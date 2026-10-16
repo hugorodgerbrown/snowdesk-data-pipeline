@@ -2771,6 +2771,10 @@
     const core = self.pwaRouteCursorMapCore;
     if (!core || !map || typeof map.panBy !== 'function') return;
     if (mapDragging) return;
+    // SNOW-1099: a phone route sheet at FULL covers the whole map, so there
+    // is no visible strip to pan the dot into; the camera stays put.
+    const rail = window.pwaRouteRail;
+    if (rail?.isSheet?.() && rail.element?.getAttribute('data-detent') === 'full') return;
     if (routeCursorPanInFlight) {
       routeCursorPanPending = true;
       return;

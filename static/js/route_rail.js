@@ -630,8 +630,12 @@
     if (!detents || !terrainEl || typeof MutationObserver !== 'function') return;
     // The terrain table loads the first time the sheet reaches FULL for a
     // route, never before: most opens never go there.
+    // Leaving FULL puts the sheet's scroll back at the top, so a table
+    // scrolled at full never displaces the profile at half; map.css hides
+    // the table itself below full and keeps what it loaded.
     new MutationObserver(function () {
       if (rail.getAttribute('data-detent') === 'full') loadTerrain();
+      else rail.scrollTop = 0;
     }).observe(rail, { attributes: true, attributeFilter: ['data-detent'] });
   }
 
