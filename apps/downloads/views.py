@@ -288,6 +288,53 @@ def _too_long_error(name: str, region_id: str, basemap_key: str) -> str | None:
     return None
 
 
+# The two spellings ``area_sync`` accepts for ``terrain``, and what each
+# means. ``URLSearchParams`` posts a JS boolean as ``"true"``/``"false"``,
+# which is what static/js/downloads_sync.js sends; anything else is refused
+# rather than read as False, because a value this endpoint does not
+# recognise came from a client it did not ship.
+_TERRAIN_VALUES: dict[str, bool] = {"true": True, "false": False}
+
+
+def _terrain_error(raw: str | None) -> str | None:
+    """Return the 400 message for an unrecognised ``terrain``, or None.
+
+    Absent is not an error: a client shell that predates SNOW-1072 posts
+    no ``terrain`` at all, and ``_terrain_defaults`` leaves the stored value
+    alone for it.
+
+    Args:
+        raw: The posted value, or None when the field was not posted.
+
+    Returns:
+        A message, or None when the value is absent or one of the two
+        spellings in ``_TERRAIN_VALUES``.
+
+    """
+    if raw is None or raw in _TERRAIN_VALUES:
+        return None
+    return 'terrain must be "true" or "false".'
+
+
+def _terrain_defaults(raw: str | None) -> dict[str, bool]:
+    """Return the ``update_or_create`` defaults a posted ``terrain`` implies.
+
+    Only a POSTED value is written. Omitted, a new row takes the model
+    default (False) and an existing row keeps what it had — so an older
+    shell re-syncing an area cannot clear an opt-in a newer one recorded.
+
+    Args:
+        raw: The posted value, already checked by ``_terrain_error``.
+
+    Returns:
+        ``{"terrain": bool}``, or an empty dict when nothing was posted.
+
+    """
+    if raw is None:
+        return {}
+    return {"terrain": _TERRAIN_VALUES[raw]}
+
+
 def _serialise(area: DownloadArea) -> dict[str, Any]:
     """Return one area as the client's JSON shape.
 
@@ -310,6 +357,7 @@ def _serialise(area: DownloadArea) -> dict[str, Any]:
         "bbox": area.bbox,
         "basemap_key": area.basemap_key,
         "name": area.name,
+        "terrain": area.terrain,
         "created_at": area.created_at.isoformat(),
     }
 
@@ -347,6 +395,12 @@ def area_sync(request: HttpRequest) -> HttpResponse:
     Validates in cheapest-first order — auth, rate limit, area id shape,
     per-user cap, then the payload itself.
 
+    SNOW-1072: ``terrain`` is ``"true"`` or ``"false"`` — whether the
+    download included terrain data. An ABSENT field leaves a stored row's
+    value alone (and creates a new row with False), so a client shell that
+    predates the field cannot clear a flag a newer one set by re-syncing the
+    same area. Any other value is a 400.
+
     The per-user cap is checked only for an area id the account does not
     already hold: re-syncing an area at the cap is an update, and refusing
     it would strand a user who is merely re-downloading something they
@@ -356,7 +410,8 @@ def area_sync(request: HttpRequest) -> HttpResponse:
         400 — non-HTMX request; malformed area id; a custom area with no
             usable bbox (absent, malformed, out of range, or larger than
             ``DOWNLOAD_CEILING_MB`` — see ``_clean_bbox``); an over-long
-            ``name``, ``region_id`` or ``basemap_key``.
+            ``name``, ``region_id`` or ``basemap_key``; a ``terrain`` that
+            is neither ``"true"`` nor ``"false"``.
         403 — anonymous request.
         409 — the user has reached ``settings.DOWNLOAD_AREAS_MAX_PER_USER``.
         429 — rate limit exceeded.
@@ -394,9 +449,12 @@ def area_sync(request: HttpRequest) -> HttpResponse:
     if kind == DownloadArea.KIND.REGION and not region_id:
         return HttpResponse("A region area needs a region_id.", status=400)
 
-    too_long = _too_long_error(name=name, region_id=region_id, basemap_key=basemap_key)
-    if too_long:
-        return HttpResponse(too_long, status=400)
+    raw_terrain = request.POST.get("terrain")
+    field_error = _too_long_error(
+        name=name, region_id=region_id, basemap_key=basemap_key
+    ) or _terrain_error(raw_terrain)
+    if field_error:
+        return HttpResponse(field_error, status=400)
 
     # One condition, short-circuited, not two nested ones: the cap is only
     # consulted for an area the account does NOT already hold, and `and`
@@ -410,19 +468,21 @@ def area_sync(request: HttpRequest) -> HttpResponse:
         logger.info("Download area sync blocked: user=%s hit the cap", request.user.pk)
         return HttpResponse("You have reached the saved-area limit.", status=409)
 
+    defaults: dict[str, Any] = {
+        **_terrain_defaults(raw_terrain),
+        "kind": kind,
+        # A region's own bbox stays null — its tiles are computed
+        # server-side from its real boundary, so a box would be a
+        # second, coarser answer to a question already answered.
+        "region_id": region_id if kind == DownloadArea.KIND.REGION else "",
+        "bbox": bbox if kind == DownloadArea.KIND.CUSTOM else None,
+        "basemap_key": basemap_key,
+        "name": name,
+    }
     area, _created = DownloadArea.objects.update_or_create(
         user=request.user,
         area_id=area_id,
-        defaults={
-            "kind": kind,
-            # A region's own bbox stays null — its tiles are computed
-            # server-side from its real boundary, so a box would be a
-            # second, coarser answer to a question already answered.
-            "region_id": region_id if kind == DownloadArea.KIND.REGION else "",
-            "bbox": bbox if kind == DownloadArea.KIND.CUSTOM else None,
-            "basemap_key": basemap_key,
-            "name": name,
-        },
+        defaults=defaults,
     )
     return JsonResponse(_serialise(area))
 
