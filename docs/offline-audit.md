@@ -2,7 +2,7 @@
 name: offline-audit
 description: Offline report — offline_audit.js, offline_audit_core.js, bounded reads, X-SW-Principal, AUDIT_SCRIPTS, snowdesk-basemap-v1 browsedState
 status: current
-last-reviewed: 2026-10-02
+last-reviewed: 2026-10-16
 ---
 
 # The offline-content report (SNOW-907)
@@ -238,8 +238,9 @@ hostname less its first label, under the source's own path
 the exact origin, because tile hosts are routinely siblings of the
 TileJSON's (`vectortiles0`–`4`), and an origin fallback read them as
 absent. Not the bare domain either, because `geo.admin.ch` also serves
-the slope overlay into the same passive cache, and a domain-only match
-read a slope tile as basemap ground. The fallback can still count a tile
+other rasters — the slope overlay's, until SNOW-1073 removed it, and a
+device that viewed it may still hold some — into the same passive cache,
+and a domain-only match read one as basemap ground. The fallback can still count a tile
 from another style under the same directory; that is only more generous
 for basemaps that share one, and they genuinely draw each other's tiles.
 

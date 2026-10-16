@@ -2,7 +2,7 @@
 name: terrain-tileset
 description: Terrain elevation tileset — swissALTI3D to a 5 m EPSG:3035 Int16 grid at /terrain/v1/, the build, grid.json, the 204 rule, TERRAIN_VERSION
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-16
 ---
 
 # Runbook — terrain elevation tileset (SNOW-908)
@@ -20,17 +20,26 @@ and the Worker applies unchanged.
 "what is the height at this coordinate, and therefore what is the slope
 angle" — the question SNOW-910 (colouring a route line by the slope it
 crosses), SNOW-964 (no-fall passages) and SNOW-839 (scoring a route against
-the bulletin) all need, and the one a pre-rendered raster cannot answer. MapLibre
-can paint the slope overlay; nothing can read a value back out of it.
+the bulletin) all need, and the one a pre-rendered raster cannot answer.
 
-So the two terrain surfaces are unrelated in everything but subject:
+The browser's terrain surface is a sibling tileset on the same origin, not
+this one: the **terrain-class tiles** (SNOW-978), PNGs whose pixels carry a
+height, an aspect octant and a 5° slope band, built in `snowdesk-tiles` from
+the same swissALTI3D grid with the same Horn kernel and 10 m window as
+`sample_slope`. The terrain filter paints them on the device, and since
+SNOW-1073 so does the map's slope layer — the filter's "Colour by slope"
+mode, which replaced swisstopo's pre-rendered
+`ch.swisstopo.hangneigung-ueber_30` raster
+([why](../decisions/slope-layer-is-painted-from-our-class-tiles.md)). So
+the map's slope shading and the route figures this grid answers come from
+one model:
 
-| | Slope angle overlay | This tileset |
+| | Terrain-class tiles | This tileset |
 |---|---|---|
-| What it is | swisstopo's pre-rendered `ch.swisstopo.hangneigung-ueber_30` raster | Our own Int16 height grid |
-| Who consumes it | MapLibre, in the browser | Django, server-side |
-| Answers | "shade this pixel" | "this coordinate is 2,417.25 m" |
-| Lives in | `static/js/slope_overlay_core.js` | Served from `snowdesk-tiles`; read by `apps/locations/services/terrain.py` (SNOW-917) |
+| What it is | 256 px PNGs of height, octant and slope band, z12–14 | Our own Int16 height grid |
+| Who consumes it | The browser — the terrain filter and the slope layer | Django, server-side |
+| Answers | "paint this pixel for this filter" | "this coordinate is 2,417.25 m" |
+| Lives in | `TERRAIN_CLASS_TILE_URL`; `static/js/terrain_filter_core.js` | Served from `snowdesk-tiles`; read by `apps/locations/services/terrain.py` (SNOW-917) |
 
 ## Where the build lives
 
@@ -297,13 +306,15 @@ resolution is recorded separately from cell spacing** because they are not the
 same claim: a 30 m source on a 5 m grid is upsampling, which is honest only so
 long as nothing downstream reads 5 m cells as 5 m of information.
 
-The accepted limitation, stated plainly: **the display overlay covers more
-ground than the sampling grid**. The slope raster's coverage rectangle reaches
-into France and Austria; this grid holds heights only for Switzerland. In the
-Vanoise or the Écrins a user will see slope shading under an uncoloured route
-line. That is not a correctness bug so long as unknown never renders as gentle
-ground — which is what the 204 rule guarantees — and it is the strongest
-argument for GLO-30 as source number two.
+The accepted limitation, stated plainly: **outside Switzerland there is no
+terrain at all**. Until SNOW-1073 the display overlay (swisstopo's slope
+raster) reached into France and Austria while this grid did not, so a user in
+the Vanoise saw slope shading under an uncoloured route line. The slope layer
+is painted from class tiles built off this grid now, so the two agree — and
+both stop at the Swiss border. That is not a correctness bug so long as
+unknown never renders as gentle ground — which is what the 204 rule and the
+no-data hatch guarantee — and it is the strongest argument for GLO-30 as
+source number two.
 
 ## Cost
 

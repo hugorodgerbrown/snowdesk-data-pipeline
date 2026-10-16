@@ -234,7 +234,8 @@ firing.
 An area downloaded with terrain data holds the terrain-class tiles the
 terrain filter paints from, and without them the filter is blank offline.
 So they join the render-dependency list exactly as the slope raster's
-tiles did (SNOW-692): **derived, not recorded** —
+tiles did (SNOW-692; SNOW-1073 removed that raster, and the class tiles are
+what the slope layer paints from now): **derived, not recorded** —
 `areaTerrainClassTileUrls(record)` rebuilds them from the record's own
 `z`, or its `bbox` + `band`, plus the class tileset's template, coverage
 and band. What the record carries is the `terrain` flag, because it is

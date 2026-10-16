@@ -2,7 +2,7 @@
 name: environment-network-allowlist
 description: Canonical egress allowlist (bare + *. pairs) for Claude Code on the web — EGRESS_BLOCKED hosts, provider APIs, basemaps, scan sites
 status: current
-last-reviewed: 2026-09-30
+last-reviewed: 2026-10-16
 ---
 
 # Environment network allow-list
@@ -132,7 +132,7 @@ from that function, not from a style URL, when a basemap changes.
 
 | Allow | Hosts actually used | Status 2026-09-29 |
 |---|---|---|
-| `geo.admin.ch`, `*.geo.admin.ch` | `vectortiles.` and the five shards `vectortiles0.`–`vectortiles4.` (swisstopo), `wmts.` (slope-angle overlay) | open |
+| `geo.admin.ch`, `*.geo.admin.ch` | `vectortiles.` and the five shards `vectortiles0.`–`vectortiles4.` (swisstopo). `wmts.` served the slope-angle overlay until SNOW-1073 removed it; the MCP danger map's raster still uses it | open |
 | `openfreemap.org`, `*.openfreemap.org` | `tiles.openfreemap.org` — the fallback basemap | open |
 | `geopf.fr`, `*.geopf.fr` | `data.geopf.fr` — IGN Plan (France) | open |
 | `wien.gv.at`, `*.wien.gv.at` | `mapsneu.wien.gv.at` — basemap.at (Austria) | open |
@@ -427,7 +427,7 @@ the tiles actually come from.
 | `tiles.snowdesk-data.info` | **Both of our own tilesets, one host.** `/terrain/v1/…` is the elevation grid `TERRAIN_TILE_BASE_URL` points at, which `apps/locations/services/terrain.py` samples — so `sample_route_slope` cannot run, and no route can be given a slope, an aspect, a no-fall passage or a fall line in a web session. `/styles/liberty` is the self-hosted basemap origin (`OPENFREEMAP_STYLE_URL`, [runbook](runbooks/self-hosted-tiles.md)), so the map page renders an empty canvas |
 | `vectortiles.geo.admin.ch` | swisstopo winter/light: the style JSON, sprite, glyphs and both source TileJSONs — **the style document only** |
 | `vectortiles0.geo.admin.ch` … `vectortiles4.geo.admin.ch` | The five numbered shards the swisstopo TileJSONs point the **tiles themselves** at (`SWISSTOPO_TILE_SHARDS`). Allowlisting the unsharded host alone loads the style and no map — the same trap SNOW-833 hit with the CSP, which has no wildcard for a subdomain prefix either |
-| `wmts.geo.admin.ch` | The slope-angle raster overlay's WMTS tiles (`SLOPE_TILE_URL`) — a different host from the vector basemap, and the one SNOW-691 added |
+| `wmts.geo.admin.ch` | swisstopo's WMTS rasters. The slope-angle overlay's tiles (`SLOPE_TILE_URL`, SNOW-691) came from here until SNOW-1073 removed the overlay; the MCP danger map's winter pixel map (`apps/mcp_server/ui/danger_map.html`) still does |
 | `tiles.openfreemap.org` | The default `OPENFREEMAP_STYLE_URL` before the self-hosted cutover, and the fallback every environment still carries |
 | `data.geopf.fr` | IGN Plan IGN — the French national basemap (style JSON, vector tiles, sprites, glyphs) |
 | `mapsneu.wien.gv.at` | basemap.at — the Austrian national basemap, same four |

@@ -1884,7 +1884,8 @@ switch sits on the sheet and governs every new download on the device.
 instead of the preference.
 
 - **What is pinned.** `terrainClassTileURLs` (`basemap_download_core.js`)
-  walks the blob's own rows, as `slopeTileURLs` does, and keeps the tiles
+  walks the blob's own rows, as SNOW-692's `slopeTileURLs` did for the
+  swisstopo slope raster SNOW-1073 removed, and keeps the tiles
   inside the tileset's `COVERAGE_BOUNDS` and its z12–14 band
   (`terrain_filter_core.js`). z10–11 of the download band have none; the
   filter overzooms z14 above.
@@ -1892,7 +1893,8 @@ instead of the preference.
   `basemap.regions` / `basemap.customAreas` record (absent means none), and
   `DownloadArea.terrain` on the account row so another device repeats it.
   `areaTerrainClassTileUrls(record)` derives the list from the record's
-  ground and the flag, as `areaSlopeTileUrls` does for the slope raster.
+  ground and the flag. Since SNOW-1073 these are also what the slope layer
+  paints from, so an area without the opt-in has no slope shading offline.
 - **What is checked.** An opted-in area missing a class tile is
   `incomplete` on the roundel and the sheet; the repair and "Sync now"
   refetch exactly the missing tiles. An area without the flag is never
