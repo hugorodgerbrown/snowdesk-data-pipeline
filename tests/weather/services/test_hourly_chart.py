@@ -338,6 +338,27 @@ class TestPeakLabels:
             label_top = float(labels[0]["top"].rstrip("%"))
             assert label_top == pytest.approx(top / PRECIP_HEIGHT * 100, abs=0.1)
 
+    @pytest.mark.parametrize(
+        ("peak_hour", "align"),
+        [(0, "start"), (2, "start"), (3, "centre"), (20, "centre"), (21, "end")],
+    )
+    def test_a_peak_near_either_end_aligns_to_the_plot_edge(
+        self, peak_hour: int, align: str
+    ) -> None:
+        """
+        Within three hours of either end the figure hangs from the plot edge.
+
+        Centred there, it ran over the band's icon on a phone (SNOW-1110).
+        """
+        day = _day()
+        hourly = day["hourly"]
+        assert isinstance(hourly, list)
+        for hour, row in enumerate(hourly):
+            row["snowfall"] = 2.0 if hour == peak_hour else 0.5
+        chart = build_hourly_chart(day)
+        assert chart is not None
+        assert chart["snow_labels"][0]["align"] == align
+
 
 class TestCoordinateFormatting:
     """Every coordinate leaves the service as an already-formatted string."""
@@ -424,20 +445,18 @@ class TestFullWidthLayout:
 
     def test_the_plots_are_sized_from_their_authored_geometry(self) -> None:
         """
-        Each plot keeps the drawing's ratio and stops at its authored height.
+        Each plot is its authored height at every width (SNOW-1110).
 
-        606 units wide, and 200, 110 and 92 tall; the direction row is a
-        fixed 30px strip.
+        200, 110 and 92 tall; the direction row is a fixed 30px strip. No
+        aspect ratio: on a phone it halved the plots under full-size labels.
         """
         chart = build_hourly_chart(_day())
         assert chart is not None
 
-        assert chart["aspect_temp"] == "606 / 200"
-        assert chart["aspect_precip"] == "606 / 110"
-        assert chart["aspect_wind"] == "606 / 92"
-        assert chart["max_h_temp"] == "200px"
-        assert chart["max_h_precip"] == "110px"
-        assert chart["max_h_wind"] == "92px"
+        assert "aspect_precip" not in chart
+        assert chart["plot_h_temp"] == "200px"
+        assert chart["plot_h_precip"] == "110px"
+        assert chart["plot_h_wind"] == "92px"
         assert chart["wind_height"] == "92"
         assert chart["direction_height"] == "30px"
 

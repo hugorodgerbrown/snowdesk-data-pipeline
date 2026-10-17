@@ -138,15 +138,18 @@ with ("arrows point where the wind comes from"). ``tests/public/
 test_weather_tags.py`` asserts the two agree for the same bearing, so they
 cannot drift apart again.
 
-The drawing stretches sideways, never taller
---------------------------------------------
+The drawing changes width, never height
+---------------------------------------
 The geometry is authored against a 606-unit content box, which is about one
 pixel per unit in the 640px column the chart was first drawn for. Since
 SNOW-1049 the chart spans the page's content column, so it lines up with the
 day picker above it, and the three plots stretch **horizontally only**: each
-SVG renders with ``preserveAspectRatio="none"``, keeps the drawing's aspect
-ratio below the authored width, and is capped at its authored height above
-it. Extra width spreads the hours; it never makes a plot taller.
+SVG renders with ``preserveAspectRatio="none"`` at its authored height in
+pixels, whatever the width. Extra width spreads the hours; it never makes a
+plot taller. Below the authored width the plots used to keep the drawing's
+aspect ratio, which on a phone halved every plot's height while its 12px
+labels stayed full size, and the chart read as squashed (SNOW-1110). Now a
+narrow column squeezes the hours instead, and the sheet scrolls.
 
 Two consequences follow. Every stroke is drawn with
 ``vector-effect="non-scaling-stroke"``, so a stretched line keeps its weight
@@ -187,9 +190,9 @@ from typing import Any, TypedDict
 logger = logging.getLogger(__name__)
 
 # ── Geometry, in viewBox units ───────────────────────────────────────────
-# The drawing is authored against a 606-unit content box. Past that width it
-# stretches horizontally only and is capped at its authored height (SNOW-1049),
-# so these are ratios along x and roughly pixels along y.
+# The drawing is authored against a 606-unit content box. At any width it
+# stretches or squeezes horizontally only and keeps its authored height
+# (SNOW-1049, SNOW-1110), so these are ratios along x and pixels along y.
 
 CHART_WIDTH = 606
 PAD_LEFT = 40  # left gutter: unit and axis labels
@@ -225,9 +228,10 @@ PRECIP_MAX_HEIGHT = 10
 BAR_WIDTH = 18  # one per hour, leaving ~4 units of gap in a 21.7-unit column
 MIN_BAR_HEIGHT = 2  # a non-zero value always draws something
 
-# Half the width of a peak label ("2.6 mm") in viewBox units, used to keep a
-# label centred on hour 0 or hour 23 from hanging over the gutter.
-_PEAK_LABEL_HALF = 24
+# A peak label ("2.6 mm") is about 50px wide. On a phone the plot squeezes to
+# roughly 11px an hour, so a label centred within this many hours of either
+# end would hang over the gutter; it is aligned to the plot's edge instead.
+_PEAK_LABEL_EDGE_HOURS = 3
 
 # Wind band. The two figure rows are fixed heights above and below the line
 # region so the numbers align across the day.
@@ -262,6 +266,17 @@ class ChartLabel(TypedDict):
     text: str
     left: str
     top: str
+
+
+class PeakLabel(ChartLabel):
+    """
+    A band's one peak figure, with how it hangs from ``left``.
+
+    ``align`` is ``"start"`` (the label's left edge at ``left``), ``"centre"``
+    or ``"end"`` (its right edge at ``left``).
+    """
+
+    align: str
 
 
 class AxisTick(TypedDict):
@@ -328,15 +343,12 @@ class HourlyChart(TypedDict):
     precip_height: str
     wind_height: str
 
-    # Sizing — each plot keeps the drawing's aspect ratio below its authored
-    # width and is capped at its authored height above it (SNOW-1049), so a
-    # wide column stretches the hours rather than the plot's height.
-    aspect_temp: str
-    aspect_precip: str
-    aspect_wind: str
-    max_h_temp: str
-    max_h_precip: str
-    max_h_wind: str
+    # Sizing — each plot is its authored height in pixels at every width
+    # (SNOW-1049, SNOW-1110), so the column's width changes the spacing of
+    # the hours and never the plot's height.
+    plot_h_temp: str
+    plot_h_precip: str
+    plot_h_wind: str
     direction_height: str
 
     # Where the gutter labels anchor: the left gutter's by its right edge,
@@ -363,9 +375,9 @@ class HourlyChart(TypedDict):
     # Precipitation chart — the plot is dropped entirely on a dry day
     has_precipitation: bool
     snow_bars: list[ChartBar]
-    snow_labels: list[ChartLabel]
+    snow_labels: list[PeakLabel]
     precip_bars: list[ChartBar]
-    precip_labels: list[ChartLabel]
+    precip_labels: list[PeakLabel]
     snow_baseline_y: str
     precip_baseline_y: str
     snow_icon_top: str
@@ -439,20 +451,6 @@ def _pct(value: float, extent: float) -> str:
 
     """
     return f"{(value / extent) * 100:.2f}%"
-
-
-def _aspect(height: int) -> str:
-    """
-    Return a plot's CSS ``aspect-ratio``: the drawing's width over ``height``.
-
-    Args:
-        height: The plot's authored height, in viewBox units.
-
-    Returns:
-        The ratio, e.g. ``"606 / 200"``.
-
-    """
-    return f"{CHART_WIDTH} / {height}"
 
 
 def _hour_x(hour: float) -> float:
@@ -971,9 +969,9 @@ class _PrecipitationLayer(TypedDict):
 
     present: bool
     snow_bars: list[ChartBar]
-    snow_labels: list[ChartLabel]
+    snow_labels: list[PeakLabel]
     precip_bars: list[ChartBar]
-    precip_labels: list[ChartLabel]
+    precip_labels: list[PeakLabel]
     snow_total: str
     precip_total: str
 
@@ -985,7 +983,7 @@ def _bars(
     max_height: float,
     headroom: float,
     unit: str,
-) -> tuple[list[ChartBar], list[ChartLabel]]:
+) -> tuple[list[ChartBar], list[PeakLabel]]:
     """
     Build one accumulation series as hourly bars with a single peak label.
 
@@ -1025,7 +1023,7 @@ def _bars(
     scale = peak * headroom
 
     bars: list[ChartBar] = []
-    tallest: tuple[float, float, float] | None = None
+    tallest: tuple[float, int, float] | None = None
     for hour, value in enumerate(slots):
         if not value or value <= 0:
             continue
@@ -1042,20 +1040,26 @@ def _bars(
         # First past the post on a tie: two identical peaks make the choice
         # arbitrary either way, and the label marks the scale, not the hour.
         if tallest is None or value > tallest[0]:
-            tallest = (value, centre, height)
+            tallest = (value, hour, height)
 
     if tallest is None:
         return bars, []
-    value, centre, height = tallest
-    # A label centred on hour 0 or hour 23 would hang into the gutter and
-    # collide with the axis, so it is pulled back inside the plot.
-    centre = min(
-        max(centre, PAD_LEFT + _PEAK_LABEL_HALF), PLOT_RIGHT - _PEAK_LABEL_HALF
-    )
+    value, hour, height = tallest
+    # A label centred near either end would hang into the gutter and run into
+    # the band's icon or the axis, so there it is aligned to the plot's edge.
+    # The test is in hours, not viewBox units: the plot squeezes horizontally
+    # on a phone while the label does not (SNOW-1110).
+    if hour < _PEAK_LABEL_EDGE_HOURS:
+        left, align = float(PAD_LEFT), "start"
+    elif hour >= DAY_HOURS - _PEAK_LABEL_EDGE_HOURS:
+        left, align = float(PLOT_RIGHT), "end"
+    else:
+        left, align = _hour_x(hour), "centre"
     return bars, [
         {
             "text": f"{value:.1f} {unit}",
-            "left": _pct(centre, CHART_WIDTH),
+            "left": _pct(left, CHART_WIDTH),
+            "align": align,
             # The label's BOTTOM edge sits on the bar's top: the template
             # lifts it by its own height (-translate-y-full), so the gap
             # is in pixels and holds at every width. A fixed offset in
@@ -1294,12 +1298,9 @@ def build_hourly_chart(
         "temp_height": str(TEMP_HEIGHT),
         "precip_height": str(PRECIP_HEIGHT),
         "wind_height": str(WIND_HEIGHT),
-        "aspect_temp": _aspect(TEMP_HEIGHT),
-        "aspect_precip": _aspect(PRECIP_HEIGHT),
-        "aspect_wind": _aspect(WIND_HEIGHT),
-        "max_h_temp": f"{TEMP_HEIGHT}px",
-        "max_h_precip": f"{PRECIP_HEIGHT}px",
-        "max_h_wind": f"{WIND_HEIGHT}px",
+        "plot_h_temp": f"{TEMP_HEIGHT}px",
+        "plot_h_precip": f"{PRECIP_HEIGHT}px",
+        "plot_h_wind": f"{WIND_HEIGHT}px",
         "direction_height": f"{DIRECTION_HEIGHT}px",
         # A CSS ``right`` is measured from the drawing's right edge, so the
         # left gutter's anchor is the distance from there to its tick's end.
