@@ -9,6 +9,8 @@ Covers:
     different users may each favourite the same resort; two NULL-resort
     favourites never collide; deleting a Resort sets favourite.resort to
     NULL (SET_NULL) leaving the row intact.
+  pin_elevation — the Location's height wins over the legacy column; the
+    legacy column is the fallback without a Location or a Location height.
 """
 
 from __future__ import annotations
@@ -20,8 +22,10 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.favourites.models import Favourite
+from apps.locations.models import Location
 from tests.factories import (
     FavouriteFactory,
+    MicroRegionFactory,
     ResortFactory,
     UserFactory,
 )
@@ -102,6 +106,39 @@ class TestFavouriteCoordinateConstraints:
         """A longitude beyond WGS-84 bounds is rejected at the DB layer."""
         with pytest.raises(IntegrityError), transaction.atomic():
             FavouriteFactory.create(longitude=999.0)
+
+
+@pytest.mark.django_db
+class TestFavouritePinElevation:
+    """Favourite.pin_elevation — the height the card shows."""
+
+    def test_location_height_wins_over_the_legacy_column(self) -> None:
+        """A pin whose Location was re-measured reports the new height."""
+        favourite = FavouriteFactory.create(elevation=1500.0)
+        Location.objects.filter(favourites=favourite).update(elevation_m=2213.0)
+
+        assert Favourite.objects.get(pk=favourite.pk).pin_elevation == 2213.0
+
+    def test_legacy_column_without_a_location(self) -> None:
+        """A pre-SNOW-704 pin with no Location keeps its stored height."""
+        favourite = FavouriteFactory.create(location=None, elevation=1500.0)
+
+        assert favourite.pin_elevation == 1500.0
+
+    def test_legacy_column_when_the_location_has_no_height(self) -> None:
+        """A Location with no height falls back to the stored one."""
+        favourite = FavouriteFactory.create(elevation=1500.0)
+        Location.objects.filter(favourites=favourite).update(elevation_m=None)
+
+        assert Favourite.objects.get(pk=favourite.pk).pin_elevation == 1500.0
+
+    def test_region_pin_has_none(self) -> None:
+        """A region pin (SNOW-802) has no height at all."""
+        favourite = FavouriteFactory.create(
+            region_pin=True, region=MicroRegionFactory.create()
+        )
+
+        assert favourite.pin_elevation is None
 
 
 @pytest.mark.django_db

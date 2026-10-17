@@ -248,6 +248,21 @@ class Favourite(BaseModel):
             and self.region_id is not None
         )
 
+    @property
+    def pin_elevation(self) -> float | None:
+        """The pin's height in metres, read from its Location (SNOW-704).
+
+        ``location.elevation_m`` is authoritative; the legacy ``elevation``
+        column is the fallback only for a pin with no Location, or whose
+        Location has no height. Callers should ``select_related("location")``
+        so this reads no extra row. None on a region pin, which has no
+        height.
+        """
+        location = self.location
+        if location is not None and location.elevation_m is not None:
+            return location.elevation_m
+        return self.elevation
+
     def to_string(self) -> str:
         """Return a concise human-readable description of this favourite.
 
