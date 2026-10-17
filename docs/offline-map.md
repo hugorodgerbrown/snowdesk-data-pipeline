@@ -3386,6 +3386,15 @@ switches to `Snowdesk (Staging)` / `Snowdesk Staging` / the
 `pwa-staging/` icon directory / amber `#b45309` for both the
 manifest `theme_color` and the `<meta name="theme-color">` tag.
 
+The browser-tab favicon follows the same identity through its `favicon`
+field: `favicon.svg` on production, the amber `favicon-staging.svg`
+everywhere else, for both the `<link rel="icon">` in `base.html` and the
+`/favicon.ico` redirect. The bulletin page's danger-tinted favicon is a
+production behaviour; off production the amber mark wins, so a staging tab
+is never mistaken for a live one. (Before this field existed the only
+amber icon was the `apple-touch-icon`, which only browsers that ignore SVG
+favicons fell back to.)
+
 Screenshots live under `/static/icons/pwa/screenshots/` on every
 environment — the screenshots show the actual UI, which is identical
 on both.

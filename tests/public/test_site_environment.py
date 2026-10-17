@@ -11,6 +11,9 @@ this contract to hold when they only assert the request-shaped surface.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from django.conf import settings
 from django.test import override_settings
 
 from apps.public.site_environment import PWAEnvironmentIdentity
@@ -26,6 +29,7 @@ def test_production_setting_yields_production_identity() -> None:
     assert identity.short_name == "Snowdesk"
     assert identity.icon_dir == "/static/icons/pwa/"
     assert identity.theme_color == "#1a1a1a"
+    assert identity.favicon == "favicon.svg"
     assert identity.title_suffix == ""
 
 
@@ -39,6 +43,7 @@ def test_staging_setting_yields_staging_identity() -> None:
     assert identity.short_name == "Snowdesk Staging"
     assert identity.icon_dir == "/static/icons/pwa-staging/"
     assert identity.theme_color == "#b45309"
+    assert identity.favicon == "favicon-staging.svg"
     assert identity.title_suffix == " — Staging"
 
 
@@ -99,3 +104,14 @@ def test_pwa_environment_identity_is_frozen() -> None:
     except dataclasses.FrozenInstanceError:
         return
     raise AssertionError("expected FrozenInstanceError on identity mutation")
+
+
+def test_staging_favicon_tile_matches_the_staging_theme_colour() -> None:
+    """``favicon-staging.svg`` is filled with the staging theme colour.
+
+    The browser tab, the browser chrome tint and the installed tile must
+    all read as the same amber, so the favicon's rect fill is pinned to
+    ``PWAEnvironmentIdentity.STAGING.theme_color``.
+    """
+    svg = (Path(settings.BASE_DIR) / "static" / "favicon-staging.svg").read_text()
+    assert f'fill="{PWAEnvironmentIdentity.STAGING.theme_color}"' in svg

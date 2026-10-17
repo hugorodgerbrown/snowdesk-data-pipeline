@@ -2658,8 +2658,12 @@ def serve_favicon(request: HttpRequest) -> HttpResponseRedirect:
     CDNs and browsers cache it for one day — the SVG target is
     content-hashed by staticfiles, so a one-day TTL is safe and avoids
     an extra round-trip on every page load.
+
+    The target is the environment's favicon, so a staging ``/favicon.ico``
+    lands on the amber mark rather than the production one.
     """
-    response = HttpResponseRedirect(static("favicon.svg"))
+    favicon = PWAEnvironmentIdentity.from_settings().favicon
+    response = HttpResponseRedirect(static(favicon))
     response["Cache-Control"] = "public, max-age=86400"
     return response
 

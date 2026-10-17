@@ -241,6 +241,9 @@ def site_environment(request: HttpRequest) -> dict[str, Any]:
     - ``PWA_THEME_COLOR`` — hex string used in the ``<meta name="theme-color">``
       tag. Matches ``theme_color`` in the manifest so the OS chrome tint
       and the browser chrome tint match.
+    - ``SITE_FAVICON`` — staticfiles path of the browser-tab favicon
+      (``favicon.svg`` on production, the amber ``favicon-staging.svg``
+      otherwise).
     - ``PWA_TITLE_SUFFIX`` — string appended after every ``<title>``
       block (empty on production, ``" — Staging"`` otherwise). Child
       templates already override ``{% block title %}`` with page-specific
@@ -252,7 +255,7 @@ def site_environment(request: HttpRequest) -> dict[str, Any]:
             from ``settings.SITE_ENVIRONMENT``, not per-request).
 
     Returns:
-        The five template variables described above.
+        The six template variables described above.
 
     """
     identity = PWAEnvironmentIdentity.from_settings()
@@ -261,6 +264,7 @@ def site_environment(request: HttpRequest) -> dict[str, Any]:
         "SITE_NAME_DISPLAY": identity.name_display,
         "PWA_ICON_DIR": identity.icon_dir,
         "PWA_THEME_COLOR": identity.theme_color,
+        "SITE_FAVICON": identity.favicon,
         "PWA_TITLE_SUFFIX": identity.title_suffix,
     }
 
