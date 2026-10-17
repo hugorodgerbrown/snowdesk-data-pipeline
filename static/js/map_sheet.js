@@ -547,7 +547,25 @@
         applySurroundings();
       })
       : null;
+    // A list's rows arrive after the list does (HTMX swaps them into a
+    // container inside the scroller), and the scroller's own box does not
+    // change size when they do — it fills the sheet either way — so the
+    // resize observer never hears of them. Watch inside each list for the
+    // swap instead, and re-fit to the rows it brought (SNOW-1102).
+    var listRows = typeof MutationObserver === 'function'
+      ? new MutationObserver(function () {
+        if (!current || !isOpen() || el.hasAttribute('data-sheet-dragging')) return;
+        fit(current);
+        applySurroundings();
+      })
+      : null;
     function observeChildren() {
+      if (listRows) {
+        listRows.disconnect();
+        Array.prototype.forEach.call(el.querySelectorAll('[data-sheet-list]'), function (list) {
+          listRows.observe(list, { childList: true, subtree: true });
+        });
+      }
       if (!resizes) return;
       resizes.disconnect();
       Array.prototype.forEach.call(el.children, function (child) {
