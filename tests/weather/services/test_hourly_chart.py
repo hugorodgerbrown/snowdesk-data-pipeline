@@ -22,6 +22,7 @@ import datetime
 import pytest
 
 from apps.weather.services.hourly_chart import (
+    PRECIP_HEIGHT,
     _daylight,
     _hour_of_day,
     _now_hour,
@@ -314,6 +315,28 @@ class TestReferenceRules:
         chart = build_hourly_chart(_day())
         assert chart is not None
         assert chart["zero_line_y"] is not None
+
+
+class TestPeakLabels:
+    """Each band's one figure sits on its tallest bar, not a fixed gap above."""
+
+    def test_label_top_is_the_tallest_bars_top(self) -> None:
+        """
+        The label's top is the bar's top; the template lifts it by its height.
+
+        A gap of 17 viewBox units shrank with the drawing on a phone while
+        the 12px figure did not, so it ran into the bars (SNOW-1110).
+        """
+        chart = build_hourly_chart(_day())
+        assert chart is not None
+        for bars, labels in (
+            (chart["snow_bars"], chart["snow_labels"]),
+            (chart["precip_bars"], chart["precip_labels"]),
+        ):
+            top = min(float(bar["y"]) for bar in bars)
+            assert len(labels) == 1
+            label_top = float(labels[0]["top"].rstrip("%"))
+            assert label_top == pytest.approx(top / PRECIP_HEIGHT * 100, abs=0.1)
 
 
 class TestCoordinateFormatting:

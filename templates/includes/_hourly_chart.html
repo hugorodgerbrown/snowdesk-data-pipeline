@@ -558,13 +558,13 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
 
                 {% for label in chart.snow_labels %}
                     <span
-                        class="absolute -translate-x-1/2 font-mono text-xs whitespace-nowrap text-accent"
+                        class="absolute -translate-x-1/2 -translate-y-full pb-0.5 font-mono text-xs leading-none whitespace-nowrap text-accent"
                         style="left: {{ label.left }}; top: {{ label.top }}"
                     >{{ label.text }}</span>
                 {% endfor %}
                 {% for label in chart.precip_labels %}
                     <span
-                        class="absolute -translate-x-1/2 font-mono text-xs whitespace-nowrap text-chart-precip"
+                        class="absolute -translate-x-1/2 -translate-y-full pb-0.5 font-mono text-xs leading-none whitespace-nowrap text-chart-precip"
                         style="left: {{ label.left }}; top: {{ label.top }}"
                     >{{ label.text }}</span>
                 {% endfor %}

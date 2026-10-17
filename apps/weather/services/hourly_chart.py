@@ -1056,7 +1056,12 @@ def _bars(
         {
             "text": f"{value:.1f} {unit}",
             "left": _pct(centre, CHART_WIDTH),
-            "top": _pct(baseline - height - 17, PRECIP_HEIGHT),
+            # The label's BOTTOM edge sits on the bar's top: the template
+            # lifts it by its own height (-translate-y-full), so the gap
+            # is in pixels and holds at every width. A fixed offset in
+            # viewBox units shrank with the drawing on a phone while the
+            # 12px text did not, and the figure ran into the bars (SNOW-1110).
+            "top": _pct(baseline - height, PRECIP_HEIGHT),
         }
     ]
 
