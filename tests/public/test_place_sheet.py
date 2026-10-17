@@ -11,6 +11,8 @@ Covers both views, ``resort_sheet_partial`` and ``favourite_sheet_partial``:
     when anonymous); a saved pin's "…" menu and inline-rename row.
   - The detents the body allows: all three when there is something for
     FULL to show, peek and half otherwise.
+  - A pin's problems are judged against its Location's height, the pin's
+    own legacy height only as a fallback.
   - HALF ends under the day's weather; a forward day reads today's row and
     shows that row's forecast entry for the day.
   - FULL: the problems, the week, a resort's details and the links on, the
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import datetime
 from typing import Any
+from unittest import mock
 
 import pytest
 from django.test import Client
@@ -199,6 +202,49 @@ class TestFavouritePeek:
         client.force_login(favourite.user)
         content = _get(client, _favourite_url(favourite.uuid)).content.decode()
         assert "No avalanche bulletin covers this spot" in content
+
+
+@pytest.mark.django_db
+class TestProblemRelevance:
+    """A pin's problems are judged against its Location's height."""
+
+    def _annotated_with(self, client: Client, favourite: Any) -> Any:
+        """Render the pin's sheet and return the height the problems got."""
+        client.force_login(favourite.user)
+        with (
+            mock.patch(
+                "apps.public.place_sheet.select_bulletin_for_date",
+                return_value=object(),
+            ),
+            mock.patch(
+                "apps.public.place_sheet.problem_cards_for_bulletin",
+                return_value=[],
+            ),
+            mock.patch(
+                "apps.public.place_sheet.annotate_problem_relevance",
+                return_value=[],
+            ) as annotate,
+        ):
+            _get(client, _favourite_url(favourite.uuid))
+        return annotate.call_args.args[1]
+
+    def test_the_locations_height_wins(self, client: Client) -> None:
+        favourite = FavouriteFactory.create(
+            region=MicroRegionFactory.create(), elevation=None
+        )
+        assert favourite.location is not None
+        favourite.location.elevation_m = 2410.0
+        favourite.location.save()
+        assert self._annotated_with(client, favourite) == 2410.0
+
+    def test_the_pins_own_height_is_the_fallback(self, client: Client) -> None:
+        favourite = FavouriteFactory.create(
+            region=MicroRegionFactory.create(), elevation=1800.0
+        )
+        assert favourite.location is not None
+        favourite.location.elevation_m = None
+        favourite.location.save()
+        assert self._annotated_with(client, favourite) == 1800.0
 
 
 @pytest.mark.django_db

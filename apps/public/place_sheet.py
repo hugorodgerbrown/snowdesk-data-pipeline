@@ -255,11 +255,18 @@ def favourite_sheet_partial(request: HttpRequest, uuid: UUID) -> HttpResponse:
         f"{favourite.name} - {url}" if url and favourite.name else (url or "")
     )
 
+    # The Location's height is authoritative (Favourite's docstring); the
+    # pin's own ``elevation`` is the pre-SNOW-704 copy, a fallback only.
+    elevation = (
+        location.elevation_m
+        if location is not None and location.elevation_m is not None
+        else favourite.elevation
+    )
     context = _place_context(
         region=favourite.region,
         location=location,
         target_date=target_date,
-        elevation=favourite.elevation,
+        elevation=elevation,
     )
     context.update(
         {
