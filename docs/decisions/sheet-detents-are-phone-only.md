@@ -95,6 +95,12 @@ only binds it to pointer events. Without the core on the page,
   day's weather: the level is already on the peek row, so the weather is
   what HALF adds, and the problems wait for FULL. It drops FULL only when
   it has nothing for it (no weather, no links, no rating).
+- The weather sheet (SNOW-1101) peeks at the day's line, adds the rest
+  of the card at HALF (ending under `data-sheet-half`), and the day's
+  meteogram at FULL. It narrows to `peek,half` for a row with no hourly
+  series and to `peek` for a day with no row. Its loading and failure
+  lines are `data-sheet-peek` and are painted before the sheet opens,
+  because the sheet measures PEEK as it opens.
 - A resting sheet's transform is `none`, never `translateY(0)`. Any
   transform makes the sheet the containing block for `position: fixed`
   descendants, which put the place sheet's "…" menu a screen-height off

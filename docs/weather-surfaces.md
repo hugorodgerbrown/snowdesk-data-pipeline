@@ -1,8 +1,8 @@
 ---
 name: weather-surfaces
-description: Weather UI — _weather_panel, _weather_day_picker, _weather_day_line, _weather_masthead, build_weather_display, is_day, /api/weather.geojson
+description: Weather UI — _weather_detail sheet, _weather_panel, _weather_day_picker, _weather_day_line, build_weather_display, is_day, weather.geojson
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-17
 ---
 
 # Weather surfaces
@@ -56,6 +56,20 @@ surface that names a location shows the day and links to the rest — the
 resort page and the favourite card both drew the whole week inline until
 SNOW-783, the resort page once per curated altitude, before SNOW-807 took
 the day off the resort page as well.
+
+**The map's weather sheet is the one place the meteogram leaves the page
+(SNOW-1101), and the split is day versus week.** The sheet is the map's
+day: the scrubber picks it, and the sheet has no picker of its own. On a
+phone it rests at PEEK on the day's line (symbol, name, high/low, new
+snow, wind), rises to HALF for the rest of the card, and to FULL for that
+one day's `_hourly_chart.html`. The week, its picker and the shareable URL
+stay the page's, which is why the sheet's way out reads "This week →".
+The body narrows its detents to what it can fill: a row with no hourly
+series stops at half, a day with no row at peek. The chart is what the
+SNOW-761 trim removed, and it costs the card again: about 86 kB raw for a
+day with hours, 7 kB gzipped, against 2 kB without. One day's chart is the
+limit; `TestCardDetents` in `tests/public/test_weather_detail.py` fails on
+a second.
 
 `_forecast_panel.html` and `_forecast_chart.html` were the week's two
 components until SNOW-789 and are **deleted**, not renamed. Historical

@@ -67,7 +67,10 @@
    */
   function showMessage(message) {
     var wrap = document.createElement('div');
-    wrap.className = 'flex flex-col min-h-0 flex-1 px-4 py-4';
+    // SNOW-1101: the line is the whole peek, so a phone sheet that opens
+    // on it settles at its height rather than at the fallback peek.
+    wrap.setAttribute('data-sheet-peek', '');
+    wrap.className = 'py-2';
     var line = document.createElement('p');
     line.className = 'text-sm text-text-2';
     // textContent, not innerHTML: these strings come from a template the
@@ -95,8 +98,10 @@
     if (shortId == null || !URL_TEMPLATE) return false;
 
     var token = ++requestToken;
-    sheet.open();
+    // Paint first: the sheet measures its peek as it opens, so the loading
+    // line must already be there or it opens at the fallback height.
     showMessage(strings.loading);
+    sheet.open();
 
     var url = URL_TEMPLATE.replace('__SHORTID__', encodeURIComponent(String(shortId)));
     if (dateKey) url += '?date=' + encodeURIComponent(dateKey);

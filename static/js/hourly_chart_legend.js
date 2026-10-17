@@ -84,10 +84,21 @@
     if (target.closest(CLOSE) || target.closest(BACKDROP)) closeAll();
   });
 
-  document.addEventListener("keydown", function (event) {
-    if (event.key !== "Escape") return;
-    closeAll();
-  });
+  // Escape closes an open legend and nothing else. Captured on the window,
+  // so it runs before any document listener: a chart inside a map sheet
+  // (SNOW-1101) sits under MapSheet's own Escape-to-close, which would
+  // otherwise shut and empty the sheet before the legend could restore
+  // focus. With no legend open the key passes through untouched.
+  window.addEventListener(
+    "keydown",
+    function (event) {
+      if (event.key !== "Escape") return;
+      if (!document.querySelector(PANEL + ":not([hidden])")) return;
+      event.stopPropagation();
+      closeAll();
+    },
+    true,
+  );
 
   // Keep focus inside an open panel: a modal the keyboard can walk out of
   // behind is a modal in appearance only.

@@ -139,7 +139,9 @@ from apps.regions.services.area_content import (
 )
 from apps.regions.services.basemap_tiles import blob_summary
 from apps.weather.models import Weather
+from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import (
+    build_point_forecast_panel,
     build_point_weather_days,
     build_weather_display,
 )
@@ -1761,6 +1763,20 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
     weather = Weather.objects.filter(location=location, observed_on=target_date).first()
     now = timezone.now()
 
+    # The day's meteogram, for the phone sheet's FULL detent (SNOW-1101) —
+    # the same chart the forecast page draws for the row's own day.
+    panel = build_point_forecast_panel(weather, now)
+    hourly_chart = (
+        build_hourly_chart(
+            panel["days"][0],
+            elevation=location.elevation_m,
+            location_label=location.name or "",
+            now=now,
+        )
+        if panel and panel["days"]
+        else None
+    )
+
     return JsonResponse(
         {
             "html": render_to_string(
@@ -1776,6 +1792,7 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
                     "heading": location.name or _weather_detail_heading(location),
                     "weather": weather,
                     "display": build_weather_display(weather, now),
+                    "hourly_chart": hourly_chart,
                     "target_date": target_date,
                     "forecast_url": (
                         f"{_weather_forecast_url(location)}"

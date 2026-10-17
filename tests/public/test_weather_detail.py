@@ -34,6 +34,7 @@ import re
 from typing import Any
 
 import pytest
+from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
 
@@ -334,13 +335,25 @@ class TestCard:
 
         They were on it once, and the hourly rows alone were 79% of the
         response — 72.7 kB for a surface opened by tapping a symbol. This
-        is what stops them drifting back.
+        is what stops them drifting back. The one day's meteogram SNOW-1101
+        put on the FULL detent is not one of them: it is the map's day,
+        and the week stays the page's (``TestCardDetents``).
         """
         html = client.get(_card_url(resort_location)).json()["html"]
 
         assert "forecast-chart" not in html
         assert "-forecast-day" not in html
         assert "-hourly-list" not in html
+
+    def test_links_out_to_the_week(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The card is the map's day; the week is the page's (SNOW-1101)."""
+        html = client.get(
+            _card_url(resort_location), {"date": TODAY.isoformat()}
+        ).json()["html"]
+
+        assert "This week →" in html
 
     def test_says_so_when_there_is_no_reading_for_the_day(
         self, client: Client, resort_location: Location
@@ -358,6 +371,89 @@ class TestCard:
         response = client.get(_card_url(resort_location), {"date": "not-a-date"})
 
         assert response.status_code == 200
+
+
+def _detents(html: str) -> str:
+    """Read the detents the card body declares for the phone sheet."""
+    match = re.search(r'data-sheet-detents="([^"]*)"', html)
+    assert match is not None
+    return match.group(1)
+
+
+@pytest.mark.django_db
+class TestCardDetents:
+    """The phone sheet's three heights, declared by the body (SNOW-1101).
+
+    PEEK is the day's line, HALF the rest of the card, FULL the day's
+    meteogram. The body narrows the list to what it can fill, so a sheet
+    never rises to an empty height.
+    """
+
+    def test_the_peek_row_carries_the_days_line(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """High/low, new snow and wind, on the row the reader drags by."""
+        html = client.get(
+            _card_url(resort_location), {"date": TODAY.isoformat()}
+        ).json()["html"]
+
+        match = re.search(
+            r'data-testid="weather-detail-line"[^>]*>(.*?)</p>', html, re.DOTALL
+        )
+        assert match is not None
+        line = " ".join(match.group(1).split())
+        assert "2&deg;" in line
+        assert "-6&deg;" in line
+        assert "3 cm new" in line
+        assert "22&nbsp;km/h" in line
+        assert "data-sheet-peek data-sheet-drag" in html
+
+    def test_a_row_with_hours_rises_to_the_meteogram(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """FULL is the map's day as a chart, and HALF ends above it."""
+        html = client.get(
+            _card_url(resort_location), {"date": TODAY.isoformat()}
+        ).json()["html"]
+
+        assert _detents(html) == "peek,half,full"
+        assert 'data-testid="weather-detail-hourly"' in html
+        assert html.index("data-sheet-half") < html.index(
+            'data-testid="weather-detail-hourly"'
+        )
+        # One day's chart, never the week's.
+        assert html.count('role="group"') == 1
+
+    def test_a_row_without_hours_stops_at_half(self, client: Client) -> None:
+        """No series, no chart, so no FULL to rise to."""
+        location = LocationFactory.create(anonymous=True, elevation_m=1450.0)
+        MicroRegionFactory.create(name="Chablais", centroid_location=location)
+        WeatherFactory.create(location=location, observed_on=TODAY, hourly=None)
+
+        html = client.get(_card_url(location), {"date": TODAY.isoformat()}).json()[
+            "html"
+        ]
+
+        assert _detents(html) == "peek,half"
+        assert 'data-testid="weather-detail-hourly"' not in html
+
+    def test_a_day_with_no_row_stays_at_peek(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The line says so, and there is nothing above it."""
+        html = client.get(_card_url(resort_location), {"date": "2020-01-01"}).json()[
+            "html"
+        ]
+
+        assert _detents(html) == "peek"
+        assert "No weather recorded" in html
+
+    def test_the_surface_declares_all_three_and_loads_the_legend(self) -> None:
+        """The map's sheet offers FULL, and the chart's key has its handler."""
+        html = render_to_string("public/partials/_weather_surface.html")
+
+        assert 'data-detents="peek,half,full"' in html
+        assert "js/hourly_chart_legend.js" in html
 
 
 def _page(client: Client, location: Location) -> str:
