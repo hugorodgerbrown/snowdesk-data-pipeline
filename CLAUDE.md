@@ -442,9 +442,9 @@ them. Full statement and history:
 6. **What opened a map panel decides its kind.** Three named kinds, one
    primitive (`_overlay_sheet.html`): an **object sheet** (a thing tapped on
    the map — slides up on phones with peek/half/full), a **roundel panel**
-   (a list or setting a roundel opened, which the roundel toggles — never
-   covers the roundel, which phones do not yet honour, SNOW-1106; no
-   detents) and a **form panel** (a task — no detents, no drag-to-close).
+   (a list or setting a roundel opened, which the roundel toggles — on a
+   desktop it sits beside the column; on a phone it docks full width over
+   it and closes with its ×, by choice, SNOW-1106; no detents) and a **form panel** (a task — no detents, no drag-to-close).
    SNOW-1102 was cancelled for breaking this.
 
 Per-line escape hatch, only when a token genuinely can't express the
