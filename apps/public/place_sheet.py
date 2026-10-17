@@ -152,9 +152,9 @@ def _place_context(
         else None,
         "forward_day": forward_day,
         "forecast_panel": forecast_panel,
-        "forecast_url": f"{base_url}?date={target_date.isoformat()}"
-        if base_url
-        else "",
+        # The page reads one row: a forward day's lives in today's, so the
+        # link names the row's day, and the page's week picker reaches it.
+        "forecast_url": f"{base_url}?date={row_date.isoformat()}" if base_url else "",
     }
 
 
