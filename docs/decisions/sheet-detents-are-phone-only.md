@@ -22,8 +22,11 @@ keep their one docked state.
 belongs to the roundel that opened it, and that roundel toggles it shut or
 switches to another list. A list sheet at half or full covers the roundel
 column (see below), so the control that opened it would vanish while it
-was open. The panel must leave the roundel visible, which is the point;
-on phones the docked panel still covers it when tall, which SNOW-1106 fixes.
+was open. On a desktop the panel sits beside the column. On a phone the
+detent-less panel docks full width and a tall one covers the column; the
+reader closes it with its ×. SNOW-1106 built a panel stopped short of the
+column and Hugo kept the full width instead (17 Oct 2026): the extra tap
+is accepted until readers say otherwise.
 
 **Why phone-only.** The detents exist to keep the ground visible while the
 reader looks at what they tapped. On a phone the docked sheet covered the

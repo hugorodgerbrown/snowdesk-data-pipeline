@@ -833,8 +833,9 @@ folds for it**: the sheet covers whatever is under it, and the furniture is
 where it was when the sheet closes. A sheet declares only the detents it
 can use, and only an object you tapped on the map declares any. **A list
 opened from a roundel uses none**, because the roundel that opened it
-must stay visible to close or switch it (on phones the docked panel still
-covers a tall list's roundel; SNOW-1106), and **a form uses
+is what closes or switches it (on a phone the full-width panel covers a
+tall list's roundel and the reader closes it with its ×, by choice,
+SNOW-1106), and **a form uses
 none**, because a swipe must never discard a half-written report. Content can narrow them further for what it holds
 (`data-sheet-detents`): the region sheet drops full on a day with no
 bulletin. At

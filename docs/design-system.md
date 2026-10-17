@@ -278,7 +278,7 @@ beside the map. They differ on a phone, and the difference is the rule.
 | Kind | Opened by | On a phone | Detents | Closed by | Today |
 |---|---|---|---|---|---|
 | **Object sheet** | Tapping a thing on the map | Full width, slides up from the foot, covers the map controls at half and full | `peek,half,full`, narrowed by content | Its ×, a drag below peek | Region, route, place (resort, saved pin), weather |
-| **Roundel panel** | A map-control roundel | Docked at the foot; must leave the roundel column visible (not yet true on phones, SNOW-1106) | None | Its ×, or the roundel that opened it (a toggle) | Pins, observations, routes, downloads, terrain filter |
+| **Roundel panel** | A map-control roundel | Docked full width at the foot, over the roundel column (SNOW-1106) | None | Its ×, or the roundel that opened it (a toggle) | Pins, observations, routes, downloads, terrain filter |
 | **Form panel** | An action that starts a task | Docked at the foot | None | Submit, cancel, or the shared dismissals (×, Escape, a tap outside, another overlay opening); never a drag | Report, add or rename favourite, sign in |
 
 **Object sheet.** The reader asked "what is this?" about a place on the
@@ -289,11 +289,14 @@ object, not the controls. The sheet is the only kind with a drag handle.
 
 **Roundel panel.** The reader asked a control to show a list or a setting,
 and that control stays in charge: tapping the same roundel closes the
-panel, tapping another switches to it. So the panel must never cover the
-roundel column. On a desktop it already sits beside the column. On a phone
-it still docks full width over it today, so a tall list hides the roundel;
-SNOW-1106 is the fix, and until it lands the rule is the target, not the
-state. A list has no one-line summary to peek with either. This
+panel, tapping another switches to it. On a desktop the panel therefore
+sits beside the roundel column and never covers it. On a phone it
+docks full width at the foot and a tall list covers the column, the
+opening roundel included, so the reader closes it with its × before
+reaching another roundel. That is a choice, not a gap (Hugo, 17 Oct 2026,
+SNOW-1106): a panel stopped short of the column was built and shown, and
+the full-width list was judged worth the extra tap; revisit only if
+readers complain. A list has no one-line summary to peek with either. This
 is why SNOW-1102 (lists as slide-up sheets) was cancelled on 17 Oct 2026:
 built, it hid the very roundel that opened it, and the list stopped being
 something the reader could toggle.
