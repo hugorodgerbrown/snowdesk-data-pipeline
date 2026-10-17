@@ -11,19 +11,20 @@ symbol on the map itself — map.js binds the tap on the ``weather-point``
 layer and calls ``window.pwaWeatherDetail.open()``. That is why this sheet,
 unlike the three UGC ones, has nothing to render until something is tapped.
 
-``scroll_body=True``, as the other sheets use: the header stays pinned and
-only the body between it and the sheet's bottom edge scrolls. The body this
-sheet injects (public/partials/_weather_detail.html) therefore carries
-``flex-1 overflow-y-auto min-h-0`` on its own scroll region — a map overlay
-that grows with its content pushes its own footer off screen, which is the
-defect the bounded-height rule exists to stop.
+DETENTS (SNOW-1101). On a phone the sheet rests at PEEK — the day's line:
+the symbol, the name, the high/low, new snow and wind — and rises to HALF
+for the rest of the card. There is no FULL: the card is small, and the
+week and the hourly detail live on the forecast page it links to. A day
+with no row narrows the detents to peek (``data-sheet-detents`` on the
+body). It does not take ``scroll_body``, as the region and place sheets do
+not: the card fits, and the sheet scrolls as one block if it ever must.
 
 Context expected:
   (None. map_weather_detail.js reads the endpoint template off #map's
   data-weather-detail-url, which _map_embed.html renders.)
 {% endcomment %}
 {% trans "Weather detail" as weather_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="weather-sheet" aria_label=weather_sheet_aria_label scroll_body=True %}
+{% include "includes/_overlay_sheet.html" with id="weather-sheet" aria_label=weather_sheet_aria_label detents="peek,half" initial="peek" %}
 <script defer src="{% static 'js/map_weather_detail.js' %}"></script>
 {# SNOW-620: the module's own user-facing strings. makemessages never scans #}
 {# JavaScript, so a literal in the module ships as English to every locale; #}
