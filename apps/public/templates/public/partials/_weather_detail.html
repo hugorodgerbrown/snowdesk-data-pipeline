@@ -139,10 +139,10 @@ Context:
                     </div>
                 {% endif %}
             </dl>
-            {# Out to the full forecast — the week and the hourly detail both #}
-            {# live there rather than here.                                    #}
+            {# Out to the full forecast. The sheet is the map's day; the week  #}
+            {# and its picker are the page's, hence the label.               #}
             {% if forecast_url %}
-                {% trans "View forecast →" as weather_forecast_cta %}
+                {% trans "This week →" as weather_forecast_cta %}
                 {% include "includes/_button.html" with label=weather_forecast_cta href=forecast_url variant="secondary" size="compact" %}
             {% endif %}
         {% else %}
