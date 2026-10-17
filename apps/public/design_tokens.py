@@ -1474,7 +1474,8 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "in a rounded track, the selected pill filled with the accent "
             "(SNOW-1073). The caller writes the fieldset, its legend and the "
             "track, and includes this once per option. Used by the theme "
-            "preference and the terrain filter's mode control."
+            "preference. (The terrain filter's mode control used it until "
+            "SNOW-1109 replaced it with two option tiles.)"
         ),
         kind="components",
         partial="includes/_segmented_option.html",
@@ -1503,9 +1504,9 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "The map terrain filter's colour key (SNOW-978): the match tint "
             "and the no-data hatch, or — in the slope mode (SNOW-1073) — the "
             "five slope classes and the hatch; the script hides the rows of "
-            "the mode not set. Rendered in the map legend and "
-            "inside the filter sheet, which carries its own key because the "
-            "legend is hidden on a phone while a route is open."
+            "the mode not set. Rendered in the map legend. The filter sheet "
+            "carried it too until SNOW-1109, whose slope ramp is its own key; "
+            "the sheet keeps only the no-data row."
         ),
         kind="components",
         partial="includes/_terrain_filter_key.html",

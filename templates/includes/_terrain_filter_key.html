@@ -5,10 +5,9 @@ templates/includes/_terrain_filter_key.html — the terrain filter's colour key 
 One key per mode, plus the row both share. The match mode paints matching
 ground in one tint; the slope mode (SNOW-1073) paints it by slope class on
 the 30/35/40/45/50+ ramp — the map's slope layer. Both hatch ground the
-tiles carry no data for. Rendered twice on the map page — in the map legend,
-and inside the filter's own sheet, because on a phone with a route open the
-legend is hidden and the sheet has to explain its own colours. One partial
-so the two cannot drift.
+tiles carry no data for. Rendered in the map legend. The filter's own
+sheet included it too until SNOW-1109: its slope ramp is now its own key,
+and the sheet repeats only the shared no-data row below.
 
 Each mode's rows sit in a `display: contents` wrapper carrying
 data-terrain-filter-key="<mode>", so the wrapper adds no box and the rows

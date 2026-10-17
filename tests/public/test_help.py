@@ -331,7 +331,8 @@ class TestHelpPageFlagGating:
         """
         content = client.get(reverse("public:help")).content.decode()
         assert 'data-testid="help-slope-how-to"' in content
-        assert "Colour by slope" in content
+        assert "By slope" in content
+        assert "Colour by slope" not in content
         assert 'data-testid="help-slope-source"' in content
         assert "swissALTI3D" in content
         assert "resampled to a 5 metre grid" in content

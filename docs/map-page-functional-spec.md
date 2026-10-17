@@ -496,7 +496,7 @@ scrubbed to.
 **It is a mode of the terrain filter (§3.5b), not a row of its own.**
 SNOW-691 shipped it as swisstopo's pre-rendered "Slope classes over 30°"
 raster with a "Display slope angles" row; SNOW-1073 replaced that with the
-filter sheet's **"Colour by slope"** mode, painted on the device from our
+filter sheet's **"By slope"** mode (named "Colour by slope" until SNOW-1109), painted on the device from our
 terrain-class tiles, and removed the raster, its row and
 `SLOPE_TILE_URL`. The why and the costs:
 [decisions/slope-layer-is-painted-from-our-class-tiles.md](decisions/slope-layer-is-painted-from-our-class-tiles.md).
@@ -554,8 +554,8 @@ bulletin uses to say where the danger is: the **aspect** a slope faces (any
 of eight), its **slope angle** (from 30° up, optionally capped below 35–50°)
 and, optionally, a band of **elevation** (100 m steps). It answers "which
 of the slopes around me is the bulletin talking about?". Its sheet has two
-modes: **"Highlight matches"**, described here, and **"Colour by slope"**,
-the slope layer (§3.5a). Both share every setting.
+modes: **"One tint"**, described here, and **"By slope"**, the slope
+layer (§3.5a). Both share every setting.
 
 **How it is drawn.** Matching ground gets a see-through blue
 (`--color-terrain-match`, about 45%), so contours and hillshade stay
@@ -565,19 +565,21 @@ the tiles carry **no data** for is **hatched**, so blank never has to mean
 layer sits **under the region choropleth**.
 
 **Where it is controlled.** One row in the layers menu, under Basemap below
-the hairline: **"Terrain filter…"**. It is the menu's one ACTION
-row — it always opens the filter's sheet rather than toggling anything —
-because the filter has more than one control and the menu holds one action
-per row. The sheet carries the on/off switch, the mode, eight compass toggles (the
-aspect wheel's order and words), the slope range, the elevation band, its
-own colour key (the legend is hidden on a phone while a route is open) and a
-line explaining an empty map: **"zoom in"** below z12, **"outside coverage"**
-outside Switzerland. While the filter is on, the row shows a short summary
-("3 aspects · 35°+"), the menu header counts it as a layer, a **chip** at the
-top of the map repeats the filter in full ("N, NE, NW · 35°+ · above
-2,400 m", led by "Slope classes" in the slope mode) and opens the sheet on
-a tap, and the legend shows a **Terrain filter** section: Matches the
-filter / No data, or the five slope classes / No data in the slope mode.
+the hairline: **"Terrain filter"**, a checkbox like the overlay rows round
+it (SNOW-1109), with an icon-only **adjust** button beside it that opens
+the filter's sheet — and turns the filter on first if it is off. The sheet
+carries the mode as two tiles ("One tint" / "By slope"), the slope range as
+a ramp of five class buttons that doubles as the slope key, an aspect rose
+of eight wedges with an "All" centre, an elevation mountain over two lists
+("Above" / "Below", 1,000–4,500 m in 100 m steps), the no-data key row and
+the caveat. While the filter is on, the row's second line shows a short
+summary ("3 aspects · 35°+") or why the map is empty — **"zoom in"** below
+z12, **"outside coverage"** outside Switzerland; the menu header counts it
+as a layer, and the legend shows a **Terrain filter** section: the summary
+in full ("N, NE, NW · 35°+ · above 2,400 m", led by "Slope classes" in the
+slope mode), then Matches the filter / No data, or the five slope classes /
+No data in the slope mode. (The chip SNOW-978 drew along the map's top
+edge is gone.)
 
 **Who can use it.** Everyone, wherever `TERRAIN_CLASS_TILE_URL` is set. It
 defaults to empty, which removes the row, the chip, the sheet and the CSP
@@ -617,7 +619,7 @@ Four sections, each collapsible and each remembering how it was left, with
 | **Places** | Resorts, Favourites, Routes | A thing on the ground: the resorts Snowdesk knows, the reader's own saved places, the reader's own uploaded tracks |
 | **Conditions** | SLF bulletins (CH), MétéoFrance (FR), ALBINA (AT, IT) · Weather, Field observations | One warning service's bulletins over every country it publishes for (SNOW-891); then, under a hairline, the two other things that describe the day |
 | **Boundaries** | Major regions (EAWS L1), Minor regions (EAWS L2), Micro regions (EAWS L4) | One tier of the EAWS region hierarchy, drawn for the countries the ACTIVE BASEMAP covers rather than for the enabled providers ([why](decisions/boundaries-follow-the-basemap.md)) |
-| **Basemap** | one radio per basemap · Terrain filter… (absent without `TERRAIN_CLASS_TILE_URL`; opens a sheet holding the filter and the slope layer, §3.5a–b), Display downloaded areas | The geographic backdrop; then, under a hairline, the things drawn ON TOP of whichever one is chosen |
+| **Basemap** | one radio per basemap · Terrain filter (absent without `TERRAIN_CLASS_TILE_URL`; a checkbox, with an adjust button that opens a sheet holding the filter and the slope layer, §3.5a–b), Display downloaded areas | The geographic backdrop; then, under a hairline, the things drawn ON TOP of whichever one is chosen |
 
 Four things about that layout are decisions rather than accidents, and a
 tidy-up would undo each of them:

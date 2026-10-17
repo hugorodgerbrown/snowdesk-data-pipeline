@@ -5,7 +5,9 @@ Content partial for the help page (SNOW-978); included via the
 body_template parameter of includes/_collapsible_panel.html, and the target
 of the map legend's and the filter sheet's #help-topic-terrain-filter
 links. Like the slope topic, this is where the filter's limits live: the
-legend and the sheet carry the key and a link here.
+legend and the sheet carry the key and a link here. SNOW-1109 made the menu
+row a checkbox with an adjust button beside it, and renamed the modes "One
+tint" and "By slope".
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
@@ -14,24 +16,24 @@ legend and the sheet carry the key and a link here.
             The terrain filter highlights ground by the three things a bulletin uses to say where the danger is: the
             aspect a slope faces, how steep it is, and how high it is. Choose any of the eight aspects, a slope range
             from 30 degrees upward, and if you like a band of elevation, and the map tints the ground that matches in
-            blue. Ground that does not match is left as it is. Open it from the layers menu&rsquo;s &ldquo;Terrain
-            filter&hellip;&rdquo; row, which opens it as a panel; while it is on, that row and the map&rsquo;s legend
-            say what it is set to.
+            blue. Ground that does not match is left as it is. The layers menu&rsquo;s &ldquo;Terrain filter&rdquo; row
+            is a checkbox that turns it on and off; the adjust button beside it opens the settings as a panel, and turns
+            the filter on if it is off. While it is on, that row and the map&rsquo;s legend say what it is set to.
         {% endblocktrans %}
     </p>
     {# SNOW-1073: the sheet's second mode is the map's slope layer. #}
     <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-modes">
         {% blocktrans trimmed %}
-            The sheet has two ways to colour what matches. &ldquo;Highlight matches&rdquo; tints it blue; &ldquo;Colour
-            by slope&rdquo; colours it by how steep it is, in the same bands as the Swiss slope maps &mdash; that is the
-            map&rsquo;s slope layer, described under &ldquo;Slope angle&rdquo;. The aspects, slope range and elevation
-            band apply to both.
+            The panel has two ways to colour what matches. &ldquo;One tint&rdquo; tints it blue; &ldquo;By slope&rdquo;
+            colours it by how steep it is, in the same bands as the Swiss slope maps &mdash; that is the map&rsquo;s
+            slope layer, described under &ldquo;Slope angle&rdquo;. The aspects, slope range and elevation band apply to
+            both.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-zoom">
         {% blocktrans trimmed %}
-            The filter shows from zoom level 12, roughly a valley across the screen; zoom out further and the sheet asks
-            you to zoom in.
+            The filter shows from zoom level 12, roughly a valley across the screen; zoom out further and its row in the
+            layers menu asks you to zoom in.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-terrain-filter-hatched">
