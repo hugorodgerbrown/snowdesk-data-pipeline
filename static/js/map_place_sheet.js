@@ -217,10 +217,8 @@
         uuidAttribute: 'data-favourite-rename',
         urlTemplate: holder ? holder.getAttribute('data-favourite-rename-url-template') : '',
         csrfToken: csrfToken,
-        onCommitted: () => {
-          announceChanged();
-          load();
-        },
+        // The announcement re-reads the body (the listener below).
+        onCommitted: announceChanged,
         onFailed: () => toast(STRINGS['rename-failed']),
       });
     }

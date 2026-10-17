@@ -275,8 +275,10 @@ def favourite_sheet_partial(request: HttpRequest, uuid: UUID) -> HttpResponse:
             "name": favourite.name,
             "favourite": favourite,
             "resort": favourite.resort,
+            # A resort backfill_resort_slugs has not reached has no page yet,
+            # and reversing a null slug raises.
             "resort_url": favourite.resort.get_absolute_url()
-            if favourite.resort
+            if favourite.resort is not None and favourite.resort.slug
             else "",
         }
     )

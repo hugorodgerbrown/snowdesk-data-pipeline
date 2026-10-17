@@ -349,6 +349,17 @@ class TestFull:
         assert "No bulletin available for" in content
         assert "Open bulletin for" not in content
 
+    def test_saved_resort_without_a_slug_has_no_resort_link(
+        self, client: Client
+    ) -> None:
+        resort = _resort()
+        favourite = FavouriteFactory.create(resort=resort, region=resort.region)
+        Resort.objects.filter(pk=resort.pk).update(slug=None)
+        client.force_login(favourite.user)
+        response = _get(client, _favourite_url(favourite.uuid))
+        assert response.status_code == 200
+        assert "View resort" not in response.content.decode()
+
     def test_saved_resort_pin_links_to_its_resort(self, client: Client) -> None:
         resort = _resort()
         favourite = FavouriteFactory.create(resort=resort, region=resort.region)

@@ -20,6 +20,7 @@ const FAVOURITE_BODY = `
   <div data-testid="place-sheet-body" data-place-kind="favourite">
     <div data-sheet-peek id="place-sheet-row" data-row-renameable>
       <h2 data-row-label>Lac des Vaux</h2>
+      <button type="button" data-row-rename data-favourite-rename="abc">Rename</button>
       <button type="button" data-favourite-share data-favourite-share-text="Lac des Vaux - https://w3w.co/a.b.c">Share</button>
       <form data-row-remove hx-post="/favourites/abc/delete/" hx-confirm="Delete this pin?">
         <input type="hidden" name="csrfmiddlewaretoken" value="tok">
@@ -184,6 +185,18 @@ describe('while open', () => {
     /** @type {HTMLElement} */ (sheet.querySelector('[data-favourite-share]')).click();
     expect(shareOrCopy).toHaveBeenCalledWith('Lac des Vaux - https://w3w.co/a.b.c', undefined, 'text');
     delete window.pwaShare;
+  });
+
+  it('re-reads the body once after a rename', async () => {
+    window.pwaRowRenameCommit = {
+      handleClick: (_ev, opts) => opts.onCommitted(),
+    };
+    window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc' });
+    await settle();
+    const calls = fetchMock.mock.calls.length;
+    /** @type {HTMLElement} */ (sheet.querySelector('[data-row-rename]')).click();
+    expect(fetchMock.mock.calls.length).toBe(calls + 1);
+    delete window.pwaRowRenameCommit;
   });
 
   it('deletes after the confirm, then announces and closes', async () => {
