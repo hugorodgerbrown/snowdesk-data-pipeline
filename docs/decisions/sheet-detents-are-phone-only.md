@@ -11,10 +11,18 @@ last-reviewed: 2026-10-17
 list drawn from `peek`, `half` and `full`. Below the `sm` breakpoint (640px)
 a sheet that declares detents shows a drag handle and rests at one of those
 heights; at `sm` and above it is the inset desktop panel, unchanged, and
-the handle is hidden. A sheet declares only the detents it can use: a thing
-tapped on the map (a region, a route, a pin) uses all three, a list uses
-`half,full`, and a form (report, add favourite, sign in) declares none and
-keeps its one docked state.
+the handle is hidden. Only a thing tapped on the map (a region, a route, a
+resort, a pin, a weather symbol) declares detents, and only the ones it can
+use. A list opened from a roundel (favourites, observations, routes,
+downloads) and a form (report, add favourite, sign in) declare none and
+keep the inset card.
+
+**Why roundel lists stay cards.** Hugo's review of SNOW-1102 (17 Oct
+2026): the slide-up sheet is for what the reader tapped on the map. A list
+belongs to the roundel that opened it, and that roundel toggles it shut or
+switches to another list. A list sheet at half or full covers the roundel
+column (see below), so the control that opened it would vanish while it
+was open. The card leaves the roundel visible, which is the point.
 
 **Why phone-only.** The detents exist to keep the ground visible while the
 reader looks at what they tapped. On a phone the docked sheet covered the
@@ -64,8 +72,9 @@ only binds it to pointer events. Without the core on the page,
 **Consequences.**
 
 - Every surface adopts detents in its own ticket (region SNOW-1098, route
-  SNOW-1099, resort and pin SNOW-1100, weather SNOW-1101, the four lists
-  SNOW-1102). Declaring detents on a form is a regression, not a choice.
+  SNOW-1099, resort and pin SNOW-1100, weather SNOW-1101). SNOW-1102, the
+  four roundel lists, was cancelled for the reason above. Declaring detents
+  on a form or a roundel list is a regression, not a choice.
 - Every detent height rule is inside a phone media query in
   `static/css/map.css`. Do not add a desktop branch.
 - The camera padding is applied with the view held still (the centre moves

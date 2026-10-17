@@ -2,7 +2,7 @@
 name: design-system
 description: Design handover — editorial and interaction principles, icon vs ellipsis rule, design tokens, the component layer, field guidance
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-17
 ---
 
 
@@ -234,7 +234,7 @@ constraints in the same way, and for the same reason: a user who has
 learned one surface should not have to relearn the next.
 
 Unlike the three numbered rules in CLAUDE.md's design-system section, these
-two have **no linter behind them**. `ds-lint` cannot count a row's calls to
+have **no linter behind them**. `ds-lint` cannot count a row's calls to
 action or judge whether a menu is in the expected order. They hold because
 a reviewer holds them.
 
@@ -265,6 +265,44 @@ its actions, and identity matters more. It was first written down in
 The consequence worth stating plainly: **a row that gains a second action
 changes shape.** That is not scope creep in the ticket that adds the
 action — it is the rule being applied at the moment it starts to bite.
+
+### Map panels: what opened it decides its shape
+
+Every panel on the map is the one primitive,
+`templates/includes/_overlay_sheet.html`, but it comes in three named
+kinds, and **the kind is decided by what the reader did to open it**, not
+by what the panel holds. On a desktop all three are the same inset card
+beside the map. They differ on a phone, and the difference is the rule.
+
+| Kind | Opened by | On a phone | Detents | Closed by | Today |
+|---|---|---|---|---|---|
+| **Object sheet** | Tapping a thing on the map | Full width, slides up from the foot, covers the map controls at half and full | `peek,half,full`, narrowed by content | Its ×, a drag below peek | Region, route, place (resort, saved pin), weather |
+| **Roundel panel** | A map-control roundel | Inset card, leaves the roundel column visible | None | Its ×, or the roundel that opened it (a toggle) | Pins, observations, routes, downloads, terrain filter |
+| **Form panel** | An action that starts a task | Inset card | None | Submit or cancel only | Report, add or rename favourite, sign in |
+
+**Object sheet.** The reader asked "what is this?" about a place on the
+ground, so the sheet answers in stages and gives the ground back: peek is a
+one-line summary with the map clear, half adds the detail, full holds the
+rest. It covers the roundels because the reader's attention is on the
+object, not the controls. The sheet is the only kind with a drag handle.
+
+**Roundel panel.** The reader asked a control to show a list or a setting,
+and that control stays in charge: tapping the same roundel closes the
+panel, tapping another switches to it. So the panel must never cover the
+roundel column. A list has no one-line summary to peek with either. This
+is why SNOW-1102 (lists as slide-up sheets) was cancelled on 17 Oct 2026:
+built, it hid the very roundel that opened it, and the list stopped being
+something the reader could toggle.
+
+**Form panel.** The reader is part-way through a task. A swipe that might
+have been meant as a scroll must never throw away what they typed, so it
+has no detents and no drag-to-close; it ends with a submit or a cancel.
+
+A new map panel picks its kind from the "Opened by" column before anything
+else. When a row in a roundel panel leads to one thing on the map, that
+thing is shown in its **object sheet**; a roundel panel never grows detents
+to become one. Mechanics, and why phones
+only: [`docs/decisions/sheet-detents-are-phone-only.md`](decisions/sheet-detents-are-phone-only.md).
 
 ## The component layer
 

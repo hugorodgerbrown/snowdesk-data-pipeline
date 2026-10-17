@@ -420,7 +420,7 @@ blocks every PR that introduces a violation:
    is mandated by the standard, so in JS the token rules above apply and
    this one does not.
 
-Two further rules govern how a surface **behaves** rather than how it is
+Three further rules govern how a surface **behaves** rather than how it is
 built. No linter enforces these — `ds-lint` cannot count a row's calls to
 action or judge a menu's order — so they hold only if a reviewer holds
 them. Full statement and history:
@@ -439,6 +439,13 @@ them. Full statement and history:
    reversed SNOW-658's "a visible trash on every row" and SNOW-830's
    narrowing of it; a row that gains a second action changes shape, and
    that is the rule applying rather than scope creep.
+6. **What opened a map panel decides its kind.** Three named kinds, one
+   primitive (`_overlay_sheet.html`): an **object sheet** (a thing tapped on
+   the map — slides up on phones with peek/half/full), a **roundel panel**
+   (a list or setting a roundel opened — an inset card that never covers
+   the roundel, which toggles it; no detents) and a **form panel** (a task
+   — no detents, no drag-to-close). SNOW-1102 was cancelled for breaking
+   this.
 
 Per-line escape hatch, only when a token genuinely can't express the
 constraint. The reason is required and audit-visible

@@ -829,9 +829,10 @@ full width, sits flush on the screen's foot with its top corners rounded,
 and slides up from the foot when it opens. **Nothing on the map moves or
 folds for it**: the sheet covers whatever is under it, and the furniture is
 where it was when the sheet closes. A sheet declares only the detents it
-can use: an object you tapped on the map uses all three, a list uses half
-and full, and **a form uses none**, because a swipe must never discard a
-half-written report. Content can narrow them further for what it holds
+can use, and only an object you tapped on the map declares any. **A list
+opened from a roundel uses none** and stays an inset card, so the roundel
+that opened it stays visible to close or switch it, and **a form uses
+none**, because a swipe must never discard a half-written report. Content can narrow them further for what it holds
 (`data-sheet-detents`): the region sheet drops full on a day with no
 bulletin. At
 `sm` and above detents change nothing. The rule above for the docked phone
