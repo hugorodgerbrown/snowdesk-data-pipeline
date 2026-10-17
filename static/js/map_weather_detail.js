@@ -98,8 +98,10 @@
     if (shortId == null || !URL_TEMPLATE) return false;
 
     var token = ++requestToken;
-    sheet.open();
+    // Paint first: the sheet measures its peek as it opens, so the loading
+    // line must already be there or it opens at the fallback height.
     showMessage(strings.loading);
+    sheet.open();
 
     var url = URL_TEMPLATE.replace('__SHORTID__', encodeURIComponent(String(shortId)));
     if (dateKey) url += '?date=' + encodeURIComponent(dateKey);

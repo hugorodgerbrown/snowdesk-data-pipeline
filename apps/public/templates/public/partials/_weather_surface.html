@@ -13,10 +13,9 @@ unlike the three UGC ones, has nothing to render until something is tapped.
 
 DETENTS (SNOW-1101). On a phone the sheet rests at PEEK — the day's line:
 the symbol, the name, the high/low, new snow and wind — and rises to HALF
-for the rest of the card. There is no FULL: the card is small, and the
-week and the hourly detail live on the forecast page it links to. A day
-with no row narrows the detents to peek (``data-sheet-detents`` on the
-body). It does not take ``scroll_body``, as the region and place sheets do
+for the rest of the card, then to FULL for the day's meteogram. A row
+with no hourly series narrows the detents to peek and half, and a day
+with no row to peek (``data-sheet-detents`` on the body). It does not take ``scroll_body``, as the region and place sheets do
 not: the card fits, and the sheet scrolls as one block if it ever must.
 
 Context expected:
@@ -24,8 +23,12 @@ Context expected:
   data-weather-detail-url, which _map_embed.html renders.)
 {% endcomment %}
 {% trans "Weather detail" as weather_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="weather-sheet" aria_label=weather_sheet_aria_label detents="peek,half" initial="peek" %}
+{% include "includes/_overlay_sheet.html" with id="weather-sheet" aria_label=weather_sheet_aria_label detents="peek,half,full" initial="peek" %}
 <script defer src="{% static 'js/map_weather_detail.js' %}"></script>
+{# SNOW-1101: the FULL detent carries the meteogram, whose info button  #}
+{# opens its legend; this is the one handler it needs (see the forecast #}
+{# page's own include of it).                                           #}
+<script defer src="{% static 'js/hourly_chart_legend.js' %}"></script>
 {# SNOW-620: the module's own user-facing strings. makemessages never scans #}
 {# JavaScript, so a literal in the module ships as English to every locale; #}
 {# read back with window.pwaStrings.read(). See docs/i18n.md.               #}
