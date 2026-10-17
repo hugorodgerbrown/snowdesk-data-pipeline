@@ -268,17 +268,18 @@ action — it is the rule being applied at the moment it starts to bite.
 
 ### Map panels: what opened it decides its shape
 
-Every panel on the map is the one primitive,
-`templates/includes/_overlay_sheet.html`, but it comes in three named
-kinds, and **the kind is decided by what the reader did to open it**, not
+Map panels are built on `templates/includes/_overlay_sheet.html`, with
+one exception: the route's object sheet is its own partial,
+`templates/includes/_route_rail.html`, which carries the same detent marks
+and handle. Either way a panel comes in one of three named kinds, and **the kind is decided by what the reader did to open it**, not
 by what the panel holds. On a desktop all three are the same inset card
 beside the map. They differ on a phone, and the difference is the rule.
 
 | Kind | Opened by | On a phone | Detents | Closed by | Today |
 |---|---|---|---|---|---|
 | **Object sheet** | Tapping a thing on the map | Full width, slides up from the foot, covers the map controls at half and full | `peek,half,full`, narrowed by content | Its ×, a drag below peek | Region, route, place (resort, saved pin), weather |
-| **Roundel panel** | A map-control roundel | Inset card, leaves the roundel column visible | None | Its ×, or the roundel that opened it (a toggle) | Pins, observations, routes, downloads, terrain filter |
-| **Form panel** | An action that starts a task | Inset card | None | Submit or cancel only | Report, add or rename favourite, sign in |
+| **Roundel panel** | A map-control roundel | Docked at the foot; must leave the roundel column visible (not yet true on phones, SNOW-1106) | None | Its ×, or the roundel that opened it (a toggle) | Pins, observations, routes, downloads, terrain filter |
+| **Form panel** | An action that starts a task | Docked at the foot | None | Submit, cancel, or the shared dismissals (×, Escape, a tap outside, another overlay opening); never a drag | Report, add or rename favourite, sign in |
 
 **Object sheet.** The reader asked "what is this?" about a place on the
 ground, so the sheet answers in stages and gives the ground back: peek is a
@@ -289,14 +290,20 @@ object, not the controls. The sheet is the only kind with a drag handle.
 **Roundel panel.** The reader asked a control to show a list or a setting,
 and that control stays in charge: tapping the same roundel closes the
 panel, tapping another switches to it. So the panel must never cover the
-roundel column. A list has no one-line summary to peek with either. This
+roundel column. On a desktop it already sits beside the column. On a phone
+it still docks full width over it today, so a tall list hides the roundel;
+SNOW-1106 is the fix, and until it lands the rule is the target, not the
+state. A list has no one-line summary to peek with either. This
 is why SNOW-1102 (lists as slide-up sheets) was cancelled on 17 Oct 2026:
 built, it hid the very roundel that opened it, and the list stopped being
 something the reader could toggle.
 
 **Form panel.** The reader is part-way through a task. A swipe that might
 have been meant as a scroll must never throw away what they typed, so it
-has no detents and no drag-to-close; it ends with a submit or a cancel.
+has no detents and no drag-to-close. It still closes on the dismissals
+every map overlay shares (its ×, Escape, a tap outside, another overlay
+opening), and those discard what was typed; guarding a half-written form
+against them would be its own ticket.
 
 A new map panel picks its kind from the "Opened by" column before anything
 else. When a row in a roundel panel leads to one thing on the map, that

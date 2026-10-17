@@ -15,14 +15,15 @@ the handle is hidden. Only a thing tapped on the map (a region, a route, a
 resort, a pin, a weather symbol) declares detents, and only the ones it can
 use. A list opened from a roundel (favourites, observations, routes,
 downloads) and a form (report, add favourite, sign in) declare none and
-keep the inset card.
+keep their one docked state.
 
 **Why roundel lists stay cards.** Hugo's review of SNOW-1102 (17 Oct
 2026): the slide-up sheet is for what the reader tapped on the map. A list
 belongs to the roundel that opened it, and that roundel toggles it shut or
 switches to another list. A list sheet at half or full covers the roundel
 column (see below), so the control that opened it would vanish while it
-was open. The card leaves the roundel visible, which is the point.
+was open. The panel must leave the roundel visible, which is the point;
+on phones the docked panel still covers it when tall, which SNOW-1106 fixes.
 
 **Why phone-only.** The detents exist to keep the ground visible while the
 reader looks at what they tapped. On a phone the docked sheet covered the

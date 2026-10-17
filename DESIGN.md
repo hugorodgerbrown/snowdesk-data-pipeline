@@ -398,7 +398,7 @@ Applied with `.dark` on `<html>`. EAWS, slope, weather-header and marker colours
 
 - Tailwind 4px ramp. Bulletin and sheets in a 640px column; legal 720; grids to 1200. Breakpoints 600 and 960.
 - **The map fills the viewport.** Floating chrome sits 12px (+ safe area) from every edge: readout chip, pin and download top-left; search top-right; the control column bottom-right (gap 8); zoom, help, legend, date and season scrubber bottom-left. Sheets dock to the same insets so their edges line up with the roundels.
-- **Map panels come in three kinds, set by what opened them.** Object sheet: a thing tapped on the map; on phones it slides up full width with peek, half and full. Roundel panel: a list or setting opened from a roundel; an inset card that leaves the roundel visible to toggle it. Form panel: a task; no detents, closes only on submit or cancel.
+- **Map panels come in three kinds, set by what opened them.** Object sheet: a thing tapped on the map; on phones it slides up full width with peek, half and full. Roundel panel: a list or setting opened from a roundel, which toggles it; it must leave the roundel visible (phones do not yet). Form panel: a task; no detents and no drag-to-close.
 - While a route is open, the rails dock at the foot and the other chrome fades out.
 
 ## Elevation & Depth

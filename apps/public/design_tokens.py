@@ -1029,8 +1029,8 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "rests at peek, half or full. Three named kinds, chosen by what "
             "opened it: an object sheet (a thing tapped on the map; the only "
             "kind with detents), a roundel panel (a list or setting a "
-            "roundel opened and toggles; never covers the roundels) and a "
-            "form panel (a task; no drag-to-close). See "
+            "roundel opened and toggles; must not cover the roundels) and "
+            "a form panel (a task; no drag-to-close). See "
             "docs/design-system.md, Map panels."
         ),
         kind="components",
