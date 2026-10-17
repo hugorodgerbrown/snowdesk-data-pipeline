@@ -43,9 +43,11 @@ Four things about this template are load-bearing:
    way since SNOW-785 (it pointed downwind before);
    tests/public/test_weather_tags.py holds the two together.
 
-5. **The plots stretch sideways, never taller** (SNOW-1049). Each SVG is
-   preserveAspectRatio="none", keeps the drawing's aspect ratio below the
-   authored 606-unit width and is capped at its authored height above it.
+5. **The plots change width, never height** (SNOW-1049, SNOW-1110). Each
+   SVG is preserveAspectRatio="none" at its authored height in pixels,
+   whatever the column's width. Keeping the aspect ratio below 606 units
+   halved the plots on a phone under full-size labels; now the hours
+   squeeze instead and the sheet scrolls.
    Every stroke is vector-effect="non-scaling-stroke" so a stretched line
    keeps its weight, and the wind arrows are fixed-size HTML glyphs rather
    than paths in a stretched viewBox, which would squash them sideways.
@@ -109,7 +111,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                 viewBox="{{ chart.view_box_temp }}"
                 preserveAspectRatio="none"
                 class="block w-full"
-                style="aspect-ratio: {{ chart.aspect_temp }}; max-height: {{ chart.max_h_temp }}"
+                style="height: {{ chart.plot_h_temp }}"
                 aria-hidden="true"
                 data-testid="{{ prefix }}-temp"
             >
@@ -466,7 +468,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                     viewBox="{{ chart.view_box_precip }}"
                     preserveAspectRatio="none"
                     class="block w-full"
-                    style="aspect-ratio: {{ chart.aspect_precip }}; max-height: {{ chart.max_h_precip }}"
+                    style="height: {{ chart.plot_h_precip }}"
                     aria-hidden="true"
                     data-testid="{{ prefix }}-precip"
                 >
@@ -558,13 +560,13 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
 
                 {% for label in chart.snow_labels %}
                     <span
-                        class="absolute -translate-x-1/2 font-mono text-xs whitespace-nowrap text-accent"
+                        class="absolute {% if label.align == 'start' %}translate-x-0{% elif label.align == 'end' %}-translate-x-full{% else %}-translate-x-1/2{% endif %} -translate-y-full pb-0.5 font-mono text-xs leading-none whitespace-nowrap text-accent"
                         style="left: {{ label.left }}; top: {{ label.top }}"
                     >{{ label.text }}</span>
                 {% endfor %}
                 {% for label in chart.precip_labels %}
                     <span
-                        class="absolute -translate-x-1/2 font-mono text-xs whitespace-nowrap text-chart-precip"
+                        class="absolute {% if label.align == 'start' %}translate-x-0{% elif label.align == 'end' %}-translate-x-full{% else %}-translate-x-1/2{% endif %} -translate-y-full pb-0.5 font-mono text-xs leading-none whitespace-nowrap text-chart-precip"
                         style="left: {{ label.left }}; top: {{ label.top }}"
                     >{{ label.text }}</span>
                 {% endfor %}
@@ -608,7 +610,7 @@ A DRY DAY DROPS THE PRECIPITATION PLOT and keeps its header. "0.0 cm ·
                 viewBox="{{ chart.view_box_wind }}"
                 preserveAspectRatio="none"
                 class="block w-full"
-                style="aspect-ratio: {{ chart.aspect_wind }}; max-height: {{ chart.max_h_wind }}"
+                style="height: {{ chart.plot_h_wind }}"
                 aria-hidden="true"
                 data-testid="{{ prefix }}-wind"
             >
