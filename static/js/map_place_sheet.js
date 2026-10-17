@@ -180,11 +180,19 @@
 
     // A resort's star: favourites.js owns the write (a document listener,
     // which runs after this one). Turn the star now, since the create is
-    // queued and the body cannot be re-read until it lands.
-    const star = target.closest?.('[data-resort-star]');
+    // queued and the body cannot be re-read until it lands — but only when
+    // that handler will queue it (on a device that cannot, it toasts and
+    // saves nothing). The star stays disabled until the drained queue's
+    // `snowdesk:favourites-changed` repaints the body, so a second tap
+    // cannot queue a second create.
+    const star = /** @type {?HTMLButtonElement} */ (target.closest?.('[data-resort-star]'));
     if (star && star.getAttribute('data-favourited') !== 'true') {
+      if (!window.MapSheet.canQueueMutations?.()) return;
       star.setAttribute('aria-pressed', 'true');
+      star.setAttribute('aria-busy', 'true');
       star.querySelector('svg')?.setAttribute('fill', 'currentColor');
+      // After this click has reached favourites.js's document listener.
+      setTimeout(() => { star.disabled = true; }, 0);
       return;
     }
 

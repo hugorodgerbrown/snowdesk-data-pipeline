@@ -148,14 +148,32 @@ describe('while open', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('turns the resort star at once', async () => {
+  it('turns the resort star at once and holds it until the save lands', async () => {
+    vi.useFakeTimers();
+    const canQueue = vi.spyOn(window.MapSheet, 'canQueueMutations').mockReturnValue(true);
     fetchMock.mockImplementation(() => answer(RESORT_BODY));
     window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
     await settle();
-    const star = /** @type {HTMLElement} */ (sheet.querySelector('[data-resort-star]'));
+    const star = /** @type {HTMLButtonElement} */ (sheet.querySelector('[data-resort-star]'));
     star.click();
     expect(star.getAttribute('aria-pressed')).toBe('true');
     expect(star.querySelector('svg').getAttribute('fill')).toBe('currentColor');
+    vi.runAllTimers();
+    expect(star.disabled).toBe(true);
+    canQueue.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('leaves the star alone on a device that cannot queue the save', async () => {
+    const canQueue = vi.spyOn(window.MapSheet, 'canQueueMutations').mockReturnValue(false);
+    fetchMock.mockImplementation(() => answer(RESORT_BODY));
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
+    await settle();
+    const star = /** @type {HTMLButtonElement} */ (sheet.querySelector('[data-resort-star]'));
+    star.click();
+    expect(star.getAttribute('aria-pressed')).toBe('false');
+    expect(star.querySelector('svg').getAttribute('fill')).toBe('none');
+    canQueue.mockRestore();
   });
 
   it('shares the pin\'s composed text', async () => {
