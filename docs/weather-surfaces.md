@@ -71,6 +71,17 @@ day with hours, 7 kB gzipped, against 2 kB without. One day's chart is the
 limit; `TestCardDetents` in `tests/public/test_weather_detail.py` fails on
 a second.
 
+**A forward day is a forecast, and the sheet says so (SNOW-1105).** The
+fetch writes no row ahead of today; the days after it live in today's row's
+`forecast` column. So for a scrubbed date after today the sheet reads
+today's row and the matching entry, opens its peek line with "Forecast",
+and states at half when it was issued ("Forecast issued Sat 17 Oct, 12:20.
+It may change before the day."). Today and the past carry no tag. A date
+past the seven-day window reads "The forecast does not reach this day
+yet", not "No weather recorded". The location page follows: a forward
+`?date=` opens today's row with that day's picker cell checked, so the
+sheet's "This week →" lands on the day the map was showing.
+
 `_forecast_panel.html` and `_forecast_chart.html` were the week's two
 components until SNOW-789 and are **deleted**, not renamed. Historical
 ADRs still name them; those are dated records of superseded states and are

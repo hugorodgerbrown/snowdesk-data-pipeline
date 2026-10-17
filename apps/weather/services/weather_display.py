@@ -446,6 +446,9 @@ class ForecastPanelDay(TypedDict):
     freezing_level_height: float | None
     wind_speed_max: float | None  # Daily max sustained wind at 10m, km/h.
     wind_bearing: float | None  # Dominant direction at 10m, degrees FROM.
+    # SNOW-1105: the weather sheet states the chance of precipitation, and
+    # on a forward day it reads this column rather than a row of its own.
+    precipitation_probability_max: int | None
     # SNOW-789: the day's daylight window, "HH:MM" in the day's OWN stored
     # offset — the same rule as ``WeatherDisplay.sunrise_local``. The day
     # picker's selected-day line states the daylight for whichever day is
@@ -521,6 +524,7 @@ def _forecast_day_context(
         freezing_level_height=entry.get("freezing_level_height"),
         wind_speed_max=entry.get("wind_speed_10m_max"),
         wind_bearing=entry.get("wind_direction_10m_dominant"),
+        precipitation_probability_max=entry.get("precipitation_probability_max"),
         # Formatted off the already-parsed locals, so the offset shown is
         # the one the provider stamped on THAT day — not the Django-active
         # TIME_ZONE, and not the lead day's.
@@ -569,6 +573,7 @@ def build_point_forecast_panel(
             freezing_level_height=weather.freezing_level_height,
             wind_speed_max=weather.wind_speed_10m_max,
             wind_bearing=weather.wind_direction_10m_dominant,
+            precipitation_probability_max=weather.precipitation_probability_max,
             # Same rule as WeatherDisplay: the wall-clock time AT THE
             # LOCATION, in the row's stored offset.
             sunrise_local=weather.sunrise.strftime("%H:%M"),
