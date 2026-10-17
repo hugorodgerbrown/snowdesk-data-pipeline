@@ -137,8 +137,10 @@ class TestPlotsStretchSidewaysOnly:
         ):
             tag = _plot_svg(html, testid)
             assert 'preserveAspectRatio="none"' in tag
-            assert f"aspect-ratio: 606 / {height}" in tag
-            assert f"max-height: {height}px" in tag
+            # A fixed height, not an aspect ratio: on a phone the ratio
+            # halved every plot under full-size labels (SNOW-1110).
+            assert "aspect-ratio" not in tag
+            assert f"height: {height}px" in tag
             assert "h-auto" not in tag
 
     def test_every_stroke_keeps_its_weight(self) -> None:
