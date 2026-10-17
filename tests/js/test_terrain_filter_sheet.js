@@ -82,7 +82,6 @@ function buildFixture() {
       <select data-terrain-filter-max-elevation><option value="">Any</option></select>
     </template>
     <template id="map-terrain-filter-strings-template">
-      <span data-string="mode-slope">Neigungsklassen</span>
       <span data-string="availability-zoom-in">Näher heranzoomen.</span>
       <span data-string="availability-out-of-coverage">Keine Daten hier.</span>
       <span data-string="aspects-all">Alle Expositionen</span>
@@ -286,11 +285,11 @@ describe('the mode (SNOW-1073)', () => {
     expect(lastFilter()).toMatchObject({ mode: 'match' });
   });
 
-  it('names the mode in the legend and shows its key there', () => {
+  it('summarises the filter in the legend without naming the mode, and shows its key', () => {
     bridge.state.filter = { mode: 'slope', minSlope: 30 };
     bridge.show();
     const legendSummary = document.querySelector('[data-terrain-filter-legend-summary]');
-    expect(legendSummary.textContent).toBe('Neigungsklassen · Alle Expositionen · ab 30°');
+    expect(legendSummary.textContent).toBe('Alle Expositionen · ab 30°');
     expect(shown(document.querySelector('[data-terrain-filter-legend]'))).toEqual(['slope']);
   });
 });
@@ -302,7 +301,7 @@ describe('the menu row and legend', () => {
     bridge.state.filter = { aspects: [0, 7], minSlope: 35, minElevation: 2400 };
     bridge.show();
     expect(summary().hidden).toBe(false);
-    expect(summary().textContent).toBe('2 Expositionen · ab 35°');
+    expect(summary().textContent).toBe('2 Expositionen · ab 35° · über 2,400 m');
     const legendSummary = document.querySelector('[data-terrain-filter-legend-summary]');
     expect(legendSummary.textContent).toBe('N, NW · ab 35° · über 2,400 m');
     expect(document.querySelector('[data-terrain-filter-legend]').hidden).toBe(false);

@@ -615,8 +615,9 @@
   /**
    * The filter in words, for the legend (long) or the menu row (short).
    *
-   * Long: "N, NE, NW · 35°+ · above 2,400 m". Short: "3 aspects · 35°+".
-   * The slope mode leads with its name: "Slope classes · All aspects · 30°+".
+   * Aspects, slope angle, elevation — the mode is not named (SNOW-1109).
+   * Long: "N, NE, NW · 35°+ · above 2,400 m". Short: "3 aspects · 35°+ ·
+   * above 2,400 m". The elevation part is left out when both bounds are null.
    *
    * @param {*} filter The filter.
    * @param {Object<string, string>} strings The sheet's strings — see
@@ -629,7 +630,6 @@
     const opts = options || {};
     const num = opts.formatNumber || ((/** @type {number} */ n) => n.toLocaleString('en-GB'));
     const parts = [];
-    if (f.mode === 'slope') parts.push(strings['mode-slope']);
     if (f.aspects.length === OCTANTS.length) {
       parts.push(strings['aspects-all']);
     } else if (f.aspects.length === 0) {
@@ -644,16 +644,14 @@
     parts.push(f.maxSlope === null
       ? fill(strings['slope-min'], { min: f.minSlope })
       : fill(strings['slope-range'], { min: f.minSlope, max: f.maxSlope }));
-    if (!opts.short) {
-      const lo = f.minElevation;
-      const hi = f.maxElevation;
-      if (lo !== null && hi !== null) {
-        parts.push(fill(strings['elevation-range'], { min: num(lo), max: num(hi) }));
-      } else if (lo !== null) {
-        parts.push(fill(strings['elevation-above'], { min: num(lo) }));
-      } else if (hi !== null) {
-        parts.push(fill(strings['elevation-below'], { max: num(hi) }));
-      }
+    const lo = f.minElevation;
+    const hi = f.maxElevation;
+    if (lo !== null && hi !== null) {
+      parts.push(fill(strings['elevation-range'], { min: num(lo), max: num(hi) }));
+    } else if (lo !== null) {
+      parts.push(fill(strings['elevation-above'], { min: num(lo) }));
+    } else if (hi !== null) {
+      parts.push(fill(strings['elevation-below'], { max: num(hi) }));
     }
     // A middle dot between parts — a glyph, not a word, so not a string.
     return parts.join(' · ');

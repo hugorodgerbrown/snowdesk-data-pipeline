@@ -312,7 +312,6 @@ describe('summarise', () => {
     'elevation-below': 'below %(max)s m',
     'elevation-range': '%(min)s–%(max)s m',
     'compass-0': 'N', 'compass-1': 'NE', 'compass-7': 'NW',
-    'mode-slope': 'Slope classes',
   };
 
   it('names the aspects, slope and band for the legend', () => {
@@ -320,9 +319,9 @@ describe('summarise', () => {
       .toBe('N, NE, NW · 35°+ · above 2,400 m');
   });
 
-  it('counts the aspects for the menu row, and leaves the band out', () => {
+  it('counts the aspects for the menu row, and keeps the band', () => {
     expect(core.summarise({ aspects: [0, 1, 7], minSlope: 35, minElevation: 2400 }, strings, { short: true }))
-      .toBe('3 aspects · 35°+');
+      .toBe('3 aspects · 35°+ · above 2,400 m');
   });
 
   it('reads a closed slope range and a closed band', () => {
@@ -330,10 +329,10 @@ describe('summarise', () => {
       .toBe('All aspects · 30–40° · 2,000–3,000 m');
   });
 
-  it('leads with the mode in the slope mode, long and short', () => {
-    expect(core.summarise({ mode: 'slope' }, strings)).toBe('Slope classes · All aspects · 30°+');
-    expect(core.summarise({ mode: 'slope', aspects: [0, 1] }, strings, { short: true }))
-      .toBe('Slope classes · 2 aspects · 30°+');
+  it('does not name the mode, long or short', () => {
+    expect(core.summarise({ mode: 'slope' }, strings)).toBe('All aspects · 30°+');
+    expect(core.summarise({ mode: 'slope', aspects: [0, 1], maxElevation: 3600 }, strings, { short: true }))
+      .toBe('2 aspects · 30°+ · below 3,600 m');
   });
 });
 

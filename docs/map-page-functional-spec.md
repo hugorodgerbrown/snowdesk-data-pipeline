@@ -573,7 +573,7 @@ a ramp of five class buttons that doubles as the slope key, an aspect rose
 of eight wedges with an "All" centre, an elevation mountain over two lists
 ("Above" / "Below", 1,000–4,500 m in 100 m steps), the no-data key row and
 the caveat. While the filter is on, the row's second line shows a short
-summary ("3 aspects · 35°+") or why the map is empty — **"zoom in"** below
+summary ("3 aspects · 35°+ · above 2,400 m") or why the map is empty — **"zoom in"** below
 z12, **"outside coverage"** outside Switzerland; the menu header counts it
 as a layer, and the legend shows a **Terrain filter** section: the summary
 in full ("N, NE, NW · 35°+ · above 2,400 m", led by "Slope classes" in the

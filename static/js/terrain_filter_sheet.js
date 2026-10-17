@@ -52,7 +52,6 @@
   const STRINGS = self.pwaStrings.read('map-terrain-filter-strings-template', {
     'availability-zoom-in': 'Zoom in further to see the filter.',
     'availability-out-of-coverage': 'No terrain data here — the filter covers Switzerland only.',
-    'mode-slope': 'Slope classes',
     'aspects-all': 'All aspects',
     'aspects-none': 'No aspects',
     'aspects-one': '1 aspect',
