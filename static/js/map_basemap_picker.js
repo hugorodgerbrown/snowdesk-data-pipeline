@@ -91,6 +91,9 @@
     community_reports: () => window.pwaCommunityReportsOverlay,
     routes: () => window.pwaRoutesOverlay,
     downloads: () => window.pwaDownloadedOverlay,
+    // SNOW-1109: the terrain filter's row is a checkbox now, not an action
+    // row, so it toggles through its bridge like the four above.
+    terrain: () => window.pwaTerrainFilter,
   };
 
   // The two rows that need an account, and the sentence each hands off
@@ -138,10 +141,9 @@
    */
   const shortLabel = (item) => {
     // SNOW-978: a row with a second line (the terrain filter's summary)
-    // names itself by its label span alone, and the "…" that marks it as
-    // opening a sheet is no part of its name.
+    // names itself by its label span alone.
     const labelEl = item.querySelector('[data-row-label]');
-    const full = self.pwaStrings.collapse((labelEl || item).textContent).replace(/…$/, '');
+    const full = self.pwaStrings.collapse((labelEl || item).textContent);
     const withoutParenthetical = full.replace(/\s*\([^)]*\)$/, '').trim();
     const prefix = STRINGS['label-prefix'];
     if (prefix && withoutParenthetical.toLowerCase().startsWith(`${prefix.toLowerCase()} `)) {
@@ -151,21 +153,14 @@
   };
 
   /**
-   * Whether a row's layer is on.
-   *
-   * ``aria-checked`` for every checkbox and radio row. SNOW-978's terrain
-   * filter row is an action row — it opens a sheet and carries no checked
-   * state — so it is on when the bridge says the filter is.
+   * Whether a row's layer is on: its ``aria-checked``, for every checkbox
+   * and radio row. (SNOW-1109 made the terrain filter's row a checkbox, so
+   * the bridge read SNOW-978 needed here is gone.)
    *
    * @param {HTMLElement} row - a ``.basemap-menu-item``.
    * @returns {boolean}
    */
-  const rowIsOn = (row) => {
-    if (row.hasAttribute('data-terrain-filter-open')) {
-      return !!(window.pwaTerrainFilter && window.pwaTerrainFilter.isEnabled());
-    }
-    return row.getAttribute('aria-checked') === 'true';
-  };
+  const rowIsOn = (row) => row.getAttribute('aria-checked') === 'true';
 
   /**
    * The one-line summary under a section heading: which of its rows are on.
@@ -205,10 +200,7 @@
     const countEl = menu.querySelector('[data-layers-count]');
     if (countEl) {
       const on = items.filter(
-        (item) =>
-          (item.classList.contains('basemap-menu-item--overlay') ||
-            item.hasAttribute('data-terrain-filter-open')) &&
-          rowIsOn(item),
+        (item) => item.classList.contains('basemap-menu-item--overlay') && rowIsOn(item),
       ).length;
       if (on === 0) {
         countEl.textContent = STRINGS['count-none'];
@@ -444,6 +436,13 @@
     'snowdesk:overlay-visibility-changed',
     syncRowsFromBridges,
   );
+  // SNOW-1109: the terrain filter row also follows its own announcement,
+  // which is the one that fires once the layer is installed at boot and
+  // when the sheet's adjust button turns the filter on.
+  document.addEventListener(
+    'snowdesk:terrain-filter-changed',
+    syncRowsFromBridges,
+  );
 
   // Seed the header and the summaries from the state map.js has already
   // written onto the rows (it runs before this file — see home.html).
@@ -520,14 +519,6 @@
       // aria-disabled here — the source of truth is that module's probe, so
       // there's no state to toggle and no basemap to swap to.
       if (item.getAttribute('aria-disabled') === 'true') return;
-
-      // SNOW-978: the terrain filter row opens its sheet and toggles
-      // nothing. The sheet announces itself to window.pwaMapOverlays, which
-      // closes this menu on the way in.
-      if (item.hasAttribute('data-terrain-filter-open')) {
-        window.pwaTerrainFilterSheet?.open();
-        return;
-      }
 
       // SNOW-59 / SNOW-172: overlay checkbox — toggle visibility or country filter.
       const overlayKey = item.dataset.overlayKey;
@@ -675,6 +666,19 @@
       refreshReadout();
       setMenuOpen(false);
       resolveBasemapStyle(key, url).then((style) => MAP.setStyle(style));
+    });
+  }
+
+  // SNOW-978 / SNOW-1109: the terrain filter's adjust button, beside its
+  // row. Not a ``.basemap-menu-item`` — it has no layer of its own to count
+  // or summarise — so it is wired here rather than in the loop above. It
+  // opens the filter's sheet (which turns the filter on if it is off); the
+  // sheet announces itself to window.pwaMapOverlays, which closes this menu
+  // on the way in.
+  for (const adjust of menu.querySelectorAll('[data-terrain-filter-open]')) {
+    adjust.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.pwaTerrainFilterSheet?.open();
     });
   }
 })();

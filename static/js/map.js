@@ -656,6 +656,10 @@
         // next page load and kill the auto-on for good; the picker writes
         // through the bridge, on a real click, and only then.
         checked = downloadedOverlayVisible;
+      } else if (key === 'terrain') {
+        // SNOW-1109: the terrain filter's row. Its state is overlayState's
+        // ``terrain_filter`` (the storage key's name), not a key of its own.
+        checked = overlayState.terrain_filter;
       } else {
         checked = overlayState[key];
       }

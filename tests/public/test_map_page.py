@@ -1181,7 +1181,9 @@ def test_the_layers_menu_has_no_slope_row() -> None:
     assert "hangneigung" not in content
     assert "js/slope_overlay_core" not in content
     assert 'data-testid="map-legend-slope"' not in content
-    # The slope layer's way in is the terrain filter's row.
+    # The slope layer's way in is the terrain filter's row (SNOW-1109: a
+    # checkbox) and the adjust button beside it.
+    assert 'data-overlay-key="terrain"' in content
     assert "data-terrain-filter-open" in content
 
 
@@ -1851,16 +1853,16 @@ def test_terrain_filter_renders_when_tile_url_configured() -> None:
     """SNOW-978: an eligible page carries the filter's every surface.
 
     The tile template reaches ``#map`` for map.js; the layers menu gets the
-    "Terrain filter…" action row (no aria-checked — it opens a sheet); the
-    legend section (with its summary line), the sheet and its two templates
-    render; and both scripts load. The chip that used to sit along the
-    map's top edge is gone — the menu row is the one way in.
+    terrain filter's row; the legend section (with its summary line), the
+    sheet and its two templates render; and both scripts load. The chip
+    that used to sit along the map's top edge is gone — the menu row is the
+    one way in.
     """
     content = Client().get(reverse("public:map")).content.decode()
 
     assert 'data-terrain-filter-eligible="true"' in content
     assert f'data-terrain-class-tile-url="{TERRAIN_CLASS_URL}"' in content
-    assert "Terrain filter…" in content
+    assert "Terrain filter…" not in content
     assert 'id="map-terrain-filter-chip"' not in content
     assert "data-terrain-filter-legend-summary" in content
     assert 'data-testid="map-legend-terrain-filter"' in content
@@ -1869,20 +1871,43 @@ def test_terrain_filter_renders_when_tile_url_configured() -> None:
     assert 'id="map-terrain-filter-strings-template"' in content
     assert "js/terrain_filter_core" in content
     assert "js/terrain_filter_sheet" in content
-    row = content[content.index('role="menuitem"') :][:400]
-    assert "data-terrain-filter-open" in row
-    assert "aria-checked" not in row
 
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_terrain_filter_sheet_renders_the_mode_control() -> None:
-    """SNOW-1073: the sheet offers its two modes as one radio group.
+def test_terrain_filter_row_is_a_checkbox_with_an_adjust_button() -> None:
+    """SNOW-1109: the row toggles the filter; the button beside it adjusts it.
 
-    "Highlight matches" is the server-rendered default; "Colour by slope"
-    is the slope layer. The colour key carries both modes' rows, the match
-    rows shown and the slope rows hidden until the script reads the stored
-    mode, and the legend has a heading per mode leading to its help topic.
+    The row is a ``menuitemcheckbox`` overlay row keyed ``terrain``, which
+    map_basemap_picker.js drives through window.pwaTerrainFilter. The
+    adjust button is its own ``menuitem`` in the same ``<li>``, icon-only
+    and named, and it is the one that opens the sheet.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    start = content.index('data-overlay-key="terrain"')
+    li = content[content.rindex("<li", 0, start) : content.index("</li>", start)]
+
+    assert 'role="menuitemcheckbox"' in li
+    assert "basemap-menu-item--overlay" in li
+    assert 'aria-checked="false"' in li
+    assert "data-terrain-filter-summary" in li
+    assert ">Terrain filter<" in li
+    adjust = li[li.index("data-terrain-filter-open") - 200 :]
+    assert 'role="menuitem"' in adjust
+    assert 'aria-label="Adjust terrain filter"' in adjust
+    assert 'aria-controls="map-terrain-filter-sheet"' in adjust
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_terrain_filter_sheet_renders_the_compact_controls() -> None:
+    """SNOW-1073, SNOW-1109: two mode tiles, the ramp, the rose, the lists.
+
+    "One tint" is the server-rendered default; "By slope" is the slope
+    layer. The sheet has no switch of its own (the menu row is the switch)
+    and no segmented control; the ramp, the rose and the mountain carry
+    their own key, so the colour key partial is the legend's alone. The
+    legend keeps a heading per mode leading to its help topic.
     """
     content = Client().get(reverse("public:map")).content.decode()
     sheet = content[content.index('id="map-terrain-filter-template"') :]
@@ -1893,12 +1918,27 @@ def test_terrain_filter_sheet_renders_the_mode_control() -> None:
     slope = sheet[sheet.index('value="slope"') :][:120]
     assert "checked" in match
     assert "checked" not in slope
-    assert "Highlight matches" in sheet
-    assert "Colour by slope" in sheet
-    assert '<div class="contents" data-terrain-filter-key="slope" hidden>' in sheet
-    assert "map-legend-swatch--slope-30" in sheet
-    # The slope range stays in the sheet whatever the mode.
-    assert "data-terrain-filter-min-slope" in sheet
+    assert "One tint" in sheet
+    assert "By slope" in sheet
+    assert "segmented" not in sheet
+    assert 'id="map-terrain-filter-enabled"' not in sheet
+    assert "data-terrain-filter-availability" not in sheet
+    assert "data-terrain-filter-key=" not in sheet
+    # The ramp: five toggle tiles, one per slope class.
+    assert "data-terrain-filter-ramp" in sheet
+    for index in range(5):
+        assert f'data-slope-class="{index}"' in sheet
+    assert "map-legend-swatch--terrain-nodata" in sheet
+    # The rose: eight keyboard-operable wedges and the "All" centre.
+    assert sheet.count('role="button"') == 9
+    for octant in range(8):
+        assert f'data-octant="{octant}"' in sheet
+    assert "data-terrain-filter-all-aspects" in sheet
+    # The mountain and the two lists, each opening on "Any".
+    assert "data-terrain-filter-mountain" in sheet
+    assert "data-terrain-filter-min-elevation" in sheet
+    assert "data-terrain-filter-max-elevation" in sheet
+    assert sheet.count('<option value="">Any</option>') == 2
 
     legend = content[content.index('data-testid="map-legend-terrain-filter"') :]
     legend = legend[: legend.index("</section>")]
@@ -1921,6 +1961,7 @@ def test_terrain_filter_absent_without_tile_url() -> None:
     assert 'data-terrain-filter-eligible="false"' in content
     assert "data-terrain-class-tile-url=" not in content
     assert "data-terrain-filter-open" not in content
+    assert 'data-overlay-key="terrain"' not in content
     assert 'id="map-terrain-filter-sheet"' not in content
     assert "js/terrain_filter_sheet" not in content
     # The core is a plain library and loads either way.
@@ -1937,7 +1978,7 @@ def test_terrain_filter_row_sits_under_basemap_after_the_hairline() -> None:
     content = Client().get(reverse("public:map")).content.decode()
     group = content[content.index('id="basemap-menu-group-basemap"') :]
     separator = group.index("basemap-menu-separator")
-    terrain = group.index("data-terrain-filter-open")
+    terrain = group.index('data-overlay-key="terrain"')
     downloads = group.index('data-overlay-key="downloads"')
     assert separator < terrain < downloads
 

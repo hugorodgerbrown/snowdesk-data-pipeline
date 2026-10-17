@@ -835,11 +835,39 @@
     transition: background 120ms ease, border-color 120ms ease;
 }
 
-/* SNOW-978: an action row that opens a sheet has no checked state, so its
-   indicator is kept for alignment and never drawn. Its label can carry a
-   second, quieter line (the terrain filter's summary while it is on). */
-.basemap-menu-item--sheet::before {
-    visibility: hidden;
+/* SNOW-1109: a row with a second control beside it — the terrain filter's
+   checkbox and its adjust button, one line. The checkbox takes the room;
+   the adjust button is a square the height of a one-line row. A row's
+   label can carry a second, quieter line (the terrain filter's summary
+   while it is on). */
+.basemap-menu-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.basemap-menu-row > .basemap-menu-item {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.basemap-menu-adjust {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    color: var(--color-text-2);
+}
+
+.basemap-menu-adjust:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
 }
 
 .basemap-menu-item-text {
