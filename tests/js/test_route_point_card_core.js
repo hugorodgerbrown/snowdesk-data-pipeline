@@ -8,9 +8,11 @@
  * downhill; the "turning" case; flat, unsampled and pre-SNOW-976 ground;
  * the gradient read off the profile and stopped at a leg's ends, checked
  * against the Backside track's real figures; a turn's two ends, which
- * line it crossed, and the kind it makes (SNOW-1069), checked against the
- * Col de la Chaux zig-zag; and `reading` building both lines and the
- * wheel's accessible name from a strings object.
+ * line it crossed, and the kind it makes (SNOW-1069; never turn or
+ * switchback since SNOW-1094), checked against the Col de la Chaux
+ * zig-zag; a turn's side read from its ends, not its chord (SNOW-1094);
+ * and `reading` building both lines and the wheel's accessible name from
+ * a strings object.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -29,8 +31,9 @@ const { readProfile } = self.pwaElevationProfileCore;
 
 /** The English strings the partial's template renders. */
 const STRINGS = {
-  label: '%(headline)s; %(ground)s',
-  join: '%(before)s • %(after)s',
+  label: 'Track: %(headline)s; Slope: %(ground)s',
+  join: '%(before)s · %(after)s',
+  phrase: '%(steepness)s %(kind)s',
   'label-join': '%(before)s, %(after)s',
   'compass-0': 'N',
   'compass-1': 'NE',
@@ -51,14 +54,12 @@ const STRINGS = {
   'kind-descent': 'descent',
   'kind-traverse': 'traverse',
   'kind-fall-line': 'fall line',
-  'kind-turn': 'turn',
-  'kind-switchback': 'switchback',
   'headline-no-height': 'No height data',
-  'ground-flat': 'Flat ground',
-  'ground-moderate': 'Moderate slope',
-  'ground-steep': 'Steep slope',
-  'ground-very-steep': 'Very steep slope',
-  'ground-extremely-steep': 'Extremely steep slope',
+  'ground-flat': 'Flat',
+  'ground-moderate': 'Moderate',
+  'ground-steep': 'Steep',
+  'ground-very-steep': 'Very steep',
+  'ground-extremely-steep': 'Extremely steep',
   'ground-unknown': 'No terrain data',
   'ground-falling-left': "%(ground)s, falling skier's left",
   'ground-falling-right': "%(ground)s, falling skier's right",
@@ -251,30 +252,37 @@ describe('turnOf', () => {
 });
 
 describe('kindOf', () => {
-  const across = { firstSide: 'left', lastSide: 'right' };
-  const along = { firstSide: 'left', lastSide: 'left' };
   const chord = (key) => ({ key, steepness: null, side: null });
 
-  it('names a climb that turns across the fall line a switchback', () => {
-    expect(core.kindOf(chord('fall-climb'), 13, [4, 1], across, 7)).toBe('switchback');
-  });
-
-  it('names a climb that turns on one side of it a turn', () => {
-    expect(core.kindOf(chord('rising-traverse'), 13, [1, 2], along, 7)).toBe('turn');
+  it('names a climb that turns an ascent, whatever its chord', () => {
+    expect(core.kindOf(chord('fall-climb'), 13, [4, 1], 7)).toBe('ascent');
+    expect(core.kindOf(chord('rising-traverse'), 13, [1, 2], 7)).toBe('ascent');
   });
 
   it('names a descent with either end down the fall line the fall line', () => {
-    expect(core.kindOf(chord('descending-traverse'), -24, [0, 1], along, 0)).toBe('fall-line');
-    expect(core.kindOf(chord('descending-traverse'), -25, [1, 0], across, 0)).toBe('fall-line');
+    expect(core.kindOf(chord('descending-traverse'), -24, [0, 1], 0)).toBe('fall-line');
+    expect(core.kindOf(chord('descending-traverse'), -25, [1, 0], 0)).toBe('fall-line');
   });
 
-  it('never names a descent a switchback', () => {
-    expect(core.kindOf(chord('descending-traverse'), -12, [2, 6], across, 0)).toBe('turn');
+  it('names any other descent that turns a descent', () => {
+    expect(core.kindOf(chord('descending-traverse'), -12, [2, 6], 0)).toBe('descent');
+    expect(core.kindOf(chord('fall-descent'), -12, [7, 6], 0)).toBe('descent');
   });
 
-  it('names a level turn, and a turn on flat ground, a turn', () => {
-    expect(core.kindOf(chord('level-traverse'), 2, [1, 2], across, 7)).toBe('turn');
-    expect(core.kindOf(chord('climb'), 10, [1, 2], null, null)).toBe('turn');
+  it('gives a level turn no kind, and names a turn on flat ground by its gradient', () => {
+    expect(core.kindOf(chord('level-traverse'), 2, [1, 2], 7)).toBeNull();
+    expect(core.kindOf(chord('climb'), 10, [1, 2], null)).toBe('ascent');
+    expect(core.kindOf(chord('descent'), -10, [1, 2], null)).toBe('descent');
+  });
+
+  it('never says turn or switchback', () => {
+    const kinds = new Set();
+    for (const grade of [-30, -10, -2, 2, 10, 30]) {
+      for (const fall of [null, 0, 4]) {
+        kinds.add(core.kindOf(chord('rising-traverse'), grade, [3, 4], fall));
+      }
+    }
+    expect([...kinds].sort()).toEqual(['ascent', 'descent', 'fall-line', null].sort());
   });
 
   it.each([
@@ -289,11 +297,55 @@ describe('kindOf', () => {
     ['descent-turning', -10, 'descent'],
     ['level', 1, null],
   ])('names the chord’s %s at %s° as %s', (key, gradient, kind) => {
-    expect(core.kindOf(chord(key), gradient, [2], along, 0)).toBe(kind);
+    expect(core.kindOf(chord(key), gradient, [2], 0)).toBe(kind);
   });
 
   it('has no kind without a height', () => {
-    expect(core.kindOf(chord('no-height'), null, [4, 1], across, 7)).toBeNull();
+    expect(core.kindOf(chord('no-height'), null, [4, 1], 7)).toBeNull();
+  });
+});
+
+describe('a turn whose two ends fall the same way', () => {
+  // The Les Tsamos bend (SNOW-1094): north-facing ground, a gentle climb
+  // heading 10° then 40°. The chord points within 45° of downhill, so it
+  // carries no side, but both ends have the ground falling to the left.
+  it('takes the side from its ends, not its chord', () => {
+    const words = core.reading({
+      index: 0,
+      paths: [pathTurning(10, 40)],
+      gradients: [8],
+      angles: [32],
+      aspects: [0],
+    }, STRINGS);
+    expect(words.state.track).toEqual([0, 1]);
+    expect(words.kind).toBe('ascent');
+    expect(words.headline).toBe('N → NE · Gentle ascent');
+    expect(words.ground).toBe("Steep, falling skier's left");
+  });
+
+  it('reads the same side on a descending traverse that turns', () => {
+    const words = core.reading({
+      index: 0,
+      paths: [pathTurning(80, 130)],
+      gradients: [-9],
+      angles: [27],
+      aspects: [0],
+    }, STRINGS);
+    expect(words.state.track).toEqual([2, 3]);
+    expect(words.headline).toBe('E → SE · Gentle descent');
+    expect(words.ground).toBe("Moderate, falling skier's left");
+  });
+
+  it('gives a level turn its steepness alone', () => {
+    const words = core.reading({
+      index: 0,
+      paths: [pathTurning(80, 130)],
+      gradients: [2],
+      angles: [27],
+      aspects: [0],
+    }, STRINGS);
+    expect(words.headline).toBe('E → SE · Level');
+    expect(words.ground).toBe("Moderate, falling skier's left");
   });
 });
 
@@ -308,7 +360,7 @@ describe('a descent that turns on the fall line', () => {
     }, STRINGS);
     expect(words.state.track).toEqual([1, 0]);
     expect(words.kind).toBe('fall-line');
-    expect(words.ground).toBe('Moderate slope');
+    expect(words.ground).toBe('Moderate');
   });
 });
 
@@ -325,7 +377,7 @@ describe('a wobble inside one sector', () => {
     }, STRINGS);
     expect(words.state.track).toEqual([0]);
     expect(words.kind).toBe('fall-line');
-    expect(words.ground).toBe('Steep slope');
+    expect(words.ground).toBe('Steep');
   });
 });
 
@@ -341,14 +393,14 @@ describe('the Col de la Chaux zig-zag', () => {
   }
 
   it.each([
-    [60, 'E → S • Gentle • switchback', "Moderate slope, falling skier's left, then right"],
-    [61, 'S • Gentle • traverse', "Moderate slope, falling skier's right"],
-    [62, 'S → NE • Gentle • switchback', "Very steep slope, falling skier's right, then left"],
-    [63, 'NE → E • Gentle • turn', "Steep slope, falling skier's left"],
-    [64, 'E → S • Gentle • switchback', "Steep slope, falling skier's left, then right"],
-    [65, 'S • Moderate • traverse', "Moderate slope, falling skier's right"],
-    [66, 'S → NE • Moderate • switchback', "Moderate slope, falling skier's right, then left"],
-    [67, 'NE • Moderate • traverse', "Very steep slope, falling skier's left"],
+    [60, 'E → S · Gentle ascent', "Moderate, falling skier's left, then right"],
+    [61, 'S · Gentle traverse', "Moderate, falling skier's right"],
+    [62, 'S → NE · Gentle ascent', "Very steep, falling skier's right, then left"],
+    [63, 'NE → E · Gentle ascent', "Steep, falling skier's left"],
+    [64, 'E → S · Gentle ascent', "Steep, falling skier's left, then right"],
+    [65, 'S · Moderate traverse', "Moderate, falling skier's right"],
+    [66, 'S → NE · Moderate ascent', "Moderate, falling skier's right, then left"],
+    [67, 'NE · Moderate traverse', "Very steep, falling skier's left"],
   ])('reads segment %s as "%s"', (index, headline, ground) => {
     const words = at(index);
     expect(words.headline).toBe(headline);
@@ -361,8 +413,8 @@ describe('the Col de la Chaux zig-zag', () => {
     expect(words.headline.startsWith('S → NE')).toBe(true);
   });
 
-  it('reads the arrow as "to" and the bullets as commas aloud', () => {
-    expect(at(62).label).toBe("S to NE, Gentle, switchback; Very steep slope, falling skier's right, then left");
+  it('reads the labels, the arrow as "to" and the dot as a comma aloud', () => {
+    expect(at(62).label).toBe("Track: S to NE, Gentle ascent; Slope: Very steep, falling skier's right, then left");
   });
 });
 
@@ -430,53 +482,53 @@ describe('reading', () => {
 
   it('reads the mockup’s point A in words', () => {
     const words = core.reading(input({}), STRINGS);
-    expect(words.headline).toBe('E • Very steep • fall line');
-    expect(words.ground).toBe('Extremely steep slope');
-    expect(words.label).toBe('E, Very steep, fall line; Extremely steep slope');
+    expect(words.headline).toBe('E · Very steep fall line');
+    expect(words.ground).toBe('Extremely steep');
+    expect(words.label).toBe('Track: E, Very steep fall line; Slope: Extremely steep');
     expect(words.kind).toBe('fall-line');
     expect(words.state.terrain).toEqual({ kind: 'faces', sector: 2, slopeDeg: 42 });
   });
 
   it('reads flat ground', () => {
     const words = core.reading(input({ angle: 3, aspect: null, gradient: -8 }), STRINGS);
-    expect(words.headline).toBe('E • Gentle • descent');
-    expect(words.ground).toBe('Flat ground');
+    expect(words.headline).toBe('E · Gentle descent');
+    expect(words.ground).toBe('Flat');
   });
 
   it('reads unsampled ground', () => {
     const words = core.reading(input({ angle: null, aspect: null, gradient: 2 }), STRINGS);
-    expect(words.headline).toBe('E • Level');
+    expect(words.headline).toBe('E · Level');
     expect(words.ground).toBe('No terrain data');
     expect(words.kind).toBeNull();
   });
 
   it('reads a payload with no aspects as no terrain data, never flat', () => {
     const words = core.reading(input({ aspects: undefined, gradient: -20 }), STRINGS);
-    expect(words.headline).toBe('E • Moderate • descent');
+    expect(words.headline).toBe('E · Moderate descent');
     expect(words.ground).toBe('No terrain data');
   });
 
   it('says so when the track has no height', () => {
     const words = core.reading(input({ gradient: null }), STRINGS);
-    expect(words.headline).toBe('E • No height data');
+    expect(words.headline).toBe('E · No height data');
   });
 
   it('says which side the slope falls on a traverse', () => {
     // Heading north across ground falling east, then west.
     const right = core.reading(input({ heading: 0, gradient: -20, aspect: 2 }), STRINGS);
-    expect(right.headline).toBe('N • Moderate • traverse');
-    expect(right.ground).toBe("Extremely steep slope, falling skier's right");
-    expect(right.label).toBe("N, Moderate, traverse; Extremely steep slope, falling skier's right");
+    expect(right.headline).toBe('N · Moderate traverse');
+    expect(right.ground).toBe("Extremely steep, falling skier's right");
+    expect(right.label).toBe("Track: N, Moderate traverse; Slope: Extremely steep, falling skier's right");
     const left = core.reading(input({ heading: 0, gradient: 2, aspect: 6, angle: 33 }), STRINGS);
-    expect(left.headline).toBe('N • Level • traverse');
-    expect(left.ground).toBe("Steep slope, falling skier's left");
+    expect(left.headline).toBe('N · Level traverse');
+    expect(left.ground).toBe("Steep, falling skier's left");
   });
 
   it('names no side on the fall line or against the heading', () => {
-    expect(core.reading(input({}), STRINGS).ground).toBe('Extremely steep slope');
+    expect(core.reading(input({}), STRINGS).ground).toBe('Extremely steep');
     const against = core.reading(input({ gradient: 6 }), STRINGS);
-    expect(against.headline).toBe('E • Gentle • ascent');
-    expect(against.ground).toBe('Extremely steep slope');
+    expect(against.headline).toBe('E · Gentle ascent');
+    expect(against.ground).toBe('Extremely steep');
   });
 
   it('carries no degrees', () => {

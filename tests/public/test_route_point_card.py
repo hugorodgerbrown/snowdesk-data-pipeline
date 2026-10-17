@@ -69,23 +69,20 @@ def test_the_partial_carries_every_word_in_its_strings_template() -> None:
     body = render_to_string("includes/_route_point_card.html", {})
     assert '<template id="route-point-card-strings-template">' in body
     keys = (
-        ["label", "join", "label-join", "heading-pair", "label-heading-pair"]
+        [
+            "label",
+            "join",
+            "phrase",
+            "label-join",
+            "heading-pair",
+            "label-heading-pair",
+        ]
         + [f"compass-{n}" for n in range(8)]
         + [
             f"steepness-{s}"
             for s in ("level", "gentle", "moderate", "steep", "very-steep")
         ]
-        + [
-            f"kind-{k}"
-            for k in (
-                "ascent",
-                "descent",
-                "traverse",
-                "fall-line",
-                "turn",
-                "switchback",
-            )
-        ]
+        + [f"kind-{k}" for k in ("ascent", "descent", "traverse", "fall-line")]
         + ["headline-no-height"]
         + [
             f"ground-{g}"
@@ -105,6 +102,28 @@ def test_the_partial_carries_every_word_in_its_strings_template() -> None:
     )
     for key in keys:
         assert f'data-string="{key}"' in body, key
+    # SNOW-1094: the kinds that restated the card are gone.
+    assert 'data-string="kind-turn"' not in body
+    assert 'data-string="kind-switchback"' not in body
+
+
+def test_each_line_carries_its_label() -> None:
+    """Track labels the headline and Slope the ground (SNOW-1094)."""
+    body = render_to_string("includes/_route_point_card.html", {})
+    card = body.split("<template", 1)[0]
+    terms = re.findall(r"<dt[^>]*>\s*(\w+)\s*</dt>", card)
+    assert terms == ["Track", "Slope"]
+    # The lines are the live region, read whole with their labels.
+    dl = re.search(r"<dl[^>]*>", card)
+    assert dl is not None
+    assert 'aria-live="polite"' in dl.group(0)
+    assert 'aria-atomic="true"' in dl.group(0)
+    assert card.count("aria-live") == 1
+    assert card.index(">Track<") < card.index("data-route-point-card-headline")
+    assert card.index("data-route-point-card-headline") < card.index(">Slope<")
+    assert card.index(">Slope<") < card.index("data-route-point-card-ground")
+    template = body.split("<template", 1)[1]
+    assert "Track: %(headline)s; Slope: %(ground)s" in template
 
 
 def test_a_filled_card_shows_its_two_lines() -> None:
@@ -114,13 +133,13 @@ def test_a_filled_card_shows_its_two_lines() -> None:
         {
             "static": True,
             "state_json": json.dumps({"track": [2], "gradeDeg": -37}),
-            "headline": "E • Very steep • fall line",
-            "ground": "Extremely steep slope",
+            "headline": "E · Very steep fall line",
+            "ground": "Extremely steep",
         },
     )
     assert 'id="route-point-card"' not in body
-    assert "E • Very steep • fall line" in body
-    assert "Extremely steep slope" in body
+    assert "E · Very steep fall line" in body
+    assert "Extremely steep" in body
     assert "data-aspect-wheel" in body
 
 
@@ -159,21 +178,29 @@ def test_the_fixtures_cover_every_family() -> None:
     assert all(headlines)
     joined = " | ".join(headlines)
     for phrase in (
-        "• fall line",
-        "• traverse",
-        "• turn",
-        "• switchback",
-        "• ascent",
-        "• descent",
-        "Level • traverse",
-        "• Level",
+        " fall line",
+        " traverse",
+        " ascent",
+        " descent",
+        "Level traverse",
+        "· Level |",
         " → ",
     ):
-        assert phrase in joined, phrase
+        assert phrase in joined + " |", phrase
+    for gone in ("turn", "switchback", "•"):
+        assert gone not in joined, gone
     grounds = {v["context"]["ground"] for v in POINT_CARD_VARIANTS}
-    assert {"Flat ground", "No terrain data"} <= grounds
+    assert {"Flat", "No terrain data"} <= grounds
+    assert not any("slope" in g for g in grounds)
     assert any(g.endswith("falling skier's left") for g in grounds)
     assert any(", then " in g for g in grounds)
+    # A turning segment whose two ends agree names one side (SNOW-1094).
+    turning = [
+        v["context"]["ground"]
+        for v in POINT_CARD_VARIANTS
+        if " → " in v["context"]["headline"]
+    ]
+    assert any(g.startswith("Steep, falling skier's left") for g in turning)
 
 
 def test_the_registry_panel_renders_every_state(staff_client: Client) -> None:
@@ -184,4 +211,4 @@ def test_the_registry_panel_renders_every_state(staff_client: Client) -> None:
     assert response.status_code == 200
     body = response.content.decode()
     assert body.count("data-route-point-card-headline") == 2 * len(POINT_CARD_VARIANTS)
-    assert "S → NE • Gentle • switchback" in body
+    assert "S → NE · Gentle ascent" in body

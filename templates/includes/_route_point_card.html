@@ -2,7 +2,8 @@
 {% comment %}
 templates/includes/_route_point_card.html — the point header: one point on
 the open route, read in words (SNOW-1064; a header of the route panel
-since SNOW-1068; headings, turns and switchbacks since SNOW-1069).
+since SNOW-1068; headings since SNOW-1069; the Track and Slope labels
+since SNOW-1094).
 
 The route panel (_route_rail.html) is one card pinned top-left with the
 profile always showing and a header in one of two states: the route, or a
@@ -14,15 +15,16 @@ opening a route changes only what the panel says, so the panel never
 moves under the finger.
 
 It holds the aspect wheel (aspect_wheel_core.js, SNOW-1063) at 48 px and
-two lines: the HEADLINE — heading, the track's steepness on its own scale
-and how it lies on the slope, "S → NE • Gentle • switchback" — and the
-GROUND in the EAWS words ("Extremely steep slope"), with the side the
-slope falls on a traverse, or both sides where a climb switches back
-across the fall line ("…, falling skier's left, then right"). The heading names the
-sectors the wheel's inner ring lights; up or down is the wheel's centre
-mark. No degrees. The words come from route_point_card_core.js, and are
-also the wheel's accessible name, read with "to" for the arrow and commas
-for the bullets.
+two labelled lines: TRACK — heading, then the track's steepness on its
+own scale and how it lies on the slope as one phrase, "NW → W · Gentle
+descent" — and SLOPE, the ground in the EAWS words ("Extremely steep"),
+with the side the ground falls on a traverse or a turn, or both sides
+where a turn crosses the fall line ("…, falling skier's left, then
+right"). The heading names the sectors the wheel's inner ring lights; up
+or down is the wheel's centre mark. No degrees. The words come from
+route_point_card_core.js, and are also the wheel's accessible name,
+"Track: …; Slope: …", read with "to" for the arrow and commas for the
+dots.
 
 HIDDEN until the route cursor has an index; static/js/route_point_card.js
 shows it and fills it. THE WHEEL CLEARS THE POINT (2026-10-02): it is a
@@ -44,7 +46,6 @@ Context:
 <div
     data-route-point-card
     {% if not static %}id="route-point-card" hidden{% endif %}
-    aria-live="polite"
     class="mt-1 flex items-center gap-3"
 >
     {# The wheel, drawn by static/js/route_point_card.js (or, in the        #}
@@ -62,18 +63,32 @@ Context:
             class="block h-12 w-12 leading-none"
         ></span>
     </button>
-    <div class="min-w-0">
-        <p data-route-point-card-headline class="text-sm font-semibold text-text-1 text-balance">
+    {# Each line carries its label, so the words need not say which is   #}
+    {# which (SNOW-1094). The labels share one column, so both lines    #}
+    {# start at the same edge. The live region is the lines alone, and    #}
+    {# atomic, so a point moving reads both lines with their labels and   #}
+    {# not the wheel's name, which repeats them.                          #}
+    {% trans "Track" context "point card line label" as track_label %}
+    {% trans "Slope" context "point card line label" as slope_label %}
+    <dl
+        aria-live="polite"
+        aria-atomic="true"
+        class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-0.5"
+    >
+        {% include "includes/_eyebrow.html" with tag="dt" text=track_label %}
+        <dd data-route-point-card-headline class="text-sm font-semibold text-text-1 text-balance">
             {% if headline %}{{ headline }}{% endif %}
-        </p>
-        <p data-route-point-card-ground class="mt-0.5 text-summary text-text-3 text-balance">
+        </dd>
+        {% include "includes/_eyebrow.html" with tag="dt" text=slope_label %}
+        <dd data-route-point-card-ground class="text-summary text-text-3 text-balance">
             {% if ground %}{{ ground }}{% endif %}
-        </p>
-    </div>
+        </dd>
+    </dl>
 </div>
 <template id="route-point-card-strings-template">
-    <span data-string="label">{% blocktrans %}%(headline)s; %(ground)s{% endblocktrans %}</span>
-    <span data-string="join">{% blocktrans %}%(before)s • %(after)s{% endblocktrans %}</span>
+    <span data-string="label">{% blocktrans %}Track: %(headline)s; Slope: %(ground)s{% endblocktrans %}</span>
+    <span data-string="join">{% blocktrans %}%(before)s · %(after)s{% endblocktrans %}</span>
+    <span data-string="phrase">{% blocktrans %}%(steepness)s %(kind)s{% endblocktrans %}</span>
     <span data-string="label-join">{% blocktrans %}%(before)s, %(after)s{% endblocktrans %}</span>
     <span data-string="compass-0">{% trans "N" context "compass point" %}</span>
     <span data-string="compass-1">{% trans "NE" context "compass point" %}</span>
@@ -94,14 +109,12 @@ Context:
     <span data-string="kind-descent">{% trans "descent" context "how a track lies on the slope" %}</span>
     <span data-string="kind-traverse">{% trans "traverse" context "how a track lies on the slope" %}</span>
     <span data-string="kind-fall-line">{% trans "fall line" context "how a track lies on the slope" %}</span>
-    <span data-string="kind-turn">{% trans "turn" context "how a track lies on the slope" %}</span>
-    <span data-string="kind-switchback">{% trans "switchback" context "how a track lies on the slope" %}</span>
     <span data-string="headline-no-height">{% trans "No height data" %}</span>
-    <span data-string="ground-flat">{% trans "Flat ground" %}</span>
-    <span data-string="ground-moderate">{% trans "Moderate slope" %}</span>
-    <span data-string="ground-steep">{% trans "Steep slope" %}</span>
-    <span data-string="ground-very-steep">{% trans "Very steep slope" %}</span>
-    <span data-string="ground-extremely-steep">{% trans "Extremely steep slope" %}</span>
+    <span data-string="ground-flat">{% trans "Flat" context "slope steepness" %}</span>
+    <span data-string="ground-moderate">{% trans "Moderate" context "slope steepness" %}</span>
+    <span data-string="ground-steep">{% trans "Steep" context "slope steepness" %}</span>
+    <span data-string="ground-very-steep">{% trans "Very steep" context "slope steepness" %}</span>
+    <span data-string="ground-extremely-steep">{% trans "Extremely steep" context "slope steepness" %}</span>
     <span data-string="ground-unknown">{% trans "No terrain data" %}</span>
     <span data-string="ground-falling-left">{% blocktrans %}%(ground)s, falling skier's left{% endblocktrans %}</span>
     <span data-string="ground-falling-right">{% blocktrans %}%(ground)s, falling skier's right{% endblocktrans %}</span>

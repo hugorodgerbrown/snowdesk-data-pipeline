@@ -1,8 +1,8 @@
 ---
 name: the-point-card-names-the-experience
-description: Point card heading • steepness • kind, turns and switchbacks (turnOf, kindOf, trackWord, groundWord); track scale shared with the wheel
+description: Point card Track and Slope lines; no turn or switchback; a turn's side from its ends (turnOf, kindOf, trackWord, groundWord)
 status: current
-last-reviewed: 2026-10-03
+last-reviewed: 2026-10-17
 ---
 
 # The point card names the experience
@@ -15,17 +15,31 @@ SNOW-1068): the aspect wheel and two lines of words, in the title and
 meta line's place, with the eyebrow naming the route and the point's
 distance ("MONT FORT · 4.1 KM").
 
-- **Words, not figures.** The headline is heading • steepness • kind —
-  "E • Very steep • fall line", "S → NE • Gentle • switchback"
-  (SNOW-1069). Line two names the ground in the EAWS words — "Extremely
-  steep slope". The card shows no degrees and no aspect. It names the
-  heading, as the compass points the wheel's inner ring lights: one, or
-  the first and last steps' joined by an arrow where the segment turns.
+- **Two labelled lines: Track and Slope (SNOW-1094).** Each line
+  carries a label, because the two describe different things — the
+  track's heading and step, the ground's angle and fall side — and
+  nothing else on the card said which was which:
+
+  ```
+  TRACK  NW → W · Gentle descent
+  SLOPE  Moderate, falling skier's left
+  ```
+
+  The wheel's accessible name reads the labels too: "Track: NW to W,
+  Gentle descent; Slope: Moderate, falling skier's left".
+- **Words, not figures.** The Track line is the heading, then the
+  steepness and kind as one phrase — "E · Very steep fall line",
+  "S → NE · Gentle ascent". The Slope line names the ground in the EAWS
+  words — "Extremely steep"; the label carries the word "slope". The
+  card shows no degrees and no aspect. It names the heading, as the
+  compass points the wheel's inner ring lights: one, or the first and
+  last steps' joined by an arrow where the segment turns.
 - **Up or down is a mark, not a word.** The kind is ascent, descent,
-  traverse, fall line, turn or switchback; whether the track climbs or
-  descends is the wheel's centre mark — a bar for level, and one, two or
-  three chevrons up or down for gentle, moderate, and steep or very
-  steep.
+  traverse or fall line; whether the track climbs or descends is the
+  wheel's centre mark — a bar for level, and one, two or three chevrons
+  up or down for gentle, moderate, and steep or very steep. (Ascent and
+  descent are words where the chord says nothing else: a turning
+  segment, or one crossing no slope.)
 - **The track has its own scale.** Level under 5°, gentle under 15°,
   moderate under 25°, steep under 35°, very steep from 35°. The aspect
   wheel's inner ring is filled on the same five steps (`TRACK_STEPS`),
@@ -38,19 +52,24 @@ distance ("MONT FORT · 4.1 KM").
   plain ascent or descent. The rule applies only where an aspect exists —
   ground of 5° or more; on flat or unsampled ground the kind is the
   track's alone, ascent or descent.
-- **Two headings: switchback, fall line or turn.** A segment whose
-  first and last steps head into different compass sectors — the inner
-  ring lighting two, adjoining or not — turned. A wobble inside one
-  sector did not. Climbing, where the side the ground falls also differs
-  between the two ends (`turnOf`), it crossed the fall line: a
-  switchback, and line two gives both sides — "Steep slope, falling
-  skier's left, then right". Descending, where either end heads in the
-  ground's own sector, it is the fall line, turning or not, and line two
-  names no side. Every other turning segment, a level one included, is a
-  turn.
-- **A traverse says which side the slope falls.** Line two gains the
-  side the ground falls away to, relative to the skier — "Very steep
-  slope, falling skier's right" (`fallSide`, the sign of the aspect's
+- **Two headings: fall line, ascent or descent (SNOW-1094).** A segment
+  whose first and last steps head into different compass sectors — the
+  inner ring lighting two, adjoining or not — turned. A wobble inside one
+  sector did not. Descending, where either end heads in the ground's own
+  sector, it is the fall line, turning or not, and the Slope line names
+  no side. Every other turning segment is an ascent or a descent by its
+  gradient's sign; a level one has no kind, and its Track line reads
+  "Level" alone, while its Slope line still names the side.
+  There is no "turn" or "switchback" kind.
+- **A turning segment's side comes from its two ends.** The Slope line
+  reads the side the ground falls at the first step and the last
+  (`turnOf`): one side where they agree — "Moderate, falling skier's
+  left" — and both where they differ — "Steep, falling skier's left,
+  then right", the track having crossed the fall line. Never from the
+  chord.
+- **A traverse says which side the slope falls.** The Slope line gains
+  the side the ground falls away to, relative to the skier — "Very
+  steep, falling skier's right" (`fallSide`, the sign of the aspect's
   turn from the heading). "Skier's right" is the guidebook term, and it
   is relative, not a compass point, so the card names no aspect.
   On the fall line the ground falls ahead or behind, so no side is named.
@@ -113,6 +132,30 @@ side of it is just a turn. Downhill, a skier whose track heads straight
 down the slope at either end is on the fall line, whatever the track
 does in between; calling that a turn hid the one fact a descent is
 planned around.
+
+The third rule (SNOW-1094) dropped "turn" and "switchback" as kinds,
+because each repeated something the card already said. "Turn" restated
+the heading pair: "NW → W" is a turn. "Switchback" restated the Slope
+line: "falling skier's left, then right" is a crossing of the fall line.
+With both gone, a turning segment's kind is what its gradient says,
+ascent or descent, or the fall line on the way down.
+
+The same change moved a turning segment's side onto its ends. The side
+had come from the chord's reading, which carries a side only when the
+chord itself is a traverse. Two routes that share a bend split it into
+segments at different points, so their chords differ: on the bend near
+Les Tsamos, Mont Fort – Backside read "Moderate slope, falling skier's
+left" and Mont Fort – Col de la Chaux read "Moderate slope", under the
+same headline. Where a segment turned, its chord is a line between two
+headings the track never took, and says nothing about which way the
+ground falls under the skier; the two ends do.
+
+The labels went on in the same change. Two unlabelled lines left the
+reader to work out that the first described the track and the second
+the ground; with a label each, the ground words no longer need "slope"
+in them, and the steepness and kind read as one phrase, "Gentle
+descent", rather than a list.
+
 The chevrons replaced the triangle so the centre mark carries the step
 as well as the direction, and the words could drop "rising",
 "descending" and "climbing" to fit one line.
@@ -133,11 +176,10 @@ and every point reads more clearly as one or the other.
   was retired by SNOW-1065).
 - A new surface that describes a point uses `trackWord` / `groundWord`
   and the track scale rather than inventing its own words.
-- Whether a climb crosses the fall line is decided against the aspect's
+- Whether a turn crosses the fall line is decided against the aspect's
   sector, so a kick turn that only just reaches the fall line can miss
-  it by up to 22.5° and read as a turn rather than a switchback.
+  it by up to 22.5° and name one side rather than two.
 - The descending fall-line test is sector equality, so a descent heading
-  22° off the fall line can still read as a turn.
-- "Turn" does not say how far the track turned: a 45° bend into the next
-  sector and a wider one both read "turn". The heading pair says the
-  rest — "NE → E" against "S → NE".
+  22° off the fall line can still read as a plain descent.
+- How far the track turned is said only by the heading pair — "NE → E"
+  against "S → NE" — since no kind names a turn.

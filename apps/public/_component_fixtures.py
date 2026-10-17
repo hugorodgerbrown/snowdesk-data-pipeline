@@ -1545,10 +1545,12 @@ ASPECT_WHEEL_VARIANTS: tuple[dict[str, Any], ...] = (
 
 # Point header (SNOW-1064; the route panel's point header since SNOW-1068) -----
 # One point on the open route, read in words: the aspect wheel at 48 px and
-# two lines — the headline (heading • the track's steepness on its own scale
-# • how it lies on the slope, SNOW-1069) and the ground in the EAWS words,
-# with the side the slope falls on a traverse, or both sides across a
-# switchback. The lines here are what route_point_card_core.js's
+# two labelled lines (SNOW-1094) — Track (heading · the track's steepness
+# on its own scale and how it lies on the slope, as one phrase) and Slope
+# (the ground in the EAWS words, with the side it falls on a traverse or a
+# turn, or both sides where a turn crosses the fall line). There is no
+# turn or switchback kind: the heading pair and the two sides already say
+# it. The lines here are what route_point_card_core.js's
 # ``reading`` writes for each state; on the map the header is filled
 # client-side from the route cursor, and hidden while no point is placed.
 
@@ -1581,8 +1583,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 4, "gradeDeg": -26},
             "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 42},
         },
-        "E • Very steep • fall line",
-        "Extremely steep slope",
+        "E · Very steep fall line",
+        "Extremely steep",
     ),
     _point_card_variant(
         "Fall line climb — 22° up a 31° face",
@@ -1593,8 +1595,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 1, "gradeDeg": 23},
             "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 31},
         },
-        "N • Moderate • fall line",
-        "Steep slope",
+        "N · Moderate fall line",
+        "Steep",
     ),
     _point_card_variant(
         "Rising traverse — 13° across a 33° north face",
@@ -1605,8 +1607,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 4, "gradeDeg": 3},
             "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 33},
         },
-        "SE • Gentle • traverse",
-        "Steep slope, falling skier's left",
+        "SE · Gentle traverse",
+        "Steep, falling skier's left",
     ),
     _point_card_variant(
         "Descending traverse — 9° across a 28° face",
@@ -1617,8 +1619,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 28},
         },
-        "E • Gentle • traverse",
-        "Moderate slope, falling skier's right",
+        "E · Gentle traverse",
+        "Moderate, falling skier's right",
     ),
     _point_card_variant(
         "Level traverse — under 5° across a 36° face",
@@ -1629,11 +1631,11 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 6, "gradeDeg": 1},
             "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 36},
         },
-        "W • Level • traverse",
-        "Very steep slope, falling skier's right",
+        "W · Level traverse",
+        "Very steep, falling skier's right",
     ),
     _point_card_variant(
-        "Switchback — Col de la Chaux, 13° up through a kick turn on a 35° face",
+        "Climb across the fall line — Col de la Chaux, 13° up through a kick turn",
         {
             "track": [4, 1],
             "gradeDeg": 13.28,
@@ -1641,11 +1643,11 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 7, "slopeDeg": 35},
         },
-        "S → NE • Gentle • switchback",
-        "Very steep slope, falling skier's right, then left",
+        "S → NE · Gentle ascent",
+        "Very steep, falling skier's right, then left",
     ),
     _point_card_variant(
-        "Turn — Col de la Chaux, a climb that turns without crossing",
+        "Climb that turns on one side — Col de la Chaux, the side from both ends",
         {
             "track": [1, 2],
             "gradeDeg": 13.29,
@@ -1653,8 +1655,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 7, "slopeDeg": 31.8},
         },
-        "NE → E • Gentle • turn",
-        "Steep slope, falling skier's left",
+        "NE → E · Gentle ascent",
+        "Steep, falling skier's left",
     ),
     _point_card_variant(
         "Fall line while turning — Backside, one end heads straight down",
@@ -1665,8 +1667,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 30.8},
         },
-        "N → NE • Moderate • fall line",
-        "Steep slope",
+        "N → NE · Moderate fall line",
+        "Steep",
     ),
     _point_card_variant(
         "Climbing while heading downhill — the gradient overrules the chord",
@@ -1677,8 +1679,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 31},
         },
-        "E • Gentle • ascent",
-        "Steep slope",
+        "E · Gentle ascent",
+        "Steep",
     ),
     _point_card_variant(
         "Flat ground — the track alone",
@@ -1689,8 +1691,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "flat"},
         },
-        "E • Gentle • descent",
-        "Flat ground",
+        "E · Gentle descent",
+        "Flat",
     ),
     _point_card_variant(
         "No terrain data — the ground was not sampled",
@@ -1701,7 +1703,7 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "unknown"},
         },
-        "SW • Level",
+        "SW · Level",
         "No terrain data",
     ),
 )
