@@ -303,6 +303,11 @@
   --color-accent:        #2563eb;
   --color-accent-hover:  #1d4ed8;
   --color-accent-text:   #ffffff;
+  /* SNOW-1109: the accent as a quiet fill — a selected option tile, a
+     selected slope class in tint mode, a selected aspect wedge in the
+     terrain filter sheet — paired with accent text or an accent stroke.
+     Translucent, so it reads over card and card-subtle alike. */
+  --color-accent-tint:   rgba(37, 99, 235, 0.14);
 
   /* Hourly chart (SNOW-723) — the four marks the meteogram needs that no
      existing token carries. The other four series reuse what is already
@@ -404,6 +409,16 @@
   --color-slope-40: #de055b;   /* 40–45° */
   --color-slope-45: #c889bb;   /* 45–50° */
   --color-slope-50: #4b4b4b;   /* >50°   */
+
+  /* The ink for a label written ON a slope fill (SNOW-1109: the terrain
+     filter sheet's ramp, where a selected class is filled with its
+     colour). Theme-invariant, like the fills: dark on the light classes,
+     white on the two dark ones. */
+  --color-slope-30-fg: #1a1916;
+  --color-slope-35-fg: #1a1916;
+  --color-slope-40-fg: #ffffff;
+  --color-slope-45-fg: #1a1916;
+  --color-slope-50-fg: #ffffff;
 
   /* —— two more, for the slope-coloured route LINE (SNOW-910) ——
      The five above are a published standard. These two
@@ -837,6 +852,7 @@
   --color-accent:        #3b82f6;
   --color-accent-hover:  #60a5fa;
   --color-accent-text:   #ffffff;
+  --color-accent-tint:   rgba(59, 130, 246, 0.22);
 
   /* Floating overlays — inverted glass so pills read against dark
      basemaps / dark UI (SNOW-36). */
@@ -2383,4 +2399,143 @@ html.pwa-launching .pwa-launch-shell {
   [data-traffic-arrow][data-active] {
     transition: none;
   }
+}
+
+/* —— the terrain filter sheet (SNOW-1109) ————————————————
+   public/partials/_map_terrain_filter_sheet.html. Its controls are
+   toggles whose look depends on aria-pressed AND on the colour mode the
+   ramp carries in data-mode, and on SVG fills and strokes — combinations
+   Tailwind's utilities do not express. Layout stays in the template.
+   ————————————————————————————————————————— */
+
+/* The slope ramp. A selected class: in tint mode the accent tint; in
+   slope mode filled with its own slope colour. An unselected class in
+   slope mode carries a strip of its colour along its foot, so the ramp
+   is its own key. No frame round the selected run: the fills say it. */
+.terrain-ramp-strip {
+  display: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 5px;
+}
+
+.terrain-ramp[data-mode="slope"] .terrain-ramp-tile[aria-pressed="false"] .terrain-ramp-strip {
+  display: block;
+}
+
+.terrain-ramp-tile[aria-pressed="true"] {
+  font-weight: 500;
+}
+
+.terrain-ramp[data-mode="match"] .terrain-ramp-tile[aria-pressed="true"] {
+  background-color: var(--color-accent-tint);
+  border-color: transparent;
+  color: var(--color-accent);
+}
+
+.terrain-ramp[data-mode="slope"] [data-slope-class="0"][aria-pressed="true"] {
+  background-color: var(--color-slope-30);
+  border-color: var(--color-slope-30);
+  color: var(--color-slope-30-fg);
+}
+
+.terrain-ramp[data-mode="slope"] [data-slope-class="1"][aria-pressed="true"] {
+  background-color: var(--color-slope-35);
+  border-color: var(--color-slope-35);
+  color: var(--color-slope-35-fg);
+}
+
+.terrain-ramp[data-mode="slope"] [data-slope-class="2"][aria-pressed="true"] {
+  background-color: var(--color-slope-40);
+  border-color: var(--color-slope-40);
+  color: var(--color-slope-40-fg);
+}
+
+.terrain-ramp[data-mode="slope"] [data-slope-class="3"][aria-pressed="true"] {
+  background-color: var(--color-slope-45);
+  border-color: var(--color-slope-45);
+  color: var(--color-slope-45-fg);
+}
+
+.terrain-ramp[data-mode="slope"] [data-slope-class="4"][aria-pressed="true"] {
+  background-color: var(--color-slope-50);
+  border-color: var(--color-slope-50);
+  color: var(--color-slope-50-fg);
+}
+
+/* The aspect rose: eight wedges, then the "All" centre. A label follows
+   its wedge in the markup, so it can take the wedge's state. */
+.terrain-rose-wedge {
+  fill: var(--color-card-subtle);
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+  cursor: pointer;
+}
+
+.terrain-rose-wedge[aria-pressed="true"] {
+  fill: var(--color-accent-tint);
+  stroke: var(--color-accent);
+}
+
+.terrain-rose-wedge:focus-visible,
+.terrain-rose-all:focus-visible circle {
+  outline: none;
+  stroke: var(--color-accent);
+  stroke-width: 3;
+}
+
+.terrain-rose-all:focus-visible {
+  outline: none;
+}
+
+.terrain-rose-label {
+  fill: var(--color-text-3);
+  font-size: 14px;
+  font-weight: 500;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.terrain-rose-wedge[aria-pressed="true"] + .terrain-rose-label {
+  fill: var(--color-accent);
+}
+
+.terrain-rose-all {
+  cursor: pointer;
+}
+
+.terrain-rose-all circle {
+  fill: var(--color-card);
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+
+.terrain-rose-all text {
+  fill: var(--color-text-2);
+  font-size: 11px;
+  font-weight: 500;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+/* The elevation mountain, after elevation_icon's (card_tags.py). */
+.terrain-mountain-outline {
+  fill: none;
+  stroke: var(--color-text-2);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.terrain-mountain-band {
+  fill: var(--color-accent);
+  opacity: 0.28;
+}
+
+.terrain-mountain-line {
+  stroke: var(--color-accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
 }
