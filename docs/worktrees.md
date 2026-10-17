@@ -251,7 +251,7 @@ contains so it can be relied on and extended safely.
 | `bulletins.regiondayrating` | 178 | `seed_test_data` |
 | `bulletins.bulletingrouping` | 10 | `seed_test_data` (one per multi-region map-date bulletin; the single-region CH-4115 detail bulletins get none — SNOW-1001) |
 | `locations.location` | 7 | `seed_test_data` (5 pins + the trip's meeting point, minted by `create_trip`, + the CH-4115 centroid the weather seed links offline) |
-| `weather.weather` | 6 | `seed_test_data` (TODAY's row for each pin and the CH-4115 centroid, with 24 hourly rows and six forward days, the first two with hours — so the meteogram draws; SNOW-1108) |
+| `weather.weather` | 6 | `seed_test_data` (TODAY's row for each pin and the CH-4115 centroid, with 24 hourly rows and six forward days, tomorrow with hours as the fetcher writes them — so the meteogram draws; SNOW-1108) |
 | `favourites.favourite` | 6 | `seed_test_data` (5 point pins + 1 CH-4115 region pin, owned by the normal dev user) |
 | `auth.user` | 2 | `seed_test_data` (superuser + normal dev user) |
 | `accounts.account` | 1 | `seed_test_data` (the normal dev user's verified profile) |

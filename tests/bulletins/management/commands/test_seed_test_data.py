@@ -734,7 +734,7 @@ class TestWeatherSeeding:
         assert Weather.objects.filter(location=centroid).exists()
 
     def test_a_row_has_the_shape_fetch_writes(self) -> None:
-        """24 hours today; six forward days, the first two with hours."""
+        """24 hours today; six forward days, only tomorrow with hours (as fetched)."""
         call_command("seed_test_data", "--include", "weather", commit=True, verbosity=0)
 
         row = Weather.objects.first()
@@ -746,7 +746,7 @@ class TestWeatherSeeding:
         assert len(row.forecast) == 6
         assert [bool(day.get("hourly")) for day in row.forecast] == [
             True,
-            True,
+            False,
             False,
             False,
             False,

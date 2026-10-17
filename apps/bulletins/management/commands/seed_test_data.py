@@ -41,7 +41,8 @@ needs a paid plan and an API key. The words name nowhere, which is safe
 here because this command refuses to run when ``DEBUG`` is ``False``.
 
 Every seeded Location also gets a ``Weather`` row for TODAY, carrying a full
-hourly series and six forward days (the first two with their own hours), so
+hourly series and six forward days (tomorrow with its own hours, as the
+fetcher writes them), so
 the meteogram draws without a fetch. So does the CH-4115 region's centroid
 Location, which the seed links offline the way
 ``link_region_centroid_locations`` does: a centroid is ``public()``, so it is
@@ -97,6 +98,7 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     build_render_model,
 )
+from apps.weather.services.fetch import HOURLY_DAYS
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -610,8 +612,6 @@ _SEED_WEATHER_TMAX_C: tuple[float, ...] = (1.0, -1.0, 2.0, 5.0, 7.0, 4.0, 0.0)
 _SEED_WEATHER_TMIN_C: tuple[float, ...] = (-6.0, -8.0, -7.0, -4.0, -2.0, -3.0, -6.0)
 _SEED_WEATHER_REFERENCE_M = 1500.0
 _SEED_WEATHER_LAPSE_C_PER_M = 0.0065
-# How many forward days carry their own hours — ``fetch.HOURLY_DAYS``.
-_SEED_WEATHER_HOURLY_DAYS = 2
 
 
 def _seed_hourly(day: date, index: int, offset_c: float) -> list[dict[str, Any]]:
@@ -662,9 +662,10 @@ def _seed_weather_fields(today: date, elevation_m: float | None) -> dict[str, An
     """Return the field values of one seeded ``Weather`` row for ``today``.
 
     The daily scalars describe today; ``hourly`` is today's 24 hours; and
-    ``forecast`` holds the six days after it, the first
-    ``_SEED_WEATHER_HOURLY_DAYS`` with their own hours, which is the shape
-    ``apps.weather.services.fetch`` writes.
+    ``forecast`` holds the six days after it. As in
+    ``apps.weather.services.fetch``, hours cover the first ``HOURLY_DAYS``
+    days counting today, so only forward days below that position carry
+    their own.
 
     Args:
         today: The row's ``observed_on``.
@@ -705,7 +706,7 @@ def _seed_weather_fields(today: date, elevation_m: float | None) -> dict[str, An
             "sunrise": f"{day.isoformat()}T07:25",
             "sunset": f"{day.isoformat()}T18:40",
         }
-        if index <= _SEED_WEATHER_HOURLY_DAYS:
+        if index < HOURLY_DAYS:
             entry["hourly"] = _seed_hourly(day, index, offset_c)
         forecast.append(entry)
 
