@@ -377,3 +377,74 @@ describe('palette', () => {
     expect(match.rgba[3] / 255).toBeCloseTo(0.45, 2);
   });
 });
+
+describe('the slope ramp (SNOW-1109)', () => {
+  const tap = (filter, index) => core.tapSlopeClass(filter, index);
+
+  it('reads the selected classes off the range', () => {
+    expect(core.slopeClassRange({ minSlope: 30 })).toEqual({ lo: 0, hi: 4 });
+    expect(core.slopeClassRange({ minSlope: 35, maxSlope: 45 })).toEqual({ lo: 1, hi: 2 });
+  });
+
+  it('extends the range down and up to a class outside it', () => {
+    expect(tap({ minSlope: 40, maxSlope: 45 }, 0)).toEqual({ minSlope: 30, maxSlope: 45 });
+    expect(tap({ minSlope: 35, maxSlope: 40 }, 3)).toEqual({ minSlope: 35, maxSlope: 50 });
+  });
+
+  it('trims either end', () => {
+    expect(tap({ minSlope: 30, maxSlope: 45 }, 0)).toEqual({ minSlope: 35, maxSlope: 45 });
+    expect(tap({ minSlope: 30, maxSlope: 45 }, 2)).toEqual({ minSlope: 30, maxSlope: 40 });
+  });
+
+  it('collapses to an interior class', () => {
+    expect(tap({ minSlope: 30 }, 2)).toEqual({ minSlope: 40, maxSlope: 45 });
+  });
+
+  it('keeps a lone class selected', () => {
+    expect(tap({ minSlope: 40, maxSlope: 45 }, 2)).toEqual({ minSlope: 40, maxSlope: 45 });
+    expect(tap({ minSlope: 50 }, 4)).toEqual({ minSlope: 50, maxSlope: null });
+  });
+
+  it('writes the 50°+ class as no maximum, and trimming it sets one', () => {
+    expect(tap({ minSlope: 35, maxSlope: 40 }, 4)).toEqual({ minSlope: 35, maxSlope: null });
+    expect(tap({ minSlope: 35 }, 4)).toEqual({ minSlope: 35, maxSlope: 50 });
+  });
+});
+
+describe('the elevation lists (SNOW-1109)', () => {
+  it('offers the full scale when neither bound is set', () => {
+    const above = core.elevationOptions({}, 'min');
+    const below = core.elevationOptions({}, 'max');
+    expect(above[0]).toBe(1000);
+    expect(above.at(-1)).toBe(4500);
+    expect(above).toHaveLength(36);
+    expect(below[0]).toBe(4500);
+    expect(below.at(-1)).toBe(1000);
+  });
+
+  it('cuts each list at the other bound', () => {
+    expect(core.elevationOptions({ maxElevation: 1300 }, 'min')).toEqual([1000, 1100, 1200]);
+    expect(core.elevationOptions({ minElevation: 4200 }, 'max')).toEqual([4500, 4400, 4300]);
+  });
+
+  it('keeps a stored value outside the scale, in order', () => {
+    expect(core.elevationOptions({ minElevation: 600 }, 'min').slice(0, 2)).toEqual([600, 1000]);
+    expect(core.elevationOptions({ maxElevation: 4800 }, 'max').slice(0, 2)).toEqual([4800, 4500]);
+  });
+});
+
+describe('the elevation band (SNOW-1109)', () => {
+  it('runs an open bound to its edge', () => {
+    expect(core.elevationBand({})).toEqual({ top: 0, bottom: 1 });
+  });
+
+  it('places a bound in proportion to the 1,000–4,500 m scale', () => {
+    const band = core.elevationBand({ minElevation: 1700, maxElevation: 3800 });
+    expect(band.top).toBeCloseTo(0.2, 5);
+    expect(band.bottom).toBeCloseTo(0.8, 5);
+  });
+
+  it('clamps a bound off the scale onto it', () => {
+    expect(core.elevationBand({ minElevation: 500, maxElevation: 4800 })).toEqual({ top: 0, bottom: 1 });
+  });
+});

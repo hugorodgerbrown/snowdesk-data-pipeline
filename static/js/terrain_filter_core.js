@@ -75,6 +75,9 @@
  *   normaliseFilter(raw) / parseFilter(text) / serialiseFilter(filter)
  *   filterHash(filter)
  *   summarise(filter, strings, options?)
+ *   ELEVATION_LIST_MIN_M / ELEVATION_LIST_MAX_M (SNOW-1109)
+ *   slopeClassRange(filter) / tapSlopeClass(filter, index)
+ *   elevationOptions(filter, which) / elevationBand(filter)
  *   tileUrl(template, z, x, y) / protocolTileUrl(hash) / parseProtocolUrl(url)
  *   createTileCache(limit)
  */
@@ -152,6 +155,16 @@
   /** The elevation band's step and ceiling, in metres. */
   const ELEVATION_STEP_M = 100;
   const ELEVATION_MAX_M = 4800;
+
+  /**
+   * The sheet's elevation lists (SNOW-1109): the heights a reader picks
+   * from, and the scale the sheet's mountain is drawn against. Narrower
+   * than the 0–4,800 m the filter accepts, because a bound under 1,000 m
+   * or over 4,500 m changes nothing in Switzerland's avalanche terrain; a
+   * stored value outside it is still kept, never rewritten.
+   */
+  const ELEVATION_LIST_MIN_M = 1000;
+  const ELEVATION_LIST_MAX_M = 4500;
 
   /** The two reserved blue-channel values. */
   const B_LEVEL = 254;
@@ -647,6 +660,117 @@
   }
 
   /**
+   * The slope ramp's selected classes, as indexes into SLOPE_LADDER.
+   *
+   * Class i covers SLOPE_LADDER[i] up to the next rung; the last class
+   * (index 4, 50°+) has no top, which the filter writes as maxSlope null.
+   *
+   * @param {*} filter The filter.
+   * @returns {{lo: number, hi: number}} First and last selected class.
+   */
+  function slopeClassRange(filter) {
+    const f = normaliseFilter(filter);
+    const last = SLOPE_LADDER.length - 1;
+    const lo = SLOPE_LADDER.indexOf(f.minSlope);
+    const hi = f.maxSlope === null ? last : SLOPE_LADDER.indexOf(f.maxSlope) - 1;
+    return { lo, hi };
+  }
+
+  /**
+   * The slope range after a tap on one class of the sheet's ramp.
+   *
+   * A class outside the range extends the range to it. An end class
+   * removes itself, unless it is the only class selected. An interior
+   * class collapses the range to that class alone.
+   *
+   * @param {*} filter The filter before the tap.
+   * @param {number} index The class tapped, 0 (30–35°) … 4 (50°+).
+   * @returns {{minSlope: number, maxSlope: number|null}}
+   */
+  function tapSlopeClass(filter, index) {
+    const last = SLOPE_LADDER.length - 1;
+    const i = Math.max(0, Math.min(last, Math.trunc(Number(index)) || 0));
+    let { lo, hi } = slopeClassRange(filter);
+    // The only class selected stays selected: an empty range is not a filter.
+    if (i < lo) {
+      lo = i;
+    } else if (i > hi) {
+      hi = i;
+    } else if (lo !== hi) {
+      if (i === lo) {
+        lo += 1;
+      } else if (i === hi) {
+        hi -= 1;
+      } else {
+        lo = i;
+        hi = i;
+      }
+    }
+    return {
+      minSlope: SLOPE_LADDER[lo],
+      maxSlope: hi === last ? null : SLOPE_LADDER[hi + 1],
+    };
+  }
+
+  /**
+   * The heights one of the sheet's elevation lists offers.
+   *
+   * 'min' ("Above") runs up from ELEVATION_LIST_MIN_M to 100 m under the
+   * set maximum; 'max' ("Below") runs down from ELEVATION_LIST_MAX_M to
+   * 100 m over the set minimum. A stored value of the list's own bound
+   * that falls outside 1,000–4,500 m is kept, in order, so opening the
+   * sheet never rewrites it.
+   *
+   * @param {*} filter The filter.
+   * @param {'min'|'max'} which Which list.
+   * @returns {number[]} Ascending for 'min', descending for 'max'.
+   */
+  function elevationOptions(filter, which) {
+    const f = normaliseFilter(filter);
+    /** @type {number[]} */
+    const values = [];
+    if (which === 'min') {
+      const top = f.maxElevation === null
+        ? ELEVATION_LIST_MAX_M
+        : Math.min(ELEVATION_LIST_MAX_M, f.maxElevation - ELEVATION_STEP_M);
+      for (let v = ELEVATION_LIST_MIN_M; v <= top; v += ELEVATION_STEP_M) values.push(v);
+      if (f.minElevation !== null && !values.includes(f.minElevation)) {
+        values.push(f.minElevation);
+      }
+      return values.sort((a, b) => a - b);
+    }
+    const bottom = f.minElevation === null
+      ? ELEVATION_LIST_MIN_M
+      : Math.max(ELEVATION_LIST_MIN_M, f.minElevation + ELEVATION_STEP_M);
+    for (let v = ELEVATION_LIST_MAX_M; v >= bottom; v -= ELEVATION_STEP_M) values.push(v);
+    if (f.maxElevation !== null && !values.includes(f.maxElevation)) {
+      values.push(f.maxElevation);
+    }
+    return values.sort((a, b) => b - a);
+  }
+
+  /**
+   * Where the elevation band sits on the sheet's mountain.
+   *
+   * Fractions of the ELEVATION_LIST_MIN_M–ELEVATION_LIST_MAX_M scale
+   * measured down from the peak: 0 is the peak, 1 the base. An open bound
+   * runs to its edge; a bound outside the scale is clamped onto it.
+   *
+   * @param {*} filter The filter.
+   * @returns {{top: number, bottom: number}}
+   */
+  function elevationBand(filter) {
+    const f = normaliseFilter(filter);
+    const span = ELEVATION_LIST_MAX_M - ELEVATION_LIST_MIN_M;
+    const fraction = (/** @type {number} */ m) =>
+      Math.max(0, Math.min(1, (ELEVATION_LIST_MAX_M - m) / span));
+    return {
+      top: f.maxElevation === null ? 0 : fraction(f.maxElevation),
+      bottom: f.minElevation === null ? 1 : fraction(f.minElevation),
+    };
+  }
+
+  /**
    * Fill an XYZ template.
    *
    * @param {string} template e.g. `https://…/{z}/{x}/{y}.png`.
@@ -755,6 +879,12 @@
     serialiseFilter: serialiseFilter,
     filterHash: filterHash,
     summarise: summarise,
+    ELEVATION_LIST_MIN_M: ELEVATION_LIST_MIN_M,
+    ELEVATION_LIST_MAX_M: ELEVATION_LIST_MAX_M,
+    slopeClassRange: slopeClassRange,
+    tapSlopeClass: tapSlopeClass,
+    elevationOptions: elevationOptions,
+    elevationBand: elevationBand,
     tileUrl: tileUrl,
     protocolTileUrl: protocolTileUrl,
     parseProtocolUrl: parseProtocolUrl,
