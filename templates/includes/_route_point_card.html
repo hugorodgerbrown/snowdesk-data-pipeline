@@ -46,7 +46,6 @@ Context:
 <div
     data-route-point-card
     {% if not static %}id="route-point-card" hidden{% endif %}
-    aria-live="polite"
     class="mt-1 flex items-center gap-3"
 >
     {# The wheel, drawn by static/js/route_point_card.js (or, in the        #}
@@ -66,13 +65,21 @@ Context:
     </button>
     {# Each line carries its label, so the words need not say which is   #}
     {# which (SNOW-1094). The labels share one column, so both lines    #}
-    {# start at the same edge.                                           #}
-    <dl class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-0.5">
-        {% include "includes/_eyebrow.html" with tag="dt" text=_("Track") %}
+    {# start at the same edge. The live region is the lines alone, and    #}
+    {# atomic, so a point moving reads both lines with their labels and   #}
+    {# not the wheel's name, which repeats them.                          #}
+    {% trans "Track" context "point card line label" as track_label %}
+    {% trans "Slope" context "point card line label" as slope_label %}
+    <dl
+        aria-live="polite"
+        aria-atomic="true"
+        class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 gap-y-0.5"
+    >
+        {% include "includes/_eyebrow.html" with tag="dt" text=track_label %}
         <dd data-route-point-card-headline class="text-sm font-semibold text-text-1 text-balance">
             {% if headline %}{{ headline }}{% endif %}
         </dd>
-        {% include "includes/_eyebrow.html" with tag="dt" text=_("Slope") %}
+        {% include "includes/_eyebrow.html" with tag="dt" text=slope_label %}
         <dd data-route-point-card-ground class="text-summary text-text-3 text-balance">
             {% if ground %}{{ ground }}{% endif %}
         </dd>

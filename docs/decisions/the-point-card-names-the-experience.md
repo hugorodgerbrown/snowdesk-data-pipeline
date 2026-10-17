@@ -58,7 +58,8 @@ distance ("MONT FORT · 4.1 KM").
   sector did not. Descending, where either end heads in the ground's own
   sector, it is the fall line, turning or not, and the Slope line names
   no side. Every other turning segment is an ascent or a descent by its
-  gradient's sign; a level one has no kind, and reads "Level" alone.
+  gradient's sign; a level one has no kind, and its Track line reads
+  "Level" alone, while its Slope line still names the side.
   There is no "turn" or "switchback" kind.
 - **A turning segment's side comes from its two ends.** The Slope line
   reads the side the ground falls at the first step and the last

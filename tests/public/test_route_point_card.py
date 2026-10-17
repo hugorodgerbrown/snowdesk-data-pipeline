@@ -113,6 +113,12 @@ def test_each_line_carries_its_label() -> None:
     card = body.split("<template", 1)[0]
     terms = re.findall(r"<dt[^>]*>\s*(\w+)\s*</dt>", card)
     assert terms == ["Track", "Slope"]
+    # The lines are the live region, read whole with their labels.
+    dl = re.search(r"<dl[^>]*>", card)
+    assert dl is not None
+    assert 'aria-live="polite"' in dl.group(0)
+    assert 'aria-atomic="true"' in dl.group(0)
+    assert card.count("aria-live") == 1
     assert card.index(">Track<") < card.index("data-route-point-card-headline")
     assert card.index("data-route-point-card-headline") < card.index(">Slope<")
     assert card.index(">Slope<") < card.index("data-route-point-card-ground")
