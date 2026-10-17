@@ -107,8 +107,12 @@ connection), but the styling of a disabled control is chrome, and
 chrome is this partial's job — a panel that later grows a disabled
 state should not have to remember to bring its own.
 {% endcomment %}
-<div class="flex min-h-0 flex-1 flex-col gap-4.5">
-    <div>
+{# SNOW-1102: the list is what turns its sheet's phone detents on       #}
+{# (``detents_opt_in`` on includes/_overlay_sheet.html): it opens at half #}
+{# and drags to full. The header is a drag surface; the rows scroll at    #}
+{# both heights (``data-sheet-list``), between a pinned header and foot.  #}
+<div class="flex min-h-0 flex-1 flex-col gap-4.5" data-sheet-detents="half,full">
+    <div data-sheet-drag>
         {% include "includes/_sheet_header.html" with title=title icon_template=icon_template close_action="dismiss" title_class="text-lg font-semibold" %}
         {# The context strip. `px-2` puts it under the title rather than    #}
         {# under the title's own left edge plus the sheet header's padding; #}
@@ -129,7 +133,7 @@ state should not have to remember to bring its own.
     {# scroll box whose content began at x=17. Hugo: "The favourites name  #}
     {# element is cut off at the left". The design it came from had no     #}
     {# scroll container, which is why it worked there.                     #}
-    <div class="-mx-1.5 flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto px-1.5">
+    <div class="-mx-1.5 flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto px-1.5" data-sheet-list>
         {# The section label belongs to the list it heads, so the two sit   #}
         {# in one tight group rather than 18px apart at the scroll region's #}
         {# own rhythm. Downloads passes no `section_label`: it has two      #}

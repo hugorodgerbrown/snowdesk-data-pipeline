@@ -36,7 +36,7 @@ Context expected:
 {# confirmation) therefore carries `min-h-0 flex-1` and owns its own      #}
 {# scroll region; see that partial's docstring for the mechanism.         #}
 {% trans "Field observation report" as report_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label scroll_body=True %}
+{% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label scroll_body=True detents="half,full" initial="half" detents_opt_in=True %}
 {# SNOW-658: the panel the roundel now opens — the user's own reports, a CTA #}
 {# to add another, and the map-overlay switch that used to be the layers      #}
 {# menu's "Community reports" row. Cloned by report.js on every open; the     #}

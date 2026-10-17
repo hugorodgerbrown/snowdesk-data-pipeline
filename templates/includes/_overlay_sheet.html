@@ -81,6 +81,15 @@ Optional context:
                 take none: docs/decisions/sheet-detents-are-phone-only.md.
   initial     — The detent the sheet opens at; default the lowest declared.
                 Ignored without ``detents``.
+  detents_opt_in — Bool; default False (SNOW-1102). The detents apply only
+                while the content marks ``data-sheet-detents``; any other
+                body is the plain inset card, with no handle and no drag.
+                The four list sheets (routes, favourites, observations,
+                downloads) set it: their list (includes/_ugc_panel.html)
+                carries the mark, and every other body they show — a form,
+                a gate, a locating line, a confirmation — is a form by
+                default, so a swipe can never throw one away. Ignored
+                without ``detents``.
 
 The handle is a ``<button>`` with an accessible name, not a bare grip: a
 press cycles to the next detent, so a keyboard or switch user can reach all
@@ -154,7 +163,11 @@ bug in a subtler form.
     data-overlay
     class="{% if static %}relative{% else %}fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)] max-h-[calc(100dvh-var(--map-edge-inset-top)-var(--map-edge-inset-bottom))]{% if scroll_body %} flex flex-col overflow-hidden{% else %} overflow-y-auto{% endif %}{% endif %} rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:bottom-4 sm:left-auto sm:right-4 {% firstof width 'sm:w-96' %}"
     aria-label="{{ aria_label }}"
-    {% if detents %}data-detents="{{ detents }}" data-detent-initial="{{ initial|default:'' }}"{% endif %}
+    {% if detents %}
+        data-detents="{{ detents }}"
+        data-detent-initial="{{ initial|default:'' }}"
+        {% if detents_opt_in %}data-detents-opt-in{% endif %}
+    {% endif %}
 >
     {% if detents %}
         <button

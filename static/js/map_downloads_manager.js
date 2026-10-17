@@ -263,6 +263,16 @@
   var groupTemplate = document.getElementById(GROUP_TEMPLATE_ID);
   if (!sheet || !bodyTemplate || !rowTemplate || !groupTemplate) return;
 
+  // SNOW-1102: the phone detents the partial declares (half and full, for
+  // the list). This sheet does not go through MapSheet.attach, so it binds
+  // them itself, here at load while the handle is still in the sheet — the
+  // first render() replaces the children, and map_sheet.js puts the handle
+  // back only for a sheet it has already bound. map.html loads
+  // map_sheet.js first.
+  var detents = window.MapSheet && window.MapSheet.bindDetents
+    ? window.MapSheet.bindDetents(sheet, { onClose: close })
+    : null;
+
   /**
    * SNOW-748: true when the app is actually using the network — the interface
    * is up AND no offline mode is in force.
@@ -1675,6 +1685,7 @@
     // other two UGC sheets. This module does not go through that controller
     // (it owns `sheet.hidden` itself), so it makes the call directly.
     window.pwaOverlayBounds?.positionSheet(sheet);
+    detents?.open();
     sheet.focus();
   }
 
@@ -1691,6 +1702,9 @@
    */
   function close() {
     sheet.hidden = true;
+    // SNOW-1102: the detent, the root mark and the camera padding go with
+    // the sheet, which is why every hide in this module comes through here.
+    detents?.reset();
   }
 
   /**
@@ -1746,7 +1760,7 @@
         window.MapSheet.toast(STRINGS['add-offline']);
         return;
       }
-      sheet.hidden = true;
+      close();
       // SNOW-645 review: hiding the sheet here does NOT hide the
       // downloaded-tiles overlay — only the in-sheet toggle's own change
       // handler ever calls hide() now (see this module's header and
@@ -1969,7 +1983,7 @@
     // device's preference for the one download it starts.
     const terrain = button.getAttribute('data-downloads-terrain') === 'true';
 
-    sheet.hidden = true;
+    close();
     if (regionId && window.pwaRegionDownload) {
       window.pwaRegionDownload.start(regionId, { terrain: terrain }).then(function (outcome) {
         // A refusal is silent on the roundel — it settles into whatever

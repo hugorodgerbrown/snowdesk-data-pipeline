@@ -275,6 +275,15 @@
     // it marks an element `data-sheet-detents` (the region sheet drops FULL
     // for a day with no bulletin — there is nothing to reveal; Hugo, 16 Oct).
     var detents = declared;
+    // SNOW-1102: detents OFF for the content in the sheet now — a form, a
+    // gate, a confirmation. The sheet is then the inset card it was before
+    // SNOW-1097: no handle, no drag, no detent height. A sheet that carries
+    // `data-detents-opt-in` (the four list sheets) is off unless its content
+    // marks `data-sheet-detents`, so every body that is not the list — and
+    // those sheets show many — is a form by default rather than by a mark
+    // each one has to remember. Any sheet's content can also say "none".
+    var optIn = el.hasAttribute('data-detents-opt-in');
+    var off = false;
     var opts = options || {};
     var handle = /** @type {HTMLElement|null} */ (el.querySelector('[data-sheet-handle]'));
     var initial = core.initialDetent(detents, el.getAttribute('data-detent-initial'));
@@ -340,6 +349,22 @@
         if (box.height > 0 && box.bottom > bottom) bottom = box.bottom;
       });
       if (!Number.isFinite(bottom)) return null;
+      // A list sheet's rows scroll inside a box that FILLS the sheet
+      // (SNOW-1102: the header and the foot stay pinned), so that box ends
+      // where the sheet does, whatever the rows need. Correct by each
+      // list's own rows: add what they hold below its fold, or take off
+      // the empty band they leave when they stop short of it. Without it a
+      // detent measures its own height back — FULL no taller than HALF, a
+      // short list's HALF a band of empty card.
+      Array.prototype.forEach.call(el.querySelectorAll('[data-sheet-list]'), function (list) {
+        var rowsBottom = -Infinity;
+        Array.prototype.forEach.call(list.children, function (child) {
+          var box = child.getBoundingClientRect();
+          if (box.height > 0 && box.bottom > rowsBottom) rowsBottom = box.bottom;
+        });
+        if (!Number.isFinite(rowsBottom)) return;
+        bottom += rowsBottom + list.scrollTop - list.getBoundingClientRect().bottom;
+      });
       var measured = heightTo(bottom);
       return measured > 0 ? measured : null;
     }
@@ -416,7 +441,7 @@
 
     /** @param {string} name */
     function set(name) {
-      if (detents.indexOf(name) === -1) return;
+      if (off || detents.indexOf(name) === -1) return;
       current = name;
       // The detent goes on first: content may show or hide with it, and
       // the height is measured from what the detent shows.
@@ -443,6 +468,7 @@
     function open() {
       restoreHandle();
       syncAllowed();
+      if (off) return;
       set(/** @type {string} */ (initial));
     }
 
@@ -463,11 +489,14 @@
     /** Re-read the content's `data-sheet-detents`, if it marks one. */
     function syncAllowed() {
       var marker = el.querySelector('[data-sheet-detents]');
-      if (!marker) {
+      var value = marker ? marker.getAttribute('data-sheet-detents') : null;
+      off = value === 'none' || (optIn && !marker);
+      el.toggleAttribute('data-sheet-detents-off', off);
+      if (!marker || off) {
         detents = declared;
         return;
       }
-      var allowed = core.parseDetents(marker.getAttribute('data-sheet-detents'));
+      var allowed = core.parseDetents(value);
       var narrowed = declared.filter(function (name) {
         return allowed.indexOf(name) !== -1;
       });
@@ -485,7 +514,19 @@
       new MutationObserver(function () {
         restoreHandle();
         syncAllowed();
-        if (!current || !isOpen()) return;
+        if (!isOpen()) return;
+        // The content turned detents off (a list swapped for its form):
+        // back to the plain card. Or on (the form swapped back for the
+        // list, or the list arriving after the open): rise to the initial.
+        if (off) {
+          if (current) reset();
+          return;
+        }
+        if (!current) {
+          set(/** @type {string} */ (initial));
+          observeChildren();
+          return;
+        }
         // New content that no longer allows the detent the sheet rests at
         // (FULL, for a day with no bulletin) brings it down to the highest
         // it does allow.

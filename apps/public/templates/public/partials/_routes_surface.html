@@ -81,7 +81,7 @@ Context expected:
 {# scrolls, which is why every body rendered into it carries               #}
 {# `min-h-0 flex-1` and owns its own scroll region.                        #}
 {% trans "Routes" as route_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="route-sheet" aria_label=route_sheet_aria_label scroll_body=True %}
+{% include "includes/_overlay_sheet.html" with id="route-sheet" aria_label=route_sheet_aria_label scroll_body=True detents="half,full" initial="half" detents_opt_in=True %}
 {# The panel the roundel opens — the user's saved routes and a CTA to add   #}
 {# another. Cloned by routes.js on every open (so a stale row can never     #}
 {# survive a re-open), which then loads the rows themselves over HTMX from  #}

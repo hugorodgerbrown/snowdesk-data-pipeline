@@ -89,7 +89,7 @@ the row's own label, so map.html loads that module once for both.
 {# budget) and foot (CTA, toggle) stay pinned while only the row groups   #}
 {# between them scroll; see includes/_overlay_sheet.html's own docstring  #}
 {# for the mechanism — all three panels opt into it now (SNOW-658).       #}
-{% include "includes/_overlay_sheet.html" with id="map-downloads-sheet" aria_label=downloads_sheet_aria_label scroll_body=True %}
+{% include "includes/_overlay_sheet.html" with id="map-downloads-sheet" aria_label=downloads_sheet_aria_label scroll_body=True detents="half,full" initial="half" detents_opt_in=True %}
 {# Sheet body — cloned into #map-downloads-sheet by map_downloads_manager.js #}
 {# each time the sheet is opened, then populated from the basemap.areas     #}
 {# record. Re-cloned rather than updated in place so a stale row can never  #}

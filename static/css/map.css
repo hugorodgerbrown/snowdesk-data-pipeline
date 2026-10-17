@@ -4895,9 +4895,16 @@ body.map-framing #map-legend {
     }
 
     @starting-style {
-        [data-detents] {
+        [data-detents]:not([data-sheet-detents-off]) {
             transform: translateY(100%);
         }
+    }
+
+    /* DETENTS OFF FOR THIS CONTENT (SNOW-1102). A list sheet showing one
+       of its forms is the plain inset card again: no handle to drag, and no
+       slide up from a foot it is not flush to. */
+    [data-detents][data-sheet-detents-off] [data-sheet-handle] {
+        display: none;
     }
 
     [data-detents][data-detent='peek'] {
@@ -4918,12 +4925,15 @@ body.map-framing #map-legend {
         overflow-y: auto;
     }
 
-    /* A scroll region inside the content (a scroll_body sheet's list) is
-       held still too below full: overflow on the sheet clips its own box
-       but leaves a descendant's scroller live, and a swipe there would
-       scroll the list rather than ask for more room. */
-    [data-detents][data-detent='peek'] .overflow-y-auto,
-    [data-detents][data-detent='half'] .overflow-y-auto {
+    /* A scroll region inside the content is held still too below full:
+       overflow on the sheet clips its own box but leaves a descendant's
+       scroller live, and a swipe there would scroll the list rather than
+       ask for more room. EXCEPT A LIST (SNOW-1102): the four list sheets
+       drag only from the handle and the header above the rows, so a list
+       that scrolls at half fights nothing, and clipping it would leave the
+       rows past the fold unreachable until the reader found FULL. */
+    [data-detents][data-detent='peek'] .overflow-y-auto:not([data-sheet-list]),
+    [data-detents][data-detent='half'] .overflow-y-auto:not([data-sheet-list]) {
         overflow-y: hidden;
     }
 
