@@ -251,7 +251,7 @@ def _build_favourite_cache_record(
         "name": favourite.name,
         "latitude": favourite.latitude,
         "longitude": favourite.longitude,
-        "elevation": favourite.elevation,
+        "elevation": favourite.pin_elevation,
         "region": region_payload,
         "rating": rating_payload,
         "generated_at": generated_at.isoformat(timespec="seconds"),
@@ -581,7 +581,7 @@ def _favourite_card_context(
     When a region and today's default bulletin both resolve, also builds
     the avalanche-problems section (SNOW-422): the bulletin's problem cards
     (``apps.public.views.problem_cards_for_bulletin``), each annotated with an
-    altitude verdict relative to ``favourite.elevation``
+    altitude verdict relative to ``favourite.pin_elevation``
     (``apps.favourites.relevance.annotate_problem_relevance``). Every problem the
     bulletin publishes is always included — the annotation only highlights
     relevance, it never suppresses a problem.
@@ -622,9 +622,10 @@ def _favourite_card_context(
             # SNOW-802: a region pin has no elevation, so there is no
             # altitude to judge a problem against — the cards render
             # unannotated rather than against a height nobody stated.
+            pin_elevation = favourite.pin_elevation
             problem_cards = (
-                annotate_problem_relevance(cards, favourite.elevation)
-                if favourite.elevation is not None
+                annotate_problem_relevance(cards, pin_elevation)
+                if pin_elevation is not None
                 else cards
             )
 

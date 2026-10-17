@@ -96,6 +96,7 @@ from waffle.testutils import override_flag
 
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
+from apps.locations.models import Location
 from apps.weather.models import Weather
 from tests.factories import (
     BulletinFactory,
@@ -1017,6 +1018,36 @@ class TestFavouriteCard:
         assert "My spot" in content
         assert "1834" in content
 
+    def test_altitude_is_the_locations_height(self, client: Client) -> None:
+        """The card reads the Location's height, not the legacy column.
+
+        The pin was saved at 1500 m; its Location has since been re-measured
+        at 2213 m. Both the altitude line and the offline cache record carry
+        the Location's figure.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, elevation=1500.0)
+        Location.objects.filter(favourites=favourite).update(elevation_m=2213.0)
+
+        response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "2213 m altitude" in content
+        assert "1500 m altitude" not in content
+        assert '"elevation": 2213.0' in content
+
+    def test_no_altitude_line_without_a_height(self, client: Client) -> None:
+        """A pin with no known height renders no empty " m altitude" line."""
+        user = UserFactory.create()
+        client.force_login(user)
+        favourite = FavouriteFactory.create(user=user, elevation=None)
+
+        content = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="favourite-card-altitude"' not in content
+
     def test_it_carries_no_row_of_its_own(self, client: Client) -> None:
         """The card shows a favourite; it does not manage one (SNOW-711).
 
@@ -1380,6 +1411,26 @@ class TestFavouriteCardProblems:
         assert "Avalanche problems" in content
         assert content.count('data-testid="rating-block"') == 1
         assert 'data-testid="altitude-relevance-chip"' in content
+        assert 'data-relevance="APPLIES"' in content
+
+    def test_verdict_is_judged_against_the_locations_height(
+        self, client: Client
+    ) -> None:
+        """A problem above 2000 m applies to a pin re-measured at 2213 m.
+
+        The legacy column still says 1500 m, which would read BELOW.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create()
+        _make_todays_bulletin(
+            region, elevation={"lower": 2000, "upper": None, "treeline": False}
+        )
+        favourite = FavouriteFactory.create(user=user, region=region, elevation=1500.0)
+        Location.objects.filter(favourites=favourite).update(elevation_m=2213.0)
+
+        content = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
+
         assert 'data-relevance="APPLIES"' in content
 
     def test_region_less_favourite_has_no_problems_section(

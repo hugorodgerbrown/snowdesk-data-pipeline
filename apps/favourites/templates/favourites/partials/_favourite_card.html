@@ -37,7 +37,7 @@ Content:
   4. Avalanche problems — this location (SNOW-422). Only rendered when
      problem_cards is non-empty (region + today's default bulletin both
      resolved). One _favourite_problem.html per card, each carrying an
-     altitude annotation relative to favourite.elevation — every problem
+     altitude annotation relative to favourite.pin_elevation — every problem
      the bulletin publishes is always shown; the annotation only
      highlights relevance, it never suppresses a card.
 
@@ -134,9 +134,11 @@ has no section heading to rank under either.
     <{{ heading_tag|default:"h2" }} class="text-lg font-semibold text-text-1" data-testid="favourite-card-title">
         {% firstof favourite.name unnamed_pin %}
     </{{ heading_tag|default:"h2" }}>
-    <p class="text-sm text-text-2 mt-0.5" data-testid="favourite-card-altitude">
-        {% blocktrans with m=favourite.elevation|floatformat:0 trimmed %}{{ m }} m altitude{% endblocktrans %}
-    </p>
+    {% if favourite.pin_elevation is not None %}
+        <p class="text-sm text-text-2 mt-0.5" data-testid="favourite-card-altitude">
+            {% blocktrans with m=favourite.pin_elevation|floatformat:0 trimmed %}{{ m }} m altitude{% endblocktrans %}
+        </p>
+    {% endif %}
     {% blocktrans trimmed with name=favourite.name|default:unnamed_pin asvar locate_aria_label %}
         Show {{ name }} on the map
     {% endblocktrans %}
