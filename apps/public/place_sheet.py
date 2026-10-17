@@ -127,6 +127,9 @@ def _place_context(
         else None
     )
     now = timezone.now()
+    # "" for a location backfill_location_short_ids has not reached: it has
+    # no page yet, so the sheet offers no link rather than a bare "?date=".
+    base_url = location.get_absolute_url() if location is not None else ""
     forecast_panel = build_point_forecast_panel(weather, now)
     forward_day = None
     if forecast_panel is not None and target_date > today:
@@ -149,11 +152,9 @@ def _place_context(
         else None,
         "forward_day": forward_day,
         "forecast_panel": forecast_panel,
-        "forecast_url": (
-            f"{location.get_absolute_url()}?date={target_date.isoformat()}"
-            if location is not None
-            else ""
-        ),
+        "forecast_url": f"{base_url}?date={target_date.isoformat()}"
+        if base_url
+        else "",
     }
 
 

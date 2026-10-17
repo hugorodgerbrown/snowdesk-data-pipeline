@@ -320,6 +320,17 @@ class TestFull:
         location = _primary_location(resort)
         assert f"{location.get_absolute_url()}?date=2026-02-03".encode() in content
 
+    def test_location_without_a_page_gets_no_forecast_link(
+        self, client: Client
+    ) -> None:
+        resort = _resort()
+        location = _primary_location(resort)
+        location.short_id = None
+        location.save()
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert "Full forecast" not in content
+        assert 'href="?date=' not in content
+
     def test_rated_day_links_to_the_dated_bulletin(self, client: Client) -> None:
         resort = _resort()
         day = datetime.date(2026, 2, 3)
