@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-17
 ---
 
 # Snowdesk site structure
@@ -105,6 +105,7 @@ guarded by `require_htmx` (a plain HTTP request gets a 400 — invariant 4 in
 
 - `/partials/season/<region_id>/` — season calendar ([`docs/calendar.md`](calendar.md))
 - `/partials/region-sheet/<region_id>/` — the phone region sheet's body, opened by any region selection on a phone (SNOW-1098, `apps/public/region_sheet.py`)
+- `/partials/place-sheet/resort/<slug>/` and `/partials/place-sheet/favourite/<uuid>/` — the phone place sheet's body, opened by a resort-pin or saved-pin tap on a phone; the favourite one is owner-only, a 404 for anyone else (SNOW-1100, `apps/public/place_sheet.py`)
 - `/partials/report/`, `/partials/report/form/`, `/partials/report/list/`,
   `/partials/report/<uuid>/delete/` — field-report submission, the
   reporter's own list, and delete
