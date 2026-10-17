@@ -93,6 +93,28 @@ describe('closing the key', () => {
     expect(panel().hidden).toBe(true);
   });
 
+  it('keeps an Escape that closed it from reaching the sheet around it', () => {
+    // A chart inside a map sheet (SNOW-1101): MapSheet closes on a document
+    // Escape, which would shut the sheet under the legend.
+    const sheetEscape = vi.fn();
+    document.addEventListener('keydown', sheetEscape);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    document.removeEventListener('keydown', sheetEscape);
+
+    expect(panel().hidden).toBe(true);
+    expect(sheetEscape).not.toHaveBeenCalled();
+  });
+
+  it('lets Escape through when no key is open', () => {
+    closer().click();
+    const sheetEscape = vi.fn();
+    document.addEventListener('keydown', sheetEscape);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    document.removeEventListener('keydown', sheetEscape);
+
+    expect(sheetEscape).toHaveBeenCalledTimes(1);
+  });
+
   it('returns focus to the trigger that opened it', () => {
     closer().click();
 
