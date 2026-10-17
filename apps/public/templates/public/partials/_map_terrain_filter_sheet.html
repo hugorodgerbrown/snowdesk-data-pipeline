@@ -1,41 +1,48 @@
 {% load i18n components %}
 {% comment %}
-public/partials/_map_terrain_filter_sheet.html — the terrain filter's sheet (SNOW-978).
+public/partials/_map_terrain_filter_sheet.html — the terrain filter's sheet (SNOW-978, SNOW-1109).
 
-The layers menu's "Terrain filter…" row opens this sheet — the one way in.
+The layers menu's terrain filter row is a checkbox that turns the filter on
+and off; the adjust (sliders) button beside it opens this sheet, and turns
+the filter on first if it is off. So the sheet carries no switch of its own
+and no availability line: the menu row's second line says when the filter
+is on but cannot draw (zoom in; outside coverage).
+
 It is the standard map panel: includes/_overlay_sheet.html, inset beside
 the roundel column on a desktop and docked to the foot on a phone, with the
 UGC panels' header (the layers roundel's glyph, title, ×, context line).
-The chip that used to repeat the filter along the top edge of the map is
-gone: it was a one-off control no other layer had. While the filter is on,
-the menu row's second line and the legend's terrain section say what it is
-set to. Everything about the filter lives here, one action per row: the
-on/off switch, the mode, the eight aspects, the slope range, an optional
-elevation band, the colour key, and the line that says why nothing is
-showing (zoom in; outside coverage).
 
-THE MODE (SNOW-1073) is a segmented control of two real radios, drawn by
-includes/_segmented_option.html: "Highlight matches" paints matching ground
-in one tint; "Colour by slope" paints it by slope class on the
-30/35/40/45/50+ ramp, and is the map's slope layer — it replaced swisstopo's
-raster and the Layers menu's slope row. Both modes share every setting
-below it, so the slope range stays visible in either: in slope mode it
-says which classes are painted, from 30° up by default. The colour key
-switches with the mode (includes/_terrain_filter_key.html).
+SNOW-1109 compacted the body so it fits a phone without scrolling past the
+map. Each control carries its own key, so the sheet no longer includes
+includes/_terrain_filter_key.html (the map legend still does):
+
+  - COLOUR: two equal tiles over two real radios named terrain-filter-mode
+    — "One tint" (value match) and "By slope" (value slope, the map's slope
+    layer since SNOW-1073). Each tile shows its own swatch.
+  - SLOPE ANGLE: a ramp of five toggle buttons, one per slope class
+    (30–35 … 50°+), [data-slope-class] 0–4. In slope mode a selected class
+    is filled with its slope colour and an unselected one carries a strip
+    of it along its foot; in tint mode a selected class takes the accent
+    tint. The range is contiguous: terrain_filter_core.js's tapSlopeClass
+    decides what a tap does. Under the ramp, the no-data hatch row.
+  - ASPECT: an SVG rose of eight wedges, each a keyboard-operable toggle
+    (role=button, aria-pressed, [data-octant] N=0 … NW=7 — the aspect
+    wheel's order and msgids, includes/_aspect_wheel.html), with an "All"
+    centre that turns every aspect on, or every one off when all are on.
+  - ELEVATION: an SVG mountain drawn after elevation_icon's geometry
+    (apps/public/templatetags/card_tags.py) on a 1,000–4,500 m scale, the
+    band shaded and each set bound a dashed line, then two native selects,
+    "Above" and "Below". Their options are written by the script, in 100 m
+    steps, each list cut at the other's value.
+
+The visual states (wedge, ramp tile, mountain) are the .terrain-* rules in
+src/css/main.css: they hang off aria-pressed and the ramp's data-mode,
+which Tailwind's utilities cannot combine.
 
 MapSheet.attach empties the sheet on every close, so the body is a
 <template> cloned on every open (static/js/terrain_filter_sheet.js) — the
 shape the sign-in sheet in _map_embed.html uses. The JS talks only to
 window.pwaTerrainFilter (static/js/map.js) and knows nothing of MapLibre.
-
-The aspects are the aspect wheel's eight compass points (SNOW-1063,
-includes/_aspect_wheel.html), the same msgids in the same order, laid out
-as a compass: NW N NE / W · E / SW S SE. Each is a toggle button carrying
-aria-pressed and its octant index (N=0 … NW=7).
-
-The slope ladder (30–50°) and the elevation step (100 m) are
-static/js/terrain_filter_core.js's SLOPE_LADDER and ELEVATION_STEP_M; the
-options are written out here so they reach the message catalogue.
 
 Included by public/map.html only for an eligible page
 (settings.TERRAIN_CLASS_TILE_URL set).
@@ -48,149 +55,254 @@ Included by public/map.html only for an eligible page
     {# at the same -mt-1.5 / px-2 / text-summary the UGC panels use.       #}
     {% include "includes/_sheet_header.html" with title=terrain_filter_title icon_template="includes/_icon_layers.html" close_action="dismiss" title_class="text-lg font-semibold" %}
     <p class="-mt-1.5 px-2 text-summary text-text-3">{% trans "The map changes as you change these." %}</p>
-    <div class="mt-3 flex items-center justify-between gap-3">
-        <label
-            for="map-terrain-filter-enabled"
-            class="text-sm text-text-1"
-        >{% trans "Show on the map" %}</label>
-        {% include "includes/_switch.html" with id="map-terrain-filter-enabled" %}
-    </div>
-    <p class="mt-1 text-sm text-text-2" data-terrain-filter-availability aria-live="polite"></p>
-    <fieldset class="mt-4">
-        <legend class="text-sm font-semibold text-text-1">{% trans "Colour" %}</legend>
-        <div class="mt-2 inline-flex rounded-pill border border-border bg-card p-0.5">
-            {% trans "Highlight matches" as mode_match_label %}
-            {% trans "Colour by slope" as mode_slope_label %}
-            {% include "includes/_segmented_option.html" with name="terrain-filter-mode" value="match" label=mode_match_label checked=True %}
-            {% include "includes/_segmented_option.html" with name="terrain-filter-mode" value="slope" label=mode_slope_label %}
-        </div>
-    </fieldset>
-    {% with aspect_class="min-h-9 rounded-sm border border-border bg-card px-2 text-sm text-text-1 aria-pressed:border-accent aria-pressed:bg-accent aria-pressed:text-accent-text hover-affordance" %}
+    {% with mode_tile="flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border border-border bg-card px-3 text-sm text-text-2 has-checked:border-accent has-checked:bg-accent-tint has-checked:text-accent has-focus-visible:outline-2 has-focus-visible:outline-accent" %}
         <fieldset class="mt-4">
-            <legend class="text-sm font-semibold text-text-1">{% trans "Aspect" %}</legend>
-            <div class="mt-2 grid w-44 grid-cols-3 gap-1">
-                <button
-                    type="button"
-                    class="col-start-1 row-start-1 {{ aspect_class }}"
-                    data-octant="7"
-                    aria-pressed="false"
-                >
-                    {% trans "NW" context "compass point" %}
-                </button>
-                <button
-                    type="button"
-                    class="col-start-2 row-start-1 {{ aspect_class }}"
-                    data-octant="0"
-                    aria-pressed="false"
-                >
-                    {% trans "N" context "compass point" %}
-                </button>
-                <button
-                    type="button"
-                    class="col-start-3 row-start-1 {{ aspect_class }}"
-                    data-octant="1"
-                    aria-pressed="false"
-                >
-                    {% trans "NE" context "compass point" %}
-                </button>
-                <button
-                    type="button"
-                    class="col-start-1 row-start-2 {{ aspect_class }}"
-                    data-octant="6"
-                    aria-pressed="false"
-                >
-                    {% trans "W" context "compass point" %}
-                </button>
-                <button
-                    type="button"
-                    class="col-start-3 row-start-2 {{ aspect_class }}"
-                    data-octant="2"
-                    aria-pressed="false"
-                >
-                    {% trans "E" context "compass point" %}
-                </button>
-                <button
-                    type="button"
-                    class="col-start-1 row-start-3 {{ aspect_class }}"
-                    data-octant="5"
-                    aria-pressed="false"
-                >
-                    {% trans "SW" context "compass point" %}
-                </button>
-                <button
-                    type="button"
-                    class="col-start-2 row-start-3 {{ aspect_class }}"
-                    data-octant="4"
-                    aria-pressed="false"
-                >
-                    {% trans "S" context "compass point" %}
-                </button>
-                <button
-                    type="button"
-                    class="col-start-3 row-start-3 {{ aspect_class }}"
-                    data-octant="3"
-                    aria-pressed="false"
-                >
-                    {% trans "SE" context "compass point" %}
-                </button>
+            <legend class="text-sm font-semibold text-text-1">{% trans "Colour" %}</legend>
+            <div class="mt-2 grid grid-cols-2 gap-2">
+                <label class="{{ mode_tile }}">
+                    <input class="sr-only" type="radio" name="terrain-filter-mode" value="match" checked>
+                    <span class="size-4 shrink-0 rounded-sm bg-accent" aria-hidden="true"></span>
+                    {% trans "One tint" %}
+                </label>
+                <label class="{{ mode_tile }}">
+                    <input class="sr-only" type="radio" name="terrain-filter-mode" value="slope">
+                    <span class="flex h-4 w-8 shrink-0 overflow-hidden rounded-sm" aria-hidden="true">
+                        <span class="flex-1 bg-slope-30"></span>
+                        <span class="flex-1 bg-slope-35"></span>
+                        <span class="flex-1 bg-slope-40"></span>
+                        <span class="flex-1 bg-slope-45"></span>
+                        <span class="flex-1 bg-slope-50"></span>
+                    </span>
+                    {% trans "By slope" %}
+                </label>
             </div>
         </fieldset>
     {% endwith %}
-    <fieldset class="mt-4">
-        <legend class="text-sm font-semibold text-text-1">{% trans "Slope angle" %}</legend>
-        <div class="mt-2 grid grid-cols-2 gap-3">
-            <label class="text-sm text-text-2">
-                {% trans "From" %}
-                <select data-terrain-filter-min-slope class="{% input_classes size='compact' extra='mt-0.5' %}">
-                    <option value="30">30°</option>
-                    <option value="35">35°</option>
-                    <option value="40">40°</option>
-                    <option value="45">45°</option>
-                    <option value="50">50°</option>
-                </select>
-            </label>
-            <label class="text-sm text-text-2">
-                {% trans "Up to" %}
-                <select data-terrain-filter-max-slope class="{% input_classes size='compact' extra='mt-0.5' %}">
-                    <option value="">{% trans "No limit" %}</option>
-                    <option value="35">35°</option>
-                    <option value="40">40°</option>
-                    <option value="45">45°</option>
-                    <option value="50">50°</option>
-                </select>
-            </label>
+    <section class="mt-4" aria-labelledby="map-terrain-filter-slope-heading">
+        <div class="flex items-baseline justify-between gap-3">
+            <h3 id="map-terrain-filter-slope-heading" class="text-sm font-semibold text-text-1">
+                {% trans "Slope angle" %}
+            </h3>
+            <span class="text-sm text-text-2" data-terrain-filter-slope-line></span>
         </div>
-    </fieldset>
-    <fieldset class="mt-4">
-        <legend class="text-sm font-semibold text-text-1">{% trans "Elevation (optional)" %}</legend>
-        <div class="mt-2 grid grid-cols-2 gap-3">
-            <label class="text-sm text-text-2">
-                {% trans "Above (m)" %}
-                <input
-                    type="number"
-                    inputmode="numeric"
-                    min="0"
-                    max="4800"
-                    step="100"
-                    data-terrain-filter-min-elevation
-                    class="{% input_classes size='compact' extra='mt-0.5' %}"
-                >
-            </label>
-            <label class="text-sm text-text-2">
-                {% trans "Below (m)" %}
-                <input
-                    type="number"
-                    inputmode="numeric"
-                    min="0"
-                    max="4800"
-                    step="100"
-                    data-terrain-filter-max-elevation
-                    class="{% input_classes size='compact' extra='mt-0.5' %}"
-                >
-            </label>
+        {% with ramp_tile="terrain-ramp-tile relative h-11 overflow-hidden rounded-sm border border-border bg-card text-sm text-text-2 hover-affordance" %}
+            <div
+                class="terrain-ramp mt-2 grid grid-cols-5 gap-[3px]"
+                data-terrain-filter-ramp
+                data-mode="match"
+                role="group"
+                aria-labelledby="map-terrain-filter-slope-heading"
+            >
+                <button type="button" class="{{ ramp_tile }}" data-slope-class="0" aria-pressed="false">
+                    {% trans "30–35°" %}
+                    <span class="terrain-ramp-strip bg-slope-30" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="{{ ramp_tile }}" data-slope-class="1" aria-pressed="false">
+                    {% trans "35–40°" %}
+                    <span class="terrain-ramp-strip bg-slope-35" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="{{ ramp_tile }}" data-slope-class="2" aria-pressed="false">
+                    {% trans "40–45°" %}
+                    <span class="terrain-ramp-strip bg-slope-40" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="{{ ramp_tile }}" data-slope-class="3" aria-pressed="false">
+                    {% trans "45–50°" %}
+                    <span class="terrain-ramp-strip bg-slope-45" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="{{ ramp_tile }}" data-slope-class="4" aria-pressed="false">
+                    {% trans "50°+" %}
+                    <span class="terrain-ramp-strip bg-slope-50" aria-hidden="true"></span>
+                </button>
+            </div>
+        {% endwith %}
+        {# The key's shared no-data row (includes/_terrain_filter_key.html): #}
+        {# the ramp is the rest of the key, so this is all that remains.   #}
+        <div class="mt-2 text-sm text-text-2">
+            <div class="map-legend-row">
+                <span
+                    class="map-legend-swatch map-legend-swatch--terrain-nodata"
+                    aria-hidden="true"
+                ></span>{% trans "No data" %}
+            </div>
         </div>
-    </fieldset>
-    <div class="mt-4 flex flex-col gap-1 text-sm text-text-2">{% include "includes/_terrain_filter_key.html" %}</div>
+    </section>
+    <div class="mt-4 grid grid-cols-2 gap-3">
+        <section aria-labelledby="map-terrain-filter-aspect-heading">
+            <h3 id="map-terrain-filter-aspect-heading" class="text-sm font-semibold text-text-1">
+                {% trans "Aspect" %}
+            </h3>
+            <p class="text-sm text-text-2" data-terrain-filter-aspect-line></p>
+            <svg
+                class="terrain-rose mx-auto mt-2 size-28"
+                viewBox="-62 -62 124 124"
+                role="group"
+                aria-labelledby="map-terrain-filter-aspect-heading"
+            >
+                <path
+                    class="terrain-rose-wedge"
+                    d="M-22.20 -53.59A58 58 0 0 1 22.20 -53.59L6.51 -15.71A17 17 0 0 0 -6.51 -15.71Z"
+                    data-octant="0"
+                    role="button"
+                    tabindex="0"
+                    aria-pressed="false"
+                    aria-label='{% trans "N" context "compass point" %}'
+                />
+                <text class="terrain-rose-label" x="0.00" y="-37.50" aria-hidden="true">
+                    {% trans "N" context "compass point" %}
+                </text>
+                <path
+                    class="terrain-rose-wedge"
+                    d="M22.20 -53.59A58 58 0 0 1 53.59 -22.20L15.71 -6.51A17 17 0 0 0 6.51 -15.71Z"
+                    data-octant="1"
+                    role="button"
+                    tabindex="0"
+                    aria-pressed="false"
+                    aria-label='{% trans "NE" context "compass point" %}'
+                />
+                <path
+                    class="terrain-rose-wedge"
+                    d="M53.59 -22.20A58 58 0 0 1 53.59 22.20L15.71 6.51A17 17 0 0 0 15.71 -6.51Z"
+                    data-octant="2"
+                    role="button"
+                    tabindex="0"
+                    aria-pressed="false"
+                    aria-label='{% trans "E" context "compass point" %}'
+                />
+                <text class="terrain-rose-label" x="37.50" y="0.00" aria-hidden="true">
+                    {% trans "E" context "compass point" %}
+                </text>
+                <path
+                    class="terrain-rose-wedge"
+                    d="M53.59 22.20A58 58 0 0 1 22.20 53.59L6.51 15.71A17 17 0 0 0 15.71 6.51Z"
+                    data-octant="3"
+                    role="button"
+                    tabindex="0"
+                    aria-pressed="false"
+                    aria-label='{% trans "SE" context "compass point" %}'
+                />
+                <path
+                    class="terrain-rose-wedge"
+                    d="M22.20 53.59A58 58 0 0 1 -22.20 53.59L-6.51 15.71A17 17 0 0 0 6.51 15.71Z"
+                    data-octant="4"
+                    role="button"
+                    tabindex="0"
+                    aria-pressed="false"
+                    aria-label='{% trans "S" context "compass point" %}'
+                />
+                <text class="terrain-rose-label" x="0.00" y="37.50" aria-hidden="true">
+                    {% trans "S" context "compass point" %}
+                </text>
+                <path
+                    class="terrain-rose-wedge"
+                    d="M-22.20 53.59A58 58 0 0 1 -53.59 22.20L-15.71 6.51A17 17 0 0 0 -6.51 15.71Z"
+                    data-octant="5"
+                    role="button"
+                    tabindex="0"
+                    aria-pressed="false"
+                    aria-label='{% trans "SW" context "compass point" %}'
+                />
+                <path
+                    class="terrain-rose-wedge"
+                    d="M-53.59 22.20A58 58 0 0 1 -53.59 -22.20L-15.71 -6.51A17 17 0 0 0 -15.71 6.51Z"
+                    data-octant="6"
+                    role="button"
+                    tabindex="0"
+                    aria-pressed="false"
+                    aria-label='{% trans "W" context "compass point" %}'
+                />
+                <text class="terrain-rose-label" x="-37.50" y="0.00" aria-hidden="true">
+                    {% trans "W" context "compass point" %}
+                </text>
+                <path
+                    class="terrain-rose-wedge"
+                    d="M-53.59 -22.20A58 58 0 0 1 -22.20 -53.59L-6.51 -15.71A17 17 0 0 0 -15.71 -6.51Z"
+                    data-octant="7"
+                    role="button"
+                    tabindex="0"
+                    aria-pressed="false"
+                    aria-label='{% trans "NW" context "compass point" %}'
+                />
+                <g
+                    class="terrain-rose-all"
+                    data-terrain-filter-all-aspects
+                    role="button"
+                    tabindex="0"
+                    aria-pressed="false"
+                    aria-label='{% trans "All aspects" %}'
+                >
+                    <circle r="15" />
+                    <text aria-hidden="true">{% trans "All" context "aspects" %}</text>
+                </g>
+            </svg>
+        </section>
+        <section aria-labelledby="map-terrain-filter-elevation-heading">
+            <h3 id="map-terrain-filter-elevation-heading" class="text-sm font-semibold text-text-1">
+                {% trans "Elevation" %}
+            </h3>
+            <p class="text-sm text-text-2" data-terrain-filter-elevation-line></p>
+            {# 1,000 m at the base (y 112), 4,500 m at the peak (y 8). #}
+            <svg
+                class="terrain-mountain mx-auto mt-2 size-28"
+                viewBox="0 0 124 124"
+                role="img"
+                data-terrain-filter-mountain
+            >
+                <defs>
+                    <clipPath id="map-terrain-filter-mountain-clip">
+                        <polygon points="62,8 8,112 116,112" />
+                    </clipPath>
+                </defs>
+                <rect
+                    class="terrain-mountain-band"
+                    x="8"
+                    y="8"
+                    width="108"
+                    height="104"
+                    clip-path="url(#map-terrain-filter-mountain-clip)"
+                    data-terrain-filter-band
+                />
+                <polygon class="terrain-mountain-outline" points="62,8 8,112 116,112" />
+                <line
+                    class="terrain-mountain-line"
+                    x1="8"
+                    x2="116"
+                    y1="8"
+                    y2="8"
+                    data-terrain-filter-bound="max"
+                    hidden
+                />
+                <line
+                    class="terrain-mountain-line"
+                    x1="8"
+                    x2="116"
+                    y1="112"
+                    y2="112"
+                    data-terrain-filter-bound="min"
+                    hidden
+                />
+            </svg>
+        </section>
+    </div>
+    <div class="mt-3 grid grid-cols-2 gap-3">
+        <label class="flex flex-col text-sm text-text-2">
+            {% trans "Above" %}
+            <select
+                data-terrain-filter-min-elevation
+                class="{% input_classes size='standard' extra='mt-1 h-10 text-base' %}"
+            >
+                <option value="">{% trans "Any" context "elevation" %}</option>
+            </select>
+        </label>
+        <label class="flex flex-col text-sm text-text-2">
+            {% trans "Below" %}
+            <select
+                data-terrain-filter-max-elevation
+                class="{% input_classes size='standard' extra='mt-1 h-10 text-base' %}"
+            >
+                <option value="">{% trans "Any" context "elevation" %}</option>
+            </select>
+        </label>
+    </div>
     <p class="mt-3 text-meta text-text-3">
         {% trans "Terrain only: it shows where the ground matches, not where it is safe, and it does not show runout zones. Switzerland only." %}
         <a
@@ -199,13 +311,11 @@ Included by public/map.html only for an eligible page
         >{% trans "More about the terrain filter" %}</a>
     </p>
 </template>
-{# The words terrain_filter_sheet.js assembles: the availability line and #}
-{# the menu row's summary. The compass names are the aspect wheel's       #}
-{# msgids, so the summary reads in the reader's language.                 #}
+{# The words terrain_filter_sheet.js assembles: the menu row's second    #}
+{# line, the legend's summary and the sheet's heading lines. The compass #}
+{# names are the aspect wheel's msgids, so they read in the reader's     #}
+{# language.                                                              #}
 <template id="map-terrain-filter-strings-template">
-    <span data-string="availability-ok">{% trans "Matching ground is highlighted." %}</span>
-    <span data-string="availability-ok-slope">{% trans "Steep ground is coloured by slope class." %}</span>
-    <span data-string="availability-off">{% trans "The filter is off." %}</span>
     <span data-string="availability-zoom-in">{% trans "Zoom in further to see the filter." %}</span>
     <span
         data-string="availability-out-of-coverage"
@@ -220,6 +330,11 @@ Included by public/map.html only for an eligible page
     <span data-string="elevation-above">{% blocktrans %}above %(min)s m{% endblocktrans %}</span>
     <span data-string="elevation-below">{% blocktrans %}below %(max)s m{% endblocktrans %}</span>
     <span data-string="elevation-range">{% blocktrans %}%(min)s–%(max)s m{% endblocktrans %}</span>
+    <span data-string="elevation-all">{% trans "All elevations" %}</span>
+    <span data-string="elevation-line-above">{% blocktrans %}Above %(min)s m{% endblocktrans %}</span>
+    <span data-string="elevation-line-below">{% blocktrans %}Below %(max)s m{% endblocktrans %}</span>
+    <span data-string="elevation-any">{% trans "Any" context "elevation" %}</span>
+    <span data-string="elevation-option">{% blocktrans %}%(value)s m{% endblocktrans %}</span>
     <span data-string="compass-0">{% trans "N" context "compass point" %}</span>
     <span data-string="compass-1">{% trans "NE" context "compass point" %}</span>
     <span data-string="compass-2">{% trans "E" context "compass point" %}</span>
