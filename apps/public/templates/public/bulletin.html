@@ -22,7 +22,11 @@ reachable via the SNOW-81 deep-link in the masthead.
     {# Favicon tinted to the bulletin's highest EAWS danger level so       #}
     {# the level is visible at a glance in the browser tab.  Falls back to  #}
     {# the default mark when no panel/danger_key is in scope (empty state). #}
-    {% if panel.danger_key %}
+    {# Off production the amber staging mark wins over the danger tint, so #}
+    {# a staging tab is never mistaken for a production one.              #}
+    {% if SITE_FAVICON != "favicon.svg" %}
+        <link rel="icon" type="image/svg+xml" href="{% static SITE_FAVICON %}">
+    {% elif panel.danger_key %}
         {% with fav_path="favicon-"|add:panel.danger_key|add:".svg" %}
             <link rel="icon" type="image/svg+xml" href="{% static fav_path %}">
         {% endwith %}

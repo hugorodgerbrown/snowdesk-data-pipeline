@@ -6351,3 +6351,30 @@ class TestUnscheduledMarker:
             ).content.decode()
         assert 'data-testid="unscheduled-marker"' in content
         assert 'data-testid="unscheduled-cell"' in content
+
+
+# ---------------------------------------------------------------------------
+# Favicon per environment
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestBulletinFavicon:
+    """The bulletin tab is danger-tinted on production, amber off it."""
+
+    def test_production_favicon_is_danger_tinted(
+        self, client: Client, simple_bulletin: Bulletin, settings: Settings
+    ) -> None:
+        """On production the tab icon carries the bulletin's danger level."""
+        settings.SITE_ENVIRONMENT = "production"
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert re.search(r'<link rel="icon"[^>]*favicon-moderate[^>]*\.svg', content)
+
+    def test_staging_favicon_is_amber(
+        self, client: Client, simple_bulletin: Bulletin, settings: Settings
+    ) -> None:
+        """On staging the amber mark wins over the danger tint."""
+        settings.SITE_ENVIRONMENT = "staging"
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        assert re.search(r'<link rel="icon"[^>]*favicon-staging[^>]*\.svg', content)
+        assert "favicon-moderate" not in content

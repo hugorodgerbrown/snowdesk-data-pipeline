@@ -705,6 +705,7 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         tokens=(
             # ---- Favicons (browser tab + bookmark; tinted by danger level) ----
             IconToken("favicon", "Default", "favicon.svg", "Favicon"),
+            IconToken("favicon-staging", "Staging", "favicon-staging.svg", "Favicon"),
             IconToken("favicon-low", "Low", "favicon-low.svg", "Favicon"),
             IconToken(
                 "favicon-moderate", "Moderate", "favicon-moderate.svg", "Favicon"

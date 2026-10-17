@@ -12,6 +12,8 @@ redirect target is an SVG at a URL containing ``favicon``.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.test import Client, override_settings
 
@@ -43,6 +45,35 @@ def test_favicon_ico_redirects_to_svg() -> None:
     location = response["Location"]
     assert "favicon" in location
     assert location.endswith(".svg")
+
+
+@override_settings(SITE_ENVIRONMENT="production")
+def test_favicon_ico_redirects_to_production_favicon_on_production() -> None:
+    """On production the redirect lands on the brand-green ``favicon.svg``."""
+    response = Client().get("/favicon.ico", follow=False)
+    assert "favicon-staging" not in response["Location"]
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_favicon_ico_redirects_to_staging_favicon_on_staging() -> None:
+    """On staging the redirect lands on the amber ``favicon-staging.svg``."""
+    response = Client().get("/favicon.ico", follow=False)
+    assert "favicon-staging" in response["Location"]
+
+
+@override_settings(SITE_ENVIRONMENT="production")
+def test_page_head_links_production_favicon_on_production() -> None:
+    """The ``<link rel="icon">`` on an ordinary page is ``favicon.svg``."""
+    content = Client().get("/").content.decode()
+    assert "favicon.svg" in content
+    assert "favicon-staging" not in content
+
+
+@override_settings(SITE_ENVIRONMENT="staging")
+def test_page_head_links_staging_favicon_on_staging() -> None:
+    """The ``<link rel="icon">`` on an ordinary page is the amber mark."""
+    content = Client().get("/").content.decode()
+    assert re.search(r'<link rel="icon"[^>]*favicon-staging[^>]*\.svg', content)
 
 
 def test_favicon_ico_has_cache_control_header() -> None:

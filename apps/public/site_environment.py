@@ -19,7 +19,10 @@ consumed in two places:
 - ``apps.public.context_processors.site_environment`` — exposes the same
   fields as template variables so ``base.html`` renders the matching
   ``<title>`` prefix, ``og:site_name``, ``apple-mobile-web-app-title``,
-  ``apple-touch-icon`` href, and ``theme-color`` meta tag.
+  ``apple-touch-icon`` href, browser-tab favicon, and ``theme-color``
+  meta tag.
+- ``apps.public.views.serve_favicon`` — redirects ``/favicon.ico`` to the
+  environment's favicon.
 
 Both consumers deliberately go through the same
 ``PWAEnvironmentIdentity.from_settings()`` call so the manifest response
@@ -75,6 +78,11 @@ class PWAEnvironmentIdentity:
             field and the ``<meta name="theme-color">`` tag so the OS
             chrome tint (installed PWA) and the browser chrome tint
             (open tab) match per environment.
+        favicon: The staticfiles path of the browser-tab SVG favicon.
+            ``favicon.svg`` on production; the amber ``favicon-staging.svg``
+            otherwise, so a staging tab is told apart from a production
+            one in every browser, not only in those that fall back to the
+            ``apple-touch-icon``.
         title_suffix: String appended to the ``<title>`` of every public
             page (outside the ``title`` block) so per-page titles
             already customised by child templates still get the
@@ -88,6 +96,7 @@ class PWAEnvironmentIdentity:
     short_name: str
     icon_dir: str
     theme_color: str
+    favicon: str
     title_suffix: str
 
     PRODUCTION: ClassVar["PWAEnvironmentIdentity"]
@@ -119,6 +128,7 @@ class PWAEnvironmentIdentity:
             short_name=cls.STAGING.short_name,
             icon_dir=cls.STAGING.icon_dir,
             theme_color=cls.STAGING.theme_color,
+            favicon=cls.STAGING.favicon,
             title_suffix=cls.STAGING.title_suffix,
         )
 
@@ -144,6 +154,7 @@ PWAEnvironmentIdentity.PRODUCTION = PWAEnvironmentIdentity(
     short_name="Snowdesk",
     icon_dir="/static/icons/pwa/",
     theme_color="#1a1a1a",
+    favicon="favicon.svg",
     title_suffix="",
 )
 
@@ -152,11 +163,13 @@ PWAEnvironmentIdentity.PRODUCTION = PWAEnvironmentIdentity(
 # tab). The matching icon tile colour lives in bin/build-pwa-icons as
 # TILE_COLOUR_STAGING — keep the two in the same amber family if either is
 # changed so the theme-color meta tag and the icon don't clash.
+# static/favicon-staging.svg carries the same amber as its tile fill.
 PWAEnvironmentIdentity.STAGING = PWAEnvironmentIdentity(
     environment="staging",
     name_display="Snowdesk (Staging)",
     short_name="Snowdesk Staging",
     icon_dir="/static/icons/pwa-staging/",
     theme_color="#b45309",
+    favicon="favicon-staging.svg",
     title_suffix=" — Staging",
 )

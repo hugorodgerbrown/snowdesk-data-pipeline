@@ -24,8 +24,9 @@ og_tags         : OpenGraph / Twitter card constants that do not vary by
                   twitter:image, twitter:image:alt. Pages should not need
                   to override this; per-page identity belongs in
                   page_meta.
-favicon         : the <link rel="icon"> tag. Default points at the plain
-                  favicon.svg; bulletin.html overrides with a level-tinted
+favicon         : the <link rel="icon"> tag. Default points at
+                  SITE_FAVICON (plain favicon.svg, amber on staging);
+                  bulletin.html overrides with a level-tinted
                   variant matching the page's danger rating.
 extra_head      : page-specific <head> content (stylesheets, scripts,
                   embedded JSON). Loaded AFTER output.css so page-level
@@ -56,8 +57,9 @@ extra_js        : scripts loaded at end of <body>. Used by
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        {# SITE_FAVICON is amber on staging (see apps.public.site_environment). #}
         {% block favicon %}
-            <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+            <link rel="icon" type="image/svg+xml" href="{% static SITE_FAVICON %}">
         {% endblock %}
         {# SNOW-553: page identity — <title>, description, og:url, and the    #}
         {# og:/twitter: title+description pair — comes from one emitter, so  #}
