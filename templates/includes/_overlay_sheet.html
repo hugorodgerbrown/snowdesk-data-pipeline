@@ -63,12 +63,14 @@ Optional context:
                 marks ``data-sheet-peek`` and leaves the map clear, HALF is
                 50dvh, FULL fills the room between the top inset and the
                 bottom one and is the only height at which the sheet itself
-                scrolls. A sheet lists only the detents it can use: a list
-                has no one-line summary to peek with, so it declares
-                ``half,full``. A FORM DECLARES NONE, because a swipe must
-                never throw away a half-written report — so the report,
-                favourite, sign-in and terrain-filter sheets pass nothing and
-                render byte-identical to before. At ``sm`` and up nothing
+                scrolls. Only a thing tapped on the map declares detents,
+                and only those it can use. A LIST OPENED FROM A ROUNDEL
+                DECLARES NONE (SNOW-1102, cancelled): at half or full the
+                sheet hides the roundel column, and the roundel is what
+                closes or switches the list. A FORM DECLARES NONE, because a
+                swipe must never throw away a half-written report — so the
+                report, favourite, sign-in and terrain-filter sheets pass
+                nothing and render byte-identical to before. At ``sm`` and up nothing
                 here applies (the handle is ``sm:hidden`` and every detent
                 rule in static/css/map.css sits inside a phone media query):
                 the inset panel stays exactly as it was.

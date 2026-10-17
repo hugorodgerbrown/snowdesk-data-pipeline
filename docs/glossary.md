@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-17
 ---
 
 # Glossary — domain terms to code symbols
@@ -211,6 +211,9 @@ Which coordinate on which model is exact, approximate or derived:
 | Module channel | The project's browser module system: classic scripts in `<script>` order, each publishing its API by assigning a frozen `window.pwa*` object that consumers read back. Enumerated once, for the type checker (SNOW-899) | `static/js/globals.d.ts`; `bin/js-globals-lint` fails on a read nothing assigns |
 | Strings template | How a user-facing string reaches JavaScript: rendered by the surface partial into a `<template>` and read back by name, with the English literal as the fallback, so `makemessages` sees it | `window.pwaStrings.read()` in `static/js/i18n_strings.js`; `bin/i18n-lint`; [i18n.md](i18n.md) |
 | Component library | The staff-only design-system reference at `/_components/` — every partial in every variant, the canonical place to look before adding a visual surface | `public:components_index` (`component_library` in `apps/public/debug_views.py`); `apps/public/design_tokens.py`; `apps/public/_component_fixtures.py` |
+| Object sheet | A map panel opened by tapping a thing on the map (region, route, place, weather). On phones it slides up full width and rests at peek, half or full; the only kind with detents | `_overlay_sheet.html` with `detents` (the route's is `_route_rail.html`); `bindDetents` in `static/js/map_sheet.js`; [design-system.md](design-system.md#map-panels-what-opened-it-decides-its-shape) |
+| Roundel panel | A map panel showing a list or setting that a map-control roundel opened and toggles (pins, observations, routes, downloads, terrain filter). Never covers the roundel (on phones not yet, SNOW-1106); no detents (SNOW-1102 cancelled) | `_overlay_sheet.html` without `detents`; [design-system.md](design-system.md#map-panels-what-opened-it-decides-its-shape) |
+| Form panel | A map panel holding a task (report, add or rename favourite, sign in). No detents and no drag-to-close, so a stray swipe never discards input (the shared ×, Escape and outside-tap dismissals still do) | `_overlay_sheet.html` without `detents`; [design-system.md](design-system.md#map-panels-what-opened-it-decides-its-shape) |
 | Overlay exclusivity | The rule that one map overlay is open at a time, so opening any closes the rest — held in one registry rather than pairwise by each surface (SNOW-658) | `window.pwaMapOverlays` in `static/js/map_overlay_exclusivity.js` |
 | Zoom gate | A map layer drawn only from a stated zoom — the terrain filter from z12 (`slope_classes` in its slope mode, `terrain_filter` otherwise), a route's slope colours from z14. One registry entry per layer (`{key, zoom, active}`), which the zoom control reads to put a tick on its scale for each gated layer that is on (SNOW-1077) | `window.pwaZoomGates` (`ZOOM_GATES`) in `static/js/map.js`; `static/js/map_zoom_control.js` + `zoom_control_core.js`; `public/partials/_map_zoom_control.html` |
 
