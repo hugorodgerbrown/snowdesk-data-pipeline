@@ -53,6 +53,9 @@ Context:
                     pickers on one page can never share a group.
     testid_prefix : str — prefix for every ``data-testid`` here. Defaults
                     to ``weather-day-picker``.
+    selected_index : int — optional. The cell checked on load; defaults to
+                    0, the row's own day. The location page passes the day
+                    a forward ``?date=`` names (SNOW-1105).
 {% endcomment %}
 {% firstof testid_prefix "weather-day-picker" as prefix %}
 {% firstof selector_name "weather-day" as group_name %}
@@ -81,7 +84,7 @@ Context:
                         data-day-index="{{ forloop.counter0 }}"
                         class="peer sr-only"
                         aria-label="{{ cell_label }}"
-                        {% if forloop.first %}checked{% endif %}
+                        {% if forloop.counter0 == selected_index|default:0 %}checked{% endif %}
                     >
                     {% comment %}
                     ``aria-current="date"`` is static on the first cell and

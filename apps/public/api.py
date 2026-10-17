@@ -143,7 +143,6 @@ from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import (
     build_point_forecast_panel,
     build_point_weather_days,
-    build_weather_display,
 )
 
 from .decorators import lowercase_region_id
@@ -1731,6 +1730,15 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
     the scrubber is a slider and the cost of a bad value is the wrong day,
     not a broken sheet.
 
+    **A forward day reads today's row** (SNOW-1105). The fetch writes one
+    row per location per day and carries the days after it in that row's
+    ``forecast`` column, so a date after today has no row of its own — an
+    exact-date lookup for it always missed, and the sheet said "No weather
+    recorded" for every day the map's weather layer was drawing. The sheet
+    now describes the matching ``forecast`` entry and marks it as a forecast,
+    stating when it was issued: it is what the week looked like this
+    morning, not a record of the day.
+
     A location with no row for the requested day still renders — the template
     says so in a sentence. That is the normal state for a past date until the
     historical backfill lands, and an error would misdescribe it.
@@ -1760,20 +1768,31 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
         except ValueError:
             logger.debug("weather_detail: ignoring unparseable date %r", raw_date)
 
-    weather = Weather.objects.filter(location=location, observed_on=target_date).first()
+    # Today or before, the day's own row; after today, today's row, whose
+    # ``forecast`` column carries the day (SNOW-1105).
+    today = timezone.localdate()
+    is_forecast = target_date > today
+    weather = (
+        Weather.objects.for_location(location).on_date(min(target_date, today)).first()
+    )
     now = timezone.now()
+    panel = build_point_forecast_panel(weather, now)
+    day = (
+        next((d for d in panel["days"] if d["date"] == target_date), None)
+        if panel
+        else None
+    )
 
     # The day's meteogram, for the phone sheet's FULL detent (SNOW-1101) —
-    # the same chart the forecast page draws for the row's own day.
-    panel = build_point_forecast_panel(weather, now)
+    # the same chart the forecast page draws for that day.
     hourly_chart = (
         build_hourly_chart(
-            panel["days"][0],
+            day,
             elevation=location.elevation_m,
             location_label=location.name or "",
             now=now,
         )
-        if panel and panel["days"]
+        if day is not None
         else None
     )
 
@@ -1790,8 +1809,10 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
                     # for instead, and fall back to the generic only when
                     # even that is missing.
                     "heading": location.name or _weather_detail_heading(location),
-                    "weather": weather,
-                    "display": build_weather_display(weather, now),
+                    "day": day,
+                    "is_forecast": is_forecast,
+                    # When the forecast was issued: the row's last fetch.
+                    "issued_at": weather.fetched_at if weather else None,
                     "hourly_chart": hourly_chart,
                     "target_date": target_date,
                     "forecast_url": (

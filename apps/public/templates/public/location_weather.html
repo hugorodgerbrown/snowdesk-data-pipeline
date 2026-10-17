@@ -60,6 +60,8 @@ Context:
     panel       — ForecastPanel, or None.
     show_day_picker — bool, precomputed by the view: the row carries more
                   than one day.
+    selected_index — int: the picker cell checked on load. 0, the row's own
+                  day, unless ``?date=`` named a forward day (SNOW-1105).
     hourly_charts — list of {"index", "chart"}, one per day with a series.
                   ``index`` is the day's position in panel.days, which is
                   what ties a meteogram to the cell that selects it.
@@ -92,7 +94,7 @@ Context:
             {% if show_day_picker %}
                 {# 2–4. The picker IS the selector for everything under it. #}
                 <section class="forecast-selector mt-5 space-y-4">
-                    {% include "includes/_weather_day_picker.html" with panel=panel testid_prefix="location-weather-forecast" selector_name="location-weather-day" only %}
+                    {% include "includes/_weather_day_picker.html" with panel=panel selected_index=selected_index testid_prefix="location-weather-forecast" selector_name="location-weather-day" only %}
                     {% for day in panel.days %}
                         {% include "includes/_weather_day_line.html" with day=day reveal_index=forloop.counter0 testid_prefix="location-weather-day-line" only %}
                     {% endfor %}

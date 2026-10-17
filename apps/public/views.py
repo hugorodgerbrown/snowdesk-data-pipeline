@@ -4353,6 +4353,14 @@ def _location_forecast_context(
     A day that drops out of the picker for a malformed date would otherwise
     shift every later meteogram off its cell.
 
+    **A forward day opens today's row with that day selected** (SNOW-1105).
+    The fetch writes no row ahead of today — the days after it live in
+    today's ``forecast`` column — so ``?date=`` naming one used to find
+    nothing and render "nothing recorded". The map's sheet links here with
+    the day it was showing, so the row is read for today and
+    ``selected_index`` points the picker at the requested day. A day past
+    the window falls back to the row's own day, the picker's default.
+
     ``show_day_picker`` is the page's shape discriminator, precomputed here
     rather than left to a ``|length`` test in the template (SNOW-789). A
     backfilled row carries ``forecast=None`` and therefore exactly one day,
@@ -4361,18 +4369,29 @@ def _location_forecast_context(
 
     Args:
         location: The location to describe.
-        observed_on: The calendar day to read.
+        observed_on: The calendar day asked for. Today or before, the row
+            read; after today, the day selected inside today's row.
         now: The reference instant for each day/night icon decision.
 
     Returns:
-        A dict of ``weather``, ``panel``, ``show_day_picker`` and
-        ``hourly_charts``. The first two are ``None`` when the location has
-        no row for the day; ``hourly_charts`` is then empty and
-        ``show_day_picker`` is ``False``.
+        A dict of ``weather``, ``panel``, ``show_day_picker``,
+        ``selected_index`` and ``hourly_charts``. The first two are
+        ``None`` when the location has no row for the day;
+        ``hourly_charts`` is then empty and ``show_day_picker`` is
+        ``False``.
 
     """
-    weather = Weather.objects.filter(location=location, observed_on=observed_on).first()
+    row_date = min(observed_on, timezone.localdate())
+    weather = Weather.objects.filter(location=location, observed_on=row_date).first()
     panel = build_point_forecast_panel(weather, now)
+    selected_index = next(
+        (
+            index
+            for index, day in enumerate(panel["days"] if panel else [])
+            if day["date"] == observed_on
+        ),
+        0,
+    )
     hourly_charts = []
     for index, day in enumerate(panel["days"] if panel else []):
         if not day["selectable"]:
@@ -4389,6 +4408,7 @@ def _location_forecast_context(
         "weather": weather,
         "panel": panel,
         "show_day_picker": panel is not None and len(panel["days"]) > 1,
+        "selected_index": selected_index,
         "hourly_charts": hourly_charts,
     }
 

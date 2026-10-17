@@ -320,13 +320,13 @@ class TestFull:
         location = _primary_location(resort)
         assert f"{location.get_absolute_url()}?date=2026-02-03".encode() in content
 
-    def test_forward_day_links_to_todays_row(self, client: Client) -> None:
+    def test_forward_day_links_to_the_day_itself(self, client: Client) -> None:
+        """The page opens a forward day inside today's row (SNOW-1105)."""
         resort = _resort()
-        today = timezone.localdate()
-        tomorrow = today + datetime.timedelta(days=1)
+        tomorrow = timezone.localdate() + datetime.timedelta(days=1)
         content = _get(client, _resort_url(resort.slug, tomorrow.isoformat())).content
         location = _primary_location(resort)
-        assert f"{location.get_absolute_url()}?date={today}".encode() in content
+        assert f"{location.get_absolute_url()}?date={tomorrow}".encode() in content
 
     def test_location_without_a_page_gets_no_forecast_link(
         self, client: Client

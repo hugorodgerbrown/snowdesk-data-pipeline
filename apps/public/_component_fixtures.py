@@ -3427,6 +3427,7 @@ def _forecast_panel_day(
         "temp_min": temp_min,
         "snowfall_sum": snowfall_sum,
         "freezing_level_height": freezing_level_height,
+        "precipitation_probability_max": None,
         "sunrise_local": sunrise_local,
         "sunset_local": sunset_local,
         "hourly": list(hourly),

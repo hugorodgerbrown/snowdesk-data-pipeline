@@ -29,17 +29,26 @@ Content, in the order a skier reads it, split across the phone detents
          carries an hourly series; without one the detents narrow to
          peek and half, and a day with no row narrows them to peek alone.
 
+A FORWARD DAY IS A FORECAST, AND SAYS SO (SNOW-1105). A day after today
+has no row of its own; the view reads today's row and the matching entry
+in its ``forecast`` column. The peek line opens with "Forecast", and the
+half detent states when it was issued — what the week looked like this
+morning, not a record of the day.
+
 Nothing here is user-supplied: a Location's name is curated and a Weather
 row comes from Open-Meteo, so there is no untrusted text on this surface.
 
 Context:
     location   — locations.Location the reading belongs to.
     heading    — str: the location's name, or a coordinate fallback.
-    weather    — weather.Weather row for the requested date, or None.
-    hourly_chart — HourlyChart for the row's own day, or None
+    day        — ForecastPanelDay for the requested date, or None: the
+                 day's own row on today or before, today's ``forecast``
+                 entry after it
+                 (apps.weather.services.weather_display.build_point_forecast_panel).
+    is_forecast — bool: the requested date is after today.
+    issued_at  — datetime the row was last fetched, or None.
+    hourly_chart — HourlyChart for that day, or None
                  (apps.weather.services.hourly_chart.build_hourly_chart).
-    display    — WeatherDisplay for that row, or None
-                 (apps.weather.services.weather_display.build_weather_display).
     target_date — datetime.date the sheet was opened for.
     forecast_url — str: URL of the full forecast for this location, or "".
                  Empty for a location with no page of its own — see the
@@ -50,18 +59,18 @@ Context:
     class="space-y-4"
     data-testid="weather-detail"
     data-location-short-id="{{ location.short_id }}"
-    data-sheet-detents="{% if hourly_chart %}peek,half,full{% elif display %}peek,half{% else %}peek{% endif %}"
+    data-sheet-detents="{% if hourly_chart %}peek,half,full{% elif day %}peek,half{% else %}peek{% endif %}"
 >
     {# PEEK (SNOW-1101): the day's line, in one row — the symbol, the name  #}
     {# over the high/low, new snow and wind, then the ×. The row the reader #}
     {# drags by. Each figure renders only when the provider gave one.       #}
     <div data-sheet-peek data-sheet-drag>
         <div class="flex items-center gap-3">
-            {% if display %}
+            {% if day %}
                 <img
-                    src="{% weather_icon_url display.icon_filename %}"
+                    src="{% weather_icon_url day.icon_filename %}"
                     class="h-8 w-8 flex-none"
-                    alt="{{ display.condition_label }}"
+                    alt="{{ day.condition_label }}"
                     data-testid="weather-detail-icon"
                 >
             {% endif %}
@@ -70,17 +79,25 @@ Context:
                     {{ heading }}
                 </h2>
                 <p class="truncate text-meta text-text-2" data-testid="weather-detail-line">
-                    {% if display %}
-                        {% if weather.temperature_2m_max is not None %}
-                            {{ weather.temperature_2m_max|floatformat:0 }}&deg;{% if weather.temperature_2m_min is not None %}&thinsp;/&thinsp;{{ weather.temperature_2m_min|floatformat:0 }}&deg;{% endif %}
+                    {% if day %}
+                        {% if is_forecast %}
+                            <span
+                                class="font-medium text-accent"
+                                data-testid="weather-detail-forecast-tag"
+                            >{% trans "Forecast" %}</span> &middot;
                         {% endif %}
-                        {% if weather.snowfall_sum %}
-                            &middot; {% blocktrans with cm=weather.snowfall_sum|floatformat:"-1" trimmed %}{{ cm }} cm
+                        {% if day.temp_max is not None %}
+                            {{ day.temp_max|floatformat:0 }}&deg;{% if day.temp_min is not None %}&thinsp;/&thinsp;{{ day.temp_min|floatformat:0 }}&deg;{% endif %}
+                        {% endif %}
+                        {% if day.snowfall_sum %}
+                            &middot; {% blocktrans with cm=day.snowfall_sum|floatformat:"-1" trimmed %}{{ cm }} cm
                                 new{% endblocktrans %}
                         {% endif %}
-                        {% if weather.wind_speed_10m_max is not None %}
-                            &middot; {{ weather.wind_speed_10m_max|floatformat:0 }}&nbsp;km/h
+                        {% if day.wind_speed_max is not None %}
+                            &middot; {{ day.wind_speed_max|floatformat:0 }}&nbsp;km/h
                         {% endif %}
+                    {% elif is_forecast %}
+                        {% trans "No forecast for this day yet" %}
                     {% else %}
                         {% trans "No weather recorded" %}
                     {% endif %}
@@ -107,35 +124,44 @@ Context:
             {% endif %}
             {{ target_date|date:"l j F Y" }}
         </p>
-        {% if display %}
-            <p class="text-sm text-text-2" data-testid="weather-detail-today">{{ display.condition_label }}</p>
+        {% if day %}
+            <p class="text-sm text-text-2" data-testid="weather-detail-today">{{ day.condition_label }}</p>
+            {% if is_forecast and issued_at %}
+                {# SNOW-1105: a forward day is what this morning's run said #}
+                {# about it. State when, so it never reads as a record.     #}
+                <p class="text-xs text-text-3" data-testid="weather-detail-forecast-note">
+                    {% blocktrans with issued=issued_at|date:"D j M, H:i" trimmed %}
+                        Forecast issued {{ issued }}. It may change before the day.
+                    {% endblocktrans %}
+                </p>
+            {% endif %}
             {# The figures that change a plan. Each renders only when the    #}
             {# provider gave one — a dash here would be four dashes in a row #}
             {# on a summer day, which reads as a broken panel rather than as #}
             {# an absent measurement.                                        #}
             <dl class="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-b border-border py-3">
-                {% if weather.freezing_level_height is not None %}
+                {% if day.freezing_level_height is not None %}
                     <div class="flex items-baseline justify-between gap-2">
                         <dt class="text-xs text-text-3">{% trans "Freezing level" %}</dt>
-                        <dd class="text-sm text-text-1">{{ weather.freezing_level_height|floatformat:0 }}&nbsp;m</dd>
+                        <dd class="text-sm text-text-1">{{ day.freezing_level_height|floatformat:0 }}&nbsp;m</dd>
                     </div>
                 {% endif %}
-                {% if weather.snowfall_sum is not None %}
+                {% if day.snowfall_sum is not None %}
                     <div class="flex items-baseline justify-between gap-2">
                         <dt class="text-xs text-text-3">{% trans "Snowfall" %}</dt>
-                        <dd class="text-sm text-text-1">{{ weather.snowfall_sum|floatformat:"-1" }}&nbsp;cm</dd>
+                        <dd class="text-sm text-text-1">{{ day.snowfall_sum|floatformat:"-1" }}&nbsp;cm</dd>
                     </div>
                 {% endif %}
-                {% if weather.wind_speed_10m_max is not None %}
+                {% if day.wind_speed_max is not None %}
                     <div class="flex items-baseline justify-between gap-2">
                         <dt class="text-xs text-text-3">{% trans "Wind" %}</dt>
-                        <dd class="text-sm text-text-1">{{ weather.wind_speed_10m_max|floatformat:0 }}&nbsp;km/h</dd>
+                        <dd class="text-sm text-text-1">{{ day.wind_speed_max|floatformat:0 }}&nbsp;km/h</dd>
                     </div>
                 {% endif %}
-                {% if weather.precipitation_probability_max is not None %}
+                {% if day.precipitation_probability_max is not None %}
                     <div class="flex items-baseline justify-between gap-2">
                         <dt class="text-xs text-text-3">{% trans "Chance of precip." %}</dt>
-                        <dd class="text-sm text-text-1">{{ weather.precipitation_probability_max }}%</dd>
+                        <dd class="text-sm text-text-1">{{ day.precipitation_probability_max }}%</dd>
                     </div>
                 {% endif %}
             </dl>
@@ -150,12 +176,16 @@ Context:
             {# the day it is being asked about. Say which, rather than        #}
             {# showing an empty panel that reads as a failure.                #}
             <p class="text-sm text-text-2" data-testid="weather-detail-empty">
-                {% trans "No weather was recorded here for this day." %}
+                {% if is_forecast %}
+                    {% trans "The forecast does not reach this day yet." %}
+                {% else %}
+                    {% trans "No weather was recorded here for this day." %}
+                {% endif %}
             </p>
         {% endif %}
     </div>
     {# FULL (SNOW-1101): the day's meteogram, the forecast page's own   #}
-    {# chart. Absent when the row carries no hourly series.             #}
+    {# chart. Absent when the day carries no hourly series.             #}
     {% if hourly_chart %}
         {% include "includes/_hourly_chart.html" with chart=hourly_chart testid_prefix="weather-detail-hourly" only %}
     {% endif %}

@@ -37,6 +37,7 @@ import pytest
 from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
+from freezegun import freeze_time
 
 from apps.locations.models import Location
 from tests.factories import (
@@ -765,3 +766,148 @@ class TestForecastPage:
 
         assert response.status_code == 200
         assert 'data-testid="location-weather-empty"' in response.content.decode()
+
+
+# Midday on the fixtures' own day, so ``timezone.localdate()`` is TODAY and
+# the fixture row's ``forecast`` entries are the days after it.
+_ON_TODAY = freeze_time("2026-01-12T11:00:00+00:00")
+
+
+def _forward(days: int) -> str:
+    """Return the ISO date ``days`` after TODAY."""
+    return (TODAY + datetime.timedelta(days=days)).isoformat()
+
+
+@pytest.mark.django_db
+@_ON_TODAY
+class TestCardForwardDay:
+    """A day after today reads today's forecast, marked as one (SNOW-1105).
+
+    The fetch writes no row ahead of today, so the card used to say "No
+    weather recorded" for every forward day the map's weather layer drew.
+    """
+
+    def test_reads_the_forecast_entry_for_the_day(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Day 2's own figures, from today's row's ``forecast`` column."""
+        html = client.get(_card_url(resort_location), {"date": _forward(2)}).json()[
+            "html"
+        ]
+
+        assert "No weather recorded" not in html
+        assert 'data-testid="weather-detail-empty"' not in html
+        assert "1700&nbsp;m" in html  # that day's freezing level, not today's
+        assert "4&deg;" in html  # that day's high
+
+    def test_is_marked_as_a_forecast_with_when_it_was_issued(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Hugo's condition: a forward day shows, as long as it says so."""
+        html = client.get(_card_url(resort_location), {"date": _forward(2)}).json()[
+            "html"
+        ]
+
+        assert 'data-testid="weather-detail-forecast-tag"' in html
+        assert 'data-testid="weather-detail-forecast-note"' in html
+        assert "Forecast issued" in html
+
+    def test_today_is_not_marked_as_a_forecast(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The tag means "after today", so today's card carries none."""
+        html = client.get(
+            _card_url(resort_location), {"date": TODAY.isoformat()}
+        ).json()["html"]
+
+        assert "weather-detail-forecast-tag" not in html
+        assert "weather-detail-forecast-note" not in html
+
+    def test_a_forward_day_with_hours_rises_to_its_meteogram(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Tomorrow carries a series (HOURLY_DAYS is 2), so FULL is its chart."""
+        html = client.get(_card_url(resort_location), {"date": _forward(1)}).json()[
+            "html"
+        ]
+
+        assert _detents(html) == "peek,half,full"
+        assert 'data-testid="weather-detail-hourly"' in html
+
+    def test_a_forward_day_without_hours_stops_at_half(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Past the hourly horizon there is no chart to rise to."""
+        html = client.get(_card_url(resort_location), {"date": _forward(3)}).json()[
+            "html"
+        ]
+
+        assert _detents(html) == "peek,half"
+
+    def test_a_day_past_the_window_says_the_forecast_does_not_reach_it(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Not "nothing was recorded": nothing has been forecast yet."""
+        html = client.get(_card_url(resort_location), {"date": _forward(10)}).json()[
+            "html"
+        ]
+
+        assert _detents(html) == "peek"
+        assert "The forecast does not reach this day yet." in html
+        assert "No weather recorded" not in html
+
+    def test_links_to_the_page_on_the_same_day(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The page opens that day inside today's row (``TestPageForwardDay``)."""
+        html = client.get(_card_url(resort_location), {"date": _forward(2)}).json()[
+            "html"
+        ]
+
+        assert f"{_page_url(resort_location)}?date={_forward(2)}" in html
+
+
+def _checked_index(html: str) -> int:
+    """Return the ``data-day-index`` of the one checked picker cell."""
+    checked = re.findall(r'data-day-index="(\d)"[^>]*\bchecked\b', html)
+    assert len(checked) == 1
+    return int(checked[0])
+
+
+@pytest.mark.django_db
+@_ON_TODAY
+class TestPageForwardDay:
+    """``?date=`` naming a forward day selects it in today's row (SNOW-1105)."""
+
+    def test_opens_on_the_requested_day(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Today's week, with the requested day's cell checked."""
+        html = _main(
+            client.get(
+                _page_url(resort_location), {"date": _forward(3)}
+            ).content.decode()
+        )
+
+        assert 'data-testid="location-weather-empty"' not in html
+        assert _checked_index(html) == 3
+
+    def test_today_opens_on_the_first_cell(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """No date, or today, keeps the picker's default."""
+        html = _main(client.get(_page_url(resort_location)).content.decode())
+
+        assert _checked_index(html) == 0
+
+    def test_a_day_past_the_window_opens_on_today(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Nothing to select, so the row's own day — still today's week."""
+        html = _main(
+            client.get(
+                _page_url(resort_location), {"date": _forward(10)}
+            ).content.decode()
+        )
+
+        assert _checked_index(html) == 0
