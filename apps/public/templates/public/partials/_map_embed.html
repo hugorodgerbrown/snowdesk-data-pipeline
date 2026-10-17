@@ -941,36 +941,58 @@ Optional context:
                             </li>
                         {% endfor %}
                         <li role="separator" class="basemap-menu-separator"></li>
-                        {# SNOW-978: the terrain filter. An ACTION row, the only one  #}
-                        {# in this menu: it always opens the filter's sheet, which    #}
-                        {# holds the on/off switch, the mode, the criteria and the    #}
-                        {# "zoom in" / "outside coverage" reasons — one action per    #}
-                        {# row. So it has no checkbox and no aria-checked; while the  #}
-                        {# filter is on its second line carries a short summary ("3   #}
-                        {# aspects · 35°+"), and map_basemap_picker.js counts it as a #}
-                        {# layer on by asking window.pwaTerrainFilter, not the row.   #}
-                        {#                                                            #}
-                        {# SNOW-1073: the slope layer is the sheet's "colour by       #}
-                        {# slope" mode. The swisstopo slope row that sat above this   #}
-                        {# one is gone, so this row is the one way to slope shading.  #}
+                        {% comment %}
+                        SNOW-978 / SNOW-1109: the terrain filter. The row is a
+                        checkbox like the overlay rows round it — a tap turns the
+                        filter on or off through window.pwaTerrainFilter
+                        (map_basemap_picker.js's OVERLAY_BRIDGES, key "terrain").
+                        While it is on, its second line carries a short summary
+                        ("3 aspects · 35°+ · above 2,400 m"), or why nothing is drawn ("zoom in",
+                        "outside coverage"); terrain_filter_sheet.js writes it.
+
+                        Beside it, an icon-only adjust button opens the filter's
+                        sheet (the mode, aspects, slope range and elevation), and
+                        turns the filter on first if it is off. Two controls on
+                        one row would normally collapse into a "…" menu (design
+                        rule 5); this row is the agreed exception for SNOW-1109:
+                        one is the row's own toggle, the other its only action,
+                        and a menu holding a single item would hide it for
+                        nothing.
+
+                        SNOW-1073: the slope layer is the sheet's "By slope" mode.
+                        The swisstopo slope row that sat above this one is gone, so
+                        this row is the one way to slope shading.
+                        {% endcomment %}
                         {% if terrain_filter_eligible %}
-                            <li role="none">
+                            <li role="none" class="basemap-menu-row">
                                 <button
                                     type="button"
-                                    role="menuitem"
-                                    class="basemap-menu-item basemap-menu-item--sheet hover-affordance"
-                                    data-terrain-filter-open
-                                    aria-haspopup="dialog"
-                                    aria-controls="map-terrain-filter-sheet"
+                                    role="menuitemcheckbox"
+                                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                                    data-overlay-key="terrain"
+                                    aria-checked="false"
                                 >
                                     <span class="basemap-menu-item-text">
-                                        <span data-row-label>{% trans "Terrain filter…" %}</span>
+                                        <span data-row-label>{% trans "Terrain filter" %}</span>
                                         <span
                                             class="basemap-menu-item-detail"
                                             data-terrain-filter-summary
                                             hidden
                                         ></span>
                                     </span>
+                                </button>
+                                {% trans "Adjust terrain filter" as adjust_terrain_filter %}
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    class="basemap-menu-adjust hover-affordance"
+                                    data-terrain-filter-open
+                                    aria-haspopup="dialog"
+                                    aria-controls="map-terrain-filter-sheet"
+                                    aria-label="{{ adjust_terrain_filter }}"
+                                    title="{{ adjust_terrain_filter }}"
+                                >
+                                    {% include "includes/_icon_sliders.html" with size=18 only %}
                                 </button>
                             </li>
                         {% endif %}

@@ -419,13 +419,21 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             "scale, and a link carries no severity. The hover step is a "
             "shade DOWN on light and a shade UP on dark; the text colour "
             "is white in both themes, because it is only ever read against "
-            "a fill of the accent itself."
+            "a fill of the accent itself. The tint is the accent as a quiet "
+            "fill under accent text or an accent stroke: the terrain filter "
+            "sheet's selected options (SNOW-1109)."
         ),
         kind="swatches",
         tokens=(
             Token("--color-accent", "Accent", "#2563eb", "#3b82f6"),
             Token("--color-accent-hover", "Accent (hover)", "#1d4ed8", "#60a5fa"),
             Token("--color-accent-text", "Accent (on-fill text)", "#ffffff", "#ffffff"),
+            Token(
+                "--color-accent-tint",
+                "Accent (tint)",
+                "rgba(37, 99, 235, 0.14)",
+                "rgba(59, 130, 246, 0.22)",
+            ),
         ),
     ),
     FoundationCategory(
@@ -525,7 +533,9 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             "The last two are MARKS drawn over that line rather than "
             "bands of it, and borrow no colour from the scale on purpose: "
             "a marker tinted from the ramp reads as a further class of "
-            "ground (SNOW-964)."
+            "ground (SNOW-964). The five -fg tokens are the ink for a label "
+            "written on a class's fill, the terrain filter sheet's slope "
+            "ramp (SNOW-1109)."
         ),
         kind="swatches",
         swatch_columns=5,
@@ -535,6 +545,11 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-slope-40", "40–45°", "#de055b", None),
             Token("--color-slope-45", "45–50°", "#c889bb", None),
             Token("--color-slope-50", "Over 50°", "#4b4b4b", None),
+            Token("--color-slope-30-fg", "Label on 30–35°", "#1a1916", None),
+            Token("--color-slope-35-fg", "Label on 35–40°", "#1a1916", None),
+            Token("--color-slope-40-fg", "Label on 40–45°", "#ffffff", None),
+            Token("--color-slope-45-fg", "Label on 45–50°", "#1a1916", None),
+            Token("--color-slope-50-fg", "Label on over 50°", "#ffffff", None),
             Token("--color-slope-gentle", "Under 30° (line)", "#38bdf8", None),
             Token("--color-slope-unknown", "Not surveyed (line)", "#94a3b8", None),
             Token(
@@ -1459,7 +1474,8 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "in a rounded track, the selected pill filled with the accent "
             "(SNOW-1073). The caller writes the fieldset, its legend and the "
             "track, and includes this once per option. Used by the theme "
-            "preference and the terrain filter's mode control."
+            "preference. (The terrain filter's mode control used it until "
+            "SNOW-1109 replaced it with two option tiles.)"
         ),
         kind="components",
         partial="includes/_segmented_option.html",
@@ -1488,9 +1504,9 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "The map terrain filter's colour key (SNOW-978): the match tint "
             "and the no-data hatch, or — in the slope mode (SNOW-1073) — the "
             "five slope classes and the hatch; the script hides the rows of "
-            "the mode not set. Rendered in the map legend and "
-            "inside the filter sheet, which carries its own key because the "
-            "legend is hidden on a phone while a route is open."
+            "the mode not set. Rendered in the map legend. The filter sheet "
+            "carried it too until SNOW-1109, whose slope ramp is its own key; "
+            "the sheet keeps only the no-data row."
         ),
         kind="components",
         partial="includes/_terrain_filter_key.html",

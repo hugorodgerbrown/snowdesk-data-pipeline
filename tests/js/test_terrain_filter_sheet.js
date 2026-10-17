@@ -1,6 +1,6 @@
 /*
  * tests/js/test_terrain_filter_sheet.js — the terrain filter's sheet, legend and
- * menu-row summary (SNOW-978).
+ * menu-row second line (SNOW-978, SNOW-1109).
  *
  * terrain_filter_sheet.js talks to one thing, window.pwaTerrainFilter, so the
  * bridge is stubbed here with a small in-memory state that announces its
@@ -45,10 +45,14 @@ function stubBridge() {
 function buildFixture() {
   document.documentElement.lang = 'en';
   const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  const ramp = ['30–35', '35–40', '40–45', '45–50', '50+'];
   document.body.innerHTML = `
     <div id="map"></div>
-    <button data-terrain-filter-open><span data-row-label>Terrain filter…</span>
-      <span data-terrain-filter-summary hidden></span></button>
+    <li class="basemap-menu-row">
+      <button data-overlay-key="terrain" aria-checked="false"><span data-row-label>Terrain filter</span>
+        <span data-terrain-filter-summary hidden></span></button>
+      <button data-terrain-filter-open aria-label="Adjust terrain filter"></button>
+    </li>
     <section data-terrain-filter-legend hidden>
       <div data-terrain-filter-key="match" data-legend-part>Terrain filter</div>
       <div data-terrain-filter-key="slope" data-legend-part hidden>Slope angle</div>
@@ -57,33 +61,36 @@ function buildFixture() {
     <div id="map-terrain-filter-sheet" hidden tabindex="-1" data-overlay></div>
     <template id="map-terrain-filter-template">
       <h2>Terrain filter</h2>
-      <input id="map-terrain-filter-enabled" type="checkbox" role="switch">
-      <p data-terrain-filter-availability></p>
       <input type="radio" name="terrain-filter-mode" value="match" checked>
       <input type="radio" name="terrain-filter-mode" value="slope">
-      ${compass.map((c, i) => `<button type="button" data-octant="${i}" aria-pressed="false">${c}</button>`).join('')}
-      <select data-terrain-filter-min-slope>
-        ${[30, 35, 40, 45, 50].map((d) => `<option value="${d}">${d}°</option>`).join('')}
-      </select>
-      <select data-terrain-filter-max-slope>
-        <option value="">No limit</option>
-        ${[35, 40, 45, 50].map((d) => `<option value="${d}">${d}°</option>`).join('')}
-      </select>
-      <input type="number" step="100" data-terrain-filter-min-elevation>
-      <input type="number" step="100" data-terrain-filter-max-elevation>
-      <div data-terrain-filter-key="match">Matches the filter</div>
-      <div data-terrain-filter-key="slope" hidden>30–35°</div>
+      <span data-terrain-filter-slope-line></span>
+      <div data-terrain-filter-ramp data-mode="match">
+        ${ramp.map((label, i) => `<button type="button" data-slope-class="${i}" aria-pressed="false">${label}</button>`).join('')}
+      </div>
+      <p data-terrain-filter-aspect-line></p>
+      <svg>
+        ${compass.map((c, i) => `<path data-octant="${i}" role="button" tabindex="0" aria-pressed="false" aria-label="${c}"></path>`).join('')}
+        <g data-terrain-filter-all-aspects role="button" tabindex="0" aria-pressed="false"></g>
+      </svg>
+      <p data-terrain-filter-elevation-line></p>
+      <svg data-terrain-filter-mountain role="img">
+        <rect data-terrain-filter-band x="8" y="8" width="108" height="104"></rect>
+        <line data-terrain-filter-bound="max" hidden></line>
+        <line data-terrain-filter-bound="min" hidden></line>
+      </svg>
+      <select data-terrain-filter-min-elevation><option value="">Any</option></select>
+      <select data-terrain-filter-max-elevation><option value="">Any</option></select>
     </template>
     <template id="map-terrain-filter-strings-template">
-      <span data-string="availability-ok">Hervorgehoben.</span>
-      <span data-string="availability-ok-slope">Nach Neigungsklasse eingefärbt.</span>
-      <span data-string="mode-slope">Neigungsklassen</span>
-      <span data-string="availability-off">Aus.</span>
       <span data-string="availability-zoom-in">Näher heranzoomen.</span>
+      <span data-string="availability-out-of-coverage">Keine Daten hier.</span>
       <span data-string="aspects-all">Alle Expositionen</span>
       <span data-string="aspects-count">%(count)s Expositionen</span>
       <span data-string="slope-min">ab %(min)s°</span>
       <span data-string="elevation-above">über %(min)s m</span>
+      <span data-string="elevation-line-above">Über %(min)s m</span>
+      <span data-string="elevation-all">Alle Höhen</span>
+      <span data-string="elevation-any">Egal</span>
       <span data-string="compass-0">N</span>
       <span data-string="compass-7">NW</span>
     </template>`;
@@ -94,6 +101,11 @@ let bridge;
 const sheetEl = () => document.getElementById('map-terrain-filter-sheet');
 const q = (selector) => sheetEl().querySelector(selector);
 const changeEvent = () => new Event('change', { bubbles: true });
+const press = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+const lastFilter = () => bridge.setFilter.mock.calls.at(-1)[0];
+const pressedTiles = () => [...sheetEl().querySelectorAll('[data-slope-class][aria-pressed="true"]')]
+  .map((b) => Number(b.dataset.slopeClass));
+const optionValues = (select) => [...select.options].map((o) => o.value);
 
 beforeAll(async () => {
   buildFixture();
@@ -113,7 +125,7 @@ afterAll(() => {
 
 beforeEach(() => {
   if (window.pwaTerrainFilterSheet.isOpen()) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-  bridge.state.enabled = false;
+  bridge.state.enabled = true;
   bridge.state.filter = { aspects: [0, 1, 2, 3, 4, 5, 6, 7], minSlope: 30 };
   bridge.state.availability = 'ok';
   bridge.setFilter.mockClear();
@@ -131,59 +143,121 @@ describe('opening the sheet', () => {
     expect(q('[data-octant="3"]').hasAttribute('data-touched')).toBe(false);
   });
 
+  it('turns the filter on when it opens with the filter off', () => {
+    bridge.state.enabled = false;
+    window.pwaTerrainFilterSheet.open();
+    expect(bridge.show).toHaveBeenCalledTimes(1);
+    expect(bridge.isEnabled()).toBe(true);
+  });
+
+  it('leaves an enabled filter alone', () => {
+    window.pwaTerrainFilterSheet.open();
+    expect(bridge.show).not.toHaveBeenCalled();
+  });
+
   it('seeds every control from the bridge', () => {
-    bridge.state.enabled = true;
     bridge.state.filter = { aspects: [0, 7], minSlope: 35, maxSlope: 45, minElevation: 2400 };
     window.pwaTerrainFilterSheet.open();
-    expect(q('#map-terrain-filter-enabled').checked).toBe(true);
     const pressed = [...sheetEl().querySelectorAll('[data-octant][aria-pressed="true"]')]
       .map((b) => b.dataset.octant);
     expect(pressed).toEqual(['0', '7']);
-    expect(q('[data-terrain-filter-min-slope]').value).toBe('35');
-    expect(q('[data-terrain-filter-max-slope]').value).toBe('45');
+    expect(q('[data-terrain-filter-all-aspects]').getAttribute('aria-pressed')).toBe('false');
+    expect(pressedTiles()).toEqual([1, 2]);
     expect(q('[data-terrain-filter-min-elevation]').value).toBe('2400');
     expect(q('[data-terrain-filter-max-elevation]').value).toBe('');
-    // A maximum at or under the minimum is greyed out.
-    expect(q('[data-terrain-filter-max-slope] option[value="35"]').disabled).toBe(true);
-    expect(q('[data-terrain-filter-max-slope] option[value="40"]').disabled).toBe(false);
+    expect(q('[data-terrain-filter-aspect-line]').textContent).toBe('N, NW');
+    expect(q('[data-terrain-filter-slope-line]').textContent).toBe('35–45°');
+    expect(q('[data-terrain-filter-elevation-line]').textContent).toBe('Über 2,400 m');
   });
 });
 
-describe('editing', () => {
-  it('turns the filter on and off through the bridge', () => {
+describe('the aspect rose', () => {
+  it('hands a wedge toggle back as a whole filter', () => {
     window.pwaTerrainFilterSheet.open();
-    const toggle = q('#map-terrain-filter-enabled');
-    toggle.checked = true;
-    toggle.dispatchEvent(changeEvent());
-    expect(bridge.show).toHaveBeenCalledTimes(1);
-    toggle.checked = false;
-    toggle.dispatchEvent(changeEvent());
-    expect(bridge.hide).toHaveBeenCalled();
-  });
-
-  it('hands an aspect toggle back as a whole filter', () => {
-    window.pwaTerrainFilterSheet.open();
-    q('[data-octant="4"]').click();
+    press(q('[data-octant="4"]'));
     expect(bridge.setFilter).toHaveBeenCalledTimes(1);
-    expect(bridge.setFilter.mock.calls[0][0]).toMatchObject({
-      aspects: [0, 1, 2, 3, 5, 6, 7],
-      minSlope: 30,
-      maxSlope: null,
-    });
+    expect(lastFilter()).toMatchObject({ aspects: [0, 1, 2, 3, 5, 6, 7], minSlope: 30, maxSlope: null });
     expect(q('[data-octant="4"]').getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('reads the slope and elevation controls, blank meaning none', () => {
+  it('answers Enter and Space on a wedge', () => {
     window.pwaTerrainFilterSheet.open();
-    q('[data-terrain-filter-min-slope]').value = '40';
-    q('[data-terrain-filter-min-elevation]').value = '2500';
-    q('[data-terrain-filter-min-elevation]').dispatchEvent(changeEvent());
-    expect(bridge.setFilter.mock.calls.at(-1)[0]).toMatchObject({
-      minSlope: 40,
-      maxSlope: null,
-      minElevation: 2500,
-      maxElevation: null,
-    });
+    q('[data-octant="2"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(lastFilter().aspects).not.toContain(2);
+    q('[data-octant="2"]').dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    expect(lastFilter().aspects).toContain(2);
+  });
+
+  it('turns every aspect off from "All" when all are on, and every one on otherwise', () => {
+    window.pwaTerrainFilterSheet.open();
+    expect(q('[data-terrain-filter-all-aspects]').getAttribute('aria-pressed')).toBe('true');
+    press(q('[data-terrain-filter-all-aspects]'));
+    expect(lastFilter().aspects).toEqual([]);
+    expect(q('[data-terrain-filter-aspect-line]').textContent).toBe('No aspects');
+    press(q('[data-terrain-filter-all-aspects]'));
+    expect(lastFilter().aspects).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(q('[data-terrain-filter-aspect-line]').textContent).toBe('Alle Expositionen');
+  });
+});
+
+describe('the slope ramp', () => {
+  it('collapses to a tapped interior class, then extends and trims', () => {
+    window.pwaTerrainFilterSheet.open();
+    expect(pressedTiles()).toEqual([0, 1, 2, 3, 4]);
+    press(q('[data-slope-class="2"]'));
+    expect(lastFilter()).toMatchObject({ minSlope: 40, maxSlope: 45 });
+    expect(pressedTiles()).toEqual([2]);
+    press(q('[data-slope-class="4"]'));
+    expect(lastFilter()).toMatchObject({ minSlope: 40, maxSlope: null });
+    expect(pressedTiles()).toEqual([2, 3, 4]);
+    press(q('[data-slope-class="2"]'));
+    expect(lastFilter()).toMatchObject({ minSlope: 45, maxSlope: null });
+    expect(q('[data-terrain-filter-slope-line]').textContent).toBe('ab 45°');
+  });
+
+  it('carries the mode for the CSS to colour by', () => {
+    bridge.state.filter = { mode: 'slope', minSlope: 30 };
+    window.pwaTerrainFilterSheet.open();
+    expect(q('[data-terrain-filter-ramp]').dataset.mode).toBe('slope');
+  });
+});
+
+describe('the elevation lists and mountain', () => {
+  it('lists Any then the scale, each cut at the other bound', () => {
+    bridge.state.filter = { minSlope: 30, minElevation: 4200 };
+    window.pwaTerrainFilterSheet.open();
+    const below = q('[data-terrain-filter-max-elevation]');
+    expect(optionValues(below)).toEqual(['', '4500', '4400', '4300']);
+    expect(below.options[0].textContent).toBe('Egal');
+    expect(below.options[1].textContent).toBe('4,500 m');
+  });
+
+  it('commits a pick, and null for Any', () => {
+    window.pwaTerrainFilterSheet.open();
+    const above = q('[data-terrain-filter-min-elevation]');
+    above.value = '2500';
+    above.dispatchEvent(changeEvent());
+    expect(lastFilter()).toMatchObject({ minElevation: 2500, maxElevation: null });
+    const again = q('[data-terrain-filter-min-elevation]');
+    again.value = '';
+    again.dispatchEvent(changeEvent());
+    expect(lastFilter()).toMatchObject({ minElevation: null });
+  });
+
+  it('draws the band and a dashed line only for a set bound', () => {
+    bridge.state.filter = { minSlope: 30, minElevation: 1700 };
+    window.pwaTerrainFilterSheet.open();
+    const band = q('[data-terrain-filter-band]');
+    expect(Number(band.getAttribute('y'))).toBeCloseTo(8, 2);
+    expect(Number(band.getAttribute('height'))).toBeCloseTo(0.8 * 104, 2);
+    expect(q('[data-terrain-filter-bound="max"]').hasAttribute('hidden')).toBe(true);
+    expect(q('[data-terrain-filter-bound="min"]').hasAttribute('hidden')).toBe(false);
+    expect(q('[data-terrain-filter-mountain]').getAttribute('aria-label')).toBe('Über 1,700 m');
+  });
+
+  it('names the open band "All elevations"', () => {
+    window.pwaTerrainFilterSheet.open();
+    expect(q('[data-terrain-filter-elevation-line]').textContent).toBe('Alle Höhen');
   });
 });
 
@@ -193,70 +267,60 @@ describe('the mode (SNOW-1073)', () => {
     .filter((el) => !el.hidden)
     .map((el) => el.dataset.terrainFilterKey);
 
-  it('seeds the mode control and the key from the bridge', () => {
+  it('seeds the mode tiles from the bridge', () => {
     bridge.state.filter = { mode: 'slope', minSlope: 30 };
     window.pwaTerrainFilterSheet.open();
     expect(radio('slope').checked).toBe(true);
     expect(radio('match').checked).toBe(false);
-    expect(shown(sheetEl())).toEqual(['slope']);
   });
 
   it('hands the chosen mode back with the rest of the filter', () => {
+    bridge.state.filter = { minSlope: 35, maxSlope: 45 };
     window.pwaTerrainFilterSheet.open();
     radio('slope').checked = true;
     radio('slope').dispatchEvent(changeEvent());
-    expect(bridge.setFilter.mock.calls.at(-1)[0]).toMatchObject({ mode: 'slope', minSlope: 30 });
-    expect(shown(sheetEl())).toEqual(['slope']);
+    expect(lastFilter()).toMatchObject({ mode: 'slope', minSlope: 35, maxSlope: 45 });
     radio('match').checked = true;
     radio('match').dispatchEvent(changeEvent());
-    expect(bridge.setFilter.mock.calls.at(-1)[0]).toMatchObject({ mode: 'match' });
-    expect(shown(sheetEl())).toEqual(['match']);
+    expect(lastFilter()).toMatchObject({ mode: 'match' });
   });
 
-  it('keeps the slope range in slope mode', () => {
-    bridge.state.filter = { mode: 'slope', minSlope: 35, maxSlope: 45 };
-    window.pwaTerrainFilterSheet.open();
-    expect(q('[data-terrain-filter-min-slope]').value).toBe('35');
-    q('[data-terrain-filter-min-slope]').value = '40';
-    q('[data-terrain-filter-min-slope]').dispatchEvent(changeEvent());
-    expect(bridge.setFilter.mock.calls.at(-1)[0]).toMatchObject({ mode: 'slope', minSlope: 40 });
-  });
-
-  it('says the ground is coloured by class, and names the mode in the legend', () => {
+  it('summarises the filter in the legend without naming the mode, and shows its key', () => {
     bridge.state.filter = { mode: 'slope', minSlope: 30 };
     bridge.show();
-    window.pwaTerrainFilterSheet.open();
-    expect(q('[data-terrain-filter-availability]').textContent).toBe('Nach Neigungsklasse eingefärbt.');
     const legendSummary = document.querySelector('[data-terrain-filter-legend-summary]');
-    expect(legendSummary.textContent).toBe('Neigungsklassen · Alle Expositionen · ab 30°');
+    expect(legendSummary.textContent).toBe('Alle Expositionen · ab 30°');
     expect(shown(document.querySelector('[data-terrain-filter-legend]'))).toEqual(['slope']);
-    bridge.hide();
   });
 });
 
-describe('the words', () => {
-  it('reads the availability line from the strings template', () => {
-    bridge.state.enabled = true;
-    bridge.state.availability = 'zoom-in';
-    window.pwaTerrainFilterSheet.open();
-    expect(q('[data-terrain-filter-availability]').textContent).toBe('Näher heranzoomen.');
-    bridge.state.enabled = false;
-    document.dispatchEvent(new CustomEvent('snowdesk:terrain-filter-changed'));
-    expect(q('[data-terrain-filter-availability]').textContent).toBe('Aus.');
-  });
+describe('the menu row and legend', () => {
+  const summary = () => document.querySelector('[data-terrain-filter-summary]');
 
-  it('shows the row summary and the legend, in words, only while the filter is on', () => {
+  it('shows the short summary while the filter draws', () => {
     bridge.state.filter = { aspects: [0, 7], minSlope: 35, minElevation: 2400 };
     bridge.show();
+    expect(summary().hidden).toBe(false);
+    expect(summary().textContent).toBe('2 Expositionen · ab 35° · über 2,400 m');
     const legendSummary = document.querySelector('[data-terrain-filter-legend-summary]');
-    const summary = document.querySelector('[data-terrain-filter-summary]');
     expect(legendSummary.textContent).toBe('N, NW · ab 35° · über 2,400 m');
-    expect(summary.hidden).toBe(false);
-    expect(summary.textContent).toBe('2 Expositionen · ab 35°');
     expect(document.querySelector('[data-terrain-filter-legend]').hidden).toBe(false);
+  });
+
+  it('says why nothing is drawn instead', () => {
+    bridge.state.availability = 'zoom-in';
+    bridge.show();
+    expect(summary().textContent).toBe('Näher heranzoomen.');
+    bridge.state.availability = 'out-of-coverage';
+    bridge.show();
+    expect(summary().textContent).toBe('Keine Daten hier.');
+  });
+
+  it('hides the line and the legend while the filter is off', () => {
     bridge.hide();
-    expect(legendSummary.textContent).toBe('');
-    expect(summary.hidden).toBe(true);
+    expect(summary().hidden).toBe(true);
+    expect(summary().textContent).toBe('');
+    expect(document.querySelector('[data-terrain-filter-legend-summary]').textContent).toBe('');
     expect(document.querySelector('[data-terrain-filter-legend]').hidden).toBe(true);
   });
 });

@@ -4,7 +4,7 @@ apps/public/templates/public/help/_topic_slope.html — "Slope angle" panel body
 Content partial for the help page (SNOW-691); included via the
 body_template parameter of includes/_collapsible_panel.html. Rendered for
 every visitor. Since SNOW-1073 the slope layer it documents is the terrain
-filter's "Colour by slope" mode, painted from our terrain-class tiles
+filter's "By slope" mode (SNOW-1109 renamed it from "Colour by slope"), painted from our terrain-class tiles
 (settings.TERRAIN_CLASS_TILE_URL) rather than swisstopo's pre-rendered
 raster, so this panel says where the colours come from, why the layer
 starts at zoom level 12 and why it stops at the Swiss border — see
@@ -32,10 +32,11 @@ half that fits.
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-how-to">
         {% blocktrans trimmed %}
-            Turn it on from the layers menu&rsquo;s &ldquo;Terrain filter&hellip;&rdquo; row: switch the filter on and
-            choose &ldquo;Colour by slope&rdquo;. The rest of that sheet still applies. The slope range says which bands
-            are painted, from 30&deg; up unless you change it, and the aspects and the elevation band narrow it further
-            &mdash; so you can colour only the north-facing slopes above 2,400 metres, say, by how steep they are.
+            Turn it on from the layers menu: tick &ldquo;Terrain filter&rdquo;, open its settings with the adjust button
+            beside it and choose &ldquo;By slope&rdquo;. The rest of that panel still applies. The slope range says
+            which bands are painted, from 30&deg; up unless you change it, and the aspects and the elevation band narrow
+            it further &mdash; so you can colour only the north-facing slopes above 2,400 metres, say, by how steep they
+            are.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-slope-why-30-45">

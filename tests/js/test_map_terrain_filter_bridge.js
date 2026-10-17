@@ -1,11 +1,12 @@
 /*
  * tests/js/test_map_terrain_filter_bridge.js — window.pwaTerrainFilter and
- * the layers menu's "Terrain filter…" row (SNOW-978).
+ * the layers menu's "Terrain filter" row (SNOW-978, SNOW-1109).
  *
  * The bridge is the filter's one owner of state: it persists the switch and
- * the criteria, and announces every change. The row is an ACTION row — it
- * opens the filter's sheet and toggles nothing — but the menu header still
- * counts the filter as a layer while it is on.
+ * the criteria, and announces every change. Since SNOW-1109 the row is a
+ * checkbox that toggles the filter through the bridge, and the adjust
+ * button beside it opens the filter's sheet; the menu header counts the
+ * filter as a layer while it is on.
  *
  * Harness follows test_map_layers_menu_anonymous_favourites.js. The MapLibre
  * stub has no addProtocol, so the layer itself is never installed — which
@@ -127,19 +128,28 @@ function buildFixture() {
             aria-checked="true"
           >OpenFreeMap</button>
         </li>
-        <li role="none">
+        <li role="none" class="basemap-menu-row">
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            class="basemap-menu-item basemap-menu-item--overlay"
+            data-overlay-key="terrain"
+            aria-checked="false"
+          ><span data-row-label>Terrain filter</span></button>
           <button
             type="button"
             role="menuitem"
-            class="basemap-menu-item basemap-menu-item--sheet"
+            class="basemap-menu-adjust"
             data-terrain-filter-open
-          ><span data-row-label>Terrain filter…</span></button>
+            aria-label="Adjust terrain filter"
+          ></button>
         </li>
       </ul>
     </div>`;
 }
 
-const row = () => document.querySelector('[data-terrain-filter-open]');
+const row = () => document.querySelector('[data-overlay-key="terrain"]');
+const adjust = () => document.querySelector('[data-terrain-filter-open]');
 const count = () => document.querySelector('[data-layers-count]').textContent;
 
 beforeAll(async () => {
@@ -237,12 +247,31 @@ describe('the layers menu row', () => {
     expect(window.localStorage.getItem(SWITCH_KEY)).toBe('false');
   });
 
-  it('opens the sheet and toggles nothing', () => {
+  it('follows the bridge when something else turns the filter on', () => {
+    window.pwaTerrainFilter.show();
+    expect(row().getAttribute('aria-checked')).toBe('true');
+    window.pwaTerrainFilter.hide();
+    expect(row().getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('toggles the filter through the bridge (SNOW-1109)', () => {
+    row().click();
+    expect(window.pwaTerrainFilter.isEnabled()).toBe(true);
+    expect(row().getAttribute('aria-checked')).toBe('true');
+    expect(window.localStorage.getItem(SWITCH_KEY)).toBe('true');
+    expect(count()).toBe('1 layer on');
+    row().click();
+    expect(window.pwaTerrainFilter.isEnabled()).toBe(false);
+    expect(row().getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('leaves the sheet to the adjust button', () => {
     window.pwaTerrainFilterSheet = { open: vi.fn() };
     row().click();
+    expect(window.pwaTerrainFilterSheet.open).not.toHaveBeenCalled();
+    row().click();
+    adjust().click();
     expect(window.pwaTerrainFilterSheet.open).toHaveBeenCalledTimes(1);
-    expect(row().hasAttribute('aria-checked')).toBe(false);
-    expect(window.pwaTerrainFilter.isEnabled()).toBe(false);
   });
 });
 

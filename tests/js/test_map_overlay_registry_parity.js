@@ -38,6 +38,10 @@
  *     key has never been in this registry and must not be added to it —
  *     a basemap swap re-seeds ``overlayState`` wholesale, and this
  *     overlay's whole point is surviving that untouched.
+ *   - ``terrain`` (SNOW-1109), the terrain filter's row, routed to
+ *     ``window.pwaTerrainFilter``. Its bridge sets the visibility of
+ *     ``OVERLAY_LAYERS.terrain_filter`` itself, under the key its storage
+ *     uses; the row's key is never looked up in this registry.
  *
  * The three other rows SNOW-904 added — favourites, community_reports and
  * routes — are NOT excluded. They are routed to bridges too, but those
@@ -75,8 +79,8 @@ function templateOverlayKeys() {
 }
 
 // SNOW-904: keys whose click is handed to a bridge that owns its own layer
-// ids. See the module docstring for why this is one key and not four.
-const BRIDGE_OWNED_LAYERS = new Set(['downloads']);
+// ids. See the module docstring for why this is two keys and not five.
+const BRIDGE_OWNED_LAYERS = new Set(['downloads', 'terrain']);
 
 describe('layers-menu overlay registry parity', () => {
   it('every non-country row has an entry in OVERLAY_LAYERS', () => {

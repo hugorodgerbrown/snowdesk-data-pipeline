@@ -271,8 +271,9 @@ in addition to the shared map assets.
     {# the map roundel (#map-custom-download-control) now, not the       #}
     {# layers menu's old "Manage downloads…" row — that row is gone.     #}
     {% include "public/partials/_map_downloads_sheet.html" %}
-    {# SNOW-978: the terrain filter's sheet — opened by the layers menu's    #}
-    {# "Terrain filter…" row and the map chip. Only for an eligible page.    #}
+    {# SNOW-978: the terrain filter's sheet — opened by the adjust button    #}
+    {# beside the layers menu's terrain filter row (SNOW-1109). Only for an  #}
+    {# eligible page.                                                         #}
     {% if terrain_filter_eligible %}
         {% include "public/partials/_map_terrain_filter_sheet.html" %}
     {% endif %}

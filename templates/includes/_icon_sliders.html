@@ -1,0 +1,29 @@
+{% comment %}
+templates/includes/_icon_sliders.html — the adjust glyph: three horizontal
+sliders (SNOW-1109).
+
+Its caller is the layers menu's terrain filter row
+(public/partials/_map_embed.html), where it is the icon-only button that
+opens the filter's sheet while the row itself toggles the filter on and off.
+
+Stroke width 2 on a 24×24 box, like every other house glyph
+(docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 18.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4" />
+</svg>

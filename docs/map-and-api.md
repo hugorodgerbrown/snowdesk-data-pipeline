@@ -2,7 +2,7 @@
 name: map-and-api
 description: /map/ (public:map) MapLibre choropleth, scrubber, calendar, overlay registry, /api/ endpoints (ratings, geojson, groupings), routes.geojson
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-17
 ---
 
 # Map page and JSON API
@@ -434,7 +434,7 @@ knowing here:
   when `ascent_m` is null**, since a GPX with no elevation data means "we
   don't know", not "flat".
 
-**Slope layer (SNOW-1073)**: the terrain filter's "Colour by slope" mode,
+**Slope layer (SNOW-1073)**: the terrain filter's "By slope" mode,
 not a layer of its own. It paints from the same `terrainfilter://` raster
 source as the filter's match tint (`installTerrainFilterLayer` in
 `static/js/map.js`, `terrain-filter-raster`), so everything about that
