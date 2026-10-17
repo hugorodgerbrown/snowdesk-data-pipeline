@@ -45,7 +45,7 @@ function stubBridge() {
 function buildFixture() {
   document.documentElement.lang = 'en';
   const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-  const ramp = ['30–35°', '35–40°', '40–45°', '45–50°', '50°+'];
+  const ramp = ['30–35', '35–40', '40–45', '45–50', '50+'];
   document.body.innerHTML = `
     <div id="map"></div>
     <li class="basemap-menu-row">

@@ -20,7 +20,7 @@ includes/_terrain_filter_key.html (the map legend still does):
     — "One tint" (value match) and "By slope" (value slope, the map's slope
     layer since SNOW-1073). Each tile shows its own swatch.
   - SLOPE ANGLE: a ramp of five toggle buttons, one per slope class
-    (30–35 … 50°+), [data-slope-class] 0–4. In slope mode a selected class
+    (labelled 30–35 … 50+; the heading carries the degrees), [data-slope-class] 0–4. In slope mode a selected class
     is filled with its slope colour and an unselected one carries a strip
     of it along its foot; in tint mode a selected class takes the accent
     tint. The range is contiguous: terrain_filter_core.js's tapSlopeClass
@@ -85,7 +85,7 @@ Included by public/map.html only for an eligible page
             </h3>
             <span class="text-sm text-text-2" data-terrain-filter-slope-line></span>
         </div>
-        {% with ramp_tile="terrain-ramp-tile relative h-11 overflow-hidden rounded-sm border border-border bg-card text-sm text-text-2 hover-affordance" %}
+        {% with ramp_tile="terrain-ramp-tile relative h-11 overflow-hidden whitespace-nowrap rounded-sm border border-border bg-card text-sm text-text-2 hover-affordance" %}
             <div
                 class="terrain-ramp mt-2 grid grid-cols-5 gap-[3px]"
                 data-terrain-filter-ramp
@@ -94,23 +94,23 @@ Included by public/map.html only for an eligible page
                 aria-labelledby="map-terrain-filter-slope-heading"
             >
                 <button type="button" class="{{ ramp_tile }}" data-slope-class="0" aria-pressed="false">
-                    {% trans "30–35°" %}
+                    {% trans "30–35" context "slope class" %}
                     <span class="terrain-ramp-strip bg-slope-30" aria-hidden="true"></span>
                 </button>
                 <button type="button" class="{{ ramp_tile }}" data-slope-class="1" aria-pressed="false">
-                    {% trans "35–40°" %}
+                    {% trans "35–40" context "slope class" %}
                     <span class="terrain-ramp-strip bg-slope-35" aria-hidden="true"></span>
                 </button>
                 <button type="button" class="{{ ramp_tile }}" data-slope-class="2" aria-pressed="false">
-                    {% trans "40–45°" %}
+                    {% trans "40–45" context "slope class" %}
                     <span class="terrain-ramp-strip bg-slope-40" aria-hidden="true"></span>
                 </button>
                 <button type="button" class="{{ ramp_tile }}" data-slope-class="3" aria-pressed="false">
-                    {% trans "45–50°" %}
+                    {% trans "45–50" context "slope class" %}
                     <span class="terrain-ramp-strip bg-slope-45" aria-hidden="true"></span>
                 </button>
                 <button type="button" class="{{ ramp_tile }}" data-slope-class="4" aria-pressed="false">
-                    {% trans "50°+" %}
+                    {% trans "50+" context "slope class" %}
                     <span class="terrain-ramp-strip bg-slope-50" aria-hidden="true"></span>
                 </button>
             </div>
@@ -288,7 +288,7 @@ Included by public/map.html only for an eligible page
             {% trans "Above" %}
             <select
                 data-terrain-filter-min-elevation
-                class="{% input_classes size='standard' extra='mt-1 h-10 text-base' %}"
+                class="{% input_classes size='standard' extra='mt-1 text-base' %}"
             >
                 <option value="">{% trans "Any" context "elevation" %}</option>
             </select>
@@ -297,7 +297,7 @@ Included by public/map.html only for an eligible page
             {% trans "Below" %}
             <select
                 data-terrain-filter-max-elevation
-                class="{% input_classes size='standard' extra='mt-1 h-10 text-base' %}"
+                class="{% input_classes size='standard' extra='mt-1 text-base' %}"
             >
                 <option value="">{% trans "Any" context "elevation" %}</option>
             </select>
