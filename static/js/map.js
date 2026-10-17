@@ -7815,6 +7815,9 @@
     // that decision for every sheet as a side effect of this ticket.
     const closeMapDetailSurfaces = () => {
       closeDetailPopup();
+      // SNOW-1100: on a phone the resort/pin detail is the place sheet, which
+      // MapSheet never closes on a tap inside #map — so it is closed here.
+      window.pwaPlaceSheet?.close();
     };
 
     // SNOW-658: the anchored detail popup is a map overlay like the layers
