@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-17
 ---
 
 # Map page — functional specification
@@ -194,9 +194,15 @@ track a specific location — a col, a slope, a hut, a chosen line — and
 return to it across sessions. It is the user's own private data.
 
 - **What it shows.** A `★` marker at the saved point, labelled with the
-  user's chosen name. Tapping it opens a pinned popup holding the name and
-  when it was saved (SNOW-658) — nothing else; the point's weather page is
-  one tap from the favourites panel. A favourite is a dropped pin, a saved
+  user's chosen name. On a desktop, tapping it opens a pinned popup holding
+  the name and when it was saved (SNOW-658) — nothing else; the point's
+  weather page is one tap from the favourites panel. On a phone (below
+  640px) the tap opens the **place sheet** (SNOW-1100) instead, at peek:
+  the region's danger tile, the pin's name over the region's code, level
+  and name, the panel row's own "…" menu (Share → Rename → Delete, acting
+  from inside the sheet) and the ×. Half adds the day's weather at the
+  pin; full adds the region's problems judged against the pin's altitude,
+  the week, and the links to the forecast and the bulletin. A favourite is a dropped pin, a saved
   resort (SNOW-499, the star on a resort's popup) or a region pin
   (SNOW-802 — a region with no coordinate, listed in the region panel
   rather than the pins sheet, SNOW-814).
@@ -207,7 +213,8 @@ return to it across sessions. It is the user's own private data.
 - **When / how.** Eligible users get an "Add favourite" control; placing
   a pin, dragging to refine, and naming it creates the favourite (rate-
   limited to 10 creates per minute). Renaming, removing and sharing live in
-  the favourites panel's row menu, not in the popup.
+  the favourites panel's row menu, and on a phone in the place sheet's,
+  never in the desktop popup.
 - **Default on.** Unlike the public overlays, favourites default to
   _visible_ for eligible users and are fetched at load — it is the user's
   own saved data, not a public dataset they must opt into.
@@ -231,7 +238,14 @@ users. They are shown as reference, not as authoritative geography.
 
 - **What it shows.** A circle pin at each geocoded resort. A resort pin is
   a _proxy for its parent region_ — tapping one selects that micro-region
-  and shows its rating, exactly as tapping the region fill would.
+  and shows its rating, exactly as tapping the region fill would. On a
+  desktop the tap also opens the resort popup; on a phone it opens the
+  **place sheet** (SNOW-1100) at peek — the danger tile, the resort's name
+  over its region, the Save star and the × — rising to half for the day's
+  weather at the resort's primary location and to full for the region's
+  problems, the week, the resort's details and the links onward. Both the
+  sheet's weather and its bulletin follow the scrubbed day; a forward day
+  reads today's forecast for it.
 - **Pin size carries the tier (SNOW-543).** Each resort has a curated
   `tier` — Core, Standard or Minor — and the pin radius is interpolated
   from it, so Zermatt and a one-lift village hill no longer read as
@@ -430,7 +444,8 @@ on the scrubbed day (SNOW-973) until SNOW-1062 removed that: the day's
 danger is a map layer (SNOW-979), drawn on the ground around the route
 rather than judged along it.
 
-The resort pin and the favourite pin keep the anchored popup. The tap priority puts a route
+The resort pin and the favourite pin keep the anchored popup on a desktop,
+and open the place sheet on a phone (SNOW-1100, §3.1). The tap priority puts a route
 *below* the point markers: where a favourite star or a report flag sits on
 top of a line, the pin wins, because a pin is a smaller and more
 deliberate target.

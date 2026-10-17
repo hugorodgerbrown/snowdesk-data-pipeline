@@ -1,0 +1,87 @@
+{% load i18n snowdesk_time %}
+{% comment %}
+public/partials/_resort_meta_rows.html — a resort's curated metadata rows
+(SNOW-501): operator, website, lifts, runs, piste length, elevation range,
+typical season.
+
+Shared by the resort popup (``_resort_popup.html``) and the phone place
+sheet (``_place_sheet_body.html``, SNOW-1100), so the two cannot list a
+resort differently. Every row always renders: a blank field shows a
+dashed-box placeholder rather than being omitted, so missing curation stays
+visible — an em-dash for the public, an "Add <field>" hint for staff.
+
+Context:
+  resort   — regions.Resort instance.
+  is_staff — bool: switches placeholders to curation hints.
+{% endcomment %}
+<div class="flex flex-col gap-1 border-t border-b border-border py-2">
+    {% include "public/partials/_resort_meta_row.html" with label=_("Operator") value=resort.operator_name is_staff=is_staff staff_hint=_("Add operator name") %}
+    <div class="flex items-center justify-between gap-2">
+        <span class="text-xs text-text-3">{% trans "Website" %}</span>
+        {% if resort.website %}
+            <a
+                href="{{ resort.website }}"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-xs text-status-info-text underline"
+            >{% trans "Official website" %}</a>
+        {% else %}
+            <span class="inline-block border border-dashed border-border rounded-tag px-2 py-0.5 text-xs text-text-3">
+                {% if is_staff %}
+                    {% trans "Add website" %}
+                {% else %}
+                    &mdash;
+                {% endif %}
+            </span>
+        {% endif %}
+    </div>
+    {% include "public/partials/_resort_meta_row.html" with label=_("Lifts") value=resort.num_lifts|default_if_none:""|stringformat:"s" is_staff=is_staff staff_hint=_("Add lift count") %}
+    {% include "public/partials/_resort_meta_row.html" with label=_("Runs") value=resort.num_runs|default_if_none:""|stringformat:"s" is_staff=is_staff staff_hint=_("Add run count") %}
+    <div class="flex items-center justify-between gap-2">
+        <span class="text-xs text-text-3">{% trans "Piste length" %}</span>
+        {% if resort.total_piste_km is not None %}
+            <span class="text-xs text-text-2">{{ resort.total_piste_km|floatformat:"-1" }} km</span>
+        {% else %}
+            <span class="inline-block border border-dashed border-border rounded-tag px-2 py-0.5 text-xs text-text-3">
+                {% if is_staff %}
+                    {% trans "Add piste length" %}
+                {% else %}
+                    &mdash;
+                {% endif %}
+            </span>
+        {% endif %}
+    </div>
+    <div class="flex items-center justify-between gap-2">
+        <span class="text-xs text-text-3">{% trans "Elevation" %}</span>
+        {% if resort.base_elevation_m is not None and resort.top_elevation_m is not None %}
+            <span class="text-xs text-text-2">{{ resort.base_elevation_m }}&ndash;{{ resort.top_elevation_m }}
+                m</span>
+        {% else %}
+            <span class="inline-block border border-dashed border-border rounded-tag px-2 py-0.5 text-xs text-text-3">
+                {% if is_staff %}
+                    {% trans "Add elevation range" %}
+                {% else %}
+                    &mdash;
+                {% endif %}
+            </span>
+        {% endif %}
+    </div>
+    <div class="flex items-center justify-between gap-2">
+        <span class="text-xs text-text-3">{% trans "Season" %}</span>
+        {% with s_open=resort.typical_season_open|month_day s_close=resort.typical_season_close|month_day %}
+            {% if s_open and s_close %}
+                <span class="text-xs text-text-2">{{ s_open|date:"j M" }}&ndash;{{ s_close|date:"j M" }}</span>
+            {% else %}
+                <span
+                    class="inline-block border border-dashed border-border rounded-tag px-2 py-0.5 text-xs text-text-3"
+                >
+                    {% if is_staff %}
+                        {% trans "Add typical season" %}
+                    {% else %}
+                        &mdash;
+                    {% endif %}
+                </span>
+            {% endif %}
+        {% endwith %}
+    </div>
+</div>

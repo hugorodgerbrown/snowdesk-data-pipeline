@@ -1,0 +1,239 @@
+{% load i18n components snowdesk_time %}
+{% comment %}
+public/partials/_place_sheet_body.html — what a tapped resort pin or saved
+pin's phone sheet says (SNOW-1100).
+
+Rendered by ``apps.public.place_sheet`` (``resort_sheet_partial`` and
+``favourite_sheet_partial``) and swapped by ``static/js/map_place_sheet.js``
+into ``#place-sheet``, an ``includes/_overlay_sheet.html`` that declares the
+detents peek, half and full. One fragment serves both kinds and all three
+detents, ordered so that each detent shows the next part of it:
+
+  1. PEEK (``data-sheet-peek``) — ONE ROW, the region sheet's: the region's
+     danger tile, the place's name over the region's code badge, the level
+     and the region's name, then the actions and the ×. A resort's action
+     is the Save star; a saved pin's are the panel row's own "…" menu
+     (``_favourite_row_menu_items.html``: Share → Rename → Delete). The
+     header is ``data-sheet-drag`` and, for a saved pin, also the row the
+     inline rename edits (``data-row-renameable``).
+  2. HALF (ends under ``data-sheet-half``) — the day's weather at the
+     place. The level is already on the peek row.
+  3. FULL — the region's avalanche problems, the week at the place, a
+     resort's curated details, and the links onward. With none of those
+     there is nothing for FULL to show, so ``data-sheet-detents`` drops it.
+
+Context:
+  kind            — "resort" or "favourite".
+  name            — the place's name; "" for an unnamed pin.
+  region          — MicroRegion or None.
+  day_rating      — RegionDayRating for target_date, or None.
+  level_label     — the danger level's name, or "".
+  target_date     — the day the map is showing.
+  bulletin_url    — that day's bulletin page, or "".
+  problem_cards   — the bulletin's problem cards, possibly annotated.
+  location        — the place's Location, or None.
+  weather_display — build_weather_display's result for the day's own row,
+                    or None (always None on a forward day).
+  forward_day     — on a forward day, today's forecast entry for it, or None.
+  forecast_panel  — build_point_forecast_panel's result, or None.
+  forecast_url    — the location's forecast page, or "".
+  resort          — the Resort (a resort, or a saved resort), or None.
+  resort_url      — the resort page, or "".
+  favourite       — the Favourite (kind "favourite" only), with
+                    ``w3w_share_text`` hung on it.
+  can_favourite, favourited, favourite_uuid, signin_url, is_staff
+                  — the resort's Save star (kind "resort" only).
+{% endcomment %}
+{% trans "Unnamed pin" as unnamed_pin %}
+{% firstof name unnamed_pin as label %}
+<div
+    class="space-y-4"
+    data-testid="place-sheet-body"
+    data-place-kind="{{ kind }}"
+    data-sheet-detents="{% if forecast_panel or forecast_url or resort_url or day_rating %}peek,half,full{% else %}peek,half{% endif %}"
+>
+    <div
+        data-sheet-peek
+        data-sheet-drag
+        {% if kind == "favourite" %}id="place-sheet-row" data-row-renameable{% endif %}
+    >
+        <div class="flex items-center gap-3">
+            {% if day_rating %}
+                <span
+                    class="danger-tile flex-none"
+                    data-level="{{ day_rating.max_rating }}"
+                    data-testid="place-sheet-rating"
+                >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+            {% endif %}
+            <div class="min-w-0 flex-1">
+                <h2
+                    data-row-label
+                    class="truncate text-base font-semibold leading-tight text-text-1"
+                    title="{{ label }}"
+                >
+                    {{ label }}
+                </h2>
+                {% if kind == "favourite" %}
+                    {% trans "Favourite name" as rename_label %}
+                    <input
+                        type="text"
+                        data-row-rename-input
+                        hidden
+                        value="{{ name }}"
+                        maxlength="100"
+                        aria-label="{{ rename_label }}"
+                        class="-mx-1.5 w-full min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-base font-semibold text-text-1 focus:outline-none"
+                    >
+                {% endif %}
+                {# The region sheet's second line: the region's code behind its #}
+                {# country's flag, then the level and the region's name.        #}
+                <p class="flex min-w-0 items-center gap-2 text-meta text-text-2" data-testid="place-sheet-meta">
+                    {% if region %}
+                        <span class="search-result-badge">
+                            {% with country=region.region_id|slice:":2"|lower %}
+                                {% if country == "ch" or country == "at" or country == "fr" or country == "it" %}
+                                    <svg
+                                        class="search-result-flag search-result-flag--{{ country }}"
+                                        aria-hidden="true"
+                                    >
+                                        <use href="#flag-{{ country }}" />
+                                    </svg>
+                                {% endif %}
+                            {% endwith %}
+                            {{ region.region_id }}
+                        </span>
+                        <span class="truncate">
+                            {% if level_label %}{{ level_label }} ·{% endif %}
+                            {{ region.name }}
+                        </span>
+                    {% else %}
+                        <span class="truncate">{% trans "No avalanche bulletin covers this spot" %}</span>
+                    {% endif %}
+                </p>
+            </div>
+            {% if kind == "resort" %}
+                {% if can_favourite %}
+                    {% if favourited %}
+                        {% trans "Remove from saved places" as star_label %}
+                    {% else %}
+                        {% trans "Save resort" as star_label %}
+                    {% endif %}
+                    <button
+                        type="button"
+                        data-resort-star
+                        data-resort-slug="{{ resort.slug }}"
+                        data-resort-name="{{ resort.name }}"
+                        data-resort-lat="{{ resort.latitude|default:'' }}"
+                        data-resort-lon="{{ resort.longitude|default:'' }}"
+                        data-favourited="{{ favourited|yesno:'true,false' }}"
+                        data-favourite-uuid="{{ favourite_uuid }}"
+                        aria-pressed="{{ favourited|yesno:'true,false' }}"
+                        aria-label="{{ star_label }}"
+                        title="{{ star_label }}"
+                        class="{% icon_button_classes %}"
+                    >
+                        {% include "includes/_icon_favourite.html" with size=18 filled=favourited only %}
+                    </button>
+                {% else %}
+                    {% trans "Sign in to save this resort" as signin_label %}
+                    <a
+                        href="{{ signin_url }}"
+                        aria-label="{{ signin_label }}"
+                        title="{{ signin_label }}"
+                        class="{% icon_button_classes %}"
+                    >
+                        {% include "includes/_icon_favourite.html" with size=18 only %}
+                    </a>
+                {% endif %}
+            {% else %}
+                {% blocktrans trimmed with name=label asvar row_actions_aria_label %}Actions for
+                    {{ name }}{% endblocktrans %}
+                {% include "includes/_overflow_menu.html" with trigger_id="place-sheet-actions" menu_id="place-sheet-actions-menu" trigger_label=row_actions_aria_label items_template="favourites/partials/_favourite_row_menu_items.html" row_target="#place-sheet-row" %}
+            {% endif %}
+            <button
+                type="button"
+                data-action="dismiss"
+                aria-label="{% trans 'Close' %}"
+                class="{% icon_button_classes extra='-mr-3' %}"
+            >
+                {% include "includes/_icon_close.html" only %}
+            </button>
+        </div>
+    </div>
+
+    {# HALF ends under the day's weather at the place (data-sheet-half): #}
+    {# the danger level is already on the peek row, so the weather is     #}
+    {# what half adds. The problems follow, for FULL.                      #}
+    <div class="space-y-4">
+        {% if weather_display %}
+            <section data-testid="place-sheet-weather" data-sheet-half>
+                {% if location.elevation_m is not None %}
+                    {% blocktrans with m=location.elevation_m|floatformat:0 d=target_date|date:"D j M" trimmed asvar weather_label %}
+                        Weather · {{ d }} · {{ m }} m
+                    {% endblocktrans %}
+                {% else %}
+                    {% blocktrans with d=target_date|date:"D j M" trimmed asvar weather_label %}Weather ·
+                        {{ d }}{% endblocktrans %}
+                {% endif %}
+                {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="place-sheet-weather" location_label=weather_label only %}
+            </section>
+        {% elif forward_day %}
+            {# A forward day: today's row forecast it, so its line says so. #}
+            <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
+                {% blocktrans with d=target_date|date:"D j M" trimmed asvar forward_label %}Forecast ·
+                    {{ d }}{% endblocktrans %}
+                {% include "includes/_eyebrow.html" with text=forward_label tag="h3" %}
+                {% include "includes/_weather_day_line.html" with day=forward_day testid_prefix="place-sheet-forward-day" only %}
+            </section>
+        {% endif %}
+        {% if kind == "resort" %}
+            {% include "public/partials/_resort_why_it_matters.html" %}
+        {% endif %}
+        {% if problem_cards %}
+            <section class="space-y-2" data-testid="place-sheet-problems">
+                {% translate "Avalanche problems" as problems_eyebrow %}
+                {% include "includes/_eyebrow.html" with text=problems_eyebrow tag="h3" %}
+                {% for card in problem_cards %}
+                    {% include "favourites/partials/_favourite_problem.html" with card=card %}
+                {% endfor %}
+            </section>
+        {% elif region and not day_rating %}
+            <p class="text-sm text-text-2">
+                {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
+                    {{ d }}{% endblocktrans %}
+            </p>
+        {% endif %}
+    </div>
+
+    {# FULL: the week at the place, a resort's details, and the links on. #}
+    {% if forecast_panel %}
+        <section class="forecast-selector space-y-3" data-testid="place-sheet-week">
+            {% translate "The week" as week_eyebrow %}
+            {% include "includes/_eyebrow.html" with text=week_eyebrow tag="h3" %}
+            {% include "includes/_weather_day_picker.html" with panel=forecast_panel testid_prefix="place-sheet-forecast" selector_name="place-sheet-day" only %}
+            {% for day in forecast_panel.days %}
+                {% include "includes/_weather_day_line.html" with day=day reveal_index=forloop.counter0 testid_prefix="place-sheet-day-line" only %}
+            {% endfor %}
+        </section>
+    {% endif %}
+    {% if kind == "resort" %}
+        <section class="space-y-2" data-testid="place-sheet-details">
+            {% translate "About this resort" as details_eyebrow %}
+            {% include "includes/_eyebrow.html" with text=details_eyebrow tag="h3" %}
+            {% include "public/partials/_resort_meta_rows.html" %}
+        </section>
+    {% endif %}
+    <div class="flex flex-col gap-2" data-testid="place-sheet-links">
+        {% if forecast_url %}
+            {% include "includes/_button.html" with label=_("Full forecast →") href=forecast_url variant="secondary" full_width=True %}
+        {% endif %}
+        {% if resort_url %}
+            {% include "includes/_button.html" with label=_("View resort →") href=resort_url variant="secondary" full_width=True %}
+        {% endif %}
+        {% if day_rating %}
+            {% blocktrans with d=target_date|date:"j M Y" trimmed asvar bulletin_label %}Open bulletin for
+                {{ d }}{% endblocktrans %}
+            {% include "includes/_button.html" with label=bulletin_label href=bulletin_url variant="secondary" full_width=True %}
+        {% endif %}
+    </div>
+</div>

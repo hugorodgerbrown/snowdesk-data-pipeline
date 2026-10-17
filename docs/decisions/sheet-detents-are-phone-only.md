@@ -2,7 +2,7 @@
 name: sheet-detents-are-phone-only
 description: Phone sheet detents (_overlay_sheet.html detents, data-sheet-detents, bindDetents); forms take none; sheet covers, never moves, map controls
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-17
 ---
 
 # Sheet detents are phone-only, and forms take none
@@ -91,6 +91,14 @@ only binds it to pointer events. Without the core on the page,
   `display: none`, which has no box to measure.
 - The route sheet's FULL is staff-only (SNOW-1099): it is the point debug
   readout. The partial declares `peek,half` for everyone else.
+- The place sheet (SNOW-1100, resort and saved pins) stops HALF under the
+  day's weather: the level is already on the peek row, so the weather is
+  what HALF adds, and the problems wait for FULL. It drops FULL only when
+  it has nothing for it (no weather, no links, no rating).
+- A resting sheet's transform is `none`, never `translateY(0)`. Any
+  transform makes the sheet the containing block for `position: fixed`
+  descendants, which put the place sheet's "…" menu a screen-height off
+  the bottom (SNOW-1100).
 - A padding change is skipped while the camera is moving and applied on
   `moveend`, because a `jumpTo` mid-flight cancels the flight (a search
   pick frames its region just as the sheet's content re-fits PEEK).

@@ -7815,6 +7815,9 @@
     // that decision for every sheet as a side effect of this ticket.
     const closeMapDetailSurfaces = () => {
       closeDetailPopup();
+      // SNOW-1100: on a phone the resort/pin detail is the place sheet, which
+      // MapSheet never closes on a tap inside #map — so it is closed here.
+      window.pwaPlaceSheet?.close();
     };
 
     // SNOW-658: the anchored detail popup is a map overlay like the layers
@@ -7867,7 +7870,18 @@
     // tapped resort pin.
     const openResortPopup = async (resortFeature) => {
       const resortId = resortFeature.properties && resortFeature.properties.id;
-      if (resortId == null || !RESORT_POPUP_URL_TEMPLATE) return false;
+      if (resortId == null) return false;
+      // SNOW-1100: on a phone the tap opens the place sheet, which leaves
+      // the ground around the pin in view; the popup is the desktop's.
+      if (window.pwaPlaceSheet?.open({
+        kind: 'resort',
+        id: String(resortId),
+        name: resortFeature.properties.name || '',
+      })) {
+        closeDetailPopup();
+        return true;
+      }
+      if (!RESORT_POPUP_URL_TEMPLATE) return false;
 
       const url = RESORT_POPUP_URL_TEMPLATE.replace(
         '__SLUG__', encodeURIComponent(String(resortId)),
@@ -8221,6 +8235,16 @@
     // favourites panel, which is why nothing else rides this event now.
     const activateFavourite = (feature) => {
       const props = feature.properties;
+      // SNOW-1100: on a phone the place sheet answers the tap instead.
+      if (window.pwaPlaceSheet?.open({
+        kind: 'favourite',
+        id: props.uuid,
+        name: props.name || '',
+        createdAt: props.created_at || '',
+      })) {
+        closeDetailPopup();
+        return;
+      }
       const container = document.createElement('div');
       container.setAttribute('data-favourite-detail', '');
       document.dispatchEvent(new CustomEvent('snowdesk:favourite-selected', {
