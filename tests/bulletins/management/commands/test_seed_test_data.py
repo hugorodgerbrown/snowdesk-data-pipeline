@@ -25,6 +25,10 @@ Covers:
   - --include route / trip seeds the dev user's one route and the trip planned
     off it (SNOW-834), both through the production services rather than the
     factories, so the derived fields and the roster are the real ones.
+  - --include weather writes today's Weather row, with an hourly series and
+    six forward days, for each seeded Location and the CH-4115 centroid,
+    which the seed links offline so the map has a public weather symbol
+    whose sheet draws the meteogram.
 
 seed_test_data needs the ``eaws_CH`` and ``resorts`` fixtures pre-loaded (it
 wires real MicroRegion FKs), so the commit tests load them first.
@@ -41,7 +45,8 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import override_settings
+from django.test import Client, override_settings
+from django.urls import reverse
 from django.utils import timezone
 from pytest_django import DjangoDbBlocker
 
@@ -65,9 +70,11 @@ from apps.bulletins.models import (
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
+from apps.regions.models import MicroRegion
 from apps.routes.models import Route
 from apps.routes.services.canonical import canonical_paths
 from apps.trips.models import Trip
+from apps.weather.models import Weather
 
 User = get_user_model()
 
@@ -294,13 +301,14 @@ class TestCommit:
     def test_all_seeds_the_new_models(self) -> None:
         """--all seeds the stage-2 Location/Favourite layer.
 
-        One Location MORE than the seeded pins: ``create_trip`` mints an
-        anonymous row for the trip's meeting point (SNOW-834), which is a
-        Location like any other. Counted here rather than filtered out, so
-        the number stays an honest total.
+        Two Locations MORE than the seeded pins: ``create_trip`` mints an
+        anonymous row for the trip's meeting point (SNOW-834), and the
+        weather seed links the CH-4115 centroid (SNOW-1108). Counted here
+        rather than filtered out, so the number stays an honest total.
         """
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
-        assert Location.objects.count() == _EXPECTED_LOCATIONS + 1
+        # + the trip's meeting point + the CH-4115 centroid (weather).
+        assert Location.objects.count() == _EXPECTED_LOCATIONS + 2
         assert Trip.objects.get().meeting_point is not None
         # SNOW-802: placed pins only — the dev user's region pin is not one.
         assert Favourite.objects.placed().count() == _EXPECTED_FAVOURITES
@@ -705,3 +713,67 @@ class TestTripSeeding:
         assert trip.points == route.points
         assert trip.meeting_point is not None
         assert trip.participants.filter(user=trip.created_by).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("_regions")
+class TestWeatherSeeding:
+    """Today's weather, so the meteogram draws in a fresh database (SNOW-1108)."""
+
+    def test_include_weather_pulls_in_location(self) -> None:
+        """Each seeded Location and the CH-4115 centroid gets one row today."""
+        call_command("seed_test_data", "--include", "weather", commit=True, verbosity=0)
+
+        centroid = MicroRegion.objects.get(region_id="CH-4115").centroid_location
+        assert centroid is not None
+        assert Location.objects.count() == _EXPECTED_LOCATIONS + 1
+        assert Weather.objects.count() == _EXPECTED_LOCATIONS + 1
+        assert set(Weather.objects.values_list("observed_on", flat=True)) == {
+            timezone.localdate()
+        }
+        assert Weather.objects.filter(location=centroid).exists()
+
+    def test_a_row_has_the_shape_fetch_writes(self) -> None:
+        """24 hours today; six forward days, the first two with hours."""
+        call_command("seed_test_data", "--include", "weather", commit=True, verbosity=0)
+
+        row = Weather.objects.first()
+        assert row is not None
+        assert row.hourly is not None
+        assert len(row.hourly) == 24
+        assert row.hourly[0]["time"] == f"{timezone.localdate().isoformat()}T00:00"
+        assert row.forecast is not None
+        assert len(row.forecast) == 6
+        assert [bool(day.get("hourly")) for day in row.forecast] == [
+            True,
+            True,
+            False,
+            False,
+            False,
+            False,
+        ]
+
+    def test_higher_pins_are_colder(self) -> None:
+        """The lapse rate makes the 2700 m pin colder than the 1500 m one."""
+        call_command("seed_test_data", "--include", "weather", commit=True, verbosity=0)
+
+        low = Weather.objects.get(location__elevation_m=1500.0)
+        high = Weather.objects.get(location__elevation_m=2700.0)
+        assert high.temperature_2m_max is not None
+        assert low.temperature_2m_max is not None
+        assert high.temperature_2m_max < low.temperature_2m_max
+
+    def test_the_centroid_sheet_draws_the_meteogram(self, client: Client) -> None:
+        """The map's one public symbol opens a sheet with the hourly chart."""
+        call_command("seed_test_data", "--include", "weather", commit=True, verbosity=0)
+        centroid = MicroRegion.objects.get(region_id="CH-4115").centroid_location
+        assert centroid is not None
+
+        response = client.get(
+            reverse("api:weather_detail", kwargs={"short_id": centroid.short_id})
+        )
+
+        assert response.status_code == 200
+        html = response.json()["html"]
+        assert 'data-testid="weather-detail-hourly' in html
+        assert 'data-sheet-detents="peek,half,full"' in html
