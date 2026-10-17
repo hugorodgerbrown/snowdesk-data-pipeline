@@ -40,6 +40,17 @@ supplied elevations: the seed makes no outbound call. Without it the
 needs a paid plan and an API key. The words name nowhere, which is safe
 here because this command refuses to run when ``DEBUG`` is ``False``.
 
+Every seeded Location also gets a ``Weather`` row for TODAY, carrying a full
+hourly series and six forward days (tomorrow with its own hours, as the
+fetcher writes them), so
+the meteogram draws without a fetch. So does the CH-4115 region's centroid
+Location, which the seed links offline the way
+``link_region_centroid_locations`` does: a centroid is ``public()``, so it is
+the one weather symbol the map draws, and tapping it opens the weather sheet
+through peek, half and full. Dated relative to the run, like the trip below,
+because the weather surfaces read today's row and a pinned April date would
+seed weather nothing shows. The figures are invented and stable, not fetched.
+
 The same dev user gets one Route and the Trip planned off it (SNOW-834), both
 written through the production services rather than the factories — so the
 route's derived fields come from the real GPX parser and the trip carries the
@@ -87,6 +98,7 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     build_render_model,
 )
+from apps.weather.services.fetch import HOURLY_DAYS
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -481,6 +493,7 @@ class SeedModel(enum.StrEnum):
     BULLETINGROUPING = "bulletingrouping"
     LOCATION = "location"
     FAVOURITE = "favourite"
+    WEATHER = "weather"
     USER = "user"
     ROUTE = "route"
     TRIP = "trip"
@@ -502,6 +515,8 @@ _DEPENDENCIES: dict[SeedModel, tuple[SeedModel, ...]] = {
     SeedModel.LOCATION: (),
     # Favourites are owned by the seeded normal dev user, so USER is a prerequisite.
     SeedModel.FAVOURITE: (SeedModel.LOCATION, SeedModel.USER),
+    # A Weather row is one Location's day, so it needs the seeded Locations.
+    SeedModel.WEATHER: (SeedModel.LOCATION,),
     SeedModel.USER: (),
     # A route belongs to somebody, and a trip is planned FROM a route by its
     # owner — so both reach back to the seeded normal dev user.
@@ -521,6 +536,7 @@ _BULLETIN_FAMILY: tuple[SeedModel, ...] = (
 _POINT_FAMILY: tuple[SeedModel, ...] = (
     SeedModel.LOCATION,
     SeedModel.FAVOURITE,
+    SeedModel.WEATHER,
 )
 _TRIP_FAMILY: tuple[SeedModel, ...] = (
     SeedModel.ROUTE,
@@ -584,6 +600,125 @@ _SEED_TRIP_START_TIME = time(7, 30)
 # the one state manual testing cannot use. Seven days out puts it under
 # "Coming up" whenever the seed is run.
 _SEED_TRIP_DAYS_AHEAD = 7
+
+# The seeded weather (Hugo, 17 Oct 2026: the meteogram should draw in a fresh
+# database without a hand-written row). Today's weather code, then one per
+# forward day — snow today and tomorrow, clearing, a second front at the end —
+# so the week strip shows more than one icon. WMO codes, as Open-Meteo sends.
+_SEED_WEATHER_CODES: tuple[int, ...] = (73, 71, 3, 1, 0, 61, 73)
+_SEED_WEATHER_SNOWFALL_CM: tuple[float, ...] = (8.0, 4.5, 0.0, 0.0, 0.0, 1.0, 9.0)
+# Daily max and min at 1500 m; other heights follow the standard lapse rate.
+_SEED_WEATHER_TMAX_C: tuple[float, ...] = (1.0, -1.0, 2.0, 5.0, 7.0, 4.0, 0.0)
+_SEED_WEATHER_TMIN_C: tuple[float, ...] = (-6.0, -8.0, -7.0, -4.0, -2.0, -3.0, -6.0)
+_SEED_WEATHER_REFERENCE_M = 1500.0
+_SEED_WEATHER_LAPSE_C_PER_M = 0.0065
+
+
+def _seed_hourly(day: date, index: int, offset_c: float) -> list[dict[str, Any]]:
+    """Return 24 ``HourlyRow`` dicts for one seeded day.
+
+    Temperature follows a day curve from the day's minimum at 06:00 to its
+    maximum at 15:00. Snow falls over the morning on a snowy day and the
+    afternoon stays dry, so the chart's bars and its dry stretch both show.
+    ``time`` is local and carries no offset, as Open-Meteo sends it.
+
+    Args:
+        day: The calendar day the hours belong to.
+        index: The day's position in the seeded week (0 is today).
+        offset_c: The lapse-rate correction for the location's height.
+
+    Returns:
+        The day's hourly series.
+
+    """
+    tmin = _SEED_WEATHER_TMIN_C[index] + offset_c
+    tmax = _SEED_WEATHER_TMAX_C[index] + offset_c
+    snow_total = _SEED_WEATHER_SNOWFALL_CM[index]
+    rows: list[dict[str, Any]] = []
+    for hour in range(24):
+        # 0 at 06:00, 1 at 15:00, falling back overnight.
+        if 6 <= hour <= 15:
+            warmth = (hour - 6) / 9
+        else:
+            warmth = max(0.0, 1 - ((hour - 15) % 24) / 15)
+        snowing = snow_total > 0 and hour < 10
+        snow = round(snow_total / 10, 2) if snowing else 0.0
+        rows.append(
+            {
+                "time": f"{day.isoformat()}T{hour:02d}:00",
+                "temperature_2m": round(tmin + (tmax - tmin) * warmth, 1),
+                "snowfall": snow,
+                "precipitation": round(snow * 0.7, 2),
+                "wind_speed_10m": float(12 + (hour % 8) * 2 + index),
+                "wind_gusts_10m": float(25 + (hour % 8) * 3 + index),
+                "wind_direction_10m": float(240 + hour * 2),
+                "freezing_level_height": float(1400 + index * 150 + hour * 10),
+            }
+        )
+    return rows
+
+
+def _seed_weather_fields(today: date, elevation_m: float | None) -> dict[str, Any]:
+    """Return the field values of one seeded ``Weather`` row for ``today``.
+
+    The daily scalars describe today; ``hourly`` is today's 24 hours; and
+    ``forecast`` holds the six days after it. As in
+    ``apps.weather.services.fetch``, hours cover the first ``HOURLY_DAYS``
+    days counting today, so only forward days below that position carry
+    their own.
+
+    Args:
+        today: The row's ``observed_on``.
+        elevation_m: The location's height, or None for the reference
+            height.
+
+    Returns:
+        Keyword arguments for ``Weather.objects.create`` (location excluded).
+
+    """
+    height = _SEED_WEATHER_REFERENCE_M if elevation_m is None else elevation_m
+    offset_c = round(
+        -(height - _SEED_WEATHER_REFERENCE_M) * _SEED_WEATHER_LAPSE_C_PER_M, 1
+    )
+    tz = django_timezone.get_current_timezone()
+
+    def daily(index: int) -> dict[str, Any]:
+        """Return one day's daily scalars, shared by the row and forecast[]."""
+        return {
+            "weather_code": _SEED_WEATHER_CODES[index],
+            "temperature_2m_max": round(_SEED_WEATHER_TMAX_C[index] + offset_c, 1),
+            "temperature_2m_min": round(_SEED_WEATHER_TMIN_C[index] + offset_c, 1),
+            "snowfall_sum": _SEED_WEATHER_SNOWFALL_CM[index],
+            "precipitation_sum": round(_SEED_WEATHER_SNOWFALL_CM[index] * 0.7, 1),
+            "wind_speed_10m_max": float(26 + index * 2),
+            "wind_gusts_10m_max": float(46 + index * 3),
+            "wind_direction_10m_dominant": 255.0,
+            # The day's highest hourly value, as ``fetch`` derives it.
+            "freezing_level_height": float(1630 + index * 150),
+        }
+
+    forecast: list[dict[str, Any]] = []
+    for index in range(1, len(_SEED_WEATHER_CODES)):
+        day = today + timedelta(days=index)
+        entry: dict[str, Any] = {
+            "date": day.isoformat(),
+            **daily(index),
+            "sunrise": f"{day.isoformat()}T07:25",
+            "sunset": f"{day.isoformat()}T18:40",
+        }
+        if index < HOURLY_DAYS:
+            entry["hourly"] = _seed_hourly(day, index, offset_c)
+        forecast.append(entry)
+
+    return {
+        "observed_on": today,
+        "fetched_at": django_timezone.now(),
+        **daily(0),
+        "sunrise": datetime.combine(today, time(7, 25), tz),
+        "sunset": datetime.combine(today, time(18, 40), tz),
+        "hourly": _seed_hourly(today, 0, offset_c),
+        "forecast": forecast,
+    }
 
 
 def _seed_route_gpx() -> str:
@@ -1095,6 +1230,8 @@ class Command(BaseCommand):
                 counts[model.value] = self._seed_favourites(
                     locations, dev_user, verbosity
                 )
+            elif model is SeedModel.WEATHER:
+                counts[model.value] = self._seed_weather(locations, verbosity)
         return counts
 
     def _seed_bulletins(
@@ -1340,6 +1477,60 @@ class Command(BaseCommand):
         if verbosity >= 2:
             self.stdout.write(f"  Created {created} Favourite rows")
         return created
+
+    def _seed_weather(self, locations: "list[Location]", verbosity: int) -> int:
+        """Write today's Weather row for each seeded Location and a centroid.
+
+        The centroid is the CH-4115 region's, linked here exactly as
+        ``link_region_centroid_locations`` links one — offline, from the
+        fixture's ``boundary`` and ``centroid_elevation_m``. It is the only
+        ``public()`` location the seed has, so it is what puts a weather
+        symbol on the map. A region with no readable boundary gets none, and
+        the pins still get their rows.
+
+        Args:
+            locations: The seeded Location instances.
+            verbosity: Verbosity level.
+
+        Returns:
+            The number of Weather rows created.
+
+        """
+        from apps.locations.services.anchor import anchor_location
+        from apps.regions.fixture_utils import centre_from_bbox
+        from apps.regions.models import MicroRegion
+        from apps.weather.models import Weather
+
+        targets = list(locations)
+        for region in MicroRegion.objects.filter(region_id__in=DETAIL_REGIONS):
+            if region.centroid_location_id is None:
+                if not isinstance(region.boundary, dict):
+                    continue
+                try:
+                    centre = centre_from_bbox(region.boundary)
+                except KeyError, TypeError, ValueError, IndexError:
+                    # Mirrors link_region_centroid_locations: an unreadable
+                    # boundary is a region with no weather, not a failed seed.
+                    continue
+                region.centroid_location = anchor_location(
+                    float(centre["lat"]),
+                    float(centre["lon"]),
+                    region.centroid_elevation_m,
+                )
+                region.save(update_fields=["centroid_location", "updated_at"])
+            if region.centroid_location is not None:
+                targets.append(region.centroid_location)
+
+        today = django_timezone.localdate()
+        for location in targets:
+            Weather.objects.create(
+                location=location,
+                **_seed_weather_fields(today, location.elevation_m),
+            )
+
+        if verbosity >= 2:
+            self.stdout.write(f"  Created {len(targets)} Weather rows")
+        return len(targets)
 
     def _seed_trip_family(
         self, resolved: "set[SeedModel]", dev_user: "User | None", verbosity: int
