@@ -27,7 +27,7 @@ this one: the **terrain-class tiles** (SNOW-978), PNGs whose pixels carry a
 height, an aspect octant and a 5° slope band, built in `snowdesk-tiles` from
 the same swissALTI3D grid with the same Horn kernel and 10 m window as
 `sample_slope`. The terrain filter paints them on the device, and since
-SNOW-1073 so does the map's slope layer — the filter's "Colour by slope"
+SNOW-1073 so does the map's slope layer — the filter's "By slope"
 mode, which replaced swisstopo's pre-rendered
 `ch.swisstopo.hangneigung-ueber_30` raster
 ([why](../decisions/slope-layer-is-painted-from-our-class-tiles.md)). So

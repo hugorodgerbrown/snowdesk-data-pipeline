@@ -165,9 +165,9 @@ audience its flag shipped with — just not by a waffle flag.
 
 The slope-angle raster kept a kill switch, `settings.SLOPE_TILE_URL`,
 until SNOW-1073 removed the raster and the setting. The slope layer is the
-terrain filter's "Colour by slope" mode now, and its switch is the
+terrain filter's "By slope" mode now, and its switch is the
 filter's: `settings.TERRAIN_CLASS_TILE_URL`, empty by default. Clearing it
-on Render removes the filter's row, sheet, chip, legend section and CSP
+on Render removes the filter's row, sheet, legend section and CSP
 entry — and the slope layer with them — on a restart rather than a
 deploy.
 

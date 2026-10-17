@@ -1324,7 +1324,7 @@ SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
         "context": {
             "name": "component-library-segmented-off",
             "value": "off",
-            "label": "Highlight matches",
+            "label": "Light",
         },
     },
     {
@@ -1332,7 +1332,7 @@ SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
         "context": {
             "name": "component-library-segmented-on",
             "value": "on",
-            "label": "Colour by slope",
+            "label": "Dark",
             "checked": True,
         },
     },
