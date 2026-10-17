@@ -32,7 +32,9 @@ Context:
   bulletin_url    — that day's bulletin page, or "".
   problem_cards   — the bulletin's problem cards, possibly annotated.
   location        — the place's Location, or None.
-  weather_display — build_weather_display's result, or None.
+  weather_display — build_weather_display's result for the day's own row,
+                    or None (always None on a forward day).
+  forward_day     — on a forward day, today's forecast entry for it, or None.
   forecast_panel  — build_point_forecast_panel's result, or None.
   forecast_url    — the location's forecast page, or "".
   resort          — the Resort (a resort, or a saved resort), or None.
@@ -174,6 +176,14 @@ Context:
                         {{ d }}{% endblocktrans %}
                 {% endif %}
                 {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="place-sheet-weather" location_label=weather_label only %}
+            </section>
+        {% elif forward_day %}
+            {# A forward day: today's row forecast it, so its line says so. #}
+            <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
+                {% blocktrans with d=target_date|date:"D j M" trimmed asvar forward_label %}Forecast ·
+                    {{ d }}{% endblocktrans %}
+                {% include "includes/_eyebrow.html" with text=forward_label tag="h3" %}
+                {% include "includes/_weather_day_line.html" with day=forward_day testid_prefix="place-sheet-forward-day" only %}
             </section>
         {% endif %}
         {% if kind == "resort" %}

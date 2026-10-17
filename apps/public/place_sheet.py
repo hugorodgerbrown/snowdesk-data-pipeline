@@ -15,10 +15,11 @@ detent reveals the next part of it:
     code, the level and the region's name, then the place's actions and ×.
     A resort's action is its Save star; a saved pin's are the panel row's
     own "…" menu (Share → Rename → Delete, the order every list keeps);
-  - HALF — the day's weather at the place, then the region's avalanche
-    problems (a saved pin's annotated against its own altitude);
-  - FULL — the week at the place, then for a resort its curated details,
-    and the links onward: the forecast page, the resort page, the bulletin.
+  - HALF — the day's weather at the place;
+  - FULL — the region's avalanche problems (a saved pin's annotated against
+    its own altitude), the week at the place, then for a resort its curated
+    details, and the links onward: the forecast page, the resort page, the
+    bulletin.
 
 Both views read the day the map is showing (``?d=``, today by default), as
 the region sheet does, so a reader looking at a past day reads that day's
@@ -114,12 +115,25 @@ def _place_context(
             )
     level_meta = _DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
 
+    # A forward day has no row of its own: the fetch writes today's row and
+    # carries the days after it in that row's ``forecast`` column, which is
+    # what the map's weather layer draws from too. So a forward day reads
+    # today's row, and the day itself is that row's matching forecast entry.
+    today = timezone.localdate()
+    row_date = min(target_date, today)
     weather = (
-        Weather.objects.for_location(location).on_date(target_date).first()
+        Weather.objects.for_location(location).on_date(row_date).first()
         if location is not None
         else None
     )
     now = timezone.now()
+    forecast_panel = build_point_forecast_panel(weather, now)
+    forward_day = None
+    if forecast_panel is not None and target_date > today:
+        forward_day = next(
+            (day for day in forecast_panel["days"] if day["date"] == target_date),
+            None,
+        )
     return {
         "region": region,
         "day_rating": day_rating,
@@ -130,9 +144,16 @@ def _place_context(
         else "",
         "problem_cards": problem_cards,
         "location": location,
-        "weather_display": build_weather_display(weather, now),
-        "forecast_panel": build_point_forecast_panel(weather, now),
-        "forecast_url": location.get_absolute_url() if location is not None else "",
+        "weather_display": build_weather_display(weather, now)
+        if row_date == target_date
+        else None,
+        "forward_day": forward_day,
+        "forecast_panel": forecast_panel,
+        "forecast_url": (
+            f"{location.get_absolute_url()}?date={target_date.isoformat()}"
+            if location is not None
+            else ""
+        ),
     }
 
 
