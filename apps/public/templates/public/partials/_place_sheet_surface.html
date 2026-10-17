@@ -1,0 +1,29 @@
+{% load i18n static %}
+{% comment %}
+public/partials/_place_sheet_surface.html — the phone place sheet and its JS
+(SNOW-1100).
+
+Included from map.html beside the region sheet it is modelled on: an empty
+sheet with no roundel and no trigger button, because the trigger is a tap on
+a resort pin or a saved pin. On a phone that tap opens this sheet at PEEK
+instead of the anchored detail popup, which covered the ground around the
+place the reader had asked about. At ``sm`` and up the popup stays and this
+sheet never opens.
+
+Context expected:
+  (None. map_place_sheet.js reads the two endpoint templates off #map's
+  data-resort-sheet-url and data-favourite-sheet-url, which _map_embed.html
+  renders.)
+{% endcomment %}
+{% trans "Place" as place_sheet_aria_label %}
+{% include "includes/_overlay_sheet.html" with id="place-sheet" aria_label=place_sheet_aria_label detents="peek,half,full" initial="peek" %}
+<script defer src="{% static 'js/map_place_sheet.js' %}"></script>
+{# The module's own user-facing strings — see docs/i18n.md. #}
+<template id="place-sheet-strings-template">
+    <span data-string="loading">{% trans "Loading place details…" %}</span>
+    <span data-string="failed">{% trans "Place details are unavailable offline." %}</span>
+    <span data-string="share-copied">{% trans "Copied." %}</span>
+    <span data-string="share-failed">{% trans "Could not share this pin." %}</span>
+    <span data-string="rename-failed">{% trans "Could not rename this pin — please try again." %}</span>
+    <span data-string="delete-failed">{% trans "Could not delete this pin — please try again." %}</span>
+</template>

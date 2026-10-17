@@ -4882,9 +4882,13 @@ body.map-framing #map-legend {
        `hidden` and before map_sheet.js sets its detent, so the browser
        takes its first style of the sheet without a detent, and a starting
        style that needed one never applied. The translate is a percentage,
-       so it resolves against the peek height once the detent lands. */
+       so it resolves against the peek height once the detent lands.
+       At rest the transform is `none`, not translateY(0): any other value
+       makes the sheet the containing block of its `position: fixed`
+       descendants, and the "…" menu (overflow_menu.js) is one — it would
+       land a viewport's height down, off the screen (SNOW-1100). */
     [data-detents] {
-        transform: translateY(0);
+        transform: none;
         transition:
             height 280ms cubic-bezier(0.32, 0.72, 0, 1),
             transform 280ms cubic-bezier(0.32, 0.72, 0, 1);

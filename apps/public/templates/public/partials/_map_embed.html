@@ -80,6 +80,9 @@ Optional context:
     data-region-summary-url="{% url 'api:region_summary' region_id='XX-0000' %}"
     {# SNOW-1098: the phone region sheet's body, read by map_region_sheet.js. #}
     data-region-sheet-url="{% url 'public:region_sheet_partial' region_id='XX-0000' %}"
+    {# SNOW-1100: the phone place sheet's bodies, read by map_place_sheet.js. #}
+    data-resort-sheet-url="{% url 'public:resort_sheet_partial' slug='__SLUG__' %}"
+    data-favourite-sheet-url="{% url 'public:favourite_sheet_partial' uuid='00000000-0000-0000-0000-000000000000' %}"
     {# SNOW-801: read by map_region_panel.js for the region panel's resorts.  #}
     data-resorts-by-region-url="{% url 'api:resorts_by_region' %}"
     {# SNOW-499: resort-pin popup URL — public endpoint, always emitted. #}

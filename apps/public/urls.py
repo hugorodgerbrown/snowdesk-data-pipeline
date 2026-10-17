@@ -59,7 +59,7 @@ resolver matches the literal suffixes first.
 from django.urls import path
 from django.views.generic import RedirectView
 
-from . import debug_views, region_sheet, views
+from . import debug_views, place_sheet, region_sheet, views
 from .feeds import CountryBulletinFeed
 
 app_name = "public"
@@ -228,6 +228,17 @@ urlpatterns += [
         "partials/region-sheet/<region_id:region_id>/",
         region_sheet.region_sheet_partial,
         name="region_sheet_partial",
+    ),
+    # SNOW-1100: the body of the phone place sheet a resort or pin tap opens.
+    path(
+        "partials/place-sheet/resort/<slug:slug>/",
+        place_sheet.resort_sheet_partial,
+        name="resort_sheet_partial",
+    ),
+    path(
+        "partials/place-sheet/favourite/<uuid:uuid>/",
+        place_sheet.favourite_sheet_partial,
+        name="favourite_sheet_partial",
     ),
     # Season calendar partial — HTMX-deferred heatmap grid (SNOW-170).
     # Registered before the generic <region_id:region_id>/ pattern for the same reason.
