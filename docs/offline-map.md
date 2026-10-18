@@ -3379,12 +3379,15 @@ Android's adaptive-icon mask never reaches it.
 The manifest view (`apps.public.views.serve_manifest`) and `base.html` both
 read `apps.public.site_environment.PWAEnvironmentIdentity.from_settings()`,
 which resolves `settings.SITE_ENVIRONMENT` to a bundle of identity
-fields — `name_display`, `short_name`, `icon_dir`, `theme_color`. On
-production (`SITE_ENVIRONMENT=production`, the default) the identity
+fields — `name_display`, `short_name`, `icon_static_dir`, `theme_color`.
+On production (`SITE_ENVIRONMENT=production`, the default) the identity
 matches the pre-SNOW-399 hard-coded values. On any other value it
 switches to `Snowdesk (Staging)` / `Snowdesk Staging` / the
-`pwa-staging/` icon directory / amber `#b45309` for both the
-manifest `theme_color` and the `<meta name="theme-color">` tag.
+`pwa-staging/` icon directory. SNOW-1112 took the colour out of the
+status bar: `theme_color` now equals `background_color` (`#f2f0ec`) on
+every environment, so the amber tile is the staging tell, and the
+identity also carries `background_color` and `tile_color`. See
+[`pwa-launch.md`](pwa-launch.md).
 
 The browser-tab favicon follows the same identity through its `favicon`
 field: `favicon.svg` on production, the amber `favicon-staging.svg`

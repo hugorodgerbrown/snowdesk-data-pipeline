@@ -1,8 +1,8 @@
 ---
 name: the-launch-screen-is-two-halves-that-match
-description: PWA splash — apple-touch-startup-image, bin/build-pwa-splash, splash-manifest.json, the in-app launch shell; iOS never used background_color
+description: PWA splash — apple-touch-startup-image, bin/build-pwa-splash, the launch shell; Android circle mark; theme_color equals background_color
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-18
 ---
 
 # The launch screen is two halves that have to match
@@ -65,3 +65,28 @@ at the exact moment the feature is trying to be invisible.
   nothing can read that preference before the page runs.
 - **Staging has no splash set of its own.** The staging tell stays the
   amber tile and status bar, where a tester chooses the app.
+
+**Amended by SNOW-1112 (2026-10-18).** The same principle, now applied to
+Android, which this record had treated as solved by the manifest:
+
+- **The shell draws what the platform's splash drew.** Android's
+  generated splash shows the manifest's maskable icon cropped to a circle,
+  not the tile. So the shell has two marks, and its inline gate picks one:
+  the circle-clipped maskable icon by default, and the tile on iOS. The
+  composition is no longer "the same everywhere" but "the same as the
+  screen it replaces".
+- **Every value comes from `PWAEnvironmentIdentity`.** The shell's `src`
+  was a hardcoded production path, so a staging install launched from the
+  amber icon onto the green one. The icons, the background and
+  `theme_color` are now read from the identity by the manifest and the
+  shell alike, and `tests/public/test_pwa_launch_parity.py` compares the
+  two rendered outputs.
+- **The status bar is no longer a staging tell.** Android paints the
+  splash's status bar in `background_color` and switches to `theme_color`
+  at first paint, so the amber (staging) and near-black (production)
+  `theme_color` were a colour flip at the handoff. Both now equal
+  `background_color`. The previous consequence "the staging tell stays the
+  amber tile and status bar" becomes the tile alone.
+
+The current contract, and how to verify it on a device, is in
+[`docs/pwa-launch.md`](../pwa-launch.md).

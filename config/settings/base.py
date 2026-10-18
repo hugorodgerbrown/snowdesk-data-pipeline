@@ -324,9 +324,9 @@ TEMPLATES = [
                 # pwa_version_check.js (docs/decisions/dev-bypasses-the-shell-cache.md).
                 "apps.public.context_processors.pwa_dev_shell_bypass",
                 # SNOW-399: injects SITE_ENVIRONMENT and the derived
-                # SITE_NAME_DISPLAY / PWA_ICON_DIR / PWA_THEME_COLOR so
-                # base.html can render a distinct app name, icon, and theme
-                # colour on staging vs production PWA installs.
+                # SITE_NAME_DISPLAY / icon URLs / PWA_THEME_COLOR /
+                # PWA_BACKGROUND_COLOR so base.html and the launch shell
+                # render the same identity the manifest serves.
                 "apps.public.context_processors.site_environment",
                 # Injects ``persistent_banners`` — the admin-managed
                 # banners targeted at this request's user. A context processor

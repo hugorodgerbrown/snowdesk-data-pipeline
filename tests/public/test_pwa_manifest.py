@@ -201,7 +201,7 @@ def test_manifest_defaults_to_production_name_and_theme() -> None:
     manifest = _load_manifest()
     assert manifest["name"] == "Snowdesk"
     assert manifest["short_name"] == "Snowdesk"
-    assert manifest["theme_color"] == "#1a1a1a"
+    assert manifest["theme_color"] == "#f2f0ec"
 
 
 def test_manifest_icon_srcs_default_to_production_directory() -> None:
@@ -226,16 +226,15 @@ def test_manifest_swaps_name_for_staging() -> None:
 
 
 @override_settings(SITE_ENVIRONMENT="staging")
-def test_manifest_swaps_theme_color_for_staging() -> None:
-    """Staging install tints the OS chrome amber (SNOW-399).
+def test_manifest_theme_color_is_the_launch_background_on_staging() -> None:
+    """Staging no longer tints the status bar amber (SNOW-1112).
 
-    The amber ``#b45309`` is the shared source of truth for the
-    installed status-bar tint and the browser tab tint, both driven by
-    the manifest ``theme_color`` and the ``<meta name="theme-color">``
-    tag respectively — they must render the same colour.
+    SNOW-399's amber ``theme_color`` was the colour the status bar flipped
+    to the moment the page painted over Android's splash. Staging is told
+    apart by its icon; the status bar keeps the splash's background.
     """
     manifest = _load_manifest()
-    assert manifest["theme_color"] == "#b45309"
+    assert manifest["theme_color"] == manifest["background_color"] == "#f2f0ec"
 
 
 @override_settings(SITE_ENVIRONMENT="staging")
@@ -260,7 +259,7 @@ def test_manifest_screenshots_unchanged_for_staging() -> None:
     the app. Since staging and production render the same UI, the
     screenshots are identical and stay under ``/static/icons/pwa/``. If
     the identity refactor accidentally routes them through
-    ``icon_dir`` they would 404 in staging — this test pins that.
+    the identity's icon set they would 404 in staging — this test pins that.
     """
     manifest = _load_manifest()
     for shot in manifest.get("screenshots", []):

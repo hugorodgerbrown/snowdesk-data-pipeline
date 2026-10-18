@@ -103,9 +103,10 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# (not as a static file) so ``id``, ``start_url``, and ``scope`` can #}
         {# be rendered as absolute URLs from ``settings.SITE_BASE_URL``.       #}
         <link rel="manifest" href="{% url 'web_manifest' %}">
-        {# SNOW-399: PWA_THEME_COLOR is the environment-appropriate hex —      #}
-        {# amber on staging, brand dark on production. Kept in sync with the  #}
-        {# manifest theme_color by apps.public.site_environment.                    #}
+        {# SNOW-1112: PWA_THEME_COLOR equals the manifest background_color on  #}
+        {# every environment, so the status bar keeps the colour Android's    #}
+        {# splash painted it. Same value as the manifest theme_color, both   #}
+        {# from apps.public.site_environment; test_pwa_launch_parity.py.    #}
         {# ds-lint-allow: meta tag does not resolve CSS variables; mobile browser chrome requires a literal hex #}
         <meta name="theme-color" content="{{ PWA_THEME_COLOR }}">
         {# SNOW-374: PWA version-check contract. Bake the current build      #}
@@ -148,11 +149,11 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# standalone Safari window. apple-touch-icon must be opaque (no   #}
         {# transparency) — iOS rounds the corners automatically.           #}
         {# SNOW-399: apple-touch-icon href and apple-mobile-web-app-title  #}
-        {# resolve against PWA_ICON_DIR / SITE_NAME_DISPLAY so a staging   #}
+        {# resolve against the identity's icon set / SITE_NAME_DISPLAY so a staging #}
         {# install lands on the iOS home screen with a distinct amber      #}
         {# tile and a "Snowdesk (Staging)" label — the manifest doesn't    #}
         {# apply on iOS, so this legacy contract is the only mechanism.    #}
-        <link rel="apple-touch-icon" sizes="180x180" href="{{ PWA_ICON_DIR }}apple-touch-icon-180.png">
+        <link rel="apple-touch-icon" sizes="180x180" href="{{ PWA_APPLE_TOUCH_ICON_URL }}">
         <meta name="mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
         <meta name="apple-mobile-web-app-title" content="{{ SITE_NAME_DISPLAY }}">

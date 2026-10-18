@@ -80,17 +80,16 @@ def test_home_apple_touch_icon_defaults_to_production_directory() -> None:
     assert "/static/icons/pwa/apple-touch-icon-180.png" in body
 
 
-def test_home_theme_color_defaults_to_production_hex() -> None:
-    """The ``theme-color`` meta tag matches the production manifest value on production (SNOW-399).
+def test_home_theme_color_is_the_launch_background_on_production() -> None:
+    """The ``theme-color`` meta tag is the launch background on production (SNOW-1112).
 
-    The tag drives the browser chrome tint on an open tab, and (on iOS)
-    the status-bar tint in a standalone install. Keeping the meta in
-    sync with the manifest ``theme_color`` avoids a jarring colour flip
-    between "opened in browser" and "opened as installed app".
+    Android paints its generated splash's status bar in the manifest
+    ``background_color`` and switches to this tag at first paint, so any
+    other value is a status-bar colour flip at the handoff.
     """
     response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
-    assert '<meta name="theme-color" content="#1a1a1a">' in body
+    assert '<meta name="theme-color" content="#f2f0ec">' in body
 
 
 @override_settings(SITE_ENVIRONMENT="staging")
@@ -138,16 +137,15 @@ def test_home_apple_touch_icon_swaps_for_staging() -> None:
 
 
 @override_settings(SITE_ENVIRONMENT="staging")
-def test_home_theme_color_swaps_for_staging() -> None:
-    """``theme-color`` meta tag renders amber on staging (SNOW-399).
+def test_home_theme_color_is_the_launch_background_on_staging() -> None:
+    """``theme-color`` is the launch background on staging too (SNOW-1112).
 
-    Matches the manifest ``theme_color`` swap so a staging install has
-    a consistent amber tint across the browser chrome (open tab) and
-    OS chrome (installed PWA).
+    SNOW-399 tinted it amber; that amber was the status-bar flip at the
+    splash handoff. The staging tell is now the icon alone.
     """
     response = Client().get(reverse("public:map"))
     body = response.content.decode("utf-8")
-    assert '<meta name="theme-color" content="#b45309">' in body
+    assert '<meta name="theme-color" content="#f2f0ec">' in body
 
 
 @override_settings(SITE_ENVIRONMENT="staging")
