@@ -79,7 +79,8 @@ Only the middle two thirds of the maskable icon is ever seen, on the splash
 and on a round launcher. That is tighter than the W3C 80% safe zone, so
 `bin/build-pwa-icons` shrinks the tile until its furthest mark (the
 mountain's base corners, or the ends of the "Staging" label) sits at 30%
-of the canvas from the centre. `tests/public/test_pwa_icons.py` fails if a mark reaches the
+of the canvas from the centre, and centres the marks themselves rather
+than the tile, whose mountain sits low in its square. `tests/public/test_pwa_icons.py` fails if a mark reaches the
 edge of the circle.
 Confirm them on a device (below), and if they are off, change both values
 in the partial's `<style>`.

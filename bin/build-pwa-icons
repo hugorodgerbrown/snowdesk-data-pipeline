@@ -174,21 +174,24 @@ async function buildAny(size, outName, outDir, srcSvg) {
 }
 
 /**
- * Return the distance from the tile's centre to its furthest light mark,
- * as a fraction of the tile's width.
+ * Measure the tile's light marks: the centre of their bounding box, and
+ * the distance from that centre to the furthest mark, all as fractions of
+ * the tile's width.
  *
  * Measured off a render rather than worked out from the SVG, because the
- * marks include text whose extent depends on the font: the label is the
- * widest thing on the tile and its corners are what the circle clips.
+ * marks include text whose extent depends on the font. The centre is the
+ * marks' own, not the tile's: the mountain sits below the middle of the
+ * favicon's square, which reads as "too low" once a circle frames it.
  */
-async function markRadius(srcSvg) {
+async function markExtent(srcSvg) {
   const probe = 512;
   const { data, info } = await sharp(srcSvg)
     .resize(probe, probe)
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  let furthest = 0;
+  const marks = [];
+  let [left, top, right, bottom] = [probe, probe, 0, 0];
   for (let y = 0; y < info.height; y += 1) {
     for (let x = 0; x < info.width; x += 1) {
       const i = (y * info.width + x) * info.channels;
@@ -198,24 +201,37 @@ async function markRadius(srcSvg) {
         data[i + 1] > MARK_CHANNEL_MIN &&
         data[i + 2] > MARK_CHANNEL_MIN;
       if (light) {
-        const dx = x + 0.5 - info.width / 2;
-        const dy = y + 0.5 - info.height / 2;
-        furthest = Math.max(furthest, Math.hypot(dx, dy));
+        marks.push([x + 0.5, y + 0.5]);
+        left = Math.min(left, x);
+        top = Math.min(top, y);
+        right = Math.max(right, x + 1);
+        bottom = Math.max(bottom, y + 1);
       }
     }
   }
-  return furthest / probe;
+  const cx = (left + right) / 2;
+  const cy = (top + bottom) / 2;
+  let furthest = 0;
+  for (const [x, y] of marks) {
+    furthest = Math.max(furthest, Math.hypot(x - cx, y - cy));
+  }
+  return { cx: cx / probe, cy: cy / probe, radius: furthest / probe };
 }
 
 async function buildMaskable(size, outName, outDir, srcSvg, tileColour) {
   const outPath = path.join(outDir, outName);
   // Scale the whole tile so its furthest mark lands on
-  // MASKABLE_MARK_RADIUS. The staging label reaches further out than the
-  // bare mountain, so the staging glyph comes out a little smaller; that
-  // is the price of the word surviving the crop.
-  const ratio = MASKABLE_MARK_RADIUS / (await markRadius(srcSvg));
+  // MASKABLE_MARK_RADIUS, and place it so the marks, not the tile, are
+  // centred on the canvas: the backdrop is the tile colour, so moving
+  // the tile is invisible except in where the marks land. The staging
+  // label reaches further out than the bare mountain, so the staging
+  // glyph comes out a little smaller; that is the price of the word
+  // surviving the crop.
+  const extent = await markExtent(srcSvg);
+  const ratio = MASKABLE_MARK_RADIUS / extent.radius;
   const inner = Math.round(size * ratio);
-  const pad = Math.round((size - inner) / 2);
+  const left = Math.round(size / 2 - extent.cx * inner);
+  const top = Math.round(size / 2 - extent.cy * inner);
   const innerBuffer = await sharp(srcSvg).resize(inner, inner).png().toBuffer();
   await sharp({
     create: {
@@ -225,7 +241,7 @@ async function buildMaskable(size, outName, outDir, srcSvg, tileColour) {
       background: tileColour,
     },
   })
-    .composite([{ input: innerBuffer, top: pad, left: pad }])
+    .composite([{ input: innerBuffer, top, left }])
     // Flatten fills transparent areas with the tile colour, then
     // removeAlpha drops the alpha channel entirely so the PNG is written
     // as RGB (color_type 2) not RGBA (color_type 6). Both steps are needed:

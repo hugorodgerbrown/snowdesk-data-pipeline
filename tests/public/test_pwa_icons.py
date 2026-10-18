@@ -144,6 +144,27 @@ def test_maskable_marks_sit_inside_the_circle_android_shows(icon_set: str) -> No
 
 
 @pytest.mark.parametrize("icon_set", ICON_SETS)
+def test_maskable_marks_are_centred_in_the_circle(icon_set: str) -> None:
+    """The marks' bounding box is centred on the maskable canvas.
+
+    The favicon's mountain sits below the middle of its square, which reads
+    as too low once Android frames it in a circle, so the build centres
+    the marks themselves rather than the tile they are drawn on.
+    """
+    path = _icon_path(icon_set, "icon-maskable-512.png")
+    with Image.open(path) as img:
+        rgb = img.convert("RGB")
+    red, green, blue = rgb.split()
+    darkest = ImageChops.darker(ImageChops.darker(red, green), blue)
+    bbox = darkest.point(lambda value: 255 if value > 200 else 0).getbbox()
+    assert bbox is not None
+    left, top, right, bottom = bbox
+    centre = rgb.width / 2
+    assert abs((left + right) / 2 - centre) <= 2, bbox
+    assert abs((top + bottom) / 2 - centre) <= 2, bbox
+
+
+@pytest.mark.parametrize("icon_set", ICON_SETS)
 def test_apple_touch_icon_has_no_fringe_at_corners(icon_set: str) -> None:
     """The apple-touch icon's corners are the tile colour.
 
