@@ -212,6 +212,13 @@ class PWAEnvironmentIdentity:
 # out of the stylesheet so the two cannot drift.
 LAUNCH_BACKGROUND = "#f2f0ec"
 
+# The dark --color-bg. Only iOS uses it: its startup images come in both
+# schemes (bin/build-pwa-splash, chosen by prefers-color-scheme), so the
+# launch shell has to follow the same media query there. Android's splash
+# has no dark variant — the manifest has one background_color — so the
+# Android shell stays light. Not per-environment, so not an identity field.
+LAUNCH_BACKGROUND_DARK = "#1c1b19"
+
 PWAEnvironmentIdentity.PRODUCTION = PWAEnvironmentIdentity(
     environment=PRODUCTION_ENVIRONMENT,
     name_display="Snowdesk",

@@ -72,18 +72,28 @@ def _shell_background(body: str) -> str:
 
 
 def _shell_image(body: str, css_class: str) -> str:
-    """Return the ``data-src`` of the launch shell image with ``css_class``."""
-    match = re.search(rf'class="{css_class}"\s+data-src="([^"]+)"', body)
-    assert match, f"{css_class} not found"
-    return match.group(1)
+    """Return the ``data-src`` of the launch shell image with ``css_class``.
+
+    Reads the attribute from the ``<img>`` tag as a whole, so the test does
+    not depend on the order the template writes its attributes in.
+    """
+    for tag in re.findall(r"<img\b[^>]*>", body):
+        if f'class="{css_class}"' in tag:
+            match = re.search(r'data-src="([^"]+)"', tag)
+            assert match, tag
+            return match.group(1)
+    raise AssertionError(f"{css_class} not found")
 
 
-def _colour_bg_token() -> str:
-    """Return the light ``--color-bg`` value — the first one in main.css."""
+def _colour_bg_tokens() -> tuple[str, str]:
+    """Return the light and dark ``--color-bg`` values from main.css.
+
+    Two definitions of the token: the light one in ``@theme``, the dark one
+    in the ``.dark`` override further down the file.
+    """
     css = (Path(settings.BASE_DIR) / "src" / "css" / "main.css").read_text()
-    match = re.search(r"--color-bg:\s*(#[0-9a-fA-F]{6})", css)
-    assert match
-    return match.group(1).lower()
+    light, dark = re.findall(r"--color-bg:\s*(#[0-9a-fA-F]{6});", css)[:2]
+    return light.lower(), dark.lower()
 
 
 @pytest.mark.parametrize("environment", ENVIRONMENTS)
@@ -103,7 +113,24 @@ def test_first_paint_background_is_the_splash_background(environment: str) -> No
     with override_settings(SITE_ENVIRONMENT=environment):
         manifest, body = _manifest(), _page()
     assert _shell_background(body) == manifest["background_color"]
-    assert manifest["background_color"].lower() == _colour_bg_token()
+    assert manifest["background_color"].lower() == _colour_bg_tokens()[0]
+
+
+def test_ios_dark_first_paint_is_the_dark_startup_image_background() -> None:
+    """A dark-scheme iPhone hands over from a dark startup image onto dark.
+
+    ``bin/build-pwa-splash`` ships both schemes, chosen by
+    ``prefers-color-scheme``; the shell's iOS branch follows the same query
+    with the dark ``--color-bg``.
+    """
+    body = _page()
+    match = re.search(
+        r"@media \(prefers-color-scheme: dark\) \{\s*"
+        r"html\.pwa-launching--ios \.pwa-launch-shell \{\s*background-color: ([^;]+);",
+        body,
+    )
+    assert match, "iOS dark-scheme shell background not found"
+    assert match.group(1).strip().lower() == _colour_bg_tokens()[1]
 
 
 @pytest.mark.parametrize("environment", ENVIRONMENTS)

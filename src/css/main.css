@@ -2025,10 +2025,10 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
    see docs/pwa-launch.md.
 
    Hidden by default and shown only under
-   `html.pwa-launching`, which the inline gate in
-   includes/_pwa_launch_shell.html sets synchronously,
-   before the rest of the body paints, when this load
-   is a cold launch of the installed app. A browser tab never adds the class,
+   `html.pwa-launching`, which the inline gate right
+   after the overlay in includes/_pwa_launch_shell.html
+   sets before the rest of the body paints, when this
+   load is a cold launch of the installed app. A browser tab never adds the class,
    so a visitor on the web sees none of this, and a
    second navigation inside the app session doesn't
    either.

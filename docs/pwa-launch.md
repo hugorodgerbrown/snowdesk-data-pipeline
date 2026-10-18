@@ -84,8 +84,11 @@ Known gaps:
   there is no staging set (SNOW-878; per-environment iOS images are a
   separate ticket). So on iOS only, staging hands over from the production
   tile to its own.
-- **Dark mode.** The manifest has no dark `background_color`, so Android's
-  splash and status bar are always the light cream.
+- **Dark mode on Android.** The manifest has no dark `background_color`,
+  so Android's splash, status bar and launch shell are always the light
+  cream. iOS does follow the scheme: its startup images come in both, and
+  the shell's iOS branch switches to the dark `--color-bg`
+  (`LAUNCH_BACKGROUND_DARK`) under the same `prefers-color-scheme` query.
 
 ## Adding an environment
 

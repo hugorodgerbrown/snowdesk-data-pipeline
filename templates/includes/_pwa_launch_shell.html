@@ -69,7 +69,7 @@ that never parses cannot leave the app covered.
 <style>
     .pwa-launch-shell {
         display: none;
-        z-index: var(--z-launch, 100);
+        z-index: var(--z-launch);
         position: fixed;
         align-items: center;
         justify-content: center;
@@ -110,6 +110,14 @@ that never parses cannot leave the app covered.
         display: block;
         width: var(--pwa-launch-mark);
         height: auto;
+    }
+    /* iOS ships dark startup images too, picked by this same media query
+       on their <link>s, so a dark-scheme iPhone hands over on dark.
+       Android's splash is light-only, so this stays iOS-only. */
+    @media (prefers-color-scheme: dark) {
+        html.pwa-launching--ios .pwa-launch-shell {
+            background-color: {{ PWA_BACKGROUND_COLOR_DARK }};
+        }
     }
 </style>
 <div id="pwa-launch-shell" class="pwa-launch-shell" role="status" aria-live="polite">
