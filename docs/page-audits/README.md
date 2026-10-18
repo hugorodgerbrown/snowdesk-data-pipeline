@@ -1,6 +1,6 @@
 # Page audits
 
-Most recent audit: [2026-10-11](2026-10-11.html)
+Most recent audit: [2026-10-18](2026-10-18.html)
 
 ## Purpose
 
@@ -83,6 +83,7 @@ Sections in order, omitting any that would be empty:
 
 | Date | Baseline | Headline |
 |------|----------|----------|
+| [2026-10-18](2026-10-18.html) | `c721895` → `4ce4425` | The rewritten homepage now names all three bulletin providers (closing the scope finding in part) but still omits the Claude connector and explainers, which makes the SLF-only reading guide (SNOW-679) the loudest gap between promise and page; the footer comment about `/compare/` and the Trip page's slope-class drawing remain unfixed and untracked |
 | [2026-10-11](2026-10-11.html) | `bbc1577` → `c721895` | The site gained a static homepage at `/` that quietly re-links `/compare/` (closing that finding in part) but names neither the Claude connector nor the explainers; the bulletin guide's review date was bumped without adding ALBINA or Météo-France, and every other tracked finding is unchanged. Covers two weeks — no audit was filed for 4 October |
 | [2026-09-27](2026-09-27.html) | `a7d3f99` → `bbc1577` | A hand-written OAuth 2.1 server and a Claude-rendered danger map shipped whole, named to visitors nowhere but a privacy-policy disclosure; the terrain-coloured route line praised last week as this series' cleanest feature lost its colour on the map four days later, and the Trip page never followed — the same route now renders two different ways depending on which page shows it. Every previously tracked finding (B3, SNOW-674/678, `/compare/`, SNOW-937) is unchanged, and SNOW-977's open reachability question was closed as a duplicate without ever being answered |
 | [2026-09-20](2026-09-20.html) | `49eec709` → `a7d3f99` | Terrain-aware routes shipped whole — coloured, honest about what it doesn't know, reachable — while SNOW-937's alerting rebuild, scoped into twelve child tickets a week earlier, had zero commits or comments all week; `/compare/`'s missing link turned out to be a permanent, test-enforced policy with no ticket anywhere |
