@@ -91,6 +91,13 @@ def test_bound_variants_disable_the_matching_button() -> None:
     assert "disabled" in minus[: minus.index(">")]
 
 
+def test_the_maximum_zoom_puts_the_marker_at_the_top() -> None:
+    """At z18 the marker sits at ``top: 0.0%``, not the empty-render fallback."""
+    html = render_to_string(PARTIAL, _variant("At the maximum")["context"])
+    marker = html[html.index("data-zoom-marker") :]
+    assert "top: 0.0%" in marker[: marker.index(">")]
+
+
 def test_positions_are_not_localised() -> None:
     """A comma-decimal locale must not write ``top: 42,86%``."""
     context = _variant("Terrain filter and a route on")["context"]

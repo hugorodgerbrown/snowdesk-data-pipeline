@@ -80,7 +80,7 @@ Context (all optional):
                 class="map-zoom-marker"
                 data-zoom-marker
                 aria-hidden="true"
-                style="top: {{ zoom_marker_pct|default:100 }}%"
+                style="top: {{ zoom_marker_pct|default_if_none:100 }}%"
             ></span>
         {% endlocalize %}
     </div>
