@@ -3324,8 +3324,9 @@ Output:
 - `icon-512.png` — 512×512, `purpose: any`. Used by Chrome's install
   prompt and the Android home-screen launcher.
 - `icon-maskable-512.png` — 512×512, `purpose: maskable`. The artwork
-  is padded inside an 80% safe zone so Android's adaptive-icon mask
-  doesn't crop the glyph.
+  is shrunk until every mark sits inside the middle two thirds of the
+  canvas, the circle Android's splash and adaptive-icon mask show (see
+  [`pwa-launch.md`](pwa-launch.md)).
 - `apple-touch-icon-180.png` — 180×180, opaque (no alpha). iOS rounds
   the corners automatically; transparency renders unevenly under the
   iOS rounded mask (SNOW-118).
@@ -3373,8 +3374,8 @@ home screen advertising last season.
 mountain's top right, the way a footnote marker hangs off a word. It is
 drawn in the brand cream, the same fill as the mountain and the season
 band, and clears both the rounded corner and iOS's squircle crop; on the
-maskable variant the whole tile is scaled into the safe zone first, so
-Android's adaptive-icon mask never reaches it.
+maskable variant the whole tile is shrunk until the asterisk sits inside
+the circle Android shows, so its mask never reaches it.
 
 The manifest view (`apps.public.views.serve_manifest`) and `base.html` both
 read `apps.public.site_environment.PWAEnvironmentIdentity.from_settings()`,
