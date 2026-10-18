@@ -30,11 +30,11 @@ Adding a device is therefore a row in the builder plus
 Production artwork on every environment
 ---------------------------------------
 Unlike the icons (SNOW-399), there is no staging splash set, so these
-paths do not resolve against ``PWA_ICON_DIR``. The staging/production
+paths do not resolve against the identity's icon set. The staging/production
 distinction has to be legible where the user CHOOSES the app — the
-home-screen tile — and on the status bar beside it; both of those stay
-amber. Rendering 68 more PNGs to tint a half-second launch screen is a
-poor trade.
+home-screen tile, which stays amber (the status bar no longer carries
+the environment; SNOW-1112). Rendering 68 more PNGs to tint a
+half-second launch screen is a poor trade.
 """
 
 from __future__ import annotations

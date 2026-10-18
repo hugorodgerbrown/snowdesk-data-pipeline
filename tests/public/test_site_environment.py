@@ -11,8 +11,10 @@ this contract to hold when they only assert the request-shaped surface.
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
+import pytest
 from django.conf import settings
 from django.test import override_settings
 
@@ -27,8 +29,10 @@ def test_production_setting_yields_production_identity() -> None:
     assert identity.is_production is True
     assert identity.name_display == "Snowdesk"
     assert identity.short_name == "Snowdesk"
-    assert identity.icon_dir == "/static/icons/pwa/"
-    assert identity.theme_color == "#1a1a1a"
+    assert identity.icon_static_dir == "icons/pwa/"
+    assert identity.background_color == "#f2f0ec"
+    assert identity.theme_color == "#f2f0ec"
+    assert identity.tile_color == "#2d4a3e"
     assert identity.favicon == "favicon.svg"
     assert identity.title_suffix == ""
 
@@ -41,8 +45,10 @@ def test_staging_setting_yields_staging_identity() -> None:
     assert identity.is_production is False
     assert identity.name_display == "Snowdesk (Staging)"
     assert identity.short_name == "Snowdesk Staging"
-    assert identity.icon_dir == "/static/icons/pwa-staging/"
-    assert identity.theme_color == "#b45309"
+    assert identity.icon_static_dir == "icons/pwa-staging/"
+    assert identity.background_color == "#f2f0ec"
+    assert identity.theme_color == "#f2f0ec"
+    assert identity.tile_color == "#b45309"
     assert identity.favicon == "favicon-staging.svg"
     assert identity.title_suffix == " — Staging"
 
@@ -74,6 +80,11 @@ def test_unknown_setting_yields_staging_identity() -> None:
     assert identity.is_production is False
     assert identity.name_display == "Snowdesk (Staging)"
     assert identity.environment == "preview"
+    # Every other field is the staging one — none inherited from production.
+    assert (
+        dataclasses.replace(identity, environment="staging")
+        == PWAEnvironmentIdentity.STAGING
+    )
 
 
 @override_settings(SITE_ENVIRONMENT="")
@@ -96,8 +107,6 @@ def test_pwa_environment_identity_is_frozen() -> None:
     ``PRODUCTION`` / ``STAGING`` constant and leaking a mismatched value
     into another request in the same process.
     """
-    import dataclasses
-
     identity = PWAEnvironmentIdentity.PRODUCTION
     try:
         identity.theme_color = "#ffffff"  # type: ignore[misc]
@@ -106,12 +115,34 @@ def test_pwa_environment_identity_is_frozen() -> None:
     raise AssertionError("expected FrozenInstanceError on identity mutation")
 
 
-def test_staging_favicon_tile_matches_the_staging_theme_colour() -> None:
-    """``favicon-staging.svg`` is filled with the staging theme colour.
+@pytest.mark.parametrize(
+    ("identity", "favicon", "build_constant"),
+    [
+        (PWAEnvironmentIdentity.PRODUCTION, "favicon.svg", "TILE_COLOUR_PRODUCTION"),
+        (PWAEnvironmentIdentity.STAGING, "favicon-staging.svg", "TILE_COLOUR_STAGING"),
+    ],
+)
+def test_tile_colour_matches_the_favicon_and_the_icon_build(
+    identity: PWAEnvironmentIdentity, favicon: str, build_constant: str
+) -> None:
+    """The identity's ``tile_color`` is the favicon fill and the built tile.
 
-    The browser tab, the browser chrome tint and the installed tile must
-    all read as the same amber, so the favicon's rect fill is pinned to
-    ``PWAEnvironmentIdentity.STAGING.theme_color``.
+    Since SNOW-1112 the tile is the only thing that tells staging from
+    production, so the browser tab and the installed icon must read as the
+    same colour. This used to be pinned to ``theme_color``, which no longer
+    carries the environment.
     """
-    svg = (Path(settings.BASE_DIR) / "static" / "favicon-staging.svg").read_text()
-    assert f'fill="{PWAEnvironmentIdentity.STAGING.theme_color}"' in svg
+    svg = (Path(settings.BASE_DIR) / "static" / favicon).read_text()
+    assert f'fill="{identity.tile_color}"' in svg
+    script = (Path(settings.BASE_DIR) / "bin" / "build-pwa-icons").read_text()
+    assert f"const {build_constant} = '{identity.tile_color}';" in script
+
+
+def test_icon_url_resolves_inside_the_identitys_own_set() -> None:
+    """``icon_url`` builds every icon URL from the identity's static dir."""
+    assert PWAEnvironmentIdentity.STAGING.icon_url("icon-192.png") == (
+        "/static/icons/pwa-staging/icon-192.png"
+    )
+    assert PWAEnvironmentIdentity.PRODUCTION.icon_static_path("icon-192.png") == (
+        "icons/pwa/icon-192.png"
+    )

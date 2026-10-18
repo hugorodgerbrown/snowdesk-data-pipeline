@@ -571,6 +571,31 @@ the LAN — `runserver 0.0.0.0:8000`).
 | 1 | Reset state, load the map page, and interact with it | `#pwa-install-ios` appears with an animated arrow pointing to the Share icon in the Safari toolbar and the message "Tap Share, then Add to Home Screen" |
 | 2 | Follow the guide: Share → Add to Home Screen → Add | The Snowdesk icon appears on the home screen using the Apple touch icon (not a screenshot of the page); tapping it opens the app in standalone mode without Safari chrome |
 
+### Scenario P3b: One continuous launch, splash to first paint
+
+> Manual-only: Android's generated splash and iOS's startup image are
+> drawn by the OS, outside any browser Playwright can drive. The values
+> both halves read are pinned in
+> [tests/public/test_pwa_launch_parity.py](../tests/public/test_pwa_launch_parity.py)
+> and the platform branch in
+> [tests/js/test_pwa_launch_gate.js](../tests/js/test_pwa_launch_gate.js).
+> Contract: [docs/pwa-launch.md](pwa-launch.md).
+
+**Goal**: Verify the handoff from the OS launch screen to the page's first
+paint is invisible: the same logo, the same size and place, the same
+background and status bar, per environment.
+
+**Preconditions**: An Android 12+ phone with Chrome, and the environment
+under test installed **from scratch** (Android caches the manifest at
+install time, so uninstall first). Screen recording on.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Force-stop the app, then launch it from the home screen while recording | The splash shows the environment's icon in a circle: green on production, amber with an asterisk on staging |
+| 2 | Step through the recording frame by frame across the handoff | The logo does not move, resize, change shape or change artwork; the background and the status bar stay cream throughout |
+| 3 | Throttle the network to "Slow 3G" with the device on USB debugging, clear the app's storage, and launch | "Loading…" fades in under the logo after about 300ms; the logo does not move when it appears |
+| 4 | Repeat steps 1–2 on the other environment | No production artwork appears on staging, and no staging artwork on production |
+
 ### Scenario P4: A new sw.js is applied silently
 
 > Automated in part:

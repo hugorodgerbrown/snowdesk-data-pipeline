@@ -138,7 +138,7 @@ from .season_calendar import (
     build_season_ribbon,
     season_header,
 )
-from .site_environment import PWAEnvironmentIdentity
+from .site_environment import LAUNCH_MARK_ICON, PWAEnvironmentIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -2303,12 +2303,19 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
     in production).
 
     SNOW-399: the manifest ``name`` / ``short_name`` / ``theme_color`` and
-    the icon ``src`` prefix all key off
+    the icon set all key off
     ``apps.public.site_environment.PWAEnvironmentIdentity.from_settings()`` so
     a staging install lands on the home screen as ``Snowdesk (Staging)``
     with an amber icon set — visibly distinct from the production tile.
     Screenshots stay under ``/static/icons/pwa/screenshots/`` on every
     environment because they show the actual UI, which is identical.
+
+    SNOW-1112: ``background_color`` comes from the same identity (it is
+    the launch shell's first-paint background too), and every icon and
+    screenshot URL goes through the staticfiles storage so it carries a
+    content hash in a deployed environment. Chrome re-mints an installed
+    WebAPK only when a manifest icon URL changes, so an unhashed URL meant
+    a redrawn icon never reached anyone who had already installed.
 
     The response carries ``Content-Type: application/manifest+json`` so
     Chromium honours the manifest spec strictly. ``Cache-Control:
@@ -2327,7 +2334,6 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
     """
     base = settings.SITE_BASE_URL.rstrip("/")
     identity = PWAEnvironmentIdentity.from_settings()
-    icon_dir = identity.icon_dir.rstrip("/")
     manifest = {
         "name": identity.name_display,
         "short_name": identity.short_name,
@@ -2341,30 +2347,33 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
         "start_url": f"{base}/map/",
         "scope": f"{base}/",
         "display": "standalone",
-        # SNOW-878: --color-bg from src/css/main.css, the colour the page
-        # itself paints. It was #f4f1e8 — map.css's --paper, a neighbouring
-        # cream — so Chrome's generated Android splash handed over to a
-        # visibly different background than the one it opened into. There is
-        # no per-scheme mechanism in the manifest, so this stays the light
-        # value on every platform; the dark launch screen is iOS-only, via
-        # the prefers-color-scheme startup images (bin/build-pwa-splash).
-        "background_color": "#f2f0ec",
+        # SNOW-878 / SNOW-1112: the colour Chrome paints the generated
+        # Android splash and its status bar in, so it must be the colour the
+        # launch shell paints next. There is no per-scheme mechanism in the
+        # manifest, so this stays the light value on every platform; the
+        # dark launch screen is iOS-only, via the prefers-color-scheme
+        # startup images (bin/build-pwa-splash).
+        "background_color": identity.background_color,
+        # Equal to background_color (SNOW-1112) — anything else is a status
+        # bar colour flip at the moment the page first paints.
         "theme_color": identity.theme_color,
         "icons": [
             {
-                "src": f"{icon_dir}/icon-192.png",
+                "src": identity.icon_url("icon-192.png"),
                 "sizes": "192x192",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": f"{icon_dir}/icon-512.png",
+                "src": identity.icon_url("icon-512.png"),
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "any",
             },
             {
-                "src": f"{icon_dir}/icon-maskable-512.png",
+                # The icon Android draws on its splash, cropped to a circle
+                # — and therefore the one the launch shell draws on top of it.
+                "src": identity.icon_url(LAUNCH_MARK_ICON),
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "maskable",
@@ -2372,14 +2381,14 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
         ],
         "screenshots": [
             {
-                "src": "/static/icons/pwa/screenshots/map-wide.png",
+                "src": static("icons/pwa/screenshots/map-wide.png"),
                 "sizes": "1280x720",
                 "type": "image/png",
                 "form_factor": "wide",
                 "label": "Avalanche map for the alpine region",
             },
             {
-                "src": "/static/icons/pwa/screenshots/bulletin-narrow.png",
+                "src": static("icons/pwa/screenshots/bulletin-narrow.png"),
                 "sizes": "750x1334",
                 "type": "image/png",
                 "form_factor": "narrow",

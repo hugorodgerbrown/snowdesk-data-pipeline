@@ -2017,44 +2017,29 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
    into the page, so an installed app boots on one
    unbroken splash instead of a blank frame.
 
-   The composition deliberately MATCHES
-   bin/build-pwa-splash: the same background token,
-   the same tile, centred, at the same proportion of
-   the viewport's shorter edge. That is the whole
-   trick — iOS hands over from its startup image to
-   this the instant the page paints, and if the two
-   agree the handover is invisible. Change the mark
-   size here and the ICON_RATIO / ICON_MIN_CSS /
-   ICON_MAX_CSS clamp in that script has to move with
-   it, or the tile jumps at handover.
+   The composition deliberately MATCHES the OS
+   launch screen it takes over from — Android's
+   generated splash (circle-cropped maskable icon)
+   or iOS's startup image (bin/build-pwa-splash's
+   tile). That geometry now lives with the markup;
+   see docs/pwa-launch.md.
 
    Hidden by default and shown only under
-   `html.pwa-launching`, which the inline gate in
-   includes/_pwa_launch_shell.html sets synchronously
-   in <head> when this load is a cold launch of the
-   installed app. A browser tab never adds the class,
+   `html.pwa-launching`, which the inline gate right
+   after the overlay in includes/_pwa_launch_shell.html
+   sets before the rest of the body paints, when this
+   load is a cold launch of the installed app. A browser tab never adds the class,
    so a visitor on the web sees none of this, and a
    second navigation inside the app session doesn't
    either.
    ————————————————————————————————————————— */
 
-.pwa-launch-shell {
-  display: none;
-  /* Read by both the mark's own size and the label's offset below, so
-     the two cannot drift apart. Mirrors iconPixelsFor() in
-     bin/build-pwa-splash: the shorter edge (vmin) at ICON_RATIO, clamped
-     to the same CSS-pixel floor and ceiling. */
-  --pwa-launch-mark: clamp(96px, 24vmin, 160px);
-}
-
-html.pwa-launching .pwa-launch-shell {
-  display: flex;
-}
-
-.pwa-launch-shell__mark {
-  width: var(--pwa-launch-mark);
-  height: auto;
-}
+/* SNOW-1112: the rules that decide the FIRST FRAME — visibility, the
+   background, both marks and their sizes, and --pwa-launch-mark — moved
+   into an inline <style> in includes/_pwa_launch_shell.html, so they read
+   the environment's colour from PWAEnvironmentIdentity and do not wait on
+   this stylesheet. What is left here is motion: the label's fade, the
+   dismissal and the failsafe. */
 
 /* The label is a SECOND-THOUGHT affordance, not part of the splash:
    it fades in only once the boot is slow enough to be worth
@@ -2076,7 +2061,8 @@ html.pwa-launching .pwa-launch-shell {
   top: calc(50% + (var(--pwa-launch-mark) / 2) + 1.25rem);
   text-align: center;
   opacity: 0;
-  animation: pwa-launch-label-in 400ms ease-out 900ms forwards;
+  /* SNOW-1112: ~300ms. A launch that renders by then never shows it. */
+  animation: pwa-launch-label-in 300ms ease-out 300ms forwards;
 }
 
 @keyframes pwa-launch-label-in {

@@ -12,15 +12,15 @@ between a production install and any non-production install. It is
 consumed in two places:
 
 - ``apps.public.views.serve_manifest`` — bakes the identity into the
-  manifest's ``name``, ``short_name``, ``theme_color``, and the
-  ``icons[*].src`` / ``screenshots[*].src`` paths so the browser's
-  installation dialog and the OS launcher tile are already the
-  environment-appropriate ones at install time.
+  manifest's ``name``, ``short_name``, ``theme_color``,
+  ``background_color`` and ``icons[*].src`` so the browser's installation
+  dialog, the OS launcher tile and Android's generated splash screen are
+  already the environment-appropriate ones at install time.
 - ``apps.public.context_processors.site_environment`` — exposes the same
   fields as template variables so ``base.html`` renders the matching
   ``<title>`` prefix, ``og:site_name``, ``apple-mobile-web-app-title``,
-  ``apple-touch-icon`` href, browser-tab favicon, and ``theme-color``
-  meta tag.
+  ``apple-touch-icon`` href, browser-tab favicon, ``theme-color`` meta
+  tag, and the launch shell's background and logo (SNOW-1112).
 - ``apps.public.views.serve_favicon`` — redirects ``/favicon.ico`` to the
   environment's favicon.
 
@@ -38,22 +38,42 @@ non-production from three feet away. Both sets also carry
 the season label ("25/26") in a band at the foot of the tile; that is a
 brand constant, not an environment one, so it lives in the build script
 rather than here.
+
+SNOW-1112: the ICON is now the only staging tell. ``theme_color`` used to
+tint the status bar amber on staging (and near-black on production), but
+Android paints the status bar of its generated splash in
+``background_color`` and only switches to ``theme_color`` once the page
+paints — so any ``theme_color`` other than the background is a visible
+colour flip at the exact moment the launch is meant to look continuous.
+Both identities now carry ``theme_color == background_color``, and
+``tests/public/test_pwa_launch_parity.py`` holds that line. The full
+splash-to-first-paint contract is in ``docs/pwa-launch.md``.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import ClassVar
 
 from django.conf import settings
+from django.templatetags.static import static
 
 PRODUCTION_ENVIRONMENT = "production"
+
+# The two files the launch shell draws (SNOW-1112), named once so the
+# manifest and the template cannot pick different ones. Android draws the
+# manifest's MASKABLE icon on its generated splash, cropped to a circle, so
+# that is what the shell continues on Android. iOS has no generated splash
+# — its launch screen is a startup image built around the rounded tile —
+# so the shell keeps the tile there.
+LAUNCH_MARK_ICON = "icon-maskable-512.png"
+LAUNCH_TILE_ICON = "icon-192.png"
 
 
 @dataclass(frozen=True)
 class PWAEnvironmentIdentity:
     """
-    Bundle the four PWA-identity fields that differ per environment.
+    Bundle the PWA-identity fields that differ per environment.
 
     Instances are constructed via :meth:`from_settings` (or the class-level
     ``PRODUCTION`` / ``STAGING`` constants); the dataclass is deliberately
@@ -70,14 +90,25 @@ class PWAEnvironmentIdentity:
         short_name: The short brand string surfaced in the manifest
             ``short_name`` and used by launcher shortcuts on constrained
             surfaces (Android home-screen labels, Chrome new-tab tiles).
-        icon_dir: The ``/static/icons/…/`` prefix under which the
-            environment's PWA icon set lives. Both the manifest icons and
-            the ``apple-touch-icon`` template link resolve their filenames
-            under this prefix.
+        icon_static_dir: The staticfiles directory (``icons/pwa/``) holding
+            the environment's PWA icon set. Every icon URL — manifest,
+            ``apple-touch-icon``, launch shell — is built from it through
+            :meth:`icon_url`, so all of them are content-hashed in a
+            deployed environment and none can name the other set.
+        background_color: Hex string for the manifest ``background_color``
+            — the colour Android paints its generated splash screen and
+            status bar in — and the launch shell's first-paint background.
+            Mirrors ``--color-bg`` in ``src/css/main.css``.
         theme_color: Hex string baked into both the manifest ``theme_color``
-            field and the ``<meta name="theme-color">`` tag so the OS
-            chrome tint (installed PWA) and the browser chrome tint
-            (open tab) match per environment.
+            field and the ``<meta name="theme-color">`` tag. Equal to
+            ``background_color`` on every identity (SNOW-1112), so the
+            status bar does not change colour between the splash and the
+            first paint.
+        tile_color: The fill of the environment's icon tile, as drawn by
+            ``bin/build-pwa-icons`` (``TILE_COLOUR_*``) and the favicon.
+            Not emitted anywhere; it exists so a test can hold the favicon
+            and the tile to the same colour now ``theme_color`` no longer
+            carries it.
         favicon: The staticfiles path of the browser-tab SVG favicon.
             ``favicon.svg`` on production; the amber ``favicon-staging.svg``
             otherwise, so a staging tab is told apart from a production
@@ -94,8 +125,10 @@ class PWAEnvironmentIdentity:
     environment: str
     name_display: str
     short_name: str
-    icon_dir: str
+    icon_static_dir: str
+    background_color: str
     theme_color: str
+    tile_color: str
     favicon: str
     title_suffix: str
 
@@ -122,15 +155,7 @@ class PWAEnvironmentIdentity:
         env = str(raw).strip().lower()
         if env == PRODUCTION_ENVIRONMENT:
             return cls.PRODUCTION
-        return PWAEnvironmentIdentity(
-            environment=env or "unknown",
-            name_display=cls.STAGING.name_display,
-            short_name=cls.STAGING.short_name,
-            icon_dir=cls.STAGING.icon_dir,
-            theme_color=cls.STAGING.theme_color,
-            favicon=cls.STAGING.favicon,
-            title_suffix=cls.STAGING.title_suffix,
-        )
+        return replace(cls.STAGING, environment=env or "unknown")
 
     @property
     def is_production(self) -> bool:
@@ -147,29 +172,77 @@ class PWAEnvironmentIdentity:
         """
         return self.environment == PRODUCTION_ENVIRONMENT
 
+    def icon_static_path(self, filename: str) -> str:
+        """
+        Return the staticfiles path of one file in this identity's icon set.
+
+        Args:
+            filename: The icon's file name, e.g. ``"icon-192.png"``.
+
+        Returns:
+            The path relative to the static root, e.g.
+            ``"icons/pwa-staging/icon-192.png"``.
+
+        """
+        return f"{self.icon_static_dir}{filename}"
+
+    def icon_url(self, filename: str) -> str:
+        """
+        Return the served URL of one file in this identity's icon set.
+
+        Goes through the staticfiles storage, so on staging and production
+        (``CompressedManifestStaticFilesStorage``) the URL carries a content
+        hash. That is what lets an installed WebAPK notice a redrawn icon:
+        Chrome only re-mints the APK when a manifest icon URL changes.
+
+        Args:
+            filename: The icon's file name, e.g. ``"icon-192.png"``.
+
+        Returns:
+            The URL the browser should request.
+
+        """
+        return static(self.icon_static_path(filename))
+
+
+# One colour, three jobs: the manifest background_color (Android's splash
+# and its status bar), the launch shell's first paint, and theme_color (the
+# status bar once the page has painted). It is --color-bg in
+# src/css/main.css; tests/public/test_pwa_launch_parity.py reads the token
+# out of the stylesheet so the two cannot drift.
+LAUNCH_BACKGROUND = "#f2f0ec"
+
+# The dark --color-bg. Only iOS uses it: its startup images come in both
+# schemes (bin/build-pwa-splash, chosen by prefers-color-scheme), so the
+# launch shell has to follow the same media query there. Android's splash
+# has no dark variant — the manifest has one background_color — so the
+# Android shell stays light. Not per-environment, so not an identity field.
+LAUNCH_BACKGROUND_DARK = "#1c1b19"
 
 PWAEnvironmentIdentity.PRODUCTION = PWAEnvironmentIdentity(
     environment=PRODUCTION_ENVIRONMENT,
     name_display="Snowdesk",
     short_name="Snowdesk",
-    icon_dir="/static/icons/pwa/",
-    theme_color="#1a1a1a",
+    icon_static_dir="icons/pwa/",
+    background_color=LAUNCH_BACKGROUND,
+    theme_color=LAUNCH_BACKGROUND,
+    tile_color="#2d4a3e",
     favicon="favicon.svg",
     title_suffix="",
 )
 
-# Amber theme colour keeps the staging PWA tile clearly non-production on
-# both the OS status bar (installed app) and the browser chrome (open
-# tab). The matching icon tile colour lives in bin/build-pwa-icons as
-# TILE_COLOUR_STAGING — keep the two in the same amber family if either is
-# changed so the theme-color meta tag and the icon don't clash.
-# static/favicon-staging.svg carries the same amber as its tile fill.
+# The amber tile is the staging tell — on the launcher, in Android's splash
+# and in the launch shell. TILE_COLOUR_STAGING in bin/build-pwa-icons and
+# the rect fill in static/favicon-staging.svg are the same amber; keep the
+# three together if any one moves.
 PWAEnvironmentIdentity.STAGING = PWAEnvironmentIdentity(
     environment="staging",
     name_display="Snowdesk (Staging)",
     short_name="Snowdesk Staging",
-    icon_dir="/static/icons/pwa-staging/",
-    theme_color="#b45309",
+    icon_static_dir="icons/pwa-staging/",
+    background_color=LAUNCH_BACKGROUND,
+    theme_color=LAUNCH_BACKGROUND,
+    tile_color="#b45309",
     favicon="favicon-staging.svg",
     title_suffix=" — Staging",
 )

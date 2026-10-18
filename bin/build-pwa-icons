@@ -84,10 +84,10 @@
  * The purpose:any variants (192 and 512) keep their alpha: the browser
  * composites them itself and a transparent corner is correct there.
  *
- * Keep TILE_COLOUR_STAGING and the theme_color in
- * apps/public/site_environment.PWAEnvironmentIdentity.STAGING in the same
- * amber family — the two are seen side by side (status bar next to
- * icon) on installed Android PWAs.
+ * Keep TILE_COLOUR_PRODUCTION / TILE_COLOUR_STAGING equal to the
+ * tile_color fields in apps/public/site_environment.PWAEnvironmentIdentity.
+ * The status bar no longer carries the environment (SNOW-1112: theme_color
+ * equals the launch background on both), so the tile is the only tell.
  */
 
 'use strict';
@@ -108,10 +108,8 @@ const BUILD_MANIFEST = path.join(REPO_ROOT, 'static', 'icons', 'pwa-build.json')
 const TILE_COLOUR_PRODUCTION = '#2d4a3e';
 
 // SNOW-399 — the staging tile colour, replacing the brand green in the
-// recoloured artwork and backing the same two flattened PNGs.
-// The matching theme colour lives in
-// apps/public/site_environment.PWAEnvironmentIdentity.STAGING and drives the
-// OS status-bar tint next to the installed icon.
+// recoloured artwork and backing the same two flattened PNGs. Mirrored as
+// PWAEnvironmentIdentity.STAGING.tile_color in apps/public/site_environment.
 const TILE_COLOUR_STAGING = '#b45309';
 
 // Brand cream — must match the mountain fill in static/favicon.svg. The
