@@ -65,7 +65,8 @@
 
   const STRINGS = self.pwaStrings.read('map-zoom-strings-template', {
     'toggle-label': 'Zoom level %(zoom)s',
-    'gate-zoom': 'z%(zoom)s',
+    'gate-off': 'off',
+    'gate-region_select': 'Tap selects a region',
     'gate-terrain_filter': 'Terrain filter',
     'gate-slope_classes': 'Slope classes',
     'gate-route_slopes': 'Route slope colours',
@@ -77,10 +78,8 @@
   const zoomIn = flyout.querySelector('[data-zoom-step="in"]');
   const marker = flyout.querySelector('[data-zoom-marker]');
   const tickList = flyout.querySelector('[data-zoom-ticks]');
-  const gateList = flyout.querySelector('[data-zoom-gates]');
   const cameraLine = flyout.querySelector('[data-zoom-camera]');
   const tickTemplate = document.getElementById('map-zoom-tick-template');
-  const gateTemplate = document.getElementById('map-zoom-gate-template');
 
   /**
    * The zoom the style's vector sources are fetching tiles at.
@@ -139,46 +138,43 @@
   let drawnTicks = null;
 
   /**
-   * Redraw the ticks and their rows, when they changed.
+   * Redraw the ticks, when they changed.
    *
-   * @param {Array<{key: string, zoom: number, position: number, reached: boolean}>} ticks
+   * Each tick is one row of the vertical scale: a mark on the track, the
+   * zoom, and the name of what changes there, placed at that zoom's height.
+   * A layer that is switched off is still named, dimmed and marked "off",
+   * so the scale says what each level is for before the reader turns it on.
+   *
+   * @param {Array<{key: string, zoom: number, position: number, reached: boolean, active: boolean, upTo: boolean}>} ticks
    * @returns {void}
    */
   function renderTicks(ticks) {
-    const signature = ticks.map((t) => t.key + ':' + t.zoom + ':' + t.reached).join('|');
+    const signature = ticks
+      .map((t) => [t.key, t.zoom, t.reached, t.active, t.upTo].join(':'))
+      .join('|');
     if (signature === drawnTicks) return;
     drawnTicks = signature;
 
     const tickNodes = [];
-    const gateNodes = [];
     for (const tick of ticks) {
       const tickNode = cloneRow(tickTemplate);
-      if (tickNode) {
-        tickNode.dataset.zoomTick = tick.key;
-        tickNode.toggleAttribute('data-reached', tick.reached);
-        tickNode.style.left = (tick.position * 100).toFixed(2) + '%';
-        const number = tickNode.querySelector('[data-zoom-tick-zoom]');
-        if (number) number.textContent = String(tick.zoom);
-        tickNodes.push(tickNode);
-      }
-      const gateNode = cloneRow(gateTemplate);
-      if (gateNode) {
-        gateNode.dataset.zoomGate = tick.key;
-        gateNode.toggleAttribute('data-reached', tick.reached);
-        const label = gateNode.querySelector('[data-zoom-gate-label]');
-        if (label) label.textContent = gateLabel(tick.key);
-        const zoom = gateNode.querySelector('[data-zoom-gate-zoom]');
-        if (zoom) {
-          zoom.textContent = self.pwaStrings.interpolate(STRINGS['gate-zoom'], { zoom: tick.zoom });
-        }
-        gateNodes.push(gateNode);
-      }
+      if (!tickNode) continue;
+      tickNode.dataset.zoomTick = tick.key;
+      tickNode.toggleAttribute('data-reached', tick.reached);
+      tickNode.toggleAttribute('data-up-to', tick.upTo);
+      tickNode.toggleAttribute('data-off', !tick.active);
+      tickNode.style.top = ((1 - tick.position) * 100).toFixed(2) + '%';
+      // An up-to gate draws a band from its tick to the foot of the scale.
+      tickNode.style.setProperty('--zoom-below', tick.position.toFixed(4));
+      const number = tickNode.querySelector('[data-zoom-tick-zoom]');
+      if (number) number.textContent = String(tick.zoom);
+      const label = tickNode.querySelector('[data-zoom-tick-label]');
+      if (label) label.textContent = gateLabel(tick.key);
+      const off = tickNode.querySelector('[data-zoom-tick-off]');
+      if (off) off.textContent = tick.active ? '' : STRINGS['gate-off'];
+      tickNodes.push(tickNode);
     }
     if (tickList) tickList.replaceChildren(...tickNodes);
-    if (gateList) {
-      gateList.replaceChildren(...gateNodes);
-      gateList.hidden = gateNodes.length === 0;
-    }
   }
 
   // The face last written, so a pinch — a `zoom` event every frame — writes
@@ -219,7 +215,9 @@
     const buttons = core.buttonState(pendingTarget ?? camera, min, max);
     setStepEnabled(zoomOut, buttons.canZoomOut, zoomIn);
     setStepEnabled(zoomIn, buttons.canZoomIn, zoomOut);
-    if (marker) marker.style.left = (core.scalePosition(camera, min, max) * 100).toFixed(2) + '%';
+    if (marker) {
+      marker.style.top = ((1 - core.scalePosition(camera, min, max)) * 100).toFixed(2) + '%';
+    }
 
     const gates = window.pwaZoomGates ? window.pwaZoomGates.list() : [];
     renderTicks(core.ticks(gates, camera, min, max));

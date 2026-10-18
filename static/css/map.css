@@ -1855,15 +1855,17 @@ html:has(> body.map-fullscreen) > body {
 /* The flyout opens into the crook between the roundel column and the date
    row, exactly where .map-legend-card opens — the same two offsets, so
    it needs no JS to find its place. The two are never open together
-   (window.pwaMapOverlays). 264 px fits beside the 32 px column at 320 px:
-   inset + 32 + 8 + 264 stays inside the viewport. */
+   (window.pwaMapOverlays). It is a vertical scale, + over −, because zoom
+   is height: each zoom-gated thing is named at the level it changes. */
 .map-zoom-flyout {
+    --zoom-scale-h: 196px;
+    --zoom-track-x: 22px;
     position: absolute;
     left: calc(var(--map-control-sm) + 8px);
     bottom: calc(var(--map-control-sm) + 8px);
-    width: 264px;
+    width: 216px;
     max-width: calc(100vw - var(--map-control-sm) - 32px);
-    padding: 2px 2px 8px;
+    padding: 2px 2px 6px;
     background: var(--color-glass);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
@@ -1880,17 +1882,12 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
-.map-zoom-row {
-    display: flex;
-    align-items: center;
-}
-
-/* − and +: 44 px targets, the same box as .map-fill-step. */
+/* + and −: 44 px targets, the same box as .map-fill-step, stacked on the
+   track's line so the scale reads as running between them. */
 .map-zoom-step {
-    flex: none;
+    display: flex;
     width: 44px;
     height: 44px;
-    display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
@@ -1909,24 +1906,22 @@ html:has(> body.map-fullscreen) > body {
     outline-offset: -3px;
 }
 
-/* The scale: a hairline track across the map's zoom range, the camera
-   marker on it, and a tick for each gated layer that is on with its zoom
-   above it. Every `left` is a percentage of this box, written by the JS. */
+/* The scale: a vertical hairline across the map's zoom range, maximum at
+   the top, the camera marker on it, and one row per gate at its zoom.
+   Every `top` is a percentage of this box, written by the JS. */
 .map-zoom-scale {
     position: relative;
-    flex: 1;
-    min-width: 0;
-    height: 44px;
-    margin: 0 8px;
+    height: var(--zoom-scale-h);
+    margin: 4px 0;
 }
 
 .map-zoom-track {
     position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 2px;
-    margin-top: -1px;
+    top: 0;
+    bottom: 0;
+    left: var(--zoom-track-x);
+    width: 2px;
+    margin-left: -1px;
     border-radius: 999px;
     background: var(--color-border);
 }
@@ -1939,34 +1934,94 @@ html:has(> body.map-fullscreen) > body {
     list-style: none;
 }
 
+/* One row: the mark across the track, the zoom, what changes there. */
 .map-zoom-tick {
     position: absolute;
-    top: 50%;
-    width: 2px;
-    height: 12px;
-    margin: -6px 0 0 -1px;
+    left: 0;
+    right: 0;
+    height: 20px;
+    margin-top: -10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px 0 calc(var(--zoom-track-x) - 6px);
+    font-size: 12px;
+    line-height: 1.2;
+    color: var(--color-text-2);
+}
+
+.map-zoom-tick-mark {
+    flex: none;
+    width: 12px;
+    height: 2px;
+    border-radius: 999px;
     background: var(--color-text-3);
 }
 
-/* At or past the gate: the layer is being drawn. */
+.map-zoom-tick-zoom {
+    flex: none;
+    min-width: 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-2);
+}
+
+.map-zoom-tick-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.map-zoom-tick-off {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--color-text-3);
+}
+
+/* In force at the camera's zoom: the layer is drawn, or the tap selects. */
 .map-zoom-tick[data-reached] {
+    color: var(--color-text-1);
+    font-weight: 500;
+}
+
+.map-zoom-tick[data-reached] .map-zoom-tick-mark {
     background: var(--color-text-1);
 }
 
-.map-zoom-tick-zoom {
+/* Switched off: named, so the reader learns the level, but quiet. */
+.map-zoom-tick[data-off] {
+    color: var(--color-text-3);
+    font-weight: 400;
+}
+
+.map-zoom-tick[data-off] .map-zoom-tick-mark {
+    background: var(--color-text-3);
+}
+
+/* An up-to gate (regions, z10 and below) holds from its mark down to the
+   foot of the scale, so it draws a band along the track rather than a
+   threshold. */
+.map-zoom-tick[data-up-to]::before {
+    content: "";
     position: absolute;
-    bottom: 14px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    line-height: 1;
-    color: var(--color-text-2);
+    top: 10px;
+    left: calc(var(--zoom-track-x) - 3px);
+    width: 6px;
+    height: calc(var(--zoom-below) * var(--zoom-scale-h));
+    border-radius: 999px;
+    background: var(--color-text-3);
+    opacity: 0.35;
+}
+
+.map-zoom-tick[data-up-to][data-reached]::before {
+    background: var(--color-text-1);
+    opacity: 0.5;
 }
 
 .map-zoom-marker {
     position: absolute;
-    top: 50%;
+    left: var(--zoom-track-x);
     width: 12px;
     height: 12px;
     margin: -6px 0 0 -6px;
@@ -1974,37 +2029,7 @@ html:has(> body.map-fullscreen) > body {
     border-radius: 999px;
     background: var(--color-text-1);
     box-shadow: 0 0 0 0.5px var(--color-border);
-}
-
-/* One row per tick, naming the layer and the zoom it starts at. */
-.map-zoom-gates {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin: 0;
-    padding: 2px 12px 0;
-    list-style: none;
-    font-size: 11px;
-    line-height: 1.4;
-}
-
-.map-zoom-gates[hidden] {
-    display: none;
-}
-
-.map-zoom-gate {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    color: var(--color-text-2);
-}
-
-.map-zoom-gate[data-reached] {
-    color: var(--color-text-1);
-}
-
-.map-zoom-gate-zoom {
-    font-family: var(--font-mono);
+    pointer-events: none;
 }
 
 /* DEBUG only: the camera zoom to two decimals. */
@@ -2023,7 +2048,7 @@ html:has(> body.map-fullscreen) > body {
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    min-height: 168px;
+    min-height: 360px;
     padding-bottom: calc(var(--map-control-sm) + 8px);
 }
 

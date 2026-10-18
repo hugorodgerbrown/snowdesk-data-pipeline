@@ -2986,26 +2986,40 @@ SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
 # The roundel at the top of the map's bottom-left stack and the flyout it
 # opens. On /map/ static/js/map_zoom_control.js fills every value from the
 # map; here each variant sets them, across the map's range of z4 to z18.
-# The two gates are the ones window.pwaZoomGates publishes: the terrain
-# filter from z12 and route slope colours from z14.
+# The gates are the ones window.pwaZoomGates publishes: a tap selects a
+# region at z10 and below, the terrain filter from z12 and route slope
+# colours from z14. All three are named on every variant; a layer that is
+# switched off is dimmed and marked "off".
 
 _MAP_MIN_ZOOM = 4
 _MAP_MAX_ZOOM = 18
 
 
 def _zoom_pct(zoom: float) -> float:
-    """Return where ``zoom`` sits on the control's scale, 0..100."""
-    return round((zoom - _MAP_MIN_ZOOM) / (_MAP_MAX_ZOOM - _MAP_MIN_ZOOM) * 100, 2)
+    """Return how far down the vertical scale ``zoom`` sits, 0..100 (top = z18)."""
+    return round((_MAP_MAX_ZOOM - zoom) / (_MAP_MAX_ZOOM - _MAP_MIN_ZOOM) * 100, 2)
 
 
-def _zoom_tick(key: str, label: str, gate: int, camera: float) -> dict[str, Any]:
-    """Return one tick, reached when ``camera`` is at or past ``gate``."""
+def _zoom_tick(
+    key: str,
+    label: str,
+    gate: int,
+    camera: float,
+    *,
+    active: bool = True,
+    up_to: bool = False,
+) -> dict[str, Any]:
+    """Return one tick, reached when ``camera`` is inside the gate's band."""
     return {
         "key": key,
         "label": label,
         "zoom": gate,
         "pct": _zoom_pct(gate),
-        "reached": camera >= gate,
+        # The share of the scale below the tick, which an up-to band fills.
+        "below": round(1 - _zoom_pct(gate) / 100, 4),
+        "active": active,
+        "up_to": up_to,
+        "reached": int(camera) <= gate if up_to else camera >= gate,
     }
 
 
@@ -3019,11 +3033,11 @@ def _zoom_variant(
     debug: bool = False,
 ) -> dict[str, Any]:
     """Return one zoom-control variant at a camera zoom."""
-    ticks = []
-    if terrain:
-        ticks.append(_zoom_tick("terrain_filter", "Terrain filter", 12, camera))
-    if routes:
-        ticks.append(_zoom_tick("route_slopes", "Route slope colours", 14, camera))
+    ticks = [
+        _zoom_tick("region_select", "Tap selects a region", 10, camera, up_to=True),
+        _zoom_tick("terrain_filter", "Terrain filter", 12, camera, active=terrain),
+        _zoom_tick("route_slopes", "Route slope colours", 14, camera, active=routes),
+    ]
     return {
         "caption": caption,
         "context": {
@@ -3041,7 +3055,7 @@ def _zoom_variant(
 
 MAP_ZOOM_CONTROL_VARIANTS: tuple[dict[str, Any], ...] = (
     _zoom_variant("Closed — the roundel at z10", 10.4, is_open=False),
-    _zoom_variant("Open at z10, no gated layer on", 10.4),
+    _zoom_variant("Open at z8, nothing switched on — a tap selects a region", 8.3),
     _zoom_variant("Terrain filter on, not reached yet (z10)", 10.4, terrain=True),
     _zoom_variant(
         "Terrain filter and a route on, at z13 — filter drawn, slope colours not",

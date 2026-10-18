@@ -1,4 +1,4 @@
-{% load l10n %}
+{% load i18n l10n %}
 {% comment %}
 public/partials/_map_zoom_tick.html — one tick on the zoom control's scale
 (SNOW-1077): a mark at a zoom-gated layer's zoom, numbered.
@@ -16,8 +16,16 @@ Context:
         class="map-zoom-tick"
         data-zoom-tick="{{ tick.key|default:'' }}"
         {% if tick.reached %}data-reached{% endif %}
-        style="left: {{ tick.pct|default:0 }}%"
+        {% if tick.up_to %}data-up-to{% endif %}
+        {% if tick and not tick.active %}data-off{% endif %}
+        style="top: {{ tick.pct|default:0 }}%;{% if tick.below %} --zoom-below: {{ tick.below }}{% endif %}"
     >
+        <span class="map-zoom-tick-mark" aria-hidden="true"></span>
         <span class="map-zoom-tick-zoom" data-zoom-tick-zoom>{{ tick.zoom|default:'' }}</span>
+        <span class="map-zoom-tick-label" data-zoom-tick-label>{{ tick.label|default:'' }}</span>
+        <span
+            class="map-zoom-tick-off"
+            data-zoom-tick-off
+        >{% if tick and not tick.active %}{% trans "off" %}{% endif %}</span>
     </li>
 {% endlocalize %}

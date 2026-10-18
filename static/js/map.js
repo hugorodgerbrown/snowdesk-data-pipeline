@@ -2211,6 +2211,27 @@
   // 2026-09-30). The leg lines stop here and the class lines start.
   const ROUTE_SLOPE_MINZOOM = 14;
 
+  // The deepest zoom at which a tap selects a region. The inverse of the
+  // route slope classes (z14) and the terrain filter (z12), which only
+  // start as you zoom in: a region is a whole valley's worth of ground, so
+  // past z10 it no longer fits the screen and a tap that selected it would
+  // name a selection the reader cannot see — typically a tap just off a
+  // route they meant to open. Above it the fill still draws, and a tap on
+  // it reads as a tap on empty map.
+  const REGION_SELECT_MAXZOOM = 10;
+
+  /**
+   * Whether a tap on the region fill selects the region at this zoom.
+   *
+   * Judged on the WHOLE zoom, the number the zoom roundel's face shows, so
+   * the control and the tap agree: a camera at 10.6 reads "10" and still
+   * selects.
+   *
+   * @param {number} zoom The map's camera zoom.
+   * @returns {boolean} True at REGION_SELECT_MAXZOOM or below.
+   */
+  const regionsSelectableAt = (zoom) => Math.floor(zoom) <= REGION_SELECT_MAXZOOM;
+
   /**
    * The opacity of a leg's core line: `base` below ROUTE_SLOPE_MINZOOM,
    * and from there 0 for a leg of a sampled route, whose slope segments
@@ -6804,36 +6825,57 @@
   //     is painted and its slope source holds at least one segment. A
   //     route with no sampled slope keeps its leg colours at every zoom,
   //     so it does not count.
+  //   region_select — a tap selects a region at REGION_SELECT_MAXZOOM
+  //     (z10) and below; the one gate that holds UP TO its zoom (`upTo`)
+  //     rather than from it. Always active: it is not a layer to switch.
+  //
+  // `listed` decides whether the zoom control names the gate at all. The
+  // terrain filter's two modes share one switch and one zoom, so the
+  // scale names whichever mode the filter is in — the plain filter when
+  // it is off — rather than two rows for one control.
+  const terrainSlopeMode = () => !!TERRAIN_CORE
+    && TERRAIN_CORE.normaliseFilter(terrainFilter).mode === 'slope';
   const ZOOM_GATES = Object.freeze([
+    Object.freeze({
+      key: 'region_select',
+      zoom: REGION_SELECT_MAXZOOM,
+      upTo: true,
+      active: () => true,
+      listed: () => true,
+    }),
     Object.freeze({
       key: 'terrain_filter',
       zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
       active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter
-        && TERRAIN_CORE.normaliseFilter(terrainFilter).mode !== 'slope',
+        && !terrainSlopeMode(),
+      listed: () => TERRAIN_FILTER_ELIGIBLE && !terrainSlopeMode(),
     }),
     Object.freeze({
       key: 'slope_classes',
       zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
       active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter
-        && TERRAIN_CORE.normaliseFilter(terrainFilter).mode === 'slope',
+        && terrainSlopeMode(),
+      listed: () => TERRAIN_FILTER_ELIGIBLE && terrainSlopeMode(),
     }),
     Object.freeze({
       key: 'route_slopes',
       zoom: ROUTE_SLOPE_MINZOOM,
       active: () => panelOverlayPainted('routes') && routeSlopeSegmentCount > 0,
+      listed: () => true,
     }),
   ]);
 
   window.pwaZoomGates = Object.freeze({
     /**
-     * Every zoom-gated layer, read now.
+     * Every zoom-gated layer the zoom control names, read now.
      *
-     * @returns {Array<{key: string, zoom: number, active: boolean}>}
+     * @returns {Array<{key: string, zoom: number, active: boolean, upTo: boolean}>}
      */
-    list: () => ZOOM_GATES.map((gate) => ({
+    list: () => ZOOM_GATES.filter((gate) => gate.listed()).map((gate) => ({
       key: gate.key,
       zoom: gate.zoom,
       active: !!gate.active(),
+      upTo: !!gate.upTo,
     })),
   });
 
@@ -9036,6 +9078,10 @@
     // Double-click zooms to the region — a single click only selects it —
     // and prevents the default map double-click zoom so we control the target.
     map.on('dblclick', 'regions-fill', (e) => {
+      // Past REGION_SELECT_MAXZOOM a region is not a tap target, so a
+      // double-click is the map's own zoom-in rather than a zoom back OUT
+      // to the region's bounds.
+      if (!regionsSelectableAt(map.getZoom())) return;
       e.preventDefault();
       if (!e.features.length) return;
       const feature = FEATURE_BY_ID[e.features[0].id];
@@ -9116,13 +9162,19 @@
       // No marker claimed the tap. Resolve region intent from the fill layer
       // and the resort pins. SNOW-235: both are lazy-installed, so filter to
       // present layers — queryRenderedFeatures throws on an unknown layer id.
-      const layers = ['regions-fill', 'resorts-pin'].filter((id) => map.getLayer(id));
+      // Past REGION_SELECT_MAXZOOM the fill is left out of the hit test, so
+      // a tap that only lands on a region falls to the empty-map branch.
+      const layers = [
+        ...(regionsSelectableAt(map.getZoom()) ? ['regions-fill'] : []),
+        'resorts-pin',
+      ].filter((id) => map.getLayer(id));
       const features = layers.length
         ? map.queryRenderedFeatures(e.point, { layers })
         : [];
 
       if (features.length === 0) {
-        // Genuine tap on empty map area (outside any region) — deselects the
+        // Genuine tap on empty map area (outside any region, or on one past
+        // REGION_SELECT_MAXZOOM) — deselects the
         // region (greys the ribbon, drops the readout to date-only, removes the
         // highlight) and closes any anchored resort/favourite popup. Runs even
         // during playback (unchanged from before).
@@ -9160,7 +9212,12 @@
       }
     });
 
-    map.on('mouseenter', 'regions-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+    // No pointer past REGION_SELECT_MAXZOOM, where a region is not a tap
+    // target. Left alone rather than cleared there, so it never wipes the
+    // pointer a route, pin or weather symbol on top of the fill has set.
+    map.on('mouseenter', 'regions-fill', () => {
+      if (regionsSelectableAt(map.getZoom())) map.getCanvas().style.cursor = 'pointer';
+    });
     map.on('mouseleave', 'regions-fill', () => { map.getCanvas().style.cursor = ''; });
 
     map.on('mouseenter', 'resorts-pin', () => { map.getCanvas().style.cursor = 'pointer'; });

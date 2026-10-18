@@ -131,13 +131,19 @@
   function ticks(gates, zoom, minZoom, maxZoom) {
     if (!Array.isArray(gates)) return [];
     return gates
-      .filter((gate) => gate && gate.active && Number.isFinite(gate.zoom)
+      .filter((gate) => gate && Number.isFinite(gate.zoom)
         && gate.zoom >= minZoom && gate.zoom <= maxZoom)
       .map((gate) => ({
         key: String(gate.key),
         zoom: gate.zoom,
         position: scalePosition(gate.zoom, minZoom, maxZoom),
-        reached: zoom + EPSILON >= gate.zoom,
+        active: !!gate.active,
+        upTo: !!gate.upTo,
+        // An `upTo` gate holds through its whole zoom (z10.9 still reads
+        // "10"); every other gate holds from its zoom up.
+        reached: gate.upTo
+          ? Math.floor(zoom + EPSILON) <= gate.zoom
+          : zoom + EPSILON >= gate.zoom,
       }))
       .sort((a, b) => a.zoom - b.zoom || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   }
