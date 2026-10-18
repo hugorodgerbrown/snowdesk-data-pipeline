@@ -5,14 +5,10 @@ the open route, read in words (SNOW-1064; a header of the route panel
 since SNOW-1068; headings since SNOW-1069; the Track and Slope labels
 since SNOW-1094).
 
-The route panel (_route_rail.html) is one card pinned top-left with the
-profile always showing and a header in one of two states: the route, or a
-point. This partial is the second. The rail includes it inside its
-identity block, under the eyebrow and the buttons' row so it has the
-panel's full width (SNOW-1069), and hides the title and meta line while a
-point is placed; the eyebrow becomes the route's name. Placing a point or
-opening a route changes only what the panel says, so the panel never
-moves under the finger.
+The route panel (_route_rail.html) is one card: the route's header, its
+profile, a hint, and this — the point under the hint at the panel's full
+width (2026-10-18; it replaced the route's title and meta line from
+SNOW-1068 until then). On a phone it is the route sheet's HALF state.
 
 It holds the aspect wheel (aspect_wheel_core.js, SNOW-1063) at 48 px and
 two labelled lines: TRACK — heading, then the track's steepness on its
@@ -26,10 +22,14 @@ route_point_card_core.js, and are also the wheel's accessible name,
 "Track: …; Slope: …", read with "to" for the arrow and commas for the
 dots.
 
-HIDDEN until the route cursor has an index; static/js/route_point_card.js
-shows it and fills it. THE WHEEL CLEARS THE POINT (2026-10-02): it is a
-button (`[data-route-point-card-clear]`), and pressing it keeps the route
-open, as the first Escape does. The panel's × always closes the route.
+UNLIT until the route cursor has an index: the wheel drawn with nothing
+lit and a dash on each line, so a phone sheet pulled to HALF before a tap
+shows what a tap will fill (2026-10-18). static/js/route_point_card.js
+fills it; from sm up the rail hides it while no point is placed
+(static/css/map.css). THE WHEEL CLEARS THE POINT (2026-10-02): it is a
+button (`[data-route-point-card-clear]`), disabled with no point, and
+pressing it keeps the route open, as the first Escape does. The panel's ×
+always closes the route.
 
 The strings template carries every word the header says, under
 ``{% trans %}``, so makemessages sees them and no literal reaches the DOM
@@ -45,8 +45,8 @@ Context:
 {% endcomment %}
 <div
     data-route-point-card
-    {% if not static %}id="route-point-card" hidden{% endif %}
-    class="mt-1 flex items-center gap-3"
+    {% if not static %}id="route-point-card"{% endif %}
+    class="flex items-center gap-3"
 >
     {# The wheel, drawn by static/js/route_point_card.js (or, in the        #}
     {# component library, static/js/aspect_wheel.js from data-state). The   #}
@@ -115,6 +115,7 @@ Context:
     <span data-string="ground-steep">{% trans "Steep" context "slope steepness" %}</span>
     <span data-string="ground-very-steep">{% trans "Very steep" context "slope steepness" %}</span>
     <span data-string="ground-extremely-steep">{% trans "Extremely steep" context "slope steepness" %}</span>
+    <span data-string="empty">–</span>
     <span data-string="ground-unknown">{% trans "No terrain data" %}</span>
     <span data-string="ground-falling-left">{% blocktrans %}%(ground)s, falling skier's left{% endblocktrans %}</span>
     <span data-string="ground-falling-right">{% blocktrans %}%(ground)s, falling skier's right{% endblocktrans %}</span>

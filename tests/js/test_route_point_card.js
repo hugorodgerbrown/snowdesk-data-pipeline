@@ -3,9 +3,10 @@
  * (static/js/route_point_card.js, SNOW-1064; the route panel's point
  * header since SNOW-1068).
  *
- * The header is hidden until the route cursor has an index, shows and
- * reads the point when it does, hides again when the index clears (the
- * panel's route header returns) and on detach, and its wheel's
+ * The header is UNLIT until the route cursor has an index — the wheel with
+ * nothing lit, a dash on each line, the clear button disabled (2026-10-18)
+ * — reads the point when it does, goes back to unlit when the index clears
+ * and on detach, and its wheel's
  * accessible name is the two lines it shows with their labels, "Track:
  * …; Slope: …", read with a comma for the dot (SNOW-1069, SNOW-1094).
  * Pressing the wheel clears the point (2026-10-02).
@@ -26,7 +27,7 @@ import '../../static/js/route_point_card_core.js';
 
 document.body.innerHTML = `
   <div id="map">
-    <div id="route-point-card" data-route-point-card hidden>
+    <div id="route-point-card" data-route-point-card>
       <button type="button" data-route-point-card-clear aria-label="Clear the point">
         <span data-route-point-card-wheel></span>
       </button>
@@ -41,6 +42,18 @@ await import('../../static/js/route_point_card.js');
 const card = document.getElementById('route-point-card');
 const headline = card.querySelector('[data-route-point-card-headline]');
 const ground = card.querySelector('[data-route-point-card-ground]');
+const clearButton = card.querySelector('[data-route-point-card-clear]');
+
+/** Expect the header unlit: no lit sector, no centre mark, dashes, disabled. */
+function expectUnlit() {
+  expect(card.hidden).toBe(false);
+  expect(card.querySelector('svg')).not.toBeNull();
+  expect(card.querySelector('[data-lit]')).toBeNull();
+  expect(card.querySelector('[data-centre]')).toBeNull();
+  expect(headline.textContent).toBe('–');
+  expect(ground.textContent).toBe('–');
+  expect(clearButton.disabled).toBe(true);
+}
 
 /**
  * A straight path heading `deg` from `start`.
@@ -101,17 +114,15 @@ describe('route_point_card.js', () => {
     window.pwaRoutePointCard.detach();
   });
 
-  it('stays hidden when a route is attached with no point', () => {
+  it('shows unlit when a route is attached with no point', () => {
     attach();
-    expect(card.hidden).toBe(true);
-    expect(headline.textContent).toBe('');
-    expect(ground.textContent).toBe('');
+    expectUnlit();
   });
 
-  it('shows and reads the point when the cursor moves', () => {
+  it('reads the point when the cursor moves', () => {
     const cursor = attach();
     cursor.setIndex(1);
-    expect(card.hidden).toBe(false);
+    expect(clearButton.disabled).toBe(false);
     expect(headline.textContent).toBe('E · Steep fall line');
     expect(ground.textContent).toBe('Extremely steep');
     expect(card.querySelector('[data-lit="faces"]')).not.toBeNull();
@@ -125,35 +136,32 @@ describe('route_point_card.js', () => {
     expect(wheelLabel()).toBe(`Track: E, Steep fall line; Slope: ${ground.textContent}`);
   });
 
-  it('hides and empties when the index clears, for the route header', () => {
+  it('goes back to unlit when the index clears', () => {
     const cursor = attach();
     cursor.setIndex(1);
     cursor.setIndex(null);
-    expect(card.hidden).toBe(true);
-    expect(headline.textContent).toBe('');
-    expect(card.querySelector('svg')).toBeNull();
+    expectUnlit();
   });
 
-  it('hides on detach and stops following the old cursor', () => {
+  it('goes unlit on detach and stops following the old cursor', () => {
     const cursor = attach();
     cursor.setIndex(1);
     window.pwaRoutePointCard.detach();
-    expect(card.hidden).toBe(true);
+    expectUnlit();
     cursor.setIndex(0);
-    expect(card.hidden).toBe(true);
-    expect(headline.textContent).toBe('');
+    expectUnlit();
   });
 
   it('clears the point when the wheel is pressed, and keeps following', () => {
     const cursor = attach();
     cursor.setIndex(1);
 
-    card.querySelector('[data-route-point-card-clear]').click();
+    clearButton.click();
 
     expect(cursor.state().index).toBeNull();
-    expect(card.hidden).toBe(true);
+    expectUnlit();
     cursor.setIndex(2);
-    expect(card.hidden).toBe(false);
+    expect(headline.textContent).not.toBe('–');
   });
 
   it('does nothing on a wheel press once detached', () => {

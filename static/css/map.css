@@ -178,6 +178,12 @@
     .route-rail {
         top: calc(env(safe-area-inset-top, 0px) + 12px + var(--map-control-lg) + 8px);
     }
+
+    /* No detents here, so nothing to pull up to: the point header shows
+       only while there is a point to read (2026-10-18). */
+    .route-rail:not([data-route-rail-point]) > [data-sheet-half] {
+        display: none;
+    }
 }
 
 /* —— The route sheet on a phone (SNOW-1099) ————————————————————————————
@@ -186,18 +192,20 @@
    on phones" below, which supplies its full width, its flush foot, its
    heights and its slide up). The profile — the thing a thumb taps to place
    a point — sits at the thumb rather than as far from it as the screen
-   allows. Peek is the identity block (name, meta line, menu, ×), half adds
-   the point header and the profile, and full — staff only — the point
-   debug readout: every terrain figure behind the placed point.
+   allows. Each detent reveals one more layer (2026-10-18): peek — where a
+   tap on a route opens it — is the identity block (name, meta line, menu,
+   ×), the profile and the hint under it; half adds the point header; full
+   — staff only — the point debug readout: every terrain figure behind the
+   placed point.
 
    `fixed` rather than #map's absolute, so it sits on the viewport's foot
    like every other sheet, over the site footer rather than above it, and
    at the sheets' own level (--z-popup) like the region sheet.
 
-   At peek only the identity block shows: the profile starts 8px below it
-   (the grid's gap), inside the sheet's bottom padding, so without this a
-   sliver of it shows under the meta line — and a covered profile must
-   not take a tap or a tab stop either. */
+   At peek the point header starts 8px below the hint (the grid's gap),
+   inside the sheet's bottom padding, so without this a sliver of it shows
+   under the hint — and a covered wheel must not take a tap or a tab stop
+   either. */
 @media (max-width: 639.98px) {
     .route-rail[data-detent] {
         position: fixed;
@@ -207,22 +215,22 @@
         align-content: start;
     }
 
-    .route-rail[data-detent='peek'] > :not([data-sheet-handle]):not([data-sheet-peek]) {
+    .route-rail[data-detent='peek'] > [data-sheet-half] {
         visibility: hidden;
     }
 
     /* The point debug readout is FULL's alone. Hidden rather than taken
        out of the flow, so FULL can measure it before it shows; HALF stops
-       at the profile (`data-sheet-half`), which clips it. */
+       at the point header (`data-sheet-half`), which clips it. */
     .route-rail:not([data-detent='full']) [data-route-rail-debug] {
         visibility: hidden;
     }
 
     /* With a route open the column is trimmed to locate, layers and routes
-       (SNOW-1067, above), so its foot is the layers-and-routes group rather
-       than the chevron the region sheet's peek covers: peek cuts layers and
-       covers routes. Both go; locate stays, clear of the sheet's edge. */
-    :root[data-map-sheet='peek'] #map[data-route-rail-open] #map-controls-collapsible {
+       (SNOW-1067, above). The route's peek holds the profile (2026-10-18),
+       so it reaches past locate as well: the whole column goes, as every
+       sheet's half takes it, so no covered button keeps a tab stop. */
+    :root[data-map-sheet='peek'] #map[data-route-rail-open] #map-controls-br {
         visibility: hidden;
     }
 }

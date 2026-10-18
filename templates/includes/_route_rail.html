@@ -6,18 +6,25 @@ cut at its transitions, under a header for the route or a point
 only since 2026-10-02).
 
 A RAIL is the card pinned top-left while a route is open
-(docs/glossary.md). There is one: SNOW-1065 retired rail two, and
-SNOW-1068 folded the point card into it, because a point placed on the
-profile is read in the header right above it. The profile is always
-showing; the HEADER takes one of two states:
+(docs/glossary.md). There is one: SNOW-1065 retired rail two. Top to
+bottom it reads:
 
-  route — the route's NAME as the title, its META LINE as the subtitle,
-          the routes list's own format and strings ("12.9km · 337m ↑ ·
-          1906m ↓ · 2h51m", routes/partials/_route.html), the time only
-          when the recording has one;
-  point — the aspect wheel and the reading (_route_point_card.html) in
-          the title and subtitle's place, and the eyebrow becomes the
-          route's name. Pressing the wheel clears the point.
+  the HEADER — the route's NAME as the title and its META LINE as the
+          subtitle, the routes list's own format and strings ("12.9km ·
+          337m ↑ · 1906m ↓ · 2h51m", routes/partials/_route.html), the
+          time only when the recording has one;
+  the LANE — the profile, below;
+  the HINT — "Click on the profile to view terrain data";
+  the POINT HEADER — the aspect wheel and the reading
+          (_route_point_card.html) for the placed point. Pressing the
+          wheel clears the point.
+
+ON A PHONE THE THREE SHEET STATES ARE THREE DEPTHS of that list
+(2026-10-18): PEEK, the state a tap on a route opens, ends under the hint,
+so the profile is there from the first tap; HALF adds the point header,
+unlit until a point is placed (a point placed at peek raises the sheet to
+it); FULL, staff only, adds the point debug readout. From sm up the panel
+has no detents: the point header shows while a point is placed.
 
 Then the LANE, the elevation profile drawn as one filled shape per leg
 under one outline, with distance ticks along its foot. 400 px wide on
@@ -122,16 +129,13 @@ Context:
     {# Identity. `data-row-renameable` makes this block the row          #}
     {# static/js/inline_rename.js edits in place: the label, the hidden  #}
     {# input beside it, and the Rename item inside the menu below.        #}
-    {# SNOW-1099: on a phone this block is the sheet's PEEK and its drag  #}
-    {# header — the profile below it never drags, so a tap there still   #}
-    {# places a point.                                                   #}
-    <div data-row-renameable data-sheet-peek data-sheet-drag class="min-w-0">
+    {# SNOW-1099: on a phone this block is the sheet's drag header — the #}
+    {# profile below it never drags, so a tap there still places a point. #}
+    <div data-row-renameable data-sheet-drag class="min-w-0">
         <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-                {# The eyebrow reads "Route", or the route's name while a      #}
-                {# point is placed (route_rail.js).                           #}
                 {% include "includes/_eyebrow.html" with text=route_rail_eyebrow tag="h2" heading_id="route-rail-eyebrow" class_extra="truncate" %}
-                {# The route header's title; hidden for a point.             #}
+                {# The route's name.                                          #}
                 <p data-route-rail-title class="mt-1 text-sm font-semibold text-text-1 text-balance">
                     <span data-row-label data-route-rail-name></span>
                 </p>
@@ -158,11 +162,6 @@ Context:
                 </button>
             </div>
         </div>
-        {# The point header (SNOW-1068): the wheel and the reading, in the #}
-        {# title and meta line's place while a point is placed. Below the  #}
-        {# buttons' row, not beside it, so the reading has the panel's     #}
-        {# full width and its lines do not wrap early (SNOW-1069).         #}
-        {% include "includes/_route_point_card.html" with static=False %}
         {# The meta line: the route's, in the routes list's format.       #}
         {# Filled by static/js/route_rail.js.                             #}
         <p data-route-rail-meta class="mt-1 font-mono text-meta text-text-2"></p>
@@ -172,8 +171,7 @@ Context:
     </div>
     {# The lane. Filled per open by static/js/route_rail.js. A tap on its  #}
     {# top line places the point; the readout shows the point's figures.  #}
-    {# On a phone the sheet's HALF ends under it (data-sheet-half).       #}
-    <div data-sheet-half class="min-w-0">
+    <div class="min-w-0">
         <div class="relative">
             <svg
                 data-route-rail-lane
@@ -196,6 +194,21 @@ Context:
             </div>
         </div>
         <div data-route-rail-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3"></div>
+    </div>
+    {# The hint, under the profile it names. On a phone the sheet's PEEK  #}
+    {# ends here (data-sheet-peek): the route, its profile and how to     #}
+    {# read a point are the first thing a tap on a route shows.           #}
+    <p data-route-rail-hint data-sheet-peek class="text-summary text-text-3">
+        {% trans "Click on the profile to view terrain data" %}
+    </p>
+    {# The point header (SNOW-1064): the wheel and the reading, under the #}
+    {# hint at the panel's full width. On a phone it is HALF's (the sheet #}
+    {# stops under it, data-sheet-half) and shows unlit until a point is  #}
+    {# placed; from sm up it shows only while a point is placed. "fit":   #}
+    {# not capped at half the screen, which on a short phone would clip  #}
+    {# the header under a peek that already holds the profile.            #}
+    <div data-sheet-half="fit" class="min-w-0 border-t border-border pt-2">
+        {% include "includes/_route_point_card.html" with static=False %}
     </div>
     {% comment %}
     SNOW-1099: the phone sheet's FULL detent, staff only — the point debug

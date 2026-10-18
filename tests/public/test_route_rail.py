@@ -466,7 +466,17 @@ class TestTheRouteOpenFurniture:
         phone, _rest = _split_phone_blocks(_MAP_CSS.read_text(encoding="utf-8"))
         hidden = _withdrawn_ids(phone) | {"home-intro"}
         assert set(_WITHDRAWN_ON_A_PHONE) <= hidden
-        assert "map-controls-br" not in _withdrawn_ids(phone)
+        # The column goes whole only under the route sheet's peek, which
+        # holds the profile and covers it (2026-10-18), never for the route
+        # being open as such.
+        column = [
+            sel
+            for sel, body in _rules(phone)
+            if "visibility: hidden" in body
+            and re.search(r"#map\[data-route-rail-open\]\s+#map-controls-br", sel)
+        ]
+        assert column
+        assert all(":root[data-map-sheet='peek']" in sel for sel in column)
 
     def test_a_phone_keeps_locate_layers_and_routes(self) -> None:
         """Every other roundel and the chevron leave the column."""

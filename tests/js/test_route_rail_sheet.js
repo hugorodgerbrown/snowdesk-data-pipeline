@@ -33,21 +33,23 @@ document.body.innerHTML = `
     <section id="route-rail" data-route-rail hidden
              data-detents="peek,half,full" data-detent-initial="peek"
              data-route-terrain-url-template="/_route-terrain/${NIL}/?format=json">
-      <div data-row-renameable data-sheet-peek>
+      <div data-row-renameable data-sheet-drag>
         <h2 id="route-rail-eyebrow">Route</h2>
         <p data-route-rail-title><span data-row-label data-route-rail-name></span></p>
         <button type="button" data-route-rail-close></button>
         <p data-route-rail-meta></p>
       </div>
-      <div data-sheet-half>
+      <div>
         <svg data-route-rail-lane></svg>
         <div data-route-rail-readout hidden>
           <span data-route-rail-dot></span>
           <span data-route-rail-elevation></span>
           <span data-route-rail-distance></span>
         </div>
+        <div data-route-rail-ticks></div>
       </div>
-      <div data-route-rail-ticks></div>
+      <p data-route-rail-hint data-sheet-peek>Click on the profile to view terrain data</p>
+      <div data-sheet-half></div>
       <dl data-route-rail-debug>
         <div data-route-rail-debug-hint>Place a point on the profile to read its figures.</div>
         <dd data-route-rail-debug-field="sample">–</dd>

@@ -46,9 +46,10 @@
  * THE POINT HEADER (SNOW-1064, SNOW-1068). `open` attaches the point
  * header (route_point_card.js) to the new cursor, with the arrays it reads
  * the point's words from, and `close` detaches it. The header follows the
- * cursor itself, and its wheel clears the point; this module hides the
- * title and the meta line while a point is placed (`paintState`) and puts
- * the route's name in the eyebrow. The × always closes the route.
+ * cursor itself, under the profile and its hint, and its wheel clears the
+ * point; this module marks the rail `data-route-rail-point` while a point
+ * is placed (`paintState`). The route's title and meta line stay put
+ * (2026-10-18). The × always closes the route.
  *
  * THE CURSOR LINE (SNOW-1019) AND ITS READOUT (2026-10-02). The cursor
  * index is drawn across the lane as a vertical line
@@ -78,16 +79,18 @@
  * identity block (`[data-route-rail-claim]`), where the recipient lands.
  *
  * A BOTTOM SHEET ON A PHONE (SNOW-1099). Below 640px the rail is a sheet
- * with detents (window.MapSheet.bindDetents, bound on the first open):
- * PEEK shows the identity block (`data-sheet-peek`), HALF stops under the
- * profile (`data-sheet-half`), and FULL — staff only, declared by the
- * partial — is the point debug readout (`[data-route-rail-debug]`): the
- * staff terrain table's figures for the segment under the point, fetched
- * from /_route-terrain/<uuid>/?format=json the first time the sheet
- * reaches FULL for a route, never before. A point placed while the sheet
- * peeks raises it to HALF. The sheet is below the map's dot, so the leader
- * line stops on its top edge (`isSheet`), and map.js pads the camera's
- * foot rather than its head. At `sm` and above none of this applies.
+ * with detents (window.MapSheet.bindDetents, bound on the first open), and
+ * each detent reveals one more layer (2026-10-18): PEEK, where a tap on a
+ * route opens it, is the header, the profile and the hint
+ * (`data-sheet-peek`); HALF adds the point header (`data-sheet-half`); and
+ * FULL — staff only, declared by the partial — is the point debug readout
+ * (`[data-route-rail-debug]`): the staff terrain table's figures for the
+ * segment under the point, fetched from /_route-terrain/<uuid>/?format=json
+ * the first time the sheet reaches FULL for a route, never before. A point
+ * placed while the sheet peeks raises it to HALF. The sheet is below the
+ * map's dot, so the leader line stops on its top edge (`isSheet`), and
+ * map.js pads the camera's foot rather than its head. At `sm` and above
+ * none of this applies.
  *
  * PINNED TOP-LEFT (SNOW-1068). While open, `#map` carries
  * `data-route-rail-open`, which static/css/map.css reads to withdraw the
@@ -155,11 +158,7 @@
   var PLAN_TRIP_URL = rail.dataset.routePlanTripUrl || '';
 
   var nameEl = rail.querySelector('[data-route-rail-name]');
-  var eyebrowEl = document.getElementById('route-rail-eyebrow');
-  var titleEl = rail.querySelector('[data-route-rail-title]');
   var closeEl = rail.querySelector('[data-route-rail-close]');
-  /** The eyebrow's route text, as the partial rendered it. */
-  var EYEBROW_TEXT = eyebrowEl ? eyebrowEl.textContent : '';
   var metaEl = rail.querySelector('[data-route-rail-meta]');
   var lane = rail.querySelector('[data-route-rail-lane]');
   var ticksEl = rail.querySelector('[data-route-rail-ticks]');
@@ -423,26 +422,23 @@
   }
 
   /**
-   * Switch the header to a point, or back to the route (SNOW-1068).
+   * Mark the rail with whether a point is placed (SNOW-1068).
    *
-   * The point header itself follows the cursor (route_point_card.js);
-   * here the title and the meta line give way to it and the eyebrow names
-   * the route. The point's distance is on the profile, beside the cursor
-   * line (2026-10-02).
+   * The point header itself follows the cursor (route_point_card.js),
+   * under the profile; the route's title and meta line stay (2026-10-18).
+   * The mark is what static/css/map.css reads to show the point header
+   * from sm up only while there is a point to read.
    *
    * @param {?number} index The cursor index; null with no point.
    */
   function paintPointMode(index) {
     var point = index !== null;
-    // SNOW-1099: a point placed while the phone sheet peeks (a tap on the
-    // route's line on the map) raises it to half, where the point header and
-    // its line on the profile answer the tap.
+    // A point placed while the phone sheet peeks (a tap on the route's line
+    // or on the profile) raises it to half, where the point header answers
+    // the tap — what the hint at peek promises.
     if (point && detents && detents.current() === 'peek') detents.set('half');
     if (point) rail.setAttribute('data-route-rail-point', '');
     else rail.removeAttribute('data-route-rail-point');
-    if (titleEl) titleEl.hidden = point;
-    if (metaEl) metaEl.hidden = point;
-    if (eyebrowEl) eyebrowEl.textContent = point ? current.name : EYEBROW_TEXT;
   }
 
   /**

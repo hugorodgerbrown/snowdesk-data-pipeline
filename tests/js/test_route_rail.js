@@ -577,14 +577,14 @@ describe('the point header (SNOW-1068)', () => {
     expect(closeButton().getAttribute('aria-label')).toBe('Close the route profile');
   });
 
-  it('gives the title and meta line way to a point, naming the route in the eyebrow', () => {
+  it('keeps the route header when a point is placed (2026-10-18)', () => {
     window.pwaRouteRail.open(feature());
     window.pwaRouteRail.cursor().setIndex(5);
     expect(rail.hasAttribute('data-route-rail-point')).toBe(true);
-    expect(title().hidden).toBe(true);
-    expect(meta().hidden).toBe(true);
-    // The point's distance is beside the cursor line now, not here.
-    expect(eyebrow().textContent).toBe('Mont Fort');
+    // The point header sits under the profile now, not in the title's place.
+    expect(title().hidden).toBe(false);
+    expect(meta().hidden).toBe(false);
+    expect(eyebrow().textContent).toBe('Route');
     expect(closeButton().getAttribute('aria-label')).toBe('Close the route profile');
   });
 
