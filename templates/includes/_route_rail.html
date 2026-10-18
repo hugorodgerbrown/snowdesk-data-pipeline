@@ -204,8 +204,10 @@ Context:
     {# The point header (SNOW-1064): the wheel and the reading, under the #}
     {# hint at the panel's full width. On a phone it is HALF's (the sheet #}
     {# stops under it, data-sheet-half) and shows unlit until a point is  #}
-    {# placed; from sm up it shows only while a point is placed.          #}
-    <div data-sheet-half class="min-w-0 border-t border-border pt-2">
+    {# placed; from sm up it shows only while a point is placed. "fit":   #}
+    {# not capped at half the screen, which on a short phone would clip  #}
+    {# the header under a peek that already holds the profile.            #}
+    <div data-sheet-half="fit" class="min-w-0 border-t border-border pt-2">
         {% include "includes/_route_point_card.html" with static=False %}
     </div>
     {% comment %}

@@ -349,6 +349,14 @@ describe('fitting the content (SNOW-1099)', () => {
     expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('384px');
   });
 
+  it('lets a "fit" half marker run past half the screen, up to full', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'half');
+    childEndingAt(sheet, 500, 'data-sheet-half="fit"');
+    controller.open();
+    // Past the 384 px half-screen cap: 500 px plus the 16 px gap.
+    expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('516px');
+  });
+
   it('stops full at the end of the content, past the half marker', () => {
     const { sheet, controller } = attachSheet('peek,half,full', 'full');
     childEndingAt(sheet, 150, 'data-sheet-half');

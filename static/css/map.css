@@ -227,10 +227,10 @@
     }
 
     /* With a route open the column is trimmed to locate, layers and routes
-       (SNOW-1067, above), so its foot is the layers-and-routes group rather
-       than the chevron the region sheet's peek covers: peek cuts layers and
-       covers routes. Both go; locate stays, clear of the sheet's edge. */
-    :root[data-map-sheet='peek'] #map[data-route-rail-open] #map-controls-collapsible {
+       (SNOW-1067, above). The route's peek holds the profile (2026-10-18),
+       so it reaches past locate as well: the whole column goes, as every
+       sheet's half takes it, so no covered button keeps a tab stop. */
+    :root[data-map-sheet='peek'] #map[data-route-rail-open] #map-controls-br {
         visibility: hidden;
     }
 }

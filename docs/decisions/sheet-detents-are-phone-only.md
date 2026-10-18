@@ -109,7 +109,11 @@ only binds it to pointer events. Without the core on the page,
   data"), because a full-width sheet has the room and the
   profile is what a tap on a route is for. HALF adds the point header
   (unlit until a point is placed; a point placed at peek raises the sheet
-  to HALF) and FULL the staff debug readout.
+  to HALF) and FULL the staff debug readout. Its half marker reads
+  `data-sheet-half="fit"`, capped at FULL's room rather than half the
+  screen, because on a short phone the profile already fills half and a
+  non-staff sheet has no FULL to reveal a clipped header. The peek covers
+  locate, so the whole bottom-right column is hidden under it.
 - The place sheet (SNOW-1100, resort and saved pins) stops HALF under the
   day's weather: the level is already on the peek row, so the weather is
   what HALF adds, and the problems wait for FULL. It drops FULL only when

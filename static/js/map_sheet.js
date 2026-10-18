@@ -350,10 +350,18 @@
      * (the route sheet stops under its profile), else to the end of the
      * content. A sheet with less to say than half a screen stops where it
      * ends rather than showing a band of empty card.
+     *
+     * A marker that reads `data-sheet-half="fit"` is capped at FULL's room
+     * instead of half the screen: the route sheet's HALF is the point
+     * header under a peek that already holds the profile, which on a short
+     * phone runs past half the screen, and a non-staff route sheet has no
+     * FULL to reveal what a half-screen cap would clip.
      */
     function halfHeight() {
-      var cap = Math.round(window.innerHeight * 0.5);
       var marker = el.querySelector('[data-sheet-half]');
+      var cap = marker && marker.getAttribute('data-sheet-half') === 'fit'
+        ? fullHeight()
+        : Math.round(window.innerHeight * 0.5);
       var measured = marker ? heightTo(marker.getBoundingClientRect().bottom) : contentHeight();
       return measured && measured > 0 ? Math.min(cap, measured) : cap;
     }
