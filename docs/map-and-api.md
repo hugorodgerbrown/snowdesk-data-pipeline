@@ -2,7 +2,7 @@
 name: map-and-api
 description: /map/ (public:map) MapLibre choropleth, scrubber, calendar, overlay registry, /api/ endpoints (ratings, geojson, groupings), routes.geojson
 status: current
-last-reviewed: 2026-10-17
+last-reviewed: 2026-10-18
 ---
 
 # Map page and JSON API
@@ -450,8 +450,8 @@ each matching pixel by its 5° band in the SLF classes
 part of `filterHash`, so switching mode re-tiles through `setTiles`. It is
 gated on `TERRAIN_CLASS_TILE_URL` like the filter, and it shares the
 filter's on/off switch and its sheet's aspect, slope-range and elevation
-settings. The zoom control's z12 tick reads "Slope classes" while it is
-on (`slope_classes` in `window.pwaZoomGates`).
+settings. The zoom control names both modes as one feature, "Terrain
+overlay ≥12" (`terrain_filter` in `window.pwaZoomGates`).
 
 SNOW-691's swisstopo raster — `ch.swisstopo.hangneigung-ueber_30` from
 `SLOPE_TILE_URL`, its "Display slope angles" row, `slope_overlay_core.js`,
