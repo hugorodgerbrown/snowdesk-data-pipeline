@@ -114,16 +114,13 @@ Context (all optional):
     {% include "public/partials/_map_zoom_tick.html" %}
 </template>
 {# makemessages never scans JavaScript, so every string the control writes #}
-{# is rendered here and read back by window.pwaStrings.read(). One label,  #}
-{# and one description per entry in window.pwaZoomGates.                  #}
+{# is rendered here and read back by window.pwaStrings.read(). One label   #}
+{# per entry in window.pwaZoomGates.                                       #}
 <template id="map-zoom-strings-template">
     <span data-string="toggle-label">{% blocktrans %}Zoom level %(zoom)s{% endblocktrans %}</span>
     <span data-string="gate-region_select">{% trans "Region selector" %}</span>
-    <span data-string="desc-region_select">{% trans "Tap a region to select it" %}</span>
     <span data-string="gate-terrain_filter">{% trans "Terrain overlay" %}</span>
-    <span data-string="desc-terrain_filter">{% trans "Slope and aspect on the ground" %}</span>
     <span data-string="gate-route_slopes">{% trans "Route slope angle" %}</span>
-    <span data-string="desc-route_slopes">{% trans "A saved route coloured by steepness" %}</span>
     <span data-string="threshold-from">{% blocktrans %}≥%(zoom)s{% endblocktrans %}</span>
     <span data-string="threshold-up-to">{% blocktrans %}≤%(zoom)s{% endblocktrans %}</span>
     <span data-string="camera">{% blocktrans %}Camera zoom %(zoom)s{% endblocktrans %}</span>

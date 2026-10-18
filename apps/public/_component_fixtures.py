@@ -3003,7 +3003,6 @@ def _zoom_pct(zoom: float) -> float:
 def _zoom_tick(
     key: str,
     label: str,
-    description: str,
     gate: int,
     camera: float,
     *,
@@ -3013,7 +3012,6 @@ def _zoom_tick(
     return {
         "key": key,
         "label": label,
-        "description": description,
         "zoom": gate,
         "pct": _zoom_pct(gate),
         "threshold": f"≤{gate}" if up_to else f"≥{gate}",
@@ -3038,7 +3036,6 @@ def _zoom_variant(
         _zoom_tick(
             "region_select",
             "Region selector",
-            "Tap a region to select it",
             10,
             camera,
             up_to=True,
@@ -3046,14 +3043,12 @@ def _zoom_variant(
         _zoom_tick(
             "terrain_filter",
             "Terrain overlay",
-            "Slope and aspect on the ground",
             12,
             camera,
         ),
         _zoom_tick(
             "route_slopes",
             "Route slope angle",
-            "A saved route coloured by steepness",
             14,
             camera,
         ),

@@ -1966,18 +1966,21 @@ html:has(> body.map-fullscreen) > body {
     background: var(--color-border);
 }
 
-/* One feature: its name and threshold on its level's line, what it does
-   underneath. The whole row is a button that zooms to the threshold. */
+/* One feature: its name and threshold on its level's line. The whole row
+   is a button that zooms to the threshold. */
 .map-zoom-tick {
     position: absolute;
     left: calc(var(--zoom-label-x) - 6px);
     right: 4px;
-    margin-top: -12px;
+    /* Half the row's height, less a pixel: the name's x-height, not its
+       line box, reads as sitting on the level's line. */
+    margin-top: -13px;
 }
 
 .map-zoom-tick-button {
     display: flex;
-    flex-direction: column;
+    align-items: baseline;
+    gap: 6px;
     width: 100%;
     padding: 4px 6px;
     background: transparent;
@@ -1992,12 +1995,6 @@ html:has(> body.map-fullscreen) > body {
     outline-offset: -2px;
 }
 
-.map-zoom-tick-head {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-}
-
 .map-zoom-tick-label {
     font-size: 12px;
     line-height: 16px;
@@ -2008,17 +2005,8 @@ html:has(> body.map-fullscreen) > body {
     font-size: 10px;
 }
 
-.map-zoom-tick-desc {
-    font-size: 10px;
-    line-height: 13px;
-}
-
 /* Available at the camera's zoom, whether or not it is switched on:
    strong; everything else stays muted. */
-.map-zoom-tick[data-reached] .map-zoom-tick-button {
-    color: var(--color-text-2);
-}
-
 .map-zoom-tick[data-reached] .map-zoom-tick-label {
     color: var(--color-text-1);
     font-weight: 600;

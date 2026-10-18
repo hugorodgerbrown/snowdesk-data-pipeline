@@ -1,8 +1,8 @@
 {% load l10n %}
 {% comment %}
 public/partials/_map_zoom_tick.html — one zoom-gated feature on the zoom
-control's scale (SNOW-1077): its name and a line saying what it does, at
-the level it becomes available.
+control's scale (SNOW-1077): its name and threshold, at the level it
+becomes available.
 
 Rendered once per tick by the component library's variants, and once
 empty inside #map-zoom-tick-template, which static/js/map_zoom_control.js
@@ -13,7 +13,7 @@ the map to the feature's threshold, and the threshold reads ≥14, or ≤10
 for the region selector, which holds up to its level rather than from it.
 
 Context:
-* tick — {key, label, description, threshold, zoom, pct, reached}; absent
+* tick — {key, label, threshold, zoom, pct, reached}; absent
   for the template copy.
 {% endcomment %}
 {% localize off %}
@@ -30,11 +30,8 @@ Context:
             data-zoom-tick-button
             data-zoom-target="{{ tick.zoom|default:'' }}"
         >
-            <span class="map-zoom-tick-head">
-                <span class="map-zoom-tick-label" data-zoom-tick-label>{{ tick.label|default:'' }}</span>
-                <span class="map-zoom-tick-threshold" data-zoom-tick-threshold>{{ tick.threshold|default:'' }}</span>
-            </span>
-            <span class="map-zoom-tick-desc" data-zoom-tick-desc>{{ tick.description|default:'' }}</span>
+            <span class="map-zoom-tick-label" data-zoom-tick-label>{{ tick.label|default:'' }}</span>
+            <span class="map-zoom-tick-threshold" data-zoom-tick-threshold>{{ tick.threshold|default:'' }}</span>
         </button>
     </li>
 {% endlocalize %}

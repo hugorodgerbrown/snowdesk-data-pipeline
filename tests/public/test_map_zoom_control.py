@@ -56,12 +56,11 @@ def test_empty_render_is_a_closed_roundel_named_zoom_level() -> None:
     assert "data-zoom-camera" not in html
 
 
-def test_strings_template_carries_a_label_and_description_per_gate() -> None:
+def test_strings_template_carries_one_label_per_gate() -> None:
     """Each key window.pwaZoomGates publishes has a translatable label."""
     html = render_to_string(PARTIAL, {})
     for key in ("region_select", "terrain_filter", "route_slopes"):
         assert f'data-string="gate-{key}"' in html
-        assert f'data-string="desc-{key}"' in html
     assert 'data-string="toggle-label"' in html
 
 

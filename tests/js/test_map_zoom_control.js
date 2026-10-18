@@ -41,7 +41,6 @@ document.body.innerHTML = `
       <li class="map-zoom-tick" data-zoom-tick="">
         <button type="button" data-zoom-tick-button data-zoom-target="">
           <span data-zoom-tick-label></span><span data-zoom-tick-threshold></span>
-          <span data-zoom-tick-desc></span>
         </button>
       </li>
     </template>
@@ -50,9 +49,7 @@ document.body.innerHTML = `
       <span data-string="threshold-from">≥%(zoom)s</span>
       <span data-string="threshold-up-to">≤%(zoom)s</span>
       <span data-string="gate-region_select">Region selector</span>
-      <span data-string="desc-region_select">Tap a region to select it</span>
       <span data-string="gate-terrain_filter">Terrain overlay</span>
-      <span data-string="desc-terrain_filter">Slope and aspect on the ground</span>
       <span data-string="gate-route_slopes">Route slope colours</span>
     </template>
   </div>
@@ -251,14 +248,12 @@ describe('the ticks', () => {
   const ticks = () => [...flyout.querySelectorAll('[data-zoom-ticks] > li')];
   const tick = (key) => ticks().find((li) => li.dataset.zoomTick === key);
 
-  it('name and describe every gate at its level', () => {
+  it('name every gate at its level', () => {
     toggle.click();
     expect(ticks().map((li) => li.dataset.zoomTick))
       .toEqual(['region_select', 'terrain_filter', 'route_slopes']);
     expect(tick('terrain_filter').querySelector('[data-zoom-tick-label]').textContent)
       .toBe('Terrain overlay');
-    expect(tick('terrain_filter').querySelector('[data-zoom-tick-desc]').textContent)
-      .toBe('Slope and aspect on the ground');
     // z12 sits 8/14 of the way up z4..z18.
     expect(tick('terrain_filter').style.top).toBe('42.86%');
   });

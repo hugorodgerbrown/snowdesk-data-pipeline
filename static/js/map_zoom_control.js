@@ -66,11 +66,8 @@
   const STRINGS = self.pwaStrings.read('map-zoom-strings-template', {
     'toggle-label': 'Zoom level %(zoom)s',
     'gate-region_select': 'Region selector',
-    'desc-region_select': 'Tap a region to select it',
     'gate-terrain_filter': 'Terrain overlay',
-    'desc-terrain_filter': 'Slope and aspect on the ground',
     'gate-route_slopes': 'Route slope angle',
-    'desc-route_slopes': 'A saved route coloured by steepness',
     'threshold-from': '≥%(zoom)s',
     'threshold-up-to': '≤%(zoom)s',
     camera: 'Camera zoom %(zoom)s',
@@ -144,8 +141,8 @@
   /**
    * Redraw the ticks, when they changed.
    *
-   * Each tick names one zoom-gated feature, its threshold (≥12, ≤10) and
-   * what it does, placed
+   * Each tick names one zoom-gated feature and its threshold (≥12, ≤10),
+   * placed
    * at the height of the level it becomes available. It is bold while the
    * camera is at a zoom where the feature works, switched on or not: the
    * scale answers "what can I do at this zoom", which is what a reader
@@ -185,8 +182,6 @@
           STRINGS[tick.upTo ? 'threshold-up-to' : 'threshold-from'], { zoom: tick.zoom },
         );
       }
-      const description = tickNode.querySelector('[data-zoom-tick-desc]');
-      if (description) description.textContent = STRINGS['desc-' + tick.key] || '';
       tickNodes.push(tickNode);
     }
     if (tickList) tickList.replaceChildren(...tickNodes);

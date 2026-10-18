@@ -6810,8 +6810,8 @@
   // Some features work only at certain zooms, and the zoom control's
   // flyout (static/js/map_zoom_control.js) names each one at its level on
   // the scale, in bold once the camera is where it works. One entry per
-  // gated feature, so a fourth is a line here and a label and description
-  // in the control's strings template, and nothing else.
+  // gated feature, so a fourth is a line here and a label in the
+  // control's strings template, and nothing else.
   //
   // Every gate is named whether or not the feature is switched on: the
   // scale says where each one becomes available, which is what a reader
