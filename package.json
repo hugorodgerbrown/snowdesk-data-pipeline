@@ -5,7 +5,6 @@
     "lh:open": "open $(python -c \"import json; print(' '.join(r['htmlPath'] for r in json.load(open('.lighthouseci/manifest.json')) if r['isRepresentativeRun']))\")",
     "build:icons": "node bin/build-pwa-icons",
     "build:splash": "node bin/build-pwa-splash",
-    "build:screenshots": "node bin/build-pwa-screenshots",
     "test:js": "vitest run",
     "types:js": "tsc --noEmit",
     "build:js": "node bin/minify-js",

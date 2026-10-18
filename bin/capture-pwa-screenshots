@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+# bin/capture-pwa-screenshots — capture the install-sheet screenshots from the
+# real app.
+#
+# SNOW-1112. Chrome's richer install sheet shows the manifest's
+# ``description`` above its ``screenshots``, so the screenshots are the first
+# view of the app anyone sees before installing it. They used to be branded
+# placeholder cards drawn by bin/build-pwa-screenshots; this captures the map
+# itself instead.
+#
+# Two files, written to static/icons/pwa/screenshots/ and named in
+# serve_manifest (apps/public/views.py):
+#
+#   map-wide.png    1280×720, form_factor wide — the map on a desktop window,
+#                   zoomed out one step so the whole of the Alps is in view.
+#   map-narrow.png  750×1334, form_factor narrow — the map on a phone
+#                   (375×667 at 2×) with one region's sheet open.
+#
+# Both are captured on a fixed mid-season day, not today, so a re-run in the
+# summer still shows a full map. The welcome card and the map tour are
+# marked as already seen, so neither covers the map.
+#
+#     uv run python bin/capture-pwa-screenshots
+#     uv run python bin/capture-pwa-screenshots --base-url http://127.0.0.1:8000
+#
+# Defaults to production, whose data and basemap are what an installer will
+# see. Needs network access to that site and to its basemap tile hosts; a
+# capture without the basemap is a map of outlines on a blank page, so the
+# script refuses to write one (see _assert_basemap_loaded). Needs Chromium
+# for Playwright: ``uv run playwright install chromium`` once, or point
+# ``--chromium`` at an existing build (a Claude Code cloud session has one at
+# /opt/pw-browsers/chromium).
+#
+# ruff: noqa: T201
+# T201 — CLI script; print() is the intended output channel.
+
+"""Capture the PWA install-sheet screenshots — see the header block above."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from playwright.sync_api import Page, sync_playwright
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+OUT_DIR = REPO_ROOT / "static" / "icons" / "pwa" / "screenshots"
+
+DEFAULT_BASE_URL = "https://snowdesk.info"
+
+# Inside the golden week (apps/bulletins/services/golden_week.py): a day all
+# three providers published, with every danger level from low to very high.
+DEFAULT_DATE = "2026-02-12"
+
+# The region whose sheet the phone capture opens.
+DEFAULT_REGION = "CH-1111"
+
+# What static/js/home_intro.js and static/js/map_help.js write when their
+# card is dismissed. Set before any page script runs.
+DISMISS_INTRO = (
+    "try {"
+    " localStorage.setItem('snowdesk.home.intro', 'dismissed');"
+    " localStorage.setItem('snowdesk.map.help', 'seen');"
+    " } catch (e) {}"
+)
+
+# Time for MapLibre to draw the choropleth and the basemap tiles after the
+# network goes quiet, and again after a zoom.
+SETTLE_MS = 3000
+
+
+def _assert_basemap_loaded(failed: list[str]) -> None:
+    """Exit non-zero if any basemap request failed.
+
+    Args:
+        failed: The URLs of every request that failed during the capture.
+
+    """
+    tiles = [url for url in failed if "tile" in url or "style" in url]
+    if tiles:
+        print("basemap requests failed, so nothing was written:", file=sys.stderr)
+        for url in sorted(set(tiles))[:5]:
+            print(f"  {url}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _open(page: Page, url: str) -> None:
+    """Load ``url`` and wait for the map to settle.
+
+    Args:
+        page: The Playwright page to drive.
+        url: The page to load.
+
+    """
+    page.goto(url, wait_until="networkidle", timeout=60_000)
+    page.wait_for_timeout(SETTLE_MS)
+
+
+def capture(
+    base_url: str, date: str, region: str, chromium: str | None
+) -> dict[str, bytes]:
+    """Capture both screenshots and return them as PNG bytes, by file name.
+
+    Args:
+        base_url: The site to capture, without a trailing slash.
+        date: The bulletin day to show, as ``YYYY-MM-DD``.
+        region: The region id whose sheet the phone capture opens.
+        chromium: A Chromium executable to use instead of Playwright's own.
+
+    Returns:
+        ``{"map-wide.png": …, "map-narrow.png": …}``.
+
+    """
+    shots: dict[str, bytes] = {}
+    failed: list[str] = []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=chromium)
+
+        desktop = browser.new_context(viewport={"width": 1280, "height": 720})
+        desktop.add_init_script(DISMISS_INTRO)
+        page = desktop.new_page()
+        page.on("requestfailed", lambda request: failed.append(request.url))
+        _open(page, f"{base_url}/map/?d={date}")
+        page.mouse.move(640, 360)
+        page.mouse.wheel(0, 250)
+        page.wait_for_timeout(SETTLE_MS)
+        shots["map-wide.png"] = page.screenshot()
+
+        phone = browser.new_context(
+            viewport={"width": 375, "height": 667},
+            device_scale_factor=2,
+            is_mobile=True,
+            has_touch=True,
+        )
+        phone.add_init_script(DISMISS_INTRO)
+        page = phone.new_page()
+        page.on("requestfailed", lambda request: failed.append(request.url))
+        _open(page, f"{base_url}/map/?d={date}#{region}")
+        shots["map-narrow.png"] = page.screenshot()
+
+        browser.close()
+    _assert_basemap_loaded(failed)
+    return shots
+
+
+def main() -> None:
+    """Parse arguments, capture, and write the screenshots."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--date", default=DEFAULT_DATE)
+    parser.add_argument("--region", default=DEFAULT_REGION)
+    parser.add_argument("--chromium", default=None)
+    args = parser.parse_args()
+
+    shots = capture(args.base_url.rstrip("/"), args.date, args.region, args.chromium)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    for name, png in shots.items():
+        path = OUT_DIR / name
+        path.write_bytes(png)
+        print(f"wrote {path.relative_to(REPO_ROOT)}")
+
+
+if __name__ == "__main__":
+    main()
