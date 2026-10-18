@@ -20,9 +20,10 @@
  *                              of the tiles.)
  *
  * Staging set (static/icons/pwa-staging/, SNOW-399) — same four files but
- * on an amber tile with an asterisk set off the mountain's top right.
- * On the maskable variant every mark sits inside the circle Android
- * actually shows (see MASKABLE_MARK_RADIUS), so neither is cropped.
+ * on an amber tile, with the mountain raised and the word "Staging" set in
+ * a band beneath it. On the maskable variant every mark sits inside the
+ * circle Android actually shows (see MASKABLE_MARK_RADIUS), so neither the
+ * glyph nor the word is cropped.
  *
  * Snowdesk deploys the same codebase to staging (*.onrender.com) and
  * production (snowdesk.info). Once a tester has both installed as PWAs,
@@ -30,27 +31,19 @@
  * that reads as unambiguously non-production from three feet away, so
  * staging sessions can't be confused for production ones.
  *
- * SEASON LABEL
- * ------------
- * Every PWA icon carries the two-year season identifier ("25/26") in a
- * band at the foot of the tile, so an installed home-screen icon says
- * which season the app is serving without launching it. The mountain
- * glyph is lifted by MOUNTAIN_LIFT units of the 32-unit viewBox to clear
- * the band. static/favicon.svg itself is left untouched: the browser-tab
- * favicon renders at 16px, where five glyphs are illegible — the label
- * is a home-screen-tile affordance only.
- *
- * The label is derived from SEASON_START_DATE, which mirrors the Django
- * setting of the same name (config/settings/base.py). Because the PNGs
- * are checked in, they go stale the moment that setting rolls over to a
- * new season; ``static/icons/pwa-build.json`` records the label baked
- * into the committed PNGs and tests/public/test_pwa_icons.py asserts it
- * still matches the configured season, so the roll-over surfaces as a
- * failing test rather than a wrong icon nobody notices.
+ * STAGING LABEL
+ * -------------
+ * The production tile is the favicon artwork and nothing else. The
+ * staging tile lifts the mountain by MOUNTAIN_LIFT units of the 32-unit
+ * viewBox and sets STAGING_LABEL in the band it vacates, so an installed
+ * staging app says what it is without launching it. (Until SNOW-1112's
+ * follow-up both tiles carried the season, "25/26", in that band, and
+ * staging an asterisk off the mountain's top right; both were dropped.)
  *
  * Run via ``npm run build:icons`` (see package.json). The PNGs are
- * checked in alongside ``static/favicon.svg`` — when the SVG or the
- * season changes, regenerate and commit the new outputs.
+ * checked in alongside ``static/favicon.svg`` — when the SVG changes,
+ * regenerate and commit the new outputs, then run
+ * ``npm run build:splash`` so the iOS launch images follow.
  *
  * OPAQUE VARIANTS AND THE TILE COLOUR
  * -----------------------------------
@@ -100,7 +93,6 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const SRC_SVG = path.join(REPO_ROOT, 'static', 'favicon.svg');
 const OUT_DIR_PROD = path.join(REPO_ROOT, 'static', 'icons', 'pwa');
 const OUT_DIR_STAGING = path.join(REPO_ROOT, 'static', 'icons', 'pwa-staging');
-const BUILD_MANIFEST = path.join(REPO_ROOT, 'static', 'icons', 'pwa-build.json');
 
 // Brand green — must match the rect fill in static/favicon.svg. Doubles
 // as the opaque backdrop for the production maskable and apple-touch
@@ -113,16 +105,16 @@ const TILE_COLOUR_PRODUCTION = '#2d4a3e';
 const TILE_COLOUR_STAGING = '#b45309';
 
 // Brand cream — must match the mountain fill in static/favicon.svg. The
-// season band and the staging asterisk reuse it so every light mark on
-// the tile is the same white.
+// staging label reuses it so every light mark on the tile is the same
+// white.
 const FOREGROUND_COLOUR = '#f2f0ec';
 
 // The radius, as a fraction of the maskable canvas, that every light mark
-// on the tile (mountain, season band, staging asterisk) must sit inside.
+// on the tile (the mountain, and on staging the label) must sit inside.
 // Android 12+ shows a maskable icon on its launch splash, and on a round
 // launcher, as a circle two thirds of the canvas wide: radius 1/3. The
-// W3C 80% safe zone is looser than that, which is how the season label
-// and the asterisk came to be sliced off on the splash (SNOW-1112
+// W3C 80% safe zone is looser than that, which is how the old season
+// label and staging asterisk came to be sliced off on the splash (SNOW-1112
 // follow-up). 0.30 keeps a tenth of the circle as air around the marks.
 const MASKABLE_MARK_RADIUS = 0.3;
 
@@ -130,94 +122,49 @@ const MASKABLE_MARK_RADIUS = 0.3;
 // cream foreground is #f2f0ec, both tile colours are far darker.
 const MARK_CHANNEL_MIN = 200;
 
-// Units of the 32-unit viewBox the mountain glyph is raised by to clear
-// the season band at the foot of the tile.
+// Units of the 32-unit viewBox the staging mountain is raised by to clear
+// the label band at the foot of the tile.
 const MOUNTAIN_LIFT = 4;
 
-// Default season start — mirrors SEASON_START_DATE in
-// config/settings/base.py. Override via the environment variable of the
-// same name when building icons for a different season.
-const SEASON_START_DEFAULT = '2025-11-01';
+// The word in the staging band.
+const STAGING_LABEL = 'Staging';
 
 /**
- * Build the SLF-style two-year season identifier (e.g. "25/26") from an
- * ISO season-start date. Mirrors ``_season_label`` in
- * apps/public/season_calendar.py — the Northern-hemisphere avalanche
- * season runs from autumn through to late spring of the following year,
- * so the label is always two two-digit years separated by a slash.
- */
-function seasonLabelFor(startIso) {
-  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(startIso);
-  if (!match) {
-    throw new Error(
-      `SEASON_START_DATE must be an ISO date (YYYY-MM-DD), got: ${startIso}`,
-    );
-  }
-  const year = Number(match[1]);
-  const pad = (n) => String(n % 100).padStart(2, '0');
-  return `${pad(year)}/${pad(year + 1)}`;
-}
-
-/**
- * Render the season band as an SVG <text> element.
+ * Render the staging label as an SVG <text> element.
  *
- * Font size 7 and baseline y=29 of the 32-unit viewBox put the label in
- * the 11 units the lifted mountain vacates, with roughly equal air above
- * the cap height and below the baseline. The label's corners are the
- * furthest marks on the production tile, so they set how far the
- * maskable variant shrinks the tile (see buildMaskable).
+ * Baseline y=29 of the 32-unit viewBox puts it in the band the lifted
+ * mountain vacates. At font size 5.5 the word spans about two thirds of
+ * the tile, leaving the rounded corners plenty of air. On the
+ * maskable variant the word's ends are the furthest marks from the
+ * centre, so they set how far the tile shrinks (see buildMaskable).
  */
-function seasonBand(label) {
+function labelBand(label) {
   return (
     `<text x="16" y="29" font-family="Arial, Helvetica, sans-serif"` +
-    ` font-size="7" font-weight="700" text-anchor="middle"` +
-    ` fill="${FOREGROUND_COLOUR}" letter-spacing="0.1">${label}</text>`
+    ` font-size="5.5" font-weight="700" text-anchor="middle"` +
+    ` fill="${FOREGROUND_COLOUR}">${label}</text>`
   );
 }
 
 /**
- * Read the checked-in production favicon SVG, lift the mountain glyph to
- * clear the season band, and composite the band itself.
+ * Read the checked-in production favicon SVG and, for the staging set,
+ * recolour its tile, lift the mountain and set the label beneath it.
  *
- * For the staging set the rect fill is also recoloured and an asterisk
- * is set off the mountain's top right, the way a footnote marker hangs
- * off a word. It is drawn in the brand cream, the same fill as the
- * mountain and the season band — the tile has no other white, and a
- * pure #ffffff sitting inches from the cream glyph would read as a
- * mistake. Placed at (26.5, 13) of the 32-unit viewBox it clears both
- * the lifted mountain's right peak and the rounded corner, and survives
- * iOS's squircle crop on the apple-touch icon; on the maskable variant
- * the whole tile is shrunk until the asterisk sits inside the circle
- * Android shows, so its mask never reaches it.
- *
- * The string replacements target the exact production shape (see the
- * check in main()); a future SVG rewrite that changes it surfaces as a
- * build-time mismatch, not a silent no-op.
+ * The production tile is the favicon unchanged. The string replacements
+ * target the exact production shape (see the check in main()); a future
+ * SVG rewrite that changes it surfaces as a build-time mismatch, not a
+ * silent no-op.
  */
-function loadSourceSvg(variant, label) {
+function loadSourceSvg(variant) {
   const svg = fs.readFileSync(SRC_SVG, 'utf8');
-  const lifted = svg.replace(
-    '<path ',
-    `<path transform="translate(0 -${MOUNTAIN_LIFT})" `,
-  );
   if (variant === 'production') {
-    return Buffer.from(
-      lifted.replace('</svg>', `${seasonBand(label)}</svg>`),
-      'utf8',
-    );
+    return Buffer.from(svg, 'utf8');
   }
-  const recoloured = lifted.replace(
-    `fill="${TILE_COLOUR_PRODUCTION}"`,
-    `fill="${TILE_COLOUR_STAGING}"`,
-  );
-  const asterisk =
-    '<text x="26.5" y="13" font-family="Arial, Helvetica, sans-serif"' +
-    ' font-size="16" font-weight="700" text-anchor="middle"' +
-    ` fill="${FOREGROUND_COLOUR}">*</text>`;
-  return Buffer.from(
-    recoloured.replace('</svg>', `${asterisk}${seasonBand(label)}</svg>`),
-    'utf8',
-  );
+  const staged = svg
+    .replace('<path ', `<path transform="translate(0 -${MOUNTAIN_LIFT})" `)
+    .replace(`fill="${TILE_COLOUR_PRODUCTION}"`, `fill="${TILE_COLOUR_STAGING}"`)
+    .replace('</svg>', `${labelBand(STAGING_LABEL)}</svg>`);
+  return Buffer.from(staged, 'utf8');
 }
 
 async function buildAny(size, outName, outDir, srcSvg) {
@@ -263,9 +210,9 @@ async function markRadius(srcSvg) {
 async function buildMaskable(size, outName, outDir, srcSvg, tileColour) {
   const outPath = path.join(outDir, outName);
   // Scale the whole tile so its furthest mark lands on
-  // MASKABLE_MARK_RADIUS. The staging asterisk reaches further out than
-  // anything on the production tile, so the staging glyph comes out a
-  // little smaller; that is the price of the asterisk surviving the crop.
+  // MASKABLE_MARK_RADIUS. The staging label reaches further out than the
+  // bare mountain, so the staging glyph comes out a little smaller; that
+  // is the price of the word surviving the crop.
   const ratio = MASKABLE_MARK_RADIUS / (await markRadius(srcSvg));
   const inner = Math.round(size * ratio);
   const pad = Math.round((size - inner) / 2);
@@ -337,7 +284,7 @@ async function buildAppleTouchIcon(size, outName, outDir, srcSvg, tileColour) {
  * canvas to read as mountains rather than as a smudge.
  *
  * There is no staging variant. The badge is an alpha mask, so the amber
- * tile colour cannot survive into it and the asterisk would be a few
+ * tile colour cannot survive into it and the label would be a few
  * illegible pixels — a staging badge would be byte-identical in every way
  * that reaches the screen.
  */
@@ -359,9 +306,9 @@ async function buildBadge(size, outName, outDir) {
   );
 }
 
-async function buildSet({ variant, outDir, tileColour, label }) {
+async function buildSet({ variant, outDir, tileColour }) {
   fs.mkdirSync(outDir, { recursive: true });
-  const srcSvg = loadSourceSvg(variant, label);
+  const srcSvg = loadSourceSvg(variant);
   await buildAny(192, 'icon-192.png', outDir, srcSvg);
   await buildAny(512, 'icon-512.png', outDir, srcSvg);
   await buildMaskable(512, 'icon-maskable-512.png', outDir, srcSvg, tileColour);
@@ -376,7 +323,7 @@ async function main() {
   // The staging recolour and the mountain lift depend on the exact
   // production SVG shape. Guard here so a future SVG rewrite surfaces as
   // a build error rather than a silent no-op that ships an amber-less
-  // staging tile or a mountain overlapping the season band.
+  // staging tile or a mountain overlapping the staging label.
   const svg = fs.readFileSync(SRC_SVG, 'utf8');
   if (!svg.includes(`fill="${TILE_COLOUR_PRODUCTION}"`)) {
     console.error(
@@ -388,39 +335,24 @@ async function main() {
   if (!svg.includes('<path ')) {
     console.error(
       'expected a single <path> (the mountain glyph) in static/favicon.svg —' +
-        ' update the mountain lift in loadSourceSvg() if the artwork has changed',
+        ' update the staging lift in loadSourceSvg() if the artwork has changed',
     );
     process.exit(1);
   }
-
-  const seasonStart = process.env.SEASON_START_DATE || SEASON_START_DEFAULT;
-  const label = seasonLabelFor(seasonStart);
-  console.log(`season label: ${label} (from SEASON_START_DATE=${seasonStart})`);
 
   await buildSet({
     variant: 'production',
     outDir: OUT_DIR_PROD,
     tileColour: TILE_COLOUR_PRODUCTION,
-    label,
   });
   await buildSet({
     variant: 'staging',
     outDir: OUT_DIR_STAGING,
     tileColour: TILE_COLOUR_STAGING,
-    label,
   });
   // One badge, in the production directory, for both environments —
   // static/js/sw.js reads it by that path whichever host it is running on.
   await buildBadge(96, 'badge-96.png', OUT_DIR_PROD);
-
-  // Record what was baked into the committed PNGs so a test can fail when
-  // the configured season moves on and the icons aren't regenerated.
-  fs.writeFileSync(
-    BUILD_MANIFEST,
-    `${JSON.stringify({ season_label: label, season_start_date: seasonStart }, null, 2)}\n`,
-    'utf8',
-  );
-  console.log(`wrote ${path.relative(REPO_ROOT, BUILD_MANIFEST)}`);
 }
 
 main().catch((err) => {

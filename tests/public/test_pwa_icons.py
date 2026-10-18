@@ -7,7 +7,7 @@ alongside them, are build artefacts of ``bin/build-pwa-icons``
 Nothing in the request path reads their pixels, so a regression in the build
 script ships silently and only surfaces as a wrong-looking tile on somebody's
 home screen — days later, on a device nobody is testing on. These tests read
-the bytes off disk and assert the three properties that have actually broken:
+the bytes off disk and assert the properties that have actually broken:
 
 1. **No border under the OS mask.** Android crops a maskable icon to a
    circle that reaches the midpoint of each edge; iOS crops the
@@ -17,12 +17,8 @@ the bytes off disk and assert the three properties that have actually broken:
    staging maskable, whose canvas was a shade darker than its rect fill,
    and the production apple-touch icon, flattened onto the cream manifest
    ``background_color``, were later fixed the same way.
-2. **The season label is current.** Every icon carries the two-year
-   season identifier ("25/26"). Because the PNGs are committed, they go
-   stale the moment ``settings.SEASON_START_DATE`` rolls over to a new
-   season. ``static/icons/pwa-build.json`` records what the committed
-   PNGs were built with, so the roll-over fails a test instead of
-   shipping last season's tile.
+2. **Every mark fits the circle Android shows.** Android 12+ shows only the
+   middle two thirds of a maskable icon (SNOW-1112 follow-up).
 3. **The notification badge is a silhouette.** Android keeps only the
    alpha channel of a notification's ``badge`` and tints what survives, so
    an edge-to-edge opaque PNG becomes a solid white block in the status
@@ -35,15 +31,12 @@ assertion reads the PNG IHDR byte directly, which needs no decoder at all.
 
 from __future__ import annotations
 
-import json
 import math
 from pathlib import Path
 
 import pytest
 from django.conf import settings
 from PIL import Image, ImageChops
-
-from apps.public.season_calendar import _season_label
 
 # Tile colours, one per icon set — the fill of the rounded rect in the
 # artwork itself. Mirrors TILE_COLOUR_PRODUCTION / TILE_COLOUR_STAGING in
@@ -127,7 +120,7 @@ def test_maskable_marks_sit_inside_the_circle_android_shows(icon_set: str) -> No
     Android 12+ shows a maskable icon on its launch splash, and on a round
     launcher, as a circle two thirds of the canvas wide, and the launch
     shell continues that splash with the same crop. Built to the looser
-    W3C 80% safe zone, the season label's corners and the staging
+    W3C 80% safe zone, the old season label's corners and the staging
     asterisk were sliced off (SNOW-1112 follow-up).
     """
     path = _icon_path(icon_set, "icon-maskable-512.png")
@@ -218,26 +211,6 @@ def test_production_tile_colour_matches_the_favicon_rect_fill() -> None:
     svg = (Path(settings.BASE_DIR) / "static" / "favicon.svg").read_text()
     red, green, blue = TILE_COLOURS["pwa"]
     assert f'fill="#{red:02x}{green:02x}{blue:02x}"' in svg
-
-
-def test_committed_icons_carry_the_configured_season_label() -> None:
-    """The committed icons were built for ``settings.SEASON_START_DATE``.
-
-    The season label ("25/26") is baked into the PNGs at build time and
-    cannot be read back out of them, so ``bin/build-pwa-icons`` records
-    it in ``static/icons/pwa-build.json`` instead. When the season rolls
-    over, bumping ``SEASON_START_DATE`` without re-running
-    ``npm run build:icons`` fails here — otherwise every installed home
-    screen would keep advertising last season indefinitely.
-    """
-    build = json.loads((_icons_dir() / "pwa-build.json").read_text())
-    expected = _season_label(settings.SEASON_START_DATE)
-    assert build["season_label"] == expected, (
-        f"committed PWA icons carry the season label {build['season_label']!r} "
-        f"but SEASON_START_DATE ({settings.SEASON_START_DATE.isoformat()}) is "
-        f"season {expected!r}. Run `npm run build:icons` and commit the "
-        "regenerated PNGs and static/icons/pwa-build.json."
-    )
 
 
 def test_notification_badge_is_an_alpha_silhouette() -> None:

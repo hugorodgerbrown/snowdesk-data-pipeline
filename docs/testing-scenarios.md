@@ -591,7 +591,7 @@ install time, so uninstall first). Screen recording on.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Force-stop the app, then launch it from the home screen while recording | The splash shows the environment's icon in a circle: green on production, amber with an asterisk on staging |
+| 1 | Force-stop the app, then launch it from the home screen while recording | The splash shows the environment's icon in a circle: green on production, amber labelled "Staging" on staging |
 | 2 | Step through the recording frame by frame across the handoff | The logo does not move, resize, change shape or change artwork; the background and the status bar stay cream throughout |
 | 3 | Throttle the network to "Slow 3G" with the device on USB debugging, clear the app's storage, and launch | "Loading…" fades in under the logo after about 300ms; the logo does not move when it appears |
 | 4 | Repeat steps 1–2 on the other environment | No production artwork appears on staging, and no staging artwork on production |

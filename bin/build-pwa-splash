@@ -27,7 +27,7 @@
  * variant), so its rounded corners land on the splash background
  * cleanly. Reading the built icon rather than re-rendering favicon.svg
  * means the launch screen cannot drift from the home-screen icon — same
- * artwork, same season label, one source. It also means this script
+ * artwork, one source. It also means this script
  * REQUIRES ``npm run build:icons`` to have run first; main() checks and
  * says so rather than emitting a splash with a hole in it.
  *
@@ -79,7 +79,6 @@ const sharp = require('sharp');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SRC_ICON = path.join(REPO_ROOT, 'static', 'icons', 'pwa', 'icon-512.png');
-const ICON_BUILD_MANIFEST = path.join(REPO_ROOT, 'static', 'icons', 'pwa-build.json');
 const OUT_DIR = path.join(REPO_ROOT, 'static', 'icons', 'pwa', 'splash');
 const OUT_MANIFEST = path.join(OUT_DIR, 'splash-manifest.json');
 
@@ -290,12 +289,10 @@ function planEntries() {
  * to add one — and a file that was never rendered cannot be linked.
  *
  * @param {object[]} entries - The rendered manifest entries.
- * @param {string} seasonLabel - The season baked into the source icon.
  */
-function writeManifest(entries, seasonLabel) {
+function writeManifest(entries) {
   const manifest = {
     generated_by: 'bin/build-pwa-splash',
-    season_label: seasonLabel,
     background_light: BACKGROUND_LIGHT,
     background_dark: BACKGROUND_DARK,
     entries: entries.map((entry) => ({
@@ -319,11 +316,6 @@ async function main() {
     process.exit(1);
   }
 
-  let seasonLabel = null;
-  if (fs.existsSync(ICON_BUILD_MANIFEST)) {
-    seasonLabel = JSON.parse(fs.readFileSync(ICON_BUILD_MANIFEST, 'utf8')).season_label;
-  }
-
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
   const entries = planEntries();
@@ -337,11 +329,11 @@ async function main() {
     rendered.add(entry.file);
   }
 
-  writeManifest(entries, seasonLabel);
+  writeManifest(entries);
   console.log(
     `wrote ${rendered.size} splash PNGs + ${path.relative(REPO_ROOT, OUT_MANIFEST)}` +
       ` (${DEVICES.length} devices × ${ORIENTATIONS.length} orientations ×` +
-      ` ${SCHEMES.length} schemes = ${entries.length} links, season ${seasonLabel})`,
+      ` ${SCHEMES.length} schemes = ${entries.length} links)`,
   );
 }
 

@@ -414,7 +414,7 @@ The badge is therefore its own file, `/static/icons/pwa/badge-96.png` — the
 mountain glyph, white on transparent, built by `bin/build-pwa-icons`
 (`buildBadge`) from the same `static/favicon.svg` as everything else. It has no
 staging variant: an alpha mask cannot carry the amber tile colour, and the
-staging asterisk would be a few illegible pixels at 24dp.
+staging label would be a few illegible pixels at 24dp.
 `tests/public/test_pwa_icons.py` asserts the file keeps its alpha channel and
 is a real silhouette (alpha extrema of exactly `(0, 255)`), because a
 uniformly-opaque badge is indistinguishable from a working one until someone

@@ -241,8 +241,8 @@ def test_manifest_theme_color_is_the_launch_background_on_staging() -> None:
 def test_manifest_swaps_icons_for_staging() -> None:
     """Every icon ``src`` lives under ``/static/icons/pwa-staging/`` when the environment is staging (SNOW-399).
 
-    The staging icon set is a distinct amber-tiled artwork marked with an
-    asterisk; pointing at it via a different URL prefix keeps the two
+    The staging icon set is a distinct amber-tiled artwork labelled
+    "Staging"; pointing at it via a different URL prefix keeps the two
     files apart on disk so a rebuild of one doesn't disturb the other. It also means the browser can cache both independently by
     URL when the same device previews both installs.
     """
