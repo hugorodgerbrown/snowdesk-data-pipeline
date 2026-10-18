@@ -1,15 +1,19 @@
-{% load i18n l10n %}
+{% load l10n %}
 {% comment %}
-public/partials/_map_zoom_tick.html — one tick on the zoom control's scale
-(SNOW-1077): a mark at a zoom-gated layer's zoom, numbered.
+public/partials/_map_zoom_tick.html — one zoom-gated feature on the zoom
+control's scale (SNOW-1077): its name and a line saying what it does, at
+the level it becomes available.
 
 Rendered once per tick by the component library's variants, and once
 empty inside #map-zoom-tick-template, which static/js/map_zoom_control.js
-clones for each gate that is on. ``data-reached`` is present when the
-camera is at or past the gate, so the layer is being drawn.
+clones for each gate. ``data-reached`` is present when the camera is at a
+zoom where the feature is available, which the scale shows in bold — not
+whether the reader has switched it on. ``data-up-to`` marks the gate that
+holds up to its level (the region selector) rather than from it.
 
 Context:
-* tick — {key, zoom, pct, reached}; absent for the template copy.
+* tick — {key, label, description, pct, below, reached, up_to}; absent for
+  the template copy.
 {% endcomment %}
 {% localize off %}
     <li
@@ -17,15 +21,9 @@ Context:
         data-zoom-tick="{{ tick.key|default:'' }}"
         {% if tick.reached %}data-reached{% endif %}
         {% if tick.up_to %}data-up-to{% endif %}
-        {% if tick and not tick.active %}data-off{% endif %}
         style="top: {{ tick.pct|default:0 }}%;{% if tick.below %} --zoom-below: {{ tick.below }}{% endif %}"
     >
-        <span class="map-zoom-tick-mark" aria-hidden="true"></span>
-        <span class="map-zoom-tick-zoom" data-zoom-tick-zoom>{{ tick.zoom|default:'' }}</span>
         <span class="map-zoom-tick-label" data-zoom-tick-label>{{ tick.label|default:'' }}</span>
-        <span
-            class="map-zoom-tick-off"
-            data-zoom-tick-off
-        >{% if tick and not tick.active %}{% trans "off" %}{% endif %}</span>
+        <span class="map-zoom-tick-desc" data-zoom-tick-desc>{{ tick.description|default:'' }}</span>
     </li>
 {% endlocalize %}

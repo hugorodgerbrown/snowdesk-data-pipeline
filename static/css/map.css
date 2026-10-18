@@ -1858,12 +1858,13 @@ html:has(> body.map-fullscreen) > body {
    (window.pwaMapOverlays). It is a vertical scale, + over −, because zoom
    is height: each zoom-gated thing is named at the level it changes. */
 .map-zoom-flyout {
-    --zoom-scale-h: 196px;
+    --zoom-scale-h: 280px;
     --zoom-track-x: 22px;
+    --zoom-label-x: 56px;
     position: absolute;
     left: calc(var(--map-control-sm) + 8px);
     bottom: calc(var(--map-control-sm) + 8px);
-    width: 216px;
+    width: 248px;
     max-width: calc(100vw - var(--map-control-sm) - 32px);
     padding: 2px 2px 6px;
     background: var(--color-glass);
@@ -1934,79 +1935,77 @@ html:has(> body.map-fullscreen) > body {
     list-style: none;
 }
 
-/* One row: the mark across the track, the zoom, what changes there. */
-.map-zoom-tick {
+/* Every whole zoom level, numbered beside a short mark on the line. */
+.map-zoom-levels {
     position: absolute;
-    left: 0;
-    right: 0;
-    height: 20px;
-    margin-top: -10px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 8px 0 calc(var(--zoom-track-x) - 6px);
-    font-size: 12px;
-    line-height: 1.2;
-    color: var(--color-text-2);
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
-.map-zoom-tick-mark {
-    flex: none;
-    width: 12px;
-    height: 2px;
-    border-radius: 999px;
-    background: var(--color-text-3);
-}
-
-.map-zoom-tick-zoom {
-    flex: none;
-    min-width: 14px;
+.map-zoom-level {
+    position: absolute;
+    left: calc(var(--zoom-track-x) - 4px);
+    height: 12px;
+    margin-top: -6px;
+    padding-left: 14px;
     font-family: var(--font-mono);
     font-size: 10px;
+    line-height: 12px;
+    color: var(--color-text-3);
+}
+
+.map-zoom-level::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 5px;
+    width: 8px;
+    height: 1px;
+    background: var(--color-border);
+}
+
+/* One feature: its name on its level's line, what it does underneath. */
+.map-zoom-tick {
+    position: absolute;
+    left: var(--zoom-label-x);
+    right: 8px;
+    margin-top: -8px;
+    display: flex;
+    flex-direction: column;
     color: var(--color-text-2);
 }
 
 .map-zoom-tick-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 12px;
+    line-height: 16px;
 }
 
-.map-zoom-tick-off {
-    margin-left: auto;
+.map-zoom-tick-desc {
     font-size: 10px;
+    line-height: 13px;
     color: var(--color-text-3);
 }
 
-/* In force at the camera's zoom: the layer is drawn, or the tap selects. */
-.map-zoom-tick[data-reached] {
+/* Available at the camera's zoom, whether or not it is switched on. */
+.map-zoom-tick[data-reached] .map-zoom-tick-label {
     color: var(--color-text-1);
-    font-weight: 500;
+    font-weight: 600;
 }
 
-.map-zoom-tick[data-reached] .map-zoom-tick-mark {
-    background: var(--color-text-1);
+.map-zoom-tick[data-reached] .map-zoom-tick-desc {
+    color: var(--color-text-2);
 }
 
-/* Switched off: named, so the reader learns the level, but quiet. */
-.map-zoom-tick[data-off] {
-    color: var(--color-text-3);
-    font-weight: 400;
-}
-
-.map-zoom-tick[data-off] .map-zoom-tick-mark {
-    background: var(--color-text-3);
-}
-
-/* An up-to gate (regions, z10 and below) holds from its mark down to the
-   foot of the scale, so it draws a band along the track rather than a
-   threshold. */
+/* An up-to gate (the region selector, z10 and below) holds from its level
+   down to the foot of the scale, so it draws a band along the track
+   rather than a threshold. */
 .map-zoom-tick[data-up-to]::before {
     content: "";
     position: absolute;
-    top: 10px;
-    left: calc(var(--zoom-track-x) - 3px);
+    top: 8px;
+    left: calc(var(--zoom-track-x) - var(--zoom-label-x) - 3px);
     width: 6px;
     height: calc(var(--zoom-below) * var(--zoom-scale-h));
     border-radius: 999px;
@@ -2032,6 +2031,14 @@ html:has(> body.map-fullscreen) > body {
     pointer-events: none;
 }
 
+/* The one line of explanation over the scale. */
+.map-zoom-intro {
+    margin: 8px 10px 0;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--color-text-2);
+}
+
 /* DEBUG only: the camera zoom to two decimals. */
 .map-zoom-camera {
     margin: 4px 12px 0;
@@ -2048,7 +2055,7 @@ html:has(> body.map-fullscreen) > body {
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    min-height: 360px;
+    min-height: 480px;
     padding-bottom: calc(var(--map-control-sm) + 8px);
 }
 

@@ -24,9 +24,10 @@
  * vector source).
  *
  * THE GATES come from `window.pwaZoomGates` (map.js), one entry per
- * zoom-gated layer: `{ key, zoom, active }`. `ticks` keeps the active ones
- * inside the map's range, sorted by zoom, and says for each where it sits
- * on the scale and whether the camera has reached it.
+ * zoom-gated feature: `{ key, zoom, upTo }`. `ticks` keeps every one inside
+ * the map's range, switched on or not, sorted by zoom, and says for each
+ * where it sits on the scale and whether the camera is at a zoom where it
+ * is available. `levels` numbers every whole zoom on the line.
  *
  * Every function here is pure.
  *
@@ -37,6 +38,7 @@
  *   faceZoom(tileZoom, cameraZoom)          → whole number
  *   buttonState(zoom, minZoom, maxZoom)     → { canZoomOut, canZoomIn }
  *   ticks(gates, zoom, minZoom, maxZoom)    → Array<Tick>
+ *   levels(minZoom, maxZoom)                → Array<{zoom, position}>
  */
 
 // @ts-check
@@ -46,9 +48,10 @@
 
   /**
    * @typedef {object} Gate
-   * @property {string} key The layer's name in the gate registry.
-   * @property {number} zoom The zoom from which the layer is drawn.
-   * @property {boolean} active Whether the layer is on now.
+   * @property {string} key The feature's name in the gate registry.
+   * @property {number} zoom The zoom from which it is available, or up to
+   *   which for an `upTo` gate.
+   * @property {boolean} [upTo] Whether it holds up to its zoom, not from it.
    */
 
   /**
@@ -56,7 +59,9 @@
    * @property {string} key The gate's key.
    * @property {number} zoom The gate's zoom.
    * @property {number} position Where the tick sits on the scale, 0..1.
-   * @property {boolean} reached Whether the camera is at or past the gate.
+   * @property {boolean} upTo Whether the gate holds up to its zoom.
+   * @property {boolean} reached Whether the feature is available at the
+   *   camera's zoom.
    */
 
   /**
@@ -115,11 +120,11 @@
   }
 
   /**
-   * The ticks the scale draws: one per active gate inside the map's range.
+   * The ticks the scale draws: one per gate inside the map's range.
    *
-   * A gate that is off draws nothing — a tick for a layer that is not on
-   * the map would name a threshold for something the reader cannot see.
-   * A gate outside the range is dropped rather than pinned to an end: a
+   * Whether the feature is switched on does not matter: the scale says
+   * where each becomes available, before the reader turns it on. A gate
+   * outside the range is dropped rather than pinned to an end: a
    * tick at the edge would claim the layer starts there.
    *
    * @param {ReadonlyArray<Gate>|null|undefined} gates The gate registry's list.
@@ -137,7 +142,6 @@
         key: String(gate.key),
         zoom: gate.zoom,
         position: scalePosition(gate.zoom, minZoom, maxZoom),
-        active: !!gate.active,
         upTo: !!gate.upTo,
         // An `upTo` gate holds through its whole zoom (z10.9 still reads
         // "10"); every other gate holds from its zoom up.
@@ -148,7 +152,24 @@
       .sort((a, b) => a.zoom - b.zoom || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   }
 
+  /**
+   * Every whole zoom level inside the map's range, placed on the scale.
+   *
+   * @param {number} minZoom The map's minimum zoom.
+   * @param {number} maxZoom The map's maximum zoom.
+   * @returns {Array<{zoom: number, position: number}>} Lowest first.
+   */
+  function levels(minZoom, maxZoom) {
+    if (!Number.isFinite(minZoom) || !Number.isFinite(maxZoom)) return [];
+    const out = [];
+    for (let z = Math.ceil(minZoom); z <= Math.floor(maxZoom); z += 1) {
+      out.push({ zoom: z, position: scalePosition(z, minZoom, maxZoom) });
+    }
+    return out;
+  }
+
   self.pwaZoomControlCore = Object.freeze({
+    levels: levels,
     EPSILON: EPSILON,
     scalePosition: scalePosition,
     faceZoom: faceZoom,

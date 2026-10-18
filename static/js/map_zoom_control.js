@@ -65,11 +65,12 @@
 
   const STRINGS = self.pwaStrings.read('map-zoom-strings-template', {
     'toggle-label': 'Zoom level %(zoom)s',
-    'gate-off': 'off',
-    'gate-region_select': 'Tap selects a region',
-    'gate-terrain_filter': 'Terrain filter',
-    'gate-slope_classes': 'Slope classes',
-    'gate-route_slopes': 'Route slope colours',
+    'gate-region_select': 'Region selector',
+    'desc-region_select': 'Tap a region to select it',
+    'gate-terrain_filter': 'Terrain overlay',
+    'desc-terrain_filter': 'Slope and aspect on the ground',
+    'gate-route_slopes': 'Route slope angle',
+    'desc-route_slopes': 'A saved route coloured by steepness',
     camera: 'Camera zoom %(zoom)s',
   });
 
@@ -78,6 +79,7 @@
   const zoomIn = flyout.querySelector('[data-zoom-step="in"]');
   const marker = flyout.querySelector('[data-zoom-marker]');
   const tickList = flyout.querySelector('[data-zoom-ticks]');
+  const levelList = flyout.querySelector('[data-zoom-levels]');
   const cameraLine = flyout.querySelector('[data-zoom-camera]');
   const tickTemplate = document.getElementById('map-zoom-tick-template');
 
@@ -140,18 +142,17 @@
   /**
    * Redraw the ticks, when they changed.
    *
-   * Each tick is one row of the vertical scale: a mark on the track, the
-   * zoom, and the name of what changes there, placed at that zoom's height.
-   * A layer that is switched off is still named, dimmed and marked "off",
-   * so the scale says what each level is for before the reader turns it on.
+   * Each tick names one zoom-gated feature and says what it does, placed
+   * at the height of the level it becomes available. It is bold while the
+   * camera is at a zoom where the feature works, switched on or not: the
+   * scale answers "what can I do at this zoom", which is what a reader
+   * who switched something on and saw nothing needs.
    *
-   * @param {Array<{key: string, zoom: number, position: number, reached: boolean, active: boolean, upTo: boolean}>} ticks
+   * @param {Array<{key: string, zoom: number, position: number, reached: boolean, upTo: boolean}>} ticks
    * @returns {void}
    */
   function renderTicks(ticks) {
-    const signature = ticks
-      .map((t) => [t.key, t.zoom, t.reached, t.active, t.upTo].join(':'))
-      .join('|');
+    const signature = ticks.map((t) => [t.key, t.zoom, t.reached, t.upTo].join(':')).join('|');
     if (signature === drawnTicks) return;
     drawnTicks = signature;
 
@@ -162,19 +163,41 @@
       tickNode.dataset.zoomTick = tick.key;
       tickNode.toggleAttribute('data-reached', tick.reached);
       tickNode.toggleAttribute('data-up-to', tick.upTo);
-      tickNode.toggleAttribute('data-off', !tick.active);
       tickNode.style.top = ((1 - tick.position) * 100).toFixed(2) + '%';
-      // An up-to gate draws a band from its tick to the foot of the scale.
+      // An up-to gate draws a band from its level to the foot of the scale.
       tickNode.style.setProperty('--zoom-below', tick.position.toFixed(4));
-      const number = tickNode.querySelector('[data-zoom-tick-zoom]');
-      if (number) number.textContent = String(tick.zoom);
       const label = tickNode.querySelector('[data-zoom-tick-label]');
       if (label) label.textContent = gateLabel(tick.key);
-      const off = tickNode.querySelector('[data-zoom-tick-off]');
-      if (off) off.textContent = tick.active ? '' : STRINGS['gate-off'];
+      const description = tickNode.querySelector('[data-zoom-tick-desc]');
+      if (description) description.textContent = STRINGS['desc-' + tick.key] || '';
       tickNodes.push(tickNode);
     }
     if (tickList) tickList.replaceChildren(...tickNodes);
+  }
+
+  // The level range last numbered, so the numbers are written once per
+  // range rather than on every frame of a pinch.
+  let drawnLevels = null;
+
+  /**
+   * Number every whole zoom level on the line, once per range.
+   *
+   * @param {number} min The map's minimum zoom.
+   * @param {number} max The map's maximum zoom.
+   * @returns {void}
+   */
+  function renderLevels(min, max) {
+    const signature = min + ':' + max;
+    if (!levelList || signature === drawnLevels) return;
+    drawnLevels = signature;
+    const nodes = core.levels(min, max).map((level) => {
+      const li = document.createElement('li');
+      li.className = 'map-zoom-level';
+      li.style.top = ((1 - level.position) * 100).toFixed(2) + '%';
+      li.textContent = String(level.zoom);
+      return li;
+    });
+    levelList.replaceChildren(...nodes);
   }
 
   // The face last written, so a pinch — a `zoom` event every frame — writes
@@ -219,6 +242,7 @@
       marker.style.top = ((1 - core.scalePosition(camera, min, max)) * 100).toFixed(2) + '%';
     }
 
+    renderLevels(min, max);
     const gates = window.pwaZoomGates ? window.pwaZoomGates.list() : [];
     renderTicks(core.ticks(gates, camera, min, max));
 

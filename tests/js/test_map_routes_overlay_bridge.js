@@ -291,27 +291,6 @@ describe('window.pwaRoutesOverlay', () => {
       expect(Object.isFrozen(window.pwaRoutesOverlay)).toBe(true);
     });
 
-    it('turns the zoom control\'s route-slopes gate on only for a sampled route (SNOW-1077)', async () => {
-      const gate = () => window.pwaZoomGates.list().find((g) => g.key === 'route_slopes');
-      // Drawn, but unsampled: the route keeps its leg colours past z14, so
-      // the scale must not promise slope classes there.
-      expect(gate()).toMatchObject({ zoom: 14, active: false });
-
-      routesBody = SAMPLED_ROUTES_GEOJSON;
-      try {
-        document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
-        await waitFor(() => gate().active);
-        expect(gate().active).toBe(true);
-        window.pwaRoutesOverlay.hide();
-        expect(gate().active).toBe(false);
-      } finally {
-        routesBody = ROUTES_GEOJSON;
-        window.pwaRoutesOverlay.show();
-        document.dispatchEvent(new CustomEvent('snowdesk:routes-changed'));
-        await waitFor(() => !gate().active);
-      }
-    });
-
     it('show() installs both line layers and draws them', () => {
       expect(window.pwaRoutesOverlay.isVisible()).toBe(true);
       expect(visibilities(mapStub, ROUTE_LAYERS)).toEqual(['visible', 'visible', 'visible']);

@@ -6807,77 +6807,43 @@
 
   // ==== SNOW-1077: the zoom-gated layers, for the zoom control ====
   //
-  // Some layers are drawn only past a zoom, and the zoom control's flyout
-  // (static/js/map_zoom_control.js) puts a tick on its scale for each one
-  // that is on. One entry per gated layer, so a third one is a line here
-  // and a label in the control's strings template, and nothing else.
+  // Some features work only at certain zooms, and the zoom control's
+  // flyout (static/js/map_zoom_control.js) names each one at its level on
+  // the scale, in bold once the camera is where it works. One entry per
+  // gated feature, so a fourth is a line here and a label and description
+  // in the control's strings template, and nothing else.
   //
-  // `active` answers "is this layer on the map now", not "is it drawn at
-  // this zoom" — the tick is there to say where it starts.
+  // Every gate is named whether or not the feature is switched on: the
+  // scale says where each one becomes available, which is what a reader
+  // who switched one on and saw nothing needs to know (Hugo, 18 Oct).
   //
-  //   terrain_filter — the filter's tiles exist from TERRAIN_CORE.MIN_ZOOM
-  //     (z12); on while the reader has switched it on in the match mode.
-  //   slope_classes — the same tiles, so the same zoom, in the filter's
-  //     slope mode (SNOW-1073): the slope layer, labelled as such. The two
-  //     entries are never on together, so there is one tick at z12.
-  //   route_slopes — a route's core switches from leg colours to slope
-  //     classes at ROUTE_SLOPE_MINZOOM (z14); on while the routes overlay
-  //     is painted and its slope source holds at least one segment. A
-  //     route with no sampled slope keeps its leg colours at every zoom,
-  //     so it does not count.
   //   region_select — a tap selects a region at REGION_SELECT_MAXZOOM
   //     (z10) and below; the one gate that holds UP TO its zoom (`upTo`)
-  //     rather than from it. Always active: it is not a layer to switch.
-  //
-  // `listed` decides whether the zoom control names the gate at all. The
-  // terrain filter's two modes share one switch and one zoom, so the
-  // scale names whichever mode the filter is in — the plain filter when
-  // it is off — rather than two rows for one control.
-  const terrainSlopeMode = () => !!TERRAIN_CORE
-    && TERRAIN_CORE.normaliseFilter(terrainFilter).mode === 'slope';
+  //     rather than from it.
+  //   terrain_filter — the terrain overlay's class tiles exist from
+  //     TERRAIN_CORE.MIN_ZOOM (z12), in either of its modes (the filter
+  //     and SNOW-1073's slope colouring share the tiles and the switch).
+  //   route_slopes — a route's core switches from leg colours to slope
+  //     classes at ROUTE_SLOPE_MINZOOM (z14).
   const ZOOM_GATES = Object.freeze([
-    Object.freeze({
-      key: 'region_select',
-      zoom: REGION_SELECT_MAXZOOM,
-      upTo: true,
-      active: () => true,
-      listed: () => true,
-    }),
-    Object.freeze({
-      key: 'terrain_filter',
-      zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
-      active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter
-        && !terrainSlopeMode(),
-      listed: () => TERRAIN_FILTER_ELIGIBLE && !terrainSlopeMode(),
-    }),
-    Object.freeze({
-      key: 'slope_classes',
-      zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
-      active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter
-        && terrainSlopeMode(),
-      listed: () => TERRAIN_FILTER_ELIGIBLE && terrainSlopeMode(),
-    }),
-    Object.freeze({
-      key: 'route_slopes',
-      zoom: ROUTE_SLOPE_MINZOOM,
-      active: () => panelOverlayPainted('routes') && routeSlopeSegmentCount > 0,
-      listed: () => true,
-    }),
+    Object.freeze({ key: 'region_select', zoom: REGION_SELECT_MAXZOOM, upTo: true }),
+    Object.freeze({ key: 'terrain_filter', zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12 }),
+    Object.freeze({ key: 'route_slopes', zoom: ROUTE_SLOPE_MINZOOM }),
   ]);
 
   window.pwaZoomGates = Object.freeze({
     /**
-     * Every zoom-gated layer the zoom control names, read now.
+     * Every zoom-gated feature the zoom control names.
      *
-     * @returns {Array<{key: string, zoom: number, active: boolean, upTo: boolean}>}
+     * @returns {Array<{key: string, zoom: number, upTo: boolean}>}
      */
-    list: () => ZOOM_GATES.filter((gate) => gate.listed()).map((gate) => ({
+    list: () => ZOOM_GATES.map((gate) => ({
       key: gate.key,
       zoom: gate.zoom,
-      active: !!gate.active(),
       upTo: !!gate.upTo,
     })),
   });
+
 
   // ==== SNOW-803: ``?panel=<name>`` opens a sheet with nothing selected ====
   //
@@ -9162,19 +9128,13 @@
       // No marker claimed the tap. Resolve region intent from the fill layer
       // and the resort pins. SNOW-235: both are lazy-installed, so filter to
       // present layers — queryRenderedFeatures throws on an unknown layer id.
-      // Past REGION_SELECT_MAXZOOM the fill is left out of the hit test, so
-      // a tap that only lands on a region falls to the empty-map branch.
-      const layers = [
-        ...(regionsSelectableAt(map.getZoom()) ? ['regions-fill'] : []),
-        'resorts-pin',
-      ].filter((id) => map.getLayer(id));
+      const layers = ['regions-fill', 'resorts-pin'].filter((id) => map.getLayer(id));
       const features = layers.length
         ? map.queryRenderedFeatures(e.point, { layers })
         : [];
 
       if (features.length === 0) {
-        // Genuine tap on empty map area (outside any region, or on one past
-        // REGION_SELECT_MAXZOOM) — deselects the
+        // Genuine tap on empty map area (outside any region) — deselects the
         // region (greys the ribbon, drops the readout to date-only, removes the
         // highlight) and closes any anchored resort/favourite popup. Runs even
         // during playback (unchanged from before).
@@ -9197,6 +9157,14 @@
       }
 
       const region = features.find((f) => f.layer.id === 'regions-fill');
+      // Past REGION_SELECT_MAXZOOM a region is too big to see, so a tap on
+      // one selects nothing and deselects nothing — the region in hand
+      // stays in hand (Hugo, 18 Oct). It only closes the place sheet or
+      // popup, as any tap on the map does.
+      if (region && !regionsSelectableAt(map.getZoom())) {
+        closeMapDetailSurfaces();
+        return;
+      }
       if (region) {
         // Tapping the region that is already selected deselects it — the same
         // end state as an empty-canvas tap, without hunting for a gap in the

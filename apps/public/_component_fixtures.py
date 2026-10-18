@@ -2986,10 +2986,10 @@ SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
 # The roundel at the top of the map's bottom-left stack and the flyout it
 # opens. On /map/ static/js/map_zoom_control.js fills every value from the
 # map; here each variant sets them, across the map's range of z4 to z18.
-# The gates are the ones window.pwaZoomGates publishes: a tap selects a
-# region at z10 and below, the terrain filter from z12 and route slope
-# colours from z14. All three are named on every variant; a layer that is
-# switched off is dimmed and marked "off".
+# The gates are the ones window.pwaZoomGates publishes: the region selector
+# at z10 and below, the terrain overlay from z12 and the route slope angle
+# from z14. All three are named on every variant, bold where the camera's
+# zoom makes them available — switched on or not.
 
 _MAP_MIN_ZOOM = 4
 _MAP_MAX_ZOOM = 18
@@ -3003,40 +3003,62 @@ def _zoom_pct(zoom: float) -> float:
 def _zoom_tick(
     key: str,
     label: str,
+    description: str,
     gate: int,
     camera: float,
     *,
-    active: bool = True,
     up_to: bool = False,
 ) -> dict[str, Any]:
-    """Return one tick, reached when ``camera`` is inside the gate's band."""
+    """Return one tick, reached when ``camera`` is where the feature works."""
     return {
         "key": key,
         "label": label,
+        "description": description,
         "zoom": gate,
         "pct": _zoom_pct(gate),
         # The share of the scale below the tick, which an up-to band fills.
         "below": round(1 - _zoom_pct(gate) / 100, 4),
-        "active": active,
         "up_to": up_to,
         "reached": int(camera) <= gate if up_to else camera >= gate,
     }
+
+
+_ZOOM_LEVELS = tuple(
+    {"zoom": z, "pct": _zoom_pct(z)} for z in range(_MAP_MIN_ZOOM, _MAP_MAX_ZOOM + 1)
+)
 
 
 def _zoom_variant(
     caption: str,
     camera: float,
     *,
-    terrain: bool = False,
-    routes: bool = False,
     is_open: bool = True,
     debug: bool = False,
 ) -> dict[str, Any]:
     """Return one zoom-control variant at a camera zoom."""
     ticks = [
-        _zoom_tick("region_select", "Tap selects a region", 10, camera, up_to=True),
-        _zoom_tick("terrain_filter", "Terrain filter", 12, camera, active=terrain),
-        _zoom_tick("route_slopes", "Route slope colours", 14, camera, active=routes),
+        _zoom_tick(
+            "region_select",
+            "Region selector",
+            "Tap a region to select it",
+            10,
+            camera,
+            up_to=True,
+        ),
+        _zoom_tick(
+            "terrain_filter",
+            "Terrain overlay",
+            "Slope and aspect on the ground",
+            12,
+            camera,
+        ),
+        _zoom_tick(
+            "route_slopes",
+            "Route slope angle",
+            "A saved route coloured by steepness",
+            14,
+            camera,
+        ),
     ]
     return {
         "caption": caption,
@@ -3044,6 +3066,7 @@ def _zoom_variant(
             "zoom_face": int(camera),
             "zoom_open": is_open,
             "zoom_marker_pct": _zoom_pct(camera),
+            "zoom_levels": _ZOOM_LEVELS,
             "zoom_ticks": ticks,
             "zoom_out_disabled": camera <= _MAP_MIN_ZOOM,
             "zoom_in_disabled": camera >= _MAP_MAX_ZOOM,
@@ -3055,19 +3078,12 @@ def _zoom_variant(
 
 MAP_ZOOM_CONTROL_VARIANTS: tuple[dict[str, Any], ...] = (
     _zoom_variant("Closed — the roundel at z10", 10.4, is_open=False),
-    _zoom_variant("Open at z8, nothing switched on — a tap selects a region", 8.3),
-    _zoom_variant("Terrain filter on, not reached yet (z10)", 10.4, terrain=True),
-    _zoom_variant(
-        "Terrain filter and a route on, at z13 — filter drawn, slope colours not",
-        13.2,
-        terrain=True,
-        routes=True,
-    ),
-    _zoom_variant(
-        "At the maximum zoom (z18) — + disabled", 18, terrain=True, routes=True
-    ),
+    _zoom_variant("At z8 — only the region selector is available", 8.3),
+    _zoom_variant("At z12 — the terrain overlay is available", 12.4),
+    _zoom_variant("At z14 — the terrain overlay and route slope angle", 14.6),
+    _zoom_variant("At the maximum zoom (z18) — + disabled", 18),
     _zoom_variant("At the minimum zoom (z4) — − disabled", 4),
-    _zoom_variant("DEBUG — with the camera zoom line", 12.47, terrain=True, debug=True),
+    _zoom_variant("DEBUG — with the camera zoom line", 12.47, debug=True),
 )
 
 # ── Bulletin headline (SNOW-249) ────────────────────────────────────────────

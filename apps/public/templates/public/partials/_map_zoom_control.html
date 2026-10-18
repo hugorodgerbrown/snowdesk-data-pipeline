@@ -57,6 +57,7 @@ Context (all optional):
     aria-label='{% trans "Zoom" %}'
     {% if not zoom_open %}hidden{% endif %}
 >
+    <p class="map-zoom-intro">{% trans "Some features are only available at certain zoom levels." %}</p>
     <button
         type="button"
         class="map-zoom-step hover-affordance"
@@ -66,10 +67,18 @@ Context (all optional):
     >
         {% include "includes/_icon_plus.html" with size=18 only %}
     </button>
-    {# The scale runs bottom to top, like the zoom: each row sits at the #}
-    {# zoom it names, beside the track, so the list IS the picture.       #}
+    {# The scale runs bottom to top, like the zoom: every whole level is #}
+    {# numbered on the line, and each gated feature sits at the level it  #}
+    {# becomes available, so the list IS the picture.                     #}
     <div class="map-zoom-scale">
         <span class="map-zoom-track" aria-hidden="true"></span>
+        <ol class="map-zoom-levels" data-zoom-levels aria-hidden="true">
+            {% localize off %}
+                {% for level in zoom_levels %}
+                    <li class="map-zoom-level" style="top: {{ level.pct }}%">{{ level.zoom }}</li>
+                {% endfor %}
+            {% endlocalize %}
+        </ol>
         <ol class="map-zoom-ticks" data-zoom-ticks>
             {% for tick in zoom_ticks %}
                 {% include "public/partials/_map_zoom_tick.html" with tick=tick only %}
@@ -105,14 +114,15 @@ Context (all optional):
     {% include "public/partials/_map_zoom_tick.html" %}
 </template>
 {# makemessages never scans JavaScript, so every string the control writes #}
-{# is rendered here and read back by window.pwaStrings.read(). One label   #}
-{# per entry in window.pwaZoomGates.                                       #}
+{# is rendered here and read back by window.pwaStrings.read(). One label,  #}
+{# and one description per entry in window.pwaZoomGates.                  #}
 <template id="map-zoom-strings-template">
     <span data-string="toggle-label">{% blocktrans %}Zoom level %(zoom)s{% endblocktrans %}</span>
-    <span data-string="gate-region_select">{% trans "Tap selects a region" %}</span>
-    <span data-string="gate-terrain_filter">{% trans "Terrain filter" %}</span>
-    <span data-string="gate-slope_classes">{% trans "Slope classes" %}</span>
-    <span data-string="gate-route_slopes">{% trans "Route slope colours" %}</span>
-    <span data-string="gate-off">{% trans "off" %}</span>
+    <span data-string="gate-region_select">{% trans "Region selector" %}</span>
+    <span data-string="desc-region_select">{% trans "Tap a region to select it" %}</span>
+    <span data-string="gate-terrain_filter">{% trans "Terrain overlay" %}</span>
+    <span data-string="desc-terrain_filter">{% trans "Slope and aspect on the ground" %}</span>
+    <span data-string="gate-route_slopes">{% trans "Route slope angle" %}</span>
+    <span data-string="desc-route_slopes">{% trans "A saved route coloured by steepness" %}</span>
     <span data-string="camera">{% blocktrans %}Camera zoom %(zoom)s{% endblocktrans %}</span>
 </template>
