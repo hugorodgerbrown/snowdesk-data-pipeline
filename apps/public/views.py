@@ -2339,7 +2339,12 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
         "short_name": identity.short_name,
         "id": f"{base}/",
         "lang": "en",
-        "description": "Daily Swiss avalanche bulletins for the alpine region.",
+        # The first line of Chrome's install sheet, above the screenshots.
+        # The homepage's own pitch, so the two never say different things.
+        "description": (
+            "Today’s avalanche bulletin and weather forecast for where "
+            "you’re going in the Alps."
+        ),
         "categories": ["weather", "sports", "travel"],
         # The installed app opens on the map, not the marketing homepage at
         # ``/``. ``id`` stays ``/`` — it is the installed app's identity, and
@@ -2381,18 +2386,19 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
         ],
         "screenshots": [
             {
+                # Captured from the live map by bin/capture-pwa-screenshots.
                 "src": static("icons/pwa/screenshots/map-wide.png"),
                 "sizes": "1280x720",
                 "type": "image/png",
                 "form_factor": "wide",
-                "label": "Avalanche map for the alpine region",
+                "label": "Avalanche danger across the Alps, on the map",
             },
             {
-                "src": static("icons/pwa/screenshots/bulletin-narrow.png"),
+                "src": static("icons/pwa/screenshots/map-narrow.png"),
                 "sizes": "750x1334",
                 "type": "image/png",
                 "form_factor": "narrow",
-                "label": "Daily bulletin for a single region",
+                "label": "One region's danger rating, on a phone",
             },
         ],
     }

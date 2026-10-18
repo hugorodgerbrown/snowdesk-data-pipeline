@@ -31,13 +31,10 @@ and the page ``<head>`` cannot drift out of sync per environment.
 The identity is keyed on ``settings.SITE_ENVIRONMENT`` (``"production"``
 by default; anything else is treated as a staging-style non-production
 install). The production values are the canonical Snowdesk brand
-constants; the staging values reuse the same rectangle glyph on an amber
-tile with an asterisk set off the mountain's top right by
-``bin/build-pwa-icons`` — a launcher tile that reads as unambiguously
-non-production from three feet away. Both sets also carry
-the season label ("25/26") in a band at the foot of the tile; that is a
-brand constant, not an environment one, so it lives in the build script
-rather than here.
+constants; the staging values reuse the same mountain glyph on an amber
+tile, raised over the word "Staging", drawn by ``bin/build-pwa-icons`` — a
+launcher tile that reads as unambiguously non-production from three feet
+away.
 
 SNOW-1112: the ICON is now the only staging tell. ``theme_color`` used to
 tint the status bar amber on staging (and near-black on production), but
