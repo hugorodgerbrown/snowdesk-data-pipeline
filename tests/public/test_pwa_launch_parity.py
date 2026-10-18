@@ -71,18 +71,17 @@ def _shell_background(body: str) -> str:
     return match.group(1).strip()
 
 
-def _shell_image(body: str, css_class: str) -> str:
-    """Return the ``data-src`` of the launch shell image with ``css_class``.
+def _shell_image(body: str, which: str) -> str:
+    """Return the URL the launch gate gives the ``mark`` or the ``tile``.
 
-    Reads the attribute from the ``<img>`` tag as a whole, so the test does
-    not depend on the order the template writes its attributes in.
+    The images ship with no ``src``; the inline gate assigns one from a
+    server-rendered literal, so that literal is what the browser fetches.
     """
-    for tag in re.findall(r"<img\b[^>]*>", body):
-        if f'class="{css_class}"' in tag:
-            match = re.search(r'data-src="([^"]+)"', tag)
-            assert match, tag
-            return match.group(1)
-    raise AssertionError(f"{css_class} not found")
+    match = re.search(rf"{which}: '([^']+)'", body)
+    assert match, f"launch shell {which} URL not found"
+    # ``|escapejs`` writes ``-`` as ``\u002D``; decode it as JS would.
+    decoded: str = json.loads(f'"{match.group(1)}"')
+    return decoded
 
 
 def _colour_bg_tokens() -> tuple[str, str]:
@@ -139,9 +138,9 @@ def test_first_paint_mark_is_the_icon_androids_splash_shows(environment: str) ->
     with override_settings(SITE_ENVIRONMENT=environment):
         manifest, body = _manifest(), _page()
     maskable = [i["src"] for i in manifest["icons"] if i["purpose"] == "maskable"]
-    assert maskable == [_shell_image(body, "pwa-launch-shell__mark")]
+    assert maskable == [_shell_image(body, "mark")]
     own = ENVIRONMENTS[environment]["own"]
-    assert f"/static/{own}" in _shell_image(body, "pwa-launch-shell__tile")
+    assert f"/static/{own}" in _shell_image(body, "tile")
 
 
 @pytest.mark.parametrize("environment", ENVIRONMENTS)
@@ -193,8 +192,8 @@ def test_icon_urls_go_through_the_static_storage() -> None:
         assert icon["src"].endswith(".0123abcd.png"), icon
     for shot in manifest["screenshots"]:
         assert shot["src"].endswith(".0123abcd.png"), shot
-    assert _shell_image(body, "pwa-launch-shell__mark").endswith(".0123abcd.png")
-    assert _shell_image(body, "pwa-launch-shell__tile").endswith(".0123abcd.png")
+    assert _shell_image(body, "mark").endswith(".0123abcd.png")
+    assert _shell_image(body, "tile").endswith(".0123abcd.png")
     assert 'apple-touch-icon-180.0123abcd.png"' in body
 
 

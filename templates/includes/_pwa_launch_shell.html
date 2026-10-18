@@ -127,7 +127,6 @@ that never parses cannot leave the app covered.
     {# announcing the logo too would say it twice.                       #}
     <img
         class="pwa-launch-shell__mark"
-        data-src="{{ PWA_LAUNCH_MARK_URL }}"
         alt=""
         width="240"
         height="240"
@@ -136,7 +135,6 @@ that never parses cannot leave the app covered.
     >
     <img
         class="pwa-launch-shell__tile"
-        data-src="{{ PWA_LAUNCH_TILE_URL }}"
         alt=""
         width="192"
         height="192"
@@ -175,13 +173,18 @@ that never parses cannot leave the app covered.
         // through and show the splash: repeating it on an in-app
         // navigation is a smaller fault than never showing it.
       }
-      // The images carry data-src, not src, so a browser tab — which
-      // renders this markup on every page and never shows it — downloads
-      // neither. Only the one mark this launch will show is fetched.
-      var img = document.querySelector(
-        ios ? '.pwa-launch-shell__tile' : '.pwa-launch-shell__mark'
-      );
-      if (img) img.src = img.getAttribute('data-src');
+      // The images ship with no src, so a browser tab — which renders this
+      // markup on every page and never shows it — downloads neither. Only
+      // the one mark this launch will show is fetched. The URLs are
+      // server-rendered from PWAEnvironmentIdentity, never read back out of
+      // the DOM.
+      var marks = {
+        mark: '{{ PWA_LAUNCH_MARK_URL|escapejs }}',
+        tile: '{{ PWA_LAUNCH_TILE_URL|escapejs }}'
+      };
+      var shown = ios ? 'tile' : 'mark';
+      var img = document.querySelector('.pwa-launch-shell__' + shown);
+      if (img) img.src = marks[shown];
       document.documentElement.classList.add('pwa-launching');
     })();
 </script>

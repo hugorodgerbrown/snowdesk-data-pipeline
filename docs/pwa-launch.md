@@ -60,7 +60,8 @@ The inline gate runs straight after the overlay markup and before the nav:
    session (a `sessionStorage` flag).
 2. It adds `pwa-launching--ios` when `'standalone' in navigator`; only
    iOS WebKit defines it.
-3. It copies `data-src` into `src` on the one mark it will show. A browser
+3. It gives a `src` to the one mark it will show, from a URL rendered into
+   the script (never read back out of the DOM). A browser
    tab renders the markup on every page and fetches neither image.
 4. It adds `pwa-launching`, which shows the overlay.
 

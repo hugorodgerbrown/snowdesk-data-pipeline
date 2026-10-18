@@ -24,19 +24,34 @@ const TEMPLATE = readFileSync(
   'utf8',
 );
 
-// The one inline <script> in the partial; its nonce is a template tag, so
-// match the element by its body rather than its attributes.
-const GATE_SOURCE = TEMPLATE.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1];
-
 const MARK = '/static/icons/pwa-staging/icon-maskable-512.png';
 const TILE = '/static/icons/pwa-staging/icon-192.png';
+
+/**
+ * The one inline script in the partial, with the two URL variables the
+ * template renders filled in as Django would.
+ *
+ * Sliced out by string search rather than a regex: the template is our own
+ * file and has exactly one lower-case script element, and slicing says so
+ * without pretending to be an HTML parser.
+ */
+function gateSource() {
+  const open = TEMPLATE.indexOf('<script');
+  const bodyStart = TEMPLATE.indexOf('>', open) + 1;
+  const bodyEnd = TEMPLATE.indexOf('</script>', bodyStart);
+  expect(open).toBeGreaterThan(-1);
+  expect(bodyEnd).toBeGreaterThan(bodyStart);
+  return TEMPLATE.slice(bodyStart, bodyEnd)
+    .replace('{{ PWA_LAUNCH_MARK_URL|escapejs }}', MARK)
+    .replace('{{ PWA_LAUNCH_TILE_URL|escapejs }}', TILE);
+}
 
 function buildFixture() {
   document.documentElement.className = '';
   document.body.innerHTML = `
     <div id="pwa-launch-shell" class="pwa-launch-shell">
-      <img class="pwa-launch-shell__mark" data-src="${MARK}" alt="">
-      <img class="pwa-launch-shell__tile" data-src="${TILE}" alt="">
+      <img class="pwa-launch-shell__mark" alt="">
+      <img class="pwa-launch-shell__tile" alt="">
     </div>
   `;
 }
@@ -56,7 +71,7 @@ function runGate({ standalone, ios }) {
       configurable: true,
     });
   }
-  new Function(GATE_SOURCE)();
+  new Function(gateSource())();
 }
 
 const html = () => document.documentElement.classList;
