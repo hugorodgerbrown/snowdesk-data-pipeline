@@ -48,7 +48,7 @@ document.body.innerHTML = `
         </div>
         <div data-route-rail-ticks></div>
       </div>
-      <p data-route-rail-hint data-sheet-peek>Click on the route or profile to view slope and track data</p>
+      <p data-route-rail-hint data-sheet-peek>Click on the profile to view terrain data</p>
       <div data-sheet-half></div>
       <dl data-route-rail-debug>
         <div data-route-rail-debug-hint>Place a point on the profile to read its figures.</div>
