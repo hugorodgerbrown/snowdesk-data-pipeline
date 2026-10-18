@@ -3325,8 +3325,8 @@ Output:
   prompt and the Android home-screen launcher.
 - `icon-maskable-512.png` — 512×512, `purpose: maskable`. The artwork
   is shrunk until every mark sits inside the middle two thirds of the
-  canvas, the circle Android's splash and adaptive-icon mask show (see
-  [`pwa-launch.md`](pwa-launch.md)).
+  canvas, the circle the home-screen launcher's adaptive-icon mask shows
+  (see [`pwa-launch.md`](pwa-launch.md)).
 - `apple-touch-icon-180.png` — 180×180, opaque (no alpha). iOS rounds
   the corners automatically; transparency renders unevenly under the
   iOS rounded mask (SNOW-118).

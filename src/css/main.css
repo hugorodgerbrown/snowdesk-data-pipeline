@@ -2035,38 +2035,46 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
    ————————————————————————————————————————— */
 
 /* SNOW-1112: the rules that decide the FIRST FRAME — visibility, the
-   background, both marks and their sizes, and --pwa-launch-mark — moved
-   into an inline <style> in includes/_pwa_launch_shell.html, so they read
-   the environment's colour from PWAEnvironmentIdentity and do not wait on
-   this stylesheet. What is left here is motion: the label's fade, the
-   dismissal and the failsafe. */
+   background, both marks and their sizes — moved into an inline <style>
+   in includes/_pwa_launch_shell.html, so they read the environment's
+   colour from PWAEnvironmentIdentity and do not wait on this stylesheet.
+   What is left here is motion: the reveal, the dismissal and the
+   failsafe. */
 
-/* The label is a SECOND-THOUGHT affordance, not part of the splash:
-   it fades in only once the boot is slow enough to be worth
-   acknowledging. A fast launch never shows it at all, which keeps the
-   handover from the OS splash a pure continuation — an app name
-   appearing under a tile that was already on screen reads as a flash,
-   not as progress.
+/* The reveal. The first frames are an exact copy of the OS splash; then
+   static/js/pwa_launch_shell.js adds this class and the splash turns
+   into a loading state ON PURPOSE: the background fades to show the nav
+   and the empty map underneath, and the mark eases down to a small
+   circle that pulses until the map is drawn. A change that moves
+   smoothly reads as the app loading; the same change in one frame read
+   as a glitch, which is what the old 160px shell did.
 
-   Taken OUT OF FLOW for the same reason. The OS launch screen centres
-   the tile alone; if the label were a flex sibling, the pair would
-   centre as a group and the tile would sit ~20px lower than the image
-   iOS just handed over — a visible jump at the exact moment the whole
-   feature is trying to be invisible. Absolute positioning keeps the
-   mark on the viewport's centre line and hangs the label below it. */
-.pwa-launch-shell__label {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(50% + (var(--pwa-launch-mark) / 2) + 1.25rem);
-  text-align: center;
-  opacity: 0;
-  /* SNOW-1112: ~300ms. A launch that renders by then never shows it. */
-  animation: pwa-launch-label-in 300ms ease-out 300ms forwards;
+   pointer-events go with the background, so the nav is usable while the
+   map loads. The selector out-ranks the inline first-frame rules
+   (including iOS's dark background), which sit later in the document.
+
+   Motion only: under prefers-reduced-motion none of this applies, and the
+   splash holds as it is until the map is ready rather than jumping from
+   full size to small in one frame. */
+@media (prefers-reduced-motion: no-preference) {
+  html.pwa-launching .pwa-launch-shell.pwa-launch-shell--revealing {
+    background-color: transparent;
+    pointer-events: none;
+    /* opacity too, or this rule's higher rank would drop the
+       .pwa-launch-shell--done fade below. */
+    transition: background-color 300ms ease-out, opacity 300ms ease-out;
+  }
+
+  .pwa-launch-shell--revealing .pwa-launch-shell__mark,
+  .pwa-launch-shell--revealing .pwa-launch-shell__tile {
+    transform: scale(0.4);
+    transition: transform 400ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: pwa-launch-pulse 900ms ease-in-out 400ms infinite alternate;
+  }
 }
 
-@keyframes pwa-launch-label-in {
-  to { opacity: 1; }
+@keyframes pwa-launch-pulse {
+  to { opacity: 0.55; }
 }
 
 /* JS-driven dismissal: static/js/pwa_launch_shell.js adds this class,
@@ -2097,7 +2105,6 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 @media (prefers-reduced-motion: reduce) {
   /* No fades — but the failsafe still has to fire, so it becomes an
      instant switch at the same deadline rather than being disabled. */
-  .pwa-launch-shell__label { animation: none; opacity: 1; }
   .pwa-launch-shell--done { transition: none; }
   .pwa-launch-shell { animation: pwa-launch-failsafe 1ms linear 10s forwards; }
 }

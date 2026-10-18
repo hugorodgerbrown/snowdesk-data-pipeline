@@ -1,6 +1,6 @@
 ---
 name: pwa-launch
-description: PWA launch — PWAEnvironmentIdentity colours and icon_url, serve_manifest, launch shell marks and gate, adding an environment
+description: PWA launch — PWAEnvironmentIdentity colours and icon_url, serve_manifest, launch shell marks, gate and reveal, adding an environment
 status: current
 last-reviewed: 2026-10-18
 ---
@@ -19,7 +19,7 @@ first frame is identical to the OS's last one (SNOW-878, SNOW-1112).
 | Logo | Manifest **maskable** icon, cropped to a circle | The rounded tile |
 | Background | Manifest `background_color` | Baked into the PNG (`--color-bg`, both schemes) |
 | Status bar | `background_color`, then `theme_color` at first paint | Black-translucent |
-| Shell's matching mark | `icon-maskable-512.png`, 240px canvas, 160px circle | `icon-192.png` at `clamp(96px, 24vmin, 160px)` |
+| Shell's matching mark | `icon-maskable-512.png`, the whole icon as a 240px circle | `icon-192.png` at `clamp(96px, 24vmin, 160px)` |
 
 ## One source for every value
 
@@ -65,25 +65,43 @@ The inline gate runs straight after the overlay markup and before the nav:
    tab renders the markup on every page and fetches neither image.
 4. It adds `pwa-launching`, which shows the overlay.
 
-"Loading…" fades in at 300ms, hangs below the mark and is absolutely
-positioned, so it never moves the logo.
+There is no visible text. The OS splash has none, so text appearing would
+be a change at the handover; "Loading…" is kept for screen readers only.
+
+### The reveal
+
+Matching the splash covers only the first frames. 150ms after the
+deferred `static/js/pwa_launch_shell.js` runs, it adds
+`pwa-launch-shell--revealing`. The background then fades over 300ms to show
+the nav and the empty map underneath, the mark eases down to 40% of its
+size over 400ms, and it pulses until the map is drawn (or the five-second
+timeout). The nav takes taps from the start of the reveal. This is the
+loading state, and it is meant to be seen: a change that moves reads as the
+app loading, where the same change in one frame reads as a glitch. Under
+`prefers-reduced-motion` there is no reveal, and the splash holds until the
+map is ready.
 
 ### The Android geometry
 
-Android 12+ draws a launcher icon that has a background on a 240dp canvas
-inside a 160dp circle. CSS pixels are dp on Android, so the shell draws the
-maskable PNG at 240px with `clip-path: circle(80px)`, centred on the
-viewport. These numbers come from the Android SplashScreen documentation.
+Measured off a Pixel 9 on Android 17 (SNOW-1112): the splash shows the
+**whole** maskable icon as a circle 240dp across, centred. CSS pixels are
+dp on Android, so the shell draws the maskable PNG at 240px with
+`clip-path: circle(50%)`. The documented Android 12 geometry, a 160dp
+circle showing the middle two thirds, made the logo visibly shrink at the
+handover on that phone, so the shell follows the device rather than the
+documentation. Older Android versions may still draw the 160dp crop, and
+Chrome's user agent no longer reports the Android version, so the shell
+cannot tell them apart.
 
-Only the middle two thirds of the maskable icon is ever seen, on the splash
-and on a round launcher. That is tighter than the W3C 80% safe zone, so
-`bin/build-pwa-icons` shrinks the tile until its furthest mark (the
-mountain's base corners, or the ends of the "Staging" label) sits at 30%
-of the canvas from the centre, and centres the marks themselves rather
-than the tile, whose mountain sits low in its square. `tests/public/test_pwa_icons.py` fails if a mark reaches the
-edge of the circle.
-Confirm them on a device (below), and if they are off, change both values
-in the partial's `<style>`.
+The tightest crop the icon gets is the home-screen launcher: an adaptive
+icon shows the middle two thirds of the canvas, with a safe zone of 66dp of
+108dp. So `bin/build-pwa-icons` shrinks the tile until its furthest mark
+(the mountain's base corners, or the ends of the "Staging" label) sits at
+30% of the canvas from the centre, and it centres the marks themselves
+rather than the tile, whose mountain sits low in its square. That is why
+the marks can't be made larger without the launcher cropping them.
+`tests/public/test_pwa_icons.py` fails if a mark reaches the edge of that
+circle.
 
 Known gaps:
 

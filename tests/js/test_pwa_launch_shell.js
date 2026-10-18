@@ -23,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const SHELL_ID = 'pwa-launch-shell';
 const LAUNCHING_CLASS = 'pwa-launching';
 const DONE_CLASS = 'pwa-launch-shell--done';
+const REVEALING_CLASS = 'pwa-launch-shell--revealing';
 
 /**
  * Render the overlay as includes/_pwa_launch_shell.html does, optionally
@@ -33,10 +34,20 @@ function buildFixture({ launching = true, withMap = false } = {}) {
   document.body.innerHTML = `
     <div id="${SHELL_ID}" class="pwa-launch-shell" role="status" aria-live="polite">
       <img class="pwa-launch-shell__mark" src="/static/icons/pwa/icon-192.png" alt="">
-      <p class="pwa-launch-shell__label">Loading…</p>
+      <p class="sr-only">Loading…</p>
     </div>
     ${withMap ? '<div id="map"></div>' : ''}
   `;
+}
+
+/**
+ * A transitionend event for one property. jsdom has no TransitionEvent,
+ * so propertyName is set on a plain Event.
+ */
+function transitionEnd(propertyName, init = {}) {
+  const event = new Event('transitionend', init);
+  Object.defineProperty(event, 'propertyName', { value: propertyName });
+  return event;
 }
 
 async function loadModule() {
@@ -98,6 +109,32 @@ describe('gating', () => {
   });
 });
 
+describe('the reveal', () => {
+  it('holds as a copy of the OS splash, then reveals the page', async () => {
+    // The first frames must match the splash exactly, so the handover is
+    // never the frame that changes; the reveal is a deliberate change
+    // after it.
+    buildFixture({ withMap: true });
+    await loadModule();
+
+    vi.advanceTimersByTime(149);
+    expect(shell().classList.contains(REVEALING_CLASS)).toBe(false);
+
+    vi.advanceTimersByTime(1);
+    expect(shell().classList.contains(REVEALING_CLASS)).toBe(true);
+    expect(shell().classList.contains(DONE_CLASS)).toBe(false);
+  });
+
+  it('does not reveal a splash that was already dismissed', async () => {
+    buildFixture({ withMap: true });
+    await loadModule();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:map-ready'));
+    vi.advanceTimersByTime(150);
+    expect(document.querySelector('.' + REVEALING_CLASS)).toBeNull();
+  });
+});
+
 describe('dismissal on the map page', () => {
   it('waits for snowdesk:map-ready, not for load', async () => {
     // The load event is the wrong signal here: MapLibre fetches its
@@ -130,7 +167,25 @@ describe('dismissal on the map page', () => {
     await loadModule();
 
     document.dispatchEvent(new CustomEvent('snowdesk:map-ready'));
-    shell().dispatchEvent(new Event('transitionend'));
+    shell().dispatchEvent(transitionEnd('opacity'));
+    expect(shell()).toBeNull();
+  });
+
+  it('ignores a reveal transition ending during the fade', async () => {
+    // The map can report ready while the reveal is still animating; its
+    // background and transform transitions must not cut the fade short.
+    buildFixture({ withMap: true });
+    await loadModule();
+
+    vi.advanceTimersByTime(150);
+    document.dispatchEvent(new CustomEvent('snowdesk:map-ready'));
+    shell().dispatchEvent(transitionEnd('background-color'));
+    shell()
+      .querySelector('.pwa-launch-shell__mark')
+      .dispatchEvent(transitionEnd('transform', { bubbles: true }));
+    expect(shell()).not.toBeNull();
+
+    shell().dispatchEvent(transitionEnd('opacity'));
     expect(shell()).toBeNull();
   });
 

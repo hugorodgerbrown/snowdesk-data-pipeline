@@ -31,6 +31,16 @@
  * boot on the connections this app is used on, and short enough that a
  * user still reads it as slow rather than broken.
  *
+ * THE REVEAL
+ * ----------
+ * Before any of those, the module turns the splash into a loading state
+ * (SNOW-1112). The overlay's first frames are an exact copy of the OS
+ * splash, so the handover cannot be seen; REVEAL_DELAY_MS later it adds
+ * `pwa-launch-shell--revealing`, and src/css/main.css fades the
+ * background to show the nav and the empty map while the mark eases down
+ * to a small pulsing circle. The change is meant to be seen, so it moves
+ * rather than jumps.
+ *
  * A fourth backstop lives outside JavaScript entirely: a failsafe
  * keyframe in src/css/main.css hides the overlay at ten seconds whether
  * or not this file ever parsed. Everything here is an optimisation on
@@ -44,6 +54,13 @@
   const SHELL_ID = 'pwa-launch-shell';
   const LAUNCHING_CLASS = 'pwa-launching';
   const DONE_CLASS = 'pwa-launch-shell--done';
+  const REVEALING_CLASS = 'pwa-launch-shell--revealing';
+
+  // How long the overlay holds as an exact copy of the OS splash before
+  // it starts to reveal the page: long enough for the matched frames to
+  // reach the screen, so the handover itself is never the moment that
+  // changes.
+  const REVEAL_DELAY_MS = 150;
 
   // Hard deadline from this module's execution, in ms. See the header:
   // shorter than the CSS failsafe, which only exists for the case where
@@ -87,7 +104,15 @@
     dismissed = true;
     shell.classList.add(DONE_CLASS);
     const remove = () => shell.remove();
-    shell.addEventListener('transitionend', remove, { once: true });
+    // Only the shell's own opacity fade. The reveal's background and the
+    // mark's transform transitions can still be ending when the map
+    // reports ready, and either would otherwise cut the fade short.
+    const onEnd = (event) => {
+      if (event.target !== shell || event.propertyName !== 'opacity') return;
+      shell.removeEventListener('transitionend', onEnd);
+      remove();
+    };
+    shell.addEventListener('transitionend', onEnd);
     window.setTimeout(remove, FADE_MS);
   }
 
@@ -112,6 +137,10 @@
   } else {
     window.addEventListener('load', dismiss, { once: true });
   }
+
+  window.setTimeout(() => {
+    if (!dismissed) shell.classList.add(REVEALING_CLASS);
+  }, REVEAL_DELAY_MS);
 
   window.setTimeout(dismiss, TIMEOUT_MS);
 })();

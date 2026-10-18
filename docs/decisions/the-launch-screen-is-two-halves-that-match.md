@@ -90,3 +90,22 @@ Android, which this record had treated as solved by the manifest:
 
 The current contract, and how to verify it on a device, is in
 [`docs/pwa-launch.md`](../pwa-launch.md).
+
+**Amended again by SNOW-1112 (2026-10-18, after a device recording).**
+Matching still governs the handover. It no longer governs the whole wait:
+
+- **The handover matches the device, not the documentation.** On a Pixel 9
+  running Android 17, the splash shows the whole maskable icon as a 240dp
+  circle, not the documented 160dp circle cropped to the middle two thirds.
+  The shell drew the documented figures, so the logo shrank at the
+  handover. It now draws what the device drew.
+- **After the handover, the shell becomes a loading state on purpose.** A
+  matched splash held over the whole wait hid the app without saying
+  anything. So, a moment after the handover, the background fades to show
+  the nav and the empty map, and the mark eases down to a small pulsing
+  circle. A deliberate change that moves reads as loading, where a change
+  in one frame reads as a glitch.
+- **No visible "Loading…".** Text appearing under the logo is a change at
+  the handover, and the label and its out-of-flow positioning (above) are
+  gone. The `--pwa-launch-mark` variable went with them; the iOS clamp
+  now lives on the tile rule itself, still coupled to `bin/build-pwa-splash`.

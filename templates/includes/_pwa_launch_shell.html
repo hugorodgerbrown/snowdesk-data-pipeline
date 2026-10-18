@@ -16,8 +16,8 @@ so there are two marks and the inline gate picks one (SNOW-1112):
   * Android (and anything that is not iOS): Chrome generates the splash
     from the manifest — background_color, and the MASKABLE icon cropped
     to a circle. So the default mark is that same file, clipped to the
-    same circle at the same size (a 240px canvas showing a 160px circle,
-    the Android 12+ splash geometry; see docs/pwa-launch.md).
+    same circle at the same size: the whole icon as a 240px circle,
+    measured off a Pixel 9 on Android 17 (see docs/pwa-launch.md).
   * iOS: the launch screen is a startup image built around the rounded
     tile (bin/build-pwa-splash), so the tile is shown instead, at the
     proportion of the shorter edge that script uses.
@@ -61,6 +61,15 @@ includes/theme_head.html — which is also why the failure mode is
 "overlay never shows" rather than "overlay never leaves": the class is
 only ever added, never relied on for removal.
 
+THEN IT REVEALS THE PAGE
+
+Matching the OS splash is only the first frames. Once the deferred
+script runs it lets the background go and eases the mark down to a
+small pulsing circle over the page, so the nav and the empty map read as
+the app loading rather than as a blank frame (static/js/pwa_launch_shell.js,
+the motion in src/css/main.css). There is no visible "Loading…": the OS
+splash has no text, so text would be a change at the handover.
+
 Removal is the deferred script's job (static/js/pwa_launch_shell.js),
 backstopped by a CSS failsafe animation in src/css/main.css so a script
 that never parses cannot leave the app covered.
@@ -75,17 +84,15 @@ that never parses cannot leave the app covered.
         justify-content: center;
         inset: 0;
         background-color: {{ PWA_BACKGROUND_COLOR }};
-        /* The visible diameter of the mark. The label hangs below it, so the
-           two read one value and cannot drift apart. */
-        --pwa-launch-mark: 160px;
     }
     html.pwa-launching .pwa-launch-shell {
         display: flex;
     }
-    /* Android: the maskable icon on a 240px canvas, clipped to a 160px
-       circle — the Android 12+ splash geometry for an icon with a
-       background. 50% / 50% is the canvas centre, which is the viewport
-       centre, which is where Android drew it. */
+    /* Android: the whole maskable icon as a 240px circle, centred on the
+       viewport. Measured off the splash itself (a Pixel 9, Android 17),
+       not the documented Android 12 geometry of a 160px circle showing
+       the middle two thirds, which drew the logo smaller than the splash
+       it took over from. */
     .pwa-launch-shell__mark {
         position: absolute;
         top: 50%;
@@ -93,22 +100,19 @@ that never parses cannot leave the app covered.
         width: 240px;
         height: 240px;
         margin: -120px 0 0 -120px;
-        clip-path: circle(80px at 50% 50%);
+        clip-path: circle(50% at 50% 50%);
     }
     .pwa-launch-shell__tile {
         display: none;
     }
     /* iOS: the rounded tile at bin/build-pwa-splash's ICON_RATIO, clamped to
        its ICON_MIN_CSS / ICON_MAX_CSS. Move one, move the other. */
-    html.pwa-launching--ios .pwa-launch-shell {
-        --pwa-launch-mark: clamp(96px, 24vmin, 160px);
-    }
     html.pwa-launching--ios .pwa-launch-shell__mark {
         display: none;
     }
     html.pwa-launching--ios .pwa-launch-shell__tile {
         display: block;
-        width: var(--pwa-launch-mark);
+        width: clamp(96px, 24vmin, 160px);
         height: auto;
     }
     /* iOS ships dark startup images too, picked by this same media query
@@ -123,8 +127,8 @@ that never parses cannot leave the app covered.
 <div id="pwa-launch-shell" class="pwa-launch-shell" role="status" aria-live="polite">
     {# The OS's own launch artwork, not a redraw of it — the same file   #}
     {# the manifest (Android) or the startup image (iOS) just showed.    #}
-    {# alt is empty because the label below already names what this is; #}
-    {# announcing the logo too would say it twice.                       #}
+    {# alt is empty because the hidden label below already names what   #}
+    {# this is; announcing the logo too would say it twice.              #}
     <img
         class="pwa-launch-shell__mark"
         alt=""
@@ -141,7 +145,9 @@ that never parses cannot leave the app covered.
         decoding="sync"
         fetchpriority="high"
     >
-    <p class="pwa-launch-shell__label text-sm text-text-3">{% trans "Loading…" %}</p>
+    {# For screen readers only: the OS splash has no text, so any visible #}
+    {# text would be a change at the handover.                           #}
+    <p class="sr-only">{% trans "Loading…" %}</p>
 </div>
 <script nonce="{{ request.csp_nonce }}">
     (function () {
