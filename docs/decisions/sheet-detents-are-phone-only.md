@@ -2,7 +2,7 @@
 name: sheet-detents-are-phone-only
 description: Phone sheet detents (_overlay_sheet.html detents, data-sheet-detents, bindDetents); forms take none; sheet covers, never moves, map controls
 status: current
-last-reviewed: 2026-10-17
+last-reviewed: 2026-10-18
 ---
 
 # Sheet detents are phone-only, and forms take none
@@ -104,6 +104,12 @@ only binds it to pointer events. Without the core on the page,
   `display: none`, which has no box to measure.
 - The route sheet's FULL is staff-only (SNOW-1099): it is the point debug
   readout. The partial declares `peek,half` for everyone else.
+- The route sheet's PEEK carries the profile (Hugo, 18 Oct 2026): it ends
+  under the hint below the profile ("Click on the route or profile to view
+  slope and track data"), because a full-width sheet has the room and the
+  profile is what a tap on a route is for. HALF adds the point header
+  (unlit until a point is placed; a point placed at peek raises the sheet
+  to HALF) and FULL the staff debug readout.
 - The place sheet (SNOW-1100, resort and saved pins) stops HALF under the
   day's weather: the level is already on the peek row, so the weather is
   what HALF adds, and the problems wait for FULL. It drops FULL only when

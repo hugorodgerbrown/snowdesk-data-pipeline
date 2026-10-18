@@ -36,11 +36,15 @@ def staff_client(db: Any) -> Client:
     return client
 
 
-def test_the_partial_renders_hidden_with_every_hook() -> None:
-    """With no context the header is the map's: hidden, every hook."""
+def test_the_partial_renders_shown_with_every_hook() -> None:
+    """With no context the header is the map's: every hook, not hidden.
+
+    2026-10-18: it shows unlit with no point (route_point_card.js), so the
+    phone sheet's HALF state has something to show before a tap.
+    """
     body = render_to_string("includes/_route_point_card.html", {})
     assert 'id="route-point-card"' in body
-    assert re.search(r"<div[^>]*\sdata-route-point-card[^>]*\shidden[\s>]", body)
+    assert not re.search(r"<div[^>]*\sdata-route-point-card[^>]*\shidden[\s>]", body)
     for hook in (
         "data-route-point-card-wheel",
         "data-route-point-card-headline",
@@ -144,25 +148,23 @@ def test_a_filled_card_shows_its_two_lines() -> None:
 
 
 @pytest.mark.django_db
-def test_the_map_page_renders_the_header_inside_the_panel() -> None:
-    """The header sits in the panel's identity block, and its scripts load first."""
+def test_the_map_page_renders_the_header_under_the_profile() -> None:
+    """2026-10-18: the header follows the profile and its hint, at HALF.
+
+    It used to take the title and meta line's place; now the route's
+    header stays and the point is read under the profile, which is the
+    phone sheet's second state.
+    """
     body = Client().get(reverse("public:map")).content.decode()
     assert body.count('id="route-point-card"') == 1
     panel = body.split('id="route-rail"', 1)[1].split("</section>", 1)[0]
-    assert panel.index("data-route-rail-title") < panel.index('id="route-point-card"')
-    assert panel.index('id="route-point-card"') < panel.index("data-route-rail-meta")
-
-
-@pytest.mark.django_db
-def test_the_header_spans_the_panel_below_the_buttons() -> None:
-    """The header follows the buttons' row, not beside them (SNOW-1069).
-
-    In the eyebrow's column it stopped at the buttons' left edge, and
-    ``text-balance`` split a long ground line into two even halves.
-    """
-    body = Client().get(reverse("public:map")).content.decode()
-    panel = body.split('id="route-rail"', 1)[1].split("</section>", 1)[0]
-    assert panel.index("data-route-rail-close") < panel.index('id="route-point-card"')
+    assert (
+        panel.index("data-route-rail-meta")
+        < panel.index("data-route-rail-lane")
+        < panel.index("data-route-rail-hint")
+        < panel.index("data-sheet-half")
+        < panel.index('id="route-point-card"')
+    )
     positions = [
         body.index("js/aspect_wheel_core"),
         body.index("js/route_point_card_core"),

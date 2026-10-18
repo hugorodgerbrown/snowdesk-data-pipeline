@@ -2,7 +2,7 @@
 name: the-point-card-names-the-experience
 description: Point card Track and Slope lines; no turn or switchback; a turn's side from its ends (turnOf, kindOf, trackWord, groundWord)
 status: current
-last-reviewed: 2026-10-17
+last-reviewed: 2026-10-18
 ---
 
 # The point card names the experience
@@ -11,9 +11,10 @@ last-reviewed: 2026-10-17
 
 The reading for one point on a saved route is the route panel's point
 header (SNOW-1064; a header of the panel, not a card of its own, since
-SNOW-1068): the aspect wheel and two lines of words, in the title and
-meta line's place, with the eyebrow naming the route and the point's
-distance ("MONT FORT · 4.1 KM").
+SNOW-1068): the aspect wheel and two lines of words, under the profile and
+its hint (2026-10-18 — until then it took the title and meta line's place,
+with the eyebrow naming the route). On a phone it is the route sheet's
+HALF state, shown unlit until a point is placed.
 
 - **Two labelled lines: Track and Slope (SNOW-1094).** Each line
   carries a label, because the two describe different things — the

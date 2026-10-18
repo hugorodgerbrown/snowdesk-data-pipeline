@@ -5,10 +5,11 @@
  *
  * The rail attaches the header when a route opens (route_rail.js's `open`)
  * and detaches it when the route closes. While attached it follows the
- * route cursor (route_cursor_core.js): with no index it is hidden and the
- * panel shows the route, and with one it shows that segment's wheel and
- * words, while the rail hides its own title and meta line in its place
- * (route_rail.js's `paintState`). Every surface that places a point
+ * route cursor (route_cursor_core.js): with no index it shows UNLIT — the
+ * wheel with nothing lit, a dash on each line, the clear button disabled —
+ * and with one it shows that segment's wheel and words (2026-10-18: it
+ * sits under the profile now, the route sheet's HALF state on a phone,
+ * rather than in the route title's place). Every surface that places a point
  * already writes the cursor: a tap on the route's line (map.js) and a tap
  * on the profile (route_rail.js). Nothing here is placement.
  *
@@ -19,7 +20,7 @@
  *
  * CLEARING THE POINT is a press on the wheel (2026-10-02): the wheel sits
  * in a button (`[data-route-point-card-clear]`) that sets the cursor's
- * index to null, which hides this header and brings the route's back.
+ * index to null, which takes this header back to unlit.
  * Escape does the same (route_rail.js). The panel's × closes the route.
  *
  * Depends on i18n_strings.js, route_slope_core.js, aspect_wheel_core.js
@@ -29,7 +30,7 @@
  *
  *   attach({cursor, slope, coordinates, profile, legs, sampleCount, spanM})
  *              — follow one route's cursor, showing the header for a point
- *   detach()   — stop following and hide the header
+ *   detach()   — stop following and show the header unlit
  *   element    — the header itself
  */
 
@@ -74,6 +75,7 @@
     'ground-steep': 'Steep',
     'ground-very-steep': 'Very steep',
     'ground-extremely-steep': 'Extremely steep',
+    empty: '–',
     'ground-unknown': 'No terrain data',
     'ground-falling-left': "%(ground)s, falling skier's left",
     'ground-falling-right': "%(ground)s, falling skier's right",
@@ -105,12 +107,19 @@
     wheelEl.innerHTML = wheel.aspectWheelSvg({ size: WHEEL_SIZE, state: state, label: label });
   }
 
-  /** Hide the header and empty it, for the panel's route header. */
+  /**
+   * The wheel with nothing lit: no heading, flat ground, no gradient. Flat
+   * rather than "none" because "none" fills the outer ring grey, which
+   * reads as missing terrain data rather than no point.
+   */
+  var UNLIT_STATE = Object.freeze({ track: [], gradeDeg: null, prev: null, next: null, terrain: { kind: 'flat' } });
+
+  /** Show the header unlit: no point is placed. */
   function clear() {
-    card.hidden = true;
-    if (wheelEl) wheelEl.innerHTML = '';
-    headlineEl.textContent = '';
-    groundEl.textContent = '';
+    drawWheel(UNLIT_STATE, '');
+    headlineEl.textContent = STRINGS.empty;
+    groundEl.textContent = STRINGS.empty;
+    if (clearEl) /** @type {HTMLButtonElement} */ (clearEl).disabled = true;
   }
 
   /**
@@ -136,7 +145,7 @@
     if (words.state) drawWheel(words.state, words.label);
     headlineEl.textContent = words.headline;
     groundEl.textContent = words.ground;
-    card.hidden = false;
+    if (clearEl) /** @type {HTMLButtonElement} */ (clearEl).disabled = false;
   }
 
   /**
@@ -167,7 +176,7 @@
     paint(cursor.state());
   }
 
-  /** Stop following the cursor and hide the header. */
+  /** Stop following the cursor and show the header unlit. */
   function detach() {
     if (unsubscribe) unsubscribe();
     unsubscribe = null;
