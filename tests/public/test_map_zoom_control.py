@@ -78,9 +78,11 @@ def test_a_filled_variant_names_the_zoom_and_draws_its_ticks() -> None:
     terrain = html[html.index('data-zoom-tick="terrain_filter"') :]
     assert "data-reached" in terrain[: terrain.index(">")]
     region = html[html.index('data-zoom-tick="region_select"') :]
-    region = region[: region.index(">")]
-    assert "data-up-to" in region
-    assert "data-reached" not in region
+    assert "data-reached" not in region[: region.index(">")]
+    # Each row is a button aimed at its threshold, which reads its direction.
+    assert 'data-zoom-target="10"' in region
+    assert "≤10" in region
+    assert "≥14" in html
 
 
 def test_bound_variants_disable_the_matching_button() -> None:
@@ -107,7 +109,6 @@ def test_positions_are_not_localised() -> None:
         html = render_to_string(PARTIAL, context)
     assert "top: 42.86%" in html
     assert "42,86" not in html
-    assert "--zoom-below: 0.4286" in html
 
 
 def test_the_library_panel_renders(staff_client: Client) -> None:

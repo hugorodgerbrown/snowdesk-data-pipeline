@@ -3016,9 +3016,7 @@ def _zoom_tick(
         "description": description,
         "zoom": gate,
         "pct": _zoom_pct(gate),
-        # The share of the scale below the tick, which an up-to band fills.
-        "below": round(1 - _zoom_pct(gate) / 100, 4),
-        "up_to": up_to,
+        "threshold": f"≤{gate}" if up_to else f"≥{gate}",
         "reached": int(camera) <= gate if up_to else camera >= gate,
     }
 

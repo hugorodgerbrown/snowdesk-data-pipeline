@@ -8,22 +8,33 @@ Rendered once per tick by the component library's variants, and once
 empty inside #map-zoom-tick-template, which static/js/map_zoom_control.js
 clones for each gate. ``data-reached`` is present when the camera is at a
 zoom where the feature is available, which the scale shows in bold — not
-whether the reader has switched it on. ``data-up-to`` marks the gate that
-holds up to its level (the region selector) rather than from it.
+whether the reader has switched it on. The row is a button: a tap zooms
+the map to the feature's threshold, and the threshold reads ≥14, or ≤10
+for the region selector, which holds up to its level rather than from it.
 
 Context:
-* tick — {key, label, description, pct, below, reached, up_to}; absent for
-  the template copy.
+* tick — {key, label, description, threshold, zoom, pct, reached}; absent
+  for the template copy.
 {% endcomment %}
 {% localize off %}
     <li
         class="map-zoom-tick"
         data-zoom-tick="{{ tick.key|default:'' }}"
         {% if tick.reached %}data-reached{% endif %}
-        {% if tick.up_to %}data-up-to{% endif %}
-        style="top: {{ tick.pct|default:0 }}%;{% if tick.below %} --zoom-below: {{ tick.below }}{% endif %}"
+        style="top: {{ tick.pct|default:0 }}%"
     >
-        <span class="map-zoom-tick-label" data-zoom-tick-label>{{ tick.label|default:'' }}</span>
-        <span class="map-zoom-tick-desc" data-zoom-tick-desc>{{ tick.description|default:'' }}</span>
+        {# A tap zooms the map to the level the feature starts at. #}
+        <button
+            type="button"
+            class="map-zoom-tick-button hover-affordance"
+            data-zoom-tick-button
+            data-zoom-target="{{ tick.zoom|default:'' }}"
+        >
+            <span class="map-zoom-tick-head">
+                <span class="map-zoom-tick-label" data-zoom-tick-label>{{ tick.label|default:'' }}</span>
+                <span class="map-zoom-tick-threshold" data-zoom-tick-threshold>{{ tick.threshold|default:'' }}</span>
+            </span>
+            <span class="map-zoom-tick-desc" data-zoom-tick-desc>{{ tick.description|default:'' }}</span>
+        </button>
     </li>
 {% endlocalize %}

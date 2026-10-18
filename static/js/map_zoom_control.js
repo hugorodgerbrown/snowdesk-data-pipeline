@@ -71,6 +71,8 @@
     'desc-terrain_filter': 'Slope and aspect on the ground',
     'gate-route_slopes': 'Route slope angle',
     'desc-route_slopes': 'A saved route coloured by steepness',
+    'threshold-from': '≥%(zoom)s',
+    'threshold-up-to': '≤%(zoom)s',
     camera: 'Camera zoom %(zoom)s',
   });
 
@@ -142,7 +144,8 @@
   /**
    * Redraw the ticks, when they changed.
    *
-   * Each tick names one zoom-gated feature and says what it does, placed
+   * Each tick names one zoom-gated feature, its threshold (≥12, ≤10) and
+   * what it does, placed
    * at the height of the level it becomes available. It is bold while the
    * camera is at a zoom where the feature works, switched on or not: the
    * scale answers "what can I do at this zoom", which is what a reader
@@ -152,8 +155,17 @@
    * @returns {void}
    */
   function renderTicks(ticks) {
-    const signature = ticks.map((t) => [t.key, t.zoom, t.reached, t.upTo].join(':')).join('|');
-    if (signature === drawnTicks) return;
+    // The rows themselves change only when the gates do. A zoom past a
+    // threshold restyles the row in place rather than rebuilding it, so a
+    // row that holds keyboard focus — the one just tapped, say — keeps it
+    // while the map animates through its threshold.
+    const signature = ticks.map((t) => [t.key, t.zoom, t.upTo].join(':')).join('|');
+    if (signature === drawnTicks && tickList) {
+      ticks.forEach((tick, i) => {
+        tickList.children[i]?.toggleAttribute('data-reached', tick.reached);
+      });
+      return;
+    }
     drawnTicks = signature;
 
     const tickNodes = [];
@@ -162,12 +174,17 @@
       if (!tickNode) continue;
       tickNode.dataset.zoomTick = tick.key;
       tickNode.toggleAttribute('data-reached', tick.reached);
-      tickNode.toggleAttribute('data-up-to', tick.upTo);
       tickNode.style.top = ((1 - tick.position) * 100).toFixed(2) + '%';
-      // An up-to gate draws a band from its level to the foot of the scale.
-      tickNode.style.setProperty('--zoom-below', tick.position.toFixed(4));
+      const button = tickNode.querySelector('[data-zoom-tick-button]');
+      if (button) button.dataset.zoomTarget = String(tick.zoom);
       const label = tickNode.querySelector('[data-zoom-tick-label]');
       if (label) label.textContent = gateLabel(tick.key);
+      const threshold = tickNode.querySelector('[data-zoom-tick-threshold]');
+      if (threshold) {
+        threshold.textContent = self.pwaStrings.interpolate(
+          STRINGS[tick.upTo ? 'threshold-up-to' : 'threshold-from'], { zoom: tick.zoom },
+        );
+      }
       const description = tickNode.querySelector('[data-zoom-tick-desc]');
       if (description) description.textContent = STRINGS['desc-' + tick.key] || '';
       tickNodes.push(tickNode);
@@ -292,6 +309,22 @@
   }
 
   /**
+   * Zoom straight to a level — a feature's threshold, from its row.
+   *
+   * Animated (MapLibre's zoomTo eases), so the marker visibly travels to
+   * the row that was tapped; the row turns bold as the camera arrives.
+   *
+   * @param {number} zoom The level to go to.
+   * @returns {void}
+   */
+  function goTo(zoom) {
+    const target = Math.min(map.getMaxZoom(), Math.max(map.getMinZoom(), zoom));
+    pendingTarget = target;
+    map.zoomTo(target);
+    render();
+  }
+
+  /**
    * Open or close the flyout.
    *
    * @param {boolean} open
@@ -320,6 +353,15 @@
   });
 
   if (zoomOut) zoomOut.addEventListener('click', () => step(-1));
+  if (tickList) {
+    tickList.addEventListener('click', (e) => {
+      const target = /** @type {Element} */ (e.target);
+      const button = target.closest && target.closest('[data-zoom-tick-button]');
+      if (!(button instanceof HTMLElement)) return;
+      const zoom = Number(button.dataset.zoomTarget);
+      if (Number.isFinite(zoom)) goTo(zoom);
+    });
+  }
   if (zoomIn) zoomIn.addEventListener('click', () => step(1));
 
   // The pending target clears when its move ends at the target. Not on

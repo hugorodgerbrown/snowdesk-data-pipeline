@@ -39,11 +39,16 @@ document.body.innerHTML = `
     </div>
     <template id="map-zoom-tick-template">
       <li class="map-zoom-tick" data-zoom-tick="">
-        <span data-zoom-tick-label></span><span data-zoom-tick-desc></span>
+        <button type="button" data-zoom-tick-button data-zoom-target="">
+          <span data-zoom-tick-label></span><span data-zoom-tick-threshold></span>
+          <span data-zoom-tick-desc></span>
+        </button>
       </li>
     </template>
     <template id="map-zoom-strings-template">
       <span data-string="toggle-label">Zoom level %(zoom)s</span>
+      <span data-string="threshold-from">≥%(zoom)s</span>
+      <span data-string="threshold-up-to">≤%(zoom)s</span>
       <span data-string="gate-region_select">Region selector</span>
       <span data-string="desc-region_select">Tap a region to select it</span>
       <span data-string="gate-terrain_filter">Terrain overlay</span>
@@ -275,13 +280,36 @@ describe('the ticks', () => {
     expect(tick('terrain_filter').hasAttribute('data-reached')).toBe(true);
   });
 
-  it('draw the region band up to z10, reached only at z10 or below', () => {
+  it('give each threshold its direction: ≤10 for regions, ≥ for the rest', () => {
     toggle.click();
-    expect(tick('region_select').hasAttribute('data-up-to')).toBe(true);
+    const thresholds = ticks().map((li) => li.querySelector('[data-zoom-tick-threshold]').textContent);
+    expect(thresholds).toEqual(['≤10', '≥12', '≥14']);
+  });
+
+  it('mark the region selector available only at z10 or below', () => {
+    toggle.click();
     expect(tick('region_select').hasAttribute('data-reached')).toBe(true);
-    expect(tick('region_select').style.getPropertyValue('--zoom-below')).toBe('0.4286');
     zoom = 11.2;
     fireZoom();
     expect(tick('region_select').hasAttribute('data-reached')).toBe(false);
+  });
+
+  it('zoom the map to a feature\'s threshold when its row is tapped, and stay open', () => {
+    toggle.click();
+    tick('route_slopes').querySelector('button').click();
+    expect(targets()).toEqual([14]);
+    tick('region_select').querySelector('button').click();
+    expect(targets()).toEqual([14, 10]);
+    expect(flyout.hidden).toBe(false);
+  });
+
+  it('restyle a row in place as the zoom crosses its threshold, keeping focus', () => {
+    toggle.click();
+    const button = tick('terrain_filter').querySelector('button');
+    button.focus();
+    zoom = 12.1;
+    fireZoom();
+    expect(tick('terrain_filter').hasAttribute('data-reached')).toBe(true);
+    expect(document.activeElement).toBe(button);
   });
 });

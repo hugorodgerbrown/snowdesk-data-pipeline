@@ -1966,15 +1966,36 @@ html:has(> body.map-fullscreen) > body {
     background: var(--color-border);
 }
 
-/* One feature: its name on its level's line, what it does underneath. */
+/* One feature: its name and threshold on its level's line, what it does
+   underneath. The whole row is a button that zooms to the threshold. */
 .map-zoom-tick {
     position: absolute;
-    left: var(--zoom-label-x);
-    right: 8px;
-    margin-top: -8px;
+    left: calc(var(--zoom-label-x) - 6px);
+    right: 4px;
+    margin-top: -12px;
+}
+
+.map-zoom-tick-button {
     display: flex;
     flex-direction: column;
-    color: var(--color-text-2);
+    width: 100%;
+    padding: 4px 6px;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    text-align: left;
+    color: var(--color-text-3);
+}
+
+.map-zoom-tick-button:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: -2px;
+}
+
+.map-zoom-tick-head {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
 }
 
 .map-zoom-tick-label {
@@ -1982,40 +2003,29 @@ html:has(> body.map-fullscreen) > body {
     line-height: 16px;
 }
 
+.map-zoom-tick-threshold {
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+
 .map-zoom-tick-desc {
     font-size: 10px;
     line-height: 13px;
-    color: var(--color-text-3);
 }
 
-/* Available at the camera's zoom, whether or not it is switched on. */
+/* Available at the camera's zoom, whether or not it is switched on:
+   strong; everything else stays muted. */
+.map-zoom-tick[data-reached] .map-zoom-tick-button {
+    color: var(--color-text-2);
+}
+
 .map-zoom-tick[data-reached] .map-zoom-tick-label {
     color: var(--color-text-1);
     font-weight: 600;
 }
 
-.map-zoom-tick[data-reached] .map-zoom-tick-desc {
-    color: var(--color-text-2);
-}
-
-/* An up-to gate (the region selector, z10 and below) holds from its level
-   down to the foot of the scale, so it draws a band along the track
-   rather than a threshold. */
-.map-zoom-tick[data-up-to]::before {
-    content: "";
-    position: absolute;
-    top: 8px;
-    left: calc(var(--zoom-track-x) - var(--zoom-label-x) - 3px);
-    width: 6px;
-    height: calc(var(--zoom-below) * var(--zoom-scale-h));
-    border-radius: 999px;
-    background: var(--color-text-3);
-    opacity: 0.35;
-}
-
-.map-zoom-tick[data-up-to][data-reached]::before {
-    background: var(--color-text-1);
-    opacity: 0.5;
+.map-zoom-tick[data-reached] .map-zoom-tick-threshold {
+    color: var(--color-text-1);
 }
 
 .map-zoom-marker {
