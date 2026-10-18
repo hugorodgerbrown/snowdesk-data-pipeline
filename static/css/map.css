@@ -1855,15 +1855,18 @@ html:has(> body.map-fullscreen) > body {
 /* The flyout opens into the crook between the roundel column and the date
    row, exactly where .map-legend-card opens — the same two offsets, so
    it needs no JS to find its place. The two are never open together
-   (window.pwaMapOverlays). 264 px fits beside the 32 px column at 320 px:
-   inset + 32 + 8 + 264 stays inside the viewport. */
+   (window.pwaMapOverlays). It is a vertical scale, + over −, because zoom
+   is height: each zoom-gated thing is named at the level it changes. */
 .map-zoom-flyout {
+    --zoom-scale-h: 280px;
+    --zoom-track-x: 22px;
+    --zoom-label-x: 56px;
     position: absolute;
     left: calc(var(--map-control-sm) + 8px);
     bottom: calc(var(--map-control-sm) + 8px);
-    width: 264px;
+    width: 248px;
     max-width: calc(100vw - var(--map-control-sm) - 32px);
-    padding: 2px 2px 8px;
+    padding: 2px 2px 6px;
     background: var(--color-glass);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
@@ -1880,17 +1883,12 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
-.map-zoom-row {
-    display: flex;
-    align-items: center;
-}
-
-/* − and +: 44 px targets, the same box as .map-fill-step. */
+/* + and −: 44 px targets, the same box as .map-fill-step, stacked on the
+   track's line so the scale reads as running between them. */
 .map-zoom-step {
-    flex: none;
+    display: flex;
     width: 44px;
     height: 44px;
-    display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
@@ -1909,24 +1907,22 @@ html:has(> body.map-fullscreen) > body {
     outline-offset: -3px;
 }
 
-/* The scale: a hairline track across the map's zoom range, the camera
-   marker on it, and a tick for each gated layer that is on with its zoom
-   above it. Every `left` is a percentage of this box, written by the JS. */
+/* The scale: a vertical hairline across the map's zoom range, maximum at
+   the top, the camera marker on it, and one row per gate at its zoom.
+   Every `top` is a percentage of this box, written by the JS. */
 .map-zoom-scale {
     position: relative;
-    flex: 1;
-    min-width: 0;
-    height: 44px;
-    margin: 0 8px;
+    height: var(--zoom-scale-h);
+    margin: 4px 0;
 }
 
 .map-zoom-track {
     position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 2px;
-    margin-top: -1px;
+    top: 0;
+    bottom: 0;
+    left: var(--zoom-track-x);
+    width: 2px;
+    margin-left: -1px;
     border-radius: 999px;
     background: var(--color-border);
 }
@@ -1939,34 +1935,90 @@ html:has(> body.map-fullscreen) > body {
     list-style: none;
 }
 
-.map-zoom-tick {
+/* Every whole zoom level, numbered beside a short mark on the line. */
+.map-zoom-levels {
     position: absolute;
-    top: 50%;
-    width: 2px;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.map-zoom-level {
+    position: absolute;
+    left: calc(var(--zoom-track-x) - 4px);
     height: 12px;
-    margin: -6px 0 0 -1px;
-    background: var(--color-text-3);
-}
-
-/* At or past the gate: the layer is being drawn. */
-.map-zoom-tick[data-reached] {
-    background: var(--color-text-1);
-}
-
-.map-zoom-tick-zoom {
-    position: absolute;
-    bottom: 14px;
-    left: 50%;
-    transform: translateX(-50%);
+    margin-top: -6px;
+    padding-left: 14px;
     font-family: var(--font-mono);
     font-size: 10px;
-    line-height: 1;
-    color: var(--color-text-2);
+    line-height: 12px;
+    color: var(--color-text-3);
+}
+
+.map-zoom-level::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 5px;
+    width: 8px;
+    height: 1px;
+    background: var(--color-border);
+}
+
+/* One feature: its name and threshold on its level's line. The whole row
+   is a button that zooms to the threshold. */
+.map-zoom-tick {
+    position: absolute;
+    left: calc(var(--zoom-label-x) - 6px);
+    right: 4px;
+    /* Half the row's height, less a pixel: the name's x-height, not its
+       line box, reads as sitting on the level's line. */
+    margin-top: -13px;
+}
+
+.map-zoom-tick-button {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 6px;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    text-align: left;
+    color: var(--color-text-3);
+}
+
+.map-zoom-tick-button:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: -2px;
+}
+
+.map-zoom-tick-label {
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.map-zoom-tick-threshold {
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+
+/* Available at the camera's zoom, whether or not it is switched on:
+   strong; everything else stays muted. */
+.map-zoom-tick[data-reached] .map-zoom-tick-label {
+    color: var(--color-text-1);
+    font-weight: 600;
+}
+
+.map-zoom-tick[data-reached] .map-zoom-tick-threshold {
+    color: var(--color-text-1);
 }
 
 .map-zoom-marker {
     position: absolute;
-    top: 50%;
+    left: var(--zoom-track-x);
     width: 12px;
     height: 12px;
     margin: -6px 0 0 -6px;
@@ -1974,37 +2026,15 @@ html:has(> body.map-fullscreen) > body {
     border-radius: 999px;
     background: var(--color-text-1);
     box-shadow: 0 0 0 0.5px var(--color-border);
+    pointer-events: none;
 }
 
-/* One row per tick, naming the layer and the zoom it starts at. */
-.map-zoom-gates {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin: 0;
-    padding: 2px 12px 0;
-    list-style: none;
+/* The one line of explanation over the scale. */
+.map-zoom-intro {
+    margin: 8px 10px 0;
     font-size: 11px;
-    line-height: 1.4;
-}
-
-.map-zoom-gates[hidden] {
-    display: none;
-}
-
-.map-zoom-gate {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
+    line-height: 1.35;
     color: var(--color-text-2);
-}
-
-.map-zoom-gate[data-reached] {
-    color: var(--color-text-1);
-}
-
-.map-zoom-gate-zoom {
-    font-family: var(--font-mono);
 }
 
 /* DEBUG only: the camera zoom to two decimals. */
@@ -2023,7 +2053,7 @@ html:has(> body.map-fullscreen) > body {
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    min-height: 168px;
+    min-height: 480px;
     padding-bottom: calc(var(--map-control-sm) + 8px);
 }
 

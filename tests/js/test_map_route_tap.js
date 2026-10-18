@@ -90,6 +90,22 @@ let favouriteUnderPoint = false;
 /** Whether a weather symbol sits under the exact tap point. */
 let weatherUnderPoint = false;
 
+/** Whether the region fill sits under the exact tap point. */
+let regionUnderPoint = false;
+
+/** The camera zoom the stub reports. */
+let cameraZoom = 8;
+
+/** The one region the regions feed carries; map.js numbers it 0. */
+const REGIONS_FC = {
+  type: 'FeatureCollection',
+  features: [{
+    type: 'Feature',
+    geometry: { type: 'Polygon', coordinates: [[[7, 46], [7.2, 46], [7.2, 46.2], [7, 46]]] },
+    properties: { id: 'CH-4115', name: 'Martigny' },
+  }],
+};
+
 /** A weather symbol, which owns its tap the way a marker does (SNOW-761). */
 const WEATHER_FEATURE = {
   layer: { id: 'weather-point' },
@@ -153,7 +169,7 @@ function stubMapLibre() {
     fitBounds: () => {},
     easeTo: () => {},
     flyTo: () => {},
-    getZoom: () => 8,
+    getZoom: () => cameraZoom,
     getCenter: () => ({ lng: 7, lat: 46 }),
     getBounds: () => ({
       getWest: () => 5, getSouth: () => 45, getEast: () => 10, getNorth: () => 48,
@@ -177,6 +193,9 @@ function stubMapLibre() {
       const hits = [];
       if (favouriteUnderPoint && wants('favourites-pin')) hits.push(FAVOURITE_FEATURE);
       if (weatherUnderPoint && wants('weather-point')) hits.push(WEATHER_FEATURE);
+      if (regionUnderPoint && wants('regions-fill')) {
+        hits.push({ layer: { id: 'regions-fill' }, id: 0, properties: {} });
+      }
       if (wants('routes-line') && geometry.y === LINE_Y) hits.push(ROUTE_FEATURE);
       return hits;
     },
@@ -263,7 +282,8 @@ beforeAll(async () => {
     vi.fn((url) => Promise.resolve({
       ok: true,
       json: () => Promise.resolve(
-        String(url).includes('routes.geojson') ? ROUTES_FC : EMPTY_FC,
+        String(url).includes('routes.geojson') ? ROUTES_FC
+          : String(url).includes('regions.geojson') ? REGIONS_FC : EMPTY_FC,
       ),
     })),
   );
@@ -289,6 +309,8 @@ beforeEach(() => {
   installedLayers = new Set(['routes-line', 'routes-line-casing']);
   favouriteUnderPoint = false;
   weatherUnderPoint = false;
+  regionUnderPoint = false;
+  cameraZoom = 8;
   ROUTE_FEATURE.properties.uuid = '11111111-2222-3333-4444-555555555555';
 });
 
@@ -405,5 +427,31 @@ describe('tapping a saved route', () => {
 
     expect(() => tapAt(LINE_Y)).not.toThrow();
     expect(tapAt(LINE_Y)).toBeUndefined();
+  });
+});
+
+describe('tapping a region, by zoom', () => {
+  it('selects at z10 and below; past it selects nothing, deselects nothing, and closes the place sheet', () => {
+    installedLayers = new Set(['routes-line', 'routes-line-casing', 'regions-fill']);
+    regionUnderPoint = true;
+    const selections = [];
+    const record = (e) => selections.push(e.detail);
+    document.addEventListener('snowdesk:region-selected', record);
+    window.pwaPlaceSheet = { close: vi.fn() };
+    try {
+      // Judged on the whole zoom the roundel shows: 10.6 is still 10.
+      cameraZoom = 10.6;
+      tapAt(200);
+      expect(selections.map((d) => d.region_id)).toEqual(['CH-4115']);
+
+      // Zoomed in, the same tap leaves the selection in hand.
+      cameraZoom = 13;
+      tapAt(200);
+      expect(selections).toHaveLength(1);
+      expect(window.pwaPlaceSheet.close).toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('snowdesk:region-selected', record);
+      delete window.pwaPlaceSheet;
+    }
   });
 });

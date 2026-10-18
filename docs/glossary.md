@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-10-17
+last-reviewed: 2026-10-18
 ---
 
 # Glossary — domain terms to code symbols
@@ -215,7 +215,7 @@ Which coordinate on which model is exact, approximate or derived:
 | Roundel panel | A map panel showing a list or setting that a map-control roundel opened and toggles (pins, observations, routes, downloads, terrain filter). Sits beside the roundel column on desktop; full width over it on a phone, closed with its × (SNOW-1106); no detents (SNOW-1102 cancelled) | `_overlay_sheet.html` without `detents`; [design-system.md](design-system.md#map-panels-what-opened-it-decides-its-shape) |
 | Form panel | A map panel holding a task (report, add or rename favourite, sign in). No detents and no drag-to-close, so a stray swipe never discards input (the shared ×, Escape and outside-tap dismissals still do) | `_overlay_sheet.html` without `detents`; [design-system.md](design-system.md#map-panels-what-opened-it-decides-its-shape) |
 | Overlay exclusivity | The rule that one map overlay is open at a time, so opening any closes the rest — held in one registry rather than pairwise by each surface (SNOW-658) | `window.pwaMapOverlays` in `static/js/map_overlay_exclusivity.js` |
-| Zoom gate | A map layer drawn only from a stated zoom — the terrain filter from z12 (`slope_classes` in its slope mode, `terrain_filter` otherwise), a route's slope colours from z14. One registry entry per layer (`{key, zoom, active}`), which the zoom control reads to put a tick on its scale for each gated layer that is on (SNOW-1077) | `window.pwaZoomGates` (`ZOOM_GATES`) in `static/js/map.js`; `static/js/map_zoom_control.js` + `zoom_control_core.js`; `public/partials/_map_zoom_control.html` |
+| Zoom gate | A map feature available only at a stated zoom — the region selector at z10 and below (`region_select`, the one `upTo` gate; `REGION_SELECT_MAXZOOM`), the terrain overlay from z12 (`terrain_filter`, either mode), a route's slope angle from z14 (`route_slopes`). One registry entry per feature (`{key, zoom, upTo}`), which the zoom control names at its level on its scale, in strong text where the camera's zoom makes it available (SNOW-1077) | `window.pwaZoomGates` (`ZOOM_GATES`) in `static/js/map.js`; `static/js/map_zoom_control.js` + `zoom_control_core.js`; `public/partials/_map_zoom_control.html` |
 
 ## Offline basemap downloads (PWA)
 

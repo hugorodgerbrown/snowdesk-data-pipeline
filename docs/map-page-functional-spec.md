@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-17
+last-reviewed: 2026-10-18
 ---
 
 # Map page — functional specification
@@ -70,6 +70,16 @@ bottom-left date are unchanged.
 Tapping the selected region again deselects it, as does tapping empty
 map area outside any region; the ribbon greys out and the readout drops
 back to the date alone.
+
+**A tap selects a region only at z10 or below** (`REGION_SELECT_MAXZOOM`
+in `map.js`, judged on the whole zoom the zoom roundel shows, so 10.6
+counts as 10). Past it a region is too big to see, and a tap meant for a
+route beside the line selected the valley underneath. So above z10 a tap
+on a region selects nothing and deselects nothing: the region already
+selected stays selected, and the tap only closes a place sheet or popup.
+A double-click there is the map's own zoom-in rather than a zoom out to
+the region, and the fill shows no pointer cursor. The zoom control
+(§3.6b) names this as the **Region selector, ≤10** (Hugo, 18 Oct 2026).
 
 **Coverage.** The map covers the four avalanche services Snowdesk
 ingests:
@@ -755,21 +765,29 @@ stack and the date row, where the legend card opens:
 - **− and +**, 44 px targets, zooming out and in by one step. − is
   disabled at the map's minimum (z4), + at its maximum (z18). They are the
   single-pointer alternative to pinching (WCAG 2.5.1).
-- **A scale** across the map's whole zoom range, with a marker at the
-  camera.
-- **A tick for each zoom-gated layer that is on**, numbered with its zoom,
-  and a row under the scale naming it: **Terrain filter** at z12 while the
-  filter is switched on (§3.5b), **Route slope colours** at z14 while the
-  routes overlay is drawing a route whose slope has been sampled (§3.4a).
-  An unsampled route keeps its leg colours at every zoom, so it adds no
-  tick. A layer that is off has no tick. A tick and its row turn from muted to full strength once the camera
-  reaches the gate, which is when the layer is drawn.
+- **One line of explanation** at the top: "Some features are only
+  available at certain zoom levels."
+- **A vertical scale**, + over −, across the map's whole zoom range,
+  every whole level numbered on the line, with a marker at the camera.
+- **Each zoom-gated feature, named at its level** with its threshold:
+  **Route slope angle ≥14** (§3.4a), **Terrain overlay ≥12** (§3.5b, in
+  either of its modes) and **Region selector ≤10** (§1). A feature is in
+  strong text while the camera is at a zoom where it is available, and
+  muted otherwise — whether or not it is switched on, because the scale
+  answers "what can I do at this zoom". The rows stay put; only the marker
+  and the styling move as the map zooms.
+- **Each row is a button** that eases the map to its threshold, so the
+  marker travels to the row tapped; the flyout stays open.
+
+The designer notes behind this (Hugo, 18 Oct 2026): the overlay is mainly
+explanatory, pinch stays the main way to zoom, and no locks, checkmarks or
+second lines of description — a description under each name was tried and
+judged distracting.
 
 The gates come from one registry, `window.pwaZoomGates` in `map.js` —
-`list()` answers `{key, zoom, active}` per gated layer — so a third gated
-layer is one entry there and one label in the control's strings template.
-The face and the ticks update on every zoom, and when either gated layer is
-switched on or off.
+`list()` answers `{key, zoom, upTo}` per gated feature, `upTo` for the one
+that holds up to its zoom rather than from it — so a fourth feature is one
+entry there and one label in the control's strings template.
 
 The flyout is one overlay among the others: opening it closes any open
 sheet, menu or card, and opening one of those closes it

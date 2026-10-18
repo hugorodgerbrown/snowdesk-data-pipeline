@@ -276,43 +276,26 @@ describe('the layers menu row', () => {
 });
 
 describe('window.pwaZoomGates (SNOW-1077)', () => {
-  /**
-   * One gate from the registry, by key.
-   *
-   * @param {string} key The gate's key.
-   * @returns {{key: string, zoom: number, active: boolean}}
-   */
-  const gate = (key) => window.pwaZoomGates.list().find((g) => g.key === key);
+  const list = () => window.pwaZoomGates.list();
 
-  it('lists the terrain filter at z12 and route slopes at z14', () => {
-    expect(gate('terrain_filter').zoom).toBe(12);
-    expect(gate('route_slopes').zoom).toBe(14);
+  it('names the region selector up to z10, the terrain overlay at z12, route slopes at z14', () => {
+    expect(list()).toEqual([
+      { key: 'region_select', zoom: 10, upTo: true },
+      { key: 'terrain_filter', zoom: 12, upTo: false },
+      { key: 'route_slopes', zoom: 14, upTo: false },
+    ]);
   });
 
-  it('turns the terrain-filter gate on with the filter', () => {
-    window.pwaTerrainFilter.show();
-    expect(gate('terrain_filter').active).toBe(true);
-    window.pwaTerrainFilter.hide();
-    expect(gate('terrain_filter').active).toBe(false);
-  });
-
-  it('leaves the route-slopes gate off with no routes drawn', () => {
-    expect(gate('route_slopes').active).toBe(false);
-  });
-
-  it('labels the z12 gate as slope classes in the slope mode (SNOW-1073)', () => {
-    // The two gates share a zoom and are never on together, so the scale
-    // carries one tick at z12 named for what is actually drawn.
-    expect(gate('slope_classes').zoom).toBe(12);
+  it('lists the same gates whatever the terrain overlay is doing (SNOW-1073)', () => {
+    // The scale says where a feature becomes available, not whether it is
+    // on, so neither switching the overlay nor its mode changes the list.
+    const before = list();
     window.pwaTerrainFilter.setFilter({ mode: 'slope' });
     window.pwaTerrainFilter.show();
-    expect(gate('slope_classes').active).toBe(true);
-    expect(gate('terrain_filter').active).toBe(false);
+    expect(list()).toEqual(before);
     window.pwaTerrainFilter.setFilter({ mode: 'match' });
-    expect(gate('slope_classes').active).toBe(false);
-    expect(gate('terrain_filter').active).toBe(true);
     window.pwaTerrainFilter.hide();
-    expect(gate('slope_classes').active).toBe(false);
+    expect(list()).toEqual(before);
   });
 });
 

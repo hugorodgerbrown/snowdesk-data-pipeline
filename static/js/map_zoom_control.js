@@ -65,10 +65,11 @@
 
   const STRINGS = self.pwaStrings.read('map-zoom-strings-template', {
     'toggle-label': 'Zoom level %(zoom)s',
-    'gate-zoom': 'z%(zoom)s',
-    'gate-terrain_filter': 'Terrain filter',
-    'gate-slope_classes': 'Slope classes',
-    'gate-route_slopes': 'Route slope colours',
+    'gate-region_select': 'Region selector',
+    'gate-terrain_filter': 'Terrain overlay',
+    'gate-route_slopes': 'Route slope angle',
+    'threshold-from': '≥%(zoom)s',
+    'threshold-up-to': '≤%(zoom)s',
     camera: 'Camera zoom %(zoom)s',
   });
 
@@ -77,10 +78,9 @@
   const zoomIn = flyout.querySelector('[data-zoom-step="in"]');
   const marker = flyout.querySelector('[data-zoom-marker]');
   const tickList = flyout.querySelector('[data-zoom-ticks]');
-  const gateList = flyout.querySelector('[data-zoom-gates]');
+  const levelList = flyout.querySelector('[data-zoom-levels]');
   const cameraLine = flyout.querySelector('[data-zoom-camera]');
   const tickTemplate = document.getElementById('map-zoom-tick-template');
-  const gateTemplate = document.getElementById('map-zoom-gate-template');
 
   /**
    * The zoom the style's vector sources are fetching tiles at.
@@ -139,46 +139,77 @@
   let drawnTicks = null;
 
   /**
-   * Redraw the ticks and their rows, when they changed.
+   * Redraw the ticks, when they changed.
    *
-   * @param {Array<{key: string, zoom: number, position: number, reached: boolean}>} ticks
+   * Each tick names one zoom-gated feature and its threshold (≥12, ≤10),
+   * placed
+   * at the height of the level it becomes available. It is bold while the
+   * camera is at a zoom where the feature works, switched on or not: the
+   * scale answers "what can I do at this zoom", which is what a reader
+   * who switched something on and saw nothing needs.
+   *
+   * @param {Array<{key: string, zoom: number, position: number, reached: boolean, upTo: boolean}>} ticks
    * @returns {void}
    */
   function renderTicks(ticks) {
-    const signature = ticks.map((t) => t.key + ':' + t.zoom + ':' + t.reached).join('|');
-    if (signature === drawnTicks) return;
+    // The rows themselves change only when the gates do. A zoom past a
+    // threshold restyles the row in place rather than rebuilding it, so a
+    // row that holds keyboard focus — the one just tapped, say — keeps it
+    // while the map animates through its threshold.
+    const signature = ticks.map((t) => [t.key, t.zoom, t.upTo].join(':')).join('|');
+    if (signature === drawnTicks && tickList) {
+      ticks.forEach((tick, i) => {
+        tickList.children[i]?.toggleAttribute('data-reached', tick.reached);
+      });
+      return;
+    }
     drawnTicks = signature;
 
     const tickNodes = [];
-    const gateNodes = [];
     for (const tick of ticks) {
       const tickNode = cloneRow(tickTemplate);
-      if (tickNode) {
-        tickNode.dataset.zoomTick = tick.key;
-        tickNode.toggleAttribute('data-reached', tick.reached);
-        tickNode.style.left = (tick.position * 100).toFixed(2) + '%';
-        const number = tickNode.querySelector('[data-zoom-tick-zoom]');
-        if (number) number.textContent = String(tick.zoom);
-        tickNodes.push(tickNode);
+      if (!tickNode) continue;
+      tickNode.dataset.zoomTick = tick.key;
+      tickNode.toggleAttribute('data-reached', tick.reached);
+      tickNode.style.top = ((1 - tick.position) * 100).toFixed(2) + '%';
+      const button = tickNode.querySelector('[data-zoom-tick-button]');
+      if (button) button.dataset.zoomTarget = String(tick.zoom);
+      const label = tickNode.querySelector('[data-zoom-tick-label]');
+      if (label) label.textContent = gateLabel(tick.key);
+      const threshold = tickNode.querySelector('[data-zoom-tick-threshold]');
+      if (threshold) {
+        threshold.textContent = self.pwaStrings.interpolate(
+          STRINGS[tick.upTo ? 'threshold-up-to' : 'threshold-from'], { zoom: tick.zoom },
+        );
       }
-      const gateNode = cloneRow(gateTemplate);
-      if (gateNode) {
-        gateNode.dataset.zoomGate = tick.key;
-        gateNode.toggleAttribute('data-reached', tick.reached);
-        const label = gateNode.querySelector('[data-zoom-gate-label]');
-        if (label) label.textContent = gateLabel(tick.key);
-        const zoom = gateNode.querySelector('[data-zoom-gate-zoom]');
-        if (zoom) {
-          zoom.textContent = self.pwaStrings.interpolate(STRINGS['gate-zoom'], { zoom: tick.zoom });
-        }
-        gateNodes.push(gateNode);
-      }
+      tickNodes.push(tickNode);
     }
     if (tickList) tickList.replaceChildren(...tickNodes);
-    if (gateList) {
-      gateList.replaceChildren(...gateNodes);
-      gateList.hidden = gateNodes.length === 0;
-    }
+  }
+
+  // The level range last numbered, so the numbers are written once per
+  // range rather than on every frame of a pinch.
+  let drawnLevels = null;
+
+  /**
+   * Number every whole zoom level on the line, once per range.
+   *
+   * @param {number} min The map's minimum zoom.
+   * @param {number} max The map's maximum zoom.
+   * @returns {void}
+   */
+  function renderLevels(min, max) {
+    const signature = min + ':' + max;
+    if (!levelList || signature === drawnLevels) return;
+    drawnLevels = signature;
+    const nodes = core.levels(min, max).map((level) => {
+      const li = document.createElement('li');
+      li.className = 'map-zoom-level';
+      li.style.top = ((1 - level.position) * 100).toFixed(2) + '%';
+      li.textContent = String(level.zoom);
+      return li;
+    });
+    levelList.replaceChildren(...nodes);
   }
 
   // The face last written, so a pinch — a `zoom` event every frame — writes
@@ -219,8 +250,11 @@
     const buttons = core.buttonState(pendingTarget ?? camera, min, max);
     setStepEnabled(zoomOut, buttons.canZoomOut, zoomIn);
     setStepEnabled(zoomIn, buttons.canZoomIn, zoomOut);
-    if (marker) marker.style.left = (core.scalePosition(camera, min, max) * 100).toFixed(2) + '%';
+    if (marker) {
+      marker.style.top = ((1 - core.scalePosition(camera, min, max)) * 100).toFixed(2) + '%';
+    }
 
+    renderLevels(min, max);
     const gates = window.pwaZoomGates ? window.pwaZoomGates.list() : [];
     renderTicks(core.ticks(gates, camera, min, max));
 
@@ -270,6 +304,22 @@
   }
 
   /**
+   * Zoom straight to a level — a feature's threshold, from its row.
+   *
+   * Animated (MapLibre's zoomTo eases), so the marker visibly travels to
+   * the row that was tapped; the row turns bold as the camera arrives.
+   *
+   * @param {number} zoom The level to go to.
+   * @returns {void}
+   */
+  function goTo(zoom) {
+    const target = Math.min(map.getMaxZoom(), Math.max(map.getMinZoom(), zoom));
+    pendingTarget = target;
+    map.zoomTo(target);
+    render();
+  }
+
+  /**
    * Open or close the flyout.
    *
    * @param {boolean} open
@@ -298,6 +348,15 @@
   });
 
   if (zoomOut) zoomOut.addEventListener('click', () => step(-1));
+  if (tickList) {
+    tickList.addEventListener('click', (e) => {
+      const target = /** @type {Element} */ (e.target);
+      const button = target.closest && target.closest('[data-zoom-tick-button]');
+      if (!(button instanceof HTMLElement)) return;
+      const zoom = Number(button.dataset.zoomTarget);
+      if (Number.isFinite(zoom)) goTo(zoom);
+    });
+  }
   if (zoomIn) zoomIn.addEventListener('click', () => step(1));
 
   // The pending target clears when its move ends at the target. Not on

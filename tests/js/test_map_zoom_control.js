@@ -30,25 +30,26 @@ document.body.innerHTML = `
     </button>
     <div id="map-zoom-flyout" role="dialog" aria-label="Zoom" hidden>
       <button type="button" data-zoom-step="out">-</button>
-      <div aria-hidden="true">
+      <div>
+        <ol data-zoom-levels></ol>
         <ol data-zoom-ticks></ol>
         <span data-zoom-marker></span>
       </div>
       <button type="button" data-zoom-step="in">+</button>
-      <ul data-zoom-gates hidden></ul>
     </div>
     <template id="map-zoom-tick-template">
-      <li class="map-zoom-tick" data-zoom-tick=""><span data-zoom-tick-zoom></span></li>
-    </template>
-    <template id="map-zoom-gate-template">
-      <li class="map-zoom-gate" data-zoom-gate="">
-        <span data-zoom-gate-label></span><span data-zoom-gate-zoom></span>
+      <li class="map-zoom-tick" data-zoom-tick="">
+        <button type="button" data-zoom-tick-button data-zoom-target="">
+          <span data-zoom-tick-label></span><span data-zoom-tick-threshold></span>
+        </button>
       </li>
     </template>
     <template id="map-zoom-strings-template">
       <span data-string="toggle-label">Zoom level %(zoom)s</span>
-      <span data-string="gate-zoom">z%(zoom)s</span>
-      <span data-string="gate-terrain_filter">Terrain filter</span>
+      <span data-string="threshold-from">≥%(zoom)s</span>
+      <span data-string="threshold-up-to">≤%(zoom)s</span>
+      <span data-string="gate-region_select">Region selector</span>
+      <span data-string="gate-terrain_filter">Terrain overlay</span>
       <span data-string="gate-route_slopes">Route slope colours</span>
     </template>
   </div>
@@ -57,8 +58,6 @@ document.body.innerHTML = `
 
 /** The camera zoom the stub reports; set per test. */
 let zoom = 10.4;
-/** The terrain filter's switch, as window.pwaZoomGates reports it. */
-let terrainOn = false;
 
 const handlers = {};
 const map = {
@@ -71,8 +70,9 @@ const map = {
 window.MAP = map;
 window.pwaZoomGates = {
   list: () => [
-    { key: 'terrain_filter', zoom: 12, active: terrainOn },
-    { key: 'route_slopes', zoom: 14, active: false },
+    { key: 'region_select', zoom: 10, upTo: true },
+    { key: 'terrain_filter', zoom: 12 },
+    { key: 'route_slopes', zoom: 14 },
   ],
 };
 
@@ -105,7 +105,6 @@ const faceText = () => toggle.querySelector('[data-zoom-face]').textContent;
 
 beforeEach(() => {
   zoom = 10.4;
-  terrainOn = false;
   // A gesture ends any step a previous test left pending.
   fireMoveEnd({ originalEvent: new Event('touchend') });
   map.zoomTo.mockClear();
@@ -240,48 +239,72 @@ describe('the flyout', () => {
     toggle.click();
     zoom = 11;
     fireZoom();
-    expect(flyout.querySelector('[data-zoom-marker]').style.left).toBe('50%');
+    // The scale runs bottom to top: z11 is halfway up z4..z18.
+    expect(flyout.querySelector('[data-zoom-marker]').style.top).toBe('50%');
   });
 });
 
 describe('the ticks', () => {
   const ticks = () => [...flyout.querySelectorAll('[data-zoom-ticks] > li')];
-  const gates = () => [...flyout.querySelectorAll('[data-zoom-gates] > li')];
+  const tick = (key) => ticks().find((li) => li.dataset.zoomTick === key);
 
-  it('draw nothing while no gated layer is on', () => {
+  it('name every gate at its level', () => {
     toggle.click();
-    expect(ticks()).toEqual([]);
-    expect(flyout.querySelector('[data-zoom-gates]').hidden).toBe(true);
+    expect(ticks().map((li) => li.dataset.zoomTick))
+      .toEqual(['region_select', 'terrain_filter', 'route_slopes']);
+    expect(tick('terrain_filter').querySelector('[data-zoom-tick-label]').textContent)
+      .toBe('Terrain overlay');
+    // z12 sits 8/14 of the way up z4..z18.
+    expect(tick('terrain_filter').style.top).toBe('42.86%');
   });
 
-  it('appear when the terrain filter is switched on, labelled with the layer', () => {
+  it('number every whole level on the line, z18 at the top', () => {
     toggle.click();
-    terrainOn = true;
-    document.dispatchEvent(new CustomEvent('snowdesk:terrain-filter-changed'));
-
-    expect(ticks().map((li) => li.dataset.zoomTick)).toEqual(['terrain_filter']);
-    expect(ticks()[0].textContent.trim()).toBe('12');
-    expect(gates()[0].querySelector('[data-zoom-gate-label]').textContent).toBe('Terrain filter');
-    expect(gates()[0].querySelector('[data-zoom-gate-zoom]').textContent).toBe('z12');
-    expect(flyout.querySelector('[data-zoom-gates]').hidden).toBe(false);
+    const levels = [...flyout.querySelectorAll('[data-zoom-levels] > li')];
+    expect(levels.map((li) => li.textContent)).toEqual(
+      ['4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18'],
+    );
+    expect(levels.at(-1).style.top).toBe('0%');
   });
 
-  it('mark a gate reached once the camera passes it', () => {
-    terrainOn = true;
+  it('mark a gate reached once the camera passes it, switched on or not', () => {
     toggle.click();
-    expect(ticks()[0].hasAttribute('data-reached')).toBe(false);
+    expect(tick('terrain_filter').hasAttribute('data-reached')).toBe(false);
     zoom = 12.2;
     fireZoom();
-    expect(ticks()[0].hasAttribute('data-reached')).toBe(true);
-    expect(gates()[0].hasAttribute('data-reached')).toBe(true);
+    expect(tick('terrain_filter').hasAttribute('data-reached')).toBe(true);
   });
 
-  it('go when the layer is switched off again', () => {
-    terrainOn = true;
+  it('give each threshold its direction: ≤10 for regions, ≥ for the rest', () => {
     toggle.click();
-    expect(ticks()).toHaveLength(1);
-    terrainOn = false;
-    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
-    expect(ticks()).toEqual([]);
+    const thresholds = ticks().map((li) => li.querySelector('[data-zoom-tick-threshold]').textContent);
+    expect(thresholds).toEqual(['≤10', '≥12', '≥14']);
+  });
+
+  it('mark the region selector available only at z10 or below', () => {
+    toggle.click();
+    expect(tick('region_select').hasAttribute('data-reached')).toBe(true);
+    zoom = 11.2;
+    fireZoom();
+    expect(tick('region_select').hasAttribute('data-reached')).toBe(false);
+  });
+
+  it('zoom the map to a feature\'s threshold when its row is tapped, and stay open', () => {
+    toggle.click();
+    tick('route_slopes').querySelector('button').click();
+    expect(targets()).toEqual([14]);
+    tick('region_select').querySelector('button').click();
+    expect(targets()).toEqual([14, 10]);
+    expect(flyout.hidden).toBe(false);
+  });
+
+  it('restyle a row in place as the zoom crosses its threshold, keeping focus', () => {
+    toggle.click();
+    const button = tick('terrain_filter').querySelector('button');
+    button.focus();
+    zoom = 12.1;
+    fireZoom();
+    expect(tick('terrain_filter').hasAttribute('data-reached')).toBe(true);
+    expect(document.activeElement).toBe(button);
   });
 });

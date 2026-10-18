@@ -2211,6 +2211,27 @@
   // 2026-09-30). The leg lines stop here and the class lines start.
   const ROUTE_SLOPE_MINZOOM = 14;
 
+  // The deepest zoom at which a tap selects a region. The inverse of the
+  // route slope classes (z14) and the terrain filter (z12), which only
+  // start as you zoom in: a region is a whole valley's worth of ground, so
+  // past z10 it no longer fits the screen and a tap that selected it would
+  // name a selection the reader cannot see — typically a tap just off a
+  // route they meant to open. Above it the fill still draws, and a tap on
+  // it reads as a tap on empty map.
+  const REGION_SELECT_MAXZOOM = 10;
+
+  /**
+   * Whether a tap on the region fill selects the region at this zoom.
+   *
+   * Judged on the WHOLE zoom, the number the zoom roundel's face shows, so
+   * the control and the tap agree: a camera at 10.6 reads "10" and still
+   * selects.
+   *
+   * @param {number} zoom The map's camera zoom.
+   * @returns {boolean} True at REGION_SELECT_MAXZOOM or below.
+   */
+  const regionsSelectableAt = (zoom) => Math.floor(zoom) <= REGION_SELECT_MAXZOOM;
+
   /**
    * The opacity of a leg's core line: `base` below ROUTE_SLOPE_MINZOOM,
    * and from there 0 for a leg of a sampled route, whose slope segments
@@ -6786,56 +6807,43 @@
 
   // ==== SNOW-1077: the zoom-gated layers, for the zoom control ====
   //
-  // Some layers are drawn only past a zoom, and the zoom control's flyout
-  // (static/js/map_zoom_control.js) puts a tick on its scale for each one
-  // that is on. One entry per gated layer, so a third one is a line here
-  // and a label in the control's strings template, and nothing else.
+  // Some features work only at certain zooms, and the zoom control's
+  // flyout (static/js/map_zoom_control.js) names each one at its level on
+  // the scale, in bold once the camera is where it works. One entry per
+  // gated feature, so a fourth is a line here and a label in the
+  // control's strings template, and nothing else.
   //
-  // `active` answers "is this layer on the map now", not "is it drawn at
-  // this zoom" — the tick is there to say where it starts.
+  // Every gate is named whether or not the feature is switched on: the
+  // scale says where each one becomes available, which is what a reader
+  // who switched one on and saw nothing needs to know (Hugo, 18 Oct).
   //
-  //   terrain_filter — the filter's tiles exist from TERRAIN_CORE.MIN_ZOOM
-  //     (z12); on while the reader has switched it on in the match mode.
-  //   slope_classes — the same tiles, so the same zoom, in the filter's
-  //     slope mode (SNOW-1073): the slope layer, labelled as such. The two
-  //     entries are never on together, so there is one tick at z12.
+  //   region_select — a tap selects a region at REGION_SELECT_MAXZOOM
+  //     (z10) and below; the one gate that holds UP TO its zoom (`upTo`)
+  //     rather than from it.
+  //   terrain_filter — the terrain overlay's class tiles exist from
+  //     TERRAIN_CORE.MIN_ZOOM (z12), in either of its modes (the filter
+  //     and SNOW-1073's slope colouring share the tiles and the switch).
   //   route_slopes — a route's core switches from leg colours to slope
-  //     classes at ROUTE_SLOPE_MINZOOM (z14); on while the routes overlay
-  //     is painted and its slope source holds at least one segment. A
-  //     route with no sampled slope keeps its leg colours at every zoom,
-  //     so it does not count.
+  //     classes at ROUTE_SLOPE_MINZOOM (z14).
   const ZOOM_GATES = Object.freeze([
-    Object.freeze({
-      key: 'terrain_filter',
-      zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
-      active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter
-        && TERRAIN_CORE.normaliseFilter(terrainFilter).mode !== 'slope',
-    }),
-    Object.freeze({
-      key: 'slope_classes',
-      zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12,
-      active: () => TERRAIN_FILTER_ELIGIBLE && !!overlayState.terrain_filter
-        && TERRAIN_CORE.normaliseFilter(terrainFilter).mode === 'slope',
-    }),
-    Object.freeze({
-      key: 'route_slopes',
-      zoom: ROUTE_SLOPE_MINZOOM,
-      active: () => panelOverlayPainted('routes') && routeSlopeSegmentCount > 0,
-    }),
+    Object.freeze({ key: 'region_select', zoom: REGION_SELECT_MAXZOOM, upTo: true }),
+    Object.freeze({ key: 'terrain_filter', zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12 }),
+    Object.freeze({ key: 'route_slopes', zoom: ROUTE_SLOPE_MINZOOM }),
   ]);
 
   window.pwaZoomGates = Object.freeze({
     /**
-     * Every zoom-gated layer, read now.
+     * Every zoom-gated feature the zoom control names.
      *
-     * @returns {Array<{key: string, zoom: number, active: boolean}>}
+     * @returns {Array<{key: string, zoom: number, upTo: boolean}>}
      */
     list: () => ZOOM_GATES.map((gate) => ({
       key: gate.key,
       zoom: gate.zoom,
-      active: !!gate.active(),
+      upTo: !!gate.upTo,
     })),
   });
+
 
   // ==== SNOW-803: ``?panel=<name>`` opens a sheet with nothing selected ====
   //
@@ -9036,6 +9044,10 @@
     // Double-click zooms to the region — a single click only selects it —
     // and prevents the default map double-click zoom so we control the target.
     map.on('dblclick', 'regions-fill', (e) => {
+      // Past REGION_SELECT_MAXZOOM a region is not a tap target, so a
+      // double-click is the map's own zoom-in rather than a zoom back OUT
+      // to the region's bounds.
+      if (!regionsSelectableAt(map.getZoom())) return;
       e.preventDefault();
       if (!e.features.length) return;
       const feature = FEATURE_BY_ID[e.features[0].id];
@@ -9145,6 +9157,14 @@
       }
 
       const region = features.find((f) => f.layer.id === 'regions-fill');
+      // Past REGION_SELECT_MAXZOOM a region is too big to see, so a tap on
+      // one selects nothing and deselects nothing — the region in hand
+      // stays in hand (Hugo, 18 Oct). It only closes the place sheet or
+      // popup, as any tap on the map does.
+      if (region && !regionsSelectableAt(map.getZoom())) {
+        closeMapDetailSurfaces();
+        return;
+      }
       if (region) {
         // Tapping the region that is already selected deselects it — the same
         // end state as an empty-canvas tap, without hunting for a gap in the
@@ -9160,7 +9180,12 @@
       }
     });
 
-    map.on('mouseenter', 'regions-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+    // No pointer past REGION_SELECT_MAXZOOM, where a region is not a tap
+    // target. Left alone rather than cleared there, so it never wipes the
+    // pointer a route, pin or weather symbol on top of the fill has set.
+    map.on('mouseenter', 'regions-fill', () => {
+      if (regionsSelectableAt(map.getZoom())) map.getCanvas().style.cursor = 'pointer';
+    });
     map.on('mouseleave', 'regions-fill', () => { map.getCanvas().style.cursor = ''; });
 
     map.on('mouseenter', 'resorts-pin', () => { map.getCanvas().style.cursor = 'pointer'; });

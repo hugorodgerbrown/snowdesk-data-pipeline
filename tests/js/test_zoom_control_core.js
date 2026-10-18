@@ -69,8 +69,16 @@ describe('ticks', () => {
     { key: 'terrain_filter', zoom: 12, active: false },
   ];
 
-  it('keeps only the gates that are on', () => {
-    expect(core.ticks(GATES, 13, MIN, MAX).map((t) => t.key)).toEqual(['route_slopes']);
+  it('keeps every gate, switched on or not', () => {
+    expect(core.ticks(GATES, 13, MIN, MAX).map((t) => t.key))
+      .toEqual(['terrain_filter', 'route_slopes']);
+  });
+
+  it('holds an up-to gate through its whole zoom, and not past it', () => {
+    const gate = [{ key: 'region_select', zoom: 10, active: true, upTo: true }];
+    expect(core.ticks(gate, 8, MIN, MAX)[0]).toMatchObject({ upTo: true, reached: true });
+    expect(core.ticks(gate, 10.9, MIN, MAX)[0].reached).toBe(true);
+    expect(core.ticks(gate, 11, MIN, MAX)[0].reached).toBe(false);
   });
 
   it('sorts by zoom and places each on the scale', () => {
@@ -86,6 +94,14 @@ describe('ticks', () => {
     const out = core.ticks(both, 13, MIN, MAX);
     expect(out.map((t) => t.reached)).toEqual([true, false]);
     expect(core.ticks(both, 14, MIN, MAX).every((t) => t.reached)).toBe(true);
+  });
+
+  it('numbers every whole level in the range, lowest first', () => {
+    const out = core.levels(MIN, MAX);
+    expect(out.map((l) => l.zoom)).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+    expect(out[0].position).toBe(0);
+    expect(out.at(-1).position).toBe(1);
+    expect(core.levels(NaN, MAX)).toEqual([]);
   });
 
   it('drops a gate outside the range, and survives a missing list', () => {

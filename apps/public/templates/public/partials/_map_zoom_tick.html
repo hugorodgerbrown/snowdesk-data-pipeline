@@ -1,23 +1,37 @@
 {% load l10n %}
 {% comment %}
-public/partials/_map_zoom_tick.html — one tick on the zoom control's scale
-(SNOW-1077): a mark at a zoom-gated layer's zoom, numbered.
+public/partials/_map_zoom_tick.html — one zoom-gated feature on the zoom
+control's scale (SNOW-1077): its name and threshold, at the level it
+becomes available.
 
 Rendered once per tick by the component library's variants, and once
 empty inside #map-zoom-tick-template, which static/js/map_zoom_control.js
-clones for each gate that is on. ``data-reached`` is present when the
-camera is at or past the gate, so the layer is being drawn.
+clones for each gate. ``data-reached`` is present when the camera is at a
+zoom where the feature is available, which the scale shows in bold — not
+whether the reader has switched it on. The row is a button: a tap zooms
+the map to the feature's threshold, and the threshold reads ≥14, or ≤10
+for the region selector, which holds up to its level rather than from it.
 
 Context:
-* tick — {key, zoom, pct, reached}; absent for the template copy.
+* tick — {key, label, threshold, zoom, pct, reached}; absent
+  for the template copy.
 {% endcomment %}
 {% localize off %}
     <li
         class="map-zoom-tick"
         data-zoom-tick="{{ tick.key|default:'' }}"
         {% if tick.reached %}data-reached{% endif %}
-        style="left: {{ tick.pct|default:0 }}%"
+        style="top: {{ tick.pct|default:0 }}%"
     >
-        <span class="map-zoom-tick-zoom" data-zoom-tick-zoom>{{ tick.zoom|default:'' }}</span>
+        {# A tap zooms the map to the level the feature starts at. #}
+        <button
+            type="button"
+            class="map-zoom-tick-button hover-affordance"
+            data-zoom-tick-button
+            data-zoom-target="{{ tick.zoom|default:'' }}"
+        >
+            <span class="map-zoom-tick-label" data-zoom-tick-label>{{ tick.label|default:'' }}</span>
+            <span class="map-zoom-tick-threshold" data-zoom-tick-threshold>{{ tick.threshold|default:'' }}</span>
+        </button>
     </li>
 {% endlocalize %}

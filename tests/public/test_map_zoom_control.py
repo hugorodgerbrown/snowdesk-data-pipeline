@@ -50,30 +50,38 @@ def test_empty_render_is_a_closed_roundel_named_zoom_level() -> None:
     assert 'aria-expanded="false"' in html
     flyout = html[html.index('id="map-zoom-flyout"') :]
     assert "hidden" in flyout[: flyout.index(">")]
-    # Nothing to name until a gate is on, and no DEBUG line without DEBUG.
-    assert "data-zoom-gates hidden" in html
+    # The script draws the ticks, and no DEBUG line without DEBUG.
+    ticks = html[html.index("data-zoom-ticks") :]
+    assert "<li" not in ticks[: ticks.index("</ol>")]
     assert "data-zoom-camera" not in html
 
 
 def test_strings_template_carries_one_label_per_gate() -> None:
     """Each key window.pwaZoomGates publishes has a translatable label."""
     html = render_to_string(PARTIAL, {})
-    for key in ("terrain_filter", "route_slopes"):
+    for key in ("region_select", "terrain_filter", "route_slopes"):
         assert f'data-string="gate-{key}"' in html
     assert 'data-string="toggle-label"' in html
 
 
 def test_a_filled_variant_names_the_zoom_and_draws_its_ticks() -> None:
-    """The library's z13 variant: two ticks, the first reached."""
-    context = _variant("Terrain filter and a route on")["context"]
+    """The library's z12 variant: every feature named, and every level numbered."""
+    context = _variant("At z12")["context"]
     html = render_to_string(PARTIAL, context)
-    assert 'aria-label="Zoom level 13"' in html
+    assert 'aria-label="Zoom level 12"' in html
     assert 'aria-expanded="true"' in html
-    assert 'data-zoom-tick="terrain_filter"' in html
-    assert 'data-zoom-tick="route_slopes"' in html
-    assert "Terrain filter" in html
-    assert "Route slope colours" in html
-    assert "z14" in html
+    assert "Some features are only available at certain zoom levels." in html
+    for name in ("Region selector", "Terrain overlay", "Route slope angle"):
+        assert name in html
+    assert html.count('class="map-zoom-level"') == 15
+    terrain = html[html.index('data-zoom-tick="terrain_filter"') :]
+    assert "data-reached" in terrain[: terrain.index(">")]
+    region = html[html.index('data-zoom-tick="region_select"') :]
+    assert "data-reached" not in region[: region.index(">")]
+    # Each row is a button aimed at its threshold, which reads its direction.
+    assert 'data-zoom-target="10"' in region
+    assert "≤10" in region
+    assert "≥14" in html
 
 
 def test_bound_variants_disable_the_matching_button() -> None:
@@ -86,13 +94,20 @@ def test_bound_variants_disable_the_matching_button() -> None:
     assert "disabled" in minus[: minus.index(">")]
 
 
+def test_the_maximum_zoom_puts_the_marker_at_the_top() -> None:
+    """At z18 the marker sits at ``top: 0.0%``, not the empty-render fallback."""
+    html = render_to_string(PARTIAL, _variant("At the maximum")["context"])
+    marker = html[html.index("data-zoom-marker") :]
+    assert "top: 0.0%" in marker[: marker.index(">")]
+
+
 def test_positions_are_not_localised() -> None:
-    """A comma-decimal locale must not write ``left: 57,14%``."""
-    context = _variant("Terrain filter and a route on")["context"]
+    """A comma-decimal locale must not write ``top: 42,86%``."""
+    context = _variant("At z12")["context"]
     with translation.override("de"):
         html = render_to_string(PARTIAL, context)
-    assert "left: 57.14%" in html
-    assert "57,14" not in html
+    assert "top: 42.86%" in html
+    assert "42,86" not in html
 
 
 def test_the_library_panel_renders(staff_client: Client) -> None:
