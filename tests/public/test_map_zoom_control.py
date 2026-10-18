@@ -50,21 +50,22 @@ def test_empty_render_is_a_closed_roundel_named_zoom_level() -> None:
     assert 'aria-expanded="false"' in html
     flyout = html[html.index('id="map-zoom-flyout"') :]
     assert "hidden" in flyout[: flyout.index(">")]
-    # Nothing to name until a gate is on, and no DEBUG line without DEBUG.
-    assert "data-zoom-gates hidden" in html
+    # The script draws the ticks, and no DEBUG line without DEBUG.
+    ticks = html[html.index("data-zoom-ticks") :]
+    assert "<li" not in ticks[: ticks.index("</ol>")]
     assert "data-zoom-camera" not in html
 
 
 def test_strings_template_carries_one_label_per_gate() -> None:
     """Each key window.pwaZoomGates publishes has a translatable label."""
     html = render_to_string(PARTIAL, {})
-    for key in ("terrain_filter", "route_slopes"):
+    for key in ("region_select", "terrain_filter", "slope_classes", "route_slopes"):
         assert f'data-string="gate-{key}"' in html
     assert 'data-string="toggle-label"' in html
 
 
 def test_a_filled_variant_names_the_zoom_and_draws_its_ticks() -> None:
-    """The library's z13 variant: two ticks, the first reached."""
+    """The library's z13 variant: three ticks, the filter reached, regions not."""
     context = _variant("Terrain filter and a route on")["context"]
     html = render_to_string(PARTIAL, context)
     assert 'aria-label="Zoom level 13"' in html
@@ -73,7 +74,11 @@ def test_a_filled_variant_names_the_zoom_and_draws_its_ticks() -> None:
     assert 'data-zoom-tick="route_slopes"' in html
     assert "Terrain filter" in html
     assert "Route slope colours" in html
-    assert "z14" in html
+    assert "Tap selects a region" in html
+    region = html[html.index('data-zoom-tick="region_select"') :]
+    region = region[: region.index(">")]
+    assert "data-up-to" in region
+    assert "data-reached" not in region
 
 
 def test_bound_variants_disable_the_matching_button() -> None:
@@ -87,12 +92,13 @@ def test_bound_variants_disable_the_matching_button() -> None:
 
 
 def test_positions_are_not_localised() -> None:
-    """A comma-decimal locale must not write ``left: 57,14%``."""
+    """A comma-decimal locale must not write ``top: 42,86%``."""
     context = _variant("Terrain filter and a route on")["context"]
     with translation.override("de"):
         html = render_to_string(PARTIAL, context)
-    assert "left: 57.14%" in html
-    assert "57,14" not in html
+    assert "top: 42.86%" in html
+    assert "42,86" not in html
+    assert "--zoom-below: 0.4286" in html
 
 
 def test_the_library_panel_renders(staff_client: Client) -> None:

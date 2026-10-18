@@ -30,24 +30,21 @@ document.body.innerHTML = `
     </button>
     <div id="map-zoom-flyout" role="dialog" aria-label="Zoom" hidden>
       <button type="button" data-zoom-step="out">-</button>
-      <div aria-hidden="true">
+      <div>
         <ol data-zoom-ticks></ol>
         <span data-zoom-marker></span>
       </div>
       <button type="button" data-zoom-step="in">+</button>
-      <ul data-zoom-gates hidden></ul>
     </div>
     <template id="map-zoom-tick-template">
-      <li class="map-zoom-tick" data-zoom-tick=""><span data-zoom-tick-zoom></span></li>
-    </template>
-    <template id="map-zoom-gate-template">
-      <li class="map-zoom-gate" data-zoom-gate="">
-        <span data-zoom-gate-label></span><span data-zoom-gate-zoom></span>
+      <li class="map-zoom-tick" data-zoom-tick="">
+        <span data-zoom-tick-zoom></span><span data-zoom-tick-label></span><span data-zoom-tick-off></span>
       </li>
     </template>
     <template id="map-zoom-strings-template">
       <span data-string="toggle-label">Zoom level %(zoom)s</span>
-      <span data-string="gate-zoom">z%(zoom)s</span>
+      <span data-string="gate-off">off</span>
+      <span data-string="gate-region_select">Tap selects a region</span>
       <span data-string="gate-terrain_filter">Terrain filter</span>
       <span data-string="gate-route_slopes">Route slope colours</span>
     </template>
@@ -71,6 +68,7 @@ const map = {
 window.MAP = map;
 window.pwaZoomGates = {
   list: () => [
+    { key: 'region_select', zoom: 10, active: true, upTo: true },
     { key: 'terrain_filter', zoom: 12, active: terrainOn },
     { key: 'route_slopes', zoom: 14, active: false },
   ],
@@ -240,48 +238,55 @@ describe('the flyout', () => {
     toggle.click();
     zoom = 11;
     fireZoom();
-    expect(flyout.querySelector('[data-zoom-marker]').style.left).toBe('50%');
+    // The scale runs bottom to top: z11 is halfway up z4..z18.
+    expect(flyout.querySelector('[data-zoom-marker]').style.top).toBe('50%');
   });
 });
 
 describe('the ticks', () => {
   const ticks = () => [...flyout.querySelectorAll('[data-zoom-ticks] > li')];
-  const gates = () => [...flyout.querySelectorAll('[data-zoom-gates] > li')];
+  const tick = (key) => ticks().find((li) => li.dataset.zoomTick === key);
 
-  it('draw nothing while no gated layer is on', () => {
+  it('name every gate at its level, the switched-off ones marked off', () => {
     toggle.click();
-    expect(ticks()).toEqual([]);
-    expect(flyout.querySelector('[data-zoom-gates]').hidden).toBe(true);
+    expect(ticks().map((li) => li.dataset.zoomTick))
+      .toEqual(['region_select', 'terrain_filter', 'route_slopes']);
+    expect(tick('terrain_filter').querySelector('[data-zoom-tick-zoom]').textContent).toBe('12');
+    expect(tick('terrain_filter').querySelector('[data-zoom-tick-label]').textContent)
+      .toBe('Terrain filter');
+    expect(tick('terrain_filter').hasAttribute('data-off')).toBe(true);
+    expect(tick('terrain_filter').querySelector('[data-zoom-tick-off]').textContent).toBe('off');
+    // z12 sits 8/14 of the way up z4..z18.
+    expect(tick('terrain_filter').style.top).toBe('42.86%');
   });
 
-  it('appear when the terrain filter is switched on, labelled with the layer', () => {
+  it('lose "off" when the terrain filter is switched on, and gain it back', () => {
     toggle.click();
     terrainOn = true;
     document.dispatchEvent(new CustomEvent('snowdesk:terrain-filter-changed'));
-
-    expect(ticks().map((li) => li.dataset.zoomTick)).toEqual(['terrain_filter']);
-    expect(ticks()[0].textContent.trim()).toBe('12');
-    expect(gates()[0].querySelector('[data-zoom-gate-label]').textContent).toBe('Terrain filter');
-    expect(gates()[0].querySelector('[data-zoom-gate-zoom]').textContent).toBe('z12');
-    expect(flyout.querySelector('[data-zoom-gates]').hidden).toBe(false);
+    expect(tick('terrain_filter').hasAttribute('data-off')).toBe(false);
+    expect(tick('terrain_filter').querySelector('[data-zoom-tick-off]').textContent).toBe('');
+    terrainOn = false;
+    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+    expect(tick('terrain_filter').hasAttribute('data-off')).toBe(true);
   });
 
   it('mark a gate reached once the camera passes it', () => {
     terrainOn = true;
     toggle.click();
-    expect(ticks()[0].hasAttribute('data-reached')).toBe(false);
+    expect(tick('terrain_filter').hasAttribute('data-reached')).toBe(false);
     zoom = 12.2;
     fireZoom();
-    expect(ticks()[0].hasAttribute('data-reached')).toBe(true);
-    expect(gates()[0].hasAttribute('data-reached')).toBe(true);
+    expect(tick('terrain_filter').hasAttribute('data-reached')).toBe(true);
   });
 
-  it('go when the layer is switched off again', () => {
-    terrainOn = true;
+  it('draw the region band up to z10, reached only at z10 or below', () => {
     toggle.click();
-    expect(ticks()).toHaveLength(1);
-    terrainOn = false;
-    document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
-    expect(ticks()).toEqual([]);
+    expect(tick('region_select').hasAttribute('data-up-to')).toBe(true);
+    expect(tick('region_select').hasAttribute('data-reached')).toBe(true);
+    expect(tick('region_select').style.getPropertyValue('--zoom-below')).toBe('0.4286');
+    zoom = 11.2;
+    fireZoom();
+    expect(tick('region_select').hasAttribute('data-reached')).toBe(false);
   });
 });

@@ -300,19 +300,20 @@ describe('window.pwaZoomGates (SNOW-1077)', () => {
     expect(gate('route_slopes').active).toBe(false);
   });
 
-  it('labels the z12 gate as slope classes in the slope mode (SNOW-1073)', () => {
-    // The two gates share a zoom and are never on together, so the scale
-    // carries one tick at z12 named for what is actually drawn.
-    expect(gate('slope_classes').zoom).toBe(12);
+  it('names the z12 gate for the mode the filter is in (SNOW-1073)', () => {
+    // The two gates share a zoom and a switch, so the scale lists exactly
+    // one of them at z12, named for what the filter draws — and keeps it
+    // listed, marked off, while the filter is off.
+    const atTwelve = () => window.pwaZoomGates.list()
+      .filter((g) => g.zoom === 12).map((g) => [g.key, g.active]);
+    expect(atTwelve()).toEqual([['terrain_filter', false]]);
     window.pwaTerrainFilter.setFilter({ mode: 'slope' });
     window.pwaTerrainFilter.show();
-    expect(gate('slope_classes').active).toBe(true);
-    expect(gate('terrain_filter').active).toBe(false);
+    expect(atTwelve()).toEqual([['slope_classes', true]]);
     window.pwaTerrainFilter.setFilter({ mode: 'match' });
-    expect(gate('slope_classes').active).toBe(false);
-    expect(gate('terrain_filter').active).toBe(true);
+    expect(atTwelve()).toEqual([['terrain_filter', true]]);
     window.pwaTerrainFilter.hide();
-    expect(gate('slope_classes').active).toBe(false);
+    expect(atTwelve()).toEqual([['terrain_filter', false]]);
   });
 });
 
