@@ -36,11 +36,12 @@ assertion reads the PNG IHDR byte directly, which needs no decoder at all.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import pytest
 from django.conf import settings
-from PIL import Image
+from PIL import Image, ImageChops
 
 from apps.public.season_calendar import _season_label
 
@@ -102,8 +103,8 @@ def test_maskable_icon_has_no_border_at_cardinal_edges(icon_set: str) -> None:
     """The maskable icon's edge midpoints are the tile colour (SNOW-151).
 
     Android's adaptive-icon mask crops to a circle that touches each edge
-    at its midpoint. The maskable variant pads the artwork into an 80%
-    safe zone, so those four points fall on the canvas, not the artwork —
+    at its midpoint. The maskable variant shrinks the artwork well inside
+    that circle, so those four points fall on the canvas, not the artwork —
     and any canvas colour other than the tile's own reads as a border
     ring against the launcher background.
     """
@@ -117,6 +118,36 @@ def test_maskable_icon_has_no_border_at_cardinal_edges(icon_set: str) -> None:
             "Android's circular mask reaches this pixel, so a mismatch shows "
             "as a border ring. Rebuild with `npm run build:icons`."
         )
+
+
+@pytest.mark.parametrize("icon_set", ICON_SETS)
+def test_maskable_marks_sit_inside_the_circle_android_shows(icon_set: str) -> None:
+    """Every light mark on the maskable icon is inside Android's visible circle.
+
+    Android 12+ shows a maskable icon on its launch splash, and on a round
+    launcher, as a circle two thirds of the canvas wide, and the launch
+    shell continues that splash with the same crop. Built to the looser
+    W3C 80% safe zone, the season label's corners and the staging
+    asterisk were sliced off (SNOW-1112 follow-up).
+    """
+    path = _icon_path(icon_set, "icon-maskable-512.png")
+    with Image.open(path) as img:
+        rgb = img.convert("RGB")
+    size = rgb.width
+    visible = size / 3
+    # Each pixel's darkest channel: above 200 only on the cream marks.
+    red, green, blue = rgb.split()
+    darkest = ImageChops.darker(ImageChops.darker(red, green), blue).tobytes()
+    furthest = max(
+        math.hypot(i % size + 0.5 - size / 2, i // size + 0.5 - size / 2)
+        for i, value in enumerate(darkest)
+        if value > 200
+    )
+    assert furthest < visible * 0.95, (
+        f"{icon_set}/icon-maskable-512.png has a mark {furthest:.0f}px from "
+        f"the centre; Android shows only {visible:.0f}px. "
+        "Rebuild with `npm run build:icons`."
+    )
 
 
 @pytest.mark.parametrize("icon_set", ICON_SETS)
