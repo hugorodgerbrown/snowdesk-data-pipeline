@@ -17,8 +17,9 @@ the bytes off disk and assert the properties that have actually broken:
    staging maskable, whose canvas was a shade darker than its rect fill,
    and the production apple-touch icon, flattened onto the cream manifest
    ``background_color``, were later fixed the same way.
-2. **Every mark fits the circle Android shows.** Android 12+ shows only the
-   middle two thirds of a maskable icon (SNOW-1112 follow-up).
+2. **Every mark fits the circle Android shows.** The home-screen launcher
+   shows only the middle two thirds of a maskable icon (SNOW-1112
+   follow-up).
 3. **The notification badge is a silhouette.** Android keeps only the
    alpha channel of a notification's ``badge`` and tints what survives, so
    an edge-to-edge opaque PNG becomes a solid white block in the status
@@ -117,11 +118,11 @@ def test_maskable_icon_has_no_border_at_cardinal_edges(icon_set: str) -> None:
 def test_maskable_marks_sit_inside_the_circle_android_shows(icon_set: str) -> None:
     """Every light mark on the maskable icon is inside Android's visible circle.
 
-    Android 12+ shows a maskable icon on its launch splash, and on a round
-    launcher, as a circle two thirds of the canvas wide, and the launch
-    shell continues that splash with the same crop. Built to the looser
-    W3C 80% safe zone, the old season label's corners and the staging
-    asterisk were sliced off (SNOW-1112 follow-up).
+    Android's home-screen launcher draws a maskable icon as an adaptive
+    icon, showing a circle two thirds of the canvas wide; it is the
+    tightest crop the icon gets (the launch splash shows all of it).
+    Built to the looser W3C 80% safe zone, the old season label's corners
+    and the staging asterisk were sliced off (SNOW-1112 follow-up).
     """
     path = _icon_path(icon_set, "icon-maskable-512.png")
     with Image.open(path) as img:

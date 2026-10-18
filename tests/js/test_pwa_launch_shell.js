@@ -23,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const SHELL_ID = 'pwa-launch-shell';
 const LAUNCHING_CLASS = 'pwa-launching';
 const DONE_CLASS = 'pwa-launch-shell--done';
+const REVEALING_CLASS = 'pwa-launch-shell--revealing';
 
 /**
  * Render the overlay as includes/_pwa_launch_shell.html does, optionally
@@ -33,7 +34,7 @@ function buildFixture({ launching = true, withMap = false } = {}) {
   document.body.innerHTML = `
     <div id="${SHELL_ID}" class="pwa-launch-shell" role="status" aria-live="polite">
       <img class="pwa-launch-shell__mark" src="/static/icons/pwa/icon-192.png" alt="">
-      <p class="pwa-launch-shell__label">Loading…</p>
+      <p class="sr-only">Loading…</p>
     </div>
     ${withMap ? '<div id="map"></div>' : ''}
   `;
@@ -95,6 +96,32 @@ describe('gating', () => {
   it('does nothing when there is no overlay on the page', async () => {
     document.body.innerHTML = '<div id="map"></div>';
     await expect(loadModule()).resolves.not.toThrow();
+  });
+});
+
+describe('the reveal', () => {
+  it('holds as a copy of the OS splash, then reveals the page', async () => {
+    // The first frames must match the splash exactly, so the handover is
+    // never the frame that changes; the reveal is a deliberate change
+    // after it.
+    buildFixture({ withMap: true });
+    await loadModule();
+
+    vi.advanceTimersByTime(149);
+    expect(shell().classList.contains(REVEALING_CLASS)).toBe(false);
+
+    vi.advanceTimersByTime(1);
+    expect(shell().classList.contains(REVEALING_CLASS)).toBe(true);
+    expect(shell().classList.contains(DONE_CLASS)).toBe(false);
+  });
+
+  it('does not reveal a splash that was already dismissed', async () => {
+    buildFixture({ withMap: true });
+    await loadModule();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:map-ready'));
+    vi.advanceTimersByTime(150);
+    expect(document.querySelector('.' + REVEALING_CLASS)).toBeNull();
   });
 });
 
