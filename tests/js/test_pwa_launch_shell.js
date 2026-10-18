@@ -40,6 +40,16 @@ function buildFixture({ launching = true, withMap = false } = {}) {
   `;
 }
 
+/**
+ * A transitionend event for one property. jsdom has no TransitionEvent,
+ * so propertyName is set on a plain Event.
+ */
+function transitionEnd(propertyName, init = {}) {
+  const event = new Event('transitionend', init);
+  Object.defineProperty(event, 'propertyName', { value: propertyName });
+  return event;
+}
+
 async function loadModule() {
   vi.resetModules();
   await import('../../static/js/pwa_launch_shell.js');
@@ -157,7 +167,25 @@ describe('dismissal on the map page', () => {
     await loadModule();
 
     document.dispatchEvent(new CustomEvent('snowdesk:map-ready'));
-    shell().dispatchEvent(new Event('transitionend'));
+    shell().dispatchEvent(transitionEnd('opacity'));
+    expect(shell()).toBeNull();
+  });
+
+  it('ignores a reveal transition ending during the fade', async () => {
+    // The map can report ready while the reveal is still animating; its
+    // background and transform transitions must not cut the fade short.
+    buildFixture({ withMap: true });
+    await loadModule();
+
+    vi.advanceTimersByTime(150);
+    document.dispatchEvent(new CustomEvent('snowdesk:map-ready'));
+    shell().dispatchEvent(transitionEnd('background-color'));
+    shell()
+      .querySelector('.pwa-launch-shell__mark')
+      .dispatchEvent(transitionEnd('transform', { bubbles: true }));
+    expect(shell()).not.toBeNull();
+
+    shell().dispatchEvent(transitionEnd('opacity'));
     expect(shell()).toBeNull();
   });
 

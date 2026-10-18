@@ -104,7 +104,15 @@
     dismissed = true;
     shell.classList.add(DONE_CLASS);
     const remove = () => shell.remove();
-    shell.addEventListener('transitionend', remove, { once: true });
+    // Only the shell's own opacity fade. The reveal's background and the
+    // mark's transform transitions can still be ending when the map
+    // reports ready, and either would otherwise cut the fade short.
+    const onEnd = (event) => {
+      if (event.target !== shell || event.propertyName !== 'opacity') return;
+      shell.removeEventListener('transitionend', onEnd);
+      remove();
+    };
+    shell.addEventListener('transitionend', onEnd);
     window.setTimeout(remove, FADE_MS);
   }
 
