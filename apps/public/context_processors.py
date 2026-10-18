@@ -18,12 +18,7 @@ from django.utils.functional import SimpleLazyObject
 from apps.core.sw_shell import served_cache_version
 from apps.public.banners import banners_for_request, dismiss_url_for, kind_for
 from apps.public.release import release_label
-from apps.public.site_environment import (
-    LAUNCH_BACKGROUND_DARK,
-    LAUNCH_MARK_ICON,
-    LAUNCH_TILE_ICON,
-    PWAEnvironmentIdentity,
-)
+from apps.public.site_environment import PWAEnvironmentIdentity
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -244,14 +239,6 @@ def site_environment(request: HttpRequest) -> dict[str, Any]:
     - ``PWA_THEME_COLOR`` — hex string used in the ``<meta name="theme-color">``
       tag. Matches ``theme_color`` in the manifest so the OS chrome tint
       and the browser chrome tint match.
-    - ``PWA_BACKGROUND_COLOR`` — the launch shell's first-paint background;
-      the manifest ``background_color`` (SNOW-1112).
-    - ``PWA_BACKGROUND_COLOR_DARK`` — the shell's background on a dark-scheme
-      iOS device, matching the dark startup images.
-    - ``PWA_LAUNCH_MARK_URL`` / ``PWA_LAUNCH_TILE_URL`` — the two images the
-      launch shell can draw: the maskable icon Android's splash shows, and
-      the rounded tile iOS's startup image shows. Both from the same icon
-      set as the manifest (SNOW-1112).
     - ``SITE_FAVICON`` — staticfiles path of the browser-tab favicon
       (``favicon.svg`` on production, the amber ``favicon-staging.svg``
       otherwise).
@@ -275,10 +262,6 @@ def site_environment(request: HttpRequest) -> dict[str, Any]:
         "SITE_NAME_DISPLAY": identity.name_display,
         "PWA_APPLE_TOUCH_ICON_URL": identity.icon_url("apple-touch-icon-180.png"),
         "PWA_THEME_COLOR": identity.theme_color,
-        "PWA_BACKGROUND_COLOR": identity.background_color,
-        "PWA_BACKGROUND_COLOR_DARK": LAUNCH_BACKGROUND_DARK,
-        "PWA_LAUNCH_MARK_URL": identity.icon_url(LAUNCH_MARK_ICON),
-        "PWA_LAUNCH_TILE_URL": identity.icon_url(LAUNCH_TILE_ICON),
         "SITE_FAVICON": identity.favicon,
         "PWA_TITLE_SUFFIX": identity.title_suffix,
     }
