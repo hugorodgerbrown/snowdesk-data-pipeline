@@ -64,7 +64,8 @@ map click dispatcher"). It stops at the first rule that claims the tap:
    the sheet, at any zoom, and changes nothing else
    (`window.pwaRegionSheet.reopen`). The sheet closes while the region stays
    selected (its ×, a route opening over it), and past z10 this is the only
-   way back to it.
+   way back to it. It works during timelapse playback too, because it
+   changes no selection.
 7. **On a region, at z10 or below**: selects it, or deselects it if it was
    already selected. On a phone the selection opens the region sheet.
    **Above z10**: closes the place sheet or popup and leaves the selection
