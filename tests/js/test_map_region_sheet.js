@@ -215,6 +215,32 @@ describe('opening', () => {
   });
 });
 
+describe('reopening (2026-10-19)', () => {
+  it('reopens for the region still selected once its sheet was closed', async () => {
+    const sheet = await boot();
+    select('CH-4115', 'tap');
+    await settle();
+    // The × closes it the way overlays.js's shared handler does: by
+    // hiding it. The region stays selected.
+    sheet.setAttribute('hidden', '');
+    expect(window.pwaRegionSheet.reopen()).toBe(true);
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+    expect(sheet.getAttribute('data-detent')).toBe('peek');
+    expect(sheet.textContent).toContain('Martigny-Verbier');
+  });
+
+  it('does nothing while the sheet is open, with no selection, or on a desktop', async () => {
+    const sheet = await boot();
+    expect(window.pwaRegionSheet.reopen()).toBe(false);
+    select('CH-4115', 'tap');
+    expect(window.pwaRegionSheet.reopen()).toBe(false);
+    sheet.setAttribute('hidden', '');
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    expect(window.pwaRegionSheet.reopen()).toBe(false);
+    expect(sheet.hasAttribute('hidden')).toBe(true);
+  });
+});
+
 describe('while open', () => {
   it('follows another selection, tap or not, at the detent it rests at', async () => {
     const sheet = await boot();

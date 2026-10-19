@@ -9172,6 +9172,15 @@
       }
 
       const region = features.find((f) => f.layer.id === 'regions-fill');
+      // A tap on the region already selected, with its phone sheet closed,
+      // reopens the sheet at ANY zoom (2026-10-19): the selection is not
+      // changed, which is the rule past REGION_SELECT_MAXZOOM, but a region
+      // the reader can see outlined is one they can get back to. With the
+      // sheet open the tap falls through as before.
+      if (region && region.id === selectedId && window.pwaRegionSheet?.reopen?.()) {
+        closeMapDetailSurfaces();
+        return;
+      }
       // Past REGION_SELECT_MAXZOOM a region is too big to see, so a tap on
       // one selects nothing and deselects nothing — the region in hand
       // stays in hand (Hugo, 18 Oct). It only closes the place sheet or

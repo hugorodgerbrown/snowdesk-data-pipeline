@@ -60,11 +60,16 @@ map click dispatcher"). It stops at the first rule that claims the tap:
 4. **A route is open**: the tap closes the route rail and does nothing
    else. It was aimed at leaving the route, not at a region.
 5. **On a resort pin**: the resort popup opens.
-6. **On a region, at z10 or below**: selects it, or deselects it if it was
+6. **On the region already selected, with its phone sheet closed**: reopens
+   the sheet, at any zoom, and changes nothing else
+   (`window.pwaRegionSheet.reopen`). The sheet closes while the region stays
+   selected (its ×, a route opening over it), and past z10 this is the only
+   way back to it.
+7. **On a region, at z10 or below**: selects it, or deselects it if it was
    already selected. On a phone the selection opens the region sheet.
    **Above z10**: closes the place sheet or popup and leaves the selection
    alone.
-7. **On empty map**: deselects the region and closes any popup.
+8. **On empty map**: deselects the region and closes any popup.
 
 A double-click on a region at z10 or below zooms to the region; above z10 it
 is the map's own zoom-in.
