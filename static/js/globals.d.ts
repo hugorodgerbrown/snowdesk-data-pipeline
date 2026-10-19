@@ -58,6 +58,7 @@ interface Window {
     register(name: string, handlers: { close(): void; isOpen?(): boolean }): void;
     opening(name: string): void;
     closeAll(): void;
+    openNames(): string[];
     names(): string[];
   };
   /** static/js/hatch_core.js — the downloaded-areas hatch image. */
