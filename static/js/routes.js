@@ -98,7 +98,8 @@
  *   - show()/hide() are the only writers of that overlay's visibility, so
  *     the switch and the map cannot drift.
  *
- * The roundel's `data-overlay-shown` ring follows from the same bridge,
+ * The roundel's `data-overlay-shown` state (attribute and aria-label; no
+ * visual ring since the two-capsule column) follows from the same bridge,
  * painted by static/js/map_roundel_overlay_state.js — nothing here writes
  * it.
  *

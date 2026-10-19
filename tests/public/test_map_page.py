@@ -276,6 +276,21 @@ def test_layers_menu_is_outside_both_groups() -> None:
     assert "map-controls-collapsible" not in ancestors, ancestors
 
 
+def test_no_css_rule_draws_the_overlay_shown_marker() -> None:
+    """
+    The on-map ring keyed on ``data-overlay-shown`` is gone, by design.
+
+    SNOW-658 drew a blue inset ring on every roundel whose overlay was on the
+    map. Readers took it for "this button is selected", and it repeated what
+    the map itself shows, so the two-capsule column dropped it. The attribute
+    stays (map_roundel_overlay_state.js composes it into the aria-label), so
+    the guard is on the stylesheet: no selector may key on it.
+    """
+    css = (settings.BASE_DIR / "static" / "css" / "map.css").read_text()
+    without_comments = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    assert "data-overlay-shown" not in without_comments
+
+
 @pytest.mark.django_db
 def test_help_tour_walks_the_control_stack_in_dom_order() -> None:
     """

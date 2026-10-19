@@ -583,7 +583,7 @@
    * statement about the map.
    *
    * The gate is on the READ rather than on the render, so ``isEnabled()`` is
-   * honest for the roundel rings too. Nothing here writes storage, so a real
+   * honest for the roundel overlay state too. Nothing here writes storage, so a real
    * preference survives signing out and back in.
    *
    * @returns {boolean} True when the overlay may start visible.
@@ -3258,7 +3258,8 @@
     raiseMarkerLayers();
     // Same one-install-function-announces rule installFavouritesLayer
     // carries: every path that gets these lines onto the map (or explicitly
-    // hides them) ends here, so the roundel ring is settled from one place.
+    // hides them) ends here, so the roundels' overlay state is settled from
+    // one place.
     announceOverlayVisibility();
   };
 
@@ -3690,7 +3691,8 @@
     });
     raiseMarkerLayers();
     // SNOW-658 review: as for the favourites install above — the flags are
-    // on the map only as of this line, and the roundel's ring reads paint.
+    // on the map only as of this line, and the roundel's overlay state reads
+    // paint.
     announceOverlayVisibility();
   };
 
@@ -5685,8 +5687,8 @@
       // SNOW-658 review: this is where a lazy overlay's paint actually
       // changes — the caller that dispatched this event announced a tick
       // ago, before the fetch above had installed anything, so without this
-      // the roundel ring would stay off for an overlay now on the map (or,
-      // on a re-enable of an already-loaded layer, off for a layer this
+      // the roundel's overlay state would stay off for an overlay now on the
+      // map (or, on a re-enable of an already-loaded layer, off for a layer this
       // handler's own loop has just made visible). A settled fetch that
       // installed nothing announces too: it says "still not drawn", which
       // is the state this whole distinction exists to keep honest.
@@ -6326,8 +6328,9 @@
   // The bridges are what the picker calls rather than the storage write and
   // the lazy-load dispatch directly, because being INSIDE this IIFE they also
   // recompute the favourited-resort exclusion and announce visibility to the
-  // roundel rings — effects the picker cannot reach across the boundary, and
-  // which a row that only wrote localStorage would silently drop.
+  // roundels' overlay state — effects the picker cannot reach across the
+  // boundary, and which a row that only wrote localStorage would silently
+  // drop.
   // (``snowdesk:favourites-visibility-changed`` stays: other callers still
   // fire it, and its listener is the same one-line call.)
   //
@@ -6748,14 +6751,15 @@
   //
   // The two can legitimately disagree, and the case they disagree in is the
   // one that matters: enable favourites offline with nothing cached and the
-  // switch reads ON (the preference took) while the roundel's ring stays off
-  // (nothing was drawn). That is not a glitch to paper over — it is the only
-  // way the user can see that their request has not reached the map. A ring
-  // claiming "shown" over a blank map would be the same defect class as a
-  // sync dot claiming a layer is cached when it isn't.
+  // switch reads ON (the preference took) while the roundel's overlay state
+  // stays off (nothing was drawn). That is not a glitch to paper over — it is
+  // the only way the user can see that their request has not reached the
+  // map. A roundel announcing "shown" over a blank map would be the same
+  // defect class as a sync dot claiming a layer is cached when it isn't.
   //
-  // So: status indicators (the roundel ring) read isVisible(); controls that
-  // state what the user asked for (the panel switches) read isEnabled().
+  // So: status indicators (the roundel's data-overlay-shown and composed
+  // label) read isVisible(); controls that state what the user asked for
+  // (the layers-menu rows and the panel switches) read isEnabled().
 
   window.pwaFavouritesOverlay = Object.freeze({
     show() {
@@ -6792,7 +6796,8 @@
   // key, since their only key-specific branch is the favourites
   // resort-exclusion recompute. Read by static/js/routes.js (the panel
   // switch, via isEnabled) and by static/js/map_roundel_overlay_state.js
-  // (the roundel ring, via isVisible) — see the block above for why those
+  // (the roundel's overlay state, via isVisible) — see the block above for
+  // why those
   // two are different questions.
   window.pwaRoutesOverlay = Object.freeze({
     show() {

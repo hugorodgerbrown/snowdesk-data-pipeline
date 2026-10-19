@@ -387,10 +387,10 @@ Optional context:
                 {# data-favourites-eligible, mirroring #report-btn's                   #}
                 {# data-report-eligible anon branch).                                  #}
                 {# SNOW-658: it opens a PANEL now — the user's saved pins, an "Add a   #}
-                {# favourite" CTA, and the "Show favourites on the map" switch that     #}
-                {# used to be a layers-menu row — rather than jumping straight into     #}
-                {# pin placement. The id is unchanged (favourites.js binds it by id,    #}
-                {# and map_help.js targets it), but the label is: it manages now.       #}
+                {# favourite" CTA, and a "Show on the map" switch bound to the layers   #}
+                {# menu's Favourites row — rather than jumping straight into pin        #}
+                {# placement. The id is unchanged (favourites.js binds it by id, and    #}
+                {# map_help.js targets it), but the label is: it manages now.           #}
                 <div class="map-utility-pill map-utility-pill--favourite">
                     <button
                         id="favourite-add-btn"
@@ -404,11 +404,12 @@ Optional context:
                         data-signin-url="{{ favourites_signin_url }}"
                         aria-label='{% trans "Your favourites" %}'
                         {# SNOW-658: "the favourites overlay is on the map right  #}
-                        {# now" — one attribute, one meaning, on all three        #}
+                        {# now" — one attribute, one meaning, on all four         #}
                         {# overlay roundels. Server-rendered false because that   #}
                         {# is the truth with JS off (nothing draws the overlay);  #}
                         {# map_roundel_overlay_state.js paints the real answer at #}
-                        {# boot and on every change.                              #}
+                        {# boot and on every change, into the aria-label. No CSS  #}
+                        {# draws it: the on-map ring was dropped by design.       #}
                         data-overlay-shown="false"
                     >
                         {# SNOW-658: the star's paths live in                    #}
@@ -467,9 +468,9 @@ Optional context:
                 {#                                                                       #}
                 {# SNOW-687: this roundel now carries `data-overlay-shown` like the       #}
                 {# other three — the routes overlay exists, and                          #}
-                {# map_roundel_overlay_state.js paints the ring here from                 #}
-                {# window.pwaRoutesOverlay.isVisible(). It said "no ring to paint yet"    #}
-                {# through SNOW-686, when there was no layer for a switch to drive.       #}
+                {# map_roundel_overlay_state.js paints it here from                       #}
+                {# window.pwaRoutesOverlay.isVisible(), into the aria-label (no visual    #}
+                {# marker: the on-map ring was dropped by design).                        #}
                 <div class="map-utility-pill map-utility-pill--route">
                     <button
                         id="route-add-btn"
