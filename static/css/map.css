@@ -143,7 +143,7 @@
        floating over the map's bottom-left corner has to clear it, because those members are what a visitor
        taps and a card overlapping them wins the hit test in silence: the
        date control simply stops responding, with no console error and
-       nothing on screen to say why. #home-intro is the one that does
+       nothing on screen to say why. #map-tour-offer is the one that does
        (its own rule, below); the stack's members read their offsets from
        --map-bottom-row-offset above, so both sides of that clearance come
        from the same two tokens. */
@@ -240,9 +240,9 @@
    every width, when two rails filled the screen. With one panel pinned
    top-left there is room to give them back.
 
-   From 640px: everything returns. Only #home-intro stays withdrawn — it
-   is an introduction to the map, not a control, and it sits where the
-   reader is looking at the route.
+   From 640px: everything returns. Only #map-tour-offer stays withdrawn —
+   it is an offer to introduce the map, not a control, and it sits where
+   the reader is looking at the route.
 
    Below 640px: a phone with a route open is someone on the move, so the
    map keeps locate, layers and routes and nothing else. Withdrawn there:
@@ -253,7 +253,7 @@
                             control, date control and season scrubber (the
                             date matters only for a route on the day, which
                             is the Tour feature's to bring back);
-     #home-intro          — the intro card, if it is showing;
+     #map-tour-offer      — the tour offer, if it is showing;
    and, in #map-controls-br, the collapse chevron and every button in the
    "yours" capsule but routes. The "map" capsule (locate and layers) is
    never collapsible, so it needs no rule; routes is shown, alone in its
@@ -265,7 +265,7 @@
    the fade, so the fade is seen; the return is immediate. Nothing in
    static/js sets these containers' visibility or opacity inline, so no
    script can re-show one under this rule. */
-#map[data-route-rail-open] #home-intro {
+#map[data-route-rail-open] #map-tour-offer {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -310,7 +310,7 @@
     #map[data-route-rail-open] #season-ribbon,
     #map[data-route-rail-open] #map-utility-cluster,
     #map[data-route-rail-open] #map-legend,
-    #map[data-route-rail-open] #home-intro {
+    #map[data-route-rail-open] #map-tour-offer {
         transition: none;
     }
 }
@@ -1500,7 +1500,7 @@ html:has(> body.map-fullscreen) > body {
    Stacking: scrubber=2, legend=3 (also season-ribbon at top-left),
    utility cluster=4. (The off-season notice is not a #map chip — SNOW-445
    moved it to a bar above the map, and that bar has since been dropped;
-   the note now lives only inside #home-intro.) */
+   the note now lives only inside #map-tour-offer.) */
 
 .map-legend {
     position: absolute;
@@ -1830,14 +1830,14 @@ html:has(> body.map-fullscreen) > body {
        a fixed low anchor with no height limit at all, so a longer legend
        (more danger levels, longer attribution strings in a future locale)
        would grow into the top of the viewport with nothing to stop it —
-       the same defect class as #home-intro and the "Manage downloads"
+       the same defect class as the old #home-intro panel and the "Manage downloads"
        sheet. Bound to the room between the shared top safe-area/gap
        token every floating map surface uses (--map-edge-inset-top,
        src/css/main.css) and this card's own distance from the viewport
        bottom (--map-legend-card-bottom-offset, set on the parent
        .map-legend above — the offset this card is already anchored from,
-       plus its own 8px gap). `dvh`, not `vh`: see .home-intro-card's own
-       comment for why. */
+       plus its own 8px gap). `dvh`, not `vh`, so a mobile URL bar does
+       not push the bottom off screen. */
     max-height: calc(100dvh - var(--map-edge-inset-top) - var(--map-legend-card-bottom-offset));
     overflow-y: auto;
     font-size: 11px;
@@ -3488,14 +3488,14 @@ html:has(> body.map-fullscreen) > body {
 
 /* —————————————————————————————————————————————————————————
    Map-scoped z-index band (SNOW-486; extended SNOW-522)
-   #home-intro, #map-help-overlay and #map-frame-overlay are positioned
+   #map-tour-offer, #map-help-overlay and #map-frame-overlay are positioned
    against other #map controls (utility cluster, scrubber, legend) and
    live inside #map's own stacking context, so they intentionally do NOT
    use the global --z-banner/--z-toast/--z-popup/--z-modal scale declared
    in src/css/main.css's @theme — lifting them out of #map would detach
    them from the controls they're anchored to. This 0-8 scale is local
    to #map only: 0-4 cover the choropleth/legend/utility-cluster layers
-   above; 5 is #home-intro, 6 is the coachmark ring, 7 is its tooltip,
+   above; 5 is #map-tour-offer, 6 is the coachmark ring, 7 is its tooltip,
    8 is the custom-area download's framing overlay (mask + frame + CTA
    bar) — deliberately above the coachmark tour, since opening the
    framing overlay while the tour happens to be open should read as the
@@ -3503,56 +3503,38 @@ html:has(> body.map-fullscreen) > body {
    ————————————————————————————————————————————————————————— */
 
 /* —————————————————————————————————————————————————————————
-   SNOW-314 — Homepage intro overlay (#home-intro)
-   Absolutely positioned over #map; rendered with show_intro=True from
-   the home() view. Dismissed via button or Escape key; restored by
-   visiting /#about. home_intro.js owns the state machine.
+   SNOW-1117 — The tour offer (#map-tour-offer)
+   A small card that asks a first-time visitor whether they would like
+   the tour. It replaced the SNOW-314 "Welcome to Snowdesk" panel
+   (#home-intro) and keeps that panel's anchoring: absolutely positioned
+   over #map, bottom-left, directly above the bottom-left stack. Rendered
+   `hidden`; static/js/map_tour_offer.js reveals it once per device after
+   the map settles.
    ————————————————————————————————————————————————————————— */
 
-.home-intro {
+.map-tour-offer {
     position: absolute;
-    /* Offset from safe areas so the card clears the status bar / notch. */
-    top: calc(env(safe-area-inset-top, 0px) + 64px);
-    /* SNOW-645 review: `bottom` is new — this element used to set `top`
-       ONLY, which leaves its height "auto" (intrinsic, sized to whatever
-       .home-intro-card inside it needs). Setting `bottom` too gives it a
-       DEFINITE height instead (this element's own containing block,
-       #map, has one: #map is `flex: 1 1 auto` inside a `flex-col` body
-       whose `min-height: 100dvh` makes #map's own height determinate in
-       the standard case — the nav bar and any off-season banner above it
-       are already excluded from #map's box by that flex layout, which a
-       raw `100dvh` figure computed HERE could not know about). That
-       definite height is what lets .home-intro-card's own `max-height:
-       100%`, below, resolve against "the real room inside #map below the
-       nav/banner chrome" rather than the full viewport including it —
-       measured directly against a live page (nav + off-season banner
-       both present) rather than assumed: a raw `100dvh`-minus-insets
-       figure here was off by the nav+banner's own height, letting the
-       card's computed max-height run past the bottom of the viewport.
-       The figure is the bottom-left stack's own clearance plus its height
-       plus the 8px gap the stack's members use between themselves: this
-       card sits directly above the help roundel, the legend toggle and the
-       date control, and must not cover them. It was the bare edge inset
-       until the date control joined that stack (SNOW-794), after which a
-       short viewport — a docked preview pane, a laptop with the off-season
-       banner up — put the card straight over the date pill, where it
-       swallowed every click on it. `--map-bottom-left-stack` is defined on
-       #map beside the offset the stack itself uses, so the two cannot
-       drift apart. */
+    /* The bottom-left stack's own clearance plus its height plus the 8px
+       gap its members use: the card sits directly above the help roundel,
+       the legend toggle, the zoom control and the date control, and must
+       not cover them. A card overlapping them wins the hit test in
+       silence (SNOW-794 found the date pill dead under the old panel).
+       --map-bottom-left-stack is defined on #map beside the offset the
+       stack itself uses, so the two cannot drift apart. */
     bottom: calc(
         var(--map-bottom-row-offset) + var(--map-bottom-left-stack) + 8px
     );
     left: calc(env(safe-area-inset-left, 0px) + 16px);
     z-index: 5;
-    /* Pointer events on the card only; the map behind the card stays interactive. */
+    /* Pointer events on the card only; the map around it stays usable. */
     pointer-events: none;
 }
 
-.home-intro[hidden] {
+.map-tour-offer[hidden] {
     display: none;
 }
 
-.home-intro-card {
+.map-tour-offer-card {
     position: relative;
     pointer-events: auto;
     background: var(--color-glass);
@@ -3561,87 +3543,61 @@ html:has(> body.map-fullscreen) > body {
     border: 0.5px solid var(--color-border);
     box-shadow: var(--shadow-glass);
     border-radius: 12px;
-    padding: 20px 22px;
-    /* SNOW-535: widened from 320px — the two-paragraph copy this carries read
-       as cramped at the old width. The card must also stay short enough to
-       clear the bottom-left (i) legend toggle (tests/e2e/test_map_bottom_bar.py).
-
-       The min() caps the card against the viewport so it never runs under the
-       right-anchored utility cluster: at 412px the flat 380px card spanned
-       x 16–396 while #basemap-toggle sits at x 360–400, so the card won the
-       hit test and the toggle could not be clicked. 96px = the 16px left
-       offset + the cluster's 44px column + 36px of breathing room. */
-    max-width: min(380px, calc(100vw - 96px));
+    padding: 16px 18px;
+    /* Capped against the viewport so it never runs under the right-hand
+       control column: 96px = the 16px left offset + the column's 44px +
+       36px of breathing room (the figure the welcome panel settled on). */
+    width: min(320px, calc(100vw - 96px));
     color: var(--color-text-1);
     font-family: var(--sans);
-    /* SNOW-645 review: bounded height, added — there was none before, so
-       long copy (an off-season notice paragraph plus both taglines) grew
-       DOWN past the bottom controls with nothing to stop it, the same
-       defect class as the "Manage downloads" sheet's own unbounded
-       growth (templates/includes/_overlay_sheet.html). `max-height: 100%`
-       resolves against .home-intro's OWN height, which is now definite
-       (top AND bottom both set — see that rule's own comment for why a
-       plain `100dvh`-minus-insets figure computed HERE was wrong by the
-       nav bar's own height, verified against a live page rather than
-       assumed). The whole card scrolls as one unit when it overflows
-       (`overflow-y: auto`) — the same "no internal pinned regions"
-       default the favourites/report map sheets use, not the downloads
-       sheet's pinned-header/footer treatment: this card has no such
-       structure to split, and this fix is deliberately NOT the
-       anchored-top-and-bottom redesign a future bulletin-panel rework
-       may still do — see .home-intro's own comment for why a plain
-       bound is now the right amount of fix here. The "×" close button
-       (.home-intro-close, absolutely positioned WITHIN this card)
-       scrolls with the content as a result — Escape and the primary CTA
-       in .home-intro-actions (itself part of the scrolling content,
-       reached by scrolling down) remain the way to dismiss without
-       scrolling back up first. */
-    max-height: 100%;
-    overflow-y: auto;
+    animation: map-tour-offer-in 220ms ease-out;
 }
 
-.home-intro-identity {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 10px;
-    /* Clears the "×" close button (top-right, 28px) so a short wordmark row
-       never sits underneath it. */
+@keyframes map-tour-offer-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.map-tour-offer--no-motion .map-tour-offer-card {
+    animation: none;
+}
+
+.map-tour-offer-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-3);
+    margin: 0 0 4px;
+    /* Clears the "×" (top-right, 28px). */
     padding-right: 28px;
 }
 
-.home-intro-wordmark {
-    font-size: 18px;
+.map-tour-offer-title {
+    font-size: 16px;
     font-weight: 600;
-    letter-spacing: -0.02em;
+    line-height: 1.3;
+    margin: 0 0 6px;
     color: var(--color-text-1);
 }
 
-.home-intro-taglines {
-    display: flex;
-    flex-direction: column;
-}
-
-.home-intro-tagline {
+.map-tour-offer-body {
     font-size: 13px;
     line-height: 1.5;
     color: var(--color-text-2);
     margin: 0 0 12px;
 }
 
-/* The taglines stack in one column at every viewport. SNOW-535 laid them out
-   side by side above 960px (in a card widened to 640px) to hold the card's
-   height down; that traded height for a 640px measure, which is too long a
-   line for 13px body text. The copy is short enough to stack instead. */
-
-/* SNOW-445 removed the old bottom-left .map-offseason-note chip in favour of
-   a full-width #map-offseason-bar above the map; that bar has since been
-   dropped as well, so neither set of styles remains. */
-
-/* Off-season reference line inside the intro card — rendered only when
-   is_offseason is True, and now the only surface carrying the archive
-   notice. */
-.home-intro-offseason-ref {
+/* Off-season reference line — rendered only when is_offseason is True, and
+   the only surface carrying the archive notice. */
+.map-tour-offer-offseason {
     font-size: 11px;
     line-height: 1.4;
     color: var(--color-text-3);
@@ -3652,51 +3608,51 @@ html:has(> body.map-fullscreen) > body {
     border-radius: 6px;
 }
 
-/* Inline link inside a tagline paragraph (the "Register" call-out). Underlined
-   rather than colour-only so it reads as a link against the muted body text. */
-.home-intro-inline-link {
-    color: var(--color-text-1);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-}
-
-.home-intro-inline-link:hover {
-    text-decoration-thickness: 2px;
-}
-
-.home-intro-actions {
+.map-tour-offer-actions {
     display: flex;
-    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
     gap: 8px;
 }
 
-.home-intro-dismiss {
+.map-tour-offer-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 8px 16px;
+    padding: 8px 14px;
     border-radius: 999px;
-    background: var(--ink);
-    color: var(--on-ink);
-    font-size: 13px;
-    font-weight: 500;
     border: none;
-    cursor: pointer;
+    background: transparent;
+    color: var(--color-text-1);
     font-family: var(--sans);
-    transition: opacity 120ms ease;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 120ms ease, background 120ms ease;
 }
 
-.home-intro-dismiss:hover {
+.map-tour-offer-btn:hover {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.map-tour-offer-btn--primary {
+    background: var(--ink);
+    color: var(--on-ink);
+}
+
+.map-tour-offer-btn--primary:hover {
+    background: var(--ink);
     opacity: 0.85;
 }
 
-.home-intro--no-motion .home-intro-dismiss {
-    transition: none;
+.map-tour-offer-btn:focus-visible,
+.map-tour-offer-close:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
 }
 
-/* SNOW-535: "×" close, top-right — mirrors .map-help-close below (SNOW-457),
-   the same corner-dismiss idiom applied to this card. */
-.home-intro-close {
+/* "×" close, top-right — the corner-dismiss idiom .map-help-close uses. */
+.map-tour-offer-close {
     position: absolute;
     top: 8px;
     right: 8px;
@@ -3714,25 +3670,14 @@ html:has(> body.map-fullscreen) > body {
     transition: color 120ms ease, background 120ms ease;
 }
 
-.home-intro-close:hover {
+.map-tour-offer-close:hover {
     color: var(--color-text-1);
     background: rgba(0, 0, 0, 0.06);
 }
 
-.home-intro--no-motion .home-intro-close {
+.map-tour-offer--no-motion .map-tour-offer-btn,
+.map-tour-offer--no-motion .map-tour-offer-close {
     transition: none;
-}
-
-.home-intro-close:focus-visible {
-    outline: 2px solid var(--color-text-1);
-    outline-offset: 2px;
-}
-
-/* Dark mode: the glass card uses the dark glass token automatically via
-   the .dark body class set by the theme head partial. */
-.dark .home-intro-card {
-    background: var(--color-glass);
-    color: var(--color-text-1);
 }
 
 /* —————————————————————————————————————————————————————————
@@ -3809,12 +3754,12 @@ html:has(> body.map-fullscreen) > body {
     /* SNOW-645 review: bounded height, added — this card is JS-positioned
        per coachmark step (map_help.js computes `top`/`left` at runtime,
        hence no fixed anchor to measure a precise remaining-room figure
-       from, unlike .home-intro-card / .map-legend-card above), so the
+       from, unlike .map-legend-card above), so the
        general viewport-minus-edge-insets cap every floating map surface
        now uses is the right level of precision here: a longer step's
        copy scrolls within the card rather than growing past whichever
-       edge JS happened to place it near. `dvh`, not `vh` — see
-       .home-intro-card's own comment for why. */
+       edge JS happened to place it near. `dvh`, not `vh`, so a mobile
+       URL bar does not push the bottom off screen. */
     max-height: calc(100dvh - var(--map-edge-inset-top) - var(--map-edge-inset-bottom));
     overflow-y: auto;
 }
@@ -3914,7 +3859,7 @@ html:has(> body.map-fullscreen) > body {
     transition: none;
 }
 
-/* Primary (Next / Done) reuses the same dark-pill look as .home-intro-dismiss. */
+/* Primary (Next / Done) reuses the same dark-pill look as .map-tour-offer-btn--primary. */
 .map-help-btn--primary {
     background: var(--ink);
     color: var(--on-ink);
@@ -3952,7 +3897,7 @@ html:has(> body.map-fullscreen) > body {
    pans/zooms the map underneath it, static/js/map.js's
    mapCustomDownloadControlInit recomputes the "up to N MB" readout once
    per animation frame. z-index 8 on the map-scoped band above (the
-   comment block above .home-intro further up this file) — deliberately
+   comment block above .map-tour-offer further up this file) — deliberately
    above the coachmark tour (6/7).
    ————————————————————————————————————————————————————————— */
 
@@ -4439,7 +4384,8 @@ body.map-framing #map-legend {
        two terms as .map-legend-card's own bound: the shared top gap, and
        this row's distance from the viewport bottom (which since SNOW-794
        shortens when the scrubber is not drawn, so the card grows to match).
-       `dvh` not `vh`, for the reason .home-intro-card's comment gives. */
+       `dvh` not `vh`, so a mobile URL bar does not push the bottom off
+       screen. */
     max-height: calc(100dvh - var(--map-edge-inset-top) - var(--map-legend-card-bottom-offset));
     overflow-y: auto;
     /* Stated rather than inherited: nothing above this element sets it now.

@@ -125,37 +125,27 @@ def _stub_elevation_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _suppress_home_intro(request: pytest.FixtureRequest) -> None:
-    """Start every e2e test with ``#home-intro`` already dismissed.
+def _suppress_tour_offer(request: pytest.FixtureRequest) -> None:
+    """Start every e2e test with the tour offer already answered.
 
-    SNOW-535 grew the first-run intro card to two paragraphs plus a CTA and
-    two onward links. It is absolutely positioned top-left over ``#map`` and
-    grows downward with no bottom bound, so at common viewport sizes it now
-    covers map controls — the bottom-left (i) legend toggle, and at 375px
-    the whole utility cluster (``#basemap-toggle``, ``#report-btn``,
-    ``#favourite-add-btn``). Playwright then fails the click with "subtree
-    intercepts pointer events".
+    ``#map-tour-offer`` (SNOW-1117) slides in over the bottom-left of the map
+    once it settles, which a test clicking a map control a few seconds in
+    could find under its cursor. A returning visitor has long since answered
+    it, so seeding that is both the realistic default and the one that keeps
+    these tests testing what they claim to. (Its predecessor, the
+    ``#home-intro`` welcome panel, needed the same treatment.)
 
-    Nearly every e2e test on ``/`` is about the map, not the intro, and a
-    returning visitor has long since dismissed the panel — so seeding the
-    dismissed flag is both the realistic default and the one that keeps
-    these tests testing what they claim to. Doing it here rather than
-    per-test avoids sprinkling a dismissal through ~30 files and re-fixing
-    the next one that trips over the panel.
-
-    Tests whose subject *is* the intro opt out with
-    ``@pytest.mark.shows_home_intro`` (see tests/e2e/test_home_intro_tour.py).
-    Tests that want to exercise the dismissal interaction itself should still
-    call ``_dismiss_home_intro``, which is a no-op once already hidden.
+    Tests whose subject *is* the offer opt out with
+    ``@pytest.mark.shows_tour_offer`` (see tests/e2e/test_map_tour_offer.py).
 
     The write is wrapped because init scripts also run on ``about:blank``,
     where the origin is opaque and ``localStorage`` access throws.
     """
-    if "shows_home_intro" in request.keywords:
+    if "shows_tour_offer" in request.keywords:
         return
     page = request.getfixturevalue("page")
     page.add_init_script(
-        "try { localStorage.setItem('snowdesk.home.intro', 'dismissed'); } catch (_) {}"
+        "try { localStorage.setItem('snowdesk.map.tour-offer', 'dismissed'); } catch (_) {}"
     )
 
 
@@ -534,27 +524,3 @@ def no_script_page(
         yield NoScriptPage(page=page, live_server_url=live_server.url, account=account)
     finally:
         context.close()
-
-
-def _dismiss_home_intro(page: Page) -> None:
-    """Dismiss the ``#home-intro`` overlay via its "×", if it is showing.
-
-    SNOW-535 grew ``#home-intro``'s copy to two paragraphs plus two onward
-    links, tall enough at common desktop viewport sizes to cover other map
-    controls (e.g. the bottom-left (i) legend toggle — the regression this
-    guards against). Any test that navigates to ``/`` and then clicks a map
-    control should call this first, mirroring what a real visitor does
-    before using the map.
-
-    Uses the "×" (``#home-intro-close``) rather than the "Explore the map"
-    CTA (``#home-intro-dismiss``) deliberately: the CTA also opens the
-    map-help coachmark tour (SNOW-535), a side effect most callers of this
-    helper don't want.
-
-    A no-op if ``#home-intro`` is absent or already hidden (e.g.
-    ``show_intro=False``, or a prior dismissal in the same test persisted
-    via localStorage) — most callers don't need to know or care which.
-    """
-    intro = page.locator("#home-intro")
-    if intro.count() and intro.is_visible():
-        page.locator("#home-intro-close").click()

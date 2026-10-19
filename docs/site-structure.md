@@ -50,7 +50,7 @@ prefixes depend on this ordering — don't reorder
 | Route | View | Notes |
 |-------|------|-------|
 | `/` | `public.views.home` | **The homepage.** A static page — a still of the map, a pitch, short sections on what a reader gets, and links to `/map/`, `/help/`, `/compare/` and the build blog. Loads no map JavaScript. A request carrying any parameter other than attribution (`utm_*`, `ref`, …) is a map link from before the move and 301s to `/map/` with the query string intact. |
-| `/map/` | `public.views.map_page` | **The interactive map** — the app, and the manifest's `start_url`. A dismissable `#home-intro` overlay on first visit (SNOW-314). CH-4115 (Martigny/Verbier) is pre-selected so the readout chip and breadcrumb are correct on first paint (SNOW-342). `?edit=resorts` / `?edit=locations` open the editors for a superuser (SNOW-74/86/724/755). |
+| `/map/` | `public.views.map_page` | **The interactive map** — the app, and the manifest's `start_url`. Nothing over it on load; the tour is offered once, after the map settles (`#map-tour-offer`, SNOW-1117). CH-4115 (Martigny/Verbier) is pre-selected so the readout chip and breadcrumb are correct on first paint (SNOW-342). `?edit=resorts` / `?edit=locations` open the editors for a superuser (SNOW-74/86/724/755). |
 | `/<region_id>/` | `bulletin_detail` | Today's bulletin for a region, never redirecting away. |
 | `/<region_id>/<slug>/` | `bulletin_detail` | Slugged form, the canonical shareable URL. |
 | `/<region_id>/<slug>/<date_str>/` | `bulletin_detail` | A specific day. Past days are immutable. |

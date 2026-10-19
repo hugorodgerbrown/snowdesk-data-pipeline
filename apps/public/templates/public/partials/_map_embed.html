@@ -38,28 +38,21 @@ Context expected from the including template:
   default_region_id   — str: region whose ribbon is server-rendered (CH-4115).
 
 Optional context:
-  show_intro          — bool (default False): when True, renders the
-                        #home-intro welcome overlay inside #map. It is also
-                        what the "?" roundel opens: with the panel present
-                        the roundel shows it rather than starting the tour
-                        (static/js/map_help.js), and the panel's CTA carries
-                        on into the tour from there.
+  show_tour_offer     — bool (default False): when True, renders the
+                        hidden #map-tour-offer card inside #map, which
+                        static/js/map_tour_offer.js reveals once per device
+                        after the map settles (SNOW-1117). It replaced the
+                        #home-intro welcome panel.
   is_offseason        — bool: True when today is past the season end.
-                        Drives the archive note inside #home-intro. The
-                        full-width #map-offseason-bar it also carried
-                        (SNOW-445) is gone — the strip stated a resume
-                        month the data no longer supported, and the
-                        panel's line already makes the same guarantee.
+                        Drives the archive note inside #map-tour-offer.
   map_help_autostart  — bool (default True): when False, #map-help-overlay
                         carries data-map-help-no-autostart and
                         static/js/map_help.js's first-load auto-start is
-                        skipped — the tour then only opens on request. On a
-                        page with #home-intro that request comes from the
-                        panel's "Explore the map" CTA, which is also where
-                        the "?" roundel now leads; elsewhere the roundel
-                        opens the tour itself. map.html passes False
-                        (SNOW-535): the tour must not throw itself at a
-                        visitor straight after they dismiss #home-intro.
+                        skipped — the tour then only opens on request: the
+                        "?" roundel, or #map-tour-offer's "Start the tour".
+                        map.html passes False: the offer asks first, after
+                        the map has settled, rather than the tour starting
+                        itself over a map the visitor has not seen yet.
 {% endcomment %}
 {# SNOW-188: Hidden SVG sprite for country flags shown in the search   #}
 {# result badge. Extracted to a shared include (SNOW-162) so the      #}
@@ -1407,12 +1400,10 @@ Optional context:
         {# see the note at its old site for why. It sits after the date so the  #}
         {# row reads left to right as legend, date, help: what the colours mean, #}
         {# which day they are for, how to use any of it.                        #}
-        {# On this page it opens #home-intro, the welcome panel, whose        #}
-        {# "Explore the map" CTA leads into the coachmark tour — the roundel   #}
-        {# used to start that tour directly, which left a visitor who had      #}
-        {# dismissed the panel with no way back to it. map_help.js decides     #}
-        {# from the presence of #home-intro, so a page embedding this partial  #}
-        {# without show_intro still gets the tour straight from the roundel.   #}
+        {# It starts the coachmark tour. Between SNOW-535 and SNOW-1117 it     #}
+        {# opened the #home-intro welcome panel instead; the panel is gone     #}
+        {# (the homepage says what Snowdesk is), so the roundel leads straight #}
+        {# into the tour again.                                                 #}
         <button
             id="map-help-toggle"
             type="button"
@@ -1565,7 +1556,7 @@ Optional context:
     </div>
     {# The off-season archive notice (SNOW-343) has not lived here since      #}
     {# SNOW-445 moved it to a full-width bar above the map; that bar is now    #}
-    {# gone too, and the #home-intro panel carries the note on its own.        #}
+    {# gone too, and the note rides in #map-tour-offer, the first-visit card. #}
     {# SNOW-314: Season ribbon — flat horizontal strip of one cell per day, #}
     {# coloured by peak danger for the selected region (default CH-4115). #}
     {# Positioned above the scrubber. Requires ribbon context from view.  #}
@@ -1581,7 +1572,7 @@ Optional context:
     {# + tooltip over each one. The list is rebuilt on every open, so a step   #}
     {# the visitor has since collapsed away is re-measured rather than stale.  #}
     {# localStorage key 'snowdesk.map.help' persists the dismissed state,      #}
-    {# mirroring #home-intro's 'snowdesk.home.intro' pattern.                  #}
+    {# #map-tour-offer reads it too: a finished tour is never offered again.  #}
     <ul id="map-help-steps" hidden>
         <li data-help-target="#region-readout" data-help-title='{% trans "Region name" %}'>
             {% trans "Names the selected region and its risk level on the displayed date. Tap it for the region's details and a link to the bulletin." %}
@@ -1646,11 +1637,9 @@ Optional context:
         {# The bottom-left stack, walked top to bottom in DOM order — which is #}
         {# also the order the tour reaches them on screen.                      #}
         {# The tour explains its own trigger, and this is where a user who has  #}
-        {# just been shown it learns how to get back to it. On a page carrying  #}
-        {# #home-intro the roundel re-opens that welcome panel, which leads     #}
-        {# back in here by its own CTA — so the copy names both.                #}
+        {# just been shown it learns how to get back to it.                     #}
         <li data-help-target="#map-help-toggle" data-help-title='{% trans "Map help" %}'>
-            {% trans "Reopen the welcome panel, and this tour." %}
+            {% trans "Take this tour again at any time." %}
         </li>
         <li data-help-target="#map-legend-toggle" data-help-title='{% trans "Map information" %}'>
             {% trans "View attribution and EAWS danger level key." %}
@@ -1677,11 +1666,10 @@ Optional context:
         aria-describedby="map-help-tooltip-title map-help-tooltip-body"
         data-overlay
         data-overlay-persist="snowdesk.map.help=seen"
-        {# SNOW-535: opt out of map_help.js's first-load auto-start. The       #}
-        {# homepage embeds #home-intro, whose "Explore the map" CTA (and the   #}
-        {# "?" roundel) are the only ways this tour should open there — an     #}
-        {# auto-start straight after dismissing the intro read as the site     #}
-        {# throwing a second overlay at a visitor who had just cleared one.    #}
+        {# SNOW-535: opt out of map_help.js's first-load auto-start. map.html  #}
+        {# does: there the tour opens from the "?" roundel or from             #}
+        {# #map-tour-offer's "Start the tour" (SNOW-1117), which asks once the #}
+        {# map has settled rather than starting over a map not yet seen.       #}
         {# Data-driven (an attribute the including template opts into) rather  #}
         {# than a hardcoded "am I map.html" check, so another page embedding  #}
         {# this partial can keep the auto-start behaviour if that's right for  #}
@@ -1747,35 +1735,29 @@ Optional context:
             </div>
         </div>
     </div>
-    {% if show_intro %}
-        {# SNOW-314: Homepage intro overlay — absolutely positioned over #map.  #}
-        {# Dismissed by clicking the overlay or a button; localStorage key      #}
-        {# 'snowdesk.home.intro' persists the dismissed state. /#about hash     #}
-        {# forces it open, as does the "?" roundel above — a dismissal is not   #}
-        {# meant to be final, and the roundel is the way back. home_intro.js    #}
-        {# owns the behaviour.                                                  #}
-        {# aria-modal is only valid on role="dialog"/"alertdialog"; the panel is #}
-        {# role="complementary" (non-blocking, map stays interactive behind it),  #}
-        {# so the attribute is dropped — it was an axe aria-allowed-attr failure. #}
+    {% if show_tour_offer %}
+        {# SNOW-1117: the one-time offer of the map tour. It replaced the      #}
+        {# "Welcome to Snowdesk" panel (#home-intro, SNOW-314/535), which      #}
+        {# opened over the map on every first paint and said what Snowdesk is: #}
+        {# the homepage says that now, and a returning visitor saw the panel   #}
+        {# flash open before the script hid it. This card is rendered HIDDEN,  #}
+        {# so no first paint ever shows it; static/js/map_tour_offer.js        #}
+        {# reveals it once the map has settled, once per device, and never on  #}
+        {# a deep link. Its strings live here so {% trans %} reaches them.     #}
+        {# role="region" rather than dialog: it is not modal and the map stays #}
+        {# usable around it, the same choice #home-intro made.                 #}
         <div
-            id="home-intro"
-            class="home-intro"
-            role="complementary"
-            data-overlay
-            data-overlay-persist="snowdesk.home.intro=dismissed"
+            id="map-tour-offer"
+            class="map-tour-offer"
+            role="region"
+            aria-labelledby="map-tour-offer-title"
+            hidden
         >
-            <div class="home-intro-card">
-                {# SNOW-535: "×" close, top-right — the standard overlay dismiss #}
-                {# idiom (SNOW-486): data-action="dismiss" inside the [data-overlay] #}
-                {# #home-intro is enough for overlays.js's shared handler to hide + #}
-                {# persist; the icon mirrors #map-help-close's. Unlike            #}
-                {# #home-intro-dismiss below, this does NOT also open the map help #}
-                {# tour — a plain "close" reads as "not now", not "show me around". #}
+            <div class="map-tour-offer-card">
                 <button
-                    id="home-intro-close"
+                    id="map-tour-offer-close"
                     type="button"
-                    class="home-intro-close"
-                    data-action="dismiss"
+                    class="map-tour-offer-close"
                     aria-label='{% trans "Dismiss" %}'
                 >
                     <svg
@@ -1793,56 +1775,32 @@ Optional context:
                         <path d="m6 6 12 12" />
                     </svg>
                 </button>
-                <div class="home-intro-identity">
-                    <span class="home-intro-wordmark">{% trans "Welcome to Snowdesk" %}</span>
-                </div>
-                {# The wrapper groups the two body paragraphs so their shared     #}
-                {# spacing lives in one rule (static/css/map.css), separate from  #}
-                {# the offseason ref and the actions row below.                   #}
-                <div class="home-intro-taglines">
-                    <p class="home-intro-tagline">
-                        {% trans "Avalanche information across the Alps, sourced daily from SLF (Switzerland), ALBINA (Austria, Italy) and Météo-France (France). Each bulletin displays on the interactive map in its EAWS danger rating colour. Tap on a region to see the season timeline, and a link to the day's bulletin." %}
-                    </p>
-                    <p class="home-intro-tagline">
-                        {# The anchor sits inside the blocktrans so a translator can #}
-                        {# move "Register" wherever the sentence needs it.            #}
-                        {% url 'accounts:register' as register_url %}
-                        {% blocktrans trimmed %}
-                            <a href="{{ register_url }}" class="home-intro-inline-link">Register</a>
-                            with Snowdesk to view field observations, pin the places and regions you follow, and
-                            download an area to read offline.
-                        {% endblocktrans %}
-                    </p>
-                </div>
+                <p class="map-tour-offer-eyebrow">{% trans "New to the map?" %}</p>
+                <h2 class="map-tour-offer-title" id="map-tour-offer-title">{% trans "Take the one-minute tour" %}</h2>
+                <p class="map-tour-offer-body">
+                    {% trans "How to read the colours, open a region's bulletin, and what each control does." %}
+                </p>
                 {% if is_offseason %}
                     {# Off-season honesty (launch requirement): the data shown is #}
-                    {# archive, not live. Carried in the first-visit panel.       #}
-                    <p class="home-intro-offseason-ref">
+                    {# archive, not live. It moved here with the rest of the     #}
+                    {# first-visit surface when #home-intro was removed.         #}
+                    <p class="map-tour-offer-offseason">
                         {% blocktrans trimmed with start_month=archived_season_start|date:"F" %}
                             Map shows {{ season_label }} season — live bulletins resume in
                             {{ start_month }}
                         {% endblocktrans %}
                     </p>
                 {% endif %}
-                <div class="home-intro-actions">
-                    {# SNOW-486: data-action routes the click through the shared #}
-                    {# overlays.js handler, which hides the overlay and persists #}
-                    {# snowdesk.home.intro — home_intro.js listens for           #}
-                    {# overlay:dismissed to clear the /#about hash.               #}
-                    {# SNOW-535: this CTA also opens the map-help coachmark tour —#}
-                    {# home_intro.js binds its own click listener alongside the   #}
-                    {# shared dismiss handler and dispatches                      #}
-                    {# 'snowdesk:map-help-requested', which map_help.js listens   #}
-                    {# for and answers by calling its own open() entry point, so  #}
-                    {# the tour logic itself stays in one place.                 #}
+                <div class="map-tour-offer-actions">
+                    <button id="map-tour-offer-later" type="button" class="map-tour-offer-btn">
+                        {% trans "Not now" %}
+                    </button>
                     <button
-                        id="home-intro-dismiss"
+                        id="map-tour-offer-start"
                         type="button"
-                        class="home-intro-dismiss"
-                        data-action="dismiss"
-                        aria-label='{% trans "Dismiss and explore the map" %}'
+                        class="map-tour-offer-btn map-tour-offer-btn--primary"
                     >
-                        {% trans "Explore the map" %}
+                        {% trans "Start the tour" %}
                     </button>
                 </div>
             </div>

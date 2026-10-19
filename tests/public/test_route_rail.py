@@ -385,7 +385,7 @@ _WITHDRAWN_ON_A_PHONE = (
     "season-ribbon",
     "map-utility-cluster",
     "map-legend",
-    "home-intro",
+    "map-tour-offer",
 )
 _PHONE_QUERY = "@media (max-width: 639.98px)"
 
@@ -461,10 +461,10 @@ def _withdrawn_ids(css: str) -> set[str]:
 class TestTheRouteOpenFurniture:
     """Desktop keeps every control; a phone keeps three (SNOW-1067)."""
 
-    def test_a_phone_withdraws_the_top_row_the_stack_and_the_intro(self) -> None:
-        """Below 640 px the region row, search, the left stack and the intro go."""
+    def test_a_phone_withdraws_the_top_row_the_stack_and_the_offer(self) -> None:
+        """Below 640 px the region row, search, the left stack and the tour offer go."""
         phone, _rest = _split_phone_blocks(_MAP_CSS.read_text(encoding="utf-8"))
-        hidden = _withdrawn_ids(phone) | {"home-intro"}
+        hidden = _withdrawn_ids(phone) | {"map-tour-offer"}
         assert set(_WITHDRAWN_ON_A_PHONE) <= hidden
         # The column goes whole only under the route sheet's peek, which
         # holds the profile and covers it (2026-10-18), never for the route
@@ -500,16 +500,16 @@ class TestTheRouteOpenFurniture:
         opened = dict(rules)["#map[data-route-rail-open] #map-controls-collapsible"]
         assert "calc(var(--map-control-lg) + 1px)" in opened
 
-    def test_desktop_withdraws_nothing_but_the_intro(self) -> None:
-        """From 640 px every control returns; the intro card is not a control."""
+    def test_desktop_withdraws_nothing_but_the_tour_offer(self) -> None:
+        """From 640 px every control returns; the tour offer is not a control."""
         _phone, rest = _split_phone_blocks(_MAP_CSS.read_text(encoding="utf-8"))
-        assert _withdrawn_ids(rest) == {"home-intro"}
+        assert _withdrawn_ids(rest) == {"map-tour-offer"}
 
     def test_the_containers_exist_in_the_map_partials(self) -> None:
         """A renamed container would leave its controls over the panel.
 
         Read from the templates rather than a rendered page: the season
-        ribbon and the intro card are conditional, and the test database
+        ribbon and the tour offer are conditional, and the test database
         has no season for the ribbon to render.
         """
         partials = Path(__file__).resolve().parents[2] / "apps" / "public" / "templates"

@@ -257,9 +257,10 @@ is delegated to CI. Runs `npm ci && npm run test:js` (`vitest run`).
   failure toast, and the SNOW-462 account-change reconcile/drain-guard
   (`test_mutation_queue*.js`, split across several files for the same
   per-module-instance-state reason as telemetry.js).
-- `overlays.js`, `home_intro.js`, `map_help.js` — the shared dismiss
-  primitive, and the two overlays' persistence/keyboard/auto-start
-  behaviour (`test_overlays.js`, `test_home_intro.js`, `test_map_help.js`;
+- `overlays.js`, `map_tour_offer.js`, `map_help.js` — the shared dismiss
+  primitive, the tour offer's timing and once-per-device rule, and the
+  tour's persistence/keyboard/auto-start behaviour (`test_overlays.js`,
+  `test_map_tour_offer.js`, `test_map_help.js`;
   the latter drops pixel-positioning assertions jsdom's zero-rect
   `getBoundingClientRect` can't support — none of the ported Playwright
   cases asserted on positions anyway).

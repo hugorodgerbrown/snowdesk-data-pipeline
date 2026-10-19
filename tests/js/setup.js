@@ -11,7 +11,7 @@
  * the surface `static/js/db.js` needs.
  *
  * SNOW-496: two more harmless, always-on stubs jsdom doesn't ship, needed by
- * `home_intro.js` / `map_help.js`:
+ * `map_tour_offer.js` / `map_help.js`:
  *
  *   - `window.matchMedia` — jsdom throws "not implemented" on the bare
  *     property; both modules call it once for `prefers-reduced-motion`.
