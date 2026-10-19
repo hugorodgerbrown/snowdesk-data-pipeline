@@ -31,9 +31,8 @@ const { readProfile } = self.pwaElevationProfileCore;
 
 /** The English strings the partial's template renders. */
 const STRINGS = {
-  label: 'Track: %(headline)s; Slope: %(ground)s',
+  label: "Skier's track: %(headline)s; Terrain slope: %(ground)s",
   join: '%(before)s · %(after)s',
-  phrase: '%(steepness)s %(kind)s',
   'label-join': '%(before)s, %(after)s',
   'compass-0': 'N',
   'compass-1': 'NE',
@@ -45,16 +44,20 @@ const STRINGS = {
   'compass-7': 'NW',
   'heading-pair': '%(first)s → %(second)s',
   'label-heading-pair': '%(first)s to %(second)s',
-  'steepness-level': 'Level',
-  'steepness-gentle': 'Gentle',
-  'steepness-moderate': 'Moderate',
-  'steepness-steep': 'Steep',
-  'steepness-very-steep': 'Very steep',
-  'kind-ascent': 'ascent',
-  'kind-descent': 'descent',
-  'kind-traverse': 'traverse',
-  'kind-fall-line': 'fall line',
+  'kind-ascent': 'Ascent',
+  'kind-descent': 'Descent',
+  'kind-traverse': 'Traverse',
+  'kind-fall-line': 'Fall line',
+  'headline-level': 'Level',
   'headline-no-height': 'No height data',
+  'with-band': '%(text)s · %(band)s',
+  'label-with-band': '%(text)s, %(band)s',
+  'band-under': 'under %(high)s°',
+  'band-range': '%(low)s–%(high)s°',
+  'band-over': '%(low)s°+',
+  'label-band-under': 'under %(high)s degrees',
+  'label-band-range': '%(low)s to %(high)s degrees',
+  'label-band-over': '%(low)s degrees or more',
   'ground-flat': 'Flat',
   'ground-moderate': 'Moderate',
   'ground-steep': 'Steep',
@@ -114,16 +117,31 @@ function track(count) {
 describe('trackWord', () => {
   it.each([
     [0, 'level'],
+    [-4.9, 'level'],
+    [-5, 'gentle'],
+    [-14.9, 'gentle'],
+    [-15, 'steady'],
+    [-24.9, 'steady'],
+    [-25, 'stiff'],
+    [-34.9, 'stiff'],
+    [-35, 'very-stiff'],
+    [-62, 'very-stiff'],
+  ])('reads a %s° descent as %s', (gradient, word) => {
+    expect(core.trackWord(gradient)).toBe(word);
+  });
+
+  // Skin tracks live under 20°, so a climb has bounds of its own.
+  it.each([
     [4.9, 'level'],
     [5, 'gentle'],
-    [-14.9, 'gentle'],
-    [15, 'moderate'],
-    [24.9, 'moderate'],
-    [-25, 'steep'],
-    [34.9, 'steep'],
-    [35, 'very-steep'],
-    [-62, 'very-steep'],
-  ])('reads a %s° track as %s', (gradient, word) => {
+    [9.9, 'gentle'],
+    [10, 'steady'],
+    [14.9, 'steady'],
+    [15, 'stiff'],
+    [19.9, 'stiff'],
+    [20, 'very-stiff'],
+    [36, 'very-stiff'],
+  ])('reads a %s° climb as %s', (gradient, word) => {
     expect(core.trackWord(gradient)).toBe(word);
   });
 
@@ -133,8 +151,48 @@ describe('trackWord', () => {
   });
 
   it('shares its bounds with the wheel’s inner ring', () => {
-    const steps = self.pwaAspectWheelCore.TRACK_STEPS.map((step) => step[0]);
-    expect(core.TRACK_BOUNDS).toEqual(steps.slice(0, -1));
+    expect(core.TRACK_BOUNDS).toEqual(self.pwaAspectWheelCore.TRACK_BOUNDS);
+  });
+
+  it('names the same step as the wheel', () => {
+    [-40, -30, -20, -10, -2, 0, 3, 7, 12, 17, 22].forEach((gradient) => {
+      const words = ['level', 'gentle', 'steady', 'stiff', 'very-stiff'];
+      expect(core.trackWord(gradient)).toBe(words[self.pwaAspectWheelCore.trackStep(gradient)]);
+    });
+  });
+});
+
+describe('trackBand', () => {
+  it.each([
+    [2, { low: null, high: 5 }],
+    [-2, { low: null, high: 5 }],
+    [12, { low: 10, high: 15 }],
+    [-12, { low: 5, high: 15 }],
+    [22, { low: 20, high: null }],
+    [-22, { low: 15, high: 25 }],
+    [-40, { low: 35, high: null }],
+  ])('bands a %s° track as %o', (gradient, band) => {
+    expect(core.trackBand(gradient)).toEqual(band);
+  });
+
+  it('has no band for an unknown gradient', () => {
+    expect(core.trackBand(null)).toBeNull();
+  });
+});
+
+describe('groundBand', () => {
+  it.each([
+    [3, { low: null, high: 5 }],
+    [29.9, { low: 5, high: 30 }],
+    [30, { low: 30, high: 35 }],
+    [37, { low: 35, high: 40 }],
+    [52, { low: 40, high: null }],
+  ])('bands %s° ground as %o', (angle, band) => {
+    expect(core.groundBand(angle)).toEqual(band);
+  });
+
+  it('has no band for an unknown angle', () => {
+    expect(core.groundBand(undefined)).toBeNull();
   });
 });
 
@@ -192,12 +250,12 @@ describe('headline', () => {
   const ANGLE = 33;
 
   it('reads within 45° of downhill as a fall line descent', () => {
-    expect(core.headline(90, ASPECT, -37, 42)).toEqual({ key: 'fall-descent', steepness: 'very-steep', side: null });
-    expect(core.headline(134.9, ASPECT, -20, ANGLE)).toEqual({ key: 'fall-descent', steepness: 'moderate', side: null });
+    expect(core.headline(90, ASPECT, -37, 42)).toEqual({ key: 'fall-descent', steepness: 'very-stiff', side: null });
+    expect(core.headline(134.9, ASPECT, -20, ANGLE)).toEqual({ key: 'fall-descent', steepness: 'steady', side: null });
   });
 
   it('reads within 45° of uphill as a fall line climb', () => {
-    expect(core.headline(270, ASPECT, 22, ANGLE)).toEqual({ key: 'fall-climb', steepness: 'moderate', side: null });
+    expect(core.headline(270, ASPECT, 22, ANGLE)).toEqual({ key: 'fall-climb', steepness: 'very-stiff', side: null });
     expect(core.headline(225.1, ASPECT, 8, ANGLE)).toEqual({ key: 'fall-climb', steepness: 'gentle', side: null });
   });
 
@@ -208,7 +266,7 @@ describe('headline', () => {
 
   it('picks a traverse’s direction from the gradient', () => {
     // The mockup's point B: heading 113° across ground falling north.
-    expect(core.headline(113, 0, 13.3, 32.7)).toEqual({ key: 'rising-traverse', steepness: 'gentle', side: 'left' });
+    expect(core.headline(113, 0, 13.3, 32.7)).toEqual({ key: 'rising-traverse', steepness: 'steady', side: 'left' });
     expect(core.headline(0, ASPECT, -6, ANGLE)).toEqual({ key: 'descending-traverse', steepness: 'gentle', side: 'right' });
     expect(core.headline(0, ASPECT, 2, ANGLE)).toEqual({ key: 'level-traverse', steepness: null, side: 'right' });
   });
@@ -220,7 +278,7 @@ describe('headline', () => {
 
   it('reads the track alone on flat or unsampled ground', () => {
     expect(core.headline(90, null, -8, 3)).toEqual({ key: 'descent', steepness: 'gentle', side: null });
-    expect(core.headline(90, null, 18, null)).toEqual({ key: 'climb', steepness: 'moderate', side: null });
+    expect(core.headline(90, null, 18, null)).toEqual({ key: 'climb', steepness: 'stiff', side: null });
     expect(core.headline(90, null, 1, null)).toEqual({ key: 'level', steepness: null, side: null });
     // An aspect on ground under 5° is ignored: flat ground faces nowhere.
     expect(core.headline(90, ASPECT, -8, 4)).toEqual({ key: 'descent', steepness: 'gentle', side: null });
@@ -319,8 +377,8 @@ describe('a turn whose two ends fall the same way', () => {
     }, STRINGS);
     expect(words.state.track).toEqual([0, 1]);
     expect(words.kind).toBe('ascent');
-    expect(words.headline).toBe('N → NE · Gentle ascent');
-    expect(words.ground).toBe("Steep, falling skier's left");
+    expect(words.headline).toBe('N → NE · Ascent · 5–10°');
+    expect(words.ground).toBe("Steep · 30–35°, falling skier's left");
   });
 
   it('reads the same side on a descending traverse that turns', () => {
@@ -332,8 +390,8 @@ describe('a turn whose two ends fall the same way', () => {
       aspects: [0],
     }, STRINGS);
     expect(words.state.track).toEqual([2, 3]);
-    expect(words.headline).toBe('E → SE · Gentle descent');
-    expect(words.ground).toBe("Moderate, falling skier's left");
+    expect(words.headline).toBe('E → SE · Descent · 5–15°');
+    expect(words.ground).toBe("Moderate · 5–30°, falling skier's left");
   });
 
   it('gives a level turn its steepness alone', () => {
@@ -345,7 +403,7 @@ describe('a turn whose two ends fall the same way', () => {
       aspects: [0],
     }, STRINGS);
     expect(words.headline).toBe('E → SE · Level');
-    expect(words.ground).toBe("Moderate, falling skier's left");
+    expect(words.ground).toBe("Moderate · 5–30°, falling skier's left");
   });
 });
 
@@ -360,7 +418,7 @@ describe('a descent that turns on the fall line', () => {
     }, STRINGS);
     expect(words.state.track).toEqual([1, 0]);
     expect(words.kind).toBe('fall-line');
-    expect(words.ground).toBe('Moderate');
+    expect(words.ground).toBe('Moderate · 5–30°');
   });
 });
 
@@ -377,7 +435,7 @@ describe('a wobble inside one sector', () => {
     }, STRINGS);
     expect(words.state.track).toEqual([0]);
     expect(words.kind).toBe('fall-line');
-    expect(words.ground).toBe('Steep');
+    expect(words.ground).toBe('Steep · 30–35°');
   });
 });
 
@@ -393,14 +451,14 @@ describe('the Col de la Chaux zig-zag', () => {
   }
 
   it.each([
-    [60, 'E → S · Gentle ascent', "Moderate, falling skier's left, then right"],
-    [61, 'S · Gentle traverse', "Moderate, falling skier's right"],
-    [62, 'S → NE · Gentle ascent', "Very steep, falling skier's right, then left"],
-    [63, 'NE → E · Gentle ascent', "Steep, falling skier's left"],
-    [64, 'E → S · Gentle ascent', "Steep, falling skier's left, then right"],
-    [65, 'S · Moderate traverse', "Moderate, falling skier's right"],
-    [66, 'S → NE · Moderate ascent', "Moderate, falling skier's right, then left"],
-    [67, 'NE · Moderate traverse', "Very steep, falling skier's left"],
+    [60, 'E → S · Ascent · 10–15°', "Moderate · 5–30°, falling skier's left, then right"],
+    [61, 'S · Traverse · 10–15°', "Moderate · 5–30°, falling skier's right"],
+    [62, 'S → NE · Ascent · 10–15°', "Very steep · 35–40°, falling skier's right, then left"],
+    [63, 'NE → E · Ascent · 10–15°', "Steep · 30–35°, falling skier's left"],
+    [64, 'E → S · Ascent · 10–15°', "Steep · 30–35°, falling skier's left, then right"],
+    [65, 'S · Traverse · 15–20°', "Moderate · 5–30°, falling skier's right"],
+    [66, 'S → NE · Ascent · 15–20°', "Moderate · 5–30°, falling skier's right, then left"],
+    [67, 'NE · Traverse · 15–20°', "Very steep · 35–40°, falling skier's left"],
   ])('reads segment %s as "%s"', (index, headline, ground) => {
     const words = at(index);
     expect(words.headline).toBe(headline);
@@ -414,7 +472,9 @@ describe('the Col de la Chaux zig-zag', () => {
   });
 
   it('reads the labels, the arrow as "to" and the dot as a comma aloud', () => {
-    expect(at(62).label).toBe("Track: S to NE, Gentle ascent; Slope: Very steep, falling skier's right, then left");
+    expect(at(62).label).toBe(
+      "Skier's track: S to NE, Ascent, 10 to 15 degrees; Terrain slope: Very steep, 35 to 40 degrees, falling skier's right, then left",
+    );
   });
 });
 
@@ -482,17 +542,17 @@ describe('reading', () => {
 
   it('reads the mockup’s point A in words', () => {
     const words = core.reading(input({}), STRINGS);
-    expect(words.headline).toBe('E · Very steep fall line');
-    expect(words.ground).toBe('Extremely steep');
-    expect(words.label).toBe('Track: E, Very steep fall line; Slope: Extremely steep');
+    expect(words.headline).toBe('E · Fall line · 35°+');
+    expect(words.ground).toBe('Extremely steep · 40°+');
+    expect(words.label).toBe("Skier's track: E, Fall line, 35 degrees or more; Terrain slope: Extremely steep, 40 degrees or more");
     expect(words.kind).toBe('fall-line');
     expect(words.state.terrain).toEqual({ kind: 'faces', sector: 2, slopeDeg: 42 });
   });
 
   it('reads flat ground', () => {
     const words = core.reading(input({ angle: 3, aspect: null, gradient: -8 }), STRINGS);
-    expect(words.headline).toBe('E · Gentle descent');
-    expect(words.ground).toBe('Flat');
+    expect(words.headline).toBe('E · Descent · 5–15°');
+    expect(words.ground).toBe('Flat · under 5°');
   });
 
   it('reads unsampled ground', () => {
@@ -504,7 +564,7 @@ describe('reading', () => {
 
   it('reads a payload with no aspects as no terrain data, never flat', () => {
     const words = core.reading(input({ aspects: undefined, gradient: -20 }), STRINGS);
-    expect(words.headline).toBe('E · Moderate descent');
+    expect(words.headline).toBe('E · Descent · 15–25°');
     expect(words.ground).toBe('No terrain data');
   });
 
@@ -516,23 +576,26 @@ describe('reading', () => {
   it('says which side the slope falls on a traverse', () => {
     // Heading north across ground falling east, then west.
     const right = core.reading(input({ heading: 0, gradient: -20, aspect: 2 }), STRINGS);
-    expect(right.headline).toBe('N · Moderate traverse');
-    expect(right.ground).toBe("Extremely steep, falling skier's right");
-    expect(right.label).toBe("Track: N, Moderate traverse; Slope: Extremely steep, falling skier's right");
+    expect(right.headline).toBe('N · Traverse · 15–25°');
+    expect(right.ground).toBe("Extremely steep · 40°+, falling skier's right");
+    expect(right.label).toBe("Skier's track: N, Traverse, 15 to 25 degrees; Terrain slope: Extremely steep, 40 degrees or more, falling skier's right");
     const left = core.reading(input({ heading: 0, gradient: 2, aspect: 6, angle: 33 }), STRINGS);
-    expect(left.headline).toBe('N · Level traverse');
-    expect(left.ground).toBe("Steep, falling skier's left");
+    expect(left.headline).toBe('N · Traverse · under 5°');
+    expect(left.ground).toBe("Steep · 30–35°, falling skier's left");
   });
 
   it('names no side on the fall line or against the heading', () => {
-    expect(core.reading(input({}), STRINGS).ground).toBe('Extremely steep');
+    expect(core.reading(input({}), STRINGS).ground).toBe('Extremely steep · 40°+');
     const against = core.reading(input({ gradient: 6 }), STRINGS);
-    expect(against.headline).toBe('E · Gentle ascent');
-    expect(against.ground).toBe('Extremely steep');
+    expect(against.headline).toBe('E · Ascent · 5–10°');
+    expect(against.ground).toBe('Extremely steep · 40°+');
   });
 
-  it('carries no degrees', () => {
+  it('carries the steps’ bands, never the measured angles', () => {
+    // A 37° fall line on 42° ground: the bands are 35°+ and 40°+.
     const words = core.reading(input({}), STRINGS);
-    expect(`${words.headline} ${words.ground}`).not.toMatch(/°|\d/);
+    expect(`${words.headline} ${words.ground}`).not.toMatch(/37|42/);
+    expect(words.headline).toMatch(/· 35°\+$/);
+    expect(words.ground).toBe('Extremely steep · 40°+');
   });
 });
