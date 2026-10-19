@@ -2435,7 +2435,8 @@ def serve_robots(request: HttpRequest) -> HttpResponse:
     """
     base = settings.SITE_BASE_URL.rstrip("/")
     lines = [
-        "# Snowdesk — daily Swiss avalanche bulletins (SLF CAAML data).",
+        "# Snowdesk — daily avalanche bulletins from SLF, ALBINA and Météo-France"
+        " (CAAML v6).",
         "# Public-good safety information: crawlers and AI agents are welcome.",
         f"# Machine-readable site index: {base}/llms.txt",
         "",
