@@ -69,7 +69,7 @@ from django.utils.http import quote_etag
 from django.utils.text import slugify
 from django.utils.translation import (
     get_language,
-    gettext as _gettext,
+    gettext,
     gettext_lazy as _,
 )
 from django.views.decorators.cache import never_cache
@@ -3535,12 +3535,12 @@ def _build_og_description(panel: dict[str, Any] | None) -> str:
     raw_key_message = strip_tags(str(panel.get("key_message") or "")).strip()
 
     if label and number:
-        prefix = _gettext("Avalanche danger: %(label)s (%(number)s).") % {
+        prefix = gettext("Avalanche danger: %(label)s (%(number)s).") % {
             "label": label,
             "number": number,
         }
     elif label:
-        prefix = _gettext("Avalanche danger: %(label)s.") % {"label": label}
+        prefix = gettext("Avalanche danger: %(label)s.") % {"label": label}
     else:
         prefix = ""
 
@@ -3744,7 +3744,7 @@ def _bulletin_document_name(region: MicroRegion) -> str:
         ``"Avalanche bulletin — <region name>"``, translated.
 
     """
-    return _gettext("Avalanche bulletin — %(region)s") % {"region": region.name}
+    return gettext("Avalanche bulletin — %(region)s") % {"region": region.name}
 
 
 def _serialise_json_ld(payload: dict[str, Any]) -> str:
@@ -3986,7 +3986,7 @@ def _build_period_transition_chip(
         return None
 
     direction = period_transition.direction
-    verb = _gettext("rises") if direction == "rise" else _gettext("falls")
+    verb = gettext("rises") if direction == "rise" else gettext("falls")
     level_num = period_transition.destination_number
     level_sub = period_transition.destination_subdivision or ""
     label = f"L{level_num}{level_sub}"
@@ -3994,14 +3994,14 @@ def _build_period_transition_chip(
     partition_label = period_transition.partition_label
     if partition_label:
         # e.g. "rises above 2600 m to L3"
-        chip_text = _gettext("%(verb)s %(partition)s to %(label)s") % {
+        chip_text = gettext("%(verb)s %(partition)s to %(label)s") % {
             "verb": verb,
             "partition": partition_label,
             "label": label,
         }
     else:
         # e.g. "rises to L3"
-        chip_text = _gettext("%(verb)s to %(label)s") % {
+        chip_text = gettext("%(verb)s to %(label)s") % {
             "verb": verb,
             "label": label,
         }
@@ -5467,9 +5467,9 @@ def _elevation_display(lower_raw: Any, upper_raw: Any) -> str:
     if lower_fmt and upper_fmt:
         return f"{lower_fmt}\u2013{upper_fmt}"
     if lower_fmt:
-        return _gettext("above %(bound)s") % {"bound": lower_fmt}
+        return gettext("above %(bound)s") % {"bound": lower_fmt}
     if upper_fmt:
-        return _gettext("below %(bound)s") % {"bound": upper_fmt}
+        return gettext("below %(bound)s") % {"bound": upper_fmt}
     return ""
 
 
@@ -5557,11 +5557,11 @@ def _problem_summary(
         return core_zone_text
     if aspects and elevation:
         aspect_str = ", ".join(aspects)
-        return _gettext("Affects %(aspect_str)s aspects %(elevation)s") % {
+        return gettext("Affects %(aspect_str)s aspects %(elevation)s") % {
             "aspect_str": aspect_str,
             "elevation": elevation.display,
         }
-    return _gettext("Affects all aspects and elevations")
+    return gettext("Affects all aspects and elevations")
 
 
 def _enrich_avalanche_problem(
@@ -5907,7 +5907,7 @@ def _pivot_label(band_elevation: dict[str, Any] | None) -> str:
         return ""
     treeline: bool = band_elevation.get("treeline", False)
     if treeline:
-        return _gettext("treeline")
+        return gettext("treeline")
     lower: int | None = band_elevation.get("lower")
     upper: int | None = band_elevation.get("upper")
     pivot = lower if lower is not None else upper
@@ -5938,7 +5938,7 @@ def _build_band_time_subheader(
     """
     if not earlier_pivot or not later_pivot or earlier_pivot == later_pivot:
         return ""
-    return _gettext("Wet line at %(earlier)s earlier, %(later)s later") % {
+    return gettext("Wet line at %(earlier)s earlier, %(later)s later") % {
         "earlier": earlier_pivot,
         "later": later_pivot,
     }
