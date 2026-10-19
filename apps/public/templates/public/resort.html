@@ -6,11 +6,13 @@ Gives a Resort its own indexable URL (``/resorts/<slug>/``), rendered by
 ``apps.public.views.resort_detail``. Cross-linked from the map's resort-pin
 popup, whose CTA reads "View resort →".
 
-A ROUTER TO THE TWO DOCUMENTS (SNOW-807, docs/decisions/two-documents-and-
-a-map.md). The page is kept because people search "Verbier avalanche", not
-"CH-4115" — but it is not a third document, and it renders nothing that
-belongs to one. Someone landing here from a search engine gets to the
-bulletin or a forecast in one tap.
+THE PAGE ANSWERS THE QUERY (SNOW-1124, docs/decisions/a-resort-page-
+answers-the-query.md, amending SNOW-807's docs/decisions/two-documents-and-
+a-map.md for resort pages). People search "Verbier avalanche", not
+"CH-4115", and a page that only links onward cannot rank for that — so
+today's danger is shown here. It is the bulletin page's own render model,
+selected the same way and rendered through the same partials, read-only:
+the bulletin stays the one full document, and this page holds no copy.
 
 Sections, top to bottom:
   1. Resort name (+ alternative/marketing name, when set), canton, and
@@ -21,11 +23,17 @@ Sections, top to bottom:
      website, lifts, runs, piste, elevation range, season and notes, each
      cell omitted when unset and the whole block omitted when all are.
      The resort's own.
-  2. The danger area — ONE link to the parent region's evergreen bulletin,
-     carrying today's ``.danger-tile`` chip (or the no-bulletin note) and
-     the "View bulletin →" label. It was a chip beside a separate button;
-     the whole area is the link now, and tests/e2e/test_resort_page.py
-     clicks ``[data-testid="resort-danger"] a`` — keep exactly one.
+  2. Today's danger (SNOW-1124). ``[data-testid="resort-danger"]`` is ONE
+     link to the parent region's evergreen bulletin, carrying today's
+     ``.danger-tile`` and level word (or the no-bulletin note) and the
+     "Full bulletin →" label, followed by the bulletin headline
+     (``public/_bulletin_headline.html``). tests/e2e/test_resort_page.py
+     clicks ``[data-testid="resort-danger"] a`` — keep exactly one. Below
+     it, OUTSIDE that block because their prose and field notes can carry
+     links, the avalanche problem cards (``public/_rating_block.html``,
+     the bulletin page's own loop) with aspects, elevations and the full
+     problem prose. With no bulletin covering today only the note and the
+     link render — never a past bulletin as today's.
   3. The favourite/unfavourite control
      (``favourites/partials/_resort_favourite_button.html``).
   4. Forecasts — a list of the resort's curated locations, each a link
@@ -50,7 +58,13 @@ Context expected (built by ``apps.public.views.resort_detail``):
   region                        — regions.MicroRegion instance (resort.region,
                                    select_related region).
   region_id                     — str: region.region_id.
-  day_rating                    — bulletins.RegionDayRating for today, or None.
+  panel                         — dict from views._build_panel_context for
+                                   today's bulletin (danger_key,
+                                   danger_number, danger_subdivision,
+                                   danger_label, problem_cards, …), or None
+                                   when no bulletin covers today.
+  headline                      — str: the bulletin page's headline for the
+                                   same render model; "" without a panel.
   target_date                   — datetime.date: today.
   bulletin_url                  — str: the region's evergreen bulletin URL.
   favourited                    — bool.
@@ -101,7 +115,7 @@ Context expected (built by ``apps.public.views.resort_detail``):
 {# SNOW-1122: title and description name the resort beside the terms     #}
 {# people search for ("conditions", "avalanche", "bulletin", "weather"), #}
 {# and "weather" only when the page links to a forecast. The danger     #}
-{# sentence appears only when today's rating has a level. Kept under    #}
+{# sentence appears only when today's bulletin has a level. Kept under  #}
 {# ~155 characters, the snippet length _page_meta.html budgets for.     #}
 {% block page_meta %}
     {% if locations %}
@@ -113,9 +127,10 @@ Context expected (built by ``apps.public.views.resort_detail``):
             {{ name }} avalanche conditions & bulletin · Snowdesk
         {% endblocktrans %}
     {% endif %}
-    {# A "no_rating" row is truthy but has no digit — say nothing then.   #}
-    {% if day_rating and day_rating.max_rating|danger_level_digit %}
-        {% blocktrans with level=day_rating.max_rating|danger_level_digit label=day_rating.max_rating|danger_level_digit|danger_level_label trimmed asvar danger_line %}
+    {# Read from the same panel as the danger tile, so the description  #}
+    {# and the page can never name different levels (SNOW-1124).       #}
+    {% if panel and panel.danger_number %}
+        {% blocktrans with level=panel.danger_number label=panel.danger_label trimmed asvar danger_line %}
             Danger today: {{ level }} – {{ label }}.
         {% endblocktrans %}
     {% endif %}
@@ -162,27 +177,46 @@ Context expected (built by ``apps.public.views.resort_detail``):
         {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-conditions-heading" text=conditions_heading_label class_extra="mb-2" only %}
         {# SNOW-807: the whole danger area is ONE link to the bulletin —     #}
         {# keep exactly one <a> inside [data-testid="resort-danger"].         #}
+        {# SNOW-1124: the tile reads the bulletin page's panel, not a copy.   #}
         <div class="mb-6" data-testid="resort-danger">
             <a
                 href="{{ bulletin_url }}"
                 class="hover-affordance flex flex-wrap items-center gap-4 rounded-card border border-border p-4"
                 data-testid="resort-danger-link"
             >
-                {% if day_rating %}
+                {% if panel %}
                     <span
                         class="danger-tile"
-                        data-level="{{ day_rating.max_rating }}"
+                        data-level="{{ panel.danger_key }}"
                         data-testid="resort-danger-chip"
-                    >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+                    >{{ panel.danger_number }}{{ panel.danger_subdivision }}</span>
+                    <span class="text-sm text-text-2" data-testid="resort-danger-label">{{ panel.danger_label }}</span>
                 {% else %}
                     <span class="text-sm text-text-3" data-testid="resort-no-rating">
                         {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
                             {{ d }}{% endblocktrans %}
                     </span>
                 {% endif %}
-                <span class="text-sm font-medium text-text-1 underline">{% trans "View bulletin →" %}</span>
+                <span class="text-sm font-medium text-text-1 underline">{% trans "Full bulletin →" %}</span>
             </a>
+            {% if panel %}
+                <div class="mt-4">
+                    {% include "public/_bulletin_headline.html" %}
+                </div>
+            {% endif %}
         </div>
+
+        {# SNOW-1124: the bulletin page's own problem cards, outside the       #}
+        {# one-link block above — their prose and field notes may hold links. #}
+        {% if panel.problem_cards %}
+            <section class="mb-6" aria-labelledby="resort-problems-heading" data-testid="resort-problems">
+                {% translate "Avalanche Problems" as avalanche_problems_label %}
+                {% include "includes/_eyebrow.html" with tag="h3" heading_id="resort-problems-heading" text=avalanche_problems_label class_extra="mb-3" only %}
+                {% for card in panel.problem_cards %}
+                    {% include "public/_rating_block.html" with card=card %}
+                {% endfor %}
+            </section>
+        {% endif %}
 
         <div class="mb-6">
             {% include "favourites/partials/_resort_favourite_button.html" %}
