@@ -6320,10 +6320,13 @@
   //
   // SNOW-658 moved Favourites and Community reports out of the layers menu and
   // onto a switch in the panel each roundel opens, so the callers were
-  // favourites.js and report.js. SNOW-904 reversed that: all four switches are
-  // gone and the menu is the only control, so the caller is once again
+  // favourites.js and report.js. SNOW-904 reversed that: all four switches
+  // went and the menu became the only control, so the caller is once again
   // map_basemap_picker.js, routing a row click through the frozen bridges
-  // published below.
+  // published below. The two-capsule control column put a "Show on the map"
+  // switch back in each panel, but it drives its layer by clicking the menu
+  // row (static/js/map_panel_overlay_switch.js), so the picker stays the
+  // caller of show()/hide() for both controls in the ordinary case.
   //
   // The bridges are what the picker calls rather than the storage write and
   // the lazy-load dispatch directly, because being INSIDE this IIFE they also

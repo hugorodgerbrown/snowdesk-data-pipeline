@@ -491,6 +491,11 @@ in addition to the shared map assets.
     {# bundle module reads it), which is what                                #}
     {# tests/public/test_map_script_order.py asks of a tag placed here.      #}
     <script defer src="{% static 'js/map_roundel_overlay_state.js' %}"></script>
+    {# Each panel's "Show on the map" switch, bound to its layers-menu row.  #}
+    {# Reads the bridges and the rows lazily, so it only has to run before   #}
+    {# the first panel opens; outside the bundle for the same reason as the  #}
+    {# tag above.                                                             #}
+    <script defer src="{% static 'js/map_panel_overlay_switch.js' %}"></script>
     {# SNOW-978: the terrain filter's sheet, map chip and menu-row summary.  #}
     {# Talks only to window.pwaTerrainFilter, which map.js publishes at      #}
     {# parse time — hence after the bundle, and outside its contiguous run   #}

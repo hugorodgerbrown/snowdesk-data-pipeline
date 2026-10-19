@@ -184,10 +184,12 @@ def synthetic_season_grid() -> SeasonGrid:
 # same component four times with four contents is the point: the help page
 # says these panels share a shape, and the illustrations show it.
 #
-# SNOW-904 dropped the ``toggle_id`` each entry carried, with the "Display
-# on the map" switch it named. Every layer is chosen from the map's layers
-# menu now, so no panel has one, and these illustrations no longer have to
-# namespace an id away from the real one.
+# ``toggle_id`` is namespaced per illustration. The ids the real panels use
+# (``#map-favourites-overlay-toggle`` and friends) are how
+# static/js/map_panel_overlay_switch.js finds the switch it binds; a
+# decoration must never answer to that name, and two illustrations on one
+# page must not collide with each other either. (SNOW-904 dropped these with
+# the switch; the two-capsule column restored both.)
 _PANELS: dict[str, dict[str, Any]] = {
     "favourites": {
         "title": _("Favourites"),
@@ -195,6 +197,7 @@ _PANELS: dict[str, dict[str, Any]] = {
         "context_line": _("Favourites are private and not shared."),
         "section_label": _("Places"),
         "cta_label": _("Add a favourite"),
+        "toggle_id": "help-illustration-toggle-favourites",
         "rows": (
             {"label": _("Cabane des Dix"), "meta": _("Val des Dix")},
             {"label": _("Col des Gentianes"), "meta": _("Martigny · Verbier")},
@@ -206,6 +209,7 @@ _PANELS: dict[str, dict[str, Any]] = {
         "context_line": _("Reports are shared with the community."),
         "section_label": _("Reports"),
         "cta_label": _("Report an observation"),
+        "toggle_id": "help-illustration-toggle-observations",
         "rows": (
             {"label": _("Whumpfing"), "meta": _("Arolla · 2 hours ago")},
             {"label": _("Shooting cracks"), "meta": _("Verbier · yesterday")},
@@ -219,6 +223,7 @@ _PANELS: dict[str, dict[str, Any]] = {
         "context_line": _("Routes are private unless you share one."),
         "section_label": _("Tracks"),
         "cta_label": _("Add a route"),
+        "toggle_id": "help-illustration-toggle-routes",
         "rows": (
             # Mirrors the real row's shape from routes/partials/_route.html
             # — four figures, both vertical words abbreviated, elapsed time
@@ -257,6 +262,7 @@ _PANELS: dict[str, dict[str, Any]] = {
         # laid out a way the product no longer is.
         "section_label": _("OpenFreeMap"),
         "cta_label": _("Download a custom area"),
+        "toggle_id": "help-illustration-toggle-downloads",
         "rows": (
             {
                 "label": _("Martigny · Verbier"),

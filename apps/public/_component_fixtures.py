@@ -1283,10 +1283,11 @@ SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
 
 # Switch (SNOW-645) -----------------------------------------------------------
 # First use was the "Manage downloads" sheet's map-overlay control, which
-# SNOW-904 removed with every other panel switch; the network menu's
-# "Offline mode" row (includes/_connection_panel.html, moved out of the nav's
-# account dropdown by SNOW-921) and the account settings page are the callers
-# now.
+# SNOW-904 removed with every other panel switch and the two-capsule control
+# column restored (includes/_map_overlay_toggle.html, below). The network
+# menu's "Offline mode" row (includes/_connection_panel.html, moved out of
+# the nav's account dropdown by SNOW-921) and the account settings page are
+# the other callers.
 # Pure CSS (Tailwind's peer variant) — no JS runs on this page, so both
 # states render correctly from the `checked` attribute alone.
 
@@ -1364,9 +1365,29 @@ THEME_PREFERENCE_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
-# SNOW-904 removed MAP_OVERLAY_TOGGLE_VARIANTS here, with the partial it
-# previewed. The "Display on the map" switch was a UGC panel's fifth part;
-# every layer is chosen from the map's layers menu now, so no panel has one.
+# Map overlay toggle -----------------------------------------------------------
+# The "Show on the map" footer strip of the four map panels. SNOW-658 built
+# it, SNOW-904 deleted it, and the two-capsule control column restored it —
+# bound to the layers-menu row for the same layer rather than replacing it.
+# Pure markup: static/js/map_panel_overlay_switch.js binds the four real ids,
+# and these namespaced ids are never among them.
+
+MAP_OVERLAY_TOGGLE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "As every map panel renders it",
+        "context": {
+            "id": "component-library-map-overlay-toggle-panel",
+            "label": "Show on the map",
+        },
+    },
+    {
+        "caption": "A longer label, to check the switch holds its size",
+        "context": {
+            "id": "component-library-map-overlay-toggle-long",
+            "label": "Show the community's field observations on the map",
+        },
+    },
+)
 
 
 # Overflow menu (SNOW-645) -----------------------------------------------------
@@ -1722,8 +1743,9 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
 # demo template rendering two static rows — every real caller's list
 # either loads over HTMX or is filled by JS, and this page runs neither.
 #
-# There is no `toggle_label`: SNOW-904 removed the footer switch these
-# panels used to carry, so there is no label to pass.
+# There is no `toggle_label`: the footer switch reads "Show on the map" on
+# every panel, so the shared partial owns the string. `toggle_id` is
+# namespaced so the real switch module never finds the library's copy.
 
 UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
     {
@@ -1735,6 +1757,7 @@ UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
             "section_label": "Places",
             "rows_template": "public/partials/_ugc_panel_demo_rows.html",
             "cta_label": "Add a favourite",
+            "toggle_id": "component-library-ugc-panel-toggle-favourites",
         },
     },
     {
@@ -1751,6 +1774,7 @@ UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
             "header_template": "public/partials/_map_downloads_header.html",
             "rows_template": "public/partials/_ugc_panel_demo_rows.html",
             "cta_label": "Download a custom area",
+            "toggle_id": "component-library-ugc-panel-toggle-downloads",
         },
     },
 )

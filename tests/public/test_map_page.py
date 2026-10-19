@@ -817,10 +817,12 @@ def test_map_layer_menu_holds_every_user_data_row() -> None:
 
     The cost was that a reader asking what can go on their map had to open
     five surfaces to find out, and no single surface answered it. All four
-    are rows here now, driving the same ``window.pwa*Overlay`` bridges, and
-    the panel switches are gone — asserted absent rather than merely
-    unlisted, because a reinstated switch would be a second control for a
-    layer this menu already owns.
+    are rows here now, driving the same ``window.pwa*Overlay`` bridges.
+
+    The two-capsule control column put a "Show on the map" switch back in
+    each panel, bound to its row here rather than replacing it — so the
+    menu still holds every row, and each switch renders inside its own
+    panel's <template>, never in the menu.
 
     Asserted for a signed-in user, mirroring the test this replaces.
     """
@@ -832,13 +834,18 @@ def test_map_layer_menu_holds_every_user_data_row() -> None:
 
     for key in ("favourites", "community_reports", "routes", "downloads"):
         assert f'data-overlay-key="{key}"' in content, key
+    # The menu runs from its own opening tag to the chevron that follows it
+    # in the stack; no panel switch may render inside that span.
+    menu_start = content.index('id="basemap-menu"')
+    menu_end = content.index('id="map-controls-toggle"')
     for toggle_id in (
         "map-favourites-overlay-toggle",
         "map-community-reports-overlay-toggle",
         "map-routes-overlay-toggle",
         "map-downloads-overlay-toggle",
     ):
-        assert toggle_id not in content, toggle_id
+        toggle_idx = content.index(f'id="{toggle_id}"')
+        assert not menu_start < toggle_idx < menu_end, toggle_id
 
 
 @pytest.mark.django_db

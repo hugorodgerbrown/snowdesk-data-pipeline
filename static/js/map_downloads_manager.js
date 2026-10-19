@@ -889,6 +889,10 @@
     // Re-clone rather than update in place — see the module header.
     sheet.textContent = '';
     sheet.appendChild(bodyTemplate.content.cloneNode(true));
+    // The "Show on the map" switch at the foot starts unchecked in the
+    // clone; seed it from window.pwaDownloadedOverlay.isEnabled() (the
+    // tri-state's derived answer — reading it writes nothing).
+    window.pwaPanelOverlaySwitch?.sync();
 
     // SNOW-645 review: the budget figure itself is no longer stated in
     // this text — it now lives in the <select> right after it ("40.3 MB
@@ -956,11 +960,12 @@
     const empty = sheet.querySelector('[data-downloads-empty]');
     if (empty) empty.hidden = rows.length > 0;
 
-    // SNOW-904 removed SNOW-832's empty-list guard here. It hid the
-    // "Display on the map" strip when this panel had nothing to display,
-    // because a switch that cannot do what it says teaches the wrong
-    // thing. The strip is gone with every other panel switch — the layers
-    // menu is the sole control now — so there is no control left to hide.
+    // SNOW-904 removed SNOW-832's empty-list guard here, which hid the
+    // overlay switch when this panel had nothing to display. The switch is
+    // back (bound to the layers menu's downloads row), but the guard is
+    // not: the menu row it mirrors is shown whatever is downloaded, and
+    // two controls over one setting should not disagree about whether it
+    // exists.
 
     // SNOW-XXX: two groups — what is on this device, and what is only on
     // the account. SNOW-832's per-basemap headings are gone; the basemap
@@ -2137,13 +2142,11 @@
     });
   });
 
-  // SNOW-904: this sheet's "Display on the map" switch is gone, and with it
-  // both the change handler that drove window.pwaDownloadedOverlay and the
-  // ``snowdesk:downloaded-overlay-changed`` read-back that kept it honest
-  // when something else (a placement flow, a connectivity flip) moved the
-  // overlay. The layers menu's "Display downloaded areas" row drives the
-  // same bridge and listens to the same broadcast — see
-  // map_basemap_picker.js.
+  // The sheet's "Show on the map" switch is wired by
+  // static/js/map_panel_overlay_switch.js — the change handler that drives
+  // it through the layers menu's "Display downloaded areas" row, and the
+  // read-back that keeps it honest when something else (a placement flow,
+  // a connectivity flip) moves the overlay.
 
   // SNOW-637: a sheet left open when the connection drops has to reflect it
   // there and then — waiting for the next open would leave a live-looking
