@@ -40,6 +40,7 @@ import logging
 from typing import TYPE_CHECKING, NamedTuple
 
 from django.conf import settings
+from django.utils.dates import MONTHS_3
 
 from apps.bulletins.models import RegionDayRating
 
@@ -65,20 +66,6 @@ _RATED_LEVELS: tuple[str, ...] = (
     RegionDayRating.Rating.CONSIDERABLE,
     RegionDayRating.Rating.HIGH,
     RegionDayRating.Rating.VERY_HIGH,
-)
-_MONTH_ABBREVIATIONS = (
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
 )
 
 
@@ -574,6 +561,10 @@ def _month_label_indices(
             continue
         month = first_dated.date.month
         if month != last_month:
-            labels[idx] = _MONTH_ABBREVIATIONS[month - 1]
+            # SNOW-1128: Django's own translated three-letter month name,
+            # resolved in the request's active language (``MONTHS_3`` is
+            # lower-case — "jan" — so title-case it as the ``M`` date format
+            # does).
+            labels[idx] = str(MONTHS_3[month]).title()
             last_month = month
     return labels

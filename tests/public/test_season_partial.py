@@ -10,6 +10,9 @@ Covers:
   - calendar-cell-selected absent from the response (selection is client-side).
   - Fragment cache: second request for the same (region, today) skips DB queries.
   - Cache invalidation: apply_bulletin_day_ratings deletes the key.
+  - SNOW-1128: the key carries the language (normalised to its LANGUAGES
+    code), invalidation deletes every language's key, and a time-split
+    cell's AM/PM label renders through one translatable sentence.
 """
 
 from __future__ import annotations
@@ -21,13 +24,17 @@ from typing import Any
 
 import pytest
 from django.core.cache import cache
-from django.core.cache.utils import make_template_fragment_key
+from django.template.loader import render_to_string
 from django.test import Client, override_settings
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import timezone, translation
 
 from apps.bulletins.models import Bulletin, RegionDayRating
-from apps.bulletins.services.day_rating import apply_bulletin_day_ratings
+from apps.bulletins.services.day_rating import (
+    apply_bulletin_day_ratings,
+    season_calendar_cache_key,
+)
+from apps.public.season_calendar import SeasonCell
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -189,8 +196,8 @@ class TestSeasonPartialCache:
         region = MicroRegionFactory.create()
         today = timezone.localdate()
         today_iso = today.isoformat()
-        cache_key = make_template_fragment_key(
-            "season_calendar", [region.canonical_region_id, today_iso]
+        cache_key = season_calendar_cache_key(
+            region.canonical_region_id, today_iso, translation.get_language()
         )
 
         # Prime the fragment cache via the partial endpoint.
@@ -214,6 +221,60 @@ class TestSeasonPartialCache:
 
         # The cache key should have been deleted.
         assert cache.get(cache_key) is None
+
+    def test_cache_key_carries_the_language(self) -> None:
+        """SNOW-1128: one key per language; ``en-gb`` is the listed ``en``."""
+        with override_settings(LANGUAGES=[("en", "English"), ("de", "Deutsch")]):
+            en = season_calendar_cache_key("ch-4115", "2026-01-12", "en")
+            en_gb = season_calendar_cache_key("ch-4115", "2026-01-12", "en-gb")
+            de = season_calendar_cache_key("ch-4115", "2026-01-12", "de")
+        assert en == en_gb
+        assert en != de
+
+    @override_settings(
+        SEASON_START_DATE=_SEASON_START,
+        LANGUAGES=[("en", "English"), ("de", "Deutsch")],
+    )
+    def test_apply_bulletin_day_ratings_invalidates_every_language(self) -> None:
+        """SNOW-1128: ingest deletes the cached body for every language."""
+        region = MicroRegionFactory.create()
+        today = timezone.localdate()
+        keys = [
+            season_calendar_cache_key(
+                region.canonical_region_id, today.isoformat(), code
+            )
+            for code in ("en", "de")
+        ]
+        for key in keys:
+            cache.set(key, b"stale", 90000)
+        bulletin = BulletinFactory.create(
+            valid_from=datetime.datetime(
+                today.year, today.month, today.day, 6, 0, tzinfo=UTC
+            ),
+            valid_to=datetime.datetime(
+                today.year, today.month, today.day, 15, 0, tzinfo=UTC
+            ),
+        )
+        RegionBulletinFactory.create(bulletin=bulletin, region=region)
+        apply_bulletin_day_ratings(bulletin)
+        assert [cache.get(key) for key in keys] == [None, None]
+
+
+def test_time_split_cell_label_is_one_sentence() -> None:
+    """SNOW-1128: the AM/PM label renders through blocktrans, unchanged in English."""
+    cell = SeasonCell(
+        date=datetime.date(2026, 1, 5),
+        min_rating_key="low",
+        max_rating_key="moderate",
+        subdivision="",
+        has_bulletin=True,
+        am_rating_key="low",
+        pm_rating_key="moderate",
+    )
+    html = render_to_string(
+        "public/partials/_season_cell.html", {"cell": cell, "inert": True}
+    )
+    assert 'aria-label="Mon 5 Jan.: Low AM · Moderate PM"' in html
 
 
 # ---------------------------------------------------------------------------

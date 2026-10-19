@@ -1,4 +1,4 @@
-{% load snowdesk_time %}
+{% load i18n snowdesk_time %}
 {% comment %}
    One day of the season heatmap (SNOW-1126 — extracted from
    _season_calendar.html so the bulletin page's grid and the resort page's
@@ -30,6 +30,9 @@
         <div class="season-cell-wrap" data-month-parity="{{ cell.month_parity }}">
             {% if cell.has_bulletin and cell.is_time_split and not cell.band_mode %}
                 {# SNOW-291: vertical AM/PM split tile — left half AM, right half PM. #}
+                {# SNOW-1128: the label is one translatable sentence, AM/PM included. #}
+                {% blocktrans asvar split_label trimmed %}{{ day }}: {{ am_label }} AM · {{ pm_label }}
+                    PM{% endblocktrans %}
                 {% if inert %}
                     <div
                         role="img"
@@ -40,8 +43,8 @@
                         data-rating-pm="{{ cell.pm_rating_key }}"
                         data-rating-min="{{ cell.min_rating_key }}"
                         data-rating-max="{{ cell.max_rating_key }}"
-                        title="{{ day }}: {{ am_label }} AM · {{ pm_label }} PM"
-                        aria-label="{{ day }}: {{ am_label }} AM · {{ pm_label }} PM"
+                        title="{{ split_label }}"
+                        aria-label="{{ split_label }}"
                     >
                         {{ cell.date|date:'j' }}
                     </div>
@@ -55,8 +58,8 @@
                         data-rating-pm="{{ cell.pm_rating_key }}"
                         data-rating-min="{{ cell.min_rating_key }}"
                         data-rating-max="{{ cell.max_rating_key }}"
-                        title="{{ day }}: {{ am_label }} AM · {{ pm_label }} PM"
-                        aria-label="{{ day }}: {{ am_label }} AM · {{ pm_label }} PM"
+                        title="{{ split_label }}"
+                        aria-label="{{ split_label }}"
                     >{{ cell.date|date:'j' }}</a>
                 {% endif %}
             {% elif cell.has_bulletin and not inert %}
