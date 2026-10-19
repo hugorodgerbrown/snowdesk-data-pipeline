@@ -521,6 +521,34 @@ describe('scrubbing the profile (2026-10-19)', () => {
     expect(touchmove()).toBe(false);
   });
 
+  it('ignores a second finger landing mid-scrub', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+
+    onLane('pointerdown', 100, 70, lane, 'touch');
+    onLane('pointermove', 300, 70, lane, 'touch');
+    const second = new MouseEvent('pointerdown', { bubbles: true, clientX: 900, clientY: 70 });
+    Object.defineProperty(second, 'pointerId', { value: 8 });
+    Object.defineProperty(second, 'isPrimary', { value: false });
+    lane.dispatchEvent(second);
+    onLane('pointermove', 600, 70, lane, 'touch');
+    onLane('pointerup', 600, 70, lane, 'touch');
+
+    expect(index()).toBe(14);
+  });
+
+  it('starts nothing on a right-button drag', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+
+    const down = new MouseEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 70, button: 2 });
+    Object.defineProperty(down, 'pointerId', { value: 7 });
+    lane.dispatchEvent(down);
+    onLane('pointermove', 600, 70);
+
+    expect(index()).toBeNull();
+  });
+
   it('stops on a cancelled pointer, as when the page takes a vertical pan', () => {
     window.pwaRouteRail.open(feature());
     layOutLane();

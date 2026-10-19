@@ -912,6 +912,10 @@
   // that never moves that far is left to the click above.
   lane.addEventListener('pointerdown', function (event) {
     if (!cursor || !(sampleCount > 0)) return;
+    // One finger scrubs: a second landing mid-scrub, a right-click or a
+    // pen's barrel button starts nothing.
+    if (press && press.dragging && press.id !== event.pointerId) return;
+    if (event.isPrimary === false || event.button !== 0) return;
     press = { id: event.pointerId, x: event.clientX, dragging: false };
     swallowClick = false;
   });
@@ -979,7 +983,7 @@
   // A mouse shows the pointer where a click would place the point, and a
   // sideways arrow over the rest of the profile, where a drag scrubs.
   lane.addEventListener('mousemove', function (event) {
-    if (press && press.dragging) return;
+    if (press && press.dragging && press.id !== event.pointerId) return;
     if (!cursor || !(sampleCount > 0)) {
       lane.style.cursor = '';
       return;
