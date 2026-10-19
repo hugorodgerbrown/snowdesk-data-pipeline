@@ -544,7 +544,7 @@ class TestDespikeOnSteepGround:
 
     def test_a_steady_climb_is_left_alone_however_steep(self) -> None:
         """The median of a one-way window is its middle value."""
-        climb = [2000.0 + 20.0 * index for index in range(41)]
+        climb: list[float | None] = [2000.0 + 20.0 * index for index in range(41)]
         record = _level_record(climb, 60.0)
 
         assert _cleaned(record) == climb
