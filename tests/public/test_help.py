@@ -485,11 +485,10 @@ class TestHelpIllustrations:
         "help-topic-bulletins": b'data-testid="day-windows-panel"',
         "help-topic-problems": b"Wind slab",
         "help-topic-calendar": b"calendar-cell",
-        # SNOW-904: the four panel illustrations were marked by the id of
-        # the "Display on the map" switch each one rendered. That switch is
-        # gone from every panel — the layers menu is the sole control for
-        # every layer now — so each is marked by its own add-CTA label,
-        # which is the one string that differs between the four.
+        # Each panel illustration is marked by its own add-CTA label, which
+        # is the one string that differs between the four. (SNOW-904 moved
+        # these off the switch ids; the switch is back, but the labels are
+        # still the clearer marker.)
         "help-topic-favourites": b"Add a favourite",
         "help-topic-observations": b"Report an observation",
         "help-topic-routes": b"Add a route",
@@ -530,14 +529,15 @@ class TestHelpIllustrations:
             assert "inert" in wrapper, testid
             assert 'aria-hidden="true"' in wrapper, testid
 
-    def test_illustrations_render_no_panel_overlay_switch(self, client: Client) -> None:
-        """SNOW-904: no panel has a "Display on the map" switch any more.
+    def test_illustrations_never_answer_to_the_real_switch_ids(
+        self, client: Client
+    ) -> None:
+        """Each panel illustration's switch carries a namespaced id.
 
-        This test used to guard a subtler thing — map.js found the switch
-        it drove by id, so a decoration must not answer to that id. There
-        is no such switch and no such id now, on /help/ or anywhere else,
-        and the ids are still asserted absent because a reinstated switch
-        would be a second control for a layer the menu already owns.
+        static/js/map_panel_overlay_switch.js finds each panel's "Show on
+        the map" switch by id, so a decoration must never answer to one of
+        those ids — on /help/ the module is not loaded, but the guarantee
+        is cheap and the ids are the contract.
         """
         content = client.get(reverse("public:help")).content
         for real_id in (
@@ -547,6 +547,13 @@ class TestHelpIllustrations:
             b"map-downloads-overlay-toggle",
         ):
             assert real_id not in content, real_id
+        for illustration_id in (
+            b"help-illustration-toggle-favourites",
+            b"help-illustration-toggle-observations",
+            b"help-illustration-toggle-routes",
+            b"help-illustration-toggle-downloads",
+        ):
+            assert illustration_id in content, illustration_id
 
     def test_help_page_issues_no_illustration_queries(self, client: Client) -> None:
         """The illustrations are built in memory, and must stay that way.

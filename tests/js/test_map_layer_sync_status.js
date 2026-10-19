@@ -17,7 +17,8 @@
  * afterEach) to exercise the offline red-dot + row-disable behaviour.
  *
  * SNOW-904: `favourites`, `community_reports` and `routes` are rows in this
- * menu again — the four panel "Display on the map" switches are gone — so
+ * menu again (SNOW-904; each panel's "Show on the map" switch is bound to
+ * its row rather than replacing it) — so
  * all three are back in OVERLAY_RESOURCES as `idb` resources. They are
  * opt-in in `buildFixture` (`idbRows`) so the pre-existing blocks below keep
  * exercising a menu without them. `downloads` is a row with NO dot at

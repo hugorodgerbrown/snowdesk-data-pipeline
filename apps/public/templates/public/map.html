@@ -481,14 +481,21 @@ in addition to the shared map assets.
     {# SNOW-792: the map's date picker. After map_scrubber.js, which owns    #}
     {# the snowdesk:scrub-to listener it dispatches into.                     #}
     <script defer src="{% static 'js/map_calendar.js' %}"></script>
-    {# SNOW-658: the three overlay roundels' shared "my overlay is on the    #}
-    {# map" state (data-overlay-shown). Reads window.pwaDownloadedOverlay /  #}
-    {# pwaFavouritesOverlay / pwaCommunityReportsOverlay, which map.js       #}
+    {# SNOW-658: the four overlay roundels' shared "my overlay is on the     #}
+    {# map" state (data-overlay-shown, and the aria-label composed from it;  #}
+    {# no visual marker). Reads window.pwaDownloadedOverlay /                #}
+    {# pwaFavouritesOverlay / pwaCommunityReportsOverlay / pwaRoutesOverlay, #}
+    {# which map.js                                                          #}
     {# publishes at parse time — hence AFTER the bundle. Deliberately        #}
     {# outside the bundle's contiguous run (it is not a bundle member: no    #}
     {# bundle module reads it), which is what                                #}
     {# tests/public/test_map_script_order.py asks of a tag placed here.      #}
     <script defer src="{% static 'js/map_roundel_overlay_state.js' %}"></script>
+    {# Each panel's "Show on the map" switch, bound to its layers-menu row.  #}
+    {# Reads the bridges and the rows lazily, so it only has to run before   #}
+    {# the first panel opens; outside the bundle for the same reason as the  #}
+    {# tag above.                                                             #}
+    <script defer src="{% static 'js/map_panel_overlay_switch.js' %}"></script>
     {# SNOW-978: the terrain filter's sheet, map chip and menu-row summary.  #}
     {# Talks only to window.pwaTerrainFilter, which map.js publishes at      #}
     {# parse time — hence after the bundle, and outside its contiguous run   #}

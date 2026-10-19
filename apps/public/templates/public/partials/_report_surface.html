@@ -38,8 +38,8 @@ Context expected:
 {% trans "Field observation report" as report_sheet_aria_label %}
 {% include "includes/_overlay_sheet.html" with id="report-sheet" aria_label=report_sheet_aria_label scroll_body=True %}
 {# SNOW-658: the panel the roundel now opens — the user's own reports, a CTA #}
-{# to add another, and the map-overlay switch that used to be the layers      #}
-{# menu's "Community reports" row. Cloned by report.js on every open; the     #}
+{# to add another, and a "Show on the map" switch bound to the layers menu's   #}
+{# "Field observations" row. Cloned by report.js on every open; the           #}
 {# rows load over HTMX from observations:list, so each arrives with its own   #}
 {# delete wiring and this file needs no copy of it.                            #}
 {#                                                                             #}
@@ -57,7 +57,7 @@ Context expected:
     {# so before the user adds another.                                     #}
     {% trans "Reports are shared with the community." as report_context_line %}
     {% trans "Reports" as report_section_label %}
-    {% include "includes/_ugc_panel.html" with title=report_list_title icon_template="includes/_icon_observation.html" context_line=report_context_line section_label=report_section_label rows_template="public/partials/_report_panel_rows.html" cta_label=report_add_label %}
+    {% include "includes/_ugc_panel.html" with title=report_list_title icon_template="includes/_icon_observation.html" context_line=report_context_line section_label=report_section_label rows_template="public/partials/_report_panel_rows.html" cta_label=report_add_label toggle_id="map-community-reports-overlay-toggle" %}
 </template>
 {# SNOW-475: place_picker.js is loaded by map.html (shared with        #}
 {# _favourites_surface.html) — not repeated here; see this partial's    #}

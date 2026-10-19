@@ -6,8 +6,8 @@
  * tests/js/test_map_overlay_exclusivity.js against fakes. THIS file loads
  * the real surfaces — the layers menu, the favourites panel, the field-
  * observations panel, the downloads panel, the routes panel, the legend
- * card, the help tour's coachmark, the bulletin fill-strength flyout and
- * the welcome panel — into one document, the way public/home.html does,
+ * card, the help tour's coachmark, the zoom control's flyout and the
+ * welcome panel — into one document, the way public/home.html does,
  * and runs the full ordered matrix over them: open A, open B, A must be
  * shut.
  *
@@ -43,7 +43,7 @@
  *
  * One of the eight hides itself differently, which is the point of asking
  * each surface how to read its own state rather than assuming: the five
- * panels, the coachmark and the fill flyout use the `hidden` attribute (the
+ * panels, the coachmark and the zoom flyout use the `hidden` attribute (the
  * coachmark's overlay is additionally `pointer-events: none`), while the
  * legend uses `data-state` on its CLUSTER (#map-legend, the card's parent —
  * the (i) toggle and the date ribbon are siblings of the card and stay up
@@ -78,7 +78,7 @@ function shownByAttribute(id) {
  *
  * The registered name is the element's own DOM id in every case. The read
  * is per-surface because the idiom is: `hidden` for the four panels, the
- * coachmark and the fill flyout, `data-state` on the legend card's parent
+ * coachmark and the zoom flyout, `data-state` on the legend card's parent
  * cluster.
  *
  * The downloads sheet is driven through its bridge rather than a DOM
@@ -123,11 +123,9 @@ const SURFACES = {
     open: () => document.getElementById('map-help-toggle').click(),
     isOpen: () => shownByAttribute('home-intro'),
   },
-  'map-fill-flyout': {
-    open: () => document.getElementById('map-fill-toggle').click(),
-    isOpen: () => shownByAttribute('map-fill-flyout'),
-  },
-  // SNOW-1077: the zoom control's flyout, the stack's second flyout.
+  // SNOW-1077: the zoom control's flyout. (The bulletin fill-strength
+  // flyout that sat beside it here is gone: its steps are a row in the
+  // layers menu now, which is already in this matrix as 'basemap-menu'.)
   'map-zoom-flyout': {
     open: () => document.getElementById('map-zoom-toggle').click(),
     isOpen: () => shownByAttribute('map-zoom-flyout'),
@@ -218,16 +216,7 @@ function buildFixture() {
     </template>
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
       <div id="map-controls-collapsible">
-        <div class="map-controls-collapsible-inner">
-          <div class="map-utility-pill map-utility-pill--fill" id="map-fill-pill" data-state="collapsed">
-            <button id="map-fill-toggle" type="button" aria-expanded="false"
-                    aria-controls="map-fill-flyout"></button>
-          </div>
-        </div>
-      </div>
-      <div id="map-fill-flyout" class="map-fill-flyout" role="group" hidden>
-        <button type="button" role="radio" aria-checked="true"
-                class="map-fill-step" data-bulletins-step="0.5"></button>
+        <div class="map-controls-collapsible-inner map-control-group"></div>
       </div>
     </div>
     <div id="map-legend" data-state="collapsed">
@@ -266,8 +255,9 @@ function buildFixture() {
 /**
  * Load the registry and the surface modules in home.html's order.
  *
- * Ten surfaces: map_basemap_picker.js carries both the layers menu and
- * the bulletin fill-strength flyout in two IIFEs, overlays.js carries no
+ * map_basemap_picker.js carries the layers menu (it also carried the
+ * bulletin fill-strength flyout until those steps became a menu row),
+ * overlays.js carries no
  * surface of its own — it is the shared dismiss handler home_intro.js's
  * "×" and CTA both route through — and zoom_control_core.js is the pure
  * half map_zoom_control.js reads.

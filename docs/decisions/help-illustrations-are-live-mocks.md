@@ -2,7 +2,7 @@
 name: help-illustrations-are-live-mocks
 description: /help/ illustrations render real partials from apps/public/component_previews.py, not screenshots; inert wrappers, namespaced ids
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-19
 ---
 
 # Help illustrations are live mocks, not screenshots
@@ -79,16 +79,17 @@ in the tab order, which is the focusable-inside-aria-hidden fault. The
 prose must therefore stand on its own, because a screen-reader user gets
 the paragraph and nothing else.
 
-**Ids must be namespaced.** SNOW-904 removed the case that made this
-urgent — the panels' "Display on the map" switches, which `map.js` found
-by id (`#map-favourites-overlay-toggle` and friends) — but the rule
-outlives it: an illustration renders REAL components, and a live surface
-that addresses one of them by id would find the decoration. Today
-`component_previews.py` supplies no ids at all (the `toggle_id` each panel
-entry carried went with the switch), and
-`tests/public/test_help.py::test_illustrations_render_no_panel_overlay_switch`
+**Ids must be namespaced.** The case that makes this urgent is the
+panels' "Show on the map" switches, which
+`static/js/map_panel_overlay_switch.js` finds by id
+(`#map-favourites-overlay-toggle` and friends; SNOW-904 removed them, the
+two-capsule control column brought them back). An illustration renders
+REAL components, and a live surface that addresses one of them by id would
+find the decoration. So `component_previews.py` gives each panel mock a
+`help-illustration-toggle-…` id, and
+`tests/public/test_help.py::test_illustrations_never_answer_to_the_real_switch_ids`
 asserts the real ids stay absent from the page; any id a future
-illustration does supply must carry a `help-illustration-…` prefix.
+illustration supplies must carry a `help-illustration-…` prefix.
 
 **A component whose styles are not in `output.css` cannot be illustrated
 here.** `/help/` loads that stylesheet alone. The season scrubber has a

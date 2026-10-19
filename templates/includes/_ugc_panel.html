@@ -1,4 +1,4 @@
-{% load components %}
+{% load i18n components %}
 {% comment %}
 templates/includes/_ugc_panel.html — the shared skeleton for the three
 map panels that manage a user's own data (SNOW-658).
@@ -17,9 +17,9 @@ mock (see the SNOW-645/SNOW-635 notes in
 public/partials/_map_downloads_sheet.html), so its skeleton is what got
 extracted here and the other two conform to it, not the reverse.
 
-SNOW-658 (Hugo's "Map panels — common format" design): the shell is four
-parts, always in this order, and what varies between the three panels is
-only ever their contents.
+SNOW-658 (Hugo's "Map panels — common format" design): the shell is five
+parts, always in this order, and what varies between the panels is only
+ever their contents.
 
   1. HEADER — includes/_sheet_header.html, carrying the icon of the
      ROUNDEL that opens this panel and the sentence-case title at ONE
@@ -37,21 +37,26 @@ only ever their contents.
      the panel. The scroll region is the only part that scrolls, so the
      header above and the CTA below stay pinned.
   4. ADD CTA — one full-width outlined button, exactly one per panel.
+  5. MAP SWITCH — includes/_map_overlay_toggle.html at the foot, "Show on
+     the map", so the map BEHIND the sheet is the last thing read rather
+     than the first.
 
-SNOW-904 removed a fifth part. Each panel used to carry a "Display on the
-map" switch at its foot, put there by SNOW-658 on a "one subject, one way
-in" rule — so a reader who wanted to know what could go on their map had
-to open five surfaces to find out, and no single surface answered it. The
-map's layers menu is the sole control for every layer now, and a panel is
-about its own list again. The partial that held the switch
-(includes/_map_overlay_toggle.html) went with it.
+The fifth part has a history. SNOW-658 put a "Display on the map" switch
+here on a "one subject, one way in" rule, and SNOW-904 removed it, because
+a reader asking what could go on their map had to open five surfaces to
+find out. The two-capsule control column brought it back WITHOUT bringing
+that problem back: the map's layers menu stays the one place that answers
+"what is on my map", and this switch is a second way in to ONE layer — the
+panel's own — bound to the same state as its menu row
+(static/js/map_panel_overlay_switch.js). See
+docs/decisions/map-controls-are-two-groups-without-an-on-map-marker.md.
 
 The outer flex column runs at the 18px (`gap-4.5`) rhythm and carries
 `min-h-0 flex-1` so it fills — and is allowed to SHRINK inside — the
 bounded box includes/_overlay_sheet.html's `scroll_body=True` renders.
 `min-h-0` is load-bearing: a flex child defaults to `min-height: auto`
 ("never shrink below my content"), and without the override the list
-refuses to scroll and pushes the CTA off-screen instead.
+refuses to scroll and pushes the CTA and the switch off-screen instead.
 
 Composition. Django has no slot mechanism, and the three shapes we need
 to vary (a rows region, an optional header extra) are markup, not
@@ -100,6 +105,22 @@ Parameters (passed via {% include … with … %}):
                   anything to hold.
   cta_label       (string) — the add-CTA's visible, translated label.
                   Required.
+  toggle_id       (string, optional) — DOM id for the "Show on the map"
+                  switch. Omit it and the switch is not rendered at all.
+                  Every real panel passes one of the four ids
+                  static/js/map_panel_overlay_switch.js knows; the
+                  component library and the /help/ illustrations pass a
+                  namespaced id, so that module never finds theirs.
+
+                  Optional because a panel whose overlay does not exist yet
+                  is a real state (SNOW-686 landed the routes panel before
+                  its layer): a switch wired to nothing is a worse lie than
+                  an absent one.
+
+The switch's LABEL is not a parameter. It is "Show on the map" on every
+panel that has one, so it is fixed here, where no caller can restate it —
+four sentences for one control is the divergence this partial exists to
+remove.
 
 The CTA carries `disabled:` utilities unconditionally. Only downloads
 ever sets `disabled` on it today (SNOW-637: starting a download needs a
@@ -182,4 +203,11 @@ state should not have to remember to bring its own.
             {{ cta_label }}
         </button>
     </div>
+    {# One string for every panel that HAS this switch — see the note above  #}
+    {# the parameter list for why the label is not a parameter, and why      #}
+    {# `toggle_id` is optional.                                              #}
+    {% if toggle_id %}
+        {% trans "Show on the map" as overlay_toggle_label %}
+        {% include "includes/_map_overlay_toggle.html" with id=toggle_id label=overlay_toggle_label %}
+    {% endif %}
 </div>

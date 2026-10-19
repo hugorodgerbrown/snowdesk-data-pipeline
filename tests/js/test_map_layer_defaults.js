@@ -216,18 +216,20 @@ function buildFixture(defaults = {}) {
             <button class="basemap-menu-item basemap-menu-item--overlay"
                     data-overlay-key="l2" aria-checked="false">Minor</button>
           </li>
+          <li role="none" class="basemap-menu-opacity">
+            <div class="map-fill-steps" id="map-bulletin-opacity" role="radiogroup">
+              <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0"></button>
+              <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0.25"></button>
+              <button role="radio" aria-checked="true" class="map-fill-step" data-bulletins-step="0.5"></button>
+              <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0.75"></button>
+              <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="1"></button>
+            </div>
+          </li>
           <li role="none">
             <button class="basemap-menu-item basemap-menu-item--overlay"
                     data-overlay-key="l4" aria-checked="true">Micro</button>
           </li>
         </ul>
-      </div>
-      <div id="map-fill-flyout" class="map-fill-flyout" role="group" hidden>
-        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0"></button>
-        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0.25"></button>
-        <button role="radio" aria-checked="true" class="map-fill-step" data-bulletins-step="0.5"></button>
-        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0.75"></button>
-        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="1"></button>
       </div>
     </div>`;
 }

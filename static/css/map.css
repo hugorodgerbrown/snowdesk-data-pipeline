@@ -68,10 +68,10 @@
        split above turns on. The cost is 8px of tap target (40 → 32); the
        alternative that keeps 40px is a painted shell inset inside a larger
        transparent hit box, which needs a wrapper element on the download
-       control (both its pseudo-elements are taken — ::before by the
-       busy/done fill and the other-basemap ring, ::after by the shared
-       [data-overlay-shown] rule — and its overflow: hidden would clip any
-       hit-area expander). Rejected as machinery out of proportion to 8px.
+       control (its ::before is taken by the busy/done fill and the
+       other-basemap ring — ::after was the shared [data-overlay-shown] ring
+       until that marker was dropped — and its overflow: hidden would clip
+       any hit-area expander). Rejected as machinery out of proportion to 8px.
        .ribbon-header's own min-height stays at lg so the row still centres
        against the lg search roundel opposite it.
 
@@ -254,10 +254,11 @@
                             date matters only for a route on the day, which
                             is the Tour feature's to bring back);
      #home-intro          — the intro card, if it is showing;
-   and, in #map-controls-br, every roundel but locate, layers
-   (#basemap-pill) and routes, and the collapse chevron. The two kept
-   inside the collapsible group are shown expanded whatever its state, so
-   the three are always one tap away.
+   and, in #map-controls-br, the collapse chevron and every button in the
+   "yours" capsule but routes. The "map" capsule (locate and layers) is
+   never collapsible, so it needs no rule; routes is shown, alone in its
+   capsule, whatever the chevron last left the group as, so the three are
+   always one tap away.
 
    `visibility: hidden` also takes the controls out of the tab order and
    the accessibility tree, which opacity alone would not. It changes after
@@ -282,14 +283,20 @@
     }
 
     #map[data-route-rail-open] .map-controls-toggle,
-    #map[data-route-rail-open] .map-controls-collapsible-inner > :not(#basemap-pill):not(.map-utility-pill--route) {
+    #map[data-route-rail-open] .map-controls-collapsible-inner > :not(.map-utility-pill--route) {
         display: none;
     }
 
-    /* Two roundels and the gap between them, open whatever the chevron
-       last left the group as. */
+    /* Routes is no longer the first of its siblings on screen, so it drops
+       the hairline the capsule draws above every button after the first. */
+    #map[data-route-rail-open] .map-controls-collapsible-inner > .map-utility-pill--route {
+        border-top: 0;
+    }
+
+    /* One button's height, open whatever the chevron last left the group
+       as. */
     #map[data-route-rail-open] #map-controls-collapsible {
-        height: calc(2 * var(--map-control-lg) + 8px);
+        height: calc(var(--map-control-lg) + 1px);
         opacity: 1;
         margin-bottom: 0;
     }
@@ -373,12 +380,14 @@
     gap: 8px;
 }
 
-/* Bottom-right control stack — every roundel (basemap, locate, and the
-   flag-gated favourite + observation pills) in one bottom-anchored column,
-   with the help (?) roundel at the foot so it sits level with the bottom-left
-   (i) legend toggle (both at bottom:60px). Bottom-anchored + column means a
-   hidden roundel simply shortens the stack from the top: the column always
-   sits on the baseline, never leaving a gap above the corner. */
+/* Bottom-right control stack — two capsules (.map-control-group, below) in
+   one bottom-anchored column: "the map" (locate, layers) and "yours"
+   (favourites, field observations, routes, downloads), with the chevron at
+   the foot so it sits level with the bottom-left (i) legend toggle.
+   Bottom-anchored + column means a hidden control simply shortens the stack
+   from the top: the column always sits on the baseline, never leaving a gap
+   above the corner. The 16px gap separates the two groups; the chevron's
+   own top margin takes it back to 8px below the "yours" capsule. */
 .map-controls-br {
     position: absolute;
     right: var(--map-edge-inset-right);
@@ -387,61 +396,124 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 8px;
+    gap: 16px;
+}
+
+.map-controls-br > .map-controls-toggle {
+    margin-top: -8px;
+}
+
+/* —— Control groups (the two capsules) ————————————————————————
+   One glass capsule per group: the background, hairline border, blur and
+   shadow belong to the GROUP, and the buttons inside give theirs up, so a
+   group reads as one object with a hairline between its members rather
+   than a column of separate roundels. `border-radius: 999px` on a box one
+   button wide gives semicircular ends; `overflow: hidden` clips each
+   button's hover infill (and anything a button paints on its own
+   pseudo-elements, such as the downloads control's) to that outline.
+
+   Every member stays exactly --map-control-lg tall — the divider is a
+   border INSIDE that height (border-box) — so a capsule of n buttons is
+   n * lg, which is what #map-controls-collapsible's computed height
+   relies on.
+
+   Focus rings are drawn INSIDE the button for the same reason the hover
+   fill is clipped: an outline offset outwards would be cut off by the
+   capsule's own clip. */
+.map-control-group {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    width: var(--map-control-lg);
+    overflow: hidden;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+}
+
+.map-control-group > .map-utility-pill,
+.map-control-group > .map-glass-roundel {
+    width: 100%;
+    height: var(--map-control-lg);
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+/* As specific as the reset above (it wins on source order), or that rule's
+   `border: 0` would erase every divider. */
+.map-control-group > :is(.map-utility-pill, .map-glass-roundel) + :is(.map-utility-pill, .map-glass-roundel) {
+    border-top: 0.5px solid var(--color-border);
+}
+
+.map-control-group .map-utility-button,
+.map-control-group .map-utility-button:focus-visible {
+    width: 100%;
+    border-radius: 0;
+}
+
+.map-control-group .map-utility-button:focus-visible,
+.map-control-group > .map-glass-roundel:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: -3px;
 }
 
 /* —— Collapsible control group ————————————————————————————————
-   Eight roundels in one column read as clutter over the map. Locate and the
-   toggle stay out; the other six (layers, bulletin fill, download,
-   favourite, observations, help) collapse into the toggle.
-
-   That split is SNOW-664's, and this comment described the one before it
-   ("Layers, locate and the toggle stay out; the other four…") until the
-   roundel sizing audit — the same drift that left the fallback below stale.
+   The chevron collapses the "yours" capsule — favourites, field
+   observations, routes and downloads — and nothing else. The "map" capsule
+   (locate and layers) stays out: where you are and what the map is drawing
+   are the two questions a map always has to answer, and SNOW-664's column,
+   which folded layers away with everything else, left one of them behind
+   the chevron.
 
    The toggle is the LAST child, so the bottom-anchored stack grows and
    shrinks upward out of it: the toggle never moves under the finger that
-   is pressing it, and the revealed controls appear directly beneath layers
-   and locate in their existing stack order.
+   is pressing it, and the revealed capsule appears directly beneath the
+   "map" one.
 
-   SNOW-794: help is no longer one of them. Everything in this column
-   changes what the map SHOWS — layers, basemap, fill strength, downloads,
-   the UGC pins. Help changes nothing; it explains. It sits in the
-   bottom-left stack now, with the legend and the date.
+   SNOW-794: help is not in this column. Everything here changes what the
+   map SHOWS; help changes nothing, it explains. It sits in the
+   bottom-left stack, with the legend and the date.
 
-   Height is COMPUTED, not measured. The control scale above guarantees
-   every child is exactly --map-control-lg tall with an 8px gap, so n
-   children occupy n*lg + (n-1)*8. --map-controls-count is set from the
-   live child count by mapControlsCollapseInit, which keeps this correct if
-   a control ever becomes conditional again — SNOW-724 made the routes
-   roundel unconditional, taking the count from six to seven, and SNOW-794
-   moved the help roundel out to the bottom-left stack, taking it back to
-   six. Measuring
-   instead would mean
-   reading offsetHeight off an already-clipped box (it returns 0) or
-   un-clipping to measure and forcing a reflow on every toggle.
+   Height is COMPUTED, not measured. The capsule's members are each exactly
+   --map-control-lg tall with no gap between them (the hairline divider is
+   drawn inside each button's own height), so n members occupy n*lg, plus
+   1px for the capsule's own two 0.5px borders.
+   --map-controls-count is set from the live child count by
+   mapControlsCollapseInit, which keeps this correct if a control ever
+   becomes conditional again. Measuring instead would mean reading
+   offsetHeight off an already-clipped box (it returns 0) or un-clipping to
+   measure and forcing a reflow on every toggle.
 
    THE FALLBACK MUST TRACK THE MARKUP. It is only reached before the JS
    runs — but the group is server-rendered `data-expanded="true"` (so the
    controls are discoverable on a first visit and present with JS off), so
-   a stale fallback is a visible clip, not a harmless default. It sat at 4
-   from before SNOW-664 moved layers into the group and SNOW-656 added the
-   bulletin fill, against six real children: 4*40 + 3*8 = 184px of box for
-   280px of content, and `overflow: hidden` swallowed the top ~96px — the
-   layers and fill roundels were entirely invisible until the JS corrected
-   the count. Found by the roundel sizing audit. If you add or remove a
-   child of .map-controls-collapsible-inner, change the 6 below to match.
+   a stale fallback is a visible clip, not a harmless default: once it sat
+   at 4 against six real children and `overflow: hidden` swallowed the top
+   two until the JS corrected the count (the roundel sizing audit). The
+   "yours" capsule holds four buttons; if you add or remove a child of
+   .map-controls-collapsible-inner, change the 4 below to match
+   (tests/public/test_map_page.py asserts the two agree).
 
-   The wrapper animates height and is what clips; the inner holds the flex
-   column, because transitioning height needs a fixed-height box wrapping an
-   auto-height one. margin-bottom cancels the parent's 8px gap while
-   collapsed, so a collapsed group leaves no phantom slot in the stack. */
+   The wrapper animates height and is what clips; the inner — the capsule
+   itself — holds the flex column, because transitioning height needs a
+   fixed-height box wrapping an auto-height one. margin-bottom cancels the
+   stack's 16px gap while collapsed, so a collapsed group leaves no phantom
+   slot: the chevron sits 8px under the "map" capsule, as it sits 8px under
+   the "yours" one when the group is open. */
 #map-controls-collapsible {
     overflow: hidden;
     flex: 0 0 auto;
     height: 0;
     opacity: 0;
-    margin-bottom: -8px;
+    margin-bottom: -16px;
     transition:
         height 300ms cubic-bezier(0.32, 0.72, 0, 1),
         opacity 200ms ease-out,
@@ -449,21 +521,15 @@
 }
 
 .map-controls-br[data-expanded="true"] #map-controls-collapsible {
-    height: calc(
-        var(--map-controls-count, 6) * var(--map-control-lg) +
-            (var(--map-controls-count, 6) - 1) * 8px
-    );
+    height: calc(var(--map-controls-count, 4) * var(--map-control-lg) + 1px);
     opacity: 1;
     margin-bottom: 0;
 }
 
 /* The lift makes the group rise into place rather than materialise; it is on
-   the inner so it composites independently of the wrapper's height. */
+   the inner so it composites independently of the wrapper's height. The
+   inner is the capsule, so its column carries no gap (.map-control-group). */
 .map-controls-collapsible-inner {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
     transform: translateY(10px);
     transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -657,43 +723,6 @@
 }
 
 
-/* SNOW-656: bulletin-fill roundel — the same three declarations every other
-   member of the bottom-right stack carries.
-
-   Added by the roundel sizing audit: this rule did not exist at all. The
-   class was on the markup from the day the control shipped, but map.css
-   never defined it, so the pill fell back to `width: auto` and took its
-   width from content — the 40px button plus the pill's own two 0.5px
-   borders, i.e. 41px. Three things followed, and each is a reason one of
-   the declarations below is load-bearing rather than copied:
-
-   `width` — at 41px this roundel was a pixel wider than the other eight,
-   and .map-controls-br is `align-items: flex-end`, so the extra pixel hung
-   off the LEFT and broke the column's shared edge.
-
-   `border-radius: 999px` on a 41×40 box is an ellipse (20.5px/20px), not a
-   circle — and 41 is odd, which is the exact case the control-scale comment
-   at the top of this file warns about: a fractional corner radius that
-   Chrome's backdrop-filter clip does not honour, leaving an unclipped
-   rectangular patch at the trailing edge. This pill carries
-   backdrop-filter: blur(8px) from .map-utility-pill.
-
-   `flex: 0 0 auto` — without it this was the one child of the column that
-   could flex-shrink. #map-controls-collapsible's height is COMPUTED from a
-   child count rather than measured (see its own rule), so any drift between
-   that count and reality would have squashed this control first, silently.
-
-   `justify-content: center` has no visible effect today — the content box
-   is exactly the button's width — but it is what keeps the glyph centred if
-   anything else ever lands beside it in the pill, which is the whole reason
-   its siblings state it. */
-.map-utility-pill--fill {
-    width: var(--map-control-lg);
-    flex: 0 0 auto;
-    justify-content: center;
-}
-
-
 /* Hide the MapLibre GeolocateControl's own rendered control — our
    #locate-toggle pill is the visible affordance. Hiding only the button left
    the empty .maplibregl-ctrl-group wrapper (a white box with a shadow) visible
@@ -717,9 +746,10 @@
        (i). right:48px clears the 40px pill + 8px gap.
 
        SNOW-664: `bottom` is measured from .map-controls-br now, not from
-       #basemap-pill — the pill moved inside #map-controls-collapsible, whose
-       `overflow: hidden` would clip this menu, so it is a child of the stack
-       (like .map-fill-flyout, SNOW-656). `bottom: 0` therefore lines its
+       #basemap-pill — the pill sits inside a clipping box (the "map"
+       capsule, .map-control-group, since the column became two groups),
+       which would clip this menu, so it is a child of the stack.
+       `bottom: 0` therefore lines its
        lower edge up with the foot of the roundel column, level with the
        legend/report baseline (bottom:60px). This is the no-JS value; on a
        real load basemapPickerInit overwrites it with the measured floor just
@@ -1557,45 +1587,46 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
-/* SNOW-656: the bulletin-fill flyout — five opacity steps, opening to the
-   LEFT of the bottom-right roundel column from #map-fill-toggle.
+/* Bulletin opacity — five opacity steps, a row in the layers menu's
+   Conditions group under the three providers whose bulletins it shades.
+   SNOW-656 built it as a roundel in the control column with a flyout of
+   its own; the two-capsule column moved it here, so every choice about
+   what the map draws is made in one menu.
 
-   Left, at right:48px, is the same side and offset .basemap-menu uses, so
-   every panel in this stack appears from the same edge.
+   A label above a full-width segmented row: the menu is shrink-to-fit with
+   nowrap rows (SNOW-328), so the row takes the width the row labels set
+   (`width: 0; min-width: 100%`, the same trick .basemap-menu-item-detail
+   uses) rather than widening the menu to five fixed targets. */
+.basemap-menu-opacity {
+    padding: 4px 12px 6px;
+}
 
-   It is a child of .map-controls-br, NOT of the roundel it belongs to. The
-   roundel sits inside #map-controls-collapsible, which is `overflow: hidden`
-   for its height animation — and that clips both axes, so a panel extending
-   left out of that box would simply be cut off. Anchoring to the stack keeps
-   it out of the clip; mapFillControlInit sets `top` from the roundel's own
-   offset on open, so it still lines up with the control that opened it.
+/* Indented to the row labels' own column (12px row padding + a 14px
+   checkbox + the 8px gap, less this row's 12px), so it reads as a row
+   label; the steps beneath it take the menu's full inner width. */
+.basemap-menu-opacity-label {
+    margin: 0 0 4px;
+    padding-left: 22px;
+    font-size: 13px;
+    color: var(--color-text-1);
+    white-space: nowrap;
+}
 
-   Five 44px targets is 220px, which is why this is a flyout at all: it does
-   not fit inline on the canvas at 375px, and a control this size has no
-   business being permanently on the map. */
-.map-fill-flyout {
-    position: absolute;
-    right: 48px;
+.map-fill-steps {
     display: flex;
-    align-items: center;
+    width: 0;
+    min-width: 100%;
     gap: 2px;
-    padding: 0 4px;
-    background: var(--color-glass);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    border: 0.5px solid var(--color-border);
-    border-radius: 999px;
-    box-shadow: var(--shadow-glass);
-    z-index: 5;
 }
 
-.map-fill-flyout[hidden] {
-    display: none;
-}
-
+/* Each step takes an equal share of the row, so the five fill whatever
+   width the menu's labels set. 36px tall — a menu row's own height — and
+   never narrower than the 24px WCAG 2.2 floor (the menu's 200px minimum
+   leaves each about 34px). */
 .map-fill-step {
-    width: 44px;
-    height: 44px;
+    flex: 1 1 0;
+    min-width: 24px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1635,15 +1666,13 @@ html:has(> body.map-fullscreen) > body {
 .map-fill-step-swatch[data-step="1"] { opacity: 1; }
 
 /* The selected step.
-   The ring hangs off the SWATCH, not the 44px button. On the button it was a
-   heavy circle at the full target size, which both fought the rounded-square
-   swatch inside it and sat flush against the pill's own edge — reading as if
-   the selection had broken out of the ribbon.
+   The ring hangs off the SWATCH, not the button. On the button it was a
+   heavy shape at the full target size, which fought the rounded-square
+   swatch inside it.
    Two box-shadow rings, both taking the swatch's own border-radius so they
    are concentric with it: a card-coloured gap, then a hairline in the muted
-   text tone rather than full black. 27px overall inside a 44px target leaves
-   8.5px of clear space on every side, so it stays visibly within the pill
-   while the tap target is untouched. */
+   text tone rather than full black. 27px overall, inside a 36px-tall step,
+   so it stays clear of the neighbouring steps' own rings. */
 .map-fill-step[aria-checked="true"] .map-fill-step-swatch {
     box-shadow:
         0 0 0 3px var(--color-card),
@@ -1899,7 +1928,7 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
-/* + and −: 44 px targets, the same box as .map-fill-step, stacked on the
+/* + and −: 44 px targets, stacked on the
    track's line so the scale reads as running between them. */
 .map-zoom-step {
     display: flex;
@@ -3413,54 +3442,21 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
-/* SNOW-658: "the overlay this roundel's panel switches is on the map right
-   now" — the one state shared by all three overlay roundels (downloads,
-   favourites, field observations), painted from one attribute by one module
-   (static/js/map_roundel_overlay_state.js). Keyed on the attribute alone,
-   with no class in the selector, deliberately: the downloads roundel is a
-   .map-download-control and the other two are .map-utility-buttons inside a
-   pill, and a per-family rule is exactly how the three signals diverged
-   before this ticket. A fourth roundel gets this by carrying the attribute.
+/* SNOW-658 drew a 2px --color-accent inset ring on `::after` of every
+   roundel carrying `[data-overlay-shown="true"]` — "the overlay this
+   roundel's panel switches is on the map right now". It is gone by design,
+   with the two-capsule column: readers took the ring for "selected" (the
+   roundel's own state, not its layer's), and it only repeated what the map
+   already shows. The map itself carries that state, the layers menu names
+   every layer that is on, and each panel's own "Show on the map" switch
+   states it for its layer.
 
-   WHY A RING AND NOT A FILL. SNOW-645 removed a FILLED disc from
-   #map-custom-download-control after three attempts at it (an active-basemap
-   colour, then a flat neutral, then a theme-inverting neutral) all drew the
-   same complaint: a solid disc among glass roundels reads as an error or an
-   alert, not as a status. The lesson there was that the problem was painting
-   a colour at all, not which colour — so this deliberately does not reach
-   for a fill again. A 2px inset ring leaves the glass chrome and the glyph
-   exactly as they are in the off state and changes only the rim, which is
-   the same "third answer, not a shade of the other two" device the
-   'other-basemap' state above already uses on the region roundel.
-
-   The colour is --color-accent, and it is not a new choice: it is the ON
-   colour of the switch that drives this state (the track in
-   templates/includes/_switch.html is `peer-checked:bg-accent`). The control
-   and its remote indicator say the same thing in the same colour, in both
-   themes — main.css mirrors --color-accent under .dark.
-
-   Drawn on ::after rather than the element's own box-shadow so it cannot
-   contend with .map-download-control's drop shadow or with the ::before that
-   busy/done/other-basemap already own. `border-radius: inherit` gives the
-   pseudo-element its own circular geometry rather than leaning on a host
-   clip — see the 'other-basemap' rule's own comment for the bug that
-   reasoning shipped last time. If a stale static/css/output.css leaves
-   --color-accent undefined the ring simply does not paint; the state is
-   still in each roundel's aria-label, which is the accessible expression it
-   carries for its own sake. */
-[data-overlay-shown="true"] {
-    position: relative;
-}
-
-[data-overlay-shown="true"]::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    box-shadow: inset 0 0 0 2px var(--color-accent);
-    pointer-events: none;
-    z-index: 1;
-}
+   static/js/map_roundel_overlay_state.js still paints the attribute and
+   composes the roundel's aria-label from it, so the state stays available
+   to assistive technology; it simply has no visual rule. A future rule
+   keyed on the attribute would bring the marker back — see
+   docs/decisions/map-controls-are-two-groups-without-an-on-map-marker.md
+   before adding one. */
 
 /* The max-width:640px rule that hid the major/minor download icons went with
    them. Only the micro control exists, it now lives in the bottom-right stack
@@ -4392,7 +4388,7 @@ body.map-framing #map-legend {
    thing as the favourites, observations and routes controls — a roundel
    that opens one surface over the map — so it sits with them, and the
    popup is positioned against .map-controls-br exactly as .basemap-menu
-   and .map-fill-flyout are. The roundel itself is inside
+   is. The roundel itself is inside
    #map-controls-collapsible, which is `overflow: hidden` for its height
    animation and would clip a popup opening leftward out of it.
    ————————————————————————————————————————————————————————— */
@@ -5029,9 +5025,9 @@ body.map-framing #map-legend {
     /* COVERED, NOT MOVED (Hugo, 16 Oct). While a detent sheet is open on a
        phone nothing on the map moves or folds to make room for it: the
        sheet slides up over the furniture, and whatever is under it is under
-       it. The column's menus (#basemap-menu, #map-fill-flyout) close on
-       their own when the sheet opens — both are in pwaMapOverlays, which
-       map_sheet.js announces every open through. */
+       it. The column's menu (#basemap-menu) closes on its own when the
+       sheet opens — it is in pwaMapOverlays, which map_sheet.js announces
+       every open through. */
 
     /* ...BUT NOTHING IS LEFT HALF-COVERED, OR REACHABLE UNDER THE SHEET.
        Covering alone leaves two faults. The sheet's top edge lands where
@@ -5056,16 +5052,21 @@ body.map-framing #map-legend {
 
     /* AT PEEK THE COLUMN KEEPS ITS THREE (2026-10-19). A sheet at peek is
        someone reading one thing on the map, so the column is trimmed to
-       what a route-open phone keeps (Route-open furniture, above): locate,
-       layers and routes. Fill, downloads, favourites and reports go, and
-       the two kept inside the collapsible group show whatever the chevron
-       last left it as. Half and full hide the column whole (above). */
-    :root[data-map-sheet='peek'] .map-controls-collapsible-inner > :not(#basemap-pill):not(.map-utility-pill--route) {
+       what a route-open phone keeps (Route-open furniture, above): the
+       "map" capsule (locate and layers), which nothing here touches, and
+       routes, the one member of the "yours" capsule kept, shown open
+       whatever the chevron last left it as. Half and full hide the column
+       whole (above). */
+    :root[data-map-sheet='peek'] .map-controls-collapsible-inner > :not(.map-utility-pill--route) {
         display: none;
     }
 
+    :root[data-map-sheet='peek'] .map-controls-collapsible-inner > .map-utility-pill--route {
+        border-top: 0;
+    }
+
     :root[data-map-sheet='peek'] #map-controls-collapsible {
-        height: calc(2 * var(--map-control-lg) + 8px);
+        height: calc(var(--map-control-lg) + 1px);
         opacity: 1;
         margin-bottom: 0;
     }

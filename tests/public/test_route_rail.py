@@ -479,19 +479,26 @@ class TestTheRouteOpenFurniture:
         assert all(":root[data-map-sheet='peek']" in sel for sel in column)
 
     def test_a_phone_keeps_locate_layers_and_routes(self) -> None:
-        """Every other roundel and the chevron leave the column."""
+        """Every other button in the "yours" capsule, and the chevron, leave.
+
+        The "map" capsule (locate and layers) is outside the collapsible
+        group, so nothing here hides it; routes is the one member of the
+        "yours" capsule kept, shown open whatever the chevron's state.
+        """
         phone, _rest = _split_phone_blocks(_MAP_CSS.read_text(encoding="utf-8"))
         rules = _rules(phone)
         hidden = [sel for sel, body in rules if "display: none" in body]
         joined = " ".join(hidden)
         assert ".map-controls-toggle" in joined
-        assert ":not(#basemap-pill):not(.map-utility-pill--route)" in joined
-        # Locate sits outside the collapsible group, so nothing there hides it.
-        assert "#locate-toggle" not in joined
-        assert "map-utility-pill--locate" not in joined
-        # The two inside the group are shown open whatever its state.
+        assert (
+            ".map-controls-collapsible-inner > :not(.map-utility-pill--route)" in joined
+        )
+        for kept in ("#locate-toggle", "map-utility-pill--locate", "basemap-pill"):
+            assert kept not in joined, kept
+        assert "map-control-group-map" not in joined
+        # One button's height, plus the capsule's 1px of border.
         opened = dict(rules)["#map[data-route-rail-open] #map-controls-collapsible"]
-        assert "calc(2 * var(--map-control-lg) + 8px)" in opened
+        assert "calc(var(--map-control-lg) + 1px)" in opened
 
     def test_desktop_withdraws_nothing_but_the_intro(self) -> None:
         """From 640 px every control returns; the intro card is not a control."""
@@ -511,7 +518,12 @@ class TestTheRouteOpenFurniture:
             for name in ("_map_embed.html", "_season_ribbon.html")
         )
 
-        for container in (*_WITHDRAWN_ON_A_PHONE, "map-controls-br", "basemap-pill"):
+        for container in (
+            *_WITHDRAWN_ON_A_PHONE,
+            "map-controls-br",
+            "basemap-pill",
+            "map-control-group-map",
+        ):
             assert re.search(rf'id="{container}"', source), container
         assert "map-utility-pill--route" in source
 

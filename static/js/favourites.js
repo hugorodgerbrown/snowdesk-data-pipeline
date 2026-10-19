@@ -20,11 +20,11 @@
  * Rename — the pencil, and only the pencil — puts the row's own label
  * into an inline edit (static/js/inline_rename.js, shared with the
  * downloads panel) and posts the committed name from below. The panel
- * offers [data-panel-add] to place another. It carried a "Display on the
- * map" switch for window.pwaFavouritesOverlay between SNOW-658 and
- * SNOW-904; that ticket returned every layer control to the map's layers
- * menu, so the panel is about its own list and the menu's Favourites row
- * drives the bridge.
+ * offers [data-panel-add] to place another. Its foot carries a "Show on
+ * the map" switch bound to the layers menu's Favourites row (SNOW-658 put
+ * one here, SNOW-904 removed it, the two-capsule column restored it beside
+ * the row); static/js/map_panel_overlay_switch.js owns it, and this module
+ * only seeds it after each clone.
  *
  * Flow when eligible (authenticated), using the shared place-picker
  * (SNOW-475 — static/js/place_picker.js) rather than a draggable marker,
@@ -265,9 +265,11 @@
    *
    * Eligible: the rows load over HTMX from favourites:list. Anonymous: the
    * rows and the add CTA are removed and a sign-in CTA takes their place.
-   * (The overlay switch that used to stay put here through both branches —
-   * a view control for the map behind the sheet — left with every other
-   * panel switch in SNOW-904.)
+   * The "Show on the map" switch stays through both branches, as SNOW-658's
+   * did: it is a view control for the map behind the sheet, not a row in a
+   * list the visitor hasn't got. Signed out, flipping it hands off to
+   * sign-in exactly as the layers-menu row does
+   * (static/js/map_panel_overlay_switch.js).
    *
    * @returns {boolean} Whether the panel was rendered — false when the
    *   surface carries no list template, so the caller can fall back.
@@ -276,6 +278,8 @@
     if (!listTemplate) return false;
     sheet.replaceChildren();
     sheet.appendChild(listTemplate.content.cloneNode(true));
+    // A cloned switch starts unchecked; seed it from the overlay's setting.
+    window.pwaPanelOverlaySwitch?.sync();
 
     if (!IS_ELIGIBLE) {
       const addButton = sheet.querySelector('[data-panel-add]');
@@ -538,11 +542,12 @@
     });
   }
 
-  // SNOW-904: the "Display on the map" switch this panel carried, and the
-  // change listener that drove window.pwaFavouritesOverlay from it, are
-  // gone. The layers menu is the sole control for every layer now, and its
-  // Favourites row drives the same bridge — so the overlay is unchanged and
-  // this module simply no longer owns a view control for it.
+  // The panel's "Show on the map" switch is wired by
+  // static/js/map_panel_overlay_switch.js, not here: it is bound to the
+  // layers menu's Favourites row (SNOW-904 had removed the switch SNOW-658
+  // put here; the two-capsule column restored it beside that row rather
+  // than instead of it), so one module owns both directions for all four
+  // panels.
 
   // SNOW-658: the list is fetched, and this panel opens offline while its
   // list does not load offline. Say so, rather than leaving the loading line

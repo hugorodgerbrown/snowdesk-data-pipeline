@@ -259,201 +259,138 @@ Optional context:
             <circle cx="12" cy="10" r="2.75" fill="var(--color-card)" />
         </svg>
     </div>
-    {# Bottom-right control stack — every roundel in one bottom-anchored      #}
-    {# column: locate, then the collapsible group (layers, bulletin fill,     #}
-    {# downloads, favourites, observations) with the help (?) roundel at its  #}
-    {# foot, then the expand/collapse toggle (level with the bottom-left (i)  #}
-    {# toggle). map.js/report.js/favourites.js bind by id, so the ordering is #}
-    {# DOM-only; #map-controls-br is on the click guard.                      #}
-    {# SNOW-664: LOCATE is the only roundel outside the collapsible group.    #}
-    {# "Where am I" is the one question worth a permanent control on a map    #}
-    {# the user is standing in; everything else is a choice about what the    #}
-    {# map shows, and a choice can wait behind the toggle. Layers used to sit #}
-    {# above locate and stay out with it — it is now the FIRST item inside    #}
-    {# the group, one slot down, so a collapsed column is locate + toggle and #}
-    {# nothing else.                                                          #}
+    {# Bottom-right control stack — two capsules in one bottom-anchored       #}
+    {# column, then the expand/collapse toggle (level with the bottom-left    #}
+    {# (i) toggle). map.js/report.js/favourites.js bind by id, so the         #}
+    {# ordering is DOM-only; #map-controls-br is on the click guard.          #}
+    {#                                                                        #}
+    {# The column is TWO GROUPS, each one glass capsule (.map-control-group  #}
+    {# in static/css/map.css — one shared background, border and shadow,     #}
+    {# hairlines between the buttons, no gap):                                #}
+    {#   1. THE MAP — locate and layers. Where you are, and what the map is   #}
+    {#      drawing. Always on screen.                                        #}
+    {#   2. YOURS — favourites, field observations, routes and downloads:     #}
+    {#      the things the reader keeps. Downloads belongs here rather than   #}
+    {#      with the map because what it opens is a list of areas THIS        #}
+    {#      reader saved, managed exactly like the other three.               #}
+    {# The chevron collapses group 2 only. SNOW-664 had collapsed layers too, #}
+    {# leaving locate alone outside; "what is the map showing" is the other   #}
+    {# question a map always has to answer, so layers stays out with locate.  #}
+    {# See docs/decisions/map-controls-are-two-groups-without-an-on-map-marker.md. #}
     {# data-expanded drives the collapsible group below. Server-rendered      #}
     {# "true" so the controls are discoverable on a first visit and present   #}
     {# with JS disabled; mapControlsCollapseInit re-reads the persisted       #}
     {# preference from localStorage on boot.                                  #}
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
-        {# SNOW-328: "Locate me" roundel — triggers the MapLibre       #}
-        {# GeolocateControl to pan/zoom to the user's position once.  #}
-        {# The control's own button is hidden via CSS; this pill is    #}
-        {# the visible affordance. Rendered on both /map/ and /.       #}
-        {# SNOW-664: FIRST in the stack, and the only child outside     #}
-        {# #map-controls-collapsible — see the stack comment above.     #}
-        {# HACK MODE (feature discovery): this roundel carries TWO modes, and #}
-        {# `data-mode` says which. Idle it is "locate me"; the tap that finds  #}
-        {# you also arms a drop zone around you, and the roundel becomes       #}
-        {# "download this" until it times out (static/js/map_drop_zone.js).    #}
-        {# One control because it is one thought — the position is a one-shot  #}
-        {# fix, not a live track, so there was never a reason for a second     #}
-        {# roundel to ask for the same fix a moment later.                     #}
-        {# Both glyphs are rendered and CSS shows one, rather than the JS      #}
-        {# writing SVG: the markup stays server-rendered and the mode switch   #}
-        {# stays a single attribute write.                                     #}
-        <div class="map-utility-pill map-utility-pill--locate">
-            <button
-                id="locate-toggle"
-                type="button"
-                class="map-utility-button hover-affordance"
-                data-mode="locate"
-                aria-label='{% trans "Locate me" %}'
+        {# Group 1, "the map": locate + layers in one capsule. Never inside   #}
+        {# #map-controls-collapsible, so the chevron cannot hide either.      #}
+        <div class="map-control-group" id="map-control-group-map" data-control-group="map">
+            {# SNOW-328: "Locate me" roundel — triggers the MapLibre       #}
+            {# GeolocateControl to pan/zoom to the user's position once.  #}
+            {# The control's own button is hidden via CSS; this pill is    #}
+            {# the visible affordance. Rendered on both /map/ and /.       #}
+            {# HACK MODE (feature discovery): this roundel carries TWO modes, and #}
+            {# `data-mode` says which. Idle it is "locate me"; the tap that finds  #}
+            {# you also arms a drop zone around you, and the roundel becomes       #}
+            {# "download this" until it times out (static/js/map_drop_zone.js).    #}
+            {# One control because it is one thought — the position is a one-shot  #}
+            {# fix, not a live track, so there was never a reason for a second     #}
+            {# roundel to ask for the same fix a moment later.                     #}
+            {# Both glyphs are rendered and CSS shows one, rather than the JS      #}
+            {# writing SVG: the markup stays server-rendered and the mode switch   #}
+            {# stays a single attribute write.                                     #}
+            <div class="map-utility-pill map-utility-pill--locate">
+                <button
+                    id="locate-toggle"
+                    type="button"
+                    class="map-utility-button hover-affordance"
+                    data-mode="locate"
+                    aria-label='{% trans "Locate me" %}'
+                >
+                    <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        aria-hidden="true"
+                        class="map-locate-glyph map-locate-glyph--locate"
+                    >
+                        <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" />
+                    </svg>
+                    {# Concentric rings around a filled centre — a radius about a  #}
+                    {# point, which is what the drop draws. Deliberately close to  #}
+                    {# the crosshair above without being it: the same place, a     #}
+                    {# different verb.                                             #}
+                    <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        class="map-locate-glyph map-locate-glyph--drop"
+                    >
+                        <circle cx="12" cy="12" r="2.5" fill="currentColor" />
+                        <circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.6" />
+                        <circle
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-dasharray="3 3"
+                        />
+                    </svg>
+                </button>
+            </div>
+            {# SNOW-58: basemap layer picker — Google-Maps-style stacked-layers   #}
+            {# pill that opens a popover of basemap options. Choice persists in   #}
+            {# localStorage; selecting a value calls maplibre setStyle() and JS   #}
+            {# re-installs the regions source + layers on style.load.             #}
+            {# Second in the "map" capsule, under locate, and never collapsed.    #}
+            {# Its menu (#basemap-menu) is still a child of the stack rather than #}
+            {# of this pill: positionMenu measures it against the stack, and the  #}
+            {# capsule clips its own children to its rounded outline.             #}
+            <div
+                class="map-utility-pill map-utility-pill--basemap"
+                id="basemap-pill"
+                data-state="collapsed"
             >
-                <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    aria-hidden="true"
-                    class="map-locate-glyph map-locate-glyph--locate"
+                <button
+                    id="basemap-toggle"
+                    type="button"
+                    class="map-utility-button hover-affordance"
+                    aria-label='{% trans "Choose basemap" %}'
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                    aria-controls="basemap-menu"
                 >
-                    <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" />
-                </svg>
-                {# Concentric rings around a filled centre — a radius about a  #}
-                {# point, which is what the drop draws. Deliberately close to  #}
-                {# the crosshair above without being it: the same place, a     #}
-                {# different verb.                                             #}
-                <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    class="map-locate-glyph map-locate-glyph--drop"
-                >
-                    <circle cx="12" cy="12" r="2.5" fill="currentColor" />
-                    <circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.6" />
-                    <circle
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                        stroke-dasharray="3 3"
-                    />
-                </svg>
-            </button>
+                    {% include "includes/_icon_layers.html" %}
+                </button>
+            </div>
         </div>
-        {# Collapsible group. Locate above stays put; these five reveal beneath  #}
-        {# it, in stack order, easing out of the toggle anchored at the foot.   #}
+        {# Group 2, "yours", in the collapsible wrapper. The chevron at the     #}
+        {# foot reveals and hides this capsule alone, easing out of the toggle. #}
         {# The wrapper is what animates (height, clipped by overflow) and the   #}
-        {# inner holds the flex column, because a height transition needs a     #}
-        {# fixed-height box wrapping an auto-height one.                        #}
-        {# The clip is on BOTH axes, which is why neither panel opened from     #}
-        {# this group lives inside it: #basemap-menu and #map-fill-flyout are   #}
-        {# both children of #map-controls-br, positioned against the stack by   #}
-        {# their own JS — see each one's comment below.                         #}
+        {# inner — which IS the capsule — holds the flex column, because a      #}
+        {# height transition needs a fixed-height box wrapping an auto-height   #}
+        {# one. The inner's children are the capsule's buttons and nothing      #}
+        {# else: mapControlsCollapseInit counts them for the open height.       #}
         <div id="map-controls-collapsible">
-            <div class="map-controls-collapsible-inner">
-                {# SNOW-58: basemap layer picker — Google-Maps-style stacked-layers   #}
-                {# pill that opens a popover of basemap options. Choice persists in   #}
-                {# localStorage; selecting a value calls maplibre setStyle() and JS   #}
-                {# re-installs the regions source + layers on style.load.             #}
-                {# SNOW-664: FIRST in the collapsible group, one slot below the       #}
-                {# always-visible locate roundel — it used to sit above locate and    #}
-                {# stay out of the group with it. Its menu (#basemap-menu) moved out  #}
-                {# to the stack in the same change: this wrapper is `overflow:        #}
-                {# hidden`, so a popover anchored to a roundel inside it would be     #}
-                {# clipped the moment it extended left, exactly as SNOW-656 found     #}
-                {# for the bulletin-fill flyout.                                      #}
-                <div
-                    class="map-utility-pill map-utility-pill--basemap"
-                    id="basemap-pill"
-                    data-state="collapsed"
-                >
-                    <button
-                        id="basemap-toggle"
-                        type="button"
-                        class="map-utility-button hover-affordance"
-                        aria-label='{% trans "Choose basemap" %}'
-                        aria-haspopup="menu"
-                        aria-expanded="false"
-                        aria-controls="basemap-menu"
-                    >
-                        {% include "includes/_icon_layers.html" %}
-                    </button>
-                </div>
-                {# SNOW-656: bulletin-fill strength — a roundel whose flyout     #}
-                {# opens to the LEFT with five opacity steps. It governs the     #}
-                {# danger choropleth (regions-fill) and the dissolved boundary   #}
-                {# of every region sharing one bulletin: the bulletin DATA,      #}
-                {# split from the Micro regions row, which now carries the       #}
-                {# geography alone.                                              #}
-                {#                                                               #}
-                {# FIVE STEPS, NOT A TOGGLE. How strong the choropleth should be #}
-                {# is not a binary — it depends on the basemap under it and on   #}
-                {# whether the reader is after the danger or the terrain. 0 is   #}
-                {# the off position, so this subsumes the toggle it replaces     #}
-                {# rather than sitting beside one. Discrete steps rather than a  #}
-                {# range input because each is then a one-tap 44px target and    #}
-                {# the stored value is one of five known numbers. Persisted      #}
-                {# under snowdesk.map.overlay.bulletins, seeded once from the    #}
-                {# old .l4 value so a device that had the tier switched off      #}
-                {# comes back at 0.                                              #}
-                {#                                                               #}
-                {# Mutually exclusive with the downloads sheet's "Show areas on  #}
-                {# the map" (both paint the same polygons) — moving either       #}
-                {# visibly moves the other. See window.pwaLayerVisibilityCore.   #}
-                {#                                                               #}
-                {# SECOND in the collapsible group — SNOW-664 moved the layers   #}
-                {# roundel in above it — so it sits two slots below the          #}
-                {# always-visible locate roundel and hides with the strip. A     #}
-                {# flyout rather than inline on the canvas: five 44px targets is #}
-                {# 220px, which does not fit beside the date pill at 375px, and  #}
-                {# a control this size should not be permanently on the map.     #}
-                <div
-                    class="map-utility-pill map-utility-pill--fill"
-                    id="map-fill-pill"
-                    data-state="collapsed"
-                >
-                    <button
-                        id="map-fill-toggle"
-                        type="button"
-                        class="map-utility-button hover-affordance"
-                        aria-label='{% trans "Bulletin fill strength" %}'
-                        aria-haspopup="true"
-                        aria-expanded="false"
-                        aria-controls="map-fill-flyout"
-                    >
-                        {# A half-filled square: the control sets how strongly    #}
-                        {# the choropleth paints, and the icon is that idea at    #}
-                        {# rest. Outline plus a half-tone wedge, so it reads at   #}
-                        {# 18px without a label.                                  #}
-                        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-                            <rect
-                                x="3"
-                                y="3"
-                                width="18"
-                                height="18"
-                                rx="4"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            />
-                            <path d="M3 12h18v5a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4z" fill="currentColor" />
-                        </svg>
-                    </button>
-                </div>
-                {# SNOW-522: "Download this area" — a user-framed custom-area    #}
-                {# basemap download, taking the slot the per-region download     #}
-                {# control (_map_download_control.html) vacated when it moved    #}
-                {# back to the ribbon header (public/partials/_season_ribbon.html). #}
-                {# Always rendered (no focused-region dependency, unlike its      #}
-                {# sibling above), so the group's height never changes under the  #}
-                {# user. See public/partials/_map_custom_download_control.html.   #}
-                {% include "public/partials/_map_custom_download_control.html" %}
+            <div
+                class="map-controls-collapsible-inner map-control-group"
+                id="map-control-group-yours"
+                data-control-group="yours"
+            >
                 {# SNOW-414: "Favourites" control — rendered regardless of              #}
                 {# authentication state, so anonymous visitors see the affordance and  #}
                 {# get a sign-in CTA on tap (favourites.js branches on                 #}
                 {# data-favourites-eligible, mirroring #report-btn's                   #}
                 {# data-report-eligible anon branch).                                  #}
                 {# SNOW-658: it opens a PANEL now — the user's saved pins, an "Add a   #}
-                {# favourite" CTA, and the "Show favourites on the map" switch that     #}
-                {# used to be a layers-menu row — rather than jumping straight into     #}
-                {# pin placement. The id is unchanged (favourites.js binds it by id,    #}
-                {# and map_help.js targets it), but the label is: it manages now.       #}
+                {# favourite" CTA, and a "Show on the map" switch bound to the layers   #}
+                {# menu's Favourites row — rather than jumping straight into pin        #}
+                {# placement. The id is unchanged (favourites.js binds it by id, and    #}
+                {# map_help.js targets it), but the label is: it manages now.           #}
                 <div class="map-utility-pill map-utility-pill--favourite">
                     <button
                         id="favourite-add-btn"
@@ -467,11 +404,12 @@ Optional context:
                         data-signin-url="{{ favourites_signin_url }}"
                         aria-label='{% trans "Your favourites" %}'
                         {# SNOW-658: "the favourites overlay is on the map right  #}
-                        {# now" — one attribute, one meaning, on all three        #}
+                        {# now" — one attribute, one meaning, on all four         #}
                         {# overlay roundels. Server-rendered false because that   #}
                         {# is the truth with JS off (nothing draws the overlay);  #}
                         {# map_roundel_overlay_state.js paints the real answer at #}
-                        {# boot and on every change.                              #}
+                        {# boot and on every change, into the aria-label. No CSS  #}
+                        {# draws it: the on-map ring was dropped by design.       #}
                         data-overlay-shown="false"
                     >
                         {# SNOW-658: the star's paths live in                    #}
@@ -530,9 +468,9 @@ Optional context:
                 {#                                                                       #}
                 {# SNOW-687: this roundel now carries `data-overlay-shown` like the       #}
                 {# other three — the routes overlay exists, and                          #}
-                {# map_roundel_overlay_state.js paints the ring here from                 #}
-                {# window.pwaRoutesOverlay.isVisible(). It said "no ring to paint yet"    #}
-                {# through SNOW-686, when there was no layer for a switch to drive.       #}
+                {# map_roundel_overlay_state.js paints it here from                       #}
+                {# window.pwaRoutesOverlay.isVisible(), into the aria-label (no visual    #}
+                {# marker: the on-map ring was dropped by design).                        #}
                 <div class="map-utility-pill map-utility-pill--route">
                     <button
                         id="route-add-btn"
@@ -568,20 +506,30 @@ Optional context:
                         {% include "includes/_icon_route.html" with size=18 only %}
                     </button>
                 </div>
+                {# SNOW-522: "Download this area" — a user-framed custom-area    #}
+                {# basemap download, taking the slot the per-region download     #}
+                {# control (_map_download_control.html) vacated when it moved    #}
+                {# back to the ribbon header (public/partials/_season_ribbon.html). #}
+                {# Always rendered (no focused-region dependency, unlike its      #}
+                {# sibling there), so the group's height never changes under the  #}
+                {# user. See public/partials/_map_custom_download_control.html.   #}
+                {# LAST in the "yours" capsule: the areas it lists are the        #}
+                {# reader's own, like the three above it.                         #}
+                {% include "public/partials/_map_custom_download_control.html" %}
                 {# SNOW-794: the help roundel LEFT this stack. Everything in the       #}
                 {# bottom-right column changes what the map is showing — layers,       #}
-                {# basemap, fill strength, downloads, the UGC pins. Help changes       #}
+                {# basemap, bulletin opacity, downloads, the UGC pins. Help changes    #}
                 {# nothing; it explains. It now sits in the bottom-left row with the   #}
                 {# legend and the date, which is the other thing there that describes  #}
                 {# the map rather than altering it.                                     #}
             </div>
         </div>
         {# SNOW-664: the layers menu is a child of .map-controls-br, NOT of the #}
-        {# #basemap-pill it belongs to — the pill moved into                    #}
-        {# #map-controls-collapsible, which is `overflow: hidden` for its       #}
-        {# height animation, and that clips both axes, so a menu opening        #}
-        {# leftward out of it would simply be cut off. Same reasoning, and the  #}
-        {# same fix, as #map-fill-flyout below (SNOW-656).                      #}
+        {# #basemap-pill it belongs to. The pill sat in #map-controls-collapsible #}
+        {# then, which is `overflow: hidden` for its height animation; it sits  #}
+        {# in the "map" capsule now, which clips its children to its rounded    #}
+        {# outline just the same, so a menu opening leftward from inside it     #}
+        {# would still be cut off.                                              #}
         {#                                                                      #}
         {# It was always positioned by JS rather than by CSS — basemapPicker-   #}
         {# Init measures the floor above the scrubber and the cap below #map's  #}
@@ -602,8 +550,16 @@ Optional context:
         {# whichever panel that subject's roundel opens, on a "one subject,    #}
         {# one way in" rule. That answered the wrong question: a reader        #}
         {# asking "what can go on my map" had to open five surfaces to find    #}
-        {# out, and no single surface answered it. The switches are gone; this #}
-        {# menu is the sole control.                                           #}
+        {# out, and no single surface answered it. SNOW-904 made this menu the #}
+        {# sole control.                                                       #}
+        {#                                                                     #}
+        {# This menu STAYS the place that answers "what is on my map" — every  #}
+        {# layer, in one list. Each of those four panels now ALSO carries a    #}
+        {# "Show on the map" switch for its own layer, bound to the same state #}
+        {# as its row here (static/js/map_panel_overlay_switch.js): flip       #}
+        {# either and the other follows. A second way in to one layer, not a   #}
+        {# second answer to the whole question. See                            #}
+        {# docs/decisions/map-controls-are-two-groups-without-an-on-map-marker.md. #}
         {# ``data-signin-url``: where the Favourites and Routes rows hand an   #}
         {# anonymous visitor off to. On the menu rather than on #map because   #}
         {# it is this surface's own hand-off, and the same page already        #}
@@ -781,6 +737,99 @@ Optional context:
                                 <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                                 {% trans "ALBINA (AT, IT)" %}
                             </button>
+                        </li>
+                        {# Bulletin opacity: how strongly the danger choropleth  #}
+                        {# (regions-fill) and the dissolved bulletin boundary    #}
+                        {# paint. SNOW-656 made it a roundel with a flyout; it   #}
+                        {# is a row here now, under the three providers whose    #}
+                        {# bulletins it shades, so every display choice is in    #}
+                        {# this one menu.                                        #}
+                        {#                                                       #}
+                        {# FIVE STEPS, NOT A TOGGLE. How strong the choropleth   #}
+                        {# should be depends on the basemap under it and on      #}
+                        {# whether the reader is after the danger or the         #}
+                        {# terrain. 0 is the off position. Discrete steps rather #}
+                        {# than a range input, so each is a one-tap target and   #}
+                        {# the stored value is one of five known numbers         #}
+                        {# (snowdesk.map.overlay.bulletins).                     #}
+                        {#                                                       #}
+                        {# The steps are NOT .basemap-menu-items: the picker's   #}
+                        {# row loop would read them as basemap radios. A click   #}
+                        {# leaves the menu open (map_basemap_picker.js).         #}
+                        {#                                                       #}
+                        {# SNOW-872: the step that opens checked follows         #}
+                        {# settings.MAP_DEFAULT_OPACITY_STEP. map.js's           #}
+                        {# applyBulletinsVisibility rewrites aria-checked on     #}
+                        {# every [data-bulletins-step] from the EFFECTIVE step   #}
+                        {# the moment it runs, so the rendered value only has to #}
+                        {# be true for first paint — and the same configured     #}
+                        {# value is what #map's data-default-opacity-step        #}
+                        {# carries.                                              #}
+                        {% trans "Bulletin opacity" as bulletin_opacity_label %}
+                        {% trans "Bulletins off" as step_label_0 %}
+                        {% trans "Bulletins at 25%" as step_label_25 %}
+                        {% trans "Bulletins at 50%" as step_label_50 %}
+                        {% trans "Bulletins at 75%" as step_label_75 %}
+                        {% trans "Bulletins at full strength" as step_label_100 %}
+                        <li role="none" class="basemap-menu-opacity">
+                            <p class="basemap-menu-opacity-label" aria-hidden="true">{{ bulletin_opacity_label }}</p>
+                            <div
+                                class="map-fill-steps"
+                                id="map-bulletin-opacity"
+                                role="radiogroup"
+                                aria-label="{{ bulletin_opacity_label }}"
+                            >
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked="{% if map_default_opacity_step == 0 %}true{% else %}false{% endif %}"
+                                    aria-label="{{ step_label_0 }}"
+                                    class="map-fill-step hover-affordance"
+                                    data-bulletins-step="0"
+                                >
+                                    <span class="map-fill-step-swatch" data-step="0" aria-hidden="true"></span>
+                                </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked="{% if map_default_opacity_step == 0.25 %}true{% else %}false{% endif %}"
+                                    aria-label="{{ step_label_25 }}"
+                                    class="map-fill-step hover-affordance"
+                                    data-bulletins-step="0.25"
+                                >
+                                    <span class="map-fill-step-swatch" data-step="0.25" aria-hidden="true"></span>
+                                </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked="{% if map_default_opacity_step == 0.5 %}true{% else %}false{% endif %}"
+                                    aria-label="{{ step_label_50 }}"
+                                    class="map-fill-step hover-affordance"
+                                    data-bulletins-step="0.5"
+                                >
+                                    <span class="map-fill-step-swatch" data-step="0.5" aria-hidden="true"></span>
+                                </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked="{% if map_default_opacity_step == 0.75 %}true{% else %}false{% endif %}"
+                                    aria-label="{{ step_label_75 }}"
+                                    class="map-fill-step hover-affordance"
+                                    data-bulletins-step="0.75"
+                                >
+                                    <span class="map-fill-step-swatch" data-step="0.75" aria-hidden="true"></span>
+                                </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked="{% if map_default_opacity_step == 1 %}true{% else %}false{% endif %}"
+                                    aria-label="{{ step_label_100 }}"
+                                    class="map-fill-step hover-affordance"
+                                    data-bulletins-step="1"
+                                >
+                                    <span class="map-fill-step-swatch" data-step="1" aria-hidden="true"></span>
+                                </button>
+                            </div>
                         </li>
                         <li role="separator" class="basemap-menu-separator"></li>
                         {# SNOW-761: one symbol per public Location — a region   #}
@@ -1031,79 +1080,6 @@ Optional context:
         {# so it never moves — the group grows and shrinks upward out of it.   #}
         {# aria-controls/aria-expanded are kept in sync by                     #}
         {# mapControlsCollapseInit, which also persists the choice.            #}
-        {# The flyout. Opens LEFT of the roundel column, the same     #}
-        {# side and offset the basemap menu uses, so every panel      #}
-        {# in this stack appears from the same edge.                  #}
-        {# SNOW-872: the segment that opens checked follows                    #}
-        {# settings.MAP_DEFAULT_OPACITY_STEP (default: 0.5, as before) rather  #}
-        {# than a literal. map.js's applyBulletinsVisibility rewrites these    #}
-        {# from the effective step the moment it runs, so the rendered value   #}
-        {# only has to be true for first paint — but a first paint that ticks  #}
-        {# a step the map is not painting is still a lie, and the same         #}
-        {# configured value is what #map's data-default-opacity-step carries.  #}
-        {% trans "Bulletins off" as step_label_0 %}
-        {% trans "Bulletins at 25%" as step_label_25 %}
-        {% trans "Bulletins at 50%" as step_label_50 %}
-        {% trans "Bulletins at 75%" as step_label_75 %}
-        {% trans "Bulletins at full strength" as step_label_100 %}
-        <div
-            id="map-fill-flyout"
-            class="map-fill-flyout"
-            role="group"
-            aria-label='{% trans "Bulletin fill strength" %}'
-            hidden
-        >
-            <button
-                type="button"
-                role="radio"
-                aria-checked="{% if map_default_opacity_step == 0 %}true{% else %}false{% endif %}"
-                aria-label="{{ step_label_0 }}"
-                class="map-fill-step hover-affordance"
-                data-bulletins-step="0"
-            >
-                <span class="map-fill-step-swatch" data-step="0" aria-hidden="true"></span>
-            </button>
-            <button
-                type="button"
-                role="radio"
-                aria-checked="{% if map_default_opacity_step == 0.25 %}true{% else %}false{% endif %}"
-                aria-label="{{ step_label_25 }}"
-                class="map-fill-step hover-affordance"
-                data-bulletins-step="0.25"
-            >
-                <span class="map-fill-step-swatch" data-step="0.25" aria-hidden="true"></span>
-            </button>
-            <button
-                type="button"
-                role="radio"
-                aria-checked="{% if map_default_opacity_step == 0.5 %}true{% else %}false{% endif %}"
-                aria-label="{{ step_label_50 }}"
-                class="map-fill-step hover-affordance"
-                data-bulletins-step="0.5"
-            >
-                <span class="map-fill-step-swatch" data-step="0.5" aria-hidden="true"></span>
-            </button>
-            <button
-                type="button"
-                role="radio"
-                aria-checked="{% if map_default_opacity_step == 0.75 %}true{% else %}false{% endif %}"
-                aria-label="{{ step_label_75 }}"
-                class="map-fill-step hover-affordance"
-                data-bulletins-step="0.75"
-            >
-                <span class="map-fill-step-swatch" data-step="0.75" aria-hidden="true"></span>
-            </button>
-            <button
-                type="button"
-                role="radio"
-                aria-checked="{% if map_default_opacity_step == 1 %}true{% else %}false{% endif %}"
-                aria-label="{{ step_label_100 }}"
-                class="map-fill-step hover-affordance"
-                data-bulletins-step="1"
-            >
-                <span class="map-fill-step-swatch" data-step="1" aria-hidden="true"></span>
-            </button>
-        </div>
         <button
             type="button"
             id="map-controls-toggle"
@@ -1622,34 +1598,21 @@ Optional context:
         <li data-help-target="#search-toggle" data-help-title='{% trans "Find a region or resort" %}'>
             {% trans "Search regions and resorts by name." %}
         </li>
-        {# The bottom-right stack, walked top to bottom in DOM order. #}
-        {# SNOW-664: locate leads it now — it is the only roundel outside the   #}
-        {# collapsible group, and the layers roundel moved one slot down into   #}
-        {# that group, so these two swapped to keep the walk in DOM order.      #}
+        {# The bottom-right stack, walked top to bottom in DOM order: the "map" #}
+        {# capsule (locate, layers), then the "yours" capsule (favourites,      #}
+        {# field observations, routes, downloads), then the chevron.           #}
         <li data-help-target="#locate-toggle" data-help-title='{% trans "Locate me" %}'>
             {% trans "Centre the map on your current position, then tap again to save the area around you for offline use." %}
         </li>
+        {# The bulletin-opacity control lives in this menu now (it had its own  #}
+        {# roundel and step until the two capsules), so this step names it.    #}
         <li data-help-target="#basemap-toggle" data-help-title='{% trans "Map detail" %}'>
-            {% trans "Switch base maps and toggle overlays and map location data." %}
+            {% trans "Switch base maps, choose what is drawn on the map, and set how strongly the bulletin colours show." %}
         </li>
-        {# SNOW-656: bulletin-fill strength. Sits here because the tour walks    #}
-        {# the bottom-right stack in DOM order and this roundel follows the     #}
-        {# layers one inside the collapsible group. The tour force-opens that   #}
-        {# group while it runs, so the target is on screen even for a user who  #}
-        {# had the strip collapsed.                                             #}
-        <li data-help-target="#map-fill-toggle" data-help-title='{% trans "Bulletin display" %}'>
-            {% trans "Control the opacity of the bulletin colour shading." %}
-        </li>
-        {# SNOW-522: the new custom-area download — takes the bottom-right      #}
-        {# slot the per-region control vacated when it moved to the ribbon      #}
-        {# header (the step above).                                            #}
-        <li data-help-target="#map-custom-download-control" data-help-title='{% trans "Offline maps" %}'>
-            {% trans "View and manage offline regions, download custom areas and manage storage." %}
-        </li>
-        {# SNOW-658: both roundels open a panel that LISTS what the user has    #}
-        {# already saved before offering to add another, and each panel owns    #}
-        {# the map-overlay switch that used to be a layers-menu row — so both   #}
-        {# steps describe managing, not only adding.                            #}
+        {# SNOW-658: these roundels open a panel that LISTS what the user has  #}
+        {# already saved before offering to add another, and each panel        #}
+        {# carries a "Show on the map" switch for its own layer — so the steps #}
+        {# describe managing, not only adding.                                  #}
         <li data-help-target="#favourite-add-btn" data-help-title='{% trans "Your favourites" %}'>
             {% trans "See your saved pins, add another, and show or hide them on the map." %}
         </li>
@@ -1659,9 +1622,13 @@ Optional context:
         {# SNOW-686/687 added the routes roundel to the stack without a step  #}
         {# here, so the one control in the column the tour never named was    #}
         {# also the one with no section on /help/. Sits between the field-    #}
-        {# observation roundel and the help "?", which is its DOM order.      #}
+        {# observation roundel and downloads, which is its DOM order.         #}
         <li data-help-target="#route-add-btn" data-help-title='{% trans "Your routes" %}'>
             {% trans "Upload a GPX track, see the ones you've saved, and show or hide them on the map." %}
+        </li>
+        {# SNOW-522: the custom-area download — last in the "yours" capsule.  #}
+        <li data-help-target="#map-custom-download-control" data-help-title='{% trans "Offline maps" %}'>
+            {% trans "View and manage offline regions, download custom areas and manage storage." %}
         </li>
         {# The tour force-opens the collapsible group while it runs, so this   #}
         {# step lands on a toggle whose chevron is pointing "close".           #}

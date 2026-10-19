@@ -193,11 +193,12 @@ describe('the add CTA', () => {
   });
 });
 
-// SNOW-904 removed this file's "the overlay switch" block. The panel no
-// longer carries a "Display on the map" switch — every layer is switched
-// from the map's layers menu, whose row drives the same
-// window.pwaFavouritesOverlay bridge. Its coverage lives in
-// tests/js/test_map_layers_menu.js.
+// SNOW-904 removed this file's "the overlay switch" block with the panel's
+// switch. The two-capsule control column put a "Show on the map" switch
+// back, bound to the layers-menu row that drives the same
+// window.pwaFavouritesOverlay bridge; one module owns all four panels'
+// switches, so their coverage lives in
+// tests/js/test_map_panel_overlay_switch.js.
 
 describe('a list load that fails', () => {
   it.each(['htmx:responseError', 'htmx:sendError'])(

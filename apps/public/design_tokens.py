@@ -50,6 +50,7 @@ from apps.public._component_fixtures import (
     FORM_FIELD_VARIANTS,
     GLOSSARY_TERM_VARIANTS,
     HOURLY_CHART_VARIANTS,
+    MAP_OVERLAY_TOGGLE_VARIANTS,
     MAP_ZOOM_CONTROL_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
@@ -1532,6 +1533,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
+        slug="map-overlay-toggle",
+        label="Map overlay toggle",
+        description=(
+            "The 'Show on the map' footer strip of the four map panels — a "
+            "label plus includes/_switch.html in a bg-tag box. A view "
+            "control for the map BEHIND the sheet, bound to the layers-menu "
+            "row for the same layer by static/js/map_panel_overlay_switch.js, "
+            "which finds each real switch by id; flipping either control "
+            "moves the other."
+        ),
+        kind="components",
+        partial="includes/_map_overlay_toggle.html",
+        variants=MAP_OVERLAY_TOGGLE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
         slug="ugc-panel",
         label="UGC panel",
         description=(
@@ -1541,11 +1558,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "opening roundel's icon plus the title, at one size for all "
             "three), context strip (one line saying where the data lives), "
             "list (mono uppercase section label, then hairline-separated "
-            "rows — never cards) and one add-CTA. SNOW-904 removed a fifth "
-            "part, the 'Display on the map' switch: every layer is chosen "
-            "from the map's own layers menu now, so a panel is about its "
-            "list alone. The icon, rows and header-extra slots take "
-            "template paths, since Django has no slot mechanism."
+            "rows — never cards), one add-CTA, and the 'Show on the map' "
+            "switch at the foot, bound to the layers-menu row for the "
+            "panel's own layer (the menu still lists every layer in one "
+            "place). The icon, rows and header-extra slots take template "
+            "paths, since Django has no slot mechanism."
         ),
         kind="components",
         partial="includes/_ugc_panel.html",
