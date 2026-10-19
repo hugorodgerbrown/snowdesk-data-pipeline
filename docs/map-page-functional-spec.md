@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-18
+last-reviewed: 2026-10-19
 ---
 
 # Map page — functional specification
@@ -414,7 +414,10 @@ track, and a tap on the profile's top line places it at that distance.
 The profile's target is the line, loosely, about 20 px either side of
 it; a tap lower down in the fill does nothing. The first tap on a route
 opens the panel with the point already placed where it landed; a later
-tap moves it. There is no leg selection, no drag along the profile, and
+tap moves it. The profile also scrubs: a press anywhere on it, at any
+height, that moves sideways drags the point along with it in real time,
+and lifting leaves it there (restored 2026-10-19). The route's line on the
+map does not scrub; it stays tap to move. There is no leg selection and
 no hover: a mouse over the line or the profile leaves the point where it
 was. A tap leaves the camera where it is: the reader tapped a line they
 can already see, at a scale they chose. Picking the route from the

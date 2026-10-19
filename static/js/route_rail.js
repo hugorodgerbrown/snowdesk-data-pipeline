@@ -43,12 +43,22 @@
  *
  * POINTS ONLY (2026-10-02). The leg fills are drawn and never pressed:
  * leg selection — a leg highlighted on the map and the profile, " • Leg 3"
- * in the title, the leg's own figures — was removed, along with dragging
- * along the profile and the mouse moving the point by hovering. A TAP on
- * the profile's top line — loosely, OUTLINE_TOLERANCE_PX either side —
- * places the point at that distance; a tap on the route's
- * line on the map places it at the nearest sample (map.js's
- * tapOpenRoute). Either writes the cursor, and everything else follows it.
+ * in the title, the leg's own figures — was removed, along with the mouse
+ * moving the point by hovering. A TAP on the profile's top line — loosely,
+ * OUTLINE_TOLERANCE_PX either side — places the point at that distance; a
+ * tap on the route's line on the map places it at the nearest sample
+ * (map.js's tapOpenRoute). Either writes the cursor, and everything else
+ * follows it.
+ *
+ * SCRUBBING (2026-10-19, restoring SNOW-1065's drag). A press anywhere on
+ * the profile, at any height, that moves more than DRAG_PX sideways
+ * scrubs: the point follows the pointer's x for as long as it is held,
+ * with any pointer, and the click the drag ends with is swallowed. The
+ * lane is `touch-action: pan-y` (static/css/map.css), so a press that
+ * starts sideways reaches this script while one that starts upward still
+ * scrolls; once a scrub has started, its touchmoves are cancelled, so the
+ * finger may drift up or down off the profile and keep scrubbing. The profile only:
+ * the route's line on the map stays tap-to-move.
  *
  * THE POINT HEADER (SNOW-1064, SNOW-1068). `open` attaches the point
  * header (route_point_card.js) to the new cursor, with the arrays it reads
@@ -136,6 +146,8 @@
   var READOUT_GAP_PX = 9;
   /** How far above or below the profile's top line a tap still counts, px. */
   var OUTLINE_TOLERANCE_PX = 20;
+  /** How far a press must move sideways, px, before it scrubs. */
+  var DRAG_PX = 6;
 
   // Server-translated copy; the literals are the English fallback (see
   // static/js/i18n_strings.js).
@@ -880,17 +892,110 @@
   }
 
   // A tap on the profile's top line places the point at that distance
-  // (2026-10-02). The target is the line, loosely — OUTLINE_TOLERANCE_PX
+  // (2026-10-02); a drag anywhere on it scrubs (below). The target is the line, loosely — OUTLINE_TOLERANCE_PX
   // either side — not the whole lane: a tap down in the fill by the ticks
   // sending the point somewhere was unexpected.
   lane.addEventListener('click', function (event) {
+    if (swallowClick) {
+      swallowClick = false;
+      return;
+    }
     var index = outlineIndexAt(event);
     if (index !== null) cursor.setIndex(index);
   });
 
-  // A mouse shows the pointer only where a click would place the point.
+  /**
+   * The press being tracked for a scrub: which pointer, where it went
+   * down, and whether it has moved far enough sideways to be one.
+   *
+   * @type {?{id: number, x: number, dragging: boolean}}
+   */
+  var press = null;
+  /** Set by a scrub's end, so the click it ends with places nothing more. */
+  var swallowClick = false;
+
+  // A press anywhere on the lane — on the line or down in the fill — that
+  // moves DRAG_PX sideways scrubs the point along the profile. A press
+  // that never moves that far is left to the click above.
+  lane.addEventListener('pointerdown', function (event) {
+    if (!cursor || !(sampleCount > 0)) return;
+    // One finger scrubs: a second landing mid-scrub, a right-click or a
+    // pen's barrel button starts nothing.
+    if (press && press.dragging && press.id !== event.pointerId) return;
+    if (event.isPrimary === false || event.button !== 0) return;
+    press = { id: event.pointerId, x: event.clientX, dragging: false };
+    swallowClick = false;
+  });
+
+  lane.addEventListener('pointermove', function (event) {
+    if (!press || press.id !== event.pointerId) return;
+    // A press released off the lane before it became a scrub never sent
+    // this lane its pointerup (capture is taken only once it IS one), so
+    // a move with no button held ends it here.
+    if (!press.dragging && event.buttons === 0) {
+      press = null;
+      return;
+    }
+    if (!press.dragging) {
+      if (Math.abs(event.clientX - press.x) <= DRAG_PX) return;
+      press.dragging = true;
+      lane.style.cursor = 'ew-resize';
+      if (lane.setPointerCapture) {
+        try {
+          lane.setPointerCapture(event.pointerId);
+        } catch (_err) {
+          // A synthetic or already-released pointer cannot be captured.
+        }
+      }
+    }
+    var index = indexAt(event.clientX);
+    if (index !== null && cursor) cursor.setIndex(index);
+  });
+
+  // Once a scrub has started, the finger owns the profile until it lifts:
+  // `pan-y` alone lets a later upward drift start a scroll, which cancels
+  // the pointer mid-scrub. Chrome fires pointermove before touchmove, so
+  // the press is already a scrub by the time this runs.
+  lane.addEventListener(
+    'touchmove',
+    function (event) {
+      if (press && press.dragging && event.cancelable) event.preventDefault();
+    },
+    { passive: false },
+  );
+
+  /**
+   * End the tracked press; a scrub swallows the click it ends with.
+   *
+   * @param {PointerEvent} event The pointer event.
+   */
+  function endPress(event) {
+    if (!press || press.id !== event.pointerId) return;
+    swallowClick = press.dragging;
+    press = null;
+  }
+  lane.addEventListener('pointerup', endPress);
+  // Only the lane's own capture ending ends the press. A touch is
+  // implicitly captured by what it landed on — a leg's path — and taking
+  // the capture for the lane fires that path's lostpointercapture, which
+  // bubbles here mid-scrub.
+  lane.addEventListener('lostpointercapture', function (event) {
+    if (event.target === lane) endPress(event);
+  });
+  lane.addEventListener('pointercancel', function (event) {
+    endPress(event);
+    swallowClick = false;
+  });
+
+  // A mouse shows the pointer where a click would place the point, and a
+  // sideways arrow over the rest of the profile, where a drag scrubs.
   lane.addEventListener('mousemove', function (event) {
-    lane.style.cursor = outlineIndexAt(event) !== null ? 'pointer' : '';
+    if (press && press.dragging && press.id !== event.pointerId) return;
+    if (!cursor || !(sampleCount > 0)) {
+      lane.style.cursor = '';
+      return;
+    }
+    lane.style.cursor = outlineIndexAt(event) !== null ? 'pointer' : 'ew-resize';
   });
   lane.addEventListener('mouseleave', function () {
     lane.style.cursor = '';

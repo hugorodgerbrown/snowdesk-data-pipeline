@@ -37,9 +37,9 @@ generous margin either side of the line but not down in the fill; a tap on the r
 point is drawn on the lane as a vertical line with a dot where it crosses
 the outline, the point's ELEVATION at the top of the line and its
 DISTANCE from the start at the bottom (`[data-route-rail-readout]`),
-right of the line unless they would not fit. The legs are drawn and never
-pressed: leg selection, and dragging along the profile, were removed on
-2026-10-02.
+right of the line unless they would not fit. A sideways drag from anywhere
+on the profile scrubs the point (restored 2026-10-19). The legs are drawn
+and never pressed: leg selection was removed on 2026-10-02.
 
 RENDERED ONCE, EMPTY, AND HIDDEN. static/js/route_rail.js fills it for the
 route map.js's `activateRoute` opens and hides it again when the route
@@ -170,7 +170,8 @@ Context:
         <div data-route-rail-claim hidden></div>
     </div>
     {# The lane. Filled per open by static/js/route_rail.js. A tap on its  #}
-    {# top line places the point; the readout shows the point's figures.  #}
+    {# top line places the point, a sideways drag anywhere scrubs it; the #}
+    {# readout shows the point's figures.                                 #}
     <div class="min-w-0">
         <div class="relative">
             <svg

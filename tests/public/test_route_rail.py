@@ -553,9 +553,11 @@ class TestThePanelIsPinnedTopLeft:
         """Its words and wheel are the panel's point header now."""
         css = _MAP_CSS.read_text(encoding="utf-8")
         assert ".route-point-card" not in css
-        # 2026-10-02: nothing drags along the lane, so it hands no touch
-        # gesture to the script; a tap is a click.
-        assert ".route-rail-lane" not in dict(_rules(css))
+
+    def test_the_lane_hands_a_sideways_finger_to_the_scrub(self) -> None:
+        """2026-10-19: a sideways drag scrubs; an upward one still scrolls."""
+        css = _MAP_CSS.read_text(encoding="utf-8")
+        assert "touch-action: pan-y" in dict(_rules(css))[".route-rail-lane"]
 
 
 class TestTheComponentLibraryVariant:
