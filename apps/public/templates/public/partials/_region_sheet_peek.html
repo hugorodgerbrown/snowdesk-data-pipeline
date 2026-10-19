@@ -1,0 +1,102 @@
+{% load i18n components snowdesk_time %}
+{% comment %}
+public/partials/_region_sheet_peek.html — the region sheet's PEEK row: the
+danger tile, the name over the code and area, the pin and download proxies
+and the × (SNOW-1098; its own partial since 2026-10-19).
+
+Rendered twice, so the row the reader first sees and the row the body
+brings are the same markup and the sheet does not change height when the
+body lands:
+
+  - by ``_region_sheet_body.html``, filled from the server's context;
+  - by ``_region_sheet_surface.html`` with ``blank=True``, inside a
+    ``<template>`` that ``static/js/map_region_sheet.js`` clones and fills
+    from what the page already holds (the region's name, code and area off
+    the selection, the day's level off the map), so a tap paints the peek
+    at once instead of waiting on the network.
+
+The slots the script fills carry ``data-region-sheet-slot``. In the blank
+copy the tile and the flag are rendered hidden: a region with no rating
+for the day, or outside the four flagged countries, leaves them so.
+
+Context:
+  region       — MicroRegion, with subregion__major select_related (absent
+                 when blank).
+  day_rating   — RegionDayRating for the day, or None.
+  level_label  — The danger level's name, or "".
+  blank        — True for the template copy.
+{% endcomment %}
+<div data-sheet-peek data-sheet-drag>
+    <div class="flex items-center gap-3">
+        {% if blank %}
+            <span class="danger-tile flex-none" data-region-sheet-slot="rating" hidden></span>
+        {% elif day_rating %}
+            <span
+                class="danger-tile flex-none"
+                data-level="{{ day_rating.max_rating }}"
+                data-testid="region-sheet-rating"
+                data-region-sheet-slot="rating"
+            >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+        {% endif %}
+        <div class="min-w-0 flex-1">
+            <h2
+                class="truncate text-base font-semibold leading-tight text-text-1"
+                title="{{ region.name }}"
+                data-region-sheet-slot="name"
+            >
+                {{ region.name }}
+            </h2>
+            {# The search row's second line: the region's code behind its country's flag, and the area it sits in. #}
+            <p class="flex min-w-0 items-center gap-2 text-meta text-text-2" data-testid="region-sheet-meta">
+                <span class="search-result-badge">
+                    {% if blank %}
+                        <svg class="search-result-flag" aria-hidden="true" data-region-sheet-slot="flag" hidden>
+                            <use href="" />
+                        </svg>
+                    {% else %}
+                        {% with country=region.region_id|slice:":2"|lower %}
+                            {% if country == "ch" or country == "at" or country == "fr" or country == "it" %}
+                                <svg class="search-result-flag search-result-flag--{{ country }}" aria-hidden="true">
+                                    <use href="#flag-{{ country }}" />
+                                </svg>
+                            {% endif %}
+                        {% endwith %}
+                    {% endif %}
+                    <span data-region-sheet-slot="code">{{ region.region_id }}</span>
+                </span>
+                <span class="truncate" data-region-sheet-slot="meta">
+                    {% if not blank %}
+                        {% if level_label %}{{ level_label }} ·{% endif %}
+                        {{ region.subregion.name_en|default:region.subregion.name_native }}
+                    {% endif %}
+                </span>
+            </p>
+        </div>
+        <button
+            type="button"
+            data-region-sheet-proxy="map-region-pin-control"
+            aria-label="{% trans 'Pin this region' %}"
+            title="{% trans 'Pin this region' %}"
+            class="{% icon_button_classes %}"
+        >
+            {% include "includes/_icon_favourite.html" with size=18 only %}
+        </button>
+        <button
+            type="button"
+            data-region-sheet-proxy="map-download-control"
+            aria-label="{% trans 'Download this region' %}"
+            title="{% trans 'Download this region' %}"
+            class="{% icon_button_classes %}"
+        >
+            {% include "includes/_icon_download_arrow.html" with size=18 only %}
+        </button>
+        <button
+            type="button"
+            data-action="dismiss"
+            aria-label="{% trans 'Close' %}"
+            class="{% icon_button_classes extra='-mr-3' %}"
+        >
+            {% include "includes/_icon_close.html" only %}
+        </button>
+    </div>
+</div>

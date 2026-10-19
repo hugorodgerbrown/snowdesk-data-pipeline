@@ -139,13 +139,15 @@ The other root and `#map` marks, for CSS that needs to know what is up:
 
 | Sheet | Peek content comes from | Network |
 |---|---|---|
-| Region sheet | `/partials/region-sheet/<id>/?d=` (server-rendered) | one request per selection and per date change while open; network-only in the service worker, so offline it says "unavailable" |
+| Region sheet | the page: the selection's name, code and area, the day's level off the map's feature state | the body (`/partials/region-sheet/<id>/?d=`) once per region and day: kept in memory for 10 minutes, and sent `Cache-Control: private` (a day for a past day, 10 minutes for today or a forecast); network-only in the service worker |
 | Place sheet | `/partials/place-sheet/resort/<slug>/` or the favourite's | one request per open |
 | Weather sheet | `/api/weather…` detail | one request per open |
 | Route rail | the routes GeoJSON already in memory | none; the staff-only full detent fetches terrain rows once per route |
 
-The region sheet waits on that round trip before its peek has anything to
-say, even though the name, the level and the date are already on the page
-(the region's properties and the season ratings). Painting the peek from
-those and fetching only the half and full content would make it immediate
-and keep it working offline.
+The region sheet's peek is painted the moment a region is selected, from a
+blank copy of `_region_sheet_peek.html` that the map page carries in a
+`<template>` and `map_region_sheet.js` fills (level from
+`window.pwaRegionLevel`). The body the server renders includes the same
+partial, so the sheet keeps its height when the body lands. Reopening a
+region, or scrubbing back to a day already seen, paints the kept body with
+no request. If the body fails, the peek stays and a line under it says so.
