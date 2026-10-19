@@ -592,6 +592,15 @@ class TestDespikeOnSteepGround:
 
         assert _cleaned(record)[20] == 2009.0
 
+    def test_a_segment_list_that_does_not_pair_with_the_heights_is_ignored(
+        self,
+    ) -> None:
+        """A truncated record says nothing about the ground: no despike, no error."""
+        record = _level_record(_level({20: 9.0}), 50.0)
+        record["segments"] = record["segments"][:10]
+
+        assert _cleaned(record)[20] == 2009.0
+
     def test_a_segment_with_no_angle_is_never_altered(self) -> None:
         """An unknown angle does not pass the gate."""
         record = _level_record(_level({20: 9.0}), None)

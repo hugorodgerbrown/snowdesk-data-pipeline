@@ -362,13 +362,16 @@ def _despiked(model: list[float | None], segments: Any) -> list[float | None]:
         model: The model's height at each boundary, None where it has none.
         segments: The record's ``segments`` list (one dict per gap between
             boundaries, ``angle_deg`` the ground's steepness), or anything
-            else when the record has none.
+            else when the record has none. A list of any other length than
+            ``len(model) - 1`` is ignored as not belonging to these heights.
 
     Returns:
         A new list the same length as ``model``.
 
     """
-    if not isinstance(segments, list) or not segments:
+    # One segment per gap between boundaries; a list that does not pair with
+    # the heights (a truncated or stale record) says nothing about them.
+    if not isinstance(segments, list) or len(segments) != len(model) - 1:
         return list(model)
     result = list(model)
     for index, height in enumerate(model):
