@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-19
 ---
 
 # PWA shell
@@ -780,10 +780,11 @@ l1/l2/l3/resorts (rendered in
 `apps/public/templates/public/partials/_map_embed.html`).
 
 That toast is the *only* thing the user gets in this state, and it is
-deliberately paired with the panel switch staying ON and the roundel ring
-staying OFF: the switch reports what was asked for (`isEnabled()`, the
-persisted preference), the ring reports what reached the map
-(`isVisible()`, read off MapLibre). They disagree here on purpose — see
+deliberately paired with the layers-menu row and the panel's "Show on the
+map" switch both staying ON: they report what was asked for (`isEnabled()`,
+the persisted preference), not what reached the map (`isVisible()`, read
+off MapLibre, which the roundel's aria-label still states). There is no
+on-map ring to disagree with them any more — see
 [`map-page-functional-spec.md`](map-page-functional-spec.md) §3.8.
 
 **"Download basemap"** (SNOW-521 — previously "Cache this area for offline",
@@ -1156,7 +1157,7 @@ bottom-docked and full-width on mobile
 384px right-hand panel instead), so the squares this overlay draws were
 permanently covered by the sheet showing them, on the platform that needs
 offline maps most. It settled on a "Display on the map" switch INSIDE the
-sheet, the only caller of `show()`/`hide()`.
+sheet, the only caller of `show()`/`hide()` until SNOW-904.
 
 SNOW-904 brings the control back to the menu as "Display downloaded
 areas", under Basemap with the slope-angle row: both are drawn on top of
@@ -1581,10 +1582,13 @@ probe, and the `refresh` member of `window.pwaCustomAreaDownload`.
 
 What it carries instead is `data-overlay-shown`, and that means here
 exactly what it means on the favourites and field-observation roundels:
-the overlay this roundel's panel switches is drawn on the map right now
+the overlay this roundel's panel is about is drawn on the map right now
 (see §3.8 of
 [`docs/map-page-functional-spec.md`](map-page-functional-spec.md)). One
-roundel, one state, the same state on all three. The question the old one
+roundel, one state, the same state on all four. Nothing paints it: the
+on-map ring that once drew it was removed, and it now drives only the
+roundel's aria-label (see
+[`decisions/map-controls-are-two-groups-without-an-on-map-marker.md`](decisions/map-controls-are-two-groups-without-an-on-map-marker.md)). The question the old one
 answered is answered properly by the sheet the roundel opens — a row list,
 per-area swatches, a budget bar — which is where it belonged.
 
@@ -2229,15 +2233,19 @@ the user last asked for.
 
 Closing the sheet does NOT call `.hide()` either. Until SNOW-904 the sheet
 carried a `#map-downloads-overlay-toggle` switch that was the only thing
-which did; that switch is gone, along with the three beside it on the other
-panels, and the **layers menu's "Display downloaded areas" row is now the
-only control** — see [`map-page-functional-spec.md`](map-page-functional-spec.md).
-The sheet neither shows nor hides the squares.
+which did; SNOW-904 removed that switch and the three beside it, making the
+layers menu's "Display downloaded areas" row the only control. The panel
+switch is back now as a SECOND control: the sheet's "Show on the map"
+switch is bound to the same preference as that row
+(`static/js/map_panel_overlay_switch.js` clicks the row), so the sheet
+shows and hides the squares only by way of the row — see
+[`map-page-functional-spec.md`](map-page-functional-spec.md).
 
 The bridge still publishes two questions, split by SNOW-658's review:
 `isVisible()` answers from the squares MapLibre is actually drawing (the
-roundel ring's question), while `isEnabled()` is the persisted preference
-`show()`/`hide()` write — what the menu row seeds its `aria-checked` from.
+roundel's aria-label's question), while `isEnabled()` is the persisted preference
+`show()`/`hide()` write — what the menu row seeds its `aria-checked` from,
+and the panel switch its `checked`.
 The two disagree legitimately when the overlay is on and the active basemap
 has nothing downloaded: the row reads ON over an empty source.
 
@@ -2568,13 +2576,17 @@ optimistic half of the same shape the favourites panel's pending pin uses.
 An area forgotten and then re-downloaded here is listed again: the local
 record is newer than the pending forget.
 
-**The overlay switch is gone (SNOW-904).** This sheet carried one —
-`includes/_switch.html` in a `bg-tag` rounded panel, labelled "Display on
-the map" — as did the favourites, field-observation and routes panels. All
-four went with SNOW-904, which made the layers menu the sole control for
-every layer: a reader asking what can go on their map had to open five
-surfaces to find out. The paragraphs below describe what that switch did
-while it existed, and SNOW-832's empty-list guard went with it.
+**The overlay switch: removed by SNOW-904, back as a second control.** This
+sheet carried one — `includes/_switch.html` in a `bg-tag` rounded panel,
+labelled "Display on the map" — as did the favourites, field-observation and
+routes panels. All four went with SNOW-904, which made the layers menu the
+sole control for every layer: a reader asking what can go on their map had
+to open five surfaces to find out. They are back
+(`includes/_map_overlay_toggle.html`, labelled "Show on the map") as a
+second control bound to the menu row, which stays the one place that
+answers that question. SNOW-832's empty-list guard did not come back: the
+switch now drives the row, which shows the squares whether or not any area
+is downloaded, exactly as the row alone always has.
 
 The account of that switch's own defects — SNOW-832's empty-list guard, and the bare-`<span>` wrapper that made the visible pill inert until `_switch.html`'s own element became a second `<label for>` — is kept in the SNOW-645/SNOW-832 history rather than restated here. The `<label for>` lesson still applies to `includes/_switch.html`, which the nav's "Offline mode" row and the account settings page still use; see that partial's own docstring.
 

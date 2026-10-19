@@ -79,7 +79,24 @@ opens, closes and coexists (CLAUDE.md, design-system rule 6).
 | **Object sheet** | region sheet, place sheet, weather sheet, route rail | a tap on something on the map | bottom sheet with detents (peek, half, full) | ×, drag below peek, Escape, deselecting, another object sheet |
 | **Roundel panel** | routes, favourites, reports, downloads lists; region panel | its roundel | full-width docked panel, no detents | its roundel, its ×, another overlay |
 | **Form panel** | field report, terrain filter | a call to action | docked panel, no detents, no drag-to-close | its own buttons, its × |
-| **Flyout / card** | layers menu, fill flyout, zoom flyout, calendar, legend card, help coachmark, intro card, resort popup | its toggle | anchored card | a click away, another overlay |
+| **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, intro card, resort popup | its toggle | anchored card | a click away, another overlay |
+
+### The control column
+
+The bottom-right column is two glass capsules (`.map-control-group`), 16px
+apart:
+
+- **the map** (`#map-control-group-map`): locate and layers. Always shown.
+- **yours** (`#map-control-group-yours`): favourites, field observations,
+  routes, downloads, in that order. It is the inner of
+  `#map-controls-collapsible`, so the chevron folds this capsule only.
+
+A roundel carries no on-map marker for "my layer is drawn": the layers menu
+is where that is read. Bulletin opacity is a row in the layers menu (the
+`role="radiogroup"` "Bulletin opacity", after ALBINA), not a roundel. Each
+of the four "yours" panels ends in a "Show on the map" switch bound to the
+same setting as its layers-menu row (`static/js/map_panel_overlay_switch.js`).
+Why: [`decisions/map-controls-are-two-groups-without-an-on-map-marker.md`](decisions/map-controls-are-two-groups-without-an-on-map-marker.md).
 
 ### Who can be open together
 

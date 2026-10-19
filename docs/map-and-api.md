@@ -2,7 +2,7 @@
 name: map-and-api
 description: /map/ (public:map) MapLibre choropleth, scrubber, calendar, overlay registry, /api/ endpoints (ratings, geojson, groupings), routes.geojson
 status: current
-last-reviewed: 2026-10-18
+last-reviewed: 2026-10-19
 ---
 
 # Map page and JSON API
@@ -186,13 +186,12 @@ deliberately not asserted.
 
 ### One open overlay at a time (SNOW-658)
 
-Fourteen surfaces float over the map, and only one is ever meaningful at
+Thirteen surfaces float over the map, and only one is ever meaningful at
 once: the layers menu (`basemap-menu`), the four UGC panels (downloads,
 favourites, field observations, and routes since SNOW-686), the anchored
 detail popup a resort pin or a favourite pin opens (`map-detail-popup`),
 the legend card (`#map-legend-card`), the help
-tour's coachmark (`#map-help-overlay`), the bulletin fill-strength flyout
-(`#map-fill-flyout`), the date picker (`map-calendar`, SNOW-792), the
+tour's coachmark (`#map-help-overlay`), the date picker (`map-calendar`, SNOW-792), the
 welcome panel (`#home-intro`), the region panel the readout chip discloses
 (`region-panel`, `map_region_panel.js`, SNOW-801), the weather sheet a
 weather symbol opens (`#weather-sheet`, `map_weather_detail.js`, SNOW-761)
@@ -247,17 +246,20 @@ being displaced is not the visitor saying "read", which is what the "×",
 Escape and the CTA mean — and re-opening it from the roundel does not clear
 that flag either, so the next load is still a clean map.
 
-The legend, the coachmark and the fill flyout joined last, and none was
+The legend, the coachmark and the (since removed) fill flyout joined last, and none was
 covered by the outside-click dismiss it already had: their toggles call
 `stopPropagation` (without it the opening click reads as a click away), so
 no other surface's document handler ever saw them open, and a surface
 opened programmatically — the downloads panel from its roundel, the detail
 popup from a MapLibre canvas event — reached no document handler at all.
-The fill flyout's third dismiss path, the observer that closes it when the
-collapsible strip hides the roundel it is anchored to, answers a different
-question again and stays — and SNOW-664 gave the layers menu the same
-observer, for the same reason: `#basemap-pill` moved into that strip, so a
-menu left open beside a hidden roundel is now an orphan there too. The
+The fill flyout had a third dismiss path, an observer that closed it when
+the collapsible strip hid the roundel it was anchored to, and SNOW-664 gave
+the layers menu the same observer once `#basemap-pill` moved into that
+strip. Both are gone: the fill flyout became the layers menu's "Bulletin
+opacity" row, and `#basemap-pill` sits in the "map" capsule the chevron
+never folds, so the menu can no longer be orphaned and stays open when the
+"yours" capsule collapses (see
+[`decisions/map-controls-are-two-groups-without-an-on-map-marker.md`](decisions/map-controls-are-two-groups-without-an-on-map-marker.md)). The
 coachmark closes
 without persisting `snowdesk.map.help`: being displaced is not the user
 saying "seen", which is what Done / Escape / "×" mean. Registering it is
@@ -409,10 +411,13 @@ knowing here:
   `routes.js` reads off `data-routes-eligible` to choose between the real
   list and an anonymous sign-in CTA; the roundel and the sheet themselves
   are always in the DOM.
-- **No map layer, so no overlay switch and no roundel ring.** The panel
-  includes `includes/_ugc_panel.html` *without* a `toggle_id`, which is why
-  that parameter is optional: a switch wired to nothing is a worse lie than
-  an absent one. The roundel likewise carries no `data-overlay-shown`.
+- **A "Show on the map" switch, bound to the layers menu's Routes row.**
+  The panel passes `toggle_id="map-routes-overlay-toggle"` to
+  `includes/_ugc_panel.html`, like the other three panels;
+  `static/js/map_panel_overlay_switch.js` keeps it and the row in step. The
+  parameter stays optional for an illustration or a panel with no layer: a
+  switch wired to nothing is a worse lie than an absent one. The roundel
+  carries `data-overlay-shown` for its aria-label only; nothing draws it.
 - **Upload is online-only** and posts multipart straight to
   `routes:create` rather than through `window.pwaMutationQueue` — the queue
   persists JSON bodies in IndexedDB and a multipart file is a different
@@ -534,7 +539,8 @@ entries duplicated verbatim, four unique to one and one to the other.
 overlay layer driven by **opacity** rather than visibility, because it is the
 map's hit-test target and `queryRenderedFeatures` returns nothing from a
 layer at `visibility: none`. Its opacity is the user's chosen step (0 / 0.25 /
-0.5 / 0.75 / 1, from the `#map-fill-toggle` flyout) AND-ed with any active
+0.5 / 0.75 / 1, from the layers menu's "Bulletin opacity" row,
+`#map-bulletin-opacity`) AND-ed with any active
 suppression; its visibility is derived from that plus the Micro regions row by
 `window.pwaLayerVisibilityCore.regionsFillLayout`, and both are applied
 through `applyBulletinsVisibility` in `map.js`, which is the single writer.
@@ -679,7 +685,7 @@ date, no `?d=`, no readable `data-today` — the swap repaints **nothing**:
 the wiped feature-state is the correct, uncoloured map (SNOW-660).
 
 The fill itself is painted **translucent**, at the step the visitor chose
-from the fill-strength flyout (SNOW-656,
+from the layers menu's "Bulletin opacity" row (SNOW-656,
 [`decisions/bulletin-fill-is-a-user-choice.md`](decisions/bulletin-fill-is-a-user-choice.md)),
 and takes the raw `RATING_COLOURS`. That reversed an earlier decision to
 paint it opaque with the translucency baked into the colours by
