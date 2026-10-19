@@ -104,11 +104,15 @@
 
   /**
    * Whether another surface holds the screen: an object sheet on a phone,
-   * the route rail, or the tour. The offer waits for none of them; it just
-   * does not appear this visit.
+   * the route rail, the tour, or any overlay the visitor opened (the
+   * layers menu, the legend, the calendar, a panel). Showing the offer
+   * would close that overlay under them. The offer waits for none of
+   * them; it just does not appear this visit.
    */
   const screenIsBusy = () => {
     if (document.documentElement.hasAttribute('data-map-sheet')) return true;
+    const open = window.pwaMapOverlays?.openNames?.() || [];
+    if (open.some((name) => name !== OVERLAY_NAME)) return true;
     const map = document.getElementById('map');
     if (map && map.hasAttribute('data-route-rail-open')) return true;
     const tour = document.getElementById('map-help-overlay');
@@ -181,18 +185,30 @@
     show();
   };
 
+  // The colours can paint before the page's load event on a cached
+  // visit, so the signal is listened for from the start and only acted
+  // on once the page has loaded.
+  let ratingsLoaded = false;
+  let pageLoaded = false;
+  let settleTimer = null;
+  let capTimer = null;
+  const settle = () => {
+    if (settleTimer !== null) return;
+    clearTimeout(capTimer);
+    settleTimer = setTimeout(offerNow, SETTLE_MS);
+  };
+  document.addEventListener('snowdesk:country-ratings-loaded', () => {
+    ratingsLoaded = true;
+    if (pageLoaded) settle();
+  }, { once: true });
+
   const afterLoad = () => {
-    let settleTimer = null;
-    let capTimer = null;
-    const settle = () => {
-      if (settleTimer !== null) return;
-      clearTimeout(capTimer);
-      settleTimer = setTimeout(offerNow, SETTLE_MS);
-    };
+    pageLoaded = true;
+    if (ratingsLoaded) {
+      settle();
+      return;
+    }
     capTimer = setTimeout(settle, RATINGS_WAIT_MS);
-    document.addEventListener('snowdesk:country-ratings-loaded', settle, {
-      once: true,
-    });
   };
 
   if (document.readyState === 'complete') {

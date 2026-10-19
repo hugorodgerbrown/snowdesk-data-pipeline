@@ -39,6 +39,10 @@
  *                               reveals itself, so the two are never on
  *                               screen together for a frame.
  *   closeAll()                  close every registered overlay.
+ *   openNames()                 the names of the overlays open now —
+ *                               how a surface that appears by itself
+ *                               (the tour offer) tells it would be
+ *                               interrupting one the visitor opened.
  *   names()                     the registered names, sorted — what the
  *                               exclusivity matrix in
  *                               tests/js/test_map_overlay_exclusivity.js
@@ -124,6 +128,17 @@
   }
 
   /**
+   * The names of the registered overlays open now, sorted.
+   *
+   * @returns {string[]}
+   */
+  function openNames() {
+    return names().filter(function (name) {
+      return overlays.get(name).isOpen();
+    });
+  }
+
+  /**
    * The registered names, sorted.
    *
    * @returns {string[]}
@@ -136,6 +151,7 @@
     register: register,
     opening: opening,
     closeAll: closeAll,
+    openNames: openNames,
     names: names,
   });
 }());
