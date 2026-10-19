@@ -16,6 +16,10 @@ Covers ``apps.routes.services.terrain_heights``:
   - ``has_terrain_heights``: a list of nulls is not a record with heights;
   - ``climb_figures``: the one rule every surface shows ascent and descent
     by — the model's totals with heights, the stored columns without;
+  - SNOW-1051, the despike: a spike on steep ground replaced by its
+    neighbours' median, and nothing else touched (gentle ground, a real
+    step, a monotonic climb, holes, a record with no segments), pinned on
+    the four canonical tours to the exact boundaries altered;
   - the reason for all of it, on real data: the Mont Fort – Backside tour
     read on its drifting altimeter has a climb at the start that the
     terrain model does not, and loses it on model heights.
@@ -381,8 +385,9 @@ class TestTheBacksideOnModelHeights:
     def test_the_model_heights_read_it_as_the_descent_it_was(self) -> None:
         """Three legs: down, up, down.
 
-        Measured on the committed record, on the merged terrain track:
-        574.3 m of descent, 274.6 m of ascent, then 1,321.4 m of descent.
+        Measured on the committed record, on the merged terrain track,
+        after the SNOW-1051 despike: 554.1 m of descent, 274.6 m of
+        ascent, then 1,309.1 m of descent.
         The climb ends on the track's high point (``_snap_to_extrema``);
         cut where the smoothed series turned, 39 m short of it, it read
         260.4 m.
@@ -392,18 +397,18 @@ class TestTheBacksideOnModelHeights:
         legs = detect_legs(terrain_points(points, record))
 
         assert [leg.climbing for leg in legs] == [False, True, False]
-        assert legs[0].descent_m == pytest.approx(574.3, abs=10)
+        assert legs[0].descent_m == pytest.approx(554.1, abs=5)
         assert legs[1].ascent_m == pytest.approx(274.6, abs=5)
-        assert legs[2].descent_m == pytest.approx(1321.4, abs=10)
+        assert legs[2].descent_m == pytest.approx(1309.1, abs=5)
 
     def test_the_model_heights_cut_the_phantom_climb_from_the_totals(self) -> None:
-        """Ascent falls from 478.8 m recorded to about 337 m on the model."""
+        """Ascent falls from 478.8 m recorded to about 305 m on the model."""
         points, record = _canonical("mont-fort-backside")
 
         ascent, descent = climb_totals(terrain_points(points, record))
 
-        assert ascent == pytest.approx(337.2, abs=10)
-        assert descent == pytest.approx(1905.5, abs=10)
+        assert ascent == pytest.approx(304.7, abs=5)
+        assert descent == pytest.approx(1873.0, abs=5)
 
     def test_every_point_of_a_covered_track_takes_a_model_height(self) -> None:
         """Mont Fort is inside the model's coverage end to end."""
@@ -464,3 +469,216 @@ class TestChamonixAcrossTheCoverageEdge:
 
         assert ascent == pytest.approx(165.4, abs=10)
         assert descent == pytest.approx(715.5, abs=10)
+
+
+# SNOW-1051 -----------------------------------------------------------------
+
+
+def _level_record(
+    heights: list[float | None], angle_deg: float | None
+) -> dict[str, Any]:
+    """Return a record on ``_STRAIGHT`` whose every segment has one ground angle.
+
+    Args:
+        heights: One height per boundary (41 of them).
+        angle_deg: The ground angle of every segment, or None for a
+            segment carrying none.
+
+    Returns:
+        The record, with its ``segments`` list.
+
+    """
+    record = _record(heights, _STRAIGHT)
+    record["segments"] = [
+        {} if angle_deg is None else {"angle_deg": angle_deg}
+        for _ in range(len(heights) - 1)
+    ]
+    return record
+
+
+def _cleaned(record: dict[str, Any]) -> list[float | None]:
+    """Return the boundary heights ``boundary_heights`` reads off ``record``."""
+    result = boundary_heights(_STRAIGHT, record)
+    assert result is not None
+    return result
+
+
+def _level(spike_at: dict[int, float]) -> list[float | None]:
+    """Return 41 level boundaries at 2,000 m with the given indices raised."""
+    return [2000.0 + spike_at.get(index, 0.0) for index in range(41)]
+
+
+class TestDespikeOnSteepGround:
+    """A spike on ground of 40° or more is replaced by its window's median."""
+
+    def test_a_single_spike_on_steep_ground_is_replaced(self) -> None:
+        """One point 9 m high on a 50° face reads as the level road it is."""
+        record = _level_record(_level({20: 9.0}), 50.0)
+
+        assert _cleaned(record)[20] == 2000.0
+
+    def test_a_three_point_bump_on_steep_ground_is_replaced(self) -> None:
+        """The ±75 m window is seven points, so three bad ones are outvoted."""
+        record = _level_record(_level({19: 8.0, 20: 9.0, 21: 7.0}), 50.0)
+
+        assert _cleaned(record)[19:22] == [2000.0, 2000.0, 2000.0]
+
+    def test_the_same_spike_on_gentle_ground_is_left_alone(self) -> None:
+        """Below the gate the point is real until shown otherwise."""
+        record = _level_record(_level({20: 9.0}), 30.0)
+
+        assert _cleaned(record)[20] == 2009.0
+
+    def test_the_gate_is_the_steeper_of_the_two_segments(self) -> None:
+        """A point on the edge of a steep face is despiked."""
+        record = _level_record(_level({20: 9.0}), 10.0)
+        record["segments"][19] = {"angle_deg": 45.0}
+
+        assert _cleaned(record)[20] == 2000.0
+
+    def test_a_persistent_step_is_left_alone(self) -> None:
+        """Four or more raised points are the track's own new level."""
+        record = _level_record(_level({k: 9.0 for k in range(20, 28)}), 50.0)
+
+        assert _cleaned(record)[22:26] == [2009.0] * 4
+
+    def test_a_steady_climb_is_left_alone_however_steep(self) -> None:
+        """The median of a one-way window is its middle value."""
+        climb = [2000.0 + 20.0 * index for index in range(41)]
+        record = _level_record(climb, 60.0)
+
+        assert _cleaned(record) == climb
+
+    def test_a_rise_under_the_threshold_is_left_alone(self) -> None:
+        """2 m off the median is inside SPIKE_THRESHOLD_M."""
+        record = _level_record(_level({20: 2.0}), 50.0)
+
+        assert _cleaned(record)[20] == 2002.0
+
+    def test_a_hole_far_away_is_preserved_and_the_spike_still_goes(self) -> None:
+        """A None stays None (rebased from the device) outside the window."""
+        heights = _level({20: 9.0})
+        heights[5] = None
+        record = _level_record(heights, 50.0)
+
+        cleaned = _cleaned(record)
+
+        assert cleaned[20] == 2000.0
+        assert cleaned[5] is not None
+
+    def test_a_hole_inside_the_window_leaves_the_point_alone(self) -> None:
+        """A median over a gap is not the point's own on a slope."""
+        heights = _level({20: 9.0})
+        heights[18] = None
+        record = _level_record(heights, 50.0)
+
+        assert _cleaned(record)[20] == 2009.0
+
+    def test_the_ends_of_the_track_are_left_alone(self) -> None:
+        """The first and last three boundaries have no whole window."""
+        record = _level_record(_level({1: 9.0, 39: 9.0}), 50.0)
+
+        cleaned = _cleaned(record)
+
+        assert cleaned[1] == 2009.0
+        assert cleaned[39] == 2009.0
+
+    @pytest.mark.parametrize("segments", [None, [], "nonsense"])
+    def test_a_record_without_segments_is_untouched(self, segments: Any) -> None:
+        """No ground angle, no claim: every height reads as recorded."""
+        record = _record(_level({20: 9.0}), _STRAIGHT)
+        if segments is not None:
+            record["segments"] = segments
+
+        assert _cleaned(record)[20] == 2009.0
+
+    def test_a_segment_with_no_angle_is_never_altered(self) -> None:
+        """An unknown angle does not pass the gate."""
+        record = _level_record(_level({20: 9.0}), None)
+
+        assert _cleaned(record)[20] == 2009.0
+
+    def test_the_terrain_track_carries_the_cleaned_height(self) -> None:
+        """The merged track, the profile and the totals read the same value."""
+        record = _level_record(_level({20: 9.0}), 50.0)
+
+        result = terrain_points(_STRAIGHT, record)
+
+        assert max(_heights(result)) == 2000.0
+        assert climb_totals(result) == (0.0, 0.0)
+
+    def test_the_stored_record_is_never_mutated(self) -> None:
+        """Nothing is stored: the despike is read-time only."""
+        record = _level_record(_level({20: 9.0}), 50.0)
+        before = copy.deepcopy(record)
+
+        terrain_points(_STRAIGHT, record)
+
+        assert record == before
+
+
+# The boundaries the despike alters on each canonical tour, measured over
+# the committed records (SNOW-1051 sweep, ±75 m / 3 m / 40°). 15 of 1,606.
+_ALTERED = {
+    "chamonix-col-de-balme": [],
+    "hidden-valley": [225, 226, 227],
+    "mont-fort-backside": [22, 23, 25, 26, 329, 330, 354, 356],
+    "mont-fort-col-de-la-chaux": [468, 469, 471, 502],
+}
+
+
+class TestDespikeOnTheCanonicalTours:
+    """The sweep's result, pinned: which boundaries move, and what does not."""
+
+    @pytest.mark.parametrize("stem", sorted(_ALTERED))
+    def test_exactly_these_boundaries_are_altered(self, stem: str) -> None:
+        """Compared with the record's own heights, boundary by boundary."""
+        points, record = _canonical(stem)
+        cleaned = boundary_heights(points, record)
+        assert cleaned is not None
+
+        altered = [
+            index
+            for index, (raw, clean) in enumerate(
+                zip(record["heights"], cleaned, strict=True)
+            )
+            if raw is not None and abs(clean - raw) > 0.05
+        ]
+
+        assert altered == _ALTERED[stem]
+
+    @pytest.mark.parametrize("stem", sorted(_ALTERED))
+    def test_no_leg_changes_kind_or_count(self, stem: str) -> None:
+        """Compared with the same record with its segments removed."""
+        points, record = _canonical(stem)
+        undespiked = {key: value for key, value in record.items() if key != "segments"}
+
+        with_despike = detect_legs(terrain_points(points, record))
+        without = detect_legs(terrain_points(points, undespiked))
+
+        assert [leg.climbing for leg in with_despike] == [
+            leg.climbing for leg in without
+        ]
+
+    def test_the_corpus_ascent_falls_by_62_m(self) -> None:
+        """62 m of 1,528 m (4.1%) across the four tours, none on Balme."""
+        removed = 0.0
+        for stem in _ALTERED:
+            points, record = _canonical(stem)
+            undespiked = {k: v for k, v in record.items() if k != "segments"}
+            before = climb_totals(terrain_points(points, undespiked))[0]
+            after = climb_totals(terrain_points(points, record))[0]
+            assert before is not None and after is not None
+            removed += before - after
+
+        assert removed == pytest.approx(62, abs=3)
+
+    def test_the_col_de_la_chaux_road_reads_level(self) -> None:
+        """The ticket's case: boundaries 463–474 sit within 2.5 m of 2,194 m."""
+        points, record = _canonical("mont-fort-col-de-la-chaux")
+        cleaned = boundary_heights(points, record)
+        assert cleaned is not None
+
+        window = [height for height in cleaned[463:475] if height is not None]
+
+        assert max(window) - min(window) < 4.0
