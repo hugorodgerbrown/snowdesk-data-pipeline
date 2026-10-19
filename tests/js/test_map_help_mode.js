@@ -29,6 +29,9 @@ function buildFixture({ sheetOpen = false } = {}) {
       <span data-region-sheet-slot="rating">2</span>
       <p data-testid="region-sheet-breadcrumb">Switzerland › Valais</p>
     </div>
+    <div id="route-rail" hidden>
+      <p data-route-rail-meta>12 km · 900 m</p>
+    </div>
     <div id="map-help-mode" hidden data-help-url="/help/">
       <div id="map-help-mode-bar">
         <button id="map-help-mode-tour" type="button">Tour</button>
@@ -69,6 +72,10 @@ function buildFixture({ sheetOpen = false } = {}) {
           <li data-anchor="[data-testid='panel-title']"><b>Each problem</b></li>
         </ol>
       </div>
+      <div data-sheet-guide="route" data-sheet="#route-rail" data-eyebrow="Route"
+           data-topic="help-topic-routes" data-more="More about routes">
+        <ol><li data-anchor="[data-route-rail-meta]"><b>Length and climb</b></li></ol>
+      </div>
     </div>
   `;
 }
@@ -87,9 +94,12 @@ const labels = () => Array.from($('map-help-mode-labels').children).filter((n) =
 
 let layersPressed;
 // Each case re-imports the module against a fresh page; the listeners an
-// earlier import put on `document` would otherwise answer first.
-let documentListeners = [];
-const realAdd = document.addEventListener.bind(document);
+// earlier import put on `document` and `window` would otherwise answer first.
+let added = [];
+const realAdd = {
+  document: document.addEventListener.bind(document),
+  window: window.addEventListener.bind(window),
+};
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'] });
@@ -99,20 +109,24 @@ beforeEach(async () => {
 afterEach(() => {
   // Leave help mode so this case's frame loop and listeners go quiet.
   $('map-help-mode-done')?.click();
-  documentListeners.forEach((args) => document.removeEventListener(...args));
-  documentListeners = [];
-  document.addEventListener = realAdd;
+  added.forEach(([target, args]) => target.removeEventListener(...args));
+  added = [];
   vi.useRealTimers();
 });
 
 async function setUp(opts) {
   buildFixture(opts);
   document.addEventListener = (...args) => {
-    documentListeners.push(args);
-    realAdd(...args);
+    added.push([document, args]);
+    realAdd.document(...args);
+  };
+  window.addEventListener = (...args) => {
+    added.push([window, args]);
+    realAdd.window(...args);
   };
   await loadModules();
-  document.addEventListener = realAdd;
+  document.addEventListener = realAdd.document;
+  window.addEventListener = realAdd.window;
   layersPressed = vi.fn();
   $('basemap-toggle').addEventListener('click', layersPressed);
 }
@@ -316,6 +330,59 @@ describe('a sheet opened in help mode', () => {
     frame();
 
     expect($('map-help-mode-guide').hidden).toBe(false);
+  });
+
+  it('a sheet already open is kept when help mode starts; other overlays close', async () => {
+    await setUp({ sheetOpen: true });
+    const sheetClose = vi.fn();
+    const layersClose = vi.fn();
+    window.pwaMapOverlays.register('region-sheet', { isOpen: () => true, close: sheetClose });
+    window.pwaMapOverlays.register('basemap-menu', { isOpen: () => true, close: layersClose });
+
+    $('map-help-toggle').click();
+
+    expect(sheetClose).not.toHaveBeenCalled();
+    expect(layersClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('Escape steps back through help mode and never reaches the sheet', async () => {
+    await setUp();
+    const sheetEscape = vi.fn();
+    document.addEventListener('keydown', sheetEscape);
+    $('map-help-toggle').click();
+    $('region-sheet').hidden = false;
+    frame();
+    $('basemap-toggle').click();
+
+    const esc = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    esc();
+    expect($('map-help-mode-card').hidden).toBe(true);
+    expect($('map-help-mode-guide').hidden).toBe(false);
+    esc();
+    expect($('map-help-mode-guide').hidden).toBe(true);
+    expect(helpModeOn()).toBe(true);
+    esc();
+    expect(helpModeOn()).toBe(false);
+
+    expect(sheetEscape).not.toHaveBeenCalled();
+    document.removeEventListener('keydown', sheetEscape);
+  });
+
+  it('a guide put away stays away while another sheet opens and closes beside it', async () => {
+    await setUp();
+    $('map-help-toggle').click();
+    $('route-rail').hidden = false;
+    frame();
+    expect($('map-help-mode-guide-eyebrow').textContent).toBe('Route');
+    $('map-help-mode-guide-done').click();
+
+    $('region-sheet').hidden = false;
+    frame();
+    expect($('map-help-mode-guide-eyebrow').textContent).toBe('Region sheet');
+    $('region-sheet').hidden = true;
+    frame();
+
+    expect($('map-help-mode-guide').hidden).toBe(true);
   });
 
   it('a sheet opened outside help mode gets no guide', async () => {

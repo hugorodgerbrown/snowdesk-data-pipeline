@@ -113,6 +113,9 @@
     };
   });
 
+  /** The overlay-registry names of the sheets a guide explains: their ids. */
+  const guideSheetIds = new Set(guides.map((g) => g.sheet.replace(/^#/, '')));
+
   let active = false;
   /** @type {Control|null} */
   let selected = null;
@@ -446,11 +449,14 @@
     const mapTop = mapEl ? mapEl.getBoundingClientRect().top : 0;
     bar.style.top = `${mapTop + BAR_OFFSET}px`;
     guide.style.top = `${mapTop + MARGIN}px`;
-    const open = guides.find(guideIsOpen) || null;
+    // A guide put away stays away until its own sheet closes, even while
+    // another sheet opens over or beside it (the route rail stays open
+    // under the weather sheet on a desktop).
     guides.forEach((g) => {
-      if (g !== open) putAway.delete(g.key);
+      if (!guideIsOpen(g)) putAway.delete(g.key);
     });
-    if (open && open !== guided && !putAway.has(open.key)) showGuide(open);
+    const open = guides.find((g) => guideIsOpen(g) && !putAway.has(g.key)) || null;
+    if (open && open !== guided) showGuide(open);
     if (guided && guided !== open) hideGuide();
     if (guided) placeBadges(guided);
 
@@ -480,8 +486,14 @@
     active = true;
     lastFocused = document.activeElement;
     // Help mode looks at the map; nothing else should be floating over it.
-    // Sheets are left open — they are what a guide explains.
-    window.pwaMapOverlays?.closeAll();
+    // A sheet with a guide is left open — it is what the guide explains —
+    // so the registry is asked to close everything but that one.
+    const overlays = window.pwaMapOverlays;
+    if (overlays) {
+      const keep = overlays.openNames().find((name) => guideSheetIds.has(name));
+      if (keep) overlays.opening(keep);
+      else overlays.closeAll();
+    }
     document.documentElement.setAttribute(ROOT_ATTR, '');
     toggleBtn.setAttribute('aria-pressed', 'true');
     root.hidden = false;
@@ -564,13 +576,18 @@
   document.getElementById('map-help-mode-guide-close')?.addEventListener('click', putGuideAway);
   document.getElementById('map-help-mode-guide-done')?.addEventListener('click', putGuideAway);
 
-  document.addEventListener('keydown', (event) => {
+  // On the window's capture phase, ahead of every sheet's own Escape
+  // handler: while help mode is on, Escape is its, one step back at a
+  // time — the card, then the guide, then help mode — and never also
+  // closes the sheet underneath.
+  window.addEventListener('keydown', (event) => {
     if (!active || event.key !== 'Escape') return;
-    // One step back at a time: the card, then the guide, then help mode.
+    event.preventDefault();
+    event.stopImmediatePropagation();
     if (selected) hideCard();
     else if (guided) putGuideAway();
     else leave();
-  });
+  }, true);
 
   // The tour opening (from anywhere) ends help mode: the two would talk
   // over each other about the same controls.
