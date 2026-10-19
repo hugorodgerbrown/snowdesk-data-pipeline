@@ -8095,6 +8095,38 @@
       }));
     };
 
+    // SNOW-1118: the tour's "Tap a region" step shows a real region rather
+    // than describing one. map_help.js asks for it, and this answers: the
+    // region already selected (its sheet opened again on a phone), or else
+    // the one under the middle of the map, or failing that any region in
+    // view. On a phone the selection opens the region sheet, as any
+    // selection does (map_region_sheet.js), and that sheet is what the step
+    // points at; a desktop names it in the readout chip.
+    //
+    // Leaving the step releases it: a selection the tour made is dropped,
+    // so the visitor ends the tour on the map they started it on. One they
+    // made themselves is theirs, and stays.
+    let tourSelectedId = null;
+    document.addEventListener('snowdesk:map-help-show-region', () => {
+      if (selectedId !== null) {
+        window.pwaRegionSheet?.reopen?.();
+        return;
+      }
+      if (!map.getLayer('regions-fill')) return;
+      const canvas = map.getCanvas();
+      const middle = [canvas.clientWidth / 2, canvas.clientHeight / 2];
+      const hit =
+        map.queryRenderedFeatures(middle, { layers: ['regions-fill'] })[0] ||
+        map.queryRenderedFeatures({ layers: ['regions-fill'] })[0];
+      if (!hit || hit.id === undefined || !REGION_LOOKUP[hit.id]) return;
+      tourSelectedId = hit.id;
+      selectFeature(hit.id, { via: 'tour' });
+    });
+    document.addEventListener('snowdesk:map-help-release-region', () => {
+      if (tourSelectedId !== null && selectedId === tourSelectedId) deselectRegion();
+      tourSelectedId = null;
+    });
+
     // SNOW-445: favourite / community-observation / report-cluster markers sit
     // ON TOP of the region choropleth. MapLibre has no stopPropagation between
     // layer-scoped click handlers, so without a carve-out a tap on a marker

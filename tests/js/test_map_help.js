@@ -35,8 +35,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const STORAGE_KEY = 'snowdesk.map.help';
 const DISMISSED_VALUE = 'seen';
 
-// Mirrors the template's 13 step definitions (apps/public/templates/public/
-// partials/_map_embed.html), in template order.
+// The tour's step list as it stood before SNOW-1118: one plain <li> per
+// control, its text the body, no chapters. The template carries seven
+// chaptered steps now (tests/js/test_map_help_chapters.js walks that shape),
+// but map_help.js still reads this simpler one — a step without a
+// [data-help-body] uses its own text, and steps without chapters show the
+// "Step n of m" line instead of the progress bar — so this file keeps it to
+// cover the sequencing, persistence and keyboard behaviour on their own.
 //
 // Every one of those targets is server-rendered unconditionally — none of
 // them is gated on a waffle flag or an auth check any more (#favourite-add-btn

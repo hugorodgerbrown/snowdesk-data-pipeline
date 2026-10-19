@@ -326,6 +326,23 @@ To see the offer again without clearing `localStorage`, load
 recorded, after the same wait, and is stripped from the address bar once the
 offer is answered. It is the handle to use in QA, screenshots and bug reports.
 
+### Scenario MS8: The tour reads the map in seven steps
+
+**Goal**: Verify the tour explains the map and not only its buttons: seven
+steps in four chapters, the second of which shows a real region
+(SNOW-1118 — it replaced a walk of thirteen controls in DOM order).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | On a phone-sized window with no region selected, click the "?" roundel | The tour opens with no ring, its card across the foot of the screen: "Colour is the day's danger", with the five danger levels as numbered tiles. The progress bar reads Read the map · Move · Yours · Help, with the first segment filled |
+| 2 | Click "Next" | A region near the middle of the map is selected and its sheet opens at the foot of the screen, ringed; the card ("Tap a region") sits above it and the tour stays open |
+| 3 | Click "Next" | The region sheet closes and the selection is dropped (the address bar loses its `#` region). The date control is ringed: "Choose the day" |
+| 4 | Click "Next" | Search, locate and the zoom number are ringed together: "Find your way". The progress bar's current chapter is Move |
+| 5 | Click "Next", then "Next" | "Layers" rings the layers roundel; "Your things" rings the whole "yours" capsule and lists Pins, Observations, Routes and Offline, each with its roundel's glyph. Signed out, the copy ends "Sign in to keep them." |
+| 6 | Click "Next" | "Help is always here" rings the "?" roundel, and the button reads "Done" |
+| 7 | Select a region yourself, then repeat steps 1–3 | Step 2 rings that region's sheet rather than choosing another, and on step 3 the region stays selected |
+| 8 | At desktop width, repeat steps 1–3 | Step 2 rings the region chip at the top left instead of a sheet |
+
 ---
 
 ## Accounts and Pins
