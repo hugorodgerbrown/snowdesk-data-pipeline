@@ -534,6 +534,105 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
 SEASON_CALENDAR_VARIANTS: tuple[dict[str, Any], ...] = _build_season_calendar_variants()
 
 
+# Season cell variants (SNOW-1126) ------------------------------------------
+# The one day partial the bulletin page's heatmap and the resort page's
+# season strip share. One row per variant: a padding slot, a day with no
+# bulletin, a stable day, a variable day, an AM/PM split, an ALBINA
+# elevation split and today's ring — linked (the heatmap) and inert (the
+# resort strip, role="img", no link).
+
+
+def _build_season_cell_variants() -> tuple[dict[str, Any], ...]:
+    """Build the season-cell variants for the component library.
+
+    Imported lazily for the same reason as ``_build_season_calendar_variants``.
+
+    Returns:
+        The linked and inert rows, each one cell per state.
+
+    """
+    from apps.public.season_calendar import SeasonCell
+
+    day = datetime.date(2026, 1, 12)
+    cells: list[SeasonCell | None] = [
+        None,
+        SeasonCell(
+            date=day,
+            min_rating_key="no_rating",
+            max_rating_key="no_rating",
+            subdivision="",
+            has_bulletin=False,
+        ),
+        SeasonCell(
+            date=day + datetime.timedelta(days=1),
+            min_rating_key="moderate",
+            max_rating_key="moderate",
+            subdivision="",
+            has_bulletin=True,
+        ),
+        SeasonCell(
+            date=day + datetime.timedelta(days=2),
+            min_rating_key="moderate",
+            max_rating_key="considerable",
+            subdivision="",
+            has_bulletin=True,
+        ),
+        SeasonCell(
+            date=day + datetime.timedelta(days=3),
+            min_rating_key="considerable",
+            max_rating_key="high",
+            subdivision="",
+            has_bulletin=True,
+            am_rating_key="considerable",
+            pm_rating_key="high",
+        ),
+        SeasonCell(
+            date=day + datetime.timedelta(days=4),
+            min_rating_key="low",
+            max_rating_key="considerable",
+            subdivision="",
+            has_bulletin=True,
+            source="ALBINA",
+            bands=[
+                {
+                    "band_id": "above-2200",
+                    "label": "Above 2200 m",
+                    "rating_key": "considerable",
+                    "time_period": "all_day",
+                },
+                {
+                    "band_id": "below-2200",
+                    "label": "Below 2200 m",
+                    "rating_key": "low",
+                    "time_period": "all_day",
+                },
+            ],
+        ),
+        SeasonCell(
+            date=day + datetime.timedelta(days=5),
+            min_rating_key="high",
+            max_rating_key="high",
+            subdivision="",
+            has_bulletin=True,
+            is_today=True,
+        ),
+    ]
+    region = SimpleNamespace(canonical_region_id="CH-4115", name_slug="verbier")
+    return (
+        {
+            "caption": "Linked — the bulletin page's heatmap",
+            "context": {"cells": cells, "region": region, "inert": False},
+        },
+        {
+            "caption": "Inert — the resort page's season strip (role=img)",
+            "context": {"cells": cells, "region": region, "inert": True},
+        },
+    )
+
+
+SEASON_CELL_VARIANTS: tuple[dict[str, Any], ...] = _build_season_cell_variants()
+
+
 # Button variants (SNOW-200) ------------------------------------------------
 # Covers all three visual variants × both sizes, plus a full-width example.
 

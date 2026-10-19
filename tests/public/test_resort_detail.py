@@ -34,6 +34,10 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
     stored but never rendered. Every cell renders when curated, an unset
     cell is omitted, and the whole block is omitted rather than rendered
     empty when nothing is curated at all.
+  - SNOW-1126: the season strip and its text summary render server-side in
+    the plain (non-HTMX) response with correct counts, are omitted when no
+    day had a bulletin, show last season from an October date, never link
+    a cell to its day, and cost a bounded number of queries.
 """
 
 from __future__ import annotations
@@ -1100,3 +1104,117 @@ class TestResortFacts:
         assert 'data-testid="resort-facts-lifts"' in content
         assert 'data-testid="resort-facts-piste"' in content
         assert "0 km" in content
+
+
+@pytest.mark.django_db
+class TestResortSeasonStrip:
+    """SNOW-1126: the season strip, server-rendered on the resort page."""
+
+    @pytest.fixture(autouse=True)
+    def _archive_start(self, settings: Any) -> None:
+        """Pin SEASON_START_DATE so the window is not clamped."""
+        settings.SEASON_START_DATE = datetime.date(2024, 11, 1)
+
+    def _rate(self, region: Any, day: datetime.date, rating: str) -> None:
+        """Create one RegionDayRating row backed by a bulletin."""
+        RegionDayRatingFactory.create(
+            region=region,
+            date=day,
+            min_rating=rating,
+            max_rating=rating,
+            source_bulletin=BulletinFactory.create(),
+        )
+
+    def _strip(self, content: str) -> str:
+        """Return the strip section's markup."""
+        start = content.index('data-testid="resort-season"')
+        return content[start : content.index("</section>", start)]
+
+    @freeze_time("2026-02-20 12:00:00+00:00")
+    def test_strip_and_summary_are_in_the_plain_response(self) -> None:
+        """No HX-Request: the summary counts and the cells are in the HTML."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        self._rate(region, datetime.date(2025, 12, 1), "low")
+        self._rate(region, datetime.date(2025, 12, 2), "moderate")
+        self._rate(region, datetime.date(2026, 1, 5), "high")
+        self._rate(region, datetime.date(2026, 1, 6), "considerable")
+        self._rate(region, datetime.date(2026, 1, 7), "high")
+
+        response = Client().get(resort.get_absolute_url())
+
+        assert response.status_code == 200
+        strip = self._strip(response.content.decode())
+        summary = html.unescape(
+            " ".join(strip.split('data-testid="resort-season-summary"')[1].split())
+        )
+        assert "Season 25/26: 5 days with a bulletin." in summary
+        assert "3 days at Considerable or higher." in summary
+        assert "Peak: High on 5 Jan 2026." in summary
+        assert 'data-testid="season-calendar"' in strip
+        assert 'role="img"' in strip
+        # Django's "N" format is AP-style ("Jan."); the name is the translated label.
+        assert 'aria-label="Mon 5 Jan.: High"' in strip
+        assert 'data-level="high"' in strip
+
+    @freeze_time("2026-02-20 12:00:00+00:00")
+    def test_cells_do_not_link_to_their_days(self) -> None:
+        """The page's one bulletin link is the danger area; no cell is a link."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        self._rate(region, datetime.date(2026, 1, 5), "high")
+
+        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
+
+        assert "<a" not in strip
+
+    @freeze_time("2026-02-20 12:00:00+00:00")
+    def test_strip_is_omitted_without_bulletins(self) -> None:
+        """No day in the window had a bulletin → no section at all."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        # A row with no source bulletin is not a day with a bulletin.
+        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 5))
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert "resort-season" not in content
+        assert 'data-testid="resort-detail"' in content
+
+    @freeze_time("2026-10-19 12:00:00+00:00")
+    def test_an_october_date_shows_last_season(self) -> None:
+        """Off-season, the strip is the season just ended, not an empty one."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        self._rate(region, datetime.date(2026, 3, 10), "considerable")
+        self._rate(region, datetime.date(2026, 4, 30), "moderate")
+        # Outside the 25/26 window on both sides.
+        self._rate(region, datetime.date(2025, 3, 10), "very_high")
+        self._rate(region, datetime.date(2026, 5, 1), "high")
+
+        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
+        summary = " ".join(strip.split())
+
+        assert "Season 25/26: 2 days with a bulletin." in summary
+        assert "Peak: Considerable on 10 Mar 2026." in summary
+        assert 'data-date="2025-11-01"' in strip
+        assert 'data-date="2026-04-30"' in strip
+        assert 'data-date="2026-05-01"' not in strip
+
+    @freeze_time("2026-02-20 12:00:00+00:00")
+    def test_query_count_is_bounded(self, django_assert_max_num_queries: Any) -> None:
+        """The strip adds one range query, however many days are rated."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        for offset in range(30):
+            self._rate(
+                region, datetime.date(2025, 12, 1) + datetime.timedelta(offset), "low"
+            )
+        client = Client()
+        url = resort.get_absolute_url()
+
+        # The page took six queries before SNOW-1126; the strip adds one.
+        with django_assert_max_num_queries(7):
+            response = client.get(url)
+
+        assert response.status_code == 200

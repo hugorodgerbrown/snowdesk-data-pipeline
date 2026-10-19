@@ -138,6 +138,8 @@ from .season_calendar import (
     build_season_grid,
     build_season_ribbon,
     season_header,
+    season_window,
+    summarise_season,
 )
 from .site_environment import PWAEnvironmentIdentity
 
@@ -4808,7 +4810,36 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
             f"{settings.SITE_BASE_URL.rstrip('/')}{resort.get_absolute_url()}",
         ),
     }
+    context.update(_resort_season_strip_context(region, today))
     return render(request, "public/resort.html", context)
+
+
+def _resort_season_strip_context(
+    region: MicroRegion, today: datetime.date
+) -> dict[str, Any]:
+    """Build the resort page's season strip and its text summary (SNOW-1126).
+
+    Rendered server-side, not deferred the way the bulletin page's
+    ``#season-grid`` is: the strip's summary is the page's indexable account
+    of the season, and a crawler never fires the client trigger. The cost is
+    one indexed ``RegionDayRating.objects.for_region_range`` query.
+
+    The window is the running 1 Nov – 30 Apr season, or the one just ended
+    from May to October (``season_window``); the grid stops at ``today + 1``
+    within a running season.
+
+    Args:
+        region: The resort's parent micro-region.
+        today: The current local date.
+
+    Returns:
+        ``season_strip`` (a ``SeasonGrid``) and ``season_summary`` (a
+        ``SeasonSummary``, falsy — so the template hides the strip — when no
+        day in the window had a bulletin).
+
+    """
+    grid = build_season_grid(region, today, window=season_window(today))
+    return {"season_strip": grid, "season_summary": summarise_season(grid)}
 
 
 def _resort_location_links(

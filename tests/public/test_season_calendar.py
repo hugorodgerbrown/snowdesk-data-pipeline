@@ -27,20 +27,32 @@ SNOW-314 — build_season_ribbon:
   - Days without a source_bulletin → has_bulletin=False.
   - season_label matches the SLF two-year format.
   - Cross-region isolation (other region's rows not included).
+
+SNOW-1126 — the resort page's season strip:
+  - season_window boundaries: 31 Oct, 1 Nov, April, an October date that
+    answers with the previous season, and the SEASON_START_DATE clamp.
+  - build_season_grid(window=…) runs from the window start to the earlier
+    of its end and today + 1, carrying the window's label.
+  - summarise_season counts days with a bulletin, days by level, days at
+    Considerable or higher, and dates the peak to its first day.
 """
 
 from __future__ import annotations
 
 import datetime
+from typing import Any
 
 import pytest
 from django.test import override_settings
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.public.season_calendar import (
+    SeasonWindow,
     build_season_grid,
     build_season_ribbon,
     season_header,
+    season_window,
+    summarise_season,
 )
 from tests.factories import (
     BulletinFactory,
@@ -740,3 +752,136 @@ class TestBuildSeasonRibbon:
         day = next(d for d in ribbon.days if d.date == datetime.date(2025, 11, 4))
         assert day.has_bulletin is False
         assert day.max_rating_key == RegionDayRating.Rating.NO_RATING
+
+
+class TestSeasonWindow:
+    """Tests for season_window (SNOW-1126)."""
+
+    @pytest.fixture(autouse=True)
+    def _early_archive(self, settings: Any) -> None:
+        """Put SEASON_START_DATE well before every window under test."""
+        settings.SEASON_START_DATE = datetime.date(2020, 11, 1)
+
+    def test_31_october_is_the_previous_season(self) -> None:
+        """The last day before the season opens answers with the one just ended."""
+        assert season_window(datetime.date(2026, 10, 31)) == SeasonWindow(
+            datetime.date(2025, 11, 1), datetime.date(2026, 4, 30), "25/26"
+        )
+
+    def test_1_november_opens_the_new_season(self) -> None:
+        """1 November is the first day of the new season."""
+        assert season_window(datetime.date(2026, 11, 1)) == SeasonWindow(
+            datetime.date(2026, 11, 1), datetime.date(2027, 4, 30), "26/27"
+        )
+
+    @pytest.mark.parametrize("day", [1, 30])
+    def test_april_is_inside_the_running_season(self, day: int) -> None:
+        """April, through the 30th, belongs to the season that opened in November."""
+        assert season_window(datetime.date(2026, 4, day)) == SeasonWindow(
+            datetime.date(2025, 11, 1), datetime.date(2026, 4, 30), "25/26"
+        )
+
+    @pytest.mark.parametrize(
+        "today", [datetime.date(2026, 5, 1), datetime.date(2026, 10, 19)]
+    )
+    def test_off_season_dates_return_the_previous_season(
+        self, today: datetime.date
+    ) -> None:
+        """May to October answers with the season that has just closed."""
+        assert season_window(today) == SeasonWindow(
+            datetime.date(2025, 11, 1), datetime.date(2026, 4, 30), "25/26"
+        )
+
+    def test_start_is_clamped_to_season_start_date(self, settings: Any) -> None:
+        """The start never precedes SEASON_START_DATE; the label is the nominal season's."""
+        settings.SEASON_START_DATE = datetime.date(2026, 1, 15)
+        assert season_window(datetime.date(2026, 2, 1)) == SeasonWindow(
+            datetime.date(2026, 1, 15), datetime.date(2026, 4, 30), "25/26"
+        )
+
+
+@pytest.mark.django_db
+class TestWindowedSeasonGrid:
+    """build_season_grid with a window, and summarise_season (SNOW-1126)."""
+
+    @pytest.fixture(autouse=True)
+    def _early_archive(self, settings: Any) -> None:
+        """Put SEASON_START_DATE well before every window under test."""
+        settings.SEASON_START_DATE = datetime.date(2020, 11, 1)
+
+    def _rate(
+        self,
+        region: object,
+        day: datetime.date,
+        rating: str,
+        bulletin: Bulletin | None,
+    ) -> None:
+        """Create one RegionDayRating row."""
+        RegionDayRatingFactory.create(
+            region=region,
+            date=day,
+            min_rating=rating,
+            max_rating=rating,
+            source_bulletin=bulletin,
+        )
+
+    def test_past_season_window_spans_november_to_april(self) -> None:
+        """An October today draws the whole previous season, end to end."""
+        region = MicroRegionFactory.create()
+        today = datetime.date(2026, 10, 19)
+        grid = build_season_grid(region, today, window=season_window(today))
+        dated = [c for col in grid.columns for c in col if c is not None]
+        assert dated[0].date == datetime.date(2025, 11, 1)
+        assert dated[-1].date == datetime.date(2026, 4, 30)
+        assert grid.season_label == "25/26"
+
+    def test_running_season_window_stops_at_tomorrow(self) -> None:
+        """Mid-season the grid ends at today + 1, not at 30 April."""
+        region = MicroRegionFactory.create()
+        today = datetime.date(2026, 1, 10)
+        grid = build_season_grid(region, today, window=season_window(today))
+        dated = [c for col in grid.columns for c in col if c is not None]
+        assert dated[-1].date == datetime.date(2026, 1, 11)
+
+    def test_window_after_its_end_is_empty(self) -> None:
+        """A window whose clamped start passes its end builds an empty grid."""
+        region = MicroRegionFactory.create()
+        window = SeasonWindow(
+            datetime.date(2026, 5, 1), datetime.date(2026, 4, 30), "25/26"
+        )
+        grid = build_season_grid(region, datetime.date(2026, 6, 1), window=window)
+        assert not grid
+        assert not summarise_season(grid)
+
+    def test_summary_counts_levels_and_dates_the_first_peak(self) -> None:
+        """Counts only days with a bulletin; the peak is the first day at the top level."""
+        region = MicroRegionFactory.create()
+        bulletin = BulletinFactory.create()
+        self._rate(region, datetime.date(2025, 12, 1), "low", bulletin)
+        self._rate(region, datetime.date(2025, 12, 2), "considerable", bulletin)
+        self._rate(region, datetime.date(2025, 12, 3), "high", bulletin)
+        self._rate(region, datetime.date(2025, 12, 4), "high", bulletin)
+        # No source bulletin — not a day with a bulletin, even rated very high.
+        self._rate(region, datetime.date(2025, 12, 5), "very_high", None)
+        today = datetime.date(2026, 10, 19)
+        summary = summarise_season(
+            build_season_grid(region, today, window=season_window(today))
+        )
+        assert summary
+        assert summary.season_label == "25/26"
+        assert summary.days_with_bulletin == 4
+        assert summary.level_counts == [("low", 1), ("considerable", 1), ("high", 2)]
+        assert summary.considerable_or_higher == 3
+        assert summary.peak_rating_key == "high"
+        assert summary.peak_date == datetime.date(2025, 12, 3)
+
+    def test_summary_is_falsy_without_bulletins(self) -> None:
+        """No day with a bulletin → a falsy summary with no peak."""
+        region = MicroRegionFactory.create()
+        today = datetime.date(2026, 10, 19)
+        summary = summarise_season(
+            build_season_grid(region, today, window=season_window(today))
+        )
+        assert not summary
+        assert summary.peak_rating_key == ""
+        assert summary.peak_date is None
