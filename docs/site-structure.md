@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
 status: current
-last-reviewed: 2026-10-17
+last-reviewed: 2026-10-19
 ---
 
 # Snowdesk site structure
@@ -159,14 +159,17 @@ also mounts the SLF and ALBINA replay mirrors at `/dev/slf-mirror/` and
 
 `/sitemap.xml` has four sections, defined in
 [`apps/public/sitemaps.py`](../apps/public/sitemaps.py) and registered together
-as `SITEMAPS`: `bulletins` (regions with a bulletin valid today), `resorts`
+as `SITEMAPS`: `bulletins` (every region that has ever had a bulletin, at its evergreen
+URL, year-round; SNOW-1121), `resorts`
 (every resort page), `locations` (every *named* public location's weather
 page — never a centroid, never a favourite's pin; SNOW-799) and `static`
 (the homepage, the map, both guides, `/compare/`, and the three legal pages —
 privacy, terms of service, colophon; `/terms/` is a redirect). SNOW-676 added `resorts`
 and `static` — until then the sitemap was the bulletin section alone, which
 left the resort pages invisible to search and made the whole file *empty*
-out of season, when no bulletin is valid today. Deliberately absent, with
+out of season, when no bulletin is valid today. The bulletin section itself
+stayed empty out of season until SNOW-1121, because it listed only today's
+regions. Deliberately absent, with
 the reasoning in the module: `/examples/…` (serves a random bulletin per
 request), redirects (`/observations/` is one now), staff-only routes, and
 anything `Disallow`ed in robots.txt.

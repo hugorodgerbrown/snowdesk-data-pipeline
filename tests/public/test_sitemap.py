@@ -3,11 +3,13 @@ tests/public/test_sitemap.py — Tests for the /sitemap.xml endpoint.
 
 Covers:
   - 200 OK + Content-Type is application/xml.
-  - Regions with a bulletin for today (Europe/Zurich) appear in the output.
+  - Every region that has ever had a bulletin appears, whatever its date
+    (SNOW-1121 — the section used to list today's regions only).
   - Regions from multiple countries appear.
-  - Regions whose bulletin date is not today are excluded.
   - Regions with no bulletin at all are excluded.
-  - Empty-but-valid XML when no bulletin is published for today.
+  - A region with several bulletins appears once, lastmod the newest.
+  - The bulletin section's query count does not grow with the regions.
+  - Empty-but-valid XML when no bulletin exists at all.
   - Sitemap entries are evergreen form-2 URLs, not dated form-3 URLs
     (SNOW-395).
 """
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -23,7 +26,11 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.public.sitemaps import LocationWeatherSitemap, StaticViewSitemap
+from apps.public.sitemaps import (
+    BulletinSitemap,
+    LocationWeatherSitemap,
+    StaticViewSitemap,
+)
 from apps.regions.models import MicroRegion, Resort
 from tests.factories import (
     BulletinFactory,
@@ -73,7 +80,7 @@ class TestSitemapResponse:
         assert "xml" in response["Content-Type"]
 
     def test_empty_sitemap_is_valid_xml(self, client: Client) -> None:
-        """When no bulletins are published today the response is still well-formed XML."""
+        """With no bulletins at all the response is still well-formed XML."""
         url = reverse("sitemap")
         response = client.get(url)
         content = response.content.decode()
@@ -82,7 +89,7 @@ class TestSitemapResponse:
 
 @pytest.mark.django_db
 class TestSitemapContents:
-    """Sitemap includes only regions with today's bulletins."""
+    """The bulletin section lists every region that has ever had a bulletin."""
 
     def test_today_bulletin_region_is_listed(self, client: Client) -> None:
         """A region with a bulletin for today appears in the sitemap."""
@@ -97,19 +104,87 @@ class TestSitemapContents:
         content = response.content.decode()
         assert "ch-4115" in content
 
-    def test_yesterday_bulletin_region_is_excluded(self, client: Client) -> None:
-        """A region whose bulletin is from yesterday does not appear."""
+    def test_out_of_season_region_is_listed_with_its_lastmod(
+        self, client: Client
+    ) -> None:
+        """SNOW-1121: a region whose only bulletin ended months ago is listed.
+
+        The evergreen page renders all year, so the section must not empty
+        out between May and November — those are the weeks a crawler has
+        time to index it before the season.
+        """
         region = MicroRegionFactory.create(
             region_id="CH-4200", name="Graubunden", slug="ch-4200"
         )
-        yesterday = _zurich_today() - timedelta(days=1)
-        _make_bulletin_for_region(region, yesterday)
+        _make_bulletin_for_region(region, _zurich_today() - timedelta(days=150))
+        bulletin = region.bulletins.get()
 
-        url = reverse("sitemap")
-        response = client.get(url)
-        content = response.content.decode()
-        # Only today's bulletins qualify — yesterday's must not appear.
-        assert "ch-4200" not in content
+        content = client.get(reverse("sitemap")).content.decode()
+
+        entry = re.search(
+            r"/ch-4200/graubunden/</loc>\s*<lastmod>([^<]+)</lastmod>", content
+        )
+        assert entry, "expected the out-of-season region's evergreen entry"
+        assert entry.group(1) == bulletin.updated_at.date().isoformat()
+
+    def test_out_of_season_evergreen_page_renders(self, client: Client) -> None:
+        """The URL the sitemap lists for an out-of-season region is a 200."""
+        region = MicroRegionFactory.create(
+            region_id="CH-4201", name="Davos", slug="ch-4201"
+        )
+        _make_bulletin_for_region(region, _zurich_today() - timedelta(days=150))
+
+        response = client.get(region.get_absolute_url())
+
+        assert response.status_code == 200
+
+    def test_region_with_several_bulletins_is_listed_once_at_the_newest(
+        self, client: Client
+    ) -> None:
+        """One <url> per region, its lastmod the newest bulletin's updated_at."""
+        region = MicroRegionFactory.create(
+            region_id="CH-5000", name="Many", slug="ch-5000"
+        )
+        today = _zurich_today()
+        for days_ago in (300, 200, 1):
+            _make_bulletin_for_region(region, today - timedelta(days=days_ago))
+        newest = max(b.updated_at for b in region.bulletins.all())
+
+        content = client.get(reverse("sitemap")).content.decode()
+
+        assert content.count("/ch-5000/many/</loc>") == 1
+        lastmods = re.findall(
+            r"/ch-5000/many/</loc>\s*<lastmod>([^<]+)</lastmod>", content
+        )
+        assert lastmods == [newest.date().isoformat()]
+
+    def test_bulletin_section_query_count_is_flat(
+        self, django_assert_num_queries: Any
+    ) -> None:
+        """Listing the section costs the same queries for 1 region as for 5."""
+        today = _zurich_today()
+
+        def _render() -> None:
+            sitemap = BulletinSitemap()
+            for item in sitemap.items():
+                sitemap.location(item)
+                sitemap.lastmod(item)
+
+        _make_bulletin_for_region(
+            MicroRegionFactory.create(region_id="CH-6000", slug="ch-6000"), today
+        )
+        with django_assert_num_queries(1):
+            _render()
+
+        for index in range(1, 5):
+            _make_bulletin_for_region(
+                MicroRegionFactory.create(
+                    region_id=f"CH-600{index}", slug=f"ch-600{index}"
+                ),
+                today - timedelta(days=index * 40),
+            )
+        with django_assert_num_queries(1):
+            _render()
 
     def test_region_with_no_bulletin_excluded(self, client: Client) -> None:
         """A region with no bulletin at all does not appear in the sitemap."""
@@ -141,25 +216,6 @@ class TestSitemapContents:
         assert "ch-1111" in content
         assert "at-1111" in content
         assert "it-1111" in content
-
-    def test_today_region_in_sitemap_not_yesterday(self, client: Client) -> None:
-        """Only the today region appears; the yesterday region is absent."""
-        region_today = MicroRegionFactory.create(
-            region_id="CH-2222", name="Today Region", slug="ch-2222"
-        )
-        region_yesterday = MicroRegionFactory.create(
-            region_id="CH-3333", name="Yesterday Region", slug="ch-3333"
-        )
-        today = _zurich_today()
-        yesterday = today - timedelta(days=1)
-        _make_bulletin_for_region(region_today, today)
-        _make_bulletin_for_region(region_yesterday, yesterday)
-
-        url = reverse("sitemap")
-        response = client.get(url)
-        content = response.content.decode()
-        assert "ch-2222" in content
-        assert "ch-3333" not in content
 
     def test_urls_are_evergreen_not_dated(self, client: Client) -> None:
         """SNOW-395: every <loc> is form 2 (/<region>/<slug>/), not form 3.
