@@ -223,6 +223,30 @@ class TestFavouriteCard:
         assert favourite.location is not None
         assert favourite.location.get_absolute_url() in content
 
+    @freeze_time(MIDDAY)
+    def test_the_card_keeps_freezing_level_and_sun_times(self) -> None:
+        """SNOW-1125: only the resort page opts into the brief panel."""
+        user = UserFactory.create()
+        favourite = FavouriteFactory.create(user=user, name="The col")
+        WeatherFactory.create(
+            location=favourite.location,
+            observed_on=PAGE_DATE,
+            sunrise=SUNRISE,
+            sunset=SUNSET,
+            freezing_level_height=2800.0,
+        )
+
+        client = Client()
+        client.force_login(user)
+        content = client.get(
+            reverse("favourites:card", kwargs={"uuid": favourite.uuid}),
+            HTTP_HX_REQUEST="true",
+        ).content.decode()
+
+        assert 'data-testid="favourite-weather-freezing-level"' in content
+        assert "icons/weather/sunrise" in content
+        assert "06:30" in content
+
 
 @pytest.mark.django_db
 class TestLocationForecastPage:
