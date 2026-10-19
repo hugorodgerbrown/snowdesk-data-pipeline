@@ -210,14 +210,21 @@ describe('trackFill', () => {
   it.each([
     [0, 'var(--color-track-level)'],
     [4.9, 'var(--color-track-level)'],
-    [5, 'var(--color-slope-gentle)'],
+    [-5, 'var(--color-slope-gentle)'],
     [-14.9, 'var(--color-slope-gentle)'],
-    [15, 'var(--color-slope-30)'],
-    [24.9, 'var(--color-slope-30)'],
+    [-15, 'var(--color-slope-30)'],
+    [-24.9, 'var(--color-slope-30)'],
     [-25, 'var(--color-slope-35)'],
-    [34.9, 'var(--color-slope-35)'],
-    [35, 'var(--color-slope-40)'],
+    [-34.9, 'var(--color-slope-35)'],
+    [-35, 'var(--color-slope-40)'],
     [-60, 'var(--color-slope-40)'],
+    // A climb steps at 5 / 10 / 15 / 20°: skin tracks live under 20°.
+    [5, 'var(--color-slope-gentle)'],
+    [9.9, 'var(--color-slope-gentle)'],
+    [10, 'var(--color-slope-30)'],
+    [15, 'var(--color-slope-35)'],
+    [19.9, 'var(--color-slope-35)'],
+    [20, 'var(--color-slope-40)'],
   ])('fills a %s° track with %s', (gradient, token) => {
     expect(core.trackFill(gradient)).toBe(token);
   });
@@ -228,17 +235,39 @@ describe('trackFill', () => {
 
   it('starts the level step at LEVEL_DEG', () => {
     expect(core.LEVEL_DEG).toBe(5);
-    expect(core.TRACK_STEPS[0][0]).toBe(core.LEVEL_DEG);
+    expect(core.TRACK_BOUNDS.climb[0]).toBe(core.LEVEL_DEG);
+    expect(core.TRACK_BOUNDS.descent[0]).toBe(core.LEVEL_DEG);
+  });
+});
+
+describe('trackStep', () => {
+  it.each([
+    [0, 0],
+    [-4.9, 0],
+    [-5, 1],
+    [-15, 2],
+    [-25, 3],
+    [-35, 4],
+    [5, 1],
+    [10, 2],
+    [15, 3],
+    [20, 4],
+  ])('puts a %s° track on step %s', (gradient, step) => {
+    expect(core.trackStep(gradient)).toBe(step);
+  });
+
+  it('has no step for an unknown gradient', () => {
+    expect(core.trackStep(null)).toBeNull();
   });
 });
 
 describe('aspectWheelSvg', () => {
   it('fills the inner ring on the track scale and the outer on the slope classes', () => {
-    // A 13° climb across 33° ground: gentle on the track scale, and the
-    // 30–35° class on the ground's — the mockup's point B.
+    // A 13° climb across 33° ground: steady on the climb's track scale,
+    // and the 30–35° class on the ground's — the mockup's point B.
     const state = { ...FACES, gradeDeg: 13, terrain: { kind: 'faces', sector: 0, slopeDeg: 33 } };
     const svg = parse(core.aspectWheelSvg({ size: 48, state }));
-    expect(svg.querySelector('[data-lit="heading"]')?.getAttribute('fill')).toBe('var(--color-slope-gentle)');
+    expect(svg.querySelector('[data-lit="heading"]')?.getAttribute('fill')).toBe('var(--color-slope-30)');
     expect(svg.querySelector('[data-lit="faces"]')?.getAttribute('fill')).toBe('var(--color-slope-30)');
     const level = parse(core.aspectWheelSvg({ size: 48, state: { ...state, gradeDeg: 3 } }));
     expect(level.querySelector('[data-lit="heading"]')?.getAttribute('fill')).toBe('var(--color-track-level)');
@@ -292,7 +321,7 @@ describe('aspectWheelSvg', () => {
     const state = {
       ...FACES,
       prev: { sector: 0, gradeDeg: -36 },
-      next: { sector: 4, gradeDeg: 10 },
+      next: { sector: 4, gradeDeg: -10 },
     };
     const svg = parse(core.aspectWheelSvg({ size: 48, state }));
     const neighbours = svg.querySelectorAll('[data-lit="neighbour"]');
@@ -314,6 +343,17 @@ describe('aspectWheelSvg', () => {
     expect(neighbours[0].getAttribute('fill')).toBe('var(--color-slope-40)');
   });
 
+  it('keeps the higher step, not the larger angle, where a climb meets a descent', () => {
+    // 17° up is stiff on the climb's scale; 22° down is only steady.
+    const state = {
+      ...FACES,
+      prev: { sector: 0, gradeDeg: -22 },
+      next: { sector: 0, gradeDeg: 17 },
+    };
+    const svg = parse(core.aspectWheelSvg({ size: 48, state }));
+    expect(svg.querySelector('[data-lit="neighbour"]')?.getAttribute('fill')).toBe('var(--color-slope-35)');
+  });
+
   it('lights both sectors of a turn', () => {
     const svg = parse(core.aspectWheelSvg({ size: 48, state: { ...FACES, track: [0, 2] } }));
     expect(svg.querySelectorAll('[data-lit="heading"]')).toHaveLength(2);
@@ -329,9 +369,11 @@ describe('aspectWheelSvg', () => {
   it.each([
     [5, 1],
     [-14.9, 1],
-    [15, 2],
-    [24.9, 2],
+    [-15, 2],
+    [-24.9, 2],
+    [10, 2],
     [-25, 3],
+    [15, 3],
     [35, 3],
     [62, 3],
   ])('grades a %s° track with %s chevrons (SNOW-1069)', (gradeDeg, count) => {

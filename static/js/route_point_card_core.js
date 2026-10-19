@@ -5,31 +5,39 @@
  *
  * The point header (templates/includes/_route_point_card.html) is the
  * route panel's header while a point is placed. It holds the aspect wheel
- * (aspect_wheel_core.js) and two lines of words, labelled Track and Slope
- * in the partial, and this module is where the words come from
+ * (aspect_wheel_core.js) and two lines of words, labelled Skier's track
+ * and Terrain slope in the partial (Track and Slope until 2026-10-19), and this module is where the words come from
  * (docs/decisions/the-point-card-names-the-experience.md).
  *
- * ## The Track line: heading · steepness kind
+ * ## The Skier's track line: heading · kind · band
  *
- * "NW → W · Gentle descent". The heading, then the steepness and kind as
- * one phrase (the strings' `phrase`), joined by the strings' `join` (a
- * template, because the strings reader trims, so a bare " · " would lose
- * its spaces):
+ * "NW → W · Descent · 5–15°". The heading, the kind and the track's band
+ * of degrees, joined by the strings' `join` and `with-band` (templates,
+ * because the strings reader trims, so a bare " · " would lose its
+ * spaces):
  *
  *   HEADING    — the compass point the segment heads in, or the first and
  *                last steps' points joined by an arrow where it turns:
  *                the inner ring's own sectors (`headingSectors`), so the
  *                words name exactly what the ring lights (SNOW-1069).
- *   STEEPNESS  — the track's step on its own scale (`trackWord`), because
- *                on the EAWS slope classes almost every skin track is
- *                "moderate": level under 5°, gentle under 15°, moderate
- *                under 25°, steep under 35°, very steep from 35°. The
- *                bounds are the aspect wheel's `TRACK_STEPS`, so the inner
- *                ring's colour and the word always name the same step.
- *   KIND       — ascent, descent, traverse or fall line
- *                (`kindOf`). Up or down is the wheel's centre mark, not a
- *                word, so the kind names only how the track lies on the
- *                slope.
+ *   KIND       — ascent, descent, traverse or fall line (`kindOf`). Up or
+ *                down is the wheel's centre mark, not a word, so the kind
+ *                names only how the track lies on the slope. A track with
+ *                no kind is level, and reads "Level" alone.
+ *   BAND       — the range of the track's step on its own scale
+ *                (`trackBand`), never the measured gradient. Level under
+ *                5°, then by direction: descending, 5 / 15 / 25 / 35°;
+ *                climbing, 5 / 10 / 15 / 20°, because skin tracks live
+ *                under 20°. The bounds are the aspect wheel's
+ *                `TRACK_BOUNDS`, so the inner ring's colour, the chevrons
+ *                and the band always name the same step.
+ *
+ * The track carried a word for its step until the usability review
+ * (2026-10-19): gentle, moderate, steep, very steep. They were the Slope
+ * line's EAWS words on other bounds, so "Moderate" over "Moderate" named
+ * two ranges and "Steep fall line" could sit over a "Moderate" slope. The
+ * band says the step without borrowing a word. `trackWord` still names
+ * the steps, for the level test and the wheel's tests.
  *
  * How the track lies on the slope (`headline`) compares its chord with the
  * way the ground falls — the segment's aspect, its downhill direction. d
@@ -70,21 +78,24 @@
  * segment's character, not a survey, and the error is the same one the
  * wheel's outer ring draws.
  *
- * ## The Slope line: the ground, in the EAWS words
+ * ## The Terrain slope line: the ground, in the EAWS words
  *
  * `groundWord` is the EAWS glossary's slope classes — moderate under 30°,
  * steep from 30°, very steep from 35°, extremely steep from 40° — with
  * flat under 5° added below them, the rule rail two's readout used. The
- * label says "Slope", so the words do not: "Steep", not "Steep slope". A
+ * label says "Slope", so the words do not: "Steep", not "Steep slope".
+ * The class's band follows it, "Steep · 30–35°" (`groundBand`), as the
+ * track's follows its kind, so the two scales read side by side. A
  * traverse adds the side the ground falls away to, and a turning segment
  * its ends' side or sides, except on the fall line itself.
  *
  * ## The accessible name
  *
- * The wheel's label is both lines with their labels, "Track: …; Slope:
- * …", read rather than drawn: the heading's arrow is "to"
- * (`label-heading-pair`) and the parts are joined by `label-join`, so a
- * screen reader never says "right arrow" or "dot".
+ * The wheel's label is both lines with their labels, "Skier's track: …;
+ * Terrain slope: …", read rather than drawn: the heading's arrow is "to"
+ * (`label-heading-pair`), the parts are joined by `label-join`, and a band
+ * is "30 to 35 degrees" (`label-band-*`), so a screen reader never says
+ * "right arrow", "dot" or "en dash".
  *
  * ## The gradient
  *
@@ -103,10 +114,12 @@
  *
  * Exports (frozen `self.pwaRoutePointCardCore`):
  *
- *   TRACK_BOUNDS                    — the track scale's upper bounds, degrees
+ *   TRACK_BOUNDS                    — the track scale's upper bounds, {climb, descent}
  *   FALL_LINE_DEG                   — within this of the fall line, 45
- *   trackWord(gradient)             — the track's step, or null
+ *   trackWord(gradient)             — the track's step, by direction, or null
+ *   trackBand(gradient)             — that step's {low, high} degrees, or null
  *   groundWord(angle)               — the ground's EAWS class, or null
+ *   groundBand(angle)               — that class's {low, high} degrees, or null
  *   angleBetween(a, b)              — two bearings' separation, 0 to 180
  *   headingDeg(path)                — a segment path's bearing, first to last
  *   fallSide(heading, aspect)       — 'left' or 'right', the way the ground falls
@@ -124,12 +137,18 @@
 
   /**
    * The track scale's exclusive upper bounds, in degrees of absolute
-   * gradient: level, gentle, moderate, steep. Very steep has none.
+   * gradient: level, gentle, steady, stiff; very stiff has none. A climb
+   * has its own, because skin tracks live under 20°. A copy of the aspect
+   * wheel's `TRACK_BOUNDS`, which a test holds equal, so this module's
+   * words need no wheel to read.
    */
-  const TRACK_BOUNDS = Object.freeze([5, 15, 25, 35]);
+  const TRACK_BOUNDS = Object.freeze({
+    climb: Object.freeze([5, 10, 15, 20]),
+    descent: Object.freeze([5, 15, 25, 35]),
+  });
 
   /** The track scale's step names, one more than the bounds. */
-  const TRACK_WORDS = Object.freeze(['level', 'gentle', 'moderate', 'steep', 'very-steep']);
+  const TRACK_WORDS = Object.freeze(['level', 'gentle', 'steady', 'stiff', 'very-stiff']);
 
   /** Within this many degrees of the fall line, the track is on it. */
   const FALL_LINE_DEG = 45;
@@ -141,6 +160,12 @@
   const GROUND_STEEP_DEG = 30;
   const VERY_STEEP_DEG = 35;
   const EXTREMELY_STEEP_DEG = 40;
+
+  /** The ground's class edges, one fewer than `GROUND_WORDS`. */
+  const GROUND_BOUNDS = Object.freeze([FLAT_GROUND_DEG, GROUND_STEEP_DEG, VERY_STEEP_DEG, EXTREMELY_STEEP_DEG]);
+
+  /** The ground's classes, flat first. */
+  const GROUND_WORDS = Object.freeze(['flat', 'moderate', 'steep', 'very-steep', 'extremely-steep']);
 
   /** A segment's length on the wire, metres: the sampler's stride. */
   const STRIDE_M = 25;
@@ -178,20 +203,79 @@
   }
 
   /**
-   * The track's step on its own scale.
+   * The bounds a signed gradient is read on: the climb's where it rises,
+   * the descent's otherwise.
    *
-   * @param {*} gradient Degrees, signed or absolute.
-   * @returns {?string} 'level', 'gentle', 'moderate', 'steep' or
-   *   'very-steep'; null for an unknown gradient.
+   * @param {number} gradient Degrees, signed.
+   * @returns {ReadonlyArray<number>} The upper bounds.
+   */
+  function trackBounds(gradient) {
+    return gradient > 0 ? TRACK_BOUNDS.climb : TRACK_BOUNDS.descent;
+  }
+
+  /**
+   * A value's step on a scale of exclusive upper bounds.
+   *
+   * @param {number} value The value, already absolute.
+   * @param {ReadonlyArray<number>} bounds The upper bounds.
+   * @returns {number} 0 to `bounds.length`.
+   */
+  function stepOf(value, bounds) {
+    const step = bounds.findIndex((bound) => value < bound);
+    return step === -1 ? bounds.length : step;
+  }
+
+  /**
+   * The track's step on its own scale, read by direction.
+   *
+   * @param {*} gradient Degrees, signed: positive climbs.
+   * @returns {?string} 'level', 'gentle', 'steady', 'stiff' or
+   *   'very-stiff'; null for an unknown gradient.
    */
   function trackWord(gradient) {
     const value = finite(gradient);
     if (value === null) return null;
-    const steep = Math.abs(value);
-    for (let i = 0; i < TRACK_BOUNDS.length; i += 1) {
-      if (steep < TRACK_BOUNDS[i]) return TRACK_WORDS[i];
-    }
-    return TRACK_WORDS[TRACK_WORDS.length - 1];
+    return TRACK_WORDS[stepOf(Math.abs(value), trackBounds(value))];
+  }
+
+  /**
+   * A step's band of degrees: its lower and upper bounds, either null
+   * where the scale is open at that end.
+   *
+   * @typedef {{low: ?number, high: ?number}} Band
+   */
+
+  /**
+   * The band of degrees the track's step covers (2026-10-19).
+   *
+   * The step's range, not the measured gradient, so the band can never
+   * disagree with the word or the ring's colour.
+   *
+   * @param {*} gradient Degrees, signed: positive climbs.
+   * @returns {?Band} Null for an unknown gradient.
+   */
+  function trackBand(gradient) {
+    const value = finite(gradient);
+    if (value === null) return null;
+    const bounds = trackBounds(value);
+    const step = stepOf(Math.abs(value), bounds);
+    return { low: step > 0 ? bounds[step - 1] : null, high: step < bounds.length ? bounds[step] : null };
+  }
+
+  /**
+   * The band of degrees the ground's EAWS class covers (2026-10-19).
+   *
+   * @param {*} angle The slope angle, degrees.
+   * @returns {?Band} Null for an unknown angle.
+   */
+  function groundBand(angle) {
+    const value = finite(angle);
+    if (value === null) return null;
+    const step = stepOf(value, GROUND_BOUNDS);
+    return {
+      low: step > 0 ? GROUND_BOUNDS[step - 1] : null,
+      high: step < GROUND_BOUNDS.length ? GROUND_BOUNDS[step] : null,
+    };
   }
 
   /**
@@ -206,10 +290,7 @@
   function groundWord(angle) {
     const value = finite(angle);
     if (value === null) return null;
-    if (value < FLAT_GROUND_DEG) return 'flat';
-    if (value < GROUND_STEEP_DEG) return 'moderate';
-    if (value < VERY_STEEP_DEG) return 'steep';
-    return value < EXTREMELY_STEEP_DEG ? 'very-steep' : 'extremely-steep';
+    return GROUND_WORDS[stepOf(value, GROUND_BOUNDS)];
   }
 
   /**
@@ -529,6 +610,27 @@
   }
 
   /**
+   * A text with its band of degrees after it, drawn and spoken.
+   *
+   * @param {string} text The word or phrase.
+   * @param {?Band} band The band; none adds nothing.
+   * @param {Object<string, string>} strings The strings object.
+   * @returns {{drawn: string, spoken: string}} "Steep · 30–35°", and
+   *   "Steep, 30 to 35 degrees" to read aloud.
+   */
+  function withBand(text, band, strings) {
+    if (!band) return { drawn: text, spoken: text };
+    let shape = 'range';
+    if (band.low === null) shape = 'under';
+    else if (band.high === null) shape = 'over';
+    const values = { low: String(band.low), high: String(band.high) };
+    return {
+      drawn: fill(strings, 'with-band', { text: text, band: fill(strings, `band-${shape}`, values) }),
+      spoken: fill(strings, 'label-with-band', { text: text, band: fill(strings, `label-band-${shape}`, values) }),
+    };
+  }
+
+  /**
    * The card's words for one point, and the wheel's state for it.
    *
    * @param {{index: number, paths: *, gradients: *, angles: *,
@@ -558,18 +660,17 @@
     const track = state ? state.track : [];
     const kind = kindOf(head, gradient, track, aspect === null ? null : terrain.sector);
 
-    // Steepness and kind are one phrase, "Gentle descent"; a track with
-    // no kind is its steepness alone.
-    const steep = trackWord(gradient);
-    let phrase = fill(strings, 'headline-no-height');
-    if (steep !== null) {
-      const steepness = fill(strings, `steepness-${steep}`);
+    // The kind and the step's band, "Descent · 15–25°"
+    // (2026-10-19: the band replaced the step's word). A track with no
+    // kind is level, and says so in a word: its band adds nothing.
+    let phrase = { drawn: fill(strings, 'headline-no-height'), spoken: fill(strings, 'headline-no-height') };
+    if (gradient !== null) {
       phrase = kind
-        ? fill(strings, 'phrase', { steepness: steepness, kind: fill(strings, `kind-${kind}`) })
-        : steepness;
+        ? withBand(fill(strings, `kind-${kind}`), trackBand(gradient), strings)
+        : { drawn: fill(strings, 'headline-level'), spoken: fill(strings, 'headline-level') };
     }
-    const drawn = [headingWords(track, strings, 'heading-pair'), phrase].filter(Boolean);
-    const spoken = [headingWords(track, strings, 'label-heading-pair'), phrase].filter(Boolean);
+    const drawn = [headingWords(track, strings, 'heading-pair'), phrase.drawn].filter(Boolean);
+    const spoken = [headingWords(track, strings, 'label-heading-pair'), phrase.spoken].filter(Boolean);
     const join = (/** @type {Array<string>} */ parts, /** @type {string} */ key) => parts
       .reduce((before, after) => fill(strings, key, { before: before, after: after }));
     const headlineText = join(drawn, 'join');
@@ -580,26 +681,30 @@
     const groundKey = terrain && (terrain.kind === 'unknown' || terrain.kind === 'none')
       ? null
       : groundWord(angle);
-    const slopeText = fill(strings, groundKey === null ? 'ground-unknown' : `ground-${groundKey}`);
-    let groundText = slopeText;
+    const slope = groundKey === null
+      ? withBand(fill(strings, 'ground-unknown'), null, strings)
+      : withBand(fill(strings, `ground-${groundKey}`), groundBand(angle), strings);
     // A side needs ground that faces somewhere; the guard keeps an
     // unknown reading from claiming one. The fall line names none.
+    let fallKey = null;
     if (groundKey !== null && groundKey !== 'flat' && kind !== 'fall-line') {
       if (Array.isArray(track) && track.length > 1) {
         // A turning segment's side is its two ends', never its chord's.
         if (turn && turn.firstSide === turn.lastSide) {
-          groundText = fill(strings, `ground-falling-${turn.firstSide}`, { ground: slopeText });
+          fallKey = `ground-falling-${turn.firstSide}`;
         } else if (turn) {
-          groundText = fill(strings, `ground-falling-${turn.firstSide}-then-${turn.lastSide}`, { ground: slopeText });
+          fallKey = `ground-falling-${turn.firstSide}-then-${turn.lastSide}`;
         }
       } else if (head.side) {
-        groundText = fill(strings, `ground-falling-${head.side}`, { ground: slopeText });
+        fallKey = `ground-falling-${head.side}`;
       }
     }
+    const groundText = fallKey ? fill(strings, fallKey, { ground: slope.drawn }) : slope.drawn;
+    const groundSpoken = fallKey ? fill(strings, fallKey, { ground: slope.spoken }) : slope.spoken;
     return {
       headline: headlineText,
       ground: groundText,
-      label: fill(strings, 'label', { headline: headlineSpoken, ground: groundText }),
+      label: fill(strings, 'label', { headline: headlineSpoken, ground: groundSpoken }),
       kind: kind,
       state: state,
     };
@@ -609,7 +714,9 @@
     TRACK_BOUNDS: TRACK_BOUNDS,
     FALL_LINE_DEG: FALL_LINE_DEG,
     trackWord: trackWord,
+    trackBand: trackBand,
     groundWord: groundWord,
+    groundBand: groundBand,
     angleBetween: angleBetween,
     headingDeg: headingDeg,
     fallSide: fallSide,
