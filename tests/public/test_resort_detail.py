@@ -43,6 +43,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.bulletins.models import RegionDayRating
+from apps.regions.models import Resort
 from tests.factories import (
     FavouriteFactory,
     LocationFactory,
@@ -565,6 +566,15 @@ class TestResortStructuredData:
         assert data["sameAs"] == "https://www.verbier4vallees.ch/"
         assert data["containedInPlace"]["name"] == "Martigny – Verbier"
         assert data["subjectOf"]["url"].endswith(region.get_absolute_url())
+
+    def test_touring_terrain_is_a_place_not_a_ski_resort(self) -> None:
+        """A lift-less pass is not a SkiResort, so it is typed Place."""
+        resort = ResortFactory.create(name="Grimsel", kind=Resort.Kind.TOURING_TERRAIN)
+
+        data = _json_ld(Client().get(resort.get_absolute_url()).content.decode())
+
+        assert data["@type"] == "Place"
+        assert data["name"] == "Grimsel"
 
     def test_optional_properties_are_omitted_when_unset(self) -> None:
         """No coordinates, no alternate name, no website: no empty keys."""

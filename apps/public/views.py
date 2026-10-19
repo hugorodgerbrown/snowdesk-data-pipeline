@@ -3750,7 +3750,8 @@ def _build_resort_structured_data(resort: Resort, canonical_url: str) -> str:
     """
     Build a schema.org ``SkiResort`` JSON-LD payload for the resort page.
 
-    Ties the page to the named place people search for (SNOW-1123). Every
+    Ties the page to the named place people search for (SNOW-1123). A
+    ``TOURING_TERRAIN`` row is typed ``Place`` instead — it has no lifts. Every
     optional property is omitted rather than emitted empty: ``geo`` needs
     both coordinates, ``alternateName`` and ``sameAs`` need a curated value,
     and ``address`` needs a canton. The region's evergreen bulletin is
@@ -3769,7 +3770,9 @@ def _build_resort_structured_data(resort: Resort, canonical_url: str) -> str:
     region = resort.region
     payload: dict[str, Any] = {
         "@context": "https://schema.org",
-        "@type": "SkiResort",
+        # Touring terrain (a pass, a side valley) has no lifts, so calling
+        # it a SkiResort would be false structured data; it is a Place.
+        "@type": ("SkiResort" if resort.kind == Resort.Kind.RESORT else "Place"),
         "@id": canonical_url,
         "name": resort.name,
         "url": canonical_url,
