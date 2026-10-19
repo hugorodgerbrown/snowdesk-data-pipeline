@@ -88,7 +88,8 @@ Context expected (built by ``apps.public.views.resort_detail``):
 {# SNOW-1122: title and description name the resort beside the terms     #}
 {# people search for ("conditions", "avalanche", "bulletin", "weather"), #}
 {# and "weather" only when the page links to a forecast. The danger     #}
-{# sentence appears only when today's chip below renders.                #}
+{# sentence appears only when today's rating has a level. Kept under    #}
+{# ~155 characters, the snippet length _page_meta.html budgets for.     #}
 {% block page_meta %}
     {% if locations %}
         {% blocktrans with name=resort.name trimmed asvar page_title %}
@@ -99,19 +100,20 @@ Context expected (built by ``apps.public.views.resort_detail``):
             {{ name }} avalanche conditions & bulletin · Snowdesk
         {% endblocktrans %}
     {% endif %}
-    {% if day_rating %}
+    {# A "no_rating" row is truthy but has no digit — say nothing then.   #}
+    {% if day_rating and day_rating.max_rating|danger_level_digit %}
         {% blocktrans with level=day_rating.max_rating|danger_level_digit label=day_rating.max_rating|danger_level_digit|danger_level_label trimmed asvar danger_line %}
             Danger today: {{ level }} – {{ label }}.
         {% endblocktrans %}
     {% endif %}
     {% if locations %}
         {% blocktrans with name=resort.name region=region.name danger=danger_line|default:"" trimmed asvar page_description %}
-            {{ name }} avalanche conditions on Snowdesk. {{ danger }} Links to the {{ region }} avalanche bulletin and
-            to a mountain weather forecast for each of its locations.
+            {{ name }} avalanche conditions. {{ danger }} The {{ region }} avalanche bulletin and a weather forecast for
+            each location.
         {% endblocktrans %}
     {% else %}
         {% blocktrans with name=resort.name region=region.name danger=danger_line|default:"" trimmed asvar page_description %}
-            {{ name }} avalanche conditions on Snowdesk. {{ danger }} Links to the {{ region }} avalanche bulletin.
+            {{ name }} avalanche conditions. {{ danger }} The {{ region }} avalanche bulletin, issued daily.
         {% endblocktrans %}
     {% endif %}
     {% include "includes/_page_meta.html" with title=page_title description=page_description %}
