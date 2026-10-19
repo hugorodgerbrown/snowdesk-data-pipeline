@@ -3994,6 +3994,50 @@ def _build_period_transition_chip(
     }
 
 
+def _build_bulletin_headline(
+    raw_render_model: dict[str, Any],
+    period_transition: PeriodTransition | None,
+) -> str:
+    """
+    Return the data-driven headline for a bulletin's render model (SNOW-249).
+
+    Projects the five inputs of the variant matrix — source, partition
+    type, peak rating, direction and problem family — from the render
+    model and its period transition, then looks the copy up with
+    :func:`apps.public.headlines.headline_for`. Shared by the bulletin page
+    and the resort page (SNOW-1124) so the two cannot drift.
+
+    Args:
+        raw_render_model: The panel's render model (``panel["render_model"]``).
+        period_transition: ``compute_period_transition(raw_render_model)``,
+            or ``None`` on an all-day bulletin.
+
+    Returns:
+        The translated headline string.
+
+    """
+    source: str = raw_render_model.get("source") or ""
+    partition_type: str = (
+        period_transition.partition_type if period_transition is not None else "none"
+    )
+    danger_info: dict[str, Any] = raw_render_model.get("danger") or {}
+    peak_number: str = danger_info.get("number") or "1"
+    peak_subdivision: str = danger_info.get("subdivision") or ""
+    peak_rating: str = (
+        f"{peak_number}{peak_subdivision}" if peak_subdivision else peak_number
+    )
+    direction: str = (
+        period_transition.direction if period_transition is not None else "none"
+    )
+    return headline_for(
+        source,
+        partition_type,
+        peak_rating,
+        direction,
+        derive_problem_family(raw_render_model),
+    )
+
+
 def _bulletin_detail_response(
     request: HttpRequest,
     region: MicroRegion,
@@ -4196,23 +4240,6 @@ def _bulletin_detail_response(
         period_transition
     )
 
-    # Bulletin headline (SNOW-249) — data-driven copy from the variant matrix.
-    # The five inputs are projected from the render model and the period transition.
-    rm_source: str = raw_render_model.get("source") or ""
-    rm_partition_type: str = (
-        period_transition.partition_type if period_transition is not None else "none"
-    )
-    _rm_danger_info: dict[str, Any] = raw_render_model.get("danger") or {}
-    rm_peak_number: str = _rm_danger_info.get("number") or "1"
-    rm_peak_subdivision: str = _rm_danger_info.get("subdivision") or ""
-    rm_peak_rating: str = (
-        f"{rm_peak_number}{rm_peak_subdivision}"
-        if rm_peak_subdivision
-        else rm_peak_number
-    )
-    rm_direction: str = (
-        period_transition.direction if period_transition is not None else "none"
-    )
     # Day movement — the same classification the day summary uses, so the
     # Day Risk Profile's flat-split caption cannot claim a change the
     # summary beside it reports as a static day. 23 of the archive's 101
@@ -4226,14 +4253,9 @@ def _bulletin_detail_response(
         set(problem_types_for(rm_traits, {"later"})),
     )
 
-    rm_family: str = derive_problem_family(raw_render_model)
-    headline: str = headline_for(
-        rm_source,
-        rm_partition_type,
-        rm_peak_rating,
-        rm_direction,
-        rm_family,
-    )
+    # Bulletin headline (SNOW-249) — one helper shared with the resort page
+    # (SNOW-1124), so the two cannot word the same day differently.
+    headline: str = _build_bulletin_headline(raw_render_model, period_transition)
 
     # SNOW-555: one derivation feeding both the JSON-LD Report below and the
     # article:* OG properties on the page.
@@ -4687,19 +4709,27 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     redirect to perform here: the URL either names a resort or it 404s.
     The pre-slug ``/resorts/<id>/<slug>/`` form is ``resort_legacy_redirect``.
 
-    A ROUTER, not a third document (SNOW-807,
-    ``docs/decisions/two-documents-and-a-map.md``). What is the resort's
-    own — name, region, the curated facts and why-it-matters line, the
-    favourite toggle — renders here; everything else is a link: the danger
-    area to the region's bulletin, each curated location to its weather
-    page, the observations to the map with the reports sheet open. The
-    page is kept because people search "Verbier avalanche", not
-    "CH-4115", and ``ResortSitemap`` publishes every resort.
+    The page answers the query it ranks for (SNOW-1124,
+    ``docs/decisions/a-resort-page-answers-the-query.md``, amending
+    ``docs/decisions/two-documents-and-a-map.md`` for resort pages). People
+    search "Verbier avalanche", not "CH-4115", so today's danger is shown
+    here: the level, the headline and the avalanche problems, read from the
+    region's bulletin through the bulletin page's own selection —
+    ``issues_for_date`` then ``_resolve_selected_issue`` (the 10:00 rule)
+    then ``_build_panel_context`` — and its headline helper. It is the same
+    render model shown read-only, never a copy, and the bulletin stays the
+    one full document: the danger area carries exactly one link to it.
+    With no bulletin covering today the page says so; it never shows a past
+    bulletin as today's.
+
+    Everything else that is not the resort's own is still a link: each
+    curated location to its weather page, the observations to the map with
+    the reports sheet open.
 
     Reuses the context-building already proven by ``apps.public.api.resort_popup``
-    (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``)
-    and by ``apps.public.api.region_summary`` (today's ``RegionDayRating`` lookup
-    for the danger chip).
+    (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``).
+    The meta description's danger sentence reads the same ``panel`` as the
+    tile, so the two can never name different levels.
 
     Args:
         request: The incoming HTTP request.
@@ -4717,7 +4747,25 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     region = resort.region
     today = timezone.localdate()
 
-    day_rating = RegionDayRating.objects.filter(region=region, date=today).first()
+    # SNOW-1124: today's bulletin, chosen exactly as the evergreen bulletin
+    # page chooses it, so the two pages always show the same issue.
+    selected = _resolve_selected_issue(
+        _issues_for_date(region, today), today, requested_id=None
+    )
+    panel: dict[str, Any] | None = None
+    headline = ""
+    if selected is not None:
+        panel = _build_panel_context(selected)
+        raw_render_model: dict[str, Any] = panel.get("render_model") or {}
+        if raw_render_model.get("version") == 0:
+            # A render model that failed to build: the bulletin page shows
+            # its "couldn't process" callout, and its danger key is only a
+            # "low" fallback — never show that as today's level here.
+            panel = None
+        else:
+            headline = _build_bulletin_headline(
+                raw_render_model, compute_period_transition(raw_render_model)
+            )
 
     can_favourite = False
     favourite = None
@@ -4729,7 +4777,10 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         "resort": resort,
         "region": region,
         "region_id": region.region_id,
-        "day_rating": day_rating,
+        # SNOW-1124: the bulletin page's panel and headline for today, or
+        # None / "" when no bulletin covers today.
+        "panel": panel,
+        "headline": headline,
         "target_date": today,
         "bulletin_url": region.get_absolute_url(),
         "favourited": favourite is not None,
