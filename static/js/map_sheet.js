@@ -715,8 +715,16 @@
       });
     }
 
+    // Crossing into a phone width with two sheets open (the route panel
+    // beside a desktop card) would dock both on the same foot: the first
+    // sheet to hear the resize closes the other, as an open there would.
+    var wasPhone = isPhone();
     window.addEventListener('resize', function () {
+      var phone = isPhone();
+      var crossed = phone && !wasPhone;
+      wasPhone = phone;
       if (!current) return;
+      if (crossed && isOpen()) closeOtherSheets(el);
       fit(current);
       applySurroundings();
     });

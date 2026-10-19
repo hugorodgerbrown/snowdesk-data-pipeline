@@ -304,6 +304,24 @@ describe('two sheets on one map (2026-10-19)', () => {
     expect(t.maxDepth()).toBeLessThan(3);
     expect(t.padding().bottom).toBe(384);
   });
+
+  it('narrowing to a phone with two open leaves one', () => {
+    let desktop = true;
+    window.matchMedia = /** @type {any} */ ((query) => ({ matches: desktop && query.includes('min-width') }));
+    try {
+      const t = twoSheets();
+      t.ca.open();
+      t.cb.open();
+      expect(t.a.hasAttribute('hidden')).toBe(false);
+      expect(t.b.hasAttribute('hidden')).toBe(false);
+      desktop = false;
+      window.dispatchEvent(new Event('resize'));
+      expect([t.a, t.b].filter((el) => !el.hasAttribute('hidden'))).toHaveLength(1);
+    } finally {
+      // @ts-ignore jsdom has none; the binding reads its absence as a phone.
+      delete window.matchMedia;
+    }
+  });
 });
 
 describe('detents the content allows', () => {
