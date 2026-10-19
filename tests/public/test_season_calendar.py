@@ -35,6 +35,9 @@ SNOW-1126 — the resort page's season strip:
     of its end and today + 1, carrying the window's label.
   - summarise_season counts days with a bulletin, days by level, days at
     Considerable or higher, and dates the peak to its first day.
+
+SNOW-1128 — month labels come from Django's translated month names, in the
+active language.
 """
 
 from __future__ import annotations
@@ -44,6 +47,7 @@ from typing import Any
 
 import pytest
 from django.test import override_settings
+from django.utils import translation
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.public.season_calendar import (
@@ -240,6 +244,16 @@ class TestBuildSeasonGrid:
                 "Dec",
             ].index(label) + 1
             assert first_dated.date.month == month_int
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
+    def test_month_labels_follow_the_active_language(self) -> None:
+        """SNOW-1128: the labels are Django's month names in the active language."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        today = datetime.date(2026, 1, 12)
+        with translation.override("de"):
+            grid = build_season_grid(region, today=today)
+        labels = [lbl for lbl in grid.month_labels if lbl]
+        assert labels == ["Nov", "Dez", "Jan"]
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 3))
     def test_excludes_other_regions(self) -> None:

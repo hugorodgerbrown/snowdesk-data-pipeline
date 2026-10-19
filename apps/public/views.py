@@ -47,7 +47,6 @@ import waffle
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
-from django.core.cache.utils import make_template_fragment_key
 from django.db.models import Max, Prefetch
 from django.http import (
     Http404,
@@ -93,6 +92,7 @@ from apps.bulletins.models import (
 )
 from apps.bulletins.schema import ValidTimePeriod
 from apps.bulletins.services import day_summary
+from apps.bulletins.services.day_rating import season_calendar_cache_key
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     DayCharacter,
@@ -3681,7 +3681,7 @@ def _build_structured_data(
     report: dict[str, Any] = {
         "@type": "Report",
         "@id": f"{canonical_url}#report",
-        "name": f"Avalanche bulletin — {region.name}",
+        "name": _bulletin_document_name(region),
         "datePublished": date_published,
         # SNOW-394: dateModified reflects the last upsert of the row so
         # LLMs and freshness-aware crawlers can tell a re-issued
@@ -3729,6 +3729,22 @@ def _build_structured_data(
     }
 
     return _serialise_json_ld(payload)
+
+
+def _bulletin_document_name(region: MicroRegion) -> str:
+    """Name a region's bulletin page in JSON-LD, in the active language.
+
+    Shared by the bulletin page's ``Report`` and the resort page's
+    ``subjectOf`` so both name the same document the same way (SNOW-1128).
+
+    Args:
+        region: The bulletin's micro-region.
+
+    Returns:
+        ``"Avalanche bulletin — <region name>"``, translated.
+
+    """
+    return _gettext("Avalanche bulletin — %(region)s") % {"region": region.name}
 
 
 def _serialise_json_ld(payload: dict[str, Any]) -> str:
@@ -3783,7 +3799,7 @@ def _build_resort_structured_data(resort: Resort, canonical_url: str) -> str:
         "containedInPlace": {"@type": "Place", "name": region.name},
         "subjectOf": {
             "@type": "WebPage",
-            "name": f"Avalanche bulletin — {region.name}",
+            "name": _bulletin_document_name(region),
             "url": f"{base}{region.get_absolute_url()}",
         },
     }
@@ -5074,7 +5090,7 @@ def season_calendar_partial(request: HttpRequest, region_id: str) -> HttpRespons
     # ``apply_bulletin_day_ratings`` (which deletes it after ingest) so fresh
     # data is always served after the next bulletin lands.
     canonical_id = slugify(region_id)
-    cache_key = make_template_fragment_key("season_calendar", [canonical_id, today_iso])
+    cache_key = season_calendar_cache_key(canonical_id, today_iso, get_language())
     cached_body: bytes | None = cache.get(cache_key)
     if cached_body is not None:
         return HttpResponse(cached_body)

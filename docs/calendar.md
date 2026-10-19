@@ -97,8 +97,9 @@ has nothing to add.
 `apply_bulletin_day_ratings(bulletin)` inline after the render model is
 built — never via `post_save`. Failures are logged and ingest continues
 (the bulletin is still stored; the calendar tile picks up on the next
-rebuild). The same call deletes the `season_calendar` fragment-cache key
-for each affected region so the next open re-renders.
+rebuild). The same call deletes the `season_calendar` cache key for each
+affected region, in every `settings.LANGUAGES` language, so the next open
+re-renders.
 
 **Rebuild**: `rebuild_render_models` recomputes day ratings for every
 `(region, day)` covered by the rebuilt bulletins as a trailing step.
@@ -115,8 +116,11 @@ first open (`hx-trigger="snowdesk:load once"`, SNOW-170) and the grid
 (`public/partials/_season_calendar.html`, built by
 `apps.public.season_calendar.build_season_grid`) is swapped in with
 `hx-swap="innerHTML"`. The rendered body is cached for 25 hours under
-`make_template_fragment_key("season_calendar", [canonical_region_id,
-today])`, so a cache hit issues zero DB queries. The grid runs from
+`season_calendar_cache_key(canonical_region_id, today, language)` in
+`apps/bulletins/services/day_rating.py`, so a cache hit issues zero DB
+queries. The language is in the key because the body is rendered text:
+the month labels are Django's own translated month names (`MONTHS_3`) and
+the cell labels are `blocktrans` sentences (SNOW-1128). The grid runs from
 `settings.SEASON_START_DATE` to `today + 1` (the afternoon bulletin
 targets tomorrow); the selected tile is highlighted client-side from
 `data-selected-date`.
