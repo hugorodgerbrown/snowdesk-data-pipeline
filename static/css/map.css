@@ -5050,16 +5050,21 @@ body.map-framing #map-legend {
 
     /* AT PEEK THE COLUMN KEEPS ITS THREE (2026-10-19). A sheet at peek is
        someone reading one thing on the map, so the column is trimmed to
-       what a route-open phone keeps (Route-open furniture, above): locate,
-       layers and routes. Fill, downloads, favourites and reports go, and
-       the two kept inside the collapsible group show whatever the chevron
-       last left it as. Half and full hide the column whole (above). */
-    :root[data-map-sheet='peek'] .map-controls-collapsible-inner > :not(#basemap-pill):not(.map-utility-pill--route) {
+       what a route-open phone keeps (Route-open furniture, above): the
+       "map" capsule (locate and layers), which nothing here touches, and
+       routes, the one member of the "yours" capsule kept, shown open
+       whatever the chevron last left it as. Half and full hide the column
+       whole (above). */
+    :root[data-map-sheet='peek'] .map-controls-collapsible-inner > :not(.map-utility-pill--route) {
         display: none;
     }
 
+    :root[data-map-sheet='peek'] .map-controls-collapsible-inner > .map-utility-pill--route {
+        border-top: 0;
+    }
+
     :root[data-map-sheet='peek'] #map-controls-collapsible {
-        height: calc(2 * var(--map-control-lg) + 8px);
+        height: calc(var(--map-control-lg) + 1px);
         opacity: 1;
         margin-bottom: 0;
     }
