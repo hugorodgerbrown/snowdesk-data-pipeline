@@ -40,6 +40,7 @@ interface Window {
   pwaChoroplethCore: any;
   /** static/js/calendar_core.js — the date picker's month grid maths. */
   pwaCalendarCore: any;
+  pwaStaleDayCore: any;
   /** static/js/scrubber_core.js — season-scrubber position and snapping. */
   pwaScrubberCore: any;
   /** static/js/search_core.js — diacritic-insensitive region/resort match. */

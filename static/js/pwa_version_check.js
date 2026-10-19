@@ -278,7 +278,8 @@
    * that follows an offer.
    *
    * @returns {Promise<{current: string, shell: string,
-   *   update_required: boolean, update_available: boolean} | null>}
+   *   update_required: boolean, update_available: boolean,
+   *   today: string} | null>}
    *   The trimmed identifiers and both server verdicts, or ``null`` when
    *   the endpoint is unreachable / non-2xx — "cannot confirm" must never
    *   be treated as "confirmed".
@@ -305,6 +306,10 @@
           // truthiness on ``undefined``.
           update_required: json.update_required === true,
           update_available: json.update_available === true,
+          // SNOW-920: the server's day (``YYYY-MM-DD``), for
+          // ``stale_day.js``. Empty from a server that predates the field,
+          // which that module reads as "cannot confirm" and says nothing.
+          today: String(json.today || '').trim(),
         };
       } catch (_err) {
         return null;
@@ -480,8 +485,16 @@
   // also published the shell's own build and release here for the banner's
   // versioned copy; SNOW-1025 removed that copy, and SNOW-1026 removed the
   // ``release`` field from ``/api/version``.
+  //
+  // SNOW-920: ``refresh`` is a round trip that is never answered from
+  // ``lastVerdict`` — ``stale_day.js`` asks what day it is NOW, on a page
+  // that may have been open since yesterday, and a held body would answer
+  // with the day of the last drift check. It still shares any fetch already
+  // in flight.
   window.pwaVersionInfo = Object.freeze({
     verified: verified,
+    refresh: fetchAuthoritativeVersion,
+    reload: clearShellAndReload,
   });
 
   // Kick off. The pwa-app-version meta tag being present is our signal

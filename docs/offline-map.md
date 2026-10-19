@@ -3518,3 +3518,17 @@ context that pytest can't replicate faithfully. Manual verification:
    Screen" — icon is the Snowdesk apple-touch-icon (not a screenshot
    of the page), launching from the home screen opens in a standalone
    window without Safari chrome (SNOW-118).
+
+## A cache-served page's day (SNOW-920)
+
+When `_networkFirst` serves the cached shell after `NAVIGATION_FETCH_BUDGET_MS`
+(5 s), the page's `#season-scrubber[data-today]` is the day it was rendered
+on. `static/js/stale_day.js` asks `/api/version` for the server's `today`
+(`window.pwaVersionInfo.refresh()`, never answered from a held body) on load
+and when the page returns to the foreground, at most once a minute, and
+reveals `#stale-day-notice` — the page's day and a Reload — on a mismatch.
+Reload is `clearShellAndReload`: it drops the shell caches, so the next
+navigation comes from the network. There is no automatic reload, and an
+offline or failed poll shows nothing. Lowering the navigation budget and a
+bounded cache-first paint stay out of scope.
+

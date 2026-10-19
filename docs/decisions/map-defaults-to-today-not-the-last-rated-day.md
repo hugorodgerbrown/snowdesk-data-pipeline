@@ -2,7 +2,7 @@
 name: map-defaults-to-today-not-the-last-rated-day
 description: Why the map defaults to today, never the last rated day (readDisplayDate, data-today); why the ceiling (latestKnownDate) follows the data
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-19
 ---
 
 # The map defaults to today, never to the last rated day
@@ -180,3 +180,17 @@ similar number and is precisely the value SNOW-660 removed from the boot
 path. The ceiling is derived independently and lives in
 `latestSelectableMs`, so a boot-default-shaped thing is never sitting one
 careless line away from being one again.
+
+## Addendum: a cached page's today can be old (SNOW-920)
+
+`data-today` is the day the page was RENDERED on. A navigation the service
+worker serves from cache after its network budget runs out carries
+yesterday's, and the rule above (today only ever comes from the server, never
+`new Date()`) leaves the client unable to know. `/api/version` therefore
+returns the server's `today`; `stale_day.js` compares it with `data-today` on
+load and when the page returns to the foreground, and on a mismatch shows
+"Showing 18 Oct" with a Reload button that clears the shell caches and fetches
+the shell from the network. Nothing reloads by itself, a failed or empty poll
+says nothing, and an explicit `?d=` is never labelled. The label does not
+change what the map shows; it says that the page is old.
+
