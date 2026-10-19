@@ -125,6 +125,7 @@ from apps.weather.models import Weather
 from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import (
     build_point_forecast_panel,
+    build_weather_display,
 )
 
 from . import competitor_matrix
@@ -4722,9 +4723,10 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     With no bulletin covering today the page says so; it never shows a past
     bulletin as today's.
 
-    Everything else that is not the resort's own is still a link: each
-    curated location to its weather page, the observations to the map with
-    the reports sheet open.
+    Each curated location is a link to its weather page with today's
+    one-day row beside it (SNOW-1125 — the icon, high/low, snowfall and
+    wind); the observations are a link to the map with the reports sheet
+    open.
 
     Reuses the context-building already proven by ``apps.public.api.resort_popup``
     (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``).
@@ -4792,8 +4794,9 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         "is_staff": request.user.is_staff,
         "signin_url": reverse("accounts:sign_in"),
         # SNOW-807: the resort's curated locations, each a link to its own
-        # weather page — no forecast is read here. One query, no Weather.
-        "locations": _resort_location_links(resort),
+        # weather page. SNOW-1125: each also carries today's one-day row —
+        # one batched Weather query whatever the number of locations.
+        "locations": _resort_location_links(resort, today, timezone.now()),
         # SNOW-807: the map with the reports sheet open, flown to this resort
         # (static/js/map.js consumes ``?panel=`` and ``?resort=``).
         "observations_map_url": (
@@ -4808,8 +4811,10 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     return render(request, "public/resort.html", context)
 
 
-def _resort_location_links(resort: Resort) -> list[dict[str, Any]]:
-    """Return the resort's curated locations as links to their weather pages.
+def _resort_location_links(
+    resort: Resort, today: datetime.date, now: datetime.datetime
+) -> list[dict[str, Any]]:
+    """Return the resort's curated locations as links, each with today's weather.
 
     Ordered with the primary link first — the one the resort leads with,
     normally the village, because that is where someone arrives — then by
@@ -4817,25 +4822,47 @@ def _resort_location_links(resort: Resort) -> list[dict[str, Any]]:
     ``link_resort_locations`` mints at the resort's own pin has none, and
     falls back to the resort's name (SNOW-807, after SNOW-761's block).
 
+    SNOW-1125: each link also carries today's one-day weather row, read in
+    ONE batched query over every linked location (keyed by
+    ``location_id``), so the cost is two queries whatever the number of
+    locations. A location with no row today gets ``weather_display=None``
+    and degrades to its link alone.
+
     Args:
         resort: The resort whose links to walk.
+        today: The server's local date — the ``Weather.observed_on`` read.
+        now: The reference instant for the day/night icon.
 
     Returns:
         One dict per link: ``label``, ``elevation_m``, ``role_label``,
-        ``url`` and a stable ``testid``. Empty when the resort has no
-        linked locations — a manual operator step, so that state is
-        normal for a freshly geocoded resort.
+        ``url``, ``weather_display`` (or ``None``) and a stable
+        ``testid``. Empty when the resort has no linked locations — a
+        manual operator step, so that state is normal for a freshly
+        geocoded resort.
 
     """
-    links = resort.resort_locations.select_related("location").order_by(
-        "-is_primary", "role", "location__name"
+    links = list(
+        resort.resort_locations.select_related("location").order_by(
+            "-is_primary", "role", "location__name"
+        )
     )
+    if not links:
+        return []
+    weather_by_location = {
+        row.location_id: row
+        for row in Weather.objects.on_date(today).filter(
+            location_id__in=[link.location_id for link in links]
+        )
+    }
     return [
         {
             "label": link.location.name or resort.name,
             "elevation_m": link.location.elevation_m,
             "role_label": str(link.get_role_display()),
             "url": link.location.get_absolute_url(),
+            "weather_display": build_weather_display(
+                weather_by_location.get(link.location_id), now
+            ),
             "testid": f"resort-location-{index}",
         }
         for index, link in enumerate(links)

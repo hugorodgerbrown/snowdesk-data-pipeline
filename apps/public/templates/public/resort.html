@@ -36,12 +36,15 @@ Sections, top to bottom:
      link render — never a past bulletin as today's.
   3. The favourite/unfavourite control
      (``favourites/partials/_resort_favourite_button.html``).
-  4. Forecasts — a plain list of the resort's curated locations, each a
-     link to its own weather page (``/weather/<short_id>/``), with the
-     role and elevation that tell village from summit. No weather data is
-     read here: SNOW-761 drew one block per location and SNOW-783 trimmed
-     it to the day; this removes the rest. A resort with no curated
-     locations renders no section at all — ``link_resort_locations`` is a
+  4. Forecasts — a list of the resort's curated locations, each a link
+     to its own weather page (``/weather/<short_id>/``), with the role and
+     elevation that tell village from summit. SNOW-761 drew one block per
+     location, SNOW-783 trimmed it to the day and SNOW-807 removed the
+     rest; SNOW-1125 puts today's one-day row back under each link in the
+     brief form of ``includes/_weather_panel.html`` (icon, condition,
+     high/low, snowfall, wind — no freezing level, no sun times). A
+     location with no row today renders its link alone. A resort with no
+     curated locations renders no section at all — ``link_resort_locations`` is a
      manual operator step, so that state is normal.
   5. Observations — ONE link to the map with the reports sheet open, flown
      to this resort (``?panel=reports&resort=<slug>``). The point-local
@@ -73,6 +76,7 @@ Context expected (built by ``apps.public.views.resort_detail``):
   signin_url                    — str: accounts:sign_in URL.
   locations                     — list[dict]: the resort's curated locations
                                    (label, elevation_m, role_label, url,
+                                   weather_display — WeatherDisplay | None,
                                    testid), primary first. Empty is normal.
   observations_map_url          — str: the map with the reports sheet open,
                                    flown to this resort.
@@ -240,6 +244,11 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                         &middot;
                                     </span>{{ place.elevation_m|floatformat:0 }} m{% endif %}
                             </span>
+                            {% if place.weather_display %}
+                                <div class="mt-1">
+                                    {% include "includes/_weather_panel.html" with weather_display=place.weather_display testid_prefix=place.testid|add:"-weather" location_label="" brief=True only %}
+                                </div>
+                            {% endif %}
                         </li>
                     {% endfor %}
                 </ul>

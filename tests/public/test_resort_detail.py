@@ -12,9 +12,11 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
   - Favourite-star state: sign-in CTA for anonymous/ineligible visitors,
     the button (unfavourited or favourited) for eligible ones.
   - SNOW-807: the danger area is one link to the bulletin; each curated
-    location is a link to its weather page (no inline weather); the
-    observations section is one link to the map with the reports sheet
-    open, flown to the resort.
+    location is a link to its weather page; the observations section is
+    one link to the map with the reports sheet open, flown to the resort.
+  - SNOW-1125: each location row carries today's brief one-day weather
+    (icon, condition, high/low, snowfall, wind — no freezing level, no sun
+    times), read in one batched query; no row today means the link alone.
   - SNOW-855: the meta description branches on whether the resort has any
     curated locations — it named a village, a mid-station and a summit for
     every resort, including those with no locations at all.
@@ -45,9 +47,12 @@ from typing import Any
 
 import pytest
 from django.conf import settings
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from freezegun import freeze_time
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.bulletins.services.render_model import (
@@ -189,18 +194,6 @@ class TestResortDetailContent:
         assert len(re.findall(r"<a\b", area)) == 1
         assert f'href="{region.get_absolute_url()}"' in area
         assert "Full bulletin" in area
-
-    def test_no_weather_is_rendered_inline(self) -> None:
-        """SNOW-807: the page reads no Weather row — forecasts are links."""
-        resort = ResortFactory.create()
-        location = LocationFactory.create(name="Mont Fort", elevation_m=3328.0)
-        ResortLocationFactory.create(resort=resort, location=location)
-        WeatherFactory.create(location=location, observed_on=timezone.localdate())
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert 'data-testid="resort-weather"' not in content
-        assert "weather-icon" not in content
 
 
 class _ElementSource(HTMLParser):
@@ -539,6 +532,136 @@ class TestResortLocations:
 
         assert 'data-testid="resort-locations"' not in content
         assert "Forecasts" not in content
+
+
+# SNOW-1125: a fixed winter day. 11:00 UTC is midday in Europe/Zurich and
+# 21:00 UTC is evening on the same local date, so ``timezone.localdate()``
+# (the day the view reads) is TODAY under both.
+TODAY = datetime.date(2026, 1, 15)
+MIDDAY = "2026-01-15T11:00:00+00:00"
+EVENING = "2026-01-15T21:00:00+00:00"
+SUNRISE = datetime.datetime(2026, 1, 15, 7, 0, tzinfo=datetime.UTC)
+SUNSET = datetime.datetime(2026, 1, 15, 16, 0, tzinfo=datetime.UTC)
+
+
+def _todays_weather(location: Any, **overrides: Any) -> Any:
+    """Create today's Weather row for a location with fixed sun times."""
+    fields: dict[str, Any] = {
+        "location": location,
+        "observed_on": TODAY,
+        "sunrise": SUNRISE,
+        "sunset": SUNSET,
+        "weather_code": 0,
+        "temperature_2m_max": 4.0,
+        "temperature_2m_min": -6.0,
+        "snowfall_sum": 12.0,
+        "wind_speed_10m_max": 35.0,
+        "wind_gusts_10m_max": 60.0,
+        "wind_direction_10m_dominant": 315.0,
+        "freezing_level_height": 1900.0,
+    }
+    fields.update(overrides)
+    return WeatherFactory.create(**fields)
+
+
+def _resort_with_locations(count: int) -> Resort:
+    """Return a resort with ``count`` linked locations, each with a row today."""
+    resort = ResortFactory.create()
+    for index in range(count):
+        location = LocationFactory.create(
+            name=f"Point {index}", elevation_m=1500.0 + index * 500
+        )
+        ResortLocationFactory.create(
+            resort=resort, location=location, is_primary=index == 0
+        )
+        _todays_weather(location)
+    return resort
+
+
+@pytest.mark.django_db
+class TestResortLocationWeather:
+    """SNOW-1125: each location row carries today's brief one-day weather."""
+
+    @freeze_time(MIDDAY)
+    def test_a_location_with_todays_row_shows_its_day(self) -> None:
+        """Condition, high/low, snowfall and wind beside the forecast link."""
+        resort = ResortFactory.create()
+        location = LocationFactory.create(name="Mont Fort", elevation_m=3328.0)
+        ResortLocationFactory.create(resort=resort, location=location)
+        _todays_weather(location)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        row = content[content.index('data-testid="resort-location-0"') :]
+        row = row[: row.index("</li>")]
+        assert f'href="/weather/{location.short_id}/"' in row
+        assert 'data-testid="resort-location-0-weather-panel"' in row
+        assert "clear-day.svg" in row
+        assert "Clear" in row
+        assert "4&deg;" in row
+        assert "-6&deg;" in row
+        assert "12 cm" in row
+        assert 'data-testid="resort-location-0-weather-wind"' in row
+        assert "35 gusting 60 km/h" in row
+
+    @freeze_time(MIDDAY)
+    def test_freezing_level_and_sun_times_are_left_to_the_forecast_page(
+        self,
+    ) -> None:
+        """The brief panel drops what belongs to the location's own page."""
+        resort = _resort_with_locations(1)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-location-0-weather-panel"' in content
+        assert "freezing-level" not in content
+        assert "1900 m" not in content
+        assert "icons/weather/sunrise" not in content
+        assert "07:00" not in content
+
+    @freeze_time(MIDDAY)
+    def test_a_location_with_no_row_today_keeps_its_link_alone(self) -> None:
+        """Yesterday's row is not today's: the link renders, no panel."""
+        resort = ResortFactory.create()
+        location = LocationFactory.create(name="Mont Fort")
+        ResortLocationFactory.create(resort=resort, location=location)
+        _todays_weather(location, observed_on=datetime.date(2026, 1, 14))
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-location-0-link"' in content
+        assert f'href="{location.get_absolute_url()}"' in content
+        assert "resort-location-0-weather" not in content
+        assert "weather-panel" not in content
+
+    @freeze_time(EVENING)
+    def test_after_sunset_the_night_icon_is_drawn(self) -> None:
+        """The day/night decision reads the request's own instant."""
+        resort = _resort_with_locations(1)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert "clear-night.svg" in content
+        assert "clear-day.svg" not in content
+        assert 'data-time-of-day="night"' in content
+
+    @freeze_time(MIDDAY)
+    def test_the_query_count_does_not_grow_with_the_locations(
+        self, django_assert_num_queries: Any
+    ) -> None:
+        """One batched Weather read, whatever the number of locations."""
+        one = _resort_with_locations(1)
+        three = _resort_with_locations(3)
+        client = Client()
+        # Warm any per-process caches (waffle flags, content types) first.
+        client.get(_resort_with_locations(2).get_absolute_url())
+
+        with CaptureQueriesContext(connection) as single:
+            client.get(one.get_absolute_url())
+        with django_assert_num_queries(len(single.captured_queries)):
+            content = client.get(three.get_absolute_url()).content.decode()
+
+        assert content.count("-weather-panel") == 3
 
 
 def _meta_description(content: str) -> str:
