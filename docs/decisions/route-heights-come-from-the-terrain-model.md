@@ -2,7 +2,7 @@
 name: route-heights-come-from-the-terrain-model
 description: slope_samples heights, terrain_points, climb_totals — profile, legs, ascent/descent, track gradient on model heights
 status: current
-last-reviewed: 2026-10-02
+last-reviewed: 2026-10-19
 ---
 
 # A route's heights come from the terrain model, not the altimeter
@@ -94,8 +94,10 @@ model's.
   on the Backside — and nothing may assume the two lengths are equal;
   the GPX export and route/trip copies keep reading the stored points.
 - Canonical figures on the terrain track (ascent / descent, m): Chamonix
-  165.4 / 715.5, Hidden Valley 269.2 / 1,194.5, Backside 337.2 / 1,905.5,
-  Col de la Chaux 765.0 / 1,936.0.
+  165.4 / 715.5, Hidden Valley 256.7 / 1,182.0, Backside 304.7 / 1,873.0,
+  Col de la Chaux 747.8 / 1,918.8 — after the SNOW-1051 despike
+  ([route-heights-are-despiked-on-steep-ground.md](route-heights-are-despiked-on-steep-ground.md));
+  before it 269.2 / 1,194.5, 337.2 / 1,905.5 and 765.0 / 1,936.0.
 - Stored `ascent_m` / `descent_m` and the shown figures can disagree. The
   Django admin's list and detail views still show the stored columns — they
   are the parser's record of the upload, which is what staff are auditing.
