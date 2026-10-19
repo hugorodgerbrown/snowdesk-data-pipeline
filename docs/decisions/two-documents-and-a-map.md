@@ -2,7 +2,7 @@
 name: two-documents-and-a-map
 description: Two document pages — bulletin and weather — plus the map; regions, resorts, observations and routes are map objects; a trip is not
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-19
 ---
 
 # Two documents and a map
@@ -26,7 +26,10 @@ Three pages survive outside that rule, each for a stated reason.
 not map objects. `/resorts/<slug>/` is retained as a **landing page for a
 search term** — people search "Verbier avalanche", not "CH-4115", and
 `ResortSitemap` publishes every resort — but it is a router to the two
-documents, not a third document. **`/trips/<uuid>/` is a page because a trip
+documents, not a third document. *(Amended by SNOW-1124: a resort page now
+shows today's danger from the bulletin's own render model, read-only — see
+[`a-resort-page-answers-the-query`](a-resort-page-answers-the-query.md).)*
+**`/trips/<uuid>/` is a page because a trip
 is authored to be sent** (SNOW-819): it is one person's plan for one day,
 addressed to other people, and a link to it has to unfurl as a card in a
 message and open as something a recipient can read before being asked for
