@@ -21,6 +21,8 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
   - SNOW-1122: the title and description name the resort beside the terms
     people search for, "weather" only when there are forecasts, and today's
     danger in words only when rated.
+  - SNOW-1123: the schema.org SkiResort JSON-LD — core properties, optional
+    ones omitted when unset, and a ``</script>`` that cannot break out.
   - Resort facts block (SNOW-695): the curated Resort columns the page
     stored but never rendered. Every cell renders when curated, an unset
     cell is omitted, and the whole block is omitted rather than rendered
@@ -29,9 +31,12 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
 
 from __future__ import annotations
 
+import json
 import re
+from typing import Any
 
 import pytest
+from django.conf import settings
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -481,6 +486,75 @@ class TestResortSearchTerms:
         content = Client().get(resort.get_absolute_url()).content.decode()
 
         assert "Avalanche danger and mountain conditions" in content
+
+
+def _json_ld(content: str) -> dict[str, Any]:
+    """Return the page's parsed JSON-LD payload."""
+    match = re.search(
+        r'<script type="application/ld\+json"[^>]*>(.*?)</script>', content, re.S
+    )
+    assert match, "expected a JSON-LD script tag"
+    payload: dict[str, Any] = json.loads(
+        re.sub(r"\{#.*?#\}", "", match.group(1), flags=re.S)
+    )
+    return payload
+
+
+@pytest.mark.django_db
+class TestResortStructuredData:
+    """SNOW-1123: the page emits schema.org SkiResort JSON-LD."""
+
+    def test_payload_names_the_resort_its_url_and_its_address(self) -> None:
+        """The core properties match the resort row."""
+        region = MicroRegionFactory.create(name="Martigny – Verbier")
+        resort = ResortFactory.create(
+            name="Verbier",
+            region=region,
+            canton="VS",
+            name_alt="4 Vallées",
+            website="https://www.verbier4vallees.ch/",
+            geocoded=True,
+        )
+
+        data = _json_ld(Client().get(resort.get_absolute_url()).content.decode())
+
+        assert data["@context"] == "https://schema.org"
+        assert data["@type"] == "SkiResort"
+        assert data["name"] == "Verbier"
+        assert data["alternateName"] == "4 Vallées"
+        assert data["url"] == f"{settings.SITE_BASE_URL.rstrip('/')}/resorts/verbier/"
+        assert data["address"]["@type"] == "PostalAddress"
+        assert data["address"]["addressRegion"] == "VS"
+        assert data["address"]["addressCountry"] == (region.subregion.major.country)
+        assert data["geo"] == {
+            "@type": "GeoCoordinates",
+            "latitude": 46.1,
+            "longitude": 7.4,
+        }
+        assert data["sameAs"] == "https://www.verbier4vallees.ch/"
+        assert data["containedInPlace"]["name"] == "Martigny – Verbier"
+        assert data["subjectOf"]["url"].endswith(region.get_absolute_url())
+
+    def test_optional_properties_are_omitted_when_unset(self) -> None:
+        """No coordinates, no alternate name, no website: no empty keys."""
+        resort = ResortFactory.create(name="Verbier")
+
+        data = _json_ld(Client().get(resort.get_absolute_url()).content.decode())
+
+        assert "geo" not in data
+        assert "alternateName" not in data
+        assert "sameAs" not in data
+
+    def test_a_script_close_in_the_name_cannot_break_out(self) -> None:
+        """``</script>`` in a curated string is escaped inside the tag."""
+        resort = ResortFactory.create(name="Evil</script><b>x</b>")
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        block = content.split('<script type="application/ld+json"', 1)[1]
+        block = block.split("</script>", 1)[0]
+        assert "<\\/script>" in block
+        assert _json_ld(content)["name"] == "Evil</script><b>x</b>"
 
 
 @pytest.mark.django_db

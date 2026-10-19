@@ -62,6 +62,8 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    testid), primary first. Empty is normal.
   observations_map_url          — str: the map with the reports sheet open,
                                    flown to this resort.
+  structured_data_json          — str: schema.org SkiResort JSON-LD, already
+                                   escaped for a script tag (SNOW-1123).
 {% endcomment %}
 {% load i18n static components snowdesk_time %}
 
@@ -73,6 +75,13 @@ Context expected (built by ``apps.public.views.resort_detail``):
 {# from shipping without the script again.                                   #}
 {% block extra_head %}
     <script src="{% static 'js/htmx.min.js' %}"></script>
+    {# SNOW-1123: schema.org SkiResort. structured_data_json is built by     #}
+    {# apps/public/views.py:_build_resort_structured_data and escaped by     #}
+    {# _serialise_json_ld ("</" → "<\/"), so it is safe unescaped here.      #}
+    <script type="application/ld+json" nonce="{{ request.csp_nonce }}">
+        {# nosemgrep: generic.html-templates.security.var-in-script-tag.var-in-script-tag,python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe #}
+        {{ structured_data_json|safe }}
+    </script>
 {% endblock %}
 
 {# SNOW-553: this page is the sharpest case the sharing-metadata rule    #}

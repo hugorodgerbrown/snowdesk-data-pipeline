@@ -3724,7 +3724,82 @@ def _build_structured_data(
         "mainEntity": report,
     }
 
+    return _serialise_json_ld(payload)
+
+
+def _serialise_json_ld(payload: dict[str, Any]) -> str:
+    r"""
+    Serialise a JSON-LD payload for a ``<script type="application/ld+json">``.
+
+    ``</`` is escaped to ``<\/`` so a stray ``</script>`` in any string
+    field cannot end the embedding tag; JSON decoders read ``\/`` as ``/``.
+    Shared by the bulletin and resort pages so the escape cannot drift
+    between them (SNOW-1123).
+
+    Args:
+        payload: The structured-data dict.
+
+    Returns:
+        A JSON string safe for ``{{ …|safe }}`` inside the script tag.
+
+    """
     return json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+
+
+def _build_resort_structured_data(resort: Resort, canonical_url: str) -> str:
+    """
+    Build a schema.org ``SkiResort`` JSON-LD payload for the resort page.
+
+    Ties the page to the named place people search for (SNOW-1123). Every
+    optional property is omitted rather than emitted empty: ``geo`` needs
+    both coordinates, ``alternateName`` and ``sameAs`` need a curated value,
+    and ``address`` needs a canton. The region's evergreen bulletin is
+    ``subjectOf`` — the resort is what that bulletin is about, and the
+    bulletin stays the full document.
+
+    Args:
+        resort: The resort, with ``region__subregion__major`` selected.
+        canonical_url: The absolute canonical URL of the resort page.
+
+    Returns:
+        A JSON string ready for ``{{ structured_data_json|safe }}``.
+
+    """
+    base = settings.SITE_BASE_URL.rstrip("/")
+    region = resort.region
+    payload: dict[str, Any] = {
+        "@context": "https://schema.org",
+        "@type": "SkiResort",
+        "@id": canonical_url,
+        "name": resort.name,
+        "url": canonical_url,
+        "containedInPlace": {"@type": "Place", "name": region.name},
+        "subjectOf": {
+            "@type": "WebPage",
+            "name": f"Avalanche bulletin — {region.name}",
+            "url": f"{base}{region.get_absolute_url()}",
+        },
+    }
+    if resort.name_alt:
+        payload["alternateName"] = resort.name_alt
+    if resort.latitude is not None and resort.longitude is not None:
+        payload["geo"] = {
+            "@type": "GeoCoordinates",
+            "latitude": resort.latitude,
+            "longitude": resort.longitude,
+        }
+    if resort.canton:
+        address: dict[str, Any] = {
+            "@type": "PostalAddress",
+            "addressRegion": resort.canton,
+        }
+        major = region.subregion.major if region.subregion else None
+        if major is not None and major.country:
+            address["addressCountry"] = major.country
+        payload["address"] = address
+    if resort.website:
+        payload["sameAs"] = resort.website
+    return _serialise_json_ld(payload)
 
 
 def _capture_utm_to_session(request: HttpRequest) -> None:
@@ -4631,7 +4706,7 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
 
     """
     resort = get_object_or_404(
-        Resort.objects.select_related("region"),
+        Resort.objects.select_related("region__subregion__major"),
         slug=slug,
     )
 
@@ -4668,6 +4743,11 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         # (static/js/map.js consumes ``?panel=`` and ``?resort=``).
         "observations_map_url": (
             f"{reverse('public:map')}?panel=reports&resort={resort.slug}"
+        ),
+        # SNOW-1123: schema.org SkiResort, emitted in extra_head.
+        "structured_data_json": _build_resort_structured_data(
+            resort,
+            f"{settings.SITE_BASE_URL.rstrip('/')}{resort.get_absolute_url()}",
         ),
     }
     return render(request, "public/resort.html", context)
