@@ -100,7 +100,7 @@ beforeEach(() => {
   for (const target of [document, window]) {
     const original = target.addEventListener.bind(target);
     vi.spyOn(target, 'addEventListener').mockImplementation((type, fn, opts) => {
-      if (type === 'visibilitychange' || type === 'pageshow') added.push([target, type, fn]);
+      if (['visibilitychange', 'pageshow', 'popstate', 'snowdesk:date-changed'].includes(type)) added.push([target, type, fn]);
       return original(type, fn, opts);
     });
   }
@@ -185,6 +185,41 @@ describe('the notice', () => {
     refresh.mockResolvedValue({ today: '2026-10-18' });
     document.dispatchEvent(new Event('visibilitychange'));
     for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    expect(notice().hidden).toBe(true);
+  });
+});
+
+describe('choosing a day while the notice shows', () => {
+  it('hides it when the calendar or scrubber commits a day', async () => {
+    await load();
+    expect(notice().hidden).toBe(false);
+
+    // map_scrubber.js writes ?d= and THEN emits the event.
+    history.replaceState(null, '', '/map/?d=2026-10-10');
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed'));
+
+    expect(notice().hidden).toBe(true);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides it on back/forward onto an explicit day, and shows it again off one', async () => {
+    await load();
+
+    history.replaceState(null, '', '/map/?d=2026-10-10');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(notice().hidden).toBe(true);
+
+    history.replaceState(null, '', '/map/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(notice().hidden).toBe(false);
+  });
+
+  it('does nothing before a poll has answered', async () => {
+    refresh.mockResolvedValue(null);
+    await load();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed'));
+
     expect(notice().hidden).toBe(true);
   });
 });

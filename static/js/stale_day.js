@@ -26,7 +26,8 @@
  *     second trigger is what catches a tab or installed app left open across
  *     midnight, which no cold-start check could.
  *   - AN EXPLICIT ``?d=`` IS LEFT ALONE. The visitor asked for that day; the
- *     label is about the page's default one.
+ *     label is about the page's default one. Choosing a day while the label
+ *     is showing hides it at once (snowdesk:date-changed, popstate).
  *
  * Depends on pwa_version_check.js (window.pwaVersionInfo.refresh / .reload),
  * stale_day_core.js and i18n_strings.js, all loaded before it.
@@ -51,6 +52,9 @@
 
   let lastPollAt = 0;
   let polling = false;
+  // The last day the server named, so a change of URL can re-judge it
+  // without another request. Null until a poll has answered.
+  let lastServerDay = null;
 
   /** The URL's ``?d=``, or ``''`` when the visitor chose no day. */
   function explicitDay() {
@@ -67,6 +71,7 @@
    * @param {string} serverDay The server's ``today``, possibly empty.
    */
   function apply(serverDay) {
+    lastServerDay = serverDay;
     const pageDay = scrubber.dataset.today || '';
     const stale = core.isStale(pageDay, serverDay, explicitDay());
     notice.hidden = !stale;
@@ -108,5 +113,14 @@
     if (document.visibilityState === 'visible') check();
   });
   window.addEventListener('pageshow', check);
+  // A day chosen on the calendar or scrubber writes ``?d=`` and emits
+  // ``snowdesk:date-changed`` (the URL first); back/forward moves ``?d=``
+  // too. Either makes the day the visitor's own choice, so re-judge at once
+  // rather than leave a label naming the page's rendered day beside it.
+  const rejudge = () => {
+    if (lastServerDay !== null) apply(lastServerDay);
+  };
+  document.addEventListener('snowdesk:date-changed', rejudge);
+  window.addEventListener('popstate', rejudge);
   check();
 })();
