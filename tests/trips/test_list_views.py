@@ -143,17 +143,19 @@ class TestTripListSplit:
     def test_upcoming_reads_soonest_first(self, client: Client) -> None:
         """An agenda reads forwards."""
         reader = UserFactory.create()
+        # Distinct names: in CI a bare "Far" matched other text earlier on the
+        # page, so the index compared the wrong occurrence.
         TripFactory.create(
-            created_by=reader, name="Far", date=datetime.date(2026, 4, 1)
+            created_by=reader, name="Far outing", date=datetime.date(2026, 4, 1)
         )
         TripFactory.create(
-            created_by=reader, name="Near", date=datetime.date(2026, 3, 16)
+            created_by=reader, name="Near outing", date=datetime.date(2026, 3, 16)
         )
         client.force_login(reader)
 
         html = client.get(reverse("trips:list")).content.decode()
 
-        assert html.index("Near") < html.index("Far")
+        assert html.index("Near outing") < html.index("Far outing")
 
     def test_past_reads_most_recent_first(self, client: Client) -> None:
         """A history reads backwards."""
