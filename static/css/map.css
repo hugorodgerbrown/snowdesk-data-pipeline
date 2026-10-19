@@ -447,7 +447,9 @@
     box-shadow: none;
 }
 
-.map-control-group > * + * {
+/* As specific as the reset above (it wins on source order), or that rule's
+   `border: 0` would erase every divider. */
+.map-control-group > :is(.map-utility-pill, .map-glass-roundel) + :is(.map-utility-pill, .map-glass-roundel) {
     border-top: 0.5px solid var(--color-border);
 }
 
