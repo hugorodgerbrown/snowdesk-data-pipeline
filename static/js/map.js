@@ -9135,8 +9135,20 @@
       // region, and on a phone the region chip is withdrawn while the panel
       // is open, so a region selected under it would be a change the reader
       // cannot see.
+      //
+      // A resort pin is the exception (2026-10-19): it is a thing on the
+      // map like a marker or a weather symbol, which already take their
+      // tap with a route open, so a tap on one opens it there and then
+      // rather than spending the first tap on closing the route.
       if (window.pwaRouteRail?.isOpen?.()) {
+        const resortHit = map.getLayer('resorts-pin')
+          ? map.queryRenderedFeatures(e.point, { layers: ['resorts-pin'] })[0]
+          : null;
         window.pwaRouteRail.close();
+        if (resortHit && !IS_PLAYING) {
+          closeMapDetailSurfaces();
+          openResortPopup(resortHit);
+        }
         return;
       }
 

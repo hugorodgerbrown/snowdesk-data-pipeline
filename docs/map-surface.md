@@ -57,8 +57,9 @@ map click dispatcher"). It stops at the first rule that claims the tap:
    route rail with the point placed where the line was hit; a tap on the
    open route moves the point.
 3. **On a weather symbol**: the weather sheet opens for that station.
-4. **A route is open**: the tap closes the route rail and does nothing
-   else. It was aimed at leaving the route, not at a region.
+4. **A route is open**: the tap closes the route rail. On a resort pin it
+   also opens that resort, as rule 5 would; anywhere else it does nothing
+   more, since it was aimed at leaving the route, not at a region.
 5. **On a resort pin**: the resort popup opens.
 6. **On the region already selected, with its phone sheet closed**: reopens
    the sheet, at any zoom, and changes nothing else
