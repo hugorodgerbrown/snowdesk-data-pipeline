@@ -18,6 +18,9 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
   - SNOW-855: the meta description branches on whether the resort has any
     curated locations — it named a village, a mid-station and a summit for
     every resort, including those with no locations at all.
+  - SNOW-1122: the title and description name the resort beside the terms
+    people search for, "weather" only when there are forecasts, and today's
+    danger in words only when rated.
   - Resort facts block (SNOW-695): the curated Resort columns the page
     stored but never rendered. Every cell renders when curated, an unset
     cell is omitted, and the whole block is omitted rather than rendered
@@ -408,6 +411,76 @@ class TestResortMetaDescription:
         assert "\n" not in description
         assert "  " not in description
         assert description == description.strip()
+
+
+def _page_title(content: str) -> str:
+    """Return the rendered <title> text, unescaped for '&'."""
+    match = re.search(r"<title>([^<]*)</title>", content)
+    return match.group(1).replace("&amp;", "&").strip() if match else ""
+
+
+@pytest.mark.django_db
+class TestResortSearchTerms:
+    """SNOW-1122: title and description name the resort beside the search terms."""
+
+    def test_title_with_locations_names_conditions_avalanche_and_weather(
+        self,
+    ) -> None:
+        """A resort with forecasts gets all four target terms in its title."""
+        resort = ResortFactory.create(name="Adelboden")
+        ResortLocationFactory.create(
+            resort=resort,
+            location=LocationFactory.create(name="Adelboden", kind="VILLAGE"),
+            role="BASE",
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        title = _page_title(content)
+        assert title.startswith(
+            "Adelboden conditions — avalanche bulletin & weather · Snowdesk"
+        )
+
+    def test_title_without_locations_does_not_promise_weather(self) -> None:
+        """No Forecasts section, so "weather" stays out of the title."""
+        resort = ResortFactory.create(name="Adelboden")
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        title = _page_title(content)
+        assert title.startswith("Adelboden avalanche conditions & bulletin · Snowdesk")
+        assert "weather" not in title
+
+    def test_description_names_todays_danger_when_rated(self) -> None:
+        """A rating for today puts the level in words into the description."""
+        resort = ResortFactory.create(name="Adelboden")
+        RegionDayRatingFactory.create(
+            region=resort.region, max_rating=RegionDayRating.Rating.CONSIDERABLE
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        description = _meta_description(content)
+        assert description.startswith("Adelboden avalanche conditions")
+        assert "Danger today: 3 – Considerable." in description
+
+    def test_description_omits_danger_when_unrated(self) -> None:
+        """No rating today, no danger claim — and no stray double space."""
+        resort = ResortFactory.create(name="Adelboden")
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        description = _meta_description(content)
+        assert "Danger today" not in description
+        assert "  " not in description
+
+    def test_body_carries_the_conditions_subheading(self) -> None:
+        """The target terms appear in the visible page, not only the meta tags."""
+        resort = ResortFactory.create(name="Adelboden")
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert "Avalanche danger and mountain conditions" in content
 
 
 @pytest.mark.django_db

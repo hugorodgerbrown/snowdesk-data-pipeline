@@ -85,16 +85,33 @@ Context expected (built by ``apps.public.views.resort_detail``):
 {# a summit for every resort; no resort in the fixture set has all three #}
 {# roles, and most have locations with no role at all, so the page may   #}
 {# be offering one anonymous point or none.                              #}
+{# SNOW-1122: title and description name the resort beside the terms     #}
+{# people search for ("conditions", "avalanche", "bulletin", "weather"), #}
+{# and "weather" only when the page links to a forecast. The danger     #}
+{# sentence appears only when today's chip below renders.                #}
 {% block page_meta %}
-    {% blocktrans with name=resort.name trimmed asvar page_title %}{{ name }} · Snowdesk{% endblocktrans %}
     {% if locations %}
-        {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
-            {{ name }} ski resort on Snowdesk — links to the {{ region }} avalanche bulletin and to a mountain weather
-            forecast for each of its locations.
+        {% blocktrans with name=resort.name trimmed asvar page_title %}
+            {{ name }} conditions — avalanche bulletin & weather · Snowdesk
         {% endblocktrans %}
     {% else %}
-        {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
-            {{ name }} ski resort on Snowdesk — links to the {{ region }} avalanche bulletin.
+        {% blocktrans with name=resort.name trimmed asvar page_title %}
+            {{ name }} avalanche conditions & bulletin · Snowdesk
+        {% endblocktrans %}
+    {% endif %}
+    {% if day_rating %}
+        {% blocktrans with level=day_rating.max_rating|danger_level_digit label=day_rating.max_rating|danger_level_digit|danger_level_label trimmed asvar danger_line %}
+            Danger today: {{ level }} – {{ label }}.
+        {% endblocktrans %}
+    {% endif %}
+    {% if locations %}
+        {% blocktrans with name=resort.name region=region.name danger=danger_line|default:"" trimmed asvar page_description %}
+            {{ name }} avalanche conditions on Snowdesk. {{ danger }} Links to the {{ region }} avalanche bulletin and
+            to a mountain weather forecast for each of its locations.
+        {% endblocktrans %}
+    {% else %}
+        {% blocktrans with name=resort.name region=region.name danger=danger_line|default:"" trimmed asvar page_description %}
+            {{ name }} avalanche conditions on Snowdesk. {{ danger }} Links to the {{ region }} avalanche bulletin.
         {% endblocktrans %}
     {% endif %}
     {% include "includes/_page_meta.html" with title=page_title description=page_description %}
@@ -124,6 +141,10 @@ Context expected (built by ``apps.public.views.resort_detail``):
             </div>
         </div>
 
+        {# SNOW-1122: the target search terms in the body, not only in the   #}
+        {# meta tags — people search "{resort} avalanche" / "conditions".     #}
+        {% translate "Avalanche danger and mountain conditions" as conditions_heading_label %}
+        {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-conditions-heading" text=conditions_heading_label class_extra="mb-2" only %}
         {# SNOW-807: the whole danger area is ONE link to the bulletin —     #}
         {# keep exactly one <a> inside [data-testid="resort-danger"].         #}
         <div class="mb-6" data-testid="resort-danger">
