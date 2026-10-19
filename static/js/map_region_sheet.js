@@ -376,6 +376,27 @@
     controller.open();
   });
 
+  // REOPENING (2026-10-19). On a phone the sheet is the one surface that
+  // names the selection, and it can close while the region stays selected
+  // (its ×, a drag below peek, a route opening over it). Past z10 a tap on
+  // a region changes nothing, so a selected region whose sheet was closed
+  // there was outlined on the map with no way back to it. map.js's tap
+  // dispatcher asks this first for a tap on the region already selected.
+  window.pwaRegionSheet = Object.freeze({
+    /**
+     * Open the sheet again for the region still selected.
+     *
+     * @returns {boolean} Whether it opened: false on a desktop, with no
+     *   selection, or with the sheet already open.
+     */
+    reopen: () => {
+      if (!regionId || !isPhone() || controller.isOpen()) return false;
+      load();
+      controller.open();
+      return true;
+    },
+  });
+
   document.addEventListener('snowdesk:date-changed', (ev) => {
     dateKey = ev.detail?.date || null;
     if (controller.isOpen()) load();

@@ -1546,19 +1546,15 @@
       },
       paint: {
         'line-color': '#1a1a1a',
-        'line-width': 4,
         // Soft halo so the outline reads against any choropleth fill colour.
         'line-blur': 0.5,
-        // Show only selected features; opacity 0 hides unselected ones
-        // without needing a filter (which cannot reference feature-state).
-        'line-opacity': [
-          'case',
-          [
-            'any',
-            ['boolean', ['feature-state', 'selected'], false],
-            ['boolean', ['feature-state', 'previewing'], false],
-          ], 1, 0,
-        ],
+        // Width tapers with zoom, and the opacity shows only selected
+        // features (opacity 0 hides the rest without a filter, which cannot
+        // reference feature-state) and recedes while a route is open
+        // (choropleth_core.js, 2026-10-19).
+        ...self.pwaChoroplethCore.selectedOutlinePaint(
+          !!window.pwaRouteRail?.isOpen?.(),
+        ),
       },
     });
     // No BASE_LAYER_FILTERS entry for regions-line-selected: it has no filter
@@ -2834,6 +2830,18 @@
     if (!routeCursorTarget || routeCursorTarget.cursor.state().index === null) return;
     if (!window.pwaRouteRail?.isOpen?.()) return;
     keepRouteCursorInView();
+  });
+
+  // The selected region's outline recedes while a route is open and comes
+  // back when it closes (choropleth_core.js, 2026-10-19). The rail announces
+  // its open and close; a style swap re-installs the layer with the state
+  // read at that moment, so only a change needs writing here.
+  document.addEventListener('snowdesk:route-rail-changed', () => {
+    if (!map || !map.getLayer('regions-line-selected')) return;
+    const paint = self.pwaChoroplethCore.selectedOutlinePaint(
+      !!window.pwaRouteRail?.isOpen?.(),
+    );
+    map.setPaintProperty('regions-line-selected', 'line-opacity', paint['line-opacity']);
   });
 
   // SNOW-1019: the leader line's bridge to the map — the cursor dot's
@@ -9137,8 +9145,20 @@
       // region, and on a phone the region chip is withdrawn while the panel
       // is open, so a region selected under it would be a change the reader
       // cannot see.
+      //
+      // A resort pin is the exception (2026-10-19): it is a thing on the
+      // map like a marker or a weather symbol, which already take their
+      // tap with a route open, so a tap on one opens it there and then
+      // rather than spending the first tap on closing the route.
       if (window.pwaRouteRail?.isOpen?.()) {
+        const resortHit = map.getLayer('resorts-pin')
+          ? map.queryRenderedFeatures(e.point, { layers: ['resorts-pin'] })[0]
+          : null;
         window.pwaRouteRail.close();
+        if (resortHit && !IS_PLAYING) {
+          closeMapDetailSurfaces();
+          openResortPopup(resortHit);
+        }
         return;
       }
 
@@ -9159,9 +9179,22 @@
         return;
       }
 
+      const region = features.find((f) => f.layer.id === 'regions-fill');
+      // A tap on the region already selected, with its phone sheet closed,
+      // reopens the sheet at ANY zoom (2026-10-19): the selection is not
+      // changed, which is the rule past REGION_SELECT_MAXZOOM, but a region
+      // the reader can see outlined is one they can get back to. With the
+      // sheet open the tap falls through as before.
+      const reopensSelected = () =>
+        !!region && region.id === selectedId && !!window.pwaRegionSheet?.reopen?.();
+
       // A region or resort was tapped. Timelapse playback suppresses selection
-      // changes (mirrors the old regions-fill IS_PLAYING guard).
-      if (IS_PLAYING) return;
+      // changes (mirrors the old regions-fill IS_PLAYING guard). Reopening the
+      // selected region's sheet changes no selection, so it still works.
+      if (IS_PLAYING) {
+        if (reopensSelected()) closeMapDetailSurfaces();
+        return;
+      }
 
       // SNOW-499: a resort pin now opens its own minimal popup (name, region,
       // favourite star, bulletin link) instead of proxying to the parent
@@ -9173,7 +9206,10 @@
         return;
       }
 
-      const region = features.find((f) => f.layer.id === 'regions-fill');
+      if (reopensSelected()) {
+        closeMapDetailSurfaces();
+        return;
+      }
       // Past REGION_SELECT_MAXZOOM a region is too big to see, so a tap on
       // one selects nothing and deselects nothing — the region in hand
       // stays in hand (Hugo, 18 Oct). It only closes the place sheet or

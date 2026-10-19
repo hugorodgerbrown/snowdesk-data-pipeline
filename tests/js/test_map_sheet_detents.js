@@ -127,6 +127,29 @@ describe('the handle', () => {
     expect(sheet.getAttribute('data-detent')).toBe('peek');
   });
 
+  it('a tap on a draggable header steps up too (2026-10-19)', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'peek');
+    controller.open();
+    const header = document.createElement('div');
+    header.setAttribute('data-sheet-drag', '');
+    header.innerHTML = '<span>Region name</span><button type="button">Pin</button>';
+    sheet.appendChild(header);
+    /** @type {HTMLElement} */ (header.querySelector('span')).click();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+    // A control in the header keeps its own press.
+    /** @type {HTMLElement} */ (header.querySelector('button')).click();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
+  it('a tap on content outside a draggable header does nothing', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'peek');
+    controller.open();
+    const body = document.createElement('p');
+    sheet.appendChild(body);
+    body.click();
+    expect(sheet.getAttribute('data-detent')).toBe('peek');
+  });
+
   it('is put back after a content swap removes it', async () => {
     const { sheet, controller } = attachSheet('peek,half,full', 'peek');
     controller.open();
@@ -184,6 +207,19 @@ describe('dragging', () => {
     pointer(handle, 'pointerup', 300, 2000);
     handle.click();
     expect(sheet.getAttribute('data-detent')).toBe('full');
+  });
+
+  it('does not step the detent from the click a header drag ends with', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'half');
+    controller.open();
+    const header = document.createElement('div');
+    header.setAttribute('data-sheet-drag', '');
+    sheet.appendChild(header);
+    pointer(header, 'pointerdown', 500, 0);
+    pointer(header, 'pointermove', 480, 500);
+    pointer(header, 'pointerup', 480, 500);
+    header.click();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
   });
 
   it('ignores a pointer that never moves past the slop', () => {

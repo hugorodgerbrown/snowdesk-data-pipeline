@@ -57,14 +57,21 @@ map click dispatcher"). It stops at the first rule that claims the tap:
    route rail with the point placed where the line was hit; a tap on the
    open route moves the point.
 3. **On a weather symbol**: the weather sheet opens for that station.
-4. **A route is open**: the tap closes the route rail and does nothing
-   else. It was aimed at leaving the route, not at a region.
+4. **A route is open**: the tap closes the route rail. On a resort pin it
+   also opens that resort, as rule 5 would; anywhere else it does nothing
+   more, since it was aimed at leaving the route, not at a region.
 5. **On a resort pin**: the resort popup opens.
-6. **On a region, at z10 or below**: selects it, or deselects it if it was
+6. **On the region already selected, with its phone sheet closed**: reopens
+   the sheet, at any zoom, and changes nothing else
+   (`window.pwaRegionSheet.reopen`). The sheet closes while the region stays
+   selected (its ×, a route opening over it), and past z10 this is the only
+   way back to it. It works during timelapse playback too, because it
+   changes no selection.
+7. **On a region, at z10 or below**: selects it, or deselects it if it was
    already selected. On a phone the selection opens the region sheet.
    **Above z10**: closes the place sheet or popup and leaves the selection
    alone.
-7. **On empty map**: deselects the region and closes any popup.
+8. **On empty map**: deselects the region and closes any popup.
 
 A double-click on a region at z10 or below zooms to the region; above z10 it
 is the map's own zoom-in.
@@ -97,6 +104,12 @@ is where that is read. Bulletin opacity is a row in the layers menu (the
 of the four "yours" panels ends in a "Show on the map" switch bound to the
 same setting as its layers-menu row (`static/js/map_panel_overlay_switch.js`).
 Why: [`decisions/map-controls-are-two-groups-without-an-on-map-marker.md`](decisions/map-controls-are-two-groups-without-an-on-map-marker.md).
+
+On a phone an object sheet steps up a detent on a press of its handle or
+a tap on its header (away from the header's buttons), and drags from
+either. While one rests at peek the bottom-right column keeps locate,
+layers and routes only; at half and full the column and the bottom-left
+stack are hidden whole (`static/css/map.css`).
 
 ### Who can be open together
 
