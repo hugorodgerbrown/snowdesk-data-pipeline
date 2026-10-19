@@ -3,16 +3,16 @@
 {% comment %}
 apps/public/templates/public/map.html — the interactive map at /map/ (the app).
 
-SNOW-314: the full-frame map with a dismissable landing overlay (#home-intro).
-The map surface uses the _map_embed.html partial (show_intro=True adds the
-overlay inside #map). The offmap-banner, edit panels and edit JS are included
-here too.
+SNOW-314: the full-frame map. The map surface uses the _map_embed.html partial
+(show_tour_offer=True adds the one-time tour offer inside #map, SNOW-1117 — it
+replaced the #home-intro welcome panel). The offmap-banner, edit panels and
+edit JS are included here too.
 
 The map lived at / (as public/home.html) from SNOW-344 until the marketing
 homepage took the root; / now 301s here when it carries map query
 parameters (views.home).
 
-This template owns the page metadata (page_meta) and loads home_intro.js
+This template owns the page metadata (page_meta) and loads map_tour_offer.js
 in addition to the shared map assets.
 {% endcomment %}
 
@@ -115,13 +115,11 @@ in addition to the shared map assets.
     {% trans "Showing this trip's route." as trip_arrival_body %}
     {% trans "Back to the trip" as trip_arrival_cta %}
     {% include "includes/_overlay_banner.html" with variant="floating" id="trip-arrival-banner" title=" " title_id="trip-arrival-banner-title" body=trip_arrival_body body_id="trip-arrival-banner-body" cta_id="trip-arrival-back" cta_label=trip_arrival_cta aria_live="polite" dismissible=True %}
-    {# SNOW-314: shared map surface with intro overlay enabled.          #}
-    {# The _map_embed partial renders #home-intro when show_intro=True.  #}
-    {# SNOW-535: map_help_autostart=False — the coachmark tour only opens #}
-    {# here via #home-intro's "Explore the map" CTA, reached on a first   #}
-    {# visit or by re-opening the panel from the "?" roundel; never       #}
-    {# automatically straight after the intro is dismissed.               #}
-    {% include "public/partials/_map_embed.html" with show_intro=True map_help_autostart=False %}
+    {# SNOW-1117: show_tour_offer renders the hidden #map-tour-offer card, #}
+    {# and map_help_autostart=False stops the tour starting by itself: on  #}
+    {# this page it opens from the offer's "Start the tour" or the "?"     #}
+    {# roundel, never over a map the visitor has not seen yet.            #}
+    {% include "public/partials/_map_embed.html" with show_tour_offer=True map_help_autostart=False %}
     {# SNOW-344: edit-resorts panel (moved from map.html).               #}
     {% if edit_target == "resorts" %}{% include "public/partials/edit_resorts_panel.html" %}{% endif %}
     {# SNOW-755: edit-locations panel — the same surface for the curated Location estate. #}
@@ -523,8 +521,8 @@ in addition to the shared map assets.
         {% include "includes/_map_explainer_strings.html" %}
         <script defer src="{% static 'js/map_exploded.js' %}"></script>
     {% endif %}
-    {# SNOW-314: intro overlay dismiss / /#about restore behaviour. #}
-    <script defer src="{% static 'js/home_intro.js' %}"></script>
+    {# SNOW-1117: reveals #map-tour-offer once per device after the map settles. #}
+    <script defer src="{% static 'js/map_tour_offer.js' %}"></script>
     {# Collapsible bottom-right control group. Independent of map.js — it     #}
     {# only reads #map-controls-br's DOM — but must load before map_help.js   #}
     {# so it is listening for snowdesk:map-help-open by the time an           #}

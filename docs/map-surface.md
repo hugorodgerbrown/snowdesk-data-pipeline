@@ -51,7 +51,7 @@ One generic `map.on('click')` handler decides every tap (map.js, "single
 map click dispatcher"). It stops at the first rule that claims the tap:
 
 1. **On a control over the map** (scrubber, utility cluster, bottom-right
-   roundels, legend, intro card, help coachmark): ignored.
+   roundels, legend, tour offer, help coachmark): ignored.
 2. **On a marker** (favourite pin, report point or cluster, a route's line,
    legs or slope segments): the marker is activated. A route tap opens the
    route rail with the point placed where the line was hit; a tap on the
@@ -86,7 +86,7 @@ opens, closes and coexists (CLAUDE.md, design-system rule 6).
 | **Object sheet** | region sheet, place sheet, weather sheet, route rail | a tap on something on the map | bottom sheet with detents (peek, half, full) | ×, drag below peek, Escape, deselecting, another object sheet |
 | **Roundel panel** | routes, favourites, reports, downloads lists; region panel | its roundel | full-width docked panel, no detents | its roundel, its ×, another overlay |
 | **Form panel** | field report, terrain filter | a call to action | docked panel, no detents, no drag-to-close | its own buttons, its × |
-| **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, intro card, resort popup | its toggle | anchored card | a click away, another overlay |
+| **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, tour offer, resort popup | its toggle | anchored card | a click away, another overlay |
 
 ### The control column
 

@@ -13,7 +13,7 @@
  * The module is an IIFE that binds at import time and returns early when
  * `[data-theme-preference]` is absent, so the fixture has to exist BEFORE the
  * import — hence `vi.resetModules()` + `await import(...)` per test, the same
- * pattern as test_home_intro.js.
+ * pattern as test_map_tour_offer.js.
  *
  * `matchMedia` is stubbed per test rather than using setup.js's always-false
  * default: half of what "system" means is what the OS is currently saying, so

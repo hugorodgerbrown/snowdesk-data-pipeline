@@ -3,9 +3,9 @@ tests/public/test_home_page.py — Tests for the interactive map page at /map/.
 
 Covers:
   - GET /map/ returns 200 with the map container (#map).
-  - The intro overlay (#home-intro) is rendered (show_intro=True).
+  - The tour offer (#map-tour-offer) is rendered, hidden (SNOW-1117).
   - The season ribbon (#season-ribbon) is present when data exists.
-  - Off-season note present in #home-intro when is_offseason is True, and
+  - Off-season note present in #map-tour-offer when is_offseason is True, and
     no full-width off-season bar above the map (SNOW-445's strip, dropped).
   - The sample-bulletin URL itself returns 200 (against test_data fixture).
   - #season-ribbon carries data-default-region-name and -slug on homepage
@@ -20,14 +20,11 @@ Covers:
   - Title and og:title name the Alps, not Switzerland alone (SNOW-535).
   - The meta description names all five territories and stays inside the
     ~155-character budget search results render (SNOW-535).
-  - The intro card renders both tagline paragraphs — data sources and
-    the registration pitch.
-  - The intro card's actions row carries no onward links — the "Explore
-    the map" CTA is its only action.
-  - The intro card carries a "×" close control wired to the shared
-    overlays.js dismiss idiom (SNOW-535).
+  - The tour offer is about the tour only: no welcome copy, no register
+    pitch, its two answers and a "×" (SNOW-1117).
+  - The welcome panel it replaced (#home-intro) is gone.
   - #map-help-overlay opts out of the coachmark tour's first-load
-    auto-start on the homepage (SNOW-535).
+    auto-start: the offer asks instead (SNOW-535, SNOW-1117).
   - A crossorigin <link rel="preconnect"> warms the active basemap's origin,
     and follows BASEMAP_ORIGIN rather than being hardcoded.
     discarded while the anchor is still hrefless.
@@ -83,12 +80,24 @@ class TestHomePageBasic:
         content = response.content.decode()
         assert 'id="map"' in content
 
-    def test_home_renders_intro_overlay(self) -> None:
-        """The #home-intro overlay is rendered (show_intro=True on home)."""
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
-        assert 'id="home-intro"' in content
+    def test_renders_the_tour_offer_hidden(self) -> None:
+        """SNOW-1117: #map-tour-offer is in the page and hidden at first paint.
+
+        Hidden in the HTML, not by a script after the fact: the welcome panel
+        it replaced was rendered visible and hidden by JS, so a returning
+        visitor saw it flash open on every load.
+        """
+        content = Client().get(reverse("public:map")).content.decode()
+        match = re.search(r'<div\s+id="map-tour-offer"[^>]*>', content)
+        assert match is not None, "#map-tour-offer should render on /map/"
+        assert re.search(r"\shidden[\s>]", match.group(0))
+
+    def test_the_welcome_panel_is_gone(self) -> None:
+        """SNOW-1117: the homepage says what Snowdesk is; the map does not."""
+        content = Client().get(reverse("public:map")).content.decode()
+        assert 'id="home-intro"' not in content
+        assert "Welcome to Snowdesk" not in content
+        assert "home_intro.js" not in content
 
     def test_title_and_og_title_are_alps_wide(self) -> None:
         """Title/og:title name the map; the description names the Alps."""
@@ -125,70 +134,33 @@ class TestHomePageBasic:
         # Google truncates around 155 characters; keep the tag readable whole.
         assert len(description) <= 160
 
-    def test_intro_renders_both_tagline_paragraphs(self) -> None:
-        """The intro card carries both the sources paragraph and the
-        registration paragraph.
+    def test_tour_offer_is_about_the_tour(self) -> None:
+        """The offer names the tour and offers it, and nothing else.
+
+        The welcome panel's provider paragraph and register pitch are the
+        homepage's job now.
         """
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
-        assert (
-            "sourced daily from SLF (Switzerland), ALBINA (Austria, Italy)" in content
+        content = Client().get(reverse("public:map")).content.decode()
+        offer = re.search(
+            r'<div\s+id="map-tour-offer".*?<div class="map-tour-offer-actions">(.*?)</div>',
+            content,
+            re.DOTALL,
         )
-        assert "with Snowdesk to view field observations" in content
+        assert offer is not None
+        assert "Take the one-minute tour" in content
+        assert "sourced daily from SLF" not in content
+        assert 'class="home-intro-inline-link"' not in content
+        actions = offer.group(1)
+        assert 'id="map-tour-offer-start"' in actions
+        assert 'id="map-tour-offer-later"' in actions
+        assert "<a " not in actions
+        assert 'id="map-tour-offer-close"' in content
 
-    def test_intro_registration_pitch_links_to_register(self) -> None:
-        """The word "Register" in the second tagline links to the sign-up flow.
+    def test_map_help_overlay_opts_out_of_autostart(self) -> None:
+        """#map-help-overlay carries the no-autostart opt-out on /map/.
 
-        The card tells a visitor to register but its only button explores the
-        map, so the word itself has to carry them there.
-        """
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
-        assert (
-            f'<a href="{reverse("accounts:register")}" '
-            'class="home-intro-inline-link">Register</a>'
-        ) in content
-
-    def test_intro_carries_no_onward_links(self) -> None:
-        """The intro card's only action is the "Explore the map" CTA.
-
-        SNOW-535 added onward links to a sample bulletin and the reading guide
-        beneath the CTA; they are gone. Both pages remain reachable elsewhere
-        (the help topics, llms.txt), so this asserts against the card's own
-        actions row rather than the whole page.
-        """
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
-        actions = re.search(
-            r'<div class="home-intro-actions">(.*?)</div>', content, re.DOTALL
-        )
-        assert actions is not None, "#home-intro should render an actions row"
-        assert "<a " not in actions.group(1)
-
-    def test_intro_renders_close_button(self) -> None:
-        """SNOW-535: the intro card carries a "×" wired to the shared dismiss idiom.
-
-        Distinct from #home-intro-dismiss ("Explore the map"), which also
-        opens the map-help tour — the "×" only closes the card.
-        """
-        client = Client()
-        response = client.get(reverse("public:map"))
-        content = response.content.decode()
-        assert 'id="home-intro-close"' in content
-        assert content.count('data-action="dismiss"') >= 2, (
-            "both #home-intro-close and #home-intro-dismiss should opt into "
-            "the shared overlays.js dismiss handler"
-        )
-
-    def test_map_help_overlay_opts_out_of_autostart_on_homepage(self) -> None:
-        """SNOW-535: #map-help-overlay carries the no-autostart opt-out on /.
-
-        The tour must only open there via the "?" roundel or #home-intro's
-        "Explore the map" CTA — never automatically straight after a
-        visitor dismisses the intro card.
+        The tour opens there from the "?" roundel or the offer's "Start the
+        tour" (SNOW-1117), never by itself over a map not yet seen.
         """
         client = Client()
         response = client.get(reverse("public:map"))
@@ -231,28 +203,28 @@ class TestHomePageBasic:
         assert "Can't find your location" in content
 
     def test_home_loads_map_assets(self) -> None:
-        """The homepage loads maplibre, map.css, map.js, and home_intro.js."""
+        """The map page loads maplibre, map.css, map.js, and map_tour_offer.js."""
         client = Client()
         response = client.get(reverse("public:map"))
         content = response.content.decode()
         assert "maplibre-gl" in content
         assert "/static/css/map.css" in content
         assert "/static/js/map.js" in content
-        assert "home_intro.js" in content
+        assert "map_tour_offer.js" in content
 
 
 @pytest.mark.django_db
 class TestHomePageOffseason:
-    """Tests for the off-season note in the intro overlay and the persistent bar."""
+    """Tests for the off-season note in the tour offer and the persistent bar."""
 
     @freeze_time("2026-06-15")  # past the May 31 season end
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     def test_offseason_note_present_when_past_season_end(self) -> None:
-        """Off-season note (.home-intro-offseason-ref) appears in the intro after season end."""
+        """Off-season note (.map-tour-offer-offseason) appears in the offer after season end."""
         client = Client()
         response = client.get(reverse("public:map"))
         content = response.content.decode()
-        assert "home-intro-offseason-ref" in content
+        assert "map-tour-offer-offseason" in content
 
     @freeze_time("2026-06-15")  # past the May 31 season end
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
@@ -262,7 +234,7 @@ class TestHomePageOffseason:
         SNOW-445 put an archive notice in a full-width bar between the
         header and the map, and SNOW-639 made it dismissable. It stated a
         resume month the data no longer supported, so it was dropped; the
-        #home-intro note asserted above is the one remaining surface. The
+        #map-tour-offer note asserted above is the one remaining surface. The
         old bottom-left chip it had itself replaced stays gone too.
         """
         client = Client()
@@ -293,7 +265,7 @@ class TestHomePageOffseason:
         client = Client()
         response = client.get(reverse("public:map"))
         content = response.content.decode()
-        assert "home-intro-offseason-ref" in content
+        assert "map-tour-offer-offseason" in content
         assert "Map shows 2025/26 season" in content
         assert "live bulletins resume in November" in content
         assert "2026/26" not in content
@@ -321,7 +293,7 @@ class TestHomePageOffseason:
         client = Client()
         response = client.get(reverse("public:map"))
         content = response.content.decode()
-        assert "home-intro-offseason-ref" not in content
+        assert "map-tour-offer-offseason" not in content
 
 
 @pytest.mark.django_db
@@ -613,7 +585,7 @@ class TestLegacyRootRedirect:
         assert response.status_code == 200
         content = response.content.decode()
         assert 'id="map"' in content
-        assert 'id="home-intro"' in content
+        assert 'id="map-tour-offer"' in content
 
 
 @pytest.mark.django_db

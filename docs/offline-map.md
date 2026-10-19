@@ -2656,7 +2656,7 @@ roughly the title's own visual weight (Hugo's mock). Second complication:
 the mark is no longer the literal "×" (U+00D7) character at all — past a
 certain size it reads as a thin, off-centre mathematical symbol rather
 than a close icon. Replaced with the same stroke-based inline SVG cross
-`#map-help-close` / `#home-intro-close` already use in `_map_embed.html`
+`#map-help-close` / `#map-tour-offer-close` already use in `_map_embed.html`
 (`viewBox="0 0 24 24"`, `stroke="currentColor"`, round caps/joins,
 `currentColor` inheriting `text-text-2`/`hover:text-text-1` exactly as the
 glyph did), sized 22×22 inside the 44×44 box — proportionate, not

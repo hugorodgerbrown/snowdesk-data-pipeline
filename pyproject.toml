@@ -189,9 +189,9 @@ addopts = "-n auto --dist=loadgroup --cov=apps.core --cov=apps.bulletins --cov=a
 # registered and their test client GETs resolve.
 django_debug_mode = "keep"
 markers = [
-    # e2e: opt out of conftest's autouse #home-intro suppression, for the
-    # handful of tests whose subject *is* the first-run intro panel.
-    "shows_home_intro: leave the #home-intro overlay showing on / (e2e only)",
+    # e2e: opt out of conftest's autouse tour-offer suppression, for the
+    # test whose subject *is* the first-run tour offer.
+    "shows_tour_offer: leave the #map-tour-offer card unanswered on /map/ (e2e only)",
 ]
 
 [tool.coverage.run]

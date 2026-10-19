@@ -31,7 +31,7 @@
  *
  * A standalone module rather than another IIFE in map.js so it is reachable
  * from the Vitest + jsdom harness (map.js can't be imported there — its boot
- * IIFEs need MapLibre), matching map_layer_sync_status.js / home_intro.js.
+ * IIFEs need MapLibre), matching map_layer_sync_status.js / map_tour_offer.js.
  */
 
 (function mapControlsCollapseInit() {

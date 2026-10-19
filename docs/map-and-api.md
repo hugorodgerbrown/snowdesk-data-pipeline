@@ -192,7 +192,7 @@ favourites, field observations, and routes since SNOW-686), the anchored
 detail popup a resort pin or a favourite pin opens (`map-detail-popup`),
 the legend card (`#map-legend-card`), the help
 tour's coachmark (`#map-help-overlay`), the date picker (`map-calendar`, SNOW-792), the
-welcome panel (`#home-intro`), the region panel the readout chip discloses
+tour offer (`#map-tour-offer`, SNOW-1117), the region panel the readout chip discloses
 (`region-panel`, `map_region_panel.js`, SNOW-801), the weather sheet a
 weather symbol opens (`#weather-sheet`, `map_weather_detail.js`, SNOW-761)
 and the sign-in sheet a signed-out tap on a Favourites or Routes row opens
@@ -227,24 +227,14 @@ one that forgets to register fails there.
 
 Each panel's own roundel toggles: a second tap closes what the first
 opened, matching the layers pill. The one exception is the help "?"
-roundel, which always re-opens — the deliberate "show me again" affordance
-it has had since SNOW-457. What it re-opens is the **welcome panel**
-wherever the page renders one (`#home-intro`, i.e. the homepage): the panel
-says what Snowdesk is, and its "Explore the map" CTA carries on into the
-tour from step 1. It went straight to the tour until then, which left a
-visitor who had dismissed the panel with no route back to it. Elsewhere —
-any page embedding `_map_embed.html` without `show_intro` — the roundel
-still opens the tour itself; `static/js/map_help.js` decides from the
-presence of `#home-intro` rather than from any "am I the homepage" check,
-and asks for the panel with a `snowdesk:home-intro-requested` event that
-`home_intro.js` answers.
+roundel, which always re-opens the tour from step 1 — the deliberate "show
+me again" affordance it has had since SNOW-457. (Between SNOW-535 and
+SNOW-1117 it opened the welcome panel instead.)
 
-The welcome panel is in the registry for that reason: while a fresh page
-load was the only way to see it, nothing else could be open behind it.
-Like the coachmark, it closes without persisting `snowdesk.home.intro` —
-being displaced is not the visitor saying "read", which is what the "×",
-Escape and the CTA mean — and re-opening it from the roundel does not clear
-that flag either, so the next load is still a clean map.
+The tour offer registers because it appears by itself, over a map the
+visitor may already be using: opening any other overlay closes it, and it
+closes without recording an answer — being displaced is not the visitor
+saying "not now", which is what its buttons, its "×" and Escape mean.
 
 The legend, the coachmark and the (since removed) fill flyout joined last, and none was
 covered by the outside-click dismiss it already had: their toggles call
@@ -278,16 +268,18 @@ diacritic-insensitive, prefix hits rank above substring hits, and results
 carry a "Region" or "Resort" badge to disambiguate cases where a resort
 shares its name with its parent region (e.g. "Davos"). Selecting a result
 routes through the same `selectFeature` helper used by the map click handler.
-The map page carries no "go to the map" link: the
-"Explore the map" button inside the `#home-intro` overlay
-(`public/partials/_map_embed.html`, rendered when `map.html` passes
-`show_intro=True`) is a **dismiss** control — it clears the
-landing overlay to reveal the map already mounted behind it, and additionally
-opens the map-help coachmark tour (SNOW-535), which the overlay's "×" does
-not. It is the only way into the tour on this page, on a first visit and
-on every later one: the "?" roundel re-opens this panel rather than the
-tour (see "One open overlay at a time" below). The overlay's only outbound link is "Register"; `/examples/random/` is
-reachable by URL but is not linked from here.
+Nothing covers the map on load. The "Welcome to Snowdesk" panel
+(`#home-intro`) that did is gone (SNOW-1117): the homepage says what
+Snowdesk is. In its place `map.html` passes `show_tour_offer=True`, which
+renders `#map-tour-offer` hidden; `static/js/map_tour_offer.js` reveals it
+once per device, after the colours have painted and the map has settled,
+and never on a deep link (`?route_share=`, `?trip=`, `?resort=`, `?panel=`
+and the like) or over a sheet or an open route. "Start the tour" opens the
+map-help coachmark tour; "Not now", the "×" and Escape only close it. Each
+records `snowdesk.map.tour-offer = dismissed`, and a finished tour
+(`snowdesk.map.help = seen`) or a dismissed welcome panel
+(`snowdesk.home.intro = dismissed`) counts as offered too. `?tour-offer=1`
+shows it whatever was recorded, for QA.
 
 **Basemap layer picker (SNOW-58)**: a Google-Maps-style stacked-layers
 pill (`#basemap-pill`, in the bottom-right control column since SNOW-664)

@@ -18,7 +18,7 @@
  *        `data-overlay-hide="class"` toggles the Tailwind `hidden` CLASS
  *        (every shell-chrome banner/toast/modal); the default toggles the
  *        HTML5 `hidden` ATTRIBUTE (map-internal overlays and sheets —
- *        #home-intro, #map-help-overlay, #favourite-sheet, #report-sheet).
+ *        #map-help-overlay, #favourite-sheet, #report-sheet).
  *        Never flips which idiom an element uses.
  *      - optionally persists a localStorage flag via
  *        `data-overlay-persist="key=value"`.
@@ -26,8 +26,8 @@
  *        (`detail.overlay` = the element) so the owning module can run
  *        teardown beyond hide (map_sheet.js deactivates the place-picker
  *        and clears the sheet's content for both map sheets, and drops the
- *        shared toast's auto-dismiss timer; home_intro.js / map_help.js
- *        set aria-hidden and restore focus) without binding its own
+ *        shared toast's auto-dismiss timer; map_help.js sets aria-hidden
+ *        and restores focus) without binding its own
  *        ×-click listener.
  *
  * 2. A shared toast auto-dismiss controller — any element carrying
@@ -70,7 +70,7 @@
    * Persist a `data-overlay-persist="key=value"` declaration to
    * localStorage, tolerating storage errors (private mode / full quota) —
    * matching every other localStorage write in this codebase
-   * (home_intro.js, map_help.js, pwa_install.js).
+   * (map_tour_offer.js, map_help.js, pwa_install.js).
    * @param {string} declaration
    */
   function persist(declaration) {

@@ -11,25 +11,18 @@
  *   - On first load (localStorage key 'snowdesk.map.help' absent) the tour
  *     auto-starts once — unless #map-help-overlay carries
  *     data-map-help-no-autostart, an opt-out the embedding page sets when
- *     it has its own, better way to offer the tour. home.html sets it
- *     (SNOW-535): on the homepage the tour is only ever reached through
- *     #home-intro's "Explore the map" CTA — on first load, or after
- *     re-opening that panel from the "?" roundel — never automatically
- *     straight after a visitor dismisses the card.
+ *     it has its own, better way to offer the tour. map.html sets it: there
+ *     #map-tour-offer (static/js/map_tour_offer.js, SNOW-1117) asks once the
+ *     map has settled, and its "Start the tour" opens the tour.
  *   - Steps whose target selector resolves to nothing in the DOM (the
  *     flag-gated #favourite-add-btn / #report-btn controls) are skipped
  *     automatically when the active step list is built.
- *   - The "?" roundel (#map-help-toggle) is the way back in. Where the page
- *     renders the welcome panel (#home-intro, the homepage) the roundel
- *     opens THAT rather than the tour, by dispatching
- *     'snowdesk:home-intro-requested' for home_intro.js to answer: the
- *     panel says what Snowdesk is, and its "Explore the map" CTA leads on
- *     into the tour. Without that panel — any other page embedding the map
- *     partial — the roundel opens the tour directly, from step 1,
- *     regardless of stored state.
+ *   - The "?" roundel (#map-help-toggle) is the way back in: it opens the
+ *     tour from step 1, regardless of stored state. Between SNOW-535 and
+ *     SNOW-1117 it opened the #home-intro welcome panel instead, which led
+ *     into the tour by its own CTA; that panel is gone.
  *   - A 'snowdesk:map-help-requested' CustomEvent opens the tour from step 1
- *     too. home_intro.js dispatches it when the "Explore the map" CTA is
- *     clicked, which is the second half of the flow above.
+ *     too. map_tour_offer.js dispatches it from "Start the tour".
  *   - Back / Next control the sequence; Next becomes "Done" on the final
  *     step. The "×" close button, Escape and Done all persist the dismissed
  *     state.
@@ -39,14 +32,14 @@
  *     opening) on close.
  *   - prefers-reduced-motion disables the ring's pulse animation and the
  *     position transitions via a 'map-help--no-motion' class, mirroring
- *     home_intro.js's '--no-motion' pattern.
+ *     map_tour_offer.js's '--no-motion' pattern.
  *   - SNOW-658: the tour is a map overlay, so it registers with
  *     window.pwaMapOverlays (static/js/map_overlay_exclusivity.js) — opening
  *     it closes every other map overlay, and opening any of them closes it.
  *     Nothing in the walkthrough depends on another overlay staying open:
  *     every step points at map chrome, never at a panel's contents.
  *
- * Mirrors the IIFE + localStorage-guard shape of home_intro.js.
+ * An IIFE with a localStorage guard, the shape map_tour_offer.js shares.
  */
 
 (function mapHelpInit() {
@@ -72,7 +65,7 @@
     !stepCountEl || !backBtn || !nextBtn || !closeBtn
   ) {
     // Malformed/partial markup — nothing sensible to drive. Fail silently
-    // rather than throwing, matching home_intro.js's early-return guard.
+    // rather than throwing, matching map_tour_offer.js's early-return guard.
     // (closeBtn is guarded for markup completeness only — its click is
     // handled by the shared overlays.js dismiss handler, not bound here;
     // see the Control bindings note below.)
@@ -89,7 +82,7 @@
   const TOOLTIP_MARGIN = 12;
 
   // Respect prefers-reduced-motion: skip the ring pulse and the position
-  // transitions, matching home_intro.js's equivalent guard.
+  // transitions, matching map_tour_offer.js's equivalent guard.
   const prefersReducedMotion = window.matchMedia(
     '(prefers-reduced-motion: reduce)',
   ).matches;
@@ -386,27 +379,8 @@
   });
 
   if (toggleBtn) {
-    // The deliberate "show me again" affordance, and the only way back to
-    // the welcome panel: before this the roundel went straight to the tour,
-    // so a visitor who had dismissed #home-intro could never read what
-    // Snowdesk is again. The panel leads into the tour by its own CTA, so
-    // handing the click over loses nothing and gains the step in front.
-    //
-    // Presence of #home-intro is the test, resolved per click rather than
-    // at parse time: it is the panel's own template that decides whether a
-    // page has one (show_intro in _map_embed.html), and asking the DOM
-    // keeps this module free of any "am I the homepage" check. Where there
-    // is no panel, nothing answers the request event — hence the fallback
-    // rather than a dispatch into the void.
-    toggleBtn.addEventListener('click', () => {
-      if (document.getElementById('home-intro')) {
-        document.dispatchEvent(
-          new CustomEvent('snowdesk:home-intro-requested'),
-        );
-        return;
-      }
-      open(true);
-    });
+    // The deliberate "show me again" affordance.
+    toggleBtn.addEventListener('click', () => open(true));
   }
 
   // SNOW-658: the tour closes whenever any other map overlay opens, and
@@ -426,10 +400,9 @@
     close: () => close(false, false),
   });
 
-  // SNOW-535: the homepage's #home-intro "Explore the map" CTA asks for the
-  // tour via this event (home_intro.js) rather than reaching into this
-  // module's internals directly — keeps the tour-opening logic in one
-  // place while decoupling the two scripts.
+  // SNOW-1117: #map-tour-offer's "Start the tour" asks for the tour via this
+  // event (map_tour_offer.js) rather than reaching into this module's
+  // internals — the tour-opening logic stays in one place.
   document.addEventListener('snowdesk:map-help-requested', () => open(true));
 
   window.addEventListener('resize', reposition);

@@ -9100,7 +9100,7 @@
         tgt && tgt.closest &&
         // SNOW-457: #map-help-overlay — the coachmark tooltip's Back/Next/Skip
         // buttons sit over the map, same reasoning as the other overlays.
-        tgt.closest('.season-scrubber, #map-utility-cluster, #map-controls-br, #map-legend, #home-intro, #map-help-overlay')
+        tgt.closest('.season-scrubber, #map-utility-cluster, #map-controls-br, #map-legend, #map-tour-offer, #map-help-overlay')
       ) {
         return;
       }

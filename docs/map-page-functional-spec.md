@@ -735,8 +735,9 @@ The same budget governs the `snowdesk:locate-request` path the field-report
 flow uses, so that sheet reaches its MANUAL "move the map to set your
 location" state promptly instead of holding "Finding your location…".
 
-**A first visit lands on:** the intro panel (`#home-intro`, dismissed state
-persisted under `snowdesk.home.intro`), SLF (CH) bulletins, Micro (EAWS L4)
+**A first visit lands on:** a clean map, with the tour offered once it
+settles (`#map-tour-offer`, answer persisted under
+`snowdesk.map.tour-offer`, SNOW-1117), SLF (CH) bulletins, Micro (EAWS L4)
 boundaries, the OpenFreeMap basemap, and bulletin fill at 50%.
 
 Four of those five are **configured, not hardcoded** (SNOW-872 for the

@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-19
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -38,7 +38,7 @@ last-reviewed: 2026-10-01
 ### Scenario 1: View the homepage, then open the map
 
 **Goal**: Verify `/` is the static homepage and `/map/` is the interactive
-map behind a dismissable landing overlay. The map was the homepage from
+map, with nothing over it on load. The map was the homepage from
 SNOW-314 until the marketing page took the root — see
 [`decisions/the-homepage-is-not-the-map.md`](decisions/the-homepage-is-not-the-map.md).
 
@@ -46,12 +46,12 @@ SNOW-314 until the marketing page took the root — see
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/ | A static page loads: the "Avalanche bulletins across the Alps, on one map." heading, an "Open the map" primary button and a "How it works" secondary button, a still image of the map, and short sections on bulletins, the season, weather, routes, offline use and field reports. No MapLibre canvas, no map JavaScript |
 | 2 | Look at the page chrome | A thin top nav bar with a "Snowdesk" wordmark (no back link) sits above the page |
-| 3 | Clear `localStorage` for the site, then click "Open the map" | http://localhost:8000/map/ loads: the full-frame map, with the `#home-intro` card centred over it |
-| 4 | Locate the intro card's controls | A "×" close button (top-right of the card) and an "Explore the map" button at the foot of it |
+| 3 | Clear `localStorage` for the site, then click "Open the map" | http://localhost:8000/map/ loads: the full-frame map, with no card or panel over it |
+| 4 | Wait for the danger colours to paint, then a moment more | The tour offer (`#map-tour-offer`) slides in at the bottom left, above the zoom, help, key and date controls: "Take the one-minute tour", with "Not now", "Start the tour" and a "×" (Scenario MS7) |
 | 5 | Note the pre-selected region | CH-4115 (Martigny/Verbier) is already selected, so the readout chip and breadcrumb are populated on first paint (SNOW-342) |
 | 6 | Navigate to http://localhost:8000/?d=2026-04-08 | A 301 to `http://localhost:8000/map/?d=2026-04-08` — map state on `/` is forwarded with its query string |
 
-Out of season (today past the season end) the card also carries an
+Out of season (today past the season end) the offer also carries an
 off-season note naming the archived season's start month.
 
 ### Scenario 2: View a random sample bulletin
@@ -303,27 +303,28 @@ both hits appear and the badge makes the distinction obvious.
 | 1 | Click into the search input and clear any existing text | Dropdown is hidden |
 | 2 | Type `xyznonexistent` | Dropdown does not open (no results, no error message shown) |
 
-### Scenario MS7: "Explore the map" dismisses the intro overlay
+### Scenario MS7: The tour is offered once, after the map
 
-**Goal**: Verify the intro overlay's CTA is a *dismiss* control, not a link —
-the map is already mounted behind it — that the dismissal persists, and that
-the "?" roundel brings the card back rather than jumping straight to the tour.
+**Goal**: Verify the map opens clean, that the tour is offered once the map
+has settled and only once per device, and that the offer stays away from a
+visit that came for something in particular (SNOW-1117 — it replaced the
+"Welcome to Snowdesk" panel, which flashed open on every load).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Clear `localStorage`, navigate to http://localhost:8000/map/ | Map loads with the `#home-intro` card over it |
-| 2 | Click "Explore the map" | The card clears in place. **No navigation occurs** — the URL stays `http://localhost:8000/map/` and the map is not reloaded. The map-help coachmark tour then opens (SNOW-535) |
-| 3 | Inspect `localStorage` | `snowdesk.home.intro` is set to `dismissed` |
-| 4 | Reload the page | The map loads with no intro card |
-| 5 | Repeat from step 1, but click the "×" close button (or press Escape) | The card dismisses and persists the same way — but the map-help tour does **not** open. That extra step is what distinguishes the CTA from the "×" |
-| 6 | With the card dismissed, click the "?" roundel in the bottom-left stack | The welcome card comes back, over whatever the map was showing; any other open panel (layers, legend, a sheet) closes. `snowdesk.home.intro` is still `dismissed` |
-| 7 | Click "Explore the map" | The card clears and the coachmark tour opens on step 1 — the same route in as step 2, which is the only route in on this page |
+| 1 | Clear `localStorage`, navigate to http://localhost:8000/map/ | The map loads with nothing over it. A moment after the colours paint, the tour offer slides in at the bottom left |
+| 2 | Click "Start the tour" | The offer closes and the coachmark tour opens on step 1. **No navigation occurs** |
+| 3 | Inspect `localStorage` | `snowdesk.map.tour-offer` is `dismissed` |
+| 4 | Close the tour and reload the page | The map loads and the offer does not come back |
+| 5 | Clear `localStorage`, reload, and click "Not now" (or the "×", or press Escape) when the offer appears | The offer closes and records the same answer — but the tour does **not** open |
+| 6 | Clear `localStorage` and open http://localhost:8000/map/?resort=verbier | The resort opens and the offer never appears: a deep link came for that |
+| 7 | Clear `localStorage`, reload, and tap a region before the offer appears | The region sheet opens and the offer does not appear over it this visit; `snowdesk.map.tour-offer` is still unset |
+| 8 | Click the "?" roundel in the bottom-left stack | The coachmark tour opens on step 1, whatever was recorded |
 
-To bring the overlay back without clearing `localStorage`, load
-`http://localhost:8000/map/?intro=1` — it forces the panel open, survives a server
-round-trip (unlike `#about`), and is stripped from the address bar on dismissal
-so the panel stays dismissed across a reload. It is the handle to use in QA,
-screenshots and bug reports.
+To see the offer again without clearing `localStorage`, load
+`http://localhost:8000/map/?tour-offer=1` — it shows the offer whatever was
+recorded, after the same wait, and is stripped from the address bar once the
+offer is answered. It is the handle to use in QA, screenshots and bug reports.
 
 ---
 

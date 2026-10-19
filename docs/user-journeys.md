@@ -98,8 +98,9 @@ ten seconds.
 
 **Entry points:**
 - Homepage `/` — a static page that describes Snowdesk and links into
-  the map at `/map/`. First-time visitors on the map meet the dismissable
-  `#home-intro` overlay; an installed app opens straight on `/map/`.
+  the map at `/map/`. First-time visitors on the map are offered the
+  tour once it settles (`#map-tour-offer`); an installed app opens
+  straight on `/map/`.
 - Deep link to a specific region (`/<region_id>/<slug>/`) from search
   engines, shared messages, or the PWA shortcut.
 

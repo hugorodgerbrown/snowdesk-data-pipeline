@@ -785,8 +785,7 @@ def map_page(request: HttpRequest) -> HttpResponse:
     """
     Render the interactive map at ``/map/``.
 
-    SNOW-314: the full-frame map with a dismissable landing overlay
-    (``#home-intro``). The map lived at ``/`` from SNOW-344 until the
+    SNOW-314: the full-frame map. The map lived at ``/`` from SNOW-344 until the
     marketing homepage took the root; ``/`` now 301s here when it carries
     map query parameters.
 
@@ -799,11 +798,10 @@ def map_page(request: HttpRequest) -> HttpResponse:
 
     CH-4115 (Martigny / Verbier) is pre-selected so the readout chip and
     breadcrumb are correct on first paint (SNOW-342); the scrubber paints that
-    region's season into the track. The intro overlay provides identity, a
-    factual one-liner naming the three providers, an off-season note when today
-    is past the season end, and a "Register" link. Its "Explore the map" button
-    dismisses the overlay and opens the map-help tour (SNOW-535); the "x"
-    dismisses without the tour.
+    region's season into the track. The template carries a hidden one-time
+    offer of the map tour (``#map-tour-offer``, SNOW-1117), with the off-season
+    note when today is past the season end; it replaced the ``#home-intro``
+    welcome panel now that the homepage says what Snowdesk is.
 
     Context:
       ``ribbon``              — default-region (CH-4115) SeasonRibbon or None.
@@ -812,7 +810,6 @@ def map_page(request: HttpRequest) -> HttpResponse:
       ``default_region_slug`` — str: the pre-selected region's bulletin slug.
       ``default_subregion_name`` — str: L2 sub-region name for the breadcrumb.
       ``default_major_name``  — str: L1 major-region name for the breadcrumb.
-      ``show_intro``          — True (the overlay renders on the homepage).
       ``is_offseason``        — True when today is past the active season end.
       ``edit_target``         — "resorts" when resort-edit mode is active,
                                 else "". The empty string is the normal map.
@@ -935,7 +932,6 @@ def map_page(request: HttpRequest) -> HttpResponse:
             "default_region_slug": default_region_slug,
             "default_subregion_name": default_subregion_name,
             "default_major_name": default_major_name,
-            "show_intro": True,
             "is_offseason": is_offseason,
             "season_label": season_label,
             "archived_season_start": archived_season_start,
