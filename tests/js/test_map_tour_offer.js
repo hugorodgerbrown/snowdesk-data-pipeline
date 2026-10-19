@@ -151,6 +151,31 @@ describe('when it appears', () => {
     expect(isShown()).toBe(false);
   });
 
+  it('stays away while the visitor has an overlay open, and leaves it open', async () => {
+    await loadModules();
+    const layersClose = vi.fn();
+    window.pwaMapOverlays.register('basemap-menu', { isOpen: () => true, close: layersClose });
+    vi.advanceTimersByTime(RATINGS_WAIT_MS + SETTLE_MS);
+
+    expect(isShown()).toBe(false);
+    expect(layersClose).not.toHaveBeenCalled();
+  });
+
+  it('does not miss colours painted before the page finished loading', async () => {
+    Object.defineProperty(document, 'readyState', { value: 'loading', configurable: true });
+    try {
+      await loadModules();
+      ratingsLoaded();
+      window.dispatchEvent(new Event('load'));
+
+      vi.advanceTimersByTime(SETTLE_MS);
+
+      expect(isShown()).toBe(true);
+    } finally {
+      delete document.readyState;
+    }
+  });
+
   it('?tour-offer=1 shows it whatever was recorded', async () => {
     localStorage.setItem(OFFER_KEY, 'dismissed');
     history.replaceState(null, '', '/map/?tour-offer=1');
