@@ -2,7 +2,7 @@
 name: the-point-card-names-the-experience
 description: Point card Track and Slope lines; no turn or switchback; a turn's side from its ends (turnOf, kindOf, trackWord, groundWord)
 status: current
-last-reviewed: 2026-10-18
+last-reviewed: 2026-10-19
 ---
 
 # The point card names the experience
@@ -81,8 +81,9 @@ HALF state, shown unlit until a point is placed.
   lifted the bottom controls whenever it opened; on top, under the chip
   row, nothing on the map moves. A point is placed by a tap on the
   profile's top line or on the route's line, so the words sit directly
-  above the place tapped. Since 2026-10-02 there is no leg selection and
-  no drag: the profile marks the point with a dot on its top line and
+  above the place tapped. Since 2026-10-02 there is no leg selection; a
+  sideways drag along the profile, removed that day, was restored on
+  2026-10-19 and scrubs the point (the map's line stays tap only). The profile marks the point with a dot on its top line and
   the point's elevation and distance beside the cursor line, pressing
   the wheel clears the point and keeps the route, as the first Escape
   does, and the panel's × always closes the route.

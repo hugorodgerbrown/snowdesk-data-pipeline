@@ -5,7 +5,8 @@
  * The subtitle is the routes list's meta line, with the time only when
  * the recording has one (SNOW-1065). Points only (2026-10-02): a tap on
  * the profile's top line — loosely — places the point, a tap down in the
- * fill does not, and nothing drags, hovers or presses a leg. A placed
+ * fill does not, and nothing hovers or presses a leg. A sideways drag
+ * from anywhere on the profile scrubs the point (2026-10-19). A placed
  * point draws the cursor line with a dot on the outline and its
  * elevation and distance beside it, moving to the line's left when they
  * would not fit. The × always closes the route. Around it: one path per
@@ -397,20 +398,17 @@ describe('tapping the profile (2026-10-02)', () => {
     expect(index()).toBe(0);
   });
 
-  it('places nothing on a drag or a hover', () => {
+  it('places nothing on a hover', () => {
     window.pwaRouteRail.open(feature());
     layOutLane();
 
-    onLane('pointerdown', 100, 70, lane, 'touch');
-    onLane('pointermove', 600, 60, lane, 'touch');
-    onLane('pointerup', 600, 60, lane, 'touch');
     onLane('pointermove', 500, 5);
     onLane('mousemove', 500, 5);
 
     expect(index()).toBeNull();
   });
 
-  it('shows a mouse the pointer only over the line', () => {
+  it('shows a mouse the pointer over the line and a sideways arrow in the fill', () => {
     window.pwaRouteRail.open(feature());
     layOutLane();
 
@@ -418,7 +416,120 @@ describe('tapping the profile (2026-10-02)', () => {
     expect(lane.style.cursor).toBe('pointer');
 
     onLane('mousemove', 500, 70);
-    expect(lane.style.cursor).toBe('');
+    expect(lane.style.cursor).toBe('ew-resize');
+  });
+});
+
+describe('scrubbing the profile (2026-10-19)', () => {
+  const index = () => window.pwaRouteRail.cursor().state().index;
+
+  it('moves the point with the finger, from a press down in the fill', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+
+    onLane('pointerdown', 100, 70, legPaths()[0], 'touch');
+    onLane('pointermove', 300, 70, lane, 'touch');
+    expect(index()).toBe(7);
+
+    // Any height: the finger has drifted up off the profile entirely.
+    onLane('pointermove', 600, -30, lane, 'touch');
+    expect(index()).toBe(14);
+
+    onLane('pointerup', 600, -30, lane, 'touch');
+    expect(index()).toBe(14);
+  });
+
+  it('scrubs with a mouse too, clamped to the route', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+
+    onLane('pointerdown', 500, 5);
+    onLane('pointermove', 1200, 5);
+    onLane('pointerup', 1200, 5);
+
+    expect(index()).toBe(23);
+  });
+
+  it('leaves a press that never moves DRAG_PX sideways to the click', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+
+    onLane('pointerdown', 500, 70, lane, 'touch');
+    onLane('pointermove', 504, 40, lane, 'touch');
+    onLane('pointerup', 504, 40, lane, 'touch');
+
+    expect(index()).toBeNull();
+  });
+
+  it('swallows the click a scrub ends with', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+
+    onLane('pointerdown', 100, 5);
+    onLane('pointermove', 600, 70);
+    onLane('pointerup', 600, 70);
+    onLane('click', 20, 75);
+    expect(index()).toBe(14);
+
+    // The next click is a real tap again.
+    onLane('click', 20, 75);
+    expect(index()).toBe(0);
+  });
+
+  it('stops following the pointer once it lifts', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+
+    onLane('pointerdown', 100, 70, lane, 'touch');
+    onLane('pointermove', 600, 70, lane, 'touch');
+    onLane('pointerup', 600, 70, lane, 'touch');
+    onLane('pointermove', 900, 70, lane, 'touch');
+
+    expect(index()).toBe(14);
+  });
+
+  it('keeps scrubbing when the leg a finger landed on loses its capture', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+
+    onLane('pointerdown', 100, 70, legPaths()[0], 'touch');
+    onLane('pointermove', 300, 70, lane, 'touch');
+    // Taking the capture for the lane ends the path's implicit one, and
+    // that event bubbles to the lane.
+    onLane('lostpointercapture', 300, 70, legPaths()[0], 'touch');
+    onLane('pointermove', 600, 70, lane, 'touch');
+
+    expect(index()).toBe(14);
+  });
+
+  it('holds the page still while a finger scrubs, and only then', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+    const touchmove = () => {
+      const event = new Event('touchmove', { bubbles: true, cancelable: true });
+      lane.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    onLane('pointerdown', 100, 70, lane, 'touch');
+    expect(touchmove()).toBe(false);
+
+    onLane('pointermove', 300, 70, lane, 'touch');
+    expect(touchmove()).toBe(true);
+
+    onLane('pointerup', 300, 70, lane, 'touch');
+    expect(touchmove()).toBe(false);
+  });
+
+  it('stops on a cancelled pointer, as when the page takes a vertical pan', () => {
+    window.pwaRouteRail.open(feature());
+    layOutLane();
+
+    onLane('pointerdown', 100, 70, lane, 'touch');
+    onLane('pointercancel', 100, 70, lane, 'touch');
+    onLane('pointermove', 600, 70, lane, 'touch');
+
+    expect(index()).toBeNull();
   });
 });
 
