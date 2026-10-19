@@ -225,9 +225,11 @@
       countryScoped: true,
     }),
     // SNOW-656: a ``bulletins`` entry lived here while the bulletin-fill
-    // control was a row in this menu. The control moved to the map canvas
-    // (``.map-fill-steps``, beside the scrubbed date), so there is no row to
-    // hang a dot on and no row for the offline gate to disable.
+    // control was a row in this menu. It is back in this menu as the
+    // "Bulletin opacity" steps (``.map-fill-steps``, in the Conditions
+    // group), but as a radio group with no ``data-overlay-key`` — so there is
+    // still no row to hang a dot on and no row for the offline gate to
+    // disable.
     //
     // Nothing is lost from the dashboard: the feed it reported
     // (``/api/ratings/``) is one of the four COUNTRY_FEED_PATHS below, so a

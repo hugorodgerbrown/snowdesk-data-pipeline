@@ -5739,8 +5739,10 @@
     // preferred: while something is suppressing the choropleth the control
     // must read 0, so the user can see why the colour went.
     //
-    // Document-wide, not scoped to the layers menu — SNOW-656 moved the
-    // control onto the canvas beside the scrubbed date.
+    // Document-wide rather than scoped to one container: the control has
+    // moved twice (a roundel flyout under SNOW-656, the layers menu's
+    // "Bulletin opacity" row since the two-capsule column), and the
+    // attribute is the contract, not where it sits.
     const shown = fill.opacity;
     for (const seg of document.querySelectorAll('[data-bulletins-step]')) {
       const step = Number(seg.dataset.bulletinsStep);

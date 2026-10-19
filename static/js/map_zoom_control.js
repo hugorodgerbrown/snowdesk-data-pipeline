@@ -38,7 +38,7 @@
  * on).
  *
  * ONE OVERLAY AT A TIME. The flyout registers with `window.pwaMapOverlays`
- * as `map-zoom-flyout`, the same way #map-fill-flyout does
+ * as `map-zoom-flyout`, the same way #basemap-menu does
  * (map_basemap_picker.js), and closes on an outside click and on Escape.
  * It opens into the crook between the stack and the date row, where the
  * legend card opens, so it needs no measuring.

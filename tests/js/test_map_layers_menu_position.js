@@ -13,6 +13,8 @@
  * be a child of #basemap-pill; that pill moved into #map-controls-collapsible,
  * which is `overflow: hidden` for its height animation and would clip a menu
  * opening leftward out of it, so the menu is a child of #map-controls-br now.
+ * (The pill sits in the always-visible "map" capsule since the column became
+ * two groups, which clips its children to its outline just the same.)
  * The floor and the cap are unchanged — the arithmetic simply starts from the
  * stack's own lower edge, which (unlike the pill's) does not move when the
  * column changes height. That last property is asserted below: it is the
@@ -50,12 +52,13 @@ function buildFixture({ stackTop = 319, bottomRow = true } = {}) {
   document.body.innerHTML = `
     <div id="map"></div>
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
-      <div id="map-controls-collapsible">
-        <div class="map-controls-collapsible-inner">
-          <div id="basemap-pill" data-state="collapsed">
-            <button id="basemap-toggle" aria-expanded="false"></button>
-          </div>
+      <div class="map-control-group" id="map-control-group-map">
+        <div id="basemap-pill" data-state="collapsed">
+          <button id="basemap-toggle" aria-expanded="false"></button>
         </div>
+      </div>
+      <div id="map-controls-collapsible">
+        <div class="map-controls-collapsible-inner map-control-group"></div>
       </div>
       <div id="basemap-menu" hidden>
         <div class="basemap-menu-header">
@@ -165,27 +168,31 @@ describe('where the layers menu opens', () => {
   });
 });
 
-describe('the menu is not clipped by the collapsible group', () => {
-  it('is a child of the stack, not of the pill inside the group', async () => {
+describe('the menu is not clipped by either group', () => {
+  it('is a child of the stack, not of the capsule its pill sits in', async () => {
     // SNOW-664. #map-controls-collapsible is `overflow: hidden` for its
-    // height animation, and that clips both axes — a menu opening leftward
-    // from inside it would be cut off with no other symptom.
+    // height animation, and the "map" capsule clips its children to its
+    // rounded outline — a menu opening leftward from inside either would be
+    // cut off with no other symptom.
     const menu = await openMenu();
 
     expect(menu.parentElement.id).toBe('map-controls-br');
     expect(document.getElementById('map-controls-collapsible').contains(menu)).toBe(false);
+    expect(document.getElementById('map-control-group-map').contains(menu)).toBe(false);
   });
 
-  it('closes when the collapsible strip hides the roundel it belongs to', async () => {
+  it('stays open when the chevron folds the "yours" group away', async () => {
+    // SNOW-664 closed the menu here, while #basemap-pill lived inside the
+    // collapsible strip and a collapse left it an orphan. The pill is in the
+    // always-visible "map" capsule now, so the collapse hides nothing the
+    // menu belongs to.
     const menu = await openMenu();
     expect(menu.hidden).toBe(false);
 
-    // The strip writes only `data-expanded`; the picker observes it, because
-    // a menu left open beside a hidden roundel is an orphan.
     document.getElementById('map-controls-br').dataset.expanded = 'false';
     await Promise.resolve();
 
-    expect(menu.hidden).toBe(true);
+    expect(menu.hidden).toBe(false);
   });
 
   it('stays open when a click lands on the menu\'s own chrome', async () => {
