@@ -4728,8 +4728,8 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
 
     Reuses the context-building already proven by ``apps.public.api.resort_popup``
     (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``).
-    ``day_rating`` (today's ``RegionDayRating``) is kept for the meta
-    description (SNOW-1122).
+    The meta description's danger sentence reads the same ``panel`` as the
+    tile, so the two can never name different levels.
 
     Args:
         request: The incoming HTTP request.
@@ -4746,8 +4746,6 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
 
     region = resort.region
     today = timezone.localdate()
-
-    day_rating = RegionDayRating.objects.filter(region=region, date=today).first()
 
     # SNOW-1124: today's bulletin, chosen exactly as the evergreen bulletin
     # page chooses it, so the two pages always show the same issue.
@@ -4779,7 +4777,6 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         "resort": resort,
         "region": region,
         "region_id": region.region_id,
-        "day_rating": day_rating,
         # SNOW-1124: the bulletin page's panel and headline for today, or
         # None / "" when no bulletin covers today.
         "panel": panel,

@@ -656,11 +656,9 @@ class TestResortSearchTerms:
         assert "weather" not in title
 
     def test_description_names_todays_danger_when_rated(self) -> None:
-        """A rating for today puts the level in words into the description."""
+        """Today's bulletin puts its level in words into the description."""
         resort = ResortFactory.create(name="Adelboden")
-        RegionDayRatingFactory.create(
-            region=resort.region, max_rating=RegionDayRating.Rating.CONSIDERABLE
-        )
+        _todays_bulletin(resort.region)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
@@ -679,7 +677,7 @@ class TestResortSearchTerms:
         assert "  " not in description
 
     def test_description_omits_danger_for_a_no_rating_row(self) -> None:
-        """A "no_rating" row exists but has no level, so no danger claim."""
+        """A "no_rating" row with no bulletin today makes no danger claim."""
         resort = ResortFactory.create(name="Adelboden")
         RegionDayRatingFactory.create(
             region=resort.region, max_rating=RegionDayRating.Rating.NO_RATING
@@ -700,13 +698,13 @@ class TestResortSearchTerms:
             location=LocationFactory.create(name="Adelboden", kind="VILLAGE"),
             role="BASE",
         )
-        RegionDayRatingFactory.create(
-            region=region, max_rating=RegionDayRating.Rating.CONSIDERABLE
-        )
+        _todays_bulletin(region)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        assert len(html.unescape(_meta_description(content))) <= 155
+        description = html.unescape(_meta_description(content))
+        assert "Danger today: 3 – Considerable." in description
+        assert len(description) <= 155
 
     def test_body_carries_the_conditions_subheading(self) -> None:
         """The target terms appear in the visible page, not only the meta tags."""
