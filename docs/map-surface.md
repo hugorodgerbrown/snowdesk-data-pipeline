@@ -81,6 +81,12 @@ opens, closes and coexists (CLAUDE.md, design-system rule 6).
 | **Form panel** | field report, terrain filter | a call to action | docked panel, no detents, no drag-to-close | its own buttons, its × |
 | **Flyout / card** | layers menu, fill flyout, zoom flyout, calendar, legend card, help coachmark, intro card, resort popup | its toggle | anchored card | a click away, another overlay |
 
+On a phone an object sheet steps up a detent on a press of its handle or
+a tap on its header (away from the header's buttons), and drags from
+either. While one rests at peek the bottom-right column keeps locate,
+layers and routes only; at half and full the column and the bottom-left
+stack are hidden whole (`static/css/map.css`).
+
 ### Who can be open together
 
 Two mechanisms enforce exclusivity, and a new surface has to join the right

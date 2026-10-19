@@ -1546,19 +1546,15 @@
       },
       paint: {
         'line-color': '#1a1a1a',
-        'line-width': 4,
         // Soft halo so the outline reads against any choropleth fill colour.
         'line-blur': 0.5,
-        // Show only selected features; opacity 0 hides unselected ones
-        // without needing a filter (which cannot reference feature-state).
-        'line-opacity': [
-          'case',
-          [
-            'any',
-            ['boolean', ['feature-state', 'selected'], false],
-            ['boolean', ['feature-state', 'previewing'], false],
-          ], 1, 0,
-        ],
+        // Width tapers with zoom, and the opacity shows only selected
+        // features (opacity 0 hides the rest without a filter, which cannot
+        // reference feature-state) and recedes while a route is open
+        // (choropleth_core.js, 2026-10-19).
+        ...self.pwaChoroplethCore.selectedOutlinePaint(
+          !!window.pwaRouteRail?.isOpen?.(),
+        ),
       },
     });
     // No BASE_LAYER_FILTERS entry for regions-line-selected: it has no filter
@@ -2834,6 +2830,18 @@
     if (!routeCursorTarget || routeCursorTarget.cursor.state().index === null) return;
     if (!window.pwaRouteRail?.isOpen?.()) return;
     keepRouteCursorInView();
+  });
+
+  // The selected region's outline recedes while a route is open and comes
+  // back when it closes (choropleth_core.js, 2026-10-19). The rail announces
+  // its open and close; a style swap re-installs the layer with the state
+  // read at that moment, so only a change needs writing here.
+  document.addEventListener('snowdesk:route-rail-changed', () => {
+    if (!map || !map.getLayer('regions-line-selected')) return;
+    const paint = self.pwaChoroplethCore.selectedOutlinePaint(
+      !!window.pwaRouteRail?.isOpen?.(),
+    );
+    map.setPaintProperty('regions-line-selected', 'line-opacity', paint['line-opacity']);
   });
 
   // SNOW-1019: the leader line's bridge to the map — the cursor dot's
