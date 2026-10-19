@@ -6844,6 +6844,23 @@
     })),
   });
 
+  // The day's level the map is painting for one region (2026-10-19), read
+  // back from the feature state the choropleth writes, so the phone region
+  // sheet can show it in its peek before its body arrives. Null when the
+  // region is not loaded, or the day has no rating for it yet.
+  window.pwaRegionLevel = Object.freeze({
+    /**
+     * @param {string} regionId e.g. "CH-4115".
+     * @returns {?string} "low" … "very_high", or null.
+     */
+    forRegion: (regionId) => {
+      const feature = FEATURE_BY_REGION_ID[regionId];
+      if (!feature || feature.id == null || !map.getSource('regions')) return null;
+      const rating = map.getFeatureState({ source: 'regions', id: feature.id }).rating;
+      return rating && rating !== 'no_rating' ? rating : null;
+    },
+  });
+
 
   // ==== SNOW-803: ``?panel=<name>`` opens a sheet with nothing selected ====
   //

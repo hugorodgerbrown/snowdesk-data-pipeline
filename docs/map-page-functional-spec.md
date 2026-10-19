@@ -861,6 +861,11 @@ bulletin. At
 sheet still holds for every sheet that declares no detents. Why:
 [`docs/decisions/sheet-detents-are-phone-only.md`](decisions/sheet-detents-are-phone-only.md).
 
+**One bottom sheet at a time.** On a phone every detent sheet docks to the
+same foot of the screen, so opening one — the route sheet included — closes
+any other that is open. Which overlays can be open together, and at what
+zoom a tap does what, is in [`map-surface.md`](map-surface.md).
+
 ### 3.7a Pressing a row's name frames its place
 
 On the three panels whose rows are **places** — routes, favourites
@@ -1140,6 +1145,8 @@ render the normal map.
 
 ## Related documents
 
+- [`map-surface.md`](map-surface.md) — zoom bands, what a tap does, and
+  which overlays can be open together.
 - [`map-and-api.md`](map-and-api.md) — implementation reference: the map
   JS, the `/api/` endpoints, the caching and payload contracts.
 - [`offline-map.md`](offline-map.md) — PWA shell, service worker, cache

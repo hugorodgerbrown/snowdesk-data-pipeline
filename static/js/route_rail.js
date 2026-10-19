@@ -22,6 +22,13 @@
  * point is placed, on a claim or a delete, and it is refilled in place
  * when another route is tapped.
  *
+ * ONE BOTTOM SHEET ON A PHONE (2026-10-19). Below 640px the rail is a
+ * detent sheet like the region, place and weather sheets, and
+ * map_sheet.js's bindDetents closes whichever of them is open when another
+ * opens: a route opened closes the region sheet, and a region sheet opened
+ * by a search pick closes the route. That is the one exception to its own
+ * lifetime, and it holds only where they would stack on the same foot.
+ *
  * WHAT THIS MODULE OWNS. The rail's markup, filled per open; one route
  * cursor per open route (`createRouteCursor`, static/js/route_cursor_core.js,
  * whose first caller this is); and the rail's menu. All the

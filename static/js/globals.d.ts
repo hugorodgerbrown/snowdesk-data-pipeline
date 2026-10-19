@@ -120,6 +120,8 @@ interface Window {
   pwaTerrainFilterSheet: any;
   /** static/js/map.js — the zoom-gated layers: list() → [{key, zoom, active}]. */
   pwaZoomGates: any;
+  /** static/js/map.js — the painted day's level for a region: forRegion(id) → "low" … "very_high" | null. */
+  pwaRegionLevel: any;
 }
 
 /**
