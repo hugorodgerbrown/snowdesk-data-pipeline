@@ -319,7 +319,7 @@ visit that came for something in particular (SNOW-1117 — it replaced the
 | 5 | Clear `localStorage`, reload, and click "Not now" (or the "×", or press Escape) when the offer appears | The offer closes and records the same answer — but the tour does **not** open |
 | 6 | Clear `localStorage` and open http://localhost:8000/map/?resort=verbier | The resort opens and the offer never appears: a deep link came for that |
 | 7 | Clear `localStorage`, reload, and tap a region before the offer appears | The region sheet opens and the offer does not appear over it this visit; `snowdesk.map.tour-offer` is still unset |
-| 8 | Click the "?" roundel in the bottom-left stack | The coachmark tour opens on step 1, whatever was recorded |
+| 8 | Click the "?" roundel in the bottom-left stack, then "Tour" on the bar it opens | The coachmark tour opens on step 1, whatever was recorded (Scenario MS9) |
 
 To see the offer again without clearing `localStorage`, load
 `http://localhost:8000/map/?tour-offer=1` — it shows the offer whatever was
@@ -334,7 +334,7 @@ steps in four chapters, the second of which shows a real region
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | On a phone-sized window with no region selected, click the "?" roundel | The tour opens with no ring, its card across the foot of the screen: "Colour is the day's danger", with the five danger levels as numbered tiles. The progress bar reads Read the map · Move · Yours · Help, with the first segment filled |
+| 1 | On a phone-sized window with no region selected, click the "?" roundel, then "Tour" | The tour opens with no ring, its card across the foot of the screen: "Colour is the day's danger", with the five danger levels as numbered tiles. The progress bar reads Read the map · Move · Yours · Help, with the first segment filled |
 | 2 | Click "Next" | A region near the middle of the map is selected and its sheet opens at the foot of the screen, ringed; the card ("Tap a region") sits above it and the tour stays open |
 | 3 | Click "Next" | The region sheet closes and the selection is dropped (the address bar loses its `#` region). The date control is ringed: "Choose the day" |
 | 4 | Click "Next" | Search, locate and the zoom number are ringed together: "Find your way". The progress bar's current chapter is Move |
@@ -342,6 +342,26 @@ steps in four chapters, the second of which shows a real region
 | 6 | Click "Next" | "Help is always here" rings the "?" roundel, and the button reads "Done" |
 | 7 | Select a region yourself, then repeat steps 1–3 | Step 2 rings that region's sheet rather than choosing another, and on step 3 the region stays selected |
 | 8 | At desktop width, repeat steps 1–3 | Step 2 rings the region chip at the top left instead of a sheet |
+
+### Scenario MS9: Help mode names the controls and keys each sheet
+
+**Goal**: Verify the "?" roundel puts the map into help mode — every
+control named, a tap on one explaining it rather than using it — and that
+a sheet opened in help mode is numbered and keyed (SNOW-1119 — until then
+the "?" only replayed the tour).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | On a phone-sized window, click the "?" roundel | The "?" turns dark. A bar reads "Tap anything to see what it does" with "Tour" and "Done", and every control on screen carries its name in a dark pill beside it. Nothing else opens |
+| 2 | Tap the layers roundel | The layers menu does **not** open. The roundel is ringed, the other names dim, and a card says what layers are for, with "More in Help" and "Open layers" |
+| 3 | Click "More in Help" | `/help/` opens with the Layers topic already expanded and scrolled to |
+| 4 | Go back, enter help mode again, tap the layers roundel's *name*, then "Open layers" | Help mode ends and the layers menu opens |
+| 5 | Enter help mode and tap a region on the map | The tap goes through: the region sheet opens, raised to half height, with numbered badges on its parts and a "What this shows" card keying each number. The bar steps aside |
+| 6 | Click "Got it" | The key and badges go; the bar comes back. Close the sheet and tap another region: the key comes back for the new sheet |
+| 7 | Repeat step 5 on a resort pin, a saved route, and a weather symbol | Each sheet gets its own key: the place sheet, the route rail and the weather sheet |
+| 8 | Press Escape three times with a card open over a keyed sheet | The card closes, then the key, then help mode |
+| 9 | Enter help mode and click "Tour" | Help mode ends and the tour opens on step 1 |
+| 10 | At desktop width, enter help mode | No two names overlap; each sits beside its control, above or below it where the side is taken |
 
 ---
 

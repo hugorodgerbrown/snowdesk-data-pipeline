@@ -33,7 +33,9 @@
  *     the step dispatches 'snowdesk:map-help-release-region' (map.js drops
  *     a selection only the tour made) and closes whatever it opened.
  *   - The "?" roundel (#map-help-toggle) is the way back in: it opens the
- *     tour from step 1, regardless of stored state. Between SNOW-535 and
+ *     tour from step 1, regardless of stored state — except where the page
+ *     renders help mode (#map-help-mode, SNOW-1119), whose bar carries the
+ *     tour instead. Between SNOW-535 and
  *     SNOW-1117 it opened the #home-intro welcome panel instead, which led
  *     into the tour by its own CTA; that panel is gone.
  *   - A 'snowdesk:map-help-requested' CustomEvent opens the tour from step 1
@@ -638,8 +640,11 @@
     }
   });
 
-  if (toggleBtn) {
-    // The deliberate "show me again" affordance.
+  // The deliberate "show me again" affordance — on a page without help
+  // mode. Where #map-help-mode is rendered (map.html, SNOW-1119) the "?"
+  // turns help mode on instead, and the tour is its bar's "Tour" button;
+  // map_help_mode.js takes the roundel's click in the capture phase.
+  if (toggleBtn && !document.getElementById('map-help-mode')) {
     toggleBtn.addEventListener('click', () => open(true));
   }
 

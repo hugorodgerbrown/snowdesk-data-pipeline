@@ -264,6 +264,9 @@ in addition to the shared map assets.
     {# SNOW-1098: the region sheet a map tap opens on a phone. #}
     {% include "public/partials/_region_sheet_surface.html" %}
     {% include "public/partials/_place_sheet_surface.html" %}
+    {# SNOW-1119: help mode — the "?" roundel names every control and guides #}
+    {# the sheets. After the sheets, which its guides describe.               #}
+    {% include "public/partials/_map_help_mode.html" %}
     {# SNOW-588: "Manage downloads" sheet + JS — what this device has     #}
     {# stored offline, what it costs, and a delete. SNOW-634: opened from #}
     {# the map roundel (#map-custom-download-control) now, not the       #}
@@ -536,6 +539,9 @@ in addition to the shared map assets.
     <script defer src="{% static 'js/map_scrubber_reveal.js' %}"></script>
     {# SNOW-457: map help / coachmark tour #}
     <script defer src="{% static 'js/map_help.js' %}"></script>
+    {# SNOW-1119: help mode on the "?" roundel. Its "Tour" button asks       #}
+    {# map_help.js for the tour, so it loads after it.                        #}
+    <script defer src="{% static 'js/map_help_mode.js' %}"></script>
     {# SNOW-344: edit-resorts JS (moved from map.html). #}
     {% if edit_target == "resorts" %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
     {# SNOW-755: edit-locations JS. The core module carries the logic and #}

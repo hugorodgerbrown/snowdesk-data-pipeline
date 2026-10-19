@@ -50,6 +50,17 @@ interface Window {
   pwaSheetDetentsCore: any;
   /** static/js/map_region_panel.js — the loaded pinned-region ids search lists on a phone. */
   pwaPinnedRegions: { ids(): string[]; ready(): Promise<void> };
+  /**
+   * static/js/map_overlay_exclusivity.js — the map's one-overlay-at-a-time
+   * registry. Read by map_help_mode.js (SNOW-1119), which closes them all.
+   */
+  pwaMapOverlays?: {
+    register(name: string, handlers: { close(): void; isOpen?(): boolean }): void;
+    opening(name: string): void;
+    closeAll(): void;
+    openNames(): string[];
+    names(): string[];
+  };
   /** static/js/hatch_core.js — the downloaded-areas hatch image. */
   pwaHatchCore: any;
   /** static/js/map_viewport_core.js — stored-camera restore and clamping. */

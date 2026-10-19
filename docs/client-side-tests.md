@@ -264,6 +264,12 @@ is delegated to CI. Runs `npm ci && npm run test:js` (`vitest run`).
   the latter drops pixel-positioning assertions jsdom's zero-rect
   `getBoundingClientRect` can't support — none of the ported Playwright
   cases asserted on positions anyway).
+- `map_help_mode.js`, `help_topic_anchor.js` — help mode on the "?"
+  roundel: a tapped control shows its card instead of acting, "Open"
+  leaves and acts, a map tap goes through, and a sheet opened in help mode
+  is keyed until "Got it" or it closes; and the `/help/` topic a link
+  names opening on arrival (`test_map_help_mode.js`,
+  `test_help_topic_anchor.js`; what is drawn, not where).
 - `scrubber_core.js` / `basemap_cache_core.js` — pure math extracted from
   `map.js` (season scrubber/timelapse/ribbon) and `sw.js` (fetch
   classification, basemap cache eviction) behind thin delegators, so logic

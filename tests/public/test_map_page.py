@@ -325,6 +325,51 @@ def test_help_tour_reads_the_map_in_four_chapters() -> None:
 
 
 @pytest.mark.django_db
+@override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+@freeze_time("2026-02-17")
+def test_help_mode_names_only_controls_the_page_draws() -> None:
+    """
+    SNOW-1119: every control help mode names, and every sheet it keys, is
+    on the page.
+
+    Help mode finds each control by its selector and draws its name beside
+    it; a control renamed in the template would simply lose its name and
+    its card, with nothing failing. This holds the list to the page. The
+    region chip and its download control live in the season ribbon, which
+    renders only once the season has a rated day.
+    """
+    region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
+    RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 2, 17))
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    assert 'id="map-help-mode"' in content
+    assert "js/map_help_mode.js" in content
+    selectors = re.findall(r'data-(?:control|sheet)="#([\w-]+)"', content)
+    assert len(selectors) == 19
+    missing = [s for s in selectors if f'id="{s}"' not in content]
+    assert missing == []
+
+
+@pytest.mark.django_db
+def test_help_mode_links_each_card_to_a_help_topic() -> None:
+    """
+    SNOW-1119: each card's "More in Help" lands on a topic that exists.
+
+    The cards and sheet guides link to ``/help/#<topic>``; the topic ids
+    are the ``anchor_id`` each collapsible panel on /help/ renders.
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+    help_page = client.get(reverse("public:help")).content.decode()
+
+    topics = set(re.findall(r'data-topic="([\w-]+)"', content))
+    assert topics
+    missing = [t for t in sorted(topics) if f'id="{t}"' not in help_page]
+    assert missing == []
+
+
+@pytest.mark.django_db
 def test_map_page_renders_resorts_legend_entry() -> None:
     """SNOW-78: the danger-scale legend includes a Resorts entry."""
     client = Client()
