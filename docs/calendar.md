@@ -1,8 +1,8 @@
 ---
 name: calendar
-description: RegionDayRating denormalisation and the day_rating v8 aggregation policy feeding the season heatmap season_calendar_partial HTMX fragment
+description: RegionDayRating, day_rating policy, season_calendar_partial heatmap and the resort season strip (season_window, _season_cell)
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-19
 ---
 
 # Calendar and RegionDayRating
@@ -14,6 +14,32 @@ season trigger in the top nav (`includes/nav.html` with
 a server-rendered HTMX fragment backed by a denormalised per-(region,
 date) rating table — no JSON API, no per-day render-model reads at
 request time.
+
+**The resort page's season strip** (SNOW-1126). `/resorts/<slug>/`
+renders the same grid, server-side and inline rather than as a deferred
+fragment, because its text summary is the page's indexable account of the
+season and a crawler never fires the client trigger. The cost is one
+indexed `RegionDayRating.objects.for_region_range` query; there is no
+`{% cache %}` around it, so `apply_bulletin_day_ratings`' invalidation
+has nothing to add.
+- **Window** — `season_window(today)` in `apps/public/season_calendar.py`
+  returns a `SeasonWindow(start, end, label)`: a season runs 1 November
+  to 30 April (`SEASON_OPENS` / `SEASON_CLOSES`), and from 1 May to
+  31 October the window is the season just ended. The start is clamped
+  to `settings.SEASON_START_DATE`; the label is the nominal season's.
+  `build_season_grid(region, today, window=…)` runs from the window's
+  start to the earlier of its end and `today + 1`. Without a `window` the
+  grid is the bulletin page's, unchanged.
+- **Summary** — `summarise_season(grid)` counts the days with a bulletin,
+  the days per level, the days at Considerable or higher, and the peak
+  level with the first day it was reached. A falsy summary (no day with a
+  bulletin) omits the whole section.
+- **Cells** — both grids draw each day through
+  `public/partials/_season_cell.html` (component library slug
+  `season-cell`). The strip passes `inert=True`: no cell links to its
+  day — the danger area is the page's one bulletin link — and each dated
+  cell is `role="img"` with the translated EAWS level name in its
+  `aria-label` and `title`, the same names the bulletin grid now uses.
 
 **Model**: `apps.bulletins.models.RegionDayRating` — one row per
 `(region, calendar day)` with:

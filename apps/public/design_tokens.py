@@ -71,6 +71,7 @@ from apps.public._component_fixtures import (
     ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
+    SEASON_CELL_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
     SEGMENTED_OPTION_VARIANTS,
     SHEET_HEADER_VARIANTS,
@@ -1110,6 +1111,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_season_calendar_demo.html",
         variants=SEASON_CALENDAR_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="season-cell",
+        label="Season cell",
+        description=(
+            "One day of the season heatmap (public/partials/_season_cell.html, "
+            "SNOW-1126) — shared by the bulletin page's grid and the resort "
+            "page's season strip. Fills from data-rating-min/-max, an AM/PM "
+            "split, or ALBINA band spans; labels are the translated EAWS names. "
+            "Linked to the day's bulletin, or inert (role=img, no link) on the "
+            "resort strip. Must render inside [data-testid=season-calendar]."
+        ),
+        kind="components",
+        partial="public/partials/_season_cell_demo.html",
+        variants=SEASON_CELL_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

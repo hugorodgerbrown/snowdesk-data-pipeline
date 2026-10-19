@@ -180,6 +180,54 @@ Context expected (built by ``apps.public.views.resort_detail``):
             </a>
         </div>
 
+        {% comment %}
+            SNOW-1126 — the season strip. The region's danger day by day
+            through the running 1 Nov – 30 Apr season (the one just ended,
+            from May to October), rendered server-side so a crawler reads
+            it. Context from views._resort_season_strip_context:
+            season_strip (SeasonGrid) and season_summary (SeasonSummary,
+            falsy when no day had a bulletin — the section is then omitted).
+            The text summary is both the accessible equivalent of the cells
+            and the indexable content. The grid is the bulletin page's own
+            (_season_calendar.html) with inert=True: no cell links to its
+            day, the danger area above is the page's one bulletin link.
+        {% endcomment %}
+        {% if season_summary %}
+            <section class="mb-6" aria-labelledby="resort-season-heading" data-testid="resort-season">
+                {% translate "Danger through the season" as season_heading_label %}
+                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-season-heading" text=season_heading_label class_extra="mb-2" only %}
+                <p class="mb-2 text-sm text-text-2" data-testid="resort-season-summary">
+                    {% blocktrans with label=season_summary.season_label count days=season_summary.days_with_bulletin trimmed %}
+                        Season {{ label }}: {{ days }} day with a bulletin.
+                    {% plural %}
+                        Season {{ label }}: {{ days }} days with a bulletin.
+                    {% endblocktrans %}
+                    {% blocktrans count days=season_summary.considerable_or_higher trimmed %}
+                        {{ days }} day at Considerable or higher.
+                    {% plural %}
+                        {{ days }} days at Considerable or higher.
+                    {% endblocktrans %}
+                    {% blocktrans with level=season_summary.peak_rating_key|danger_level_digit|danger_level_label day=season_summary.peak_date|date:"j M Y" trimmed %}
+                        Peak: {{ level }} on {{ day }}.
+                    {% endblocktrans %}
+                </p>
+                <ul class="mb-2 flex flex-wrap gap-x-3 text-sm text-text-3" data-testid="resort-season-levels">
+                    {% for key, count in season_summary.level_counts %}
+                        <li data-level="{{ key }}">
+                            {% blocktrans with level=key|danger_level_digit|danger_level_label trimmed count days=count %}
+                                {{ level }}: {{ days }} day
+                            {% plural %}
+                                {{ level }}: {{ days }} days
+                            {% endblocktrans %}
+                        </li>
+                    {% endfor %}
+                </ul>
+                <div class="overflow-x-auto">
+                    {% include "public/partials/_season_calendar.html" with season_calendar=season_strip inert=True %}
+                </div>
+            </section>
+        {% endif %}
+
         <div class="mb-6">
             {% include "favourites/partials/_resort_favourite_button.html" %}
         </div>
