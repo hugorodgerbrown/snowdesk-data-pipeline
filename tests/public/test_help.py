@@ -33,6 +33,8 @@ banners landed, every page extending ``public/base.html`` looks them up
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.db import connection
 from django.test import Client
@@ -464,8 +466,21 @@ class TestHelpCoversTheMapControls:
     def test_each_control_has_a_coachmark_step(
         self, client: Client, control: str
     ) -> None:
+        """The tour rings the control, or names it in a step that does.
+
+        SNOW-1118 folded the four "yours" roundels into one step that rings
+        their capsule and lists them a row each; a row says which roundel it
+        describes with ``data-help-names``.
+        """
         home = client.get(reverse("public:map")).content
-        assert f'data-help-target="#{control}"'.encode() in home, control
+        targets = re.findall(rb'data-help-target="([^"]*)"', home)
+        targeted = any(
+            f"#{control}".encode()
+            in [t.strip() for t in target.replace(b"|", b",").split(b",")]
+            for target in targets
+        )
+        named = f'data-help-names="#{control}"'.encode() in home
+        assert targeted or named, control
 
 
 @pytest.mark.django_db

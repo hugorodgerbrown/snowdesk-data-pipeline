@@ -292,24 +292,36 @@ def test_no_css_rule_draws_the_overlay_shown_marker() -> None:
 
 
 @pytest.mark.django_db
-def test_help_tour_walks_the_control_stack_in_dom_order() -> None:
+def test_help_tour_reads_the_map_in_four_chapters() -> None:
     """
-    The tour walks the bottom-right column top to bottom, as the DOM does.
+    SNOW-1118: seven steps in four chapters, about the map before its buttons.
 
-    The tour is a top-to-bottom walk of the page, so its order is a
-    projection of the DOM's: the map capsule, then the yours capsule, then
-    the chevron. The bulletin-fill roundel's step went with the roundel —
-    the layers step names the opacity row instead.
+    The tour it replaced walked every control in the column in DOM order —
+    thirteen steps that never said what the colours mean or that a region
+    opens. Now it reads the map (the colours, a region, the day), then how
+    to move about it, then what is yours, then where help lives. The three
+    ways of moving share one step, and the "yours" capsule is one step that
+    rings the whole capsule. The bulletin-fill roundel's step went with the
+    roundel — the layers step names the opacity row instead.
     """
     client = Client()
     content = client.get(reverse("public:map")).content.decode()
 
-    steps = re.findall(r'data-help-target="([^"]+)"', content)
-    assert "#map-fill-toggle" not in steps
-    column = [f"#{control}" for control in _MAP_GROUP + _YOURS_GROUP]
-    column.append("#map-controls-toggle")
-    positions = [steps.index(target) for target in column]
-    assert positions == sorted(positions), steps
+    steps = re.findall(
+        r'<li\s+data-help-target="([^"]*)"\s+data-help-chapter="([a-z]+)"', content
+    )
+    assert steps == [
+        ("", "read"),
+        ("#region-sheet | #region-readout", "read"),
+        ("#map-calendar-toggle", "read"),
+        ("#search-toggle, #locate-toggle, #map-zoom-toggle", "move"),
+        ("#basemap-toggle", "move"),
+        ("#map-control-group-yours", "yours"),
+        ("#map-help-toggle", "help"),
+    ]
+    chapters = re.findall(r'<li data-chapter="([a-z]+)">', content)
+    assert chapters == ["read", "move", "yours", "help"]
+    assert "#map-fill-toggle" not in content
 
 
 @pytest.mark.django_db
@@ -1622,25 +1634,21 @@ def test_map_calendar_toggle_sits_on_the_bottom_row_beside_the_scrubber() -> Non
 
 @pytest.mark.django_db
 def test_map_calendar_is_in_the_help_tour() -> None:
-    """The toggle carries a coachmark step, in bottom-left stack order.
+    """The date control has its own step, in the "Read the map" chapter.
 
-    The tour walks the map's chrome in DOM order, so once SNOW-794 moved the
-    calendar into the bottom-left stack its step moved with it: the scrubber
-    is introduced with the rest of the map, then the stack is walked from
-    the top down — help, legend, and the date control on the bottom line.
+    SNOW-1118: the map shows one day at a time, which is part of reading it,
+    so the step sits with the colours and the region rather than at the end
+    of a walk down the bottom-left stack (SNOW-794's order).
     """
     client = Client()
-    response = client.get(reverse("public:map"))
-    content = response.content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
-    steps = re.findall(r'data-help-target="([^"]+)"', content)
-    assert "#map-calendar-toggle" in steps
-    # SNOW-794: the walk follows the bottom-left stack top to bottom — help,
-    # legend, then the date row the calendar toggle sits on. The scrubber
-    # step comes before all three, with the rest of the map chrome.
-    assert steps.index("#season-scrubber") < steps.index("#map-calendar-toggle")
-    assert steps.index("#map-help-toggle") < steps.index("#map-legend-toggle")
-    assert steps.index("#map-legend-toggle") < steps.index("#map-calendar-toggle")
+    step = re.search(
+        r'<li\s+data-help-target="#map-calendar-toggle"\s+data-help-chapter="([a-z]+)"',
+        content,
+    )
+    assert step is not None
+    assert step.group(1) == "read"
 
 
 @pytest.mark.django_db

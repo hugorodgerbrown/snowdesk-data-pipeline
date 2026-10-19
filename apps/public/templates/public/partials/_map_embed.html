@@ -1566,91 +1566,148 @@ Optional context:
     {# + scripts stay in _report_surface.html.                                   #}
     {# SNOW-457: help / coachmark tour — step definitions are server-rendered   #}
     {# as hidden <li> nodes so every string is translatable via {% trans %};   #}
-    {# static/js/map_help.js reads them, drops any step whose data-help-target #}
-    {# is not on screen — no match at all, or matched but not rendered         #}
-    {# (SNOW-794: the scrubber below 640px) — then sequences a highlight ring  #}
-    {# + tooltip over each one. The list is rebuilt on every open, so a step   #}
-    {# the visitor has since collapsed away is re-measured rather than stale.  #}
-    {# localStorage key 'snowdesk.map.help' persists the dismissed state,      #}
-    {# #map-tour-offer reads it too: a finished tour is never offered again.  #}
+    {# static/js/map_help.js reads them and sequences a highlight ring +       #}
+    {# tooltip over each one. localStorage key 'snowdesk.map.help' persists    #}
+    {# the dismissed state; #map-tour-offer reads it too, so a finished tour   #}
+    {# is never offered again.                                                 #}
+    {#                                                                         #}
+    {# SNOW-1118: seven steps in four chapters, about the MAP and not only its #}
+    {# buttons. The tour it replaced walked thirteen controls one by one in    #}
+    {# DOM order and never said what the colours mean or that a region opens.  #}
+    {# What each attribute does (map_help.js reads all of them):               #}
+    {#   data-help-target   one selector, a comma-separated list (one ring     #}
+    {#                      each, the card beside the first), "a | b" for the  #}
+    {#                      first of several that is on screen, or empty for a #}
+    {#                      step about the map itself (no ring, the card sits  #}
+    {#                      at the foot of the screen).                        #}
+    {#   data-help-chapter  the chapter, one of #map-help-chapters' keys; the  #}
+    {#                      progress bar groups the steps by it.               #}
+    {#   data-help-action   "show-region": the tour selects a region itself    #}
+    {#                      (the one at the middle of the map, unless one is   #}
+    {#                      already selected) so the step points at a real     #}
+    {#                      region sheet, and lets it go again on leaving.     #}
+    {#   [data-help-body]   the step's copy; [data-help-extra] is cloned into  #}
+    {#                      the card under it (the scale, the four lists).     #}
+    {# A step whose target is not on screen when the tour opens is dropped     #}
+    {# (the flag-gated roundels; checkVisibility), except an action step,      #}
+    {# whose target only appears once its action has run.                      #}
+    <ol id="map-help-chapters" hidden>
+        <li data-chapter="read">{% trans "Read the map" %}</li>
+        <li data-chapter="move">{% trans "Move" %}</li>
+        <li data-chapter="yours">{% trans "Yours" %}</li>
+        <li data-chapter="help">{% trans "Help" %}</li>
+    </ol>
     <ul id="map-help-steps" hidden>
-        <li data-help-target="#region-readout" data-help-title='{% trans "Region name" %}'>
-            {% trans "Names the selected region and its risk level on the displayed date. Tap it for the region's details and a link to the bulletin." %}
+        <li data-help-target="" data-help-chapter="read" data-help-title='{% trans "Colour is the day’s danger" %}'>
+            <p data-help-body>
+                {% trans "Every region is painted with its avalanche danger level from the day’s bulletin, on the European five-step scale." %}
+            </p>
+            {# The tiles are the region sheet's own .danger-tile, so the scale #}
+            {# the tour teaches is the one the reader meets next.              #}
+            <div data-help-extra>
+                <div class="map-help-scale">
+                    <span class="map-help-scale-level"><span class="danger-tile" data-level="low"
+                        >1</span>{% trans "Low" %}</span>
+                    <span class="map-help-scale-level"><span class="danger-tile" data-level="moderate"
+                        >2</span>{% trans "Moderate" %}</span>
+                    <span class="map-help-scale-level"><span class="danger-tile" data-level="considerable"
+                        >3</span>{% trans "Considerable" %}</span>
+                    <span class="map-help-scale-level"><span class="danger-tile" data-level="high"
+                        >4</span>{% trans "High" %}</span>
+                    <span class="map-help-scale-level"><span class="danger-tile" data-level="very_high"
+                        >5</span>{% trans "Very high" %}</span>
+                </div>
+            </div>
         </li>
-        {# SNOW-522: reworded for the ribbon-header position (it briefly lived  #}
-        {# in the bottom-right stack under SNOW-521) and moved next to          #}
-        {# #region-readout — it follows that chip in the DOM, so walking the    #}
-        {# tour top-to-bottom no longer zig-zags top-left → bottom-right →      #}
-        {# top-left. It is the only roundel left in the header since the        #}
-        {# view-bulletin one was removed.                                       #}
-        <li data-help-target="#map-download-control" data-help-title='{% trans "Download region" %}'>
-            {% trans "Make the selected region available offline." %}
+        {# The phone opens #region-sheet for a selection; a desktop names it  #}
+        {# in the #region-readout chip instead, so the target is whichever of #}
+        {# the two is on screen once the tour has selected the region.        #}
+        <li
+            data-help-target="#region-sheet | #region-readout"
+            data-help-chapter="read"
+            data-help-action="show-region"
+            data-help-title='{% trans "Tap a region" %}'
+        >
+            <p data-help-body>
+                {% trans "Its name and danger level open here. Open it further for the day’s avalanche problems and the link to the full bulletin." %}
+            </p>
         </li>
-        <li data-help-target="#search-toggle" data-help-title='{% trans "Find a region or resort" %}'>
-            {% trans "Search regions and resorts by name." %}
+        <li
+            data-help-target="#map-calendar-toggle"
+            data-help-chapter="read"
+            data-help-title='{% trans "Choose the day" %}'
+        >
+            <p data-help-body>
+                {% trans "The map shows one day at a time. Tap the date for a calendar of the season, coloured by the selected region’s danger." %}
+            </p>
         </li>
-        {# The bottom-right stack, walked top to bottom in DOM order: the "map" #}
-        {# capsule (locate, layers), then the "yours" capsule (favourites,      #}
-        {# field observations, routes, downloads), then the chevron.           #}
-        <li data-help-target="#locate-toggle" data-help-title='{% trans "Locate me" %}'>
-            {% trans "Centre the map on your current position, then tap again to save the area around you for offline use." %}
+        {# Three controls, one step: each is a way of moving the map, and a  #}
+        {# step apiece was most of what made the old tour long.              #}
+        <li
+            data-help-target="#search-toggle, #locate-toggle, #map-zoom-toggle"
+            data-help-chapter="move"
+            data-help-title='{% trans "Find your way" %}'
+        >
+            <p data-help-body>
+                {% trans "Search a region or resort by name. Locate centres the map on you. The number is your zoom: tap it to see what appears as you go closer." %}
+            </p>
         </li>
-        {# The bulletin-opacity control lives in this menu now (it had its own  #}
-        {# roundel and step until the two capsules), so this step names it.    #}
-        <li data-help-target="#basemap-toggle" data-help-title='{% trans "Map detail" %}'>
-            {% trans "Switch base maps, choose what is drawn on the map, and set how strongly the bulletin colours show." %}
+        {# The bulletin-opacity control lives in this menu (it had its own    #}
+        {# roundel until the two capsules), so this step names it.            #}
+        <li data-help-target="#basemap-toggle" data-help-chapter="move" data-help-title='{% trans "Layers" %}'>
+            <p data-help-body>
+                {% trans "Switch the base map, choose what is drawn over it, and set how strongly the danger colours show." %}
+            </p>
         </li>
-        {# SNOW-658: these roundels open a panel that LISTS what the user has  #}
-        {# already saved before offering to add another, and each panel        #}
-        {# carries a "Show on the map" switch for its own layer — so the steps #}
-        {# describe managing, not only adding.                                  #}
-        <li data-help-target="#favourite-add-btn" data-help-title='{% trans "Your favourites" %}'>
-            {% trans "See your saved pins, add another, and show or hide them on the map." %}
+        {# The "yours" capsule as ONE step: four lists of what you have saved, #}
+        {# each with its own Show on the map switch (SNOW-658). The glyphs are #}
+        {# the roundels' own partials, so a row names the button it describes, #}
+        {# and data-help-names says which: tests/public/test_help.py holds    #}
+        {# every roundel to a step that targets or names it.                  #}
+        <li
+            data-help-target="#map-control-group-yours"
+            data-help-chapter="yours"
+            data-help-title='{% trans "Your things" %}'
+        >
+            <p data-help-body>
+                {% trans "Four lists of what you have saved. Each one has a Show on the map switch." %}
+                {% if not favourites_eligible %}
+                    {% trans "Sign in to keep them." %}
+                {% endif %}
+            </p>
+            <div data-help-extra>
+                <ul class="map-help-list">
+                    <li data-help-names="#favourite-add-btn">
+                        {% include "includes/_icon_favourite.html" with size=16 only %}
+                        <span>{% blocktrans trimmed %}<b>Pins</b> places and regions you
+                                follow{% endblocktrans %}</span>
+                    </li>
+                    <li data-help-names="#report-btn">
+                        {% include "includes/_icon_observation.html" with size=16 only %}
+                        <span>{% blocktrans trimmed %}<b>Observations</b> field reports, yours and
+                                others’{% endblocktrans %}</span>
+                    </li>
+                    <li data-help-names="#route-add-btn">
+                        {% include "includes/_icon_route.html" with size=16 only %}
+                        <span>{% blocktrans trimmed %}<b>Routes</b> GPX tracks you upload{% endblocktrans %}</span>
+                    </li>
+                    <li data-help-names="#map-custom-download-control">
+                        {% include "includes/_icon_downloads.html" with size=16 only %}
+                        <span>{% blocktrans trimmed %}<b>Offline</b> maps saved to this device{% endblocktrans %}</span>
+                    </li>
+                </ul>
+            </div>
         </li>
-        <li data-help-target="#report-btn" data-help-title='{% trans "Field observations" %}'>
-            {% trans "See your reports, share a new field observation, and show or hide the community's on the map." %}
-        </li>
-        {# SNOW-686/687 added the routes roundel to the stack without a step  #}
-        {# here, so the one control in the column the tour never named was    #}
-        {# also the one with no section on /help/. Sits between the field-    #}
-        {# observation roundel and downloads, which is its DOM order.         #}
-        <li data-help-target="#route-add-btn" data-help-title='{% trans "Your routes" %}'>
-            {% trans "Upload a GPX track, see the ones you've saved, and show or hide them on the map." %}
-        </li>
-        {# SNOW-522: the custom-area download — last in the "yours" capsule.  #}
-        <li data-help-target="#map-custom-download-control" data-help-title='{% trans "Offline maps" %}'>
-            {% trans "View and manage offline regions, download custom areas and manage storage." %}
-        </li>
-        {# The tour force-opens the collapsible group while it runs, so this   #}
-        {# step lands on a toggle whose chevron is pointing "close".           #}
-        <li data-help-target="#map-controls-toggle" data-help-title='{% trans "Hide the controls" %}'>
-            {% trans "Collapse the controls to clear the map." %}
-        </li>
-        {# SNOW-794: the season scrubber. Absent from the walk in both cases  #}
-        {# where it is absent from the map — off-season (not rendered at all)  #}
-        {# and below 640px (rendered, not drawn) — the first because the <li>  #}
-        {# target matches nothing, the second because map_help.js's buildSteps #}
-        {# now also drops targets with no box.                                 #}
-        <li data-help-target="#season-scrubber" data-help-title='{% trans "Season scrubber" %}'>
-            {% trans "Run through the season day by day. It appears while the map is showing a day inside the season." %}
-        </li>
-        {# The bottom-left stack, walked top to bottom in DOM order — which is #}
-        {# also the order the tour reaches them on screen.                      #}
-        {# The tour explains its own trigger, and this is where a user who has  #}
-        {# just been shown it learns how to get back to it.                     #}
-        <li data-help-target="#map-help-toggle" data-help-title='{% trans "Map help" %}'>
-            {% trans "Take this tour again at any time." %}
-        </li>
-        <li data-help-target="#map-legend-toggle" data-help-title='{% trans "Map information" %}'>
-            {% trans "View attribution and EAWS danger level key." %}
-        </li>
-        {# SNOW-794: ONE step where there were two. #map-date-ribbon had its   #}
-        {# own ("The date currently shown on the map") while                   #}
-        {# #map-calendar-toggle had another — and the two ids now name the     #}
-        {# same control, so keeping both would have highlighted the same pill  #}
-        {# twice in one walk. The copy says both halves of what it does.       #}
-        <li data-help-target="#map-calendar-toggle" data-help-title='{% trans "Map display date" %}'>
-            {% trans "The day the map is showing. Tap it to pick another from a calendar, coloured by the selected region's danger." %}
+        {# The tour explains its own trigger, and this is where a user who has #}
+        {# just been shown it learns how to get back to it.                    #}
+        <li
+            data-help-target="#map-help-toggle"
+            data-help-chapter="help"
+            data-help-title='{% trans "Help is always here" %}'
+        >
+            <p data-help-body>
+                {% trans "Tap ? to take this tour again at any time." %}
+            </p>
         </li>
     </ul>
     {# SNOW-457 (review): aria-describedby points at the step title + body so #}
@@ -1678,7 +1735,7 @@ Optional context:
         {# it would silently override the homepage's opt-out back to True.    #}
         {% if not map_help_autostart|default_if_none:True %}data-map-help-no-autostart{% endif %}
     >
-        <div id="map-help-ring" aria-hidden="true"></div>
+        <div id="map-help-ring" class="map-help-ring" aria-hidden="true"></div>
         {# SNOW-457 (review): no role on the tooltip card itself — role="group" #}
         {# is for a set of related form controls, which this isn't; the outer  #}
         {# #map-help-overlay's role="dialog" already scopes the whole widget.  #}
@@ -1711,10 +1768,17 @@ Optional context:
                     <path d="m6 6 12 12" />
                 </svg>
             </button>
+            {# SNOW-1118: the progress bar — a segment per step, grouped under  #}
+            {# its chapter's name. map_help.js draws it; aria-hidden because    #}
+            {# the step count below says the same thing in words.              #}
+            <div class="map-help-progress" id="map-help-progress" aria-hidden="true" hidden></div>
+            {# Visually hidden once the progress bar is drawn, but still the    #}
+            {# live region a screen reader announces each step from.            #}
             <p class="map-help-tooltip-step" id="map-help-step-count" aria-live="polite"></p>
             <span id="map-help-step-template" hidden>{% trans "Step {n} of {total}" %}</span>
             <h3 class="map-help-tooltip-title" id="map-help-tooltip-title"></h3>
             <p class="map-help-tooltip-body" id="map-help-tooltip-body"></p>
+            <div class="map-help-tooltip-extra" id="map-help-tooltip-extra" hidden></div>
             <div class="map-help-tooltip-actions">
                 <button
                     type="button"

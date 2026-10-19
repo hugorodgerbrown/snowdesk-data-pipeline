@@ -3495,11 +3495,12 @@ html:has(> body.map-fullscreen) > body {
    in src/css/main.css's @theme — lifting them out of #map would detach
    them from the controls they're anchored to. This 0-8 scale is local
    to #map only: 0-4 cover the choropleth/legend/utility-cluster layers
-   above; 5 is #map-tour-offer, 6 is the coachmark ring, 7 is its tooltip,
-   8 is the custom-area download's framing overlay (mask + frame + CTA
-   bar) — deliberately above the coachmark tour, since opening the
-   framing overlay while the tour happens to be open should read as the
-   framing overlay winning, not layering oddly beneath a highlight ring.
+   above; 5 is #map-tour-offer, 8 is the custom-area download's framing
+   overlay (mask + frame + CTA bar). The coachmark tour was 6 and 7 here
+   until SNOW-1118 lifted it above the sheets (see #map-help-overlay
+   below). The framing overlay is reached only from the downloads panel,
+   and that panel closes the tour as it opens (window.pwaMapOverlays), so
+   the two are never on screen together.
    ————————————————————————————————————————————————————————— */
 
 /* —————————————————————————————————————————————————————————
@@ -3702,7 +3703,13 @@ html:has(> body.map-fullscreen) > body {
 #map-help-overlay {
     position: fixed;
     inset: 0;
-    z-index: 6;
+    /* SNOW-1118: above the sheets, not in #map's local 0-8 band. The tour's
+       "Tap a region" step opens the region sheet and points at it, and that
+       sheet sits on the global --z-popup level, outside #map; at 6 the ring
+       and the card slid under it. #map makes no stacking context of its own
+       (z-index auto), so this compares against the sheet directly. Below
+       --z-modal still, so a forced update or reset outranks the tour. */
+    z-index: calc(var(--z-popup) + 1);
     /* The overlay itself never intercepts pointer events — only the
        tooltip card (below) opts back in for its buttons. */
     pointer-events: none;
@@ -3717,7 +3724,10 @@ html:has(> body.map-fullscreen) > body {
     50%      { box-shadow: 0 0 0 7px rgba(0, 0, 0, 0.10); }
 }
 
-#map-help-ring {
+/* SNOW-1118: a class, not the id, because a step that points at several
+   controls (search, locate, zoom) draws a ring round each; map_help.js
+   makes the extra rings beside #map-help-ring. */
+.map-help-ring {
     position: fixed;
     border: 1.5px solid var(--ink);
     box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.22);
@@ -3731,7 +3741,11 @@ html:has(> body.map-fullscreen) > body {
         border-radius 160ms ease;
 }
 
-.map-help--no-motion #map-help-ring {
+.map-help-ring[hidden] {
+    display: none;
+}
+
+.map-help--no-motion .map-help-ring {
     animation: none;
     transition: none;
 }
@@ -3740,7 +3754,9 @@ html:has(> body.map-fullscreen) > body {
     position: fixed;
     z-index: 7;
     pointer-events: auto;
-    max-width: 300px;
+    /* SNOW-1118: a little wider than the 300px it was, for the progress
+       bar's four chapter names, and never wider than the phone it is on. */
+    width: min(340px, calc(100vw - 24px));
     background: var(--color-glass);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
@@ -3830,6 +3846,137 @@ html:has(> body.map-fullscreen) > body {
     line-height: 1.5;
     color: var(--color-text-2);
     margin: 0 0 14px;
+}
+
+/* SNOW-1118: the step count stays the live region a screen reader announces
+   each step from, but the progress bar says it on screen. */
+.map-help-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* SNOW-1118: the progress bar — a segment per step, grouped by chapter, with
+   the chapter's name under its segments. Each chapter's flex-grow is its
+   step count (set by map_help.js), so every segment is the same width. */
+.map-help-progress {
+    display: flex;
+    gap: 6px;
+    margin: 0 0 10px;
+    padding-right: 28px;
+}
+
+.map-help-progress[hidden] {
+    display: none;
+}
+
+.map-help-progress-chapter {
+    flex: 1 1 0;
+    /* A chapter is never narrower than its name: one step's worth of bar is
+       too short for "Yours" once the current chapter's name is bold. */
+    min-width: max-content;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.map-help-progress-segments {
+    display: flex;
+    gap: 3px;
+}
+
+.map-help-progress-segment {
+    flex: 1 1 0;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--color-border);
+}
+
+.map-help-progress-segment[data-state="done"] {
+    background: var(--ink);
+}
+
+.map-help-progress-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--color-text-3);
+}
+
+.map-help-progress-chapter[data-state="current"] .map-help-progress-label {
+    color: var(--color-text-1);
+    font-weight: 600;
+}
+
+/* SNOW-1118: what a step adds under its copy — the danger scale, the four
+   lists of yours. */
+.map-help-tooltip-extra {
+    margin: -4px 0 14px;
+}
+
+.map-help-tooltip-extra[hidden] {
+    display: none;
+}
+
+.map-help-scale {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+}
+
+.map-help-scale-level {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    font-size: 10px;
+    line-height: 1.2;
+    text-align: center;
+    color: var(--color-text-2);
+}
+
+.map-help-scale-level .danger-tile {
+    min-width: 0;
+    height: 1.75rem;
+}
+
+.map-help-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--color-text-2);
+}
+
+.map-help-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.map-help-list svg {
+    flex: 0 0 auto;
+    margin-top: 1px;
+    color: var(--color-text-1);
+}
+
+.map-help-list b {
+    font-weight: 600;
+    color: var(--color-text-1);
 }
 
 /* SNOW-457: Back + Next sit right-aligned. "Skip" moved out to the "×"

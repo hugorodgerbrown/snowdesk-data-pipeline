@@ -254,8 +254,13 @@ coachmark closes
 without persisting `snowdesk.map.help`: being displaced is not the user
 saying "seen", which is what Done / Escape / "×" mean. Registering it is
 safe because every tour step targets map chrome — a roundel, the readout,
-the scrubber — and none targets a panel's contents, so nothing the tour
-closes is a step's own target.
+the date control — with one exception the tour arranges itself. Its "Tap a
+region" step (SNOW-1118) asks map.js to select a region
+(`snowdesk:map-help-show-region`), which on a phone opens the region sheet
+the step points at; the tour ignores the registry's close while it makes
+that request, so the sheet announcing itself does not end the tour.
+Leaving the step sends `snowdesk:map-help-release-region` — map.js drops
+the selection if the tour made it — and closes the sheet.
 
 The map JS reads endpoint URLs from `data-*` attributes on the `#map` element
 (`data-ratings-url`, `data-regions-url`, `data-weather-url`, … — a dozen or so
