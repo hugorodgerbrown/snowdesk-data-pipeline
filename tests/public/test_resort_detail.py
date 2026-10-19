@@ -31,6 +31,7 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
 
 from __future__ import annotations
 
+import html
 import json
 import re
 from typing import Any
@@ -478,6 +479,36 @@ class TestResortSearchTerms:
         description = _meta_description(content)
         assert "Danger today" not in description
         assert "  " not in description
+
+    def test_description_omits_danger_for_a_no_rating_row(self) -> None:
+        """A "no_rating" row exists but has no level, so no danger claim."""
+        resort = ResortFactory.create(name="Adelboden")
+        RegionDayRatingFactory.create(
+            region=resort.region, max_rating=RegionDayRating.Rating.NO_RATING
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        description = _meta_description(content)
+        assert "Danger today" not in description
+        assert "–" not in description
+
+    def test_rated_forecast_description_fits_a_search_snippet(self) -> None:
+        """The longest branch stays inside the ~155-character snippet budget."""
+        region = MicroRegionFactory.create(name="Bernese Oberland")
+        resort = ResortFactory.create(name="Adelboden", region=region)
+        ResortLocationFactory.create(
+            resort=resort,
+            location=LocationFactory.create(name="Adelboden", kind="VILLAGE"),
+            role="BASE",
+        )
+        RegionDayRatingFactory.create(
+            region=region, max_rating=RegionDayRating.Rating.CONSIDERABLE
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert len(html.unescape(_meta_description(content))) <= 155
 
     def test_body_carries_the_conditions_subheading(self) -> None:
         """The target terms appear in the visible page, not only the meta tags."""
