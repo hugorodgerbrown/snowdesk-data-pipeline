@@ -4038,6 +4038,190 @@ html:has(> body.map-fullscreen) > body {
 }
 
 /* —————————————————————————————————————————————————————————
+   SNOW-1119 — Help mode (#map-help-mode, public/partials/_map_help_mode.html)
+   The "?" roundel names every control and guides the sheets. Everything is
+   position: fixed and placed by static/js/map_help_mode.js from the
+   controls' own rectangles, like the tour above. Above the sheets for the
+   tour's reason: a guide numbers the parts of an open sheet. The layer
+   itself takes no taps; only the bar, the cards and the names do.
+   ————————————————————————————————————————————————————————— */
+
+.map-help-mode {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-popup) + 1);
+    pointer-events: none;
+}
+
+.map-help-mode[hidden],
+.map-help-mode [hidden] {
+    display: none;
+}
+
+/* While help mode is on the "?" reads as pressed: the way out is the way in. */
+:root[data-map-help-mode] #map-help-toggle {
+    background: var(--ink);
+    color: var(--on-ink);
+}
+
+.map-help-mode-bar {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(440px, calc(100vw - 24px));
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 6px 6px 16px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--on-ink);
+    box-shadow: var(--shadow-glass);
+    pointer-events: auto;
+}
+
+.map-help-mode-bar-text {
+    flex: 1 1 auto;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.3;
+}
+
+.map-help-mode-bar-btn {
+    flex: 0 0 auto;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    color: inherit;
+    font: 500 13px var(--sans);
+    cursor: pointer;
+}
+
+.map-help-mode-bar-btn--primary {
+    background: var(--on-ink);
+    color: var(--ink);
+}
+
+.map-help-mode-bar-btn:focus-visible {
+    outline: 2px solid var(--on-ink);
+    outline-offset: 2px;
+}
+
+/* A control's name, drawn beside it. Dimmed while another's card is open. */
+.map-help-mode-label {
+    position: fixed;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: 500 12px/1.3 var(--sans);
+    white-space: nowrap;
+    box-shadow: var(--shadow-glass);
+    pointer-events: auto;
+    cursor: pointer;
+    transition: opacity 120ms ease;
+}
+
+.map-help-mode-label[data-state="dim"] {
+    opacity: 0.35;
+}
+
+/* The control card and the sheet guide share the tour card's look. */
+.map-help-mode-card {
+    position: fixed;
+    width: min(320px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    padding: 16px 18px;
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-card, 12px);
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-family: var(--sans);
+    pointer-events: auto;
+}
+
+.map-help-mode-card:focus {
+    outline: none;
+}
+
+.map-help-mode-guide {
+    left: 12px;
+    width: min(420px, calc(100vw - 24px));
+}
+
+.map-help-mode-eyebrow {
+    margin: 0 0 4px;
+    padding-right: 28px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-3);
+}
+
+.map-help-mode-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.map-help-mode-link {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-1);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.map-help-mode-key {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--color-text-2);
+}
+
+.map-help-mode-key li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.map-help-mode-key b {
+    font-weight: 600;
+    color: var(--color-text-1);
+}
+
+/* A number: in the key, and on the part of the sheet it keys. */
+.map-help-mode-badge {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: 600 11px/1 var(--sans);
+}
+
+.map-help-mode-badge--on-sheet {
+    position: fixed;
+    box-shadow: 0 0 0 2px var(--color-card);
+}
+
+/* —————————————————————————————————————————————————————————
    SNOW-522 — Custom-area basemap download framing overlay
    (#map-frame-overlay, public/partials/_map_embed.html)
    A Google-Maps-style dim mask with a fixed, centred frame: the user

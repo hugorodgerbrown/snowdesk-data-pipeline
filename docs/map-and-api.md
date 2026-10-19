@@ -227,9 +227,17 @@ one that forgets to register fails there.
 
 Each panel's own roundel toggles: a second tap closes what the first
 opened, matching the layers pill. The one exception is the help "?"
-roundel, which always re-opens the tour from step 1 — the deliberate "show
-me again" affordance it has had since SNOW-457. (Between SNOW-535 and
-SNOW-1117 it opened the welcome panel instead.)
+roundel, which since SNOW-1119 toggles **help mode** (`_map_help_mode.html`,
+`static/js/map_help_mode.js`): every control named, a tap on one showing a
+card instead of acting, and a sheet opened while it is on keyed with
+numbered badges. Help mode is a mode, not an overlay — it does not register
+with `pwaMapOverlays`; it closes every overlay as it starts and lets taps
+on the map through, so a sheet can open under it. Its bar's "Tour" button
+is now the way into the tour (`snowdesk:map-help-requested`), which
+re-opens from step 1 as the "?" itself did from SNOW-457 to SNOW-1118.
+(Between SNOW-535 and SNOW-1117 the "?" opened the welcome panel.) Each
+control's card and each sheet's key links to its `/help/` topic;
+`static/js/help_topic_anchor.js` opens the collapsed topic the link names.
 
 The tour offer registers because it appears by itself, over a map the
 visitor may already be using: opening any other overlay closes it, and it

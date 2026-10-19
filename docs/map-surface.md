@@ -51,7 +51,11 @@ One generic `map.on('click')` handler decides every tap (map.js, "single
 map click dispatcher"). It stops at the first rule that claims the tap:
 
 1. **On a control over the map** (scrubber, utility cluster, bottom-right
-   roundels, legend, tour offer, help coachmark): ignored.
+   roundels, legend, tour offer, help coachmark): ignored. In help mode
+   (SNOW-1119) a control never gets that far — a capture-phase listener in
+   `map_help_mode.js` takes the tap and shows the control's card — but a
+   tap on the map itself is let through, so the rules below still decide
+   it.
 2. **On a marker** (favourite pin, report point or cluster, a route's line,
    legs or slope segments): the marker is activated. A route tap opens the
    route rail with the point placed where the line was hit; a tap on the
@@ -87,6 +91,11 @@ opens, closes and coexists (CLAUDE.md, design-system rule 6).
 | **Roundel panel** | routes, favourites, reports, downloads lists; region panel | its roundel | full-width docked panel, no detents | its roundel, its ×, another overlay |
 | **Form panel** | field report, terrain filter | a call to action | docked panel, no detents, no drag-to-close | its own buttons, its × |
 | **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, tour offer, resort popup | its toggle | anchored card | a click away, another overlay |
+
+Help mode (SNOW-1119, the "?" roundel) is none of these: it is a layer
+over the whole map that names the controls and keys whichever object sheet
+opens under it. It closes every overlay as it starts and does not register
+with `pwaMapOverlays`, so a sheet opening does not end it.
 
 ### The control column
 
