@@ -3727,6 +3727,12 @@ def version(request: HttpRequest) -> JsonResponse:
     The header itself is sent by ``static/js/pwa_client_version.js``
     (SNOW-388) on every same-origin fetch / HTMX request.
 
+    ``today`` (SNOW-920) is the server's date as ``YYYY-MM-DD``. The map
+    compares it with the day its own page was rendered on and offers a
+    Reload when they differ. It is a function of the clock, not of any
+    request header, and the 60-second edge cache below bounds how far past
+    midnight it can lag.
+
     The response is cacheable at the CDN for 60 seconds because the values
     only change on deploy or on an explicit ops flip — the client itself
     fetches this on cold start and every 15 minutes while active, so a
@@ -3758,6 +3764,14 @@ def version(request: HttpRequest) -> JsonResponse:
             "shell": served_cache_version(),
             "update_required": update_required,
             "update_available": update_available,
+            # SNOW-920: the server's day, in the form the map page renders
+            # as ``#season-scrubber[data-today]`` (``map_page`` uses
+            # ``date.today()`` too, so the two can never disagree on a
+            # server whose zone is not UTC). A page served from the worker's
+            # cache after the network budget ran out carries the day it was
+            # RENDERED on; this is what it is compared with. SNOW-793 keeps
+            # the browser clock out of it.
+            "today": date.today().isoformat(),
             "released_at": settings.APP_RELEASED_AT,
             "kill": bool(settings.SW_KILL),
         }

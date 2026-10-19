@@ -1508,6 +1508,34 @@ Optional context:
                 <span id="map-date-ribbon" class="map-date-ribbon" aria-live="polite" hidden></span>
             </button>
             {% comment %}
+            SNOW-920: shown by static/js/stale_day.js when this page is a cached
+            copy rendered on an earlier day than the server's. It names the day
+            the page is showing and offers a Reload that fetches the shell from
+            the network; nothing reloads by itself. Hidden until the server has
+            said the page is behind, so a fresh page, an offline one and a page
+            on an explicit ?d= never see it.
+            {% endcomment %}
+            <div
+                id="stale-day-notice"
+                class="stale-day-notice"
+                role="status"
+                hidden
+            >
+                <span class="stale-day-label" data-stale-day-label></span>
+                <button
+                    type="button"
+                    class="stale-day-reload hover-affordance"
+                    data-stale-day-reload
+                >
+                    {% trans "Reload" %}
+                </button>
+            </div>
+            {# SNOW-920: the label's copy, read by stale_day.js; the day is   #}
+            {# interpolated by name, never positionally.                      #}
+            <template id="stale-day-strings-template">
+                <span data-string="stale-day-showing">{% blocktrans %}Showing %(day)s{% endblocktrans %}</span>
+            </template>
+            {% comment %}
             The season scrubber (SNOW-47), now a member of this stack rather
             than a full-width bar of its own. It fills the line beside the
             date control, out to the bottom-right column — the strip that

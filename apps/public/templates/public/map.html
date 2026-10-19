@@ -542,6 +542,10 @@ in addition to the shared map assets.
     {# SNOW-1119: help mode on the "?" roundel. Its "Tour" button asks       #}
     {# map_help.js for the tour, so it loads after it.                        #}
     <script defer src="{% static 'js/map_help_mode.js' %}"></script>
+    {# SNOW-920: "Showing 18 Oct · Reload" when a cache-served page's own  #}
+    {# day is behind the server's. Needs pwa_version_check.js (base.html).  #}
+    <script defer src="{% static 'js/stale_day_core.js' %}"></script>
+    <script defer src="{% static 'js/stale_day.js' %}"></script>
     {# SNOW-344: edit-resorts JS (moved from map.html). #}
     {% if edit_target == "resorts" %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
     {# SNOW-755: edit-locations JS. The core module carries the logic and #}

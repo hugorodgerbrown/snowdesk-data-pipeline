@@ -1726,6 +1726,43 @@ html:has(> body.map-fullscreen) > body {
     min-width: 0;
 }
 
+/* SNOW-920: the stale-day notice beside the date control — the day a cached
+   page is showing and a Reload. Same glass pill as the control it sits next
+   to, so it reads as part of the date row rather than as a banner. Hidden
+   until stale_day.js is told the page is behind. */
+.stale-day-notice {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--map-control-sm);
+    padding: 0 6px 0 12px;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.stale-day-notice[hidden] {
+    display: none;
+}
+
+.stale-day-reload {
+    height: calc(var(--map-control-sm) - 8px);
+    padding: 0 10px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--color-text-1);
+    color: var(--color-card);
+    font: inherit;
+    cursor: pointer;
+}
+
 /* SNOW-794: the date control — one pill that both SAYS the day and OPENS
    the picker. The glass pill treatment moved from .map-date-ribbon (which
    was the readout half) onto the button that now wraps it; the readout

@@ -26,10 +26,12 @@ and it fails silently in both directions if they can ever disagree.
 
 from __future__ import annotations
 
+import datetime
 import json
 
 import pytest
 from django.test import Client, override_settings
+from freezegun import freeze_time
 
 from apps.core.sw_shell import served_cache_version
 from config.settings.base import comma_separated_frozenset
@@ -43,7 +45,7 @@ from config.settings.base import comma_separated_frozenset
     SW_KILL=False,
 )
 def test_version_endpoint_returns_expected_shape() -> None:
-    """``/api/version`` returns the full six-field body.
+    """``/api/version`` returns the full seven-field body.
 
     ``update_available`` (SNOW-869) and ``shell`` (SNOW-952) decide whether
     the soft banner appears; the other four are the original spec shape.
@@ -60,6 +62,7 @@ def test_version_endpoint_returns_expected_shape() -> None:
         "shell": served_cache_version(),
         "update_required": False,
         "update_available": False,
+        "today": datetime.date.today().isoformat(),
         "released_at": "2026-07-15T09:00:00+00:00",
         "kill": False,
     }
@@ -305,3 +308,34 @@ def test_sw_config_rejects_post() -> None:
     """``/api/sw-config`` is GET-only — POST returns 405."""
     response = Client().post("/api/sw-config")
     assert response.status_code == 405
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("frozen", "expected"),
+    [
+        ("2026-10-18 23:59:30", "2026-10-18"),
+        ("2026-10-19 00:00:30", "2026-10-19"),
+        ("2026-12-31 23:59:59", "2026-12-31"),
+    ],
+)
+def test_version_endpoint_carries_the_servers_day(frozen: str, expected: str) -> None:
+    """``today`` is the server's date, ISO, and turns over at midnight (SNOW-920).
+
+    The map compares it with the day its own page was rendered on, so it
+    must be the same value ``map_page`` renders as ``data-today``.
+    """
+    with freeze_time(frozen):
+        body = json.loads(Client().get("/api/version").content)
+
+    assert body["today"] == expected
+
+
+@pytest.mark.django_db
+def test_the_servers_day_is_the_one_the_map_page_renders() -> None:
+    """The page's ``data-today`` and the API's ``today`` are one value."""
+    with freeze_time("2026-02-03 12:00:00"):
+        page = Client().get("/map/").content.decode()
+        body = json.loads(Client().get("/api/version").content)
+
+    assert f'data-today="{body["today"]}"' in page
