@@ -66,8 +66,9 @@
  *     release settles at the detent ``pwaSheetDetentsCore.settle`` picks
  *     from the release height and velocity — or closes it, for a drag below
  *     the lowest detent;
- *   - turns a press on the handle (a click, Enter or Space) into a step up
- *     to the next detent, so the three states are reachable without a drag;
+ *   - turns a press on the handle (a click, Enter or Space), or a tap on a
+ *     ``data-sheet-drag`` header away from its controls, into a step up to
+ *     the next detent, so the three states are reachable without a drag;
  *   - after every settle, pads the map camera's bottom edge by the sheet's
  *     height, so a fly-to lands above the sheet rather than behind it. The
  *     map's furniture does not move or fold: the sheet slides up over it.
@@ -401,7 +402,7 @@
 
     /** @type {string|null} */
     var current = null;
-    /** @type {{ id: number, startY: number, startHeight: number, moved: boolean, fromHandle: boolean, samples: Array<{t: number, h: number}> }|null} */
+    /** @type {{ id: number, startY: number, startHeight: number, moved: boolean, samples: Array<{t: number, h: number}> }|null} */
     var drag = null;
     var suppressClick = false;
     boundSheets.push({ el: el, close: opts.onClose });
@@ -640,7 +641,6 @@
         startY: event.clientY,
         startHeight: startHeight,
         moved: false,
-        fromHandle: !!(handle && handle.contains(/** @type {Node} */ (event.target))),
         samples: [{ t: now, h: startHeight }],
       };
     });
@@ -678,10 +678,10 @@
       var finished = drag;
       drag = null;
       if (!finished.moved) return;
-      // Only the handle reads clicks, so only a drag that began on it can
-      // leave one to swallow; a header drag setting this would eat the
-      // reader's next real press of the handle instead.
-      suppressClick = finished.fromHandle;
+      // A drag ends in a click on whatever it began on — the handle or a
+      // header, both of which step the sheet on a click (below) — so it
+      // swallows that one. The next pointerdown clears it either way.
+      suppressClick = true;
       var first = finished.samples[0];
       var last = finished.samples[finished.samples.length - 1];
       var elapsed = last.t - first.t;
@@ -704,16 +704,25 @@
     el.addEventListener('pointerup', endDrag);
     el.addEventListener('pointercancel', endDrag);
 
-    if (handle) {
-      handle.addEventListener('click', function () {
-        if (suppressClick) {
-          suppressClick = false;
-          return;
-        }
-        var next = core.nextDetent(detents, current);
-        if (next) set(next);
-      });
-    }
+    // A press on the handle, or a tap on a header the content marks
+    // draggable (not on a control inside it), steps up a detent and back
+    // to the lowest from the top (2026-10-19). The handle is a 36px bar;
+    // the header is the row a reader actually aims at, and it already
+    // took a drag, so a tap that did nothing read as a sheet that does not
+    // open. The handle is also the keyboard's way in: Enter and Space on
+    // it are clicks.
+    el.addEventListener('click', function (event) {
+      var target = /** @type {Node|null} */ (event.target);
+      var onHandle = !!(handle && target && handle.contains(target));
+      if (!onHandle && (!isPhone() || !isDragSurface(target))) return;
+      if (suppressClick) {
+        suppressClick = false;
+        return;
+      }
+      if (!current) return;
+      var next = core.nextDetent(detents, current);
+      if (next) set(next);
+    });
 
     // Crossing into a phone width with two sheets open (the route panel
     // beside a desktop card) would dock both on the same foot: the first

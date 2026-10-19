@@ -190,6 +190,7 @@
   var renameEl = rail.querySelector('[data-route-rename]');
   var renameInput = rail.querySelector('[data-row-rename-input]');
   var claimEl = rail.querySelector('[data-route-rail-claim]');
+  var hintEl = /** @type {HTMLElement|null} */ (rail.querySelector('[data-route-rail-hint]'));
   // SNOW-1099: the phone sheet's staff-only FULL detent — the point debug
   // readout — and the terrain rows it reads.
   var debugEl = /** @type {HTMLElement|null} */ (rail.querySelector('[data-route-rail-debug]'));
@@ -456,6 +457,11 @@
     // or on the profile) raises it to half, where the point header answers
     // the tap — what the hint at peek promises.
     if (point && detents && detents.current() === 'peek') detents.set('half');
+    // The hint says how to place a point; once one is placed the point
+    // header is the answer, so the hint goes until the point is cleared
+    // (2026-10-19). PEEK is measured to the group around it, so a hidden
+    // hint leaves PEEK at the profile's foot.
+    if (hintEl) hintEl.hidden = point;
     if (point) rail.setAttribute('data-route-rail-point', '');
     else rail.removeAttribute('data-route-rail-point');
   }
