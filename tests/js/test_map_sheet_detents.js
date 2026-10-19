@@ -239,6 +239,73 @@ describe('the map around the sheet', () => {
   });
 });
 
+describe('two sheets on one map (2026-10-19)', () => {
+  /**
+   * Two detent sheets in one document, each attached, plus a MAP whose
+   * jumpTo ends a move synchronously — as MapLibre's does — so a watcher
+   * that answers its own moveend would recurse here as it did on a phone.
+   */
+  function twoSheets() {
+    document.body.innerHTML = `
+      <div id="map"></div>
+      <div id="sheet-a" data-overlay hidden tabindex="-1" data-detents="peek,half" data-detent-initial="half"></div>
+      <div id="sheet-b" data-overlay hidden tabindex="-1" data-detents="peek,half" data-detent-initial="half"></div>
+    `;
+    const a = /** @type {HTMLElement} */ (document.getElementById('sheet-a'));
+    const b = /** @type {HTMLElement} */ (document.getElementById('sheet-b'));
+    stubHeight(a, 400);
+    stubHeight(b, 600);
+    const listeners = { moveend: [] };
+    let padding = { top: 0, bottom: 0, left: 0, right: 0 };
+    let depth = 0;
+    let maxDepth = 0;
+    globalThis.MAP = {
+      getPadding: () => padding,
+      setPadding: (next) => {
+        padding = next;
+      },
+      getContainer: () => ({ clientWidth: 400, clientHeight: 768 }),
+      unproject: ([x, y]) => ({ x, y }),
+      on: (name, fn) => listeners[name].push(fn),
+      jumpTo: (options) => {
+        padding = options.padding;
+        depth += 1;
+        maxDepth = Math.max(maxDepth, depth);
+        if (depth < 50) listeners.moveend.forEach((fn) => fn());
+        depth -= 1;
+      },
+    };
+    return {
+      a,
+      b,
+      ca: window.MapSheet.attach(a),
+      cb: window.MapSheet.attach(b),
+      padding: () => padding,
+      moveend: () => listeners.moveend.forEach((fn) => fn()),
+      maxDepth: () => maxDepth,
+    };
+  }
+
+  it('opening one closes the other, so they never stack', () => {
+    const t = twoSheets();
+    t.ca.open();
+    t.cb.open();
+    expect(t.a.hasAttribute('hidden')).toBe(true);
+    expect(t.b.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('a camera move does not set the sheets fighting over the padding', () => {
+    const t = twoSheets();
+    t.ca.open();
+    t.ca.close();
+    t.cb.open();
+    t.moveend();
+    // One jumpTo answers a move, and its own moveend finds nothing to do.
+    expect(t.maxDepth()).toBeLessThan(3);
+    expect(t.padding().bottom).toBe(384);
+  });
+});
+
 describe('detents the content allows', () => {
   it('skips a detent the content does not allow', async () => {
     const { sheet, handle, controller } = attachSheet('peek,half,full', 'peek');

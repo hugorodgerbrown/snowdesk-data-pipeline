@@ -79,6 +79,14 @@
  *     removed it, and re-fits the resting detent after one, or after any
  *     child changes height in place (a ResizeObserver; never mid-drag).
  *
+ * Two rules hold ACROSS sheets, because every detent sheet docks to the same
+ * foot of the screen (2026-10-19): opening one closes any other that is open
+ * (the route sheet included, which window.pwaMapOverlays does not reach),
+ * and the camera padding and the root's `data-map-sheet` have one writer
+ * here — each sheet reports its lift and detent, and the tallest lift wins,
+ * re-applied by one moveend watcher. Per-sheet watchers used to fight each
+ * other's padding until the stack overflowed and the map stopped answering.
+ *
  * At ``sm`` and up the binding does nothing visible: every height rule is
  * inside a phone media query in static/css/map.css, and the padding and the
  * root mark are reset to nothing. The rules themselves are pure and live in
@@ -244,16 +252,128 @@
     map.jumpTo({ center: centre, padding: next });
   }
 
+  // ONE OWNER FOR WHAT SHEETS DO TO THE PAGE (2026-10-19). Every bound sheet
+  // used to write the camera's bottom padding and the root's
+  // `data-map-sheet` itself, and each kept a moveend watcher that put ITS
+  // padding back when the camera came to rest — a closed sheet's being 0.
+  // With two sheets bound (any session that had opened a route and then a
+  // region), the first camera move set off a loop: one watcher's jumpTo
+  // ended a move, the other's answered it, and so on until the browser's
+  // stack overflowed inside MapLibre's handler manager, which then stopped
+  // answering touches for good. So a sheet now only REPORTS what it needs
+  // (its lift, its detent) and this module writes one answer for all of
+  // them: the tallest lift, from one watcher, which a jumpTo of its own
+  // cannot re-trigger because the second pass finds the padding already
+  // matching.
+
+  /** @type {Map<HTMLElement, number>} The camera lift each open sheet wants. */
+  var lifts = new Map();
+  /** @type {Map<HTMLElement, string>} The detent each open sheet rests at. */
+  var restingDetents = new Map();
+  /** @type {Array<{ el: HTMLElement, close: (function(): void)|undefined }>} */
+  var boundSheets = [];
+  /** The map the shared moveend watcher is on, so a new map gets one too. */
+  var watchedMap = null;
+
+  /**
+   * Forget entries for sheets no longer in the document (a test fixture
+   * replaced, a surface re-rendered), so they cannot hold the padding up.
+   *
+   * @param {Map<HTMLElement, any>} registry
+   */
+  function prune(registry) {
+    registry.forEach(function (_value, el) {
+      if (!el.isConnected) registry.delete(el);
+    });
+  }
+
+  /** Pad the camera's foot by the tallest lift any open sheet wants. */
+  function applyMapPadding() {
+    prune(lifts);
+    var bottom = 0;
+    lifts.forEach(function (lift) {
+      if (lift > bottom) bottom = lift;
+    });
+    padMapBottom(bottom);
+  }
+
+  /**
+   * Record the camera lift one sheet wants (0 for none) and re-apply.
+   *
+   * @param {HTMLElement} el
+   * @param {number} lift
+   */
+  function setLift(el, lift) {
+    if (lift > 0) lifts.set(el, lift);
+    else lifts.delete(el);
+    watchCamera();
+    applyMapPadding();
+  }
+
+  /**
+   * Put the sheets' padding back after a camera move that replaced it.
+   * fitBounds and friends take a padding of their own and leave it on the
+   * map, which would let every later centring land under the sheet; a
+   * deferred write (the camera was moving) lands here too. One watcher per
+   * map, whatever the number of sheets.
+   */
+  function watchCamera() {
+    var map = getMap();
+    if (!map || map === watchedMap || typeof map.on !== 'function') return;
+    watchedMap = map;
+    map.on('moveend', function () {
+      if (!isPhone()) return;
+      applyMapPadding();
+    });
+  }
+
   /**
    * Mark the root with the detent while a detent sheet is open on a phone,
-   * for any rule that needs to know the sheet is up. Nothing on the map
+   * for any rule that needs to know a sheet is up. Nothing on the map
    * moves for it — the sheet slides up over the furniture (Hugo, 16 Oct).
+   * A sheet closing clears only its own entry, so it cannot unmark the root
+   * under another sheet still open.
    *
+   * @param {HTMLElement} el
    * @param {string|null} detent
    */
-  function markSheet(detent) {
-    if (detent) document.documentElement.setAttribute('data-map-sheet', detent);
+  function markSheet(el, detent) {
+    if (detent) {
+      restingDetents.delete(el);
+      restingDetents.set(el, detent);
+    } else {
+      restingDetents.delete(el);
+    }
+    prune(restingDetents);
+    var latest = null;
+    restingDetents.forEach(function (value) {
+      latest = value;
+    });
+    if (latest) document.documentElement.setAttribute('data-map-sheet', latest);
     else document.documentElement.removeAttribute('data-map-sheet');
+  }
+
+  /**
+   * ONE BOTTOM SHEET AT A TIME ON A PHONE (2026-10-19). Every detent sheet
+   * docks to the same foot of the screen, so a second one opening lands on
+   * top of the first — the region sheet's peek sat over the route sheet's.
+   * window.pwaMapOverlays cannot settle this: the route sheet stays out of
+   * it on purpose (route_rail.js, "its own lifetime"), so nothing it
+   * announces would close it and it announces nothing. The rule is stated
+   * here instead, where every detent sheet is bound: opening one closes
+   * every other through its owner's own close, so each teardown runs.
+   *
+   * @param {HTMLElement} el The sheet that is opening.
+   */
+  function closeOtherSheets(el) {
+    if (!isPhone()) return;
+    boundSheets = boundSheets.filter(function (entry) {
+      return entry.el.isConnected;
+    });
+    boundSheets.forEach(function (entry) {
+      if (entry.el === el || entry.el.hasAttribute('hidden') || !entry.close) return;
+      entry.close();
+    });
   }
 
   /**
@@ -284,11 +404,7 @@
     /** @type {{ id: number, startY: number, startHeight: number, moved: boolean, fromHandle: boolean, samples: Array<{t: number, h: number}> }|null} */
     var drag = null;
     var suppressClick = false;
-    // The bottom padding this sheet last gave the camera, or 0. A fit that
-    // passes its own padding (fitBounds) replaces it, so it is put back
-    // when the camera comes to rest.
-    var padded = 0;
-    var watchingCamera = false;
+    boundSheets.push({ el: el, close: opts.onClose });
 
     function isOpen() {
       return !el.hasAttribute('hidden');
@@ -390,36 +506,13 @@
      */
     function applySurroundings() {
       if (!isOpen() || !current || !isPhone()) {
-        markSheet(null);
-        padded = 0;
-        padMapBottom(0);
+        markSheet(el, null);
+        setLift(el, 0);
         return;
       }
-      markSheet(current);
+      markSheet(el, current);
       if (current === 'full') return;
-      var lift = Math.round(heights()[current] + bottomOffset());
-      padded = lift;
-      watchCamera();
-      padMapBottom(lift);
-    }
-
-    /**
-     * Put the sheet's padding back after a camera move that replaced it.
-     * fitBounds and friends take a padding of their own and leave it on the
-     * map, which would let every later centring land under the sheet.
-     * padMapBottom is a no-op when the padding already matches, so its own
-     * jumpTo ends here once and stops.
-     */
-    function watchCamera() {
-      var map = getMap();
-      if (watchingCamera || !map || typeof map.on !== 'function') return;
-      watchingCamera = true;
-      map.on('moveend', function () {
-        if (!isPhone()) return;
-        // Open: put back the sheet's padding (a fit replaced it, or it was
-        // deferred mid-flight). Closed: clear what a deferred close left.
-        padMapBottom(isOpen() ? padded : 0);
-      });
+      setLift(el, Math.round(heights()[current] + bottomOffset()));
     }
 
     /** @param {string} name */
@@ -449,6 +542,7 @@
     }
 
     function open() {
+      closeOtherSheets(el);
       restoreHandle();
       syncAllowed();
       set(/** @type {string} */ (initial));
@@ -457,15 +551,14 @@
     function reset() {
       current = null;
       drag = null;
-      padded = 0;
       suppressClick = false;
       el.removeAttribute('data-detent');
       el.removeAttribute('data-sheet-dragging');
       el.style.removeProperty('--sheet-drag-height');
       el.style.removeProperty('--sheet-half-height');
       el.style.removeProperty('--sheet-full-height');
-      markSheet(null);
-      padMapBottom(0);
+      markSheet(el, null);
+      setLift(el, 0);
     }
 
     /** Re-read the content's `data-sheet-detents`, if it marks one. */
