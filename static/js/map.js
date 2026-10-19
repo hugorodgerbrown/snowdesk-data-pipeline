@@ -9157,9 +9157,22 @@
         return;
       }
 
+      const region = features.find((f) => f.layer.id === 'regions-fill');
+      // A tap on the region already selected, with its phone sheet closed,
+      // reopens the sheet at ANY zoom (2026-10-19): the selection is not
+      // changed, which is the rule past REGION_SELECT_MAXZOOM, but a region
+      // the reader can see outlined is one they can get back to. With the
+      // sheet open the tap falls through as before.
+      const reopensSelected = () =>
+        !!region && region.id === selectedId && !!window.pwaRegionSheet?.reopen?.();
+
       // A region or resort was tapped. Timelapse playback suppresses selection
-      // changes (mirrors the old regions-fill IS_PLAYING guard).
-      if (IS_PLAYING) return;
+      // changes (mirrors the old regions-fill IS_PLAYING guard). Reopening the
+      // selected region's sheet changes no selection, so it still works.
+      if (IS_PLAYING) {
+        if (reopensSelected()) closeMapDetailSurfaces();
+        return;
+      }
 
       // SNOW-499: a resort pin now opens its own minimal popup (name, region,
       // favourite star, bulletin link) instead of proxying to the parent
@@ -9171,7 +9184,10 @@
         return;
       }
 
-      const region = features.find((f) => f.layer.id === 'regions-fill');
+      if (reopensSelected()) {
+        closeMapDetailSurfaces();
+        return;
+      }
       // Past REGION_SELECT_MAXZOOM a region is too big to see, so a tap on
       // one selects nothing and deselects nothing — the region in hand
       // stays in hand (Hugo, 18 Oct). It only closes the place sheet or
