@@ -138,7 +138,7 @@ from .season_calendar import (
     build_season_ribbon,
     season_header,
 )
-from .site_environment import LAUNCH_MARK_ICON, PWAEnvironmentIdentity
+from .site_environment import PWAEnvironmentIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -2310,9 +2310,8 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
     Screenshots stay under ``/static/icons/pwa/screenshots/`` on every
     environment because they show the actual UI, which is identical.
 
-    SNOW-1112: ``background_color`` comes from the same identity (it is
-    the launch shell's first-paint background too), and every icon and
-    screenshot URL goes through the staticfiles storage so it carries a
+    SNOW-1112: ``background_color`` comes from the same identity, and every
+    icon and screenshot URL goes through the staticfiles storage so it carries a
     content hash in a deployed environment. Chrome re-mints an installed
     WebAPK only when a manifest icon URL changes, so an unhashed URL meant
     a redrawn icon never reached anyone who had already installed.
@@ -2353,8 +2352,8 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
         "scope": f"{base}/",
         "display": "standalone",
         # SNOW-878 / SNOW-1112: the colour Chrome paints the generated
-        # Android splash and its status bar in, so it must be the colour the
-        # launch shell paints next. There is no per-scheme mechanism in the
+        # Android splash and its status bar in, which is --color-bg, the
+        # page's own background. There is no per-scheme mechanism in the
         # manifest, so this stays the light value on every platform; the
         # dark launch screen is iOS-only, via the prefers-color-scheme
         # startup images (bin/build-pwa-splash).
@@ -2376,9 +2375,8 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
                 "purpose": "any",
             },
             {
-                # The icon Android draws on its splash, cropped to a circle
-                # — and therefore the one the launch shell draws on top of it.
-                "src": identity.icon_url(LAUNCH_MARK_ICON),
+                # The icon Android draws on its splash, cropped to a circle.
+                "src": identity.icon_url("icon-maskable-512.png"),
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "maskable",
