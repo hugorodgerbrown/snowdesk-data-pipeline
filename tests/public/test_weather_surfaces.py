@@ -4,13 +4,19 @@ tests/public/test_weather_surfaces.py — Tests for the server-rendered weather.
 Four surfaces read a ``Weather`` row and render it (SNOW-761):
 
 * the bulletin masthead, from the region's ``centroid_location``;
-* the resort page, one block per curated ``Location`` linked to the resort;
+* the resort page, a seven-day strip per Base / Mid / Summit point
+  (SNOW-1157 — its own tests are in tests/public/test_resort_detail.py);
 * the favourite detail card, from the pin's own ``Location``;
 * the location forecast page, from one ``Location``.
 
-**Only the last of those draws the week** (SNOW-783). The resort page and
-the favourite card show the day and link out; asserting a day-strip on
-either is asserting the defect this ticket removed.
+**The favourite card shows the day and links out** (SNOW-783); asserting a
+day-strip there is asserting the defect that ticket removed. The resort
+page drew the week again in SNOW-1157, as a strip of summaries that links
+to the location page for everything else.
+
+``includes/_weather_provenance.html`` is shared by the location page (no
+link, a ruled closing line) and the resort strip (a card footer with a
+link); ``TestWeatherProvenance`` pins both shapes.
 
 The assertions below are about what reaches the page, and about the one
 behaviour every surface shares: **no row means no panel, never an error**.
@@ -27,9 +33,11 @@ from __future__ import annotations
 import datetime
 import pathlib
 import re
+from typing import Any
 
 import pytest
 from django.conf import settings
+from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -853,3 +861,62 @@ class TestLocationWeatherCanonicalUrl:
         assert self._canonical(content).endswith(
             f"{location.get_absolute_url()}?date=2026-01-14"
         )
+
+
+class TestWeatherProvenance:
+    """SNOW-1157: one provenance partial, two shapes, and the old one intact."""
+
+    FETCHED = {"fetched_at": datetime.datetime(2026, 1, 12, 18, 5, tzinfo=datetime.UTC)}
+
+    @pytest.fixture(autouse=True)
+    def _utc(self, settings: Any) -> None:
+        """Render times in UTC so "18:05" is the fetch time as written."""
+        settings.TIME_ZONE = "UTC"
+
+    def test_without_a_link_it_is_the_ruled_closing_line(self) -> None:
+        """The location page's caller: one ``<p>``, a hairline, no link."""
+        html = render_to_string(
+            "includes/_weather_provenance.html",
+            {"weather": self.FETCHED, "testid_prefix": "p"},
+        )
+
+        assert re.search(r'<p class="border-t[^"]*" data-testid="p">', html)
+        assert re.search(r"Open-Meteo &middot; updated 18:05", html)
+        assert "<a" not in html
+
+    def test_with_a_link_it_is_a_footer_line_then_the_link(self) -> None:
+        """The resort strip's caller: no hairline, the line, then the link."""
+        html = render_to_string(
+            "includes/_weather_provenance.html",
+            {
+                "weather": self.FETCHED,
+                "testid_prefix": "p",
+                "link_url": "/weather/Ab3dE_fGh1J/",
+                "link_text": "Read the full 7-day forecast →",
+            },
+        )
+
+        assert "border-t" not in html
+        line = html.index('data-testid="p-line"')
+        link = html.index('data-testid="p-link"')
+        assert line < link
+        assert re.search(r"Open-Meteo &middot; updated 18:05", html)
+        assert re.search(
+            r'<a\s+href="/weather/Ab3dE_fGh1J/"[^>]*>Read the full 7-day forecast →</a>',
+            html,
+        )
+
+    def test_with_a_link_and_no_row_it_is_the_link_alone(self) -> None:
+        """No row today: nothing to attribute, but the way on remains."""
+        html = render_to_string(
+            "includes/_weather_provenance.html",
+            {
+                "weather": None,
+                "testid_prefix": "p",
+                "link_url": "/weather/Ab3dE_fGh1J/",
+                "link_text": "Read the full 7-day forecast →",
+            },
+        )
+
+        assert "Open-Meteo" not in html
+        assert 'data-testid="p-link"' in html

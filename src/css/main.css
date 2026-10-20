@@ -1954,6 +1954,80 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   display: flex;
 }
 
+/* —————————————————————————————————————————
+   Resort forecast points (SNOW-1157)
+
+   The resort page's forecast strip shows one of
+   up to three points — Base, Mid, Summit — chosen
+   by a chip. CSS only, for the reason the day
+   picker above gives: this is core content and the
+   whole week of every point is already in the page.
+
+   Markup (public/partials/_resort_forecast.html):
+   the visually hidden radios come FIRST in the
+   card, then the chip group, then one pane per
+   point, all siblings. So `:checked ~` reaches both
+   the chip and the pane — but `~` matches EVERY
+   later sibling, which is why Tailwind's
+   `peer-checked:` cannot do this: it would reveal
+   the checked pane and every pane after it. Each
+   rule pairs one `data-point` index on both ends,
+   capped at three — one per role. A fourth point
+   would fail visibly (its pane never shows), never
+   show the wrong one.
+
+   The pane's default is `display: none`, so an
+   unmatched index shows nothing rather than all.
+   Selection's border is the accent, the weather
+   page's day picker's own checked border; the
+   keyboard ring is the text colour, as on the board.
+   ————————————————————————————————————————— */
+
+.resort-forecast-pane {
+  display: none;
+}
+
+.resort-forecast-point[data-point="0"]:checked
+  ~ .resort-forecast-pane[data-point="0"],
+.resort-forecast-point[data-point="1"]:checked
+  ~ .resort-forecast-pane[data-point="1"],
+.resort-forecast-point[data-point="2"]:checked
+  ~ .resort-forecast-pane[data-point="2"] {
+  display: flex;
+}
+
+.resort-forecast-point[data-point="0"]:checked
+  ~ .resort-forecast-chips
+  label[data-point="0"]
+  .resort-forecast-chip,
+.resort-forecast-point[data-point="1"]:checked
+  ~ .resort-forecast-chips
+  label[data-point="1"]
+  .resort-forecast-chip,
+.resort-forecast-point[data-point="2"]:checked
+  ~ .resort-forecast-chips
+  label[data-point="2"]
+  .resort-forecast-chip {
+  border-color: var(--color-accent);
+  color: var(--color-text-1);
+}
+
+.resort-forecast-point[data-point="0"]:focus-visible
+  ~ .resort-forecast-chips
+  label[data-point="0"]
+  .resort-forecast-chip,
+.resort-forecast-point[data-point="1"]:focus-visible
+  ~ .resort-forecast-chips
+  label[data-point="1"]
+  .resort-forecast-chip,
+.resort-forecast-point[data-point="2"]:focus-visible
+  ~ .resort-forecast-chips
+  label[data-point="2"]
+  .resort-forecast-chip {
+  outline: 2px solid var(--color-text-1);
+  outline-offset: 2px;
+}
+
 
 /* —— Weather condition icon halo (SNOW-791) ——
    Outlines the symbol so it survives a light

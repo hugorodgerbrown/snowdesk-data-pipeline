@@ -263,6 +263,14 @@ class _ElementSource(HTMLParser):
         if self.depth and not self.done:
             self.parts.append(data)
 
+    def handle_entityref(self, name: str) -> None:
+        """Keep a named entity (``&deg;``) inside the capture, as written."""
+        self.handle_data(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        """Keep a numeric entity inside the capture, as written."""
+        self.handle_data(f"&#{name};")
+
 
 def _danger_area(content: str) -> str:
     """Return the markup of ``[data-testid="resort-danger"]`` and its children."""
@@ -524,7 +532,7 @@ def _main_column_order(content: str) -> list[str]:
     """Return the main column's section testids in source order."""
     found = [
         (content.index(f'data-testid="{testid}"'), testid)
-        for testid in ("resort-bulletin", "resort-locations", "resort-season")
+        for testid in ("resort-bulletin", "resort-forecast", "resort-season")
         if f'data-testid="{testid}"' in content
     ]
     return [testid for _, testid in sorted(found)]
@@ -562,7 +570,7 @@ class TestResortSectionOrder:
 
         assert _main_column_order(content) == [
             "resort-bulletin",
-            "resort-locations",
+            "resort-forecast",
             "resort-season",
         ]
 
@@ -573,7 +581,7 @@ class TestResortSectionOrder:
         content = Client().get(resort.get_absolute_url()).content.decode()
 
         assert _main_column_order(content) == [
-            "resort-locations",
+            "resort-forecast",
             "resort-bulletin",
             "resort-season",
         ]
@@ -812,80 +820,9 @@ class TestResortDetailUrl:
         assert str(resort.pk) not in url
 
 
-@pytest.mark.django_db
-class TestResortLocations:
-    """SNOW-807: the resort's curated locations, each a link to its weather page."""
-
-    def test_each_curated_location_links_to_its_weather_page(self) -> None:
-        """Primary first, then role and name; label, role and elevation on the row."""
-        resort = ResortFactory.create(name="Verbier")
-        summit = LocationFactory.create(
-            name="Mont Fort", kind="PEAK", elevation_m=3328.0
-        )
-        village = LocationFactory.create(
-            name="Verbier village", kind="VILLAGE", elevation_m=1500.0
-        )
-        ResortLocationFactory.create(resort=resort, location=summit, role="TOP")
-        ResortLocationFactory.create(
-            resort=resort, location=village, role="BASE", is_primary=True
-        )
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert 'data-testid="resort-locations"' in content
-        first = content.index('data-testid="resort-location-0"')
-        second = content.index('data-testid="resort-location-1"')
-        assert first < second
-        assert f'href="{village.get_absolute_url()}"' in content[first:second]
-        assert "Verbier village" in content[first:second]
-        assert "Base" in content[first:second]
-        assert "1500 m" in content[first:second]
-        assert f'href="{summit.get_absolute_url()}"' in content[second:]
-        assert "3328 m" in content[second:]
-
-    def test_an_anonymous_pin_is_labelled_with_the_resorts_name(self) -> None:
-        """The location link_resort_locations mints has no name of its own."""
-        resort = ResortFactory.create(name="Verbier")
-        ResortLocationFactory.create(
-            resort=resort, location=LocationFactory.create(anonymous=True)
-        )
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert re.search(r'data-testid="resort-location-0-link"\s*>Verbier<', content)
-
-    def test_no_pin_and_no_curated_locations_means_no_section(self) -> None:
-        """An unpinned resort with no links renders no heading over an empty list."""
-        resort = ResortFactory.create()
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert 'data-testid="resort-locations"' not in content
-        assert "Forecasts" not in content
-
-    def test_the_pin_leads_and_is_not_repeated_by_a_link_to_it(self) -> None:
-        """SNOW-1144: the pin comes first; a link reaching the same row is skipped."""
-        resort = ResortFactory.create(name="Verbier", geocoded=True)
-        assert resort.location is not None
-        ResortLocationFactory.create(
-            resort=resort, location=resort.location, role="", is_primary=True
-        )
-        summit = LocationFactory.create(name="Mont Fort")
-        ResortLocationFactory.create(resort=resort, location=summit, role="TOP")
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert content.count(f'href="{resort.location.get_absolute_url()}"') == 1
-        first = content.index('data-testid="resort-location-0"')
-        second = content.index('data-testid="resort-location-1"')
-        assert f'href="{resort.location.get_absolute_url()}"' in content[first:second]
-        assert f'href="{summit.get_absolute_url()}"' in content[second:]
-        assert 'data-testid="resort-location-2"' not in content
-
-
-# SNOW-1125: a fixed winter day. 11:00 UTC is midday in Europe/Zurich and
-# 21:00 UTC is evening on the same local date, so ``timezone.localdate()``
-# (the day the view reads) is TODAY under both.
+# SNOW-1125/1157: a fixed winter day. 11:00 UTC is midday in Europe/Zurich
+# and 21:00 UTC is evening on the same local date, so
+# ``timezone.localdate()`` (the day the view reads) is TODAY under both.
 TODAY = datetime.date(2026, 1, 15)
 MIDDAY = "2026-01-15T11:00:00+00:00"
 EVENING = "2026-01-15T21:00:00+00:00"
@@ -893,11 +830,28 @@ SUNRISE = datetime.datetime(2026, 1, 15, 7, 0, tzinfo=datetime.UTC)
 SUNSET = datetime.datetime(2026, 1, 15, 16, 0, tzinfo=datetime.UTC)
 
 
+def _forecast_day(offset: int, **overrides: Any) -> dict[str, Any]:
+    """Return one ``forecast[]`` entry ``offset`` days after TODAY."""
+    day = TODAY + datetime.timedelta(days=offset)
+    entry: dict[str, Any] = {
+        "date": day.isoformat(),
+        "weather_code": 73,
+        "sunrise": f"{day.isoformat()}T08:00:00+01:00",
+        "sunset": f"{day.isoformat()}T17:00:00+01:00",
+        "temperature_2m_max": -2.0,
+        "temperature_2m_min": -7.0,
+        "snowfall_sum": 0.0,
+    }
+    entry.update(overrides)
+    return entry
+
+
 def _todays_weather(location: Any, **overrides: Any) -> Any:
-    """Create today's Weather row for a location with fixed sun times."""
+    """Create today's Weather row for a location with a six-day forecast."""
     fields: dict[str, Any] = {
         "location": location,
         "observed_on": TODAY,
+        "fetched_at": datetime.datetime(2026, 1, 15, 11, 0, tzinfo=datetime.UTC),
         "sunrise": SUNRISE,
         "sunset": SUNSET,
         "weather_code": 0,
@@ -908,128 +862,394 @@ def _todays_weather(location: Any, **overrides: Any) -> Any:
         "wind_gusts_10m_max": 60.0,
         "wind_direction_10m_dominant": 315.0,
         "freezing_level_height": 1900.0,
+        "forecast": [_forecast_day(offset) for offset in range(1, 7)],
     }
     fields.update(overrides)
     return WeatherFactory.create(**fields)
 
 
-def _resort_with_locations(count: int) -> Resort:
-    """Return a resort with ``count`` linked locations, each with a row today."""
-    resort = ResortFactory.create()
-    for index in range(count):
-        location = LocationFactory.create(
-            name=f"Point {index}", elevation_m=1500.0 + index * 500
-        )
-        ResortLocationFactory.create(
-            resort=resort, location=location, is_primary=index == 0
-        )
-        _todays_weather(location)
-    return resort
+def _section(content: str, testid: str) -> str:
+    """Return the markup of the first ``[data-testid=testid]`` element."""
+    parser = _ElementSource(testid)
+    parser.feed(content)
+    assert parser.done, f"{testid} not found"
+    return "".join(parser.parts)
+
+
+def _role_link(resort: Resort, role: str, **location_fields: Any) -> Any:
+    """Link a new location to ``resort`` in ``role`` and return the location."""
+    location = LocationFactory.create(**location_fields)
+    ResortLocationFactory.create(resort=resort, location=location, role=role)
+    return location
 
 
 @pytest.mark.django_db
-class TestResortLocationWeather:
-    """SNOW-1125: each location row carries today's brief one-day weather."""
+class TestResortForecastPoints:
+    """SNOW-1157: Base / Mid / Summit, from the roles, the pin standing in for Base."""
 
-    @freeze_time(MIDDAY)
-    def test_a_pinned_resort_with_no_curated_locations_shows_its_pins_weather(
+    def test_one_chip_per_role_in_base_mid_summit_order(self) -> None:
+        """Each role's location is a chip, in that order, with its elevation."""
+        resort = ResortFactory.create(name="Verbier")
+        _role_link(resort, "TOP", name="Mont Fort", elevation_m=3329.6)
+        _role_link(resort, "BASE", name="Verbier village", elevation_m=1494.0)
+        _role_link(resort, "MID", name="Les Ruinettes", elevation_m=2200.0)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        chips = _section(content, "resort-forecast-chips")
+        base = chips.index('data-testid="resort-forecast-chip-base"')
+        mid = chips.index('data-testid="resort-forecast-chip-mid"')
+        top = chips.index('data-testid="resort-forecast-chip-top"')
+        assert base < mid < top
+        text = re.sub(r"\s+", " ", chips)
+        assert "Base · 1,494 m" in text
+        assert "Mid · 2,200 m" in text
+        assert "Summit · 3,330 m" in text
+
+    def test_the_chips_are_a_labelled_group_of_radios_with_base_checked(
         self,
     ) -> None:
-        """SNOW-1144: the pin Location is listed, with today's weather, unaided."""
+        """Hidden radios share a name; the first point is checked; no script."""
+        resort = ResortFactory.create()
+        _role_link(resort, "BASE", elevation_m=1500.0)
+        _role_link(resort, "TOP", elevation_m=3000.0)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        section = _section(content, "resort-forecast")
+        radios = re.findall(r"<input[^>]*>", section)
+        assert len(radios) == 2
+        assert all('name="resort-forecast-point"' in radio for radio in radios)
+        assert "checked" in radios[0]
+        assert "checked" not in radios[1]
+        assert 'role="group"' in section
+        assert 'aria-label="Forecast location"' in section
+        assert 'for="resort-forecast-point-0"' in section
+        assert "<script" not in section
+
+    def test_the_pin_stands_in_for_base(self) -> None:
+        """No BASE link: the resort's own pin is the Base point."""
         resort = ResortFactory.create(name="Ovronnaz", geocoded=True)
         assert resort.location is not None
-        assert not resort.resort_locations.exists()
+        _role_link(resort, "TOP", elevation_m=2500.0)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        pane = _section(content, "resort-forecast-pane-base")
+        assert f'href="{resort.location.get_absolute_url()}"' in pane
+        assert 'data-testid="resort-forecast-chip-top"' in content
+        assert 'data-testid="resort-forecast-chip-mid"' not in content
+
+    def test_a_base_link_beats_the_pin(self) -> None:
+        """A curated BASE location is the Base point, not the pin."""
+        resort = ResortFactory.create(geocoded=True)
+        assert resort.location is not None
+        village = _role_link(resort, "BASE", elevation_m=1500.0)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        pane = _section(content, "resort-forecast-pane-base")
+        assert f'href="{village.get_absolute_url()}"' in pane
+        assert resort.location.get_absolute_url() not in content
+
+    def test_the_primary_link_leads_within_a_role(self) -> None:
+        """Two TOP links: the primary one is the Summit point."""
+        resort = ResortFactory.create()
+        _role_link(resort, "TOP", name="Aaa peak")
+        primary = LocationFactory.create(name="Zzz peak")
+        ResortLocationFactory.create(
+            resort=resort, location=primary, role="TOP", is_primary=True
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        pane = _section(content, "resort-forecast-pane-top")
+        assert f'href="{primary.get_absolute_url()}"' in pane
+        assert content.count('data-testid="resort-forecast-chip-top"') == 1
+
+    def test_a_single_point_is_still_one_chip(self) -> None:
+        """A resort with only a pin shows a Base chip over its strip."""
+        resort = ResortFactory.create(geocoded=True)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-forecast-chip-base"' in content
+        assert content.count("<label") >= 1
+        assert 'data-testid="resort-forecast-chip-mid"' not in content
+        assert 'data-testid="resort-forecast-chip-top"' not in content
+
+    def test_unknown_elevation_omits_the_elevation(self) -> None:
+        """A chip reads just its role when the elevation is not resolved."""
+        resort = ResortFactory.create()
+        _role_link(resort, "MID", elevation_m=None)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        chip = _section(content, "resort-forecast-chip-mid")
+        assert re.sub(r"<[^>]+>|\s+", "", chip) == "Mid"
+
+    def test_a_blank_role_link_is_not_a_point(self) -> None:
+        """A role-less link names no altitude: no chip, and alone no section."""
+        resort = ResortFactory.create()
+        ResortLocationFactory.create(
+            resort=resort, location=LocationFactory.create(anonymous=True), role=""
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-forecast"' not in content
+
+    def test_no_pin_and_no_role_links_means_no_section(self) -> None:
+        """An unpinned resort with no links renders no Forecast section."""
+        resort = ResortFactory.create()
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-forecast"' not in content
+        assert "Forecast •" not in content
+
+    def test_the_old_location_list_is_gone(self) -> None:
+        """SNOW-807's list of links with one-day rows is replaced."""
+        resort = ResortFactory.create(geocoded=True)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-locations"' not in content
+        assert "resort-location-0" not in content
+        assert "weather-panel" not in content
+
+
+@pytest.mark.django_db
+class TestResortForecastStrip:
+    """SNOW-1157: seven tiles per point, today first, from one row."""
+
+    @freeze_time(MIDDAY)
+    def test_eyebrow_names_the_forecast_and_today(self) -> None:
+        """The h2 reads "Forecast • Thursday 15 January"."""
+        resort = ResortFactory.create(geocoded=True)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert re.search(
+            r'<h2[^>]*id="resort-forecast-point-heading"[^>]*>'
+            r"\s*Forecast • Thursday 15 January\s*</h2>",
+            content,
+        )
+
+    @freeze_time(MIDDAY)
+    def test_seven_tiles_today_first(self) -> None:
+        """Today's tile leads with Max / Min / New snow; six days follow."""
+        resort = ResortFactory.create(geocoded=True)
+        assert resort.location is not None
         _todays_weather(resort.location)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        assert 'data-testid="resort-locations"' in content
-        row = content[content.index('data-testid="resort-location-0"') :]
-        row = row[: row.index("</li>")]
-        assert f'href="{resort.location.get_absolute_url()}"' in row
-        assert re.search(r'data-testid="resort-location-0-link"\s*>Ovronnaz<', row)
-        assert 'data-testid="resort-location-0-weather-panel"' in row
+        pane = _section(content, "resort-forecast-pane-base")
+        today = pane.index('data-testid="resort-forecast-today"')
+        assert pane.count('data-testid="resort-forecast-today"') == 1
+        assert pane.count('data-testid="resort-forecast-day"') == 6
+        assert today < pane.index('data-testid="resort-forecast-day"')
+        tile = _section(pane, "resort-forecast-today")
+        assert "<dl" in tile
+        for label in ("Max", "Min", "New snow"):
+            assert re.search(rf"<dt[^>]*>\s*{label}\s*</dt>", tile)
+        assert "4&deg;" in tile
+        assert "-6&deg;" in tile
+        assert "12 cm" in tile
+        assert "clear-day.svg" in tile
+        dates = re.findall(r'data-date="([\d-]+)"', pane)
+        assert dates == [
+            (TODAY + datetime.timedelta(days=offset)).isoformat() for offset in range(7)
+        ]
 
     @freeze_time(MIDDAY)
-    def test_a_location_with_todays_row_shows_its_day(self) -> None:
-        """Condition, high/low, snowfall and wind beside the forecast link."""
-        resort = ResortFactory.create()
-        location = LocationFactory.create(name="Mont Fort", elevation_m=3328.0)
-        ResortLocationFactory.create(resort=resort, location=location)
-        _todays_weather(location)
+    def test_the_other_tiles_show_day_icon_high_low_and_snow(self) -> None:
+        """An unlabelled tile: weekday, icon, high, low and new snow."""
+        resort = ResortFactory.create(geocoded=True)
+        assert resort.location is not None
+        _todays_weather(
+            resort.location,
+            forecast=[_forecast_day(1, snowfall_sum=8.4, temperature_2m_max=-1.6)],
+        )
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        row = content[content.index('data-testid="resort-location-0"') :]
-        row = row[: row.index("</li>")]
-        assert f'href="/weather/{location.short_id}/"' in row
-        assert 'data-testid="resort-location-0-weather-panel"' in row
-        assert "clear-day.svg" in row
-        assert "Clear" in row
-        assert "4&deg;" in row
-        assert "-6&deg;" in row
-        assert "12 cm" in row
-        assert 'data-testid="resort-location-0-weather-wind"' in row
-        assert "35 gusting 60 km/h" in row
+        tile = _section(content, "resort-forecast-day")
+        assert re.search(r">\s*Fri\s*<", tile)
+        assert "moderate_snow.svg" in tile
+        assert "-2&deg;" in tile
+        assert "-7&deg;" in tile
+        assert "8 cm" in tile
+        assert "<dt" not in tile
 
     @freeze_time(MIDDAY)
-    def test_freezing_level_and_sun_times_are_left_to_the_forecast_page(
-        self,
-    ) -> None:
-        """The brief panel drops what belongs to the location's own page."""
-        resort = _resort_with_locations(1)
+    def test_zero_new_snow_reads_zero_cm(self) -> None:
+        """0 cm is a statement on an avalanche page, never a blank."""
+        resort = ResortFactory.create(geocoded=True)
+        assert resort.location is not None
+        _todays_weather(
+            resort.location,
+            snowfall_sum=0.0,
+            forecast=[_forecast_day(1, snowfall_sum=0.0)],
+        )
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        assert 'data-testid="resort-location-0-weather-panel"' in content
-        assert "freezing-level" not in content
-        assert "1900 m" not in content
-        assert "icons/weather/sunrise" not in content
-        assert "07:00" not in content
+        assert re.search(r">\s*0 cm\s*<", _section(content, "resort-forecast-today"))
+        assert re.search(r">\s*0 cm\s*<", _section(content, "resort-forecast-day"))
 
     @freeze_time(MIDDAY)
-    def test_a_location_with_no_row_today_keeps_its_link_alone(self) -> None:
-        """Yesterday's row is not today's: the link renders, no panel."""
+    def test_a_short_forecast_renders_what_exists(self) -> None:
+        """Two forward days: three tiles, no padding."""
+        resort = ResortFactory.create(geocoded=True)
+        assert resort.location is not None
+        _todays_weather(resort.location, forecast=[_forecast_day(1), _forecast_day(2)])
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        pane = _section(content, "resort-forecast-pane-base")
+        assert pane.count('data-testid="resort-forecast-today"') == 1
+        assert pane.count('data-testid="resort-forecast-day"') == 2
+
+    @freeze_time(MIDDAY)
+    def test_a_backfilled_row_is_today_alone(self) -> None:
+        """``forecast=None`` (a backfilled row) is one tile, not an error."""
+        resort = ResortFactory.create(geocoded=True)
+        assert resort.location is not None
+        _todays_weather(resort.location, forecast=None)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        pane = _section(content, "resort-forecast-pane-base")
+        assert pane.count('data-testid="resort-forecast-today"') == 1
+        assert 'data-testid="resort-forecast-day"' not in pane
+
+    @freeze_time(MIDDAY)
+    def test_a_longer_window_is_capped_at_seven(self) -> None:
+        """Eight forward days still draw seven tiles."""
+        resort = ResortFactory.create(geocoded=True)
+        assert resort.location is not None
+        _todays_weather(
+            resort.location, forecast=[_forecast_day(offset) for offset in range(1, 9)]
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert content.count('data-testid="resort-forecast-day"') == 6
+
+    @freeze_time(MIDDAY)
+    def test_each_tile_is_a_group_with_a_spoken_summary(self) -> None:
+        """Today's label leads with "Today,"; the others name their weekday."""
+        resort = ResortFactory.create(geocoded=True)
+        assert resort.location is not None
+        _todays_weather(resort.location, forecast=[_forecast_day(1)])
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        today = _section(content, "resort-forecast-today")
+        day = _section(content, "resort-forecast-day")
+        assert 'role="group"' in today
+        assert 'role="group"' in day
+        assert (
+            'aria-label="Today, Thursday, clear, high 4°, low -6°, 12 cm new snow"'
+            in today
+        )
+        assert 'aria-label="Friday, snow, high -2°, low -7°, 0 cm new snow"' in day
+        assert 'alt=""' in day
+
+    @freeze_time(MIDDAY)
+    def test_missing_temperatures_drop_out_of_the_summary(self) -> None:
+        """A dropped variable reads "—" and is left out of the label."""
+        resort = ResortFactory.create(geocoded=True)
+        assert resort.location is not None
+        _todays_weather(
+            resort.location,
+            forecast=[
+                _forecast_day(
+                    1,
+                    temperature_2m_max=None,
+                    temperature_2m_min=None,
+                    snowfall_sum=None,
+                )
+            ],
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        day = _section(content, "resort-forecast-day")
+        assert 'aria-label="Friday, snow"' in day
+        assert day.count("&mdash;") == 3
+
+    @freeze_time(EVENING)
+    def test_after_sunset_today_draws_the_night_icon(self) -> None:
+        """The day/night decision reads the request's own instant."""
+        resort = ResortFactory.create(geocoded=True)
+        assert resort.location is not None
+        _todays_weather(resort.location)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert "clear-night.svg" in _section(content, "resort-forecast-today")
+
+    @freeze_time(MIDDAY)
+    def test_each_pane_carries_its_own_attribution_and_link(self) -> None:
+        """The attribution line and the point's own forecast link, per pane."""
         resort = ResortFactory.create()
-        location = LocationFactory.create(name="Mont Fort")
-        ResortLocationFactory.create(resort=resort, location=location)
+        base = _role_link(resort, "BASE", elevation_m=1500.0)
+        top = _role_link(resort, "TOP", elevation_m=3000.0)
+        _todays_weather(base)
+        _todays_weather(top)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        for role, location in (("base", base), ("top", top)):
+            pane = _section(content, f"resort-forecast-pane-{role}")
+            footer = _section(pane, f"resort-forecast-provenance-{role}")
+            assert re.search(r"Open-Meteo &middot; updated \d\d:\d\d", footer)
+            link = _section(footer, f"resort-forecast-provenance-{role}-link")
+            assert f'href="/weather/{location.short_id}/"' in link
+            assert "Read the full 7-day forecast →" in link
+
+    @freeze_time(MIDDAY)
+    def test_a_point_with_no_row_today_says_so_and_keeps_its_link(self) -> None:
+        """Yesterday's row is not today's: "No forecast yet." and the link."""
+        resort = ResortFactory.create()
+        location = _role_link(resort, "BASE")
         _todays_weather(location, observed_on=datetime.date(2026, 1, 14))
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        assert 'data-testid="resort-location-0-link"' in content
-        assert f'href="{location.get_absolute_url()}"' in content
-        assert "resort-location-0-weather" not in content
-        assert "weather-panel" not in content
-
-    @freeze_time(EVENING)
-    def test_after_sunset_the_night_icon_is_drawn(self) -> None:
-        """The day/night decision reads the request's own instant."""
-        resort = _resort_with_locations(1)
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert "clear-night.svg" in content
-        assert "clear-day.svg" not in content
-        assert 'data-time-of-day="night"' in content
+        pane = _section(content, "resort-forecast-pane-base")
+        assert "No forecast yet." in pane
+        assert "resort-forecast-today" not in pane
+        assert "Open-Meteo" not in pane
+        assert f'href="{location.get_absolute_url()}"' in pane
 
     @freeze_time(MIDDAY)
-    def test_the_query_count_does_not_grow_with_the_locations(
+    def test_the_query_count_does_not_grow_with_the_points(
         self, django_assert_num_queries: Any
     ) -> None:
-        """One batched Weather read, whatever the number of locations."""
-        one = _resort_with_locations(1)
-        three = _resort_with_locations(3)
+        """One batched Weather read, whatever the number of points."""
+
+        def resort_with(roles: tuple[str, ...]) -> Resort:
+            resort = ResortFactory.create()
+            for role in roles:
+                _todays_weather(_role_link(resort, role))
+            return resort
+
+        one = resort_with(("BASE",))
+        three = resort_with(("BASE", "MID", "TOP"))
         client = Client()
         # Warm any per-process caches (waffle flags, content types) first.
-        client.get(_resort_with_locations(2).get_absolute_url())
+        client.get(resort_with(("MID",)).get_absolute_url())
 
         with CaptureQueriesContext(connection) as single:
             client.get(one.get_absolute_url())
         with django_assert_num_queries(len(single.captured_queries)):
             content = client.get(three.get_absolute_url()).content.decode()
 
-        assert content.count("-weather-panel") == 3
+        assert content.count('data-testid="resort-forecast-today"') == 3
 
 
 def _meta_description(content: str) -> str:
@@ -1059,14 +1279,11 @@ class TestResortMetaDescription:
         assert "forecast" in description
         assert "village, mid-station and summit" not in description
 
-    def test_a_blank_role_location_promises_forecasts_without_naming_tiers(
+    def test_a_pinned_resort_promises_forecasts_without_naming_tiers(
         self,
     ) -> None:
-        """An auto-linked resort has no roles, so it can name no tiers either."""
-        resort = ResortFactory.create(name="Verbier")
-        ResortLocationFactory.create(
-            resort=resort, location=LocationFactory.create(anonymous=True), role=""
-        )
+        """SNOW-1157: the pin alone is a Base point, so the forecast is promised."""
+        resort = ResortFactory.create(name="Verbier", geocoded=True)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
@@ -1074,8 +1291,20 @@ class TestResortMetaDescription:
         assert "forecast" in description
         assert "village, mid-station and summit" not in description
 
+    def test_a_blank_role_link_alone_claims_no_forecast(self) -> None:
+        """SNOW-1157: a role-less link is no point, so nothing is promised."""
+        resort = ResortFactory.create(name="Verbier")
+        ResortLocationFactory.create(
+            resort=resort, location=LocationFactory.create(anonymous=True), role=""
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert "forecast" not in _meta_description(content)
+        assert "weather" not in _page_title(content)
+
     def test_no_locations_names_the_bulletin_and_claims_no_forecast(self) -> None:
-        """No Forecasts section means no forecast promise in the description."""
+        """No Forecast section means no forecast promise in the description."""
         region = MicroRegionFactory.create(name="Val de Bagnes")
         # Unpinned: since SNOW-1144 a pinned resort always lists its pin.
         resort = ResortFactory.create(name="Verbier", region=region)
@@ -1439,7 +1668,7 @@ class TestResortHeader:
             'data-testid="resort-danger"'
         )
         assert content.index('data-testid="resort-facts"') > content.index(
-            'data-testid="resort-locations"'
+            'data-testid="resort-forecast"'
         )
 
 

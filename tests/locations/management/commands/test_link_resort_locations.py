@@ -175,19 +175,24 @@ class TestAPinnedResortGetsWeather:
         body = response.content.decode()
 
         assert response.status_code == 200
-        assert 'data-testid="resort-locations"' in body
+        assert 'data-testid="resort-forecast"' in body
         assert f'href="{resort.location.get_absolute_url()}"' in body
 
-    def test_the_link_is_labelled_with_the_resort_name(self, client: Client) -> None:
-        """An anonymous location must not put raw coordinates on the page."""
+    def test_the_pin_is_the_base_chip_not_its_coordinates(self, client: Client) -> None:
+        """An anonymous location must not put raw coordinates on the page.
+
+        SNOW-1157: the pin is the forecast strip's Base point, named by its
+        role rather than by the location.
+        """
         resort = _legacy_resort(name="Verbier", base_elevation_m=1494)
         call_command(COMMAND, "--commit", stdout=StringIO())
 
         body = client.get(resort.get_absolute_url()).content.decode()
 
-        link_markup = body.split('data-testid="resort-location-0-link"')[1][:200]
-        assert ">Verbier</a>" in link_markup
-        assert "46.1" not in link_markup
+        section = body[body.index('data-testid="resort-forecast"') :]
+        section = section[: section.index("</section>")]
+        assert 'data-testid="resort-forecast-chip-base"' in section
+        assert "46.1" not in section
 
 
 @pytest.mark.django_db
