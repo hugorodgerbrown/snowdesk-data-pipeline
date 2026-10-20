@@ -689,11 +689,16 @@
     // The terrain rows load the first time the sheet reaches FULL for a
     // route, never before: most opens never go there. Leaving FULL puts the
     // sheet's scroll back at the top; map.css hides the data below full.
-    // A drag reaches FULL as the terrain slope line does, so the line's
-    // expanded state follows the detent rather than its own presses.
+    // A drag reaches FULL as the terrain slope line does, so the open mark
+    // follows the detent rather than the line's own presses.
     new MutationObserver(function () {
-      if (rail.getAttribute('data-detent') === 'full') loadTerrain();
-      else rail.scrollTop = 0;
+      if (rail.getAttribute('data-detent') === 'full') {
+        rail.setAttribute('data-route-terrain-open', '');
+        loadTerrain();
+      } else {
+        rail.removeAttribute('data-route-terrain-open');
+        rail.scrollTop = 0;
+      }
       paintTerrainToggle();
     }).observe(rail, { attributes: true, attributeFilter: ['data-detent'] });
   }
@@ -707,15 +712,30 @@
   // segment under the point, so the two cannot disagree.
 
   /**
-   * Whether the terrain data is showing: FULL on a phone; the card's own
-   * open mark from sm up.
+   * Whether the terrain data is showing. One mark,
+   * `data-route-terrain-open`, on both sides of the breakpoint: a phone
+   * sheet sets it at FULL and clears it below, the card sets it on a
+   * press, so the state survives a rotation or a resize across 640px.
    *
    * @returns {boolean}
    */
   function terrainShown() {
-    if (isSheet()) return rail.getAttribute('data-detent') === 'full';
     return rail.hasAttribute('data-route-terrain-open');
   }
+
+  /**
+   * Bring a phone sheet into line with the open mark after the panel
+   * crosses the breakpoint: data opened in the desktop card needs the
+   * sheet at FULL, where map.css shows it. The other way needs nothing,
+   * since the card reads the mark the sheet left.
+   */
+  function reconcileTerrain() {
+    if (rail.hidden || !detents || !isSheet()) return;
+    if (terrainShown() && rail.getAttribute('data-detent') !== 'full') detents.set('full');
+    paintTerrainToggle();
+  }
+
+  window.addEventListener('resize', reconcileTerrain);
 
   /** Mark the terrain slope line expanded while the data shows. */
   function paintTerrainToggle() {
@@ -731,13 +751,9 @@
    */
   function showTerrain(show) {
     if (!terrainEl || !current.uuid) return;
-    if (isSheet() && detents) {
-      detents.set(show ? 'full' : 'half');
-    } else if (show) {
-      rail.setAttribute('data-route-terrain-open', '');
-    } else {
-      rail.removeAttribute('data-route-terrain-open');
-    }
+    if (show) rail.setAttribute('data-route-terrain-open', '');
+    else rail.removeAttribute('data-route-terrain-open');
+    if (isSheet() && detents) detents.set(show ? 'full' : 'half');
     if (show) loadTerrain();
     paintTerrainToggle();
   }

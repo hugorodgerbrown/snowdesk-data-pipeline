@@ -358,6 +358,28 @@ describe('the terrain slope line reveals the data', () => {
     expect(toggle().getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('keeps the data open when a phone at full turns to a desktop width', async () => {
+    window.pwaRouteRail.open(feature());
+    toggle().click();
+    await settle();
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    window.dispatchEvent(new Event('resize'));
+    expect(rail.hasAttribute('data-route-terrain-open')).toBe(true);
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('raises the sheet to full when a desktop-open card turns to a phone width', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    window.pwaRouteRail.open(feature());
+    toggle().click();
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    window.dispatchEvent(new Event('resize'));
+    await settle();
+    expect(rail.getAttribute('data-detent')).toBe('full');
+    expect(rail.hasAttribute('data-route-terrain-open')).toBe(true);
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('offers nothing for a pending share, which has no rows', () => {
     const pending = feature();
     delete pending.properties.uuid;
