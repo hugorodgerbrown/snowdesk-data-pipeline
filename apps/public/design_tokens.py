@@ -65,6 +65,7 @@ from apps.public._component_fixtures import (
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
     REGION_TOOLTIP_VARIANTS,
+    RESORT_BULLETIN_CARD_VARIANTS,
     RESORT_FACTS_VARIANTS,
     RESORT_META_ROW_VARIANTS,
     RESORT_WHY_IT_MATTERS_VARIANTS,
@@ -1436,6 +1437,31 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="public/partials/_resort_facts.html",
         variants=RESORT_FACTS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="resort-bulletin-card",
+        label="Resort bulletin card",
+        description=(
+            "The resort page's one-card summary of today's avalanche danger "
+            "(SNOW-1156): the page is a landing page that leads into the "
+            "full bulletin, so this card answers the level and defers the "
+            "detail. An h2 eyebrow names the section and today, then a card "
+            "whose band takes the level's EAWS tint and text tokens "
+            "(.danger-band) around the outlined .danger-tile, the level "
+            "word and the region; one row with the first problem's aspect "
+            "rose and elevation pictogram (omitted without either); the "
+            "bulletin headline; a mono 'SLF · updated 17:00' line in "
+            "Central European time; and 'Read the full {region} bulletin "
+            "→'. With no bulletin today the band is neutral, the tile an "
+            "outlined '–', a note names the resort's typical season (a "
+            "dateless sentence when unset) and the link reads 'Latest "
+            "{region} bulletin →'. The card is "
+            "[data-testid='resort-danger'] and holds exactly one link."
+        ),
+        kind="components",
+        partial="public/partials/_resort_bulletin_card.html",
+        variants=RESORT_BULLETIN_CARD_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

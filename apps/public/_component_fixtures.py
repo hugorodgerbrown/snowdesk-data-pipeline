@@ -1258,6 +1258,140 @@ RESORT_FACTS_VARIANTS: tuple[dict[str, Any], ...] = (
     },
 )
 
+
+# Resort page bulletin card (SNOW-1156) ------------------------------------
+# Mirrors the context ``apps.public.views.resort_detail`` hands
+# ``public/partials/_resort_bulletin_card.html``: the panel keys the card
+# reads (a slice of ``_build_panel_context``), the headline, the region and
+# resort, and ``_resort_bulletin_attribution``'s two strings. A version-0
+# render model is not a distinct state: the view drops its panel, so it
+# renders as the no-bulletin card.
+
+
+def _resort_bulletin_card_context(
+    panel: dict[str, Any] | None,
+    *,
+    headline: str = "",
+    provider: str = "",
+    updated: str = "",
+    season: tuple[str, str] = ("12-01", "04-30"),
+) -> dict[str, Any]:
+    """Build one bulletin-card variant's context around ``panel``."""
+    return {
+        "panel": panel,
+        "headline": headline,
+        "region": SimpleNamespace(name="Martigny–Verbier"),
+        "resort": SimpleNamespace(
+            typical_season_open=season[0], typical_season_close=season[1]
+        ),
+        "bulletin_url": "#",
+        "target_date": datetime.date(2026, 1, 14),
+        "bulletin_provider": provider,
+        "bulletin_updated_time": updated,
+    }
+
+
+RESORT_BULLETIN_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Rated — the design board: all aspects above 1600 m, SLF",
+        "solo": True,
+        "context": _resort_bulletin_card_context(
+            {
+                "danger_key": "considerable",
+                "danger_number": "3",
+                "danger_subdivision": "",
+                "danger_label": "Considerable",
+                "problem_cards": [
+                    {
+                        "aspects": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+                        "elevation": _ElevationBounds(
+                            lower="1600",
+                            upper="",
+                            display="above 1600m",
+                            bound_type=_ELEVATION_LOWER,
+                        ),
+                        "core_zone_text": "All aspects, above 1600m",
+                    }
+                ],
+            },
+            headline=(
+                "Considerable danger on steep slopes above 1600 m: fresh wind "
+                "slabs on all aspects are easily triggered."
+            ),
+            provider="SLF",
+            updated="17:00",
+        ),
+    },
+    {
+        "caption": "Rated with a subdivision — some aspects, a band, ALBINA",
+        "solo": True,
+        "context": _resort_bulletin_card_context(
+            {
+                "danger_key": "moderate",
+                "danger_number": "2",
+                "danger_subdivision": "+",
+                "danger_label": "Moderate",
+                "problem_cards": [
+                    {
+                        "aspects": ["N", "NE", "E"],
+                        "elevation": _ElevationBounds(
+                            lower="2200",
+                            upper="2800",
+                            display="2200–2800m",
+                            bound_type="BOTH",
+                        ),
+                        "core_zone_text": "",
+                    }
+                ],
+            },
+            headline="Moderate danger, rising during the day with warming.",
+            provider="ALBINA",
+            updated="17:00",
+        ),
+    },
+    {
+        "caption": "Rated, no problem scope — the aspect row is omitted",
+        "solo": True,
+        "context": _resort_bulletin_card_context(
+            {
+                "danger_key": "high",
+                "danger_number": "4",
+                "danger_subdivision": "",
+                "danger_label": "High",
+                "problem_cards": [],
+            },
+            headline="High danger: natural avalanches are likely.",
+            provider="SLF",
+            updated="08:00",
+        ),
+    },
+    {
+        "caption": "Very high, publication time unknown — provider alone",
+        "solo": True,
+        "context": _resort_bulletin_card_context(
+            {
+                "danger_key": "very_high",
+                "danger_number": "5",
+                "danger_subdivision": "",
+                "danger_label": "Very High",
+                "problem_cards": [],
+            },
+            headline="Very high danger: stay off and away from avalanche terrain.",
+            provider="Météo-France",
+        ),
+    },
+    {
+        "caption": "No bulletin — the typical season named",
+        "solo": True,
+        "context": _resort_bulletin_card_context(None),
+    },
+    {
+        "caption": "No bulletin, no typical season curated — the dateless note",
+        "solo": True,
+        "context": _resort_bulletin_card_context(None, season=("", "")),
+    },
+)
+
 # Overlay primitives (SNOW-486) -----------------------------------------------
 # The four consolidated overlay shapes — banner, modal, sheet — each with a
 # "static" context flag so the component library renders them inline rather
