@@ -2,7 +2,7 @@
 name: compressed-views-rating-rule
 description: Peak-rating rule — choropleth, map tooltip and season calendar always show RegionDayRating.max_rating on split days
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-20
 ---
 
 # Compressed-views rating rule
@@ -67,7 +67,8 @@ SNOW-252 regression fixture; see
 |---------|-------|------------|
 | Map choropleth | `apps/public/api.py` `_build_ratings_payload` | `max_rating` via `_RATING_TO_INT` |
 | Map tooltip (region summary chip) | `apps/public/api.py` `region_summary` → `apps/public/templates/public/_region_tooltip.html` | `day_rating.max_rating` |
-| Season-trend calendar tiles | `apps/public/season_calendar.py` `build_season_grid` → `apps/public/templates/public/partials/_season_calendar.html` | `rdr.max_rating` as `max_rating_key` |
+| Season calendar cells (resort page, bulletin season sheet) | `apps/public/season_calendar.py` `build_season_grid` → `build_season_months` → `apps/public/templates/public/partials/_season_calendar.html` | `rdr.max_rating` as `max_rating_key` → `MonthDay.level` (`data-level`). A two-level day draws both halves, but its upper half is always the peak and its `data-level` is the peak |
+| Bulletin season sheet selected-day readout | `static/js/season_sheet.js` `fillReadout` | the selected cell's `data-level` (the peak) |
 
 ## Explicit exclusion
 
