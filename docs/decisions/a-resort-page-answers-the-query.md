@@ -1,6 +1,6 @@
 ---
 name: a-resort-page-answers-the-query
-description: /resorts/<slug>/ (resort_detail) shows today's danger read-only, plus one band-vs-lift-range line per problem (_problem_band_relation)
+description: /resorts/<slug>/ (resort_detail) is a landing page: today's danger in one card (_resort_bulletin_card.html); problem cards retired
 status: current
 last-reviewed: 2026-10-20
 ---
@@ -8,66 +8,69 @@ last-reviewed: 2026-10-20
 # A resort page answers the query
 
 Amends [`two-documents-and-a-map`](two-documents-and-a-map.md) for resort
-pages only (SNOW-1124).
+pages only (SNOW-1124). Narrowed by SNOW-1156: the page is a **landing
+page** that answers the query in one card and leads into the bulletin.
 
 ## Decision
 
-`/resorts/<slug>/` shows **today's avalanche danger**: the level, the
-bulletin headline and the avalanche problem cards, with their aspects,
-elevations and full prose. It is no longer only a router to the two
-documents.
+`/resorts/<slug>/` shows **today's avalanche danger** in one compact card,
+`public/partials/_resort_bulletin_card.html`, under the eyebrow "Regional
+avalanche bulletin • {today}":
+
+- the level — the EAWS tint band, the `.danger-tile` and the level word —
+  and the region;
+- the first (dominant) problem's aspect rose and elevation pictogram, when
+  it has either;
+- the bulletin headline;
+- "{provider} · updated HH:MM" — the bulletin's publication time on
+  Central European time (`_resort_bulletin_attribution`);
+- one link, "Read the full {region} bulletin →", to the region's evergreen
+  bulletin.
+
+It is no longer only a router to the two documents, and it does not try to
+answer every question either: the detail lives in the bulletin, one tap
+away.
 
 The guard that keeps it from becoming a third document:
 
 - **The bulletin stays the one full document.** The resort page shows the
-  danger and the problems, not the snowpack, weather, outlook or metadata,
-  and its danger area is one link, "Full bulletin →", to the region's
-  evergreen bulletin.
+  level, where the main problem sits and the headline — not the problem
+  prose, the snowpack, weather, outlook or metadata — and its danger card
+  is one link to the region's evergreen bulletin.
 - **The same render model, read-only, never a copy.** `resort_detail`
   selects the issue exactly as the bulletin page does —
   `issues_for_date(region, today)`, then `_resolve_selected_issue` (the
   10:00 rule), then `_build_panel_context` — and words the headline with
-  the bulletin page's own helper, `_build_bulletin_headline`. The cards
-  render through `public/_rating_block.html`, the bulletin page's partial.
-  Nothing about the day is stored on the resort, and the one thing derived
-  for it is the numeric line below.
+  the bulletin page's own helper, `_build_bulletin_headline`. Nothing about
+  the day is stored on the resort, and nothing is derived for it.
 - **No bulletin today means no danger.** Out of season, or before the day's
-  bulletin is ingested, the page says "No bulletin available" and links to
-  the bulletin. A past bulletin is never shown as today's.
+  bulletin is ingested, the card says "No bulletin today", names the
+  resort's typical season, and links to the latest bulletin. A past
+  bulletin is never shown as today's.
+- **The season decides the order.** With a bulletin today the card leads
+  the main column; without one the forecasts lead and the card follows
+  them, because out of season there is no danger to lead with.
 
-## One derived claim per problem (SNOW-1143)
+## The problem cards and the lift-range line, retired (SNOW-1156)
 
-Under each problem card the page adds **one line** saying how the
-problem's elevation band sits against the resort's lift range
-(`Resort.base_elevation_m`..`Resort.top_elevation_m`) — "Within Verbier's
-lift range", "Above 2200 m: covers the upper part of Verbier", "Above
-Verbier's top lift (3330 m)" and so on. It is the only thing the page
-derives for the resort, and it is a **straight numeric comparison**: two
-ranges against each other, nothing about piste, off-piste or terrain.
-`_problem_band_relation` in `apps/public/views.py` holds the rule and its
-edge semantics (a bound equal to the base or top counts as reaching it).
+SNOW-1124 put the bulletin page's own problem cards on the resort page
+(`public/_rating_block.html`, with aspects, elevations and full prose), and
+SNOW-1143 added under each one a line comparing its elevation band with the
+resort's lift range (`_problem_band_relation`, "Above 2200 m: covers the
+upper part of Verbier") with a disclaimer under the heading. SNOW-1156
+removed both, on Hugo's decision, with `_resort_problem_rows`,
+`_problem_band_relation`, `_numeric_band_relation` and their tests.
 
-Why: the reader landed on "Verbier avalanche" to learn whether today's
-problems are where they will ski. The bulletin answers in metres; the page
-already holds the resort's metres; putting the two side by side is
-arithmetic the reader would otherwise do in their head. It stays a
-numeric claim so it can never disagree with the bulletin it reads.
-
-The rules that keep it honest:
-
-- **A treeline bound gets no verdict.** The treeline has no number, so the
-  line states the band and the lift range side by side ("Above the
-  treeline. Verbier's lifts run 821–3330 m") and lets the reader judge.
-- **No elevation means all elevations** ("All elevations, including all of
-  Verbier") — except on a card showing "See description below", where the
-  scope is in the prose and an "all elevations" claim could contradict it;
-  that card gets no line.
-- **No lift range, no line.** A resort missing either elevation (or whose
-  top is not above its base) shows the cards alone.
-- One disclaimer under the heading, only when a line renders: "Compared
-  with {resort}'s lift range ({base}–{top} m). Off-piste terrain may
-  differ." The bulletin page and `_rating_block.html` are untouched; the
-  line renders after the partial, outside `[data-testid="resort-danger"]`.
+Why: the page is the landing page for "{resort} avalanche", and its job is
+to answer "how dangerous is it today" and lead the reader into the
+bulletin, not to be a second reading of it. With the full problem cards
+the resort page repeated most of the bulletin — the very drift into a third
+document the guard above exists to prevent — and pushed the forecasts and
+the season below a long column. The lift-range line was the one claim the
+page derived for itself; useful arithmetic, but a claim the bulletin does
+not make, beside a disclaimer that it might not hold off-piste. One card
+showing the level, the dominant problem's aspects and elevation, and the
+headline answers the query at a glance; the bulletin answers the rest.
 
 ## Why
 
@@ -87,11 +90,11 @@ the same level and the same words.
 - A change to the bulletin page's issue selection or headline inputs
   reaches the resort page too; that is the point. Change
   `_build_bulletin_headline`, not a copy of it.
-- `day_rating` (`RegionDayRating`) stays in the resort context only for
-  the meta description (SNOW-1122).
-- The reused partials can carry links (problem prose, field notes), so the
-  problem cards render outside `[data-testid="resort-danger"]`, which must
-  hold exactly one `<a>` — `tests/e2e/test_resort_page.py` clicks it.
+- The meta description's danger sentence reads the same `panel` as the
+  card (SNOW-1122), so the two can never name different levels.
+- `[data-testid="resort-danger"]` is the card and must hold exactly one
+  `<a>` — `tests/e2e/test_resort_page.py` clicks it. Nothing that can carry
+  its own link (problem prose, field notes) is drawn inside it.
 - The rest of `two-documents-and-a-map` stands: the bulletin and the
   weather page are the two documents, and nothing else gains a page from
   this amendment.
