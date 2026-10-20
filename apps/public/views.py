@@ -6600,12 +6600,21 @@ def _enrich_render_model_problem(
         lower_raw = rm_elevation.get("lower")
         upper_raw = rm_elevation.get("upper")
         is_treeline = rm_elevation.get("treeline", False)
-        # When treeline flag is set and no numeric lower bound, use the token.
+        # SNOW-1148: put the token back on the bound that carried it.
+        # ``treeline_side`` is "upper" for a problem BELOW the treeline; it
+        # used to be dropped, so every treeline band read "above treeline".
+        # A render model stored before the side was recorded has no
+        # ``treeline_side``, and keeps the old lower-bound reading.
+        treeline_side = rm_elevation.get("treeline_side")
         caaml_lower: Any = lower_raw
-        if is_treeline and lower_raw is None:
+        caaml_upper: Any = upper_raw
+        if is_treeline and treeline_side == "upper":
+            if upper_raw is None:
+                caaml_upper = "treeline"
+        elif is_treeline and lower_raw is None:
             caaml_lower = "treeline"
         elevation_bounds = _format_elevation(
-            {"lowerBound": caaml_lower, "upperBound": upper_raw}
+            {"lowerBound": caaml_lower, "upperBound": caaml_upper}
         )
     else:
         elevation_bounds = _format_elevation(None)
