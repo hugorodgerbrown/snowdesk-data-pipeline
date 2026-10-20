@@ -3142,7 +3142,7 @@
     // SNOW-1145: from ROUTE_SLOPE_MINZOOM the cursor IS its segment — the
     // 25 m the point card describes, drawn along its own path in its
     // class colour inside a white band and a dark casing. Square ends
-    // ('butt'), so where the piece starts and stops is unambiguous, and
+    // ('butt'), so where the segment starts and stops is unambiguous, and
     // two consecutive indices meet end to end at their shared boundary.
     // The widths keep the class colour wider than the slope line under it
     // and the white band clear of it at every zoom. Below the minzoom the

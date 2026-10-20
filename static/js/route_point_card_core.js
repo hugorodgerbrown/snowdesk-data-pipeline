@@ -592,7 +592,7 @@
    * one places a segment. Until SNOW-1145 the window was one stride
    * either side of the middle, 50 m, twice the 25 m the colour, the
    * heading and the map's cursor describe; now every line of the card
-   * reads the same piece of track. A window that never leaves its own
+   * reads the same segment. A window that never leaves its own
    * segment never leaves its own leg either, so the legs no longer clip
    * it. A segment spanning an elevation gap is no reading: the gap is
    * kept as a gap rather than interpolated across.

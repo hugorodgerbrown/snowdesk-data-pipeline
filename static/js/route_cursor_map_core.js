@@ -45,13 +45,13 @@
  * ## From z14 the cursor IS its segment (SNOW-1145)
  *
  * The point card describes one segment, 25 m of track, and from
- * ROUTE_SLOPE_MINZOOM the map draws the cursor as exactly that piece:
+ * ROUTE_SLOPE_MINZOOM the map draws the cursor as exactly that segment:
  * `cursorSegment` is the segment's own path, the one the slope line draws
  * it along, in its class colour. Two consecutive indices share a boundary
  * point, so their segments meet end to end with neither gap nor overlap,
- * and the reader can see where the piece the card is about starts and
+ * and the reader can see where the segment the card is about starts and
  * stops. Below z14 the line is drawn in legs, a segment is a few pixels,
- * and the dot stays. This is not the highlighted stretch SNOW-1052
+ * and the dot stays. This is not the highlighted run SNOW-1052
  * removed (`selectionLine`, a rail selection of many segments): it is the
  * one segment the cursor is on.
  *

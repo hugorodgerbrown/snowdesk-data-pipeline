@@ -218,7 +218,7 @@ and every point reads more clearly as one or the other.
   Until SNOW-1145 it read the window rail two used (retired by
   SNOW-1065): one stride, 25 m, either side of the segment's middle,
   stopped at a leg's ends, so 50 m of track. Since SNOW-1145 it reads the
-  segment's own 25 m, the same piece the colour, the heading, the ground
+  segment's own 25 m, the same segment the colour, the heading, the ground
   and the map's cursor describe, between the sampler's own boundaries
   (`boundaryDistances`, placed by the record's `seams`; the last segment
   absorbs the remainder, so equal shares would not match). A segment

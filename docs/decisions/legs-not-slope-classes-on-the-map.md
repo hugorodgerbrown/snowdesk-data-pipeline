@@ -128,15 +128,15 @@ a sampled route is drawn as the segment itself, along the same path
 (the class colour), with butt caps, from `cursorSegment` in
 `route_cursor_map_core.js`. Segment i ends on `points[i + 1]` and
 segment i + 1 starts on it, so two consecutive points meet end to end
-and the reader can see exactly where the piece the header describes
+and the reader can see exactly where the segment the header describes
 starts and stops. The ring's two layers stay for a route never sampled,
 which has no segment; on a sampled route they hide from z14 on the
 dot's `segment` flag. Below z14 the line is drawn in legs, a segment is
 a few pixels, and the dot is unchanged. This is not the highlighted
-stretch SNOW-1052 removed, which was a rail selection of many segments.
+run SNOW-1052 removed, which was a rail selection of many segments.
 The same ticket narrowed the header's gradient to the segment's own
 25 m, so every line of the header and the mark on the map describe one
-piece of track ([the-point-card-names-the-experience.md](the-point-card-names-the-experience.md)).
+segment ([the-point-card-names-the-experience.md](the-point-card-names-the-experience.md)).
 
 ## Why
 
