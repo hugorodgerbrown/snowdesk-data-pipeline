@@ -1,10 +1,13 @@
 {% load i18n %}
 {% comment %}
 templates/includes/_weather_provenance.html — region 5 of the location
-forecast page (SNOW-789).
+forecast page (SNOW-789), and the footer of each point's pane in the
+resort page's forecast strip (SNOW-1157).
 
-One line closing the page: when this row was last fetched, and who it came
-from.
+One line: who the row came from, and when it was last fetched —
+"Open-Meteo · updated HH:MM", the same shape as the resort bulletin card's
+"SLF · updated 17:00" (SNOW-1157 swapped the order from "Updated HH:MM ·
+Open-Meteo" so the two cards on the resort page read alike).
 
 **"Open-Meteo", not "Forecast model".** The handoff's literal names a value
 this codebase does not store — Open-Meteo picks the backing model per
@@ -16,14 +19,42 @@ and ``privacy.html`` already credit.
 through the day (four fetches), so how recent it is is the whole point,
 and the day it belongs to is already on the day line above.
 
+TWO SHAPES.
+  * No ``link_url`` — the location forecast page's closing line, ruled off
+    by a hairline above it.
+  * With ``link_url`` (SNOW-1157) — a card's footer: no hairline (the
+    card's own padding separates it), the line, then the onward link under
+    it. ``weather`` may be ``None`` in this shape: a point with no row
+    today still offers its link, and the caller says why above it.
+
 Context:
-    weather : weather.Weather — read only for ``fetched_at``.
+    weather : weather.Weather (or anything with ``fetched_at``) — read only
+              for ``fetched_at``. Optional with ``link_url``.
     testid_prefix : str — data-testid namespace. Defaults to
               ``weather-provenance``.
+    link_url  : str — optional. The onward link's href.
+    link_text : str — the onward link's text; required with ``link_url``.
 {% endcomment %}
 {% firstof testid_prefix "weather-provenance" as prefix %}
-<p class="border-t border-border pt-3.5 font-mono text-xs text-text-3" data-testid="{{ prefix }}">
-    {% blocktrans with updated=weather.fetched_at|time:"H:i" trimmed %}
-        Updated {{ updated }} &middot; Open-Meteo
-    {% endblocktrans %}
-</p>
+{% if link_url %}
+    <div class="flex flex-col gap-3" data-testid="{{ prefix }}">
+        {% if weather %}
+            <p class="font-mono text-xs text-text-3" data-testid="{{ prefix }}-line">
+                {% blocktrans with updated=weather.fetched_at|time:"H:i" trimmed %}
+                    Open-Meteo &middot; updated {{ updated }}
+                {% endblocktrans %}
+            </p>
+        {% endif %}
+        <a
+            href="{{ link_url }}"
+            class="inline-block self-start text-sm text-accent hover:text-accent-hover"
+            data-testid="{{ prefix }}-link"
+        >{{ link_text }}</a>
+    </div>
+{% else %}
+    <p class="border-t border-border pt-3.5 font-mono text-xs text-text-3" data-testid="{{ prefix }}">
+        {% blocktrans with updated=weather.fetched_at|time:"H:i" trimmed %}
+            Open-Meteo &middot; updated {{ updated }}
+        {% endblocktrans %}
+    </p>
+{% endif %}

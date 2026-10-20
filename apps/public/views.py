@@ -119,18 +119,16 @@ from apps.core.services.request_log import capture as capture_request_log
 from apps.core.sw_shell import inject_cache_version, served_cache_version
 from apps.core.utils import html_to_markdown
 from apps.favourites.models import Favourite
-from apps.locations.models import Location
+from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
 from apps.regions.cantons import canton_label
 from apps.regions.models import MicroRegion, Resort
 from apps.routes.models import Route
 from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
+from apps.weather.services.fetch import FORECAST_DAYS
 from apps.weather.services.hourly_chart import build_hourly_chart
-from apps.weather.services.weather_display import (
-    build_point_forecast_panel,
-    build_weather_display,
-)
+from apps.weather.services.weather_display import build_point_forecast_panel
 
 from . import competitor_matrix
 from .component_previews import help_illustrations
@@ -5023,11 +5021,13 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     "{provider} · updated HH:MM" line (``_resort_bulletin_attribution``) —
     and the problem cards and SNOW-1143's band-vs-lift-range lines are
     gone. In season (a panel today) the card leads the main column; out of
-    season the forecasts lead and the card follows.
+    season the forecast leads and the card follows.
 
-    Each curated location is a link to its weather page with today's
-    one-day row beside it (SNOW-1125 — the icon, high/low, snowfall and
-    wind). SNOW-1155 rebuilt the frame: a header with the eyebrow
+    The forecast is a seven-day strip for each of the resort's Base, Mid
+    and Summit points, chosen by CSS-only chips (SNOW-1157,
+    ``_resort_forecast_points``), each pane linking to its point's weather
+    page; it replaced SNOW-1125's list of links with a one-day row each.
+    SNOW-1155 rebuilt the frame: a header with the eyebrow
     (``_resort_eyebrow``), the name, the tagline and two actions — save the
     resort, and see it on the map (``/map/?resort=<slug>``, which replaced
     SNOW-807's "Reports near here" link) — then the sections in a main
@@ -5100,10 +5100,10 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         # metadata rows already do.
         "is_staff": request.user.is_staff,
         "signin_url": reverse("accounts:sign_in"),
-        # SNOW-807: the resort's curated locations, each a link to its own
-        # weather page. SNOW-1125: each also carries today's one-day row —
-        # one batched Weather query whatever the number of locations.
-        "locations": _resort_location_links(resort, today, timezone.now()),
+        # SNOW-1157: the forecast strip's Base / Mid / Summit points, each
+        # with today's row and its week — one batched Weather query whatever
+        # the number of points.
+        "forecast_points": _resort_forecast_points(resort, today, timezone.now()),
         # SNOW-1155: the header's mono eyebrow — alternative name, canton,
         # country — each part omitted when blank.
         "resort_eyebrow": _resort_eyebrow(resort),
@@ -5268,70 +5268,92 @@ def _resort_bulletin_attribution(panel: dict[str, Any] | None) -> dict[str, str]
     return {"bulletin_provider": provider, "bulletin_updated_time": updated}
 
 
-def _resort_location_links(
+# SNOW-1157: the resort page's forecast points, in chip order. The role a
+# ``ResortLocation`` plays and the chip's short label — "Mid" and "Summit"
+# rather than the model's "Mid-mountain" and "Top", which name the
+# relationship rather than the place a reader picks.
+_RESORT_FORECAST_ROLES: tuple[tuple[str, Any], ...] = (
+    (ResortLocation.ROLE.BASE, _("Base")),
+    (ResortLocation.ROLE.MID, _("Mid")),
+    (ResortLocation.ROLE.TOP, _("Summit")),
+)
+
+
+def _resort_forecast_points(
     resort: Resort, today: datetime.date, now: datetime.datetime
 ) -> list[dict[str, Any]]:
-    """Return the resort's pin and curated locations as links, each with weather.
+    """Return the resort page's forecast points: Base, Mid and Summit (SNOW-1157).
 
-    SNOW-1144: the resort's own pin (``resort.location``) leads — it is
-    where the resort is, and since every pin writer goes through
-    ``set_resort_pin`` it is the one location every pinned resort has, so a
-    resort with no curated points still shows its weather. The curated
-    ``ResortLocation`` links follow, primary first then by role and name,
-    skipping the pin's own row when a link also reaches it (the anonymous
-    primary link the pre-SNOW-1144 ``link_resort_locations`` minted is
-    exactly that row). An anonymous location carries no name and falls
-    back to the resort's (SNOW-807, after SNOW-761's block).
+    One point per role, in that order, each the resort's ``ResortLocation``
+    in that role — the primary link first within a role, then by name. The
+    resort's pin (``resort.location``) stands in for Base when no link has
+    that role: since SNOW-1144 every pin writer goes through
+    ``set_resort_pin``, so the pin is the one location every pinned resort
+    has, and it is where the resort is. A role with no location gets no
+    point, and a link with a blank role is not a point at all — it names no
+    altitude the chips could offer.
 
-    SNOW-1125: each link also carries today's one-day weather row, read in
-    ONE batched query over every location (keyed by ``location_id``), so
-    the cost is two queries whatever the number of locations — the pin
-    rides on the caller's ``select_related("location")``. A location with
-    no row today gets ``weather_display=None`` and degrades to its link.
+    Each point carries today's ``Weather`` row and the week built from it
+    by ``build_point_forecast_panel`` — the row's own day, then its
+    ``forecast[]`` — capped at ``FORECAST_DAYS``. The rows are read in ONE
+    batched query keyed by ``location_id``, so the page costs the same
+    whatever the number of points (the pin rides on the caller's
+    ``select_related("location")``). A point with no row today keeps its
+    chip and its link with ``panel=None``.
 
     Args:
-        resort: The resort whose pin and links to walk, with ``location``
-            already loaded.
+        resort: The resort whose links to walk, with ``location`` loaded.
         today: The server's local date — the ``Weather.observed_on`` read.
-        now: The reference instant for the day/night icon.
+        now: The reference instant for each day's day/night icon.
 
     Returns:
-        One dict per location: ``label``, ``elevation_m``, ``role_label``,
-        ``url``, ``weather_display`` (or ``None``) and a stable
-        ``testid``. Empty only for a resort with no pin and no links.
+        One dict per point: ``role`` (``"base"``/``"mid"``/``"top"``),
+        ``label``, ``elevation_m`` (a rounded ``int`` or ``None``), ``url``
+        (the location's ``/weather/<short_id>/`` page, ``""`` without a
+        short id), ``weather`` (the row or ``None``) and ``panel`` (a
+        ``ForecastPanel`` or ``None``). Empty when no role has a location.
 
     """
-    pin = resort.location
-    links = [
-        link
-        for link in resort.resort_locations.select_related("location").order_by(
-            "-is_primary", "role", "location__name"
-        )
-        if pin is None or link.location_id != pin.pk
-    ]
-    rows: list[tuple[Location, str]] = [(pin, "")] if pin is not None else []
-    rows += [(link.location, str(link.get_role_display())) for link in links]
-    if not rows:
+    by_role: dict[str, Location] = {}
+    links = resort.resort_locations.filter(
+        role__in=[role for role, _label in _RESORT_FORECAST_ROLES]
+    ).select_related("location")
+    for link in links.order_by("-is_primary", "location__name"):
+        by_role.setdefault(link.role, link.location)
+    if ResortLocation.ROLE.BASE not in by_role and resort.location is not None:
+        by_role[ResortLocation.ROLE.BASE] = resort.location
+    if not by_role:
         return []
     weather_by_location = {
         row.location_id: row
         for row in Weather.objects.on_date(today).filter(
-            location_id__in=[location.pk for location, _role in rows]
+            location_id__in=[location.pk for location in by_role.values()]
         )
     }
-    return [
-        {
-            "label": location.name or resort.name,
-            "elevation_m": location.elevation_m,
-            "role_label": role_label,
-            "url": location.get_absolute_url(),
-            "weather_display": build_weather_display(
-                weather_by_location.get(location.pk), now
-            ),
-            "testid": f"resort-location-{index}",
-        }
-        for index, (location, role_label) in enumerate(rows)
-    ]
+    points: list[dict[str, Any]] = []
+    for role, label in _RESORT_FORECAST_ROLES:
+        location = by_role.get(role)
+        if location is None:
+            continue
+        weather = weather_by_location.get(location.pk)
+        panel = build_point_forecast_panel(weather, now)
+        if panel is not None:
+            panel["days"] = panel["days"][:FORECAST_DAYS]
+        points.append(
+            {
+                "role": str(role).lower(),
+                "label": str(label),
+                "elevation_m": (
+                    round(location.elevation_m)
+                    if location.elevation_m is not None
+                    else None
+                ),
+                "url": location.get_absolute_url(),
+                "weather": weather,
+                "panel": panel,
+            }
+        )
+    return points
 
 
 # ---------------------------------------------------------------------------

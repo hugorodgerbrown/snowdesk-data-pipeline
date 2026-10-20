@@ -1,8 +1,8 @@
 ---
 name: weather-surfaces
-description: Weather UI — _weather_detail sheet, _weather_panel, _weather_day_picker, _weather_day_line, build_weather_display, is_day, weather.geojson
+description: Weather UI — _weather_detail, _weather_panel, _weather_day_picker, _weather_day_line, _resort_forecast, build_weather_display, geojson
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-10-20
 ---
 
 # Weather surfaces
@@ -25,7 +25,7 @@ restoration.
 | Surface | Anchor | Which day |
 |---------|--------|-----------|
 | Favourite card ([`apps/favourites/templates/favourites/partials/_favourite_card.html`](../apps/favourites/templates/favourites/partials/_favourite_card.html)) | `Favourite.location` | today |
-| Resort page Forecasts rows ([`apps/public/templates/public/resort.html`](../apps/public/templates/public/resort.html)) | each curated `ResortLocation.location` | today |
+| Resort forecast strip ([`apps/public/templates/public/partials/_resort_forecast.html`](../apps/public/templates/public/partials/_resort_forecast.html)) | the resort's BASE / MID / TOP `ResortLocation`, the pin standing in for Base | today and the six days after it |
 | Location forecast page ([`apps/public/templates/public/location_weather.html`](../apps/public/templates/public/location_weather.html)) | one `Location` | `?date=` or today |
 | Map overlay ([`static/js/map.js`](../static/js/map.js)) | every `Location.objects.public()` | the scrubbed date |
 
@@ -34,19 +34,34 @@ MapLibre symbol layer, plus a tap sheet
 ([`apps/public/templates/public/partials/_weather_detail.html`](../apps/public/templates/public/partials/_weather_detail.html))
 that hands off to the location forecast page.
 
-**The resort page is back on this list, in brief (SNOW-1125).** It is
-still a router to the two documents (SNOW-807): its Forecasts section is a
-list of the resort's curated locations, each a link to its own
-`/weather/<short_id>/` page with the role and elevation that tell village
-from summit. Under each link sits today's `_weather_panel.html` with
-`brief=True` — icon, condition, high/low, snowfall and wind, but no
-freezing level and no sunrise/sunset, which stay the forecast page's.
-`_resort_location_links` reads every location's row in one batched
-`Weather.objects.on_date(timezone.localdate())` query, so the page costs
-the same whatever the number of locations; a location with no row today
-renders its link alone. SNOW-761 drew one panel per location there,
-SNOW-783 trimmed it to the day and SNOW-807 removed the rest; SNOW-1125
-returned the day's headline figures.
+**The resort page draws a week per point (SNOW-1157).** It is still a
+router to the two documents (SNOW-807), but its Forecast section is now
+the design system's forecast strip: one chip per point — Base, Mid,
+Summit, each with its elevation — over that point's seven days. The
+points are the resort's `ResortLocation` links by role (primary first
+within a role); the resort's pin stands in for Base when no link has
+that role, a role with no location gets no chip, and a link with a blank
+role is no point at all. `_resort_forecast_points` reads every point's
+row in one batched `Weather.objects.on_date(timezone.localdate())` query
+and builds each week with `build_point_forecast_panel` — the row's own
+day, then its `forecast[]` — capped at `FORECAST_DAYS`. Today's tile
+leads, wider, with a Max / Min / New snow list; the six after it carry a
+weekday, an icon, high, low and new snow, and zero new snow reads "0 cm".
+Each pane closes with `_weather_provenance.html` in its linked shape and
+"Read the full 7-day forecast →" to that point's own page; a point with
+no row today says "No forecast yet." and keeps the link.
+
+The chips are radios and the reveal is CSS-only, like the day picker:
+the radios come first in the card, so `:checked ~` reaches both the chip
+and the pane, and the rules in [`src/css/main.css`](../src/css/main.css)
+("Resort forecast points") pair a `data-point` index on both ends. The
+tiles are **not** the day picker's cells, which are labels for radios
+with a selection marker: these are inert summaries, each a
+`role="group"` with a spoken label.
+
+The list it replaced — SNOW-1125's link per location with
+`_weather_panel.html` `brief=True` beside it — is gone, along with
+`_resort_location_links`. `brief` has no caller left.
 
 **The bulletin masthead is not on this list, and that is the point
 (SNOW-784).** It carried a row read off `MicroRegion.centroid_location`
@@ -57,13 +72,15 @@ more than it knows. The bulletin's own weather — `weatherReview`,
 is unaffected; see the closing note in this file.
 
 **Each component appears once (SNOW-782).** The one-day row
-(`_weather_panel.html`) goes wherever a location is named; the week
-(`_weather_day_picker.html`) and the day (`_weather_day_line.html`,
-`_hourly_chart.html`) belong to the location forecast page alone. A
-surface that names a location shows the day and links to the rest — the
-resort page and the favourite card both drew the whole week inline until
-SNOW-783, the resort page once per curated altitude, before SNOW-807 took
-the day off the resort page as well (SNOW-1125 put the brief day back).
+(`_weather_panel.html`) goes wherever a location is named; the week as
+navigation (`_weather_day_picker.html`) and the day
+(`_weather_day_line.html`, `_hourly_chart.html`) belong to the location
+forecast page alone. The favourite card shows the day and links to the
+rest. The resort page drew the whole week inline until SNOW-783, once per
+curated altitude, lost the day too in SNOW-807 and got a brief day back
+in SNOW-1125; SNOW-1157 gave it the week again as a summary strip — no
+day line, no meteogram, no picker — that links to the location page for
+those.
 
 **The map's weather sheet is the one place the meteogram leaves the page
 (SNOW-1101), and the split is day versus week.** The sheet is the map's
@@ -374,7 +391,13 @@ neither the hiding class nor the index and simply renders.
 
 ### `includes/_weather_provenance.html`
 
-One line: when the row was last fetched, and who from. A **time**, not a
+One line: who the row came from, and when it was last fetched —
+"Open-Meteo · updated HH:MM", the order the resort bulletin card's
+"SLF · updated 17:00" uses (SNOW-1157). Two shapes: the location page's
+closing line, ruled off by a hairline, and — with `link_url` — a card
+footer with no hairline and the onward link under the line, which is how
+each resort forecast pane ends. In the linked shape `weather` may be
+`None`, and the link renders alone. A **time**, not a
 date — today's row is rewritten in place across four fetches a day, so how
 recent it is is the whole point, and the day it belongs to is already on the
 day line above. It credits **Open-Meteo** rather than naming a forecast

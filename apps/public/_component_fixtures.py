@@ -3965,7 +3965,181 @@ WEATHER_PROVENANCE_VARIANTS: tuple[dict[str, Any], ...] = (
             "testid_prefix": "component-library-provenance",
         },
     },
+    {
+        "caption": "A card footer with its onward link (SNOW-1157)",
+        "solo": True,
+        "context": {
+            "weather": {
+                "fetched_at": datetime.datetime(2026, 1, 12, 11, 0, tzinfo=datetime.UTC)
+            },
+            "testid_prefix": "component-library-provenance-linked",
+            "link_url": "#",
+            "link_text": "Read the full 7-day forecast →",
+        },
+    },
 )
+
+
+# Resort forecast strip (SNOW-1157) -----------------------------------------
+# Mirrors ``apps.public.views._resort_forecast_points``: one dict per point
+# with its role, label, rounded elevation, URL, today's row (a plain dict —
+# the provenance line reads only ``fetched_at``) and its ForecastPanel, built
+# from ``_forecast_panel_day`` so the tiles read the real column shape.
+
+# One week per point: (icon bucket, label, max, min, new snow) per day.
+_ForecastWeek = tuple[tuple[str, str, float | None, float | None, float | None], ...]
+
+_SNOW_WEEK: _ForecastWeek = (
+    ("moderate_snow", "Snow", -1.0, -6.0, 8.0),
+    ("moderate_snow", "Snow", -2.0, -7.0, 12.0),
+    ("cloudy", "Overcast", 0.0, -5.0, 0.0),
+    ("clear", "Clear", 2.0, -4.0, 0.0),
+    ("clear", "Clear", 3.0, -3.0, 0.0),
+    ("cloudy", "Overcast", 1.0, -4.0, 0.0),
+    ("light_snow", "Light snow", -1.0, -6.0, 5.0),
+)
+
+_RAIN_WEEK: _ForecastWeek = (
+    ("light_rain", "Light rain", 13.0, 8.0, 0.0),
+    ("moderate_rain", "Rain", 16.0, 7.0, 0.0),
+    ("light_rain", "Light rain", 12.0, 2.0, 0.0),
+    ("cloudy", "Overcast", 15.0, 7.0, 0.0),
+    ("drizzle", "Drizzle", 9.0, 4.0, 0.0),
+    ("light_rain", "Light rain", 14.0, 6.0, 0.0),
+    ("cloudy", "Overcast", 12.0, 5.0, 0.0),
+)
+
+
+def _forecast_point(
+    role: str,
+    label: str,
+    elevation_m: int | None,
+    week: _ForecastWeek | None,
+    *,
+    anchor: datetime.date,
+    shift: float = 0.0,
+) -> dict[str, Any]:
+    """Build one point of the resort forecast strip.
+
+    Args:
+        role: ``"base"`` / ``"mid"`` / ``"top"``.
+        label: The chip's role label.
+        elevation_m: The chip's elevation, or None.
+        week: The point's days, or None for a point with no row today.
+        anchor: Today — the first tile's date.
+        shift: Degrees added to every temperature, so higher points read
+            colder than the base without a second table.
+
+    Returns:
+        The point dict.
+
+    """
+    panel = None
+    if week is not None:
+        panel = {
+            "days": [
+                _forecast_panel_day(
+                    date=anchor + datetime.timedelta(days=index),
+                    icon_bucket=bucket,
+                    condition_label=condition,
+                    temp_max=None if high is None else high + shift,
+                    temp_min=None if low is None else low + shift,
+                    snowfall_sum=snow,
+                    freezing_level_height=None,
+                )
+                for index, (bucket, condition, high, low, snow) in enumerate(week)
+            ]
+        }
+    return {
+        "role": role,
+        "label": label,
+        "elevation_m": elevation_m,
+        "url": "#",
+        "weather": (
+            {"fetched_at": datetime.datetime(2026, 1, 14, 11, 0, tzinfo=datetime.UTC)}
+            if week is not None
+            else None
+        ),
+        "panel": panel,
+    }
+
+
+def _build_resort_forecast_variants() -> tuple[dict[str, Any], ...]:
+    """Build the resort-forecast-strip variants.
+
+    Each variant names its own ``selector_name``: the chips are radios, and
+    two strips sharing a group on one library page would deselect each
+    other.
+
+    Returns:
+        The variant tuple.
+
+    """
+    winter = datetime.date(2026, 1, 14)
+    autumn = datetime.date(2026, 10, 20)
+
+    def points(week: _ForecastWeek, anchor: datetime.date) -> list[dict[str, Any]]:
+        """Return Base / Mid / Summit, each colder than the one below."""
+        return [
+            _forecast_point("base", "Base", 1494, week, anchor=anchor),
+            _forecast_point("mid", "Mid", 2200, week, anchor=anchor, shift=-3.0),
+            _forecast_point("top", "Summit", 3330, week, anchor=anchor, shift=-8.0),
+        ]
+
+    sparse_week: _ForecastWeek = (
+        ("light_snow", "Light snow", -3.0, None, None),
+        ("moderate_snow", "Snow", None, None, 14.0),
+        ("cloudy", "Overcast", -4.0, -9.0, 0.0),
+    )
+    return (
+        {
+            "caption": "Snow week — the design board, three points, Base checked",
+            "solo": True,
+            "context": {
+                "forecast_points": points(_SNOW_WEEK, winter),
+                "target_date": winter,
+                "selector_name": "component-library-forecast-snow",
+            },
+        },
+        {
+            "caption": "Rain week out of season — zero new snow reads 0 cm",
+            "solo": True,
+            "context": {
+                "forecast_points": points(_RAIN_WEEK, autumn),
+                "target_date": autumn,
+                "selector_name": "component-library-forecast-rain",
+            },
+        },
+        {
+            "caption": "Single point — the resort's pin standing in for Base",
+            "solo": True,
+            "context": {
+                "forecast_points": [
+                    _forecast_point("base", "Base", None, _SNOW_WEEK, anchor=winter)
+                ],
+                "target_date": winter,
+                "selector_name": "component-library-forecast-single",
+            },
+        },
+        {
+            "caption": (
+                "Missing data — a three-day window with dropped values, and a "
+                "Summit with no row today"
+            ),
+            "solo": True,
+            "context": {
+                "forecast_points": [
+                    _forecast_point("base", "Base", 1494, sparse_week, anchor=winter),
+                    _forecast_point("top", "Summit", 3330, None, anchor=winter),
+                ],
+                "target_date": winter,
+                "selector_name": "component-library-forecast-sparse",
+            },
+        },
+    )
+
+
+RESORT_FORECAST_VARIANTS: tuple[dict[str, Any], ...] = _build_resort_forecast_variants()
 
 
 # ── Hourly chart (SNOW-723) ──────────────────────────────────────────────

@@ -1,0 +1,260 @@
+{% load i18n humanize weather_icons %}
+{% comment %}
+public/partials/_resort_forecast.html — the resort page's "Forecast"
+section (SNOW-1157): a seven-day strip for each of the resort's Base, Mid
+and Summit points, one point shown at a time, chosen by a chip.
+
+Drawn to Hugo's approved board (WeatherToday / WeatherWinter, the Mobile
+tile layout). It replaced the SNOW-807/SNOW-1125 list of location links,
+each with a one-day row.
+
+THE CHIPS ARE RADIOS, AND THERE IS NO JAVASCRIPT. One visually hidden
+radio per point, all of them FIRST in the card, then the chip group, then
+one pane per point. ``:checked ~`` reaches every later sibling, so each
+radio can style its own chip and reveal its own pane — rules written by
+hand in src/css/main.css ("Resort forecast points"), paired on
+``data-point`` on both ends, because ``peer-checked:`` cannot name WHICH
+later sibling, so a stack of panes would show the checked one and every
+one after it (the same trap the weather day picker documents in
+docs/decisions/weather-day-picker-is-a-selector-not-navigation.md). The
+first point — Base when there is one — is checked on load, so the page
+reads correctly with no CSS state at all. Every pane's default is
+``display: none``; an unmatched index shows nothing rather than all.
+
+A resort with one point still gets its one chip: it names the altitude the
+strip describes, which a bare strip would not.
+
+THE TILES. Today first and wider (``1.9fr`` beside six ``1fr`` from
+``sm``; a full-width row above the six on a phone), with a ``<dl>`` of
+Max / Min / New snow. The other six are unlabelled: weekday, icon, high
+(bold), low and new snow in mono. Zero new snow reads "0 cm", never blank —
+on an avalanche page none is a statement; a value Open-Meteo dropped reads
+"—". Each tile is ``role="group"`` with a spoken summary ("Today,
+Wednesday, snow, high -2°, low -7°, 0 cm new snow"), so the icon is
+decorative. A week shorter than seven days renders what it has.
+
+These are NOT the weather page's day-picker cells: those are labels for
+radios with a selection marker; these are inert summaries, and each one
+links nowhere — the pane's one link is to the full week.
+
+UNDER EACH PANE its own footer (``includes/_weather_provenance.html`` with
+a link): "Open-Meteo · updated HH:MM", then "Read the full 7-day forecast →"
+to that point's ``/weather/<short_id>/``, so the visible pane always links
+to the point it shows. A point with no row today says "No forecast yet."
+and keeps the link.
+
+Context:
+  forecast_points — list[dict] from ``views._resort_forecast_points``:
+                    role ("base"/"mid"/"top"), label, elevation_m (int or
+                    None), url, weather (Weather or None), panel
+                    (ForecastPanel or None). The caller renders nothing
+                    when it is empty.
+  target_date     — datetime.date: today, named in the eyebrow.
+  selector_name   — str, optional: the radio group's ``name`` and id
+                    prefix. Defaults to ``resort-forecast-point``; the
+                    component library passes one per variant.
+  class_extra     — optional classes on the outer ``<section>``.
+{% endcomment %}
+{% firstof selector_name "resort-forecast-point" as group_name %}
+<section
+    {% if class_extra %}class="{{ class_extra }}"{% endif %}
+    aria-labelledby="{{ group_name }}-heading"
+    data-testid="resort-forecast"
+>
+    {% blocktrans with day=target_date|date:"l j F" trimmed asvar forecast_eyebrow %}
+        Forecast • {{ day }}
+    {% endblocktrans %}
+    {% include "includes/_eyebrow.html" with tag="h2" heading_id=group_name|add:"-heading" text=forecast_eyebrow class_extra="mb-3" only %}
+    <div class="rounded-card border border-border bg-card">
+        <div class="relative flex flex-col gap-6 p-4 sm:gap-7 sm:p-6">
+            {% for point in forecast_points %}
+                <input
+                    type="radio"
+                    name="{{ group_name }}"
+                    id="{{ group_name }}-{{ forloop.counter0 }}"
+                    class="resort-forecast-point sr-only"
+                    data-point="{{ forloop.counter0 }}"
+                    {% if forloop.first %}checked{% endif %}
+                >
+            {% endfor %}
+            {% translate "Forecast location" as chips_label %}
+            <div
+                class="resort-forecast-chips -mb-2 flex flex-wrap gap-2"
+                role="group"
+                aria-label="{{ chips_label }}"
+                data-testid="resort-forecast-chips"
+            >
+                {% for point in forecast_points %}
+                    <label
+                        for="{{ group_name }}-{{ forloop.counter0 }}"
+                        class="inline-flex min-h-11 cursor-pointer items-center"
+                        data-point="{{ forloop.counter0 }}"
+                        data-testid="resort-forecast-chip-{{ point.role }}"
+                    >
+                        <span
+                            class="resort-forecast-chip rounded-pill border border-border-strong px-2.5 py-1 font-mono text-meta uppercase tracking-wider text-text-2 hover:bg-card-hover"
+                        >
+                            {% if point.elevation_m is not None %}
+                                {% blocktrans with label=point.label elevation=point.elevation_m|intcomma trimmed %}
+                                    {{ label }} · {{ elevation }} m
+                                {% endblocktrans %}
+                            {% else %}
+                                {{ point.label }}
+                            {% endif %}
+                        </span>
+                    </label>
+                {% endfor %}
+            </div>
+            {% for point in forecast_points %}
+                <div
+                    class="resort-forecast-pane flex-col gap-6"
+                    data-point="{{ forloop.counter0 }}"
+                    data-testid="resort-forecast-pane-{{ point.role }}"
+                >
+                    {% if point.panel %}
+                        <div class="grid grid-cols-6 gap-1 sm:grid-cols-[minmax(0,1.9fr)_repeat(6,minmax(0,1fr))] sm:gap-2">
+                            {% for day in point.panel.days %}
+                                {% with weekday=day.date|date:"l" condition=day.condition_label|lower %}
+                                    {% if forloop.first %}
+                                        {% blocktrans trimmed asvar day_name %}
+                                            Today, {{ weekday }}
+                                        {% endblocktrans %}
+                                    {% else %}
+                                        {% firstof weekday as day_name %}
+                                    {% endif %}
+                                    {% if day.temp_max is not None and day.temp_min is not None %}
+                                        {% if day.snowfall_sum is not None %}
+                                            {% blocktrans with high=day.temp_max|floatformat:0 low=day.temp_min|floatformat:0 snow=day.snowfall_sum|floatformat:0 trimmed asvar tile_label %}
+                                                {{ day_name }}, {{ condition }}, high {{ high }}°, low {{ low }}°,
+                                                {{ snow }} cm new snow
+                                            {% endblocktrans %}
+                                        {% else %}
+                                            {% blocktrans with high=day.temp_max|floatformat:0 low=day.temp_min|floatformat:0 trimmed asvar tile_label %}
+                                                {{ day_name }}, {{ condition }}, high {{ high }}°, low {{ low }}°
+                                            {% endblocktrans %}
+                                        {% endif %}
+                                    {% elif day.snowfall_sum is not None %}
+                                        {% blocktrans with snow=day.snowfall_sum|floatformat:0 trimmed asvar tile_label %}
+                                            {{ day_name }}, {{ condition }}, {{ snow }} cm new snow
+                                        {% endblocktrans %}
+                                    {% else %}
+                                        {% blocktrans trimmed asvar tile_label %}
+                                            {{ day_name }}, {{ condition }}
+                                        {% endblocktrans %}
+                                    {% endif %}
+                                    {% if forloop.first %}
+                                        <div
+                                            role="group"
+                                            aria-label="{{ tile_label }}"
+                                            class="col-span-full flex items-center gap-4 rounded-card border border-border-strong bg-card px-4 py-3 sm:col-span-1 sm:flex-col sm:gap-1.5 sm:px-3"
+                                            data-testid="resort-forecast-today"
+                                            data-date="{{ day.date|date:'Y-m-d' }}"
+                                        >
+                                            <div class="flex min-w-14 flex-col items-center gap-1.5">
+                                                <span
+                                                    class="font-mono text-meta uppercase tracking-wider text-text-3"
+                                                >{% translate "Today" %}</span>
+                                                <img
+                                                    src="{% weather_icon_url day.icon_filename %}"
+                                                    class="{% weather_icon_class %} h-8 w-8"
+                                                    alt=""
+                                                    aria-hidden="true"
+                                                >
+                                            </div>
+                                            <dl class="grid min-w-0 flex-1 grid-cols-[auto_auto] items-baseline justify-between gap-x-2 gap-y-0.5 sm:w-full">
+                                                <dt class="font-mono text-meta uppercase leading-5 tracking-wider text-text-3">
+                                                    {% translate "Max" %}
+                                                </dt>
+                                                <dd class="text-base font-semibold text-text-1">
+                                                    {% if day.temp_max is not None %}
+                                                        {{ day.temp_max|floatformat:0 }}&deg;
+                                                    {% else %}
+                                                        &mdash;
+                                                    {% endif %}
+                                                </dd>
+                                                <dt class="font-mono text-meta uppercase leading-5 tracking-wider text-text-3">
+                                                    {% translate "Min" %}
+                                                </dt>
+                                                <dd class="text-sm text-text-2">
+                                                    {% if day.temp_min is not None %}
+                                                        {{ day.temp_min|floatformat:0 }}&deg;
+                                                    {% else %}
+                                                        &mdash;
+                                                    {% endif %}
+                                                </dd>
+                                                <dt class="font-mono text-meta uppercase leading-5 tracking-wider text-text-3">
+                                                    {% translate "New snow" %}
+                                                </dt>
+                                                <dd class="text-right font-mono text-xs leading-5 text-text-3">
+                                                    {% if day.snowfall_sum is not None %}
+                                                        {% blocktrans with snow=day.snowfall_sum|floatformat:0 trimmed %}
+                                                            {{ snow }} cm
+                                                        {% endblocktrans %}
+                                                    {% else %}
+                                                        &mdash;
+                                                    {% endif %}
+                                                </dd>
+                                            </dl>
+                                        </div>
+                                    {% else %}
+                                        <div
+                                            role="group"
+                                            aria-label="{{ tile_label }}"
+                                            class="flex flex-col items-center gap-1.5 rounded-card border border-border bg-card-subtle px-0.5 py-2.5 sm:px-1 sm:py-3"
+                                            data-testid="resort-forecast-day"
+                                            data-date="{{ day.date|date:'Y-m-d' }}"
+                                        >
+                                            <span
+                                                class="font-mono text-meta uppercase tracking-wider text-text-3"
+                                            >{{ day.date|date:"D" }}</span>
+                                            <img
+                                                src="{% weather_icon_url day.icon_filename %}"
+                                                class="{% weather_icon_class %} h-8 w-8"
+                                                alt=""
+                                                aria-hidden="true"
+                                            >
+                                            <span class="text-base font-semibold text-text-1">
+                                                {% if day.temp_max is not None %}
+                                                    {{ day.temp_max|floatformat:0 }}&deg;
+                                                {% else %}
+                                                    &mdash;
+                                                {% endif %}
+                                            </span>
+                                            <span class="text-sm text-text-2">
+                                                {% if day.temp_min is not None %}
+                                                    {{ day.temp_min|floatformat:0 }}&deg;
+                                                {% else %}
+                                                    &mdash;
+                                                {% endif %}
+                                            </span>
+                                            <span class="min-h-4 whitespace-nowrap font-mono text-xs text-text-3">
+                                                {% if day.snowfall_sum is not None %}
+                                                    {% blocktrans with snow=day.snowfall_sum|floatformat:0 trimmed %}
+                                                        {{ snow }} cm
+                                                    {% endblocktrans %}
+                                                {% else %}
+                                                    &mdash;
+                                                {% endif %}
+                                            </span>
+                                        </div>
+                                    {% endif %}
+                                {% endwith %}
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-sm text-text-2" data-testid="resort-forecast-empty-{{ point.role }}">
+                            {% translate "No forecast yet." %}
+                        </p>
+                    {% endif %}
+                    {% if point.url %}
+                        {% translate "Read the full 7-day forecast →" as forecast_link_text %}
+                        {% include "includes/_weather_provenance.html" with weather=point.weather testid_prefix="resort-forecast-provenance-"|add:point.role link_url=point.url link_text=forecast_link_text only %}
+                    {% elif point.weather %}
+                        {# No short_id yet (backfill window): no weather page to link, but the forecast shown still credits Open-Meteo. #}
+                        {% include "includes/_weather_provenance.html" with weather=point.weather testid_prefix="resort-forecast-provenance-"|add:point.role only %}
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>

@@ -43,8 +43,8 @@ Header:
     map" link is gone; this one replaces it.
 
 Main column — the order follows the season (SNOW-1156). In season (``panel``
-set: a bulletin covers today) the bulletin card, then the forecasts, then
-the season strip; out of season the forecasts, then the bulletin card, then
+set: a bulletin covers today) the bulletin card, then the forecast, then
+the season strip; out of season the forecast, then the bulletin card, then
 the season strip. The card is one include rendered in one of two places,
 and one ``gap-12`` spaces whichever order the sections take.
   * Regional avalanche bulletin (SNOW-1156) —
@@ -55,18 +55,16 @@ and one ``gap-12`` spaces whichever order the sections take.
     "Latest {region} bulletin →". Never a past bulletin as today's. The
     card is ``[data-testid="resort-danger"]`` and holds exactly one
     ``<a>`` — tests/e2e/test_resort_page.py clicks it.
-  * Forecasts — the resort's pin Location first (SNOW-1144), then its
-    curated locations, each a link to its own weather page
-    (``/weather/<short_id>/``), with the role and elevation that tell
-    village from summit. SNOW-761 drew one block per
-    location, SNOW-783 trimmed it to the day and SNOW-807 removed the
-    rest; SNOW-1125 puts today's one-day row back under each link in the
-    brief form of ``includes/_weather_panel.html`` (icon, condition,
-    high/low, snowfall, wind — no freezing level, no sun times). A
-    location with no row today renders its link alone. Every pin writer
-    goes through ``set_resort_pin``, so a pinned resort always has at least
-    its pin here; only a resort with no pin and no curated locations
-    renders no section at all.
+  * Forecast (SNOW-1157) — ``public/partials/_resort_forecast.html``, which
+    documents itself: "Forecast • {today}", then Base / Mid / Summit chips
+    (CSS-only radios, Base checked) over one seven-day strip per point —
+    today first and wider with Max / Min / New snow, then six unlabelled
+    days — each pane closing with "Open-Meteo · updated HH:MM" and "Read
+    the full 7-day forecast →" to that point's ``/weather/<short_id>/``.
+    The points are the resort's BASE / MID / TOP ``ResortLocation`` links,
+    the pin standing in for Base (``views._resort_forecast_points``). It
+    replaced SNOW-807/SNOW-1125's list of location links with a one-day
+    row each. A resort with no point renders no section at all.
   * The season strip (SNOW-1126), described where it renders.
 
 Sidebar: "About this resort" (SNOW-695, redrawn by SNOW-1155) via
@@ -103,10 +101,12 @@ Context expected (built by ``apps.public.views.resort_detail``):
   is_staff                      — bool: switches the why-it-matters blank
                                    state to a curation hint (SNOW-542).
   signin_url                    — str: accounts:sign_in URL.
-  locations                     — list[dict]: the resort's curated locations
-                                   (label, elevation_m, role_label, url,
-                                   weather_display — WeatherDisplay | None,
-                                   testid), primary first. Empty is normal.
+  forecast_points               — list[dict]: the Base / Mid / Summit points
+                                   (role, label, elevation_m, url, weather —
+                                   Weather | None, panel — ForecastPanel |
+                                   None), in that order
+                                   (views._resort_forecast_points). Empty is
+                                   normal.
   resort_eyebrow                — str: the header eyebrow, "" when every
                                    part is blank (SNOW-1155).
   structured_data_json          — str: schema.org SkiResort JSON-LD, already
@@ -135,19 +135,19 @@ Context expected (built by ``apps.public.views.resort_detail``):
 {# exists for — SNOW-504 built /resorts/<id>/<slug>/ specifically as an  #}
 {# indexable, shareable URL cross-linked from the map's resort popup,    #}
 {# and until now it unfurled with no title, description or og:url.      #}
-{# SNOW-855: the description branches on ``locations``, the same         #}
-{# condition the Forecasts section itself uses, so it promises only what #}
-{# this resort actually links to. It named a village, a mid-station and  #}
-{# a summit for every resort; no resort in the fixture set has all three #}
-{# roles, and most have locations with no role at all, so the page may   #}
-{# be offering one anonymous point or none.                              #}
+{# SNOW-855: the description branches on whether the page has a         #}
+{# forecast — ``forecast_points`` since SNOW-1157, the same condition    #}
+{# the Forecast section itself uses — so it promises only what this      #}
+{# resort actually shows. It named a village, a mid-station and a summit #}
+{# for every resort; most resorts have one point or none, so it names    #}
+{# no tiers.                                                             #}
 {# SNOW-1122: title and description name the resort beside the terms     #}
 {# people search for ("conditions", "avalanche", "bulletin", "weather"), #}
 {# and "weather" only when the page links to a forecast. The danger     #}
 {# sentence appears only when today's bulletin has a level. Kept under  #}
 {# ~155 characters, the snippet length _page_meta.html budgets for.     #}
 {% block page_meta %}
-    {% if locations %}
+    {% if forecast_points %}
         {% blocktrans with name=resort.name trimmed asvar page_title %}
             {{ name }} conditions — avalanche bulletin & weather · Snowdesk
         {% endblocktrans %}
@@ -163,7 +163,7 @@ Context expected (built by ``apps.public.views.resort_detail``):
             Danger today: {{ level }} – {{ label }}.
         {% endblocktrans %}
     {% endif %}
-    {% if locations %}
+    {% if forecast_points %}
         {% blocktrans with name=resort.name region=region.name danger=danger_line|default:"" trimmed asvar page_description %}
             {{ name }} avalanche conditions. {{ danger }} The {{ region }} avalanche bulletin and a weather forecast for
             each location.
@@ -222,43 +222,15 @@ Context expected (built by ``apps.public.views.resort_detail``):
             {# SNOW-1156: one gap spaces the sections, whichever order they take. #}
             <div class="flex min-w-0 flex-col gap-12 lg:flex-1">
                 {# SNOW-1156: in season (a bulletin covers today) the bulletin card  #}
-                {# leads; out of season the forecasts lead and the card follows.    #}
+                {# leads; out of season the forecast leads and the card follows.    #}
                 {# The card is one include, rendered in one of two places.          #}
                 {% if panel %}
                     {% include "public/partials/_resort_bulletin_card.html" %}
                 {% endif %}
 
-                {# ── Forecasts: the resort's curated locations, each a link (SNOW-807) ── #}
-                {% if locations %}
-                    <section aria-labelledby="resort-locations-heading" data-testid="resort-locations">
-                        {% translate "Forecasts" as locations_heading_label %}
-                        {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-locations-heading" text=locations_heading_label class_extra="mb-2" only %}
-                        <ul class="flex flex-col gap-2 text-sm">
-                            {% for place in locations %}
-                                <li data-testid="{{ place.testid }}">
-                                    <a
-                                        class="hover-affordance text-text-1 underline"
-                                        href="{{ place.url }}"
-                                        data-testid="{{ place.testid }}-link"
-                                    >{{ place.label }}</a>
-                                    <span class="text-text-3">
-                                        <span aria-hidden="true">
-                                            &middot;
-                                        </span>{{ place.role_label }}{% if place.elevation_m is not None %}<span
-                                                aria-hidden="true"
-                                            >
-                                                &middot;
-                                            </span>{{ place.elevation_m|floatformat:0 }} m{% endif %}
-                                    </span>
-                                    {% if place.weather_display %}
-                                        <div class="mt-1">
-                                            {% include "includes/_weather_panel.html" with weather_display=place.weather_display testid_prefix=place.testid|add:"-weather" location_label="" brief=True only %}
-                                        </div>
-                                    {% endif %}
-                                </li>
-                            {% endfor %}
-                        </ul>
-                    </section>
+                {# ── Forecast: the Base / Mid / Summit strip (SNOW-1157) ── #}
+                {% if forecast_points %}
+                    {% include "public/partials/_resort_forecast.html" %}
                 {% endif %}
 
                 {% if not panel %}
