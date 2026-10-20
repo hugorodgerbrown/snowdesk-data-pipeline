@@ -185,19 +185,18 @@
   }
 
   /**
-   * Format an ISO timestamp as "HH:MM" (24h, zero-padded), mirroring
-   * ``pwa_offline.js``'s ``formatShort`` without pulling in a full date +
-   * day/month string. Returns '' on parse failure.
+   * Stamp a cached record's time: "HH:MM" when it is from today, day +
+   * "HH:MM" otherwise, so yesterday's cache cannot read as today's
+   * (SNOW-1139). The formatting is ``pwaCachedStampCore``'s, shared with
+   * the reports and routes panels; '' on a parse failure, or when the core
+   * is somehow absent.
    *
    * @param {string | null} isoValue
    * @returns {string}
    */
-  function _formatHHMM(isoValue) {
-    if (!isoValue) return '';
-    const d = new Date(isoValue);
-    if (Number.isNaN(d.valueOf())) return '';
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  function _formatStamp(isoValue) {
+    const core = window.pwaCachedStampCore;
+    return core ? core.formatStamp(isoValue) : '';
   }
 
   /**
@@ -287,7 +286,7 @@
       const stamp = document.createElement('span');
       stamp.className = 'text-xs text-text-3 font-mono';
       stamp.textContent = interpolate(STRINGS['rating-as-of'], {
-        time: _formatHHMM(record.generated_at),
+        time: _formatStamp(record.generated_at),
       });
       row.appendChild(stamp);
 
@@ -299,7 +298,7 @@
     asOf.className = 'text-xs text-text-3 font-mono mt-4';
     asOf.setAttribute('data-testid', 'favourite-card-cached-as-of');
     asOf.textContent = interpolate(STRINGS['cached-as-of'], {
-      time: _formatHHMM(record.generated_at),
+      time: _formatStamp(record.generated_at),
     });
     root.appendChild(asOf);
 

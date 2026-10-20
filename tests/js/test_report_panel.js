@@ -271,6 +271,32 @@ describe('a failed list load with rows cached on the device (SNOW-661)', () => {
     expect(container.textContent).toContain('Showing your saved reports');
   });
 
+  it("dates yesterday's cache, so it cannot read as today's (SNOW-1139)", async () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(9, 0, 0, 0);
+    const iso = yesterday.toISOString();
+    stubCache({ body: CACHED_ROWS, cached_at: iso });
+    const container = await failListLoad();
+
+    const line = container.querySelector('[data-testid="report-list-cached"]');
+    const day = window.pwaCachedStampCore.formatDay(iso);
+    expect(day).not.toBe('');
+    expect(line.textContent).toBe(
+      `Showing your saved reports — last updated ${day} 09:00.`,
+    );
+  });
+
+  it("stamps today's cache with the time alone (SNOW-1139)", async () => {
+    stubCache({ body: CACHED_ROWS, cached_at: new Date().toISOString() });
+    const container = await failListLoad();
+
+    const line = container.querySelector('[data-testid="report-list-cached"]');
+    expect(line.textContent).toMatch(
+      /^Showing your saved reports — last updated \d{2}:\d{2}\.$/,
+    );
+  });
+
   it('carries no Delete form, which offline would do nothing', async () => {
     // Deleting a report is an online-only hx-post — only SUBMISSION goes
     // through the mutation queue — and a control that silently does nothing

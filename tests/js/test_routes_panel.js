@@ -384,6 +384,32 @@ describe('a failed list load with rows cached on the device (SNOW-950)', () => {
     expect(container.textContent).toContain('Showing your saved routes');
   });
 
+  it("dates yesterday's cache, so it cannot read as today's (SNOW-1139)", async () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(9, 0, 0, 0);
+    const iso = yesterday.toISOString();
+    stubCache({ body: CACHED_ROWS, cached_at: iso });
+    const container = await failListLoad();
+
+    const line = container.querySelector('[data-testid="route-list-cached"]');
+    const day = window.pwaCachedStampCore.formatDay(iso);
+    expect(day).not.toBe('');
+    expect(line.textContent).toBe(
+      `Showing your saved routes — last updated ${day} 09:00.`,
+    );
+  });
+
+  it("stamps today's cache with the time alone (SNOW-1139)", async () => {
+    stubCache({ body: CACHED_ROWS, cached_at: new Date().toISOString() });
+    const container = await failListLoad();
+
+    const line = container.querySelector('[data-testid="route-list-cached"]');
+    expect(line.textContent).toMatch(
+      /^Showing your saved routes — last updated \d{2}:\d{2}\.$/,
+    );
+  });
+
   it('carries no row menu, whose every item is online-only', async () => {
     // Plan a trip, Share, Rename and Delete all need the network, and a
     // control that silently does nothing is worse than one that is not

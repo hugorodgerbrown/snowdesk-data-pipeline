@@ -205,7 +205,10 @@ describe('translated card copy (SNOW-620)', () => {
   });
 
   it('renders the cached-as-of stamp with its time substituted', async () => {
-    await replayRoster([record('u-stamp', 'Verbier')]);
+    // SNOW-1139: a card cached today carries the time alone.
+    await replayRoster([
+      { ...record('u-stamp', 'Verbier'), generated_at: new Date().toISOString() },
+    ]);
     const target = document.createElement('div');
     document.body.appendChild(target);
 
@@ -213,6 +216,23 @@ describe('translated card copy (SNOW-620)', () => {
 
     const asOf = target.querySelector('[data-testid="favourite-card-cached-as-of"]');
     expect(asOf.textContent).toMatch(/^Showing cached data — as of \d{2}:\d{2}$/);
+  });
+
+  it("dates yesterday's cache, so it cannot read as today's (SNOW-1139)", async () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(9, 0, 0, 0);
+    const iso = yesterday.toISOString();
+    await replayRoster([{ ...record('u-old', 'Verbier'), generated_at: iso }]);
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+
+    await failListRequest(target);
+
+    const asOf = target.querySelector('[data-testid="favourite-card-cached-as-of"]');
+    const day = window.pwaCachedStampCore.formatDay(iso);
+    expect(day).not.toBe('');
+    expect(asOf.textContent).toBe(`Showing cached data — as of ${day} 09:00`);
   });
 });
 
