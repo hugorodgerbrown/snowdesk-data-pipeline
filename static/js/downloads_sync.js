@@ -55,6 +55,20 @@
  * `isEnabled()` is false and every function is an immediate no-op — which
  * is also what a page carrying no downloads surface at all gets, since the
  * configuration is read off that surface.
+ *
+ * ## A download carries its principal (SNOW-1142)
+ *
+ * The bytes are device-wide on purpose — a user who signs out keeps their
+ * maps for the trip — but the browser can be shared. Every local area
+ * record is stamped with `principal`, the account id from
+ * `<meta name="pwa-user-id">` at the moment it was written ('' for an
+ * anonymous download), and `ownership()` below is the one rule deciding
+ * what may be recorded to the signed-in account: its own areas, plus a
+ * LEGACY record (no `principal` field) or an ANONYMOUS one, each claimed
+ * ONCE by the first signed-in account to see it — stamped with that id
+ * first, so no later account can claim it again. Another account's area
+ * is still listed and usable here; it is never pushed. See
+ * docs/decisions/a-download-carries-its-principal.md.
  */
 
 (function () {
@@ -65,7 +79,19 @@
   // without a round trip. Advisory only: a lost or stale value costs one
   // redundant push, which the server absorbs as an `update_or_create` on
   // the same `(user, area_id)`.
+  //
+  // SNOW-1142: keyed by principal — `{[accountId]: [areaIds]}` — because
+  // "this device has told the account" means nothing on a shared browser
+  // without saying WHICH account. The flat array every earlier release
+  // wrote is read as nobody's, so the first `adopt()` after the deploy
+  // re-checks every held area against `ownership()` and pushes only what
+  // the signed-in account may claim.
   var SYNCED_KEY = 'basemap.syncedAreaIds';
+
+  // The two `meta:app` records a held area lives in — named here because
+  // a claim (SNOW-1142) stamps the record itself.
+  var REGIONS_KEY = 'basemap.regions';
+  var CUSTOM_AREAS_KEY = 'basemap.customAreas';
 
   // The budget for the one read this module makes. Generous enough for a
   // slow mobile round trip, short enough that opening the Manage downloads
@@ -126,48 +152,146 @@
   }
 
   /**
-   * Read the area ids already pushed to the account.
+   * The signed-in account's public id — `<meta name="pwa-user-id">`, which
+   * `public/base.html` renders on every page — or '' when nobody is
+   * signed in (SNOW-1142).
    *
-   * Best-effort: an unreadable IndexedDB yields an empty list, which makes
-   * `adopt()` push everything again. That is the safe direction — a
-   * redundant push is an update, a skipped one is a missing row.
+   * Read off the tag at call time rather than through `pwaDb.context()`,
+   * whose snapshot is cached: the tag is the page's own statement of who
+   * it was rendered for, and it is all a stamp needs.
    *
-   * @returns {Promise<string[]>}
+   * @returns {string}
    */
-  async function _readSynced() {
+  function principal() {
+    var meta = document.querySelector('meta[name="pwa-user-id"]');
+    return (meta && meta.getAttribute('content')) || '';
+  }
+
+  /**
+   * Whose area a held record is, as far as recording it to the account is
+   * concerned (SNOW-1142). The one rule; `adopt()`, `recordHeld()` and the
+   * writers' own pushes all ask it.
+   *
+   *   'own'     — stamped with the signed-in id: push it.
+   *   'claim'   — a LEGACY record (no `principal`, null here) or an
+   *               ANONYMOUS download (''), seen by a signed-in account:
+   *               stamp it with that id, then push it. Once.
+   *   'foreign' — stamped with another account's id: never push it.
+   *   'none'    — nobody is signed in: there is no account to push to.
+   *
+   * Pure: no DOM, no storage.
+   *
+   * @param {string|null|undefined} recordPrincipal The record's stamp.
+   * @param {string} signedIn The signed-in account id, '' for none.
+   * @returns {'own'|'claim'|'foreign'|'none'}
+   */
+  function ownership(recordPrincipal, signedIn) {
+    if (!signedIn) return 'none';
+    if (recordPrincipal === signedIn) return 'own';
+    if (recordPrincipal === undefined || recordPrincipal === null || recordPrincipal === '') {
+      return 'claim';
+    }
+    return 'foreign';
+  }
+
+  /**
+   * The record a writer stores, stamped with its principal (SNOW-1142).
+   *
+   * A NEW record — nothing held under this id before — takes the signed-in
+   * id, or '' for an anonymous download. A record that REPLACES one
+   * already held (a re-download, a repair) keeps the stamp it had: a
+   * refresh is not a change of owner, and a legacy record with no stamp
+   * stays without one, so the claim rule — not a refresh — decides who
+   * it belongs to.
+   *
+   * @param {Object} record The record about to be written.
+   * @param {Object|null|undefined} existing The record it replaces, if any.
+   * @returns {Object} A copy of `record` with `principal` set (or, for a
+   *   legacy predecessor, left absent).
+   */
+  function stampPrincipal(record, existing) {
+    var out = Object.assign({}, record);
+    delete out.principal;
+    if (existing) {
+      if (Object.prototype.hasOwnProperty.call(existing, 'principal')) {
+        out.principal = existing.principal;
+      }
+    } else {
+      out.principal = principal();
+    }
+    return out;
+  }
+
+  /**
+   * The whole synced marker, as an object keyed by principal (SNOW-1142).
+   *
+   * The flat array every earlier release wrote is read as `{}` — nobody's
+   * — so the first `adopt()` after the deploy re-checks every held area
+   * against `ownership()` rather than trusting a list that never said
+   * which account it was for. Best-effort: an unreadable IndexedDB is `{}`
+   * too, which makes `adopt()` push again — the safe direction, since a
+   * redundant push is an update and a skipped one is a missing row.
+   *
+   * @returns {Promise<Object<string, string[]>>}
+   */
+  async function _readSyncedAll() {
     try {
       var row = await window.pwaDb?.get('meta:app', SYNCED_KEY);
-      return Array.isArray(row && row.value) ? row.value : [];
+      var value = row && row.value;
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+      return value;
     } catch (_err) {
-      return [];
+      return {};
     }
   }
 
   /**
-   * Remember `areaId` as pushed.
+   * Read the area ids already pushed to `owner`'s account.
    *
-   * Always a `put` of the whole list, never an append to a shared cursor:
-   * this is one small array and a read-modify-write of it is atomic enough
-   * for a value nothing else writes.
+   * @param {string} owner The account id.
+   * @returns {Promise<string[]>}
+   */
+  async function _readSynced(owner) {
+    var all = await _readSyncedAll();
+    var ids = owner ? all[owner] : null;
+    return Array.isArray(ids) ? ids : [];
+  }
+
+  /**
+   * Write `ids` as `owner`'s synced list, leaving every other account's
+   * alone. Always a `put` of the whole object: it is small, and nothing
+   * else writes it.
+   *
+   * @param {string} owner
+   * @param {string[]} ids
+   * @returns {Promise<void>}
+   */
+  async function _writeSynced(owner, ids) {
+    var all = Object.assign({}, await _readSyncedAll());
+    all[owner] = ids;
+    await window.pwaDb?.put('meta:app', { key: SYNCED_KEY, value: all });
+  }
+
+  /**
+   * Remember `areaId` as pushed to the signed-in account.
    *
    * @param {string} areaId
    * @returns {Promise<void>}
    */
   async function _markSynced(areaId) {
+    var owner = principal();
+    if (!owner) return;
     try {
-      var existing = await _readSynced();
+      var existing = await _readSynced(owner);
       if (existing.indexOf(areaId) !== -1) return;
-      await window.pwaDb?.put('meta:app', {
-        key: SYNCED_KEY,
-        value: existing.concat([areaId]),
-      });
+      await _writeSynced(owner, existing.concat([areaId]));
     } catch (_err) {
-      // Best-effort — see `_readSynced`.
+      // Best-effort — see `_readSyncedAll`.
     }
   }
 
   /**
-   * Forget that `areaId` was pushed.
+   * Forget that `areaId` was pushed to the signed-in account.
    *
    * Called when the account row goes, so that re-downloading the same area
    * later pushes it again rather than assuming a row that is no longer
@@ -177,17 +301,75 @@
    * @returns {Promise<void>}
    */
   async function _unmarkSynced(areaId) {
+    var owner = principal();
+    if (!owner) return;
     try {
-      var existing = await _readSynced();
+      var existing = await _readSynced(owner);
       if (existing.indexOf(areaId) === -1) return;
-      await window.pwaDb?.put('meta:app', {
-        key: SYNCED_KEY,
-        value: existing.filter(function (id) {
+      await _writeSynced(
+        owner,
+        existing.filter(function (id) {
           return id !== areaId;
         }),
-      });
+      );
     } catch (_err) {
-      // Best-effort — see `_readSynced`.
+      // Best-effort — see `_readSyncedAll`.
+    }
+  }
+
+  /**
+   * Stamp a LEGACY or ANONYMOUS held record with `owner` — the local half
+   * of a claim (SNOW-1142).
+   *
+   * Conditional inside the write: an entry already stamped with an id is
+   * left as it is, so two tabs racing a claim cannot hand one area to two
+   * accounts. On one `readModifyWrite` transaction where the store offers
+   * it, for the reason every other writer of these whole-array rows uses
+   * one (SNOW-959).
+   *
+   * @param {string} areaId
+   * @param {string} owner
+   * @returns {Promise<boolean>} Whether the record now carries `owner` —
+   *   false when no such record is held here, another account stamped it
+   *   first, or the write failed. A claim pushes only on true.
+   */
+  async function _claimLocal(areaId, owner) {
+    var core = self.pwaBasemapDownloadCore;
+    var db = window.pwaDb;
+    if (!core || !db || !areaId || !owner) return false;
+    var isCustom = core.isCustomAreaId(areaId);
+    var key = isCustom ? CUSTOM_AREAS_KEY : REGIONS_KEY;
+    var matches = function (entry) {
+      if (!entry) return false;
+      return isCustom ? entry.id === areaId : core.areaIdForRegion(entry.region_id) === areaId;
+    };
+    var claimed = false;
+    var mutate = function (row) {
+      var list = Array.isArray(row && row.value) ? row.value : [];
+      var touched = false;
+      var next = list.map(function (entry) {
+        if (!matches(entry)) return entry;
+        if (entry.principal === owner) {
+          claimed = true;
+          return entry;
+        }
+        if (ownership(entry.principal, owner) !== 'claim') return entry;
+        touched = true;
+        claimed = true;
+        return Object.assign({}, entry, { principal: owner });
+      });
+      return touched ? { key: key, value: next } : undefined;
+    };
+    try {
+      if (typeof db.readModifyWrite === 'function') {
+        await db.readModifyWrite('meta:app', key, mutate);
+      } else {
+        var written = mutate(await db.get('meta:app', key));
+        if (written) await db.put('meta:app', written);
+      }
+      return claimed;
+    } catch (_err) {
+      return false;
     }
   }
 
@@ -275,11 +457,23 @@
    *   "CIRCLE"`, anything else (a framed area, a region, an older record
    *   with no type) posts "BOX" — so another device restores a drop zone
    *   as a drop zone rather than as the rectangle around it.
+   *   SNOW-1142: `principal` is the stamp on the local record the writer
+   *   just stored. When the key is PRESENT the push goes ahead only if
+   *   `ownership()` says the record is the signed-in account's own — a
+   *   re-download of another account's area keeps that account's stamp
+   *   and is not recorded here, and a legacy predecessor (stamp absent,
+   *   passed as undefined) is left for `adopt()`'s claim.
    * @returns {Promise<boolean>} Whether the write was queued. Never
    *   rejects — see `_enqueue`.
    */
   async function push(record) {
     if (!isEnabled() || !record || !record.areaId) return false;
+    if (
+      Object.prototype.hasOwnProperty.call(record, 'principal') &&
+      ownership(record.principal, principal()) !== 'own'
+    ) {
+      return false;
+    }
     var queued = await _enqueue(config().downloadSyncUrl, {
       area_id: record.areaId,
       region_id: record.regionId || '',
@@ -426,30 +620,6 @@
   }
 
   /**
-   * Push every local area the account has not been told about.
-   *
-   * The migration path for a device that was downloading before this
-   * feature existed, and the repair path for a push that never landed.
-   * Idempotent on both sides: the marker list skips what has already been
-   * sent, and the endpoint is an `update_or_create` on `(user, area_id)`
-   * for anything that slips through.
-   *
-   * Reads through `window.pwaBasemapDownloads.areas()` rather than the
-   * two `meta:app` records directly — that bridge is the single
-   * normalising layer, and a second reader here would have to re-derive
-   * the record-to-bucket-id mapping it already owns. The cost of sharing
-   * that reader is that its list is wider than this loop's: it includes
-   * the shared base layers, which are not the user's downloads and which
-   * this endpoint rejects, so they are skipped explicitly below.
-   *
-   * @param {Array<Object>} [known] SNOW-1140: that same list, when the
-   *   caller has already read it — used as given, so no second read (and
-   *   no second account request) is made.
-   * @returns {Promise<number>} How many areas were pushed — 0 when
-   *   everything was already synced, which is the common case on every
-   *   load after the first.
-   */
-  /**
    * The name to record on the account for a held area.
    *
    * SNOW-1133: a custom area's display `name` is filled in memory with the
@@ -466,8 +636,95 @@
     return typeof area.storedName === 'string' ? area.storedName : area.name || '';
   }
 
+  /**
+   * Record one area HELD on this device to the signed-in account, if it
+   * may be (SNOW-1142).
+   *
+   * The one place the ownership rule is applied to a held area — `adopt()`
+   * and the Manage downloads sheet's `_reassertHeldAreas` both call this
+   * rather than `push()`, so they cannot disagree about whose an area is:
+   *
+   *   own     → pushed.
+   *   claim   → the local record is stamped with the signed-in id FIRST,
+   *             and pushed only once that stamp has landed, so a later
+   *             account sees the area as foreign and never claims it too.
+   *   foreign → skipped. It is still listed and usable here.
+   *   none    → skipped: nobody to record it to.
+   *
+   * The shape exclusions every caller needs are here too: an orphaned
+   * bucket (SNOW-612 — a download that failed partway, leaving tiles and
+   * no record) has no completed area to describe; a shared base layer
+   * (SNOW-860) is not one of the user's downloads and the endpoint's
+   * `_AREA_ID_RE` 400s its `base-` prefix, which the mutation queue
+   * classifies as permanent and never retries; and a custom area with no
+   * stored box cannot be described to another device, so the server
+   * refuses it.
+   *
+   * @param {Object} area An area as `basemap_downloaded_areas.js`'s reader
+   *   (or `reconcileAreas` after it) returns it, carrying `principal`.
+   * @returns {Promise<boolean>} Whether a push was queued. Never rejects.
+   */
+  async function recordHeld(area) {
+    if (!isEnabled() || !area || !area.id || area.orphaned) return false;
+    // An account-only row is not held here: there is no record to stamp.
+    if (area.onDevice === false) return false;
+    var core = self.pwaBasemapDownloadCore;
+    if (core && core.isBaseLayerAreaId(area.id)) return false;
+    var isCustom = core ? core.isCustomAreaId(area.id) : false;
+    if (isCustom && !Array.isArray(area.bbox)) return false;
+    var owner = principal();
+    var verdict = ownership(area.principal, owner);
+    if (verdict === 'claim') {
+      if (!(await _claimLocal(area.id, owner))) return false;
+    } else if (verdict !== 'own') {
+      return false;
+    }
+    return push({
+      areaId: area.id,
+      regionId: isCustom ? '' : String(area.id).replace(/^region-/, ''),
+      bbox: area.bbox,
+      basemapKey: area.basemapKey,
+      name: accountName(area),
+      terrain: !!area.terrain,
+      // SNOW-1136: box or drop zone — see `shapeFor`.
+      type: area.type,
+      principal: owner,
+    });
+  }
+
+  /**
+   * Push every local area the account has not been told about.
+   *
+   * The migration path for a device that was downloading before this
+   * feature existed, and the repair path for a push that never landed.
+   * Idempotent on both sides: the marker list skips what has already been
+   * sent, and the endpoint is an `update_or_create` on `(user, area_id)`
+   * for anything that slips through.
+   *
+   * SNOW-1142: only what the signed-in account may record — its own areas,
+   * and a legacy or anonymous one it claims (see `recordHeld`). Another
+   * account's area held on this shared browser is skipped, and the marker
+   * consulted is this account's own.
+   *
+   * Reads through `window.pwaBasemapDownloads.areas()` rather than the
+   * two `meta:app` records directly — that bridge is the single
+   * normalising layer, and a second reader here would have to re-derive
+   * the record-to-bucket-id mapping it already owns. The cost of sharing
+   * that reader is that its list is wider than this loop's: it includes
+   * the shared base layers, which are not the user's downloads and which
+   * this endpoint rejects, so they are skipped explicitly below.
+   *
+   * @param {Array<Object>} [known] SNOW-1140: that same list, when the
+   *   caller has already read it — used as given, so no second read (and
+   *   no second account request) is made.
+   * @returns {Promise<number>} How many areas were pushed — 0 when
+   *   everything was already synced, which is the common case on every
+   *   load after the first.
+   */
   async function adopt(known) {
     if (!isEnabled()) return 0;
+    var owner = principal();
+    if (!owner) return 0;
     var areas;
     // SNOW-1140: a caller that has just read the list hands it in, so the
     // account's areas are not fetched a second time at boot (the Manage
@@ -483,52 +740,22 @@
     }
     if (!Array.isArray(areas) || !areas.length) return 0;
 
-    var synced = await _readSynced();
-    var core = self.pwaBasemapDownloadCore;
+    var synced = await _readSynced(owner);
     var pushed = 0;
     for (var i = 0; i < areas.length; i += 1) {
       var area = areas[i];
       if (!area || !area.id || synced.indexOf(area.id) !== -1) continue;
-      // An orphaned bucket (SNOW-612 — a download that failed partway,
-      // leaving tiles and no record) is skipped: there is no completed
-      // area to describe, and syncing one would offer another device a
-      // download that never finished on this one.
-      if (area.orphaned) continue;
-      // SNOW-860: a shared base layer is not one of the user's downloads
-      // and must never be pushed. `basemapDownloadedAreas()` has listed
-      // them since SNOW-856 — they are real bytes on the device, so the
-      // reader reports them — and every consumer for which a base layer
-      // is NOT an area excludes it explicitly: `planEviction`,
-      // `manageRows`, `map_layer_sync_status.js` and the reset-data
-      // panel all call `isBaseLayerAreaId`. This loop was the one that
-      // did not, so it posted `base-<basemapKey>` to an endpoint whose
-      // `_AREA_ID_RE` is `^(region|custom)-…` — a 400, which the
-      // mutation queue classifies as permanent and never retries. Every
-      // signed-in user who had downloaded anything carried a failed
-      // queue row and a red sync badge because of it.
-      if (core && core.isBaseLayerAreaId(area.id)) continue;
-      var isCustom = core ? core.isCustomAreaId(area.id) : false;
-      // A custom area with no stored bbox cannot be described to another
-      // device, and the server refuses it — so it is skipped here rather
-      // than posted to be rejected.
-      if (isCustom && !Array.isArray(area.bbox)) continue;
-      var ok = await push({
-        areaId: area.id,
-        regionId: isCustom ? '' : String(area.id).replace(/^region-/, ''),
-        bbox: area.bbox,
-        basemapKey: area.basemapKey,
-        name: accountName(area),
-        terrain: !!area.terrain,
-        // SNOW-1136: box or drop zone — see `shapeFor`.
-        type: area.type,
-      });
-      if (ok) pushed += 1;
+      if (await recordHeld(area)) pushed += 1;
     }
     return pushed;
   }
 
   self.pwaDownloadsSync = Object.freeze({
     accountName: accountName,
+    ownership: ownership,
+    principal: principal,
+    recordHeld: recordHeld,
+    stampPrincipal: stampPrincipal,
     shapeFor: shapeFor,
     isEnabled: isEnabled,
     push: push,

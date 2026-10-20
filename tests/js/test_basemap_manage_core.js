@@ -806,6 +806,22 @@ describe('reconcileAreas carries the stored name (SNOW-1133)', () => {
   });
 });
 
+describe('reconcileAreas carries the principal (SNOW-1142)', () => {
+  it('passes a stamp through, and reads a missing one as null', () => {
+    const out = core.reconcileAreas(
+      [
+        { id: 'region-a', bytes: 1, regionId: 'A', principal: 'u-2' },
+        { id: 'custom-b', bytes: 1, bbox: [7, 46, 8, 47], principal: '' },
+        { id: 'custom-c', bytes: 1, bbox: [7, 46, 8, 47] },
+      ],
+      [],
+      {},
+      [],
+    );
+    expect(out.map((area) => area.principal)).toEqual(['u-2', '', null]);
+  });
+});
+
 describe('manageRows with the account (SNOW-749)', () => {
   const isCustomAreaId = (id) => id.indexOf('custom-') === 0;
 
