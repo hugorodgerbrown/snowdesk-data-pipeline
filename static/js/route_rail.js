@@ -608,9 +608,7 @@
           slope: slope,
           coordinates: coordinates,
           profile: profile,
-          legs: legs,
           sampleCount: sampleCount,
-          spanM: spanM,
         });
       } else {
         window.pwaRoutePointCard.detach();

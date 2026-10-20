@@ -479,9 +479,9 @@ describe('the Col de la Chaux zig-zag', () => {
 });
 
 describe('segmentGradients', () => {
-  it('reads rise over run either side of each segment', () => {
+  it('reads rise over run across each segment', () => {
     const profile = readProfile(track(81));
-    const out = core.segmentGradients(profile, 24, profile.distanceM);
+    const out = core.segmentGradients(profile, 24);
     expect(out).toHaveLength(24);
     expect(out[2]).toBeGreaterThan(0);
     expect(out[21]).toBeLessThan(0);
@@ -489,36 +489,55 @@ describe('segmentGradients', () => {
   });
 
   it('is null throughout for a profile with no heights', () => {
-    expect(core.segmentGradients(readProfile([]), 4, 100)).toEqual([null, null, null, null]);
-    expect(core.segmentGradients(null, 2, 100)).toEqual([null, null]);
+    expect(core.segmentGradients(readProfile([]), 4)).toEqual([null, null, null, null]);
+    expect(core.segmentGradients(null, 2)).toEqual([null, null]);
   });
 
-  it('stops the window at the leg’s ends', () => {
+  it('reads only its own 25 m, never its neighbours (SNOW-1145)', () => {
+    // Flat but for one 6 m rise from point 17 to 19, inside segment 5
+    // (points 16.7 to 20): segments 4 and 6, which a window one stride
+    // either side of their middles used to reach into, read level, and
+    // segment 5 alone climbs.
+    const coordinates = Array.from({ length: 81 }, (_, i) => [
+      7.4 + i / 10000,
+      46.1,
+      Math.min(6, Math.max(0, (i - 17) * 3)) + 1500,
+    ]);
+    const profile = readProfile(coordinates);
+    const out = core.segmentGradients(profile, 24);
+    expect(out[5]).toBeGreaterThan(1);
+    expect(out[4]).toBeCloseTo(0, 6);
+    expect(out[6]).toBeCloseTo(0, 6);
+  });
+
+  it('never averages a segment with the leg behind it', () => {
+    // The summit sits on the boundary between segments 11 and 12, so each
+    // reads its own side's full gradient rather than a blend across it.
     const profile = readProfile(track(81));
-    const legs = [{ from: 0, to: 11 }, { from: 12, to: 23 }];
-    const open = core.segmentGradients(profile, 24, profile.distanceM);
-    const cut = core.segmentGradients(profile, 24, profile.distanceM, legs);
-    expect(Math.abs(open[11])).toBeLessThan(Math.abs(open[2]) - 5);
-    expect(cut[11]).toBeCloseTo(cut[2], 6);
-    expect(cut[12]).toBeCloseTo(cut[21], 6);
+    const out = core.segmentGradients(profile, 24);
+    expect(out[11]).toBeCloseTo(out[2], 6);
+    expect(out[12]).toBeCloseTo(out[21], 6);
   });
 
   it('never measures across a gap in the heights', () => {
     const coordinates = track(81).map((p, i) => (i === 20 ? [p[0], p[1], null] : p));
-    const out = core.segmentGradients(readProfile(coordinates), 24, readProfile(coordinates).distanceM);
+    const out = core.segmentGradients(readProfile(coordinates), 24);
     expect(out[5]).toBeNull();
     expect(out[2]).not.toBeNull();
   });
 
   it('reads the Backside track’s two mockup points', () => {
     const profile = readProfile(backside.coordinates);
-    const out = core.segmentGradients(profile, backside.angles.length, backside.distance_m, backside.legs);
+    const out = core.segmentGradients(profile, backside.angles.length);
     // Point A, a steep descent down the 42° face; point B, the gentle
     // climb. (The mockup read A at -37°; this fixture's heights put it a
     // step gentler, so the bound is the steep step's.)
     expect(out[27]).toBeLessThan(-25);
-    expect(core.trackWord(out[151])).toBe('gentle');
+    // Point B is a climb; read across its own 25 m (SNOW-1145) it is
+    // about 12°, in the steady step, where the old 50 m window blended it
+    // down to about 9° with the gentler ground either side.
     expect(out[151]).toBeGreaterThan(0);
+    expect(out[151]).toBeLessThan(15);
   });
 });
 

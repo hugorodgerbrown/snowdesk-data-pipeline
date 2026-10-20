@@ -100,10 +100,11 @@
  * ## The gradient
  *
  * `segmentGradients` is the signed gradient along the track at each
- * segment: rise over run one stride (25 m) either side of its midpoint,
- * read off the heights rail one's profile draws — the terrain model's
- * since SNOW-1043 — and stopped at the leg's ends, so the first segment
- * down from a col is not averaged with the climb behind it. It moved here
+ * segment: rise over run across the segment's own 25 m (SNOW-1145; one
+ * stride either side of its midpoint before), read off the heights rail
+ * one's profile draws — the terrain model's since SNOW-1043. A segment
+ * never reaches past its own ends, so the first segment down from a col
+ * is not averaged with the climb behind it. It moved here
  * from rail two with SNOW-1064, the gradient's only reader once rail two
  * went (SNOW-1065).
  *
@@ -126,7 +127,7 @@
  *   headline(heading, aspect, gradient, angle) — {key, steepness, side}
  *   turnOf(path, aspect)            — the sides the ground falls at both ends
  *   kindOf(head, gradient, track, fall) — the Track line's kind, or null
- *   segmentGradients(profile, sampleCount, spanM, legs?) — signed, per segment
+ *   segmentGradients(profile, sampleCount) — signed, per segment
  *   reading(input, strings)         — the card's words and the wheel's state
  */
 
@@ -166,9 +167,6 @@
 
   /** The ground's classes, flat first. */
   const GROUND_WORDS = Object.freeze(['flat', 'moderate', 'steep', 'very-steep', 'extremely-steep']);
-
-  /** A segment's length on the wire, metres: the sampler's stride. */
-  const STRIDE_M = 25;
 
   /** Tolerance for comparing distances along the profile. */
   const EPSILON = 1e-6;
@@ -527,44 +525,30 @@
    * The signed gradient along the track at each segment, in degrees:
    * positive where the track rises in its own direction (SNOW-1044).
    *
-   * Rise over run between the heights one stride either side of the
-   * segment's midpoint, clamped to the track's ends, read off
-   * `readProfile`'s runs. The segment's midpoint sits on the profile by
-   * share, as rail one places it. With `legs`, a segment is measured only
-   * against ground in its own leg; a segment no leg holds keeps the whole
-   * window. A window spanning an elevation gap is no reading: the gap is
-   * kept as a gap rather than interpolated across.
+   * Rise over run across the segment itself (SNOW-1145): between the
+   * heights at its two ends, read off `readProfile`'s runs, with the
+   * segment placed on the profile by share, as rail one places it. Until
+   * SNOW-1145 the window was one stride either side of the middle, 50 m,
+   * twice the 25 m the colour, the heading and the map's cursor describe;
+   * now every line of the card reads the same piece of track. A window
+   * that never leaves its own segment never leaves its own leg either, so
+   * the legs no longer clip it. A segment spanning an elevation gap is no
+   * reading: the gap is kept as a gap rather than interpolated across.
    *
    * @param {?{runs: Array<Array<{d: number, e: number}>>, distanceM: number,
    *   hasElevation: boolean}} profile A `readProfile` result.
    * @param {number} sampleCount N, the length of `slope.angles`.
-   * @param {number} spanM The route's length, rail one's `distance_m`.
-   * @param {?Array<{from: number, to: number}>} [legs] The route's legs, in
-   *   sample indices.
    * @returns {Array<?number>} N entries, null where a height is missing.
    */
-  function segmentGradients(profile, sampleCount, spanM, legs) {
+  function segmentGradients(profile, sampleCount) {
     const count = sampleCount > 0 ? Math.floor(sampleCount) : 0;
     /** @type {Array<?number>} */
     const out = new Array(count).fill(null);
     if (!profile || !profile.hasElevation || !(profile.distanceM > 0) || !count) return out;
     const distanceM = profile.distanceM;
-    const half = STRIDE_M * (spanM > 0 ? distanceM / spanM : 1);
-    /** @type {Array<?{from: number, to: number}>} */
-    const owner = new Array(count).fill(null);
-    (Array.isArray(legs) ? legs : []).forEach((leg) => {
-      if (!leg || !Number.isInteger(leg.from) || !Number.isInteger(leg.to)) return;
-      for (let s = Math.max(0, leg.from); s <= leg.to && s < count; s += 1) owner[s] = leg;
-    });
     for (let i = 0; i < count; i += 1) {
-      const mid = ((i + 0.5) / count) * distanceM;
-      let a = Math.max(0, mid - half);
-      let b = Math.min(distanceM, mid + half);
-      const own = owner[i];
-      if (own) {
-        a = Math.max(a, (own.from / count) * distanceM);
-        b = Math.min(b, ((own.to + 1) / count) * distanceM);
-      }
+      const a = (i / count) * distanceM;
+      const b = ((i + 1) / count) * distanceM;
       if (!(b - a > EPSILON)) continue;
       const run = runAt(profile.runs, a);
       if (run < 0 || run !== runAt(profile.runs, b)) continue;

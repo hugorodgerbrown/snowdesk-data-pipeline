@@ -5,7 +5,8 @@
  * The cursor dot on its segment's middle, the nearest sample on screen
  * with its distance cap, and null for everything a route with no slope
  * record cannot answer. SNOW-1052 removed `selectionLine`, and gave the
- * dot its segment's slope-class colour.
+ * dot its segment's slope-class colour. SNOW-1145 added the cursor's
+ * segment as a line, which the map draws in the dot's place from z14.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -63,6 +64,42 @@ describe('cursorPoint with no slope core', () => {
 
     expect(point.properties.index).toBe(1);
     expect(point.properties).not.toHaveProperty('colour');
+  });
+});
+
+describe('cursorSegment (SNOW-1145)', () => {
+  it('runs from the index\'s boundary point to the next, in its colour', () => {
+    const segment = core.cursorSegment(SLOPE, 1);
+
+    expect(segment.geometry.type).toBe('LineString');
+    expect(segment.geometry.coordinates).toEqual([[7.0, 46.002], [7.0, 46.004]]);
+    expect(segment.properties.index).toBe(1);
+    expect(segment.properties.colour).toBe(slopeCore.CLASSES[2].hex);
+  });
+
+  it('meets the next index\'s segment end to end', () => {
+    const here = core.cursorSegment(SLOPE, 0).geometry.coordinates;
+    const next = core.cursorSegment(SLOPE, 1).geometry.coordinates;
+
+    expect(here[here.length - 1]).toEqual(next[0]);
+  });
+
+  it('follows the track\'s own path where the record carries seams', () => {
+    const coords = [[7.0, 46.0, 2000], [7.002, 46.0, 2010], [7.002, 46.001, 2020]];
+    const slope = { points: [[7.0, 46.0], [7.002, 46.001]], angles: [31], seams: [0, 2] };
+
+    expect(core.cursorSegment(slope, 0, coords).geometry.coordinates).toEqual([
+      [7.0, 46.0], [7.002, 46.0], [7.002, 46.001],
+    ]);
+  });
+
+  it('answers null wherever cursorPoint does', () => {
+    expect(core.cursorSegment(SLOPE, null)).toBeNull();
+    expect(core.cursorSegment(SLOPE, 3)).toBeNull();
+    expect(core.cursorSegment(SLOPE, -1)).toBeNull();
+    expect(core.cursorSegment(SLOPE, 1.5)).toBeNull();
+    expect(core.cursorSegment(null, 0)).toBeNull();
+    expect(core.cursorSegment({ points: [[7, 46], null], angles: [20] }, 0)).toBeNull();
   });
 });
 

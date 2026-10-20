@@ -2,7 +2,7 @@
 name: legs-not-slope-classes-on-the-map
 description: route_legs_core.js, routes-leg-climb/-descent, routes-slope-line, ROUTE_SLOPE_MINZOOM — a route is its legs, in slope classes from z14
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-20
 ---
 
 # A saved route on the map is drawn as its legs, not in slope classes
@@ -117,6 +117,27 @@ fills; a tap on the line or the profile places a point, and the point is
 the one thing the cursor holds. The "selection dims the others" bullet
 below and the dimming consequence are historical.
 
+**2026-10-20 (SNOW-1145): from z14 the cursor is its segment.** The
+point header describes one 25 m segment, but from z14 the cursor was a
+fixed 25 px ring: about 80 m of track at z14, 40 m at z15, half a
+segment at z17. A ring in the segment's class colour also vanished into
+a line of the same colour. Now, from `ROUTE_SLOPE_MINZOOM`, the cursor on
+a sampled route is drawn as the segment itself, along the same path
+`segmentPaths` gives the slope line: `routes-cursor-segment-casing`
+(dark), `routes-cursor-segment-halo` (white) and `routes-cursor-segment`
+(the class colour), with butt caps, from `cursorSegment` in
+`route_cursor_map_core.js`. Segment i ends on `points[i + 1]` and
+segment i + 1 starts on it, so two consecutive points meet end to end
+and the reader can see exactly where the piece the header describes
+starts and stops. The ring's two layers stay for a route never sampled,
+which has no segment; on a sampled route they hide from z14 on the
+dot's `segment` flag. Below z14 the line is drawn in legs, a segment is
+a few pixels, and the dot is unchanged. This is not the highlighted
+stretch SNOW-1052 removed, which was a rail selection of many segments.
+The same ticket narrowed the header's gradient to the segment's own
+25 m, so every line of the header and the mark on the map describe one
+piece of track ([the-point-card-names-the-experience.md](the-point-card-names-the-experience.md)).
+
 ## Why
 
 - **Density.** A track changes slope class every few segments, so a
@@ -166,6 +187,7 @@ below and the dimming consequence are historical.
   fall-line and crux rows with the marks.
 - HISTORICAL: the dimming followed `window.pwaRouteRail.cursor()`,
   through the one subscription `bindRouteCursor` in `map.js` holds. That
-  subscription now draws only the cursor's dot, and the rail's `close()`
+  subscription now draws only the cursor's dot (and, from z14, its
+  segment: SNOW-1145), and the rail's `close()`
   clears the point before it drops the cursor, which is how the map
   hears the rail's ×, Escape and backdrop closes.

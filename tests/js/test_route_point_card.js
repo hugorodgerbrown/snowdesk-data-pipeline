@@ -97,9 +97,7 @@ function attach() {
     slope,
     coordinates,
     profile,
-    legs: [{ from: 0, to: 2, i: 1, climbing: false }],
     sampleCount: 3,
-    spanM: profile.distanceM,
   });
   return cursor;
 }
