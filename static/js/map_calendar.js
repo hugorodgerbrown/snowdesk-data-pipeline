@@ -349,17 +349,11 @@
   // swipe makes the whole grid the control.
   //
   // Touch events, not pointer events: a mouse drag across the grid on a
-  // desktop is a text selection, not a request for a new month. Passive,
-  // because nothing here cancels the browser's handling — `touch-action:
-  // pan-y` on the card (static/css/map.css) is what hands us the horizontal
-  // axis while leaving the card's own vertical scroll alone.
+  // desktop is a text selection, not a request for a new month. The start
+  // and cancel listeners are passive — `touch-action: pan-y` on the card
+  // (static/css/map.css) is what hands us the horizontal axis while leaving
+  // the card's own vertical scroll alone.
   let swipeStart = null;
-  let swallowClickUntil = 0;
-  // How long after a swipe the click it may produce is ignored. A finger
-  // that lifts on a day cell can still fire a click on some browsers, and
-  // without this a swipe that ended on "14" would page the month AND pick
-  // the 14th of the month it paged to.
-  const SWIPE_CLICK_GUARD_MS = 400;
 
   root.addEventListener(
     'touchstart',
@@ -371,19 +365,32 @@
     { passive: true }
   );
 
-  root.addEventListener(
-    'touchend',
+  // On the document, not the card: a second finger that lands OUTSIDE the
+  // card never reaches the listener above, and lifting the first one would
+  // otherwise page the month in the middle of a pinch on the map.
+  document.addEventListener(
+    'touchstart',
     (e) => {
-      if (!swipeStart || e.changedTouches.length === 0) return;
-      const end = e.changedTouches[0];
-      const delta = core.swipeStep(end.clientX - swipeStart.x, end.clientY - swipeStart.y);
-      swipeStart = null;
-      if (delta === 0) return;
-      swallowClickUntil = Date.now() + SWIPE_CLICK_GUARD_MS;
-      step(delta);
+      if (e.touches.length > 1) swipeStart = null;
     },
     { passive: true }
   );
+
+  // Not passive: a swipe cancels its touchend, which is what stops the
+  // browser synthesising a click from it. Without that a swipe ending on
+  // "14" would page the month AND pick the 14th of the month it paged to.
+  // Cancelling here, rather than swallowing the next click on a timer, ties
+  // the suppression to the one click this gesture would have produced and
+  // never to a genuine tap that follows it.
+  root.addEventListener('touchend', (e) => {
+    if (!swipeStart || e.changedTouches.length === 0) return;
+    const end = e.changedTouches[0];
+    const delta = core.swipeStep(end.clientX - swipeStart.x, end.clientY - swipeStart.y);
+    swipeStart = null;
+    if (delta === 0) return;
+    if (e.cancelable) e.preventDefault();
+    step(delta);
+  });
 
   root.addEventListener(
     'touchcancel',
@@ -391,19 +398,6 @@
       swipeStart = null;
     },
     { passive: true }
-  );
-
-  // Capture phase, so it runs before the grid's own delegated handler and
-  // the arrows' handlers below it.
-  root.addEventListener(
-    'click',
-    (e) => {
-      if (Date.now() >= swallowClickUntil) return;
-      swallowClickUntil = 0;
-      e.stopPropagation();
-      e.preventDefault();
-    },
-    true
   );
 
   // One delegated listener rather than one per cell: the grid is rebuilt on

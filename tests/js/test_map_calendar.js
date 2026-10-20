@@ -419,11 +419,12 @@ describe('month navigation', () => {
 describe('swiping between months on a phone (SNOW-1160)', () => {
   /** Dispatch a touch event carrying one point on `target`. */
   function touch(target, type, x, y) {
-    const e = new Event(type, { bubbles: true });
+    const e = new Event(type, { bubbles: true, cancelable: true });
     const point = { clientX: x, clientY: y };
     e.touches = type === 'touchend' ? [] : [point];
     e.changedTouches = [point];
     target.dispatchEvent(e);
+    return e;
   }
 
   /** A one-finger swipe across the grid from x0 to x1. */
@@ -482,23 +483,42 @@ describe('swiping between months on a phone (SNOW-1160)', () => {
     expect(monthLabel()).toBe('February 2026');
   });
 
-  it('does not also pick the day the finger lifts on', async () => {
+  it('ignores a second finger that lands outside the card', async () => {
     history.replaceState(null, '', '/?d=2026-02-11');
     await loadCalendar();
     openPopup();
+    const grid = document.getElementById('map-calendar-grid');
 
-    swipe(200, 40, dayButton('2026-02-13'));
-    // The click a lifted finger can still produce lands after the page
-    // turn, on whatever cell of the NEW month is now under it.
-    dayButton('2026-03-13').click();
+    touch(grid, 'touchstart', 200, 100);
+    const outside = new Event('touchstart', { bubbles: true });
+    outside.touches = [{ clientX: 200, clientY: 100 }, { clientX: 400, clientY: 500 }];
+    document.body.dispatchEvent(outside);
+    touch(grid, 'touchend', 40, 100);
+    expect(monthLabel()).toBe('February 2026');
+  });
+
+  it('cancels a swipe\'s touchend, so it cannot also pick the day it lifts on', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    await loadCalendar();
+    openPopup();
+    const cell = dayButton('2026-02-13');
+
+    touch(cell, 'touchstart', 200, 100);
+    // A cancelled touchend is what stops the browser synthesising a click.
+    expect(touch(cell, 'touchend', 40, 100).defaultPrevented).toBe(true);
     expect(monthLabel()).toBe('March 2026');
-    // The address bar, not the commit log — see `loadCalendar` for why.
-    expect(new URL(location.href).searchParams.get('d')).toBe('2026-02-11');
-    expect(document.getElementById('map-calendar').hidden).toBe(false);
+  });
 
-    // Only that one click is swallowed: the next tap picks a day as usual.
-    dayButton('2026-03-20').click();
-    expect(new URL(location.href).searchParams.get('d')).toBe('2026-03-20');
+  it('leaves a tap\'s touchend alone, so the tap still picks its day', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    await loadCalendar();
+    openPopup();
+    const cell = dayButton('2026-02-13');
+
+    touch(cell, 'touchstart', 100, 100);
+    expect(touch(cell, 'touchend', 102, 101).defaultPrevented).toBe(false);
+    cell.click();
+    expect(new URL(location.href).searchParams.get('d')).toBe('2026-02-13');
   });
 });
 
