@@ -2273,6 +2273,33 @@ describe('account-only rows (SNOW-749)', () => {
     );
   });
 
+  it('re-asserts with the terrain opt-in and the stored name (SNOW-1133)', async () => {
+    // Without `terrain`, push posted "false" and the account forgot the
+    // choice; without `storedName`, it froze the localised default.
+    window.pwaDownloadsSync.push = vi.fn(async () => true);
+    window.pwaDownloadsSync.accountName = (area) =>
+      typeof area.storedName === 'string' ? area.storedName : area.name;
+    installAreas([
+      {
+        id: 'custom-k1',
+        name: 'Custom area 4',
+        storedName: '',
+        bytes: 5 * MB,
+        bbox: [7.1, 46.1, 7.2, 46.2],
+        onDevice: true,
+        synced: false,
+        terrain: true,
+      },
+    ]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(window.pwaDownloadsSync.push).toHaveBeenCalledWith(
+      expect.objectContaining({ areaId: 'custom-k1', name: '', terrain: true }),
+    );
+  });
+
   it('never re-asserts a row it does not hold', async () => {
     // An account-only row is the account telling THIS device something,
     // not the other way about. Pushing it back would make every device

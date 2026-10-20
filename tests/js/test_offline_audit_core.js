@@ -225,6 +225,29 @@ describe('the downloads', () => {
     ]);
   });
 
+  it('names an unrenamed custom area by its ordinal, not its id (SNOW-1133)', () => {
+    const report = core.buildReport(
+      healthy({
+        areas: [
+          {
+            id: 'custom-9b1e',
+            kind: 'custom',
+            name: '',
+            ordinal: 3,
+            deps: [],
+            bucketPresent: true,
+            entries: ['a'],
+          },
+        ],
+      }),
+      {
+        'label-custom': '%(name)s (area you drew)',
+        'default-custom-name': 'Custom area %(n)s',
+      },
+    );
+    expect(row(report, 'area:custom-9b1e').label).toBe('Custom area 3 (area you drew)');
+  });
+
   it('names a region by name alone, because a place reads as one', () => {
     const report = core.buildReport(healthy(), {});
     expect(row(report, 'area:region-ch-4115').label).toBe('Martigny');

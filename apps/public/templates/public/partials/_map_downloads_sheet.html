@@ -214,6 +214,10 @@ the row's own label, so map.html loads that module once for both.
     <span data-string="kind-content-incomplete">{% trans "Bulletins not saved" %}</span>
     <span data-string="kind-region">{% trans "Region" %}</span>
     <span data-string="kind-custom">{% trans "Custom area" %}</span>
+    {# SNOW-1133: an account-only area with no name, named by the day the #}
+    {# account recorded it (map_downloads_manager.js's unnamedAreaLabel). #}
+    <span data-string="unnamed-area">{% blocktrans %}Area saved %(date)s{% endblocktrans %}</span>
+    <span data-string="unnamed-area-undated">{% trans "Unnamed area" %}</span>
     {# SNOW-856: the shared z0-9 overview map — one per basemap, and the #}
     {# only row kind with no Remove control. "Shared" rather than a #}
     {# restatement of the row's own title ("Overview map"), which would #}

@@ -358,7 +358,16 @@
       // Uniform for every row now: the record's own name (always present
       // except for an orphan — see the docstring) falls back to the id,
       // the only identifier left for something with no name at all.
-      var label = area.name || id;
+      //
+      // SNOW-1133: an ACCOUNT-ONLY area with no name — a custom area that
+      // was never renamed, whose "Custom area N" default exists only on
+      // the device that made it — asks the caller instead, so the row
+      // never reads as a raw `custom-<uuid>`.
+      var unnamed =
+        !area.name && !onDevice && typeof opts.unnamedLabel === 'function'
+          ? opts.unnamedLabel(area)
+          : '';
+      var label = area.name || unnamed || id;
 
       var bytes = Number(area.bytes);
       if (!Number.isFinite(bytes) || bytes < 0) bytes = 0;
@@ -446,9 +455,16 @@
     // it is the ground every other row in its group sits on, and a shared
     // foundation listed between two of the things that depend on it reads
     // as a peer of theirs. A group has at most one.
-    var KIND_ORDER = { base: 0, region: 1, custom: 2 };
+    // SNOW-1133: every kind `rows.push` above can produce has a rank. A
+    // drop zone had none, so the subtraction was NaN, which `sort` reads
+    // as "equal" for one pair and not another — the order then depended
+    // on the order the areas were read in. Unknown kinds sort last.
+    var KIND_ORDER = { base: 0, region: 1, custom: 2, dropzone: 3 };
+    function kindRank(kind) {
+      return Object.prototype.hasOwnProperty.call(KIND_ORDER, kind) ? KIND_ORDER[kind] : 99;
+    }
     rows.sort(function (a, b) {
-      if (a.kind !== b.kind) return KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
+      if (a.kind !== b.kind) return kindRank(a.kind) - kindRank(b.kind);
       var byLabel = a.label.localeCompare(b.label);
       if (byLabel !== 0) return byLabel;
       return a.id.localeCompare(b.id);
@@ -619,6 +635,10 @@
         // for a region (whose kind its id already gives). `manageRows`
         // reads it to name the kind in words on the row.
         type: area.type,
+        // SNOW-1133: the name as STORED — '' for an area never renamed,
+        // whose `name` is the reader's in-memory default. What the
+        // account is told, so that default never freezes into it.
+        storedName: area.storedName,
         // SNOW-645: absent on a pre-SNOW-645 record — see manageRows.
         basemapKey: area.basemapKey || null,
         // SNOW-749: the tiles are here.

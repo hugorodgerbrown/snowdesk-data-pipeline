@@ -271,6 +271,7 @@
     'section-access': 'Getting in',
     'section-map': 'The map',
     'section-downloads': 'Map downloads',
+    'default-custom-name': 'Custom area %(n)s',
     'section-content': 'Your content',
 
     'row-offline-support': 'Offline support is installed',
@@ -1332,7 +1333,12 @@
           // a particular name — `basemap_manage_core.js` reads the same
           // field for the same reason, and the report groups by it.
           type: record.type === 'dropzone' ? 'dropzone' : 'custom',
-          name: record.name || record.id,
+          // SNOW-1133: the stored name only. An unrenamed area's
+          // "Custom area N" is built from `ordinal` where the report
+          // speaks of it (offline_audit_core.js's `areaName`), as the
+          // sheet does, rather than falling back to the raw id here.
+          name: record.name || '',
+          ordinal: Number.isFinite(record.ordinal) ? record.ordinal : undefined,
           basemapKey: record.basemapKey || null,
           bytes: record.bytes,
           savedAt: record.savedAt,
