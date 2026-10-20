@@ -1954,6 +1954,32 @@
   }
 
   /**
+   * SNOW-1136: the drop-zone blob for a STORED box — ``circleBlob`` over the
+   * circle ``bbox`` bounds.
+   *
+   * A drop zone's account row carries only its ``bbox`` and ``shape:
+   * 'circle'``; no centre or radius is synced, because the box already
+   * says both. ``map_drop_zone.js`` stores ``circleBBox(centre, radius)``,
+   * which is ``radius / KM_PER_DEGREE_LAT`` degrees either side of the
+   * centre in latitude — so the centre is the box's midpoint and the
+   * radius is half its north–south extent, in the same equirectangular
+   * arithmetic ``circleBlob`` itself uses. Restoring through this fetches
+   * the same clipped tile set the drop fetched, not the box around it.
+   *
+   * @param {number[]} bbox ``[west, south, east, north]`` in (lon, lat).
+   * @param {number} minZ Shallowest zoom (inclusive).
+   * @param {number} maxZ Detail floor (inclusive).
+   * @param {number} [ceilingMb] As ``circleBlob``.
+   * @returns {ReturnType<typeof circleBlob>}
+   */
+  function circleBlobForBBox(bbox, minZ, maxZ, ceilingMb) {
+    const lat = (bbox[1] + bbox[3]) / 2;
+    const lon = (bbox[0] + bbox[2]) / 2;
+    const radiusKm = ((bbox[3] - bbox[1]) / 2) * KM_PER_DEGREE_LAT;
+    return circleBlob(lat, lon, radiusKm, minZ, maxZ, ceilingMb);
+  }
+
+  /**
    * The largest factor in ``[0, 1]`` by which ``bbox`` may be scaled
    * about its centre while a ``[minZ, maxZ]`` download of the result
    * still fits under ``DOWNLOAD_CEILING_MB``. ``1`` when ``bbox`` already
@@ -2990,6 +3016,7 @@
     centreTile: centreTile,
     buildBlob: buildBlob,
     circleBlob: circleBlob,
+    circleBlobForBBox: circleBlobForBBox,
     budgetScaleForBBox: budgetScaleForBBox,
     hasStorageHeadroom: hasStorageHeadroom,
     deviceCeilingMb: deviceCeilingMb,

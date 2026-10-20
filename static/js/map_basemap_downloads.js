@@ -1709,6 +1709,8 @@ async function _appendCustomArea(area) {
     // SNOW-1072: the opt-in travels with the definition, so another
     // device downloading this area fetches the same tile families.
     terrain: !!area.terrain,
+    // SNOW-1136: and its kind, so a drop zone is restored as a drop zone.
+    type: area.type,
   });
 }
 
@@ -2238,6 +2240,15 @@ document.addEventListener('snowdesk:basemap-changed', () => warmBaseLayerWideBan
 
 window.pwaBasemapDownloads = Object.freeze({
   /**
+   * SNOW-1136 review: whether a pinned download is running anywhere on the
+   * page — `pinnedDownloadBusy`, published for callers outside the map's
+   * shared script scope.
+   *
+   * @returns {boolean}
+   */
+  isBusy: () => pinnedDownloadBusy(),
+
+  /**
    * Every recorded area, normalised to
    * `{id, name, bytes, savedAt, basemapKey}` and keyed by the id that also
    * names its pinned Cache Storage bucket.
@@ -2621,6 +2632,9 @@ const BASEMAP_DOWNLOAD_ERROR_TOAST_IDS = {
   // fallback copy ("check your connection") actively misleads here: the
   // network is fine and no request was ever made.
   'no-worker': 'map-download-error-toast-no-worker',
+  // SNOW-1136 review: another pinned download is running — see
+  // `pinnedDownloadBusy`.
+  busy: 'map-download-error-toast-busy',
 };
 const BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID = 'map-download-error-toast';
 
@@ -3304,6 +3318,9 @@ const PINNED_DOWNLOAD_DEPS = {
   finishBaseLayer: (result, plan) => recordBaseLayer(result, plan),
 };
 
+// SNOW-1136 review: see `runPinnedDownload` and `pinnedDownloadBusy`.
+let pinnedRunActive = false;
+
 /**
  * Run one pinned basemap download — see `basemap_download_runner.js` for
  * the sequence and the argument contract.
@@ -3326,7 +3343,51 @@ async function runPinnedDownload(options) {
     revealBasemapDownloadError(null);
     return;
   }
-  return runner.run(PINNED_DOWNLOAD_DEPS, options);
+  // SNOW-1136 review: the one lock every pinned download takes. Held from
+  // here until the run's `finish` settles; released at once when the runner
+  // returns without ever starting the warm (a refused pre-flight, a
+  // declined eviction), because then no `finish` will come.
+  pinnedRunActive = true;
+  let warmStarted = false;
+  const deps = {
+    ...PINNED_DOWNLOAD_DEPS,
+    warmCache: (urls, opts) => {
+      warmStarted = true;
+      return PINNED_DOWNLOAD_DEPS.warmCache(urls, opts);
+    },
+  };
+  const finish = options.finish;
+  const run = {
+    ...options,
+    finish: async (...args) => {
+      try {
+        return await finish(...args);
+      } finally {
+        pinnedRunActive = false;
+      }
+    },
+  };
+  try {
+    return await runner.run(deps, run);
+  } finally {
+    if (!warmStarted) pinnedRunActive = false;
+  }
+}
+
+/**
+ * Whether a pinned download is running anywhere on the page (SNOW-1136
+ * review).
+ *
+ * Every download — the region roundel, a framed custom area, a drop zone,
+ * "Download here" — draws one shared progress grid and plans against one
+ * storage budget, so a second run started before the first settles
+ * overwrites the first's grid and can overspend the budget. Each entry point
+ * checks this before it starts, and says so with the `busy` toast.
+ *
+ * @returns {boolean}
+ */
+function pinnedDownloadBusy() {
+  return pinnedRunActive;
 }
 
 /**

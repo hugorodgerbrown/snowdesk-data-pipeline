@@ -639,11 +639,12 @@ describe('the custom roundel describes nothing about what is downloaded', () => 
     // SNOW-658 removed `refresh`, which existed to settle a roundel state
     // this control no longer carries. SNOW-749 added `openFramingAt`, the
     // Manage downloads sheet's "Download here" entry point for an area on
-    // the account that this device does not hold — still framing, just
-    // aimed at a stored box. `refresh` staying absent is the assertion.
+    // the account that this device does not hold; SNOW-1136 replaced it
+    // with `restoreArea`, which restores the stored area instead of
+    // framing a new one. `refresh` staying absent is the assertion.
     expect(Object.keys(window.pwaCustomAreaDownload)).toEqual([
       'openFraming',
-      'openFramingAt',
+      'restoreArea',
     ]);
   });
 });

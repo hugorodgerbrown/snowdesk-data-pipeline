@@ -2132,6 +2132,11 @@ Optional context:
 {# controller. Reloading is the only remedy, so the copy says so. #}
 {% trans "Offline maps aren't active on this page yet. Reload the page, then try the download again." as basemap_download_no_worker_body %}
 {% include "includes/_toast.html" with id="map-download-error-toast-no-worker" kind="error" body=basemap_download_no_worker_body dismissible=True %}
+{# SNOW-1136 review: one download at a time across every entry point —   #}
+{# the region roundel, framing, a drop zone and "Download here" share one #}
+{# progress grid and one budget plan (see `pinnedDownloadBusy`).          #}
+{% trans "Another download is still running. Try again when it finishes." as basemap_download_busy_body %}
+{% include "includes/_toast.html" with id="map-download-error-toast-busy" kind="error" body=basemap_download_busy_body dismissible=True %}
 {% trans "Download failed. Check your connection and try again." as basemap_download_failed_body %}
 {% include "includes/_toast.html" with id="map-download-error-toast" kind="error" body=basemap_download_failed_body dismissible=True %}
 {# SNOW-586: whole-area-eviction confirm banner — reveals when a download #}

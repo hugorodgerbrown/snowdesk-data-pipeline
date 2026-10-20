@@ -326,6 +326,15 @@ the row's own label, so map.html loads that module once for both.
         data-string="download-here-busy"
     >{% trans "Another download is still running — try again when it finishes." %}</span>
     <span data-string="download-here-already">{% trans "That area is already downloaded on this device." %}</span>
+    {# SNOW-1136: a restored area is fetched as stored, not re-framed, so  #}
+    {# a box another device could hold can be too big for this one.       #}
+    <span data-string="download-here-too-big">{% trans "That area is larger than this device can hold." %}</span>
+    {# SNOW-1136: a region restored under a basemap other than the one it  #}
+    {# was downloaded for. Asked first, because the download fetches the   #}
+    {# basemap on screen, not the stored one.                              #}
+    <span
+        data-string="confirm-other-basemap"
+    >{% blocktrans %}%(name)s was downloaded for %(stored)s. Download it for %(active)s on this device?{% endblocktrans %}</span>
 </template>
 {# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must #}
 {# load before the manager below; both are defer, so document order holds.  #}
