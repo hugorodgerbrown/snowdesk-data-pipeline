@@ -3193,11 +3193,20 @@ every basemap row on **three** states, in both connectivity states:
 
 Coverage comes from `window.pwaBasemapDownloads.areas()` — read **once per
 refresh pass**, not per row — matching each area's `basemapKey` against the
-row's `data-basemap-key`. A keyless area (a pre-SNOW-645 record, or a
-reconciled orphan — "downloaded, basemap unknown") counts for the **active**
-basemap only, mirroring `basemapDownloadedTemplates`' `basemapKey ||
-activeKey`: crediting every basemap off one legacy record would restore the
+row's `data-basemap-key`. A keyless record (written before SNOW-645 —
+"downloaded, basemap unknown") counts for the **active** basemap only,
+mirroring `basemapDownloadedTemplates`' `basemapKey || activeKey`:
+crediting every basemap off one legacy record would restore the
 over-claim, crediting none would regress the basemap in use.
+
+Two entries in that list are **not coverage** (SNOW-1138). A shared base
+layer (`isBaseLayerAreaId`) is only the zoomed-out ground, so a basemap
+holding nothing else draws the world from far out and nothing where the
+reader is going; it reads on its style alone — "Partly cached" where the
+style is cached — exactly as it would with nothing downloaded. And a
+reconciled **orphan** (a download that never finished, which the Manage
+downloads sheet labels Incomplete) covers no basemap at all, the active
+one included — it used to fall through to the keyless rule above.
 
 The middle state is what this used to get wrong, and it got it wrong
 **online**, which is where it mattered. `_basemapStaleWhileRevalidate`

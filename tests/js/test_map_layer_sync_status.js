@@ -46,6 +46,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
+// SNOW-1138: the area-id grammar (`isBaseLayerAreaId`), which the map page
+// always loads ahead of this module.
+import '../../static/js/basemap_download_core.js';
 import '../../static/js/map_layer_sync_status.js';
 
 const MAJOR_REGIONS_PATH = '/api/major-regions.geojson';
@@ -708,20 +711,46 @@ describe('per-basemap rows', () => {
     expect(basemapRowDisabled('standard')).toBe(false);
   });
 
-  it('a basemap whose overview map is stored reads as available offline', async () => {
-    // SNOW-XXX: the z0-7 overview is fetched when a basemap is first
-    // SHOWN, so holding one is exactly the claim this dot makes — open the
-    // app offline on that basemap and a map draws. SNOW-856 skipped base
-    // layers here, correctly for the old ones: they arrived as a side
-    // effect of a download, so greening a basemap the user had never
-    // chosen to store would have over-claimed.
+  it('a base layer alone never greens its basemap (SNOW-1138)', async () => {
+    // The shared overview is the zoomed-out ground and nothing more: with
+    // only that on disk the basemap draws the world from far out and
+    // nothing where the reader is going. Its style is cached, so it reads
+    // as the honest middle state — partly cached — not "available offline".
     setOnline(false);
     fakeDownloads([{ id: 'base-swisstopo', basemapKey: 'swisstopo' }]);
     vi.stubGlobal('caches', fakeCaches({ hitUrls: [SWISSTOPO_STYLE] }));
 
     await window.pwaLayerSyncStatus.refresh();
 
+    expect(basemapDotState('swisstopo')).toBe('uncached');
+    expect(basemapDotLabel('swisstopo')).toBe('Partly cached — may not load everywhere');
+    expect(basemapRowDisabled('swisstopo')).toBe(false);
+  });
+
+  it('a base layer beside a real download still greens on the download', async () => {
+    setOnline(false);
+    fakeDownloads([
+      { id: 'base-swisstopo', basemapKey: 'swisstopo' },
+      { id: 'region-ch-4115', basemapKey: 'swisstopo' },
+    ]);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [SWISSTOPO_STYLE] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
     expect(basemapDotState('swisstopo')).toBe('cached');
+  });
+
+  it('an orphan with no basemapKey greens nothing, the active basemap included (SNOW-1138)', async () => {
+    // A download that never finished. The keyless fallback used to hand it
+    // to the basemap on screen; the sheet calls it Incomplete.
+    setOnline(false);
+    fakeDownloads([{ id: 'region-ch-9999', basemapKey: null, orphaned: true }]);
+    vi.stubGlobal('caches', fakeCaches({ hitUrls: [STANDARD_STYLE, SWISSTOPO_STYLE] }));
+
+    await window.pwaLayerSyncStatus.refresh();
+
+    expect(basemapDotState('standard')).not.toBe('cached');
+    expect(basemapDotState('swisstopo')).not.toBe('cached');
   });
 
   it('an overview map never greens a basemap other than its own', async () => {
