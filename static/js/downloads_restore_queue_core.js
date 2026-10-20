@@ -139,6 +139,47 @@
     });
   }
 
+  /** The value a start that overran its bound resolves to. */
+  var START_TIMED_OUT = { started: false, reason: 'timeout' };
+
+  /**
+   * ``deps.start(item)``, bounded by the same ``timeoutMs`` as the lock
+   * wait (SNOW-1140 review). A custom-area restore resolves only once its
+   * run SETTLES, not when it is dispatched, so a run that keeps reporting
+   * progress without finishing would otherwise hold the queue on this
+   * await for ever and never reach ``waitForIdle``'s bound. On overrun
+   * the queue stops as ``'timeout'``; the run itself carries on, and
+   * still holds the page-wide lock, so nothing else is started under it.
+   *
+   * @param {QueueDeps} deps
+   * @param {QueueItem} item
+   * @param {WaitOptions} [options]
+   * @returns {Promise<StartOutcome>}
+   */
+  function boundedStart(deps, item, options) {
+    var opts = options || {};
+    var timeoutMs = typeof opts.timeoutMs === 'number' ? opts.timeoutMs : DEFAULT_TIMEOUT_MS;
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () {
+        resolve(START_TIMED_OUT);
+      }, timeoutMs);
+      Promise.resolve()
+        .then(function () {
+          return deps.start(item);
+        })
+        .then(
+          function (outcome) {
+            clearTimeout(timer);
+            resolve(outcome);
+          },
+          function (err) {
+            clearTimeout(timer);
+            reject(err);
+          },
+        );
+    });
+  }
+
   /**
    * Run every item through ``deps.start``, one at a time, until the list
    * ends or a stop rule fires (see the module header for the rules).
@@ -187,7 +228,7 @@
           result.skipped += 1;
           continue;
         }
-        var outcome = await deps.start(item);
+        var outcome = await boundedStart(deps, item, options);
         if (!outcome || !outcome.started) {
           return stop((outcome && outcome.reason) || 'unknown', item);
         }

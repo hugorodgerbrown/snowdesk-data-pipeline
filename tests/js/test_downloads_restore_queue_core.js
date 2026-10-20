@@ -204,6 +204,20 @@ describe('runQueue', () => {
     expect(page.listeners.size).toBe(0);
   });
 
+  it('gives up on a start that never resolves', async () => {
+    // A custom-area restore resolves only when its run settles; one that
+    // never does must not hold the queue past the same bound.
+    const page = fakePage();
+    page.deps.start = vi.fn(() => new Promise(() => {}));
+    const done = core.runQueue(ITEMS, page.deps, { timeoutMs: 60000 });
+    await flush();
+
+    await vi.advanceTimersByTimeAsync(60000);
+    const result = await done;
+    expect(page.deps.start).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ stopped: 'timeout' });
+  });
+
   it('stops rather than rejects when a dependency throws', async () => {
     const page = fakePage();
     page.deps.presentIds = async () => {
