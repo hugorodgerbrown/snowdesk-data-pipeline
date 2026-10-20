@@ -350,4 +350,24 @@ describe('the proxies', () => {
     proxy.click();
     expect(pressed).toHaveBeenCalledTimes(1);
   });
+
+  // SNOW-1130: on a phone the proxy is the only download button, and a tap
+  // on a downloaded ('done') or half-refreshed ('partial') region refreshes
+  // its bulletins and weather. The roundel announces both as actionable, so
+  // the proxy must pass the press through.
+  it.each(['done', 'partial'])('presses the roundel in the %s state', async (state) => {
+    const sheet = await boot();
+    select('CH-4115', 'tap');
+    await settle();
+    const roundel = document.getElementById('map-download-control');
+    const pressed = vi.fn();
+    roundel.addEventListener('click', pressed);
+    roundel.setAttribute('data-download-state', state);
+    roundel.setAttribute('aria-disabled', 'false');
+    await settle();
+    const proxy = sheet.querySelector('[data-region-sheet-proxy="map-download-control"]');
+    expect(proxy.getAttribute('aria-disabled')).toBe('false');
+    proxy.click();
+    expect(pressed).toHaveBeenCalledTimes(1);
+  });
 });

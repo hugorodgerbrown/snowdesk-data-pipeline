@@ -1110,8 +1110,14 @@
     // the control keeps its place in the stack (see renderControl). 'idle',
     // (SNOW-568) 'error' and (SNOW-645) 'other-basemap' are the actionable
     // states — handleClick returns immediately for every other one,
-    // including 'busy' (a run is already going) and 'done' (an
-    // informational success state), so those are announced as disabled too.
+    // including 'busy' (a run is already going), so those are announced as
+    // disabled too.
+    //
+    // SNOW-1130: 'done' and 'partial' are actionable. SNOW-924 made a tap on
+    // either refresh the area's bulletins and weather, but they stayed on
+    // the disabled side of this list — and the region sheet's proxy, the
+    // only download button a phone shows, drops every press while the
+    // roundel says aria-disabled. A green or amber icon did nothing.
     //
     // SNOW-749: 'signin' is actionable too — the tap navigates to the
     // sign-in page. Announcing it as disabled would be the same mistake as
@@ -1126,6 +1132,8 @@
         // missing documents. A warning the user cannot act on is worse
         // than no warning, and this one has a one-tap remedy.
         state === 'incomplete' ||
+        state === 'done' ||
+        state === 'partial' ||
         state === 'signin'
         ? 'false'
         : 'true',

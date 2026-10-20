@@ -602,6 +602,9 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
     await flapConnectivity();
 
     expect(btn.dataset.downloadState).toBe('partial');
+    // SNOW-1130: and it is announced as actionable — the remedy is a tap,
+    // and the region sheet's proxy drops presses on a disabled roundel.
+    expect(btn.getAttribute('aria-disabled')).toBe('false');
   });
 
   it('records the shortfall on the area, not in the DOM', async () => {
@@ -628,6 +631,8 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
 
     await flapConnectivity();
     expect(btn.dataset.downloadState).toBe('done');
+    // SNOW-1130: a tap on 'done' refreshes, so it is not announced disabled.
+    expect(btn.getAttribute('aria-disabled')).toBe('false');
   });
 
   it('reads a record with neither field as done, not as amber', async () => {
