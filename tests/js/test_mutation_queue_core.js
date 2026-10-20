@@ -66,6 +66,15 @@ describe('classifyStatus', () => {
     }
   });
 
+  // SNOW-1132: a code the caller declared as "already applied" wins over
+  // every other rule, and only for that caller.
+  it('classifies a declared done status as success', () => {
+    expect(core.classifyStatus(404, [404])).toBe('success');
+    expect(core.classifyStatus(410, [404])).toBe('permanent');
+    expect(core.classifyStatus(404, [])).toBe('permanent');
+    expect(core.classifyStatus(404, undefined)).toBe('permanent');
+  });
+
   it('classifies unexpected 1xx/3xx as retry rather than dropping silently', () => {
     expect(core.classifyStatus(100)).toBe('retry');
     expect(core.classifyStatus(302)).toBe('retry');

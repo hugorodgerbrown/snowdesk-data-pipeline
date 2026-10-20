@@ -271,6 +271,32 @@ describe('permanent 4xx', () => {
     },
   );
 
+  // SNOW-1132: a mutation that declares a status as "already applied" is
+  // deleted on it, with no toast and no failed row left on the badge.
+  it('deletes the row on a status the mutation declared done', async () => {
+    let callCount = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        callCount += 1;
+        return new Response('', { status: 404 });
+      }),
+    );
+
+    await window.pwaMutationQueue.enqueue({
+      method: 'POST',
+      url: MUTATION_URL,
+      doneStatuses: [404],
+    });
+
+    await waitFor(async () => callCount === 1 && (await mutationRows()).length === 0);
+
+    const toastEl = document.getElementById('mutation-queue-toast');
+    expect(toastEl ? toastEl.classList.contains('hidden') : true).toBe(true);
+    const events = await eventRows();
+    expect(events.some((e) => e.event === 'pwa.mutation.failed_permanent')).toBe(false);
+  });
+
   // The toast's "×" dismiss-click transition (slide-up before hiding) needs
   // its OWN button listener wired by mutation_queue.js's _wireToast() at
   // IIFE-load time against an already-present #mutation-queue-toast — this
