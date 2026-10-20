@@ -348,6 +348,57 @@ class TestEnrichRenderModelProblemDangerLevelCss:
         assert result["danger_level_css"] == ""
 
 
+class TestEnrichRenderModelProblemTreelineSide:
+    """SNOW-1148: a treeline band keeps the side the CAAML bound was on."""
+
+    def _elevation(self, elevation: dict[str, Any]) -> Any:
+        """Enrich a minimal problem with ``elevation`` and return its bounds."""
+        from apps.public.views import _enrich_render_model_problem
+
+        rm_problem = {
+            "problem_type": "wind_slab",
+            "danger_rating_value": "considerable",
+            "time_period": "all_day",
+            "elevation": elevation,
+            "aspects": [],
+            "core_zone_text": "",
+            "comment_html": "",
+        }
+        return _enrich_render_model_problem(rm_problem, {}, [rm_problem], 0)[
+            "elevation"
+        ]
+
+    def test_upper_treeline_reads_below_treeline(self) -> None:
+        """CAAML upperBound "treeline" is a problem below the treeline."""
+        bounds = self._elevation(
+            {"lower": None, "upper": None, "treeline": True, "treeline_side": "upper"}
+        )
+        assert bounds.upper == "treeline"
+        assert bounds.lower == ""
+        assert bounds.display == "below treeline"
+
+    def test_lower_treeline_reads_above_treeline(self) -> None:
+        """CAAML lowerBound "treeline" is a problem above the treeline."""
+        bounds = self._elevation(
+            {"lower": None, "upper": None, "treeline": True, "treeline_side": "lower"}
+        )
+        assert bounds.lower == "treeline"
+        assert bounds.display == "above treeline"
+
+    def test_numeric_lower_with_upper_treeline_keeps_both(self) -> None:
+        """A numeric floor up to the treeline keeps both ends."""
+        bounds = self._elevation(
+            {"lower": 1500, "upper": None, "treeline": True, "treeline_side": "upper"}
+        )
+        assert bounds.lower == "1500"
+        assert bounds.upper == "treeline"
+
+    def test_render_model_without_a_side_keeps_the_old_reading(self) -> None:
+        """A stored render model with no treeline_side still reads "above"."""
+        bounds = self._elevation({"lower": None, "upper": None, "treeline": True})
+        assert bounds.display == "above treeline"
+
+
 # ── View-level integration canaries ──────────────────────────────────────────
 
 
