@@ -138,6 +138,15 @@ the climbing. Descents keep 5 / 15 / 25 / 35°; along the line a skier
 takes they bunch low too, because skiers turn, but a couloir is real
 and needs its top step.
 
+A single four-step scale for both directions — 5, 15 and 25°, one
+colour and one chevron count per step, the descent's chevron bounds
+applied to the climb — was drawn up and declined on 2026-10-20
+(SNOW-1149). It would have matched the chevrons to the colours, but on
+the canonical tours no climb reaches 25°, so three chevrons would never
+mark a climb, and the climb's grading would be back where the one-scale
+design left it. The explainer `docs/explainers/reading-the-track-scale.html`
+draws the scale, the roundel at each step and both tours.
+
 The "no degrees" rule this replaces held that degrees have to be
 translated by the reader every time. A band is already the
 translation's other half: the reader sees the step and its range, not a
