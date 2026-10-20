@@ -288,14 +288,16 @@
 
   // SNOW-1161: a resort named in the sheet opens in its own sheet — the map
   // keeps the reader — rather than navigating to the resort page. A
-  // modified click (new tab, new window) keeps the link's own behaviour.
+  // modified click (new tab, new window) keeps the link's own behaviour,
+  // and the href rides along so a resort with no pin still reaches its
+  // page (map.js's listener falls back to it).
   sheet.addEventListener('click', (ev) => {
     const link = ev.target.closest?.('a[data-resort-slug]');
     if (!link || !sheet.contains(link)) return;
     if (ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
     ev.preventDefault();
     document.dispatchEvent(new CustomEvent('snowdesk:resort-open', {
-      detail: { slug: link.getAttribute('data-resort-slug') },
+      detail: { slug: link.getAttribute('data-resort-slug'), href: link.href },
     }));
   });
 

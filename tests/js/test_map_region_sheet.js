@@ -387,7 +387,10 @@ describe('a resort named in the sheet (SNOW-1161)', () => {
     document.removeEventListener('snowdesk:resort-open', asked);
     expect(click.defaultPrevented).toBe(true);
     expect(asked).toHaveBeenCalledTimes(1);
-    expect(asked.mock.calls[0][0].detail).toEqual({ slug: 'verbier' });
+    expect(asked.mock.calls[0][0].detail).toEqual({
+      slug: 'verbier',
+      href: new URL('/resorts/verbier/', document.baseURI).href,
+    });
   });
 
   it('leaves a modified click to the link, for a new tab', async () => {

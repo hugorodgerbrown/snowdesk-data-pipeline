@@ -8026,12 +8026,14 @@
      * @returns {void}
      */
     const openResort = (matches, onMissing) => {
+      // Before the cached path too: a feed loaded earlier and then hidden
+      // would otherwise open the sheet over an invisible pin.
+      if (!overlayState.resorts) showPanelOverlay('resorts');
       if (focusResort(matches)) return;
       if (resortsGeojsonCache) {
         onMissing?.();
         return;
       }
-      if (!overlayState.resorts) showPanelOverlay('resorts');
       const onResortsSourceData = (e) => {
         if (e.sourceId !== 'resorts' || !map.isSourceLoaded('resorts')) return;
         map.off('sourcedata', onResortsSourceData);
@@ -8041,10 +8043,16 @@
     };
 
     // SNOW-1161: the region sheet's "Resorts in this region" asks for a
-    // resort by slug (map_region_sheet.js) instead of leaving the map.
+    // resort by slug (map_region_sheet.js) instead of leaving the map. A
+    // resort with no pin is not in the feed, so it goes to its page — the
+    // link the region sheet held back.
     document.addEventListener('snowdesk:resort-open', (ev) => {
       const slug = ev.detail && ev.detail.slug;
-      if (slug) openResort((props) => props.id === slug);
+      const href = ev.detail && ev.detail.href;
+      if (!slug) return;
+      openResort((props) => props.id === slug, () => {
+        if (href) window.location.assign(href);
+      });
     });
 
 
