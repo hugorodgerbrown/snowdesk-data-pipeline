@@ -491,6 +491,20 @@ describe('"Download here" (SNOW-1134)', () => {
   });
 });
 
+describe('"Download here" keeps the region it was asked for (SNOW-1134 review)', () => {
+  it('downloads A even when B is selected while A is being probed', async () => {
+    select(REGION_B);
+    await waitFor(() => state() === 'idle');
+    const pending = window.pwaRegionDownload.start(REGION_A);
+    // The selection lands while A's probe is still being awaited.
+    select(REGION_B);
+    const outcome = await pending;
+    expect(outcome).toEqual({ started: true, reason: '' });
+    await waitFor(() => !!recorded(REGION_A));
+    expect(recorded(REGION_B)).toBeUndefined();
+  });
+});
+
 describe('a hung probe (SNOW-1134)', () => {
   it('gives up at the budget, never paints done, and leaves later renders free', async () => {
     await downloadToDone(REGION_A);

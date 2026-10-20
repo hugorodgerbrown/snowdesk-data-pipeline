@@ -779,6 +779,37 @@
   }
 
   /**
+   * A label for an account-only area that has no name.
+   *
+   * SNOW-1133: an unrenamed custom area's "Custom area N" is built from an
+   * ordinal only the device that made it holds, so another device has no
+   * name to show. The day the account recorded it tells two such rows
+   * apart, where a raw `custom-<uuid>` told the user nothing — and the
+   * time of day with it, so two saved on the same day still differ.
+   *
+   * @param {{savedAt?: string}} area
+   * @returns {string} '' when there is no usable date, so the caller falls
+   *   back as before.
+   */
+  function unnamedAreaLabel(area) {
+    const when = area && area.savedAt ? new Date(area.savedAt) : null;
+    if (!when || Number.isNaN(when.getTime())) return STRINGS['unnamed-area-undated'] || '';
+    let date;
+    try {
+      date = new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(when);
+    } catch (_e) {
+      date = when.toISOString().slice(0, 16).replace('T', ' ');
+    }
+    return interpolate(STRINGS['unnamed-area'], { date: date });
+  }
+
+  /**
    * Tell the account about areas this device holds that it does not know
    * about (SNOW-XXX).
    *
