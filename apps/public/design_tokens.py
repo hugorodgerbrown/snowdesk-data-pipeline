@@ -67,6 +67,7 @@ from apps.public._component_fixtures import (
     REGION_TOOLTIP_VARIANTS,
     RESORT_BULLETIN_CARD_VARIANTS,
     RESORT_FACTS_VARIANTS,
+    RESORT_FORECAST_VARIANTS,
     RESORT_META_ROW_VARIANTS,
     RESORT_WHY_IT_MATTERS_VARIANTS,
     ROUTE_RAIL_VARIANTS,
@@ -1465,6 +1466,30 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
+        slug="resort-forecast",
+        label="Resort forecast strip",
+        description=(
+            "The resort page's Forecast section (SNOW-1157): an h2 eyebrow "
+            "naming today, then a card with one chip per point — Base, Mid, "
+            "Summit, each with its elevation — over that point's seven-day "
+            "strip. The chips are visually hidden radios and labels; the "
+            "selection is CSS-only (:checked ~ rules paired on data-point in "
+            "main.css), Base checked, the checked chip bordered in the "
+            "accent. Today's tile leads, wider (1.9fr; a full row on a "
+            "phone) with a Max / Min / New snow list; six unlabelled tiles "
+            "follow with weekday, icon, high, low and new snow in mono. "
+            "Zero new snow reads '0 cm'; a dropped value reads '—'. Each "
+            "tile is a role=group with a spoken summary. Each pane closes "
+            "with the weather provenance line and 'Read the full 7-day "
+            "forecast →' to its own point; a point with no row today says "
+            "'No forecast yet.' and keeps the link."
+        ),
+        kind="components",
+        partial="public/partials/_resort_forecast.html",
+        variants=RESORT_FORECAST_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
         slug="resort-why-it-matters",
         label="Resort why-it-matters line",
         description=(
@@ -1915,8 +1940,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="weather-provenance",
         label="Weather provenance",
         description=(
-            "One line closing the location forecast page (SNOW-789): when "
-            "the row was last fetched, and who it came from. A TIME, not "
+            "One line closing the location forecast page (SNOW-789): who "
+            "the row came from, and when it was last fetched. With a link "
+            "(SNOW-1157) it is a card footer instead — no hairline, the "
+            "line, then the onward link — as under each resort forecast "
+            "pane. A TIME, not "
             "a date — today's row is rewritten in place across four "
             "fetches a day, so how recent it is is the whole point, and "
             "the day it belongs to is already on the day line above. It "
