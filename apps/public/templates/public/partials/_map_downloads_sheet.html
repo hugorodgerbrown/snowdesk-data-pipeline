@@ -231,7 +231,7 @@ the row's own label, so map.html loads that module once for both.
     {# rather than left blank: an unlabelled heading over real rows reads  #}
     {# as a rendering fault, and these rows are real and still deletable.  #}
     <span data-string="group-unknown">{% trans "Unknown basemap" %}</span>
-    {# SNOW-XXX: the two list headings, and the fourth row kind. The       #}
+    {# The two list headings, and the fourth row kind. The                 #}
     {# eyebrow uppercases them, so the msgids stay sentence case — a       #}
     {# locale that does not uppercase is not fighting the CSS.             #}
     <span data-string="group-device">{% trans "On this device" %}</span>
@@ -244,7 +244,7 @@ the row's own label, so map.html loads that module once for both.
     {# beside it did not; segmented by basemap it encodes a COMPOSITION    #}
     {# stated nowhere else on the panel, so it is a role="img" whose       #}
     {# description render() builds from the same segments it paints.       #}
-    <span data-string="budget-bar-label">{% blocktrans %}Space used, by base map: %(segments)s{% endblocktrans %}</span>
+    <span data-string="budget-bar-label">{% blocktrans %}Space used, by basemap: %(segments)s{% endblocktrans %}</span>
     <span data-string="budget-bar-empty">{% trans "Nothing downloaded on this device" %}</span>
     <span data-string="budget-segment">{% blocktrans %}%(basemap)s %(size)s{% endblocktrans %}</span>
     {# SNOW-1135: Remove means this device. The first message is for a row  #}

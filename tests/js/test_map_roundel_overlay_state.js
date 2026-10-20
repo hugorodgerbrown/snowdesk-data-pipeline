@@ -178,8 +178,8 @@ function buildFixture() {
     <ul id="search-results" hidden></ul>
     <button id="${DOWNLOADS_ROUNDEL}"
             data-overlay-shown="false"
-            aria-label="Manage offline downloads"
-            title="Manage offline downloads"></button>
+            aria-label="Manage downloads"
+            title="Manage downloads"></button>
     <button id="${FAVOURITES_ROUNDEL}"
             data-overlay-shown="false"
             aria-label="Your favourites"></button>
@@ -482,7 +482,7 @@ describe('the state is announced, not only painted', () => {
     await window.pwaDownloadedOverlay.show();
     const el = document.getElementById(DOWNLOADS_ROUNDEL);
 
-    expect(el.title).toBe('Manage offline downloads — shown on the map');
+    expect(el.title).toBe('Manage downloads — shown on the map');
     expect(el.getAttribute('aria-label')).toBe(el.title);
   });
 

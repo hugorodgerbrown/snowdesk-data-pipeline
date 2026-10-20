@@ -338,11 +338,11 @@
     // on this line is why it has no Remove control.
     'kind-base': 'Shared',
     'row-meta': '%(kind)s · %(basemap)s · %(size)s',
-    // SNOW-XXX: a drop zone is a circle around where you were standing; a
+    // A drop zone is a circle around where you were standing; a
     // custom area is a box you framed. Both are yours, both renameable —
     // and which one a row is is worth a word.
     'kind-dropzone': 'Drop zone',
-    // SNOW-XXX: the "…" trigger names the row it acts on — the glyph
+    // The "…" trigger names the row it acts on — the glyph
     // alone names nothing to a screen reader.
     'row-actions-label': 'Actions for %(name)s',
     // The two lists. Uppercased by the eyebrow's own styling, so the
@@ -359,7 +359,7 @@
     // basemap, the bar states a composition the panel says nowhere else,
     // so it is a `role="img"` with a description rather than decoration.
     // Built per render from budgetSegments() — see render().
-    'budget-bar-label': 'Space used, by base map: %(segments)s',
+    'budget-bar-label': 'Space used, by basemap: %(segments)s',
     'budget-bar-empty': 'Nothing downloaded on this device',
     'budget-segment': '%(basemap)s %(size)s',
     // SNOW-1135: Remove means THIS device, and only this device. Two
@@ -817,7 +817,7 @@
 
   /**
    * Tell the account about areas this device holds that it does not know
-   * about (SNOW-XXX).
+   * about.
    *
    * A repair, not a refcount. Since SNOW-1135 removing an area here never
    * touches the account, so the account loses a held area only when a
@@ -922,14 +922,14 @@
     const list = allAreas.filter(
       (area) => !FORGOTTEN.has(area.id) || area.onDevice !== false,
     ).filter(
-      // SNOW-XXX: the shared overview maps are the app's own map data, not
+      // The shared overview maps are the app's own map data, not
       // downloads — see basemap_manage_core.js's `manageRows`. Filtered
       // once, here, so the rows, the segments, the legend and the "Using X
       // of Y" total all describe the same set: what the user downloaded.
       // Their size is stated in account settings, under Reset local data.
       (area) => !(isBaseLayerAreaId && isBaseLayerAreaId(String(area.id || ''))),
     );
-    // SNOW-XXX: re-assert what this device holds.
+    // Re-assert what this device holds.
     //
     // A row this device HAS and the account does not know about is pushed
     // back. Removing an area here leaves the account alone (SNOW-1135), so
@@ -1057,7 +1057,7 @@
     // two controls over one setting should not disagree about whether it
     // exists.
 
-    // SNOW-XXX: two groups — what is on this device, and what is only on
+    // Two groups — what is on this device, and what is only on
     // the account. SNOW-832's per-basemap headings are gone; the basemap
     // is a dot and a word on each row now. See `groupRowsByPresence` for
     // why the split moved, and `buildGroup` for what a heading carries.
@@ -1175,7 +1175,7 @@
   }
 
   /**
-   * A row's kind, in words (SNOW-XXX).
+   * A row's kind, in words.
    *
    * Four, where the meta line used to compose three: a DROP ZONE is its
    * own kind rather than a custom area with a particular name — it is a
@@ -1426,7 +1426,7 @@
     //     here". It costs this device nothing, so a size would be "0.0 MB"
     //     — a download that somehow takes no space rather than one that is
     //     not here.
-    // SNOW-XXX: the basemap identity dot. It is the whole of what the
+    // The basemap identity dot. It is the whole of what the
     // per-basemap group headings used to carry, moved onto the row so the
     // colour survives the list being grouped by presence instead — the
     // same `.basemap-identity-fill` rules the bar segments use, so the two
@@ -1457,14 +1457,14 @@
       if (row.orphaned || row.incomplete) {
         subtitle.textContent = STRINGS['kind-incomplete'] || '';
       } else if (row.onDevice === false) {
-        // SNOW-XXX: the kind alone. This row is under a heading that
+        // The kind alone. This row is under a heading that
         // already says these are not here, and it has no size (nothing of
         // it is on this device) and no basemap (nothing has been stored,
         // so no basemap has been chosen — naming one would imply a colour
         // this row deliberately does not carry).
         subtitle.textContent = kindLabel(row.kind);
       } else {
-        // SNOW-XXX: kind, basemap, size — "Region · Swisstopo (CH) ·
+        // Kind, basemap, size — "Region · Swisstopo (CH) ·
         // 13.6 MB". The basemap moved here from the group heading it used
         // to sort under, so the fact survives the grouping change: the dot
         // gives it at a glance, the word gives it exactly.
@@ -1497,7 +1497,7 @@
       // available offline".
     }
 
-    // SNOW-XXX: which SHAPE this row's actions take, decided before any of
+    // Which SHAPE this row's actions take, decided before any of
     // them are stamped. More than one action is a "…"; exactly one is a
     // bare icon. Hugo reversed SNOW-658's ruling (a visible trash on every
     // row) for every panel on 2026-09-07 — see

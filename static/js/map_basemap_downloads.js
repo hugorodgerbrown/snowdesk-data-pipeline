@@ -2637,6 +2637,13 @@ const BASEMAP_DOWNLOAD_ERROR_TOAST_IDS = {
   busy: 'map-download-error-toast-busy',
 };
 const BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID = 'map-download-error-toast';
+// SNOW-1137: a region run's own copy for the two refusals whose remedy
+// above ("frame a smaller area") a region cannot take — its outline is the
+// provider's. Keyed by reason; any other reason has no region variant.
+const BASEMAP_DOWNLOAD_ERROR_TOAST_REGION_IDS = {
+  quota: 'map-download-error-toast-quota-region',
+  budget: 'map-download-error-toast-budget-region',
+};
 
 // SNOW-568: reveal the basemap-download failure toast matching ``reason``,
 // and hide the other one.
@@ -2654,14 +2661,24 @@ const BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID = 'map-download-error-toast';
 // missing element (an older cached shell that predates the partials) is a
 // silent no-op, never a thrown error inside a download's finish handler.
 //
+// SNOW-1137: `kind` is the run's kind — 'region' picks the region
+// variant of a quota/budget toast (BASEMAP_DOWNLOAD_ERROR_TOAST_REGION_IDS);
+// anything else, including absent, keeps the custom-area copy.
+//
 // @param {string|null} reason
+// @param {string} [kind]
 // @returns {void}
-function revealBasemapDownloadError(reason) {
+function revealBasemapDownloadError(reason, kind) {
   try {
+    const regionId =
+      kind === 'region' && reason ? BASEMAP_DOWNLOAD_ERROR_TOAST_REGION_IDS[reason] : null;
     const showId =
-      BASEMAP_DOWNLOAD_ERROR_TOAST_IDS[reason] || BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID;
+      regionId ||
+      BASEMAP_DOWNLOAD_ERROR_TOAST_IDS[reason] ||
+      BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID;
     const ids = [
       ...Object.values(BASEMAP_DOWNLOAD_ERROR_TOAST_IDS),
+      ...Object.values(BASEMAP_DOWNLOAD_ERROR_TOAST_REGION_IDS),
       BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID,
     ];
     // The toasts dock at the foot of the viewport, which is exactly where
@@ -2717,6 +2734,7 @@ function clearBasemapDownloadError() {
   try {
     const ids = [
       ...Object.values(BASEMAP_DOWNLOAD_ERROR_TOAST_IDS),
+      ...Object.values(BASEMAP_DOWNLOAD_ERROR_TOAST_REGION_IDS),
       BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID,
     ];
     for (const id of ids) {
@@ -3330,6 +3348,11 @@ let pinnedRunActive = false;
  * indistinguishable from the download never having been offered, which is
  * the silence SNOW-568 exists to remove.
  *
+ * SNOW-1137: `options.kind` ('region' from the per-region control) is
+ * handed to the error toast, so a region run's quota/budget refusal reads
+ * the region copy rather than "frame a smaller area". The runner itself
+ * never sees it — only its `revealError` dependency is rebound.
+ *
  * @param {Object} options
  * @returns {Promise<void>}
  */
@@ -3355,6 +3378,11 @@ async function runPinnedDownload(options) {
       warmStarted = true;
       return PINNED_DOWNLOAD_DEPS.warmCache(urls, opts);
     },
+    // SNOW-1137: a run that names its kind gets that kind's refusal
+    // toasts — a region cannot be framed smaller, so it is not told to.
+    ...(options.kind
+      ? { revealError: (reason) => revealBasemapDownloadError(reason, options.kind) }
+      : {}),
   };
   const finish = options.finish;
   const run = {

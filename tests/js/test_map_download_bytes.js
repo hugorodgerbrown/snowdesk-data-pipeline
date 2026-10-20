@@ -671,7 +671,7 @@ describe('the other-basemap roundel state (SNOW-645)', () => {
     expect(btn().dataset.basemapKey).toBeUndefined();
     // The name-less variant — never interpolated with an empty name.
     expect(btn().getAttribute('aria-label')).toBe(
-      "This region's basemap is downloaded for another basemap — tap to download it for this basemap too",
+      "This region's basemap is downloaded for another basemap — tap to replace it with this basemap",
     );
   });
 });

@@ -103,6 +103,19 @@ class TestWhatItCarries:
 
 
 @pytest.mark.django_db
+class TestIntro:
+    """SNOW-1137: the intro says what follows the account and what does not."""
+
+    def test_it_does_not_claim_nothing_is_on_the_account(self) -> None:
+        """The LIST of downloaded areas follows the account since SNOW-749."""
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert "nothing here is stored on your account" not in html
+        assert "follows your account to your other devices" in " ".join(html.split())
+        assert "the maps themselves, your download budget" in " ".join(html.split())
+
+
+@pytest.mark.django_db
 class TestResetRow:
     """Ported from tests/accounts/test_account_layout.py with the row."""
 

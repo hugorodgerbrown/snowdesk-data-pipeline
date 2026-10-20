@@ -125,7 +125,7 @@
    * Paint one roundel from its own overlay's current visibility.
    *
    * The label is composed rather than picked from a pair, so the roundels
-   * keep their own distinct names ("Your favourites", "Manage offline
+   * keep their own distinct names ("Your favourites", "Manage
    * downloads", "Your routes") and only one translated string states the shared
    * fact. ``title`` follows the label where the roundel already has one —
    * the tooltip and the screen-reader text must not disagree — and is not

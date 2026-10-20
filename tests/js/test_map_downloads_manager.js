@@ -204,7 +204,7 @@ function buildFixture() {
       <span data-string="group-account">Not on this device</span>
       <span data-string="row-actions-label">Actions for %(name)s</span>
       <span data-string="kind-dropzone">Drop zone</span>
-      <span data-string="budget-bar-label">Space used, by base map: %(segments)s</span>
+      <span data-string="budget-bar-label">Space used, by basemap: %(segments)s</span>
       <span data-string="budget-bar-empty">Nothing downloaded on this device</span>
       <span data-string="budget-segment">%(basemap)s %(size)s</span>
       <span data-string="confirm-remove">Remove the offline map for %(name)s? This
@@ -1979,7 +1979,7 @@ describe('the budget readout', () => {
     // OpenFreeMap's 40 MB, which is budgetSegments' own ordering and NOT
     // the group headings' picker order.
     expect(track.getAttribute('aria-label')).toBe(
-      'Space used, by base map: Swisstopo (CH) 120 MB, OpenFreeMap 40.0 MB',
+      'Space used, by basemap: Swisstopo (CH) 120 MB, OpenFreeMap 40.0 MB',
     );
   });
 
@@ -1990,7 +1990,7 @@ describe('the budget readout', () => {
     await settle();
 
     expect(document.querySelector('[data-downloads-track]').getAttribute('aria-label')).toBe(
-      'Space used, by base map: Unknown basemap 40.0 MB',
+      'Space used, by basemap: Unknown basemap 40.0 MB',
     );
   });
 
