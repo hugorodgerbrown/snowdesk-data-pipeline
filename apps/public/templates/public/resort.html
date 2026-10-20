@@ -21,6 +21,8 @@ column with the facts LAST. The shell widens to ``max-w-grid-max`` at
 ``lg`` — the existing token the home page uses — via
 ``page_shell_classes``'s ``extra``.
 
+Above the header, an "All resorts" link back to ``/resorts/`` (SNOW-1150).
+
 Header:
   * Eyebrow — a mono uppercase ``<p>`` (``includes/_eyebrow.html``, not a
     heading): ``resort_eyebrow``, the alternative name · canton (the major
@@ -182,6 +184,15 @@ Context expected (built by ``apps.public.views.resort_detail``):
         data-testid="resort-detail"
         data-resort-slug="{{ resort.slug }}"
     >
+        {# SNOW-1150: back to the hub every resort page hangs off, so the #}
+        {# index and each resort link both ways.                          #}
+        <p class="mb-4 text-sm">
+            <a
+                class="hover-affordance text-text-2 underline"
+                href="{% url 'public:resorts' %}"
+                data-testid="resort-all-resorts-link"
+            >{% translate "All resorts" %}</a>
+        </p>
         <header class="mb-8 flex flex-col gap-5 lg:mb-10 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between lg:gap-6">
             <div class="flex flex-col gap-2">
                 {% if resort_eyebrow %}

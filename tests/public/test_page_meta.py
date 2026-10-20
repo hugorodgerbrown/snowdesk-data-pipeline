@@ -98,6 +98,9 @@ def sharing_pages(db: None) -> dict[str, str]:
         "terms_of_service": reverse("public:terms_of_service"),
         "how_to_read_bulletin": reverse("public:how_to_read_bulletin"),
         "resort": resort.get_absolute_url(),
+        # SNOW-1150. The resorts index is a search landing page and the hub
+        # every resort page hangs off, so it carries a full card.
+        "resorts": reverse("public:resorts"),
         "bulletin": region.get_absolute_url(),
         # SNOW-821. The trip share page carries a full card AND `noindex`,
         # which are independent (see includes/_page_meta.html): unfurling
