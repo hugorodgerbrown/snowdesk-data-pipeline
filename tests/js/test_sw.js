@@ -1129,6 +1129,21 @@ describe('inline mutation-queue core agrees with the real one (SNOW-617)', () =>
     }
   });
 
+  it('classifies every status identically, with and without done statuses', () => {
+    // SNOW-1132: the worker drain replays rows tab-closed, so its copy must
+    // honour a row's declared done statuses as the real core does.
+    const inline = loadSw()._INLINE_MUTATION_QUEUE_CORE;
+    const STATUSES = [200, 204, 302, 400, 404, 408, 409, 410, 429, 500, 503];
+
+    for (const done of [undefined, [], [404], [404, 410]]) {
+      for (const status of STATUSES) {
+        expect(inline.classifyStatus(status, done), `${status} / ${done}`).toBe(
+          coreQueue.classifyStatus(status, done),
+        );
+      }
+    }
+  });
+
   it('agrees on MAX_ATTEMPTS and the backoff schedule', () => {
     const inline = loadSw()._INLINE_MUTATION_QUEUE_CORE;
 
@@ -3216,6 +3231,56 @@ describe('the Background-Sync drain respects offline mode (SNOW-852)', () => {
     // fires with no window open, so there is no surface left to show the
     // user their connection being spent.
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('deletes a row on a status it declared done (SNOW-1132)', async () => {
+    // A forget queued offline and replayed with every tab closed comes
+    // through this drain, not the page's; a 404 there must clear the row.
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('queue:mutations', 'readwrite');
+        tx.objectStore('queue:mutations').add({
+          method: 'POST',
+          url: `${ORIGIN}/downloads/partials/custom-a1/forget/`,
+          headers: {},
+          body: null,
+          idempotency_key: 'k-1132',
+          attempts: 0,
+          status: 'queued',
+          next_attempt_at: 0,
+          done_statuses: [404],
+        });
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+    const fetchSpy = vi.fn(async () => new Response('', { status: 404 }));
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const left = await new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const get = db.transaction('queue:mutations').objectStore('queue:mutations').getAll();
+        get.onsuccess = () => {
+          db.close();
+          resolve(get.result);
+        };
+        get.onerror = () => reject(get.error);
+      };
+    });
+    expect(left).toEqual([]);
   });
 
   it('still replays when the app is online', async () => {

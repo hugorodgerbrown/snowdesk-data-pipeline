@@ -203,12 +203,14 @@
    * @param {string} url
    * @param {Object<string, string>} fields Form fields, CSRF included by
    *   this function.
+   * @param {number[]} [doneStatuses] Response codes that mean the write is
+   *   already applied (SNOW-1132), passed through to the queue.
    * @returns {Promise<boolean>} Whether the operation was accepted for
    *   delivery. Never rejects: a failed enqueue costs a missing account
    *   row, not a failed download, and the download is what the user asked
    *   for.
    */
-  async function _enqueue(url, fields) {
+  async function _enqueue(url, fields, doneStatuses) {
     if (!window.pwaMutationQueue || !url) return false;
     var body = new URLSearchParams(
       Object.assign({ csrfmiddlewaretoken: csrfToken() }, fields),
@@ -224,6 +226,7 @@
           'HX-Request': 'true',
         },
         body: body,
+        doneStatuses: doneStatuses || [],
       });
       return true;
     } catch (_err) {
@@ -287,9 +290,14 @@
     if (!isEnabled() || !areaId) return false;
     var template = config().downloadRenameUrlTemplate;
     if (!template) return false;
-    return _enqueue(template.replace('__AREA_ID__', encodeURIComponent(areaId)), {
-      name: name || '',
-    });
+    // SNOW-1132: a 404 means the account has no such area — another
+    // device forgot it, or it never got there. Nothing is left to rename,
+    // which is done, not a failure to keep on the badge.
+    return _enqueue(
+      template.replace('__AREA_ID__', encodeURIComponent(areaId)),
+      { name: name || '' },
+      [404],
+    );
   }
 
   /**
@@ -308,9 +316,12 @@
     if (!isEnabled() || !areaId) return false;
     var template = config().downloadForgetUrlTemplate;
     if (!template) return false;
+    // SNOW-1132: a 404 is the row already gone — removed on another
+    // device, or never synced — which is the outcome asked for.
     var queued = await _enqueue(
       template.replace('__AREA_ID__', encodeURIComponent(areaId)),
       {},
+      [404],
     );
     // Unmarked whether or not the enqueue landed: either the row is going,
     // or it never got there, and both mean a later download of the same

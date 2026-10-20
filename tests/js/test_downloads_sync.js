@@ -223,6 +223,8 @@ describe('forget', () => {
     const op = window.pwaMutationQueue.enqueue.mock.calls[0][0];
     expect(op.url).toBe('/downloads/partials/custom-a1/forget/');
     expect(op.headers['HX-Request']).toBe('true');
+    // SNOW-1132: the row already gone is the outcome asked for.
+    expect(op.doneStatuses).toEqual([404]);
   });
 
   it('lets a later download of the same area sync again', async () => {
@@ -245,6 +247,15 @@ describe('rename', () => {
     const op = window.pwaMutationQueue.enqueue.mock.calls[0][0];
     expect(op.url).toBe('/downloads/partials/custom-a1/rename/');
     expect(bodyOf(window.pwaMutationQueue.enqueue).name).toBe('North ridge');
+    // SNOW-1132: no account row means nothing left to rename.
+    expect(op.doneStatuses).toEqual([404]);
+  });
+
+  it('declares no done status on a push', async () => {
+    // A 404 on the upsert would be a real fault, not an applied write.
+    await sync.push({ areaId: 'region-CH-4115', regionId: 'CH-4115' });
+
+    expect(window.pwaMutationQueue.enqueue.mock.calls[0][0].doneStatuses).toEqual([]);
   });
 });
 
