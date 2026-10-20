@@ -1797,12 +1797,25 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
   transition: background-image 120ms ease;
 }
 
-.hover-affordance:hover,
+/* SNOW-1131: :hover only where the pointer can genuinely hover. On a touch
+   screen the browser leaves :hover on the last element tapped until the
+   next tap lands elsewhere, so an unguarded rule left a grey wash on a
+   roundel after every press — over a red error state it read as stuck.
+   :focus-visible stays unguarded: keyboard focus is real on any device. */
 .hover-affordance:focus-visible {
   background-image: linear-gradient(
     var(--color-chip-strong),
     var(--color-chip-strong)
   );
+}
+
+@media (hover: hover) {
+  .hover-affordance:hover {
+    background-image: linear-gradient(
+      var(--color-chip-strong),
+      var(--color-chip-strong)
+    );
+  }
 }
 
 /* A control that cannot be pressed says so, and takes no fill: the
