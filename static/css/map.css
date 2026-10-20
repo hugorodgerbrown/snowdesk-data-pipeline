@@ -3390,11 +3390,13 @@ html:has(> body.map-fullscreen) > body {
     height: 100%;
 }
 
-/* White download glyph on the filled disc (the glyph strokes currentColor).
-   Reads on the green fill above in both themes (see that fill's own
-   dark-mode colour, src/css/main.css). Same icon as every other state —
-   see the display rules above for why. */
-.map-download-control[data-download-state="done"] .map-download-control-icon--idle {
+/* White glyph on the filled disc (the glyph strokes currentColor). Reads on
+   the green fill above in both themes (see that fill's own dark-mode
+   colour, src/css/main.css). SNOW-1131: 'done' shows the REFRESH glyph
+   since SNOW-924 (the display rules above), so this targets that one — it
+   still named the idle arrow, which 'done' no longer shows, and the
+   refresh arrow was drawn in ink on the solid fill. */
+.map-download-control[data-download-state="done"] .map-download-control-icon--refresh {
     color: #fff;
 }
 

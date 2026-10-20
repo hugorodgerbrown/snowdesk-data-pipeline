@@ -291,6 +291,47 @@ def test_no_css_rule_draws_the_overlay_shown_marker() -> None:
     assert "data-overlay-shown" not in without_comments
 
 
+def _uncommented_css(*parts: str) -> str:
+    """Read a stylesheet under BASE_DIR with its comments stripped."""
+    css = Path(settings.BASE_DIR, *parts).read_text()
+    return re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+
+
+def test_hover_affordance_hovers_only_where_a_pointer_can() -> None:
+    """
+    SNOW-1131: the chip fill on ``:hover`` sits inside ``(hover: hover)``.
+
+    A touch screen leaves ``:hover`` on the last element tapped, so an
+    unguarded rule left a grey wash on the download roundel after every
+    press. Every ``.hover-affordance:hover`` selector must therefore appear
+    after the media query opens and nowhere outside it.
+    """
+    css = _uncommented_css("src", "css", "main.css")
+    media = css.index("@media (hover: hover)")
+    hovers = [m.start() for m in re.finditer(r"\.hover-affordance:hover\b", css)]
+    assert hovers, "the .hover-affordance:hover rule has gone from main.css"
+    for at in hovers:
+        assert at > media, "a .hover-affordance:hover rule sits outside (hover: hover)"
+        assert css.rfind("@media", 0, at) == media
+
+
+def test_the_done_roundel_whitens_the_glyph_it_shows() -> None:
+    """
+    SNOW-1131: on the solid ``done`` disc the white rule targets the refresh glyph.
+
+    SNOW-924 made ``done`` show the refresh glyph; the colour rule still
+    named the idle arrow, which ``done`` hides, so the refresh arrow was
+    drawn in ink on the green fill.
+    """
+    css = _uncommented_css("static", "css", "map.css")
+    rule = re.search(
+        r'\[data-download-state="done"\]\s+\.map-download-control-icon--(\w+)\s*\{[^}]*color:\s*#fff',
+        css,
+    )
+    assert rule is not None
+    assert rule.group(1) == "refresh"
+
+
 @pytest.mark.django_db
 def test_help_tour_reads_the_map_in_four_chapters() -> None:
     """
