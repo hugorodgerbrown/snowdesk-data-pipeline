@@ -40,16 +40,18 @@ Sections, top to bottom:
      renders — neither when the resort lacks a base or top elevation.
   3. The favourite/unfavourite control
      (``favourites/partials/_resort_favourite_button.html``).
-  4. Forecasts — a list of the resort's curated locations, each a link
-     to its own weather page (``/weather/<short_id>/``), with the role and
-     elevation that tell village from summit. SNOW-761 drew one block per
+  4. Forecasts — the resort's pin Location first (SNOW-1144), then its
+     curated locations, each a link to its own weather page
+     (``/weather/<short_id>/``), with the role and elevation that tell
+     village from summit. SNOW-761 drew one block per
      location, SNOW-783 trimmed it to the day and SNOW-807 removed the
      rest; SNOW-1125 puts today's one-day row back under each link in the
      brief form of ``includes/_weather_panel.html`` (icon, condition,
      high/low, snowfall, wind — no freezing level, no sun times). A
-     location with no row today renders its link alone. A resort with no
-     curated locations renders no section at all — ``link_resort_locations`` is a
-     manual operator step, so that state is normal.
+     location with no row today renders its link alone. Every pin writer
+     goes through ``set_resort_pin``, so a pinned resort always has at least
+     its pin here; only a resort with no pin and no curated locations
+     renders no section at all.
   5. Observations — ONE link to the map with the reports sheet open, flown
      to this resort (``?panel=reports&resort=<slug>``). The point-local
      counts SNOW-508 rendered here were a filtered view of map data.
