@@ -56,6 +56,13 @@
   /** The value a read that never came back resolves to. */
   const NO_ANSWER = Symbol('no-answer');
 
+  // SNOW-1138 review: the orphan walk is one `cache.match()` per entry, so
+  // a large interrupted download could eat the whole READ_BUDGET_MS and
+  // cost the panel its list. Orphans get half the budget between them;
+  // one still unmeasured when it runs out reads 0 bytes rather than
+  // failing the read the downloads list rides on.
+  const ORPHAN_BUDGET_MS = READ_BUDGET_MS / 2;
+
   /**
    * Take one reading, or give up on it.
    *
@@ -332,6 +339,36 @@
   }
 
   /**
+   * Wrap `measure` so every orphan it sizes shares one ORPHAN_BUDGET_MS
+   * deadline, counted from this call.
+   *
+   * @param {function(string): Promise<number>} measure
+   * @returns {function(string): Promise<number>}
+   */
+  function orphanMeasurer(measure) {
+    const deadline = Date.now() + ORPHAN_BUDGET_MS;
+    return function (areaId) {
+      const left = deadline - Date.now();
+      if (typeof measure !== 'function' || left <= 0) return Promise.resolve(0);
+      return new Promise(function (resolve) {
+        const timer = setTimeout(() => resolve(0), left);
+        Promise.resolve()
+          .then(() => measure(areaId))
+          .then(
+            (bytes) => {
+              clearTimeout(timer);
+              resolve(bytes || 0);
+            },
+            () => {
+              clearTimeout(timer);
+              resolve(0);
+            },
+          );
+      });
+    };
+  }
+
+  /**
    * Read the three sources the summary is built from.
    *
    * Each is independently best-effort. A device with no basemap cores
@@ -356,7 +393,7 @@
       areas = await bounded(() =>
         areasApi.downloadedAreas({
           strings: STRINGS,
-          measureBytes: areasApi.measureBucketBytes,
+          measureBytes: orphanMeasurer(areasApi.measureBucketBytes),
         }),
       );
       // The downloads ARE this panel: a list that came back empty because

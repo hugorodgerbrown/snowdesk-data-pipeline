@@ -239,7 +239,6 @@ describe('an orphaned bucket (SNOW-1138)', () => {
 
     await renderPanel();
 
-    expect(downloadedAreas.mock.calls[0][0].measureBytes).toBe(measureBucketBytes);
     expect(measureBucketBytes).toHaveBeenCalledWith('region-ch-9999');
     expect(category('maps').value).toBe('3.0 MB');
   });
@@ -397,5 +396,30 @@ describe('when the device does not answer at all', () => {
 
     expect(placeholderText()).toBeNull();
     expect(category('maps')).not.toBeNull();
+  });
+
+  it('still paints the downloads when sizing an orphan hangs', async () => {
+    // SNOW-1138 review: a large orphan's walk is one cache.match() per
+    // entry. It must cost the orphan its figure, not the panel its list.
+    stubDevice({ usage: 50 * MB });
+    window.pwaBasemapAreas = {
+      measureBucketBytes: () => new Promise(() => {}),
+      downloadedAreas: async (options) => [
+        {
+          id: 'region-ch-9999',
+          orphaned: true,
+          basemapKey: null,
+          savedAt: '',
+          bytes: await options.measureBytes('region-ch-9999'),
+        },
+      ],
+    };
+
+    await renderPanelUnderFakeClock();
+
+    expect(placeholderText()).toBeNull();
+    const rows = [...list.querySelectorAll('[data-testid="reset-data-summary-map"]')];
+    expect(rows.map((row) => row.firstChild.textContent)).toEqual(['region-ch-9999']);
+    expect(category('maps').value).toBe('0 MB');
   });
 });
