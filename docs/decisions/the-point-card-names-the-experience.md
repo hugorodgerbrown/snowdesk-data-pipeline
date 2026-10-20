@@ -219,7 +219,10 @@ and every point reads more clearly as one or the other.
   SNOW-1065): one stride, 25 m, either side of the segment's middle,
   stopped at a leg's ends, so 50 m of track. Since SNOW-1145 it reads the
   segment's own 25 m, the same piece the colour, the heading, the ground
-  and the map's cursor describe. A segment never crosses a leg boundary,
+  and the map's cursor describe, between the sampler's own boundaries
+  (`boundaryDistances`, placed by the record's `seams`; the last segment
+  absorbs the remainder, so equal shares would not match). A segment
+  never crosses a leg boundary,
   so the leg clipping went with it. On the two Mont Fort canonical tours
   between a fifth and a quarter of segments moved to a neighbouring
   track step; none

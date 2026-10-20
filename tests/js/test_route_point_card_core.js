@@ -541,6 +541,52 @@ describe('segmentGradients', () => {
   });
 });
 
+describe('boundaryDistances and the sampler\'s own boundaries (SNOW-1145)', () => {
+  // A 110 m track due north, a coordinate every 5 m: level to 75 m, then
+  // rising 1 m a metre. The sampler cuts it at 0, 25, 50, 75 and 110 m,
+  // folding the 35 m remainder into the last segment, so equal shares
+  // (27.5 m each) would put the third segment's end inside the rise.
+  const M_PER_DEG = (6371008.8 * Math.PI) / 180;
+  const at = (m) => [7.4, 46.1 + m / M_PER_DEG];
+  const coordinates = Array.from({ length: 23 }, (_, k) => {
+    const m = k * 5;
+    return [...at(m), m <= 75 ? 2000 : 2000 + (m - 75)];
+  });
+  const slope = {
+    points: [0, 25, 50, 75, 110].map(at),
+    angles: [10, 10, 10, 40],
+    seams: [0, 5, 10, 15, 22],
+  };
+
+  it('places each boundary where the sampler cut it', () => {
+    const out = core.boundaryDistances(slope, coordinates);
+    expect(out).toHaveLength(5);
+    [0, 25, 50, 75, 110].forEach((m, i) => expect(out[i]).toBeCloseTo(m, 1));
+  });
+
+  it('reads the third segment level, where equal shares would not', () => {
+    const profile = readProfile(coordinates);
+    const placed = core.segmentGradients(profile, 4, core.boundaryDistances(slope, coordinates));
+    const shared = core.segmentGradients(profile, 4);
+    expect(placed[2]).toBeCloseTo(0, 3);
+    expect(placed[3]).toBeCloseTo(45, 1);
+    expect(shared[2]).toBeGreaterThan(5);
+  });
+
+  it('answers null without seams that place every boundary', () => {
+    const { seams: _seams, ...noSeams } = slope;
+    expect(core.boundaryDistances(noSeams, coordinates)).toBeNull();
+    expect(core.boundaryDistances({ ...slope, seams: [0, 5, 10] }, coordinates)).toBeNull();
+    expect(core.boundaryDistances({ ...slope, seams: [0, 5, 10, 15, 99] }, coordinates)).toBeNull();
+    expect(core.boundaryDistances(slope, null)).toBeNull();
+  });
+
+  it('falls back to equal shares for boundaries of the wrong length', () => {
+    const profile = readProfile(coordinates);
+    expect(core.segmentGradients(profile, 4, [0, 50, 110])).toEqual(core.segmentGradients(profile, 4));
+  });
+});
+
 describe('reading', () => {
   /**
    * One three-segment route around the segment under test.

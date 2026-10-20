@@ -166,7 +166,11 @@
     route = {
       paths: slopeCore && slope ? slopeCore.segmentPaths(slope, options.coordinates) : [],
       gradients: core
-        ? core.segmentGradients(options.profile, options.sampleCount)
+        ? core.segmentGradients(
+          options.profile,
+          options.sampleCount,
+          slope ? core.boundaryDistances(slope, options.coordinates) : null,
+        )
         : [],
       angles: slope && Array.isArray(slope.angles) ? slope.angles : [],
       // Undefined, not [], when the payload predates SNOW-976: the wheel
