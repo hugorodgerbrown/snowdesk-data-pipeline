@@ -1324,6 +1324,35 @@ broken (SNOW-847). And a green run says nothing about a **hanging**
 network: that is the third state above, and only `tox -e offline` covers
 it.
 
+### Scenario D11: Get ready for offline (the car park)
+
+> Automated: [tests/js/test_offline_ready_core.js](../tests/js/test_offline_ready_core.js)
+> (the order and the summary),
+> [tests/js/test_pwa_offline.js](../tests/js/test_pwa_offline.js) (the
+> network menu) and [tests/js/test_offline_audit.js](../tests/js/test_offline_audit.js)
+> (`/offline/?sync=all`). What stays manual is the run over a real
+> connection, and the read of the menu on a phone.
+
+**Goal**: one press in the network menu sends queued edits and brings
+every downloaded area up to date (SNOW-1141), and each area says how it
+came out.
+
+**Preconditions**: signed in, two or more areas downloaded (D1, D4), one of
+them with yesterday's bulletins (or older). To see the queue line, file a
+field report while in Offline mode so one edit is waiting, then switch
+Offline mode back off with DevTools → Network → **Offline** still set, and
+release it only at step 2.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | On `/map/`, press the connectivity symbol | Under the switch: "Heading out? …", one **Get ready for offline** button, and a row per area reading "Bulletins from today", "Bulletins from <day>" or "No bulletins saved yet" — no per-area buttons |
+| 2 | Network → **No throttling**, press **Get ready for offline** | The queued edit goes out first (Network panel: its POST precedes every area's fetches). The button reads "Getting ready… (1 of N)", counting up; the row being fetched reads "Getting ready…". The menu stays open |
+| 3 | Wait for it to finish | One line: "Ready — N areas up to date", or "M of N ready". Each row reads "Up to date" or "Parts missing". If an edit could not be sent, a second line reads "1 change still waiting to send" |
+| 4 | Close the menu and open it again | The summary has gone and the rows show their bulletin stamps again — the answer belonged to that press |
+| 5 | Delete one area's `snowdesk-basemap-pinned-*` bucket (Application → Cache Storage), then repeat step 2 | That row reads "Tiles gone · Download again", with no retry. Pressing **Download again** closes the menu and opens the Manage downloads sheet |
+| 6 | On a bulletin page, open the menu and press **Get ready for offline** | The browser goes to `/offline/`; the report runs, then the status line counts "Getting ready… (n of N)", the report runs again, and the status line ends on the summary. The address bar shows `/offline/` with no `?sync=` |
+| 7 | Switch **Offline mode** on and open the menu | The button is disabled and "Syncing needs a connection." shows |
+
 ---
 
 ## Offline, as a user meets it
@@ -1360,6 +1389,7 @@ have left this script and joined D10.
 | 4 | Wait for it to finish | The button becomes a solid filled disc. That is the only "done" signal there is — there is no message or tick |
 | 5 | Press the framed-square button at the bottom right | A panel listing what you have stored, with a size against each one and a bar showing how much of your allowance you have used |
 | 6 | Look at the region you are going to, and open its bulletin page. Look at the day you are going, too | You have now *read* them, which is what keeps them available later |
+| 7 | Before you leave, press the connection symbol at the top and choose **Get ready for offline** | The button counts through your areas, then says "Ready — … up to date". Any area that says "Tiles gone" needs downloading again |
 
 ### Scenario U2: On the hill (no signal)
 

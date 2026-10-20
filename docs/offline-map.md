@@ -3108,6 +3108,50 @@ is public and its "Save the map page" control warms the shell for anybody. A
 control that is present and honest about its limit beats one that vanishes,
 which reads as a bug.
 
+### Get ready for offline (SNOW-1141)
+
+The "starts nothing" reasoning above did not last: SNOW-951 put a Sync
+button per area under the staleness line, and SNOW-1141 replaced those with
+**one press**, "Get ready for offline", because someone in a car park wants
+one press and nothing sent the edits waiting in the queue at all. It
+overturns SNOW-951's "per area, with no sync all"; the reasoning is in
+[`decisions/a-pre-departure-sync-is-unconditional.md`](decisions/a-pre-departure-sync-is-unconditional.md).
+
+The sequence is `static/js/offline_ready_core.js`
+(`window.pwaOfflineReadyCore`, loaded in `public/base.html`), with every
+effect injected:
+
+1. `window.pwaMutationQueue.drain()`, bounded at 20 s — a dead radio hangs
+   rather than rejects — and then the rows still waiting in
+   `queue:mutations` are counted (a row marked `failed` is not waiting);
+2. every downloaded area in turn, one at a time.
+
+On the map page each area goes through `window.pwaBasemapDownloads.syncArea`
+and the menu stays open. Everywhere else the press navigates to
+`/offline/?sync=all`, where `offline_audit.js` runs the same core with that
+page's own content fetch per area — an area whose tiles do not verify is
+counted as not ready, because that page cannot mend tiles — and re-runs the
+report over the result.
+
+While it runs the button reads "Getting ready… (2 of 5)"; then one summary
+line ("Ready — 5 areas up to date" / "3 of 5 ready") and, only when the drain
+left rows, "2 changes still waiting to send". The result belongs to the press
+and **clears the next time the menu opens**; a press still running when the
+menu is reopened keeps counting. Offline (the effective reading, so a forced
+mode counts) the press is disabled and "Syncing needs a connection." shows.
+
+**The rows are detail, not controls.** Before a press a row says what the
+record alone can: "Bulletins from today", "Bulletins from 18 Oct"
+(`pwaCachedStampCore`, SNOW-1139) or "No bulletins saved yet" — nothing
+about tiles, which `pwa_offline.js` cannot see. After a press it says what
+`syncArea` found: "Up to date", "Parts missing" (a failed or unjudgeable
+tile half, or content that fell short) or "Tiles gone · Download again".
+That last row links to `/map/?panel=downloads`, which opens the Manage
+downloads sheet (`map.js`'s `PANEL_SHEET_BRIDGES`; on the map page the menu
+opens the sheet in place), rather than offering a retry a sync can never
+win. Every word is in `_connection_panel.html` or
+`_network_mode_strings.html`; the script toggles and interpolates.
+
 **Downloads under each mode (SNOW-748).** `_warmCache` ignores the auto-latch
 — see [`decisions/bounded-offline-read-paths.md`](decisions/bounded-offline-read-paths.md)
 — but not a forced mode: it refuses a new run and `_forceOffline()` cancels one

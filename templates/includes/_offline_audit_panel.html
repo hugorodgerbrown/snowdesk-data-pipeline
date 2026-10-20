@@ -394,5 +394,20 @@ of a page nobody came here to audit.
         <span
             data-string="complete-failed"
         >{% translate "Not everything could be saved. Re-checking what landed." %}</span>
+        {# SNOW-1141: ?sync=all — the network menu's "Get ready for offline" #}
+        {# run here. Same msgids as includes/_network_mode_strings.html.     #}
+        <span data-string="ready-running">{% translate "Getting ready…" %}</span>
+        <span
+            data-string="ready-progress"
+        >{% blocktranslate %}Getting ready… (%(n)s of %(total)s){% endblocktranslate %}</span>
+        <span
+            data-string="ready-all"
+        >{% blocktranslate %}Ready — %(total)s areas up to date{% endblocktranslate %}</span>
+        <span data-string="ready-all-one">{% translate "Ready — 1 area up to date" %}</span>
+        <span data-string="ready-some">{% blocktranslate %}%(ready)s of %(total)s ready{% endblocktranslate %}</span>
+        <span
+            data-string="queue-waiting"
+        >{% blocktranslate %}%(n)s changes still waiting to send{% endblocktranslate %}</span>
+        <span data-string="queue-waiting-one">{% translate "1 change still waiting to send" %}</span>
     </template>
 </div>

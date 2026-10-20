@@ -24,6 +24,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/offline_audit_core.js';
+import '../../static/js/offline_ready_core.js';
 import '../../static/js/offline_audit.js';
 
 const MB = 1024 * 1024;
@@ -1927,6 +1928,116 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
 
       expect(window.location.search).toBe('');
       expect(window.location.pathname).toBe('/offline/');
+    });
+
+    describe('?sync=all — Get ready for offline (SNOW-1141)', () => {
+      afterEach(async () => {
+        delete window.pwaMutationQueue;
+        const db = window.pwaDb;
+        for (const row of (await db.getAll('queue:mutations')) || []) {
+          await db.delete('queue:mutations', row.id);
+        }
+      });
+
+      /** The status line under the report, once it says something. */
+      async function statusOnceSettled(pattern) {
+        const status = () => document.querySelector('[data-offline-audit-status]').textContent;
+        await vi.waitUntil(() => pattern.test(status()), { timeout: 5000 });
+        return status();
+      }
+
+      it('drains the queue first, then runs every area, and says how many are ready', async () => {
+        // CH-4115 draws, so this page can fetch its content; CH-4116's
+        // bucket holds a tile but not its style, so it does not verify —
+        // this page cannot mend tiles, and that area is not ready.
+        installCachesStub({
+          [SHELL]: [],
+          'snowdesk-basemap-pinned-region-CH-4115': [
+            { url: 'https://t/style.json' },
+            { url: 'https://t/14/8515/5822.pbf' },
+          ],
+          'snowdesk-basemap-pinned-region-CH-4116': [{ url: 'https://t/14/8515/5822.pbf' }],
+        });
+        await seedMeta({
+          'basemap.regions': [
+            record({ contentAt: '2026-09-01T10:00:00.000Z' }),
+            record({ region_id: 'CH-4116', name: 'Sion', contentAt: '2026-09-01T10:00:00.000Z' }),
+          ],
+        });
+        const order = [];
+        window.pwaMutationQueue = {
+          drain: vi.fn(async () => {
+            order.push('drain');
+          }),
+        };
+        window.pwaWarmCache.mockImplementation(async (urls) => {
+          order.push('warm');
+          warmed.push(urls);
+          return { ok: urls.length, failed: 0, bytes: 1024 };
+        });
+        window.history.replaceState(null, '', '/offline/?sync=all');
+        document.body.innerHTML = PANEL;
+        audit.init();
+
+        const said = await statusOnceSettled(/^\d+ of \d+ ready/);
+
+        expect(order[0]).toBe('drain');
+        expect(order).toContain('warm');
+        expect(warmed.flat()).toContain('/ch-4115/martigny-verbier/' + clientDay() + '/');
+        expect(said).toBe('1 of 2 ready');
+        expect(window.location.search).toBe('');
+      });
+
+      it('warms the missing map shell once for the whole run, not once per area', async () => {
+        // SNOW-1141 review: the report the run holds was taken before it,
+        // so it keeps saying the app cannot open after the first area has
+        // warmed `/map/` — and each later area fetched it again.
+        installCachesStub({
+          [SHELL]: [],
+          'snowdesk-basemap-pinned-region-CH-4115': [
+            { url: 'https://t/style.json' },
+            { url: 'https://t/14/8515/5822.pbf' },
+          ],
+          'snowdesk-basemap-pinned-region-CH-4116': [
+            { url: 'https://t/style.json' },
+            { url: 'https://t/14/8515/5822.pbf' },
+          ],
+        });
+        await seedMeta({
+          'basemap.regions': [
+            record({ contentAt: '2026-09-01T10:00:00.000Z' }),
+            record({ region_id: 'CH-4116', name: 'Sion', contentAt: '2026-09-01T10:00:00.000Z' }),
+          ],
+        });
+        window.pwaMutationQueue = { drain: vi.fn(async () => {}) };
+        window.pwaWarmCache.mockImplementation(async (urls) => {
+          warmed.push(urls);
+          return { ok: urls.length, failed: 0, bytes: 1024 };
+        });
+        window.history.replaceState(null, '', '/offline/?sync=all');
+        document.body.innerHTML = PANEL;
+        audit.init();
+
+        const said = await statusOnceSettled(/ready/i);
+
+        const shellWarms = warmed.filter((urls) => urls.length === 1 && urls[0] === '/map/');
+        expect(shellWarms).toHaveLength(1);
+        expect(said).toBe('Ready — 2 areas up to date');
+      });
+
+      it('names the edits the drain left behind, after re-checking every area', async () => {
+        await arriveWithSync('all', { contentAt: '2026-09-01T10:00:00.000Z' });
+        // Queued before the drain, and still there after it: the stub
+        // sends nothing.
+        await window.pwaDb.put('queue:mutations', { status: 'pending' });
+        await window.pwaDb.put('queue:mutations', { status: 'pending' });
+        window.pwaMutationQueue = { drain: vi.fn(async () => {}) };
+
+        const said = await statusOnceSettled(/waiting/);
+
+        expect(window.pwaMutationQueue.drain).toHaveBeenCalledTimes(1);
+        expect(said).toBe('Ready — 1 area up to date · 2 changes still waiting to send');
+      });
     });
 
     it('does nothing at all without the parameter', async () => {
