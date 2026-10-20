@@ -416,6 +416,112 @@ describe('month navigation', () => {
   });
 });
 
+describe('swiping between months on a phone (SNOW-1160)', () => {
+  /** Dispatch a touch event carrying one point on `target`. */
+  function touch(target, type, x, y) {
+    const e = new Event(type, { bubbles: true, cancelable: true });
+    const point = { clientX: x, clientY: y };
+    e.touches = type === 'touchend' ? [] : [point];
+    e.changedTouches = [point];
+    target.dispatchEvent(e);
+    return e;
+  }
+
+  /** A one-finger swipe across the grid from x0 to x1. */
+  function swipe(x0, x1, target = document.getElementById('map-calendar-grid')) {
+    touch(target, 'touchstart', x0, 100);
+    touch(target, 'touchend', x1, 100);
+  }
+
+  it('swipe left is the next month and swipe right the previous, like the arrows', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    await loadCalendar();
+    openPopup();
+
+    swipe(200, 40);
+    expect(monthLabel()).toBe('March 2026');
+    swipe(40, 200);
+    swipe(40, 200);
+    expect(monthLabel()).toBe('January 2026');
+  });
+
+  it('stops at the same bounds the arrows do', async () => {
+    await loadCalendar();
+    openPopup();
+
+    // Opens on today's month: a swipe forward is spent, as the arrow is.
+    swipe(200, 40);
+    expect(monthLabel()).toBe('May 2026');
+
+    for (let i = 0; i < 6; i++) swipe(40, 200);
+    expect(monthLabel()).toBe('January 2026');
+  });
+
+  it('leaves the month alone for a tap, a short nudge or a vertical scroll', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    await loadCalendar();
+    openPopup();
+    const grid = document.getElementById('map-calendar-grid');
+
+    swipe(100, 100);
+    swipe(100, 80);
+    touch(grid, 'touchstart', 100, 20);
+    touch(grid, 'touchend', 50, 220);
+    expect(monthLabel()).toBe('February 2026');
+  });
+
+  it('ignores a two-finger gesture', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    await loadCalendar();
+    openPopup();
+    const grid = document.getElementById('map-calendar-grid');
+
+    const start = new Event('touchstart', { bubbles: true });
+    start.touches = [{ clientX: 200, clientY: 100 }, { clientX: 220, clientY: 100 }];
+    grid.dispatchEvent(start);
+    touch(grid, 'touchend', 40, 100);
+    expect(monthLabel()).toBe('February 2026');
+  });
+
+  it('ignores a second finger that lands outside the card', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    await loadCalendar();
+    openPopup();
+    const grid = document.getElementById('map-calendar-grid');
+
+    touch(grid, 'touchstart', 200, 100);
+    const outside = new Event('touchstart', { bubbles: true });
+    outside.touches = [{ clientX: 200, clientY: 100 }, { clientX: 400, clientY: 500 }];
+    document.body.dispatchEvent(outside);
+    touch(grid, 'touchend', 40, 100);
+    expect(monthLabel()).toBe('February 2026');
+  });
+
+  it('cancels a swipe\'s touchend, so it cannot also pick the day it lifts on', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    await loadCalendar();
+    openPopup();
+    const cell = dayButton('2026-02-13');
+
+    touch(cell, 'touchstart', 200, 100);
+    // A cancelled touchend is what stops the browser synthesising a click.
+    expect(touch(cell, 'touchend', 40, 100).defaultPrevented).toBe(true);
+    expect(monthLabel()).toBe('March 2026');
+  });
+
+  it('leaves a tap\'s touchend alone, so the tap still picks its day', async () => {
+    history.replaceState(null, '', '/?d=2026-02-11');
+    await loadCalendar();
+    openPopup();
+    const cell = dayButton('2026-02-13');
+
+    touch(cell, 'touchstart', 100, 100);
+    expect(touch(cell, 'touchend', 102, 101).defaultPrevented).toBe(false);
+    cell.click();
+    expect(new URL(location.href).searchParams.get('d')).toBe('2026-02-13');
+  });
+});
+
 describe('picking a day', () => {
   it('commits it through the scrubber, so the URL and the paint move together', async () => {
     history.replaceState(null, '', '/?d=2026-02-11');

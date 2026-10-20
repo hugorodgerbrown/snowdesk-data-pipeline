@@ -342,6 +342,64 @@
     step(1);
   });
 
+  // SNOW-1160: a sideways swipe across the card steps the month, through
+  // the same ``step`` the arrows call, so the range clamp is one rule and a
+  // swipe past either end does exactly what a disabled arrow does: nothing.
+  // On a phone the arrows are a 32px target at the card's corners; the
+  // swipe makes the whole grid the control.
+  //
+  // Touch events, not pointer events: a mouse drag across the grid on a
+  // desktop is a text selection, not a request for a new month. The start
+  // and cancel listeners are passive — `touch-action: pan-y` on the card
+  // (static/css/map.css) is what hands us the horizontal axis while leaving
+  // the card's own vertical scroll alone.
+  let swipeStart = null;
+
+  root.addEventListener(
+    'touchstart',
+    (e) => {
+      // A second finger is a pinch, not a swipe.
+      swipeStart =
+        e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+    },
+    { passive: true }
+  );
+
+  // On the document, not the card: a second finger that lands OUTSIDE the
+  // card never reaches the listener above, and lifting the first one would
+  // otherwise page the month in the middle of a pinch on the map.
+  document.addEventListener(
+    'touchstart',
+    (e) => {
+      if (e.touches.length > 1) swipeStart = null;
+    },
+    { passive: true }
+  );
+
+  // Not passive: a swipe cancels its touchend, which is what stops the
+  // browser synthesising a click from it. Without that a swipe ending on
+  // "14" would page the month AND pick the 14th of the month it paged to.
+  // Cancelling here, rather than swallowing the next click on a timer, ties
+  // the suppression to the one click this gesture would have produced and
+  // never to a genuine tap that follows it.
+  root.addEventListener('touchend', (e) => {
+    if (!swipeStart || e.changedTouches.length === 0) return;
+    const end = e.changedTouches[0];
+    const delta = core.swipeStep(end.clientX - swipeStart.x, end.clientY - swipeStart.y);
+    swipeStart = null;
+    if (delta === 0) return;
+    if (e.cancelable) e.preventDefault();
+    step(delta);
+  });
+
+  root.addEventListener(
+    'touchcancel',
+    () => {
+      swipeStart = null;
+    },
+    { passive: true }
+  );
+
   // One delegated listener rather than one per cell: the grid is rebuilt on
   // every month step, and re-binding ~35 handlers each time is work with
   // nothing to show for it.
