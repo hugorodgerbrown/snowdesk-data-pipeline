@@ -41,7 +41,9 @@ Context:
   region                — MicroRegion (or anything with ``name``).
   resort                — Resort (or anything with typical_season_open /
                           typical_season_close, "MM-DD" strings).
-  bulletin_url          — str: the region's evergreen bulletin URL.
+  bulletin_url          — str: the region's evergreen bulletin URL, or
+                          without a panel the dated page of its latest
+                          bulletin (views._resort_bulletin_url).
   target_date           — datetime.date: today, named in the eyebrow.
   bulletin_provider     — str: "SLF" / "ALBINA" / "Météo-France", or "".
   bulletin_updated_time — str: "HH:MM" in Central European time, or "".

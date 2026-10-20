@@ -5091,7 +5091,7 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         # SNOW-1156: the card's "SLF · updated 17:00" line.
         **_resort_bulletin_attribution(panel),
         "target_date": today,
-        "bulletin_url": region.get_absolute_url(),
+        "bulletin_url": _resort_bulletin_url(region, selected, today),
         "favourited": favourite is not None,
         "favourite_uuid": str(favourite.uuid) if favourite else "",
         "can_favourite": can_favourite,
@@ -5187,6 +5187,44 @@ def _resort_season_strip_context(
 # Central European Time, so one zone reads each provider's own clock: SLF's
 # evening bulletin says 17:00 here, as it does on slf.ch.
 _BULLETIN_LOCAL_TZ = zoneinfo.ZoneInfo("Europe/Zurich")
+
+
+def _resort_bulletin_url(
+    region: MicroRegion,
+    selected: Bulletin | None,
+    today: datetime.date,
+) -> str:
+    """
+    Return where the resort page's bulletin card links.
+
+    With a bulletin covering today, the region's evergreen URL — it shows
+    that same issue. Without one, the evergreen page would only repeat
+    "no bulletin", so the "Latest {region} bulletin" link goes to the dated
+    page of the region's most recent bulletin instead; the evergreen URL
+    remains the fallback when the region has none at all.
+
+    Args:
+        region: The resort's MicroRegion.
+        selected: Today's selected issue, or None.
+        today: The page's calendar day.
+
+    Returns:
+        A bulletin page URL for the region.
+
+    """
+    if selected is not None:
+        return region.get_absolute_url()
+    latest = (
+        Bulletin.objects.filter(regions=region, valid_to__date__lt=today)
+        .order_by("-valid_to")
+        .only("valid_to")
+        .first()
+    )
+    if latest is None:
+        return region.get_absolute_url()
+    return region.get_absolute_url(
+        target_date=timezone.localtime(latest.valid_to).date()
+    )
 
 
 def _resort_bulletin_attribution(panel: dict[str, Any] | None) -> dict[str, str]:

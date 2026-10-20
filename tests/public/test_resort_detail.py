@@ -36,7 +36,8 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
     "{provider} · updated HH:MM" line (``_resort_bulletin_attribution``,
     on Central European time) and "Read the full {region} bulletin →"; or
     "No bulletin today" with the resort's typical season and "Latest
-    {region} bulletin →". The section's eyebrow names today. In season the
+    {region} bulletin →", which links the most recent bulletin's dated page
+    (``_resort_bulletin_url``). The section's eyebrow names today. In season the
     card leads the main column, out of season the forecasts do. The problem
     cards and SNOW-1143's band-vs-lift-range lines are gone.
   - SNOW-1123: the schema.org SkiResort JSON-LD — core properties, optional
@@ -407,6 +408,37 @@ class TestResortTodaysDanger:
         assert "Latest Martigny–Verbier bulletin →" in text
         assert 'data-testid="resort-bulletin-attribution"' not in area
         assert len(re.findall(r"<a\b", area)) == 1
+
+    def test_latest_link_goes_to_the_last_dated_bulletin(self) -> None:
+        """No bulletin today: "Latest" links the most recent bulletin's day."""
+        region = MicroRegionFactory.create(name="Martigny–Verbier")
+        resort = ResortFactory.create(region=region)
+        today = timezone.localdate()
+        for days_ago in (40, 12):
+            start = timezone.make_aware(
+                datetime.datetime.combine(
+                    today - datetime.timedelta(days=days_ago), datetime.time(8)
+                )
+            )
+            bulletin = BulletinFactory.create(
+                valid_from=start, valid_to=start + datetime.timedelta(hours=9)
+            )
+            RegionBulletinFactory.create(bulletin=bulletin, region=region)
+
+        area = _danger_area(Client().get(resort.get_absolute_url()).content.decode())
+
+        expected = region.get_absolute_url(
+            target_date=today - datetime.timedelta(days=12)
+        )
+        assert f'href="{expected}"' in area
+
+    def test_latest_link_falls_back_to_the_evergreen_page(self) -> None:
+        """A region with no bulletin at all links its evergreen page."""
+        resort = ResortFactory.create()
+
+        area = _danger_area(Client().get(resort.get_absolute_url()).content.decode())
+
+        assert f'href="{resort.region.get_absolute_url()}"' in area
 
     @pytest.mark.parametrize(
         ("season_open", "season_close"), [("", ""), ("12-01", ""), ("", "04-30")]
