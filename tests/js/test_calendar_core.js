@@ -357,3 +357,30 @@ describe('buildMonthGrid', () => {
     expect(keys[29]).toBe('2026-03-30');
   });
 });
+
+describe('swipeStep (SNOW-1160)', () => {
+  const MIN = core.SWIPE_MIN_PX;
+
+  it('reads a swipe left as the next month and a swipe right as the previous', () => {
+    expect(core.swipeStep(-MIN, 0)).toBe(1);
+    expect(core.swipeStep(MIN, 0)).toBe(-1);
+  });
+
+  it('ignores a tap and a short nudge', () => {
+    expect(core.swipeStep(0, 0)).toBe(0);
+    expect(core.swipeStep(-(MIN - 1), 0)).toBe(0);
+    expect(core.swipeStep(MIN - 1, 0)).toBe(0);
+  });
+
+  it('ignores a drag that is not mostly sideways, so a scroll never pages', () => {
+    // Exactly twice the vertical travel still counts; any steeper does not.
+    expect(core.swipeStep(-80, 40)).toBe(1);
+    expect(core.swipeStep(-80, 41)).toBe(0);
+    expect(core.swipeStep(60, -200)).toBe(0);
+  });
+
+  it('answers 0 for travel it cannot measure', () => {
+    expect(core.swipeStep(NaN, 0)).toBe(0);
+    expect(core.swipeStep(-100, Infinity)).toBe(0);
+  });
+});

@@ -4787,6 +4787,11 @@ body.map-framing #map-legend {
        when shut — `display: none`, out of the hit test entirely — so there
        is no closed state to arm. */
     pointer-events: auto;
+    /* SNOW-1160: a sideways swipe across the card pages the month
+       (map_calendar.js). `pan-y` keeps the vertical scroll below and hands
+       the horizontal axis to the script, so a swipe neither drags the page
+       sideways nor waits on the browser deciding it was not a pan. */
+    touch-action: pan-y;
     /* Bounded and scrolling, like every surface that floats over the map.
        Six rows of dates fit easily today — but the anchor is low, the card
        opens into the viewport, and nothing else here would stop it. Same

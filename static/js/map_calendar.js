@@ -342,6 +342,70 @@
     step(1);
   });
 
+  // SNOW-1160: a sideways swipe across the card steps the month, through
+  // the same ``step`` the arrows call, so the range clamp is one rule and a
+  // swipe past either end does exactly what a disabled arrow does: nothing.
+  // On a phone the arrows are a 32px target at the card's corners; the
+  // swipe makes the whole grid the control.
+  //
+  // Touch events, not pointer events: a mouse drag across the grid on a
+  // desktop is a text selection, not a request for a new month. Passive,
+  // because nothing here cancels the browser's handling — `touch-action:
+  // pan-y` on the card (static/css/map.css) is what hands us the horizontal
+  // axis while leaving the card's own vertical scroll alone.
+  let swipeStart = null;
+  let swallowClickUntil = 0;
+  // How long after a swipe the click it may produce is ignored. A finger
+  // that lifts on a day cell can still fire a click on some browsers, and
+  // without this a swipe that ended on "14" would page the month AND pick
+  // the 14th of the month it paged to.
+  const SWIPE_CLICK_GUARD_MS = 400;
+
+  root.addEventListener(
+    'touchstart',
+    (e) => {
+      // A second finger is a pinch, not a swipe.
+      swipeStart =
+        e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+    },
+    { passive: true }
+  );
+
+  root.addEventListener(
+    'touchend',
+    (e) => {
+      if (!swipeStart || e.changedTouches.length === 0) return;
+      const end = e.changedTouches[0];
+      const delta = core.swipeStep(end.clientX - swipeStart.x, end.clientY - swipeStart.y);
+      swipeStart = null;
+      if (delta === 0) return;
+      swallowClickUntil = Date.now() + SWIPE_CLICK_GUARD_MS;
+      step(delta);
+    },
+    { passive: true }
+  );
+
+  root.addEventListener(
+    'touchcancel',
+    () => {
+      swipeStart = null;
+    },
+    { passive: true }
+  );
+
+  // Capture phase, so it runs before the grid's own delegated handler and
+  // the arrows' handlers below it.
+  root.addEventListener(
+    'click',
+    (e) => {
+      if (Date.now() >= swallowClickUntil) return;
+      swallowClickUntil = 0;
+      e.stopPropagation();
+      e.preventDefault();
+    },
+    true
+  );
+
   // One delegated listener rather than one per cell: the grid is rebuilt on
   // every month step, and re-binding ~35 handlers each time is work with
   // nothing to show for it.

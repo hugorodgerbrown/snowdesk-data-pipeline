@@ -73,6 +73,12 @@
  *   MAX_FORWARD_DAYS
  *     The cap above, exported so the scrubber's boot path can assume the
  *     same ceiling before the ratings payload has resolved.
+ *   swipeStep(dx, dy)
+ *     SNOW-1160: the month step a finger's travel asks for — ``1`` for a
+ *     swipe left (next month), ``-1`` for a swipe right (previous), ``0``
+ *     for a tap, a short nudge or a mostly-vertical drag.
+ *   SWIPE_MIN_PX
+ *     The horizontal travel below which ``swipeStep`` answers ``0``.
  */
 
 // @ts-check
@@ -89,6 +95,12 @@
   // same optimistic assumption before the payload has resolved, and the two
   // must not drift.
   var MAX_FORWARD_DAYS = 3;
+
+  // SNOW-1160: how far a finger has to travel sideways before the card reads
+  // it as a swipe rather than a tap that wobbled. 40px is roughly a day
+  // cell's width plus its gap — far enough that lifting off a cell is never
+  // a swipe, short enough that a flick across a 210px grid always is.
+  var SWIPE_MIN_PX = 40;
 
   var DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
   var MONTH_KEY_RE = /^\d{4}-\d{2}$/;
@@ -357,6 +369,26 @@
     return cells;
   }
 
+  /**
+   * The month step a touch's travel asks for (SNOW-1160).
+   *
+   * Swipe LEFT moves FORWARD, as a page turns: the next month comes in from
+   * the right. A drag counts only when it is mostly sideways — horizontal
+   * travel at least twice the vertical — because the card is a bounded,
+   * scrolling box, and a vertical scroll that drifts a little must not also
+   * page the month.
+   *
+   * @param {number} dx Horizontal travel, end minus start, in px.
+   * @param {number} dy Vertical travel, end minus start, in px.
+   * @returns {number} ``1``, ``-1`` or ``0``.
+   */
+  function swipeStep(dx, dy) {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return 0;
+    if (Math.abs(dx) < SWIPE_MIN_PX) return 0;
+    if (Math.abs(dx) < 2 * Math.abs(dy)) return 0;
+    return dx < 0 ? 1 : -1;
+  }
+
   window.pwaCalendarCore = Object.freeze({
     monthKeyOf: monthKeyOf,
     shiftMonth: shiftMonth,
@@ -365,5 +397,7 @@
     latestKnownDate: latestKnownDate,
     MAX_FORWARD_DAYS: MAX_FORWARD_DAYS,
     buildMonthGrid: buildMonthGrid,
+    swipeStep: swipeStep,
+    SWIPE_MIN_PX: SWIPE_MIN_PX,
   });
 })();
