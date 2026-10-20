@@ -29,6 +29,11 @@ SNOW-836 added "Compare apps" (/compare/) beside Help; it was removed
 again here. The page itself stays and is still in the sitemap, but
 nothing in the site links to it any more.
 
+SNOW-1150 added "Resorts" (/resorts/) after Help — the resorts index is
+the hub every resort page hangs off, and a footer link is the one route to
+it from every page. It is the fifth link, so the line is now at the
+ceiling below: adding a sixth means removing one.
+
 Kept deliberately minimal: one line. Visual weight should not compete
 with page content. Five links is the ceiling — a sixth wraps on a phone,
 and a wrapped footer reads as two rows of equally-weighted links rather
@@ -41,11 +46,14 @@ than as one quiet line.
 >
     <p>
         {% url 'public:help' as help_url %}
+        {% url 'public:resorts' as resorts_url %}
         {% url 'public:terms_of_service' as terms_url %}
         {% url 'public:privacy' as privacy_url %}
         {% url 'public:colophon' as colophon_url %}
         {% blocktrans trimmed %}
             <a class="underline hover:text-text-2" href="{{ help_url }}">Help</a>
+            &middot;
+            <a class="underline hover:text-text-2" href="{{ resorts_url }}">Resorts</a>
             &middot;
             <a class="underline hover:text-text-2" href="{{ terms_url }}">Terms of Service</a>
             &middot;

@@ -15,7 +15,8 @@ selected the same way and rendered through the same partials, read-only:
 the bulletin stays the one full document, and this page holds no copy.
 
 Sections, top to bottom:
-  1. Resort name (+ alternative/marketing name, when set), canton, and
+  1. An "All resorts" link back to ``/resorts/`` (SNOW-1150), then the
+     resort name (+ alternative/marketing name, when set), canton, and
      parent region name, then the curated "why it matters" line (SNOW-542)
      via the shared ``public/partials/_resort_why_it_matters.html`` partial,
      which owns its own blank state, then the curated facts block
@@ -164,6 +165,15 @@ Context expected (built by ``apps.public.views.resort_detail``):
         data-resort-slug="{{ resort.slug }}"
     >
         <div class="mb-6">
+            {# SNOW-1150: back to the hub every resort page hangs off, so the #}
+            {# index and each resort link both ways.                          #}
+            <p class="mb-2 text-sm">
+                <a
+                    class="hover-affordance text-text-2 underline"
+                    href="{% url 'public:resorts' %}"
+                    data-testid="resort-all-resorts-link"
+                >{% translate "All resorts" %}</a>
+            </p>
             {% include "includes/_page_title.html" with text=resort.name class_extra="mb-0" data_testid="resort-heading" %}
             {% if resort.name_alt %}
                 <p class="text-sm text-text-3">{{ resort.name_alt }}</p>

@@ -2541,6 +2541,9 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         "covers; the site entry point.",
         f"- [Avalanche map]({link('public:map')}): interactive choropleth of "
         "current danger ratings by region.",
+        f"- [Swiss ski resorts]({link('public:resorts')}): today's avalanche "
+        "danger at the main Swiss resorts, and an index of every resort and "
+        "touring area by canton, each linking to its own page.",
         f"- [How to read a bulletin]({link('public:how_to_read_bulletin')}): "
         "reference guide to the EAWS danger scale, avalanche problems, and "
         "the aspect/elevation rose.",
