@@ -51,7 +51,7 @@
  * growing with its content. ``bindDetents`` is that behaviour, and
  * ``attach`` calls it for every sheet that declares detents, so a sheet
  * driven by ``attach`` needs nothing more than the template parameter. A
- * sheet with its own open/close (the weather and route sheets) calls
+ * sheet with its own open/close (the route sheet) calls
  * ``window.MapSheet.bindDetents`` itself and drives the returned
  * controller from its own open and close.
  *
