@@ -3180,14 +3180,15 @@ html:has(> body.map-fullscreen) > body {
     opacity: 0.45;
 }
 
-/* 'idle' and (SNOW-568) 'error' are the clickable states — handleClick
-   returns for every other one. 'busy' (already running) and 'done' (an
-   informational success state) are not failures, so they keep their normal
-   colour and take the neutral default cursor rather than the not-allowed
-   above; without this the pointer contradicted the aria-disabled="true"
-   map.js sets for them. */
+/* 'busy' (already running) is not a failure, so it keeps its normal colour
+   and takes the neutral default cursor rather than the not-allowed above;
+   without this the pointer contradicted the aria-disabled="true" set for
+   it. SNOW-1130: 'done' and 'partial' are here only while disabled — a
+   tap on either refreshes the area's bulletins and weather, so online they
+   keep the pointer; offline they stay painted but cannot be pressed. */
 .map-download-control[data-download-state="busy"],
-.map-download-control[data-download-state="done"] {
+.map-download-control[data-download-state="done"][aria-disabled="true"],
+.map-download-control[data-download-state="partial"][aria-disabled="true"] {
     cursor: default;
 }
 

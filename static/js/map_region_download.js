@@ -1110,13 +1110,23 @@
     // the control keeps its place in the stack (see renderControl). 'idle',
     // (SNOW-568) 'error' and (SNOW-645) 'other-basemap' are the actionable
     // states — handleClick returns immediately for every other one,
-    // including 'busy' (a run is already going) and 'done' (an
-    // informational success state), so those are announced as disabled too.
+    // including 'busy' (a run is already going), so those are announced as
+    // disabled too.
+    //
+    // SNOW-1130: 'done' and 'partial' are actionable. SNOW-924 made a tap on
+    // either refresh the area's bulletins and weather, but they stayed on
+    // the disabled side of this list — and the region sheet's proxy, the
+    // only download button a phone shows, drops every press while the
+    // roundel says aria-disabled. A green or amber icon did nothing. Only
+    // while the network is in use, though: offline the area stays painted
+    // done/partial (it is still on the device) but a refresh cannot run,
+    // so announcing a press would promise an action that is not there.
     //
     // SNOW-749: 'signin' is actionable too — the tap navigates to the
     // sign-in page. Announcing it as disabled would be the same mistake as
     // hiding the control: the visitor CAN act on it, they just get a
     // different outcome than a signed-in one does.
+    const refreshable = (state === 'done' || state === 'partial') && networkInUse();
     btn.setAttribute(
       'aria-disabled',
       state === 'idle' ||
@@ -1126,6 +1136,7 @@
         // missing documents. A warning the user cannot act on is worse
         // than no warning, and this one has a one-tap remedy.
         state === 'incomplete' ||
+        refreshable ||
         state === 'signin'
         ? 'false'
         : 'true',
@@ -1530,6 +1541,11 @@
    * @param {Object} data The focused region's control data.
    * @returns {Promise<void>}
    */
+  // SNOW-1130: true from a refresh tap until `handleRefresh` returns. The
+  // run's own 'busy' paint guards the rest of it; this covers the awaits
+  // before that paint lands.
+  let refreshInFlight = false;
+
   async function handleRefresh(data) {
     const core = self.pwaBasemapDownloadCore;
     const areaId = core ? core.areaIdForRegion(data.regionId) : '';
@@ -1651,7 +1667,18 @@
         setState('offline', data.summary);
         return;
       }
-      await handleRefresh(data);
+      // SNOW-1130: one refresh at a time. `handleRefresh` awaits the
+      // stored record and the content plan before the run paints 'busy',
+      // and until then the control still reads done/partial — so a second
+      // tap (two quick presses on the phone proxy) would start a second
+      // refresh whose outcome could land over the first's.
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        await handleRefresh(data);
+      } finally {
+        refreshInFlight = false;
+      }
       return;
     }
     // SNOW-749: the gate, before anything else. Checked twice on purpose —
