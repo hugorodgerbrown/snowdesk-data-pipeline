@@ -2044,6 +2044,8 @@ class TestResortSeasonStrip:
 
         assert "<a" not in strip
         assert strip.count('role="img"') == 1
+        # The readout's date attributes belong to the linked variant only.
+        assert "data-day-long" not in strip
 
     @freeze_time("2026-02-20 12:00:00+00:00")
     def test_strip_is_omitted_without_bulletins(self) -> None:

@@ -20,7 +20,8 @@
  * placeholder fires one HTMX GET on first open via the custom
  * `snowdesk:load` event (SNOW-170) — so opening does two different things
  * depending on whether that fetch has happened yet. Once it lands, the
- * selected day is ringed and the selected-day readout filled from it
+ * page's own day is selected — ringed, and the readout filled from it — and
+ * a click on any rated day selects that day instead of navigating
  * (SNOW-1158).
  *
  * Loaded with `defer` from `bulletin.html`, inside the same
@@ -94,34 +95,54 @@
   }
 
   /**
-   * Fill the selected-day readout from the selected cell (SNOW-1158).
+   * Select a day: ring it and fill the readout from it (SNOW-1158).
    *
-   * The readout's date and link are server-rendered — the selected day is
-   * the page's own — and so is every level's tile digit and name; only
-   * WHICH level is known from the grid. The cell's `data-level` is the
-   * day's peak (the compressed-views rule), so a two-level day reads as
-   * its higher level. A day with no bulletin hides the link: there is no
-   * bulletin to read. Nothing found, nothing shown.
+   * Everything the readout says is server-rendered: every level's tile
+   * digit and name sit hidden in the readout, and each cell carries its own
+   * dates as `data-day-long` / `data-day-short`, formatted in the page's
+   * language. This only chooses among them, so no user-facing string is
+   * built here. The cell's `data-level` is the day's peak (the
+   * compressed-views rule), so a two-level day reads as its higher level.
    *
-   * @param {Element|null} cell
+   * The link points at the cell's own bulletin. It is hidden on the page's
+   * own day — it would link to the page it is on — and on a day with no
+   * bulletin, which has none to read.
+   *
+   * @param {Element} grid  the #season-grid container
+   * @param {Element} cell  the `.season-day` to select
    * @returns {void}
    */
-  function fillReadout(cell) {
+  function selectDay(grid, cell) {
+    grid.querySelectorAll('.season-day-ring').forEach(function (el) {
+      el.classList.remove('season-day-ring');
+    });
+    cell.classList.add('season-day-ring');
+
     var readout = sheet.querySelector('[data-season-readout]');
-    if (!readout || !cell) return;
+    if (!readout) return;
     var level = cell.getAttribute('data-level') || 'no_rating';
     var tile = readout.querySelector('[data-readout-tile]');
     if (tile) tile.setAttribute('data-level', level);
     readout.querySelectorAll('[data-readout-level]').forEach(function (el) {
       el.hidden = el.getAttribute('data-readout-level') !== level;
     });
+    var longDate = cell.getAttribute('data-day-long');
+    var dateEl = readout.querySelector('[data-readout-date]');
+    if (dateEl && longDate) dateEl.textContent = longDate;
+    var shortDate = cell.getAttribute('data-day-short');
+    var dayEl = readout.querySelector('[data-readout-day]');
+    if (dayEl && shortDate) dayEl.textContent = shortDate;
     var link = readout.querySelector('[data-readout-link]');
-    if (link) link.hidden = level === 'no_rating';
+    if (link) {
+      var href = cell.getAttribute('href');
+      if (href) link.setAttribute('href', href);
+      var isPageDay = cell.getAttribute('data-date') === grid.dataset.selectedDate;
+      link.hidden = isPageDay || !href || level === 'no_rating';
+    }
     readout.hidden = false;
   }
 
-  // After the HTMX swap completes: ring the selected day, fill the
-  // readout, then scroll.
+  // After the HTMX swap completes: select the page's own day, then scroll.
   document.body.addEventListener('htmx:afterSwap', function (e) {
     if (!e.detail || !e.detail.target || e.detail.target.id !== 'season-grid') return;
     var grid = e.detail.target;
@@ -131,11 +152,26 @@
     var selectedDate = grid.dataset.selectedDate;
     if (selectedDate) {
       var cell = grid.querySelector('.season-day[data-date="' + selectedDate + '"]');
-      if (cell) cell.classList.add('season-day-ring');
-      fillReadout(cell);
+      if (cell) selectDay(grid, cell);
     }
     scrollToSelected();
   });
+
+  // With JS a click (Enter on a focused link is a click) on a rated day
+  // selects it instead of following its link; the readout's link is how the
+  // reader then goes to that day. Without JS the cells are plain links.
+  // Delegated, because the grid is swapped in after this runs.
+  var gridEl = document.getElementById('season-grid');
+  if (gridEl) {
+    gridEl.addEventListener('click', function (e) {
+      var target = /** @type {Element|null} */ (e.target);
+      var cell = target && target.closest ? target.closest('a.season-day') : null;
+      if (!cell || !gridEl.contains(cell)) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      selectDay(gridEl, cell);
+    });
+  }
 
   trigger.addEventListener('click', function () {
     setState(sheet.dataset.seasonSheet === 'open' ? 'closed' : 'open');

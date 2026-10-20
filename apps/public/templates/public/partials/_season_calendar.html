@@ -33,7 +33,13 @@
        day (aria-label + title); the calendar is not an image, because an
        image's children are presentational and the links would vanish from
        the accessibility tree. The key is the full one: a count per level,
-       "Two levels in one day" and "Selected day".
+       "Two levels in one day" and "Selected day". Every cell also carries
+       its date in the readout's two forms, data-day-long ("Monday 6 April
+       2026") and data-day-short ("6 April"), formatted here in the active
+       language: with JS a click selects a day rather than following its
+       link (static/js/season_sheet.js), and the readout reads them, so the
+       cached fragment stays one body per day and no date string is built
+       in JavaScript. Without JS the links navigate.
 
    Context:
      season_months  — SeasonMonths (apps.public.season_calendar.build_season_months).
@@ -103,6 +109,8 @@
                                 data-state="{{ day.state }}"
                                 data-level="{{ day.level }}"
                                 {% if day.low_key %}data-lo="{{ day.low_key }}" data-hi="{{ day.high_key }}"{% endif %}
+                                data-day-long="{{ day.date|date:'l j F Y' }}"
+                                data-day-short="{{ day.date|date:'j F' }}"
                                 title="{{ day_title }}"
                                 aria-label="{{ day_title }}"
                             ></a>
@@ -113,6 +121,10 @@
                                 data-state="{{ day.state }}"
                                 data-level="{{ day.level }}"
                                 {% if day.low_key %}data-lo="{{ day.low_key }}" data-hi="{{ day.high_key }}"{% endif %}
+                                {% if linked %}
+                                    data-day-long="{{ day.date|date:'l j F Y' }}"
+                                    data-day-short="{{ day.date|date:'j F' }}"
+                                {% endif %}
                                 title="{{ day_title }}"
                             ></span>
                         {% endif %}

@@ -84,14 +84,19 @@
             >
             </div>
             {% comment %}
-               SNOW-1158: the selected-day readout. The selected day is the
-               page's own day, so its date and link are rendered here, outside
-               the cached fragment; only its level comes from the grid —
-               season_sheet.js reads the selected cell's data-level (the day's
-               peak, the compressed-views rule) after the swap, un-hides the
-               matching level tile and name, and reveals the panel. A day with
-               no bulletin reads "No bulletin" and hides the link. CSS orders
-               it between the calendar and the key (.season-sheet-body).
+               SNOW-1158: the selected-day readout. It starts on the page's own
+               day: date and link are rendered here, outside the cached
+               fragment, and the link starts hidden — it would link to the page
+               it is on. After the swap season_sheet.js reads the selected
+               cell: its data-level (the day's peak, the compressed-views rule)
+               un-hides the matching tile digit and level name, and the panel
+               shows. With JS a click on a rated day SELECTS it instead of
+               navigating: the ring moves, the readout takes the cell's level
+               and its data-day-long / data-day-short dates, and the link points
+               at the cell's own href, shown unless the day is the page's own.
+               A day with no bulletin reads "No bulletin" with no link. CSS
+               orders the panel between the calendar and the key
+               (.season-sheet-body).
             {% endcomment %}
             <div
                 class="season-readout flex flex-wrap items-center gap-4 rounded-tag border border-border-strong bg-card-subtle p-4"
@@ -116,15 +121,16 @@
                             </span>
                         {% endfor %}
                     </div>
-                    <div class="font-mono text-xs text-text-3">{{ page_date|date:"l j F Y" }}</div>
+                    <div class="font-mono text-xs text-text-3" data-readout-date>{{ page_date|date:"l j F Y" }}</div>
                 </div>
                 <a
                     class="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-text-1 hover:underline"
                     href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug page_date|date:'Y-m-d' %}"
                     data-readout-link
+                    hidden
                 >
                     {% blocktrans with day=page_date|date:"j F" trimmed %}
-                        Read the bulletin for {{ day }}
+                        Read the bulletin for <span data-readout-day>{{ day }}</span>
                     {% endblocktrans %}
                     <span aria-hidden="true">→</span>
                 </a>

@@ -2725,7 +2725,7 @@ class TestSeasonSheet:
     def test_sheet_carries_the_selected_day_readout(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
     ) -> None:
-        """SNOW-1158: the readout names the page's day and links to it, hidden until JS fills it."""
+        """SNOW-1158: the readout starts on the page's day, hidden until JS fills it."""
         url = _url("ch-4115", "valais", "2026-03-15")
         content = client.get(url).content.decode()
         readout = content.split('data-testid="season-readout"')[1]
@@ -2734,7 +2734,14 @@ class TestSeasonSheet:
 
         assert "hidden" in opening
         assert "Sunday 15 March 2026" in readout
-        assert "Read the bulletin for 15 March" in " ".join(readout.split())
+        assert (
+            "Read the bulletin for <span data-readout-day>15 March</span>"
+            in " ".join(readout.split())
+        )
+        # The page's own day is selected first: the link would point here,
+        # so it starts hidden (season_sheet.js shows it for another day).
+        link = readout.split("data-readout-link")[1].split(">")[0]
+        assert "hidden" in link
         assert f'href="{url}"' in readout
         # One hidden tile digit and one hidden name per level the day can hold.
         for key in (

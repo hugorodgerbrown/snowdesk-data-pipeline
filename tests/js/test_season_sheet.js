@@ -35,11 +35,14 @@ document.body.innerHTML = `
           <span data-readout-level="no_rating" hidden>–</span>
           <span data-readout-level="moderate" hidden>2</span>
           <span data-readout-level="considerable" hidden>3</span>
+          <span data-readout-level="high" hidden>4</span>
         </span>
         <span data-readout-level="no_rating" hidden>No bulletin</span>
         <span data-readout-level="moderate" hidden>Moderate</span>
         <span data-readout-level="considerable" hidden>Considerable</span>
-        <a data-readout-link href="/day/">Read the bulletin</a>
+        <span data-readout-level="high" hidden>High</span>
+        <div data-readout-date>Thursday 15 January 2026</div>
+        <a data-readout-link href="/day/2026-01-15/" hidden>Read the bulletin for <span data-readout-day>15 January</span></a>
       </div>
     </div>
     <button data-season-dismiss type="button">&times;</button>
@@ -262,6 +265,7 @@ describe('the backdrop touch threshold', () => {
 
 describe('the post-swap handler', () => {
   const readout = document.querySelector('[data-season-readout]');
+  const link = readout.querySelector('[data-readout-link]');
 
   /** @param {string} html */
   function swap(html) {
@@ -281,14 +285,31 @@ describe('the post-swap handler', () => {
       .map((el) => el.getAttribute('data-readout-level'));
   }
 
+  /**
+   * A rated day cell as the fragment draws it.
+   *
+   * @param {string} date
+   * @param {string} level
+   * @param {string} long
+   * @param {string} short
+   * @returns {string}
+   */
+  function day(date, level, long, short) {
+    return (
+      `<a class="season-day" href="/day/${date}/" data-date="${date}" ` +
+      `data-level="${level}" data-day-long="${long}" data-day-short="${short}"></a>`
+    );
+  }
+
   beforeEach(() => {
     readout.hidden = true;
+    link.hidden = true;
   });
 
   it('rings the selected day and is a no-op for another target', () => {
     swap(
-      '<a class="season-day" data-date="2026-01-15" data-level="considerable"></a>' +
-        '<a class="season-day" data-date="2026-01-16" data-level="moderate"></a>',
+      day('2026-01-15', 'considerable', 'Thursday 15 January 2026', '15 January') +
+        day('2026-01-16', 'moderate', 'Friday 16 January 2026', '16 January'),
     );
 
     expect(
@@ -310,11 +331,13 @@ describe('the post-swap handler', () => {
     ).not.toThrow();
   });
 
-  it('fills the readout with the selected day\'s peak level', () => {
+  it("fills the readout with the page's day, its peak level, and no link", () => {
     // A two-level day: data-state is split, data-level the peak.
     swap(
-      '<a class="season-day" data-date="2026-01-15" data-state="split" ' +
-        'data-lo="moderate" data-hi="considerable" data-level="considerable"></a>',
+      '<a class="season-day" href="/day/2026-01-15/" data-date="2026-01-15" ' +
+        'data-state="split" data-lo="moderate" data-hi="considerable" ' +
+        'data-level="considerable" data-day-long="Thursday 15 January 2026" ' +
+        'data-day-short="15 January"></a>',
     );
 
     expect(readout.hidden).toBe(false);
@@ -322,24 +345,98 @@ describe('the post-swap handler', () => {
       readout.querySelector('[data-readout-tile]').getAttribute('data-level'),
     ).toBe('considerable');
     expect(shownLevels()).toEqual(['considerable', 'considerable']);
-    expect(readout.querySelector('[data-readout-link]').hidden).toBe(false);
+    // The page's own day: the link would point at this page.
+    expect(link.hidden).toBe(true);
   });
 
-  it('reads a day with no bulletin as such and hides the link', () => {
+  it('reads a day with no bulletin as such, with no link', () => {
     swap(
       '<span class="season-day" data-date="2026-01-15" data-state="none" ' +
-        'data-level="no_rating"></span>',
+        'data-level="no_rating" data-day-long="Thursday 15 January 2026" ' +
+        'data-day-short="15 January"></span>',
     );
 
     expect(readout.hidden).toBe(false);
     expect(shownLevels()).toEqual(['no_rating', 'no_rating']);
-    expect(readout.querySelector('[data-readout-link]').hidden).toBe(true);
+    expect(link.hidden).toBe(true);
   });
 
   it('leaves the readout hidden when the selected day is not drawn', () => {
-    swap('<a class="season-day" data-date="2026-02-01" data-level="moderate"></a>');
+    swap(day('2026-02-01', 'moderate', 'Sunday 1 February 2026', '1 February'));
 
     expect(readout.hidden).toBe(true);
     expect(grid.querySelectorAll('.season-day-ring')).toHaveLength(0);
+  });
+
+  describe('a click on a rated day', () => {
+    beforeEach(() => {
+      swap(
+        day('2026-01-15', 'considerable', 'Thursday 15 January 2026', '15 January') +
+          day('2026-01-09', 'high', 'Friday 9 January 2026', '9 January'),
+      );
+    });
+
+    /**
+     * @param {string} date
+     * @param {MouseEventInit} [init]
+     * @returns {MouseEvent}
+     */
+    function clickDay(date, init = {}) {
+      const event = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      });
+      grid.querySelector(`[data-date="${date}"]`).dispatchEvent(event);
+      return event;
+    }
+
+    it('selects the day instead of navigating', () => {
+      const event = clickDay('2026-01-09');
+
+      expect(event.defaultPrevented).toBe(true);
+      const ringed = grid.querySelectorAll('.season-day-ring');
+      expect(ringed).toHaveLength(1);
+      expect(ringed[0].getAttribute('data-date')).toBe('2026-01-09');
+    });
+
+    it("moves the readout to the day: level, dates and the day's own link", () => {
+      clickDay('2026-01-09');
+
+      expect(shownLevels()).toEqual(['high', 'high']);
+      expect(
+        readout.querySelector('[data-readout-tile]').getAttribute('data-level'),
+      ).toBe('high');
+      expect(readout.querySelector('[data-readout-date]').textContent).toBe(
+        'Friday 9 January 2026',
+      );
+      expect(readout.querySelector('[data-readout-day]').textContent).toBe(
+        '9 January',
+      );
+      expect(link.getAttribute('href')).toBe('/day/2026-01-09/');
+      expect(link.hidden).toBe(false);
+    });
+
+    it("hides the link again on returning to the page's own day", () => {
+      clickDay('2026-01-09');
+      clickDay('2026-01-15');
+
+      expect(link.hidden).toBe(true);
+      expect(link.getAttribute('href')).toBe('/day/2026-01-15/');
+      expect(readout.querySelector('[data-readout-day]').textContent).toBe(
+        '15 January',
+      );
+    });
+
+    it('leaves a modified click to the browser (open in a new tab)', () => {
+      const event = clickDay('2026-01-09', { metaKey: true });
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(
+        grid.querySelector('[data-date="2026-01-15"]').classList.contains(
+          'season-day-ring',
+        ),
+      ).toBe(true);
+    });
   });
 });

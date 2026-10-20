@@ -170,6 +170,14 @@ class TestSeasonPartialContent:
         assert f'data-date="{rated_day.isoformat()}"' in cell
         assert 'data-state="moderate"' in cell
         assert 'data-level="moderate"' in cell
+        # SNOW-1158: the readout's two date forms, server-rendered per cell.
+        long_date = (
+            rated_day.strftime("%A ")
+            + f"{rated_day.day} "
+            + (rated_day.strftime("%B %Y"))
+        )
+        assert f'data-day-long="{long_date}"' in cell
+        assert f'data-day-short="{rated_day.day} {rated_day.strftime("%B")}"' in cell
         # A day with no bulletin is not a link.
         assert len(re.findall(r"<a\s", content)) == 1
 
