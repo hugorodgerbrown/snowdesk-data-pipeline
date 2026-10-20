@@ -4440,7 +4440,9 @@ function _idbDelete(db, storeName, key) {
 const _INLINE_MUTATION_QUEUE_CORE = {
   MAX_ATTEMPTS: 20,
   backoffDelayMs: (attempts) => Math.min(Math.pow(2, attempts), 300) * 1000,
-  classifyStatus: (status) => {
+  classifyStatus: (status, doneStatuses) => {
+    // SNOW-1132: a status the mutation declared as "already applied".
+    if (Array.isArray(doneStatuses) && doneStatuses.indexOf(status) !== -1) return 'success';
     if (status >= 200 && status < 300) return 'success';
     if (status === 408 || status === 429) return 'retry';
     if (status >= 500) return 'retry';
@@ -4563,7 +4565,10 @@ async function _selfDrainMutations() {
         headers,
         body: row.body != null ? row.body : undefined,
       });
-      outcome = core.classifyStatus(response.status);
+      // SNOW-1132: with the row's declared done statuses, exactly as the
+      // page drain does — a forget queued offline and replayed by
+      // Background Sync after every tab has closed comes through here.
+      outcome = core.classifyStatus(response.status, row.done_statuses);
     } catch (_networkErr) {
       outcome = 'retry';
     }
