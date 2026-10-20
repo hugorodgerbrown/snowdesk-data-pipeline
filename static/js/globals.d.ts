@@ -47,6 +47,17 @@ interface Window {
     formatDay(value: unknown, options?: { locale?: string }): string;
     formatStamp(value: unknown, options?: { now?: Date; locale?: string }): string;
   };
+  /** static/js/downloads_restore_queue_core.js — the "Download all" queue's order and stop rules (SNOW-1140). */
+  pwaDownloadsRestoreQueueCore: {
+    DEFAULT_TIMEOUT_MS: number;
+    DEFAULT_POLL_MS: number;
+    waitForIdle(deps: any, options?: { timeoutMs?: number; pollMs?: number }): Promise<boolean>;
+    runQueue(
+      items: Array<{ areaId: string }>,
+      deps: any,
+      options?: { timeoutMs?: number; pollMs?: number },
+    ): Promise<{ started: number; skipped: number; stopped: string | null; silent: boolean; item?: any }>;
+  };
   /** static/js/scrubber_core.js — season-scrubber position and snapping. */
   pwaScrubberCore: any;
   /** static/js/search_core.js — diacritic-insensitive region/resort match. */
