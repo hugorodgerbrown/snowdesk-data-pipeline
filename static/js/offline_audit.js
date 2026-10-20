@@ -69,6 +69,15 @@
  * loads two files; `basemap_download_core.js` alone is 116 KB of tile
  * arithmetic this has no use for.
  *
+ * SNOW-1138 is the one place it asks another module anything, and it
+ * asks for arithmetic, not for what is stored: which terrain-class tiles
+ * an opted-in area's ground implies (`expectedTerrainTiles`), from the
+ * same pure function the Manage downloads sheet uses. Optional — where
+ * those cores are absent the report makes no claim about class tiles.
+ * The same ticket made the report list the pinned buckets no record
+ * accounts for (`unrecordedBuckets`), as the sheet does, so the two
+ * surfaces no longer disagree about what is downloaded.
+ *
  * ## Never writes
  *
  * Every read is opened read-only and the one action — warming the map
@@ -327,6 +336,10 @@
       'only the %(name)s map style is saved, not the map itself — download the map to see it offline',
     'note-area-incomplete':
       '%(name)s will not draw until you sync it from the map’s Manage downloads sheet',
+    // SNOW-1138: a pinned bucket no record accounts for. Remove is the
+    // only action the sheet gives one, so that is the remedy named.
+    'note-area-orphaned':
+      '%(name)s is an unfinished download taking up space, so remove it from the map’s Manage downloads sheet',
     'note-area-missing':
       '%(name)s is recorded as downloaded but nothing is stored, so download it again',
     'note-area-unverifiable':
@@ -1319,6 +1332,11 @@
           // never go stale, the bulletins are new every day. Absent means
           // never, which is every area downloaded before that ticket.
           contentAt: record.contentAt || null,
+          // SNOW-1138: the terrain opt-in and the ground it is derived
+          // from — the run's own `z` row spans — so the report can judge
+          // the class tiles this area should hold (`terrainTiles`).
+          terrain: !!record.terrain,
+          z: record.z || null,
         });
       });
     }
@@ -1345,6 +1363,11 @@
           deps: Array.isArray(record.deps) ? record.deps : [],
           // SNOW-926: see the region branch above.
           contentAt: record.contentAt || null,
+          // SNOW-1138: see the region branch above. A custom area has no
+          // `z`; its ground is `bbox` + `band`, rebuilt into a blob.
+          terrain: !!record.terrain,
+          bbox: Array.isArray(record.bbox) ? record.bbox : null,
+          band: Array.isArray(record.band) ? record.band : null,
         });
       });
     }
@@ -1379,6 +1402,110 @@
       });
     }
     return areas;
+  }
+
+  /**
+   * The pinned buckets no record accounts for, as area readings
+   * (SNOW-1138).
+   *
+   * The shared reader the Manage downloads sheet lists from
+   * (`basemap_downloaded_areas.js`) treats two kinds of unrecorded bucket
+   * differently, and so does this:
+   *
+   *   - a `base-<basemapKey>` bucket is a shared base layer whose record
+   *     never landed (SNOW-863) — the bucket names its own basemap, so it
+   *     is a base layer, not an orphan, with an empty dependency list
+   *     read as `areaState`'s pre-SNOW-929 case;
+   *   - anything else is an ORPHAN: a download that never finished, which
+   *     the sheet lists as "Incomplete" with Remove as its only action.
+   *     It used to be computed here and never shown, so a device holding
+   *     one read clean on this report and not on the sheet.
+   *
+   * @param {string[]} names Every Cache Storage name.
+   * @param {Array<Object>} records The recorded areas.
+   * @returns {Array<Object>}
+   */
+  function unrecordedBuckets(names, records) {
+    var recorded = new Set(
+      records.map(function (area) {
+        return area.id;
+      }),
+    );
+    var out = [];
+    names.forEach(function (name) {
+      if (name.indexOf(PINNED_CACHE_PREFIX) !== 0) return;
+      var id = name.slice(PINNED_CACHE_PREFIX.length);
+      if (!id || recorded.has(id)) return;
+      recorded.add(id);
+      if (id.indexOf('base-') === 0) {
+        out.push({
+          id: id,
+          kind: 'base',
+          name: id.slice('base-'.length),
+          basemapKey: id.slice('base-'.length),
+          deps: [],
+        });
+        return;
+      }
+      out.push({
+        id: id,
+        // Still a region or a custom area — `orphaned` says the record is
+        // missing, not that it is a third kind of thing (the same reading
+        // `basemap_manage_core.js`'s `manageRows` makes).
+        kind: id.indexOf('region-') === 0 ? 'region' : 'custom',
+        type: 'custom',
+        orphaned: true,
+        // No record means no name, no basemap and no dependency list. The
+        // id is the label, as it is on the sheet.
+        name: '',
+        basemapKey: null,
+        deps: [],
+      });
+    });
+    return out;
+  }
+
+  /**
+   * The terrain-class tiles one recorded area should hold (SNOW-1138), or
+   * null when this page cannot say.
+   *
+   * The same rule the Manage downloads sheet's `markIncompleteRows` and
+   * the region roundel apply, through the same pure function
+   * (`pwaBasemapDownloadCore.areaTerrainClassTileURLs`), fed the same
+   * three inputs: the tile template (here off the panel, there off
+   * `#map`) and the tileset's rectangle and zoom band from
+   * `pwaTerrainFilterCore`. This asks those modules for ARITHMETIC — which
+   * URLs an area's ground implies — and never for what storage holds, so
+   * the header's rule stands.
+   *
+   * Null, not `[]`, wherever any input is absent: static/offline.html
+   * loads neither core, and a deployment without the terrain filter has
+   * no template. Null makes no claim, which is also what the sheet does
+   * with no template.
+   *
+   * @param {Object} record
+   * @param {HTMLElement|null} panel
+   * @returns {string[]|null}
+   */
+  function expectedTerrainTiles(record, panel) {
+    if (!record || !record.terrain || record.kind === 'base') return null;
+    var core = self.pwaBasemapDownloadCore;
+    var terrain = self.pwaTerrainFilterCore;
+    var template = (panel && panel.getAttribute('data-terrain-class-tile-url')) || '';
+    if (!template || !terrain || !core || typeof core.areaTerrainClassTileURLs !== 'function') {
+      return null;
+    }
+    try {
+      return core.areaTerrainClassTileURLs(
+        record,
+        template,
+        terrain.COVERAGE_BOUNDS,
+        terrain.MIN_ZOOM,
+        terrain.MAX_ZOOM,
+      );
+    } catch (_err) {
+      return null;
+    }
   }
 
   /**
@@ -1817,6 +1944,11 @@
 
     var db = await openDb(budget);
     var areaRecords = await readAreaRecords(db, budget);
+    // SNOW-1138: and every pinned bucket no record accounts for, as the
+    // shared reader (`basemap_downloaded_areas.js`) lists them for the
+    // Manage downloads sheet. Read straight off the bucket names, not
+    // through that reader, for the reason the header gives.
+    areaRecords = areaRecords.concat(unrecordedBuckets(names, areaRecords));
     var areas = [];
     for (var i = 0; i < areaRecords.length; i += 1) {
       var bucket = await readBucket(areaRecords[i].id, budget);
@@ -1825,6 +1957,7 @@
           bucketPresent: bucket.present,
           bucketReadable: bucket.readable,
           entries: bucket.entries,
+          terrainTiles: expectedTerrainTiles(areaRecords[i], panel),
         }),
       );
     }
@@ -1848,20 +1981,14 @@
       budget,
     );
 
-    var recordedIds = new Set(
-      areas.map(function (area) {
+    // The orphans by id, for the copied report's context. They are rows in
+    // `areas` too since SNOW-1138; this was computed and never shown.
+    var orphanBuckets = areas
+      .filter(function (area) {
+        return area.orphaned;
+      })
+      .map(function (area) {
         return area.id;
-      }),
-    );
-    var orphanBuckets = names
-      .filter(function (name) {
-        return name.indexOf(PINNED_CACHE_PREFIX) === 0;
-      })
-      .map(function (name) {
-        return name.slice(PINNED_CACHE_PREFIX.length);
-      })
-      .filter(function (id) {
-        return id && !recordedIds.has(id);
       });
 
     var stores = {};

@@ -141,31 +141,42 @@ describe('painting the four categories', () => {
 
   it('replaces the loading placeholder with one row per category', async () => {
     await renderPanel();
-    expect(list.querySelectorAll('[data-testid="reset-data-summary-row"]')).toHaveLength(4);
+    // Five: the four categories, and the shared basemap tiles this device
+    // holds (SNOW-1138 — a line of their own).
+    expect(list.querySelectorAll('[data-testid="reset-data-summary-row"]')).toHaveLength(5);
     expect(placeholderText()).toBeNull();
   });
 
-  it('sizes the downloaded maps from the recorded bytes', async () => {
+  it('sizes the downloaded maps from the recorded bytes, base tiles excluded', async () => {
+    // SNOW-1138: the same figure the Manage downloads sheet's total states
+    // — that sheet excludes the shared tiles, so this does too.
     await renderPanel();
-    expect(category('maps').value).toBe('120 MB');
+    expect(category('maps').value).toBe('100 MB');
   });
 
-  it('names the shared basemap tiles, which nothing else lists', async () => {
+  it('names the shared basemap tiles on a line of their own', async () => {
     // SNOW-867 took them off the Manage downloads sheet — the app's own map
     // data, not the user's downloads, and not in their budget. This panel
-    // is where that decision points, so the row has to be here.
-    //
-    // One row, and no "Shared" pill: the label says what they are, and the
-    // pill next to a row reading "Overview map" said nothing extra while
-    // repeating once per basemap.
+    // is where that decision points, so they have to be here; SNOW-1138
+    // moved them out of the "Downloaded maps" list and figure, which they
+    // made larger than the sheet's own total.
     await renderPanel();
     const rows = [...list.querySelectorAll('[data-testid="reset-data-summary-map"]')];
-    expect(rows.map((row) => row.firstChild.textContent)).toEqual([
-      'Martigny',
-      'Shared basemap tiles',
-    ]);
-    expect(rows[1].getAttribute('data-shared')).toBe('true');
+    expect(rows.map((row) => row.firstChild.textContent)).toEqual(['Martigny']);
+    expect(category('shared').label).toBe('Shared basemap tiles');
+    expect(category('shared').value).toBe('20.0 MB');
+    expect(category('shared').note).toContain('Manage downloads');
     expect(list.textContent).not.toContain('Overview map');
+  });
+
+  it('has no shared line on a device with no base layers', async () => {
+    stubDevice({
+      areas: [{ id: 'region-ch-4115', name: 'Martigny', bytes: 100 * MB, basemapKey: 'x' }],
+      usage: 130 * MB,
+    });
+    await renderPanel();
+    expect(category('shared')).toBeNull();
+    expect(list.querySelectorAll('[data-testid="reset-data-summary-row"]')).toHaveLength(4);
   });
 
   it('carries no note on the maps row once there is a list under it', async () => {
@@ -206,6 +217,61 @@ describe('painting the four categories', () => {
       'This deletes about 130 MB from this device.',
       '2 changes have not reached the server yet, and will be lost.',
     ]);
+  });
+});
+
+describe('an orphaned bucket (SNOW-1138)', () => {
+  it('asks the shared reader to measure it, as the Manage downloads sheet does', async () => {
+    // Called without `measureBytes`, an orphan read 0 MB here while the
+    // sheet sized it by walking the bucket.
+    stubDevice({ usage: 50 * MB });
+    const measureBucketBytes = vi.fn(async () => 3 * MB);
+    const downloadedAreas = vi.fn(async (options) => [
+      {
+        id: 'region-ch-9999',
+        orphaned: true,
+        basemapKey: null,
+        savedAt: '',
+        bytes: await options.measureBytes('region-ch-9999'),
+      },
+    ]);
+    window.pwaBasemapAreas = { downloadedAreas, measureBucketBytes };
+
+    await renderPanel();
+
+    expect(measureBucketBytes).toHaveBeenCalledWith('region-ch-9999');
+    expect(category('maps').value).toBe('3.0 MB');
+  });
+
+  it('is sized by the real reader’s walk of the bucket', async () => {
+    // End to end through basemap_downloaded_areas.js: no record, one
+    // bucket, entries carrying Content-Length.
+    await import('../../static/js/basemap_downloaded_areas.js');
+    const reader = window.pwaBasemapAreas;
+    stubDevice({ usage: 50 * MB });
+    window.pwaBasemapAreas = reader;
+    window.pwaDb.get = vi.fn(async () => undefined);
+    const entries = [
+      { url: 'https://t/12/1/1.pbf', length: 2 * MB },
+      { url: 'https://t/12/1/2.pbf', length: 1 * MB },
+    ];
+    vi.stubGlobal('caches', {
+      keys: async () => ['snowdesk-basemap-pinned-region-ch-9999'],
+      open: async () => ({
+        keys: async () => entries.map((entry) => ({ url: entry.url })),
+        match: async (request) => {
+          const found = entries.find((entry) => entry.url === request.url);
+          return { headers: { get: () => String(found.length) } };
+        },
+      }),
+    });
+
+    await renderPanel();
+
+    const rows = [...list.querySelectorAll('[data-testid="reset-data-summary-map"]')];
+    expect(rows.map((row) => row.firstChild.textContent)).toEqual(['region-ch-9999']);
+    expect(category('maps').value).toBe('3.0 MB');
+    vi.unstubAllGlobals();
   });
 });
 
@@ -330,5 +396,30 @@ describe('when the device does not answer at all', () => {
 
     expect(placeholderText()).toBeNull();
     expect(category('maps')).not.toBeNull();
+  });
+
+  it('still paints the downloads when sizing an orphan hangs', async () => {
+    // SNOW-1138 review: a large orphan's walk is one cache.match() per
+    // entry. It must cost the orphan its figure, not the panel its list.
+    stubDevice({ usage: 50 * MB });
+    window.pwaBasemapAreas = {
+      measureBucketBytes: () => new Promise(() => {}),
+      downloadedAreas: async (options) => [
+        {
+          id: 'region-ch-9999',
+          orphaned: true,
+          basemapKey: null,
+          savedAt: '',
+          bytes: await options.measureBytes('region-ch-9999'),
+        },
+      ],
+    };
+
+    await renderPanelUnderFakeClock();
+
+    expect(placeholderText()).toBeNull();
+    const rows = [...list.querySelectorAll('[data-testid="reset-data-summary-map"]')];
+    expect(rows.map((row) => row.firstChild.textContent)).toEqual(['region-ch-9999']);
+    expect(category('maps').value).toBe('0 MB');
   });
 });

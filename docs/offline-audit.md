@@ -2,7 +2,7 @@
 name: offline-audit
 description: Offline report — offline_audit.js, offline_audit_core.js, bounded reads, X-SW-Principal, AUDIT_SCRIPTS, snowdesk-basemap-v1 browsedState
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-20
 ---
 
 # The offline-content report (SNOW-907)
@@ -631,6 +631,26 @@ The one consequence is a deliberate twelve-line restatement of
 `missingRenderDependencies` inside `offline_audit_core.js`, against the
 same contract. Importing it would mean precaching ~135 KB of tile
 arithmetic for a recovery page.
+
+**One exception, for arithmetic only (SNOW-1138).** An area downloaded
+with terrain data is judged on its terrain-class tiles, exactly as the
+Manage downloads sheet's `markIncompleteRows` judges it. Which tiles an
+area's ground implies is not a storage reading, so the collector asks
+`pwaBasemapDownloadCore.areaTerrainClassTileURLs` — the same pure function
+the sheet and the region roundel go through — fed the template off
+`[data-offline-audit][data-terrain-class-tile-url]` and the tileset's
+rectangle and band off `pwaTerrainFilterCore`. `/offline/` loads both
+cores; `offline.html` loads neither, and there (or with no template) the
+reading is `terrainTiles: null` and the report makes no claim about class
+tiles — the sheet's own answer when it has no template.
+
+**It lists what the sheet lists (SNOW-1138).** A pinned bucket no record
+accounts for is a row: an ORPHAN (a download that never finished) reads
+No, with a note naming the sheet's Remove — its only action there — and
+no Sync control. An unrecorded `base-<basemapKey>` bucket reads as that
+basemap's base layer, as the shared reader names it (SNOW-863). Before
+this the orphans were collected and never shown, so a device holding one
+read clean here and "Incomplete" on the sheet.
 
 **It never writes.** Every read is read-only, `caches.has` gates every
 bucket read (`caches.open` *creates* on miss, which would turn "this

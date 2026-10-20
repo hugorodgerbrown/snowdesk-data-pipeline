@@ -758,10 +758,15 @@
    * skipped outright. This dot means "available offline"; "in your
    * account" is a different claim, and the sheet makes it separately.
    *
-   * ``basemapKey`` is null on a record written before SNOW-645 (and on an
-   * orphaned bucket, which has no record at all), meaning "downloaded,
-   * basemap unknown". Such an area is attributed to the ACTIVE basemap
-   * only, mirroring the ``basemapKey || activeKey`` convention in
+   * SNOW-1138: two kinds of entry are not coverage at all. A shared base
+   * layer (``isBaseLayerAreaId``) is the zoomed-out ground and nothing
+   * more, and an ORPHANED bucket (``orphaned``) is a download that never
+   * finished. Both are skipped, so a basemap holding only those reads on
+   * its style alone, as it would with nothing downloaded.
+   *
+   * ``basemapKey`` is null on a record written before SNOW-645, meaning
+   * "downloaded, basemap unknown". Such an area is attributed to the
+   * ACTIVE basemap only, mirroring the ``basemapKey || activeKey`` convention in
    * ``basemapDownloadedTemplates`` — greening every basemap off one
    * keyless record would restore the very over-claim this exists to stop,
    * and greening none of them would regress the basemap the user is
@@ -795,26 +800,27 @@
         // it would be the single worst thing this ticket could do to a
         // surface whose whole job is reporting real cache state.
         if (area.onDevice === false) continue;
-        // SNOW-XXX: a base layer DOES count, where SNOW-856 skipped it.
-        //
-        // That skip was right about the old base layer and wrong about
-        // this one. It was z0-9 arriving as a side effect of a download,
-        // so a basemap holding one and nothing else was a basemap the user
-        // had never chosen to store — greening it claimed coverage they
-        // had not asked for and would lose the moment they zoomed in.
-        //
-        // The wide half is now fetched when a basemap is SHOWN
-        // (`warmBaseLayerWideBand`), which is what makes it the honest
-        // answer to this dot's question: with it on disk the app opens
-        // offline on that basemap and draws a map. That is the claim —
-        // "this basemap works offline" — and the row's own subtitle,
-        // plus the downloads panel, is where "how much ground do you hold
-        // here" is answered.
-        const isBase = self.pwaBasemapDownloadCore?.isBaseLayerAreaId(area.id);
-        // A base layer names its own basemap in its record, so unlike an
-        // area it never falls back to the active one — a keyless base
-        // layer is not a thing this can be handed.
-        const key = area.basemapKey || (isBase ? '' : activeKey);
+        // SNOW-1138: a base layer alone never greens a basemap. This
+        // reverses the unticketed change that counted one: a base layer
+        // is the shared zoomed-out ground, and with nothing else on disk
+        // the basemap draws the world from far out and nothing where the
+        // reader is going — the same over-claim SNOW-856 skipped it for.
+        // Such a basemap falls through to the style signal below: the
+        // grey "partly cached" advisory where its style is cached, which
+        // is the honest description of a map that draws in some places
+        // and not others. It also matches the Manage downloads sheet,
+        // which lists no base layer as a download.
+        const core = self.pwaBasemapDownloadCore;
+        if (core && core.isBaseLayerAreaId(String(area.id || ''))) continue;
+        // SNOW-1138: and an ORPHANED bucket covers nothing. It is a
+        // download that never finished — the sheet labels it Incomplete
+        // and offers only Remove — so it is no grounds for "available
+        // offline" on any basemap, least of all the one on screen, which
+        // is what the keyless fallback below used to hand it.
+        if (area.orphaned) continue;
+        // A keyless RECORD (written before SNOW-645) is still a finished
+        // download, so it keeps the active-basemap attribution.
+        const key = area.basemapKey || activeKey;
         if (key) keys.add(key);
       }
       return keys;

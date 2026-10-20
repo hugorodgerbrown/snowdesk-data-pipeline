@@ -21,7 +21,7 @@ and ``navigator.storage.estimate()`` — nothing server-side to query, so
 this shell carries only the loading placeholder, the <ul> the JS targets,
 and the strings it reads back.
 
-The four categories are grouped by what it costs the user to lose them,
+The categories are grouped by what it costs the user to lose them,
 not by which storage API holds them — see reset_data_summary_core.js's
 header. The reset itself is unchanged and still all-or-nothing: this panel
 discloses, it does not select. Scoped deletion of one downloaded area
@@ -56,6 +56,14 @@ already exists, in the map's Manage downloads sheet.
     <span data-string="maps">{% trans "Downloaded maps" %}</span>
     <span data-string="maps-none">{% trans "Nothing downloaded on this device." %}</span>
     <span data-string="shared-basemap-tiles">{% trans "Shared basemap tiles" %}</span>
+    {# SNOW-1138: the shared tiles are a line of their own, so "Downloaded #}
+    {# maps" is the same total the Manage downloads sheet states.          #}
+    <span data-string="shared-basemap-tiles-note">
+        {% blocktrans trimmed %}
+            The zoomed-out map the app keeps for each basemap you use. Not part of Downloaded maps, or of the Manage
+            downloads total.
+        {% endblocktrans %}
+    </span>
     <span data-string="unsent">{% trans "Unsent changes" %}</span>
     <span data-string="unsent-none">{% trans "Nothing is waiting to be sent." %}</span>
     <span data-string="unsent-one">{% trans "1 change has not reached the server yet. Resetting deletes it." %}</span>

@@ -59,6 +59,14 @@ of a page nobody came here to audit.
     that page is the one you reach with no connection, and nothing it
     could offer to fetch would arrive.
 {% endcomment %}
+{% comment %}
+    SNOW-1138: the terrain-class tile template, so an area downloaded with
+    terrain data is judged on its class tiles exactly as the map's Manage
+    downloads sheet judges it. Empty while the terrain filter is not
+    configured, and absent on static/offline.html — in both cases the
+    report makes no claim about class tiles, which is the sheet's own
+    answer when it has no template either.
+{% endcomment %}
 <div
     data-offline-audit
     data-default-basemap-key="{{ default_basemap_key|default:'' }}"
@@ -72,6 +80,7 @@ of a page nobody came here to audit.
     data-content-countries="{{ content_countries|default:'' }}"
     data-today="{{ today|default:'' }}"
     data-content-past-days="{{ content_past_days|default:'0' }}"
+    data-terrain-class-tile-url="{{ terrain_class_tile_url|default:'' }}"
 >
     {% comment %}
         The row, in the shape every other row in this card takes:
@@ -233,6 +242,11 @@ of a page nobody came here to audit.
         <span
             data-string="note-area-incomplete"
         >{% translate "%(name)s will not draw until you sync it from the map’s Manage downloads sheet" %}</span>
+        {# SNOW-1138: a pinned bucket with no record — a download that never #}
+        {# finished. The sheet's only action for one is Remove. #}
+        <span
+            data-string="note-area-orphaned"
+        >{% translate "%(name)s is an unfinished download taking up space, so remove it from the map’s Manage downloads sheet" %}</span>
         <span
             data-string="note-area-missing"
         >{% translate "%(name)s is recorded as downloaded but nothing is stored, so download it again" %}</span>

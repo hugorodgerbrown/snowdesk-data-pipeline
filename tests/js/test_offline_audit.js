@@ -628,6 +628,139 @@ describe('the area records', () => {
 
     expect(readings.orphanBuckets).toEqual(['region-CH-9999']);
   });
+
+  it('lists an orphaned bucket as an area, as the Manage downloads sheet does (SNOW-1138)', async () => {
+    // It used to be computed and never shown, so a device holding one read
+    // clean here and "Incomplete" on the sheet.
+    installCachesStub({
+      'snowdesk-shell-abc': [],
+      'snowdesk-basemap-pinned-region-CH-9999': [{ url: 'https://t/1.pbf' }],
+    });
+
+    const readings = await audit.collect();
+
+    const orphan = readings.areas.find((area) => area.id === 'region-CH-9999');
+    expect(orphan).toMatchObject({
+      kind: 'region',
+      orphaned: true,
+      basemapKey: null,
+      bucketPresent: true,
+      entries: ['https://t/1.pbf'],
+    });
+    const report = window.pwaOfflineAuditCore.buildReport(readings, {});
+    const check = report.sections
+      .flatMap((section) => section.checks)
+      .find((c) => c.id === 'area:region-CH-9999');
+    expect(check.status).toBe('no');
+    expect(check.reason).toBe('orphaned');
+  });
+
+  it('reads an unrecorded base-layer bucket as a base layer, not an orphan', async () => {
+    // The shared reader names it from the bucket (SNOW-863); so does this.
+    installCachesStub({
+      'snowdesk-shell-abc': [],
+      'snowdesk-basemap-pinned-base-swisstopo_winter': [{ url: 'https://t/4/1/1.pbf' }],
+    });
+
+    const readings = await audit.collect();
+
+    const base = readings.areas.find((area) => area.id === 'base-swisstopo_winter');
+    expect(base).toMatchObject({ kind: 'base', basemapKey: 'swisstopo_winter' });
+    expect(base.orphaned).toBeUndefined();
+    expect(readings.orphanBuckets).toEqual([]);
+  });
+});
+
+describe('terrain-class tiles (SNOW-1138)', () => {
+  const TEMPLATE = 'https://terrain.example/v1/{z}/{x}/{y}.png';
+  // A small box over Verbier, inside the class tileset's coverage.
+  const BBOX = [7.2, 46.08, 7.24, 46.1];
+
+  beforeAll(async () => {
+    await import('../../static/js/basemap_download_core.js');
+    await import('../../static/js/slope_classes_core.js');
+    await import('../../static/js/terrain_filter_core.js');
+  });
+
+  /** The class tiles the sheet would expect for the custom area below. */
+  function expectedTiles() {
+    const core = window.pwaBasemapDownloadCore;
+    const terrain = window.pwaTerrainFilterCore;
+    return core.areaTerrainClassTileURLs(
+      { terrain: true, bbox: BBOX, band: [10, 14] },
+      TEMPLATE,
+      terrain.COVERAGE_BOUNDS,
+      terrain.MIN_ZOOM,
+      terrain.MAX_ZOOM,
+    );
+  }
+
+  function panel(template) {
+    const root = document.createElement('div');
+    root.setAttribute('data-offline-audit', '');
+    if (template) root.setAttribute('data-terrain-class-tile-url', template);
+    return root;
+  }
+
+  async function seedTerrainArea() {
+    await seedMeta({
+      'basemap.customAreas': [
+        {
+          id: 'custom-t1',
+          name: 'Verbier',
+          bbox: BBOX,
+          band: [10, 14],
+          terrain: true,
+          deps: ['https://t/style.json'],
+        },
+      ],
+    });
+  }
+
+  it('derives the class tiles an opted-in area should hold, by the sheet’s rule', async () => {
+    installCachesStub({ 'snowdesk-shell-abc': [] });
+    await seedTerrainArea();
+
+    const readings = await audit.collect(panel(TEMPLATE));
+
+    const area = readings.areas.find((a) => a.id === 'custom-t1');
+    expect(expectedTiles().length).toBeGreaterThan(0);
+    expect(area.terrainTiles).toEqual(expectedTiles());
+  });
+
+  it('flags the area while its class tiles are missing, and clears once they are pinned', async () => {
+    const tiles = expectedTiles();
+    installCachesStub({
+      'snowdesk-shell-abc': [],
+      'snowdesk-basemap-pinned-custom-t1': [
+        { url: 'https://t/style.json' },
+        { url: 'https://t/12/1/1.pbf' },
+      ],
+    });
+    await seedTerrainArea();
+    const missing = await audit.collect(panel(TEMPLATE));
+    expect(window.pwaOfflineAuditCore.areaState(missing.areas[0]).status).toBe('incomplete');
+
+    installCachesStub({
+      'snowdesk-shell-abc': [],
+      'snowdesk-basemap-pinned-custom-t1': [
+        { url: 'https://t/style.json' },
+        { url: 'https://t/12/1/1.pbf' },
+        ...tiles.map((url) => ({ url })),
+      ],
+    });
+    const present = await audit.collect(panel(TEMPLATE));
+    expect(window.pwaOfflineAuditCore.areaState(present.areas[0]).status).toBe('ready');
+  });
+
+  it('makes no claim where the page carries no template', async () => {
+    installCachesStub({ 'snowdesk-shell-abc': [] });
+    await seedTerrainArea();
+
+    const readings = await audit.collect(panel(''));
+
+    expect(readings.areas.find((a) => a.id === 'custom-t1').terrainTiles).toBeNull();
+  });
 });
 
 describe('rendering', () => {
