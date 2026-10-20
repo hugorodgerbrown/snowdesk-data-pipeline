@@ -155,8 +155,8 @@ class DownloadArea(BaseModel):
         value is never read for it.
         """
 
-        BOX = "box", "Box"
-        CIRCLE = "circle", "Circle (drop zone)"
+        BOX = "BOX", "Box"
+        CIRCLE = "CIRCLE", "Circle (drop zone)"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -230,7 +230,7 @@ class DownloadArea(BaseModel):
         help_text=(
             "Whether a custom area is a framed box or a drop zone (a circle "
             "inside its bbox) — SNOW-1136. Synced so another device restores "
-            "a drop zone as a drop zone. Always 'box' for a region."
+            "a drop zone as a drop zone. Always 'BOX' for a region."
         ),
     )
 

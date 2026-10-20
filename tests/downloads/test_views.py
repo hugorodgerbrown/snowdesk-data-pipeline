@@ -14,7 +14,7 @@ Covers:
                 SNOW-1072: ``terrain`` — "true"/"false" stored, absent
                 defaults a new row to False and leaves an existing row's
                 value alone, anything else → 400.
-                SNOW-1136: ``shape`` — "box"/"circle" stored, absent
+                SNOW-1136: ``shape`` — "BOX"/"CIRCLE" stored, absent
                 defaults a new row to box and leaves an existing row's
                 value alone, anything else → 400.
   area_rename — owner renames; a region → 400 (its name is its own);
@@ -444,7 +444,7 @@ class TestAreaSyncTerrain:
 class TestAreaSyncShape:
     """SNOW-1136: a drop zone's shape round-trips through area_sync."""
 
-    @pytest.mark.parametrize("posted", ["box", "circle"])
+    @pytest.mark.parametrize("posted", ["BOX", "CIRCLE"])
     def test_shape_is_stored(self, client: Client, signed_in: Any, posted: str) -> None:
         """The two values downloads_sync.js posts are stored as posted."""
         response = client.post(
@@ -494,12 +494,12 @@ class TestAreaSyncShape:
             shape=DownloadArea.SHAPE.CIRCLE,
         )
 
-        client.post(SYNC_URL, {**CUSTOM_PAYLOAD, "shape": "box"}, **HTMX_HEADERS)
+        client.post(SYNC_URL, {**CUSTOM_PAYLOAD, "shape": "BOX"}, **HTMX_HEADERS)
 
         stored = DownloadArea.objects.get(area_id=CUSTOM_PAYLOAD["area_id"])
         assert stored.shape == DownloadArea.SHAPE.BOX
 
-    @pytest.mark.parametrize("posted", ["", "Box", "CIRCLE", "dropzone", "polygon"])
+    @pytest.mark.parametrize("posted", ["", "Box", "circle", "dropzone", "polygon"])
     def test_unknown_shape_is_refused(
         self, client: Client, signed_in: Any, posted: str
     ) -> None:

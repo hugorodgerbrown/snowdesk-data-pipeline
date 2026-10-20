@@ -596,7 +596,7 @@
    *   ``type``, ``z``, ``band`` and ``contentIncomplete`` are OPTIONAL and
    *   the marker is load-bearing: only the recorded branch carries them —
    *   except ``type``, which SNOW-1136 also sets on an account-only row
-   *   whose ``shape`` is ``'circle'`` (a drop zone), alongside that row's
+   *   whose ``shape`` is ``'CIRCLE'`` (a drop zone), alongside that row's
    *   ``storedName``.
    *   An orphan has no record to read a band or a tile-row span off, and
    *   an account-only row is not on this device for its content to be
@@ -758,7 +758,7 @@
         // circle is a drop zone, so `manageRows` names the row "Drop zone"
         // and "Download here" restores it as one rather than as the box
         // around it. Absent for a box, which reads as what it always did.
-        type: accountRow.shape === 'circle' ? 'dropzone' : undefined,
+        type: accountRow.shape === 'CIRCLE' ? 'dropzone' : undefined,
         // SNOW-1136: the name as the account STORES it — '' for an area
         // never renamed — so a restore writes the stored name back under
         // the stored id rather than freezing a localised default into it.

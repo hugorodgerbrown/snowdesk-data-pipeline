@@ -252,7 +252,7 @@ function accountRowFromPush(pushed) {
     basemap_key: pushed.basemapKey || '',
     name: pushed.name || '',
     terrain: !!pushed.terrain,
-    shape: pushed.type === 'dropzone' ? 'circle' : 'box',
+    shape: pushed.type === 'dropzone' ? 'CIRCLE' : 'BOX',
     created_at: '2026-10-01T00:00:00.000Z',
   };
 }

@@ -62,10 +62,10 @@ class TestDownloadAreaShapeMigration:
         assert operation.model_name == "downloadarea"
         assert operation.name == "shape"
         assert isinstance(operation.field, models.CharField)
-        assert operation.field.default == "box"
+        assert operation.field.default == "BOX"
         assert list(operation.field.flatchoices) == [
-            ("box", "Box"),
-            ("circle", "Circle (drop zone)"),
+            ("BOX", "Box"),
+            ("CIRCLE", "Circle (drop zone)"),
         ]
 
     def test_follows_the_terrain_migration(self) -> None:

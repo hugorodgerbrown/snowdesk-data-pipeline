@@ -352,14 +352,14 @@ def _shape_error(raw: str | None) -> str | None:
     """
     if raw is None or raw in DownloadArea.SHAPE.values:
         return None
-    return 'shape must be "box" or "circle".'
+    return 'shape must be "BOX" or "CIRCLE".'
 
 
 def _shape_defaults(raw: str | None) -> dict[str, str]:
     """Return the ``update_or_create`` defaults a posted ``shape`` implies.
 
     Only a POSTED value is written. Omitted, a new row takes the model
-    default (``box``) and an existing row keeps what it had — so an older
+    default (``BOX``) and an existing row keeps what it had — so an older
     shell re-syncing a drop zone cannot turn it back into a box.
 
     Args:
@@ -441,7 +441,8 @@ def area_sync(request: HttpRequest) -> HttpResponse:
     predates the field cannot clear a flag a newer one set by re-syncing the
     same area. Any other value is a 400.
 
-    SNOW-1136: ``shape`` is ``"box"`` or ``"circle"`` — whether a custom
+    SNOW-1136: ``shape`` is ``"BOX"`` or ``"CIRCLE"`` (upper case, per the
+    SNOW-582 choice-value convention) — whether a custom
     area is a framed box or a drop zone — with the same absent rule as
     ``terrain``: absent leaves a stored row's value alone and creates a new
     row as ``box``; any other value is a 400.
@@ -457,7 +458,7 @@ def area_sync(request: HttpRequest) -> HttpResponse:
             ``DOWNLOAD_CEILING_MB`` — see ``_clean_bbox``); an over-long
             ``name``, ``region_id`` or ``basemap_key``; a ``terrain`` that
             is neither ``"true"`` nor ``"false"``; a ``shape`` that is
-            neither ``"box"`` nor ``"circle"``.
+            neither ``"BOX"`` nor ``"CIRCLE"``.
         403 — anonymous request.
         409 — the user has reached ``settings.DOWNLOAD_AREAS_MAX_PER_USER``.
         429 — rate limit exceeded.

@@ -155,7 +155,7 @@ class TestDownloadAreaShape:
         )
 
         area.refresh_from_db()
-        assert area.shape == "circle"
+        assert area.shape == "CIRCLE"
 
 
 @pytest.mark.django_db

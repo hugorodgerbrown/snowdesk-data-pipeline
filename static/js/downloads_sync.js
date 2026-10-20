@@ -240,13 +240,13 @@
    * A drop zone is a circle — its tiles are clipped to it
    * (`basemap_download_core.js`'s `circleBlob`) — and everything else is a
    * box. The inverse is `basemap_manage_core.js`'s `reconcileAreas`, which
-   * reads `shape: 'circle'` back as `type: 'dropzone'`.
+   * reads `shape: 'CIRCLE'` back as `type: 'dropzone'`.
    *
    * @param {string|undefined} type
-   * @returns {'box'|'circle'}
+   * @returns {'BOX'|'CIRCLE'}
    */
   function shapeFor(type) {
-    return type === 'dropzone' ? 'circle' : 'box';
+    return type === 'dropzone' ? 'CIRCLE' : 'BOX';
   }
 
   /**
@@ -272,8 +272,8 @@
    *   `terrain` is whether the download included terrain data, posted as
    *   "true"/"false" so another device repeats the choice. SNOW-1136:
    *   `type` is the local record's kind — 'dropzone' posts `shape:
-   *   "circle"`, anything else (a framed area, a region, an older record
-   *   with no type) posts "box" — so another device restores a drop zone
+   *   "CIRCLE"`, anything else (a framed area, a region, an older record
+   *   with no type) posts "BOX" — so another device restores a drop zone
    *   as a drop zone rather than as the rectangle around it.
    * @returns {Promise<boolean>} Whether the write was queued. Never
    *   rejects — see `_enqueue`.
