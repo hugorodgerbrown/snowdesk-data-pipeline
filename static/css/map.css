@@ -3183,9 +3183,12 @@ html:has(> body.map-fullscreen) > body {
 /* 'busy' (already running) is not a failure, so it keeps its normal colour
    and takes the neutral default cursor rather than the not-allowed above;
    without this the pointer contradicted the aria-disabled="true" set for
-   it. SNOW-1130: 'done' is no longer here — a tap on it refreshes the
-   area's bulletins and weather, so it keeps the pointer. */
-.map-download-control[data-download-state="busy"] {
+   it. SNOW-1130: 'done' and 'partial' are here only while disabled — a
+   tap on either refreshes the area's bulletins and weather, so online they
+   keep the pointer; offline they stay painted but cannot be pressed. */
+.map-download-control[data-download-state="busy"],
+.map-download-control[data-download-state="done"][aria-disabled="true"],
+.map-download-control[data-download-state="partial"][aria-disabled="true"] {
     cursor: default;
 }
 
