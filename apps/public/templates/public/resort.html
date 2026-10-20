@@ -44,8 +44,8 @@ Header:
 
 Main column — the order follows the season (SNOW-1156). In season (``panel``
 set: a bulletin covers today) the bulletin card, then the forecast, then
-the season strip; out of season the forecast, then the bulletin card, then
-the season strip. The card is one include rendered in one of two places,
+the season calendar; out of season the forecast, then the bulletin card,
+then the season calendar. The card is one include rendered in one of two places,
 and one ``gap-12`` spaces whichever order the sections take.
   * Regional avalanche bulletin (SNOW-1156) —
     ``public/partials/_resort_bulletin_card.html``, which documents its two
@@ -65,7 +65,12 @@ and one ``gap-12`` spaces whichever order the sections take.
     the pin standing in for Base (``views._resort_forecast_points``). It
     replaced SNOW-807/SNOW-1125's list of location links with a one-day
     row each. A resort with no point renders no section at all.
-  * The season strip (SNOW-1126), described where it renders.
+  * The season calendar (SNOW-1126, redrawn by SNOW-1158) — "Avalanche
+    danger • {region} region • {season}" over a card holding the shared
+    ``public/partials/_season_calendar.html``, unlinked: months × days, a
+    ring on today in season (on the first High day of a finished season),
+    and the short key. Its role="img" aria-label carries the season summary
+    the visible text used to. Described where it renders.
 
 Sidebar: "About this resort" (SNOW-695, redrawn by SNOW-1155) via
 ``public/partials/_resort_facts.html`` — its own eyebrow above a card
@@ -111,6 +116,10 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    part is blank (SNOW-1155).
   structured_data_json          — str: schema.org SkiResort JSON-LD, already
                                    escaped for a script tag (SNOW-1123).
+  season_months                 — SeasonMonths: the season calendar's months
+                                   × days and ring (SNOW-1158).
+  season_summary                — SeasonSummary: the calendar's aria-label
+                                   and key; falsy omits the section.
 {% endcomment %}
 {% load i18n static components snowdesk_time %}
 
@@ -238,46 +247,25 @@ Context expected (built by ``apps.public.views.resort_detail``):
                 {% endif %}
 
                 {% comment %}
-            SNOW-1126 — the season strip. The region's danger day by day
-            through the running 1 Nov – 30 Apr season (the one just ended,
-            from May to October), rendered server-side so a crawler reads
-            it. Context from views._resort_season_strip_context:
-            season_strip (SeasonGrid) and season_summary (SeasonSummary,
+            SNOW-1126 / SNOW-1158 — the season calendar. The region's danger
+            day by day through the running 1 Nov – 30 Apr season (the one just
+            ended, from May to October), rendered server-side so a crawler
+            reads it. Context from views._resort_season_calendar_context:
+            season_months (SeasonMonths) and season_summary (SeasonSummary,
             falsy when no day had a bulletin — the section is then omitted).
-            The text summary is both the accessible equivalent of the cells
-            and the indexable content. The grid is the bulletin page's own
-            (_season_calendar.html) with inert=True: no cell links to its
-            day, the bulletin card is the page's one bulletin link.
+            The calendar is the one shared partial (_season_calendar.html),
+            unlinked: one role="img" whose aria-label is the season summary,
+            then the short key, in a card. No cell links to its day — the
+            bulletin card is the page's one bulletin link.
                 {% endcomment %}
                 {% if season_summary %}
                     <section aria-labelledby="resort-season-heading" data-testid="resort-season">
-                        {% translate "Danger through the season" as season_heading_label %}
-                        {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-season-heading" text=season_heading_label class_extra="mb-2" only %}
-                        <p class="mb-2 text-sm text-text-2" data-testid="resort-season-summary">
-                            {% blocktrans with label=season_summary.season_label count days=season_summary.days_with_bulletin trimmed %}
-                                Season {{ label }}: {{ days }} day with a bulletin.
-                            {% plural %}
-                                Season {{ label }}: {{ days }} days with a bulletin.
-                            {% endblocktrans %}
-                            {% blocktrans count days=season_summary.considerable_or_higher trimmed %}
-                                {{ days }} day at Considerable or higher.
-                            {% plural %}
-                                {{ days }} days at Considerable or higher.
-                            {% endblocktrans %}
-                        </p>
-                        <ul class="mb-2 flex flex-wrap gap-x-3 text-sm text-text-3" data-testid="resort-season-levels">
-                            {% for key, count in season_summary.level_counts %}
-                                <li data-level="{{ key }}">
-                                    {% blocktrans with level=key|danger_level_digit|danger_level_label trimmed count days=count %}
-                                        {{ level }}: {{ days }} day
-                                    {% plural %}
-                                        {{ level }}: {{ days }} days
-                                    {% endblocktrans %}
-                                </li>
-                            {% endfor %}
-                        </ul>
-                        <div class="overflow-x-auto">
-                            {% include "public/partials/_season_calendar.html" with season_calendar=season_strip inert=True %}
+                        {% blocktrans with region=region.name season=season_months.season_label trimmed asvar season_heading_label %}
+                            Avalanche danger • {{ region }} region • {{ season }}
+                        {% endblocktrans %}
+                        {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-season-heading" text=season_heading_label class_extra="mb-3" only %}
+                        <div class="rounded-card border border-border bg-card p-5 sm:p-6">
+                            {% include "public/partials/_season_calendar.html" with linked=False %}
                         </div>
                     </section>
                 {% endif %}

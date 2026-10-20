@@ -35,7 +35,12 @@ from typing import Any
 
 from django.utils.translation import gettext_lazy as _
 
-from apps.public.season_calendar import SeasonCell, SeasonGrid
+from apps.public.season_calendar import (
+    SeasonCell,
+    SeasonGrid,
+    build_season_months,
+    summarise_season,
+)
 from apps.weather.services.weather_display import weather_icon_filename
 
 # The illustrated grid's own calendar. Fixed dates rather than something
@@ -177,6 +182,27 @@ def synthetic_season_grid() -> SeasonGrid:
         labels.append(label)
 
     return SeasonGrid(columns=columns, month_labels=labels, season_label="25/26")
+
+
+def synthetic_season_calendar() -> dict[str, Any]:
+    """
+    Build the help topic's season calendar context (SNOW-1158).
+
+    The six-week grid from :func:`synthetic_season_grid`, reshaped by the
+    real ``build_season_months`` with the illustration's own today, so the
+    picture draws December and January with today ringed and the rest of
+    January "not yet" — exactly what the shared
+    ``public/partials/_season_calendar.html`` draws on a resort page.
+
+    Returns:
+        ``season_months`` and ``season_summary`` for the partial.
+
+    """
+    grid = synthetic_season_grid()
+    return {
+        "season_months": build_season_months(grid, _GRID_TODAY, ring_date=_GRID_TODAY),
+        "season_summary": summarise_season(grid),
+    }
 
 
 # Each entry feeds includes/_ugc_panel.html — the one shell behind the
@@ -323,10 +349,10 @@ def help_illustrations() -> dict[str, Any]:
     Build the illustration context for the /help/ page.
 
     Returns:
-        A mapping consumed by ``public/help.html``: ``season_calendar`` for
-        the heatmap topic, ``panels`` keyed by topic for the four that
-        share the UGC panel shell, and ``weather_panel`` for the weather
-        topic.
+        A mapping consumed by ``public/help.html``: ``season_months`` and
+        ``season_summary`` for the season calendar topic, ``panels`` keyed
+        by topic for the four that share the UGC panel shell, and
+        ``weather_panel`` for the weather topic.
 
         The season scrubber is deliberately absent — its styles live in
         ``static/css/map.css``, which ``/help/`` does not load. See that
@@ -334,10 +360,10 @@ def help_illustrations() -> dict[str, Any]:
 
     """
     context: dict[str, Any] = {
-        "season_calendar": synthetic_season_grid(),
         "panels": _PANELS,
         "weather_panel": _WEATHER_PANEL,
     }
+    context.update(synthetic_season_calendar())
     context.update(_bulletin_illustrations())
     return context
 

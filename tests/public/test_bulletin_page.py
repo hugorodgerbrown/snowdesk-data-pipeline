@@ -2704,8 +2704,8 @@ class TestSeasonSheet:
 
     The grid markup is deferred — served by the season_calendar_partial
     view on first open. The bulletin page itself does NOT contain
-    data-testid="season-calendar", calendar-cell-today, or
-    calendar-cell-selected.
+    data-testid="season-calendar" or any .season-day cell; it does carry
+    the selected-day readout (SNOW-1158), filled client-side.
     """
 
     def test_renders_sheet_and_trigger_when_season_active(
@@ -2719,12 +2719,51 @@ class TestSeasonSheet:
         assert "data-season-trigger" in content
         assert 'data-testid="season-sheet"' in content
         # Grid is deferred — the bulletin page must NOT contain the grid markup.
-        # The JS toggle script references '.calendar-cell-today' as a selector
-        # string, so we check for the HTML class attribute form specifically.
         assert 'data-testid="season-calendar"' not in content
-        assert 'class="rounded-full calendar-cell calendar-cell-today"' not in content
+        assert 'class="season-day' not in content
+
+    def test_sheet_carries_the_selected_day_readout(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """SNOW-1158: the readout starts on the page's day, hidden until JS fills it."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        content = client.get(url).content.decode()
+        readout = content.split('data-testid="season-readout"')[1]
+        readout = readout.split("</a>")[0]
+        opening = content.split('data-testid="season-readout"')[1].split(">")[0]
+
+        assert "hidden" in opening
+        assert 'aria-live="polite"' in opening
+        assert "Sunday 15 March 2026" in readout
         assert (
-            'class="rounded-full calendar-cell calendar-cell-selected"' not in content
+            "Read the bulletin for <span data-readout-day>15 March</span>"
+            in " ".join(readout.split())
+        )
+        # The page's own day is selected first: the link would point here,
+        # so it starts hidden (season_sheet.js shows it for another day).
+        link = readout.split("data-readout-link")[1].split(">")[0]
+        assert "hidden" in link
+        assert f'href="{url}"' in readout
+        # One hidden tile digit and one hidden name per level the day can hold.
+        for key in (
+            "no_rating",
+            "low",
+            "moderate",
+            "considerable",
+            "high",
+            "very_high",
+        ):
+            assert readout.count(f'data-readout-level="{key}" hidden') == 2
+
+    def test_sheet_heading_names_the_region_and_the_season(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """SNOW-1158: the sheet carries the resort calendar's eyebrow."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        content = client.get(url).content.decode()
+        sheet = content.split('data-testid="season-sheet"')[1]
+        assert f"Avalanche danger • {region.name} region • 2025/26" in " ".join(
+            sheet.split("</span>")[0].split()
         )
 
     def test_omits_sheet_when_season_grid_empty(

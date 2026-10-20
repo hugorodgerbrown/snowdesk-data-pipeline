@@ -30,6 +30,20 @@ document.body.innerHTML = `
   <div data-season-sheet="closed">
     <div data-season-scroll>
       <div id="season-grid" data-selected-date="2026-01-15"></div>
+      <div data-season-readout hidden>
+        <span data-readout-tile data-level="no_rating">
+          <span data-readout-level="no_rating" hidden>–</span>
+          <span data-readout-level="moderate" hidden>2</span>
+          <span data-readout-level="considerable" hidden>3</span>
+          <span data-readout-level="high" hidden>4</span>
+        </span>
+        <span data-readout-level="no_rating" hidden>No bulletin</span>
+        <span data-readout-level="moderate" hidden>Moderate</span>
+        <span data-readout-level="considerable" hidden>Considerable</span>
+        <span data-readout-level="high" hidden>High</span>
+        <div data-readout-date>Thursday 15 January 2026</div>
+        <a data-readout-link href="/day/2026-01-15/" hidden>Read the bulletin for <span data-readout-day>15 January</span></a>
+      </div>
     </div>
     <button data-season-dismiss type="button">&times;</button>
     <div data-season-dismiss id="backdrop"></div>
@@ -250,21 +264,63 @@ describe('the backdrop touch threshold', () => {
 });
 
 describe('the post-swap handler', () => {
-  it('applies the selected-day ring and is a no-op for another target', () => {
-    grid.innerHTML = '<span data-date="2026-01-15"></span>';
+  const readout = document.querySelector('[data-season-readout]');
+  const link = readout.querySelector('[data-readout-link]');
 
+  /** @param {string} html */
+  function swap(html) {
+    grid.innerHTML = html;
     document.body.dispatchEvent(
       new CustomEvent('htmx:afterSwap', {
         bubbles: true,
         detail: { target: grid },
       }),
     );
+  }
+
+  /** @returns {string[]} the readout levels left visible */
+  function shownLevels() {
+    return Array.from(readout.querySelectorAll('[data-readout-level]'))
+      .filter((el) => !el.hidden)
+      .map((el) => el.getAttribute('data-readout-level'));
+  }
+
+  /**
+   * A rated day cell as the fragment draws it.
+   *
+   * @param {string} date
+   * @param {string} level
+   * @param {string} long
+   * @param {string} short
+   * @returns {string}
+   */
+  function day(date, level, long, short) {
+    return (
+      `<a class="season-day" href="/day/${date}/" data-date="${date}" ` +
+      `data-level="${level}" data-day-long="${long}" data-day-short="${short}"></a>`
+    );
+  }
+
+  beforeEach(() => {
+    readout.hidden = true;
+    link.hidden = true;
+  });
+
+  it('rings the selected day and is a no-op for another target', () => {
+    swap(
+      day('2026-01-15', 'considerable', 'Thursday 15 January 2026', '15 January') +
+        day('2026-01-16', 'moderate', 'Friday 16 January 2026', '16 January'),
+    );
 
     expect(
       grid.querySelector('[data-date="2026-01-15"]').classList.contains(
-        'calendar-cell-selected',
+        'season-day-ring',
       ),
     ).toBe(true);
+    expect(grid.querySelectorAll('.season-day-ring')).toHaveLength(1);
+    expect(
+      grid.querySelector('[data-date="2026-01-15"]').getAttribute('aria-current'),
+    ).toBe('date');
 
     const other = document.createElement('div');
     other.id = 'something-else';
@@ -276,5 +332,123 @@ describe('the post-swap handler', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  it("fills the readout with the page's day, its peak level, and no link", () => {
+    // A two-level day: data-state is split, data-level the peak.
+    swap(
+      '<a class="season-day" href="/day/2026-01-15/" data-date="2026-01-15" ' +
+        'data-state="split" data-lo="moderate" data-hi="considerable" ' +
+        'data-level="considerable" data-day-long="Thursday 15 January 2026" ' +
+        'data-day-short="15 January"></a>',
+    );
+
+    expect(readout.hidden).toBe(false);
+    expect(
+      readout.querySelector('[data-readout-tile]').getAttribute('data-level'),
+    ).toBe('considerable');
+    expect(shownLevels()).toEqual(['considerable', 'considerable']);
+    // The page's own day: the link would point at this page.
+    expect(link.hidden).toBe(true);
+  });
+
+  it('reads a day with no bulletin as such, with no link', () => {
+    swap(
+      '<span class="season-day" data-date="2026-01-15" data-state="none" ' +
+        'data-level="no_rating" data-day-long="Thursday 15 January 2026" ' +
+        'data-day-short="15 January"></span>',
+    );
+
+    expect(readout.hidden).toBe(false);
+    expect(shownLevels()).toEqual(['no_rating', 'no_rating']);
+    expect(link.hidden).toBe(true);
+  });
+
+  it('leaves the readout hidden when the selected day is not drawn', () => {
+    swap(day('2026-02-01', 'moderate', 'Sunday 1 February 2026', '1 February'));
+
+    expect(readout.hidden).toBe(true);
+    expect(grid.querySelectorAll('.season-day-ring')).toHaveLength(0);
+  });
+
+  describe('a click on a rated day', () => {
+    beforeEach(() => {
+      swap(
+        day('2026-01-15', 'considerable', 'Thursday 15 January 2026', '15 January') +
+          day('2026-01-09', 'high', 'Friday 9 January 2026', '9 January') +
+          '<span class="season-day season-key-swatch season-day-ring" data-state="high"></span>',
+      );
+    });
+
+    /**
+     * @param {string} date
+     * @param {MouseEventInit} [init]
+     * @returns {MouseEvent}
+     */
+    function clickDay(date, init = {}) {
+      const event = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      });
+      grid.querySelector(`[data-date="${date}"]`).dispatchEvent(event);
+      return event;
+    }
+
+    it('selects the day instead of navigating', () => {
+      const event = clickDay('2026-01-09');
+
+      expect(event.defaultPrevented).toBe(true);
+      const ringed = grid.querySelectorAll('[data-date].season-day-ring');
+      expect(ringed).toHaveLength(1);
+      expect(ringed[0].getAttribute('data-date')).toBe('2026-01-09');
+      // aria-current moves with the ring: on the new day, off the old one.
+      const current = grid.querySelectorAll('[aria-current="date"]');
+      expect(current).toHaveLength(1);
+      expect(current[0].getAttribute('data-date')).toBe('2026-01-09');
+      // The key's "Selected day" swatch keeps its ring.
+      expect(
+        grid.querySelector('.season-key-swatch').classList.contains('season-day-ring'),
+      ).toBe(true);
+    });
+
+    it("moves the readout to the day: level, dates and the day's own link", () => {
+      clickDay('2026-01-09');
+
+      expect(shownLevels()).toEqual(['high', 'high']);
+      expect(
+        readout.querySelector('[data-readout-tile]').getAttribute('data-level'),
+      ).toBe('high');
+      expect(readout.querySelector('[data-readout-date]').textContent).toBe(
+        'Friday 9 January 2026',
+      );
+      expect(readout.querySelector('[data-readout-day]').textContent).toBe(
+        '9 January',
+      );
+      expect(link.getAttribute('href')).toBe('/day/2026-01-09/');
+      expect(link.hidden).toBe(false);
+    });
+
+    it("hides the link again on returning to the page's own day", () => {
+      clickDay('2026-01-09');
+      clickDay('2026-01-15');
+
+      expect(link.hidden).toBe(true);
+      expect(link.getAttribute('href')).toBe('/day/2026-01-15/');
+      expect(readout.querySelector('[data-readout-day]').textContent).toBe(
+        '15 January',
+      );
+    });
+
+    it('leaves a modified click to the browser (open in a new tab)', () => {
+      const event = clickDay('2026-01-09', { metaKey: true });
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(
+        grid.querySelector('[data-date="2026-01-15"]').classList.contains(
+          'season-day-ring',
+        ),
+      ).toBe(true);
+    });
   });
 });

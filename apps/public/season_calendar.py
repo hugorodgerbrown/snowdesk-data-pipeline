@@ -30,6 +30,14 @@ October), ``build_season_grid`` accepts it as an optional ``window``, and
 ``summarise_season`` counts the grid into the strip's text summary. The
 strip renders server-side in ``resort_detail`` — no view-layer cache, one
 indexed range query.
+
+SNOW-1158 redraws every season calendar as one shared, month-shaped
+component (``public/partials/_season_calendar.html``). ``build_season_months``
+reshapes a ``SeasonGrid`` into months × days — a cell state per day (a level,
+"split" for a two-level day, "none", or "future" after today) — and
+``season_ring_date`` picks the resort page's ringed day: today in season, the
+first High day of a finished one. The week-column grid stays the data source;
+nothing renders its columns directly any more.
 """
 
 from __future__ import annotations
@@ -37,7 +45,7 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import logging
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from django.conf import settings
 from django.utils.dates import MONTHS_3
@@ -258,6 +266,105 @@ class SeasonSummary:
         """Return ``False`` when no day had a bulletin — the strip is hidden."""
         return self.days_with_bulletin > 0
 
+    @property
+    def key_counts(self) -> list[tuple[str, int]]:
+        """
+        Return the season calendar key's levels, each with its day count.
+
+        Low to High always (SNOW-1158 — the key names the four levels a
+        season commonly holds, a zero included); Very high only when a day
+        reached it, so the key never explains a colour the calendar lacks
+        nor leaves one it has unexplained.
+        """
+        counts = dict(self.level_counts)
+        keys = list(_RATED_LEVELS[:-1])
+        if counts.get(RegionDayRating.Rating.VERY_HIGH):
+            keys.append(RegionDayRating.Rating.VERY_HIGH)
+        return [(key, counts.get(key, 0)) for key in keys]
+
+
+@dataclasses.dataclass(frozen=True)
+class MonthDay:
+    """
+    One day of the month-shaped season calendar (SNOW-1158).
+
+    ``state`` is what the cell draws: ``"none"`` (no bulletin — outlined),
+    ``"future"`` (not yet — a day after today, faint), an EAWS rating key
+    (``"low"`` … ``"very_high"``), or ``"split"`` for a two-level day, whose
+    halves are ``low_key`` (left) and ``high_key`` (right).
+
+    ``level`` is the day's peak, ``SeasonCell.max_rating_key`` — the
+    compressed-views rule (docs/compressed-views-rating-rule.md): a split
+    day's peak is its ``high_key``, never the lower half. ``"no_rating"`` on
+    a day without a bulletin.
+
+    ``has_bulletin`` is the cell's own flag — a linked calendar links only
+    these days. ``is_ring`` marks the one ringed day, if any.
+    """
+
+    date: datetime.date
+    state: str
+    level: str
+    has_bulletin: bool
+    low_key: str = ""
+    high_key: str = ""
+    is_ring: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class SeasonMonth:
+    """
+    One month row (a column on a phone) of the season calendar.
+
+    ``label`` is Django's translated three-letter month name, title-cased
+    (``"Nov"``); ``days`` holds exactly one :class:`MonthDay` per day of
+    the month — 28 to 31 — so a short month simply ends early.
+    """
+
+    first: datetime.date
+    label: str
+    days: list[MonthDay]
+
+
+@dataclasses.dataclass(frozen=True)
+class SeasonMonths:
+    """
+    Output of :func:`build_season_months` — the month-shaped calendar.
+
+    ``months`` runs from the month of the span's first day to the month of
+    its last, inclusive. ``ring_date`` is the ringed day (or ``None``).
+    ``season_label`` is the four-digit form (``"2025/26"``) the calendar's
+    eyebrow and summary name. ``axis`` is the 31 day-axis labels, a number
+    on 1, 5, 10, … 30 and ``""`` elsewhere.
+    """
+
+    months: list[SeasonMonth]
+    ring_date: datetime.date | None
+    season_label: str
+    axis: tuple[str, ...]
+
+    def __bool__(self) -> bool:
+        """Return ``False`` when there is no month to draw."""
+        return bool(self.months)
+
+
+# The day-axis labels above (beside, on a phone) the month rows: 1, then
+# every fifth day. Fixed — every month row is drawn against 31 slots.
+SEASON_AXIS: tuple[str, ...] = tuple(
+    str(day) if day == 1 or day % 5 == 0 else "" for day in range(1, 32)
+)
+
+# Every level key a single day can read as, no bulletin first — the
+# bulletin sheet's selected-day readout renders one tile digit and one name
+# per key and season_sheet.js shows the one the selected day holds.
+SEASON_LEVEL_KEYS: tuple[str, ...] = (
+    RegionDayRating.Rating.NO_RATING,
+    *_RATED_LEVELS,
+)
+
+# Level ranks for the split rule and the ring rule. ``no_rating`` is absent.
+_LEVEL_RANK: dict[str, int] = {key: rank for rank, key in enumerate(_RATED_LEVELS)}
+
 
 def season_window(today: datetime.date) -> SeasonWindow:
     """
@@ -326,6 +433,213 @@ def summarise_season(grid: SeasonGrid) -> SeasonSummary:
             counts[key] for key in _RATED_LEVELS[considerable_rank:]
         ),
     )
+
+
+def season_ring_date(
+    grid: SeasonGrid, window: SeasonWindow, today: datetime.date
+) -> datetime.date | None:
+    """
+    Pick the resort calendar's ringed day (SNOW-1158).
+
+    In a running season (``today`` on or before ``window.end``) the ring is
+    today. In a finished season it is the first day whose peak was High or
+    higher — the day a reader most wants to find — or ``None`` when the
+    season never reached High.
+
+    Args:
+        grid: The season's grid from :func:`build_season_grid`.
+        window: The :class:`SeasonWindow` the grid was built for.
+        today: The current calendar date.
+
+    Returns:
+        The date to ring, or ``None``.
+
+    """
+    if window.start <= today <= window.end:
+        return today
+    high_rank = _LEVEL_RANK[RegionDayRating.Rating.HIGH]
+    for cell in _grid_cells(grid):
+        if cell.has_bulletin and _LEVEL_RANK.get(cell.max_rating_key, -1) >= (
+            high_rank
+        ):
+            return cell.date
+    return None
+
+
+def build_season_months(
+    grid: SeasonGrid,
+    today: datetime.date,
+    window: SeasonWindow | None = None,
+    ring_date: datetime.date | None = None,
+) -> SeasonMonths:
+    """
+    Reshape a season grid into months × days (SNOW-1158).
+
+    The one data shape behind ``public/partials/_season_calendar.html`` on
+    both the resort page and the bulletin page: one row per month (a column
+    on a phone) and one cell per day of that month. Pure — it reads only the
+    already-built grid, no query.
+
+    The months drawn run from the season's start — ``window.start``, or,
+    without a window, the grid's first day (the bulletin page's
+    ``SEASON_START_DATE``) — through that season's April, so a running
+    season shows its remaining days faint. They extend past April only to
+    the last month that holds a bulletin, and never beyond tomorrow's month
+    (:func:`_last_drawn_day`). Every month drawn is drawn in full.
+
+    Each day's state: a day with a bulletin draws its level, or ``"split"``
+    when the day held two levels (see :func:`_split_keys`); any other day
+    after ``today`` is ``"future"`` (not yet); everything else is
+    ``"none"`` (no bulletin).
+
+    Args:
+        grid: A grid from :func:`build_season_grid`.
+        today: The current calendar date — days after it with no bulletin
+            are "not yet", not "no bulletin".
+        window: Optional :class:`SeasonWindow` naming the span to draw.
+        ring_date: The day to ring, or ``None`` (the bulletin page rings the
+            selected day client-side, so its cached grid stays one body).
+
+    Returns:
+        A :class:`SeasonMonths`; falsy when the grid is empty and no window
+        was given.
+
+    """
+    by_date: dict[datetime.date, SeasonCell] = {c.date: c for c in _grid_cells(grid)}
+    if window is not None:
+        span_start = window.start
+    elif by_date:
+        span_start = min(by_date)
+    else:
+        return SeasonMonths(
+            months=[], ring_date=None, season_label="", axis=SEASON_AXIS
+        )
+    span_end = _last_drawn_day(by_date, span_start, today)
+
+    months: list[SeasonMonth] = []
+    first = span_start.replace(day=1)
+    while first <= span_end:
+        days: list[MonthDay] = []
+        cursor = first
+        while cursor.month == first.month:
+            days.append(
+                _month_day(by_date.get(cursor), cursor, today, cursor == ring_date)
+            )
+            cursor += datetime.timedelta(days=1)
+        months.append(
+            SeasonMonth(
+                first=first,
+                label=str(MONTHS_3[first.month]).title(),
+                days=days,
+            )
+        )
+        first = cursor
+    return SeasonMonths(
+        months=months,
+        ring_date=ring_date,
+        season_label=_season_long_label(span_start),
+        axis=SEASON_AXIS,
+    )
+
+
+def _last_drawn_day(
+    by_date: dict[datetime.date, SeasonCell],
+    span_start: datetime.date,
+    today: datetime.date,
+) -> datetime.date:
+    """
+    Return the last day of the calendar's span (SNOW-1158).
+
+    The season's 30 April, unless a bulletin was published after it — then
+    the last bulletin's day, capped at tomorrow (the latest a bulletin can
+    target), so a May bulletin adds May and nothing adds an empty summer.
+    """
+    close_month, close_day = SEASON_CLOSES
+    april = datetime.date(_season_start_year(span_start) + 1, close_month, close_day)
+    published = [day for day, cell in by_date.items() if cell.has_bulletin]
+    last = max(published, default=april)
+    if last <= april:
+        return april
+    return min(last, today + datetime.timedelta(days=1))
+
+
+def _season_start_year(day: datetime.date) -> int:
+    """Return the year the season holding ``day`` opened (1 November)."""
+    return day.year if (day.month, day.day) >= SEASON_OPENS else day.year - 1
+
+
+def _month_day(
+    cell: SeasonCell | None,
+    date: datetime.date,
+    today: datetime.date,
+    is_ring: bool,
+) -> MonthDay:
+    """Build one :class:`MonthDay` from the grid's cell for ``date``."""
+    if cell is not None and cell.has_bulletin:
+        split = _split_keys(cell)
+        if split is not None:
+            return MonthDay(
+                date=date,
+                state="split",
+                level=cell.max_rating_key,
+                has_bulletin=True,
+                low_key=split[0],
+                high_key=split[1],
+                is_ring=is_ring,
+            )
+        return MonthDay(
+            date=date,
+            state=cell.max_rating_key,
+            level=cell.max_rating_key,
+            has_bulletin=True,
+            is_ring=is_ring,
+        )
+    return MonthDay(
+        date=date,
+        state="future" if date > today else "none",
+        level=RegionDayRating.Rating.NO_RATING,
+        has_bulletin=False,
+        is_ring=is_ring,
+    )
+
+
+def _split_keys(cell: SeasonCell) -> tuple[str, str] | None:
+    """
+    Return ``(lower, peak)`` when ``cell`` held two levels in one day.
+
+    The levels a day held are its ``min_rating_key`` (an afternoon rise or
+    an elevation split, docs/calendar.md), its AM/PM peaks (SNOW-291) and
+    its ALBINA band ratings (SNOW-292). The upper half is always the day's
+    peak, ``max_rating_key`` — the compressed-views rule — and the lower
+    half the lowest level that day below it. ``None`` for a one-level day.
+    """
+    peak = cell.max_rating_key
+    peak_rank = _LEVEL_RANK.get(peak)
+    if peak_rank is None:
+        return None
+    held = [cell.min_rating_key, cell.am_rating_key, cell.pm_rating_key]
+    held += [band.get("rating_key", "") for band in cell.bands or []]
+    lower = [
+        _LEVEL_RANK[key] for key in held if _LEVEL_RANK.get(key, peak_rank) < peak_rank
+    ]
+    if not lower:
+        return None
+    return _RATED_LEVELS[min(lower)], peak
+
+
+def _grid_cells(grid: SeasonGrid) -> list[SeasonCell]:
+    """Return the grid's dated cells in date order, padding dropped."""
+    return [cell for column in grid.columns for cell in column if cell is not None]
+
+
+def _season_long_label(start: datetime.date) -> str:
+    """Name the season ``start`` falls in, four-digit form (``"2025/26"``).
+
+    A date before ``SEASON_OPENS`` in its year belongs to the season that
+    opened the year before.
+    """
+    start_year = _season_start_year(start)
+    return f"{start_year}/{(start_year + 1) % 100:02d}"
 
 
 def build_season_grid(
@@ -436,27 +750,33 @@ def build_season_grid(
     )
 
 
-def season_header(today: datetime.date) -> dict[str, str] | None:
+def season_header(today: datetime.date) -> dict[str, Any] | None:
     """
     Return a minimal context dict for the season trigger/shell, or ``None``.
 
-    Returns ``{"season_label": "<NN/NN>"}`` when the season has started
-    (i.e. ``today + 1 >= SEASON_START_DATE``), so the bulletin view can
-    decide whether to render the trigger and shell without building the full
-    grid. Returns ``None`` before the season start.
+    Returns ``{"season_label": "<NN/NN>", "season_name": "<NNNN/NN>",
+    "levels": SEASON_LEVEL_KEYS}`` when the season has started (i.e.
+    ``today + 1 >= SEASON_START_DATE``), so the bulletin view can decide
+    whether to render the trigger and shell without building the full grid.
+    ``season_name`` heads the sheet and ``levels`` feeds its selected-day
+    readout (SNOW-1158). Returns ``None`` before the season start.
 
     Args:
         today: Current calendar date.
 
     Returns:
-        ``{"season_label": "<NN/NN>"}`` or ``None``.
+        The header dict, or ``None``.
 
     """
     start: datetime.date = settings.SEASON_START_DATE
     end = today + datetime.timedelta(days=1)
     if end < start:
         return None
-    return {"season_label": _season_label(start)}
+    return {
+        "season_label": _season_label(start),
+        "season_name": _season_long_label(start),
+        "levels": SEASON_LEVEL_KEYS,
+    }
 
 
 def build_season_ribbon(

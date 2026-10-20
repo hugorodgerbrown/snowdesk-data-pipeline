@@ -941,7 +941,7 @@ class TestSeasonCalendar:
             response = client.get(url)
 
         # The grid is deferred — the bulletin page only contains the shell.
-        # calendar-cell-today is served by the partial (see test_season_partial.py).
+        # The calendar is served by the partial (see test_season_partial.py).
         assert b'id="season-grid"' in response.content
         assert b'data-testid="season-calendar"' not in response.content
 
@@ -963,7 +963,7 @@ class TestSeasonCalendar:
             response = client.get(url)
 
         # The selected-date is encoded in the placeholder so the JS htmx:afterSwap
-        # handler can apply calendar-cell-selected client-side.
+        # handler can ring the selected day client-side.
         assert b'data-selected-date="2026-03-05"' in response.content
 
     @override_settings(SEASON_START_DATE=date(2026, 3, 1))
@@ -1000,7 +1000,7 @@ class TestSeasonCalendar:
             },
         )
         assert expected.encode() in response.content
-        assert b'data-rating-max="considerable"' in response.content
+        assert b'data-level="considerable"' in response.content
 
 
 @pytest.mark.django_db

@@ -231,302 +231,158 @@ def _build_day_windows_variants() -> tuple[dict[str, Any], ...]:
 DAY_WINDOWS_VARIANTS: tuple[dict[str, Any], ...] = _build_day_windows_variants()
 
 
-def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
-    """Build the season calendar demo variant for the component library.
+# Season calendar variants (SNOW-1158) --------------------------------------
+# The one season calendar (public/partials/_season_calendar.html), drawn from
+# synthetic SeasonGrids reshaped by the real build_season_months. The
+# "season-calendar" entry shows the three ways the pages render it; the
+# "season-cell" entry one month holding every cell state, unlinked and
+# linked. No database access.
 
-    Constructs a synthetic 13-week SeasonGrid (Nov 2025 – Jan 2026) with
-    hand-picked cells covering every cell state: no-rating, all five EAWS
-    solid levels, split pairs (afternoon-elevated), time-split AM/PM pairs
-    (SNOW-291), today, and selected.
-    No database access — purely synthetic fixture data.
+# The design board's season, one character per day: "-" no bulletin, "1"–"5"
+# a level, "m" a moderate/considerable day. Nov 2025 – Apr 2026.
+_SEASON_BOARD: tuple[str, ...] = (
+    "-" + "2" * 4 + "-" * 10 + "1" + "2" * 7 + "3" * 6 + "2",
+    "2" * 6 + "3" * 4 + "2" * 18 + "1" * 3,
+    "1" * 2 + "2" * 5 + "3" + "4" * 3 + "3" * 20,
+    "3" * 10 + "4" * 3 + "3" * 2 + "4" * 6 + "3" * 7,
+    "2" * 14 + "3" + "2" * 10 + "3" * 3 + "2" * 3,
+    "3" * 2
+    + "2" * 3
+    + "m" * 2
+    + "3"
+    + "m" * 4
+    + "3" * 2
+    + "m" * 5
+    + "2" * 3
+    + "3" * 3
+    + "2" * 5,
+)
+_SEASON_BOARD_KEYS: dict[str, str] = {
+    "1": "low",
+    "2": "moderate",
+    "3": "considerable",
+    "4": "high",
+    "5": "very_high",
+}
 
-    Schedule entries can be:
-    - A string key: ``"L"``, ``"M"``, ``"C"``, ``"H"``, ``"VH"``, ``"nr"``
-      (uniform day — min == max).
-    - A 2-tuple ``(min_key, max_key)`` for the diagonal-split (afternoon-elevated).
-    - A 4-tuple ``(min_key, max_key, am_key, pm_key)`` for the vertical AM/PM
-      time-split tile (SNOW-291).
-    """
-    from apps.public.season_calendar import SeasonCell, SeasonGrid
 
-    _KEY = {
-        "nr": "no_rating",
-        "L": "low",
-        "M": "moderate",
-        "C": "considerable",
-        "H": "high",
-        "VH": "very_high",
-    }
-    _today = datetime.date(2026, 1, 20)
-    _selected = datetime.date(2026, 1, 14)
+def _synthetic_grid(cells: list[Any]) -> Any:
+    """Pack synthetic cells into a ``SeasonGrid`` of Monday-first weeks."""
+    from apps.public.season_calendar import SeasonGrid
 
-    # Nov 3 2025 is a Monday — zero leading padding.
-    _start = datetime.date(2025, 11, 3)
+    lead = cells[0].date.weekday()
+    flat: list[Any] = [None] * lead + cells
+    while len(flat) % 7:
+        flat.append(None)
+    columns = [tuple(flat[i : i + 7]) for i in range(0, len(flat), 7)]
+    return SeasonGrid(
+        columns=columns, month_labels=[""] * len(columns), season_label="25/26"
+    )
 
-    # 13 weeks × 7 days.  Each entry is a short-code string (solid cell),
-    # a (min, max) 2-tuple (diagonal split / afternoon-elevated cell), or
-    # a (min, max, am, pm) 4-tuple for the AM/PM time-split tile (SNOW-291).
-    _schedule: list[str | tuple[str, ...]] = [
-        # Week 1  Nov 3–9    no data yet
-        "nr",
-        "nr",
-        "nr",
-        "nr",
-        "nr",
-        "nr",
-        "nr",
-        # Week 2  Nov 10–16  season opening
-        "nr",
-        "nr",
-        "nr",
-        "L",
-        "L",
-        "L",
-        "L",
-        # Week 3  Nov 17–23  low period
-        "L",
-        "L",
-        "L",
-        "L",
-        "L",
-        "L",
-        "L",
-        # Week 4  Nov 24–30  creeping up
-        "L",
-        "M",
-        "M",
-        "M",
-        "M",
-        "M",
-        "L",
-        # Week 5  Dec 1–7    considerable
-        "M",
-        "M",
-        "C",
-        "C",
-        "C",
-        "M",
-        "M",
-        # Week 6  Dec 8–14   high / very-high spike
-        "C",
-        "H",
-        "H",
-        "VH",
-        "VH",
-        "H",
-        "C",
-        # Week 7  Dec 15–21  diagonal + AM/PM time-split (SNOW-291)
-        ("L", "M"),
-        ("L", "C"),
-        ("M", "C", "M", "M"),  # flat-but-split: M AM + M PM (SNOW-291)
-        ("M", "H", "M", "H"),  # escalating time-split: M AM + H PM (SNOW-291)
-        ("C", "H"),
-        "C",
-        "M",
-        # Week 8  Dec 22–28  settling
-        "M",
-        "M",
-        "L",
-        "L",
-        "M",
-        "M",
-        "C",
-        # Week 9  Dec 29–Jan 4
-        "M",
-        ("L", "M"),
-        "L",
-        "L",
-        ("L", "M"),
-        "M",
-        "M",
-        # Week 10 Jan 5–11   low period
-        "L",
-        "L",
-        "L",
-        "L",
-        "L",
-        "L",
-        "M",
-        # Week 11 Jan 12–18  selected date (Jan 14) in this week
-        "M",
-        ("M", "C"),
-        ("L", "C"),
-        "L",
-        "M",
-        "M",
-        "L",
-        # Week 12 Jan 19–25  today (Jan 20) in this week
-        ("L", "M"),
-        "M",
-        "M",
-        "M",
-        "L",
-        "L",
-        ("L", "M"),
-        # Week 13 Jan 26–Feb 1
-        "M",
-        "M",
-        "M",
-        "L",
-        "L",
-        ("L", "M"),
-        "M",
-    ]
 
-    month_parity = 0
-    prev_month: int | None = None
-    cells: list[SeasonCell] = []
+def _board_cell(date: datetime.date, char: str) -> Any:
+    """Build one synthetic ``SeasonCell`` from a board character."""
+    from apps.public.season_calendar import SeasonCell
 
-    for i, entry in enumerate(_schedule):
-        d = _start + datetime.timedelta(days=i)
-        if prev_month is not None and d.month != prev_month:
-            month_parity = 1 - month_parity
-        prev_month = d.month
-
-        am_key = ""
-        pm_key = ""
-        if isinstance(entry, tuple):
-            min_key = _KEY[entry[0]]
-            max_key = _KEY[entry[1]]
-            if len(entry) == 4:
-                # 4-tuple: AM/PM time-split (SNOW-291)
-                am_key = _KEY[entry[2]]
-                pm_key = _KEY[entry[3]]
-        else:
-            min_key = max_key = _KEY[entry]
-
-        has_bulletin = min_key != "no_rating"
-        cells.append(
-            SeasonCell(
-                date=d,
-                min_rating_key=min_key,
-                max_rating_key=max_key,
-                subdivision="",
-                has_bulletin=has_bulletin,
-                is_today=d == _today,
-                is_selected=d == _selected and d != _today,
-                month_parity=month_parity,
-                am_rating_key=am_key,
-                pm_rating_key=pm_key,
-            )
+    if char == "-":
+        return SeasonCell(
+            date=date,
+            min_rating_key="no_rating",
+            max_rating_key="no_rating",
+            subdivision="",
+            has_bulletin=False,
         )
-
-    # Pack flat list into 7-row columns (start is Monday — no leading pad).
-    columns: list[tuple[SeasonCell | None, ...]] = [
-        tuple(cells[i : i + 7]) for i in range(0, len(cells), 7)
-    ]
-
-    # Build month labels: non-empty only on the first column of each month.
-    _MONTH_ABBR = (
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
-    )
-    month_labels: list[str] = []
-    last_month: int | None = None
-    for column in columns:
-        first = next((c for c in column if c is not None), None)
-        if first is not None and first.date.month != last_month:
-            month_labels.append(_MONTH_ABBR[first.date.month - 1])
-            last_month = first.date.month
-        else:
-            month_labels.append("")
-
-    grid = SeasonGrid(columns=columns, month_labels=month_labels, season_label="25/26")
-
-    # ---- ALBINA elevation-only (2-band, all_day) — one synthetic cell ----
-    _albina_eo_bands = [
-        {
-            "band_id": "above-2200",
-            "label": "Above 2200 m",
-            "rating_key": "considerable",
-            "time_period": "all_day",
-        },
-        {
-            "band_id": "below-2200",
-            "label": "Below 2200 m",
-            "rating_key": "low",
-            "time_period": "all_day",
-        },
-    ]
-    _albina_eo_cell = SeasonCell(
-        date=datetime.date(2026, 1, 7),
-        min_rating_key="low",
-        max_rating_key="considerable",
+    if char == "m":
+        return SeasonCell(
+            date=date,
+            min_rating_key="moderate",
+            max_rating_key="considerable",
+            subdivision="",
+            has_bulletin=True,
+        )
+    key = _SEASON_BOARD_KEYS[char]
+    return SeasonCell(
+        date=date,
+        min_rating_key=key,
+        max_rating_key=key,
         subdivision="",
         has_bulletin=True,
-        source="ALBINA",
-        bands=_albina_eo_bands,
-    )
-    _albina_eo_grid = SeasonGrid(
-        columns=[(_albina_eo_cell, None, None, None, None, None, None)],
-        month_labels=["Jan"],
-        season_label="25/26",
     )
 
-    # ---- ALBINA 2×2 (4-band: earlier+later × 2 elevation bands) -----------
-    _albina_2x2_bands = [
-        {
-            "band_id": "above-2500",
-            "label": "Above 2500 m",
-            "rating_key": "considerable",
-            "time_period": "earlier",
-        },
-        {
-            "band_id": "below-2500",
-            "label": "Below 2500 m",
-            "rating_key": "low",
-            "time_period": "earlier",
-        },
-        {
-            "band_id": "above-2800",
-            "label": "Above 2800 m",
-            "rating_key": "high",
-            "time_period": "later",
-        },
-        {
-            "band_id": "below-2800",
-            "label": "Below 2800 m",
-            "rating_key": "moderate",
-            "time_period": "later",
-        },
-    ]
-    _albina_2x2_cell = SeasonCell(
-        date=datetime.date(2026, 1, 8),
-        min_rating_key="low",
-        max_rating_key="high",
-        subdivision="",
-        has_bulletin=True,
-        source="ALBINA",
-        bands=_albina_2x2_bands,
-    )
-    _albina_2x2_grid = SeasonGrid(
-        columns=[(_albina_2x2_cell, None, None, None, None, None, None)],
-        month_labels=["Jan"],
-        season_label="25/26",
+
+def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
+    """Build the season calendar's three page variants for the library.
+
+    A finished season (ring on its first High day), the same season so far
+    (today ringed, the rest "not yet") — both the resort page's unlinked
+    calendar — and the bulletin page's linked one with the full key.
+
+    Returns:
+        The variants, each a context for ``_season_calendar_demo.html``.
+
+    """
+    from apps.public.season_calendar import (
+        SeasonWindow,
+        build_season_months,
+        season_ring_date,
+        summarise_season,
     )
 
+    window = SeasonWindow(
+        start=datetime.date(2025, 11, 1),
+        end=datetime.date(2026, 4, 30),
+        label="25/26",
+    )
+    cells: list[Any] = []
+    for offset, row in enumerate(_SEASON_BOARD):
+        month = 11 + offset
+        first = datetime.date(2025 + (month - 1) // 12, (month - 1) % 12 + 1, 1)
+        cells += [
+            _board_cell(first + datetime.timedelta(days=i), char)
+            for i, char in enumerate(row)
+        ]
+    full = _synthetic_grid(cells)
+    finished_today = datetime.date(2026, 10, 20)
+
+    so_far_today = datetime.date(2026, 1, 14)
+    so_far = _synthetic_grid([c for c in cells if c.date <= so_far_today])
+
+    region = SimpleNamespace(canonical_region_id="CH-4115", name_slug="verbier")
     return (
         {
-            "caption": "Full season — all cell states",
-            "context": {"season_calendar": grid},
+            "caption": "Resort page — a finished season, its first High day ringed",
+            "context": {
+                "season_months": build_season_months(
+                    full,
+                    finished_today,
+                    window=window,
+                    ring_date=season_ring_date(full, window, finished_today),
+                ),
+                "season_summary": summarise_season(full),
+                "linked": False,
+            },
         },
         {
-            "caption": "ALBINA · elevation-only (2-band horizontal split)",
-            "context": {"season_calendar": _albina_eo_grid},
+            "caption": "Resort page — the season so far, today ringed, rest not yet",
+            "context": {
+                "season_months": build_season_months(
+                    so_far,
+                    so_far_today,
+                    window=window,
+                    ring_date=season_ring_date(so_far, window, so_far_today),
+                ),
+                "season_summary": summarise_season(so_far),
+                "linked": False,
+            },
         },
         {
-            "caption": "ALBINA · elevation-time (2×2 four-quadrant grid)",
-            "context": {"season_calendar": _albina_2x2_grid},
+            "caption": "Bulletin page — linked days, the full key (JS rings the day)",
+            "context": {
+                "season_months": build_season_months(full, finished_today),
+                "season_summary": summarise_season(full),
+                "linked": True,
+                "region": region,
+            },
         },
     )
 
@@ -534,51 +390,40 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
 SEASON_CALENDAR_VARIANTS: tuple[dict[str, Any], ...] = _build_season_calendar_variants()
 
 
-# Season cell variants (SNOW-1126) ------------------------------------------
-# The one day partial the bulletin page's heatmap and the resort page's
-# season strip share. One row per variant: a padding slot, a day with no
-# bulletin, a stable day, a variable day, an AM/PM split, an ALBINA
-# elevation split and today's ring — linked (the heatmap) and inert (the
-# resort strip, role="img", no link).
-
-
 def _build_season_cell_variants() -> tuple[dict[str, Any], ...]:
-    """Build the season-cell variants for the component library.
+    """Build one month holding every season-calendar cell state.
 
-    Imported lazily for the same reason as ``_build_season_calendar_variants``.
+    No bulletin, the five levels, the three ways a day holds two levels
+    (an afternoon rise in min/max, an AM/PM split, an ALBINA band split —
+    all drawn as one "split" cell, peak on the right), the ring, and the
+    days after today ("not yet"). Unlinked and linked.
 
     Returns:
-        The linked and inert rows, each one cell per state.
+        The two variants, each a context for ``_season_calendar_demo.html``.
 
     """
-    from apps.public.season_calendar import SeasonCell
+    from apps.public.season_calendar import (
+        SeasonCell,
+        build_season_months,
+        summarise_season,
+    )
 
-    day = datetime.date(2026, 1, 12)
-    cells: list[SeasonCell | None] = [
-        None,
+    first = datetime.date(2026, 1, 1)
+    today = datetime.date(2026, 1, 12)
+
+    def day(n: int) -> datetime.date:
+        return first + datetime.timedelta(days=n - 1)
+
+    cells: list[Any] = [
+        _board_cell(day(1), "-"),
+        _board_cell(day(2), "1"),
+        _board_cell(day(3), "2"),
+        _board_cell(day(4), "3"),
+        _board_cell(day(5), "4"),
+        _board_cell(day(6), "5"),
+        _board_cell(day(7), "m"),
         SeasonCell(
-            date=day,
-            min_rating_key="no_rating",
-            max_rating_key="no_rating",
-            subdivision="",
-            has_bulletin=False,
-        ),
-        SeasonCell(
-            date=day + datetime.timedelta(days=1),
-            min_rating_key="moderate",
-            max_rating_key="moderate",
-            subdivision="",
-            has_bulletin=True,
-        ),
-        SeasonCell(
-            date=day + datetime.timedelta(days=2),
-            min_rating_key="moderate",
-            max_rating_key="considerable",
-            subdivision="",
-            has_bulletin=True,
-        ),
-        SeasonCell(
-            date=day + datetime.timedelta(days=3),
+            date=day(8),
             min_rating_key="considerable",
             max_rating_key="high",
             subdivision="",
@@ -587,7 +432,7 @@ def _build_season_cell_variants() -> tuple[dict[str, Any], ...]:
             pm_rating_key="high",
         ),
         SeasonCell(
-            date=day + datetime.timedelta(days=4),
+            date=day(9),
             min_rating_key="low",
             max_rating_key="considerable",
             subdivision="",
@@ -608,24 +453,30 @@ def _build_season_cell_variants() -> tuple[dict[str, Any], ...]:
                 },
             ],
         ),
-        SeasonCell(
-            date=day + datetime.timedelta(days=5),
-            min_rating_key="high",
-            max_rating_key="high",
-            subdivision="",
-            has_bulletin=True,
-            is_today=True,
-        ),
+        _board_cell(day(10), "2"),
+        _board_cell(day(11), "3"),
+        _board_cell(day(12), "3"),
     ]
+    grid = _synthetic_grid(cells)
+    months = build_season_months(grid, today, ring_date=today)
     region = SimpleNamespace(canonical_region_id="CH-4115", name_slug="verbier")
     return (
         {
-            "caption": "Linked — the bulletin page's heatmap",
-            "context": {"cells": cells, "region": region, "inert": False},
+            "caption": "Every cell state — unlinked (role=img, short key)",
+            "context": {
+                "season_months": months,
+                "season_summary": summarise_season(grid),
+                "linked": False,
+            },
         },
         {
-            "caption": "Inert — the resort page's season strip (role=img)",
-            "context": {"cells": cells, "region": region, "inert": True},
+            "caption": "Every cell state — linked (bulletin page, full key)",
+            "context": {
+                "season_months": months,
+                "season_summary": summarise_season(grid),
+                "linked": True,
+                "region": region,
+            },
         },
     )
 

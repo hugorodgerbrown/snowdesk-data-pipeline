@@ -5,14 +5,17 @@ Covers:
   - 400 on non-HTMX request (require_htmx guard).
   - 404 on unknown region_id.
   - Grid fragment rendered with data-testid="season-calendar".
-  - calendar-cell-today present for today's cell.
-  - data-date="YYYY-MM-DD" on every rendered cell anchor/div.
-  - calendar-cell-selected absent from the response (selection is client-side).
+  - No ring in the response — the selected day is ringed client-side
+    (SNOW-1158: the bulletin page no longer marks today).
+  - data-date="YYYY-MM-DD" on every rendered cell.
   - Fragment cache: second request for the same (region, today) skips DB queries.
   - Cache invalidation: apply_bulletin_day_ratings deletes the key.
   - SNOW-1128: the key carries the language (normalised to its LANGUAGES
     code), invalidation deletes every language's key, and a time-split
     cell's AM/PM label renders through one translatable sentence.
+  - SNOW-1158: the fragment is the shared month-shaped calendar, linked —
+    rated days are links, two-level days (an afternoon rise, an AM/PM
+    split, an ALBINA band split) draw as one "split" cell, peak right.
 """
 
 from __future__ import annotations
@@ -34,7 +37,12 @@ from apps.bulletins.services.day_rating import (
     apply_bulletin_day_ratings,
     season_calendar_cache_key,
 )
-from apps.public.season_calendar import SeasonCell
+from apps.public.season_calendar import (
+    SeasonCell,
+    SeasonGrid,
+    build_season_months,
+    summarise_season,
+)
 from tests.factories import (
     BulletinFactory,
     MicroRegionFactory,
@@ -93,12 +101,15 @@ class TestSeasonPartialContent:
         assert b'data-testid="season-calendar"' in response.content
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_returns_today_cell_with_today_modifier(self, client: Client) -> None:
-        """The cell for today carries the calendar-cell-today CSS modifier."""
+    def test_is_the_linked_calendar_with_the_full_key(self, client: Client) -> None:
+        """SNOW-1158: the linked variant — no role=img, the counted key."""
         region = MicroRegionFactory.create()
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
-        assert response.status_code == 200
-        assert b"calendar-cell-today" in response.content
+        content = response.content.decode()
+        assert 'data-variant="linked"' in content
+        assert 'role="img"' not in content
+        assert "Two levels in one day" in content
+        assert "Selected day" in content
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_every_cell_carries_data_date_attribute(self, client: Client) -> None:
@@ -117,12 +128,12 @@ class TestSeasonPartialContent:
             datetime.date.fromisoformat(date_str)
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_calendar_cell_selected_absent(self, client: Client) -> None:
-        """calendar-cell-selected is never in the partial — selection is client-side."""
+    def test_no_day_is_ringed_server_side(self, client: Client) -> None:
+        """The ring is never in the partial — the selected day is ringed client-side."""
         region = MicroRegionFactory.create()
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
-        assert b"calendar-cell-selected" not in response.content
+        assert b"season-day season-day-ring" not in response.content
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_region_with_rated_days_renders_interactive_cells(
@@ -150,8 +161,25 @@ class TestSeasonPartialContent:
         )
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
-        # At least one cell with data-rating-min should be present.
-        assert b"data-rating-min" in response.content
+        content = response.content.decode()
+        href = reverse(
+            "public:bulletin_date",
+            args=[region.canonical_region_id, region.name_slug, rated_day.isoformat()],
+        )
+        cell = content.split(f'href="{href}"')[1].split(">")[0]
+        assert f'data-date="{rated_day.isoformat()}"' in cell
+        assert 'data-state="moderate"' in cell
+        assert 'data-level="moderate"' in cell
+        # SNOW-1158: the readout's two date forms, server-rendered per cell.
+        long_date = (
+            rated_day.strftime("%A ")
+            + f"{rated_day.day} "
+            + (rated_day.strftime("%B %Y"))
+        )
+        assert f'data-day-long="{long_date}"' in cell
+        assert f'data-day-short="{rated_day.day} {rated_day.strftime("%B")}"' in cell
+        # A day with no bulletin is not a link.
+        assert len(re.findall(r"<a\s", content)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -260,8 +288,8 @@ class TestSeasonPartialCache:
         assert [cache.get(key) for key in keys] == [None, None]
 
 
-def test_time_split_cell_label_is_one_sentence() -> None:
-    """SNOW-1128: the AM/PM label renders through blocktrans, unchanged in English."""
+def test_split_day_label_is_one_sentence() -> None:
+    """SNOW-1128 / SNOW-1158: a two-level day's title is one translatable sentence."""
     cell = SeasonCell(
         date=datetime.date(2026, 1, 5),
         min_rating_key="low",
@@ -271,10 +299,16 @@ def test_time_split_cell_label_is_one_sentence() -> None:
         am_rating_key="low",
         pm_rating_key="moderate",
     )
+    grid = SeasonGrid(columns=[(cell,)], month_labels=[""], season_label="25/26")
     html = render_to_string(
-        "public/partials/_season_cell.html", {"cell": cell, "inert": True}
+        "public/partials/_season_calendar.html",
+        {
+            "season_months": build_season_months(grid, datetime.date(2026, 1, 5)),
+            "season_summary": summarise_season(grid),
+            "linked": False,
+        },
     )
-    assert 'aria-label="Mon 5 Jan.: Low AM · Moderate PM"' in html
+    assert 'title="5 Jan 2026 · Low and Moderate"' in html
 
 
 # ---------------------------------------------------------------------------
@@ -285,15 +319,15 @@ def test_time_split_cell_label_is_one_sentence() -> None:
 @pytest.mark.django_db
 class TestAlbinaCalendarTileRendering:
     """
-    Assert that ALBINA calendar tiles carry the expected HTML attributes and
-    band sub-divs in the rendered season_calendar_partial response.
+    Assert that ALBINA band-split days render as two-level cells in the
+    season_calendar_partial response (SNOW-1158 retired the band sub-divs).
 
     Regression guard: SLF and MF cells must NOT carry ``data-band-mode``.
     """
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_albina_elevation_only_cell_attributes(self, client: Client) -> None:
-        """Elevation-only ALBINA cell has data-source='ALBINA' and data-band-mode='elevation-only'."""
+        """An elevation-only ALBINA day draws as a two-level cell."""
         region = MicroRegionFactory.create(region_id="at-9901")
         target = datetime.date(2025, 11, 4)
         bulletin = BulletinFactory.create()
@@ -323,14 +357,15 @@ class TestAlbinaCalendarTileRendering:
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         html = response.content.decode()
-        assert 'data-source="ALBINA"' in html
-        assert 'data-band-mode="elevation-only"' in html
-        # Two calendar-band spans for the two elevation bands.
-        assert html.count('class="calendar-band"') == 2
+        # SNOW-1158: a band split is one two-level cell, the peak on the right.
+        cell = html.split('data-date="2025-11-04"')[1].split(">")[0]
+        assert 'data-state="split"' in cell
+        assert 'data-lo="low" data-hi="considerable"' in cell
+        assert 'data-level="considerable"' in cell
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_albina_elevation_time_cell_attributes(self, client: Client) -> None:
-        """2×2 ALBINA cell has data-source='ALBINA' and data-band-mode='elevation-time'."""
+        """A 2×2 ALBINA day draws as a two-level cell: lowest band, peak band."""
         region = MicroRegionFactory.create(region_id="at-9902")
         target = datetime.date(2025, 11, 4)
         bulletin = BulletinFactory.create()
@@ -372,10 +407,10 @@ class TestAlbinaCalendarTileRendering:
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         assert response.status_code == 200
         html = response.content.decode()
-        assert 'data-source="ALBINA"' in html
-        assert 'data-band-mode="elevation-time"' in html
-        # Four calendar-band spans for the 2×2 grid.
-        assert html.count('class="calendar-band"') == 4
+        # SNOW-1158: four bands still draw two halves — the lowest and the peak.
+        cell = html.split('data-date="2025-11-04"')[1].split(">")[0]
+        assert 'data-state="split"' in cell
+        assert 'data-lo="low" data-hi="high"' in cell
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_slf_cell_has_no_band_mode(self, client: Client) -> None:
@@ -417,28 +452,23 @@ class TestAlbinaCalendarTileRendering:
         html = response.content.decode()
         assert "data-band-mode=" not in html
 
-    def test_main_css_carries_the_matching_albina_selector(self) -> None:
-        """src/css/main.css targets the exact data-source value the template emits.
+    def test_main_css_draws_every_state_the_template_emits(self) -> None:
+        """src/css/main.css has a rule for every data-state / data-lo / data-hi.
 
-        SNOW-582 upper-cased Bulletin.Source/RegionDayRating.source, so
-        ``cell.source`` renders as ``"ALBINA"`` rather than ``"albina"``. The
-        band-mode rendering rules in ``src/css/main.css`` are plain CSS
-        attribute selectors, not driven by the enum, so a casing change here
-        would silently stop matching and the elevation-band tiles would
-        fall back to the default (unsplit) fill with no test failure —
-        this guard ties the two together.
+        The fills are plain CSS attribute selectors keyed on the rating
+        values, not driven by the enum, so a renamed key would silently stop
+        matching and the cell would draw empty with no test failure — this
+        guard ties the two together.
         """
         from pathlib import Path
 
         css = Path("src/css/main.css").read_text(encoding="utf-8")
-        assert (
-            f'[data-source="{Bulletin.Source.ALBINA}"][data-band-mode="elevation-only"]'
-            in css
-        )
-        assert (
-            f'[data-source="{Bulletin.Source.ALBINA}"][data-band-mode="elevation-time"]'
-            in css
-        )
+        for key in ("none", "future", "split", *RegionDayRating.Rating.values[1:]):
+            assert f'.season-day[data-state="{key}"]' in css, key
+        for key in RegionDayRating.Rating.values[1:-1]:
+            assert f'.season-day[data-lo="{key}"]' in css, key
+        for key in RegionDayRating.Rating.values[2:]:
+            assert f'.season-day[data-hi="{key}"]' in css, key
 
 
 # ---------------------------------------------------------------------------
@@ -448,11 +478,11 @@ class TestAlbinaCalendarTileRendering:
 
 @pytest.mark.django_db
 class TestSeasonPartialTimeSplit:
-    """Tests for the AM/PM vertical-split tile rendered by the partial."""
+    """Tests for AM/PM days rendered by the partial (SNOW-291, redrawn by SNOW-1158)."""
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_time_split_cell_renders_data_shape_attribute(self, client: Client) -> None:
-        """A RegionDayRating with am/pm set renders data-shape="time-split"."""
+    def test_equal_am_pm_draws_one_level(self, client: Client) -> None:
+        """An AM/PM pair at one level is a one-level day, not a split."""
         region = MicroRegionFactory.create()
         today = datetime.date(2025, 11, 5)
         bulletin = BulletinFactory.create(
@@ -478,11 +508,12 @@ class TestSeasonPartialTimeSplit:
             )
 
         assert response.status_code == 200
-        assert b'data-shape="time-split"' in response.content
+        cell = response.content.decode().split('data-date="2025-11-04"')[1]
+        assert cell.split(">")[0].count('data-state="moderate"') == 1
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_time_split_cell_tooltip_names_both_periods(self, client: Client) -> None:
-        """The tooltip for a time-split cell mentions both AM and PM."""
+        """An AM/PM split day names both levels, the peak second."""
         region = MicroRegionFactory.create()
         today = datetime.date(2025, 11, 5)
         bulletin = BulletinFactory.create(
@@ -508,14 +539,15 @@ class TestSeasonPartialTimeSplit:
             )
 
         assert response.status_code == 200
-        content = response.content.decode()
-        # Both AM and PM rating names must appear in the title/aria-label.
-        assert "AM" in content
-        assert "PM" in content
+        cell = response.content.decode().split('data-date="2025-11-04"')[1]
+        cell = cell.split(">")[0]
+        assert 'data-state="split"' in cell
+        assert 'data-lo="moderate" data-hi="considerable"' in cell
+        assert 'aria-label="4 Nov 2025 · Moderate and Considerable"' in cell
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_uniform_cell_does_not_render_data_shape(self, client: Client) -> None:
-        """A uniform (non-split) day does not carry data-shape="time-split"."""
+    def test_uniform_cell_is_not_split(self, client: Client) -> None:
+        """A uniform (non-split) day draws its one level."""
         region = MicroRegionFactory.create()
         today = datetime.date(2025, 11, 5)
         bulletin = BulletinFactory.create(
@@ -540,4 +572,5 @@ class TestSeasonPartialTimeSplit:
             )
 
         assert response.status_code == 200
-        assert b'data-shape="time-split"' not in response.content
+        cell = response.content.decode().split('data-date="2025-11-04"')[1]
+        assert 'data-state="considerable"' in cell.split(">")[0]

@@ -40,6 +40,18 @@ SNOW-1153 — the season summary carries no season-wide peak.
 
 SNOW-1128 — month labels come from Django's translated month names, in the
 active language.
+
+SNOW-1158 — the month-shaped view (build_season_months, season_ring_date):
+  - Every month in the span drawn in full: 30/31-day months, February's 28
+    and a leap year's 29. The span runs from the season start through
+    April, past it only to the last month with a bulletin, never beyond
+    tomorrow's month.
+  - An in-progress season draws its days after today as "future".
+  - The ring: today in season, the first High day of a finished season, none
+    when the season never reached High, and only where asked.
+  - Two-level days (min/max, AM/PM, ALBINA bands) draw as "split", lower
+    level left and the peak right; data-level stays the peak.
+  - season_header's four-digit name and level keys; SeasonSummary.key_counts.
 """
 
 from __future__ import annotations
@@ -54,11 +66,17 @@ from django.utils import translation
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.public.season_calendar import (
+    SEASON_AXIS,
+    SEASON_LEVEL_KEYS,
+    SeasonCell,
+    SeasonGrid,
     SeasonSummary,
     SeasonWindow,
     build_season_grid,
+    build_season_months,
     build_season_ribbon,
     season_header,
+    season_ring_date,
     season_window,
     summarise_season,
 )
@@ -911,3 +929,364 @@ class TestWindowedSeasonGrid:
         """
         names = [field.name for field in dataclasses.fields(SeasonSummary)]
         assert not [name for name in names if name.startswith("peak")]
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1158 — the month-shaped season calendar
+# ---------------------------------------------------------------------------
+
+
+def _cell(
+    date: datetime.date,
+    level: str | None,
+    low: str | None = None,
+    **extra: Any,
+) -> SeasonCell:
+    """Build one synthetic cell: ``level`` None is a day with no bulletin."""
+    if level is None:
+        return SeasonCell(
+            date=date,
+            min_rating_key="no_rating",
+            max_rating_key="no_rating",
+            subdivision="",
+            has_bulletin=False,
+        )
+    return SeasonCell(
+        date=date,
+        min_rating_key=low or level,
+        max_rating_key=level,
+        subdivision="",
+        has_bulletin=True,
+        **extra,
+    )
+
+
+def _grid(cells: list[SeasonCell]) -> SeasonGrid:
+    """Wrap cells in a grid; build_season_months reads only the cells."""
+    return SeasonGrid(
+        columns=[(cell,) for cell in cells],
+        month_labels=[""] * len(cells),
+        season_label="25/26",
+    )
+
+
+_WINDOW = SeasonWindow(datetime.date(2025, 11, 1), datetime.date(2026, 4, 30), "25/26")
+
+
+class TestSeasonMonths:
+    """build_season_months reshapes a grid into months × days (SNOW-1158)."""
+
+    def test_window_draws_every_month_in_full(self) -> None:
+        """Nov–Apr, each with its own number of days."""
+        grid = _grid([_cell(datetime.date(2025, 12, 1), "low")])
+        months = build_season_months(grid, datetime.date(2026, 6, 1), window=_WINDOW)
+        assert [m.label for m in months.months] == [
+            "Nov",
+            "Dec",
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+        ]
+        assert [len(m.days) for m in months.months] == [30, 31, 31, 28, 31, 30]
+        assert months.months[3].days[-1].date == datetime.date(2026, 2, 28)
+        assert months.season_label == "2025/26"
+        assert months.axis == SEASON_AXIS
+
+    def test_leap_year_february_has_29_days(self) -> None:
+        """February 2028 is drawn with its 29th."""
+        window = SeasonWindow(
+            datetime.date(2027, 11, 1), datetime.date(2028, 4, 30), "27/28"
+        )
+        grid = _grid([_cell(datetime.date(2028, 2, 29), "high")])
+        months = build_season_months(grid, datetime.date(2028, 6, 1), window=window)
+        february = months.months[3]
+        assert len(february.days) == 29
+        assert february.days[28].state == "high"
+        assert months.season_label == "2027/28"
+
+    def test_axis_labels_one_and_every_fifth_day(self) -> None:
+        """1, 5, 10 … 30 over 31 slots."""
+        assert len(SEASON_AXIS) == 31
+        assert [label for label in SEASON_AXIS if label] == [
+            "1",
+            "5",
+            "10",
+            "15",
+            "20",
+            "25",
+            "30",
+        ]
+
+    def test_in_progress_season_draws_future_days_faint(self) -> None:
+        """After today: "future"; on or before it, a missing bulletin is "none"."""
+        today = datetime.date(2026, 1, 14)
+        grid = _grid(
+            [
+                _cell(datetime.date(2026, 1, 13), None),
+                _cell(datetime.date(2026, 1, 14), "considerable"),
+                # Tomorrow, not yet published.
+                _cell(datetime.date(2026, 1, 15), None),
+            ]
+        )
+        months = build_season_months(grid, today, window=_WINDOW)
+        january = {d.date.day: d for d in months.months[2].days}
+        assert january[13].state == "none"
+        assert january[14].state == "considerable"
+        assert january[15].state == "future"
+        assert months.months[5].days[-1].state == "future"
+        # A day of the window before the grid's data is "none", not "future".
+        assert months.months[0].days[0].state == "none"
+
+    def test_published_tomorrow_draws_its_level(self) -> None:
+        """A bulletin already out for tomorrow draws, not "future"."""
+        today = datetime.date(2026, 1, 14)
+        grid = _grid([_cell(datetime.date(2026, 1, 15), "moderate")])
+        months = build_season_months(grid, today, window=_WINDOW)
+        assert months.months[2].days[14].state == "moderate"
+
+    def test_without_a_window_the_span_is_the_season(self) -> None:
+        """The bulletin page's grid: its first month through April."""
+        grid = _grid(
+            [
+                _cell(datetime.date(2025, 11, 20), "low"),
+                _cell(datetime.date(2026, 1, 3), "low"),
+            ]
+        )
+        months = build_season_months(grid, datetime.date(2026, 1, 2))
+        assert [m.first.month for m in months.months] == [11, 12, 1, 2, 3, 4]
+        assert months.months[0].days[0].state == "none"
+        assert months.months[-1].days[-1].state == "future"
+        assert months.ring_date is None
+        assert not any(d.is_ring for m in months.months for d in m.days)
+
+    def test_out_of_season_the_summer_is_not_drawn(self) -> None:
+        """October, grid running to tomorrow: Nov–Apr only, six rows."""
+        today = datetime.date(2026, 10, 20)
+        cells = [_cell(datetime.date(2025, 11, 1), "low")]
+        cells += [
+            _cell(datetime.date(2026, 5, 1) + datetime.timedelta(days=n), None)
+            for n in range(174)
+        ]
+        months = build_season_months(_grid(cells), today)
+        assert [m.first.month for m in months.months] == [11, 12, 1, 2, 3, 4]
+
+    def test_a_may_bulletin_extends_to_may_only(self) -> None:
+        """A bulletin after April adds its month and stops there."""
+        today = datetime.date(2026, 10, 20)
+        cells = [
+            _cell(datetime.date(2025, 11, 1), "low"),
+            _cell(datetime.date(2026, 5, 4), "moderate"),
+            _cell(datetime.date(2026, 7, 1), None),
+        ]
+        months = build_season_months(_grid(cells), today)
+        assert [m.first.month for m in months.months][-2:] == [4, 5]
+        assert months.months[-1].days[3].state == "moderate"
+        # The window gives the same months on the resort page.
+        windowed = build_season_months(_grid(cells), today, window=_WINDOW)
+        assert [m.first for m in windowed.months] == [m.first for m in months.months]
+
+    def test_extension_never_passes_tomorrow(self) -> None:
+        """Past April the span stops at tomorrow's month."""
+        today = datetime.date(2026, 5, 10)
+        cells = [
+            _cell(datetime.date(2025, 11, 1), "low"),
+            # Not something ingest produces; the cap holds regardless.
+            _cell(datetime.date(2026, 6, 20), "low"),
+        ]
+        months = build_season_months(_grid(cells), today)
+        assert months.months[-1].first == datetime.date(2026, 5, 1)
+
+    def test_empty_grid_without_window_is_falsy(self) -> None:
+        """Nothing to draw → a falsy view."""
+        empty = SeasonGrid(columns=[], month_labels=[], season_label="25/26")
+        assert not build_season_months(empty, datetime.date(2026, 1, 1))
+
+    def test_ring_marks_the_given_day_only(self) -> None:
+        """Exactly one day carries is_ring."""
+        today = datetime.date(2026, 1, 14)
+        grid = _grid([_cell(today, "considerable")])
+        months = build_season_months(grid, today, window=_WINDOW, ring_date=today)
+        ringed = [d.date for m in months.months for d in m.days if d.is_ring]
+        assert ringed == [today]
+        assert months.ring_date == today
+
+
+class TestSeasonRingDate:
+    """season_ring_date — today in season, the first High day after it."""
+
+    grid = _grid(
+        [
+            _cell(datetime.date(2026, 1, 3), "considerable"),
+            _cell(datetime.date(2026, 1, 9), "high"),
+            _cell(datetime.date(2026, 2, 1), "very_high"),
+        ]
+    )
+
+    def test_in_season_rings_today(self) -> None:
+        """A running season rings today, High days or not."""
+        today = datetime.date(2026, 3, 2)
+        assert season_ring_date(self.grid, _WINDOW, today) == today
+
+    def test_finished_season_rings_the_first_high_day(self) -> None:
+        """After 30 April: the first day at High or above."""
+        assert season_ring_date(
+            self.grid, _WINDOW, datetime.date(2026, 10, 19)
+        ) == datetime.date(2026, 1, 9)
+
+    def test_very_high_counts_as_high(self) -> None:
+        """A season whose first day above Considerable was Very high rings it."""
+        grid = _grid([_cell(datetime.date(2026, 2, 1), "very_high")])
+        assert season_ring_date(
+            grid, _WINDOW, datetime.date(2026, 10, 19)
+        ) == datetime.date(2026, 2, 1)
+
+    def test_finished_season_without_high_rings_nothing(self) -> None:
+        """No High day → no ring."""
+        grid = _grid([_cell(datetime.date(2026, 1, 3), "considerable")])
+        assert season_ring_date(grid, _WINDOW, datetime.date(2026, 10, 19)) is None
+
+
+class TestSeasonMonthsSplitDays:
+    """Two levels in one day draw as one split cell (SNOW-1158)."""
+
+    def _day(self, cell: SeasonCell) -> Any:
+        """Return the MonthDay for ``cell``'s date."""
+        months = build_season_months(
+            _grid([cell]), datetime.date(2026, 6, 1), window=_WINDOW
+        )
+        return next(d for m in months.months for d in m.days if d.date == cell.date)
+
+    def test_afternoon_rise_is_split_with_the_peak_right(self) -> None:
+        """min moderate / max considerable → lo moderate, hi considerable."""
+        day = self._day(_cell(datetime.date(2026, 1, 5), "considerable", "moderate"))
+        assert day.state == "split"
+        assert (day.low_key, day.high_key) == ("moderate", "considerable")
+        # The compressed-views rule: the day reads as its peak.
+        assert day.level == "considerable"
+
+    def test_am_higher_than_pm_is_split(self) -> None:
+        """A falling day (am above pm) is still two levels, peak right."""
+        day = self._day(
+            _cell(
+                datetime.date(2026, 1, 5),
+                "considerable",
+                am_rating_key="considerable",
+                pm_rating_key="moderate",
+            )
+        )
+        assert day.state == "split"
+        assert (day.low_key, day.high_key) == ("moderate", "considerable")
+
+    def test_albina_bands_split_lowest_to_peak(self) -> None:
+        """Four bands draw the lowest and the peak."""
+        bands = [
+            {"band_id": "a", "rating_key": "considerable", "time_period": "earlier"},
+            {"band_id": "b", "rating_key": "low", "time_period": "earlier"},
+            {"band_id": "c", "rating_key": "high", "time_period": "later"},
+            {"band_id": "d", "rating_key": "moderate", "time_period": "later"},
+        ]
+        day = self._day(
+            _cell(
+                datetime.date(2026, 1, 5), "high", "low", source="ALBINA", bands=bands
+            )
+        )
+        assert (day.state, day.low_key, day.high_key) == ("split", "low", "high")
+
+    def test_equal_levels_are_not_split(self) -> None:
+        """AM = PM = max is one level."""
+        day = self._day(
+            _cell(
+                datetime.date(2026, 1, 5),
+                "moderate",
+                am_rating_key="moderate",
+                pm_rating_key="moderate",
+            )
+        )
+        assert day.state == "moderate"
+        assert (day.low_key, day.high_key) == ("", "")
+
+    def test_a_level_above_the_peak_never_reaches_the_drawing(self) -> None:
+        """The peak is max_rating_key; a higher AM never replaces it."""
+        day = self._day(
+            _cell(
+                datetime.date(2026, 1, 5),
+                "moderate",
+                am_rating_key="high",
+                pm_rating_key="moderate",
+            )
+        )
+        assert day.state == "moderate"
+        assert day.level == "moderate"
+
+    def test_no_bulletin_day_is_never_split(self) -> None:
+        """A day with no bulletin draws "none" with a no_rating level."""
+        day = self._day(_cell(datetime.date(2026, 1, 5), None))
+        assert (day.state, day.level, day.has_bulletin) == ("none", "no_rating", False)
+
+
+class TestSeasonCalendarKeyAndHeader:
+    """The key's levels and counts, and season_header's additions (SNOW-1158)."""
+
+    def test_key_counts_low_to_high_with_zeros(self) -> None:
+        """Low … High always, a zero included; no Very high when none occurred."""
+        summary = summarise_season(
+            _grid(
+                [
+                    _cell(datetime.date(2026, 1, 1), "low"),
+                    _cell(datetime.date(2026, 1, 2), "considerable"),
+                    _cell(datetime.date(2026, 1, 3), "considerable"),
+                ]
+            )
+        )
+        assert summary.key_counts == [
+            ("low", 1),
+            ("moderate", 0),
+            ("considerable", 2),
+            ("high", 0),
+        ]
+
+    def test_key_counts_add_very_high_when_it_occurred(self) -> None:
+        """A Very high day puts the fifth level in the key."""
+        summary = summarise_season(
+            _grid([_cell(datetime.date(2026, 1, 1), "very_high")])
+        )
+        assert summary.key_counts[-1] == ("very_high", 1)
+
+    @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+    def test_season_header_names_the_season_and_the_levels(self) -> None:
+        """The sheet's eyebrow name and the readout's level keys."""
+        result = season_header(datetime.date(2026, 3, 15))
+        assert result is not None
+        assert result["season_name"] == "2025/26"
+        assert result["levels"] == SEASON_LEVEL_KEYS
+        assert SEASON_LEVEL_KEYS[0] == "no_rating"
+
+
+@pytest.mark.django_db
+class TestSeasonMonthsFromTheDatabase:
+    """build_season_months over a real build_season_grid (SNOW-1158)."""
+
+    @override_settings(SEASON_START_DATE=datetime.date(2024, 11, 1))
+    def test_resort_window_mid_season(self) -> None:
+        """Rated days draw their level, today is ringed, tomorrow on is faint."""
+        region = MicroRegionFactory.create()
+        bulletin = BulletinFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 1, 5),
+            min_rating="moderate",
+            max_rating="considerable",
+            source_bulletin=bulletin,
+        )
+        today = datetime.date(2026, 1, 10)
+        window = season_window(today)
+        grid = build_season_grid(region, today, window=window)
+        months = build_season_months(
+            grid, today, window=window, ring_date=season_ring_date(grid, window, today)
+        )
+        january = months.months[2].days
+        assert january[4].state == "split"
+        assert january[9].is_ring
+        assert january[10].state == "future"
+        assert january[8].state == "none"
