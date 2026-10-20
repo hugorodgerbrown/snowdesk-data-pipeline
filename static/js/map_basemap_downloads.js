@@ -1690,7 +1690,15 @@ async function _nextCustomAreaOrdinal() {
 async function _appendCustomArea(area) {
   const existing = await _readCustomAreas();
   const next = existing.filter((entry) => !entry || entry.id !== area.id);
-  next.push(area);
+  // SNOW-1142: every custom-area writer — a framed area, a drop zone, a
+  // restore — reaches the record through here, so this is the one place
+  // the principal is stamped: the signed-in account's id ('' anonymous)
+  // for a new record, the predecessor's stamp for one that replaces it.
+  const previous = existing.find((entry) => entry && entry.id === area.id);
+  const sync = window.pwaDownloadsSync;
+  const stamped =
+    sync && typeof sync.stampPrincipal === 'function' ? sync.stampPrincipal(area, previous) : area;
+  next.push(stamped);
   await _writeCustomAreas(next);
   notifyDownloadsChanged();
   // SNOW-749: and record the DEFINITION against the account, from the same
@@ -1706,7 +1714,7 @@ async function _appendCustomArea(area) {
   // `basemapDownloadedAreas`), in the language active then — persisting it
   // to the account would freeze one device's language into a row every
   // other device reads.
-  await window.pwaDownloadsSync?.push({
+  await sync?.push({
     areaId: area.id,
     bbox: area.bbox,
     basemapKey: area.basemapKey,
@@ -1716,6 +1724,8 @@ async function _appendCustomArea(area) {
     terrain: !!area.terrain,
     // SNOW-1136: and its kind, so a drop zone is restored as a drop zone.
     type: area.type,
+    // SNOW-1142: `push` records only the signed-in account's own area.
+    principal: stamped.principal,
   });
 }
 
@@ -1747,7 +1757,18 @@ async function renameCustomArea(areaId, name) {
   // sheet renders from the local record, so a name that did not stick here
   // must not be claimed anywhere else. A no-op with the flag off or the
   // visitor signed out.
-  if (ok) await window.pwaDownloadsSync?.rename(areaId, name);
+  //
+  // SNOW-1142: and only for the signed-in account's own area. Renaming
+  // another account's area held on this browser renames it here alone; a
+  // legacy or anonymous one takes the new name to the account when
+  // `adopt()` claims it.
+  const sync = window.pwaDownloadsSync;
+  const entry = existing.find((candidate) => candidate && candidate.id === areaId);
+  const own =
+    !sync ||
+    typeof sync.ownership !== 'function' ||
+    sync.ownership(entry && entry.principal, sync.principal()) === 'own';
+  if (ok && own) await sync?.rename(areaId, name);
   return ok;
 }
 

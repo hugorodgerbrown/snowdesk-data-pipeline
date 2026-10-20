@@ -534,6 +534,27 @@ describe("an unrenamed custom area's default display name (SNOW-635 review)", ()
   });
 });
 
+describe('the reader carries each area\'s principal (SNOW-1142)', () => {
+  it('passes the stamp through, null for a legacy record', async () => {
+    installDbStub({
+      'basemap.regions': [
+        { region_id: 'CH-4115', name: 'Aletsch', bytes: MB, principal: 'u-2' },
+        { region_id: 'CH-2101', name: 'Verbier', bytes: MB },
+      ],
+      'basemap.customAreas': [
+        { id: 'custom-a1', ordinal: 1, bbox: [1, 2, 3, 4], bytes: MB, principal: '' },
+      ],
+    });
+
+    const areas = await window.pwaBasemapDownloads.areas();
+    const byId = Object.fromEntries(areas.map((area) => [area.id, area.principal]));
+
+    expect(byId['region-CH-4115']).toBe('u-2');
+    expect(byId['region-CH-2101']).toBeNull();
+    expect(byId['custom-a1']).toBe('');
+  });
+});
+
 describe('renaming a custom area', () => {
   it('writes the name back onto the matching entry', async () => {
     const rows = installDbStub({
@@ -580,6 +601,46 @@ describe('renaming a custom area', () => {
     const ok = await window.pwaBasemapDownloads.rename('custom-ghost', 'Nope');
 
     expect(ok).toBe(false);
+  });
+
+  describe('on a shared browser (SNOW-1142)', () => {
+    // A rename lands on this device whoever owns the area; it reaches the
+    // ACCOUNT only for the signed-in account's own.
+    const box = [1, 2, 3, 4];
+
+    beforeEach(() => {
+      window.pwaDownloadsSync = {
+        ownership: (recordPrincipal, signedIn) =>
+          recordPrincipal === signedIn ? 'own' : recordPrincipal ? 'foreign' : 'claim',
+        principal: () => 'u-1',
+        rename: vi.fn(async () => true),
+      };
+    });
+
+    afterEach(() => {
+      delete window.pwaDownloadsSync;
+    });
+
+    it('renames the account row of this account\'s own area', async () => {
+      installDbStub({
+        'basemap.customAreas': [{ id: 'custom-a1', ordinal: 1, bbox: box, principal: 'u-1' }],
+      });
+
+      await window.pwaBasemapDownloads.rename('custom-a1', 'Home run');
+
+      expect(window.pwaDownloadsSync.rename).toHaveBeenCalledWith('custom-a1', 'Home run');
+    });
+
+    it('renames another account\'s area here only', async () => {
+      const rows = installDbStub({
+        'basemap.customAreas': [{ id: 'custom-a1', ordinal: 1, bbox: box, principal: 'u-2' }],
+      });
+
+      await expect(window.pwaBasemapDownloads.rename('custom-a1', 'Mine now')).resolves.toBe(true);
+
+      expect(rows.get('basemap.customAreas')[0].name).toBe('Mine now');
+      expect(window.pwaDownloadsSync.rename).not.toHaveBeenCalled();
+    });
   });
 });
 

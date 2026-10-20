@@ -333,9 +333,13 @@
       const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
       const existing = Array.isArray(row && row.value) ? row.value : [];
       const next = existing.filter((entry) => entry && entry.region_id !== regionId);
+      // SNOW-1142: the record this one replaces, if the region is already
+      // held — a re-download keeps its predecessor's principal stamp
+      // rather than taking the signed-in account's.
+      const previous = existing.find((entry) => entry && entry.region_id === regionId);
       const feature = FEATURE_BY_REGION_ID[regionId];
       const name = (feature && feature.properties && feature.properties.name) || regionId;
-      next.push({
+      const record = {
         region_id: regionId,
         band: band,
         z: z,
@@ -383,7 +387,16 @@
         ...(terrain ? { terrain: true } : {}),
         bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
-      });
+      };
+      // SNOW-1142: stamped with the account it was downloaded under ('' for
+      // an anonymous download) — or, for a re-download, with whatever its
+      // predecessor carried. See `pwaDownloadsSync.stampPrincipal`.
+      const sync = window.pwaDownloadsSync;
+      const stamped =
+        sync && typeof sync.stampPrincipal === 'function'
+          ? sync.stampPrincipal(record, previous)
+          : record;
+      next.push(stamped);
       await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
       // SNOW-1134: see `notifyDownloadsChanged`.
       notifyDownloadsChanged();
@@ -402,12 +415,17 @@
       // anywhere outside that function, and it is the key the account row
       // is stored under.
       const core = self.pwaBasemapDownloadCore;
-      await window.pwaDownloadsSync?.push({
+      //
+      // SNOW-1142: the stamp travels with it, and `push` declines unless
+      // it is the signed-in account's own — so re-downloading a region
+      // another account downloaded on this browser never records it here.
+      await sync?.push({
         areaId: core ? core.areaIdForRegion(regionId) : '',
         regionId: regionId,
         basemapKey: basemapKey,
         name: name,
         terrain: !!terrain,
+        principal: stamped.principal,
       });
     } catch (err) {
       // Still non-fatal — see the docstring — but no longer silent
