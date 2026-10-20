@@ -1618,7 +1618,14 @@
     return days;
   }
 
-  async function fetchAreaContent(root, areaId, report) {
+  // SNOW-1141 review: `shell` is optional run-wide state, `{ok?: boolean}`.
+  // `?sync=all` passes one object to every area so the map shell is warmed
+  // at most ONCE per run: the report it holds was taken before the run and
+  // keeps saying the app cannot open even after the first area warms it,
+  // so without this every later area refetched `/map/` over the very
+  // connection the reader is about to lose. The first attempt's outcome is
+  // reused, failed or not.
+  async function fetchAreaContent(root, areaId, report, shell) {
     var core = self.pwaBasemapDownloadCore;
     var warm = self.pwaWarmCache;
     var data = (root && root.dataset) || {};
@@ -1642,8 +1649,13 @@
     // this is asking for the area to work.
     var shellOk = true;
     if (!appOpens(report)) {
-      var shell = await warm(['/map/']);
-      shellOk = !!(shell && shell.ok > 0 && shell.failed === 0);
+      if (shell && typeof shell.ok === 'boolean') {
+        shellOk = shell.ok;
+      } else {
+        var warmed = await warm(['/map/']);
+        shellOk = !!(warmed && warmed.ok > 0 && warmed.failed === 0);
+        if (shell) shell.ok = shellOk;
+      }
     }
 
     // Step 2: the four overlay feeds, whole and unfiltered — the boundary
@@ -2910,6 +2922,7 @@
         if (id) fetchable[id] = true;
       }
       var report = lastReport;
+      var shell = {};
       running = true;
       var result;
       try {
@@ -2926,7 +2939,7 @@
           areas: areas,
           syncOne: async function (areaId) {
             if (!Object.prototype.hasOwnProperty.call(fetchable, areaId)) return 'partial';
-            return (await fetchAreaContent(root, areaId, report)) ? 'ready' : 'partial';
+            return (await fetchAreaContent(root, areaId, report, shell)) ? 'ready' : 'partial';
           },
           onStep: function (step) {
             say(ready.progressText(step, t));

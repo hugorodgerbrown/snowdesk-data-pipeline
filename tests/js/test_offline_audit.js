@@ -1988,6 +1988,43 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
         expect(window.location.search).toBe('');
       });
 
+      it('warms the missing map shell once for the whole run, not once per area', async () => {
+        // SNOW-1141 review: the report the run holds was taken before it,
+        // so it keeps saying the app cannot open after the first area has
+        // warmed `/map/` — and each later area fetched it again.
+        installCachesStub({
+          [SHELL]: [],
+          'snowdesk-basemap-pinned-region-CH-4115': [
+            { url: 'https://t/style.json' },
+            { url: 'https://t/14/8515/5822.pbf' },
+          ],
+          'snowdesk-basemap-pinned-region-CH-4116': [
+            { url: 'https://t/style.json' },
+            { url: 'https://t/14/8515/5822.pbf' },
+          ],
+        });
+        await seedMeta({
+          'basemap.regions': [
+            record({ contentAt: '2026-09-01T10:00:00.000Z' }),
+            record({ region_id: 'CH-4116', name: 'Sion', contentAt: '2026-09-01T10:00:00.000Z' }),
+          ],
+        });
+        window.pwaMutationQueue = { drain: vi.fn(async () => {}) };
+        window.pwaWarmCache.mockImplementation(async (urls) => {
+          warmed.push(urls);
+          return { ok: urls.length, failed: 0, bytes: 1024 };
+        });
+        window.history.replaceState(null, '', '/offline/?sync=all');
+        document.body.innerHTML = PANEL;
+        audit.init();
+
+        const said = await statusOnceSettled(/ready/i);
+
+        const shellWarms = warmed.filter((urls) => urls.length === 1 && urls[0] === '/map/');
+        expect(shellWarms).toHaveLength(1);
+        expect(said).toBe('Ready — 2 areas up to date');
+      });
+
       it('names the edits the drain left behind, after re-checking every area', async () => {
         await arriveWithSync('all', { contentAt: '2026-09-01T10:00:00.000Z' });
         // Queued before the drain, and still there after it: the stub
