@@ -45,6 +45,9 @@
   // to stay still.
   var TAP_SLOP_SQUARED = 64;
 
+  // A ringed day of the calendar — never the key's ringed swatch.
+  var DAY_RING = '.season-day-ring:not(.season-key-swatch)';
+
   var sheet = document.querySelector('[data-season-sheet]');
   var trigger = document.querySelector('[data-season-trigger]');
   if (!sheet || !trigger) return;
@@ -56,7 +59,7 @@
    */
   function scrollToSelected() {
     var scroller = sheet.querySelector('[data-season-scroll]');
-    var target = sheet.querySelector('.season-day-ring');
+    var target = sheet.querySelector(DAY_RING);
     if (scroller && target) {
       scroller.scrollLeft = Math.max(
         0,
@@ -113,7 +116,8 @@
    * @returns {void}
    */
   function selectDay(grid, cell) {
-    grid.querySelectorAll('.season-day-ring').forEach(function (el) {
+    // The key's "Selected day" swatch wears the ring too; leave it on.
+    grid.querySelectorAll(DAY_RING).forEach(function (el) {
       el.classList.remove('season-day-ring');
     });
     cell.classList.add('season-day-ring');

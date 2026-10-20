@@ -129,9 +129,11 @@
                     data-readout-link
                     hidden
                 >
-                    {% blocktrans with day=page_date|date:"j F" trimmed %}
-                        Read the bulletin for <span data-readout-day>{{ day }}</span>
-                    {% endblocktrans %}
+                    <span>
+                        {% blocktrans with day=page_date|date:"j F" trimmed %}
+                            Read the bulletin for <span data-readout-day>{{ day }}</span>
+                        {% endblocktrans %}
+                    </span>
                     <span aria-hidden="true">→</span>
                 </a>
             </div>

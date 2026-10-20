@@ -372,7 +372,8 @@ describe('the post-swap handler', () => {
     beforeEach(() => {
       swap(
         day('2026-01-15', 'considerable', 'Thursday 15 January 2026', '15 January') +
-          day('2026-01-09', 'high', 'Friday 9 January 2026', '9 January'),
+          day('2026-01-09', 'high', 'Friday 9 January 2026', '9 January') +
+          '<span class="season-day season-key-swatch season-day-ring" data-state="high"></span>',
       );
     });
 
@@ -395,9 +396,13 @@ describe('the post-swap handler', () => {
       const event = clickDay('2026-01-09');
 
       expect(event.defaultPrevented).toBe(true);
-      const ringed = grid.querySelectorAll('.season-day-ring');
+      const ringed = grid.querySelectorAll('[data-date].season-day-ring');
       expect(ringed).toHaveLength(1);
       expect(ringed[0].getAttribute('data-date')).toBe('2026-01-09');
+      // The key's "Selected day" swatch keeps its ring.
+      expect(
+        grid.querySelector('.season-key-swatch').classList.contains('season-day-ring'),
+      ).toBe(true);
     });
 
     it("moves the readout to the day: level, dates and the day's own link", () => {
