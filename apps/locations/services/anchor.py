@@ -51,8 +51,10 @@ def anchor_location(
     The match is deliberately narrow. Only an **anonymous** location is
     reused — a curated, named place may legitimately sit at the same
     coordinate, and rebinding onto it would put that name where it does not
-    belong and give a curated row a second owner. Oldest id wins, so the row
-    with the longest weather history survives.
+    belong and give a curated row a second owner. Nor is an anonymous row a
+    user's favourite, field observation or trip minted (SNOW-1144) — that is
+    their data, not an anchor. Oldest id wins, so the row with the longest
+    weather history survives.
 
     Args:
         latitude: The anchor's latitude.
@@ -87,9 +89,22 @@ def anchor_location(
     # coordinate at one instant. Its cost is a single duplicate anonymous
     # row, which the oldest-id-wins read below makes invisible to every
     # subsequent call and which ``prune_orphan_locations`` collects.
+    #
+    # A row a user's own record minted — a favourite, a field observation, a
+    # trip's meeting point — is never adopted (SNOW-1144). Those are user
+    # data, deleted with their record, and ``create_resort_favourite`` mints
+    # one at exactly a resort's pin: adopting it would publish a private row
+    # as a resort's pin, let it outlive the favourite, and let this function
+    # overwrite its elevation below.
     existing = (
         Location.objects.anonymous()
-        .filter(latitude=latitude, longitude=longitude)
+        .filter(
+            latitude=latitude,
+            longitude=longitude,
+            favourites__isnull=True,
+            field_observations__isnull=True,
+            trips__isnull=True,
+        )
         .order_by("id")
         .first()
     )

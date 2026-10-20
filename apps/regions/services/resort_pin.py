@@ -142,6 +142,25 @@ def _move_in_place(
     )
 
 
+def _anchor(resort: Resort, latitude: float, longitude: float) -> Location:
+    """Return the anonymous Location to pin a resort at, via ``anchor_location``.
+
+    Args:
+        resort: The resort being pinned — its ``base_elevation_m`` is the
+            height, as ``link_resort_locations`` always gave it.
+        latitude: The pin's latitude.
+        longitude: The pin's longitude.
+
+    Returns:
+        The reused or newly created Location.
+
+    """
+    elevation = (
+        float(resort.base_elevation_m) if resort.base_elevation_m is not None else None
+    )
+    return anchor_location(latitude, longitude, elevation)
+
+
 @transaction.atomic
 def set_resort_pin(
     resort: Resort, latitude: float | None, longitude: float | None
@@ -190,13 +209,7 @@ def set_resort_pin(
                 resort.pk,
             )
         else:
-            location = anchor_location(
-                latitude,
-                longitude,
-                float(resort.base_elevation_m)
-                if resort.base_elevation_m is not None
-                else None,
-            )
+            location = _anchor(resort, latitude, longitude)
 
     changed = (
         resort.latitude != latitude

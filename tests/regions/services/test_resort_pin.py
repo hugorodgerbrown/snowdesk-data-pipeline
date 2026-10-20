@@ -68,6 +68,21 @@ class TestPlacingAPin:
         assert set_resort_pin(resort, 46.2, 7.3) == existing
         assert Location.objects.count() == 1
 
+    def test_never_adopts_a_favourites_location_at_the_point(self) -> None:
+        """A user's resort favourite mints a row at the pin; it stays theirs."""
+        favourite = FavouriteFactory.create(latitude=46.2, longitude=7.3)
+        favourite_location = favourite.location
+        assert favourite_location is not None
+        favourite_location.latitude, favourite_location.longitude = 46.2, 7.3
+        favourite_location.elevation_m = 1234.0
+        favourite_location.save()
+        resort = ResortFactory.create(base_elevation_m=1500)
+
+        location = set_resort_pin(resort, 46.2, 7.3)
+
+        assert location is not None and location.pk != favourite_location.pk
+        assert Location.objects.get(pk=favourite_location.pk).elevation_m == 1234.0
+
     def test_the_pin_is_in_the_fetched_estate(self) -> None:
         """A pinned resort's Location is public and active, so weather is fetched."""
         resort = ResortFactory.create()
