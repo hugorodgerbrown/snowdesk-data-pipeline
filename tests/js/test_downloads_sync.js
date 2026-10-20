@@ -386,6 +386,20 @@ describe('adopt', () => {
     expect(window.pwaMutationQueue.enqueue).toHaveBeenCalledTimes(2);
   });
 
+  it('records the stored name, never the localised default (SNOW-1133)', async () => {
+    // An unrenamed custom area's `name` is the reader's in-memory
+    // "Custom area N"; posting it froze one language into the account.
+    installDownloads([{ ...AREAS[1], name: 'Custom area 2', storedName: '' }]);
+
+    await sync.adopt();
+    expect(bodyOf(window.pwaMutationQueue.enqueue).name).toBe('');
+  });
+
+  it('names a region by its name, which has no stored form', async () => {
+    expect(sync.accountName({ name: 'Verbier' })).toBe('Verbier');
+    expect(sync.accountName({ name: 'Custom area 1', storedName: 'Ridge' })).toBe('Ridge');
+  });
+
   it('is a no-op once everything is already synced', async () => {
     // It runs on every authenticated load. A version that re-pushed each
     // time would write the whole list to the queue on every page view.

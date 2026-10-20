@@ -425,6 +425,23 @@
    *   everything was already synced, which is the common case on every
    *   load after the first.
    */
+  /**
+   * The name to record on the account for a held area.
+   *
+   * SNOW-1133: a custom area's display `name` is filled in memory with the
+   * localised "Custom area N" when it was never renamed. Posting that froze
+   * one language into the account, so the STORED name is sent instead —
+   * '' for an unrenamed area. A region carries no `storedName` and its
+   * name is its real one.
+   *
+   * @param {{name?: string, storedName?: string}} area
+   * @returns {string}
+   */
+  function accountName(area) {
+    if (!area) return '';
+    return typeof area.storedName === 'string' ? area.storedName : area.name || '';
+  }
+
   async function adopt() {
     if (!isEnabled()) return 0;
     var areas;
@@ -469,7 +486,7 @@
         regionId: isCustom ? '' : String(area.id).replace(/^region-/, ''),
         bbox: area.bbox,
         basemapKey: area.basemapKey,
-        name: area.name,
+        name: accountName(area),
         terrain: !!area.terrain,
       });
       if (ok) pushed += 1;
@@ -478,6 +495,7 @@
   }
 
   self.pwaDownloadsSync = Object.freeze({
+    accountName: accountName,
     isEnabled: isEnabled,
     push: push,
     rename: rename,
