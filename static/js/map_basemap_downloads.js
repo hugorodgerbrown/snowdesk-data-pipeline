@@ -1688,18 +1688,42 @@ async function _nextCustomAreaOrdinal() {
  * @returns {Promise<void>}
  */
 async function _appendCustomArea(area) {
+  // `_readCustomAreas` owns the lazy migration off the legacy single-row
+  // key, which cannot run inside the transaction below (it writes one key
+  // and deletes another) — see `_stampAreaContent` for the same pattern.
   const existing = await _readCustomAreas();
-  const next = existing.filter((entry) => !entry || entry.id !== area.id);
   // SNOW-1142: every custom-area writer — a framed area, a drop zone, a
   // restore — reaches the record through here, so this is the one place
   // the principal is stamped: the signed-in account's id ('' anonymous)
   // for a new record, the predecessor's stamp for one that replaces it.
-  const previous = existing.find((entry) => entry && entry.id === area.id);
+  //
+  // SNOW-1142 review: and the authoritative read, the stamp and the write
+  // are ONE transaction. Writing back the array read above would erase a
+  // principal another tab's `recordHeld` committed in between, leaving
+  // that area claimable by a second account.
   const sync = window.pwaDownloadsSync;
-  const stamped =
-    sync && typeof sync.stampPrincipal === 'function' ? sync.stampPrincipal(area, previous) : area;
-  next.push(stamped);
-  await _writeCustomAreas(next);
+  let stamped = area;
+  const replace = (/** @type {Array<any>} */ list) => {
+    const next = list.filter((entry) => !entry || entry.id !== area.id);
+    const previous = list.find((entry) => entry && entry.id === area.id);
+    stamped =
+      sync && typeof sync.stampPrincipal === 'function' ? sync.stampPrincipal(area, previous) : area;
+    next.push(stamped);
+    return next;
+  };
+  const key = window.pwaBasemapAreas?.CUSTOM_AREAS_KEY;
+  if (window.pwaDb && key && typeof window.pwaDb.readModifyWrite === 'function') {
+    try {
+      await window.pwaDb.readModifyWrite('meta:app', key, (row) => ({
+        key,
+        value: replace(Array.isArray(row && row.value) ? row.value : existing),
+      }));
+    } catch (_e) {
+      // Best-effort, as `_writeCustomAreas` is.
+    }
+  } else {
+    await _writeCustomAreas(replace(existing));
+  }
   notifyDownloadsChanged();
   // SNOW-749: and record the DEFINITION against the account, from the same
   // moment the device record is written so the two cannot disagree about

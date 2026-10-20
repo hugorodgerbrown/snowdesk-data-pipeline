@@ -330,13 +330,6 @@
   ) {
     if (!z || !window.pwaDb) return;
     try {
-      const row = await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY);
-      const existing = Array.isArray(row && row.value) ? row.value : [];
-      const next = existing.filter((entry) => entry && entry.region_id !== regionId);
-      // SNOW-1142: the record this one replaces, if the region is already
-      // held — a re-download keeps its predecessor's principal stamp
-      // rather than taking the signed-in account's.
-      const previous = existing.find((entry) => entry && entry.region_id === regionId);
       const feature = FEATURE_BY_REGION_ID[regionId];
       const name = (feature && feature.properties && feature.properties.name) || regionId;
       const record = {
@@ -391,13 +384,36 @@
       // SNOW-1142: stamped with the account it was downloaded under ('' for
       // an anonymous download) — or, for a re-download, with whatever its
       // predecessor carried. See `pwaDownloadsSync.stampPrincipal`.
+      //
+      // SNOW-1142 review: read, stamp and write in ONE transaction. A
+      // `get` here and a whole-array `put` later would erase a principal
+      // another tab's `recordHeld` committed in between — on this region
+      // or any other in the array — leaving it unstamped and claimable by
+      // a second account.
       const sync = window.pwaDownloadsSync;
-      const stamped =
-        sync && typeof sync.stampPrincipal === 'function'
-          ? sync.stampPrincipal(record, previous)
-          : record;
-      next.push(stamped);
-      await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
+      /** @type {Object} */
+      let stamped = record;
+      const replace = (/** @type {any} */ row) => {
+        const existing = Array.isArray(row && row.value) ? row.value : [];
+        const next = existing.filter((entry) => entry && entry.region_id !== regionId);
+        // The record this one replaces, if the region is already held: a
+        // re-download keeps its predecessor's stamp.
+        const previous = existing.find((entry) => entry && entry.region_id === regionId);
+        stamped =
+          sync && typeof sync.stampPrincipal === 'function'
+            ? sync.stampPrincipal(record, previous)
+            : record;
+        next.push(stamped);
+        return { key: DOWNLOADED_REGIONS_KEY, value: next };
+      };
+      if (typeof window.pwaDb.readModifyWrite === 'function') {
+        await window.pwaDb.readModifyWrite('meta:app', DOWNLOADED_REGIONS_KEY, replace);
+      } else {
+        await window.pwaDb.put(
+          'meta:app',
+          replace(await window.pwaDb.get('meta:app', DOWNLOADED_REGIONS_KEY)),
+        );
+      }
       // SNOW-1134: see `notifyDownloadsChanged`.
       notifyDownloadsChanged();
       // SNOW-749: and record the DEFINITION against the account, from the

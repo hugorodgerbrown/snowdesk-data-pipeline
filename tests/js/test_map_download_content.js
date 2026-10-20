@@ -1288,6 +1288,29 @@ describe('a region record carries its principal (SNOW-1142)', () => {
     expect((await recordedRegion()).principal).toBe('u-2');
   });
 
+  it('records the download in one read-modify-write, never a get-then-put', async () => {
+    // SNOW-1142 review: the record used to be written from a `get`
+    // snapshot with a whole-array `put`. A claim another tab committed in
+    // between (its `recordHeld` stamping a legacy area) was erased by that
+    // put, leaving the area claimable by a second account. IndexedDB's
+    // serialisation itself is proved in test_db.js; this pins that the
+    // writer goes through it.
+    await forgetRegion();
+    window.pwaDb.put.mockClear();
+    window.pwaDb.readModifyWrite.mockClear();
+
+    await clickControl();
+
+    const regionPuts = window.pwaDb.put.mock.calls.filter(
+      ([, row]) => row && row.key === 'basemap.regions',
+    );
+    expect(regionPuts).toEqual([]);
+    expect(
+      window.pwaDb.readModifyWrite.mock.calls.some(([, key]) => key === 'basemap.regions'),
+    ).toBe(true);
+    expect((await recordedRegion()).principal).toBe('u-1');
+  });
+
   it('adds no stamp to a legacy record through a re-download', async () => {
     await forgetRegion();
     await clickControl();
