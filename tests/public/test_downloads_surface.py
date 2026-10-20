@@ -184,3 +184,43 @@ class TestDownloadsRoundelAttributes:
         reads as a live control.
         """
         assert "data-downloads-sync" not in _roundel(client)
+
+
+@pytest.mark.django_db
+class TestDownloadsSheetCopy:
+    """SNOW-1137: the sheet's link, the roundel's name and the region toasts."""
+
+    def test_the_header_link_points_at_the_offline_page(self, client: Client) -> None:
+        """The breakdown it names moved to /offline/ (SNOW-930), not Settings."""
+        html = client.get(reverse("public:map")).content.decode()
+        offline_url = reverse("public:offline_page")
+
+        assert (
+            f'<a href="{offline_url}" class="text-link">See what this device holds</a>'
+            in html
+        )
+        assert "See it all in Settings" not in html
+
+    def test_the_roundel_is_named_manage_downloads(self, client: Client) -> None:
+        """The feature is "downloads"; the roundel says so without "offline"."""
+        tag = _roundel(client)
+
+        assert (
+            'aria-label="Manage downloads"' in tag
+            or "aria-label='Manage downloads'" in tag
+        )
+        assert "Manage offline downloads" not in tag
+
+    def test_a_region_run_has_its_own_quota_and_budget_toasts(
+        self, client: Client
+    ) -> None:
+        """A region cannot be framed smaller, so its toasts never say to."""
+        html = " ".join(client.get(reverse("public:map")).content.decode().split())
+
+        for toast_id in (
+            "map-download-error-toast-quota-region",
+            "map-download-error-toast-budget-region",
+        ):
+            assert f'id="{toast_id}"' in html
+        assert "Not enough storage to save this region." in html
+        assert "Raise the budget in Manage downloads" in html
