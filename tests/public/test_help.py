@@ -263,6 +263,21 @@ class TestHelpPageFlagGating:
 
         assert b"They do not follow your account to your phone" not in response.content
 
+    def test_the_bin_is_described_as_this_device_only(self, client: Client) -> None:
+        """SNOW-1135: Remove means this device; Forget clears the account.
+
+        The paragraph used to say the bin took an area off the account and
+        so off the user's other devices. That is no longer what it does, and
+        the help page is where a user checks before pressing it.
+        """
+        response = client.get(reverse("public:help"))
+        content = response.content.decode()
+
+        assert "removes that download from this device" in content
+        assert '"Not on this device"' in content
+        assert "use Forget on that row" in content
+        assert "so it goes from your other devices too" not in content
+
     def test_slope_panel_present_for_anonymous(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-slope"' in response.content
