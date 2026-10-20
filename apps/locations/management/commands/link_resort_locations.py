@@ -1,40 +1,36 @@
-"""link_resort_locations — give every geocoded resort a Location for weather.
+"""link_resort_locations — backfill ``Resort.location`` for every pinned resort.
 
-A resort's pin and a resort's weather were two unconnected things. The
-edit-resorts map overlay writes ``Resort.latitude``/``longitude`` and never
-touches ``Location``; the resort page's Forecasts section lists
-``ResortLocation`` links, which only the separate edit-locations overlay
-creates. So a resort could be on the map for months with a hand-placed pin
-and still show no weather — production had 115 geocoded resorts and 4 with a
-link.
+**A one-time backfill (SNOW-1144).** A resort's map pin is now a
+``Location`` — ``Resort.location`` — written by
+``apps.regions.services.resort_pin.set_resort_pin`` from every path that
+places, moves or clears one: the edit-resorts map overlay, ``import_resorts``
+and the admin. Once this has run against an environment, that service keeps
+pins and Locations in step on its own, and there is nothing left for an
+operator to link by hand.
 
-This closes that: a geocoded resort with no link gets an anonymous
-``Location`` at its own coordinate, marked ``is_primary``. Curating named
-village / mid / peak points stays worthwhile and stays the editor's job —
-this is the floor, not a replacement for it.
+What it backfills is the estate from before the column existed: resorts
+whose pin is still only the two mirrored floats ``Resort.latitude`` /
+``longitude``. Each one goes through ``set_resort_pin`` — the same writer as
+every other path, so the reuse rules are stated once:
 
-**Run by an operator, never by a deploy.** It first shipped wired into
-``bin/build.sh``, which was wrong: it writes one row per candidate — up to
-115 of them — and a deploy that times out mid-run leaves the estate half
-linked, on three services that deploy concurrently against one database.
-Bulk data writes are management commands for the same reason they are not
-data migrations. Nothing wipes ``ResortLocation`` on deploy either
-(resorts are applied by ``import_resorts``, never on deploy), so there
-was never a reason for it to run there.
+* the ``Location`` behind the resort's primary ``ResortLocation`` — the
+  anonymous row this command minted before SNOW-1144 — is adopted rather
+  than duplicated, so the weather already stored against it stays the
+  resort's;
+* failing that, ``anchor_location`` reuses an anonymous row already at the
+  coordinate, and only then mints one. The height is ``base_elevation_m``
+  where the sheet records one. No Open-Meteo call.
 
-Run it after geocoding resorts in the map editor, or after an
-``import_resorts`` that adds coordinates.
+**History.** Before SNOW-1144 this command minted an anonymous ``Location``
+at the pin and joined it through ``ResortLocation(is_primary=True)``, because
+the pin and the weather were two unconnected things and production had 115
+geocoded resorts and 4 links. It still never runs on a deploy: it writes one
+row per candidate, and a deploy that times out mid-run on three concurrently
+deploying services leaves the estate half linked.
 
-**Offline.** The coordinate is the resort's own, and the height is
-``base_elevation_m`` where the sheet records one. No Open-Meteo call.
-
-**Reuses rather than mints** via ``anchor_location``, for the reason SNOW-771
-records: a re-link that created a fresh row each deploy would orphan the
-previous one and every ``Weather`` row hanging off it.
-
-``role`` is left blank on purpose. BASE/MID/TOP are claims about what a point
-IS, and a hand-placed pin is only "where this resort is" — ``is_primary``
-already carries that. A curator naming the point later can say which it is.
+**``--check``** is the SNOW-885 detector, scheduled daily: it names every
+resort with coordinates and no pin ``Location`` and exits non-zero when
+there is one. After the backfill that set is empty by construction.
 
 Usage:
     # Preview — reports what it would link, writes nothing.
@@ -42,6 +38,9 @@ Usage:
 
     # Persist.
     uv run python manage.py link_resort_locations --commit
+
+    # Detect only — non-zero exit when any resort is unlinked.
+    uv run python manage.py link_resort_locations --check
 """
 
 from __future__ import annotations
@@ -54,26 +53,44 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from apps.core.command_iteration import announce_link_run, iterate_rows
-from apps.locations.models import ResortLocation
-from apps.locations.services.anchor import anchor_location
 from apps.regions.models import Resort
+from apps.regions.services.resort_pin import set_resort_pin
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
-    """Give every geocoded resort without a linked Location one at its pin.
+def _pin_is_current(resort: Resort) -> bool:
+    """Return whether the resort's pin Location already sits at its coordinate.
 
-    Read-only by default; pass --commit to persist. Offline and idempotent,
-    so it is safe to re-run at any time — but an operator runs it, never a
-    deploy (see the module docstring). Per-resort failures are caught,
-    logged and counted; the command exits non-zero when any failed.
+    Reads only the ``select_related`` location, so it costs no query per row.
+
+    Args:
+        resort: A resort carrying a coordinate.
+
+    Returns:
+        True when ``set_resort_pin`` would write nothing for this resort.
+
+    """
+    location = resort.location
+    return location is not None and (location.latitude, location.longitude) == (
+        resort.latitude,
+        resort.longitude,
+    )
+
+
+class Command(BaseCommand):
+    """Set ``Resort.location`` for every resort with a coordinate.
+
+    Read-only by default; pass --commit to persist. Offline and idempotent:
+    a resort whose pin Location already matches its coordinate is counted
+    as unchanged and not written. Per-resort failures are caught, logged and
+    counted; the command exits non-zero when any failed.
     """
 
     help = (
-        "Mint a Location at each geocoded resort's own coordinate and link "
-        "it, so a resort on the map has weather without hand curation. "
-        "Offline. Read-only unless --commit is passed."
+        "Backfill Resort.location — the resort's pin as a Location — for "
+        "every resort with a coordinate, through set_resort_pin. Offline. "
+        "Read-only unless --commit is passed."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -82,42 +99,37 @@ class Command(BaseCommand):
             "--commit",
             action="store_true",
             help=(
-                "Persist the minted Locations and their ResortLocation "
-                "links. Without this flag the command reports but writes "
-                "nothing."
+                "Persist each resort's pin Location. Without this flag the "
+                "command reports but writes nothing."
             ),
         )
         parser.add_argument(
             "--check",
             action="store_true",
             help=(
-                "Report unlinked geocoded resorts and exit NON-ZERO if there "
-                "are any. Mints nothing. For the scheduled detector."
+                "Report resorts with a coordinate but no pin Location and "
+                "exit NON-ZERO if there are any. Writes nothing. For the "
+                "scheduled detector."
             ),
         )
 
-    def _check(self, candidates: Any) -> None:
-        """Report unlinked geocoded resorts and fail if there are any.
+    def _check(self) -> None:
+        """Report unlinked resorts and fail if there are any.
 
         SNOW-885. The gap this names is silent by construction — a resort
-        renders no Forecasts section and nothing else says so, so it stays
-        broken for as long as nobody visits that page. A scheduled run that
-        exits 0 whatever it finds would be a detector that never detects, so
-        finding any is an ERROR and a non-zero exit: that is the whole signal.
-
-        Naming every resort, not just counting them, is deliberate. The count
-        alone tells an operator to run something; the names tell them which
-        pages are currently wrong, which is what they need if the answer is
-        that a recent geocoding pass is the cause.
-
-        Args:
-            candidates: The unlinked queryset.
+        with no pin ``Location`` has no weather and nothing else says so —
+        so a scheduled run that exits 0 whatever it finds would be a
+        detector that never detects. Finding any is an ERROR and a non-zero
+        exit: that is the whole signal. Every resort is named, not just
+        counted, so the operator knows which pages are wrong.
 
         Raises:
-            CommandError: When any unlinked geocoded resort exists.
+            CommandError: When any unlinked resort exists.
 
         """
-        names = list(candidates.order_by("name").values_list("name", flat=True))
+        names = list(
+            Resort.objects.unlinked().order_by("name").values_list("name", flat=True)
+        )
         if not names:
             self.stdout.write("No unlinked geocoded resorts.")
             return
@@ -125,42 +137,40 @@ class Command(BaseCommand):
         for name in names:
             self.stdout.write(f"unlinked: {name}")
         logger.error(
-            "link_resort_locations: %d geocoded resort(s) have no location "
-            "link and render no weather: %s",
+            "link_resort_locations: %d geocoded resort(s) have no pin location "
+            "and render no weather: %s",
             len(names),
             ", ".join(names),
         )
         raise CommandError(
-            f"{len(names)} geocoded resort(s) have no location link. "
+            f"{len(names)} geocoded resort(s) have no pin location. "
             f"Run: link_resort_locations --commit"
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        """Link every geocoded resort that has no location yet."""
+        """Backfill the pin Location of every resort with a coordinate."""
+        if options["check"]:
+            self._check()
+            return
+
         commit: bool = options["commit"]
         verbosity: int = options["verbosity"]
 
-        # SNOW-885: one definition of "unlinked", on the queryset, so the
-        # detector below and the linker cannot drift into disagreeing about
-        # which resorts are the gap.
-        candidates = Resort.objects.unlinked()
-
-        if options["check"]:
-            self._check(candidates)
-            return
-
+        candidates = Resort.objects.filter(
+            latitude__isnull=False, longitude__isnull=False
+        ).select_related("location")
         total = candidates.count()
 
         announce_link_run(
             self,
             logger=logger,
             command_name="link_resort_locations",
-            banner=f"Linking a Location for {total} geocoded resort(s)",
+            banner=f"Backfilling the pin Location of {total} resort(s)",
             candidate_count=total,
             commit=commit,
         )
 
-        counts = {"linked": 0, "skipped": 0, "failed": 0}
+        counts = {"linked": 0, "unchanged": 0, "failed": 0}
         for resort in iterate_rows(
             self,
             candidates,
@@ -173,61 +183,49 @@ class Command(BaseCommand):
 
         # Non-zero on ANY failure, partial batches included — the command
         # contract in CLAUDE.md. One unwritable resort never aborts the
-        # walk (it is counted and stepped over above), but the operator who
-        # ran this must not read a half-linked estate as a clean run.
+        # walk, but the operator must not read a half-linked estate as a
+        # clean run.
         if counts["failed"] > 0:
             raise CommandError(
                 f"link_resort_locations: {counts['failed']} of {total} "
-                f"candidate(s) failed to link. Check logs."
+                f"resort(s) failed to link. Check logs."
             )
 
     def _resolve_one(
         self, resort: Resort, counts: dict[str, int], *, commit: bool
     ) -> None:
-        """Anchor one resort to a Location at its own pin.
+        """Bring one resort's pin Location into step with its coordinate.
 
         Args:
-            resort: The resort to anchor.
+            resort: The resort, with ``location`` already loaded.
             counts: The running tally, mutated in place.
             commit: Whether to persist.
 
         """
-        if resort.latitude is None or resort.longitude is None:
-            counts["skipped"] += 1
+        if _pin_is_current(resort):
+            counts["unchanged"] += 1
             return
 
         if commit:
             try:
                 with transaction.atomic():
-                    # Lock and re-read: production deploys three services at
-                    # once, all running this against one database.
+                    # Lock and re-read: an editor save could move or clear
+                    # the pin between the walk and here.
                     locked = (
-                        Resort.objects.select_for_update().filter(pk=resort.pk).first()
+                        Resort.objects.select_for_update()
+                        .select_related("location")
+                        .filter(pk=resort.pk)
+                        .first()
                     )
-                    if locked is None:
-                        counts["skipped"] += 1
+                    if (
+                        locked is None
+                        or locked.latitude is None
+                        or locked.longitude is None
+                        or _pin_is_current(locked)
+                    ):
+                        counts["unchanged"] += 1
                         return
-                    if locked.resort_locations.exists():
-                        # A concurrent build linked it while we queued.
-                        counts["linked"] += 1
-                        return
-                    if locked.latitude is None or locked.longitude is None:
-                        # Re-checked under the lock: the queryset excludes a
-                        # null coordinate, but an editor save could have
-                        # cleared one between the walk and here.
-                        counts["skipped"] += 1
-                        return
-                    location = anchor_location(
-                        locked.latitude,
-                        locked.longitude,
-                        locked.base_elevation_m,
-                    )
-                    ResortLocation.objects.create(
-                        resort=locked,
-                        location=location,
-                        role="",
-                        is_primary=True,
-                    )
+                    set_resort_pin(locked, locked.latitude, locked.longitude)
             except Exception:  # noqa: BLE001 — one resort must not fail the batch
                 logger.exception(
                     "link_resort_locations: failed to link resort %s", resort.pk
@@ -246,14 +244,15 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(
                     f"Done. {counts['linked']} resort(s) {verb}, "
-                    f"{counts['skipped']} skipped, "
+                    f"{counts['unchanged']} unchanged, "
                     f"{counts['failed']} failed.{suffix}"
                 )
             )
         logger.info(
-            "link_resort_locations finished: linked=%d skipped=%d failed=%d commit=%s",
+            "link_resort_locations finished: linked=%d unchanged=%d failed=%d "
+            "commit=%s",
             counts["linked"],
-            counts["skipped"],
+            counts["unchanged"],
             counts["failed"],
             commit,
         )
