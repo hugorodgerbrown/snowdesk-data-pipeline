@@ -54,7 +54,29 @@ def test_the_partial_renders_shown_with_every_hook() -> None:
         assert hook in body
     # SNOW-1068: no card chrome and no × of its own — the panel has both.
     assert "rounded-card" not in body.split("<template")[0]
-    assert "_icon_close" not in body and "<svg" not in body.split("<template")[0]
+    # The one glyph is the terrain slope line's chevron (SNOW-1146).
+    markup = body.split("<template")[0]
+    assert "_icon_close" not in body and markup.count("<svg") == 1
+    assert "route-terrain-chevron" in markup
+
+
+def test_the_terrain_slope_line_reveals_the_terrain_data() -> None:
+    """SNOW-1146: the line is a button controlling the panel's terrain data."""
+    body = render_to_string("includes/_route_point_card.html", {})
+    button = re.search(
+        r"<button[^>]*data-route-terrain-toggle[^>]*>(.*?)</button>", body, re.S
+    )
+    assert button is not None
+    assert 'aria-expanded="false"' in button.group(0)
+    assert 'aria-controls="route-rail-terrain"' in button.group(0)
+    assert "data-route-point-card-ground" in button.group(1)
+
+
+def test_the_component_library_header_has_no_toggle() -> None:
+    """The static header runs no JS, so it gets the plain line."""
+    body = render_to_string("includes/_route_point_card.html", {"static": True})
+    assert "data-route-terrain-toggle" not in body
+    assert "data-route-point-card-ground" in body
 
 
 def test_the_wheel_is_the_button_that_clears_the_point() -> None:
