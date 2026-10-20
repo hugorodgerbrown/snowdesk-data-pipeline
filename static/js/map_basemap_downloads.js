@@ -3739,18 +3739,22 @@ async function repairPinnedDownload(options) {
  * the user has already moved on from. One extra pass runs after the
  * current one, however many calls arrive during it.
  *
+ * SNOW-1134: a call that joins a running pass gets that pass's promise,
+ * which settles only once the trailing pass it queued has run. It used to
+ * resolve at once, so a caller awaiting a render to read the settled state
+ * (`startRegionDownload`) read the interim 'idle' the running pass had
+ * painted for a region it had not probed yet — and downloaded a region
+ * already on the device a second time.
+ *
  * @param {function(): Promise<void>} render
  * @returns {function(): Promise<void>}
  */
 function coalesceRenders(render) {
   let running = false;
   let again = false;
-  return async function coalesced() {
-    if (running) {
-      again = true;
-      return;
-    }
-    running = true;
+  /** @type {Promise<void>} */
+  let current = Promise.resolve();
+  const loop = async () => {
     try {
       do {
         again = false;
@@ -3759,6 +3763,17 @@ function coalesceRenders(render) {
     } finally {
       running = false;
     }
+  };
+  return function coalesced() {
+    if (running) {
+      again = true;
+      return current;
+    }
+    // Claimed before `loop` runs, so a render that re-enters synchronously
+    // queues a trailing pass rather than starting a second loop.
+    running = true;
+    current = loop();
+    return current;
   };
 }
 
