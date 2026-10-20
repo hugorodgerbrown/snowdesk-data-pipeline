@@ -30,6 +30,17 @@ document.body.innerHTML = `
   <div data-season-sheet="closed">
     <div data-season-scroll>
       <div id="season-grid" data-selected-date="2026-01-15"></div>
+      <div data-season-readout hidden>
+        <span data-readout-tile data-level="no_rating">
+          <span data-readout-level="no_rating" hidden>–</span>
+          <span data-readout-level="moderate" hidden>2</span>
+          <span data-readout-level="considerable" hidden>3</span>
+        </span>
+        <span data-readout-level="no_rating" hidden>No bulletin</span>
+        <span data-readout-level="moderate" hidden>Moderate</span>
+        <span data-readout-level="considerable" hidden>Considerable</span>
+        <a data-readout-link href="/day/">Read the bulletin</a>
+      </div>
     </div>
     <button data-season-dismiss type="button">&times;</button>
     <div data-season-dismiss id="backdrop"></div>
@@ -250,21 +261,42 @@ describe('the backdrop touch threshold', () => {
 });
 
 describe('the post-swap handler', () => {
-  it('applies the selected-day ring and is a no-op for another target', () => {
-    grid.innerHTML = '<span data-date="2026-01-15"></span>';
+  const readout = document.querySelector('[data-season-readout]');
 
+  /** @param {string} html */
+  function swap(html) {
+    grid.innerHTML = html;
     document.body.dispatchEvent(
       new CustomEvent('htmx:afterSwap', {
         bubbles: true,
         detail: { target: grid },
       }),
     );
+  }
+
+  /** @returns {string[]} the readout levels left visible */
+  function shownLevels() {
+    return Array.from(readout.querySelectorAll('[data-readout-level]'))
+      .filter((el) => !el.hidden)
+      .map((el) => el.getAttribute('data-readout-level'));
+  }
+
+  beforeEach(() => {
+    readout.hidden = true;
+  });
+
+  it('rings the selected day and is a no-op for another target', () => {
+    swap(
+      '<a class="season-day" data-date="2026-01-15" data-level="considerable"></a>' +
+        '<a class="season-day" data-date="2026-01-16" data-level="moderate"></a>',
+    );
 
     expect(
       grid.querySelector('[data-date="2026-01-15"]').classList.contains(
-        'calendar-cell-selected',
+        'season-day-ring',
       ),
     ).toBe(true);
+    expect(grid.querySelectorAll('.season-day-ring')).toHaveLength(1);
 
     const other = document.createElement('div');
     other.id = 'something-else';
@@ -276,5 +308,38 @@ describe('the post-swap handler', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  it('fills the readout with the selected day\'s peak level', () => {
+    // A two-level day: data-state is split, data-level the peak.
+    swap(
+      '<a class="season-day" data-date="2026-01-15" data-state="split" ' +
+        'data-lo="moderate" data-hi="considerable" data-level="considerable"></a>',
+    );
+
+    expect(readout.hidden).toBe(false);
+    expect(
+      readout.querySelector('[data-readout-tile]').getAttribute('data-level'),
+    ).toBe('considerable');
+    expect(shownLevels()).toEqual(['considerable', 'considerable']);
+    expect(readout.querySelector('[data-readout-link]').hidden).toBe(false);
+  });
+
+  it('reads a day with no bulletin as such and hides the link', () => {
+    swap(
+      '<span class="season-day" data-date="2026-01-15" data-state="none" ' +
+        'data-level="no_rating"></span>',
+    );
+
+    expect(readout.hidden).toBe(false);
+    expect(shownLevels()).toEqual(['no_rating', 'no_rating']);
+    expect(readout.querySelector('[data-readout-link]').hidden).toBe(true);
+  });
+
+  it('leaves the readout hidden when the selected day is not drawn', () => {
+    swap('<a class="season-day" data-date="2026-02-01" data-level="moderate"></a>');
+
+    expect(readout.hidden).toBe(true);
+    expect(grid.querySelectorAll('.season-day-ring')).toHaveLength(0);
   });
 });

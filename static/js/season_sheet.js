@@ -19,7 +19,9 @@
  * `aria-expanded`. The grid inside is deferred — a `#season-grid`
  * placeholder fires one HTMX GET on first open via the custom
  * `snowdesk:load` event (SNOW-170) — so opening does two different things
- * depending on whether that fetch has happened yet.
+ * depending on whether that fetch has happened yet. Once it lands, the
+ * selected day is ringed and the selected-day readout filled from it
+ * (SNOW-1158).
  *
  * Loaded with `defer` from `bulletin.html`, inside the same
  * `{% if season_calendar %}` guard that renders the markup, so the
@@ -53,9 +55,7 @@
    */
   function scrollToSelected() {
     var scroller = sheet.querySelector('[data-season-scroll]');
-    var target =
-      sheet.querySelector('.calendar-cell-selected') ||
-      sheet.querySelector('.calendar-cell-today');
+    var target = sheet.querySelector('.season-day-ring');
     if (scroller && target) {
       scroller.scrollLeft = Math.max(
         0,
@@ -93,17 +93,46 @@
     }
   }
 
-  // After the HTMX swap completes: apply the selected ring, then scroll.
+  /**
+   * Fill the selected-day readout from the selected cell (SNOW-1158).
+   *
+   * The readout's date and link are server-rendered — the selected day is
+   * the page's own — and so is every level's tile digit and name; only
+   * WHICH level is known from the grid. The cell's `data-level` is the
+   * day's peak (the compressed-views rule), so a two-level day reads as
+   * its higher level. A day with no bulletin hides the link: there is no
+   * bulletin to read. Nothing found, nothing shown.
+   *
+   * @param {Element|null} cell
+   * @returns {void}
+   */
+  function fillReadout(cell) {
+    var readout = sheet.querySelector('[data-season-readout]');
+    if (!readout || !cell) return;
+    var level = cell.getAttribute('data-level') || 'no_rating';
+    var tile = readout.querySelector('[data-readout-tile]');
+    if (tile) tile.setAttribute('data-level', level);
+    readout.querySelectorAll('[data-readout-level]').forEach(function (el) {
+      el.hidden = el.getAttribute('data-readout-level') !== level;
+    });
+    var link = readout.querySelector('[data-readout-link]');
+    if (link) link.hidden = level === 'no_rating';
+    readout.hidden = false;
+  }
+
+  // After the HTMX swap completes: ring the selected day, fill the
+  // readout, then scroll.
   document.body.addEventListener('htmx:afterSwap', function (e) {
     if (!e.detail || !e.detail.target || e.detail.target.id !== 'season-grid') return;
     var grid = e.detail.target;
-    // The selected-day highlight is applied client-side from
-    // data-selected-date rather than server-rendered, so the cached grid
-    // partial is the same bytes for every day of the season.
+    // The selected-day ring is applied client-side from data-selected-date
+    // rather than server-rendered, so the cached grid partial is the same
+    // bytes for every day of the season.
     var selectedDate = grid.dataset.selectedDate;
     if (selectedDate) {
-      var cell = grid.querySelector('[data-date="' + selectedDate + '"]');
-      if (cell) cell.classList.add('calendar-cell-selected');
+      var cell = grid.querySelector('.season-day[data-date="' + selectedDate + '"]');
+      if (cell) cell.classList.add('season-day-ring');
+      fillReadout(cell);
     }
     scrollToSelected();
   });

@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n snowdesk_time %}
 {% comment %}
    Season heatmap sheet shell (SNOW-170) — fixed-position dialog frame,
    backdrop, header, dismiss button, and scroll wrapper. The inner grid is
@@ -9,9 +9,14 @@
 
    The shell starts in the closed state (data-season-sheet="closed") and
    the toggle script flips it to "open" on trigger / Escape / backdrop /
-   ✕ click. Every cell in the loaded grid is a full WCAG 24×24 px target
-   carrying the day number, so the heatmap is keyboard-reachable in
-   addition to being a focus-trapped dialog.
+   ✕ click. Every day with a bulletin in the loaded calendar is a link
+   (public/partials/_season_calendar.html, linked=True — SNOW-1158), so the
+   calendar is keyboard-reachable in addition to being a focus-trapped
+   dialog.
+
+   Context: region, page_date, season_calendar (season_header's dict:
+   season_label, season_name, levels — the level keys the
+   readout can show).
 
    Underscore prefix marks this as a plain include (not an HTMX response).
 {% endcomment %}
@@ -25,8 +30,11 @@
         data-testid="season-sheet"
     >
         <div class="season-sheet-header">
+            {# SNOW-1158: the same eyebrow the resort page's calendar carries. #}
             <span class="font-mono uppercase tracking-widest text-meta text-text-3">
-                {% trans "This season" %}
+                {% blocktrans with region=region.name season=season_calendar.season_name trimmed %}
+                    Avalanche danger • {{ region }} region • {{ season }}
+                {% endblocktrans %}
             </span>
             <button
                 type="button"
@@ -50,7 +58,7 @@
                 </svg>
             </button>
         </div>
-        <div class="overflow-x-auto" data-season-scroll>
+        <div class="season-sheet-body" data-season-scroll>
             {% comment %}
                Two idempotency guards work together here:
                - hx-trigger="snowdesk:load once": HTMX fires the GET only the
@@ -74,6 +82,52 @@
                 hx-swap="innerHTML"
                 data-loaded="false"
             >
+            </div>
+            {% comment %}
+               SNOW-1158: the selected-day readout. The selected day is the
+               page's own day, so its date and link are rendered here, outside
+               the cached fragment; only its level comes from the grid —
+               season_sheet.js reads the selected cell's data-level (the day's
+               peak, the compressed-views rule) after the swap, un-hides the
+               matching level tile and name, and reveals the panel. A day with
+               no bulletin reads "No bulletin" and hides the link. CSS orders
+               it between the calendar and the key (.season-sheet-body).
+            {% endcomment %}
+            <div
+                class="season-readout flex flex-wrap items-center gap-4 rounded-tag border border-border-strong bg-card-subtle p-4"
+                data-season-readout
+                data-testid="season-readout"
+                hidden
+            >
+                <span class="danger-tile text-xl" data-readout-tile data-level="no_rating" aria-hidden="true">
+                    {% for key in season_calendar.levels %}
+                        <span data-readout-level="{{ key }}" hidden>{{ key|danger_level_digit|default:"–" }}</span>
+                    {% endfor %}
+                </span>
+                <div class="min-w-0 flex-1 basis-40">
+                    <div class="text-base font-semibold">
+                        {% for key in season_calendar.levels %}
+                            <span data-readout-level="{{ key }}" hidden>
+                                {% if key == "no_rating" %}
+                                    {% trans "No bulletin" %}
+                                {% else %}
+                                    {{ key|danger_level_digit|danger_level_label }}
+                                {% endif %}
+                            </span>
+                        {% endfor %}
+                    </div>
+                    <div class="font-mono text-xs text-text-3">{{ page_date|date:"l j F Y" }}</div>
+                </div>
+                <a
+                    class="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-text-1 hover:underline"
+                    href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug page_date|date:'Y-m-d' %}"
+                    data-readout-link
+                >
+                    {% blocktrans with day=page_date|date:"j F" trimmed %}
+                        Read the bulletin for {{ day }}
+                    {% endblocktrans %}
+                    <span aria-hidden="true">→</span>
+                </a>
             </div>
         </div>
     </div>
