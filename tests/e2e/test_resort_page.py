@@ -47,7 +47,9 @@ def test_resort_to_bulletin_to_map_lands_on_the_same_region(
     page.wait_for_load_state("networkidle")
     assert "/ch-4115/" in page.url
 
-    map_link = page.locator('[data-testid="bulletin-map-link"]')
+    # The link itself, not its full-width row: a click on the row's centre
+    # misses the left-aligned button.
+    map_link = page.locator('[data-testid="bulletin-map-link"] a')
     map_link.wait_for(state="visible")
     map_link.click()
     page.wait_for_load_state("load")
