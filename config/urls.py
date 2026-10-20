@@ -34,6 +34,10 @@ When ``settings.DEBUG`` is true, the development-only mirrors are mounted:
 
 The two mirror URL modules are kept separate so Django's namespace-uniqueness
 check (``urls.W005``) is satisfied. Production never imports any mirror module.
+
+``handler400`` / ``handler403`` / ``handler404`` / ``handler500`` point at
+``apps.public.errors`` (SNOW-1151), which negotiates JSON, plain text or
+HTML per request; see ``docs/error-pages.md``.
 """
 
 from django.conf import settings
@@ -177,3 +181,8 @@ urlpatterns.append(path("trips/", include("apps.trips.urls")))
 # as a region_id.
 urlpatterns.append(path("downloads/", include("apps.downloads.urls")))
 urlpatterns.append(path("", include("apps.public.urls")))
+
+handler400 = "apps.public.errors.bad_request"
+handler403 = "apps.public.errors.permission_denied"
+handler404 = "apps.public.errors.page_not_found"
+handler500 = "apps.public.errors.server_error"

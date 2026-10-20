@@ -180,6 +180,9 @@ urlpatterns = [
         debug_views.icon_set_comparison,
         name="icon_sets",
     ),
+    # SNOW-1151: each error page as its handler renders it, with its real
+    # status — the handlers never run in a DEBUG build.
+    path("_errors/<str:kind>/", debug_views.error_preview, name="error_preview"),
     # Web Push spike — staff-only demo page.
     path("_push-demo/", debug_views.push_demo, name="push_demo"),
     # SW shell cache-version page — staff-only, surfaces live vs deployed

@@ -283,6 +283,11 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "config.urls"
 
+# SNOW-1151: Django's default CSRF failure view renders 403_csrf.html with no
+# request, so it could not use the site template. Ours negotiates JSON / text /
+# HTML like the other error handlers (docs/error-pages.md).
+CSRF_FAILURE_VIEW = "apps.public.errors.csrf_failure"
+
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
