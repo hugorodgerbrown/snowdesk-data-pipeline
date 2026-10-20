@@ -8533,9 +8533,10 @@
     /**
      * Read ``?resort=`` and strip it from the address bar in one step.
      *
-     * SNOW-807: the resort page's "reports near here" link is
-     * ``/?panel=reports&resort=<slug>`` — the sheet-level ``?panel=`` opens
-     * the reports sheet (SNOW-803), and this flies the camera to the resort.
+     * The resort page's "See on the map" link is ``/map/?resort=<slug>``
+     * (SNOW-1155), which flies the camera to the resort. It composes with
+     * the sheet-level ``?panel=`` (SNOW-803) — SNOW-807's former "reports
+     * near here" link was ``?panel=reports&resort=<slug>``.
      * Consumed for the same reasons ``consumeFavouriteDeepLink`` gives.
      *
      * @returns {?string} The requested resort slug, or null when none.

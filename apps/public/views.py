@@ -4762,8 +4762,11 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
 
     Each curated location is a link to its weather page with today's
     one-day row beside it (SNOW-1125 — the icon, high/low, snowfall and
-    wind); the observations are a link to the map with the reports sheet
-    open.
+    wind). SNOW-1155 rebuilt the frame: a header with the eyebrow
+    (``_resort_eyebrow``), the name, the tagline and two actions — save the
+    resort, and see it on the map (``/map/?resort=<slug>``, which replaced
+    SNOW-807's "Reports near here" link) — then the sections in a main
+    column with the curated facts in a sidebar.
 
     Reuses the context-building already proven by ``apps.public.api.resort_popup``
     (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``).
@@ -4842,11 +4845,9 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         # weather page. SNOW-1125: each also carries today's one-day row —
         # one batched Weather query whatever the number of locations.
         "locations": _resort_location_links(resort, today, timezone.now()),
-        # SNOW-807: the map with the reports sheet open, flown to this resort
-        # (static/js/map.js consumes ``?panel=`` and ``?resort=``).
-        "observations_map_url": (
-            f"{reverse('public:map')}?panel=reports&resort={resort.slug}"
-        ),
+        # SNOW-1155: the header's mono eyebrow — alternative name, canton,
+        # country — each part omitted when blank.
+        "resort_eyebrow": _resort_eyebrow(resort),
         # SNOW-1123: schema.org SkiResort, emitted in extra_head.
         "structured_data_json": _build_resort_structured_data(
             resort,
@@ -4855,6 +4856,42 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     }
     context.update(_resort_season_strip_context(region, today))
     return render(request, "public/resort.html", context)
+
+
+def _resort_eyebrow(resort: Resort) -> str:
+    """Compose the resort page header's eyebrow line (SNOW-1155).
+
+    ``"Les 4 Vallées · Valais · Switzerland"``: the resort's alternative or
+    marketing name, its canton (the English name of the region's EAWS major
+    region — ``MajorRegion.name_en``, "Valais" for CH-4) and its country's
+    English name. Each part is omitted when blank, so an uncurated resort
+    in a major region SLF publishes no English name for reads just its
+    country, and a resort with nothing to say renders an empty string.
+
+    The country name comes from ``apps.public.api.COUNTRY_NAMES``, the one
+    code → name mapping the map tooltip and llms-full.txt already use; a
+    code it does not know is omitted rather than shown raw.
+
+    Args:
+        resort: The resort, with ``region__subregion__major`` selected.
+
+    Returns:
+        The parts joined with a middle dot, or ``""`` when every part is
+        blank.
+
+    """
+    # Function-local import to break the apps.public.views ↔ apps.public.api
+    # circular (apps.public.api imports from this module).
+    from apps.public.api import COUNTRY_NAMES
+
+    subregion = resort.region.subregion if resort.region.subregion_id else None
+    major = subregion.major if subregion is not None else None
+    parts = [
+        resort.name_alt.strip(),
+        major.name_en.strip() if major is not None else "",
+        COUNTRY_NAMES.get(major.country.upper(), "") if major is not None else "",
+    ]
+    return " · ".join(part for part in parts if part)
 
 
 def _resort_season_strip_context(
