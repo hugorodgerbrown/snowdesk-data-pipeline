@@ -3,8 +3,9 @@
  * (static/js/map_place_sheet.js, SNOW-1100).
  *
  * map.js calls `pwaPlaceSheet.open()` for a resort or a saved pin; on a
- * phone the sheet opens at peek and fetches the body, on a desktop it
- * declines so map.js keeps the popup. A newer open drops an older answer, a
+ * phone the sheet opens at peek and fetches the body. On a desktop it opens
+ * for a resort (SNOW-1161, which retired the resort popup) and declines a
+ * saved pin, so map.js keeps that pin's popup. A newer open drops an older answer, a
  * failed fetch falls back to what the map already holds, the date follows
  * the scrubber, and the saved pin's Share and Delete act from inside the
  * sheet.
@@ -97,9 +98,16 @@ describe('opening', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/partials/place-sheet/favourite/abc-123/');
   });
 
-  it('declines on a desktop, so map.js keeps the popup', () => {
+  it('opens a resort on a desktop too, as the inset panel (SNOW-1161)', () => {
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
-    expect(window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' })).toBe(false);
+    expect(window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' })).toBe(true);
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+    expect(fetchMock.mock.calls[0][0]).toBe('/partials/place-sheet/resort/verbier/');
+  });
+
+  it('declines a saved pin on a desktop, so map.js keeps its popup', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    expect(window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc-123' })).toBe(false);
     expect(sheet.hasAttribute('hidden')).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
   });

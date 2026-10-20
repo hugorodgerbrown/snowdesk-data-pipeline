@@ -2,7 +2,7 @@
 name: resorts-are-search-rows
 description: Map search shows a row per resort, not just per region, and ranks by match quality rather than EAWS region id
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-20
 ---
 
 # Resorts are search rows, and ranking is by match quality
@@ -14,6 +14,13 @@ The map search index carries **one row per region plus one row per resort**
 parent region on the secondary line, and that region's EAWS id in the badge.
 Picking it selects the parent region — the same destination a region row
 reaches, differently labelled.
+
+**Amended by SNOW-1161 (20 Oct 2026):** picking a resort row now opens the
+*resort* — the map flies to its pin and opens its place sheet — because a
+resort reached inside the map must look like a resort tapped on the map
+([`the-map-opens-a-resort-in-the-sheet`](the-map-opens-a-resort-in-the-sheet.md)).
+A resort the pin feed does not carry (no coordinates yet) still selects its
+parent region, the destination the row's badge names.
 
 Results are ordered by **match quality**, not by region id: a row whose own
 name starts with the query, then one that contains it, then one that matched

@@ -81,6 +81,10 @@ only binds it to pointer events. Without the core on the page,
   on a form or a roundel list is a regression, not a choice.
 - Every detent height rule is inside a phone media query in
   `static/css/map.css`. Do not add a desktop branch.
+- A resort's place sheet opens on a desktop too since SNOW-1161, which
+  retired the resort popup. It is the inset panel there, with no detents —
+  this decision is unchanged by it
+  ([`the-map-opens-a-resort-in-the-sheet`](the-map-opens-a-resort-in-the-sheet.md)).
 - The camera padding is applied with the view held still (the centre moves
   to the point already under the new padded centre), so a settle never
   moves the ground. At full the padding stays at the previous detent's,

@@ -107,13 +107,6 @@ urlpatterns = [
         api.region_summary,
         name="region_summary",
     ),
-    # SNOW-499: minimal resort-pin popup — public (unlike favourites.geojson),
-    # per-user favourite star state resolved inline; never cached.
-    path(
-        "resorts/<slug:slug>/popup/",
-        api.resort_popup,
-        name="resort_popup",
-    ),
     # SNOW-419: community-reports overlay — anonymised, clustered
     # FieldObservation pins from the last 48 hours. Public: no auth gate
     # and no flag (SNOW-724 retired the rollout flags).

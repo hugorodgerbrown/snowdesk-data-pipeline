@@ -26,10 +26,6 @@ Swiss region choropleth and back the per-region tooltip:
 * ``/api/region/<region_id>/summary/``     — pre-rendered tooltip HTML for the
   MapLibre Popup anchored to the region's bbox centre; shows the day's danger
   rating chip (``?d=YYYY-MM-DD``-aware), breadcrumb, and resort list.
-* ``/api/resorts/<slug>/popup/``           — SNOW-499: pre-rendered minimal
-  popup HTML for a resort pin (name, region, favourite star, bulletin link).
-  Public (no auth gate — resorts are a public layer); the favourite star
-  itself is gated on authentication.
 * ``/api/community-reports.geojson``       — anonymised, clustered
   ``FieldObservation`` pins from the last 48 hours (SNOW-419).
 * ``/api/weather.geojson``                 — the weather overlay's pins.
@@ -120,7 +116,6 @@ from apps.bulletins.services.selection import select_bulletin_for_date
 from apps.bulletins.services.settled import earliest_mutable_date
 from apps.core.freshness import apply_freshness_headers
 from apps.core.sw_shell import served_cache_version
-from apps.favourites.models import Favourite
 from apps.locations.models import Location, LocationQuerySet, ResortLocation
 from apps.observations.models import FieldObservation
 from apps.regions.forms import RESORT_DETAIL_FIELDS, ResortDetailsForm
@@ -647,8 +642,9 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
     ``id`` is the resort's **slug**, not its primary key (SNOW-796,
     ``docs/decisions/no-integer-pks-in-urls.md``): this feed is public and
     cacheable, so anything it emits is exported. The slug is also what the
-    map hands to ``resort_popup`` and what ``favourites.geojson`` carries as
-    ``resort_slug``, so the two feeds share one key.
+    map hands to the place sheet (``public:resort_sheet_partial``) and what
+    ``favourites.geojson`` carries as ``resort_slug``, so the two feeds share
+    one key.
 
     SNOW-543: ``tier`` (``CORE`` / ``STANDARD`` / ``MINOR``) is the curated
     map-prominence verdict, and the public map sizes its pins from it. This
@@ -1716,7 +1712,7 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
 
         {"html": "<...>"}
 
-    Mirrors :func:`resort_popup`'s contract — a server-rendered snippet the
+    Mirrors ``region_summary``'s contract — a server-rendered snippet the
     map injects — but the map puts this one in the weather SHEET rather than
     an anchored popup. It is a CARD: today's conditions and a link out. The
     week and the hourly detail it briefly carried belong to the full
@@ -1889,90 +1885,6 @@ def _weather_detail_heading(location: Location) -> str:
     if region is not None:
         return str(region.name)
     return str(_("Weather station"))
-
-
-def resort_popup(request: HttpRequest, slug: str) -> JsonResponse:
-    """Return pre-rendered minimal popup HTML for a resort-pin tap.
-
-    Response shape::
-
-        {"html": "<...>"}
-
-    The ``html`` key is a server-rendered snippet injected into a
-    ``maplibregl.Popup`` on ``/map/`` when a resort pin is tapped (SNOW-499),
-    mirroring ``region_summary``'s ``{"html": ...}`` shape. Content: resort
-    name (+ alternative name), parent region name, curated metadata rows
-    (operator, website, lift/run counts, piste length, elevation range,
-    typical season — SNOW-501), a favourite/unfavourite star, and a
-    "View resort →" link.
-
-    SNOW-501: every metadata row always renders, even when the underlying
-    field is blank — a blank field shows a dashed-box placeholder rather
-    than being omitted, so missing curation stays visible. ``is_staff`` in
-    the render context switches that placeholder from a public em-dash to
-    an explicit "Add <field>" curation hint.
-
-    Unlike ``region_summary``, this endpoint is **public** — resorts are a
-    public reference layer, so anonymous visitors see the same name/region/
-    resort-link content everyone else does. Only the favourite star is
-    gated: it renders (with the correct favourited state + the existing
-    favourite's uuid, for unfavourite) when the requester is authenticated;
-    otherwise the popup shows a sign-in CTA in its place
-    (``can_favourite=False``).
-
-    SNOW-504: the CTA now reads "View resort →" and links to the resort's
-    own page (``resort.get_absolute_url()``) rather than straight to the
-    region bulletin — the bulletin link now lives on that page instead.
-
-    Deliberately **not** cached (unlike ``resorts_geojson``) — the
-    favourited state is per-user, so caching this response would leak one
-    user's favourite state to another (see the SNOW-499 plan's cache-policy
-    note: ``resorts_geojson`` stays anonymous and unchanged specifically so
-    this per-user popup doesn't have to fight a shared-cache Vary: Cookie
-    problem).
-
-    Errors:
-        404 — unknown ``slug``.
-
-    Args:
-        request: The incoming HTTP request.
-        slug: The Resort's slug — the ``id`` the resorts feed emits.
-
-    Returns:
-        A JsonResponse with a single ``html`` key containing the popup markup.
-
-    """
-    resort = get_object_or_404(
-        Resort.objects.select_related("region", "location"),
-        slug=slug,
-    )
-
-    can_favourite = False
-    favourite = None
-    if request.user.is_authenticated:
-        can_favourite = True
-        favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
-
-    response = JsonResponse(
-        {
-            "html": render_to_string(
-                "public/partials/_resort_popup.html",
-                {
-                    "resort": resort,
-                    "region": resort.region,
-                    "favourited": favourite is not None,
-                    "favourite_uuid": str(favourite.uuid) if favourite else "",
-                    "can_favourite": can_favourite,
-                    "signin_url": reverse("accounts:sign_in"),
-                    "resort_url": resort.get_absolute_url(),
-                    "is_staff": request.user.is_staff,
-                },
-                request=request,
-            ),
-        }
-    )
-    response["Cache-Control"] = "private, no-store"
-    return response
 
 
 # ---------------------------------------------------------------------------

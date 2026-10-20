@@ -6,7 +6,9 @@
  * body, which is then kept and reused for the same region and day; a
  * selection that was not a tap opens it too; while it is open it follows the selection and the
  * date, and a deselect closes it; a failed fetch says so; and the pin and
- * download proxies press, and mirror, the roundels they stand for.
+ * download proxies press, and mirror, the roundels they stand for. A
+ * resort named in it opens the resort's own sheet rather than leaving the
+ * map (SNOW-1161).
  *
  * The module wires itself at import against the elements present then, and
  * its listeners live on `document` for the rest of the file, so the page is
@@ -25,6 +27,7 @@ const BODY = `
     <button type="button" data-region-sheet-proxy="map-download-control" aria-label="Download this region"></button>
   </div>
   <a href="/CH-4115/">Open bulletin</a>
+  <a href="/resorts/verbier/" data-resort-slug="verbier">Verbier</a>
 `;
 
 document.body.innerHTML = `
@@ -369,5 +372,43 @@ describe('the proxies', () => {
     expect(proxy.getAttribute('aria-disabled')).toBe('false');
     proxy.click();
     expect(pressed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a resort named in the sheet (SNOW-1161)', () => {
+  it('asks the map for the resort instead of navigating', async () => {
+    const sheet = await boot();
+    select('CH-4115', 'tap');
+    await settle();
+    const asked = vi.fn();
+    document.addEventListener('snowdesk:resort-open', asked);
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    sheet.querySelector('a[data-resort-slug]').dispatchEvent(click);
+    document.removeEventListener('snowdesk:resort-open', asked);
+    expect(click.defaultPrevented).toBe(true);
+    expect(asked).toHaveBeenCalledTimes(1);
+    expect(asked.mock.calls[0][0].detail).toEqual({ slug: 'verbier' });
+  });
+
+  it('leaves a modified click to the link, for a new tab', async () => {
+    const sheet = await boot();
+    select('CH-4115', 'tap');
+    await settle();
+    const asked = vi.fn();
+    document.addEventListener('snowdesk:resort-open', asked);
+    // Read whether the sheet let the click through, then stop jsdom
+    // following the link.
+    let leftToTheLink = false;
+    const record = (ev) => {
+      leftToTheLink = !ev.defaultPrevented;
+      ev.preventDefault();
+    };
+    document.addEventListener('click', record);
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, metaKey: true });
+    sheet.querySelector('a[data-resort-slug]').dispatchEvent(click);
+    document.removeEventListener('click', record);
+    document.removeEventListener('snowdesk:resort-open', asked);
+    expect(leftToTheLink).toBe(true);
+    expect(asked).not.toHaveBeenCalled();
   });
 });

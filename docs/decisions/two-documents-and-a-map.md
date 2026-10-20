@@ -28,7 +28,9 @@ search term** — people search "Verbier avalanche", not "CH-4115", and
 `ResortSitemap` publishes every resort — but it is a router to the two
 documents, not a third document. *(Amended by SNOW-1124: a resort page now
 shows today's danger from the bulletin's own render model, read-only — see
-[`a-resort-page-answers-the-query`](a-resort-page-answers-the-query.md).)*
+[`a-resort-page-answers-the-query`](a-resort-page-answers-the-query.md).)* *(SNOW-1161: inside the map a resort opens in the place sheet, outside it
+the page, and one labelled link crosses each way — see
+[`the-map-opens-a-resort-in-the-sheet`](the-map-opens-a-resort-in-the-sheet.md).)*
 **`/trips/<uuid>/` is a page because a trip
 is authored to be sent** (SNOW-819): it is one person's plan for one day,
 addressed to other people, and a link to it has to unfurl as a card in a

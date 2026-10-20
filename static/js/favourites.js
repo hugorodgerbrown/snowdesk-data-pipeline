@@ -130,7 +130,7 @@
   // See static/js/panel_rows_cache.js.
   if (IS_ELIGIBLE && LIST_URL) window.pwaPanelRows?.warm('favourites', LIST_URL);
 
-  // SNOW-499: resort-popup star create URL — read from #map's own dataset
+  // SNOW-499: resort star create URL — read from #map's own dataset
   // (not #favourite-add-btn's) since it is emitted alongside the other
   // #map data-*-url attributes and gated the same way
   // (favourites_eligible), independent of whether #map exists at all.
@@ -831,15 +831,14 @@
   // inside markup this module was already delegating over.
 
   // ---------------------------------------------------------------------------
-  // Resort-popup star (SNOW-499) — favourite/unfavourite a resort from the
-  // minimal map-pin popup (public/templates/public/partials/_resort_popup.html).
-  // Delegated from document — the popup markup is injected by map.js well
-  // after this script's own load-time query selectors ran, and this handler
-  // must keep working even when the surface-gating early return above would
-  // otherwise apply to code defined further down (it doesn't here — this is
-  // reached only when favourites_visible is true, since favourites.js itself
-  // is only loaded in that case; the star only ever renders in the popup
-  // when the requesting user is additionally authenticated).
+  // Resort star (SNOW-499; in the place sheet since SNOW-1161, which retired
+  // the resort popup) — favourite/unfavourite a resort from the sheet's peek
+  // row (public/templates/public/partials/_place_sheet_body.html).
+  // Delegated from document — the sheet's body is fetched by
+  // map_place_sheet.js well after this script's own load-time query
+  // selectors ran (this is reached only when favourites_visible is true,
+  // since favourites.js itself is only loaded in that case; the star only
+  // renders when the requesting user is additionally authenticated).
   //
   // Not favourited: enqueued through window.pwaMutationQueue exactly like
   // the create-form flow above (SNOW-479) — offline-capable, and the queue
@@ -908,9 +907,9 @@
       // one create experience the other three creates now share.
       //
       // No card: the create-form flow renders its confirmation into the
-      // favourites sheet, and this star is in a resort popup on the map with
-      // no sheet open to render into — the popup closes a line below, which
-      // is this path's own acknowledgement.
+      // favourites sheet, and this star is in the resort's place sheet with
+      // no favourites sheet open to render into — the star turning is this
+      // path's own acknowledgement.
       //
       // No pan: the resort the user has just tapped is what the camera is
       // already framing, so moving to it would be a jump to where the map
@@ -923,10 +922,10 @@
       // the popup closed and nothing appeared.
       window.pwaRowFocus?.reveal({ overlay: window.pwaFavouritesOverlay });
 
-      // The popup's own star state can't be trusted fresh (no uuid yet —
-      // the create is queued, possibly offline) — close it rather than
-      // show a half-updated star. The next tap re-fetches accurate state.
-      document.dispatchEvent(new CustomEvent('snowdesk:resort-popup-close'));
+      // SNOW-1161: the star lives in the place sheet, on every width since
+      // the resort popup went. map_place_sheet.js turns it at once and keeps
+      // it disabled until the drained queue's snowdesk:favourites-changed
+      // repaints the body with the saved state.
       return;
     }
 
@@ -945,7 +944,6 @@
         if (!resp.ok) throw new Error('delete failed');
         window.pwaTelemetry?.emit('map.favourite.deleted', { resort: true });
         document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-        document.dispatchEvent(new CustomEvent('snowdesk:resort-popup-close'));
       })
       .catch(function () {
         showToast('Could not remove this favourite — please try again.');

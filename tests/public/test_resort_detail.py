@@ -1790,10 +1790,10 @@ class TestResortFacts:
             "resort-facts-notes",
         ):
             assert f'data-testid="{testid}"' in content, testid
-        assert "1,620&ndash;3,899 m" in content
+        assert "1,620–3,899 m" in content
         assert "34" in content
         assert "196.5 km" in content
-        assert "23 Nov &ndash; 27 Apr" in content
+        assert "23 Nov – 27 Apr" in content
         assert "Zermatt Bergbahnen AG" in content
         assert "Theodul glacier" in content
         # Compare the rendered href exactly rather than asking whether the

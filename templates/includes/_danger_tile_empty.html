@@ -1,0 +1,19 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_danger_tile_empty.html — the danger tile for a day with no
+rating (SNOW-1161).
+
+An outlined "–" in the shape of ``.danger-tile``, so a row that holds a
+level's tile on a rated day keeps its shape on a day with no bulletin. Drawn
+first by the resort page's bulletin card (SNOW-1156); SNOW-1161 extracted it
+so the place sheet's peek row says "no bulletin" with the same tile rather
+than dropping the tile and adding a line of prose.
+
+Context: none.
+{% endcomment %}
+<span
+    class="danger-tile flex-none border border-border-strong text-label text-text-3"
+    role="img"
+    aria-label='{% trans "No danger rating" %}'
+    data-testid="danger-tile-empty"
+>–</span>

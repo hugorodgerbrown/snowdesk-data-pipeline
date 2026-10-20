@@ -397,7 +397,7 @@ panel, so the popup no longer carries the `__UUID__`-templated rename/delete
 forms it once reconstructed client-side, nor the `snowdesk:favourite-detail-close`
 event a delete used to dispatch. `favourite_rename_url_template` /
 `favourite_delete_url_template` remain in the page context — the panel's
-inline rename and the resort-popup star still post to them. The "Add
+inline rename and the place sheet's resort star still post to them. The "Add
 favourite" flow itself (placement, drag-to-refine, the create sheet, CSRF
 handling) is documented in `apps/favourites/views.py`'s module docstring and
 `static/js/favourites.js`'s header comment.
@@ -621,8 +621,7 @@ appeared first.
 [`offline-map.md`](offline-map.md)); `api:share_create`,
 `api:bulletin_render_model` and `api:bulletin_caaml` (the bulletin page's
 share and JSON alternates, [`site-structure.md`](site-structure.md));
-`api:resort_popup` (the resort pin's popup, SNOW-499 — public, never
-cached, favourite star resolved per user); `api:weather_detail` and its
+`api:weather_detail` and its
 `<int>` legacy redirect ([`weather-surfaces.md`](weather-surfaces.md)); the
 five `api:edit_location_*` endpoints (the location editor, below); and
 `api:mcp:endpoint` ([`mcp-server.md`](mcp-server.md)). `apps/public/api.py`'s

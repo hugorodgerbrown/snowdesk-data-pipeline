@@ -22,7 +22,8 @@ next part of it:
      date (Hugo, 16 Oct).
   2. HALF — where the region is, the day's avalanche problems (the bulletin
      page's own cards, ``public/_rating_block.html``) and the resorts in the
-     region, each a link to its resort page.
+     region. Each is a link to its resort page that, on the map, opens the
+     resort's own sheet instead (SNOW-1161, map_region_sheet.js).
   3. FULL — the bulletin link, and only when there is a bulletin for the
      day: the body's ``data-sheet-detents`` drops FULL otherwise. The sheet links to the bulletin rather than
      re-rendering it, because the bulletin page is the full-fidelity render.
@@ -81,7 +82,13 @@ Context:
             <ul class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
                 {% for resort in resorts %}
                     <li>
-                        <a href="{{ resort.get_absolute_url }}" class="text-text-1 underline">{{ resort.name }}</a>
+                        {# SNOW-1161: on the map a resort opens in its sheet; the href is #}
+                        {# the page, for a reader without JS and for a new tab.           #}
+                        <a
+                            href="{{ resort.get_absolute_url }}"
+                            data-resort-slug="{{ resort.slug }}"
+                            class="text-text-1 underline"
+                        >{{ resort.name }}</a>
                     </li>
                 {% endfor %}
             </ul>

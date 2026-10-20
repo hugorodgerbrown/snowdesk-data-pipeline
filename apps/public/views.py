@@ -4996,9 +4996,9 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
 
     Gives a Resort its own indexable URL (``/resorts/<slug>/``, SNOW-796),
     cross-linking with the bulletin page (which lists "Resorts in this
-    region" — see ``_bulletin_detail_response``) and the map's resort-pin
-    popup (``apps.public.api.resort_popup``, whose CTA now reads "View resort →"
-    and links here instead of straight to the bulletin).
+    region" — see ``_bulletin_detail_response``) and the map's place sheet
+    (``apps.public.place_sheet.resort_sheet_partial``), whose "View resort →"
+    is the one link from the map to this page (SNOW-1161).
 
     The slug is stored and never regenerated, so there is no canonical-slug
     redirect to perform here: the URL either names a resort or it 404s.
@@ -5035,8 +5035,8 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     SNOW-807's "Reports near here" link) — then the sections in a main
     column with the curated facts in a sidebar.
 
-    Reuses the context-building already proven by ``apps.public.api.resort_popup``
-    (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``).
+    Builds the same favourite context the place sheet does (``favourited`` /
+    ``favourite_uuid`` / ``can_favourite`` / ``signin_url``).
     The meta description's danger sentence reads the same ``panel`` as the
     tile, so the two can never name different levels.
 

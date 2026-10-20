@@ -1,0 +1,20 @@
+{% load i18n %}
+{% comment %}
+public/partials/_place_sheet_forecast_link.html — the place sheet's "Full
+forecast →" (SNOW-1161).
+
+The sheet shows the day the map is on; the week lives on the location's
+weather page. Drawn as the resort page's forecast link is ("Read the full
+7-day forecast →": a small accent text link under the weather), not as a
+third full-width button.
+
+Context:
+  forecast_url — the location's weather page for the day, or "" (no link).
+{% endcomment %}
+{% if forecast_url %}
+    <a
+        href="{{ forecast_url }}"
+        class="inline-block text-sm text-accent hover:text-accent-hover"
+        data-testid="place-sheet-forecast-link"
+    >{% trans "Full forecast →" %}</a>
+{% endif %}

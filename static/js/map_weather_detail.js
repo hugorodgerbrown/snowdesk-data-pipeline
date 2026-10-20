@@ -34,8 +34,8 @@
   if (!mapEl || !sheetEl || !window.MapSheet) return;
 
   // Rendered via {% url 'api:weather_detail' short_id='__SHORTID__' %}; the
-  // placeholder is substituted per tap, matching map.js's resort-popup
-  // handling. The feed's `short_id` is opaque, never a pk (SNOW-797).
+  // placeholder is substituted per tap, matching map_place_sheet.js's
+  // resort handling. The feed's `short_id` is opaque, never a pk (SNOW-797).
   var URL_TEMPLATE = mapEl.dataset.weatherDetailUrl || '';
 
   // `read` takes the whole fallback map and returns the whole map back,

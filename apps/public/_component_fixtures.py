@@ -869,6 +869,11 @@ PAGE_TITLE_VARIANTS: tuple[dict[str, Any], ...] = (
     },
 )
 
+# Danger tile for a day with no rating (SNOW-1161) -------------------------
+DANGER_TILE_EMPTY_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "No rating", "context": {}},
+)
+
 EYEBROW_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Bulletin section heading", "context": {"text": "Day Risk Profile"}},
     {"caption": "Bulletin section heading", "context": {"text": "Avalanche Problems"}},
@@ -920,39 +925,6 @@ META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Issued", "context": {"text": "Issued"}},
     {"caption": "Valid until", "context": {"text": "Valid until"}},
     {"caption": "Next update", "context": {"text": "Next update"}},
-)
-
-# Resort meta row (SNOW-501) --------------------------------------------------
-# Populated value, plus both blank-placeholder wordings (public em-dash vs
-# staff curation hint) — same context shape _resort_popup.html feeds per row.
-RESORT_META_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
-    {
-        "caption": "Populated value",
-        "context": {
-            "label": "Operator",
-            "value": "Téléverbier SA",
-            "is_staff": False,
-            "staff_hint": "Add operator name",
-        },
-    },
-    {
-        "caption": "Blank — public placeholder",
-        "context": {
-            "label": "Operator",
-            "value": "",
-            "is_staff": False,
-            "staff_hint": "Add operator name",
-        },
-    },
-    {
-        "caption": "Blank — staff curation hint",
-        "context": {
-            "label": "Operator",
-            "value": "",
-            "is_staff": True,
-            "staff_hint": "Add operator name",
-        },
-    },
 )
 
 # Resort "why it matters" line (SNOW-542) -------------------------------------
