@@ -250,6 +250,14 @@ class TestHelpPageFlagGating:
         assert b'data-testid="help-downloads-signin"' in response.content
         assert b'data-testid="help-downloads-cross-device"' in response.content
 
+    def test_restoring_onto_a_new_device_is_explained(self, client: Client) -> None:
+        """SNOW-1140: the new-device notice and "Download all" are described."""
+        response = client.get(reverse("public:help"))
+        content = response.content.decode()
+
+        assert 'data-testid="help-downloads-restore-all"' in content
+        assert "Download all" in content
+
     def test_the_superseded_device_local_claim_is_gone(self, client: Client) -> None:
         """The old paragraph is deleted, not merely joined by the new ones.
 

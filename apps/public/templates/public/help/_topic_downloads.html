@@ -26,6 +26,9 @@ make it three ways to store an area; a row's actions live in its "…"
 menu; and "a download stores the map, not the bulletins" stopped being
 true with SNOW-924.
 
+SNOW-1140: the restore paragraph — the one-time new-device notice and
+"Download all" on the "Not on this device" group.
+
 SNOW-749 adds a second distinction: the AREA (which region, or which
 framed box) follows the account, while the MAP DATA stays on the device
 that fetched it. The three paragraphs below exist to keep those apart,
@@ -81,6 +84,14 @@ paragraph is true, and it is gone rather than kept in an else branch.
             on this device", dimmed and with no size, because the space it takes is counted only on the device that
             actually holds it &mdash; a listed area is not the same thing as an available one. "Download here", in that
             row's "&hellip;" menu, fetches the same area onto the phone.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-downloads-restore-all">
+        {% blocktrans trimmed %}
+            The first time you open the map on a new device while signed in and online, a notice tells you how many of
+            your downloads aren't on it; "Show downloads" opens the sheet. When two or more areas can be fetched here,
+            "Download all" heads the "Not on this device" group and downloads them one after another with the basemap on
+            screen. Nothing downloads until you tap it, and it stops if you go offline or an area doesn't fit.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-downloads-device-local">
