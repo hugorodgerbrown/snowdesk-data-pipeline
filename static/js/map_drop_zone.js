@@ -640,6 +640,12 @@
    */
   async function handleConfirm() {
     if (!pending || pending.blob.over_ceiling || runState === 'busy') return;
+    // SNOW-1136 review: one pinned download at a time across every entry
+    // point — see `pinnedDownloadBusy`.
+    if (typeof pinnedDownloadBusy === 'function' && pinnedDownloadBusy()) {
+      revealBasemapDownloadError('busy');
+      return;
+    }
     if (!networkInUse()) {
       paintRun('offline');
       return;

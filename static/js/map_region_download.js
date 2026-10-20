@@ -1932,6 +1932,15 @@
     // run actually did, whatever the preference says by the time it ends.
     const terrain = _runIncludesTerrain();
 
+    // SNOW-1136 review: a framed area, drop zone or restore is running —
+    // the shared lock every pinned download takes (`pinnedDownloadBusy`).
+    // Refused with the busy toast rather than silently: the roundel shows
+    // this region's own state, which is not busy.
+    if (typeof pinnedDownloadBusy === 'function' && pinnedDownloadBusy()) {
+      revealBasemapDownloadError('busy');
+      return;
+    }
+
     // SNOW-1134: claimed before the runner's first await, alongside the
     // synchronous 'busy' paint it makes.
     _beginRun(data);
@@ -2314,6 +2323,11 @@
     // in flight is all this page allows (see `runRegionId`), and probing
     // this region first would only repaint the roundel for nothing.
     if (runRegionId !== null) return { started: false, reason: 'busy' };
+    // SNOW-1136 review: a framed area, drop zone or restore holds the same
+    // shared lock (`pinnedDownloadBusy`).
+    if (typeof pinnedDownloadBusy === 'function' && pinnedDownloadBusy()) {
+      return { started: false, reason: 'busy' };
+    }
     terrainOverride =
       options && typeof options.terrain === 'boolean' ? options.terrain : null;
     try {
