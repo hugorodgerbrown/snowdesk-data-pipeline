@@ -385,6 +385,8 @@
         savedAt: new Date().toISOString(),
       });
       await window.pwaDb.put('meta:app', { key: DOWNLOADED_REGIONS_KEY, value: next });
+      // SNOW-1134: see `notifyDownloadsChanged`.
+      notifyDownloadsChanged();
       // SNOW-749: and record the DEFINITION against the account, from the
       // same moment the device record is written so the two cannot
       // disagree about what was downloaded. Enqueued through the mutation
@@ -768,6 +770,44 @@
   // `startRegionDownload`.
   let terrainOverride = null;
 
+  // SNOW-1134: the region the user last selected on the map. Usually the
+  // same as `currentRegionId`; they differ only while `startRegionDownload`
+  // has borrowed the control to probe a region nobody selected, which is
+  // what lets it hand the control back afterwards.
+  let selectedRegionId = null;
+
+  // SNOW-1134: the region the one in-flight run — a download, a repair or
+  // a refresh — belongs to, from the tap until its outcome is settled, and
+  // the last progress it reported. Null when nothing is running.
+  //
+  // This, not a painted 'busy', is what says a run is going. The roundel
+  // used to carry that fact in its own state, so selecting another region
+  // mid-run left the first region's progress on screen, and the run's
+  // outcome then painted over whichever region was showing by the time it
+  // landed — one region's green 'done' on another.
+  //
+  // One run at a time, deliberately: a tap on another region while a run is
+  // in flight is REFUSED, not queued. The worker would serialise two warm
+  // runs (`pwaWarmCache` chains them), but the page would not: the progress
+  // grid is one map source both runs would write, and the second run's
+  // budget pre-flight would plan against a record the first has not
+  // written yet. So the other region shows its own real state, announced
+  // disabled (see `setState`), and is actionable again once this clears.
+  let runRegionId = null;
+  let runPct = 0;
+  // Moves on every run's start and end, so a probe that straddled either
+  // is discarded rather than painted over the run — see `_renderControl`.
+  let runEpoch = 0;
+
+  // SNOW-1134: how long a done-probe may take before the control stops
+  // waiting for it. `_probeDone` awaits a walk of every pinned bucket and an
+  // IndexedDB read, and either can hang rather than reject on a device under
+  // storage pressure; an unbounded await there held the render coalescer for
+  // good, so no later trigger repainted the control at all. The same budget
+  // reasoning as docs/decisions/bounded-offline-read-paths.md.
+  const PROBE_BUDGET_MS = 4000;
+  const PROBE_TIMED_OUT = 'timed-out';
+
   /**
    * SNOW-1072: whether the run about to start includes terrain data.
    *
@@ -1045,6 +1085,112 @@
   }
 
   /**
+   * SNOW-1134: `_probeDone`, bounded by `PROBE_BUDGET_MS`.
+   *
+   * A probe still pending at the budget is abandoned, not cancelled — it
+   * may still finish and heal the record, which is harmless — and the
+   * caller reads `PROBE_TIMED_OUT`: "could not tell", which never paints
+   * 'done'. A rejection reads as `null`, the probe's own "can't tell yet".
+   *
+   * @param {{regionId: string, summary: Object}} data
+   * @returns {Promise<Object | null | string>}
+   */
+  function _boundedProbe(data) {
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
+    const expiry = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(PROBE_TIMED_OUT), PROBE_BUDGET_MS);
+    });
+    return Promise.race([_probeDone(data).catch(() => null), expiry]).finally(() =>
+      clearTimeout(timer),
+    );
+  }
+
+  /**
+   * SNOW-1134: whether `data` is the region the control is showing now.
+   *
+   * By region id, not object identity: `applyRegion` builds a fresh
+   * `regionData` for the same region on every re-apply.
+   *
+   * @param {{regionId: string}} data
+   * @returns {boolean}
+   */
+  function _isShowing(data) {
+    return !!regionData && regionData.regionId === data.regionId;
+  }
+
+  /**
+   * SNOW-1134: mark `data`'s run as over. Idempotent, and a no-op for a
+   * region that is not the running one.
+   *
+   * @param {{regionId: string}} data
+   * @returns {void}
+   */
+  function _endRun(data) {
+    if (runRegionId !== data.regionId) return;
+    runRegionId = null;
+    runPct = 0;
+    runEpoch += 1;
+  }
+
+  /**
+   * SNOW-1134: claim the one run for `data`'s region — synchronously, before
+   * the caller's first await, so a second tap finds it taken.
+   *
+   * @param {{regionId: string}} data
+   * @returns {void}
+   */
+  function _beginRun(data) {
+    runRegionId = data.regionId;
+    runPct = 0;
+    runEpoch += 1;
+  }
+
+  /**
+   * SNOW-1134: paint a finished run's outcome — onto its own region only.
+   *
+   * When the user has moved to another region (or to none) meanwhile, the
+   * outcome is not theirs to see: the control is re-rendered for what is
+   * selected now instead, which also re-enables a start state `setState`
+   * announced disabled while the run was going.
+   *
+   * @param {{regionId: string, summary: Object}} data
+   * @param {string} state
+   * @returns {void}
+   */
+  function _settleRun(data, state) {
+    _endRun(data);
+    if (_isShowing(data)) {
+      setState(state, data.summary);
+      return;
+    }
+    renderControl();
+  }
+
+  /**
+   * SNOW-1134: the runner's `paint` for a run on `data`'s region.
+   *
+   * Progress is remembered whichever region is showing, so reselecting the
+   * running region shows its fill where it is; it reaches the roundel only
+   * while that region is the one on screen. Every state but 'busy' is the
+   * runner settling the run (a refused pre-flight, a declined eviction), so
+   * it ends the run too.
+   *
+   * @param {{regionId: string, summary: Object}} data
+   * @returns {function(string, number=): void}
+   */
+  function _runPainter(data) {
+    return (nextState, pct) => {
+      if (nextState === 'busy') {
+        runPct = pct || 0;
+        if (_isShowing(data)) setState(nextState, data.summary, pct);
+        return;
+      }
+      _settleRun(data, nextState);
+    };
+  }
+
+  /**
    * Paint `state` onto the download icon: data-download-state, the
    * identity-colour attribute, the busy fill percentage, and an
    * aria-label/title carrying the region's size.
@@ -1127,9 +1273,13 @@
     // hiding the control: the visitor CAN act on it, they just get a
     // different outcome than a signed-in one does.
     const refreshable = (state === 'done' || state === 'partial') && networkInUse();
+    // SNOW-1134: another region's run is in flight, and `handleClick`
+    // refuses a second one — see `runRegionId`. 'signin' still navigates.
+    const blocked = runRegionId !== null && state !== 'signin';
     btn.setAttribute(
       'aria-disabled',
-      state === 'idle' ||
+      !blocked &&
+        (state === 'idle' ||
         state === 'error' ||
         state === 'other-basemap' ||
         // SNOW-844: 'incomplete' is actionable — the tap repairs the
@@ -1137,7 +1287,7 @@
         // than no warning, and this one has a one-tap remedy.
         state === 'incomplete' ||
         refreshable ||
-        state === 'signin'
+        state === 'signin')
         ? 'false'
         : 'true',
     );
@@ -1258,7 +1408,14 @@
       setState('no-region');
       return;
     }
-    if (btn.dataset.downloadState === 'busy') return;
+    // SNOW-1134: the running region shows its run, at the progress it last
+    // reported — and only that region. This used to be a bare return on a
+    // painted 'busy', which left the running region's fill on every region
+    // selected after it.
+    if (runRegionId === data.regionId) {
+      setState('busy', data.summary, runPct);
+      return;
+    }
     // SNOW-843: the ceiling applies to what the download would actually
     // spend, not to the server's per-tile figure — a region under it on a
     // single-source basemap can be over it on a two-source one, and the
@@ -1293,12 +1450,20 @@
     // region hasn't been checked yet, so it must not borrow the last
     // region's answer.
     setState(networkInUse() ? gateState('idle') : 'offline', data.summary);
-    const probe = await _probeDone(data);
-    if (regionData !== data || btn.dataset.downloadState === 'busy') return;
+    const epoch = runEpoch;
+    const probe = await _boundedProbe(data);
+    // SNOW-1134: a run started or settled while this probe was out. Its
+    // outcome is the newer paint, and a probe begun before it must not
+    // land on top — whoever settled the run re-renders if it needs to.
+    if (regionData !== data || epoch !== runEpoch) return;
+    // SNOW-1134: the probe hung past its budget. The interim paint above
+    // stands — this region's size, never 'done' — and no retry is queued:
+    // the next trigger probes afresh, bounded again.
+    if (probe === PROBE_TIMED_OUT) return;
     // "Can't tell yet" (null): paint the actionable idle state so the icon
     // still carries this region's size, but come back once the style has
     // settled — the region may well already be downloaded.
-    if (probe === null) {
+    if (probe === null || typeof probe !== 'object') {
       setState(networkInUse() ? gateState('idle') : 'offline', data.summary);
       _retryWhenStyleSettles();
       return;
@@ -1388,14 +1553,16 @@
    * re-render the icon.
    *
    * @param {string | null} regionId
-   * @returns {void}
+   * @returns {Promise<void>} Settles once the render — including any
+   *   trailing pass it joined — has painted.
    */
   function applyRegion(regionId) {
     currentRegionId = regionId;
     const feature = regionId ? FEATURE_BY_REGION_ID[regionId] : null;
     const summary = (feature && feature.properties && feature.properties.download) || null;
     regionData = summary ? { regionId: regionId, summary: summary } : null;
-    renderControl();
+    // SNOW-1134: returned, so a caller can await the settled paint.
+    return renderControl();
   }
 
   /**
@@ -1416,12 +1583,18 @@
    * @returns {Promise<void>}
    */
   async function handleRepair(data) {
-    const probe = await _probeDone(data);
-    const missing = (probe && probe.missingDeps) || [];
+    // SNOW-1134: claimed before the probe's await, so a second tap — or a
+    // tap on another region — finds a run in flight.
+    _beginRun(data);
+    const probe = await _boundedProbe(data);
+    const missing = (probe && typeof probe === 'object' && probe.missingDeps) || [];
     if (missing.length === 0) {
       // The fault fixed itself between the paint and the tap — another
       // area's download, or a browse that recached the document. Settle on
       // whatever the probe now says rather than dispatching a no-op run.
+      // SNOW-1134: a probe that timed out lands here too, and nothing has
+      // been fetched, so the same settle is the honest one.
+      _endRun(data);
       renderControl();
       return;
     }
@@ -1430,27 +1603,25 @@
     await repairPinnedDownload({
       areaId: areaId,
       urls: missing,
-      paint: (nextState, pct) => setState(nextState, data.summary, pct),
+      paint: _runPainter(data),
       finish: async (result, { core: runCore }) => {
         // The same predicate a full download settles on — a partial,
         // vacuous or absent result must not claim the area now renders.
         if (runCore && runCore.downloadSucceeded(result)) {
-          // Drop the busy latch FIRST. `_renderControl` refuses to repaint
-          // a control it believes is mid-run (that guard is what stops a
-          // basemap switch or a connectivity flip clobbering a download's
-          // progress fill), so a re-render dispatched while 'busy' is
-          // still painted would return immediately and leave the roundel
-          // spinning for good. 'idle' is a real state with a real label
-          // rather than a bare attribute write, and it survives for the
-          // one tick before the probe below settles the true one.
-          setState(gateState('idle'), data.summary);
+          // End the run FIRST: `_renderControl` repaints the running
+          // region as its run (that guard is what stops a basemap switch
+          // or a connectivity flip clobbering a download's progress fill),
+          // so a re-render dispatched before this would paint 'busy' again
+          // and leave the roundel spinning for good.
+          _endRun(data);
           // Re-probe rather than paint 'done' outright: the repair proves
           // the documents landed, and the probe is what confirms the whole
           // area — tiles included — and heals the record's `deps` from a
-          // list it has just verified.
+          // list it has just verified. SNOW-1134: and it paints whichever
+          // region is showing now, which need not be this one.
           await renderControl();
         } else {
-          setState('error', data.summary);
+          _settleRun(data, 'error');
           revealBasemapDownloadError(result ? result.reason : null);
         }
         // The layers menu is a live cache-state dashboard, and this run
@@ -1524,6 +1695,28 @@
   }
 
   /**
+   * SNOW-1134: dispatch a run, ending it if the dispatch itself throws.
+   *
+   * A run is otherwise ended by its own outcome (`finish`, or a runner
+   * paint that settles it). One whose setup threw — a rejected record
+   * read, a content plan that blew up — reaches neither, and a run that
+   * never ends refuses every tap on every region for the rest of the page.
+   *
+   * @param {{regionId: string}} data
+   * @param {function(): Promise<void>} dispatch
+   * @returns {Promise<void>}
+   */
+  async function _guardRun(data, dispatch) {
+    try {
+      await dispatch();
+    } catch (err) {
+      _endRun(data);
+      renderControl();
+      throw err;
+    }
+  }
+
+  /**
    * SNOW-924: refresh a downloaded region's CONTENT — the perishable half.
    *
    * What a tap on a done roundel now does. The tiles are a fixed grid over
@@ -1547,6 +1740,8 @@
   let refreshInFlight = false;
 
   async function handleRefresh(data) {
+    // SNOW-1134: see `handleRepair` — claimed before the first await.
+    _beginRun(data);
     const core = self.pwaBasemapDownloadCore;
     const areaId = core ? core.areaIdForRegion(data.regionId) : '';
     const record = await _storedRegionRecord(data.regionId);
@@ -1581,13 +1776,14 @@
       // tiles off the probe and paint 'done' over a shortfall that is
       // still there — the exact repaint SNOW-932 closed.
       await _stampRegionContent(data.regionId, !content.short);
+      _endRun(data);
       await renderControl();
       return;
     }
     await repairPinnedDownload({
       areaId: areaId,
       urls: urls,
-      paint: (nextState, pct) => setState(nextState, data.summary, pct),
+      paint: _runPainter(data),
       finish: async (result, { core: runCore }) => {
         // SNOW-932: a short plan is a failed refresh even when every url
         // in it landed. The tally cannot see it — `downloadSucceeded`
@@ -1595,9 +1791,9 @@
         // that was wrong.
         if (runCore && runCore.downloadSucceeded(result) && !content.short) {
           await _stampRegionContent(data.regionId, true);
-          // Drop the busy latch before re-rendering, exactly as
-          // `handleRepair` does and for the same reason — see its comment.
-          setState(gateState('idle'), data.summary);
+          // End the run before re-rendering, exactly as `handleRepair`
+          // does and for the same reason — see its comment.
+          _endRun(data);
           await renderControl();
         } else {
           // The tiles are untouched and the map still draws, so this is not
@@ -1610,7 +1806,7 @@
           // read the probe, saw whole tiles, and painted 'done' over a
           // shortfall that was still there.
           await _stampRegionContent(data.regionId, false);
-          setState('partial', data.summary);
+          _settleRun(data, 'partial');
           revealBasemapDownloadError(result ? result.reason : null);
         }
         window.pwaLayerSyncStatus?.refresh();
@@ -1641,6 +1837,10 @@
     // replacement logic of its own — `beforeWarm` confirms it and
     // `finish` prunes it.
     const state = btn.dataset.downloadState;
+    // SNOW-1134: one run at a time — see `runRegionId` for why a tap on
+    // another region is refused rather than queued. The running region's
+    // own roundel is 'busy', which no branch below acts on either.
+    if (runRegionId !== null && state !== 'signin') return;
     // SNOW-844: a repair, before the sign-in gate rather than after it.
     // This region is ALREADY on this device; finishing it is not starting
     // a new download, and the gate is on starting one. Gating it would
@@ -1653,7 +1853,7 @@
         setState('offline', data.summary);
         return;
       }
-      await handleRepair(data);
+      await _guardRun(data, () => handleRepair(data));
       return;
     }
     // SNOW-924: a tap on a downloaded area refreshes its content. Beside
@@ -1675,7 +1875,7 @@
       if (refreshInFlight) return;
       refreshInFlight = true;
       try {
-        await handleRefresh(data);
+        await _guardRun(data, () => handleRefresh(data));
       } finally {
         refreshInFlight = false;
       }
@@ -1732,7 +1932,10 @@
     // run actually did, whatever the preference says by the time it ends.
     const terrain = _runIncludesTerrain();
 
-    await runPinnedDownload({
+    // SNOW-1134: claimed before the runner's first await, alongside the
+    // synchronous 'busy' paint it makes.
+    _beginRun(data);
+    await _guardRun(data, () => runPinnedDownload({
       areaId: areaId,
       mb: data.summary.mb,
       terrain: terrain,
@@ -1742,7 +1945,7 @@
       count: data.summary.count,
       // This control's roundel carries the region's size in every state,
       // so the shared runner's (state, pct) pair is widened here.
-      paint: (nextState, pct) => setState(nextState, data.summary, pct),
+      paint: _runPainter(data),
       loadBlob: async () => {
         const response = await fetch(
           '/api/region-basemap-tiles/?id=' + encodeURIComponent(data.regionId),
@@ -1947,7 +2150,7 @@
           // connectivity listener already ran while this control was still
           // 'busy' (and so early-returned), so the resting paint is this
           // callback's job.
-          setState(networkInUse() ? 'idle' : 'offline', data.summary);
+          _settleRun(data, networkInUse() ? 'idle' : 'offline');
         } else if (ok && outcome.incomplete) {
           // SNOW-924: the tiles landed and the content did not. Not 'done',
           // which would claim a completeness this area has not got, and not
@@ -1967,11 +2170,11 @@
           // carries the fact, so this paint survives the next render
           // instead of being repainted green by a probe that could not
           // know.
-          setState('partial', data.summary);
+          _settleRun(data, 'partial');
         } else if (ok) {
-          setState('done', data.summary);
+          _settleRun(data, 'done');
         } else {
-          setState('error', data.summary);
+          _settleRun(data, 'error');
           revealBasemapDownloadError(result ? result.reason : null);
         }
         // SNOW-505: the warm-cache run has just warmed the shell + pinned
@@ -1985,7 +2188,7 @@
         // next basemap swap or reload.
         window.pwaDownloadedOverlay?.refresh();
       },
-    });
+    }));
 
     // SNOW-871: the user declined the replacement, so the run stopped
     // before caching anything (see `beforeWarm` for the one read-only
@@ -2002,7 +2205,25 @@
   btn.addEventListener('click', () => handleClick());
 
   document.addEventListener('snowdesk:region-selected', (e) => {
-    applyRegion((e.detail && e.detail.region_id) || null);
+    selectedRegionId = (e.detail && e.detail.region_id) || null;
+    applyRegion(selectedRegionId);
+  });
+
+  // SNOW-1134: what this device holds changed under the control — an area
+  // removed from the Manage downloads sheet, evicted for room, or written
+  // by another control. Without this a removed region stayed green until
+  // something unrelated repainted it. See `notifyDownloadsChanged`.
+  document.addEventListener('snowdesk:downloads-changed', () => renderControl());
+
+  // SNOW-1134: and re-probe when the page comes back. A page restored from
+  // the back/forward cache, or a tab returning to the foreground, may have
+  // missed every event above while another tab removed or downloaded the
+  // area this roundel describes.
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) renderControl();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') renderControl();
   });
 
   // Per-basemap download state: the "done" probe (_probeDone) keys off the
@@ -2089,11 +2310,29 @@
     // SNOW-1072: in force from the probe on, so the ceiling check that
     // decides whether this region can run prices the same tile families
     // the run will fetch.
+    // SNOW-1134: refused BEFORE the control is moved — the one region run
+    // in flight is all this page allows (see `runRegionId`), and probing
+    // this region first would only repaint the roundel for nothing.
+    if (runRegionId !== null) return { started: false, reason: 'busy' };
     terrainOverride =
       options && typeof options.terrain === 'boolean' ? options.terrain : null;
     try {
-      applyRegion(regionId);
-      await renderControl();
+      // SNOW-1134: awaited through to the settled probe. `renderControl`
+      // used to resolve at once when it joined a pass already running, so
+      // this read the interim 'idle' painted before any probe — and
+      // started a second download of a region already on the device.
+      //
+      // Review: and re-asserted after it. A selection made while the probe
+      // was awaited replaces the shared focus and queues its own trailing
+      // pass, which this await now waits for — so without the check the
+      // state read and the tap below would act on the region the user
+      // just picked, not the one "Download here" asked for. Re-applying
+      // is bounded: a user tapping regions faster than a probe settles
+      // three times over gets the refusal rather than a loop.
+      for (let attempt = 0; attempt < 3 && currentRegionId !== regionId; attempt += 1) {
+        await applyRegion(regionId);
+      }
+      if (currentRegionId !== regionId) return { started: false, reason: 'busy' };
       const state = btn.dataset.downloadState;
       if (state !== 'idle' && state !== 'error' && state !== 'other-basemap') {
         // SNOW-863: the refused STATE travels back, because "it did not
@@ -2105,10 +2344,18 @@
         // untrue: trying again fails identically until the run finishes.
         return { started: false, reason: state || 'unknown' };
       }
+      // `handleClick` reads the focus synchronously on entry, and nothing
+      // has been awaited since the check above, so it starts THIS region.
       await handleClick();
       return { started: true, reason: '' };
     } finally {
       terrainOverride = null;
+      // SNOW-1134: hand the control back to the region the user actually
+      // selected. This one was focused only to be probed and started; left
+      // on it, the roundel described a region nobody chose — and, once a
+      // run started, the selected region's own state never came back.
+      // The run itself carries on, painting only while its region shows.
+      if (currentRegionId !== selectedRegionId) await applyRegion(selectedRegionId);
     }
   }
 
