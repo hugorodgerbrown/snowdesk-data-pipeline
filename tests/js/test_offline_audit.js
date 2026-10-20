@@ -2018,7 +2018,9 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
         document.body.innerHTML = PANEL;
         audit.init();
 
-        const said = await statusOnceSettled(/ready/i);
+        // Anchored: an unanchored /ready/i also matches the in-progress
+        // "Getting ready… (1 of 2)" and settled before the run had (SNOW-1159).
+        const said = await statusOnceSettled(/^Ready —/);
 
         const shellWarms = warmed.filter((urls) => urls.length === 1 && urls[0] === '/map/');
         expect(shellWarms).toHaveLength(1);
