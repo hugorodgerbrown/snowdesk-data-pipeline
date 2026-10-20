@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n components %}
 {% comment %}
 apps/favourites/templates/favourites/partials/_resort_favourite_button.html —
 Resort-page favourite/unfavourite toggle button (SNOW-504).
@@ -11,6 +11,17 @@ offline-capable resort star (``favourite_create_from_resort`` /
 ``favourite_delete``, driven by ``static/js/favourites.js``'s client
 mutation queue). Not wrapped in a ``<form>``, so the CSRF token rides via
 ``hx-headers`` (mirrors ``templates/includes/bulletin_header.html``).
+
+SNOW-1155: drawn as the resort page header's secondary action, beside the
+primary "See on the map" — the shared ``button_classes`` secondary/compact
+chrome (the same string ``includes/_button.html`` emits) with the house
+star (``includes/_icon_favourite.html``), outline when unsaved and filled
+when saved. The anonymous branch is the SAME button shape as a link to
+sign-in, labelled "Save resort", so the header reads identically to every
+visitor. ``min-h-11`` is the 44px tap target; ``flex-1 lg:flex-none``
+lets the two header actions share a phone row half-and-half and size to
+their labels on a desktop. Both live here rather than at the include site
+because the HTMX toggle swaps this whole element (``outerHTML``).
 
 Context:
   resort         — regions.Resort instance.
@@ -29,9 +40,9 @@ Context:
         data-testid="resort-favourite-toggle"
         data-favourited="{{ favourited|yesno:'true,false' }}"
         aria-pressed="{{ favourited|yesno:'true,false' }}"
-        class="flex items-center gap-2 self-start rounded-pill border border-border px-3 py-1.5 text-sm font-medium text-text-1 hover:border-text-2"
+        class="{% button_classes variant='secondary' size='compact' %} inline-flex min-h-11 flex-1 items-center justify-center gap-2 lg:flex-none"
     >
-        <span aria-hidden="true">{% if favourited %}★{% else %}☆{% endif %}</span>
+        {% include "includes/_icon_favourite.html" with filled=favourited only %}
         {% if favourited %}
             {% trans "Saved" %}
         {% else %}
@@ -42,8 +53,9 @@ Context:
     <a
         href="{{ signin_url }}"
         data-testid="resort-favourite-signin"
-        class="self-start text-sm font-medium text-status-info-text underline"
+        class="{% button_classes variant='secondary' size='compact' %} inline-flex min-h-11 flex-1 items-center justify-center gap-2 lg:flex-none"
     >
-        {% trans "Sign in to save this resort" %}
+        {% include "includes/_icon_favourite.html" only %}
+        {% trans "Save resort" %}
     </a>
 {% endif %}

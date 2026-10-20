@@ -756,6 +756,37 @@ class TestFavouriteResortToggleSuccess:
 
 
 @pytest.mark.django_db
+class TestFavouriteResortToggleButtonShape:
+    """SNOW-1155: the swapped-in button is the shared secondary button."""
+
+    def test_toggle_swaps_in_the_secondary_button_with_the_house_star(
+        self, client: Client
+    ) -> None:
+        """Saved reads "Saved" with a filled star; unsaved, "Save resort" outlined."""
+        user = UserFactory.create()
+        client.force_login(user)
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+
+        with patch("apps.favourites.services.fetch_elevation", return_value=1500.0):
+            saved = client.post(_resort_toggle_url(resort.slug), **HTMX_HEADERS)
+            unsaved = client.post(_resort_toggle_url(resort.slug), **HTMX_HEADERS)
+
+        saved_html = saved.content.decode()
+        assert "Saved" in saved_html
+        assert 'aria-pressed="true"' in saved_html
+        assert 'fill="currentColor"' in saved_html  # includes/_icon_favourite.html
+        assert "border-text-1" in saved_html  # button_classes secondary
+        assert "☆" not in saved_html
+        assert "★" not in saved_html
+
+        unsaved_html = unsaved.content.decode()
+        assert "Save resort" in unsaved_html
+        assert 'aria-pressed="false"' in unsaved_html
+        assert 'fill="none"' in unsaved_html
+        assert 'hx-swap="outerHTML"' in unsaved_html
+
+
+@pytest.mark.django_db
 class TestFavouriteResortToggleCap:
     """Reaching the per-user cap renders the limit-reached partial at 409."""
 
