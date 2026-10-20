@@ -1,8 +1,8 @@
 ---
 name: location-is-the-primitive
-description: Location is the domain primitive every place FKs to — resorts, favourites, observations, region centroids; ForecastCell is gone (SNOW-762)
+description: Location is the primitive every place FKs to — Resort.location pin (set_resort_pin), favourites, observations, region centroids
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-20
 ---
 
 # Location is the primitive — supersedes location-first-information-model
@@ -25,6 +25,26 @@ identity opt-in — inverted the model and are withdrawn.
 > [`weather-is-one-immutable-location-row`](weather-is-one-immutable-location-row.md).
 > The `ForecastCell` passages are left as written, as the record of what
 > this decision was made against.
+
+> **Amended by SNOW-1144 (2026-10-20): a resort's pin is its Location.**
+> Until then a resort's pin was two floats (`Resort.latitude`/`longitude`)
+> and its weather hung off a separate `ResortLocation` an operator had to
+> create with `link_resort_locations` — so a resort placed in the map editor
+> had no weather until someone remembered. `Resort.location` (FK, `PROTECT`,
+> reverse `pinned_resorts`) is now the pin, and
+> `apps.regions.services.resort_pin.set_resort_pin` is its one writer: the
+> map editor, `import_resorts` and the admin all call it. It reuses the
+> resort's row (or the `is_primary` link's, which the old command minted);
+> when the pin moves it corrects that row in place — the re-placement this
+> document already allows — so the `Weather` history stays attached, but it
+> never moves a named or shared row, re-anchoring instead. Clearing a pin
+> clears the FK, never the row. The reverse relation joins `public()` and
+> `active()`, so a pin is fetched and shown like any curated point, and
+> `Resort.objects.geocoded()` now means "has a location". The two floats
+> stay as a mirror the service keeps in step until nothing reads them.
+> `link_resort_locations --commit` became the one-time backfill. The resort
+> page leads its weather list with the pin and skips a curated link to the
+> same row, so a resort with no curated points still shows its weather.
 
 ## Decision
 

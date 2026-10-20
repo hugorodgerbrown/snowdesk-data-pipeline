@@ -2,7 +2,7 @@
 name: locations
 description: Coordinate reference — Location, Favourite, Resort, FieldObservation, MicroRegion.centre, Route.points, GeoIP; apps/core/geo haversine
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-20
 ---
 
 # Locations — what every coordinate in this codebase means
@@ -32,7 +32,7 @@ it, and what may I safely conclude from it?**
 | `Location.what3words` (+ `_fetched_at`) | Derived, permanent | Exact — it encodes the same 3m square | `convert_to_3wa` (what3words), out of band |
 | `Favourite.latitude/longitude` | Precise, user-supplied | Exact | The user, dropping a pin |
 | `Favourite.elevation` | Derived | Approximate | `fetch_elevation` (Open-Meteo) |
-| `Resort.latitude/longitude` | Precise, curated | Exact as a *village* | Geocoder, on the resort's **name** |
+| `Resort.location` (mirrored on `Resort.latitude/longitude`) | Precise, curated | Exact as a *village* | Geocoder, on the resort's **name**; written by `set_resort_pin` (SNOW-1144) |
 | `FieldObservation.latitude/longitude` | Report location | Exact as *reported* | The user, possibly by dragging |
 | `FieldObservation.gps_latitude/gps_longitude` | Raw device fix | Exact as *measured* | The device |
 | `MicroRegion.centre` (and `SubRegion` / `MajorRegion`) | Derived centroid | Approximate | Polygon centroid, `refresh_eaws_fixtures` |
@@ -131,8 +131,12 @@ reports there — approximate, not surveyed.
 
 ### Precise, curated — `Resort`
 
-`latitude`/`longitude` carry `geocode_source`, `geocode_confidence`,
-`geocoded_at` and `needs_review`, so provenance is on the row.
+The pin is `Resort.location`, a `Location` (SNOW-1144), written only by
+`set_resort_pin` (`apps/regions/services/resort_pin.py`), which moves that
+row in place when the pin is corrected so its weather stays attached.
+`latitude`/`longitude` remain on the row as a mirror the service keeps in
+step, and carry `geocode_source`, `geocode_confidence`, `geocoded_at` and
+`needs_review`, so provenance is on the row. Readers use `location`.
 
 **Say plainly what it denotes: the geocoder's answer for the resort's
 *name*, which in practice is the village.** Live lookups put Verbier at

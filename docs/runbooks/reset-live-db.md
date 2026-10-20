@@ -2,7 +2,7 @@
 name: reset-live-db
 description: Reset the live Render Postgres DB after a rewritten migration graph (SNOW-313): drop schema, migrate, loaddata, re-ingest, rollback
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-20
 ---
 
 # Runbook — reset the live database
@@ -140,8 +140,11 @@ uv run --no-sync python manage.py compute_basemap_download --commit
 # fixture (see docs/decisions/resorts-are-editable-data.md).
 uv run --no-sync python manage.py import_resorts --commit
 
-# Weather anchors: a Location per region centroid, then one per geocoded
-# resort. Both offline and idempotent.
+# Weather anchors: a Location per region centroid. import_resorts above
+# already gave every sheet-pinned resort its pin Location through
+# set_resort_pin (SNOW-1144); link_resort_locations is the backfill for
+# any pinned before that and is a no-op otherwise. Both offline and
+# idempotent.
 uv run --no-sync python manage.py link_region_centroid_locations --commit
 uv run --no-sync python manage.py link_resort_locations --commit
 ```

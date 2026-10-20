@@ -1,8 +1,8 @@
 ---
 name: region-centroid-backfill
-description: Region centroid Locations — not re-linked on deploy; an operator runs link_region_centroid_locations and link_resort_locations --commit
+description: Region centroid Locations (link_region_centroid_locations) and the one-time Resort.location backfill (link_resort_locations)
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-20
 ---
 
 # Runbook — region centroid Locations
@@ -105,8 +105,31 @@ print('weather rows       :', Weather.objects.count())
 - **`regions w/ centroid` is 0** — the environment has not been linked.
   Run `link_region_centroid_locations --commit`; it is safe and offline.
 - **Linked, but `public locations` is small** — `public()` is
-  `resort_locations OR micro_regions`; a centroid reaches it only through
-  the FK above.
+  `resort_locations OR micro_regions OR pinned_resorts`; a centroid reaches
+  it only through the FK above.
+
+## Resort pins (SNOW-1144)
+
+A resort's map pin is its own `Location` — `Resort.location`, written by
+`apps.regions.services.resort_pin.set_resort_pin` from the map editor,
+`import_resorts` and the admin. A pinned resort therefore has weather from
+the next `fetch_weather` run with nothing to link by hand, and a moved pin
+keeps its weather because the same row is corrected in place.
+
+`link_resort_locations --commit` is the **one-time backfill** for resorts
+pinned before the column existed: it routes each one through the same
+service, adopting the anonymous `Location` the pre-SNOW-1144 command linked
+so the weather already stored stays the resort's. Offline and idempotent;
+after it has run once against an environment there is nothing left for it
+to do. Its `--check` flag (scheduled daily) names any resort with a
+coordinate and no pin `Location` — after the backfill, that set is empty by
+construction.
+
+A resort missing from the map is diagnosed the same way:
+
+```bash
+uv run --no-sync python manage.py link_resort_locations --check
+```
 - **Public, but no `weather rows`** — `fetch_weather` has not run for those
   locations yet. It is scheduled 4×/day; run it by hand to fill today.
 
