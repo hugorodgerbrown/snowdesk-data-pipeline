@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-10-20
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -1158,7 +1158,7 @@ claims to be coverage.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Tap the bin on a row | The row goes, its squares go, and its bucket is gone from the probe |
+| 1 | Tap the bin on a row | Its squares go and its bucket is gone from the probe. Signed in, the row moves to "Not on this device" (Remove means this device — SNOW-1135); signed out, it goes |
 | 2 | Start a region download and interrupt it mid-run (Network → Offline while `busy`) | The run reports cancelled, not failed; the roundel rests at `idle` — a partial run records nothing |
 | 3 | Reopen the sheet | The leftover bucket lists under "Unknown basemap" with its bucket id as the title and "Incomplete" as its whole meta line — no size, no kind, **Remove the only action** |
 | 4 | Note what distinguishes it from P13's row | Both read "Incomplete", and the actions are the difference: an orphan has no record to repair *from*, so it gets Remove alone, where a render-incomplete area carries **Repair** as well |
@@ -1175,6 +1175,8 @@ claims to be coverage.
 | 3 | Turn on "Display downloaded areas" in B's layers menu | No squares — B holds no tiles. The budget total in B reads 0 for those rows |
 | 4 | Tap "Download here" | A region downloads directly; a custom area reopens framing fitted to the stored box |
 | 5 | Rename the custom area in A, then reload B | The new name shows in B — the definition syncs, the bytes never do |
+| 6 | In B, open a listed row's "…" menu | Download here, then Forget (SNOW-1135) |
+| 7 | Choose Forget and accept | The confirmation says it comes off your account and that a device still holding it adds it back; the row leaves B's sheet. Reopen A's sheet online, then reload B — the area is listed in B again, because A still holds it |
 
 ### Scenario D9: The two gates
 

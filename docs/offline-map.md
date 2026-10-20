@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-10-20
 ---
 
 # PWA shell
@@ -2534,9 +2534,9 @@ the one that must not move.
 
 | `onDevice` | `synced` | How it reads |
 |---|---|---|
-| yes | yes | Normal row. Trash; the confirmation says the removal reaches the other devices too. |
-| yes | no | Normal row, unchanged from before this ticket. Reachable for an area downloaded before the feature shipped (and not yet adopted), or one whose queued push has not drained, which is why the trash's confirmation copy is keyed off the row's own `synced` flag and not off a global: the global would promise to remove it "from your other devices too" when it was never on any. |
-| no | yes | Dimmed title, and its whole meta line reads "On your account — not downloaded here" rather than a kind and a size (SNOW-832 — a size would be "0.0 MB", a download that somehow takes no space rather than one that is not here). It sits inside its own basemap's group, and contributes 0 to that group's total. "Download here" and the trash; no rename — the rename writes to a local record this device does not have. |
+| yes | yes | Normal row. Trash removes it from this device only (SNOW-1135); the confirmation (`confirm-remove-kept`) says it stays listed under "Not on this device". |
+| yes | no | Normal row, unchanged from before this ticket. Reachable for an area downloaded before the feature shipped (and not yet adopted), or one whose queued push has not drained, which is why the trash's confirmation copy is keyed off the row's own `synced` flag and not off a global: the global would promise a "Not on this device" row the area will not get. |
+| no | yes | Dimmed title, and its whole meta line reads "On your account — not downloaded here" rather than a kind and a size (SNOW-832 — a size would be "0.0 MB", a download that somehow takes no space rather than one that is not here). It sits inside its own basemap's group, and contributes 0 to that group's total. "Download here" and Forget (SNOW-1135), collapsed into the row's "…" menu in that order — or the bare Forget alone when the row records too little to download; no rename — the rename writes to a local record this device does not have. |
 | no | no | Not produced by `reconcileAreas`; tolerated by `manageRows`, which paints it as the row above without the account claim. |
 
 **"Download here"** hands off to whichever start control owns the kind of
@@ -2549,8 +2549,18 @@ the current zoom, so a different device at a different viewport would fetch
 a different set anyway, and the user gets to see and confirm what they are
 spending their budget on.
 
-**Delete is one verb again (SNOW-832).** The trash calls `forget()` AND
-the local eviction: gone everywhere.
+**Remove means this device; Forget clears the account (SNOW-1135).** The
+trash on a row this device holds calls only the local eviction: the
+account row stays, so a synced area drops into "Not on this device" and is
+one tap from coming back. Forget (`data-downloads-forget`) is offered only
+on an account-only row and calls only `forget()`; its confirmation says a
+device that still holds the area will add it back (`_reassertHeldAreas`).
+The two verbs never share a row, so the SNOW-832 objection below — two
+destructive controls on one row — still holds.
+
+What follows is the history. SNOW-832 made the trash call `forget()` AND
+the local eviction — gone everywhere — which surprised users and was
+undone anyway by any device still holding the area.
 
 SNOW-749 split it in two and put a second destructive control beside it —
 "Free up space" (`data-downloads-evict`), which called only the local
@@ -2563,14 +2573,14 @@ neither glyph could show. Gone with it: `includes/_icon_free_space.html`,
 the `confirm-free-space` and `free-space-row-label` strings, `buildRow`'s
 branch and the handler's.
 
-`evictArea` itself is untouched and is still the local half of the trash.
+`evictArea` itself is untouched and is, since SNOW-1135, the whole of the trash.
 So is SNOW-586's automatic budget eviction (`evictBasemapAreas`), which
 takes that same path — which is what makes an area evicted to make room
 survive as a re-download rather than disappearing with no record it
 existed.
 
-The forget is a queued mutation, so the account row survives the re-render
-that follows the tap. `map_downloads_manager.js` keeps a session-scoped
+The forget (Forget's, since SNOW-1135) is a queued mutation, so the account
+row survives the re-render that follows the tap. `map_downloads_manager.js` keeps a session-scoped
 `FORGOTTEN` set and filters those ids out of the rendered list — the
 optimistic half of the same shape the favourites panel's pending pin uses.
 An area forgotten and then re-downloaded here is listed again: the local
@@ -3531,4 +3541,3 @@ Reload is `clearShellAndReload`: it drops the shell caches, so the next
 navigation comes from the network. There is no automatic reload, and an
 offline or failed poll shows nothing. Lowering the navigation budget and a
 bounded cache-first paint stay out of scope.
-

@@ -247,9 +247,22 @@ the row's own label, so map.html loads that module once for both.
     <span data-string="budget-bar-label">{% blocktrans %}Space used, by base map: %(segments)s{% endblocktrans %}</span>
     <span data-string="budget-bar-empty">{% trans "Nothing downloaded on this device" %}</span>
     <span data-string="budget-segment">{% blocktrans %}%(basemap)s %(size)s{% endblocktrans %}</span>
+    {# SNOW-1135: Remove means this device. The first message is for a row  #}
+    {# the account does not know about; the second for one it does, which  #}
+    {# stays listed under "Not on this device" after the removal.            #}
     <span data-string="confirm-remove">{% blocktrans %}Remove the offline map for %(name)s? This frees %(size)s on this
             device. You can download it again whenever you like.{% endblocktrans %}</span>
+    <span
+        data-string="confirm-remove-kept"
+    >{% blocktrans %}Remove the offline map for %(name)s from this device? This frees %(size)s. It stays in your list under "Not on this device", so you can download it again.{% endblocktrans %}</span>
     <span data-string="remove-failed">{% trans "That download couldn't be removed. Try again." %}</span>
+    {# SNOW-1135: Forget, on an account-only row — takes the area off the   #}
+    {# account. It cannot reach another device's tiles, so it says so.     #}
+    <span
+        data-string="confirm-forget"
+    >{% blocktrans %}Forget %(name)s? It is removed from your account. A device that still has it downloaded will add it back.{% endblocktrans %}</span>
+    <span data-string="forget-row-label">{% blocktrans %}Forget %(name)s{% endblocktrans %}</span>
+    <span data-string="forget-failed">{% trans "That area couldn't be forgotten. Try again." %}</span>
     {# SNOW-634: [data-panel-add]'s offline refusal — Offline-integrity     #}
     {# mirrors #map-frame-overlay's own Download button: no new download    #}
     {# can start without a connection, even though listing/deleting what is #}
@@ -301,9 +314,9 @@ the row's own label, so map.html loads that module once for both.
             device{% endblocktrans %}</span>
     {# SNOW-832 removed `free-space-row-label` and `confirm-free-space`   #}
     {# with the second destructive verb they belonged to — see            #}
-    {# includes/_map_downloads_row_actions.html for why it went. The trash #}
-    {# means gone everywhere again, and its two confirmations are the      #}
-    {# whole set: this one for a row with an account row behind it, the    #}
+    {# includes/_map_downloads_row_actions.html for why it went. SNOW-1135 #}
+    {# made the trash local again (Remove = this device) and moved the     #}
+    {# account half to Forget, on the account-only row.                    #}
     <span data-string="download-here-failed">{% trans "That download couldn't be started here. Try again." %}</span>
     {# SNOW-863: the refusal a reader actually reaches. One roundel drives  #}
     {# every region download, so a second "Download here" while a run is    #}
