@@ -335,6 +335,45 @@ def _terrain_defaults(raw: str | None) -> dict[str, bool]:
     return {"terrain": _TERRAIN_VALUES[raw]}
 
 
+def _shape_error(raw: str | None) -> str | None:
+    """Return the 400 message for an unrecognised ``shape``, or None.
+
+    SNOW-1136. Absent is not an error, on the same reasoning as
+    ``_terrain_error``: a client shell that predates the field posts no
+    ``shape``, and ``_shape_defaults`` leaves the stored value alone for it.
+
+    Args:
+        raw: The posted value, or None when the field was not posted.
+
+    Returns:
+        A message, or None when the value is absent or one of
+        ``DownloadArea.SHAPE``'s values.
+
+    """
+    if raw is None or raw in DownloadArea.SHAPE.values:
+        return None
+    return 'shape must be "box" or "circle".'
+
+
+def _shape_defaults(raw: str | None) -> dict[str, str]:
+    """Return the ``update_or_create`` defaults a posted ``shape`` implies.
+
+    Only a POSTED value is written. Omitted, a new row takes the model
+    default (``box``) and an existing row keeps what it had — so an older
+    shell re-syncing a drop zone cannot turn it back into a box.
+
+    Args:
+        raw: The posted value, already checked by ``_shape_error``.
+
+    Returns:
+        ``{"shape": str}``, or an empty dict when nothing was posted.
+
+    """
+    if raw is None:
+        return {}
+    return {"shape": raw}
+
+
 def _serialise(area: DownloadArea) -> dict[str, Any]:
     """Return one area as the client's JSON shape.
 
@@ -358,6 +397,7 @@ def _serialise(area: DownloadArea) -> dict[str, Any]:
         "basemap_key": area.basemap_key,
         "name": area.name,
         "terrain": area.terrain,
+        "shape": area.shape,
         "created_at": area.created_at.isoformat(),
     }
 
@@ -401,6 +441,11 @@ def area_sync(request: HttpRequest) -> HttpResponse:
     predates the field cannot clear a flag a newer one set by re-syncing the
     same area. Any other value is a 400.
 
+    SNOW-1136: ``shape`` is ``"box"`` or ``"circle"`` — whether a custom
+    area is a framed box or a drop zone — with the same absent rule as
+    ``terrain``: absent leaves a stored row's value alone and creates a new
+    row as ``box``; any other value is a 400.
+
     The per-user cap is checked only for an area id the account does not
     already hold: re-syncing an area at the cap is an update, and refusing
     it would strand a user who is merely re-downloading something they
@@ -411,7 +456,8 @@ def area_sync(request: HttpRequest) -> HttpResponse:
             usable bbox (absent, malformed, out of range, or larger than
             ``DOWNLOAD_CEILING_MB`` — see ``_clean_bbox``); an over-long
             ``name``, ``region_id`` or ``basemap_key``; a ``terrain`` that
-            is neither ``"true"`` nor ``"false"``.
+            is neither ``"true"`` nor ``"false"``; a ``shape`` that is
+            neither ``"box"`` nor ``"circle"``.
         403 — anonymous request.
         409 — the user has reached ``settings.DOWNLOAD_AREAS_MAX_PER_USER``.
         429 — rate limit exceeded.
@@ -450,9 +496,12 @@ def area_sync(request: HttpRequest) -> HttpResponse:
         return HttpResponse("A region area needs a region_id.", status=400)
 
     raw_terrain = request.POST.get("terrain")
-    field_error = _too_long_error(
-        name=name, region_id=region_id, basemap_key=basemap_key
-    ) or _terrain_error(raw_terrain)
+    raw_shape = request.POST.get("shape")
+    field_error = (
+        _too_long_error(name=name, region_id=region_id, basemap_key=basemap_key)
+        or _terrain_error(raw_terrain)
+        or _shape_error(raw_shape)
+    )
     if field_error:
         return HttpResponse(field_error, status=400)
 
@@ -470,6 +519,7 @@ def area_sync(request: HttpRequest) -> HttpResponse:
 
     defaults: dict[str, Any] = {
         **_terrain_defaults(raw_terrain),
+        **_shape_defaults(raw_shape),
         "kind": kind,
         # A region's own bbox stays null — its tiles are computed
         # server-side from its real boundary, so a box would be a

@@ -32,6 +32,16 @@ records the user's INTENT — "this area includes terrain data" — which is a
 property of the area, not of a device. The terrain-class tile URLs it
 implies are never stored; each device derives them from the area's ground.
 
+``shape`` (SNOW-1136) is stored for the same reason: it records what the
+user MADE — a framed box, or a drop zone, which is a circle around where
+they stood. A drop zone's tiles are clipped to its circle
+(``basemap_download_core.js``'s ``circleBlob``), and without this column a
+drop zone restored on another device came back as a rectangle. No centre or
+radius is stored alongside it, because neither is new information: a drop
+zone's ``bbox`` is its circle's own bounding box (``map_drop_zone.js``'s
+``circleBBox``), so the centre is the box's midpoint and the radius is half
+its north–south extent.
+
 ``area_id`` is the join key, and it is minted by the CLIENT rather than
 here. That is not a shortcut: ``basemap_download_core.js``'s
 ``areaIdForRegion`` already produces ``region-<region_id>`` deterministically,
@@ -136,6 +146,18 @@ class DownloadArea(BaseModel):
         REGION = "REGION", "Region"
         CUSTOM = "CUSTOM", "Custom area"
 
+    class SHAPE(models.TextChoices):
+        """The ground a custom area's tiles cover (SNOW-1136).
+
+        ``BOX`` is a framed area: every tile inside ``bbox``. ``CIRCLE`` is
+        a drop zone: the tiles inside the circle ``bbox`` bounds. A region
+        is always ``BOX`` — its tiles come from its own boundary, and the
+        value is never read for it.
+        """
+
+        BOX = "box", "Box"
+        CIRCLE = "circle", "Circle (drop zone)"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -198,6 +220,17 @@ class DownloadArea(BaseModel):
             "tiles the terrain filter paints from (SNOW-1072). An opt-in, so "
             "False by default. Synced so another device downloading or "
             "repairing the same area fetches the same tile families."
+        ),
+    )
+
+    shape = models.CharField(
+        max_length=16,
+        choices=SHAPE.choices,
+        default=SHAPE.BOX,
+        help_text=(
+            "Whether a custom area is a framed box or a drop zone (a circle "
+            "inside its bbox) — SNOW-1136. Synced so another device restores "
+            "a drop zone as a drop zone. Always 'box' for a region."
         ),
     )
 

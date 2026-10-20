@@ -13,7 +13,8 @@ populated.
 
 ``terrain`` (SNOW-1072) is listed and filterable: whether a user opted in to
 terrain data is a yes/no a staff member can read at a glance, and the
-filter answers "how many areas carry it" without a query.
+filter answers "how many areas carry it" without a query. ``shape``
+(SNOW-1136) is listed and filterable on the same terms: box or drop zone.
 """
 
 import logging
@@ -41,9 +42,10 @@ class DownloadAreaAdmin(admin.ModelAdmin):
         "name",
         "basemap_key",
         "terrain",
+        "shape",
         "created_at",
     ]
-    list_filter = ["kind", "basemap_key", "terrain", "created_at"]
+    list_filter = ["kind", "shape", "basemap_key", "terrain", "created_at"]
     search_fields = [
         "user__email",
         "area_id",
@@ -59,6 +61,7 @@ class DownloadAreaAdmin(admin.ModelAdmin):
         "basemap_key",
         "name",
         "terrain",
+        "shape",
         "uuid",
         "created_at",
         "updated_at",

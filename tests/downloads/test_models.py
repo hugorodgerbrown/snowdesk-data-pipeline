@@ -9,6 +9,7 @@ Covers:
     two users may each hold the same area id.
   user FK is CASCADE — deleting the owner removes their areas.
   terrain (SNOW-1072) defaults to False — the opt-in is off until chosen.
+  shape (SNOW-1136) defaults to box — a drop zone is the one that says so.
 """
 
 from __future__ import annotations
@@ -127,6 +128,34 @@ class TestDownloadAreaTerrain:
 
         area.refresh_from_db()
         assert area.terrain is True
+
+
+@pytest.mark.django_db
+class TestDownloadAreaShape:
+    """SNOW-1136: whether a custom area is a box or a drop zone."""
+
+    def test_shape_defaults_to_box(self) -> None:
+        """An area is a box unless it was made as a drop zone."""
+        user = UserFactory.create()
+        area = DownloadArea.objects.create(
+            user=user, area_id="region-ch-4115", kind=DownloadArea.KIND.REGION
+        )
+
+        area.refresh_from_db()
+        assert area.shape == DownloadArea.SHAPE.BOX
+
+    def test_circle_is_stored(self) -> None:
+        """A drop zone keeps its shape through a round trip."""
+        area = DownloadAreaFactory.create(
+            area_id="custom-abc",
+            kind=DownloadArea.KIND.CUSTOM,
+            region_id="",
+            bbox=[7.0, 45.9, 7.3, 46.1],
+            shape=DownloadArea.SHAPE.CIRCLE,
+        )
+
+        area.refresh_from_db()
+        assert area.shape == "circle"
 
 
 @pytest.mark.django_db

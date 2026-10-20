@@ -14,6 +14,9 @@ Covers:
                 SNOW-1072: ``terrain`` — "true"/"false" stored, absent
                 defaults a new row to False and leaves an existing row's
                 value alone, anything else → 400.
+                SNOW-1136: ``shape`` — "box"/"circle" stored, absent
+                defaults a new row to box and leaves an existing row's
+                value alone, anything else → 400.
   area_rename — owner renames; a region → 400 (its name is its own);
                 another user's area_id → 404 (no existence oracle); an
                 unknown id → 404; over-long name → 400; anonymous → 403.
@@ -438,6 +441,78 @@ class TestAreaSyncTerrain:
 
 
 @pytest.mark.django_db
+class TestAreaSyncShape:
+    """SNOW-1136: a drop zone's shape round-trips through area_sync."""
+
+    @pytest.mark.parametrize("posted", ["box", "circle"])
+    def test_shape_is_stored(self, client: Client, signed_in: Any, posted: str) -> None:
+        """The two values downloads_sync.js posts are stored as posted."""
+        response = client.post(
+            SYNC_URL, {**CUSTOM_PAYLOAD, "shape": posted}, **HTMX_HEADERS
+        )
+
+        assert response.status_code == 200
+        stored = DownloadArea.objects.get(area_id=CUSTOM_PAYLOAD["area_id"])
+        assert stored.shape == posted
+        assert response.json()["shape"] == posted
+
+    def test_absent_shape_defaults_to_box(self, client: Client, signed_in: Any) -> None:
+        """A shell that predates the field creates a box."""
+        response = client.post(SYNC_URL, CUSTOM_PAYLOAD, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        stored = DownloadArea.objects.get(area_id=CUSTOM_PAYLOAD["area_id"])
+        assert stored.shape == DownloadArea.SHAPE.BOX
+
+    def test_absent_shape_leaves_a_stored_circle_alone(
+        self, client: Client, signed_in: Any
+    ) -> None:
+        """An older shell re-syncing a drop zone must not turn it into a box."""
+        DownloadAreaFactory.create(
+            user=signed_in,
+            area_id=CUSTOM_PAYLOAD["area_id"],
+            kind=DownloadArea.KIND.CUSTOM,
+            region_id="",
+            bbox=[7.0, 45.9, 7.3, 46.1],
+            shape=DownloadArea.SHAPE.CIRCLE,
+        )
+
+        response = client.post(SYNC_URL, CUSTOM_PAYLOAD, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        stored = DownloadArea.objects.get(area_id=CUSTOM_PAYLOAD["area_id"])
+        assert stored.shape == DownloadArea.SHAPE.CIRCLE
+
+    def test_box_replaces_a_stored_circle(self, client: Client, signed_in: Any) -> None:
+        """An explicit value is a decision, and replaces the stored one."""
+        DownloadAreaFactory.create(
+            user=signed_in,
+            area_id=CUSTOM_PAYLOAD["area_id"],
+            kind=DownloadArea.KIND.CUSTOM,
+            region_id="",
+            bbox=[7.0, 45.9, 7.3, 46.1],
+            shape=DownloadArea.SHAPE.CIRCLE,
+        )
+
+        client.post(SYNC_URL, {**CUSTOM_PAYLOAD, "shape": "box"}, **HTMX_HEADERS)
+
+        stored = DownloadArea.objects.get(area_id=CUSTOM_PAYLOAD["area_id"])
+        assert stored.shape == DownloadArea.SHAPE.BOX
+
+    @pytest.mark.parametrize("posted", ["", "Box", "CIRCLE", "dropzone", "polygon"])
+    def test_unknown_shape_is_refused(
+        self, client: Client, signed_in: Any, posted: str
+    ) -> None:
+        """A value the client never sends is refused, not read as a box."""
+        response = client.post(
+            SYNC_URL, {**CUSTOM_PAYLOAD, "shape": posted}, **HTMX_HEADERS
+        )
+
+        assert response.status_code == 400
+        assert not DownloadArea.objects.exists()
+
+
+@pytest.mark.django_db
 class TestAreaRename:
     """area_rename coverage."""
 
@@ -623,6 +698,8 @@ class TestAreasJson:
         assert area["basemap_key"] == "outdoor"
         # SNOW-1072: the opt-in, so another device fetches the same tiles.
         assert area["terrain"] is False
+        # SNOW-1136: box or drop zone, so another device restores the kind.
+        assert area["shape"] == DownloadArea.SHAPE.BOX
         assert "created_at" in area
         # Never synced — see apps/downloads/models.py for why each is
         # absent. A client that found one here would be reading another

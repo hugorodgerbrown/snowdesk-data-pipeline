@@ -46,6 +46,7 @@ class TestDownloadAreaAdminRegistration:
             "bbox",
             "name",
             "terrain",
+            "shape",
         ):
             assert field in registered.readonly_fields
 
@@ -54,3 +55,9 @@ class TestDownloadAreaAdminRegistration:
         registered = admin.site._registry[DownloadArea]
         assert "terrain" in registered.list_display
         assert "terrain" in registered.list_filter
+
+    def test_shape_is_listed_and_filterable(self) -> None:
+        """SNOW-1136: box or drop zone is a column and a filter."""
+        registered = admin.site._registry[DownloadArea]
+        assert "shape" in registered.list_display
+        assert "shape" in registered.list_filter
