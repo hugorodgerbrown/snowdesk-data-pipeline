@@ -921,7 +921,10 @@
    *
    * @param {{regionId: string, summary: Object}} data
    * @returns {Promise<{done: boolean, missingDeps: string[],
-   *   otherBasemapKey: string | null, contentIncomplete: boolean} | null>}
+   *   otherBasemapKey: string | null, contentIncomplete: boolean,
+   *   contentAt: string | null} | null>}
+   *   SNOW-1139: `contentAt` is, like `contentIncomplete`, read off the
+   *   record on the own-basemap branch only, and null on the other two.
    *   SNOW-932: `contentIncomplete` is false on every branch but the
    *   area's-own-basemap one — the other-basemap branch and the no-record
    *   fallback cannot know it, and neither paints a state that would use
@@ -1016,6 +1019,10 @@
           // the cache cannot answer. Coerced, because absence and `false`
           // must be indistinguishable to every reader.
           contentIncomplete: !!stored.contentIncomplete,
+          // SNOW-1139: when the run last fetched this area's content, read
+          // off the same record — the done/partial label dates bulletins
+          // from an earlier day.
+          contentAt: stored.contentAt || null,
         };
       }
       // SNOW-645: a record for a DIFFERENT basemap. Verify its tiles are
@@ -1036,6 +1043,7 @@
           missingDeps: [],
           otherBasemapKey: null,
           contentIncomplete: false,
+          contentAt: null,
         };
       }
       // A keyless record's basemap can still be named, from any other
@@ -1057,6 +1065,7 @@
         missingDeps: [],
         otherBasemapKey: key || '',
         contentIncomplete: false,
+        contentAt: null,
       };
     }
 
@@ -1078,6 +1087,7 @@
         // content fell short — and nothing could. The fallback answers
         // about TILES alone, which is all it has.
         contentIncomplete: false,
+        contentAt: null,
       };
     } catch (_e) {
       return null;
@@ -1224,9 +1234,13 @@
    *   pre-SNOW-645 record with no stored key) is deliberately falsy here,
    *   same as `activeBasemapKey()` returning `null` — both clear the
    *   attribute rather than write an empty one.
+   * @param {string | null} [contentAt] - SNOW-1139: when the area's
+   *   bulletins were last fetched. Only 'done' and 'partial' read it, and
+   *   only to date the label when it is an earlier day than today —
+   *   today's, or none, keeps the undated label.
    * @returns {void}
    */
-  function setState(state, summary, pct, basemapKeyOverride) {
+  function setState(state, summary, pct, basemapKeyOverride, contentAt) {
     const core = self.pwaBasemapDownloadCore;
     // SNOW-843: one funnel for every caller's `data.summary`, so no surface
     // can show the unpriced figure. Unresolved sources (style still
@@ -1322,6 +1336,13 @@
     // empty-string basemapKey, read off `_probeDone`) — never interpolates
     // an empty name into the named string.
     const otherBasemapName = state === 'other-basemap' ? basemapLabel(basemapKey) : '';
+    // SNOW-1139: the day this area's bulletins were fetched, when it is not
+    // today — '' otherwise, and then the undated label stands. A done area
+    // from last week read exactly like one from this morning, and the
+    // difference is the whole reason to tap it.
+    const stamp = self.pwaCachedStampCore;
+    const contentDay =
+      stamp && contentAt && stamp.isBeforeToday(contentAt) ? stamp.formatDay(contentAt) : '';
     const text = {
       'no-region': currentRegionId
         ? MAP_STRINGS['download-no-region-unavailable']
@@ -1332,11 +1353,15 @@
       // downloading it again, so the label has to say so. The refresh
       // glyph carries that to someone looking at the roundel; this carries
       // it to a screen reader, which sees no glyph at all.
-      done: MAP_STRINGS['download-done'],
+      done: contentDay
+        ? self.pwaStrings.interpolate(MAP_STRINGS['download-done-dated'], { date: contentDay })
+        : MAP_STRINGS['download-done'],
       // SNOW-924: one half of the run landed. Names WHICH half, because
       // "partly downloaded" would leave a reader guessing whether the map
       // draws. It does — the bulletins are what is behind.
-      partial: MAP_STRINGS['download-partial'],
+      partial: contentDay
+        ? self.pwaStrings.interpolate(MAP_STRINGS['download-partial-dated'], { date: contentDay })
+        : MAP_STRINGS['download-partial'],
       // SNOW-844: the tiles are all here; the style, sprite or TileJSON
       // that lets the map draw them is not. Says what is wrong AND what
       // the tap does, because the state is unfamiliar and the remedy is
@@ -1468,7 +1493,7 @@
       _retryWhenStyleSettles();
       return;
     }
-    const { done, missingDeps, otherBasemapKey, contentIncomplete } = probe;
+    const { done, missingDeps, otherBasemapKey, contentIncomplete, contentAt } = probe;
     // Offline-integrity: a region already downloaded (done) still reads as
     // the green offline circle; one that isn't can't be fetched now, so it
     // shows the offline-disabled state instead of an actionable idle —
@@ -1499,12 +1524,14 @@
     // a `done` area, so an amber area offline reads amber exactly as a
     // green one reads green. `handleClick` already repaints 'offline' when
     // a 'partial' tap has no network, so the tap is honest either way.
+    // SNOW-1139: both pass the record's `contentAt`, which `setState`
+    // dates in the label when it is from an earlier day.
     if (done && contentIncomplete) {
-      setState('partial', data.summary);
+      setState('partial', data.summary, undefined, undefined, contentAt);
       return;
     }
     if (done) {
-      setState('done', data.summary);
+      setState('done', data.summary, undefined, undefined, contentAt);
       return;
     }
     // SNOW-844: the tiles are all here and something the map needs to draw

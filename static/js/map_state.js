@@ -435,6 +435,12 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
     'This region is available offline — tap to update its bulletins and weather',
   'download-partial':
     "This region's map is available offline but its bulletins are not up to date — tap to update",
+  // SNOW-1139: the same two, when the bulletins the area holds are from an
+  // earlier day than today — the record's `contentAt`, dated.
+  'download-done-dated':
+    'This region is available offline, with bulletins from %(date)s — tap to update its bulletins and weather',
+  'download-partial-dated':
+    "This region's map is available offline but its bulletins are from %(date)s — tap to update",
   'download-error': "This region's basemap download failed — tap to try again",
   // SNOW-844: the tiles are here and the documents needed to draw them are
   // not. The label says what the tap does, because the state is unfamiliar
