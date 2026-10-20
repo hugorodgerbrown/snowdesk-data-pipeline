@@ -1,8 +1,8 @@
 ---
 name: a-resort-page-answers-the-query
-description: /resorts/<slug>/ (resort_detail) shows today's danger from the bulletin's own render model, read-only; amends two-documents-and-a-map
+description: /resorts/<slug>/ (resort_detail) shows today's danger read-only, plus one band-vs-lift-range line per problem (_problem_band_relation)
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-10-20
 ---
 
 # A resort page answers the query
@@ -29,10 +29,45 @@ The guard that keeps it from becoming a third document:
   10:00 rule), then `_build_panel_context` — and words the headline with
   the bulletin page's own helper, `_build_bulletin_headline`. The cards
   render through `public/_rating_block.html`, the bulletin page's partial.
-  Nothing about the day is stored on, or derived for, the resort.
+  Nothing about the day is stored on the resort, and the one thing derived
+  for it is the numeric line below.
 - **No bulletin today means no danger.** Out of season, or before the day's
   bulletin is ingested, the page says "No bulletin available" and links to
   the bulletin. A past bulletin is never shown as today's.
+
+## One derived claim per problem (SNOW-1143)
+
+Under each problem card the page adds **one line** saying how the
+problem's elevation band sits against the resort's lift range
+(`Resort.base_elevation_m`..`Resort.top_elevation_m`) — "Within Verbier's
+lift range", "Above 2200 m: covers the upper part of Verbier", "Above
+Verbier's top lift (3330 m)" and so on. It is the only thing the page
+derives for the resort, and it is a **straight numeric comparison**: two
+ranges against each other, nothing about piste, off-piste or terrain.
+`_problem_band_relation` in `apps/public/views.py` holds the rule and its
+edge semantics (a bound equal to the base or top counts as reaching it).
+
+Why: the reader landed on "Verbier avalanche" to learn whether today's
+problems are where they will ski. The bulletin answers in metres; the page
+already holds the resort's metres; putting the two side by side is
+arithmetic the reader would otherwise do in their head. It stays a
+numeric claim so it can never disagree with the bulletin it reads.
+
+The rules that keep it honest:
+
+- **A treeline bound gets no verdict.** The treeline has no number, so the
+  line states the band and the lift range side by side ("Above the
+  treeline. Verbier's lifts run 821–3330 m") and lets the reader judge.
+- **No elevation means all elevations** ("All elevations, including all of
+  Verbier") — except on a card showing "See description below", where the
+  scope is in the prose and an "all elevations" claim could contradict it;
+  that card gets no line.
+- **No lift range, no line.** A resort missing either elevation (or whose
+  top is not above its base) shows the cards alone.
+- One disclaimer under the heading, only when a line renders: "Compared
+  with {resort}'s lift range ({base}–{top} m). Off-piste terrain may
+  differ." The bulletin page and `_rating_block.html` are untouched; the
+  line renders after the partial, outside `[data-testid="resort-danger"]`.
 
 ## Why
 
