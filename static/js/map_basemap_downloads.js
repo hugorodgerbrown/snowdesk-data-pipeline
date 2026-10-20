@@ -570,12 +570,21 @@ function setTerrainDataPreferred(on) {
  *   unconfigured filter, or a record with no ground to rebuild.
  */
 function areaTerrainClassTileUrls(record) {
+  // SNOW-1138: the rule itself lives in the core
+  // (`areaTerrainClassTileURLs`), so the `/offline/` report — which loads
+  // no map module — judges an opted-in area on exactly the tiles this
+  // does. Only the three page-level inputs are this page's to supply.
   const core = self.pwaBasemapDownloadCore;
-  if (!core || !record || !record.terrain) return [];
-  if (record.z) return activeTerrainClassTileURLs({ z: record.z });
-  const band = Array.isArray(record.band) ? record.band : null;
-  if (!record.bbox || !band) return [];
-  return activeTerrainClassTileURLs(core.buildBlob(record.bbox, band[0], band[1]));
+  const terrain = self.pwaTerrainFilterCore;
+  const template = terrainClassTileTemplate();
+  if (!core || !terrain || !template) return [];
+  return core.areaTerrainClassTileURLs(
+    record,
+    template,
+    terrain.COVERAGE_BOUNDS,
+    terrain.MIN_ZOOM,
+    terrain.MAX_ZOOM,
+  );
 }
 
 /**

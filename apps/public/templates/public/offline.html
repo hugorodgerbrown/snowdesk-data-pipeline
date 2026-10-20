@@ -173,6 +173,17 @@ it gains is somewhere to send a reader who does have a connection.
     {# for what storage holds. It is also the same pair of files the service #}
     {# worker precaches for static/offline.html, where none of the four      #}
     {# exists.                                                               #}
+    {# SNOW-1138: the one exception to "shares none of them". The terrain   #}
+    {# filter's core supplies the class tileset's rectangle and zoom band    #}
+    {# (it reads slope_classes_core.js at parse time, so that loads first), #}
+    {# and basemap_download_core.js above supplies the arithmetic that turns #}
+    {# a record into the class tiles it should hold. Neither reads storage, #}
+    {# so the report still takes no module's word for what is stored — it  #}
+    {# only asks the same question of it the Manage downloads sheet does.   #}
+    {# Optional: on static/offline.html, which loads neither, the report    #}
+    {# makes no claim about class tiles.                                    #}
+    <script src="{% static 'js/slope_classes_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    <script src="{% static 'js/terrain_filter_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     <script src="{% static 'js/offline_audit_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     <script src="{% static 'js/offline_audit.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     {% if sync_log_visible %}

@@ -1926,6 +1926,38 @@ describe('terrainClassTileURLs', () => {
     expect(checked).toBeGreaterThan(0);
   });
 
+  // SNOW-1138: the per-record rule, moved here from the map module so the
+  // /offline/ report applies the one the Manage downloads sheet does.
+  it('derives an area record’s class tiles from its z, or its bbox and band', () => {
+    const z = { 12: { 1455: [2130, 2131] } };
+    expect(
+      core.areaTerrainClassTileURLs({ terrain: true, z }, TEMPLATE, COVERAGE, MIN_Z, MAX_Z),
+    ).toEqual(core.terrainClassTileURLs(TEMPLATE, { z }, COVERAGE, MIN_Z, MAX_Z));
+    expect(
+      core.areaTerrainClassTileURLs(
+        { terrain: true, bbox: BBOX, band: [10, 14] },
+        TEMPLATE,
+        COVERAGE,
+        MIN_Z,
+        MAX_Z,
+      ),
+    ).toEqual(
+      core.terrainClassTileURLs(TEMPLATE, core.buildBlob(BBOX, 10, 14), COVERAGE, MIN_Z, MAX_Z),
+    );
+  });
+
+  it('derives nothing for an area without the opt-in, a template or any ground', () => {
+    const z = { 12: { 1455: [2130, 2131] } };
+    expect(core.areaTerrainClassTileURLs({ z }, TEMPLATE, COVERAGE, MIN_Z, MAX_Z)).toEqual([]);
+    expect(core.areaTerrainClassTileURLs({ terrain: true, z }, '', COVERAGE, MIN_Z, MAX_Z)).toEqual(
+      [],
+    );
+    expect(core.areaTerrainClassTileURLs({ terrain: true }, TEMPLATE, COVERAGE, MIN_Z, MAX_Z)).toEqual(
+      [],
+    );
+    expect(core.areaTerrainClassTileURLs(null, TEMPLATE, COVERAGE, MIN_Z, MAX_Z)).toEqual([]);
+  });
+
   it('answers [] without a template, a blob or any ranges', () => {
     const blob = { z: { 12: { 1455: [2130, 2130] } } };
     expect(core.terrainClassTileURLs('', blob, COVERAGE, MIN_Z, MAX_Z)).toEqual([]);

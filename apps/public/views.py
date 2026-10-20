@@ -1349,6 +1349,11 @@ def offline_page(request: HttpRequest) -> HttpResponse:
                             ``localStorage`` preference — so the only way to
                             know which style they will see is to be told the
                             default that stands in for it.
+        terrain_class_tile_url — the terrain-class tile template
+                            (``settings.TERRAIN_CLASS_TILE_URL``, empty
+                            while ineligible), the same value the map
+                            renders as ``data-terrain-class-tile-url``
+                            (SNOW-1138).
 
     Args:
         request: The incoming HTTP request.
@@ -1400,6 +1405,14 @@ def offline_page(request: HttpRequest) -> HttpResponse:
             # area topped up from this page carries the same days as one
             # topped up from the map.
             "content_past_days": settings.OFFLINE_CONTENT_PAST_DAYS,
+            # SNOW-1138: the terrain-class tile template, so the report
+            # judges an area downloaded WITH terrain data on its class
+            # tiles, as the Manage downloads sheet does. The map reads the
+            # same value off `#map`; empty while the filter is unconfigured,
+            # which is the sheet's "not judged" case too.
+            "terrain_class_tile_url": _terrain_filter_context()[
+                "terrain_class_tile_url"
+            ],
         },
     )
 

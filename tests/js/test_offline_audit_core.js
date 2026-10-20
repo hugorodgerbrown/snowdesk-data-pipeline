@@ -2205,3 +2205,124 @@ describe('the passive browsing cache (SNOW-1058)', () => {
     );
   });
 });
+
+// SNOW-1138: the report and the Manage downloads sheet read the same
+// device two ways. They used to disagree in two places — an orphaned
+// bucket the sheet lists as "Incomplete" was invisible here, and an area
+// downloaded with terrain data read Yes here while its class tiles were
+// missing and the sheet said Incomplete.
+describe('agreeing with the Manage downloads sheet (SNOW-1138)', () => {
+  const STRINGS = {
+    'note-area-orphaned':
+      '%(name)s is an unfinished download taking up space, so remove it from the map’s Manage downloads sheet',
+    'note-area-incomplete':
+      '%(name)s will not draw until you sync it from the map’s Manage downloads sheet',
+    'notes-sentence': 'Also, %(notes)s.',
+  };
+  const CLASS_TILES = ['https://terrain/12/1/1.png', 'https://terrain/12/1/2.png'];
+
+  /** The healthy fixture's region, with overrides. */
+  function region(overrides) {
+    return Object.assign({}, healthy().areas[1], overrides || {});
+  }
+
+  it('lists an orphaned bucket as a No that says to remove it', () => {
+    const report = core.buildReport(
+      healthy({
+        areas: healthy().areas.concat([
+          {
+            id: 'region-CH-9999',
+            kind: 'region',
+            type: 'custom',
+            orphaned: true,
+            name: '',
+            basemapKey: null,
+            deps: [],
+            bucketPresent: true,
+            entries: ['https://t/12/9/9.pbf'],
+          },
+        ]),
+      }),
+      STRINGS,
+    );
+    const orphan = row(report, 'area:region-CH-9999');
+    expect(orphan.label).toBe('region-CH-9999');
+    expect(orphan.status).toBe('no');
+    expect(orphan.reason).toBe('orphaned');
+    expect(orphan.note).toBe(
+      'region-CH-9999 is an unfinished download taking up space, so remove it from the map’s Manage downloads sheet',
+    );
+    // No Sync control: there is no record to sync from.
+    expect(orphan.completable).toBe(false);
+    expect(report.summary).toContain('remove it from the map’s Manage downloads sheet');
+  });
+
+  it('never rolls an orphan up into a basemap row', () => {
+    const orphanOnly = core.buildReport(
+      healthy({
+        areas: [
+          {
+            id: 'custom-x',
+            kind: 'custom',
+            orphaned: true,
+            name: '',
+            basemapKey: null,
+            deps: [],
+            bucketPresent: true,
+            entries: ['https://t/12/9/9.pbf'],
+          },
+        ],
+        selectedBasemap: null,
+      }),
+      STRINGS,
+    );
+    expect(ids(orphanOnly).filter((id) => id.indexOf('basemap:') === 0)).toEqual([]);
+  });
+
+  it('flags an opted-in area whose terrain-class tiles are missing', () => {
+    const report = core.buildReport(
+      healthy({
+        areas: [healthy().areas[0], region({ terrain: true, terrainTiles: CLASS_TILES })],
+      }),
+      STRINGS,
+    );
+    const check = row(report, 'area:region-ch-4115');
+    expect(check.status).toBe('no');
+    expect(check.reason).toBe('incomplete');
+    expect(check.note).toBe(
+      'Martigny will not draw until you sync it from the map’s Manage downloads sheet',
+    );
+  });
+
+  it('still reads Yes once every class tile is there', () => {
+    const area = region({ terrain: true, terrainTiles: CLASS_TILES });
+    area.entries = area.entries.concat(CLASS_TILES);
+    const report = core.buildReport(
+      healthy({ areas: [healthy().areas[0], area] }),
+      STRINGS,
+    );
+    expect(row(report, 'area:region-ch-4115').status).toBe('yes');
+  });
+
+  it('judges the class tiles even when the record names no dependencies', () => {
+    // The sheet appends the class tiles to whatever the three-row rule
+    // yields, including its empty UNKNOWN case — they are derived from the
+    // ground, not read off `deps`.
+    const state = core.areaState(
+      region({ deps: [], terrain: true, terrainTiles: CLASS_TILES, entries: ['https://t/12/1/1.pbf'] }),
+    );
+    expect(state.status).toBe('incomplete');
+  });
+
+  it('makes no claim about class tiles it could not derive', () => {
+    // Null is static/offline.html, or a deployment with no terrain filter:
+    // the area is judged on everything else, exactly as before.
+    const report = core.buildReport(
+      healthy({
+        areas: [healthy().areas[0], region({ terrain: true, terrainTiles: null })],
+      }),
+      STRINGS,
+    );
+    expect(row(report, 'area:region-ch-4115').status).toBe('yes');
+  });
+});

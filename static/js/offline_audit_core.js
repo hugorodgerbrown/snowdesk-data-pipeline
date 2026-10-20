@@ -157,6 +157,14 @@
    *   than a fault: the tiles are the half that decides whether a map
    *   draws, and they are here.
    * @property {string[]} [entries]
+   * @property {boolean} [orphaned] SNOW-1138: a pinned bucket no record
+   *   accounts for — a download that never finished. The Manage downloads
+   *   sheet lists it as "Incomplete" with Remove as its only action, and
+   *   this report now lists it too.
+   * @property {string[]|null} [terrainTiles] SNOW-1138: the terrain-class
+   *   tiles an area downloaded WITH terrain data should hold, derived by
+   *   the same rule the sheet applies. Null or absent makes no claim — an
+   *   area without the opt-in, or a page that cannot derive them.
    */
 
   /**
@@ -1129,21 +1137,34 @@
    * What SNOW-929 does NOT change is the legacy branch below — see its
    * own comment.
    *
+   * SNOW-1138 adds two readings the Manage downloads sheet already made.
+   * An ORPHAN — a bucket with no record — is `orphaned` whatever it holds:
+   * nothing says what it should hold, and the sheet's only action for it
+   * is Remove. And an area downloaded with terrain data is `incomplete`
+   * while any of its terrain-class tiles (`terrainTiles`) is missing, as
+   * `markIncompleteRows` judges it — including where the record names no
+   * dependencies, because the class tiles are derived from the ground,
+   * not read off `deps`.
+   *
    * @param {AreaReading} area
-   * @returns {{status: 'ready'|'incomplete'|'missing'|'unverifiable'|'unreadable',
+   * @returns {{status: 'ready'|'incomplete'|'missing'|'unverifiable'|'unreadable'|'orphaned',
    *   missingDeps: string[], tiles: number}}
    */
   function areaState(area) {
     var entries = Array.isArray(area.entries) ? area.entries : [];
     var deps = Array.isArray(area.deps) ? area.deps : [];
     var missingDeps = missingFrom(deps, entries);
+    var terrainTiles = Array.isArray(area.terrainTiles) ? area.terrainTiles : [];
+    var missingTerrain = missingFrom(terrainTiles, entries);
     var declared = new Set(deps);
     var supporting = 0;
     for (var i = 0; i < entries.length; i += 1) {
       if (declared.has(entries[i])) supporting += 1;
     }
     var status = 'ready';
-    if (area.bucketReadable === false) {
+    if (area.orphaned) {
+      status = 'orphaned';
+    } else if (area.bucketReadable === false) {
       // The bucket read did not come back. "Nothing is stored, download it
       // again" is a serious thing to say about a 200 MB area the user
       // chose on purpose, and a read that overran its budget is not
@@ -1151,7 +1172,7 @@
       status = 'unreadable';
     } else if (area.bucketPresent === false || entries.length === 0) {
       status = 'missing';
-    } else if (missingDeps.length > 0) {
+    } else if (missingDeps.length > 0 || missingTerrain.length > 0) {
       status = 'incomplete';
     } else if (deps.length === 0 && area.kind !== 'base') {
       // Downloaded before SNOW-844, so nothing on the record says what
@@ -1171,7 +1192,7 @@
     }
     return {
       status:
-        /** @type {'ready'|'incomplete'|'missing'|'unverifiable'|'unreadable'} */ (
+        /** @type {'ready'|'incomplete'|'missing'|'unverifiable'|'unreadable'|'orphaned'} */ (
           status
         ),
       missingDeps: missingDeps,
@@ -1575,6 +1596,16 @@
         };
       }
       return { status: 'yes' };
+    }
+    if (state.status === 'orphaned') {
+      // SNOW-1138: a download that never finished. A No, with the one
+      // remedy the sheet offers it — Remove — rather than Sync, which an
+      // orphan does not get: there is no record to sync from.
+      return {
+        status: 'no',
+        reason: 'orphaned',
+        note: fill(s(t, 'note-area-orphaned'), { name: name }),
+      };
     }
     if (state.status === 'incomplete') {
       return {

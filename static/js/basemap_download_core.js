@@ -295,6 +295,7 @@
  *     ``docs/decisions/region-downloads-clip-custom-areas-dont.md``), the
  *     last caller that needed the list form.
  *   terrainClassTileURLs(template, blob, bounds, minZ, maxZ) /
+ *   areaTerrainClassTileURLs(record, template, bounds, minZ, maxZ) /
  *   terrainClassTileCount(blob, bounds, minZ, maxZ) /
  *   terrainClassMb(count) / terrainScaledBytesPerTile(bytesPerTile,
  *   sourceCount, terrain)
@@ -867,6 +868,47 @@
       urls.push(_overlayTileURL(template, z, x, y));
     });
     return urls;
+  }
+
+  /**
+   * The terrain-class tiles ONE recorded area should hold (SNOW-1138).
+   *
+   * The pure half of ``map_basemap_downloads.js``'s
+   * ``areaTerrainClassTileUrls``, moved here so a page with no map — the
+   * ``/offline/`` report — can judge an opted-in area on its class tiles
+   * by the same rule the Manage downloads sheet and the region roundel
+   * apply. What stays map-side is only where the three page-level inputs
+   * come from (the template off ``#map``, the rectangle and band off
+   * ``pwaTerrainFilterCore``); everything that decides WHICH tiles is
+   * here, once.
+   *
+   * Gated on the record's own ``terrain`` flag: an area downloaded without
+   * the opt-in holds no class tiles and is never judged on them. A REGION
+   * record carries the run's own ``z`` row spans; a CUSTOM area carries
+   * ``bbox`` + ``band`` and no ``z``, so its blob is rebuilt through
+   * ``buildBlob``, the same client-side twin that produced it.
+   *
+   * @param {Object | null | undefined} record A ``basemap.regions`` /
+   *   ``basemap.customAreas`` entry, or a row carrying the same fields.
+   * @param {string} template The class tileset's ``{z}/{x}/{y}`` template.
+   * @param {number[] | null | undefined} bounds The tileset's rectangle.
+   * @param {number} minZ Shallowest zoom it publishes, inclusive.
+   * @param {number} maxZ Deepest zoom it publishes, inclusive.
+   * @returns {string[]} Empty for an area without terrain data, a missing
+   *   template, or a record with no ground to rebuild.
+   */
+  function areaTerrainClassTileURLs(record, template, bounds, minZ, maxZ) {
+    if (!record || !record.terrain || !template) return [];
+    if (record.z) return terrainClassTileURLs(template, { z: record.z }, bounds, minZ, maxZ);
+    var band = Array.isArray(record.band) ? record.band : null;
+    if (!record.bbox || !band) return [];
+    return terrainClassTileURLs(
+      template,
+      buildBlob(record.bbox, band[0], band[1]),
+      bounds,
+      minZ,
+      maxZ,
+    );
   }
 
   /**
@@ -3034,6 +3076,7 @@
     styleFontstacks: styleFontstacks,
     glyphURLs: glyphURLs,
     terrainClassTileURLs: terrainClassTileURLs,
+    areaTerrainClassTileURLs: areaTerrainClassTileURLs,
     terrainClassTileCount: terrainClassTileCount,
     terrainClassMb: terrainClassMb,
     terrainScaledBytesPerTile: terrainScaledBytesPerTile,

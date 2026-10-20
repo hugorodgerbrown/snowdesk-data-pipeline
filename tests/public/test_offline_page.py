@@ -17,6 +17,8 @@ Django client.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from django.conf import settings
 from django.test import Client
@@ -240,6 +242,47 @@ class TestContentEndpoints:
 
         assert 'data-favourites-url=""' not in html
         assert 'data-routes-url=""' not in html
+
+
+@pytest.mark.django_db
+class TestTerrainClassTiles:
+    """SNOW-1138: the report judges an opted-in area on its class tiles."""
+
+    def test_it_renders_the_template_when_the_filter_is_configured(
+        self, settings: Any
+    ) -> None:
+        """The same template the map renders as ``data-terrain-class-tile-url``."""
+        settings.TERRAIN_CLASS_TILE_URL = "https://tiles.example/tc/{z}/{x}/{y}.png"
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert (
+            'data-terrain-class-tile-url="https://tiles.example/tc/{z}/{x}/{y}.png"'
+            in html
+        )
+
+    def test_it_renders_none_while_the_filter_is_unconfigured(
+        self, settings: Any
+    ) -> None:
+        """Empty, which the report reads as "make no claim", as the sheet does."""
+        settings.TERRAIN_CLASS_TILE_URL = ""
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        assert 'data-terrain-class-tile-url=""' in html
+
+    def test_it_loads_the_cores_the_derivation_needs(self) -> None:
+        """The tileset's rectangle and band, and the rule that walks them."""
+        html = Client().get(reverse("public:offline_page")).content.decode()
+
+        for name in (
+            "basemap_download_core",
+            "slope_classes_core",
+            "terrain_filter_core",
+        ):
+            assert f"js/{name}" in html
+        # slope_classes_core.js is read by terrain_filter_core.js at parse time.
+        assert html.index("js/slope_classes_core") < html.index(
+            "js/terrain_filter_core"
+        )
 
 
 @pytest.mark.django_db
