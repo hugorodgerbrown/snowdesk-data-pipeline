@@ -1,49 +1,169 @@
-{% load i18n %}
+{% load i18n snowdesk_time %}
 {% comment %}
-   Season heatmap grid (SNOW-170) — inner grid only, served as an HTMX
-   partial from the season_calendar_partial view.
+   The season calendar (SNOW-1158) — the ONE drawing of a region's season,
+   day by day, used everywhere a season calendar appears: the resort page's
+   season section, the bulletin page's season sheet (served as the HTMX
+   fragment from season_calendar_partial), the /help/ illustration and the
+   component library. There is deliberately no second copy of this markup,
+   so the pages cannot drift apart.
 
-   Caching is handled entirely in the view (season_calendar_partial), not
-   here. The view caches the full rendered response body keyed on
-   (canonical_region_id, today_iso) so cache hits issue zero DB queries and
-   return byte-for-byte identical content. The cache key is invalidated by
-   apply_bulletin_day_ratings after ingest.
+   Layout. One markup, re-laid out by CSS alone (src/css/main.css, "Season
+   calendar"): in a wide container the months are rows (Nov … Apr), a month
+   label column, then one dot per day against a 1 · 5 · 10 … 30 axis; in a
+   narrow one (a container query, so the sheet and the resort column each
+   decide by their own width) the months become columns of short bars with
+   the axis down the left.
 
-   Selected-day highlighting is applied client-side after the HTMX swap,
-   keyed off data-selected-date on the #season-grid container and
-   data-date="YYYY-MM-DD" on each cell anchor/div.
+   Cell states (data-state on .season-day): "none" — no bulletin, outlined;
+   a rating key — the EAWS fill; "split" — two levels in one day, data-lo
+   left and data-hi (the peak) right; "future" — not yet, a faint tint.
+   data-level is always the day's PEAK (RegionDayRating.max_rating — the
+   compressed-views rule, docs/compressed-views-rating-rule.md); the
+   bulletin sheet's readout reads it. One day may carry .season-day-ring,
+   the 2px ring: the resort page's today / first High day, server-side; the
+   bulletin page's selected day, added by static/js/season_sheet.js from
+   #season-grid's data-selected-date so the cached fragment stays one body.
 
-   Each day is drawn by public/partials/_season_cell.html (SNOW-1126). The
-   resort page also includes this grid, server-side and with inert=True,
-   as its season strip — its cells do not link to their days.
+   Two variants, by ``linked``:
+     * not linked (resort page, help, library) — the calendar is ONE
+       role="img" whose aria-label is the season summary; cells carry a
+       title ("14 Jan 2026 · Considerable") and nothing inside is a link.
+       The key is the short one: No bulletin, Low … High.
+     * linked (bulletin page) — each day with a bulletin is a link to that
+       day (aria-label + title); the calendar is not an image, because an
+       image's children are presentational and the links would vanish from
+       the accessibility tree. The key is the full one: a count per level,
+       "Two levels in one day" and "Selected day".
 
-   Context: season_calendar (SeasonGrid), region (MicroRegion), and the
-   optional inert flag, passed through to the cell.
+   Context:
+     season_months  — SeasonMonths (apps.public.season_calendar.build_season_months).
+     season_summary — SeasonSummary: the aria-label (not linked) and the
+                      key's levels and counts.
+     linked         — truthy on the bulletin page.
+     region         — MicroRegion (canonical_region_id + name_slug), only
+                      read when ``linked``.
 {% endcomment %}
-<div data-testid="season-calendar" class="inline-block">
-    {# Month labels row — one cell per column, parallel to the grid below. #}
-    {# A non-empty entry marks the column where a new calendar month       #}
-    {# begins; the label sits above the first column of its month.         #}
-    <div class="flex mb-1">
-        {% for label in season_calendar.month_labels %}
-            <div class="season-cell-wrap text-text-3 calendar-cell-label">
-                {{ label }}
-            </div>
-        {% endfor %}
-    </div>
-    {# Grid — one flex column per week, 7 cells per column (Mon..Sun).    #}
-    {# Each cell is wrapped in .season-cell-wrap, which carries           #}
-    {# data-month-parity so the alternate-background tint flips on the    #}
-    {# exact day boundary — including mid-column for weeks that span a    #}
-    {# month-end. Wrappers butt flush (no gap) so the parity tint reads   #}
-    {# as a continuous band behind the rounded-full rating tiles.         #}
-    <div class="flex">
-        {% for column in season_calendar.columns %}
-            <div class="flex flex-col shrink-0">
-                {% for cell in column %}
-                    {% include "public/partials/_season_cell.html" with cell=cell %}
+<div
+    class="season-cal flex flex-col gap-6"
+    data-testid="season-calendar"
+    data-variant="{% if linked %}linked{% else %}summary{% endif %}"
+>
+    {% if not linked %}
+        {% blocktrans with label=season_months.season_label count days=season_summary.days_with_bulletin trimmed asvar season_days %}
+            Season {{ label }}: {{ days }} day with a bulletin
+        {% plural %}
+            Season {{ label }}: {{ days }} days with a bulletin
+        {% endblocktrans %}
+        {% blocktrans count days=season_summary.considerable_or_higher trimmed asvar season_high %}
+            {{ days }} at Considerable or higher
+        {% plural %}
+            {{ days }} at Considerable or higher
+        {% endblocktrans %}
+    {% endif %}
+    <div
+        class="season-cal-grid"
+        data-testid="season-calendar-grid"
+        {% if not linked %}role="img" aria-label="{{ season_days }}, {{ season_high }}."{% endif %}
+    >
+        <div class="season-cal-axis" aria-hidden="true">
+            <span class="season-cal-axis-spacer"></span>
+            <div class="season-cal-days">
+                {% for tick in season_months.axis %}
+                    <span class="season-cal-tick">{{ tick }}</span>
                 {% endfor %}
             </div>
+        </div>
+        {% for month in season_months.months %}
+            <div class="season-cal-month" data-month="{{ month.first|date:'Y-m' }}">
+                <span class="season-cal-label">{{ month.label }}</span>
+                <div class="season-cal-days">
+                    {% for day in month.days %}
+                        {% if day.state == "split" %}
+                            {% blocktrans with date=day.date|date:'j M Y' lower=day.low_key|danger_level_digit|danger_level_label higher=day.high_key|danger_level_digit|danger_level_label trimmed asvar day_title %}
+                                {{ date }} · {{ lower }} and {{ higher }}
+                            {% endblocktrans %}
+                        {% elif day.state == "future" %}
+                            {% blocktrans with date=day.date|date:'j M Y' trimmed asvar day_title %}
+                                {{ date }} · Not yet
+                            {% endblocktrans %}
+                        {% elif day.state == "none" %}
+                            {% blocktrans with date=day.date|date:'j M Y' trimmed asvar day_title %}
+                                {{ date }} · No bulletin
+                            {% endblocktrans %}
+                        {% else %}
+                            {% blocktrans with date=day.date|date:'j M Y' level=day.level|danger_level_digit|danger_level_label trimmed asvar day_title %}
+                                {{ date }} · {{ level }}
+                            {% endblocktrans %}
+                        {% endif %}
+                        {% if linked and day.has_bulletin %}
+                            <a
+                                class="season-day{% if day.is_ring %} season-day-ring{% endif %}"
+                                href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug day.date|date:'Y-m-d' %}"
+                                data-date="{{ day.date|date:'Y-m-d' }}"
+                                data-state="{{ day.state }}"
+                                data-level="{{ day.level }}"
+                                {% if day.low_key %}data-lo="{{ day.low_key }}" data-hi="{{ day.high_key }}"{% endif %}
+                                title="{{ day_title }}"
+                                aria-label="{{ day_title }}"
+                            ></a>
+                        {% else %}
+                            <span
+                                class="season-day{% if day.is_ring %} season-day-ring{% endif %}"
+                                data-date="{{ day.date|date:'Y-m-d' }}"
+                                data-state="{{ day.state }}"
+                                data-level="{{ day.level }}"
+                                {% if day.low_key %}data-lo="{{ day.low_key }}" data-hi="{{ day.high_key }}"{% endif %}
+                                title="{{ day_title }}"
+                            ></span>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
         {% endfor %}
     </div>
+    {% if linked %}
+        {# The full key: a count per level, then the drawing's other marks. #}
+        <ul class="season-cal-key-full" data-testid="season-calendar-key">
+            {% for key, count in season_summary.key_counts %}
+                <li class="inline-flex items-center gap-2" data-level="{{ key }}">
+                    <span class="season-day season-key-swatch" data-state="{{ key }}" aria-hidden="true"></span>
+                    {{ key|danger_level_digit|danger_level_label }}
+                    <span class="font-mono text-text-1">{{ count }}</span>
+                </li>
+            {% endfor %}
+            <li class="inline-flex items-center gap-2">
+                <span class="season-day season-key-swatch" data-state="none" aria-hidden="true"></span>
+                {% translate "No bulletin" %}
+            </li>
+            <li class="inline-flex items-center gap-2">
+                <span
+                    class="season-day season-key-swatch"
+                    data-state="split"
+                    data-lo="moderate"
+                    data-hi="considerable"
+                    aria-hidden="true"
+                ></span>
+                {% translate "Two levels in one day" %}
+            </li>
+            <li class="inline-flex items-center gap-2">
+                <span class="season-day season-key-swatch season-day-ring" data-state="high" aria-hidden="true"></span>
+                {% translate "Selected day" %}
+            </li>
+        </ul>
+    {% else %}
+        {# The short key — the states a reader meets on the calendar. #}
+        {% translate "Danger rating key" as key_label %}
+        <ul class="season-cal-key" aria-label="{{ key_label }}" data-testid="season-calendar-key">
+            <li class="inline-flex items-center gap-1.5">
+                <span class="season-day season-key-swatch" data-state="none" aria-hidden="true"></span>
+                {% translate "No bulletin" %}
+            </li>
+            {% for key, count in season_summary.key_counts %}
+                <li class="inline-flex items-center gap-1.5" data-level="{{ key }}">
+                    <span class="season-day season-key-swatch" data-state="{{ key }}" aria-hidden="true"></span>
+                    {{ key|danger_level_digit|danger_level_label }}
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
 </div>

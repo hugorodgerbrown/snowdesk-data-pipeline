@@ -1169,249 +1169,202 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 }
 
 
-/* —— Calendar cell danger-rating fills ——————
-   Applied via data-rating-min / data-rating-max on each calendar tile so
-   the background comes from EAWS tokens.
+/* —— Season calendar (SNOW-1158) ————————————————————————————————
+   public/partials/_season_calendar.html — the one season calendar, on the
+   resort page, in the bulletin page's season sheet, on /help/ and in the
+   component library. Every rule is scoped to .season-cal / .season-day so
+   the drawing cannot differ between pages.
 
-   Stable days (min == max): solid tint fill.
-   Variable days (min != max): diagonal triangle split using a hard-stop
-   linear-gradient at 50%.  Direction "to top right" places the min (floor)
-   colour in the bottom-left triangle and the max (ceiling) colour in the
-   top-right triangle.  The hard stop at 50% on both sides gives a crisp
-   diagonal edge with no gradient blur.  Text colour follows max for
-   legibility on the dominant upper-right area.
+   ONE markup, two layouts. .season-cal is a size container; in a wide one
+   (≥ 30rem) the months are rows — a 36px label column, then 31 day slots
+   (a dot each, aspect-ratio 1) against the 1 · 5 · 10 … 30 axis row above.
+   In a narrow one the same elements re-flow into month COLUMNS of short
+   bars (10px tall), the axis a 22px column down the left. A container
+   query rather than a media query, because the calendar sits in a
+   ~700px column on the resort page and in a 640px sheet on the bulletin
+   page, and each must decide by its own width.
 
-   Ring borders (ring-2) are set on the tile element and frame the whole
-   square regardless of fill style — today/selected rings are unaffected.
-
-   Usage in template:
-     <div class="calendar-cell"
-          data-rating-min="moderate"
-          data-rating-max="considerable">
+   Cell states — data-state: "none" (no bulletin, outlined), the five EAWS
+   keys (filled), "split" (two levels: data-lo left half, data-hi — the
+   day's peak — right half) and "future" (not yet, faint). The ring is
+   .season-day-ring: 2px of --color-text-1 with a 1px offset, the same on
+   a dot, a bar and a key swatch.
    ————————————————————————————————————————— */
-
-/* Stable-day fills — set --cell-bg; the ::before pseudo-element paints it.
-   Keeping colour off the element itself so the overflow:hidden clip on the
-   parent never touches a gradient boundary (the root cause of the bleed). */
-.calendar-cell[data-rating-min="no_rating"][data-rating-max="no_rating"] { --cell-bg: transparent; }
-.calendar-cell[data-rating-min="low"][data-rating-max="low"]             { --cell-bg: var(--color-eaws-low); color: var(--color-eaws-low-fg); }
-.calendar-cell[data-rating-min="moderate"][data-rating-max="moderate"]   { --cell-bg: var(--color-eaws-moderate); color: var(--color-eaws-moderate-fg); }
-.calendar-cell[data-rating-min="considerable"][data-rating-max="considerable"] { --cell-bg: var(--color-eaws-considerable); color: var(--color-eaws-considerable-fg); }
-.calendar-cell[data-rating-min="high"][data-rating-max="high"]           { --cell-bg: var(--color-eaws-high); color: var(--color-eaws-high-fg); }
-.calendar-cell[data-rating-min="very_high"][data-rating-max="very_high"] { --cell-bg: var(--color-eaws-very-high); color: var(--color-eaws-very-high-fg); }
-
-/* Variable-day diagonal split fills — one rule per (min, max) pair where min < max.
-   min colour fills the bottom-left half; max colour fills the top-right half.
-   conic-gradient(from 135deg) = same 45° diagonal as linear-gradient(to top right).
-   Text colour is --color-eaws-mixed-fg, NOT either level's own -fg: one ink
-   is painted across both halves, so it has to clear both fills. It used to
-   take the max level's -fg, which put white over the pale-green or yellow
-   half of a low/high or moderate/high cell at 1.16:1 and 1.07:1 (SNOW-739). */
-.calendar-cell[data-rating-min="low"][data-rating-max="moderate"]           { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-low) 180deg, var(--color-eaws-moderate) 180deg); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-rating-min="low"][data-rating-max="considerable"]        { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-low) 180deg, var(--color-eaws-considerable) 180deg); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-rating-min="low"][data-rating-max="high"]                { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-low) 180deg, var(--color-eaws-high) 180deg); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-rating-min="low"][data-rating-max="very_high"]           { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-low) 180deg, var(--color-eaws-very-high) 180deg); color: var(--color-eaws-very-high-fg); }
-.calendar-cell[data-rating-min="moderate"][data-rating-max="considerable"]   { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-moderate) 180deg, var(--color-eaws-considerable) 180deg); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-rating-min="moderate"][data-rating-max="high"]           { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-moderate) 180deg, var(--color-eaws-high) 180deg); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-rating-min="moderate"][data-rating-max="very_high"]      { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-moderate) 180deg, var(--color-eaws-very-high) 180deg); color: var(--color-eaws-very-high-fg); }
-.calendar-cell[data-rating-min="considerable"][data-rating-max="high"]       { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-considerable) 180deg, var(--color-eaws-high) 180deg); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-rating-min="considerable"][data-rating-max="very_high"]  { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-considerable) 180deg, var(--color-eaws-very-high) 180deg); color: var(--color-eaws-very-high-fg); }
-.calendar-cell[data-rating-min="high"][data-rating-max="very_high"]          { --cell-bg: conic-gradient(from 135deg, var(--color-eaws-high) 180deg, var(--color-eaws-very-high) 180deg); color: var(--color-eaws-very-high-fg); }
-
-/* —— AM/PM vertical-split calendar tile (SNOW-291) ——————————————
-   Used when a day carries two distinct problem periods (flat-but-split
-   or escalating). The tile is divided vertically: left half = AM colour,
-   right half = PM colour.
-
-   Implementation uses a linear-gradient hard-stop at 50% (left→right),
-   pulling colours from the same EAWS token set as the existing diagonal
-   fills above.  The ::before pseudo-element paints the gradient so the
-   rounded-full clip on the parent always produces clean half-circle edges.
-
-   Selector: [data-shape="time-split"] plus [data-rating-am] / [data-rating-pm]
-   attribute pairs.  Specificity matches the diagonal-fill rules so the
-   cascade behaves identically.
-
-   All possible (am, pm) combinations are enumerated below.  A cell whose
-   two halves differ takes --color-eaws-mixed-fg, because one ink is painted
-   across both fills; only am == pm takes that level's own -fg. It used to
-   follow the PM rating, which put the neutral #1a1916 on the red half of an
-   am=high/pm=low cell at 4.40:1 (SNOW-739).
-   ————————————————————————————————————————— */
-
-/* Single AM colour (PM rating absent or same as AM — fallback) */
-.calendar-cell[data-shape="time-split"][data-rating-am="low"][data-rating-pm="low"]             { --cell-bg: var(--color-eaws-low); color: var(--color-eaws-low-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="moderate"][data-rating-pm="moderate"]   { --cell-bg: var(--color-eaws-moderate); color: var(--color-eaws-moderate-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="considerable"][data-rating-pm="considerable"] { --cell-bg: var(--color-eaws-considerable); color: var(--color-eaws-considerable-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="high"][data-rating-pm="high"]           { --cell-bg: var(--color-eaws-high); color: var(--color-eaws-high-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="very_high"][data-rating-pm="very_high"] { --cell-bg: var(--color-eaws-very-high); color: var(--color-eaws-very-high-fg); }
-
-/* Mixed AM/PM pairs — vertical left/right split using hard-stop linear-gradient */
-.calendar-cell[data-shape="time-split"][data-rating-am="low"][data-rating-pm="moderate"]           { --cell-bg: linear-gradient(to right, var(--color-eaws-low) 50%, var(--color-eaws-moderate) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="low"][data-rating-pm="considerable"]        { --cell-bg: linear-gradient(to right, var(--color-eaws-low) 50%, var(--color-eaws-considerable) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="low"][data-rating-pm="high"]                { --cell-bg: linear-gradient(to right, var(--color-eaws-low) 50%, var(--color-eaws-high) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="low"][data-rating-pm="very_high"]           { --cell-bg: linear-gradient(to right, var(--color-eaws-low) 50%, var(--color-eaws-very-high) 50%); color: var(--color-eaws-very-high-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="moderate"][data-rating-pm="low"]            { --cell-bg: linear-gradient(to right, var(--color-eaws-moderate) 50%, var(--color-eaws-low) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="moderate"][data-rating-pm="considerable"]   { --cell-bg: linear-gradient(to right, var(--color-eaws-moderate) 50%, var(--color-eaws-considerable) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="moderate"][data-rating-pm="high"]           { --cell-bg: linear-gradient(to right, var(--color-eaws-moderate) 50%, var(--color-eaws-high) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="moderate"][data-rating-pm="very_high"]      { --cell-bg: linear-gradient(to right, var(--color-eaws-moderate) 50%, var(--color-eaws-very-high) 50%); color: var(--color-eaws-very-high-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="considerable"][data-rating-pm="low"]        { --cell-bg: linear-gradient(to right, var(--color-eaws-considerable) 50%, var(--color-eaws-low) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="considerable"][data-rating-pm="moderate"]   { --cell-bg: linear-gradient(to right, var(--color-eaws-considerable) 50%, var(--color-eaws-moderate) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="considerable"][data-rating-pm="high"]       { --cell-bg: linear-gradient(to right, var(--color-eaws-considerable) 50%, var(--color-eaws-high) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="considerable"][data-rating-pm="very_high"]  { --cell-bg: linear-gradient(to right, var(--color-eaws-considerable) 50%, var(--color-eaws-very-high) 50%); color: var(--color-eaws-very-high-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="high"][data-rating-pm="low"]                { --cell-bg: linear-gradient(to right, var(--color-eaws-high) 50%, var(--color-eaws-low) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="high"][data-rating-pm="moderate"]           { --cell-bg: linear-gradient(to right, var(--color-eaws-high) 50%, var(--color-eaws-moderate) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="high"][data-rating-pm="considerable"]       { --cell-bg: linear-gradient(to right, var(--color-eaws-high) 50%, var(--color-eaws-considerable) 50%); color: var(--color-eaws-mixed-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="high"][data-rating-pm="very_high"]          { --cell-bg: linear-gradient(to right, var(--color-eaws-high) 50%, var(--color-eaws-very-high) 50%); color: var(--color-eaws-very-high-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="very_high"][data-rating-pm="low"]           { --cell-bg: linear-gradient(to right, var(--color-eaws-very-high) 50%, var(--color-eaws-low) 50%); color: var(--color-eaws-very-high-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="very_high"][data-rating-pm="moderate"]      { --cell-bg: linear-gradient(to right, var(--color-eaws-very-high) 50%, var(--color-eaws-moderate) 50%); color: var(--color-eaws-very-high-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="very_high"][data-rating-pm="considerable"]  { --cell-bg: linear-gradient(to right, var(--color-eaws-very-high) 50%, var(--color-eaws-considerable) 50%); color: var(--color-eaws-very-high-fg); }
-.calendar-cell[data-shape="time-split"][data-rating-am="very_high"][data-rating-pm="high"]          { --cell-bg: linear-gradient(to right, var(--color-eaws-very-high) 50%, var(--color-eaws-high) 50%); color: var(--color-eaws-very-high-fg); }
-
-/* —— Season heatmap sheet (SNOW-117) ————————————————————————————
-   The season heatmap renders inside a slide-down sheet (not inline).
-   Tiles are 24×24 px circles carrying the day-of-month number, framed
-   by a hairline border so out-of-season pad cells (no data-rating-min)
-   stay invisible. Today / selected get a 2 px border by overriding the
-   default-border rule — selectors include [data-rating-min] so they
-   match its specificity, otherwise the cascade silently falls back to
-   grey (this exact bug bit the SNOW-116 spike).
-
-   Colour fills carried over from the month-grid era apply unchanged
-   (the data-rating-min/max rules higher up in this file fill the tile
-   background; we only style border + box here).
-   ————————————————————————————————————————— */
-[data-testid="season-calendar"] .calendar-cell {
-    width: 1.5rem;
-    height: 1.5rem;
-    font-size: 0.6875rem;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid transparent;
-    box-sizing: border-box;
-    overflow: hidden;
-    position: relative;
-    isolation: isolate;
+.season-cal {
+    container-type: inline-size;
 }
-[data-testid="season-calendar"] .calendar-cell::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: var(--cell-bg, transparent);
-    z-index: -1;
-}
-[data-testid="season-calendar"] .calendar-cell[data-rating-min] {
-    border-color: rgba(0, 0, 0, 0.12);
-}
-[data-testid="season-calendar"] .calendar-cell-today[data-rating-min] {
-    border-color: var(--color-text-1);
-    border-width: 2px;
-}
-[data-testid="season-calendar"] .calendar-cell-selected[data-rating-min] {
-    border-color: var(--color-ring-selected);
-    border-width: 2px;
-}
-[data-testid="season-calendar"] .calendar-cell-label {
-    font-size: 9px;
-    justify-content: flex-start;
-    border: none;
-}
-
-/* Per-cell wrapper — sits behind each tile and carries the alternating
-   month tint via [data-month-parity]. 28×28 px (24 px cell + 2 px tinted
-   border on every side); wrappers butt flush so the tint reads as a
-   continuous band that switches on the exact day boundary, including
-   mid-column for weeks that span a month-end. The cell content sits
-   centred inside the wrapper as a 24 px rounded-full circle, so the
-   2 px ring of tint surrounds each tile. */
-[data-testid="season-calendar"] .season-cell-wrap {
-    width: 1.5rem;
-    height: 1.5rem;
-    padding: 2px;
-    box-sizing: content-box;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-[data-testid="season-calendar"] [data-month-parity="1"] {
-    background: rgba(0, 0, 0, 0.05);
-}
-.dark [data-testid="season-calendar"] [data-month-parity="1"] {
-    background: rgba(255, 255, 255, 0.06);
-}
-
-/* —— ALBINA elevation-band calendar tiles (SNOW-292) ——————————————
-   Two rendering modes driven by data-source="ALBINA" + data-band-mode:
-
-   elevation-only  — 2 elevation bands, same time period (all_day or
-                     both earlier/later).  The tile is split horizontally:
-                     high band on top, low band below.  The linear-gradient
-                     reads the per-band rating colours from .calendar-band
-                     child spans via sibling-count selectors, but since CSS
-                     can't directly read sibling data-attributes we use the
-                     ::before pseudo layer (set by the main data-rating rules)
-                     as the low-band colour and inject the high-band colour
-                     via a second gradient layer.
-
-   elevation-time  — 4 entries: 2 bands × 2 time periods.  Rendered as a
-                     2×2 CSS grid sub-cells inside the tile.  Each quadrant
-                     is one .calendar-band span.
-
-   The .calendar-band spans are absolutely positioned inside the tile.
-   The main calendar-cell ::before layer (data-rating-min/max fill) is
-   suppressed for ALBINA split tiles — the band spans handle colouring.
-   ————————————————————————————————————————— */
-.calendar-band {
-    display: none; /* hidden by default; shown only inside ALBINA band-mode tiles */
-}
-
-/* elevation-only: horizontal split — high band top, low band bottom.
-   Two .calendar-band spans; first = high band (above N m), second = low band.
-   We use a top/bottom absolute layout: first span fills the top half,
-   second fills the bottom half.  Each carries data-band-rating which we
-   map to its EAWS colour via attribute selectors below.                 */
-[data-source="ALBINA"][data-band-mode="elevation-only"] {
+.season-cal-grid {
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    padding: 0; /* suppress default flex centering */
-    align-items: stretch;
-    justify-content: stretch;
-    font-size: 0; /* hide the date number inside band-mode cells */
+    gap: 8px;
 }
-[data-source="ALBINA"][data-band-mode="elevation-only"] .calendar-band {
-    display: block;
-    flex: 1;
-    width: 100%;
-}
-
-/* elevation-time: 2×2 grid — earlier-high | earlier-low / later-high | later-low
-   Band order is guaranteed by _derive_albina_bands in bulletins/services/day_rating.py:
-   primary sort is time period (earlier → all_day → later), secondary is band height
-   (above-* before below-*).  Do not reorder band spans in the template. */
-[data-source="ALBINA"][data-band-mode="elevation-time"] {
+.season-cal-axis,
+.season-cal-month {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
-    overflow: hidden;
-    padding: 0;
-    font-size: 0;
+    grid-template-columns: 36px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
 }
-[data-source="ALBINA"][data-band-mode="elevation-time"] .calendar-band {
+.season-cal-days {
+    display: grid;
+    grid-template-columns: repeat(31, minmax(0, 1fr));
+    gap: 3px;
+}
+.season-cal-tick {
+    display: flex;
+    justify-content: center;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--text-meta);
+    line-height: 16px;
+    color: var(--color-text-3);
+}
+.season-cal-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-meta);
+    line-height: 16px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-3);
+}
+.season-day {
     display: block;
+    aspect-ratio: 1;
+    border-radius: 50%;
+}
+@container (max-width: 29.99rem) {
+    .season-cal-grid {
+        flex-direction: row;
+        gap: 6px;
+    }
+    .season-cal-axis {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: none;
+        width: 22px;
+    }
+    /* 16px month label + 4px margin, so day 1 of the axis lines up with
+       day 1 of every month column. */
+    .season-cal-axis-spacer {
+        display: block;
+        height: 20px;
+    }
+    .season-cal-month {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 2px;
+        flex: 1 1 0;
+        min-width: 0;
+    }
+    .season-cal-days {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .season-cal-tick {
+        display: block;
+        height: 10px;
+        line-height: 10px;
+        text-align: right;
+    }
+    .season-cal-label {
+        display: block;
+        height: 16px;
+        margin-bottom: 4px;
+        text-align: center;
+    }
+    .season-cal-days .season-day {
+        aspect-ratio: auto;
+        height: 10px;
+        border-radius: 3px;
+    }
 }
 
-/* Band rating colours — map data-band-rating to the EAWS colour tokens.
-   These override the --cell-bg variable used by the ::before fill; for
-   ALBINA split tiles we let the band spans carry the colour directly. */
-.calendar-band[data-band-rating="low"]          { background: var(--color-eaws-low); }
-.calendar-band[data-band-rating="moderate"]      { background: var(--color-eaws-moderate); }
-.calendar-band[data-band-rating="considerable"]  { background: var(--color-eaws-considerable); }
-.calendar-band[data-band-rating="high"]          { background: var(--color-eaws-high); }
-.calendar-band[data-band-rating="very_high"]     { background: var(--color-eaws-very-high); }
-.calendar-band[data-band-rating="no_rating"]     { background: transparent; }
+.season-day[data-state="none"]         { box-shadow: inset 0 0 0 1px var(--color-border-strong); }
+.season-day[data-state="future"]       { background: var(--color-chip); }
+.season-day[data-state="low"]          { background: var(--color-eaws-low); }
+.season-day[data-state="moderate"]     { background: var(--color-eaws-moderate); }
+.season-day[data-state="considerable"] { background: var(--color-eaws-considerable); }
+.season-day[data-state="high"]         { background: var(--color-eaws-high); }
+.season-day[data-state="very_high"]    { background: var(--color-eaws-very-high); }
+
+/* Two levels in one day — the lower level left, the peak right. */
+.season-day[data-lo="low"]           { --season-lo: var(--color-eaws-low); }
+.season-day[data-lo="moderate"]      { --season-lo: var(--color-eaws-moderate); }
+.season-day[data-lo="considerable"]  { --season-lo: var(--color-eaws-considerable); }
+.season-day[data-lo="high"]          { --season-lo: var(--color-eaws-high); }
+.season-day[data-hi="moderate"]      { --season-hi: var(--color-eaws-moderate); }
+.season-day[data-hi="considerable"]  { --season-hi: var(--color-eaws-considerable); }
+.season-day[data-hi="high"]          { --season-hi: var(--color-eaws-high); }
+.season-day[data-hi="very_high"]     { --season-hi: var(--color-eaws-very-high); }
+.season-day[data-state="split"] {
+    background: linear-gradient(90deg, var(--season-lo) 50%, var(--season-hi) 50%);
+}
+
+.season-day-ring {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 1px;
+}
+a.season-day:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+/* The keys. The swatch is a .season-day, so a key colour cannot drift from
+   the cell it explains; it stays a round swatch in either layout. */
+.season-cal .season-key-swatch {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+}
+.season-cal-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    font-family: var(--font-mono);
+    font-size: var(--text-meta);
+    line-height: 16px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-3);
+}
+.season-cal-key-full {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-border);
+    font-size: var(--text-summary);
+    line-height: 18px;
+    color: var(--color-text-2);
+}
+.season-cal-key-full .season-key-swatch {
+    width: 12px;
+    height: 12px;
+}
+
+/* The bulletin sheet's order: calendar, then the selected-day readout
+   (rendered by the sheet shell, outside the cached fragment), then the
+   key. #season-grid and the fragment's root step out of the box tree so
+   all three are flex items of one column — which also drops the root's
+   size container, so the body is the container the layout query reads. */
+.season-sheet-body {
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+.season-sheet-body > #season-grid,
+.season-sheet-body > #season-grid > .season-cal {
+    display: contents;
+    container-type: normal;
+}
+.season-sheet-body .season-readout { order: 1; }
+.season-sheet-body .season-cal-key-full { order: 2; }
 
 /* —— Season heatmap sheet primitive (SNOW-117) ——————————————————
    Slide-down full-width panel anchored to the top of the viewport.
@@ -1444,6 +1397,10 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
     transform: translateY(-100%);
     transition: transform 220ms ease-out;
     z-index: 41;
+    /* SNOW-1158: the calendar no longer scrolls sideways; on a short phone
+       the sheet scrolls down instead. */
+    max-height: 100dvh;
+    overflow-y: auto;
 }
 .season-sheet > * {
     max-width: var(--container-narrow);
@@ -1478,9 +1435,6 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 }
 [data-season-sheet="open"] .season-sheet-backdrop.is-pressing {
     background: rgba(0, 0, 0, 0.55);
-}
-[data-season-scroll] {
-    touch-action: pan-x;
 }
 [data-season-sheet="open"] .season-sheet {
     transform: translateY(0);

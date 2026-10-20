@@ -1914,7 +1914,10 @@ class TestResortFacts:
 
 @pytest.mark.django_db
 class TestResortSeasonStrip:
-    """SNOW-1126: the season strip, server-rendered on the resort page."""
+    """SNOW-1126: the season calendar, server-rendered on the resort page.
+
+    SNOW-1158 redrew it as the shared month-shaped calendar.
+    """
 
     @pytest.fixture(autouse=True)
     def _archive_start(self, settings: Any) -> None:
@@ -1936,9 +1939,15 @@ class TestResortSeasonStrip:
         start = content.index('data-testid="resort-season"')
         return content[start : content.index("</section>", start)]
 
+    def _cell(self, strip: str, iso: str) -> str:
+        """Return the opening tag of the calendar cell for ``iso``."""
+        head = strip.split(f'data-date="{iso}"')[0].rsplit("<span", 1)[1]
+        tail = strip.split(f'data-date="{iso}"')[1].split(">")[0]
+        return head + tail
+
     @freeze_time("2026-02-20 12:00:00+00:00")
-    def test_strip_and_summary_are_in_the_plain_response(self) -> None:
-        """No HX-Request: the summary counts and the cells are in the HTML."""
+    def test_calendar_and_summary_are_in_the_plain_response(self) -> None:
+        """No HX-Request: the summary aria-label and the cells are in the HTML."""
         region = MicroRegionFactory.create()
         resort = ResortFactory.create(region=region)
         self._rate(region, datetime.date(2025, 12, 1), "low")
@@ -1950,18 +1959,79 @@ class TestResortSeasonStrip:
         response = Client().get(resort.get_absolute_url())
 
         assert response.status_code == 200
-        strip = self._strip(response.content.decode())
-        summary = html.unescape(
-            " ".join(strip.split('data-testid="resort-season-summary"')[1].split())
-        )
-        assert "Season 25/26: 5 days with a bulletin." in summary
-        assert "3 days at Considerable or higher." in summary
-        assert "Peak" not in summary
+        strip = html.unescape(self._strip(response.content.decode()))
+        # SNOW-1158: the summary is the calendar's one role="img" label, no
+        # longer visible text, and there is no per-level count list.
+        assert (
+            'role="img" aria-label="Season 2025/26: 5 days with a bulletin, '
+            '3 at Considerable or higher."'
+        ) in strip
+        assert "resort-season-summary" not in strip
+        assert "resort-season-levels" not in strip
         assert 'data-testid="season-calendar"' in strip
-        assert 'role="img"' in strip
-        # Django's "N" format is AP-style ("Jan."); the name is the translated label.
-        assert 'aria-label="Mon 5 Jan.: High"' in strip
+        assert 'title="5 Jan 2026 · High"' in strip
         assert 'data-level="high"' in strip
+
+    @freeze_time("2026-02-20 12:00:00+00:00")
+    def test_eyebrow_names_the_region_and_the_season(self) -> None:
+        """SNOW-1158: "Avalanche danger • {region} region • 2025/26"."""
+        region = MicroRegionFactory.create(name="Martigny–Verbier")
+        resort = ResortFactory.create(region=region)
+        self._rate(region, datetime.date(2026, 1, 5), "high")
+
+        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
+        heading = strip.split('id="resort-season-heading"')[1].split("</h2>")[0]
+
+        assert "Avalanche danger • Martigny–Verbier region • 2025/26" in heading
+
+    @freeze_time("2026-02-20 12:00:00+00:00")
+    def test_the_key_names_five_states(self) -> None:
+        """The short key: No bulletin, Low, Moderate, Considerable, High."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        self._rate(region, datetime.date(2026, 1, 5), "high")
+
+        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
+        key = strip.split('data-testid="season-calendar-key"')[1].split("</ul>")[0]
+        words = [" ".join(item.split(">")[-1].split()) for item in key.split("</li>")]
+
+        assert [w for w in words if w] == [
+            "No bulletin",
+            "Low",
+            "Moderate",
+            "Considerable",
+            "High",
+        ]
+
+    @freeze_time("2026-02-20 12:00:00+00:00")
+    def test_in_season_rings_today_and_draws_the_rest_not_yet(self) -> None:
+        """A running season rings today; the days after it are "not yet"."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        self._rate(region, datetime.date(2026, 1, 5), "high")
+
+        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
+
+        assert "season-day-ring" in self._cell(strip, "2026-02-20")
+        assert strip.count("season-day season-day-ring") == 1
+        assert 'data-state="future"' in self._cell(strip, "2026-02-22")
+        assert 'data-state="future"' in self._cell(strip, "2026-04-30")
+        assert 'data-state="none"' in self._cell(strip, "2026-02-19")
+
+    @freeze_time("2026-10-19 12:00:00+00:00")
+    def test_a_finished_season_rings_its_first_high_day(self) -> None:
+        """Off-season the ring is on the season's first High day."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        self._rate(region, datetime.date(2026, 1, 3), "considerable")
+        self._rate(region, datetime.date(2026, 1, 9), "high")
+        self._rate(region, datetime.date(2026, 2, 9), "high")
+
+        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
+
+        assert "season-day-ring" in self._cell(strip, "2026-01-09")
+        assert strip.count("season-day season-day-ring") == 1
+        assert 'data-state="future"' not in strip
 
     @freeze_time("2026-02-20 12:00:00+00:00")
     def test_cells_do_not_link_to_their_days(self) -> None:
@@ -1973,6 +2043,7 @@ class TestResortSeasonStrip:
         strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
 
         assert "<a" not in strip
+        assert strip.count('role="img"') == 1
 
     @freeze_time("2026-02-20 12:00:00+00:00")
     def test_strip_is_omitted_without_bulletins(self) -> None:
@@ -1999,10 +2070,11 @@ class TestResortSeasonStrip:
         self._rate(region, datetime.date(2026, 5, 1), "high")
 
         strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
-        summary = " ".join(strip.split())
 
-        assert "Season 25/26: 2 days with a bulletin." in summary
-        assert "1 day at Considerable or higher." in summary
+        assert (
+            'aria-label="Season 2025/26: 2 days with a bulletin, '
+            '1 at Considerable or higher."'
+        ) in strip
         assert 'data-date="2025-11-01"' in strip
         assert 'data-date="2026-04-30"' in strip
         assert 'data-date="2026-05-01"' not in strip

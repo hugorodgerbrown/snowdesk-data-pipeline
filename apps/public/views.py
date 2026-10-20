@@ -138,8 +138,10 @@ from .headlines import headline_for
 from .season_calendar import (
     SeasonRibbon,
     build_season_grid,
+    build_season_months,
     build_season_ribbon,
     season_header,
+    season_ring_date,
     season_window,
     summarise_season,
 )
@@ -5156,29 +5158,38 @@ def _resort_eyebrow(resort: Resort) -> str:
 def _resort_season_strip_context(
     region: MicroRegion, today: datetime.date
 ) -> dict[str, Any]:
-    """Build the resort page's season strip and its text summary (SNOW-1126).
+    """Build the resort page's season calendar and its summary (SNOW-1126).
 
     Rendered server-side, not deferred the way the bulletin page's
-    ``#season-grid`` is: the strip's summary is the page's indexable account
-    of the season, and a crawler never fires the client trigger. The cost is
-    one indexed ``RegionDayRating.objects.for_region_range`` query.
+    ``#season-grid`` is: the calendar's aria-label summary is the page's
+    indexable account of the season, and a crawler never fires the client
+    trigger. The cost is one indexed
+    ``RegionDayRating.objects.for_region_range`` query.
 
     The window is the running 1 Nov – 30 Apr season, or the one just ended
     from May to October (``season_window``); the grid stops at ``today + 1``
-    within a running season.
+    within a running season, and SNOW-1158's month view draws the rest of
+    the season as "not yet". The ring is today in season, else the season's
+    first High day (``season_ring_date``).
 
     Args:
         region: The resort's parent micro-region.
         today: The current local date.
 
     Returns:
-        ``season_strip`` (a ``SeasonGrid``) and ``season_summary`` (a
-        ``SeasonSummary``, falsy — so the template hides the strip — when no
-        day in the window had a bulletin).
+        ``season_months`` (a ``SeasonMonths``) and ``season_summary`` (a
+        ``SeasonSummary``, falsy — so the template hides the section — when
+        no day in the window had a bulletin).
 
     """
-    grid = build_season_grid(region, today, window=season_window(today))
-    return {"season_strip": grid, "season_summary": summarise_season(grid)}
+    window = season_window(today)
+    grid = build_season_grid(region, today, window=window)
+    return {
+        "season_months": build_season_months(
+            grid, today, window=window, ring_date=season_ring_date(grid, window, today)
+        ),
+        "season_summary": summarise_season(grid),
+    }
 
 
 # The wall clock the resort page's bulletin card states its "updated" time
@@ -5539,13 +5550,16 @@ def season_calendar_partial(request: HttpRequest, region_id: str) -> HttpRespons
         MicroRegion.objects.select_related("subregion"), region_id__iexact=region_id
     )
     grid = build_season_grid(region, today)
+    # SNOW-1158: the shared month-shaped calendar, linked. No server ring —
+    # the selected day is ringed client-side, so this body is one per day.
     response = render(
         request,
         "public/partials/_season_calendar.html",
         {
             "region": region,
-            "season_calendar": grid,
-            "today_iso": today_iso,
+            "season_months": build_season_months(grid, today),
+            "season_summary": summarise_season(grid),
+            "linked": True,
         },
     )
     # Cache the full rendered body so subsequent hits are byte-for-byte
