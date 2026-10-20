@@ -377,7 +377,7 @@ def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
         return HttpResponse("resort_slug is required.", status=400)
 
     try:
-        resort = Resort.objects.select_related("region").get(slug=slug)
+        resort = Resort.objects.select_related("region", "location").get(slug=slug)
     except Resort.DoesNotExist:
         return HttpResponse("Resort not found.", status=404)
 
@@ -448,7 +448,7 @@ def favourite_resort_toggle(request: HttpRequest, slug: str) -> HttpResponse:
         )
 
     try:
-        resort = Resort.objects.select_related("region").get(slug=slug)
+        resort = Resort.objects.select_related("region", "location").get(slug=slug)
     except Resort.DoesNotExist:
         return HttpResponse("Resort not found.", status=404)
 

@@ -2,7 +2,7 @@
 name: worktrees
 description: init-worktree seed recipe, migrate + sync_waffle_flags + seed_canonical_routes every session, settings.ini not .env, dev credentials, reseed
 status: current
-last-reviewed: 2026-10-17
+last-reviewed: 2026-10-20
 ---
 
 # Worktrees and DB seeding
@@ -71,6 +71,17 @@ keeps a worktree's database in step with its checkout. `loaddata`,
 `import_resorts` and `seed_test_data` **insert** rows rather than
 reconcile them, so re-running those would duplicate the seeded dataset
 rather than refresh it — which is why the split exists at all.
+
+`import_resorts` gives every sheet-pinned resort its pin `Location`
+(`Resort.location`, SNOW-1144) as it creates the row, so a freshly seeded
+database is complete. A worktree seeded **before** SNOW-1144 has resorts
+whose pin is only the mirrored `latitude`/`longitude`: they stay on the map
+through a transitional fallback (gone with SNOW-1147), but get no weather
+and show no Forecasts section — run the one-time backfill once:
+
+```bash
+uv run python manage.py link_resort_locations --commit
+```
 
 `seed_canonical_routes --commit` is the reconciling version of the one
 part of `seed_test_data` every worktree must hold: the dev user's four

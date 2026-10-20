@@ -69,7 +69,7 @@ from apps.bulletins.models import (
 )
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
-from apps.locations.models import Location
+from apps.locations.models import Location, LocationQuerySet
 from apps.regions.models import MicroRegion
 from apps.routes.models import Route
 from apps.routes.services.canonical import canonical_paths
@@ -96,6 +96,16 @@ _EXPECTED_TOTAL = 178
 # grouping count is _EXPECTED_MAP_DATE_GROUPS, not _EXPECTED_BULLETINS.
 _EXPECTED_BULLETINS = 39
 _EXPECTED_MAP_DATE_GROUPS = 10
+
+
+def _seeded_locations() -> LocationQuerySet:
+    """Return the Locations the seeder minted — all but the resort pins.
+
+    The ``_regions`` fixture runs ``import_resorts``, which since SNOW-1144
+    gives every sheet-pinned resort its pin ``Location``. Those are the
+    sheet's, not this command's, so the counts below leave them out.
+    """
+    return Location.objects.filter(pinned_resorts__isnull=True)
 
 
 @pytest.fixture(scope="class")
@@ -308,7 +318,7 @@ class TestCommit:
         """
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
         # + the trip's meeting point + the CH-4115 centroid (weather).
-        assert Location.objects.count() == _EXPECTED_LOCATIONS + 2
+        assert _seeded_locations().count() == _EXPECTED_LOCATIONS + 2
         assert Trip.objects.get().meeting_point is not None
         # SNOW-802: placed pins only — the dev user's region pin is not one.
         assert Favourite.objects.placed().count() == _EXPECTED_FAVOURITES
@@ -318,7 +328,7 @@ class TestCommit:
         call_command(
             "seed_test_data", "--include", "location", commit=True, verbosity=0
         )
-        assert Location.objects.count() == _EXPECTED_LOCATIONS
+        assert _seeded_locations().count() == _EXPECTED_LOCATIONS
         assert Favourite.objects.count() == 0
 
     def test_include_favourite_pulls_in_location(self) -> None:
@@ -326,14 +336,14 @@ class TestCommit:
         call_command(
             "seed_test_data", "--include", "favourite", commit=True, verbosity=0
         )
-        assert Location.objects.count() == _EXPECTED_LOCATIONS
+        assert _seeded_locations().count() == _EXPECTED_LOCATIONS
         # SNOW-802: placed pins only — the dev user's region pin is not one.
         assert Favourite.objects.placed().count() == _EXPECTED_FAVOURITES
 
     def test_favourites_reference_seeded_locations(self) -> None:
         """Each Favourite points at a seeded Location with matching coords."""
         call_command("seed_test_data", "--all", commit=True, verbosity=0)
-        seeded_ids = set(Location.objects.values_list("pk", flat=True))
+        seeded_ids = set(_seeded_locations().values_list("pk", flat=True))
         for favourite in Favourite.objects.placed().select_related("location"):
             assert favourite.location is not None
             assert favourite.location.pk in seeded_ids
@@ -351,8 +361,8 @@ class TestCommit:
             "seed_test_data", "--include", "location", commit=True, verbosity=0
         )
 
-        assert Location.objects.unaddressed().count() == 0
-        for location in Location.objects.all():
+        assert _seeded_locations().unaddressed().count() == 0
+        for location in _seeded_locations():
             address = location.three_word_address
             assert address is not None
             # Three lowercase words, the shape convert-to-3wa returns —
@@ -373,13 +383,13 @@ class TestCommit:
         call_command(
             "seed_test_data", "--include", "location", commit=True, verbosity=0
         )
-        first = dict(Location.objects.values_list("latitude", "what3words"))
+        first = dict(_seeded_locations().values_list("latitude", "what3words"))
 
-        Location.objects.all().delete()
+        _seeded_locations().delete()
         call_command(
             "seed_test_data", "--include", "location", commit=True, verbosity=0
         )
-        second = dict(Location.objects.values_list("latitude", "what3words"))
+        second = dict(_seeded_locations().values_list("latitude", "what3words"))
 
         assert first == second
         # Distinct places get distinct words, so the five seeded pins are
@@ -445,7 +455,7 @@ class TestUserSeeding:
         """--include user creates only the accounts, no bulletin/point rows."""
         call_command("seed_test_data", "--include", "user", commit=True, verbosity=0)
         assert Bulletin.objects.count() == 0
-        assert Location.objects.count() == 0
+        assert _seeded_locations().count() == 0
         # The dev user's region pin is the one favourite — and it mints no Location.
         assert Favourite.objects.region_pins().count() == 1
         assert Favourite.objects.placed().count() == 0
@@ -726,7 +736,7 @@ class TestWeatherSeeding:
 
         centroid = MicroRegion.objects.get(region_id="CH-4115").centroid_location
         assert centroid is not None
-        assert Location.objects.count() == _EXPECTED_LOCATIONS + 1
+        assert _seeded_locations().count() == _EXPECTED_LOCATIONS + 1
         assert Weather.objects.count() == _EXPECTED_LOCATIONS + 1
         assert set(Weather.objects.values_list("observed_on", flat=True)) == {
             timezone.localdate()

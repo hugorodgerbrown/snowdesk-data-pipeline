@@ -561,6 +561,42 @@ class TestListResortsInRegion:
         assert result["resorts"][0]["name"] == "Verbier"
         assert result["resorts"][0]["latitude"] == 46.0961
 
+    def test_coordinates_come_from_the_pin_location(self, region: MicroRegion) -> None:
+        """SNOW-1144: the resort's pin Location is the coordinate read."""
+        pin = LocationFactory.create(anonymous=True, latitude=46.5, longitude=7.5)
+        ResortFactory.create(
+            name="Verbier", region=region, latitude=46.0, longitude=7.0, location=pin
+        )
+
+        result = tools.list_resorts_in_region(region.region_id)
+
+        assert (
+            result["resorts"][0]["latitude"],
+            result["resorts"][0]["longitude"],
+        ) == (
+            46.5,
+            7.5,
+        )
+
+    def test_a_resort_not_yet_backfilled_is_still_listed(
+        self, region: MicroRegion
+    ) -> None:
+        """SNOW-1144 transition: lat/lon and no Location yet still lists."""
+        ResortFactory.create(
+            name="Legacy", region=region, latitude=46.0, longitude=7.0, location=None
+        )
+
+        result = tools.list_resorts_in_region(region.region_id)
+
+        assert result["count"] == 1
+        assert (
+            result["resorts"][0]["latitude"],
+            result["resorts"][0]["longitude"],
+        ) == (
+            46.0,
+            7.0,
+        )
+
     def test_no_resorts_returns_empty_list(self, region: MicroRegion) -> None:
         """A region with no resorts returns an empty, non-error result."""
         result = tools.list_resorts_in_region(region.region_id)

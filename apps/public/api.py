@@ -138,6 +138,7 @@ from apps.regions.services.area_content import (
     weather_location_index,
 )
 from apps.regions.services.basemap_tiles import blob_summary
+from apps.regions.services.resort_pin import set_resort_pin
 from apps.weather.models import Weather
 from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import (
@@ -638,8 +639,10 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
 
     Each feature is a Point with GeoJSON-ordered ``coordinates: [lon, lat]``
     (RFC 7946) and properties ``id``, ``name``, ``region_id``,
-    ``needs_review``, ``tier``. Resorts missing latitude or longitude are
-    skipped.
+    ``needs_review``, ``tier``. Resorts with no pin are skipped; the
+    coordinate is ``Resort.pin_coordinates`` — the pin ``Location``, or
+    transitionally the mirrored columns of a resort not yet backfilled
+    (SNOW-1144; SNOW-1147 removes the fallback).
 
     ``id`` is the resort's **slug**, not its primary key (SNOW-796,
     ``docs/decisions/no-integer-pks-in-urls.md``): this feed is public and
@@ -670,17 +673,24 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
     for resort in (
         Resort.objects.resorts()
         .geocoded()
-        .select_related("region")
+        .select_related("region", "location")
         .order_by("name")
         .iterator()
     ):
+        # SNOW-1144: the pin, read through the one accessor (the Location,
+        # or transitionally the mirrored columns until SNOW-1147).
+        # ``geocoded()`` guarantees one; the guard only narrows the type.
+        pin = resort.pin_coordinates
+        if pin is None:
+            continue
+        latitude, longitude = pin
         # GeoJSON ordering: [longitude, latitude] per RFC 7946.
         features.append(
             {
                 "type": "Feature",
                 "geometry": {
                     "type": "Point",
-                    "coordinates": [resort.longitude, resort.latitude],
+                    "coordinates": [longitude, latitude],
                 },
                 "properties": {
                     "id": resort.slug,
@@ -1871,9 +1881,10 @@ def _weather_detail_heading(location: Location) -> str:
         coordinates.
 
     """
-    resort_location = location.resort_locations.select_related("resort").first()
-    if resort_location is not None:
-        return str(resort_location.resort.name)
+    # SNOW-1144: a resort's pin first, then a resort linking it.
+    resort = Resort.objects.standing_at(location).first()
+    if resort is not None:
+        return str(resort.name)
     region = location.micro_regions.first()
     if region is not None:
         return str(region.name)
@@ -1932,7 +1943,7 @@ def resort_popup(request: HttpRequest, slug: str) -> JsonResponse:
 
     """
     resort = get_object_or_404(
-        Resort.objects.select_related("region"),
+        Resort.objects.select_related("region", "location"),
         slug=slug,
     )
 
@@ -2617,15 +2628,13 @@ def edit_resort_save(request: HttpRequest, slug: str) -> JsonResponse:
     if details_error is not None:
         return details_error
 
-    resort.latitude = lat
-    resort.longitude = lon
+    # The pin itself (latitude/longitude/location) is written by
+    # set_resort_pin below, not here — SNOW-1144.
     resort.geocode_source = Resort.GeocodeSource.MANUAL
     resort.geocode_confidence = 1.0
     resort.geocoded_at = timezone.now()
     resort.needs_review = False
     update_fields = [
-        "latitude",
-        "longitude",
         "geocode_source",
         "geocode_confidence",
         "geocoded_at",
@@ -2654,7 +2663,11 @@ def edit_resort_save(request: HttpRequest, slug: str) -> JsonResponse:
         resort.region = containing
         update_fields.append("region")
 
-    resort.save(update_fields=update_fields)
+    with transaction.atomic():
+        resort.save(update_fields=update_fields)
+        # SNOW-1144: the one writer of the pin — moves the resort's Location
+        # in place so its weather stays attached, and mirrors lat/lon.
+        set_resort_pin(resort, lat, lon)
 
     return JsonResponse(_resort_save_payload(resort))
 
@@ -2858,8 +2871,6 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
         name=name,
         canton=resolved_canton,
         region=region,
-        latitude=lat,
-        longitude=lon,
         geocode_source=Resort.GeocodeSource.MANUAL,
         geocode_confidence=1.0,
         geocoded_at=timezone.now(),
@@ -2874,8 +2885,12 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
         return details_error
 
     # One INSERT with the details already bound — a rejected detail field
-    # cannot leave a half-populated new row behind.
-    resort.save()
+    # cannot leave a half-populated new row behind. The pin follows in the
+    # same transaction through its one writer (SNOW-1144), so a resort is
+    # never committed without the Location its weather hangs off.
+    with transaction.atomic():
+        resort.save()
+        set_resort_pin(resort, lat, lon)
     logger.info(
         "edit_resort_create: created %s in %s at (%s, %s)",
         resort.name,

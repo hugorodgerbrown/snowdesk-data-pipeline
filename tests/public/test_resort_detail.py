@@ -784,14 +784,33 @@ class TestResortLocations:
 
         assert re.search(r'data-testid="resort-location-0-link"\s*>Verbier<', content)
 
-    def test_no_curated_locations_means_no_section(self) -> None:
-        """A freshly geocoded resort renders no heading over an empty list."""
-        resort = ResortFactory.create(geocoded=True)
+    def test_no_pin_and_no_curated_locations_means_no_section(self) -> None:
+        """An unpinned resort with no links renders no heading over an empty list."""
+        resort = ResortFactory.create()
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
         assert 'data-testid="resort-locations"' not in content
         assert "Forecasts" not in content
+
+    def test_the_pin_leads_and_is_not_repeated_by_a_link_to_it(self) -> None:
+        """SNOW-1144: the pin comes first; a link reaching the same row is skipped."""
+        resort = ResortFactory.create(name="Verbier", geocoded=True)
+        assert resort.location is not None
+        ResortLocationFactory.create(
+            resort=resort, location=resort.location, role="", is_primary=True
+        )
+        summit = LocationFactory.create(name="Mont Fort")
+        ResortLocationFactory.create(resort=resort, location=summit, role="TOP")
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert content.count(f'href="{resort.location.get_absolute_url()}"') == 1
+        first = content.index('data-testid="resort-location-0"')
+        second = content.index('data-testid="resort-location-1"')
+        assert f'href="{resort.location.get_absolute_url()}"' in content[first:second]
+        assert f'href="{summit.get_absolute_url()}"' in content[second:]
+        assert 'data-testid="resort-location-2"' not in content
 
 
 # SNOW-1125: a fixed winter day. 11:00 UTC is midday in Europe/Zurich and
@@ -841,6 +860,25 @@ def _resort_with_locations(count: int) -> Resort:
 @pytest.mark.django_db
 class TestResortLocationWeather:
     """SNOW-1125: each location row carries today's brief one-day weather."""
+
+    @freeze_time(MIDDAY)
+    def test_a_pinned_resort_with_no_curated_locations_shows_its_pins_weather(
+        self,
+    ) -> None:
+        """SNOW-1144: the pin Location is listed, with today's weather, unaided."""
+        resort = ResortFactory.create(name="Ovronnaz", geocoded=True)
+        assert resort.location is not None
+        assert not resort.resort_locations.exists()
+        _todays_weather(resort.location)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-locations"' in content
+        row = content[content.index('data-testid="resort-location-0"') :]
+        row = row[: row.index("</li>")]
+        assert f'href="{resort.location.get_absolute_url()}"' in row
+        assert re.search(r'data-testid="resort-location-0-link"\s*>Ovronnaz<', row)
+        assert 'data-testid="resort-location-0-weather-panel"' in row
 
     @freeze_time(MIDDAY)
     def test_a_location_with_todays_row_shows_its_day(self) -> None:
@@ -969,7 +1007,8 @@ class TestResortMetaDescription:
     def test_no_locations_names_the_bulletin_and_claims_no_forecast(self) -> None:
         """No Forecasts section means no forecast promise in the description."""
         region = MicroRegionFactory.create(name="Val de Bagnes")
-        resort = ResortFactory.create(name="Verbier", region=region, geocoded=True)
+        # Unpinned: since SNOW-1144 a pinned resort always lists its pin.
+        resort = ResortFactory.create(name="Verbier", region=region)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
@@ -1144,6 +1183,15 @@ class TestResortStructuredData:
         assert data["sameAs"] == "https://www.verbier4vallees.ch/"
         assert data["containedInPlace"]["name"] == "Martigny – Verbier"
         assert data["subjectOf"]["url"].endswith(region.get_absolute_url())
+
+    def test_geo_comes_from_the_pin_location(self) -> None:
+        """SNOW-1144: GeoCoordinates read the resort's Location, not the mirror."""
+        pin = LocationFactory.create(anonymous=True, latitude=46.5, longitude=7.5)
+        resort = ResortFactory.create(latitude=46.0, longitude=7.0, location=pin)
+
+        data = _json_ld(Client().get(resort.get_absolute_url()).content.decode())
+
+        assert (data["geo"]["latitude"], data["geo"]["longitude"]) == (46.5, 7.5)
 
     def test_touring_terrain_is_a_place_not_a_ski_resort(self) -> None:
         """A lift-less pass is not a SkiResort, so it is typed Place."""

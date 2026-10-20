@@ -26,7 +26,7 @@ Keep business logic out of models.
 from __future__ import annotations
 
 import datetime
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from django.core.validators import RegexValidator
 from django.db import models
@@ -34,6 +34,9 @@ from django.urls import reverse
 from django.utils.text import slugify
 
 from apps.core.models import BaseModel
+
+if TYPE_CHECKING:
+    from apps.locations.models import Location
 
 # Validates a "MM-DD" month-day string, e.g. "12-01" — used for the
 # hand-curated typical season open/close fields on Resort. Blank values are
@@ -671,29 +674,75 @@ class ResortQuerySet(models.QuerySet):
     """Custom queryset for Resort."""
 
     def geocoded(self) -> "ResortQuerySet":
-        """Return only resorts with both latitude and longitude set."""
-        return self.filter(latitude__isnull=False, longitude__isnull=False)
+        """Return only resorts with a map pin (SNOW-1144).
+
+        The pin is the resort's ``Location``. **Transitional:** a resort
+        with both mirrored ``latitude``/``longitude`` set but no
+        ``location`` yet also counts, so the window between the deploy and
+        the operator's ``link_resort_locations --commit`` backfill drops no
+        resort off the map, MCP or favouriting. Read the coordinate through
+        ``Resort.pin_coordinates``, which applies the same fallback.
+        SNOW-1147 removes the fallback along with the columns, leaving
+        ``location__isnull=False``.
+        """
+        return self.filter(
+            models.Q(location__isnull=False)
+            | models.Q(latitude__isnull=False, longitude__isnull=False)
+        )
 
     def unlinked(self) -> "ResortQuerySet":
-        """Return geocoded resorts carrying no ``ResortLocation`` at all.
+        """Return resorts with a coordinate but no pin ``Location`` yet.
 
-        This is the silent gap SNOW-885 exists to detect. A resort's pin and
-        its weather are separate things: the edit-resorts overlay writes the
-        coordinate, and only a ``ResortLocation`` makes the resort page render
-        a Forecasts section. ``link_resort_locations`` creates that link, and
-        PR #758 took it out of the deploy on purpose, so a resort added or
-        re-geocoded since then shows no weather until an operator remembers to
-        run the command by hand — with nothing anywhere noticing.
+        The silent gap SNOW-885 exists to detect, redefined by SNOW-1144. A
+        resort's pin is now its ``location`` FK and ``set_resort_pin`` writes
+        it on every save, so the only way to have coordinates and no
+        ``Location`` is a row pinned before the column existed — exactly the
+        set ``link_resort_locations --commit`` backfills, and that its
+        ``--check`` flag names.
 
         A resort with NO coordinates is deliberately not here. It cannot be
         linked at all, so it is a known backlog rather than a silent failure,
         and folding the two together would bury the one in the other.
 
         Returns:
-            Filtered queryset of geocoded resorts with no location link.
+            Filtered queryset of coordinate-bearing resorts with no location.
 
         """
-        return self.geocoded().filter(resort_locations__isnull=True)
+        return self.filter(
+            latitude__isnull=False, longitude__isnull=False, location__isnull=True
+        )
+
+    def standing_at(self, location: Location) -> "ResortQuerySet":
+        """Return the resorts a location stands for, its pinned resort first.
+
+        A location is a resort's when it is that resort's pin
+        (``Resort.location``, SNOW-1144) or a curated point one links to
+        through ``ResortLocation``. The pin outranks a link — it is where
+        the resort *is* — and name breaks ties so the answer is stable.
+        Callers take ``.first()`` to name an anonymous location by the
+        resort it stands for; one query.
+
+        Args:
+            location: The ``Location`` being described.
+
+        Returns:
+            Ordered queryset of matching resorts, pinned resort first.
+
+        """
+        return (
+            self.filter(
+                models.Q(location=location)
+                | models.Q(resort_locations__location=location)
+            )
+            .annotate(
+                pin_rank=models.Case(
+                    models.When(location=location, then=models.Value(0)),
+                    default=models.Value(1),
+                    output_field=models.IntegerField(),
+                )
+            )
+            .order_by("pin_rank", "name")
+        )
 
     def needs_geocoding(self) -> "ResortQuerySet":
         """Return resorts missing coords or flagged for review."""
@@ -849,8 +898,36 @@ class Resort(BaseModel):
     )
     notes = models.TextField(blank=True)
 
-    latitude = models.FloatField(null=True, blank=True)
-    longitude = models.FloatField(null=True, blank=True)
+    latitude = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Mirror of location.latitude, kept in step by set_resort_pin "
+            "during the SNOW-1144 transition. Read Resort.pin_coordinates."
+        ),
+    )
+    longitude = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Mirror of location.longitude, kept in step by set_resort_pin "
+            "during the SNOW-1144 transition. Read Resort.pin_coordinates."
+        ),
+    )
+    location = models.ForeignKey(
+        "locations.Location",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="pinned_resorts",
+        help_text=(
+            "The resort's map pin, as a Location (SNOW-1144) — the row its "
+            "weather hangs off. Written only by "
+            "apps.regions.services.resort_pin.set_resort_pin, which reuses "
+            "the row and moves it in place when the pin moves, so its "
+            "Weather history stays attached. Null on a resort with no pin."
+        ),
+    )
     geocode_source = models.CharField(
         max_length=16,
         choices=GeocodeSource.choices,
@@ -940,6 +1017,28 @@ class Resort(BaseModel):
     def to_string(self) -> str:
         """Return a concise canonical string (name + region_id)."""
         return f"{self.name} ({self.region.region_id})"
+
+    @property
+    def pin_coordinates(self) -> tuple[float, float] | None:
+        """Return the resort's pin as ``(latitude, longitude)``, or None.
+
+        The one accessor every reader uses (SNOW-1144). The pin
+        ``Location``'s coordinate when ``location`` is set — callers
+        ``select_related("location")`` to keep this query-free — and
+        otherwise, **transitionally**, the mirrored ``latitude`` /
+        ``longitude`` of a resort pinned before the column existed and not
+        yet backfilled. ``Resort.objects.geocoded()`` applies the same
+        rule. SNOW-1147 removes the fallback along with the columns.
+
+        Returns:
+            The coordinate pair, or None when the resort has no pin.
+
+        """
+        if self.location is not None:
+            return (self.location.latitude, self.location.longitude)
+        if self.latitude is not None and self.longitude is not None:
+            return (self.latitude, self.longitude)
+        return None
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Persist the row, minting ``slug`` from ``name`` on first save.

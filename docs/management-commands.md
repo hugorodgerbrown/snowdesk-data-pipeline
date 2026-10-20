@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, purge_expired_oauth_tokens, mint_mcp_token, backfill_*
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-20
 ---
 
 # Management commands
@@ -144,7 +144,7 @@ worker logs.
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
 | OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes MCP OAuth tokens and authorization codes dead for more than a week (SNOW-1035). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
 | what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
-| Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports geocoded resorts carrying no `ResortLocation` — each one a resort page rendering no Forecasts section with nothing anywhere saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. The response is an operator running `link_resort_locations --commit` by hand; PR #758 took that write out of the deploy on purpose. |
+| Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports resorts with a coordinate but no pin `Location` (`Resort.location`, SNOW-1144) — each one a resort whose weather is not fetched, still on the map only through the transitional fallback to its mirrored coordinates (removed by SNOW-1147), with nothing else saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. Since SNOW-1144 every pin writer goes through `set_resort_pin`, so after the one-time backfill this should never fire; if it does, an operator runs `link_resort_locations --commit` by hand. |
 
 ### `purge_request_logs` — enforce the RequestLog retention window
 
@@ -365,8 +365,10 @@ The operator workflow for a fixture change is therefore:
    `build_france_fixture --commit`).
 3. Commit and push.
 4. Run `loaddata` against the target environment **by hand**, then re-run
-   `link_region_centroid_locations --commit` and
-   `link_resort_locations --commit` to restore the links the reload cleared.
+   `link_region_centroid_locations --commit` to restore the centroid links
+   the reload cleared. (Resort pins are not fixture data and are untouched;
+   `link_resort_locations --commit` is only the one-time SNOW-1144
+   backfill.)
    The full sequence is in
    [`runbooks/reset-live-db.md`](runbooks/reset-live-db.md).
 
@@ -762,49 +764,46 @@ uv run python manage.py fill_location_elevations --commit --delay 1.0  # pace ha
 Flags: `--commit`, `--force`, `--report`, `--delay SECONDS` (default 0.2,
 the pause between Open-Meteo lookups).
 
-### `link_resort_locations` — give every geocoded resort weather
+### `link_resort_locations` — backfill `Resort.location` (one-time, SNOW-1144)
 
-A resort's pin and a resort's weather used to be unconnected. The
-edit-resorts map overlay writes `Resort.latitude`/`longitude` and never
-touches `Location`; the resort page's weather section reads
-`ResortLocation` links, which only the separate edit-locations overlay
-creates. So a resort could sit on the map for months with a hand-placed pin
-and show no weather at all — production had **115 geocoded resorts and 4
-links**.
+A resort's map pin is its own `Location` — `Resort.location` — written by
+`apps.regions.services.resort_pin.set_resort_pin` from every path that
+places, moves or clears one: the edit-resorts map overlay, `import_resorts`
+and the admin. The service reuses the resort's row, corrects it in place
+when the pin moves (so its `Weather` history stays attached), and mirrors
+the coordinate onto `Resort.latitude`/`longitude` during the transition. A
+pinned resort has weather from the next `fetch_weather` run and nothing has
+to be linked by hand. See
+[`decisions/location-is-the-primitive.md`](decisions/location-is-the-primitive.md).
 
-This gives a geocoded resort with no link an anonymous `Location` at its own
-coordinate, height from `base_elevation_m`, marked `is_primary`. Curating
-named village / mid / peak points stays worthwhile and stays the editor's
-job; this is the floor, not a replacement.
+This command is the **one-time backfill** for resorts pinned before the
+column existed — still only the two mirrored floats. It walks every resort
+with a coordinate (countdown names each one) and routes it through the same
+service, so the reuse rules are stated once: the anonymous `Location` the
+pre-SNOW-1144 command linked through `ResortLocation(is_primary=True)` is
+adopted, so the weather already stored against it stays the resort's;
+failing that `anchor_location` reuses an anonymous row at the coordinate
+(never a user's favourite, observation or trip row), and only then mints
+one, height from `base_elevation_m`. Offline (no Open-Meteo call),
+idempotent — a resort whose pin `Location` already matches is counted
+`unchanged` and not written — and non-zero on any per-resort failure.
 
-`role` is left blank on purpose: BASE/MID/TOP are claims about what a point
-*is*, and a hand-placed pin is only "where this resort is" — `is_primary`
-already carries that.
+**Run by an operator, not by a deploy** — it ships with a `Deploy-Step:`
+trailer. A bulk write that a deploy timeout leaves half applied, on three
+services deploying concurrently against one database, is why bulk data
+writes are management commands rather than data migrations or build steps.
 
-**Run by an operator, not by a deploy.** It first shipped wired into
-`build.sh`, which was wrong: it writes up to 115 rows, and a deploy that
-times out mid-run leaves the estate half linked — on three services that
-deploy concurrently against one database. Bulk data writes are management
-commands for the same reason they are not data migrations. Nothing wipes
-`ResortLocation` on deploy either (resorts are applied by `import_resorts`,
-never by a deploy), so there was never a reason for it to run there.
+**History.** Before SNOW-1144 the pin and the weather were unconnected, and
+this command minted an anonymous `Location` at each geocoded resort's pin and
+joined it through an `is_primary` `ResortLocation` — production had **115
+geocoded resorts and 4 links** when it was written. Those links are left in
+place; the resort page lists the pin first and skips a link to the same row.
 
-Run it after geocoding resorts in the map editor, or after an
-`import_resorts` that adds coordinates.
-
-Offline (no Open-Meteo call) and idempotent. It reuses an existing
-anonymous `Location` at the coordinate rather than minting a new one, for
-the reason SNOW-771 records — a fresh row each deploy would orphan the
-previous one and every `Weather` row hanging off it.
-
-**`--check` is the scheduled detector (SNOW-885).** It runs the same
-candidate query (`Resort.objects.unlinked()`) and does nothing else: names
-every geocoded resort with no link, then exits non-zero if there were any.
-The gap is silent by construction — a resort renders no Forecasts section
-and nothing else reports it — so a check that exited 0 whatever it found
-would never detect anything. It names the resorts rather than counting them
-because the count only says "run something", while the names say which
-pages are wrong.
+**`--check` is the scheduled detector (SNOW-885).** It names every resort
+with a coordinate and no pin `Location` (`Resort.objects.unlinked()`), then
+exits non-zero if there were any. Since every writer goes through the
+service, after the backfill that set is empty by construction; the check
+stays because a silent gap is exactly what nothing else would report.
 
 ```bash
 uv run python manage.py link_resort_locations           # preview

@@ -166,13 +166,19 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
         The newly created (or pre-existing) Favourite.
 
     Raises:
-        ResortNotGeocoded: When ``resort`` has no latitude/longitude.
+        ResortNotGeocoded: When ``resort`` has no pin ``Location``.
         FavouriteLimitReached: When the user already holds
             ``settings.FAVOURITES_MAX_PER_USER`` favourites.
 
     """
-    if resort.latitude is None or resort.longitude is None:
+    # SNOW-1144: the resort's pin, through the one accessor (its Location,
+    # or transitionally the mirrored columns until SNOW-1147). The favourite
+    # still mints its own row at that point — the user's copy, deleted with
+    # the favourite — so only the coordinate is read from the pin.
+    pin = resort.pin_coordinates
+    if pin is None:
         raise ResortNotGeocoded(f"Resort {resort.pk} ({resort.name}) is not geocoded.")
+    latitude, longitude = pin
 
     existing = Favourite.objects.filter(user=user, resort=resort).first()
     if existing is not None:
@@ -187,8 +193,8 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
     # External HTTP calls — see create_favourite for why both sit outside
     # the transaction and why the address is resolved here rather than left
     # to the fill_what3words command.
-    elevation = fetch_elevation(resort.latitude, resort.longitude)
-    what3words = convert_to_3wa(resort.latitude, resort.longitude)
+    elevation = fetch_elevation(latitude, longitude)
+    what3words = convert_to_3wa(latitude, longitude)
 
     try:
         with transaction.atomic():
@@ -205,8 +211,8 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
                 )
             # See create_favourite: minted inside the transaction, unnamed.
             location = Location.objects.create(
-                latitude=resort.latitude,
-                longitude=resort.longitude,
+                latitude=latitude,
+                longitude=longitude,
                 elevation_m=elevation,
                 what3words=what3words,
                 what3words_fetched_at=timezone.now() if what3words else None,
@@ -215,8 +221,8 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
                 user=user,
                 name=resort.name,
                 location=location,
-                latitude=resort.latitude,
-                longitude=resort.longitude,
+                latitude=latitude,
+                longitude=longitude,
                 elevation=elevation,
                 region=resort.region,
                 resort=resort,

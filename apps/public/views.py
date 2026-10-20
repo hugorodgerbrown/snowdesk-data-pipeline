@@ -3792,7 +3792,8 @@ def _build_resort_structured_data(resort: Resort, canonical_url: str) -> str:
     bulletin stays the full document.
 
     Args:
-        resort: The resort, with ``region__subregion__major`` selected.
+        resort: The resort, with ``region__subregion__major`` and
+            ``location`` selected.
         canonical_url: The absolute canonical URL of the resort page.
 
     Returns:
@@ -3818,11 +3819,14 @@ def _build_resort_structured_data(resort: Resort, canonical_url: str) -> str:
     }
     if resort.name_alt:
         payload["alternateName"] = resort.name_alt
-    if resort.latitude is not None and resort.longitude is not None:
+    # SNOW-1144: the pin, through the one accessor (transitional fallback to
+    # the mirrored columns until SNOW-1147).
+    pin = resort.pin_coordinates
+    if pin is not None:
         payload["geo"] = {
             "@type": "GeoCoordinates",
-            "latitude": resort.latitude,
-            "longitude": resort.longitude,
+            "latitude": pin[0],
+            "longitude": pin[1],
         }
     if resort.canton:
         address: dict[str, Any] = {
@@ -4684,7 +4688,9 @@ def location_weather(request: HttpRequest, short_id: str) -> HttpResponse:
         except ValueError:
             logger.debug("location_weather: ignoring unparseable date %r", raw_date)
 
-    resort_location = location.resort_locations.select_related("resort").first()
+    # SNOW-1144: the resort this location stands for — the one it is the
+    # pin of first, else one that links it as a curated point. One query.
+    resort = Resort.objects.standing_at(location).first()
     region = location.micro_regions.first()
     context: dict[str, Any] = {
         "location": location,
@@ -4693,10 +4699,10 @@ def location_weather(request: HttpRequest, short_id: str) -> HttpResponse:
         # itself, an anonymous one is named by what it stands for, and the
         # coordinates are never a heading.
         "heading": location.name
-        or (resort_location.resort.name if resort_location else None)
+        or (resort.name if resort else None)
         or (region.name if region else None)
         or str(_("Weather station")),
-        "resort": resort_location.resort if resort_location else None,
+        "resort": resort,
         "region": region,
         "observed_on": observed_on,
         **_location_forecast_context(location, observed_on, timezone.now()),
@@ -4773,7 +4779,7 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
 
     """
     resort = get_object_or_404(
-        Resort.objects.select_related("region__subregion__major"),
+        Resort.objects.select_related("region__subregion__major", "location"),
         slug=slug,
     )
 
@@ -5068,58 +5074,66 @@ def _resort_problem_rows(
 def _resort_location_links(
     resort: Resort, today: datetime.date, now: datetime.datetime
 ) -> list[dict[str, Any]]:
-    """Return the resort's curated locations as links, each with today's weather.
+    """Return the resort's pin and curated locations as links, each with weather.
 
-    Ordered with the primary link first — the one the resort leads with,
-    normally the village, because that is where someone arrives — then by
-    role and name. A curated point carries its own name; the anonymous one
-    ``link_resort_locations`` mints at the resort's own pin has none, and
-    falls back to the resort's name (SNOW-807, after SNOW-761's block).
+    SNOW-1144: the resort's own pin (``resort.location``) leads — it is
+    where the resort is, and since every pin writer goes through
+    ``set_resort_pin`` it is the one location every pinned resort has, so a
+    resort with no curated points still shows its weather. The curated
+    ``ResortLocation`` links follow, primary first then by role and name,
+    skipping the pin's own row when a link also reaches it (the anonymous
+    primary link the pre-SNOW-1144 ``link_resort_locations`` minted is
+    exactly that row). An anonymous location carries no name and falls
+    back to the resort's (SNOW-807, after SNOW-761's block).
 
     SNOW-1125: each link also carries today's one-day weather row, read in
-    ONE batched query over every linked location (keyed by
-    ``location_id``), so the cost is two queries whatever the number of
-    locations. A location with no row today gets ``weather_display=None``
-    and degrades to its link alone.
+    ONE batched query over every location (keyed by ``location_id``), so
+    the cost is two queries whatever the number of locations — the pin
+    rides on the caller's ``select_related("location")``. A location with
+    no row today gets ``weather_display=None`` and degrades to its link.
 
     Args:
-        resort: The resort whose links to walk.
+        resort: The resort whose pin and links to walk, with ``location``
+            already loaded.
         today: The server's local date — the ``Weather.observed_on`` read.
         now: The reference instant for the day/night icon.
 
     Returns:
-        One dict per link: ``label``, ``elevation_m``, ``role_label``,
+        One dict per location: ``label``, ``elevation_m``, ``role_label``,
         ``url``, ``weather_display`` (or ``None``) and a stable
-        ``testid``. Empty when the resort has no linked locations — a
-        manual operator step, so that state is normal for a freshly
-        geocoded resort.
+        ``testid``. Empty only for a resort with no pin and no links.
 
     """
-    links = list(
-        resort.resort_locations.select_related("location").order_by(
+    pin = resort.location
+    links = [
+        link
+        for link in resort.resort_locations.select_related("location").order_by(
             "-is_primary", "role", "location__name"
         )
-    )
-    if not links:
+        if pin is None or link.location_id != pin.pk
+    ]
+    rows: list[tuple[Location, str]] = [(pin, "")] if pin is not None else []
+    rows += [(link.location, str(link.get_role_display())) for link in links]
+    if not rows:
         return []
     weather_by_location = {
         row.location_id: row
         for row in Weather.objects.on_date(today).filter(
-            location_id__in=[link.location_id for link in links]
+            location_id__in=[location.pk for location, _role in rows]
         )
     }
     return [
         {
-            "label": link.location.name or resort.name,
-            "elevation_m": link.location.elevation_m,
-            "role_label": str(link.get_role_display()),
-            "url": link.location.get_absolute_url(),
+            "label": location.name or resort.name,
+            "elevation_m": location.elevation_m,
+            "role_label": role_label,
+            "url": location.get_absolute_url(),
             "weather_display": build_weather_display(
-                weather_by_location.get(link.location_id), now
+                weather_by_location.get(location.pk), now
             ),
             "testid": f"resort-location-{index}",
         }
-        for index, link in enumerate(links)
+        for index, (location, role_label) in enumerate(rows)
     ]
 
 
