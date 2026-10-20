@@ -278,9 +278,6 @@ Context expected (built by ``apps.public.views.resort_detail``):
                     {% plural %}
                         {{ days }} days at Considerable or higher.
                     {% endblocktrans %}
-                    {% blocktrans with level=season_summary.peak_rating_key|danger_level_digit|danger_level_label day=season_summary.peak_date|date:"j M Y" trimmed %}
-                        Peak: {{ level }} on {{ day }}.
-                    {% endblocktrans %}
                 </p>
                 <ul class="mb-2 flex flex-wrap gap-x-3 text-sm text-text-3" data-testid="resort-season-levels">
                     {% for key, count in season_summary.level_counts %}

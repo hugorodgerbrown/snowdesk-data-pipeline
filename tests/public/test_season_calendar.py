@@ -33,8 +33,10 @@ SNOW-1126 — the resort page's season strip:
     answers with the previous season, and the SEASON_START_DATE clamp.
   - build_season_grid(window=…) runs from the window start to the earlier
     of its end and today + 1, carrying the window's label.
-  - summarise_season counts days with a bulletin, days by level, days at
-    Considerable or higher, and dates the peak to its first day.
+  - summarise_season counts days with a bulletin, days by level, and days
+    at Considerable or higher.
+
+SNOW-1153 — the season summary carries no season-wide peak.
 
 SNOW-1128 — month labels come from Django's translated month names, in the
 active language.
@@ -42,6 +44,7 @@ active language.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 from typing import Any
 
@@ -51,6 +54,7 @@ from django.utils import translation
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.public.season_calendar import (
+    SeasonSummary,
     SeasonWindow,
     build_season_grid,
     build_season_ribbon,
@@ -867,8 +871,8 @@ class TestWindowedSeasonGrid:
         assert not grid
         assert not summarise_season(grid)
 
-    def test_summary_counts_levels_and_dates_the_first_peak(self) -> None:
-        """Counts only days with a bulletin; the peak is the first day at the top level."""
+    def test_summary_counts_days_by_level(self) -> None:
+        """Counts only days with a bulletin, each at its day's level."""
         region = MicroRegionFactory.create()
         bulletin = BulletinFactory.create()
         self._rate(region, datetime.date(2025, 12, 1), "low", bulletin)
@@ -886,16 +890,24 @@ class TestWindowedSeasonGrid:
         assert summary.days_with_bulletin == 4
         assert summary.level_counts == [("low", 1), ("considerable", 1), ("high", 2)]
         assert summary.considerable_or_higher == 3
-        assert summary.peak_rating_key == "high"
-        assert summary.peak_date == datetime.date(2025, 12, 3)
 
     def test_summary_is_falsy_without_bulletins(self) -> None:
-        """No day with a bulletin → a falsy summary with no peak."""
+        """No day with a bulletin → a falsy summary with nothing counted."""
         region = MicroRegionFactory.create()
         today = datetime.date(2026, 10, 19)
         summary = summarise_season(
             build_season_grid(region, today, window=season_window(today))
         )
         assert not summary
-        assert summary.peak_rating_key == ""
-        assert summary.peak_date is None
+        assert summary.considerable_or_higher == 0
+        assert summary.level_counts == []
+
+    def test_summary_has_no_season_peak(self) -> None:
+        """
+        No field names a season-wide peak (SNOW-1153).
+
+        Nearly every resort reaches 3 or 4 at some point in a winter, so a
+        season peak carries no information; the summary keeps the counts.
+        """
+        names = [field.name for field in dataclasses.fields(SeasonSummary)]
+        assert not [name for name in names if name.startswith("peak")]

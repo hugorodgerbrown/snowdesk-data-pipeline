@@ -1454,7 +1454,7 @@ class TestResortSeasonStrip:
         )
         assert "Season 25/26: 5 days with a bulletin." in summary
         assert "3 days at Considerable or higher." in summary
-        assert "Peak: High on 5 Jan 2026." in summary
+        assert "Peak" not in summary
         assert 'data-testid="season-calendar"' in strip
         assert 'role="img"' in strip
         # Django's "N" format is AP-style ("Jan."); the name is the translated label.
@@ -1500,7 +1500,7 @@ class TestResortSeasonStrip:
         summary = " ".join(strip.split())
 
         assert "Season 25/26: 2 days with a bulletin." in summary
-        assert "Peak: Considerable on 10 Mar 2026." in summary
+        assert "1 day at Considerable or higher." in summary
         assert 'data-date="2025-11-01"' in strip
         assert 'data-date="2026-04-30"' in strip
         assert 'data-date="2026-05-01"' not in strip
