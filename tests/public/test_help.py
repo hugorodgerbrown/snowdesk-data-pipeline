@@ -278,6 +278,23 @@ class TestHelpPageFlagGating:
         assert "use Forget on that row" in content
         assert "so it goes from your other devices too" not in content
 
+    def test_the_downloads_copy_matches_the_sheet(self, client: Client) -> None:
+        """SNOW-1137: three ways to store an area, and a download holds bulletins.
+
+        Since SNOW-924 a download stores the bulletins and weather inside
+        its boundary, so "stores the map, not the avalanche bulletins" is
+        wrong; the drop zone made "two ways" wrong; and the sheet groups by
+        presence, not under a heading per basemap.
+        """
+        content = client.get(reverse("public:help")).content.decode()
+
+        assert "There are three ways to store an area" in content
+        assert "drop a zone" in content
+        assert "two ways to store an area" not in content
+        assert "not the avalanche bulletins" not in content
+        assert "a heading per base map" not in content
+        assert "A download stores the avalanche bulletins and the weather" in content
+
     def test_slope_panel_present_for_anonymous(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-slope"' in response.content
