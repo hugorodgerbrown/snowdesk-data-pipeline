@@ -480,10 +480,12 @@ def build_season_months(
     on a phone) and one cell per day of that month. Pure — it reads only the
     already-built grid, no query.
 
-    The span drawn is ``window`` (the whole 1 Nov – 30 Apr season, so a
-    running season shows its remaining days faint), or, without one, the
-    grid's own first to last day (the bulletin page's ``SEASON_START_DATE``
-    to ``today + 1``). Every month in the span is drawn in full.
+    The months drawn run from the season's start — ``window.start``, or,
+    without a window, the grid's first day (the bulletin page's
+    ``SEASON_START_DATE``) — through that season's April, so a running
+    season shows its remaining days faint. They extend past April only to
+    the last month that holds a bulletin, and never beyond tomorrow's month
+    (:func:`_last_drawn_day`). Every month drawn is drawn in full.
 
     Each day's state: a day with a bulletin draws its level, or ``"split"``
     when the day held two levels (see :func:`_split_keys`); any other day
@@ -505,13 +507,14 @@ def build_season_months(
     """
     by_date: dict[datetime.date, SeasonCell] = {c.date: c for c in _grid_cells(grid)}
     if window is not None:
-        span_start, span_end = window.start, window.end
+        span_start = window.start
     elif by_date:
-        span_start, span_end = min(by_date), max(by_date)
+        span_start = min(by_date)
     else:
         return SeasonMonths(
             months=[], ring_date=None, season_label="", axis=SEASON_AXIS
         )
+    span_end = _last_drawn_day(by_date, span_start, today)
 
     months: list[SeasonMonth] = []
     first = span_start.replace(day=1)
@@ -537,6 +540,32 @@ def build_season_months(
         season_label=_season_long_label(span_start),
         axis=SEASON_AXIS,
     )
+
+
+def _last_drawn_day(
+    by_date: dict[datetime.date, SeasonCell],
+    span_start: datetime.date,
+    today: datetime.date,
+) -> datetime.date:
+    """
+    Return the last day of the calendar's span (SNOW-1158).
+
+    The season's 30 April, unless a bulletin was published after it — then
+    the last bulletin's day, capped at tomorrow (the latest a bulletin can
+    target), so a May bulletin adds May and nothing adds an empty summer.
+    """
+    close_month, close_day = SEASON_CLOSES
+    april = datetime.date(_season_start_year(span_start) + 1, close_month, close_day)
+    published = [day for day, cell in by_date.items() if cell.has_bulletin]
+    last = max(published, default=april)
+    if last <= april:
+        return april
+    return min(last, today + datetime.timedelta(days=1))
+
+
+def _season_start_year(day: datetime.date) -> int:
+    """Return the year the season holding ``day`` opened (1 November)."""
+    return day.year if (day.month, day.day) >= SEASON_OPENS else day.year - 1
 
 
 def _month_day(
@@ -609,9 +638,7 @@ def _season_long_label(start: datetime.date) -> str:
     A date before ``SEASON_OPENS`` in its year belongs to the season that
     opened the year before.
     """
-    start_year = (
-        start.year if (start.month, start.day) >= SEASON_OPENS else start.year - 1
-    )
+    start_year = _season_start_year(start)
     return f"{start_year}/{(start_year + 1) % 100:02d}"
 
 

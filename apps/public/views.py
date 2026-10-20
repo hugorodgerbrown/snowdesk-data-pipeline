@@ -5169,8 +5169,9 @@ def _resort_season_strip_context(
     The window is the running 1 Nov – 30 Apr season, or the one just ended
     from May to October (``season_window``); the grid stops at ``today + 1``
     within a running season, and SNOW-1158's month view draws the rest of
-    the season as "not yet". The ring is today in season, else the season's
-    first High day (``season_ring_date``).
+    the season as "not yet". A bulletin after 30 April (read up to 31
+    October) extends the calendar to its month. The ring is today in
+    season, else the season's first High day (``season_ring_date``).
 
     Args:
         region: The resort's parent micro-region.
@@ -5183,7 +5184,14 @@ def _resort_season_strip_context(
 
     """
     window = season_window(today)
-    grid = build_season_grid(region, today, window=window)
+    # SNOW-1158: read on past 30 April to the end of October, so a bulletin
+    # published after the season closed (a May bulletin) is drawn and counted;
+    # build_season_months adds only the months that hold one.
+    grid = build_season_grid(
+        region,
+        today,
+        window=window._replace(end=window.end.replace(month=10, day=31)),
+    )
     return {
         "season_months": build_season_months(
             grid, today, window=window, ring_date=season_ring_date(grid, window, today)

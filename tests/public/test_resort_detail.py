@@ -2060,14 +2060,13 @@ class TestResortSeasonStrip:
 
     @freeze_time("2026-10-19 12:00:00+00:00")
     def test_an_october_date_shows_last_season(self) -> None:
-        """Off-season, the strip is the season just ended, not an empty one."""
+        """Off-season, the calendar is the season just ended: Nov–Apr only."""
         region = MicroRegionFactory.create()
         resort = ResortFactory.create(region=region)
         self._rate(region, datetime.date(2026, 3, 10), "considerable")
         self._rate(region, datetime.date(2026, 4, 30), "moderate")
-        # Outside the 25/26 window on both sides.
+        # Before the 25/26 season.
         self._rate(region, datetime.date(2025, 3, 10), "very_high")
-        self._rate(region, datetime.date(2026, 5, 1), "high")
 
         strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
 
@@ -2078,6 +2077,25 @@ class TestResortSeasonStrip:
         assert 'data-date="2025-11-01"' in strip
         assert 'data-date="2026-04-30"' in strip
         assert 'data-date="2026-05-01"' not in strip
+        assert strip.count('class="season-cal-month"') == 6
+
+    @freeze_time("2026-10-19 12:00:00+00:00")
+    def test_a_may_bulletin_extends_the_calendar_to_may(self) -> None:
+        """SNOW-1158: a bulletin after 30 April adds its month, and no more."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        self._rate(region, datetime.date(2026, 3, 10), "considerable")
+        self._rate(region, datetime.date(2026, 5, 3), "high")
+
+        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
+
+        assert (
+            'aria-label="Season 2025/26: 2 days with a bulletin, '
+            '2 at Considerable or higher."'
+        ) in strip
+        assert 'data-month="2026-05"' in strip
+        assert 'data-date="2026-05-31"' in strip
+        assert 'data-month="2026-06"' not in strip
 
     @freeze_time("2026-02-20 12:00:00+00:00")
     def test_query_count_is_bounded(self, django_assert_max_num_queries: Any) -> None:

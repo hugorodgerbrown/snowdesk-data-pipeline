@@ -43,7 +43,9 @@ active language.
 
 SNOW-1158 — the month-shaped view (build_season_months, season_ring_date):
   - Every month in the span drawn in full: 30/31-day months, February's 28
-    and a leap year's 29.
+    and a leap year's 29. The span runs from the season start through
+    April, past it only to the last month with a bulletin, never beyond
+    tomorrow's month.
   - An in-progress season draws its days after today as "future".
   - The ring: today in season, the first High day of a finished season, none
     when the season never reached High, and only where asked.
@@ -1043,8 +1045,8 @@ class TestSeasonMonths:
         months = build_season_months(grid, today, window=_WINDOW)
         assert months.months[2].days[14].state == "moderate"
 
-    def test_without_a_window_the_span_is_the_grid(self) -> None:
-        """The bulletin page's grid: its first month to its last."""
+    def test_without_a_window_the_span_is_the_season(self) -> None:
+        """The bulletin page's grid: its first month through April."""
         grid = _grid(
             [
                 _cell(datetime.date(2025, 11, 20), "low"),
@@ -1052,13 +1054,48 @@ class TestSeasonMonths:
             ]
         )
         months = build_season_months(grid, datetime.date(2026, 1, 2))
-        assert [m.first for m in months.months] == [
-            datetime.date(2025, 11, 1),
-            datetime.date(2025, 12, 1),
-            datetime.date(2026, 1, 1),
-        ]
+        assert [m.first.month for m in months.months] == [11, 12, 1, 2, 3, 4]
+        assert months.months[0].days[0].state == "none"
+        assert months.months[-1].days[-1].state == "future"
         assert months.ring_date is None
         assert not any(d.is_ring for m in months.months for d in m.days)
+
+    def test_out_of_season_the_summer_is_not_drawn(self) -> None:
+        """October, grid running to tomorrow: Nov–Apr only, six rows."""
+        today = datetime.date(2026, 10, 20)
+        cells = [_cell(datetime.date(2025, 11, 1), "low")]
+        cells += [
+            _cell(datetime.date(2026, 5, 1) + datetime.timedelta(days=n), None)
+            for n in range(174)
+        ]
+        months = build_season_months(_grid(cells), today)
+        assert [m.first.month for m in months.months] == [11, 12, 1, 2, 3, 4]
+
+    def test_a_may_bulletin_extends_to_may_only(self) -> None:
+        """A bulletin after April adds its month and stops there."""
+        today = datetime.date(2026, 10, 20)
+        cells = [
+            _cell(datetime.date(2025, 11, 1), "low"),
+            _cell(datetime.date(2026, 5, 4), "moderate"),
+            _cell(datetime.date(2026, 7, 1), None),
+        ]
+        months = build_season_months(_grid(cells), today)
+        assert [m.first.month for m in months.months][-2:] == [4, 5]
+        assert months.months[-1].days[3].state == "moderate"
+        # The window gives the same months on the resort page.
+        windowed = build_season_months(_grid(cells), today, window=_WINDOW)
+        assert [m.first for m in windowed.months] == [m.first for m in months.months]
+
+    def test_extension_never_passes_tomorrow(self) -> None:
+        """Past April the span stops at tomorrow's month."""
+        today = datetime.date(2026, 5, 10)
+        cells = [
+            _cell(datetime.date(2025, 11, 1), "low"),
+            # Not something ingest produces; the cap holds regardless.
+            _cell(datetime.date(2026, 6, 20), "low"),
+        ]
+        months = build_season_months(_grid(cells), today)
+        assert months.months[-1].first == datetime.date(2026, 5, 1)
 
     def test_empty_grid_without_window_is_falsy(self) -> None:
         """Nothing to draw → a falsy view."""
