@@ -733,6 +733,22 @@ class TestForecastPage:
         assert 'property="og:title"' in html
         assert 'property="og:description"' in html
 
+    def test_a_resort_pin_is_named_by_its_resort_without_a_link(
+        self, client: Client
+    ) -> None:
+        """SNOW-1144: a pin Location with no ResortLocation still names its resort."""
+        resort = ResortFactory.create(name="Ovronnaz", latitude=46.2, longitude=7.1)
+        location = resort.location
+        assert location is not None
+        WeatherFactory.create(location=location, observed_on=TODAY)
+
+        html = _page(client, location)
+
+        assert "Ovronnaz" in html
+        assert resort.get_absolute_url() in html
+        card = client.get(_card_url(location)).json()["html"]
+        assert "Ovronnaz" in card
+
     def test_links_on_to_the_resort_and_the_region(self, client: Client) -> None:
         """A location reaching both offers both onward links.
 

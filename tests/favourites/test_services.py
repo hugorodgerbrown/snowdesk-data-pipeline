@@ -174,6 +174,26 @@ class TestCreateResortFavourite:
 
         assert not Favourite.objects.filter(user=user).exists()
 
+    def test_coordinate_comes_from_the_pin_location(self) -> None:
+        """SNOW-1144: the favourite is placed at the resort's pin Location.
+
+        It still mints its own row there — the user's copy — rather than
+        sharing the resort's.
+        """
+        user = UserFactory.create()
+        pin = LocationFactory.create(anonymous=True, latitude=46.5, longitude=7.5)
+        resort = ResortFactory.create(latitude=46.0, longitude=7.0, location=pin)
+
+        with (
+            patch("apps.favourites.services.fetch_elevation", return_value=1500.0),
+            patch("apps.favourites.services.convert_to_3wa", return_value=None),
+        ):
+            favourite = create_resort_favourite(user, resort)
+
+        assert (favourite.latitude, favourite.longitude) == (46.5, 7.5)
+        assert favourite.location is not None
+        assert favourite.location.pk != pin.pk
+
     def test_second_call_is_idempotent(self) -> None:
         """A second create_resort_favourite call for the same pair returns the same row."""
         user = UserFactory.create()

@@ -26,7 +26,7 @@ Keep business logic out of models.
 from __future__ import annotations
 
 import datetime
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from django.core.validators import RegexValidator
 from django.db import models
@@ -34,6 +34,9 @@ from django.urls import reverse
 from django.utils.text import slugify
 
 from apps.core.models import BaseModel
+
+if TYPE_CHECKING:
+    from apps.locations.models import Location
 
 # Validates a "MM-DD" month-day string, e.g. "12-01" — used for the
 # hand-curated typical season open/close fields on Resort. Blank values are
@@ -700,6 +703,38 @@ class ResortQuerySet(models.QuerySet):
         """
         return self.filter(
             latitude__isnull=False, longitude__isnull=False, location__isnull=True
+        )
+
+    def standing_at(self, location: Location) -> "ResortQuerySet":
+        """Return the resorts a location stands for, its pinned resort first.
+
+        A location is a resort's when it is that resort's pin
+        (``Resort.location``, SNOW-1144) or a curated point one links to
+        through ``ResortLocation``. The pin outranks a link — it is where
+        the resort *is* — and name breaks ties so the answer is stable.
+        Callers take ``.first()`` to name an anonymous location by the
+        resort it stands for; one query.
+
+        Args:
+            location: The ``Location`` being described.
+
+        Returns:
+            Ordered queryset of matching resorts, pinned resort first.
+
+        """
+        return (
+            self.filter(
+                models.Q(location=location)
+                | models.Q(resort_locations__location=location)
+            )
+            .annotate(
+                pin_rank=models.Case(
+                    models.When(location=location, then=models.Value(0)),
+                    default=models.Value(1),
+                    output_field=models.IntegerField(),
+                )
+            )
+            .order_by("pin_rank", "name")
         )
 
     def needs_geocoding(self) -> "ResortQuerySet":

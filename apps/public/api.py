@@ -639,8 +639,8 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
 
     Each feature is a Point with GeoJSON-ordered ``coordinates: [lon, lat]``
     (RFC 7946) and properties ``id``, ``name``, ``region_id``,
-    ``needs_review``, ``tier``. Resorts missing latitude or longitude are
-    skipped.
+    ``needs_review``, ``tier``. Resorts with no pin ``Location`` are
+    skipped; the coordinate is read from it (SNOW-1144).
 
     ``id`` is the resort's **slug**, not its primary key (SNOW-796,
     ``docs/decisions/no-integer-pks-in-urls.md``): this feed is public and
@@ -671,17 +671,22 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
     for resort in (
         Resort.objects.resorts()
         .geocoded()
-        .select_related("region")
+        .select_related("region", "location")
         .order_by("name")
         .iterator()
     ):
+        # SNOW-1144: the pin is the resort's Location. ``geocoded()`` means
+        # "has one"; the guard only narrows the type.
+        location = resort.location
+        if location is None:
+            continue
         # GeoJSON ordering: [longitude, latitude] per RFC 7946.
         features.append(
             {
                 "type": "Feature",
                 "geometry": {
                     "type": "Point",
-                    "coordinates": [resort.longitude, resort.latitude],
+                    "coordinates": [location.longitude, location.latitude],
                 },
                 "properties": {
                     "id": resort.slug,
@@ -1872,9 +1877,10 @@ def _weather_detail_heading(location: Location) -> str:
         coordinates.
 
     """
-    resort_location = location.resort_locations.select_related("resort").first()
-    if resort_location is not None:
-        return str(resort_location.resort.name)
+    # SNOW-1144: a resort's pin first, then a resort linking it.
+    resort = Resort.objects.standing_at(location).first()
+    if resort is not None:
+        return str(resort.name)
     region = location.micro_regions.first()
     if region is not None:
         return str(region.name)
@@ -1933,7 +1939,7 @@ def resort_popup(request: HttpRequest, slug: str) -> JsonResponse:
 
     """
     resort = get_object_or_404(
-        Resort.objects.select_related("region"),
+        Resort.objects.select_related("region", "location"),
         slug=slug,
     )
 

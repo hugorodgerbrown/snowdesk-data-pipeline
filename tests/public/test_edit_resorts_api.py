@@ -32,6 +32,7 @@ from django.urls import reverse
 from apps.regions.forms import RESORT_DETAIL_FIELDS
 from apps.regions.models import Resort
 from tests.factories import (
+    LocationFactory,
     MicroRegionFactory,
     ResortFactory,
     SubRegionFactory,
@@ -96,6 +97,23 @@ class TestResortsGeojson:
         # SNOW-543: every feature carries its tier, so the map can size the
         # pin without a second request.
         assert feature["properties"]["tier"] == "STANDARD"
+
+    def test_coordinates_come_from_the_pin_location(self) -> None:
+        """SNOW-1144: the feed reads the resort's Location, not the mirror."""
+        pin = LocationFactory.create(anonymous=True, latitude=46.5, longitude=7.5)
+        ResortFactory.create(name="Pinned", latitude=46.0, longitude=7.0, location=pin)
+
+        body = Client().get(reverse("api:resorts_geojson")).json()
+
+        assert body["features"][0]["geometry"]["coordinates"] == [7.5, 46.5]
+
+    def test_a_mirror_without_a_location_is_not_on_the_map(self) -> None:
+        """SNOW-1144: geocoded() means "has a pin Location"."""
+        ResortFactory.create(name="Legacy", latitude=46.0, longitude=7.0, location=None)
+
+        body = Client().get(reverse("api:resorts_geojson")).json()
+
+        assert body["features"] == []
 
     def test_tier_is_carried_per_feature(self) -> None:
         """SNOW-543: the curated tier reaches the layer that sizes the pin."""

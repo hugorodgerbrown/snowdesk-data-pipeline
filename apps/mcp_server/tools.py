@@ -634,16 +634,18 @@ def list_resorts_in_region(region_id: str) -> dict[str, Any]:
         Resort.objects.resorts()
         .geocoded()
         .filter(region=region)
-        .select_related("region")
+        .select_related("region", "location")
     )
+    # SNOW-1144: the coordinate is the resort's pin Location.
     resort_list = [
         {
             "name": resort.name,
-            "latitude": resort.latitude,
-            "longitude": resort.longitude,
+            "latitude": resort.location.latitude,
+            "longitude": resort.location.longitude,
             "canton": resort.canton,
         }
         for resort in resorts
+        if resort.location is not None
     ]
     return {
         "region_id": region.region_id,
@@ -1570,16 +1572,18 @@ def region_info(region_id: str) -> dict[str, Any]:
         Resort.objects.resorts()
         .geocoded()
         .filter(region=region)
-        .select_related("region")
+        .select_related("region", "location")
     )
+    # SNOW-1144: the coordinate is the resort's pin Location.
     resort_list = [
         {
             "name": resort.name,
-            "latitude": resort.latitude,
-            "longitude": resort.longitude,
+            "latitude": resort.location.latitude,
+            "longitude": resort.location.longitude,
             "canton": resort.canton,
         }
         for resort in resorts
+        if resort.location is not None
     ]
 
     coverage = RegionDayRating.objects.filter(region=region).aggregate(

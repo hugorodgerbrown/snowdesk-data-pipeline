@@ -179,15 +179,21 @@ def resort_sheet_partial(request: HttpRequest, slug: str) -> HttpResponse:
     target_date = _target_date(request)
     if target_date is None:
         return JsonResponse({"error": "bad_date"}, status=400)
-    resort = get_object_or_404(Resort.objects.select_related("region"), slug=slug)
-
-    # The primary link is where the resort leads, normally the village.
-    link = (
-        resort.resort_locations.select_related("location")
-        .order_by("-is_primary", "role", "location__name")
-        .first()
+    resort = get_object_or_404(
+        Resort.objects.select_related("region", "location"), slug=slug
     )
-    location = link.location if link is not None else None
+
+    # SNOW-1144: the resort's pin is where it is, and where its weather is.
+    # A resort with no pin falls back to its primary link, normally the
+    # village.
+    location = resort.location
+    if location is None:
+        link = (
+            resort.resort_locations.select_related("location")
+            .order_by("-is_primary", "role", "location__name")
+            .first()
+        )
+        location = link.location if link is not None else None
 
     favourite = None
     if request.user.is_authenticated:

@@ -320,6 +320,19 @@ class TestFull:
         location = _primary_location(resort)
         assert f"{location.get_absolute_url()}?date=2026-02-03".encode() in content
 
+    def test_a_pinned_resort_reads_its_pin_not_its_primary_link(
+        self, client: Client
+    ) -> None:
+        """SNOW-1144: the sheet's weather location is the resort's pin."""
+        resort = _resort(latitude=46.1, longitude=7.4)
+        assert resort.location is not None
+        day = datetime.date(2026, 2, 3)
+        content = _get(client, _resort_url(resort.slug, day.isoformat())).content
+        pin_url = f"{resort.location.get_absolute_url()}?date=2026-02-03"
+        village_url = f"{_primary_location(resort).get_absolute_url()}?date="
+        assert pin_url.encode() in content
+        assert village_url.encode() not in content
+
     def test_forward_day_links_to_the_day_itself(self, client: Client) -> None:
         """The page opens a forward day inside today's row (SNOW-1105)."""
         resort = _resort()
