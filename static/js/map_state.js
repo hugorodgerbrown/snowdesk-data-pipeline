@@ -444,9 +444,9 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'download-disabled': "This region's basemap is too large to download",
   'download-offline': 'Basemap download unavailable while offline',
   'download-other-basemap':
-    "This region's basemap is downloaded for %(basemap)s — tap to download it for this basemap too",
+    "This region's basemap is downloaded for %(basemap)s — tap to replace it with this basemap",
   'download-other-basemap-unnamed':
-    "This region's basemap is downloaded for another basemap — tap to download it for this basemap too",
+    "This region's basemap is downloaded for another basemap — tap to replace it with this basemap",
   // SNOW-871: the body of the "this replaces the copy you already have"
   // confirm (`confirmBasemapReplace`, map_basemap_downloads.js). The title
   // asks the question and is server-rendered in the banner itself; this

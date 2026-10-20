@@ -90,7 +90,7 @@
 //
 // SNOW-749: 'signin' — the visitor is signed out, so no download can
 // START. It replaces every ACTIONABLE state
-// ('idle', and 'other-basemap' with its "download it for this basemap too"
+// ('idle', and 'other-basemap' with its "replace it with this basemap"
 // invitation) and no other: 'done' still paints its green circle, because
 // reading a region already on this device is not gated and never will be —
 // working with no signal is the whole point of having downloaded it. The
@@ -1429,7 +1429,7 @@
           data.summary.count,
         )
       : data.summary.mb;
-    // SNOW-XXX: the ceiling is the DEVICE's, so `data.summary.over_ceiling`
+    // The ceiling is the DEVICE's, so `data.summary.over_ceiling`
     // — computed server-side against a constant, because the server cannot
     // see a device — is no longer what disables this control. A region that
     // flag calls too large is downloaded anyway on a phone with the room
@@ -1523,8 +1523,8 @@
       return;
     }
     if (otherBasemapKey !== null) {
-      // SNOW-749: 'other-basemap' is an INVITATION to start a second
-      // download ("tap to download it for this basemap too"), so a gated
+      // SNOW-749: 'other-basemap' is an INVITATION to start a
+      // replacing download ("tap to replace it with this basemap"), so a gated
       // signed-out visitor gets 'signin' instead — the label would
       // otherwise promise an action the tap cannot perform. What is
       // already on disk for the other basemap is unaffected and still
@@ -1622,7 +1622,7 @@
           await renderControl();
         } else {
           _settleRun(data, 'error');
-          revealBasemapDownloadError(result ? result.reason : null);
+          revealBasemapDownloadError(result ? result.reason : null, 'region');
         }
         // The layers menu is a live cache-state dashboard, and this run
         // changed what is on disk — same post-run refresh a download does.
@@ -1807,7 +1807,7 @@
           // shortfall that was still there.
           await _stampRegionContent(data.regionId, false);
           _settleRun(data, 'partial');
-          revealBasemapDownloadError(result ? result.reason : null);
+          revealBasemapDownloadError(result ? result.reason : null, 'region');
         }
         window.pwaLayerSyncStatus?.refresh();
       },
@@ -1937,6 +1937,9 @@
     _beginRun(data);
     await _guardRun(data, () => runPinnedDownload({
       areaId: areaId,
+      // SNOW-1137: a region cannot be framed smaller, so a quota/budget
+      // refusal reads the region copy.
+      kind: 'region',
       mb: data.summary.mb,
       terrain: terrain,
       terrainMb: terrain ? _regionTerrainMb(data) : 0,
@@ -2175,7 +2178,7 @@
           _settleRun(data, 'done');
         } else {
           _settleRun(data, 'error');
-          revealBasemapDownloadError(result ? result.reason : null);
+          revealBasemapDownloadError(result ? result.reason : null, 'region');
         }
         // SNOW-505: the warm-cache run has just warmed the shell + pinned
         // basemap caches (the SW's warm-cache handler awaits its

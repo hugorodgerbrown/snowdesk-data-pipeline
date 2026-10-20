@@ -1721,7 +1721,8 @@ Optional context:
                     </li>
                     <li data-help-names="#map-custom-download-control">
                         {% include "includes/_icon_downloads.html" with size=16 only %}
-                        <span>{% blocktrans trimmed %}<b>Offline</b> maps saved to this device{% endblocktrans %}</span>
+                        <span>{% blocktrans trimmed %}<b>Downloads</b> maps you keep for use
+                                offline{% endblocktrans %}</span>
                     </li>
                 </ul>
             </div>
@@ -2122,6 +2123,17 @@ Optional context:
 {# constraint to "free up"), so it gets its own copy. #}
 {% trans "This area is too large for the download budget. Frame a smaller area." as basemap_download_budget_body %}
 {% include "includes/_toast.html" with id="map-download-error-toast-budget" kind="error" body=basemap_download_budget_body dismissible=True %}
+{# SNOW-1137: the same two refusals for a REGION run. A region's outline  #}
+{# is the provider's, so "frame a smaller area" is advice its user cannot #}
+{# take; the remedies they can take are removing other downloads (quota) #}
+{# and raising the budget in Manage downloads (budget — the run alone is  #}
+{# over the whole budget, so removing others would not help). Picked by   #}
+{# revealBasemapDownloadError's `kind`; the two above stay for the        #}
+{# custom-area and drop-zone runs, whose size the user does choose.       #}
+{% trans "Not enough storage to save this region. Free up space on your device, or remove other downloads in Manage downloads." as basemap_download_quota_region_body %}
+{% include "includes/_toast.html" with id="map-download-error-toast-quota-region" kind="error" body=basemap_download_quota_region_body dismissible=True %}
+{% trans "This region is larger than your download budget. Raise the budget in Manage downloads, then try again." as basemap_download_budget_region_body %}
+{% include "includes/_toast.html" with id="map-download-error-toast-budget-region" kind="error" body=basemap_download_budget_region_body dismissible=True %}
 {# SNOW-605: no service worker is controlling the page, so the download had #}
 {# nowhere to go and no request was ever made. A shift-reload leaves the    #}
 {# document uncontrolled for its whole life (Chrome does this on purpose),  #}
@@ -2357,11 +2369,14 @@ Optional context:
     {# state. Two variants — never interpolate an empty basemap name into   #}
     {# the named one — for a pre-SNOW-645 record whose stored `basemapKey`  #}
     {# is empty, so the OTHER basemap has no name to give it.               #}
+    {# SNOW-1137: "replace", not "download it too" — a region holds one     #}
+    {# basemap at a time (docs/decisions/one-basemap-per-region-download.md) #}
+    {# and the tap swaps the other copy out, behind the replace confirm.     #}
     <span data-string="download-other-basemap">{% blocktrans %}This region's basemap is downloaded for %(basemap)s —
-            tap to download it for this basemap too{% endblocktrans %}</span>
+            tap to replace it with this basemap{% endblocktrans %}</span>
     <span
         data-string="download-other-basemap-unnamed"
-    >{% trans "This region's basemap is downloaded for another basemap — tap to download it for this basemap too" %}</span>
+    >{% trans "This region's basemap is downloaded for another basemap — tap to replace it with this basemap" %}</span>
     {# SNOW-871: the body of the replace confirm below                      #}
     {# (#map-download-replace-confirm). The banner's TITLE asks the         #}
     {# question; this line names what answering "yes" costs — which         #}
@@ -2405,7 +2420,7 @@ Optional context:
 {# SNOW-658: the four overlay roundels' shared "…and its overlay is on the #}
 {# map right now" label (static/js/map_roundel_overlay_state.js). ONE       #}
 {# string, not one pair per roundel: each roundel keeps its own name        #}
-{# ("Your favourites", "Manage offline downloads") as the server-rendered   #}
+{# ("Your favourites", "Manage downloads") as the server-rendered          #}
 {# aria-label, and this composes the state onto it — so the shared fact is  #}
 {# stated once and translated once. blocktrans, because a locale is free    #}
 {# to put the name anywhere in the sentence.                                #}
