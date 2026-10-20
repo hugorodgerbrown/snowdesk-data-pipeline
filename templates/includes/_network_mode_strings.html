@@ -1,8 +1,8 @@
 {% load i18n %}
 {% comment %}
 templates/includes/_network_mode_strings.html — copy for the Offline mode
-switch's lock-out warning (SNOW-922) and for the network menu's per-area
-sync rows (SNOW-951).
+switch's lock-out warning (SNOW-922) and for the network menu's "Get ready
+for offline" block (SNOW-951, made one press by SNOW-1141).
 
 ``static/js/pwa_offline.js`` puts this in a ``window.confirm`` before it
 lets the network menu's "Offline mode" switch enter ``'offline-forced'`` on a
@@ -41,8 +41,15 @@ as every other string on it is. Keep the two wordings in step by hand.
     {# same name for the same thing; a reader must not meet an area called #}
     {# one thing on the map and another in this menu.                      #}
     <span data-string="area-default-name">{% blocktrans %}Custom area %(n)s{% endblocktrans %}</span>
-    {# The row's accessible name. "Sync" alone names nothing with a list   #}
-    {# of areas on screen — the same reason every row control on the       #}
-    {# downloads sheet interpolates the row's own name.                    #}
-    <span data-string="sync-area-label">{% blocktrans %}Sync %(name)s now{% endblocktrans %}</span>
+    {# SNOW-1141: "Get ready for offline". Every sentence here carries a  #}
+    {# number or a day inside it, so it is worded whole and interpolated   #}
+    {# by name rather than assembled from pieces in JavaScript.            #}
+    <span data-string="ready-running">{% trans "Getting ready…" %}</span>
+    <span data-string="ready-progress">{% blocktrans %}Getting ready… (%(n)s of %(total)s){% endblocktrans %}</span>
+    <span data-string="ready-all">{% blocktrans %}Ready — %(total)s areas up to date{% endblocktrans %}</span>
+    <span data-string="ready-all-one">{% trans "Ready — 1 area up to date" %}</span>
+    <span data-string="ready-some">{% blocktrans %}%(ready)s of %(total)s ready{% endblocktrans %}</span>
+    <span data-string="queue-waiting">{% blocktrans %}%(n)s changes still waiting to send{% endblocktrans %}</span>
+    <span data-string="queue-waiting-one">{% trans "1 change still waiting to send" %}</span>
+    <span data-string="area-bulletins-from">{% blocktrans %}Bulletins from %(day)s{% endblocktrans %}</span>
 </template>

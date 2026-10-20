@@ -326,6 +326,10 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# which is the whole reason it is a module and not a function in  #}
         {# pwa_offline.js — see its header.                                 #}
         <script src="{% static 'js/pwa_network_mode.js' %}" defer></script>
+        {# SNOW-1141: "Get ready for offline" — drain the queue, then every  #}
+        {# area. Read by pwa_offline.js (the network menu, every page) and  #}
+        {# by offline_audit.js on /offline/?sync=all, so it loads here.     #}
+        <script src="{% static 'js/offline_ready_core.js' %}" defer></script>
         {# SNOW-377: connection-state UI. Wraps fetch + HTMX so freshness    #}
         {# headers feed the banner and network failures reveal it.          #}
         <script src="{% static 'js/pwa_offline.js' %}" defer></script>

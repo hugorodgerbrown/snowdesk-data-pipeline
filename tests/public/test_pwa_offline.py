@@ -294,3 +294,103 @@ def test_pwa_offline_script_loaded_on_home_page() -> None:
     response = Client().get("/")
     body = response.content.decode("utf-8")
     assert "pwa_offline.js" in body
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1141 — "Get ready for offline"
+# ---------------------------------------------------------------------------
+
+
+def _sync_block(body: str) -> str:
+    """Return the network menu's "Get ready for offline" block markup."""
+    return body.split("data-network-sync ", 1)[1].split("data-network-downloads", 1)[0]
+
+
+@pytest.mark.django_db
+def test_network_menu_offers_one_get_ready_press() -> None:
+    """One press for every area, rendered with the shared button chrome.
+
+    SNOW-1141 replaced SNOW-951's Sync button per area: the rows remain as
+    detail, and nothing in them is a button.
+    """
+    body = Client().get("/").content.decode("utf-8")
+    block = _sync_block(body)
+    assert "data-network-ready" in block
+    assert "Get ready for offline" in block
+    assert "Getting ready…" in block
+    assert "data-network-ready-summary" in block
+    assert "data-network-ready-queue" in block
+    assert "Syncing needs a connection." in block
+    row = block.split("<template data-network-sync-row>", 1)[1].split("</template>", 1)[
+        0
+    ]
+    assert "<button" not in row
+    assert "data-network-sync-area" not in block
+    assert "Try again" not in block
+    assert "Synced" not in block
+
+
+@pytest.mark.django_db
+def test_network_menu_rows_carry_every_area_status() -> None:
+    """Every status a row can show is server-rendered and toggled by JS.
+
+    ``bin/i18n-lint`` refuses a user-facing literal written from
+    ``static/js``, so each word lives here.
+    """
+    body = Client().get("/").content.decode("utf-8")
+    row = _sync_block(body).split("<template data-network-sync-row>", 1)[1]
+    for status, words in (
+        ("today", "Bulletins from today"),
+        ("none", "No bulletins saved yet"),
+        ("running", "Getting ready…"),
+        ("ready", "Up to date"),
+        ("partial", "Parts missing"),
+        ("absent", "Tiles gone"),
+    ):
+        assert f'data-area-status="{status}"' in row
+        assert words in row
+    assert 'data-area-status="earlier"' in row
+
+
+@pytest.mark.django_db
+def test_a_tiles_gone_row_links_to_the_manage_downloads_sheet() -> None:
+    """Download again opens the map with the Manage downloads sheet up.
+
+    A sync never fetches a tile grid, so a row whose tiles are gone is not
+    offered a retry it cannot win.
+    """
+    body = Client().get("/").content.decode("utf-8")
+    row = _sync_block(body).split("<template data-network-sync-row>", 1)[1]
+    link = row.split("data-area-redownload", 1)[0].rsplit("<a", 1)[1]
+    assert 'href="/map/?panel=downloads"' in link
+    assert "Download again" in row
+
+
+@pytest.mark.django_db
+def test_get_ready_sentences_are_in_the_strings_template() -> None:
+    """The sentences that carry a number are worded whole, server-side."""
+    body = Client().get("/").content.decode("utf-8")
+    strings = body.split('id="network-mode-strings-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    for key in (
+        "ready-running",
+        "ready-progress",
+        "ready-all",
+        "ready-all-one",
+        "ready-some",
+        "queue-waiting",
+        "queue-waiting-one",
+        "area-bulletins-from",
+    ):
+        assert f'data-string="{key}"' in strings
+    assert "Getting ready… (%(n)s of %(total)s)" in strings
+    assert "sync-area-label" not in strings
+
+
+@pytest.mark.django_db
+def test_offline_ready_core_loads_before_the_network_menu_script() -> None:
+    """``pwa_offline.js`` reads ``window.pwaOfflineReadyCore`` at press time."""
+    body = Client().get("/").content.decode("utf-8")
+    assert "offline_ready_core.js" in body
+    assert body.index("offline_ready_core.js") < body.index("pwa_offline.js")
