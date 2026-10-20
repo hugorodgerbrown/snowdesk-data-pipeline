@@ -59,7 +59,8 @@ SEASON_OPENS: tuple[int, int] = (11, 1)
 SEASON_CLOSES: tuple[int, int] = (4, 30)
 
 # EAWS levels low → very high. The index is the rank ``summarise_season``
-# compares to find the peak; ``no_rating`` is deliberately absent.
+# slices to count the days at Considerable or higher; ``no_rating`` is
+# deliberately absent.
 _RATED_LEVELS: tuple[str, ...] = (
     RegionDayRating.Rating.LOW,
     RegionDayRating.Rating.MODERATE,
@@ -243,17 +244,15 @@ class SeasonSummary:
     ``days_with_bulletin`` counts the cells with ``has_bulletin``;
     ``level_counts`` is one ``(rating_key, count)`` pair per EAWS level that
     occurred, low → very high; ``considerable_or_higher`` is the count at
-    level 3 and above. ``peak_rating_key`` / ``peak_date`` name the highest
-    level reached and the first day it was reached, both empty/``None`` when
-    no day had a bulletin.
+    level 3 and above. There is deliberately no season-wide peak (SNOW-1153):
+    nearly every resort reaches 3 or 4 in a winter, so it carries no
+    information.
     """
 
     season_label: str
     days_with_bulletin: int
     level_counts: list[tuple[str, int]]
     considerable_or_higher: int
-    peak_rating_key: str
-    peak_date: datetime.date | None
 
     def __bool__(self) -> bool:
         """Return ``False`` when no day had a bulletin — the strip is hidden."""
@@ -299,8 +298,7 @@ def summarise_season(grid: SeasonGrid) -> SeasonSummary:
 
     Pure: reads only the already-built cells. Only cells with
     ``has_bulletin`` count — a ``no_rating`` placeholder is not a day with a
-    bulletin. The peak is the highest ``max_rating_key`` reached, dated to
-    the first day it was reached.
+    bulletin. Each day counts once, at its ``max_rating_key``.
 
     Args:
         grid: A grid from :func:`build_season_grid`.
@@ -310,8 +308,6 @@ def summarise_season(grid: SeasonGrid) -> SeasonSummary:
 
     """
     counts: dict[str, int] = dict.fromkeys(_RATED_LEVELS, 0)
-    peak_rank = -1
-    peak_date: datetime.date | None = None
     days = 0
     for column in grid.columns:
         for cell in column:
@@ -321,10 +317,6 @@ def summarise_season(grid: SeasonGrid) -> SeasonSummary:
                 continue
             days += 1
             counts[cell.max_rating_key] += 1
-            rank = _RATED_LEVELS.index(cell.max_rating_key)
-            if rank > peak_rank:
-                peak_rank = rank
-                peak_date = cell.date
     considerable_rank = _RATED_LEVELS.index(RegionDayRating.Rating.CONSIDERABLE)
     return SeasonSummary(
         season_label=grid.season_label,
@@ -333,8 +325,6 @@ def summarise_season(grid: SeasonGrid) -> SeasonSummary:
         considerable_or_higher=sum(
             counts[key] for key in _RATED_LEVELS[considerable_rank:]
         ),
-        peak_rating_key=_RATED_LEVELS[peak_rank] if peak_rank >= 0 else "",
-        peak_date=peak_date,
     )
 
 
