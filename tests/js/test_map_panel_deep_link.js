@@ -8,7 +8,8 @@
  * ``open()`` on a frozen window.pwa*Sheet bridge; map.js consumes the
  * parameter once and calls it. The cases:
  *
- *   - each of the three names opens its own bridge and no other;
+ *   - each of the four names opens its own bridge and no other (SNOW-1141
+ *     added the Manage downloads sheet);
  *   - the parameter is stripped from the address bar, so a refetch or a
  *     shared URL does not reopen the sheet, while ?d= and the hash survive;
  *   - a name nothing answers to is consumed silently, and so is a name
@@ -157,10 +158,12 @@ async function bootAt(url) {
     favourites: { open: vi.fn(), close: vi.fn(), isOpen: () => false },
     routes: { open: vi.fn(), close: vi.fn(), isOpen: () => false },
     reports: { open: vi.fn(), close: vi.fn(), isOpen: () => false },
+    downloads: { open: vi.fn(), toggle: vi.fn(), refresh: vi.fn() },
   };
   window.pwaFavouritesSheet = bridges.favourites;
   window.pwaRoutesSheet = bridges.routes;
   window.pwaReportSheet = bridges.reports;
+  window.pwaDownloadsManager = bridges.downloads;
 
   const record = { flights: [], popups: [] };
   const mapStub = stubMapLibre(record);
@@ -191,6 +194,7 @@ afterEach(() => {
   delete window.pwaFavouritesSheet;
   delete window.pwaRoutesSheet;
   delete window.pwaReportSheet;
+  delete window.pwaDownloadsManager;
 });
 
 describe('?panel= opens the named sheet', () => {
@@ -198,6 +202,8 @@ describe('?panel= opens the named sheet', () => {
     ['favourites', 'favourites'],
     ['routes', 'routes'],
     ['reports', 'reports'],
+    // SNOW-1141: the network menu's "Download again" lands here.
+    ['downloads', 'downloads'],
   ])('/?panel=%s opens that bridge and no other', async (name, key) => {
     const bridges = await bootAt(`/?panel=${name}`);
     for (const [other, bridge] of Object.entries(bridges)) {
@@ -212,7 +218,7 @@ describe('?panel= opens the named sheet', () => {
   });
 
   it('consumes a name nothing answers to, silently', async () => {
-    const bridges = await bootAt('/?panel=downloads');
+    const bridges = await bootAt('/?panel=nonesuch');
     expect(window.location.search).toBe('');
     for (const bridge of Object.values(bridges)) expect(bridge.open).not.toHaveBeenCalled();
   });

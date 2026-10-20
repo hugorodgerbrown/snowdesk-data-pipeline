@@ -6904,6 +6904,9 @@
     favourites: () => window.pwaFavouritesSheet,
     routes: () => window.pwaRoutesSheet,
     reports: () => window.pwaReportSheet,
+    // SNOW-1141: the network menu's "Download again", on an area whose tiles
+    // this device no longer holds — the re-download is in this sheet.
+    downloads: () => window.pwaDownloadsManager,
   };
 
   /**
@@ -6926,7 +6929,7 @@
   };
 
   /**
-   * Honour a ``/?panel=favourites|routes|reports`` arrival.
+   * Honour a ``/?panel=favourites|routes|reports|downloads`` arrival.
    *
    * Silent for a name no sheet answers to: the parameter is consumed
    * either way, and the map opens as it otherwise would.
