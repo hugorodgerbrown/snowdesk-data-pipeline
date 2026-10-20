@@ -2201,7 +2201,16 @@ both the map page and `/offline/` load (SNOW-930 moved that page off
 `/account/settings/`); the map module delegates to it, injecting
 `MAP_STRINGS` and its orphaned-bucket measurement. The "Reset local data"
 breakdown reads this same list, so the two surfaces cannot disagree about
-what is on the device — and the sheet
+what is on the device. SNOW-1138 made that true of the figures too, where
+it had held only of the list: the breakdown passes the reader's own
+`measureBucketBytes` — the walk the map page sizes an orphan by, now
+living in the reader behind the map's per-session memo — so an orphan is
+the same size on both rather than 0 MB on the breakdown; and its
+"Downloaded maps" figure excludes the shared overview maps, as the sheet's
+"Using X of Y" (`budgetSummary`) does, so for the same device the two
+state the same downloads total. The shared tiles are a "Shared basemap
+tiles" line of their own on the breakdown, whose note says it is not part
+of either figure; the reset dialog's total still counts them. And the sheet
 now carries a line linking to it ("See what this device holds", pointing
 at `/offline/` since SNOW-1137 — it pointed at Settings before the
 breakdown moved), because the shared overview maps, the cached pages, the

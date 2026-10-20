@@ -30,76 +30,102 @@ beforeAll(async () => {
 });
 
 describe('the downloaded-maps category', () => {
-  it('lists the user areas first and the shared tiles as one row after', () => {
+  it('lists the user areas alone, in the order they arrive', () => {
     const summary = core.summarise({
       rows: [
         { id: 'region-ch-4115', label: 'Martigny', bytes: 10 * MB },
         { id: 'custom-a1', label: 'Custom area 1', bytes: 5 * MB },
       ],
       baseLayers: [{ id: 'base-swisstopo_winter', name: 'Overview map', bytes: 2 * MB }],
-      sharedLabel: 'Shared basemap tiles',
     });
 
-    expect(summary.maps.items.map((item) => item.label)).toEqual([
-      'Martigny',
-      'Custom area 1',
-      'Shared basemap tiles',
-    ]);
-    expect(summary.maps.items.map((item) => item.shared)).toEqual([false, false, true]);
+    expect(summary.maps.items.map((item) => item.label)).toEqual(['Martigny', 'Custom area 1']);
   });
 
-  it('combines every base layer into that one row, summed', () => {
+  it('totals the downloads alone, leaving the shared tiles out (SNOW-1138)', () => {
+    // Folded in, "Downloaded maps" read a larger figure than the Manage
+    // downloads sheet's own total for the same device.
+    const summary = core.summarise({
+      rows: [{ id: 'region-ch-4115', label: 'Martigny', bytes: 10 * MB }],
+      baseLayers: [{ id: 'base-swisstopo_winter', name: 'Overview map', bytes: 2 * MB }],
+    });
+
+    expect(summary.maps.bytes).toBe(10 * MB);
+    expect(summary.shared).toEqual({ bytes: 2 * MB, present: true });
+  });
+
+  it('states the same downloads total as the sheet’s budgetSummary (SNOW-1138)', async () => {
+    // The sheet's "Using X of Y" is `budgetSummary` over its list, which
+    // excludes the base layers and holds 0 bytes for an account-only row.
+    // Same areas in, same figure out — the claim docs/offline-map.md makes.
+    await import('../../static/js/basemap_download_core.js');
+    await import('../../static/js/basemap_manage_core.js');
+    const download = window.pwaBasemapDownloadCore;
+    const manage = window.pwaBasemapManageCore;
+    const areas = manage.reconcileAreas(
+      [
+        { id: 'region-ch-4115', name: 'Martigny', bytes: 10 * MB, savedAt: '', basemapKey: 'a' },
+        { id: 'base-swisstopo_winter', name: 'Overview', bytes: 7 * MB, basemapKey: 'swisstopo_winter' },
+      ],
+      ['region-ch-4115', 'base-swisstopo_winter', 'region-ch-9999'],
+      { 'region-ch-9999': 3 * MB },
+      [{ area_id: 'region-fr-1', region_id: 'fr-1', name: 'Chamonix' }],
+    );
+    const sheetList = areas.filter((area) => !download.isBaseLayerAreaId(area.id));
+    const sheetTotal = manage.budgetSummary(sheetList, 500 * MB).usedBytes;
+
+    const summary = core.summarise({
+      rows: manage.manageRows(areas, {
+        isCustomAreaId: download.isCustomAreaId,
+        isBaseLayerAreaId: download.isBaseLayerAreaId,
+      }),
+      baseLayers: areas.filter((area) => download.isBaseLayerAreaId(area.id)),
+    });
+
+    expect(sheetTotal).toBe(13 * MB);
+    expect(summary.maps.bytes).toBe(sheetTotal);
+    expect(summary.shared.bytes).toBe(7 * MB);
+  });
+
+  it('sums every base layer into one shared figure', () => {
     // One per basemap is how they are STORED; a device with two basemaps
     // painted two rows reading "Overview map" and differing only in size,
     // which names the app's internals and answers nothing the user asked.
-    // The reset takes all or none, so one row is the whole truth.
+    // The reset takes all or none, so one figure is the whole truth.
     const summary = core.summarise({
       rows: [],
       baseLayers: [
         { id: 'base-swisstopo_winter', name: 'Overview map', bytes: 2.7 * MB },
         { id: 'base-openfreemap', name: 'Overview map', bytes: 12.6 * MB },
       ],
-      sharedLabel: 'Shared basemap tiles',
     });
 
-    expect(summary.maps.items).toHaveLength(1);
-    expect(summary.maps.items[0].label).toBe('Shared basemap tiles');
-    expect(summary.maps.items[0].bytes).toBeCloseTo(15.3 * MB);
-    expect(summary.maps.bytes).toBeCloseTo(15.3 * MB);
+    expect(summary.maps.items).toEqual([]);
+    expect(summary.shared.present).toBe(true);
+    expect(summary.shared.bytes).toBeCloseTo(15.3 * MB);
   });
 
-  it('omits the shared row entirely when there are no base layers', () => {
+  it('reports no shared tiles when there are no base layers', () => {
     const summary = core.summarise({
       rows: [{ id: 'region-ch-4115', label: 'Martigny', bytes: 10 * MB }],
       baseLayers: [],
-      sharedLabel: 'Shared basemap tiles',
     });
 
-    expect(summary.maps.items.map((item) => item.shared)).toEqual([false]);
+    expect(summary.shared).toEqual({ bytes: 0, present: false });
   });
 
-  it('totals every item, the shared ones included', () => {
-    const summary = core.summarise({
-      rows: [{ id: 'region-ch-4115', label: 'Martigny', bytes: 10 * MB }],
-      baseLayers: [{ id: 'base-swisstopo_winter', name: 'Overview map', bytes: 2 * MB }],
-    });
-
-    expect(summary.maps.bytes).toBe(12 * MB);
-  });
-
-  it('lists a base layer whose record has not landed, at 0 bytes', () => {
+  it('counts a base layer whose record has not landed, at 0 bytes', () => {
     // SNOW-863: the bucket is written by the service worker's warm and the
     // record by the page once that resolves. A reader who closes the tab in
     // between holds complete tiles and no size for them. The tiles are on
-    // the device either way, so the row has to appear — an unsized row is a
-    // small lie, an omitted one is a bigger one.
+    // the device either way, so the line has to appear — an unsized line
+    // is a small lie, an omitted one is a bigger one.
     const summary = core.summarise({
       rows: [],
       baseLayers: [{ id: 'base-swisstopo_winter', name: 'Overview map' }],
     });
 
-    expect(summary.maps.items).toHaveLength(1);
-    expect(summary.maps.items[0].bytes).toBe(0);
+    expect(summary.shared).toEqual({ bytes: 0, present: true });
     expect(summary.maps.bytes).toBe(0);
   });
 
@@ -151,6 +177,16 @@ describe('the unsent-changes category', () => {
 });
 
 describe('the cached-pages category', () => {
+  it('takes the shared tiles off the origin usage too', () => {
+    const summary = core.summarise({
+      rows: [{ id: 'region-ch-4115', label: 'Martigny', bytes: 100 * MB }],
+      baseLayers: [{ id: 'base-swisstopo_winter', bytes: 20 * MB }],
+      storageEstimate: { usage: 130 * MB },
+    });
+
+    expect(summary.cached.bytes).toBe(10 * MB);
+  });
+
   it('is the origin usage minus what the downloads account for', () => {
     const summary = core.summarise({
       rows: [{ id: 'region-ch-4115', label: 'Martigny', bytes: 100 * MB }],
@@ -189,7 +225,7 @@ describe('the cached-pages category', () => {
 });
 
 describe('the total pwa_reset.js quotes', () => {
-  it('is the maps plus the cached remainder', () => {
+  it('is the maps, the shared tiles and the cached remainder', () => {
     const summary = core.summarise({
       rows: [{ id: 'region-ch-4115', label: 'Martigny', bytes: 100 * MB }],
       baseLayers: [{ id: 'base-swisstopo_winter', name: 'Overview map', bytes: 20 * MB }],

@@ -26,7 +26,9 @@
  * the user's downloads and not in the downloads panel's budget), so this
  * module picks them back out of the area list itself and hands them to
  * the core separately. This panel is where they ARE stated, which is what
- * that decision points at.
+ * that decision points at — on their own line since SNOW-1138, so the
+ * "Downloaded maps" figure is the sheet's own total and not a second,
+ * larger one.
  *
  * It also publishes `window.pwaResetDataSummary.confirmLines()` for
  * `pwa_reset.js`, so the confirmation dialog quotes the total from the
@@ -103,6 +105,8 @@
     maps: 'Downloaded maps',
     'maps-none': 'Nothing downloaded on this device.',
     'shared-basemap-tiles': 'Shared basemap tiles',
+    'shared-basemap-tiles-note':
+      'The zoomed-out map the app keeps for each basemap you use. Not part of Downloaded maps, or of the Manage downloads total.',
     unsent: 'Unsent changes',
     'unsent-none': 'Nothing is waiting to be sent.',
     'unsent-one': '1 change has not reached the server yet. Resetting deletes it.',
@@ -216,11 +220,11 @@
    * Named one by one rather than counted, because "3 areas" does not
    * answer the question the user is actually asking, which is whether the
    * one they need for the weekend is among them. The shared basemap
-   * tiles arrive as one already-summed row from the core; they carried a
-   * "Shared" pill until it turned out to say nothing the label did not.
+   * tiles are not in it: since SNOW-1138 they are a category of their
+   * own, so the figure above this list is the downloads alone — the same
+   * total the Manage downloads sheet states.
    *
-   * @param {Array<{id: string, label: string, bytes: number,
-   *   shared: boolean}>} items
+   * @param {Array<{id: string, label: string, bytes: number}>} items
    * @returns {HTMLUListElement}
    */
   function buildMapList(items) {
@@ -231,7 +235,6 @@
       const li = document.createElement('li');
       li.className = 'flex items-baseline justify-between gap-3 text-xs text-text-3';
       li.setAttribute('data-testid', 'reset-data-summary-map');
-      if (item.shared) li.setAttribute('data-shared', 'true');
 
       const name = document.createElement('span');
       name.className = 'min-w-0 truncate';
@@ -249,7 +252,8 @@
   }
 
   /**
-   * Paint the four categories from a computed summary.
+   * Paint the categories from a computed summary — four, and a fifth for
+   * the shared basemap tiles when the device holds any.
    *
    * @param {HTMLElement} list
    * @param {Object} summary `pwaResetDataSummaryCore.summarise` output.
@@ -266,6 +270,22 @@
     });
     if (summary.maps.items.length) maps.appendChild(buildMapList(summary.maps.items));
     list.appendChild(maps);
+
+    // SNOW-1138: the shared overview maps, on a line of their own. Summed
+    // into "Downloaded maps" they made that figure larger than the Manage
+    // downloads sheet's total for the same device; apart, "Downloaded
+    // maps" IS that total, and this line says what it leaves out. Omitted
+    // when there are none, like the list above.
+    if (summary.shared && summary.shared.present) {
+      list.appendChild(
+        buildCategory({
+          category: 'shared',
+          label: STRINGS['shared-basemap-tiles'],
+          value: formatBytes(summary.shared.bytes),
+          note: STRINGS['shared-basemap-tiles-note'],
+        }),
+      );
+    }
 
     let unsentNote = STRINGS['unsent-none'];
     if (summary.unsent.count === 1) {
@@ -329,7 +349,16 @@
 
     let areas = [];
     if (download && manage && areasApi) {
-      areas = await bounded(() => areasApi.downloadedAreas({ strings: STRINGS }));
+      // SNOW-1138: `measureBytes` sizes an ORPHANED bucket — one with no
+      // record to read a figure off — by the walk the Manage downloads
+      // sheet uses, so an orphan reads the same size on both rather than
+      // 0 MB here.
+      areas = await bounded(() =>
+        areasApi.downloadedAreas({
+          strings: STRINGS,
+          measureBytes: areasApi.measureBucketBytes,
+        }),
+      );
       // The downloads ARE this panel: a list that came back empty because
       // nothing answered would tell someone their 200 MB of maps had
       // vanished, on the one surface that offers to delete them. Throwing
@@ -375,7 +404,6 @@
       baseLayers: baseLayers,
       mutationCount: mutationCount,
       storageEstimate: storageEstimate,
-      sharedLabel: STRINGS['shared-basemap-tiles'],
     });
   }
 

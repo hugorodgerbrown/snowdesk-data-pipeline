@@ -39,6 +39,9 @@
  *     Every area this device has downloaded, normalised into the
  *     `[{id, name, bytes, savedAt, basemapKey, …}]` shape
  *     `pwaBasemapManageCore.manageRows` and `planEviction` consume.
+ *   measureBucketBytes(areaId)
+ *     One pinned bucket's size by `Content-Length` — the measurement an
+ *     orphaned bucket is sized by, on every surface (SNOW-1138).
  *   pinnedBucketAreaIds()
  *     Every area id with a pinned Cache Storage bucket present — the
  *     ground truth for what is actually stored.
@@ -122,6 +125,47 @@
     } catch (_e) {
       return [];
     }
+  }
+
+  /**
+   * Measure one pinned bucket by summing its entries' `Content-Length`
+   * (SNOW-612; moved here from `map_basemap_downloads.js` by SNOW-1138).
+   *
+   * Only ever called for an ORPHANED bucket — one with no stored record to
+   * read a byte total off — and only for a name `pinnedBucketAreaIds`
+   * found, so `caches.open` never creates one. It lives in the shared
+   * reader so the Manage downloads sheet and `/offline/`'s Reset
+   * breakdown size an orphan by the one measurement and cannot disagree.
+   * Orphans are rare, so the walk is affordable on either page.
+   *
+   * `Content-Length` rather than the body: `cache.match()` hands back a
+   * Response without reading it, so a header sum is N cheap lookups where
+   * a `blob()` sum would be N decompressions. An entry with no such header
+   * contributes nothing — and in production a gzipped tile response
+   * carries none, so an orphan of real tiles can read ~0 here. That is
+   * the known limit of this measurement (see SNOW-612's decision doc), not
+   * something either surface papers over.
+   *
+   * @param {string} areaId
+   * @returns {Promise<number>} Bytes, or 0 if the bucket cannot be read.
+   */
+  async function measureBucketBytes(areaId) {
+    var core = self.pwaBasemapDownloadCore;
+    if (!core || typeof caches === 'undefined') return 0;
+    var total = 0;
+    try {
+      var cache = await caches.open(core.PINNED_CACHE_PREFIX + areaId);
+      var requests = await cache.keys();
+      for (var request of requests) {
+        var response = await cache.match(request);
+        var length = response && Number(response.headers.get('Content-Length'));
+        if (Number.isFinite(length) && length > 0) total += length;
+      }
+    } catch (_e) {
+      // A bucket that cannot be read is still worth listing at 0 bytes —
+      // the user can delete it, which is the point.
+    }
+    return total;
   }
 
   /**
@@ -222,14 +266,11 @@
   //   measureBytes?: function(string): Promise<number>}} [options]
   //   `strings` carries the two translated names this reader fills in
   //   (see `FALLBACK_STRINGS`). `measureBytes` measures an ORPHANED
-  //   bucket — one with no record to read a byte total off — and is
-  //   `map_basemap_downloads.js`'s `measurePinnedBucketBytes`, injected
-  //   rather than moved: it walks every entry of a bucket, which is work
-  //   the map page is already set up to absorb and an account page has no
-  //   business doing on load. Absent, an orphan reads 0 bytes, which is
-  //   what that measurement returns in production anyway — the tile
-  //   origin sends no `Content-Length` under gzip (see that function's
-  //   own docstring).
+  //   bucket — one with no record to read a byte total off. Both callers
+  //   pass `measureBucketBytes` above (the map page behind its own memo,
+  //   `measurePinnedBucketBytes`), so an orphan is the same size on the
+  //   Manage downloads sheet and on `/offline/` (SNOW-1138). Absent, an
+  //   orphan reads 0 bytes.
   //
   // @returns {Promise<Array<{id: string, name?: string, bytes: number,
   //   savedAt: string, basemapKey: string|null}>>} `basemapKey` (SNOW-645)
@@ -489,6 +530,7 @@
     LEGACY_CUSTOM_AREA_KEY: LEGACY_CUSTOM_AREA_KEY,
     BASE_LAYERS_KEY: BASE_LAYERS_KEY,
     downloadedAreas: downloadedAreas,
+    measureBucketBytes: measureBucketBytes,
     pinnedBucketAreaIds: pinnedBucketAreaIds,
     readBaseLayers: readBaseLayers,
     readCustomAreas: readCustomAreas,

@@ -1049,19 +1049,15 @@ function forgetPinnedBucketMeasurement(areaId) {
  */
 async function measurePinnedBucketBytes(areaId) {
   if (ORPHAN_BUCKET_BYTES.has(areaId)) return ORPHAN_BUCKET_BYTES.get(areaId);
-  let total = 0;
-  try {
-    const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
-    const requests = await cache.keys();
-    for (const request of requests) {
-      const response = await cache.match(request);
-      const length = response && Number(response.headers.get('Content-Length'));
-      if (Number.isFinite(length) && length > 0) total += length;
-    }
-  } catch (_e) {
-    // A bucket that cannot be read is still worth listing at 0 bytes —
-    // the user can delete it, which is the point.
-  }
+  // SNOW-1138: the walk itself lives in the shared reader
+  // (`pwaBasemapAreas.measureBucketBytes`), so `/offline/`'s Reset
+  // breakdown sizes an orphan by the same measurement this sheet does.
+  // What stays here is the page-session memo above.
+  const areasApi = window.pwaBasemapAreas;
+  const total =
+    areasApi && typeof areasApi.measureBucketBytes === 'function'
+      ? await areasApi.measureBucketBytes(areaId)
+      : 0;
   ORPHAN_BUCKET_BYTES.set(areaId, total);
   return total;
 }
@@ -1770,9 +1766,9 @@ async function renameCustomArea(areaId, name) {
 //     name and the shared overview map's name arrive in the language the
 //     map page rendered. `/offline/` passes its own panel's copies.
 //   - `measurePinnedBucketBytes`, for an ORPHANED bucket with no record to
-//     read a size off. It walks every entry of the bucket, and that is
-//     work the map page absorbs and an account page should not do on load
-//     — so it is injected here rather than moved.
+//     read a size off — the shared reader's own `measureBucketBytes`
+//     (SNOW-1138 moved the walk there) behind this page's memo. `/offline/`
+//     passes the same walk, so an orphan is the same size on both.
 //
 // @returns {Promise<Array<{id: string, name?: string, bytes: number,
 //   savedAt: string, basemapKey: string|null}>>}
