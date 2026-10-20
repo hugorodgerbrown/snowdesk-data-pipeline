@@ -1,6 +1,6 @@
 ---
 name: site-structure
-description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
+description: Public route map — two documents (bulletin, /weather/<short_id>/), the map, /resorts/ and /resorts/<slug>/; SNOW-795 redirects; partials
 status: current
 last-reviewed: 2026-10-20
 ---
@@ -57,6 +57,7 @@ prefixes depend on this ordering — don't reorder
 | `/<region_id>/<slug>/` | `bulletin_detail` | Slugged form, the canonical shareable URL. |
 | `/<region_id>/<slug>/<date_str>/` | `bulletin_detail` | A specific day. Past days are immutable. |
 | `/weather/<short_id>/` | `location_weather` | **Document two**: one location, one day (SNOW-761/789). `?date=` picks the row inside the page; the bare URL is canonical for today, the dated one for a past day (SNOW-799). Keyed on `Location.short_id` — eleven opaque characters, never the pk (SNOW-797); `/weather/<int>/` 301s. |
+| `/resorts/` | `resorts_index` | **The resorts index** (SNOW-1150) — a public reference index for a search term, not a saved-thing list ([why](decisions/two-documents-and-a-map.md)). Today's conditions board: the CORE resorts grouped by today's `RegionDayRating.max_rating` (one query, `source_bulletin` set — the map choropleth's rows), highest level first, unrated CORE resorts in a final "No bulletin" row. With no CORE region rated today it says "No avalanche bulletins today" and lists the CORE resorts A–Z with their lift ranges — no season aggregate. Then every ski resort by canton (most resorts first, names from `apps/regions/cantons.py`), then the touring areas. Emits a schema.org `CollectionPage` / `ItemList`; linked from the site footer, every resort page, the sitemap and `llms.txt`. |
 | `/resorts/<slug>/` | `resort_detail` | A search landing page, not a document (SNOW-807, SNOW-1124): the resort's own curated facts, then today's danger — the level, the bulletin headline and the avalanche problem cards, selected and rendered exactly as the bulletin page does, or a "No bulletin available" note — with one "Full bulletin →" link to the region's bulletin ([why](decisions/a-resort-page-answers-the-query.md)), the season strip — the region's danger day by day through the running 1 Nov – 30 Apr season, or the one just ended, with a text summary, rendered server-side and linking no day (SNOW-1126) — a link per curated location to its weather page with today's one-day row beside it (SNOW-1125), and one link to the map with the reports sheet open at the resort. Keyed on `Resort.slug` (SNOW-796); `/resorts/<id>/<slug>/` 301s. |
 | `/offline/` | `offline_page` | What this device holds offline — the content report, the reset control and the sync log. Public since SNOW-930 ([`decisions/what-this-device-holds-is-a-public-page.md`](decisions/what-this-device-holds-is-a-public-page.md)). |
 | `/favourites/<uuid>/` | redirect | Permanent 301 to the pin's weather page (SNOW-800); 404 for a pin with no location, and for a non-owner. |

@@ -40,6 +40,7 @@ import hashlib
 import json
 import logging
 import random
+import unicodedata
 import uuid
 from typing import Any, cast
 
@@ -71,6 +72,7 @@ from django.utils.translation import (
     get_language,
     gettext,
     gettext_lazy as _,
+    ngettext,
 )
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import (
@@ -118,6 +120,7 @@ from apps.core.utils import html_to_markdown
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
 from apps.observations.models import FieldObservation
+from apps.regions.cantons import canton_label
 from apps.regions.models import MicroRegion, Resort
 from apps.routes.models import Route
 from apps.routes.services.shares import pending_tokens
@@ -142,6 +145,7 @@ from .season_calendar import (
     summarise_season,
 )
 from .site_environment import PWAEnvironmentIdentity
+from .templatetags.snowdesk_time import danger_level_digit, danger_level_label
 
 logger = logging.getLogger(__name__)
 
@@ -2537,6 +2541,9 @@ def serve_llms_txt(request: HttpRequest) -> HttpResponse:
         "covers; the site entry point.",
         f"- [Avalanche map]({link('public:map')}): interactive choropleth of "
         "current danger ratings by region.",
+        f"- [Swiss ski resorts]({link('public:resorts')}): today's avalanche "
+        "danger at the main Swiss resorts, and an index of every resort and "
+        "touring area by canton, each linking to its own page.",
         f"- [How to read a bulletin]({link('public:how_to_read_bulletin')}): "
         "reference guide to the EAWS danger scale, avalanche problems, and "
         "the aspect/elevation rose.",
@@ -4731,6 +4738,251 @@ def resort_legacy_redirect(
     """
     resort = get_object_or_404(Resort, pk=resort_id)
     return redirect(resort.get_absolute_url(), permanent=True)
+
+
+# SNOW-1150: the levels the resorts board lists, highest first. A rating key
+# outside this tuple (``no_rating``) is not a level, so its resort goes in the
+# board's "No bulletin" row.
+_RESORT_BOARD_LEVELS: tuple[str, ...] = (
+    RegionDayRating.Rating.VERY_HIGH,
+    RegionDayRating.Rating.HIGH,
+    RegionDayRating.Rating.CONSIDERABLE,
+    RegionDayRating.Rating.MODERATE,
+    RegionDayRating.Rating.LOW,
+)
+
+
+def _alphabetical_key(name: str) -> str:
+    """Return a sort key that orders names A–Z the way a reader expects.
+
+    The database's ordering is by code point, which puts "östliche
+    Silvretta" after "Zermatt" and lower case after upper. Folding accents
+    and case puts every name where a reader looks for it.
+
+    Args:
+        name: A resort name.
+
+    Returns:
+        The name, accent-stripped and case-folded.
+
+    """
+    decomposed = unicodedata.normalize("NFKD", name)
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
+
+
+def _resort_board(core: list[Resort], ratings: dict[int, str]) -> list[dict[str, Any]]:
+    """Group the CORE resorts by today's danger level, highest first.
+
+    Each level with at least one resort is one row; a level nobody is at is
+    omitted. A resort whose region has no rated row today goes in a final
+    row with an empty ``level_key`` — the template's "No bulletin" row.
+    Resorts keep the order they arrive in (A–Z) within a row.
+
+    Args:
+        core: The CORE-tier ski resorts, A–Z.
+        ratings: Today's ``max_rating`` keyed by ``MicroRegion`` pk, for the
+            regions that have a bulletin today.
+
+    Returns:
+        Ordered ``[{"level_key": str, "resorts": list[Resort]}]``.
+
+    """
+    by_level: dict[str, list[Resort]] = {key: [] for key in _RESORT_BOARD_LEVELS}
+    unrated: list[Resort] = []
+    for resort in core:
+        key = ratings.get(resort.region_id, "")
+        if key in by_level:
+            by_level[key].append(resort)
+        else:
+            unrated.append(resort)
+    board = [
+        {"level_key": str(key), "resorts": by_level[key]}
+        for key in _RESORT_BOARD_LEVELS
+        if by_level[key]
+    ]
+    if unrated:
+        board.append({"level_key": "", "resorts": unrated})
+    return board
+
+
+def _resort_index(resorts: list[Resort]) -> list[dict[str, Any]]:
+    """Group ski resorts by canton for the full index.
+
+    Cantons are ordered by how many resorts they hold, most first, ties by
+    name; a compound code (``"BE/VS"``) is its own group, labelled with both
+    names. Resorts keep the order they arrive in (A–Z) within a canton.
+
+    Args:
+        resorts: The ``RESORT``-kind rows, A–Z.
+
+    Returns:
+        Ordered ``[{"canton_label": str, "resorts": list[Resort]}]``.
+
+    """
+    by_canton: dict[str, list[Resort]] = {}
+    for resort in resorts:
+        by_canton.setdefault(canton_label(resort.canton), []).append(resort)
+    ordered = sorted(
+        by_canton.items(),
+        key=lambda item: (-len(item[1]), _alphabetical_key(item[0])),
+    )
+    return [{"canton_label": label, "resorts": group} for label, group in ordered]
+
+
+def _resorts_index_description(board: list[dict[str, Any]], total: int) -> str:
+    """Build the ``/resorts/`` meta description from today's board.
+
+    In season it names today's spread — "Today's avalanche danger at 46
+    Swiss ski resorts: 2 High, 11 Considerable, …" — reading the same rows
+    the board renders, so the two cannot disagree. Out of season (no rated
+    row) it describes the index instead. Both stay under the ~155-character
+    snippet budget ``_page_meta.html`` works to.
+
+    Args:
+        board: The rows from ``_resort_board``.
+        total: How many resorts and touring areas the index lists.
+
+    Returns:
+        The translated description.
+
+    """
+    rated = [row for row in board if row["level_key"]]
+    if not rated:
+        return ngettext(
+            "%(count)d Swiss ski resort or touring area: a link to its "
+            "avalanche bulletin and mountain weather.",
+            "%(count)d Swiss ski resorts and touring areas: links to each "
+            "resort's avalanche bulletin and mountain weather.",
+            total,
+        ) % {"count": total}
+    rated_count = sum(len(row["resorts"]) for row in rated)
+    spread = ", ".join(
+        f"{len(row['resorts'])} "
+        f"{danger_level_label(int(danger_level_digit(row['level_key'])))}"
+        for row in rated
+    )
+    return ngettext(
+        "Today's avalanche danger at %(count)d Swiss ski resort: %(spread)s.",
+        "Today's avalanche danger at %(count)d Swiss ski resorts: %(spread)s.",
+        rated_count,
+    ) % {"count": rated_count, "spread": spread}
+
+
+def _build_resorts_index_structured_data(
+    resorts: list[Resort], canonical_url: str
+) -> str:
+    """Build the ``/resorts/`` schema.org ``CollectionPage`` JSON-LD.
+
+    ``mainEntity`` is an ``ItemList`` with one ``ListItem`` per resort page
+    the index links to, each with an absolute URL — the machine-readable
+    form of the hub the page exists to be (SNOW-1150).
+
+    Args:
+        resorts: Every resort and touring area, in the order to list them.
+        canonical_url: The absolute URL of the ``/resorts/`` page.
+
+    Returns:
+        A JSON string ready for ``{{ structured_data_json|safe }}``.
+
+    """
+    base = settings.SITE_BASE_URL.rstrip("/")
+    payload: dict[str, Any] = {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "@id": canonical_url,
+        "url": canonical_url,
+        "name": gettext("Swiss ski resorts — avalanche conditions today"),
+        "inLanguage": get_language() or "en-gb",
+        "mainEntity": {
+            "@type": "ItemList",
+            "numberOfItems": len(resorts),
+            "itemListElement": [
+                {
+                    "@type": "ListItem",
+                    "position": position,
+                    "url": f"{base}{resort.get_absolute_url()}",
+                    "name": resort.name,
+                }
+                for position, resort in enumerate(resorts, start=1)
+            ],
+        },
+    }
+    return _serialise_json_ld(payload)
+
+
+def resorts_index(request: HttpRequest) -> HttpResponse:
+    """Render ``/resorts/`` — today's conditions board and the full index.
+
+    The page is the hub every resort page hangs off (SNOW-1150): a crawler
+    otherwise reaches a resort only through the sitemap, a bulletin page or a
+    map pin, and the map has no text a crawler can follow. It is a public
+    reference index for a search term, the same for every reader — not a
+    saved-thing list (``docs/decisions/two-documents-and-a-map.md``).
+
+    Three parts:
+
+    * **The board** — the CORE ski resorts grouped by today's
+      ``RegionDayRating.max_rating``, highest level first, with any CORE
+      resort whose region has no bulletin today in a final "No bulletin"
+      row. Read in ONE query, with the groupings endpoint's
+      ``source_bulletin__isnull=False`` filter, so the board matches the map
+      choropleth. The resort page renders from the bulletin's render model
+      instead, which costs several queries per resort; around issue time
+      the two can briefly disagree, exactly as the map and the resort page
+      can.
+    * **Out of season** — when no CORE region has a rated row today, the
+      board is replaced by a plain statement and the CORE resorts A–Z with
+      their elevation ranges. The state is decided by the data, not the
+      calendar, and no season aggregate is shown.
+    * **The index** — every ski resort grouped by canton, then the touring
+      areas in their own section.
+
+    Two queries whatever the number of resorts: the resorts, then today's
+    ratings for the CORE regions.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        The rendered page.
+
+    """
+    today = timezone.localdate()
+    resorts = sorted(
+        Resort.objects.select_related("region").order_by("name"),
+        key=lambda resort: _alphabetical_key(resort.name),
+    )
+    ski_resorts = [r for r in resorts if r.kind == Resort.Kind.RESORT]
+    touring = [r for r in resorts if r.kind == Resort.Kind.TOURING_TERRAIN]
+    core = [r for r in ski_resorts if r.tier == Resort.Tier.CORE]
+
+    ratings: dict[int, str] = dict(
+        RegionDayRating.objects.filter(
+            date=today,
+            region_id__in={resort.region_id for resort in core},
+            source_bulletin__isnull=False,
+        ).values_list("region_id", "max_rating")
+    )
+    board = _resort_board(core, ratings)
+    in_season = any(row["level_key"] for row in board)
+
+    canonical_url = f"{settings.SITE_BASE_URL.rstrip('/')}{reverse('public:resorts')}"
+    context = {
+        "target_date": today,
+        "in_season": in_season,
+        "board": board,
+        "core_resorts": core,
+        "canton_groups": _resort_index(ski_resorts),
+        "touring": [
+            {"resort": resort, "canton_label": canton_label(resort.canton)}
+            for resort in touring
+        ],
+        "page_description": _resorts_index_description(board, len(resorts)),
+        "structured_data_json": _build_resorts_index_structured_data(
+            resorts, canonical_url
+        ),
+    }
+    return render(request, "public/resorts_index.html", context)
 
 
 def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:

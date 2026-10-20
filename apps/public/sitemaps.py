@@ -331,6 +331,8 @@ class StaticViewSitemap(Sitemap):
     ROUTES: dict[str, tuple[str, float]] = {
         "public:home": ("weekly", 1.0),
         "public:map": ("daily", 0.9),
+        # SNOW-1150: the resorts index — today's board changes daily.
+        "public:resorts": ("daily", 0.8),
         "public:how_to_read_bulletin": ("monthly", 0.5),
         "public:help": ("monthly", 0.5),
         "public:compare": ("monthly", 0.5),

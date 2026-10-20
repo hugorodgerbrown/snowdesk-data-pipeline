@@ -1,8 +1,8 @@
 ---
 name: two-documents-and-a-map
-description: Two document pages — bulletin and weather — plus the map; regions, resorts, observations and routes are map objects; a trip is not
+description: Two document pages — bulletin and weather — plus the map; regions, resorts, routes are map objects; trips and /resorts/ are pages
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-10-20
 ---
 
 # Two documents and a map
@@ -92,6 +92,28 @@ from today, and that is a list.
 
 So the sentence above is narrowed, not reversed. The map is still the index
 for everything indexed by place; `/trips/` exists because a trip is not.
+
+**Amended by SNOW-1150: `/resorts/` is a page, because it is a REFERENCE
+INDEX for a search term, not a saved-thing list.** The rule above is about
+lists of the reader's own objects — pins, routes, reports — and `/resorts/`
+lists none of them. It lists the curated `Resort` table, the same for every
+reader, signed in or not, and it exists for two readers the map cannot
+serve. A crawler: every resort page was reachable only through the sitemap,
+a bulletin page or a map pin, and the map is a canvas with no text index a
+crawler can follow, so nothing in the site linked to them as a set. And a
+person searching "Swiss ski resort avalanche conditions": the query names no
+resort and no region, so neither document answers it, and a map with
+nothing selected is not an answer either. The page answers it the way a
+resort page answers "Verbier avalanche" — today's danger at the CORE
+resorts, read from `RegionDayRating`, the same rows the map colours by —
+then hands the reader on: every resort is a link to its own page, which
+routes to the two documents. It is not a third document: it is not dated
+by an issuer, it holds no bulletin prose, and out of season it says so in
+one sentence rather than inventing a season aggregate.
+
+So the map remains the index for everything indexed by place, for the
+reader's own things. `/resorts/` is the index of a public reference set, by
+name and canton, which is how that set is searched for.
 
 ## Consequences
 

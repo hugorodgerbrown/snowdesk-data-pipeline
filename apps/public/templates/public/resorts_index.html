@@ -1,0 +1,178 @@
+{% extends "public/base.html" %}
+{% comment %}
+apps/public/templates/public/resorts_index.html — The resorts index (SNOW-1150).
+
+``/resorts/``, rendered by ``apps.public.views.resorts_index``. The hub every
+resort page hangs off: a crawler otherwise reaches a resort only through the
+sitemap, a bulletin page or a map pin, and a reader searching "Swiss ski
+resort avalanche conditions" needs somewhere to land. A public reference
+index for a search term, the same for everyone — not a saved-thing list
+(docs/decisions/two-documents-and-a-map.md, SNOW-1150 amendment).
+
+Sections, top to bottom:
+  1. The conditions board (``[data-testid="resorts-board"]``) — in season,
+     one row per danger level (``resorts-board-row``, ``data-level``),
+     highest first, each a ``.danger-tile`` and the level word followed by
+     EVERY CORE resort at that level as a link; nothing is truncated. CORE
+     resorts with no bulletin today form a final "No bulletin" row.
+     Out of season (no CORE region rated today) the board is replaced by
+     ``resorts-off-season``: one plain statement and the CORE resorts A–Z
+     with their lift ranges. No season aggregate — a season peak was
+     rejected as meaningless.
+  2. The index (``resorts-index``) — every ski resort, grouped by canton
+     (``resorts-canton``), most resorts first.
+  3. Touring areas (``resorts-touring``) — lift-less touring terrain A–Z,
+     each with its canton. Never listed under a canton above.
+
+No htmx: nothing on this page posts.
+
+Context expected (built by ``apps.public.views.resorts_index``):
+  target_date          — datetime.date: today.
+  in_season            — bool: at least one CORE region is rated today.
+  board                — list of {"level_key": str ("" = no bulletin),
+                          "resorts": list[Resort]}, highest level first.
+  core_resorts         — list[Resort]: the CORE ski resorts, A–Z.
+  canton_groups        — list of {"canton_label": str,
+                          "resorts": list[Resort]}.
+  touring              — list of {"resort": Resort, "canton_label": str}.
+  page_description     — str: the meta description, built in the view.
+  structured_data_json — str: schema.org CollectionPage JSON-LD, already
+                          escaped for a script tag.
+{% endcomment %}
+{% load i18n components snowdesk_time %}
+
+{% block extra_head %}
+    {# SNOW-1150: schema.org CollectionPage + ItemList. structured_data_json #}
+    {# is built by apps/public/views.py:_build_resorts_index_structured_data #}
+    {# and escaped by _serialise_json_ld ("</" → "<\/"), so it is safe      #}
+    {# unescaped here.                                                        #}
+    <script type="application/ld+json" nonce="{{ request.csp_nonce }}">
+        {# nosemgrep: generic.html-templates.security.var-in-script-tag.var-in-script-tag,python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe #}
+        {{ structured_data_json|safe }}
+    </script>
+{% endblock %}
+
+{# SNOW-1150: a search landing page, built to be found and shared. The   #}
+{# description names today's spread in season and the index out of it.  #}
+{% block page_meta %}
+    {% translate "Swiss ski resorts — avalanche conditions today · Snowdesk" as page_title %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description %}
+{% endblock page_meta %}
+
+{% block content %}
+    <main class="{% page_shell_classes %}" data-testid="resorts-page">
+        {% translate "Swiss ski resorts" as heading_label %}
+        {% include "includes/_page_title.html" with text=heading_label class_extra="mb-2" data_testid="resorts-heading" %}
+        <p class="mb-6 text-sm text-text-2">
+            {% blocktrans trimmed %}
+                Today's avalanche danger at the main Swiss resorts, and a page for every resort with its bulletin and
+                mountain weather.
+            {% endblocktrans %}
+        </p>
+
+        <section class="mb-8" aria-labelledby="resorts-board-heading">
+            {% blocktrans with d=target_date|date:"j M Y" trimmed asvar board_heading_label %}
+                Avalanche danger today · {{ d }}
+            {% endblocktrans %}
+            {% include "includes/_eyebrow.html" with tag="h2" heading_id="resorts-board-heading" text=board_heading_label class_extra="mb-3" only %}
+            {% if in_season %}
+                <ul class="flex flex-col gap-3" data-testid="resorts-board">
+                    {% for row in board %}
+                        <li
+                            class="{% card_classes padding='p-4' %}"
+                            data-testid="resorts-board-row"
+                            data-level="{{ row.level_key|default:'none' }}"
+                        >
+                            <div class="mb-2 flex items-center gap-3">
+                                {% if row.level_key %}
+                                    <span
+                                        class="danger-tile"
+                                        data-level="{{ row.level_key }}"
+                                    >{{ row.level_key|danger_level_digit }}</span>
+                                    <span
+                                        class="text-sm font-medium text-text-1"
+                                    >{{ row.level_key|danger_level_digit|danger_level_label }}</span>
+                                {% else %}
+                                    <span class="text-sm font-medium text-text-3">{% translate "No bulletin" %}</span>
+                                {% endif %}
+                            </div>
+                            <ul class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+                                {% for resort in row.resorts %}
+                                    <li>
+                                        <a
+                                            class="hover-affordance text-text-1 underline"
+                                            href="{{ resort.get_absolute_url }}"
+                                        >{{ resort.name }}</a>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <div data-testid="resorts-off-season">
+                    <p class="mb-3 text-sm text-text-2" data-testid="resorts-off-season-note">
+                        {% translate "No avalanche bulletins today. The season usually opens in November." %}
+                    </p>
+                    <ul class="flex flex-col gap-1 text-sm">
+                        {% for resort in core_resorts %}
+                            <li data-testid="resorts-off-season-resort">
+                                <a
+                                    class="hover-affordance text-text-1 underline"
+                                    href="{{ resort.get_absolute_url }}"
+                                >{{ resort.name }}</a>
+                                {% if resort.base_elevation_m is not None and resort.top_elevation_m is not None %}
+                                    <span
+                                        class="text-text-3"
+                                        data-testid="resorts-elevation"
+                                    >{{ resort.base_elevation_m }}&ndash;{{ resort.top_elevation_m }} m</span>
+                                {% endif %}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+        </section>
+
+        <section class="mb-8" aria-labelledby="resorts-index-heading" data-testid="resorts-index">
+            {% translate "All ski resorts by canton" as index_heading_label %}
+            {% include "includes/_eyebrow.html" with tag="h2" heading_id="resorts-index-heading" text=index_heading_label class_extra="mb-3" only %}
+            {% for group in canton_groups %}
+                <div class="mb-4" data-testid="resorts-canton">
+                    <h3 class="mb-1 text-sm font-semibold text-text-1">
+                        {{ group.canton_label }}
+                        <span class="font-normal text-text-3">({{ group.resorts|length }})</span>
+                    </h3>
+                    <ul class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+                        {% for resort in group.resorts %}
+                            <li>
+                                <a
+                                    class="hover-affordance text-text-1 underline"
+                                    href="{{ resort.get_absolute_url }}"
+                                >{{ resort.name }}</a>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endfor %}
+        </section>
+
+        {% if touring %}
+            <section class="mb-8" aria-labelledby="resorts-touring-heading" data-testid="resorts-touring">
+                {% translate "Touring areas" as touring_heading_label %}
+                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resorts-touring-heading" text=touring_heading_label class_extra="mb-3" only %}
+                <ul class="flex flex-col gap-1 text-sm">
+                    {% for item in touring %}
+                        <li>
+                            <a
+                                class="hover-affordance text-text-1 underline"
+                                href="{{ item.resort.get_absolute_url }}"
+                            >{{ item.resort.name }}</a>
+                            <span class="text-text-3">{{ item.canton_label }}</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
+    </main>
+{% endblock content %}
