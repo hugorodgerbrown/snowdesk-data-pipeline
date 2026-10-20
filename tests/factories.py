@@ -12,6 +12,7 @@ call sites.
 
 import datetime
 from datetime import UTC
+from typing import Any
 
 import factory
 from django.contrib.auth.models import User
@@ -150,6 +151,26 @@ class PassFactory(factory.django.DjangoModelFactory[Pass]):
     website = ""
 
 
+def _resort_pin_location(resort: Any) -> Location | None:
+    """Return an anonymous Location at a factory resort's pin, if it has one.
+
+    Mirrors the invariant ``set_resort_pin`` maintains (SNOW-1144): a full
+    coordinate pair means a ``Location`` at exactly that point.
+
+    Args:
+        resort: The factory's resolver for the resort being built.
+
+    Returns:
+        The new Location, or ``None`` when the pair is incomplete.
+
+    """
+    if resort.latitude is None or resort.longitude is None:
+        return None
+    return LocationFactory.create(
+        anonymous=True, latitude=resort.latitude, longitude=resort.longitude
+    )
+
+
 class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     """
     Factory for Resort instances.
@@ -162,6 +183,11 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     ``slug`` is deliberately not declared here: ``Resort.save()`` mints it
     from ``name`` (SNOW-796), and a test that creates two resorts with the
     same name gets ``-2`` suffixed rather than an IntegrityError.
+
+    ``location`` (SNOW-1144) follows the coordinate, as ``set_resort_pin``
+    keeps it in production: a resort created with both ``latitude`` and
+    ``longitude`` gets an anonymous ``Location`` at that point, and one
+    without a full pair gets none. Pass ``location=`` explicitly to override.
     """
 
     class Meta:
@@ -185,6 +211,7 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     notes = ""
     latitude = None
     longitude = None
+    location = factory.LazyAttribute(lambda resort: _resort_pin_location(resort))
     geocode_source = ""
     geocode_confidence = None
     geocoded_at = None

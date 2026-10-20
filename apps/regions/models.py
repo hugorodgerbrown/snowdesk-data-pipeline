@@ -671,29 +671,36 @@ class ResortQuerySet(models.QuerySet):
     """Custom queryset for Resort."""
 
     def geocoded(self) -> "ResortQuerySet":
-        """Return only resorts with both latitude and longitude set."""
-        return self.filter(latitude__isnull=False, longitude__isnull=False)
+        """Return only resorts with a map pin — a ``location`` (SNOW-1144).
+
+        The pin is the resort's ``Location``; the ``latitude``/``longitude``
+        columns are a mirror ``set_resort_pin`` keeps in step and no longer
+        what "geocoded" means. ``link_resort_locations --commit`` backfills
+        the FK for every resort pinned before the column existed.
+        """
+        return self.filter(location__isnull=False)
 
     def unlinked(self) -> "ResortQuerySet":
-        """Return geocoded resorts carrying no ``ResortLocation`` at all.
+        """Return resorts with a coordinate but no pin ``Location`` yet.
 
-        This is the silent gap SNOW-885 exists to detect. A resort's pin and
-        its weather are separate things: the edit-resorts overlay writes the
-        coordinate, and only a ``ResortLocation`` makes the resort page render
-        a Forecasts section. ``link_resort_locations`` creates that link, and
-        PR #758 took it out of the deploy on purpose, so a resort added or
-        re-geocoded since then shows no weather until an operator remembers to
-        run the command by hand — with nothing anywhere noticing.
+        The silent gap SNOW-885 exists to detect, redefined by SNOW-1144. A
+        resort's pin is now its ``location`` FK and ``set_resort_pin`` writes
+        it on every save, so the only way to have coordinates and no
+        ``Location`` is a row pinned before the column existed — exactly the
+        set ``link_resort_locations --commit`` backfills, and that its
+        ``--check`` flag names.
 
         A resort with NO coordinates is deliberately not here. It cannot be
         linked at all, so it is a known backlog rather than a silent failure,
         and folding the two together would bury the one in the other.
 
         Returns:
-            Filtered queryset of geocoded resorts with no location link.
+            Filtered queryset of coordinate-bearing resorts with no location.
 
         """
-        return self.geocoded().filter(resort_locations__isnull=True)
+        return self.filter(
+            latitude__isnull=False, longitude__isnull=False, location__isnull=True
+        )
 
     def needs_geocoding(self) -> "ResortQuerySet":
         """Return resorts missing coords or flagged for review."""
@@ -849,8 +856,36 @@ class Resort(BaseModel):
     )
     notes = models.TextField(blank=True)
 
-    latitude = models.FloatField(null=True, blank=True)
-    longitude = models.FloatField(null=True, blank=True)
+    latitude = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Mirror of location.latitude, kept in step by set_resort_pin "
+            "during the SNOW-1144 transition. Readers use location."
+        ),
+    )
+    longitude = models.FloatField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Mirror of location.longitude, kept in step by set_resort_pin "
+            "during the SNOW-1144 transition. Readers use location."
+        ),
+    )
+    location = models.ForeignKey(
+        "locations.Location",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="pinned_resorts",
+        help_text=(
+            "The resort's map pin, as a Location (SNOW-1144) — the row its "
+            "weather hangs off. Written only by "
+            "apps.regions.services.resort_pin.set_resort_pin, which reuses "
+            "the row and moves it in place when the pin moves, so its "
+            "Weather history stays attached. Null on a resort with no pin."
+        ),
+    )
     geocode_source = models.CharField(
         max_length=16,
         choices=GeocodeSource.choices,

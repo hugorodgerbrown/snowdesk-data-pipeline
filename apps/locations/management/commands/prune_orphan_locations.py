@@ -79,6 +79,9 @@ class Command(BaseCommand):
         return Location.objects.anonymous().filter(
             resort_locations__isnull=True,
             micro_regions__isnull=True,
+            # SNOW-1144: a resort's pin. Its FK is PROTECT, so leaving this
+            # out would not delete a pin — it would raise mid-sweep.
+            pinned_resorts__isnull=True,
             favourites__isnull=True,
             field_observations__isnull=True,
         )

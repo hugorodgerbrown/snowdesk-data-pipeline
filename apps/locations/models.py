@@ -93,8 +93,15 @@ def generate_short_id() -> str:
 # added to one would silently not reach the other — and the direction that
 # fails is the dangerous one, since a public feed built from a stale
 # predicate leaks private pins.
-_CURATED = models.Q(resort_locations__isnull=False) | models.Q(
-    micro_regions__isnull=False
+#
+# SNOW-1144: a resort's map pin is a ``Location`` (``Resort.location``,
+# reverse ``pinned_resorts``), and it is curated in the same sense a
+# ``ResortLocation`` is — the resort is public, and so is where it is. Without
+# this clause a resort pinned since SNOW-1144 would get no weather fetched.
+_CURATED = (
+    models.Q(resort_locations__isnull=False)
+    | models.Q(micro_regions__isnull=False)
+    | models.Q(pinned_resorts__isnull=False)
 )
 _FAVOURITED = models.Q(favourites__isnull=False)
 
@@ -136,7 +143,8 @@ class LocationQuerySet(models.QuerySet["Location"]):
     def public(self) -> "LocationQuerySet":
         """Return the locations anyone may see — the curated estate.
 
-        A location is public when a ``ResortLocation`` or a
+        A location is public when a ``ResortLocation``, a resort's pin
+        (``Resort.location``, SNOW-1144) or a
         ``MicroRegion.centroid_location`` reaches it: someone curated it as
         a place, and it is already visible on a resort page or a bulletin.
         **A ``Favourite`` does not make a location public**, and neither
