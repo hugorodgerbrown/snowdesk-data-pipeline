@@ -539,7 +539,7 @@ class TestHelpIllustrations:
     ILLUSTRATED = {
         "help-topic-bulletins": b'data-testid="day-windows-panel"',
         "help-topic-problems": b"Wind slab",
-        "help-topic-calendar": b"calendar-cell",
+        "help-topic-calendar": b"season-day",
         # Each panel illustration is marked by its own add-CTA label, which
         # is the one string that differs between the four. (SNOW-904 moved
         # these off the switch ids; the switch is back, but the labels are

@@ -1105,10 +1105,14 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="season-calendar",
         label="Season calendar",
         description=(
-            "Full-season heatmap grid — one circle per day from SEASON_START_DATE "
-            "through today+1, weeks-as-columns. Synthetic fixture covers all cell "
-            "states: no-rating, every EAWS level solid, split pairs for "
-            "afternoon-elevated days, today ring, and selected ring."
+            "The one season calendar (public/partials/_season_calendar.html, "
+            "SNOW-1158) — the resort page's season section, the bulletin "
+            "page's season sheet, the /help/ illustration. Months as rows and "
+            "one dot per day against a 1·5·10…30 axis; in a narrow container "
+            "(a container query) months become columns of short bars. "
+            "Unlinked: one role=img with the season summary as its "
+            "aria-label and the short key. Linked: each day with a bulletin "
+            "links to it, and the full key counts each level."
         ),
         kind="components",
         partial="public/partials/_season_calendar_demo.html",
@@ -1119,15 +1123,15 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="season-cell",
         label="Season cell",
         description=(
-            "One day of the season heatmap (public/partials/_season_cell.html, "
-            "SNOW-1126) — shared by the bulletin page's grid and the resort "
-            "page's season strip. Fills from data-rating-min/-max, an AM/PM "
-            "split, or ALBINA band spans; labels are the translated EAWS names. "
-            "Linked to the day's bulletin, or inert (role=img, no link) on the "
-            "resort strip. Must render inside [data-testid=season-calendar]."
+            "Every state a day of the season calendar draws (.season-day, "
+            "data-state): no bulletin (outlined), the five EAWS levels, two "
+            "levels in one day (an afternoon rise, an AM/PM split or an ALBINA "
+            "band split — lower level left, the peak right), the 2px ring, "
+            "and not yet (faint). Drawn by the shared calendar partial; there "
+            "is no separate cell partial."
         ),
         kind="components",
-        partial="public/partials/_season_cell_demo.html",
+        partial="public/partials/_season_calendar_demo.html",
         variants=SEASON_CELL_VARIANTS,
         panel_layout="stack",
     ),
