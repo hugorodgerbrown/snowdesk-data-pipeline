@@ -1926,6 +1926,19 @@ naming: deriving it from "this record has no `contentAt`" would paint amber
 over every area downloaded before this shipped. Those read `done` and pick
 their content up on the first refresh tap.
 
+**Dated labels (SNOW-1139).** `_probeDone` also reads the record's
+`contentAt`, and `setState` dates the `done` and `partial` labels with it
+when it falls on an earlier day than today — "This region is available
+offline, with bulletins from 18 Oct — tap to update …" and "… its bulletins
+are from 18 Oct — tap to update" (`download-done-dated` /
+`download-partial-dated` in `_map_embed.html`'s map strings). Today's
+content, or none, keeps the undated label. The region sheet's proxy mirrors
+`aria-label` and `title`, so the phone control says the same. The day comes
+from `static/js/cached_stamp_core.js` (`window.pwaCachedStampCore`), the one
+formatter behind every cached-copy stamp: `formatStamp` is "HH:MM" today and
+day + "HH:MM" on any other day, and is what the favourites, routes and
+reports panels stamp a cached repaint with.
+
 ### Download budget and whole-area eviction (SNOW-586)
 
 Both download controls write into their own dedicated Cache Storage
@@ -2297,7 +2310,12 @@ totals and three rules between them and their list. The basemap is still
 on every on-device row: a `.basemap-identity-fill` dot (the same rule the
 bar segments use) and a word in the meta line —
 `Region · Swisstopo (CH) · 13.6 MB`, with ` · Bulletins not saved`
-appended when the area's content half fell short (SNOW-932). An
+appended when the area's content half fell short (SNOW-932). Otherwise,
+when the record's `contentAt` falls on an earlier day than today, the line
+takes ` · Bulletins saved 18 Oct` instead (SNOW-1139) — `contentAt` travels
+from the record through `reconcileAreas` and `manageRows` to `buildRow`, and
+today's content adds nothing, because a fresh download is the normal case.
+An
 account-only row carries neither dot nor basemap nor size — nothing of it
 is stored here, so no basemap has been chosen and a colour would imply one
 — and its meta line is the kind alone. The kinds are Region, Custom area,

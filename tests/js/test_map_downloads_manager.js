@@ -196,6 +196,7 @@ function buildFixture() {
       <span data-string="sync-row-label">Sync %(name)s now</span>
       <span data-string="sync-failed">That area couldn't be brought up to date. Try again.</span>
       <span data-string="kind-content-incomplete">Bulletins not saved</span>
+      <span data-string="kind-content-saved">Bulletins saved %(date)s</span>
       <span data-string="kind-region">Region</span>
       <span data-string="kind-custom">Custom area</span>
       <span data-string="row-meta">%(kind)s · %(basemap)s · %(size)s</span>
@@ -315,6 +316,9 @@ function installDownloadsBridge(rows, cachesStub) {
         // above — no cache read can answer it — so the reader carries it
         // through exactly as map.js's own does.
         contentIncomplete: !!entry.contentIncomplete,
+        // SNOW-1139: when the run last fetched this area's content, as
+        // the real reader carries it.
+        contentAt: entry.contentAt || '',
         // SNOW-1072: the ground and the terrain-data flag the class tiles
         // are derived from, as the real reader carries them.
         z: entry.z || null,
@@ -346,6 +350,8 @@ function installDownloadsBridge(rows, cachesStub) {
         deps: Array.isArray(entry.deps) ? entry.deps : [],
         // SNOW-932: see the region branch above.
         contentIncomplete: !!entry.contentIncomplete,
+        // SNOW-1139: see the region branch above.
+        contentAt: entry.contentAt || '',
       });
     }
     return out;
@@ -393,7 +399,9 @@ function installDownloadsBridge(rows, cachesStub) {
       existing.map((entry) => {
         if (!matches(entry)) return entry;
         const { contentIncomplete: _cleared, ...rest } = entry;
-        return { ...rest, contentAt: '2026-09-13T00:00:00.000Z' };
+        // SNOW-1139: stamped NOW, as the real writer stamps it — a fixed
+        // past day would date the row the sync has just brought current.
+        return { ...rest, contentAt: new Date().toISOString() };
       }),
     );
     return true;
@@ -1573,6 +1581,71 @@ describe('an area whose bulletins are behind (SNOW-932)', () => {
     expect(row.querySelector('[data-row-meta]').textContent).toBe(
       'Custom area · OpenFreeMap · 12.0 MB',
     );
+  });
+});
+
+describe('how fresh an area\'s bulletins are (SNOW-1139)', () => {
+  /** A custom area on the active basemap, with `extra` merged in. */
+  function customArea(extra) {
+    return [
+      Object.assign(
+        {
+          id: 'custom-a1',
+          ordinal: 1,
+          bbox: [7, 46, 7.2, 46.2],
+          band: [10, 14],
+          bytes: 12 * MB,
+          savedAt: '2026-08-01T10:00:00.000Z',
+          basemapKey: 'openfreemap_liberty',
+        },
+        extra || {},
+      ),
+    ];
+  }
+
+  /** An ISO instant `days` local days ago, at 09:00. */
+  function daysAgo(days) {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    d.setHours(9, 0, 0, 0);
+    return d.toISOString();
+  }
+
+  it('dates a row whose bulletins were saved on an earlier day', async () => {
+    const contentAt = daysAgo(3);
+    seed({ 'basemap.customAreas': customArea({ contentAt }) });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const day = window.pwaCachedStampCore.formatDay(contentAt);
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
+      `Custom area · OpenFreeMap · 12.0 MB · Bulletins saved ${day}`,
+    );
+  });
+
+  it("says nothing for today's bulletins", async () => {
+    seed({ 'basemap.customAreas': customArea({ contentAt: new Date().toISOString() }) });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe(
+      'Custom area · OpenFreeMap · 12.0 MB',
+    );
+  });
+
+  it('keeps the shortfall message for a row whose content fell short', async () => {
+    seed({
+      'basemap.customAreas': customArea({ contentAt: daysAgo(3), contentIncomplete: true }),
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const meta = firstRowElement().querySelector('[data-row-meta]').textContent;
+    expect(meta.endsWith('· Bulletins not saved')).toBe(true);
+    expect(meta).not.toContain('Bulletins saved');
   });
 });
 

@@ -785,6 +785,66 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
   });
 });
 
+describe('the roundel dates bulletins from an earlier day (SNOW-1139)', () => {
+  /** Rewrite this region's record with `fields`, then let the render settle. */
+  async function patchRecord(fields) {
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    await window.pwaDb.put('meta:app', {
+      key: 'basemap.regions',
+      value: row.value.map((entry) => {
+        if (!entry || entry.region_id !== REGION_ID) return entry;
+        const { contentIncomplete: _c, ...rest } = entry;
+        return { ...rest, ...fields };
+      }),
+    });
+    document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed'));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  }
+
+  /** An ISO instant three local days ago. */
+  function threeDaysAgo() {
+    const d = new Date();
+    d.setDate(d.getDate() - 3);
+    d.setHours(9, 0, 0, 0);
+    return d.toISOString();
+  }
+
+  afterAll(async () => {
+    await patchRecord({ contentAt: new Date().toISOString() });
+  });
+
+  it('names the day on a done area whose bulletins are not today\'s', async () => {
+    const btn = document.getElementById('map-download-control');
+    const contentAt = threeDaysAgo();
+    await patchRecord({ contentAt });
+
+    expect(btn.dataset.downloadState).toBe('done');
+    const day = window.pwaCachedStampCore.formatDay(contentAt);
+    expect(btn.getAttribute('aria-label')).toContain(`bulletins from ${day}`);
+    expect(btn.title).toBe(btn.getAttribute('aria-label'));
+  });
+
+  it('names the day on a partial area too', async () => {
+    const btn = document.getElementById('map-download-control');
+    const contentAt = threeDaysAgo();
+    await patchRecord({ contentAt, contentIncomplete: true });
+
+    expect(btn.dataset.downloadState).toBe('partial');
+    const day = window.pwaCachedStampCore.formatDay(contentAt);
+    expect(btn.getAttribute('aria-label')).toContain(`bulletins are from ${day}`);
+  });
+
+  it('keeps the undated label for today\'s bulletins', async () => {
+    const btn = document.getElementById('map-download-control');
+    await patchRecord({ contentAt: new Date().toISOString() });
+
+    expect(btn.dataset.downloadState).toBe('done');
+    expect(btn.getAttribute('aria-label')).toBe(
+      'This region is available offline — tap to update its bulletins and weather',
+    );
+  });
+});
+
 describe('a custom area catches up through the sheet (SNOW-932)', () => {
   // The CUSTOM half of the same fact. A custom area has no roundel once
   // its framing overlay closes, so `refreshAreaContent` — the bridge

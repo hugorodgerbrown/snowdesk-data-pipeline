@@ -41,6 +41,12 @@ interface Window {
   /** static/js/calendar_core.js — the date picker's month grid maths. */
   pwaCalendarCore: any;
   pwaStaleDayCore: any;
+  /** static/js/cached_stamp_core.js — the cached-copy stamp and download freshness (SNOW-1139). */
+  pwaCachedStampCore: {
+    isBeforeToday(value: unknown, now?: Date): boolean;
+    formatDay(value: unknown, options?: { locale?: string }): string;
+    formatStamp(value: unknown, options?: { now?: Date; locale?: string }): string;
+  };
   /** static/js/scrubber_core.js — season-scrubber position and snapping. */
   pwaScrubberCore: any;
   /** static/js/search_core.js — diacritic-insensitive region/resort match. */

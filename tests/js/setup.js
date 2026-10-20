@@ -39,6 +39,11 @@ import 'fake-indexeddb/auto';
 
 import '../../static/js/signin_cta.js';
 
+// SNOW-1139: loaded in base.html's <head>, ahead of every surface that stamps
+// a cached copy or dates a download, so a suite importing one of them sees
+// window.pwaCachedStampCore for the same reason the browser does.
+import '../../static/js/cached_stamp_core.js';
+
 if (typeof window.matchMedia !== 'function') {
   window.matchMedia = (query) => ({
     matches: false,

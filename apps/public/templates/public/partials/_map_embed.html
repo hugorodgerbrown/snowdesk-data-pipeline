@@ -2357,6 +2357,15 @@ Optional context:
     <span
         data-string="download-partial"
     >{% trans "This region's map is available offline but its bulletins are not up to date — tap to update" %}</span>
+    {# SNOW-1139: the same two labels when the bulletins the area holds    #}
+    {# were fetched on an earlier day than today (the record's contentAt). #}
+    {# A green roundel from last week read exactly like this morning's.    #}
+    <span
+        data-string="download-done-dated"
+    >{% blocktrans %}This region is available offline, with bulletins from %(date)s — tap to update its bulletins and weather{% endblocktrans %}</span>
+    <span
+        data-string="download-partial-dated"
+    >{% blocktrans %}This region's map is available offline but its bulletins are from %(date)s — tap to update{% endblocktrans %}</span>
     <span data-string="download-error">{% trans "This region's basemap download failed — tap to try again" %}</span>
     {# SNOW-844: the tiles are all on this device and something the map    #}
     {# needs in order to DRAW them is not — the style document, a vector   #}

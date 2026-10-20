@@ -212,6 +212,10 @@ the row's own label, so map.html loads that module once for both.
     {# taking the whole line the way that state does, would send the       #}
     {# reader looking for a broken download that is not there.             #}
     <span data-string="kind-content-incomplete">{% trans "Bulletins not saved" %}</span>
+    {# SNOW-1139: the clause on an on-device row whose bulletins were      #}
+    {# fetched on an earlier day than today — the record's `contentAt`.    #}
+    {# Today's says nothing: a fresh download is the normal case.          #}
+    <span data-string="kind-content-saved">{% blocktrans %}Bulletins saved %(date)s{% endblocktrans %}</span>
     <span data-string="kind-region">{% trans "Region" %}</span>
     <span data-string="kind-custom">{% trans "Custom area" %}</span>
     {# SNOW-1133: an account-only area with no name, named by the day the #}

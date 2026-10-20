@@ -886,27 +886,24 @@
     line.className = 'mt-3 text-xs text-text-3 font-mono';
     line.setAttribute('data-testid', 'route-list-cached');
     line.textContent = interpolate(STRINGS['list-cached'], {
-      time: formatHHMM(record.cached_at),
+      time: formatStamp(record.cached_at),
     });
     rows.appendChild(line);
     return true;
   }
 
-  /** Format an ISO timestamp as "HH:MM" (24h, zero-padded).
+  /** Stamp a cached read: "HH:MM" today, day + "HH:MM" on any other day.
    *
-   * Mirrors report.js's and favourites_offline.js's own copies — the other
-   * surfaces that stamp a cached read — so all three say the age of a cache
-   * the same way. Returns '' on a parse failure.
+   * SNOW-1139: the formatting is ``pwaCachedStampCore``'s, shared by every
+   * surface that stamps a cached read, so yesterday's cache cannot read as
+   * today's. Returns '' on a parse failure, or when the core is absent.
    *
    * @param {?string} isoValue An ISO 8601 instant.
    * @returns {string}
    */
-  function formatHHMM(isoValue) {
-    if (!isoValue) return '';
-    const d = new Date(isoValue);
-    if (Number.isNaN(d.valueOf())) return '';
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  function formatStamp(isoValue) {
+    const core = window.pwaCachedStampCore;
+    return core ? core.formatStamp(isoValue) : '';
   }
 
   // ---------------------------------------------------------------------------

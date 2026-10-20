@@ -279,7 +279,9 @@
    *   onDevice: boolean, synced: boolean, redownloadable: boolean,
    *   bbox: number[]|null, regionId: string, deps: string[],
    *   z: Object|null, band: number[]|null, contentIncomplete: boolean,
-   *   terrain: boolean, storedName: string}>}
+   *   contentAt: string, terrain: boolean, storedName: string}>}
+   *   SNOW-1139: ``contentAt`` is when the area's bulletins were fetched,
+   *   '' when never (and always '' for an orphan or account-only row).
    *   SNOW-1072: ``terrain`` is whether the area includes terrain data.
    *   SNOW-1136: ``storedName`` is the name as stored, '' when never
    *   renamed — unlike ``label``, which is always something to show.
@@ -442,6 +444,11 @@
         // account-only row was never downloaded here at all — and both
         // would otherwise be offered a Refresh with nothing to refresh.
         contentIncomplete: !area.orphaned && onDevice && !!area.contentIncomplete,
+        // SNOW-1139: when this area's bulletins were fetched — the sheet
+        // dates a row whose content is from an earlier day. Suppressed
+        // for an orphan and an account-only row on the same grounds as
+        // `contentIncomplete`: neither holds content on this device.
+        contentAt: !area.orphaned && onDevice && area.contentAt ? String(area.contentAt) : '',
         // SNOW-1072: whether the area includes terrain data. Carried for
         // two readers: the completeness check, which judges an opted-in
         // row on its class tiles too, and "Download here", which repeats
@@ -579,7 +586,8 @@
    *   savedAt?: string, orphaned: boolean, basemapKey: string|null,
    *   onDevice: boolean, synced: boolean, bbox: number[]|null,
    *   regionId: string, deps: string[], type?: string, z?: Object|null,
-   *   band?: number[]|null, contentIncomplete?: boolean}>} The recorded
+   *   band?: number[]|null, contentIncomplete?: boolean,
+   *   contentAt?: string}>} The recorded
    *   areas in their original order, then any orphans id-ascending, then
    *   any account-only areas id-ascending — so the sheet's own sort has a
    *   stable input.
@@ -593,7 +601,7 @@
    *   it. A typedef that under-describes a rebuild is not a cosmetic
    *   error; it is the documentation that hides the hop.
    *
-   *   ``type``, ``z``, ``band`` and ``contentIncomplete`` are OPTIONAL and
+   *   ``type``, ``z``, ``band``, ``contentIncomplete`` and (SNOW-1139) ``contentAt`` are OPTIONAL and
    *   the marker is load-bearing: only the recorded branch carries them —
    *   except ``type``, which SNOW-1136 also sets on an account-only row
    *   whose ``shape`` is ``'CIRCLE'`` (a drop zone), alongside that row's
@@ -675,6 +683,9 @@
         // from the record. This join rebuilds every entry field by field,
         // so a field not named here is a field the sheet never sees.
         contentIncomplete: !!area.contentIncomplete,
+        // SNOW-1139: when this area's content was last fetched, passed
+        // through for the same reason — this join names every field.
+        contentAt: area.contentAt || '',
         // SNOW-1072: whether the area includes terrain data — the flag the
         // sheet's completeness check derives the class tiles from.
         terrain: !!area.terrain,
