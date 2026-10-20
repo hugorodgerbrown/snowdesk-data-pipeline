@@ -14,17 +14,35 @@ today's danger is shown here. It is the bulletin page's own render model,
 selected the same way and rendered through the same partials, read-only:
 the bulletin stays the one full document, and this page holds no copy.
 
-Sections, top to bottom:
-  1. An "All resorts" link back to ``/resorts/`` (SNOW-1150), then the
-     resort name (+ alternative/marketing name, when set), canton, and
-     parent region name, then the curated "why it matters" line (SNOW-542)
-     via the shared ``public/partials/_resort_why_it_matters.html`` partial,
-     which owns its own blank state, then the curated facts block
-     (SNOW-695) via ``public/partials/_resort_facts.html`` — operator,
-     website, lifts, runs, piste, elevation range, season and notes, each
-     cell omitted when unset and the whole block omitted when all are.
-     The resort's own.
-  2. Today's danger (SNOW-1124). ``[data-testid="resort-danger"]`` is ONE
+FRAME (SNOW-1155, to Hugo's approved design board). A header, then two
+columns on a desktop (``lg``): the sections below in a main column, and the
+curated facts in a ~320px sidebar (``lg:w-80``). On a phone it is one
+column with the facts LAST. The shell widens to ``max-w-grid-max`` at
+``lg`` — the existing token the home page uses — via
+``page_shell_classes``'s ``extra``.
+
+Above the header, an "All resorts" link back to ``/resorts/`` (SNOW-1150).
+
+Header:
+  * Eyebrow — a mono uppercase ``<p>`` (``includes/_eyebrow.html``, not a
+    heading): ``resort_eyebrow``, the alternative name · canton (the major
+    region's English name) · country, each part omitted when blank and
+    the element omitted when all are (``views._resort_eyebrow``).
+  * The resort name (``includes/_page_title.html``, its default size).
+  * The curated "why it matters" line as the tagline (SNOW-542), via the
+    shared ``public/partials/_resort_why_it_matters.html`` with
+    ``tagline=True``, which owns its own blank states.
+  * Two actions, beside the title on a desktop and in a row under the
+    tagline on a phone, where the map comes first: "Save resort" — the
+    favourite toggle (``favourites/partials/_resort_favourite_button.html``,
+    a sign-in link of the same shape for anonymous visitors) — and the
+    primary "See on the map" (``/map/?resort=<slug>``; static/js/map.js
+    flies the camera to the pin). SNOW-807's "Reports near here on the
+    map" link is gone; this one replaces it.
+
+Main column, top to bottom (each section's own design is a later ticket —
+SNOW-1155 moved them, it did not redraw them):
+  1. Today's danger (SNOW-1124). ``[data-testid="resort-danger"]`` is ONE
      link to the parent region's evergreen bulletin, carrying today's
      ``.danger-tile`` and level word (or the no-bulletin note) and the
      "Full bulletin →" label, followed by the bulletin headline
@@ -39,9 +57,8 @@ Sections, top to bottom:
      range (``[data-testid="resort-problem-band"]``), and one disclaimer
      under the heading (``resort-problem-band-note``) only when a line
      renders — neither when the resort lacks a base or top elevation.
-  3. The favourite/unfavourite control
-     (``favourites/partials/_resort_favourite_button.html``).
-  4. Forecasts — the resort's pin Location first (SNOW-1144), then its
+  2. The season strip (SNOW-1126), described where it renders.
+  3. Forecasts — the resort's pin Location first (SNOW-1144), then its
      curated locations, each a link to its own weather page
      (``/weather/<short_id>/``), with the role and elevation that tell
      village from summit. SNOW-761 drew one block per
@@ -53,9 +70,12 @@ Sections, top to bottom:
      goes through ``set_resort_pin``, so a pinned resort always has at least
      its pin here; only a resort with no pin and no curated locations
      renders no section at all.
-  5. Observations — ONE link to the map with the reports sheet open, flown
-     to this resort (``?panel=reports&resort=<slug>``). The point-local
-     counts SNOW-508 rendered here were a filtered view of map data.
+
+Sidebar: "About this resort" (SNOW-695, redrawn by SNOW-1155) via
+``public/partials/_resort_facts.html`` — its own eyebrow above a card
+holding a definition list of operator, website, lifts, runs, piste,
+elevation range, season and notes, each row omitted when unset and the
+whole section omitted when all are.
 
 Resorts with ``needs_review=True`` or null coordinates still render here —
 only the map-anchor affordance is skipped, and this page has none.
@@ -89,8 +109,8 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    (label, elevation_m, role_label, url,
                                    weather_display — WeatherDisplay | None,
                                    testid), primary first. Empty is normal.
-  observations_map_url          — str: the map with the reports sheet open,
-                                   flown to this resort.
+  resort_eyebrow                — str: the header eyebrow, "" when every
+                                   part is blank (SNOW-1155).
   structured_data_json          — str: schema.org SkiResort JSON-LD, already
                                    escaped for a script tag (SNOW-1123).
 {% endcomment %}
@@ -160,98 +180,112 @@ Context expected (built by ``apps.public.views.resort_detail``):
 
 {% block content %}
     <main
-        class="{% page_shell_classes %}"
+        class="{% page_shell_classes extra='lg:max-w-grid-max' %}"
         data-testid="resort-detail"
         data-resort-slug="{{ resort.slug }}"
     >
-        <div class="mb-6">
-            {# SNOW-1150: back to the hub every resort page hangs off, so the #}
-            {# index and each resort link both ways.                          #}
-            <p class="mb-2 text-sm">
-                <a
-                    class="hover-affordance text-text-2 underline"
-                    href="{% url 'public:resorts' %}"
-                    data-testid="resort-all-resorts-link"
-                >{% translate "All resorts" %}</a>
-            </p>
-            {% include "includes/_page_title.html" with text=resort.name class_extra="mb-0" data_testid="resort-heading" %}
-            {% if resort.name_alt %}
-                <p class="text-sm text-text-3">{{ resort.name_alt }}</p>
-            {% endif %}
-            <p class="mt-1 text-sm text-text-2" data-testid="resort-location">
-                {{ resort.canton }}
-                <span aria-hidden="true"> &middot; </span>
-                {{ region.name }}
-            </p>
-            <div class="mt-2">
-                {% include "public/partials/_resort_why_it_matters.html" %}
-            </div>
-            <div class="mt-4">
-                {% include "public/partials/_resort_facts.html" %}
-            </div>
-        </div>
-
-        {# SNOW-1122: the target search terms in the body, not only in the   #}
-        {# meta tags — people search "{resort} avalanche" / "conditions".     #}
-        {% translate "Avalanche danger and mountain conditions" as conditions_heading_label %}
-        {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-conditions-heading" text=conditions_heading_label class_extra="mb-2" only %}
-        {# SNOW-807: the whole danger area is ONE link to the bulletin —     #}
-        {# keep exactly one <a> inside [data-testid="resort-danger"].         #}
-        {# SNOW-1124: the tile reads the bulletin page's panel, not a copy.   #}
-        <div class="mb-6" data-testid="resort-danger">
+        {# SNOW-1150: back to the hub every resort page hangs off, so the #}
+        {# index and each resort link both ways.                          #}
+        <p class="mb-4 text-sm">
             <a
-                href="{{ bulletin_url }}"
-                class="hover-affordance flex flex-wrap items-center gap-4 rounded-card border border-border p-4"
-                data-testid="resort-danger-link"
-            >
-                {% if panel %}
-                    <span
-                        class="danger-tile"
-                        data-level="{{ panel.danger_key }}"
-                        data-testid="resort-danger-chip"
-                    >{{ panel.danger_number }}{{ panel.danger_subdivision }}</span>
-                    <span class="text-sm text-text-2" data-testid="resort-danger-label">{{ panel.danger_label }}</span>
-                {% else %}
-                    <span class="text-sm text-text-3" data-testid="resort-no-rating">
-                        {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
-                            {{ d }}{% endblocktrans %}
-                    </span>
+                class="hover-affordance text-text-2 underline"
+                href="{% url 'public:resorts' %}"
+                data-testid="resort-all-resorts-link"
+            >{% translate "All resorts" %}</a>
+        </p>
+        <header class="mb-8 flex flex-col gap-5 lg:mb-10 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between lg:gap-6">
+            <div class="flex flex-col gap-2">
+                {% if resort_eyebrow %}
+                    {% include "includes/_eyebrow.html" with tag="p" text=resort_eyebrow data_testid="resort-eyebrow" only %}
                 {% endif %}
-                <span class="text-sm font-medium text-text-1 underline">{% trans "Full bulletin →" %}</span>
-            </a>
-            {% if panel %}
-                <div class="mt-4">
-                    {% include "public/_bulletin_headline.html" %}
-                </div>
-            {% endif %}
-        </div>
+                {% include "includes/_page_title.html" with text=resort.name class_extra="mb-0" data_testid="resort-heading" only %}
+                {% include "public/partials/_resort_why_it_matters.html" with tagline=True %}
+            </div>
+            {# Save first in the source, as a desktop reads; on a phone the   #}
+            {# map leads the row (max-lg:order-first), as the board draws it. #}
+            <div class="flex flex-wrap gap-3" data-testid="resort-actions">
+                {% include "favourites/partials/_resort_favourite_button.html" %}
+                {# Only a pinned resort is on the map feed (Resort.objects.geocoded()); #}
+                {# without a pin the deep link would land on the generic map.          #}
+                {% if resort.pin_coordinates %}
+                    <a
+                        href="{% url 'public:map' %}?resort={{ resort.slug|urlencode }}"
+                        class="{% button_classes variant='primary' size='compact' %} inline-flex min-h-11 flex-1 items-center justify-center gap-2 max-lg:order-first lg:flex-none"
+                        data-testid="resort-map-link"
+                    >
+                        {% include "includes/_icon_map.html" only %}
+                        {% trans "See on the map" %}
+                    </a>
+                {% endif %}
+            </div>
+        </header>
 
-        {# SNOW-1124: the bulletin page's own problem cards, outside the       #}
-        {# one-link block above — their prose and field notes may hold links. #}
-        {% if panel.problem_cards %}
-            <section class="mb-6" aria-labelledby="resort-problems-heading" data-testid="resort-problems">
-                {% translate "Avalanche Problems" as avalanche_problems_label %}
-                {% include "includes/_eyebrow.html" with tag="h3" heading_id="resort-problems-heading" text=avalanche_problems_label class_extra="mb-3" only %}
-                {% if problem_band_note %}
-                    <p class="-mt-1 mb-3 text-caption text-text-2" data-testid="resort-problem-band-note">
-                        {% blocktrans with resort=resort.name base=resort.base_elevation_m top=resort.top_elevation_m trimmed %}
-                            Compared with {{ resort }}'s lift range ({{ base }}–{{ top }} m). Off-piste terrain may
-                            differ.
-                        {% endblocktrans %}
-                    </p>
-                {% endif %}
-                {% for row in problem_rows %}
-                    {% include "public/_rating_block.html" with card=row.card %}
-                    {% if row.relation_text %}
-                        <p class="-mt-2 mb-4 text-caption text-text-2" data-testid="resort-problem-band">
-                            {{ row.relation_text }}
-                        </p>
+        <div class="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
+            <div class="min-w-0 lg:flex-1">
+                {# SNOW-1122: the target search terms in the body, not only in the   #}
+                {# meta tags — people search "{resort} avalanche" / "conditions".     #}
+                {% translate "Avalanche danger and mountain conditions" as conditions_heading_label %}
+                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-conditions-heading" text=conditions_heading_label class_extra="mb-2" only %}
+                {# SNOW-807: the whole danger area is ONE link to the bulletin —     #}
+                {# keep exactly one <a> inside [data-testid="resort-danger"].         #}
+                {# SNOW-1124: the tile reads the bulletin page's panel, not a copy.   #}
+                <div class="mb-6" data-testid="resort-danger">
+                    <a
+                        href="{{ bulletin_url }}"
+                        class="hover-affordance flex flex-wrap items-center gap-4 rounded-card border border-border p-4"
+                        data-testid="resort-danger-link"
+                    >
+                        {% if panel %}
+                            <span
+                                class="danger-tile"
+                                data-level="{{ panel.danger_key }}"
+                                data-testid="resort-danger-chip"
+                            >{{ panel.danger_number }}{{ panel.danger_subdivision }}</span>
+                            <span
+                                class="text-sm text-text-2"
+                                data-testid="resort-danger-label"
+                            >{{ panel.danger_label }}</span>
+                        {% else %}
+                            <span class="text-sm text-text-3" data-testid="resort-no-rating">
+                                {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
+                                    {{ d }}{% endblocktrans %}
+                            </span>
+                        {% endif %}
+                        <span class="text-sm font-medium text-text-1 underline">{% trans "Full bulletin →" %}</span>
+                    </a>
+                    {% if panel %}
+                        <div class="mt-4">
+                            {% include "public/_bulletin_headline.html" %}
+                        </div>
                     {% endif %}
-                {% endfor %}
-            </section>
-        {% endif %}
+                </div>
 
-        {% comment %}
+                {# SNOW-1124: the bulletin page's own problem cards, outside the       #}
+                {# one-link block above — their prose and field notes may hold links. #}
+                {% if panel.problem_cards %}
+                    <section class="mb-6" aria-labelledby="resort-problems-heading" data-testid="resort-problems">
+                        {% translate "Avalanche Problems" as avalanche_problems_label %}
+                        {% include "includes/_eyebrow.html" with tag="h3" heading_id="resort-problems-heading" text=avalanche_problems_label class_extra="mb-3" only %}
+                        {% if problem_band_note %}
+                            <p class="-mt-1 mb-3 text-caption text-text-2" data-testid="resort-problem-band-note">
+                                {% blocktrans with resort=resort.name base=resort.base_elevation_m top=resort.top_elevation_m trimmed %}
+                                    Compared with {{ resort }}'s lift range ({{ base }}–{{ top }} m). Off-piste
+                                    terrain may differ.
+                                {% endblocktrans %}
+                            </p>
+                        {% endif %}
+                        {% for row in problem_rows %}
+                            {% include "public/_rating_block.html" with card=row.card %}
+                            {% if row.relation_text %}
+                                <p class="-mt-2 mb-4 text-caption text-text-2" data-testid="resort-problem-band">
+                                    {{ row.relation_text }}
+                                </p>
+                            {% endif %}
+                        {% endfor %}
+                    </section>
+                {% endif %}
+
+                {% comment %}
             SNOW-1126 — the season strip. The region's danger day by day
             through the running 1 Nov – 30 Apr season (the one just ended,
             from May to October), rendered server-side so a crawler reads
@@ -262,80 +296,74 @@ Context expected (built by ``apps.public.views.resort_detail``):
             and the indexable content. The grid is the bulletin page's own
             (_season_calendar.html) with inert=True: no cell links to its
             day, the danger area above is the page's one bulletin link.
-        {% endcomment %}
-        {% if season_summary %}
-            <section class="mb-6" aria-labelledby="resort-season-heading" data-testid="resort-season">
-                {% translate "Danger through the season" as season_heading_label %}
-                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-season-heading" text=season_heading_label class_extra="mb-2" only %}
-                <p class="mb-2 text-sm text-text-2" data-testid="resort-season-summary">
-                    {% blocktrans with label=season_summary.season_label count days=season_summary.days_with_bulletin trimmed %}
-                        Season {{ label }}: {{ days }} day with a bulletin.
-                    {% plural %}
-                        Season {{ label }}: {{ days }} days with a bulletin.
-                    {% endblocktrans %}
-                    {% blocktrans count days=season_summary.considerable_or_higher trimmed %}
-                        {{ days }} day at Considerable or higher.
-                    {% plural %}
-                        {{ days }} days at Considerable or higher.
-                    {% endblocktrans %}
-                </p>
-                <ul class="mb-2 flex flex-wrap gap-x-3 text-sm text-text-3" data-testid="resort-season-levels">
-                    {% for key, count in season_summary.level_counts %}
-                        <li data-level="{{ key }}">
-                            {% blocktrans with level=key|danger_level_digit|danger_level_label trimmed count days=count %}
-                                {{ level }}: {{ days }} day
+                {% endcomment %}
+                {% if season_summary %}
+                    <section class="mb-6" aria-labelledby="resort-season-heading" data-testid="resort-season">
+                        {% translate "Danger through the season" as season_heading_label %}
+                        {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-season-heading" text=season_heading_label class_extra="mb-2" only %}
+                        <p class="mb-2 text-sm text-text-2" data-testid="resort-season-summary">
+                            {% blocktrans with label=season_summary.season_label count days=season_summary.days_with_bulletin trimmed %}
+                                Season {{ label }}: {{ days }} day with a bulletin.
                             {% plural %}
-                                {{ level }}: {{ days }} days
+                                Season {{ label }}: {{ days }} days with a bulletin.
                             {% endblocktrans %}
-                        </li>
-                    {% endfor %}
-                </ul>
-                <div class="overflow-x-auto">
-                    {% include "public/partials/_season_calendar.html" with season_calendar=season_strip inert=True %}
-                </div>
-            </section>
-        {% endif %}
+                            {% blocktrans count days=season_summary.considerable_or_higher trimmed %}
+                                {{ days }} day at Considerable or higher.
+                            {% plural %}
+                                {{ days }} days at Considerable or higher.
+                            {% endblocktrans %}
+                        </p>
+                        <ul class="mb-2 flex flex-wrap gap-x-3 text-sm text-text-3" data-testid="resort-season-levels">
+                            {% for key, count in season_summary.level_counts %}
+                                <li data-level="{{ key }}">
+                                    {% blocktrans with level=key|danger_level_digit|danger_level_label trimmed count days=count %}
+                                        {{ level }}: {{ days }} day
+                                    {% plural %}
+                                        {{ level }}: {{ days }} days
+                                    {% endblocktrans %}
+                                </li>
+                            {% endfor %}
+                        </ul>
+                        <div class="overflow-x-auto">
+                            {% include "public/partials/_season_calendar.html" with season_calendar=season_strip inert=True %}
+                        </div>
+                    </section>
+                {% endif %}
 
-        <div class="mb-6">
-            {% include "favourites/partials/_resort_favourite_button.html" %}
-        </div>
-
-        {# ── Forecasts: the resort's curated locations, each a link (SNOW-807) ── #}
-        {% if locations %}
-            <section class="mt-6" aria-labelledby="resort-locations-heading" data-testid="resort-locations">
-                {% translate "Forecasts" as locations_heading_label %}
-                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-locations-heading" text=locations_heading_label class_extra="mb-2" only %}
-                <ul class="flex flex-col gap-2 text-sm">
-                    {% for place in locations %}
-                        <li data-testid="{{ place.testid }}">
-                            <a
-                                class="hover-affordance text-text-1 underline"
-                                href="{{ place.url }}"
-                                data-testid="{{ place.testid }}-link"
-                            >{{ place.label }}</a>
-                            <span class="text-text-3">
-                                <span aria-hidden="true">
-                                    &middot;
-                                </span>{{ place.role_label }}{% if place.elevation_m is not None %}<span
-                                        aria-hidden="true"
-                                    >
-                                        &middot;
-                                    </span>{{ place.elevation_m|floatformat:0 }} m{% endif %}
-                            </span>
-                            {% if place.weather_display %}
-                                <div class="mt-1">
-                                    {% include "includes/_weather_panel.html" with weather_display=place.weather_display testid_prefix=place.testid|add:"-weather" location_label="" brief=True only %}
-                                </div>
-                            {% endif %}
-                        </li>
-                    {% endfor %}
-                </ul>
-            </section>
-        {% endif %}
-
-        {# ── Observations: on the map, reports sheet open, flown here (SNOW-807) ── #}
-        <div class="mt-6" data-testid="resort-observations">
-            {% include "includes/_button.html" with label=_("Reports near here on the map") href=observations_map_url variant="secondary" size="compact" %}
+                {# ── Forecasts: the resort's curated locations, each a link (SNOW-807) ── #}
+                {% if locations %}
+                    <section class="mt-6" aria-labelledby="resort-locations-heading" data-testid="resort-locations">
+                        {% translate "Forecasts" as locations_heading_label %}
+                        {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-locations-heading" text=locations_heading_label class_extra="mb-2" only %}
+                        <ul class="flex flex-col gap-2 text-sm">
+                            {% for place in locations %}
+                                <li data-testid="{{ place.testid }}">
+                                    <a
+                                        class="hover-affordance text-text-1 underline"
+                                        href="{{ place.url }}"
+                                        data-testid="{{ place.testid }}-link"
+                                    >{{ place.label }}</a>
+                                    <span class="text-text-3">
+                                        <span aria-hidden="true">
+                                            &middot;
+                                        </span>{{ place.role_label }}{% if place.elevation_m is not None %}<span
+                                                aria-hidden="true"
+                                            >
+                                                &middot;
+                                            </span>{{ place.elevation_m|floatformat:0 }} m{% endif %}
+                                    </span>
+                                    {% if place.weather_display %}
+                                        <div class="mt-1">
+                                            {% include "includes/_weather_panel.html" with weather_display=place.weather_display testid_prefix=place.testid|add:"-weather" location_label="" brief=True only %}
+                                        </div>
+                                    {% endif %}
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </section>
+                {% endif %}
+            </div>
+            {% include "public/partials/_resort_facts.html" with class_extra="lg:w-80 lg:shrink-0" %}
         </div>
     </main>
 {% endblock %}

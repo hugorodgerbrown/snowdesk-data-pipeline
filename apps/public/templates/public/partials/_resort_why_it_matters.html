@@ -33,9 +33,16 @@ Context variables expected:
   can_favourite — bool: True when the requesting user is authenticated.
                   Reused as the "is signed in" signal, exactly as the popup
                   does for the favourite star.
+  tagline       — bool, optional (SNOW-1155): the resort page's header
+                  draws the curated line as the page's tagline, at body
+                  size (``text-base``) rather than the popup's ``text-sm``.
+                  Only the curated branch changes; the blank states are
+                  the same on every surface.
 {% endcomment %}
 {% if resort.why_it_matters %}
-    <p class="text-sm text-text-2" data-testid="resort-why-it-matters">{{ resort.why_it_matters }}</p>
+    <p class="{% if tagline %}text-base{% else %}text-sm{% endif %} text-text-2" data-testid="resort-why-it-matters">
+        {{ resort.why_it_matters }}
+    </p>
 {% elif is_staff %}
     <p
         class="inline-block rounded-tag border border-dashed border-border px-2 py-0.5 text-xs text-text-3"

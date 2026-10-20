@@ -2,8 +2,12 @@
 tests/public/test_resort_detail.py — Tests for the resort detail page (SNOW-504).
 
 Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
-  - 200 + content: resort name, canton, parent region name, today's danger
-    chip, and a "Full bulletin" link to the region's evergreen bulletin.
+  - 200 + content: resort name, parent region name, today's danger chip,
+    and a "Full bulletin" link to the region's evergreen bulletin.
+  - SNOW-1155: the header frame — the mono eyebrow (alternative name ·
+    canton · country, each part omitted when blank, the element omitted
+    when all are), the "See on the map" link to ``/map/?resort=<slug>``,
+    and the facts block as a definition list.
   - The pre-slug ``/resorts/<id>/<slug>/`` form 301s to the canonical URL
     whatever suffix it carries (``resort_legacy_redirect``), and does not
     loop.
@@ -12,8 +16,8 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
   - Favourite-star state: sign-in CTA for anonymous/ineligible visitors,
     the button (unfavourited or favourited) for eligible ones.
   - SNOW-807: the danger area is one link to the bulletin; each curated
-    location is a link to its weather page; the observations section is
-    one link to the map with the reports sheet open, flown to the resort.
+    location is a link to its weather page. (SNOW-807's observations link
+    was replaced by the header's "See on the map" in SNOW-1155.)
   - SNOW-1125: each location row carries today's brief one-day weather
     (icon, condition, high/low, snowfall, wind — no freezing level, no sun
     times), read in one batched query; no row today means the link alone.
@@ -34,10 +38,11 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
     renders; neither when the resort lacks a base or top elevation.
   - SNOW-1123: the schema.org SkiResort JSON-LD — core properties, optional
     ones omitted when unset, and a ``</script>`` that cannot break out.
-  - Resort facts block (SNOW-695): the curated Resort columns the page
-    stored but never rendered. Every cell renders when curated, an unset
-    cell is omitted, and the whole block is omitted rather than rendered
-    empty when nothing is curated at all.
+  - Resort facts block (SNOW-695, a ``<dl>`` since SNOW-1155): the curated
+    Resort columns the page stored but never rendered. Every row renders
+    when curated, an unset row is omitted, the whole block is omitted
+    rather than rendered empty when nothing is curated at all, elevation
+    carries a thousands separator, and notes is a full-width row.
   - SNOW-1126: the season strip and its text summary render server-side in
     the plain (non-HTMX) response with correct counts, are omitted when no
     day had a bulletin, show last season from an October date, never link
@@ -78,11 +83,13 @@ from tests.factories import (
     BulletinFactory,
     FavouriteFactory,
     LocationFactory,
+    MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
     ResortFactory,
     ResortLocationFactory,
+    SubRegionFactory,
     UserFactory,
     WeatherFactory,
 )
@@ -139,7 +146,7 @@ class TestResortDetailContent:
     """200 response with the expected content."""
 
     def test_returns_200_with_resort_and_region_content(self) -> None:
-        """The page shows the resort name, canton, and parent region name."""
+        """The page shows the resort name and parent region name."""
         region = MicroRegionFactory.create(name="Martigny – Verbier")
         resort = ResortFactory.create(name="Verbier", region=region, canton="VS")
 
@@ -149,7 +156,6 @@ class TestResortDetailContent:
         assert response.status_code == 200
         content = response.content.decode()
         assert "Verbier" in content
-        assert "VS" in content
         assert "Martigny" in content
 
     def test_includes_name_alt_when_set(self) -> None:
@@ -699,6 +705,24 @@ class TestResortDetailFavouriteState:
         assert 'data-testid="resort-favourite-signin"' in content
         assert 'data-testid="resort-favourite-toggle"' not in content
 
+    def test_anonymous_signin_cta_is_the_save_resort_button(self) -> None:
+        """SNOW-1155: the same "Save resort" button shape, linking to sign-in."""
+        resort = ResortFactory.create()
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+        link = re.search(
+            r'<a\s+href="([^"]+)"\s+data-testid="resort-favourite-signin"'
+            r'\s+class="([^"]+)"\s*>(.*?)</a>',
+            content,
+            re.S,
+        )
+
+        assert link is not None
+        assert link.group(1) == reverse("accounts:sign_in")
+        assert "border-text-1" in link.group(2)  # button_classes secondary
+        assert "Save resort" in link.group(3)
+        assert "<svg" in link.group(3)
+
     def test_authenticated_not_favourited_shows_unfavourited_button(self) -> None:
         """An eligible, not-yet-favouriting user sees the toggle, unfavourited."""
         resort = ResortFactory.create()
@@ -1224,21 +1248,146 @@ class TestResortStructuredData:
         assert _json_ld(content)["name"] == "Evil</script><b>x</b>"
 
 
-@pytest.mark.django_db
-class TestResortObservationsLink:
-    """SNOW-807: reports are on the map, with the sheet open and the camera here."""
+def _valais_region(**kwargs: Any) -> MicroRegion:
+    """Create a micro-region under CH-4 Valais, as Verbier's is."""
+    major = MajorRegionFactory.create(prefix="CH-4", country="CH", name_en="Valais")
+    subregion = SubRegionFactory.create(prefix="CH-41", major=major)
+    return MicroRegionFactory.create(region_id="CH-4115", subregion=subregion, **kwargs)
 
-    def test_links_to_the_map_with_the_reports_sheet_open_at_this_resort(
-        self,
-    ) -> None:
+
+def _eyebrow_text(content: str) -> str | None:
+    """Return the rendered eyebrow's text, or None when there is none."""
+    match = re.search(r'data-testid="resort-eyebrow"\s*>([^<]*)<', content)
+    return html.unescape(match.group(1)).strip() if match else None
+
+
+@pytest.mark.django_db
+class TestResortHeader:
+    """SNOW-1155: the header frame — eyebrow, title, tagline, two actions."""
+
+    def test_eyebrow_names_alternative_name_canton_and_country(self) -> None:
+        """All three parts render in order, joined by a middle dot."""
+        resort = ResortFactory.create(
+            name="Verbier", name_alt="Les 4 Vallées", region=_valais_region()
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert _eyebrow_text(content) == "Les 4 Vallées · Valais · Switzerland"
+        # A paragraph, not a heading: the page's one h1 is the name.
+        assert re.search(r'<p\s+class="[^"]*"\s+data-testid="resort-eyebrow"', content)
+
+    def test_eyebrow_omits_a_blank_alternative_name(self) -> None:
+        """No name_alt means no leading part and no dangling separator."""
+        resort = ResortFactory.create(name_alt="", region=_valais_region())
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert _eyebrow_text(content) == "Valais · Switzerland"
+
+    def test_eyebrow_omits_a_blank_canton(self) -> None:
+        """A major region with no English name drops the canton part."""
+        major = MajorRegionFactory.create(prefix="CH-9", country="CH", name_en="")
+        region = MicroRegionFactory.create(
+            region_id="CH-9111",
+            subregion=SubRegionFactory.create(prefix="CH-91", major=major),
+        )
+        resort = ResortFactory.create(name_alt="Alt", region=region)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert _eyebrow_text(content) == "Alt · Switzerland"
+
+    def test_eyebrow_omits_an_unknown_country(self) -> None:
+        """A country code with no English name is left out, not shown raw."""
+        major = MajorRegionFactory.create(prefix="DE-1", country="DE", name_en="Bayern")
+        region = MicroRegionFactory.create(
+            region_id="DE-1111",
+            subregion=SubRegionFactory.create(prefix="DE-11", major=major),
+        )
+        resort = ResortFactory.create(name_alt="", region=region)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert _eyebrow_text(content) == "Bayern"
+
+    def test_no_parts_means_no_eyebrow_element(self) -> None:
+        """Every part blank renders no empty eyebrow."""
+        major = MajorRegionFactory.create(prefix="XX-1", country="XX", name_en="")
+        region = MicroRegionFactory.create(
+            region_id="XX-1111",
+            subregion=SubRegionFactory.create(prefix="XX-11", major=major),
+        )
+        resort = ResortFactory.create(name_alt="", region=region)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-eyebrow"' not in content
+        assert 'data-testid="resort-heading"' in content
+
+    def test_the_old_location_lines_are_gone(self) -> None:
+        """The separate canton · region line no longer renders."""
+        resort = ResortFactory.create(canton="VS", region=_valais_region())
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-location"' not in content
+
+    def test_see_on_the_map_links_to_the_resort_on_the_map(self) -> None:
+        """The primary action flies the map to this resort's pin."""
         resort = ResortFactory.create(name="Verbier", geocoded=True)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        assert 'data-testid="resort-observations"' in content
-        assert f'href="/map/?panel=reports&amp;resort={resort.slug}"' in content
-        assert "Reported nearby" not in content
-        assert "Reported in this region" not in content
+        link = re.search(
+            r'<a\s+href="([^"]+)"[^>]*data-testid="resort-map-link"', content
+        )
+        assert link is not None
+        assert link.group(1) == f"{reverse('public:map')}?resort={resort.slug}"
+        assert "See on the map" in content
+
+    def test_see_on_the_map_is_hidden_without_a_pin(self) -> None:
+        """A resort with no pin is not on the map feed, so no map action."""
+        resort = ResortFactory.create(latitude=None, longitude=None, location=None)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-map-link"' not in content
+        assert "See on the map" not in content
+
+    def test_the_reports_link_is_gone(self) -> None:
+        """SNOW-807's "Reports near here on the map" was replaced (SNOW-1155)."""
+        resort = ResortFactory.create(geocoded=True)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-observations"' not in content
+        assert "panel=reports" not in content
+        assert "Reports near here" not in content
+
+    def test_actions_sit_in_the_header_before_the_sections(self) -> None:
+        """Save and the map link are in the header, above today's danger."""
+        resort = ResortFactory.create(geocoded=True)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        actions = content.index('data-testid="resort-actions"')
+        assert actions < content.index('data-testid="resort-danger"')
+        assert actions < content.index('data-testid="resort-favourite-signin"')
+        assert actions < content.index('data-testid="resort-map-link"')
+
+    def test_the_facts_come_after_the_main_column(self) -> None:
+        """About this resort is last in the source — last on a phone."""
+        resort = ResortFactory.create(num_lifts=34, geocoded=True)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert content.index('data-testid="resort-facts"') > content.index(
+            'data-testid="resort-danger"'
+        )
+        assert content.index('data-testid="resort-facts"') > content.index(
+            'data-testid="resort-locations"'
+        )
 
 
 @pytest.mark.django_db
@@ -1344,10 +1493,10 @@ class TestResortFacts:
             "resort-facts-notes",
         ):
             assert f'data-testid="{testid}"' in content, testid
-        assert "1620&ndash;3899 m" in content
+        assert "1,620&ndash;3,899 m" in content
         assert "34" in content
         assert "196.5 km" in content
-        assert "23 Nov&ndash;27 Apr" in content
+        assert "23 Nov &ndash; 27 Apr" in content
         assert "Zermatt Bergbahnen AG" in content
         assert "Theodul glacier" in content
         # Compare the rendered href exactly rather than asking whether the
@@ -1389,13 +1538,69 @@ class TestResortFacts:
 
         assert 'data-testid="resort-facts"' in content
         assert 'data-testid="resort-facts-elevation"' in content
-        assert "from 1343 m" in content
+        assert "from 1,343 m" in content
         assert "from 14 Dec" in content
         # Nothing curated for these, so no cell at all.
         assert "resort-facts-runs" not in content
         assert "resort-facts-piste" not in content
         assert "resort-facts-operator" not in content
         assert "resort-facts-website" not in content
+        assert "resort-facts-notes" not in content
+
+    def test_facts_are_a_definition_list_under_their_own_eyebrow(self) -> None:
+        """One <dl>, a <dt>/<dd> per row; the eyebrow sits above the card."""
+        resort = ResortFactory.create(**self._fully_curated())
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+        block = content[content.index('data-testid="resort-facts"') :]
+        block = block[: block.index("</section>")]
+
+        assert block.count("<dl") == 1
+        assert block.count("<dt") == 8
+        assert block.count("<dd") == 8
+        heading = block.index('id="resort-facts-heading"')
+        assert "About this resort" in block[heading : block.index("<dl")]
+        assert heading < block.index("rounded-card")
+
+    def test_website_row_reads_official_website_with_an_external_mark(
+        self,
+    ) -> None:
+        """The value is the words, underlined, with the external-link glyph."""
+        resort = ResortFactory.create(website="https://www.verbier.ch/")
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+        row = content.split('data-testid="resort-facts-website"')[1]
+        row = row[: row.index("</dd>")]
+
+        assert "Official website" in row
+        assert "underline" in row
+        assert 'target="_blank"' in row
+        assert "M14 4h6v6" in row  # includes/_icon_external_link.html
+
+    def test_notes_is_a_full_width_left_aligned_row(self) -> None:
+        """Notes drops the label/value split and reads as prose."""
+        resort = ResortFactory.create(notes="Glacier access from the top lift.")
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+        row = content.split('data-testid="resort-facts-notes"')[1]
+        row = row[: row.index("</dd>")]
+
+        assert "Glacier access from the top lift." in row
+        assert "text-left" in row
+        assert (
+            "justify-between"
+            not in content.split('data-testid="resort-facts-notes"')[0].rsplit(
+                "<div", 1
+            )[1]
+        )
+
+    def test_no_notes_means_no_notes_row(self) -> None:
+        """An unset notes field renders no row, even with other facts set."""
+        resort = ResortFactory.create(num_lifts=12, notes="")
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-facts-lifts"' in content
         assert "resort-facts-notes" not in content
 
     def test_zero_lifts_renders_rather_than_vanishing(self) -> None:

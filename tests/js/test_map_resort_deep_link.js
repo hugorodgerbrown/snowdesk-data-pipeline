@@ -2,8 +2,9 @@
  * tests/js/test_map_resort_deep_link.js — /?resort=<slug> flies to that
  * resort's pin (SNOW-807, static/js/map.js).
  *
- * The resort page's "reports near here" link is /?panel=reports&resort=<slug>.
- * The sheet half is test_map_panel_deep_link.js; this is the camera half,
+ * The resort page's "See on the map" link is /map/?resort=<slug> (SNOW-1155;
+ * SNOW-807's "reports near here" link added ?panel=reports). The sheet half
+ * is test_map_panel_deep_link.js; this is the camera half,
  * which resolves the resort by identity in the resorts source — its
  * feature id is the slug since SNOW-796 — and flies to it, the favourite
  * deep link's shape applied to a source that already exists. Cases:

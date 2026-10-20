@@ -1,0 +1,30 @@
+{% comment %}
+templates/includes/_icon_external_link.html — the external-link glyph: an
+arrow leaving a box (SNOW-1155).
+
+Marks a link that leaves Snowdesk — first drawn beside the resort facts
+block's "Official website" value, which opens the operator's own site in a
+new tab.
+
+STYLE — a 24-grid 2px stroke, matching the rest of the house set
+(docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 14, the
+            size that sits beside 15px body text.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:14 }}"
+    height="{{ size|default:14 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+</svg>

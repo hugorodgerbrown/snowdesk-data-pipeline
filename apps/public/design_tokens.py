@@ -1417,14 +1417,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="resort-facts",
         label="Resort facts block",
         description=(
-            "The curated Resort columns the detail page stores but never "
-            "rendered before SNOW-695 — operator, website, lifts, runs, "
-            "piste, elevation range, typical season and notes. Unlike the "
+            'The resort page\'s "About this resort" sidebar (SNOW-695, '
+            "redrawn as a definition list by SNOW-1155): a section eyebrow "
+            "above a card holding one <dl> — mono uppercase label left, "
+            "15px value (text-label) right-aligned, a hairline between "
+            "rows — for operator, website, lifts, runs, piste, elevation "
+            "range, typical season and notes. Elevation carries a thousands "
+            "separator (1,500–3,330 m), the season reads 1 Dec – 30 Apr, the "
+            'website is "Official website" with the external-link glyph, '
+            "and notes is the one full-width, left-aligned row. Unlike the "
             "resort-popup meta row, which keeps a dashed placeholder so "
             "missing curation stays visible to staff, this block omits an "
-            "unset cell entirely and omits the whole container when every "
-            "field is unset. Elevation and season each compose two nullable "
-            "columns and degrade to a one-sided from/to reading."
+            "unset row entirely and omits the whole section, eyebrow "
+            "included, when every field is unset. Elevation and season each "
+            "compose two nullable columns and degrade to a one-sided "
+            "from/to reading."
         ),
         kind="components",
         partial="public/partials/_resort_facts.html",
@@ -1437,6 +1444,8 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         description=(
             'The curated one-sentence "why it matters" line for a resort '
             "(SNOW-542), shared by the resort page and the resort-pin popup. "
+            "On the resort page it is the header's tagline (tagline=True, "
+            "body size rather than text-sm; SNOW-1155). "
             "Blank is a first-class state with three branches: a dashed "
             "curation hint for staff, a register prompt for anonymous "
             "visitors, and nothing at all for a signed-in reader (who has no "

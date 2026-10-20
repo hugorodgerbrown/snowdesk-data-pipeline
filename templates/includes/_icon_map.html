@@ -1,0 +1,30 @@
+{% comment %}
+templates/includes/_icon_map.html — the map glyph: a folded paper map
+(SNOW-1155).
+
+Drawn on the resort page's "See on the map" button, the one link from a
+resort to its pin on the map. Three panels, two folds — the shape the
+design board draws, on the house grid.
+
+STYLE — a 24-grid 2px stroke, matching the rest of the house set
+(docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 18.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z" />
+    <path d="M9 4v14M15 6v14" />
+</svg>
