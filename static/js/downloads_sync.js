@@ -235,6 +235,21 @@
   }
 
   /**
+   * The account's `shape` for a local record's `type` (SNOW-1136).
+   *
+   * A drop zone is a circle — its tiles are clipped to it
+   * (`basemap_download_core.js`'s `circleBlob`) — and everything else is a
+   * box. The inverse is `basemap_manage_core.js`'s `reconcileAreas`, which
+   * reads `shape: 'circle'` back as `type: 'dropzone'`.
+   *
+   * @param {string|undefined} type
+   * @returns {'box'|'circle'}
+   */
+  function shapeFor(type) {
+    return type === 'dropzone' ? 'circle' : 'box';
+  }
+
+  /**
    * Record one downloaded area against the account.
    *
    * Called from the two places a completed download is already recorded
@@ -248,13 +263,18 @@
    * is.
    *
    * @param {{areaId: string, regionId?: string, bbox?: number[],
-   *   basemapKey?: string|null, name?: string, terrain?: boolean}} record
+   *   basemapKey?: string|null, name?: string, terrain?: boolean,
+   *   type?: string}} record
    *   The area as the local writer has it. `bbox` is `[west, south, east,
    *   north]` in (lon, lat) order, matching the server's own carve-out; it
    *   is required for a custom area and ignored for a region, whose tiles
    *   are computed server-side from its real boundary. SNOW-1072:
    *   `terrain` is whether the download included terrain data, posted as
-   *   "true"/"false" so another device repeats the choice.
+   *   "true"/"false" so another device repeats the choice. SNOW-1136:
+   *   `type` is the local record's kind — 'dropzone' posts `shape:
+   *   "circle"`, anything else (a framed area, a region, an older record
+   *   with no type) posts "box" — so another device restores a drop zone
+   *   as a drop zone rather than as the rectangle around it.
    * @returns {Promise<boolean>} Whether the write was queued. Never
    *   rejects — see `_enqueue`.
    */
@@ -270,6 +290,7 @@
       basemap_key: record.basemapKey || '',
       name: record.name || '',
       terrain: record.terrain ? 'true' : 'false',
+      shape: shapeFor(record.type),
     });
     if (queued) await _markSynced(record.areaId);
     return queued;
@@ -375,8 +396,8 @@
    *
    * @returns {Promise<Array<{area_id: string, kind: string,
    *   region_id: string, bbox: number[]|null, basemap_key: string,
-   *   name: string, terrain: boolean, created_at: string}>>} Never
-   *   rejects.
+   *   name: string, terrain: boolean, shape: string, created_at: string}>>}
+   *   Never rejects.
    */
   async function accountAreas() {
     if (!isEnabled()) return [];
@@ -488,6 +509,8 @@
         basemapKey: area.basemapKey,
         name: accountName(area),
         terrain: !!area.terrain,
+        // SNOW-1136: box or drop zone — see `shapeFor`.
+        type: area.type,
       });
       if (ok) pushed += 1;
     }
@@ -496,6 +519,7 @@
 
   self.pwaDownloadsSync = Object.freeze({
     accountName: accountName,
+    shapeFor: shapeFor,
     isEnabled: isEnabled,
     push: push,
     rename: rename,

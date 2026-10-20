@@ -187,6 +187,22 @@ describe('push', () => {
     expect(bodyOf(window.pwaMutationQueue.enqueue, 1).terrain).toBe('false');
   });
 
+  it('posts a drop zone as a circle and everything else as a box (SNOW-1136)', async () => {
+    // The two values area_sync accepts. A drop zone's tiles are clipped to
+    // its circle, so the account has to say so for another device to
+    // restore it as a drop zone rather than as the rectangle around it.
+    const bbox = [7.9, 46.4, 8.1, 46.6];
+    await sync.push({ areaId: 'custom-d1', bbox: bbox, type: 'dropzone' });
+    await sync.push({ areaId: 'custom-c1', bbox: bbox, type: 'custom' });
+    await sync.push({ areaId: 'custom-c2', bbox: bbox });
+    await sync.push({ areaId: 'region-CH-4115', regionId: 'CH-4115' });
+
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 0).shape).toBe('circle');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 1).shape).toBe('box');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 2).shape).toBe('box');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 3).shape).toBe('box');
+  });
+
   it('does nothing at all on a page with no downloads surface', async () => {
     // No config element means no sync URL to post to. The no-op has to be
     // immediate rather than a request that fails, because this runs inside
@@ -479,6 +495,14 @@ describe('adopt', () => {
 
     expect(bodyOf(window.pwaMutationQueue.enqueue, 0).terrain).toBe('true');
     expect(bodyOf(window.pwaMutationQueue.enqueue, 1).terrain).toBe('false');
+  });
+
+  it('carries a drop zone\'s shape to the account (SNOW-1136)', async () => {
+    installDownloads([AREAS[0], { ...AREAS[1], type: 'dropzone' }]);
+    await sync.adopt();
+
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 0).shape).toBe('box');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 1).shape).toBe('circle');
   });
 
   it('does nothing for an anonymous visitor', async () => {

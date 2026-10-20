@@ -279,8 +279,10 @@
    *   onDevice: boolean, synced: boolean, redownloadable: boolean,
    *   bbox: number[]|null, regionId: string, deps: string[],
    *   z: Object|null, band: number[]|null, contentIncomplete: boolean,
-   *   terrain: boolean}>}
+   *   terrain: boolean, storedName: string}>}
    *   SNOW-1072: ``terrain`` is whether the area includes terrain data.
+   *   SNOW-1136: ``storedName`` is the name as stored, '' when never
+   *   renamed — unlike ``label``, which is always something to show.
    *   SNOW-936: ``deletable``, ``deps``, ``z`` and ``band`` were emitted
    *   here for tickets' worth of releases without being named above. This
    *   file is not ``@ts-check``'d, so this block is the ONLY contract a
@@ -445,6 +447,10 @@
         // row on its class tiles too, and "Download here", which repeats
         // the account row's choice on this device.
         terrain: !!area.terrain,
+        // SNOW-1136: the name as STORED — '' for an area never renamed,
+        // whose `label` is a localised default. Read by "Download here",
+        // which restores an account-only area under its stored name.
+        storedName: typeof area.storedName === 'string' ? area.storedName : '',
       });
     }
 
@@ -563,7 +569,8 @@
    *   orphans, keyed by area id. An orphan with no measurement counts as
    *   0 bytes — visible and deletable, but not guessed at.
    * @param {Array<{area_id: string, name?: string, basemap_key?: string,
-   *   bbox?: number[]|null, region_id?: string, created_at?: string}>}
+   *   bbox?: number[]|null, region_id?: string, created_at?: string,
+   *   terrain?: boolean, shape?: string}>}
    *   [accountAreas] The rows on the user's account, in the server's own
    *   JSON shape (``downloads/areas.json``) — snake_case, because
    *   translating it in the transport layer would put the same mapping in
@@ -587,7 +594,10 @@
    *   error; it is the documentation that hides the hop.
    *
    *   ``type``, ``z``, ``band`` and ``contentIncomplete`` are OPTIONAL and
-   *   the marker is load-bearing: only the recorded branch carries them.
+   *   the marker is load-bearing: only the recorded branch carries them —
+   *   except ``type``, which SNOW-1136 also sets on an account-only row
+   *   whose ``shape`` is ``'circle'`` (a drop zone), alongside that row's
+   *   ``storedName``.
    *   An orphan has no record to read a band or a tile-row span off, and
    *   an account-only row is not on this device for its content to be
    *   behind. ``deps`` is on all three (``[]`` where there is nothing to
@@ -743,6 +753,16 @@
         // SNOW-1072: the account's record of the opt-in, so "Download
         // here" fetches the same tile families the first device did.
         terrain: !!accountRow.terrain,
+        // SNOW-1136: the account's `shape` read back as the local record's
+        // `type` — the inverse of `downloads_sync.js`'s `shapeFor`. A
+        // circle is a drop zone, so `manageRows` names the row "Drop zone"
+        // and "Download here" restores it as one rather than as the box
+        // around it. Absent for a box, which reads as what it always did.
+        type: accountRow.shape === 'circle' ? 'dropzone' : undefined,
+        // SNOW-1136: the name as the account STORES it — '' for an area
+        // never renamed — so a restore writes the stored name back under
+        // the stored id rather than freezing a localised default into it.
+        storedName: accountRow.name || '',
       });
     }
     accountOnly.sort(function (a3, b3) {

@@ -1709,6 +1709,8 @@ async function _appendCustomArea(area) {
     // SNOW-1072: the opt-in travels with the definition, so another
     // device downloading this area fetches the same tile families.
     terrain: !!area.terrain,
+    // SNOW-1136: and its kind, so a drop zone is restored as a drop zone.
+    type: area.type,
   });
 }
 

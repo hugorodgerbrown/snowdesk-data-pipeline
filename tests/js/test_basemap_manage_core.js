@@ -1056,3 +1056,62 @@ describe('the terrain-data flag travels to the row (SNOW-1072)', () => {
     expect(rows[0].terrain).toBe(true);
   });
 });
+
+describe('a drop zone on the account stays a drop zone (SNOW-1136)', () => {
+  const isCustomAreaId = (id) => String(id).startsWith('custom-');
+  const accountRow = (overrides) => ({
+    area_id: 'custom-d1',
+    kind: 'CUSTOM',
+    region_id: '',
+    bbox: [7.9, 46.4, 8.1, 46.6],
+    basemap_key: 'openfreemap_liberty',
+    name: 'Drop zone 3',
+    terrain: false,
+    shape: 'circle',
+    created_at: '2026-07-01T00:00:00.000Z',
+    ...overrides,
+  });
+
+  it('reads an account row\'s circle back as a drop zone', () => {
+    const areas = core.reconcileAreas([], [], {}, [accountRow()]);
+
+    expect(areas[0].onDevice).toBe(false);
+    expect(areas[0].type).toBe('dropzone');
+  });
+
+  it('leaves a box as an ordinary custom area', () => {
+    const areas = core.reconcileAreas([], [], {}, [accountRow({ shape: 'box' })]);
+    expect(areas[0].type).toBeUndefined();
+
+    // An older server that sends no shape at all reads the same way.
+    const legacy = core.reconcileAreas([], [], {}, [accountRow({ shape: undefined })]);
+    expect(legacy[0].type).toBeUndefined();
+  });
+
+  it('labels the account-only row "Drop zone" through manageRows', () => {
+    const areas = core.reconcileAreas([], [], {}, [
+      accountRow(),
+      accountRow({ area_id: 'custom-c1', shape: 'box', name: 'Ridge' }),
+    ]);
+    const rows = core.manageRows(areas, { isCustomAreaId });
+
+    expect(rows.find((row) => row.id === 'custom-d1').kind).toBe('dropzone');
+    expect(rows.find((row) => row.id === 'custom-c1').kind).toBe('custom');
+  });
+
+  it('carries the stored name onto the row, \'\' when never renamed', () => {
+    const areas = core.reconcileAreas([], [], {}, [
+      accountRow(),
+      accountRow({ area_id: 'custom-c1', shape: 'box', name: '' }),
+    ]);
+    const rows = core.manageRows(areas, {
+      isCustomAreaId,
+      unnamedLabel: () => 'Custom area',
+    });
+
+    expect(rows.find((row) => row.id === 'custom-d1').storedName).toBe('Drop zone 3');
+    const unnamed = rows.find((row) => row.id === 'custom-c1');
+    expect(unnamed.storedName).toBe('');
+    expect(unnamed.label).toBe('Custom area');
+  });
+});
