@@ -2,7 +2,7 @@
 name: calendar
 description: RegionDayRating, day_rating policy, season_calendar_partial heatmap and the resort season strip (season_window, _season_cell)
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-10-20
 ---
 
 # Calendar and RegionDayRating
@@ -31,9 +31,10 @@ has nothing to add.
   start to the earlier of its end and `today + 1`. Without a `window` the
   grid is the bulletin page's, unchanged.
 - **Summary** — `summarise_season(grid)` counts the days with a bulletin,
-  the days per level, the days at Considerable or higher, and the peak
-  level with the first day it was reached. A falsy summary (no day with a
-  bulletin) omits the whole section.
+  the days per level, and the days at Considerable or higher. There is
+  deliberately no season peak: nearly every resort reaches 3 or 4 in a
+  winter, so it carries no information (SNOW-1153). A falsy summary (no
+  day with a bulletin) omits the whole section.
 - **Cells** — both grids draw each day through
   `public/partials/_season_cell.html` (component library slug
   `season-cell`). The strip passes `inert=True`: no cell links to its
