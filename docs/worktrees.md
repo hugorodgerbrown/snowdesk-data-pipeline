@@ -75,8 +75,9 @@ rather than refresh it — which is why the split exists at all.
 `import_resorts` gives every sheet-pinned resort its pin `Location`
 (`Resort.location`, SNOW-1144) as it creates the row, so a freshly seeded
 database is complete. A worktree seeded **before** SNOW-1144 has resorts
-whose pin is only the mirrored `latitude`/`longitude`, which since then is
-not enough to put them on the map — run the one-time backfill once:
+whose pin is only the mirrored `latitude`/`longitude`: they stay on the map
+through a transitional fallback (gone with SNOW-1147), but get no weather
+and show no Forecasts section — run the one-time backfill once:
 
 ```bash
 uv run python manage.py link_resort_locations --commit

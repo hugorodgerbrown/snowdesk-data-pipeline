@@ -107,13 +107,33 @@ class TestResortsGeojson:
 
         assert body["features"][0]["geometry"]["coordinates"] == [7.5, 46.5]
 
-    def test_a_mirror_without_a_location_is_not_on_the_map(self) -> None:
-        """SNOW-1144: geocoded() means "has a pin Location"."""
+    def test_a_resort_not_yet_backfilled_stays_on_the_map(self) -> None:
+        """SNOW-1144 transition: lat/lon but no Location yet is still a pin.
+
+        The window between the deploy and ``link_resort_locations
+        --commit``; SNOW-1147 removes the fallback.
+        """
         ResortFactory.create(name="Legacy", latitude=46.0, longitude=7.0, location=None)
 
         body = Client().get(reverse("api:resorts_geojson")).json()
 
-        assert body["features"] == []
+        assert len(body["features"]) == 1
+        assert body["features"][0]["geometry"]["coordinates"] == [7.0, 46.0]
+
+    def test_a_resort_not_yet_backfilled_keeps_its_popup_coordinates(self) -> None:
+        """SNOW-1144 transition: the popup's favourite star carries the pin."""
+        resort = ResortFactory.create(
+            name="Legacy", latitude=46.0, longitude=7.0, location=None
+        )
+
+        client = Client()
+        client.force_login(UserFactory.create())
+        html = client.get(
+            reverse("api:resort_popup", kwargs={"slug": resort.slug})
+        ).json()["html"]
+
+        assert 'data-resort-lat="46.0"' in html
+        assert 'data-resort-lon="7.0"' in html
 
     def test_tier_is_carried_per_feature(self) -> None:
         """SNOW-543: the curated tier reaches the layer that sizes the pin."""

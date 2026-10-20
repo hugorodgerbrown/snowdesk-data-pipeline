@@ -636,16 +636,18 @@ def list_resorts_in_region(region_id: str) -> dict[str, Any]:
         .filter(region=region)
         .select_related("region", "location")
     )
-    # SNOW-1144: the coordinate is the resort's pin Location.
+    # SNOW-1144: the coordinate is the resort's pin, through the one
+    # accessor (transitional fallback to the mirrored columns until
+    # SNOW-1147).
     resort_list = [
         {
             "name": resort.name,
-            "latitude": resort.location.latitude,
-            "longitude": resort.location.longitude,
+            "latitude": pin[0],
+            "longitude": pin[1],
             "canton": resort.canton,
         }
         for resort in resorts
-        if resort.location is not None
+        if (pin := resort.pin_coordinates) is not None
     ]
     return {
         "region_id": region.region_id,
@@ -1574,16 +1576,18 @@ def region_info(region_id: str) -> dict[str, Any]:
         .filter(region=region)
         .select_related("region", "location")
     )
-    # SNOW-1144: the coordinate is the resort's pin Location.
+    # SNOW-1144: the coordinate is the resort's pin, through the one
+    # accessor (transitional fallback to the mirrored columns until
+    # SNOW-1147).
     resort_list = [
         {
             "name": resort.name,
-            "latitude": resort.location.latitude,
-            "longitude": resort.location.longitude,
+            "latitude": pin[0],
+            "longitude": pin[1],
             "canton": resort.canton,
         }
         for resort in resorts
-        if resort.location is not None
+        if (pin := resort.pin_coordinates) is not None
     ]
 
     coverage = RegionDayRating.objects.filter(region=region).aggregate(
@@ -1880,9 +1884,10 @@ def _location_label(location: Location) -> str:
     """
     if location.name:
         return location.name
-    link = location.resort_locations.select_related("resort").first()
-    if link is not None:
-        return str(link.resort.name)
+    # SNOW-1144: a resort's pin first, then a resort linking it.
+    resort = Resort.objects.standing_at(location).first()
+    if resort is not None:
+        return str(resort.name)
     region = location.micro_regions.first()
     if region is not None:
         return str(region.name)

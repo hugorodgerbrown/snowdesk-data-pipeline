@@ -21,7 +21,7 @@ from django.db import IntegrityError
 
 from apps.regions.management.commands.import_resorts import DELETE_MARKER
 from apps.regions.models import MicroRegion, Resort
-from tests.factories import MicroRegionFactory, ResortFactory
+from tests.factories import LocationFactory, MicroRegionFactory, ResortFactory
 
 SHEET_PATH = Path("apps/regions/data/resorts.tsv")
 
@@ -181,6 +181,33 @@ class TestResortQueryset:
         """A resort with both latitude and longitude is geocoded()."""
         resort = ResortFactory.create(name="A", latitude=46.0, longitude=7.0)
         assert list(Resort.objects.geocoded()) == [resort]
+
+    def test_geocoded_includes_a_resort_with_a_location(self) -> None:
+        """SNOW-1144: a pin Location makes a resort geocoded()."""
+        location = LocationFactory.create(anonymous=True)
+        resort = ResortFactory.create(location=location)
+        assert list(Resort.objects.geocoded()) == [resort]
+
+    def test_geocoded_includes_a_resort_not_yet_backfilled(self) -> None:
+        """SNOW-1144 transition: lat/lon and no Location is still geocoded()."""
+        resort = ResortFactory.create(latitude=46.0, longitude=7.0, location=None)
+        assert list(Resort.objects.geocoded()) == [resort]
+        assert list(Resort.objects.unlinked()) == [resort]
+
+    def test_pin_coordinates_prefer_the_location(self) -> None:
+        """The accessor reads the pin Location over the mirrored columns."""
+        location = LocationFactory.create(anonymous=True, latitude=46.5, longitude=7.5)
+        resort = ResortFactory.create(latitude=46.0, longitude=7.0, location=location)
+        assert resort.pin_coordinates == (46.5, 7.5)
+
+    def test_pin_coordinates_fall_back_to_the_mirror(self) -> None:
+        """SNOW-1144 transition: no Location yet reads latitude/longitude."""
+        resort = ResortFactory.create(latitude=46.0, longitude=7.0, location=None)
+        assert resort.pin_coordinates == (46.0, 7.0)
+
+    def test_pin_coordinates_are_none_without_a_pin(self) -> None:
+        """No Location and no full pair is no pin."""
+        assert ResortFactory.create(latitude=46.0).pin_coordinates is None
 
     def test_geocoded_ignores_needs_review_flag(self) -> None:
         """needs_review does not gate the geocoded() result."""

@@ -194,6 +194,19 @@ class TestCreateResortFavourite:
         assert favourite.location is not None
         assert favourite.location.pk != pin.pk
 
+    def test_a_resort_not_yet_backfilled_can_still_be_favourited(self) -> None:
+        """SNOW-1144 transition: lat/lon and no Location yet still favourites."""
+        user = UserFactory.create()
+        resort = ResortFactory.create(latitude=46.0, longitude=7.0, location=None)
+
+        with (
+            patch("apps.favourites.services.fetch_elevation", return_value=1500.0),
+            patch("apps.favourites.services.convert_to_3wa", return_value=None),
+        ):
+            favourite = create_resort_favourite(user, resort)
+
+        assert (favourite.latitude, favourite.longitude) == (46.0, 7.0)
+
     def test_second_call_is_idempotent(self) -> None:
         """A second create_resort_favourite call for the same pair returns the same row."""
         user = UserFactory.create()

@@ -639,8 +639,10 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
 
     Each feature is a Point with GeoJSON-ordered ``coordinates: [lon, lat]``
     (RFC 7946) and properties ``id``, ``name``, ``region_id``,
-    ``needs_review``, ``tier``. Resorts with no pin ``Location`` are
-    skipped; the coordinate is read from it (SNOW-1144).
+    ``needs_review``, ``tier``. Resorts with no pin are skipped; the
+    coordinate is ``Resort.pin_coordinates`` — the pin ``Location``, or
+    transitionally the mirrored columns of a resort not yet backfilled
+    (SNOW-1144; SNOW-1147 removes the fallback).
 
     ``id`` is the resort's **slug**, not its primary key (SNOW-796,
     ``docs/decisions/no-integer-pks-in-urls.md``): this feed is public and
@@ -675,18 +677,20 @@ def resorts_geojson(request: HttpRequest) -> JsonResponse:
         .order_by("name")
         .iterator()
     ):
-        # SNOW-1144: the pin is the resort's Location. ``geocoded()`` means
-        # "has one"; the guard only narrows the type.
-        location = resort.location
-        if location is None:
+        # SNOW-1144: the pin, read through the one accessor (the Location,
+        # or transitionally the mirrored columns until SNOW-1147).
+        # ``geocoded()`` guarantees one; the guard only narrows the type.
+        pin = resort.pin_coordinates
+        if pin is None:
             continue
+        latitude, longitude = pin
         # GeoJSON ordering: [longitude, latitude] per RFC 7946.
         features.append(
             {
                 "type": "Feature",
                 "geometry": {
                     "type": "Point",
-                    "coordinates": [location.longitude, location.latitude],
+                    "coordinates": [longitude, latitude],
                 },
                 "properties": {
                     "id": resort.slug,

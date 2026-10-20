@@ -3819,12 +3819,14 @@ def _build_resort_structured_data(resort: Resort, canonical_url: str) -> str:
     }
     if resort.name_alt:
         payload["alternateName"] = resort.name_alt
-    # SNOW-1144: the pin is the resort's Location.
-    if resort.location is not None:
+    # SNOW-1144: the pin, through the one accessor (transitional fallback to
+    # the mirrored columns until SNOW-1147).
+    pin = resort.pin_coordinates
+    if pin is not None:
         payload["geo"] = {
             "@type": "GeoCoordinates",
-            "latitude": resort.location.latitude,
-            "longitude": resort.location.longitude,
+            "latitude": pin[0],
+            "longitude": pin[1],
         }
     if resort.canton:
         address: dict[str, Any] = {

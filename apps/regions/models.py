@@ -674,14 +674,21 @@ class ResortQuerySet(models.QuerySet):
     """Custom queryset for Resort."""
 
     def geocoded(self) -> "ResortQuerySet":
-        """Return only resorts with a map pin — a ``location`` (SNOW-1144).
+        """Return only resorts with a map pin (SNOW-1144).
 
-        The pin is the resort's ``Location``; the ``latitude``/``longitude``
-        columns are a mirror ``set_resort_pin`` keeps in step and no longer
-        what "geocoded" means. ``link_resort_locations --commit`` backfills
-        the FK for every resort pinned before the column existed.
+        The pin is the resort's ``Location``. **Transitional:** a resort
+        with both mirrored ``latitude``/``longitude`` set but no
+        ``location`` yet also counts, so the window between the deploy and
+        the operator's ``link_resort_locations --commit`` backfill drops no
+        resort off the map, MCP or favouriting. Read the coordinate through
+        ``Resort.pin_coordinates``, which applies the same fallback.
+        SNOW-1147 removes the fallback along with the columns, leaving
+        ``location__isnull=False``.
         """
-        return self.filter(location__isnull=False)
+        return self.filter(
+            models.Q(location__isnull=False)
+            | models.Q(latitude__isnull=False, longitude__isnull=False)
+        )
 
     def unlinked(self) -> "ResortQuerySet":
         """Return resorts with a coordinate but no pin ``Location`` yet.
@@ -896,7 +903,7 @@ class Resort(BaseModel):
         blank=True,
         help_text=(
             "Mirror of location.latitude, kept in step by set_resort_pin "
-            "during the SNOW-1144 transition. Readers use location."
+            "during the SNOW-1144 transition. Read Resort.pin_coordinates."
         ),
     )
     longitude = models.FloatField(
@@ -904,7 +911,7 @@ class Resort(BaseModel):
         blank=True,
         help_text=(
             "Mirror of location.longitude, kept in step by set_resort_pin "
-            "during the SNOW-1144 transition. Readers use location."
+            "during the SNOW-1144 transition. Read Resort.pin_coordinates."
         ),
     )
     location = models.ForeignKey(
@@ -1010,6 +1017,28 @@ class Resort(BaseModel):
     def to_string(self) -> str:
         """Return a concise canonical string (name + region_id)."""
         return f"{self.name} ({self.region.region_id})"
+
+    @property
+    def pin_coordinates(self) -> tuple[float, float] | None:
+        """Return the resort's pin as ``(latitude, longitude)``, or None.
+
+        The one accessor every reader uses (SNOW-1144). The pin
+        ``Location``'s coordinate when ``location`` is set — callers
+        ``select_related("location")`` to keep this query-free — and
+        otherwise, **transitionally**, the mirrored ``latitude`` /
+        ``longitude`` of a resort pinned before the column existed and not
+        yet backfilled. ``Resort.objects.geocoded()`` applies the same
+        rule. SNOW-1147 removes the fallback along with the columns.
+
+        Returns:
+            The coordinate pair, or None when the resort has no pin.
+
+        """
+        if self.location is not None:
+            return (self.location.latitude, self.location.longitude)
+        if self.latitude is not None and self.longitude is not None:
+            return (self.latitude, self.longitude)
+        return None
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Persist the row, minting ``slug`` from ``name`` on first save.

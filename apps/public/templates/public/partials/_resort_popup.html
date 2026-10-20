@@ -59,8 +59,8 @@ Context variables expected:
             data-resort-star
             data-resort-slug="{{ resort.slug }}"
             data-resort-name="{{ resort.name }}"
-            data-resort-lat="{{ resort.location.latitude|default:'' }}"
-            data-resort-lon="{{ resort.location.longitude|default:'' }}"
+            data-resort-lat="{{ resort.pin_coordinates.0|default:'' }}"
+            data-resort-lon="{{ resort.pin_coordinates.1|default:'' }}"
             data-favourited="{{ favourited|yesno:'true,false' }}"
             data-favourite-uuid="{{ favourite_uuid }}"
             aria-pressed="{{ favourited|yesno:'true,false' }}"

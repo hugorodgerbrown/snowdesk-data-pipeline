@@ -28,7 +28,7 @@ class Migration(migrations.Migration):
             name="latitude",
             field=models.FloatField(
                 blank=True,
-                help_text="Mirror of location.latitude, kept in step by set_resort_pin during the SNOW-1144 transition. Readers use location.",
+                help_text="Mirror of location.latitude, kept in step by set_resort_pin during the SNOW-1144 transition. Read Resort.pin_coordinates.",
                 null=True,
             ),
         ),
@@ -37,7 +37,7 @@ class Migration(migrations.Migration):
             name="longitude",
             field=models.FloatField(
                 blank=True,
-                help_text="Mirror of location.longitude, kept in step by set_resort_pin during the SNOW-1144 transition. Readers use location.",
+                help_text="Mirror of location.longitude, kept in step by set_resort_pin during the SNOW-1144 transition. Read Resort.pin_coordinates.",
                 null=True,
             ),
         ),

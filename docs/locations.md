@@ -136,7 +136,7 @@ The pin is `Resort.location`, a `Location` (SNOW-1144), written only by
 row in place when the pin is corrected so its weather stays attached.
 `latitude`/`longitude` remain on the row as a mirror the service keeps in
 step, and carry `geocode_source`, `geocode_confidence`, `geocoded_at` and
-`needs_review`, so provenance is on the row. Readers use `location`.
+`needs_review`, so provenance is on the row. Readers use `Resort.pin_coordinates` — the `location`, falling back to the mirror for a resort not yet backfilled until SNOW-1147 drops the columns.
 
 **Say plainly what it denotes: the geocoder's answer for the resort's
 *name*, which in practice is the village.** Live lookups put Verbier at

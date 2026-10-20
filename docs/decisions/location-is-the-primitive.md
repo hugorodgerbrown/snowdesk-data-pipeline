@@ -40,7 +40,10 @@ identity opt-in — inverted the model and are withdrawn.
 > never moves a named or shared row, re-anchoring instead. Clearing a pin
 > clears the FK, never the row. The reverse relation joins `public()` and
 > `active()`, so a pin is fetched and shown like any curated point, and
-> `Resort.objects.geocoded()` now means "has a location". The two floats
+> `Resort.objects.geocoded()` means "has a location" — transitionally also
+> "or both mirrored floats", read through `Resort.pin_coordinates`, so no
+> resort drops off the map between the deploy and the backfill; SNOW-1147
+> removes that fallback with the columns. The two floats
 > stay as a mirror the service keeps in step until nothing reads them.
 > `link_resort_locations --commit` became the one-time backfill. The resort
 > page leads its weather list with the pin and skips a curated link to the

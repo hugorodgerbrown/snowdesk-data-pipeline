@@ -171,13 +171,14 @@ def create_resort_favourite(user: "User", resort: "Resort") -> Favourite:
             ``settings.FAVOURITES_MAX_PER_USER`` favourites.
 
     """
-    # SNOW-1144: the resort's pin is its Location. The favourite still mints
-    # its own row at that point — the user's copy, deleted with the
-    # favourite — so only the coordinate is read from the pin.
-    pin = resort.location
+    # SNOW-1144: the resort's pin, through the one accessor (its Location,
+    # or transitionally the mirrored columns until SNOW-1147). The favourite
+    # still mints its own row at that point — the user's copy, deleted with
+    # the favourite — so only the coordinate is read from the pin.
+    pin = resort.pin_coordinates
     if pin is None:
         raise ResortNotGeocoded(f"Resort {resort.pk} ({resort.name}) is not geocoded.")
-    latitude, longitude = pin.latitude, pin.longitude
+    latitude, longitude = pin
 
     existing = Favourite.objects.filter(user=user, resort=resort).first()
     if existing is not None:
