@@ -19,6 +19,12 @@
  *   - **``adopt()`` is a no-op once everything is synced.** It runs on
  *     every authenticated load; a version that re-pushed each time would
  *     write the whole list to the queue on every page view.
+ *   - **Only the signed-in account's own areas are recorded
+ *     (SNOW-1142).** The bytes are device-wide and the browser can be
+ *     shared, so a held area carries the principal it was downloaded
+ *     under; another account's is never pushed, and a legacy or anonymous
+ *     one is claimed once — stamped first — by the first account to see
+ *     it.
  *
  * The module is a plain IIFE assigning a frozen global, and it reads its
  * configuration off ``#map-custom-download-control`` at CALL time rather
@@ -33,6 +39,9 @@ const AREAS_URL = '/downloads/areas.json';
 const RENAME_URL = '/downloads/partials/__AREA_ID__/rename/';
 const FORGET_URL = '/downloads/partials/__AREA_ID__/forget/';
 const CSRF = 'test-csrf-token';
+// SNOW-1142: the signed-in account, as `<meta name="pwa-user-id">` says.
+const ME = 'u-1';
+const OTHER = 'u-2';
 
 /**
  * Render the config carrier and the page's CSRF input.
@@ -42,10 +51,14 @@ const CSRF = 'test-csrf-token';
  * renders for a signed-in user, which is the same read
  * ``account_favourites.js`` makes.
  *
- * @param {{eligible?: boolean}} [options]
+ * SNOW-1142: and the ``pwa-user-id`` meta tag ``public/base.html`` renders,
+ * naming the signed-in account ('' — no tag content — for nobody).
+ *
+ * @param {{eligible?: boolean, account?: string}} [options]
  */
 function buildFixture(options) {
-  const opts = Object.assign({ eligible: true }, options || {});
+  const opts = Object.assign({ eligible: true, account: ME }, options || {});
+  setAccount(opts.account);
   document.body.innerHTML = `
     <form><input type="hidden" name="csrfmiddlewaretoken" value="${CSRF}"></form>
     <button id="map-custom-download-control" type="button"
@@ -55,6 +68,15 @@ function buildFixture(options) {
             data-download-areas-url="${AREAS_URL}"
             data-download-rename-url-template="${RENAME_URL}"
             data-download-forget-url-template="${FORGET_URL}"></button>`;
+}
+
+/** Point the page's `pwa-user-id` meta tag at `id` (SNOW-1142). */
+function setAccount(id) {
+  document.head.querySelectorAll('meta[name="pwa-user-id"]').forEach((el) => el.remove());
+  const meta = document.createElement('meta');
+  meta.name = 'pwa-user-id';
+  meta.content = id || '';
+  document.head.appendChild(meta);
 }
 
 /** In-memory `meta:app`, so the synced-id marker survives within a test. */
@@ -106,6 +128,7 @@ afterEach(() => {
   delete window.pwaDb;
   delete window.pwaMutationQueue;
   delete window.pwaBasemapDownloads;
+  document.head.querySelectorAll('meta[name="pwa-user-id"]').forEach((el) => el.remove());
 });
 
 describe('isEnabled', () => {
@@ -374,6 +397,7 @@ describe('adopt', () => {
       regionId: 'CH-4115',
       onDevice: true,
       synced: false,
+      principal: ME,
     },
     {
       id: 'custom-a1',
@@ -382,6 +406,7 @@ describe('adopt', () => {
       bbox: [7.9, 46.4, 8.1, 46.6],
       onDevice: true,
       synced: false,
+      principal: ME,
     },
   ];
 
@@ -526,5 +551,258 @@ describe('adopt', () => {
   it('never rejects when the downloads bridge is missing', async () => {
     delete window.pwaBasemapDownloads;
     await expect(sync.adopt()).resolves.toBe(0);
+  });
+});
+
+describe('whose area it is (SNOW-1142)', () => {
+  // A shared browser: the bytes are device-wide on purpose, so the device
+  // holds areas downloaded under more than one account. Only the
+  // signed-in account's own are recorded to it; a legacy record (no
+  // stamp) or an anonymous download ('') is claimed once, stamped first.
+  const BOX = [7.9, 46.4, 8.1, 46.6];
+
+  beforeEach(async () => {
+    await import('../../static/js/basemap_download_core.js');
+  });
+
+  /**
+   * Seed the two records and a bridge that reads them back the way the
+   * real reader does — `principal` passed through, null when absent — so
+   * a stamp written by a claim is what the next account's `adopt` sees.
+   */
+  function seedHeld(regions, customAreas) {
+    const rows = installDbStub({
+      'basemap.regions': regions || [],
+      'basemap.customAreas': customAreas || [],
+    });
+    const principalOf = (entry) => (typeof entry.principal === 'string' ? entry.principal : null);
+    window.pwaBasemapDownloads = {
+      areas: vi.fn(async () => [
+        ...(rows.get('basemap.regions') || []).map((entry) => ({
+          id: 'region-' + entry.region_id,
+          name: entry.name,
+          regionId: entry.region_id,
+          onDevice: true,
+          principal: principalOf(entry),
+        })),
+        ...(rows.get('basemap.customAreas') || []).map((entry) => ({
+          id: entry.id,
+          name: entry.name || 'Custom area 1',
+          storedName: entry.name || '',
+          bbox: entry.bbox,
+          onDevice: true,
+          principal: principalOf(entry),
+        })),
+      ]),
+    };
+    return rows;
+  }
+
+  function postedIds() {
+    return window.pwaMutationQueue.enqueue.mock.calls.map(([op]) =>
+      new URLSearchParams(op.body).get('area_id'),
+    );
+  }
+
+  describe('ownership', () => {
+    it('is the one rule both callers ask', () => {
+      expect(sync.ownership(ME, ME)).toBe('own');
+      expect(sync.ownership(OTHER, ME)).toBe('foreign');
+      expect(sync.ownership(null, ME)).toBe('claim');
+      expect(sync.ownership(undefined, ME)).toBe('claim');
+      expect(sync.ownership('', ME)).toBe('claim');
+      expect(sync.ownership(ME, '')).toBe('none');
+      expect(sync.ownership(null, '')).toBe('none');
+    });
+  });
+
+  describe('stampPrincipal', () => {
+    it('stamps a new record with the signed-in account', () => {
+      expect(sync.stampPrincipal({ id: 'custom-a1' }, undefined).principal).toBe(ME);
+    });
+
+    it('stamps an anonymous download with the empty string', () => {
+      setAccount('');
+      expect(sync.stampPrincipal({ id: 'custom-a1' }, undefined)).toHaveProperty('principal', '');
+    });
+
+    it('keeps the predecessor\'s stamp on a re-download', () => {
+      const out = sync.stampPrincipal({ id: 'custom-a1' }, { id: 'custom-a1', principal: OTHER });
+      expect(out.principal).toBe(OTHER);
+    });
+
+    it('adds no stamp where the predecessor was a legacy record', () => {
+      // The claim rule, not a refresh, decides whose a legacy record is.
+      const out = sync.stampPrincipal({ id: 'custom-a1', principal: ME }, { id: 'custom-a1' });
+      expect(out).not.toHaveProperty('principal');
+    });
+  });
+
+  describe('push', () => {
+    it('declines a record stamped with another account', async () => {
+      await expect(
+        sync.push({ areaId: 'region-CH-4115', regionId: 'CH-4115', principal: OTHER }),
+      ).resolves.toBe(false);
+      expect(window.pwaMutationQueue.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('declines a legacy predecessor\'s record, leaving it to adopt\'s claim', async () => {
+      await expect(
+        sync.push({ areaId: 'region-CH-4115', regionId: 'CH-4115', principal: undefined }),
+      ).resolves.toBe(false);
+    });
+
+    it('sends the signed-in account\'s own record', async () => {
+      await expect(
+        sync.push({ areaId: 'region-CH-4115', regionId: 'CH-4115', principal: ME }),
+      ).resolves.toBe(true);
+    });
+  });
+
+  describe('adopt', () => {
+    it('never records another account\'s area', async () => {
+      seedHeld([{ region_id: 'CH-4115', name: 'Verbier', principal: OTHER }], [
+        { id: 'custom-a1', name: 'Ridge', bbox: BOX, principal: OTHER },
+      ]);
+
+      await expect(sync.adopt()).resolves.toBe(0);
+      expect(window.pwaMutationQueue.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('records its own and skips the other account\'s, side by side', async () => {
+      seedHeld([
+        { region_id: 'CH-4115', name: 'Verbier', principal: ME },
+        { region_id: 'CH-2101', name: 'Aletsch', principal: OTHER },
+      ]);
+
+      await expect(sync.adopt()).resolves.toBe(1);
+      expect(postedIds()).toEqual(['region-CH-4115']);
+    });
+
+    it('claims a legacy record once and stamps it', async () => {
+      const rows = seedHeld([{ region_id: 'CH-4115', name: 'Verbier' }]);
+
+      await expect(sync.adopt()).resolves.toBe(1);
+      expect(rows.get('basemap.regions')[0].principal).toBe(ME);
+    });
+
+    it('claims an anonymous download once and stamps it', async () => {
+      const rows = seedHeld([], [{ id: 'custom-a1', bbox: BOX, principal: '' }]);
+
+      await expect(sync.adopt()).resolves.toBe(1);
+      expect(postedIds()).toEqual(['custom-a1']);
+      expect(rows.get('basemap.customAreas')[0].principal).toBe(ME);
+    });
+
+    it('never re-pushes a claimed area for a second account', async () => {
+      // The whole bug: a second person signing in on the same browser.
+      seedHeld([{ region_id: 'CH-4115', name: 'Verbier' }], [
+        { id: 'custom-a1', name: 'Ridge', bbox: BOX, principal: '' },
+      ]);
+      await sync.adopt();
+      window.pwaMutationQueue.enqueue.mockClear();
+
+      setAccount(OTHER);
+      await expect(sync.adopt()).resolves.toBe(0);
+      expect(window.pwaMutationQueue.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('does not push a claim whose stamp could not be written', async () => {
+      // Pushing without the stamp would let the next account claim it too.
+      seedHeld([{ region_id: 'CH-4115', name: 'Verbier' }]);
+      window.pwaDb.put = vi.fn(async () => {
+        throw new Error('quota');
+      });
+
+      await expect(sync.adopt()).resolves.toBe(0);
+      expect(window.pwaMutationQueue.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('claims nothing when the record is not held here', async () => {
+      // A list handed in that names an area this device has no record of.
+      installDbStub({});
+      await expect(
+        sync.adopt([{ id: 'region-CH-4115', regionId: 'CH-4115', onDevice: true, principal: null }]),
+      ).resolves.toBe(0);
+    });
+
+    it('stamps on one readModifyWrite transaction where the store has one', async () => {
+      const rows = seedHeld([{ region_id: 'CH-4115', name: 'Verbier' }]);
+      window.pwaDb.readModifyWrite = vi.fn(async (_store, key, mutate) => {
+        const current = rows.has(key) ? { key, value: rows.get(key) } : undefined;
+        const next = mutate(current);
+        if (next) rows.set(next.key, next.value);
+        return next || current;
+      });
+
+      await sync.adopt();
+      expect(window.pwaDb.readModifyWrite).toHaveBeenCalledWith(
+        'meta:app',
+        'basemap.regions',
+        expect.any(Function),
+      );
+      expect(rows.get('basemap.regions')[0].principal).toBe(ME);
+    });
+  });
+
+  describe('recordHeld', () => {
+    it('skips an account-only row, which has no record to stamp', async () => {
+      await expect(
+        sync.recordHeld({ id: 'region-CH-4115', onDevice: false, principal: null }),
+      ).resolves.toBe(false);
+    });
+
+    it('sends the stored name and the terrain opt-in (SNOW-1133, SNOW-1072)', async () => {
+      await sync.recordHeld({
+        id: 'custom-k1',
+        name: 'Custom area 4',
+        storedName: '',
+        bbox: BOX,
+        onDevice: true,
+        terrain: true,
+        principal: ME,
+      });
+      const body = bodyOf(window.pwaMutationQueue.enqueue);
+      expect(body.name).toBe('');
+      expect(body.terrain).toBe('true');
+    });
+  });
+
+  describe('the synced marker', () => {
+    it('is kept per principal', async () => {
+      const rows = installDbStub({});
+      await sync.push({ areaId: 'region-CH-4115', regionId: 'CH-4115' });
+      setAccount(OTHER);
+      await sync.push({ areaId: 'custom-a1', bbox: BOX });
+
+      expect(rows.get('basemap.syncedAreaIds')).toEqual({
+        [ME]: ['region-CH-4115'],
+        [OTHER]: ['custom-a1'],
+      });
+    });
+
+    it('reads the old flat array as nobody\'s, so the first adopt re-checks', async () => {
+      // Every earlier release wrote a flat list that never said which
+      // account it was for. Trusting it would skip this account's own
+      // areas; reading it as nobody's re-checks each against ownership().
+      const rows = seedHeld([
+        { region_id: 'CH-4115', name: 'Verbier', principal: ME },
+        { region_id: 'CH-2101', name: 'Aletsch', principal: OTHER },
+      ]);
+      rows.set('basemap.syncedAreaIds', ['region-CH-4115', 'region-CH-2101']);
+
+      await expect(sync.adopt()).resolves.toBe(1);
+      expect(postedIds()).toEqual(['region-CH-4115']);
+      expect(rows.get('basemap.syncedAreaIds')).toEqual({ [ME]: ['region-CH-4115'] });
+    });
+
+    it('forget unmarks only the signed-in account\'s entry', async () => {
+      const rows = installDbStub({
+        'basemap.syncedAreaIds': { [ME]: ['custom-a1'], [OTHER]: ['custom-a1'] },
+      });
+      await sync.forget('custom-a1');
+
+      expect(rows.get('basemap.syncedAreaIds')).toEqual({ [ME]: [], [OTHER]: ['custom-a1'] });
+    });
   });
 });

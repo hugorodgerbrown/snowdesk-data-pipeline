@@ -2502,7 +2502,10 @@ after the response carrying a uuid was discarded.
 | `rename(areaId, name)` | Carries a local rename to the account row, after the local write has landed. |
 | `forget(areaId)` | Drops the account row. Does NOT evict tiles. |
 | `accountAreas()` | Reads `downloads:areas`. Resolves `[]` for anonymous (403), offline, refused, timed out and unparseable alike. |
-| `adopt()` | Pushes every local area the account has not been told about — the migration path for a device that was downloading before the feature existed, and the repair path for a push that never landed. |
+| `adopt()` | Pushes every local area the account has not been told about — the migration path for a device that was downloading before the feature existed, and the repair path for a push that never landed. Since SNOW-1142, only what `ownership()` lets the signed-in account record (see "Whose area it is" below). |
+| `recordHeld(area)` | SNOW-1142: records one area HELD on this device, applying the ownership rule — the one call `adopt()` and the sheet's `_reassertHeldAreas` both make. |
+| `ownership(principal, signedIn)` | SNOW-1142: the pure rule — `own`, `claim`, `foreign` or `none`. |
+| `stampPrincipal(record, existing)` | SNOW-1142: the stamp every record writer applies — the signed-in id (`''` anonymous) for a new record, the predecessor's for one that replaces it. |
 
 `adopt()` is called once per load, fire-and-forget, from
 `map_downloads_manager.js`'s IIFE, guarded on the session (the rollout
@@ -2521,6 +2524,40 @@ publishing the bridge `adopt()` reads the local areas through. It would
 find nothing, mark nothing and never run again: a permanent no-op that
 looks exactly like a working call. `tests/js/test_map_downloads_manager.js`
 pins the ordering.
+
+**Whose area it is (SNOW-1142).** The bytes are device-wide on purpose — a
+user who signs out keeps their maps for the trip — and the browser can be
+shared, so every local record in `basemap.regions` / `basemap.customAreas`
+carries `principal`: the `<meta name="pwa-user-id">` account id it was
+downloaded under, or `''` for an anonymous download. Every writer stamps
+through `stampPrincipal` — `_recordRegionDownload` for a region, and
+`_appendCustomArea` for a framed area, a drop zone and a restore (which
+stamps the restoring account). A record that REPLACES one already held (a
+re-download) keeps its predecessor's stamp, and the content stamps
+(`_stampRegionContent`, `_stampAreaContent`, `/offline/`'s
+`stampAreaContent`) spread the entry, so a refresh or a repair never
+changes an owner and never adds a stamp to a legacy record.
+
+`basemap_downloaded_areas.js` carries `principal` onto each area (`null`
+for a record with no field) and `reconcileAreas` passes it through. What
+may be recorded to the signed-in account is then one rule,
+`ownership()`:
+
+| Record's `principal` | Verdict | What happens |
+|----------------------|---------|--------------|
+| the signed-in id | `own` | pushed |
+| absent (legacy) or `''` (anonymous) | `claim` | the local record is stamped with the signed-in id FIRST, then pushed — so no later account claims it too. A claim whose stamp does not land is not pushed. |
+| another account's id | `foreign` | never pushed, renamed on the account or re-asserted |
+
+`push()` itself declines a record whose stamp is passed and is not `own`,
+so a re-download of another account's region does not record it either.
+Such an area is still listed under "On this device", draws, syncs and can
+be removed locally; Forget is offered only on account-only rows, so it is
+never offered for it. `basemap.syncedAreaIds` is keyed by principal
+(`{[accountId]: [areaIds]}`); the flat array earlier releases wrote is read
+as nobody's, so the first `adopt()` after the deploy re-checks every held
+area against the rule. Rationale:
+[`docs/decisions/a-download-carries-its-principal.md`](decisions/a-download-carries-its-principal.md).
 
 Writes go through `window.pwaMutationQueue` (so a download completed in a
 tunnel is recorded when the device surfaces) and carry `HX-Request: true`,

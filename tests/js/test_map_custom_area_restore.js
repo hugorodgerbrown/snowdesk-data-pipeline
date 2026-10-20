@@ -150,6 +150,16 @@ function installDbStub(initial) {
       rows.set(row.key, row.value);
       return row.key;
     }),
+    // The CONTRACT of db.js's one-transaction read-modify-write (its
+    // serialisation is proved against fake-indexeddb in test_db.js): the
+    // mutator gets the current row, and `undefined` writes nothing.
+    readModifyWrite: vi.fn(async (_store, key, mutate) => {
+      const current = rows.has(key) ? { key, value: rows.get(key) } : undefined;
+      const next = mutate(current);
+      if (next === undefined) return current;
+      rows.set(next.key, next.value);
+      return next;
+    }),
     delete: vi.fn(async (_store, key) => {
       rows.delete(key);
     }),
@@ -191,6 +201,9 @@ function buildFixture(eligible) {
     </ul>`;
 }
 
+// SNOW-1142: the account doing the restoring.
+const RESTORER = 'u-restorer';
+
 /** Boot the bundle against a fresh DOM, store and sync spy. */
 async function boot({ eligible = true, records = {} } = {}) {
   buildFixture(eligible);
@@ -215,7 +228,17 @@ async function boot({ eligible = true, records = {} } = {}) {
     for (const url of urls) await cache.put(url);
     return { ok: urls.length, failed: 0, bytes: 2048, cancelled: false };
   });
+  // SNOW-1142: the real ownership helpers (`stampPrincipal` is what the
+  // record writer stamps through), with the account side stubbed.
+  document.head.querySelectorAll('meta[name="pwa-user-id"]').forEach((el) => el.remove());
+  const meta = document.createElement('meta');
+  meta.name = 'pwa-user-id';
+  meta.content = RESTORER;
+  document.head.appendChild(meta);
+  vi.resetModules();
+  await import('../../static/js/downloads_sync.js');
   window.pwaDownloadsSync = {
+    ...self.pwaDownloadsSync,
     push: vi.fn(async () => true),
     isEnabled: () => true,
     // The account list the areas reader joins in. Empty: each test feeds
@@ -294,6 +317,40 @@ describe('restoring a custom area (SNOW-1136)', () => {
     expect(window.pwaDownloadsSync.push).toHaveBeenCalledWith(
       expect.objectContaining({ areaId: AREA_ID, name: 'Ridge', bbox: BBOX }),
     );
+  });
+
+  it('stamps the record with the restoring account (SNOW-1142)', async () => {
+    await window.pwaCustomAreaDownload.restoreArea({
+      areaId: AREA_ID,
+      bbox: BBOX,
+      name: 'Ridge',
+      type: 'custom',
+    });
+
+    expect(window.pwaDb.rows.get('basemap.customAreas')[0].principal).toBe(RESTORER);
+    expect(window.pwaDownloadsSync.push).toHaveBeenCalledWith(
+      expect.objectContaining({ areaId: AREA_ID, principal: RESTORER }),
+    );
+  });
+
+  it('records the area in one read-modify-write, never a get-then-put (SNOW-1142)', async () => {
+    // A whole-array `put` from an earlier read would erase a principal
+    // another tab's `recordHeld` committed in between.
+    window.pwaDb.put.mockClear();
+    await window.pwaCustomAreaDownload.restoreArea({
+      areaId: AREA_ID,
+      bbox: BBOX,
+      name: 'Ridge',
+      type: 'custom',
+    });
+
+    const areaPuts = window.pwaDb.put.mock.calls.filter(
+      ([, row]) => row && row.key === 'basemap.customAreas',
+    );
+    expect(areaPuts).toEqual([]);
+    expect(
+      window.pwaDb.readModifyWrite.mock.calls.some(([, key]) => key === 'basemap.customAreas'),
+    ).toBe(true);
   });
 
   it('leaves exactly one row for the area, on this device and synced', async () => {

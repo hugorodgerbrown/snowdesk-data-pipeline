@@ -93,6 +93,19 @@
   }
 
   /**
+   * SNOW-1142: a record's `principal` stamp, passed through unchanged —
+   * a string ('' for an anonymous download), or null for a LEGACY record
+   * that has no such field. The two absences are different facts and the
+   * claim rule reads them alike, but the reader keeps them apart.
+   *
+   * @param {Object} record A `basemap.regions` / `basemap.customAreas` entry.
+   * @returns {string|null}
+   */
+  function principalOf(record) {
+    return record && typeof record.principal === 'string' ? record.principal : null;
+  }
+
+  /**
    * Every area id with a pinned bucket present in Cache Storage
    * (SNOW-612).
    *
@@ -336,6 +349,11 @@
           // tiles it implies are derived from `z`/`bbox` above, never
           // recorded; the flag is the choice, which nothing can derive.
           terrain: !!entry.terrain,
+          // SNOW-1142: the account the download was made under — '' for an
+          // anonymous one, null for a record written before the field
+          // existed. `downloads_sync.js`'s `ownership()` decides from this
+          // whether the signed-in account may record the area.
+          principal: principalOf(entry),
         });
       }
     } catch (_e) {
@@ -398,6 +416,8 @@
           contentAt: custom.contentAt || '',
           // SNOW-1072: see the region branch above.
           terrain: !!custom.terrain,
+          // SNOW-1142: see the region branch above.
+          principal: principalOf(custom),
         });
       }
     } catch (_e) {

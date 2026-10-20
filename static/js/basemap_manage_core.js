@@ -587,7 +587,7 @@
    *   onDevice: boolean, synced: boolean, bbox: number[]|null,
    *   regionId: string, deps: string[], type?: string, z?: Object|null,
    *   band?: number[]|null, contentIncomplete?: boolean,
-   *   contentAt?: string}>} The recorded
+   *   contentAt?: string, principal?: string|null}>} The recorded
    *   areas in their original order, then any orphans id-ascending, then
    *   any account-only areas id-ascending — so the sheet's own sort has a
    *   stable input.
@@ -606,6 +606,10 @@
    *   except ``type``, which SNOW-1136 also sets on an account-only row
    *   whose ``shape`` is ``'CIRCLE'`` (a drop zone), alongside that row's
    *   ``storedName``.
+   *   SNOW-1142: ``principal`` is recorded-branch only too — the account
+   *   the download was made under ('' anonymous, null legacy). An orphan
+   *   and an account-only row are never pushed from this list, so neither
+   *   needs one.
    *   An orphan has no record to read a band or a tile-row span off, and
    *   an account-only row is not on this device for its content to be
    *   behind. ``deps`` is on all three (``[]`` where there is nothing to
@@ -689,6 +693,11 @@
         // SNOW-1072: whether the area includes terrain data — the flag the
         // sheet's completeness check derives the class tiles from.
         terrain: !!area.terrain,
+        // SNOW-1142: whose download this is — the account id it was made
+        // under, '' for an anonymous one, null for a legacy record. Passed
+        // through for `downloads_sync.js`'s `recordHeld`, which reads it
+        // off this list to decide what may be recorded to the account.
+        principal: typeof area.principal === 'string' ? area.principal : null,
       });
     }
 

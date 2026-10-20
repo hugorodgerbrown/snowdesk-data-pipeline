@@ -602,6 +602,37 @@ describe('the content half', () => {
   });
 });
 
+describe('a sync is not a change of owner (SNOW-1142)', () => {
+  // The record carries the principal it was downloaded under. A sync
+  // rewrites the record to move its content stamp, and must carry that
+  // principal through untouched — it never re-stamps another account's
+  // area, and never adds a stamp to a legacy record, whose owner the
+  // claim rule in downloads_sync.js decides.
+  it('keeps another account\'s stamp', async () => {
+    await seedArea({ principal: 'u-2' });
+
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect((await storedArea()).principal).toBe('u-2');
+  });
+
+  it('keeps an anonymous download\'s empty stamp', async () => {
+    await seedArea({ principal: '' });
+
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect((await storedArea()).principal).toBe('');
+  });
+
+  it('adds no stamp to a legacy record', async () => {
+    await seedArea();
+
+    await window.pwaBasemapDownloads.syncArea(AREA_ID);
+
+    expect('principal' in (await storedArea())).toBe(false);
+  });
+});
+
 describe('an id nothing on this device carries', () => {
   it('fetches nothing and says so in both halves', async () => {
     // An orphaned bucket, or a row the account knows about and this device

@@ -329,6 +329,15 @@ function buildFixture() {
     <div id="map-download-error-toast" class="hidden"></div>`;
 }
 
+/** Point the page's `pwa-user-id` meta tag at `id` (SNOW-1142). */
+function setAccount(id) {
+  document.head.querySelectorAll('meta[name="pwa-user-id"]').forEach((el) => el.remove());
+  const meta = document.createElement('meta');
+  meta.name = 'pwa-user-id';
+  meta.content = id;
+  document.head.appendChild(meta);
+}
+
 /** Poll `predicate` until it holds or the budget runs out. */
 async function waitFor(predicate, timeoutMs = 5000) {
   const deadline = Date.now() + timeoutMs;
@@ -448,6 +457,12 @@ beforeAll(async () => {
   });
 
   vi.resetModules();
+  // SNOW-1142: the signed-in account, and the bridge whose
+  // `stampPrincipal` every record writer stamps through. With no
+  // `#map-custom-download-control` on the page the bridge's own sync is
+  // off, so nothing here is pushed — only stamped.
+  setAccount('u-1');
+  await import('../../static/js/downloads_sync.js');
   await import('../../static/js/basemap_download_core.js');
   await import('../../static/js/basemap_download_runner.js');
   // SNOW-1072: the class tileset's coverage and band.
@@ -1200,5 +1215,111 @@ describe('terrain data on a region download (SNOW-1072)', () => {
     window.pwaBasemapDownloads.setTerrainDataPreferred(false);
     await waitFor(() => !/terrain data/.test(btn.getAttribute('aria-label')));
     expect(btn.getAttribute('aria-label')).not.toMatch(/terrain data/);
+  });
+});
+
+describe('a region record carries its principal (SNOW-1142)', () => {
+  /** Forget the region on this device, so the next click downloads it. */
+  async function forgetRegion() {
+    await window.pwaDb.delete('meta:app', 'basemap.regions');
+    window.caches.buckets.clear();
+  }
+
+  /** Rewrite the stored record's stamp — `undefined` removes it (legacy). */
+  async function restamp(principal) {
+    const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+    const value = row.value.map((entry) => {
+      if (entry.region_id !== REGION_ID) return entry;
+      const { principal: _old, ...rest } = entry;
+      return principal === undefined ? rest : { ...rest, principal };
+    });
+    await window.pwaDb.put('meta:app', { key: 'basemap.regions', value });
+  }
+
+  /** Lose one basemap tile, so the next tap is a fresh run over the bucket. */
+  async function loseATile() {
+    const btn = document.getElementById('map-download-control');
+    const bucket = window.caches.buckets.get(`${PINNED_PREFIX}region-${REGION_ID}`);
+    bucket.delete([...bucket].find((url) => url.endsWith('.pbf')));
+    document.dispatchEvent(new CustomEvent('snowdesk:connectivity-changed'));
+    await waitFor(() => btn.dataset.downloadState === 'idle');
+    return btn;
+  }
+
+  afterEach(() => {
+    setAccount('u-1');
+  });
+
+  it('stamps a new download with the signed-in account', async () => {
+    await forgetRegion();
+    await clickControl();
+
+    expect((await recordedRegion()).principal).toBe('u-1');
+  });
+
+  it('stamps an anonymous download with the empty string', async () => {
+    await forgetRegion();
+    setAccount('');
+    await clickControl();
+
+    const record = await recordedRegion();
+    expect(record).toHaveProperty('principal', '');
+  });
+
+  it('keeps the stamp it had through a content refresh', async () => {
+    await forgetRegion();
+    await clickControl();
+    await restamp('u-2');
+
+    await window.pwaBasemapDownloads.refreshAreaContent(`region-${REGION_ID}`);
+
+    expect((await recordedRegion()).principal).toBe('u-2');
+  });
+
+  it('keeps another account\'s stamp through a re-download', async () => {
+    await forgetRegion();
+    await clickControl();
+    await restamp('u-2');
+    const btn = await loseATile();
+
+    btn.click();
+    await waitFor(() => btn.dataset.downloadState === 'done');
+
+    expect((await recordedRegion()).principal).toBe('u-2');
+  });
+
+  it('records the download in one read-modify-write, never a get-then-put', async () => {
+    // SNOW-1142 review: the record used to be written from a `get`
+    // snapshot with a whole-array `put`. A claim another tab committed in
+    // between (its `recordHeld` stamping a legacy area) was erased by that
+    // put, leaving the area claimable by a second account. IndexedDB's
+    // serialisation itself is proved in test_db.js; this pins that the
+    // writer goes through it.
+    await forgetRegion();
+    window.pwaDb.put.mockClear();
+    window.pwaDb.readModifyWrite.mockClear();
+
+    await clickControl();
+
+    const regionPuts = window.pwaDb.put.mock.calls.filter(
+      ([, row]) => row && row.key === 'basemap.regions',
+    );
+    expect(regionPuts).toEqual([]);
+    expect(
+      window.pwaDb.readModifyWrite.mock.calls.some(([, key]) => key === 'basemap.regions'),
+    ).toBe(true);
+    expect((await recordedRegion()).principal).toBe('u-1');
+  });
+
+  it('adds no stamp to a legacy record through a re-download', async () => {
+    await forgetRegion();
+    await clickControl();
+    await restamp(undefined);
+    const btn = await loseATile();
+
+    btn.click();
+    await waitFor(() => btn.dataset.downloadState === 'done');
+
+    expect('principal' in (await recordedRegion())).toBe(false);
   });
 });

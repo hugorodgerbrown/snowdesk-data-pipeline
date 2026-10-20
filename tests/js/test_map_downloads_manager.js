@@ -335,6 +335,9 @@ function installDownloadsBridge(rows, cachesStub) {
         z: entry.z || null,
         band: Array.isArray(entry.band) ? entry.band : null,
         terrain: !!entry.terrain,
+        // SNOW-1142: whose download it is, null for a legacy record — as
+        // the real reader carries it.
+        principal: typeof entry.principal === 'string' ? entry.principal : null,
       });
     }
     for (const entry of rows.get('basemap.customAreas') || []) {
@@ -363,6 +366,8 @@ function installDownloadsBridge(rows, cachesStub) {
         contentIncomplete: !!entry.contentIncomplete,
         // SNOW-1139: see the region branch above.
         contentAt: entry.contentAt || '',
+        // SNOW-1142: see the region branch above.
+        principal: typeof entry.principal === 'string' ? entry.principal : null,
       });
     }
     return out;
@@ -2151,6 +2156,11 @@ describe('account-only rows (SNOW-749)', () => {
       isEnabled: vi.fn(() => true),
       forget: vi.fn(async () => true),
       push: vi.fn(async () => true),
+      // SNOW-1142: the held-area half of the ownership rule, which the
+      // re-assert hands each candidate to. The rule itself is covered in
+      // test_downloads_sync.js and, end to end, in the shared-browser block
+      // below.
+      recordHeld: vi.fn(async () => true),
     };
   });
 
@@ -2522,8 +2532,8 @@ describe('account-only rows (SNOW-749)', () => {
     // A repair (SNOW-1135): removing never touches the account, so the
     // row is lost only by a Forget on another device (or some other way).
     // This device still has the area, so the account is told again — what
-    // the Forget confirmation promises.
-    window.pwaDownloadsSync.push = vi.fn(async () => true);
+    // the Forget confirmation promises. SNOW-1142: through `recordHeld`,
+    // which decides whether this account may be told.
     installAreas([
       { ...HERE_AND_SYNCED, synced: false },
       ACCOUNT_ONLY_REGION,
@@ -2532,37 +2542,24 @@ describe('account-only rows (SNOW-749)', () => {
     openSheet();
     await settle();
 
-    expect(window.pwaDownloadsSync.push).toHaveBeenCalledTimes(1);
-    expect(window.pwaDownloadsSync.push).toHaveBeenCalledWith(
-      expect.objectContaining({ areaId: 'region-CH-2101', regionId: 'CH-2101' }),
+    expect(window.pwaDownloadsSync.recordHeld).toHaveBeenCalledTimes(1);
+    expect(window.pwaDownloadsSync.recordHeld).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'region-CH-2101' }),
     );
+    // Never the bare push, which has no ownership rule of its own.
+    expect(window.pwaDownloadsSync.push).not.toHaveBeenCalled();
   });
 
-  it('re-asserts with the terrain opt-in and the stored name (SNOW-1133)', async () => {
-    // Without `terrain`, push posted "false" and the account forgot the
-    // choice; without `storedName`, it froze the localised default.
-    window.pwaDownloadsSync.push = vi.fn(async () => true);
-    window.pwaDownloadsSync.accountName = (area) =>
-      typeof area.storedName === 'string' ? area.storedName : area.name;
-    installAreas([
-      {
-        id: 'custom-k1',
-        name: 'Custom area 4',
-        storedName: '',
-        bytes: 5 * MB,
-        bbox: [7.1, 46.1, 7.2, 46.2],
-        onDevice: true,
-        synced: false,
-        terrain: true,
-      },
-    ]);
+  it('re-asserts nothing through a bridge that predates recordHeld (SNOW-1142)', async () => {
+    // An older cached bridge has no ownership rule; falling back to its
+    // bare push is the shared-browser bug.
+    delete window.pwaDownloadsSync.recordHeld;
+    installAreas([{ ...HERE_AND_SYNCED, synced: false }]);
     await loadModule();
     openSheet();
     await settle();
 
-    expect(window.pwaDownloadsSync.push).toHaveBeenCalledWith(
-      expect.objectContaining({ areaId: 'custom-k1', name: '', terrain: true }),
-    );
+    expect(window.pwaDownloadsSync.push).not.toHaveBeenCalled();
   });
 
   it('names two unnamed account areas saved on one day apart (SNOW-1133)', async () => {
@@ -2589,28 +2586,154 @@ describe('account-only rows (SNOW-749)', () => {
     // An account-only row is the account telling THIS device something,
     // not the other way about. Pushing it back would make every device
     // that has ever seen the row a reason for it to exist.
-    window.pwaDownloadsSync.push = vi.fn(async () => true);
     installAreas([{ ...ACCOUNT_ONLY_REGION, synced: false }]);
     await loadModule();
     openSheet();
     await settle();
 
-    expect(window.pwaDownloadsSync.push).not.toHaveBeenCalled();
+    expect(window.pwaDownloadsSync.recordHeld).not.toHaveBeenCalled();
   });
 
   it('re-asserts nothing while offline', async () => {
     // `synced` is false for every row when the account list could not be
     // read at all, and offline is exactly that case — pushing on that
     // reading would queue a mutation per area on every open.
-    window.pwaDownloadsSync.push = vi.fn(async () => true);
     window.pwaConnectivity = { isOnline: () => false };
     installAreas([{ ...HERE_AND_SYNCED, synced: false }]);
     await loadModule();
     openSheet();
     await settle();
 
-    expect(window.pwaDownloadsSync.push).not.toHaveBeenCalled();
+    expect(window.pwaDownloadsSync.recordHeld).not.toHaveBeenCalled();
     delete window.pwaConnectivity;
+  });
+});
+
+describe('a shared browser (SNOW-1142)', () => {
+  // Two people, one browser. The device holds both accounts' areas — the
+  // bytes are device-wide on purpose — and the sheet lists all of them,
+  // but opening it as one account must never record the other's areas,
+  // names included, to it. End to end through the REAL downloads_sync.js,
+  // so the re-assert and `adopt` are shown to share one rule.
+  const ME = '42';
+  const OTHER = '99';
+  const BOX = [7.9, 46.4, 8.1, 46.6];
+
+  function setAccount(id) {
+    document.head.querySelectorAll('meta[name="pwa-user-id"]').forEach((el) => el.remove());
+    const meta = document.createElement('meta');
+    meta.name = 'pwa-user-id';
+    meta.content = id;
+    document.head.appendChild(meta);
+  }
+
+  /** The sync wiring `downloads_sync.js` reads, on the gate element. */
+  function wireSync() {
+    const el = document.createElement('button');
+    el.id = 'map-custom-download-control';
+    el.dataset.downloadsEligible = 'true';
+    el.dataset.downloadSyncUrl = '/downloads/partials/sync/';
+    document.body.appendChild(el);
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<form><input type="hidden" name="csrfmiddlewaretoken" value="t"></form>',
+    );
+  }
+
+  let enqueue;
+
+  beforeEach(() => {
+    enqueue = vi.fn(async () => {});
+    window.pwaMutationQueue = { enqueue: enqueue };
+    setAccount(ME);
+  });
+
+  afterEach(() => {
+    delete window.pwaMutationQueue;
+    delete window.pwaDownloadsSync;
+    document.head.querySelectorAll('meta[name="pwa-user-id"]').forEach((el) => el.remove());
+  });
+
+  /** Seed, wire, load the sheet and then the real sync bridge, open it. */
+  async function open(initial) {
+    const rows = seed(initial);
+    await loadModule();
+    // After the sheet: its boot-time `adopt` finds no bridge and does
+    // nothing, so what is enqueued below is the re-assert's alone.
+    wireSync();
+    await import('../../static/js/downloads_sync.js');
+    openSheet();
+    await settle();
+    await settle();
+    return rows;
+  }
+
+  function postedIds() {
+    return enqueue.mock.calls.map(([op]) => new URLSearchParams(op.body).get('area_id'));
+  }
+
+  it('re-asserts only this account\'s own area, and claims a legacy one', async () => {
+    installCachesStub([
+      'snowdesk-basemap-pinned-region-CH-2101',
+      'snowdesk-basemap-pinned-region-CH-1000',
+      'snowdesk-basemap-pinned-custom-mine',
+      'snowdesk-basemap-pinned-custom-theirs',
+    ]);
+    const rows = await open({
+      'basemap.regions': [
+        { region_id: 'CH-2101', name: 'Aletsch', bytes: MB, principal: OTHER },
+        { region_id: 'CH-1000', name: 'Verbier', bytes: MB },
+      ],
+      'basemap.customAreas': [
+        { id: 'custom-mine', name: 'Mine', bbox: BOX, ordinal: 1, bytes: MB, principal: ME },
+        { id: 'custom-theirs', name: 'Their secret line', bbox: BOX, ordinal: 2, bytes: MB,
+          principal: OTHER },
+      ],
+    });
+
+    expect(postedIds().sort()).toEqual(['custom-mine', 'region-CH-1000']);
+    const bodies = enqueue.mock.calls.map(([op]) => op.body).join('&');
+    expect(bodies).not.toContain('secret');
+    // The legacy record is now this account's, so no later one claims it.
+    const verbier = rows.get('basemap.regions').find((r) => r.region_id === 'CH-1000');
+    expect(verbier.principal).toBe(ME);
+    // The other account's records are untouched.
+    expect(rows.get('basemap.regions').find((r) => r.region_id === 'CH-2101').principal).toBe(
+      OTHER,
+    );
+  });
+
+  it('never claims an area a first account already claimed', async () => {
+    installCachesStub(['snowdesk-basemap-pinned-custom-anon']);
+    const rows = await open({
+      'basemap.customAreas': [
+        { id: 'custom-anon', bbox: BOX, ordinal: 1, bytes: MB, principal: OTHER },
+      ],
+    });
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(rows.get('basemap.customAreas')[0].principal).toBe(OTHER);
+  });
+
+  it('still lists another account\'s area on this device, removable and never forgettable', async () => {
+    installCachesStub(['snowdesk-basemap-pinned-custom-theirs']);
+    await open({
+      'basemap.customAreas': [
+        { id: 'custom-theirs', name: 'Theirs', bbox: BOX, ordinal: 1, bytes: MB,
+          principal: OTHER },
+      ],
+    });
+
+    expect(groupLabels()).toEqual(['On this device']);
+    expect(rowLabels()).toEqual(['Theirs']);
+    const row = firstRowElement();
+    expect(row.querySelector('[data-downloads-forget]')).toBeNull();
+    const remove = row.querySelector('[data-downloads-delete]');
+    expect(remove.getAttribute('data-downloads-delete')).toBe('custom-theirs');
+
+    remove.click();
+    await settle();
+    expect(window.pwaBasemapDownloads.evict).toHaveBeenCalledWith(['custom-theirs']);
+    expect(enqueue).not.toHaveBeenCalled();
   });
 });
 

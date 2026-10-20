@@ -859,6 +859,10 @@
    * That marker answers "has this device ever told the account", and the
    * question here is "does the account know NOW".
    *
+   * SNOW-1142: and only for an area the signed-in account may record — on
+   * a shared browser the device holds other people's areas too, and they
+   * are listed here but never pushed (``pwaDownloadsSync.recordHeld``).
+   *
    * @param {Array<Object>} areas The reconciled list, carrying `onDevice`
    *   and `synced`.
    * @returns {void} Fire-and-forget: the panel must render at the speed of
@@ -866,41 +870,25 @@
    */
   function _reassertHeldAreas(areas) {
     const sync = window.pwaDownloadsSync;
-    // `push` is checked as well as the module: an older cached shell can
-    // have a sync bridge that predates it, and a render that throws here
-    // would take the whole panel down over a background repair.
-    if (!sync || typeof sync.push !== 'function' || !sync.isEnabled()) return;
+    // `recordHeld` is checked as well as the module: an older cached shell
+    // can have a sync bridge that predates it, and a render that throws
+    // here would take the whole panel down over a background repair.
+    // SNOW-1142: and a bridge without it is skipped outright rather than
+    // fallen back to a bare `push` — that bridge has no ownership rule,
+    // and pushing every held area to whoever is signed in is the bug.
+    if (!sync || typeof sync.recordHeld !== 'function' || !sync.isEnabled()) return;
     const connectivity = window.pwaConnectivity;
     const online = connectivity ? connectivity.isOnline() : navigator.onLine !== false;
     if (!online) return;
-    const core = downloadCore();
     for (const area of areas) {
       if (!area || !area.id || area.synced) continue;
       // Not held here: there is nothing to assert.
       if (area.onDevice === false) continue;
-      // An orphan describes a download that never finished, and a base
-      // layer is not an area at all — neither is something to offer
-      // another device. Same two exclusions `adopt` makes.
-      if (area.orphaned) continue;
-      if (core?.isBaseLayerAreaId(area.id)) continue;
-      const isCustom = core ? core.isCustomAreaId(area.id) : false;
-      // The server refuses a custom area with no box, so it is skipped
-      // here rather than posted to be rejected.
-      if (isCustom && !Array.isArray(area.bbox)) continue;
-      sync.push({
-        areaId: area.id,
-        regionId: isCustom ? '' : String(area.id).replace(/^region-/, ''),
-        bbox: area.bbox,
-        basemapKey: area.basemapKey,
-        // SNOW-1133: the stored name, never the localised default, and the
-        // terrain opt-in — without it `push` posts "false" and a
-        // re-asserted area loses the choice on the account.
-        name: typeof sync.accountName === 'function' ? sync.accountName(area) : area.name,
-        terrain: !!area.terrain,
-        // SNOW-1136: a drop zone re-asserted as a box would come back as a
-        // rectangle on the next device that restores it.
-        type: area.type,
-      });
+      // SNOW-1142: everything else — whose area this is (another
+      // account's is never pushed; a legacy or anonymous one is claimed
+      // once), and the orphan / base-layer / box-less exclusions `adopt`
+      // makes — is `recordHeld`'s, so the two callers share one rule.
+      sync.recordHeld(area);
     }
   }
 
