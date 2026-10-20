@@ -102,7 +102,8 @@ now, not the header, at that strip's own 16px.
     {# set for them; the shared overview maps, the cached pages, the       #}
     {# unsent changes and the preferences are not here and are not in that #}
     {# budget (SNOW-867), and the place they are stated — and cleared — is #}
-    {# the settings page's "Reset local data" breakdown. A link, not a     #}
+    {# the offline page's "This device" breakdown (SNOW-1137 pointed this  #}
+    {# at /offline/ rather than settings). A link, not a                   #}
     {# second copy of the breakdown: this panel answers "what did I        #}
     {# download and where", that one answers "what would I lose", and a    #}
     {# duplicate here would compete with the per-row actions below.        #}
@@ -118,10 +119,10 @@ now, not the header, at that strip's own 16px.
         </div>
     {% endif %}
     <p class="text-xs text-text-3">
-        {% url 'accounts:settings' as settings_url %}
+        {% url 'public:offline_page' as offline_url %}
         {% blocktrans trimmed %}
             Snowdesk stores more than this on your device.
-            <a href="{{ settings_url }}" class="text-link">See it all in Settings</a>
+            <a href="{{ offline_url }}" class="text-link">See what this device holds</a>
         {% endblocktrans %}
     </p>
 </div>
