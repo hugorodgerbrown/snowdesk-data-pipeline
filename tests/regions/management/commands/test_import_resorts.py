@@ -542,6 +542,12 @@ class TestImportResortsCoordinates:
 
         resort = Resort.objects.get(uuid=new_uuid)
         assert (resort.latitude, resort.longitude) == (46.68, 8.777)
+        # SNOW-1144: the pin is a Location, set through set_resort_pin.
+        assert resort.location is not None
+        assert (resort.location.latitude, resort.location.longitude) == (
+            46.68,
+            8.777,
+        )
         # ``MANUAL`` would claim an operator placed this pin on a map.
         assert resort.geocode_source == Resort.GeocodeSource.IMPORT
         assert resort.geocode_confidence is None
@@ -571,6 +577,7 @@ class TestImportResortsCoordinates:
         resort = Resort.objects.get(uuid=new_uuid)
         assert resort.latitude is None
         assert resort.longitude is None
+        assert resort.location is None
         assert resort.geocode_source == ""
         assert resort.needs_review is False
 

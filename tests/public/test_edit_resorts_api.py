@@ -36,6 +36,7 @@ from tests.factories import (
     ResortFactory,
     SubRegionFactory,
     UserFactory,
+    WeatherFactory,
 )
 
 
@@ -350,6 +351,37 @@ class TestEditResortSave:
         assert resort.geocode_confidence == 1.0
         assert resort.geocoded_at is not None
         assert resort.needs_review is False
+
+    def test_save_gives_the_resort_a_pin_location(self) -> None:
+        """SNOW-1144: the save goes through set_resort_pin — a Location at the pin."""
+        resort = ResortFactory.create(name="A")
+        client = _superuser_client()
+        resp = _post_save(client, resort.slug, latitude=46.0961, longitude=7.2275)
+        assert resp.status_code == 200, resp.content
+
+        resort.refresh_from_db()
+        assert resort.location is not None
+        assert (resort.location.latitude, resort.location.longitude) == (
+            46.0961,
+            7.2275,
+        )
+
+    def test_moving_the_pin_keeps_the_same_location_and_its_weather(self) -> None:
+        """SNOW-1144: a move corrects the Location in place, weather attached."""
+        resort = ResortFactory.create(name="A", latitude=46.0, longitude=7.0)
+        original = resort.location
+        assert original is not None
+        WeatherFactory.create(location=original)
+        client = _superuser_client()
+
+        resp = _post_save(client, resort.slug, latitude=46.2, longitude=7.3)
+        assert resp.status_code == 200, resp.content
+
+        resort.refresh_from_db()
+        assert resort.location_id == original.pk
+        original.refresh_from_db()
+        assert (original.latitude, original.longitude) == (46.2, 7.3)
+        assert original.weather.count() == 1
 
     def test_response_does_not_carry_next_in_queue(self) -> None:
         """SNOW-85 dropped auto-advance; ``next_in_queue`` is gone."""
@@ -818,6 +850,12 @@ class TestEditResortCreate:
         assert resort.canton == "VS"
         assert resort.latitude == 46.25
         assert resort.longitude == 7.25
+        # SNOW-1144: created with its pin Location, through set_resort_pin.
+        assert resort.location is not None
+        assert (resort.location.latitude, resort.location.longitude) == (
+            46.25,
+            7.25,
+        )
         # Stamped exactly as a save stamps an edited row — the operator
         # placed the pin, so the position is manually confirmed.
         assert resort.geocode_source == Resort.GeocodeSource.MANUAL

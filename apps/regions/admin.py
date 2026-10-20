@@ -7,10 +7,14 @@ Resort, Pass and RegionAlias. Bulletin-related admins live in
 """
 
 import logging
+from typing import Any
 
+from django import forms
 from django.contrib import admin
+from django.http import HttpRequest
 
 from apps.locations.admin import ResortLocationInline
+from apps.regions.services.resort_pin import set_resort_pin
 
 from .models import (
     MajorRegion,
@@ -115,6 +119,30 @@ class PassAdmin(admin.ModelAdmin):
     readonly_fields = ["id", "uuid", "created_at", "updated_at"]
 
 
+class ResortAdminForm(forms.ModelForm):
+    """Resort change form that refuses half a coordinate pair (SNOW-1144).
+
+    ``set_resort_pin`` needs both halves or neither — a latitude alone is
+    not a place — so the form says so on the field rather than the save
+    raising.
+    """
+
+    class Meta:
+        """Form metadata."""
+
+        model = Resort
+        fields = "__all__"
+
+    def clean(self) -> dict[str, Any]:
+        """Reject a latitude without a longitude, or the reverse."""
+        cleaned = super().clean() or {}
+        if (cleaned.get("latitude") is None) != (cleaned.get("longitude") is None):
+            raise forms.ValidationError(
+                "Set both latitude and longitude, or clear both."
+            )
+        return cleaned
+
+
 @admin.register(Resort)
 class ResortAdmin(admin.ModelAdmin):
     """Admin view for Resort.
@@ -125,6 +153,7 @@ class ResortAdmin(admin.ModelAdmin):
     ``apps/locations/admin.py``, beside the model it edits.
     """
 
+    form = ResortAdminForm
     inlines = [ResortLocationInline]
 
     list_display = [
@@ -155,6 +184,7 @@ class ResortAdmin(admin.ModelAdmin):
         "id",
         "uuid",
         "geocoded_at",
+        "location",
         "created_at",
         "updated_at",
     ]
@@ -192,6 +222,7 @@ class ResortAdmin(admin.ModelAdmin):
                 "fields": (
                     "latitude",
                     "longitude",
+                    "location",
                     "geocode_source",
                     "geocode_confidence",
                     "geocoded_at",
@@ -201,7 +232,9 @@ class ResortAdmin(admin.ModelAdmin):
                     "Edit coordinates here as a fallback. The preferred way to "
                     "set lat/lon is the in-map editor at /?edit=resorts, "
                     "which is open to superusers only (SNOW-724 — previously "
-                    "the ``edit_map`` waffle flag, seeded superusers=True)."
+                    "the ``edit_map`` waffle flag, seeded superusers=True). "
+                    "Saving moves the resort's pin Location with them "
+                    "(SNOW-1144)."
                 ),
             },
         ),
@@ -213,3 +246,22 @@ class ResortAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+    def save_model(
+        self, request: HttpRequest, obj: Resort, form: Any, change: bool
+    ) -> None:
+        """Save the row, then route its coordinate through ``set_resort_pin``.
+
+        The admin edits ``latitude``/``longitude`` directly, so the pin
+        ``Location`` is brought into step afterwards by the one writer
+        (SNOW-1144) — moved in place, created, or cleared.
+
+        Args:
+            request: The admin request.
+            obj: The resort being saved.
+            form: The bound change form.
+            change: Whether this is an edit rather than an add.
+
+        """
+        super().save_model(request, obj, form, change)
+        set_resort_pin(obj, obj.latitude, obj.longitude)

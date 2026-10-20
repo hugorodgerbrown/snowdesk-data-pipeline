@@ -138,6 +138,7 @@ from apps.regions.services.area_content import (
     weather_location_index,
 )
 from apps.regions.services.basemap_tiles import blob_summary
+from apps.regions.services.resort_pin import set_resort_pin
 from apps.weather.models import Weather
 from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import (
@@ -2617,15 +2618,13 @@ def edit_resort_save(request: HttpRequest, slug: str) -> JsonResponse:
     if details_error is not None:
         return details_error
 
-    resort.latitude = lat
-    resort.longitude = lon
+    # The pin itself (latitude/longitude/location) is written by
+    # set_resort_pin below, not here — SNOW-1144.
     resort.geocode_source = Resort.GeocodeSource.MANUAL
     resort.geocode_confidence = 1.0
     resort.geocoded_at = timezone.now()
     resort.needs_review = False
     update_fields = [
-        "latitude",
-        "longitude",
         "geocode_source",
         "geocode_confidence",
         "geocoded_at",
@@ -2654,7 +2653,11 @@ def edit_resort_save(request: HttpRequest, slug: str) -> JsonResponse:
         resort.region = containing
         update_fields.append("region")
 
-    resort.save(update_fields=update_fields)
+    with transaction.atomic():
+        resort.save(update_fields=update_fields)
+        # SNOW-1144: the one writer of the pin — moves the resort's Location
+        # in place so its weather stays attached, and mirrors lat/lon.
+        set_resort_pin(resort, lat, lon)
 
     return JsonResponse(_resort_save_payload(resort))
 
@@ -2858,8 +2861,6 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
         name=name,
         canton=resolved_canton,
         region=region,
-        latitude=lat,
-        longitude=lon,
         geocode_source=Resort.GeocodeSource.MANUAL,
         geocode_confidence=1.0,
         geocoded_at=timezone.now(),
@@ -2874,8 +2875,12 @@ def edit_resort_create(request: HttpRequest) -> JsonResponse:
         return details_error
 
     # One INSERT with the details already bound — a rejected detail field
-    # cannot leave a half-populated new row behind.
-    resort.save()
+    # cannot leave a half-populated new row behind. The pin follows in the
+    # same transaction through its one writer (SNOW-1144), so a resort is
+    # never committed without the Location its weather hangs off.
+    with transaction.atomic():
+        resort.save()
+        set_resort_pin(resort, lat, lon)
     logger.info(
         "edit_resort_create: created %s in %s at (%s, %s)",
         resort.name,

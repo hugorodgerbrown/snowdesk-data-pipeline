@@ -93,6 +93,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.regions.models import MicroRegion, Pass, Resort
+from apps.regions.services.resort_pin import set_resort_pin
 
 logger = logging.getLogger(__name__)
 
@@ -278,6 +279,11 @@ class Command(BaseCommand):
                 ski_pass.save()
             for resort in plan.additions:
                 resort.save()
+                if resort.latitude is not None and resort.longitude is not None:
+                    # SNOW-1144: the sheet's coordinate becomes the resort's
+                    # pin Location through its one writer, so an imported
+                    # resort has weather without a separate linking step.
+                    set_resort_pin(resort, resort.latitude, resort.longitude)
             for resort, _changes in plan.updates:
                 resort.save()
             for resort, passes in plan.pass_links:
