@@ -1687,6 +1687,7 @@ async function _appendCustomArea(area) {
   const next = existing.filter((entry) => !entry || entry.id !== area.id);
   next.push(area);
   await _writeCustomAreas(next);
+  notifyDownloadsChanged();
   // SNOW-749: and record the DEFINITION against the account, from the same
   // moment the device record is written so the two cannot disagree about
   // what was downloaded. Enqueued through the mutation queue, so an area
@@ -2024,6 +2025,31 @@ async function evictBasemapAreas(areaIds) {
   // SNOW-570: an evicted area's ring must disappear immediately, not at
   // the next refresh trigger.
   window.pwaDownloadedOverlay?.refresh();
+  // SNOW-1134: and the region roundel, which painted 'done' for an area
+  // removed from the Manage downloads sheet until something unrelated
+  // happened to repaint it.
+  notifyDownloadsChanged();
+}
+
+/**
+ * SNOW-1134: tell the page that what this device holds has changed.
+ *
+ * Dispatched from every local write and eviction of an area's record —
+ * `evictBasemapAreas` (the Manage downloads sheet's removal and the
+ * budget's automatic eviction both arrive there), `_appendCustomArea`
+ * and the region control's `_recordRegionDownload`. ONE event, so a
+ * surface that shows download state listens once rather than to each
+ * writer; the region roundel re-probes on it. Carries no detail: the
+ * listener reads the records for itself, so the two cannot disagree.
+ *
+ * Never dispatched from a record HEAL (`_healRegionRecord`): the roundel's
+ * own probe heals, and an event there would make every probe schedule
+ * the next one.
+ *
+ * @returns {void}
+ */
+function notifyDownloadsChanged() {
+  document.dispatchEvent(new CustomEvent('snowdesk:downloads-changed'));
 }
 
 /**
