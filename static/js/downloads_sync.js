@@ -442,6 +442,9 @@
    * the shared base layers, which are not the user's downloads and which
    * this endpoint rejects, so they are skipped explicitly below.
    *
+   * @param {Array<Object>} [known] SNOW-1140: that same list, when the
+   *   caller has already read it — used as given, so no second read (and
+   *   no second account request) is made.
    * @returns {Promise<number>} How many areas were pushed — 0 when
    *   everything was already synced, which is the common case on every
    *   load after the first.
@@ -463,13 +466,20 @@
     return typeof area.storedName === 'string' ? area.storedName : area.name || '';
   }
 
-  async function adopt() {
+  async function adopt(known) {
     if (!isEnabled()) return 0;
     var areas;
-    try {
-      areas = await window.pwaBasemapDownloads?.areas();
-    } catch (_err) {
-      return 0;
+    // SNOW-1140: a caller that has just read the list hands it in, so the
+    // account's areas are not fetched a second time at boot (the Manage
+    // downloads sheet reads it once for this and its restore notice).
+    if (Array.isArray(known)) {
+      areas = known;
+    } else {
+      try {
+        areas = await window.pwaBasemapDownloads?.areas();
+      } catch (_err) {
+        return 0;
+      }
     }
     if (!Array.isArray(areas) || !areas.length) return 0;
 

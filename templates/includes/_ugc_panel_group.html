@@ -1,3 +1,4 @@
+{% load components %}
 {% comment %}
 templates/includes/_ugc_panel_group.html — one titled group of rows
 inside a includes/_ugc_panel.html list (SNOW-832).
@@ -59,6 +60,14 @@ Parameters (passed via {% include … with … %}):
   rows_template (string, optional) — template path rendering the group's
               rows inside its `<ul>`. A JS-filled copy passes none and
               gets the empty `<ul>` its render() appends into.
+  action_label (string, optional) — SNOW-1140: one action that acts on the
+              whole group, rendered as a bare ghost button at the heading's
+              trailing edge ("Download all" on the downloads panel's "Not on
+              this device" group). One action, so a bare control rather than
+              a "…" menu (design-system rule 5). A JS-filled copy removes it
+              from any group it does not apply to.
+  action_hook (string, optional) — `data-hook` value on that button, the
+              same production-hook shape as `label_hook`.
 {% endcomment %}
 <div data-panel-group class="flex flex-col gap-1">
     <div class="flex items-center gap-2">
@@ -73,6 +82,15 @@ Parameters (passed via {% include … with … %}):
         {# lines up on the decimal point the way the row sizes used to     #}
         {# before SNOW-832 moved the size into the row's meta line.        #}
         <span data-group-total class="ml-auto shrink-0 font-mono text-xs text-text-3">{{ total }}</span>
+        {% if action_label %}
+            <button
+                type="button"
+                data-hook="{{ action_hook }}"
+                class='{% button_classes variant="ghost" size="compact" %} ml-auto shrink-0 whitespace-nowrap disabled:opacity-50'
+            >
+                {{ action_label }}
+            </button>
+        {% endif %}
     </div>
     <span
         data-group-rule

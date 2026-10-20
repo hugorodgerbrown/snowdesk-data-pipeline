@@ -2585,6 +2585,45 @@ names a basemap other than the active one is confirmed first ("%(name)s was
 downloaded for %(stored)s. Download it for %(active)s on this device?"),
 because the run fetches the basemap on screen; declining does nothing.
 
+**"Download all" (SNOW-1140)** heads the "Not on this device" group when two
+or more of its rows are restorable (`onDevice: false` and `redownloadable`);
+with one, that row's own "Download here" is the action, so `buildGroup`
+removes it. It is the group partial's optional `action_label` /
+`action_hook` (`data-hook="group-action"`) — one action on a heading, so a
+bare ghost button rather than a "…" menu. One confirm up front states the
+count and, when any area was saved for another basemap, that it will
+download with the active one (`confirm-download-all-other`) — custom areas
+counted too, since both start paths fetch the basemap on screen — and the
+per-row `_confirmOtherBasemap` is not asked on this path. The rows then run
+through the SAME two start paths as "Download here", one at a time, by
+`window.pwaDownloadsRestoreQueueCore.runQueue`
+(`static/js/downloads_restore_queue_core.js`, unit-tested with injected
+deps). Both starts resolve once the run has started, and every run holds
+the one page-wide lock (`pwaBasemapDownloads.isBusy()`), so before each
+start the queue waits for the lock to clear — `snowdesk:downloads-changed`
+plus a 2 s poll (a failed run records nothing and so broadcasts nothing),
+bounded at 15 minutes so a hung run cannot wedge it. It stops at the first
+refusal with that refusal's own toast (`_restoreMessage`), quietly when the
+previous run settled without its area (it failed or an eviction was
+declined, and said so itself), when the network mode reads offline, and on
+the timeout (the "busy" toast); an area that became present mid-queue is
+skipped. Whatever is left stays as rows. While a queue runs the action is
+disabled on a reopened sheet.
+
+**The new-device notice (SNOW-1140).** On boot `_adoptLocalAreas` reads the
+reconciled list ONCE and hands it to both `pwaDownloadsSync.adopt(areas)`
+(which used to make that read, and its account request, itself) and
+`_maybeShowRestoreNotice`. The notice — `#map-downloads-restore-notice`, the
+floating `_overlay_banner.html` rendered by `_map_downloads_sheet.html`,
+title "%(count)s of your downloads aren't on this device" written at runtime
+— is revealed when the visitor is signed in, the app is using the network,
+the account lists at least one restorable area, the sheet is closed, and it
+has not been shown for this account (the `pwa-user-id`) on this device. Its
+CTA opens the sheet; the × is overlays.js's. "Shown" is recorded on reveal
+under `snowdesk.downloadsRestoreNotice.<user id>` in localStorage, falling
+back to sessionStorage and then a page flag when storage is unreadable, so
+it never repeats within a session. It downloads nothing.
+
 **Remove means this device; Forget clears the account (SNOW-1135).** The
 trash on a row this device holds calls only the local eviction: the
 account row stays, so a synced area drops into "Not on this device" and is

@@ -1178,6 +1178,24 @@ claims to be coverage.
 | 6 | In B, open a listed row's "…" menu | Download here, then Forget (SNOW-1135) |
 | 7 | Choose Forget and accept | The confirmation says it comes off your account and that a device still holding it adds it back; the row leaves B's sheet. Reopen A's sheet online, then reload B — the area is listed in B again, because A still holds it |
 
+### Scenario D8b: Restore a new device's downloads
+
+**Goal**: A new device learns its account's areas exist, and gets them
+back in one tap — and nothing downloads without one.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | With two or more areas downloaded in browser A, sign in as the same account in a clean profile B and open the map online | A notice reads "N of your downloads aren't on this device", with "Show downloads". Nothing is downloading |
+| 2 | Reload B | The notice does not come back — it is shown once per account per device |
+| 3 | Clear B's site data, sign in as a different account that has areas, open the map | That account gets its own notice |
+| 4 | Repeat step 1 with B offline (network menu → Offline mode) | No notice |
+| 5 | Tap "Show downloads" (re-arm by removing `snowdesk.downloadsRestoreNotice.*` from localStorage) | The sheet opens; "Download all" heads "Not on this device" |
+| 6 | Switch to a basemap different from one area's, tap "Download all" | One confirm, naming the count and saying the areas saved for another basemap download with the current one. No per-row question follows |
+| 7 | Accept | The sheet closes; the areas download one after another — never two progress grids at once. Reopen the sheet mid-way: "Download all" is disabled |
+| 8 | When it finishes, reopen the sheet | Every area is under "On this device", each synced |
+| 9 | In B, Remove one restored area, so it is alone under "Not on this device" | "Download all" is not offered — that row's own "Download here" is the action |
+| 10 | Start "Download all" with three restorable, go offline after the first | The queue stops; the rest stay under "Not on this device" |
+
 ### Scenario D9: The two gates
 
 **Goal**: Signing out and going offline restrict *starting* a download

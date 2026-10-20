@@ -142,8 +142,13 @@ the row's own label, so map.html loads that module once for both.
 {# context, and `rows_template` is in scope here from the panel above, so   #}
 {# without it the group partial's own `{% include rows_template %}` would   #}
 {# render the rows partial inside every group.                              #}
+{# SNOW-1140: and the group's one action. "Download all" heads the "Not  #}
+{# on this device" group when two or more of its rows can be restored     #}
+{# here; render() strips it from every other group (and from that one     #}
+{# with a single row, whose own "Download here" is the action).           #}
+{% trans "Download all" as downloads_all_label %}
 <template id="map-downloads-group-template">
-    {% include "includes/_ugc_panel_group.html" with label_hook="group-label" only %}
+    {% include "includes/_ugc_panel_group.html" with label_hook="group-label" action_label=downloads_all_label action_hook="group-action" only %}
 </template>
 {# One list row (includes/_ugc_panel_row.html — the one anatomy Hugo's      #}
 {# design gives all three UGC panels). `js_filled` renders every            #}
@@ -339,8 +344,42 @@ the row's own label, so map.html loads that module once for both.
     <span
         data-string="confirm-other-basemap"
     >{% blocktrans %}%(name)s was downloaded for %(stored)s. Download it for %(active)s on this device?{% endblocktrans %}</span>
+    {# SNOW-1140: "Download all" — one confirm for the whole queue, in     #}
+    {# place of the per-row basemap question. The second form is for a     #}
+    {# queue holding areas saved for another basemap: they download with   #}
+    {# the one on screen, and the confirm says so once rather than per row. #}
+    {# `count` is always two or more here.                                  #}
+    <span
+        data-string="confirm-download-all"
+    >{% blocktrans %}Download %(count)s areas to this device? They download one at a time.{% endblocktrans %}</span>
+    <span
+        data-string="confirm-download-all-other"
+    >{% blocktrans %}Download %(count)s areas to this device? They download one at a time. %(other)s of them were saved for another basemap and will download with %(active)s.{% endblocktrans %}</span>
+    {# SNOW-1140: the one-time map notice's line. Two forms because the    #}
+    {# count can be one; the CTA and the body are server-rendered on the   #}
+    {# banner itself.                                                       #}
+    <span
+        data-string="restore-notice"
+    >{% blocktrans %}%(count)s of your downloads aren't on this device{% endblocktrans %}</span>
+    <span
+        data-string="restore-notice-one"
+    >{% blocktrans %}%(count)s of your downloads isn't on this device{% endblocktrans %}</span>
 </template>
+{# SNOW-1140: the one-time "your downloads aren't on this device" notice.  #}
+{# Revealed by map_downloads_manager.js once per account per device, when  #}
+{# a signed-in visitor is online and the account lists areas this device  #}
+{# does not hold; its CTA opens this sheet. The shared floating-banner     #}
+{# primitive, bottom-centre like the trip-arrival banner — the title is    #}
+{# written at runtime (it carries the count), which is what title_id is    #}
+{# the hook for.                                                            #}
+{% trans "Download them again from Your downloads while you have a connection." as downloads_restore_notice_body %}
+{% trans "Show downloads" as downloads_restore_notice_cta %}
+{% include "includes/_overlay_banner.html" with variant="floating" id="map-downloads-restore-notice" title=" " title_id="map-downloads-restore-notice-title" body=downloads_restore_notice_body body_id="map-downloads-restore-notice-body" cta_id="map-downloads-restore-notice-open" cta_label=downloads_restore_notice_cta aria_live="polite" dismissible=True %}
 {# SNOW-588: pure budget/row arithmetic (window.pwaBasemapManageCore). Must #}
 {# load before the manager below; both are defer, so document order holds.  #}
 <script defer src="{% static 'js/basemap_manage_core.js' %}"></script>
+{# SNOW-1140: the "Download all" queue's order and stop rules             #}
+{# (window.pwaDownloadsRestoreQueueCore). Read by the manager at click     #}
+{# time, so it only has to precede it.                                     #}
+<script defer src="{% static 'js/downloads_restore_queue_core.js' %}"></script>
 <script defer src="{% static 'js/map_downloads_manager.js' %}"></script>

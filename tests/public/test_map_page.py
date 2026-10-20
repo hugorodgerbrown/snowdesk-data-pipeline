@@ -1844,6 +1844,57 @@ def test_downloads_strings_template_carries_the_forget_copy() -> None:
     assert "Not on this device" in strings
 
 
+@pytest.mark.django_db
+def test_downloads_group_template_carries_download_all() -> None:
+    """SNOW-1140: "Download all" is rendered on the group heading.
+
+    ``buildGroup`` keeps it only on the "Not on this device" group with two
+    or more restorable rows, so the template renders it on every group and
+    the label is server-translated here rather than written in JavaScript.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    group = content.split('id="map-downloads-group-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    assert 'data-hook="group-action"' in group
+    assert "Download all" in group
+
+
+@pytest.mark.django_db
+def test_downloads_strings_template_carries_the_restore_copy() -> None:
+    """SNOW-1140: the Download all confirms and the restore notice's title."""
+    content = Client().get(reverse("public:map")).content.decode()
+    strings = content.split('id="map-downloads-strings-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    for key in (
+        "confirm-download-all",
+        "confirm-download-all-other",
+        "restore-notice",
+        "restore-notice-one",
+    ):
+        assert f'data-string="{key}"' in strings
+    assert "of your downloads" in strings
+
+
+@pytest.mark.django_db
+def test_map_renders_the_restore_notice_hidden_with_its_cta() -> None:
+    """SNOW-1140: the one-time notice ships hidden, with the hooks JS uses.
+
+    It is revealed only by ``map_downloads_manager.js``, and only for a
+    signed-in visitor online — so the server never renders it visible.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    notice = content.split('id="map-downloads-restore-notice"', 1)[1].split(
+        'id="map-downloads-restore-notice-open"', 1
+    )[0]
+    assert "hidden" in notice.split(">", 1)[0]
+    assert 'id="map-downloads-restore-notice-title"' in notice
+    assert 'id="map-downloads-restore-notice-open"' in content
+    assert "Show downloads" in content
+    assert "js/downloads_restore_queue_core.js" in content
+
+
 _MAP_STATE_JS = Path(__file__).parent.parent.parent / "static" / "js" / "map_state.js"
 
 
