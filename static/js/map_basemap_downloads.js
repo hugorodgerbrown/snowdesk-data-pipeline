@@ -2739,6 +2739,7 @@ function clearBasemapDownloadError() {
   try {
     const ids = [
       ...Object.values(BASEMAP_DOWNLOAD_ERROR_TOAST_IDS),
+      ...Object.values(BASEMAP_DOWNLOAD_ERROR_TOAST_REGION_IDS),
       BASEMAP_DOWNLOAD_ERROR_TOAST_FALLBACK_ID,
     ];
     for (const id of ids) {

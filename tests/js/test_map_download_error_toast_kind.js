@@ -48,7 +48,7 @@ beforeEach(() => {
     .join('\n;\n');
   // eslint-disable-next-line no-new-func
   new Function(
-    `${source}\n;window.__downloadErrorApi = { reveal: revealBasemapDownloadError, run: runPinnedDownload };`,
+    `${source}\n;window.__downloadErrorApi = { reveal: revealBasemapDownloadError, clear: clearBasemapDownloadError, run: runPinnedDownload };`,
   )();
   api = window.__downloadErrorApi;
 });
@@ -67,6 +67,14 @@ describe('revealBasemapDownloadError', () => {
   it('falls back to the generic toast for a region run with no reason of its own', () => {
     api.reveal(null, 'region');
     expect(shown()).toEqual(['map-download-error-toast']);
+  });
+});
+
+describe('clearBasemapDownloadError', () => {
+  it.each(['quota', 'budget'])('hides the region %s copy when a new attempt starts', (reason) => {
+    api.reveal(reason, 'region');
+    api.clear();
+    expect(shown()).toEqual([]);
   });
 });
 
