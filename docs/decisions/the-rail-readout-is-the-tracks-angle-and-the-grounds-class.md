@@ -125,3 +125,5 @@ with no cursor. Inside a no-fall passage the line ends
 - **What stands.** Pinch, the −/+ zoom, the double-tap zoom, the leg
   picker, the passage bars, and `aria-valuetext`'s bank side and "Kick
   turn" after the line.
+
+> **Update, SNOW-1051 (2026-10-19).** The level-track-on-a-steep-face limit recorded above is addressed for heights by [route-heights-are-despiked-on-steep-ground.md](route-heights-are-despiked-on-steep-ground.md).

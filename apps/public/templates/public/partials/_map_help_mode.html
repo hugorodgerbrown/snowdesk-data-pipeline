@@ -1,0 +1,329 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_help_mode.html — help mode on the map (SNOW-1119).
+
+The "?" roundel used to start the tour. It now turns on help mode: every
+control on the map gets its name beside it, a bar says "Tap anything to see
+what it does" (with the tour one tap away), and a tap on a control shows
+what it does instead of doing it. Opening a sheet in help mode — tapping a
+region, a resort or saved pin, a weather symbol or a route — numbers its
+parts and keys them in a card.
+
+Two layers, deliberately separate: the map SURFACE (the controls, one card
+each) and each OVERLAY (a sheet, one guide each). Everything a reader sees
+is rendered here, so {% trans %} reaches every string;
+static/js/map_help_mode.js only reads it, positions it and wires it.
+
+Included from map.html, after the sheets it describes.
+
+What the JS reads:
+  #map-help-controls  one <li> per control: data-control is its selector,
+                      data-label the name drawn beside it, data-topic the
+                      /help/ topic its card links to, data-open the label
+                      of the card's button that leaves help mode and
+                      presses the control. The <li>'s text is the card's
+                      copy. A control not on screen gets no label.
+  [data-sheet-guide]  one guide per sheet: data-sheet is the sheet's
+                      selector (open when it is not hidden), data-topic and
+                      data-more the /help/ link under the key. Each key
+                      row's data-anchor is a selector inside the sheet for
+                      its badge; a row whose part is not on screen (scrolled
+                      away, or absent that day) keeps its number in the key
+                      and loses its badge.
+{% endcomment %}
+{% url "public:help" as help_url %}
+<div id="map-help-mode" class="map-help-mode" hidden data-help-url="{{ help_url }}">
+    {# The bar: what help mode is, and the two ways out of it. #}
+    <div class="map-help-mode-bar" id="map-help-mode-bar" role="region" aria-label='{% trans "Map help" %}'>
+        <p class="map-help-mode-bar-text">{% trans "Tap anything to see what it does" %}</p>
+        <button type="button" id="map-help-mode-tour" class="map-help-mode-bar-btn">{% trans "Tour" %}</button>
+        <button type="button" id="map-help-mode-done" class="map-help-mode-bar-btn map-help-mode-bar-btn--primary">
+            {% trans "Done" %}
+        </button>
+    </div>
+    {# The names drawn beside the controls. aria-hidden: each control      #}
+    {# already carries its own accessible name; these are for the eye.     #}
+    <div id="map-help-mode-labels" aria-hidden="true"></div>
+    <div id="map-help-mode-ring" class="map-help-ring" aria-hidden="true" hidden></div>
+    {# The card a tapped control opens. #}
+    <div
+        id="map-help-mode-card"
+        class="map-help-mode-card"
+        role="dialog"
+        aria-modal="false"
+        aria-labelledby="map-help-mode-card-title"
+        tabindex="-1"
+        hidden
+    >
+        <button type="button" id="map-help-mode-card-close" class="map-help-close" aria-label='{% trans "Close" %}'>
+            {% include "includes/_icon_close.html" with size=16 only %}
+        </button>
+        <p class="map-help-mode-eyebrow">{% trans "Map control" %}</p>
+        <h3 class="map-help-tooltip-title" id="map-help-mode-card-title"></h3>
+        <p class="map-help-tooltip-body" id="map-help-mode-card-body"></p>
+        <div class="map-help-mode-actions">
+            <a
+                id="map-help-mode-card-more"
+                class="map-help-mode-link"
+                href="{{ help_url }}"
+            >{% trans "More in Help" %}</a>
+            <button type="button" id="map-help-mode-card-open" class="map-help-btn map-help-btn--primary"></button>
+        </div>
+    </div>
+    {# The guide an open sheet shows, and the badges on its parts. #}
+    <div id="map-help-mode-badges" aria-hidden="true"></div>
+    <div
+        id="map-help-mode-guide"
+        class="map-help-mode-card map-help-mode-guide"
+        role="dialog"
+        aria-modal="false"
+        aria-labelledby="map-help-mode-guide-title"
+        tabindex="-1"
+        hidden
+    >
+        <button type="button" id="map-help-mode-guide-close" class="map-help-close" aria-label='{% trans "Close" %}'>
+            {% include "includes/_icon_close.html" with size=16 only %}
+        </button>
+        <p class="map-help-mode-eyebrow" id="map-help-mode-guide-eyebrow"></p>
+        <h3 class="map-help-tooltip-title" id="map-help-mode-guide-title">{% trans "What this shows" %}</h3>
+        <ol class="map-help-mode-key" id="map-help-mode-guide-key"></ol>
+        <div class="map-help-mode-actions">
+            <a id="map-help-mode-guide-more" class="map-help-mode-link" href="{{ help_url }}"></a>
+            <button type="button" id="map-help-mode-guide-done" class="map-help-btn map-help-btn--primary">
+                {% trans "Got it" %}
+            </button>
+        </div>
+    </div>
+</div>
+{# ---- The controls, in the order a reader meets them. ---- #}
+<ul id="map-help-controls" hidden>
+    <li
+        data-control="#region-readout"
+        data-label='{% trans "Region" %}'
+        data-topic="help-topic-bulletins"
+        data-open='{% trans "Open the region" %}'
+    >
+        {% trans "The region you have selected and its danger on the day shown. Tap it for the day’s avalanche problems and the link to the full bulletin." %}
+    </li>
+    <li
+        data-control="#map-region-pin-control"
+        data-label='{% trans "Pin region" %}'
+        data-topic="help-topic-favourites"
+        data-open='{% trans "Pin it" %}'
+    >
+        {% trans "Pin the selected region to follow it. Pinned regions are listed first when you search." %}
+    </li>
+    <li
+        data-control="#map-download-control"
+        data-label='{% trans "Save offline" %}'
+        data-topic="help-topic-downloads"
+        data-open='{% trans "Save it" %}'
+    >
+        {% trans "Save the selected region’s map and bulletins to this device, so it opens without a signal." %}
+    </li>
+    <li
+        data-control="#map-calendar-toggle"
+        data-label='{% trans "Day shown" %}'
+        data-topic="help-topic-calendar"
+        data-open='{% trans "Open the calendar" %}'
+    >
+        {% trans "The map shows one day at a time. Tap the date for a calendar of the season, coloured by the selected region’s danger." %}
+    </li>
+    <li
+        data-control="#season-scrubber"
+        data-label='{% trans "Season" %}'
+        data-topic="help-topic-timeline"
+        data-open='{% trans "Use it" %}'
+    >
+        {% trans "Run through the season day by day, or press play to watch the danger change." %}
+    </li>
+    <li
+        data-control="#search-toggle"
+        data-label='{% trans "Search" %}'
+        data-topic="help-topic-map"
+        data-open='{% trans "Search" %}'
+    >
+        {% trans "Find a region or resort by name and go straight to it." %}
+    </li>
+    <li
+        data-control="#locate-toggle"
+        data-label='{% trans "Locate me" %}'
+        data-topic="help-topic-map"
+        data-open='{% trans "Locate me" %}'
+    >
+        {% trans "Centre the map on where you are. Tap again to save the area around you for offline use." %}
+    </li>
+    <li
+        data-control="#basemap-toggle"
+        data-label='{% trans "Layers" %}'
+        data-topic="help-topic-layers"
+        data-open='{% trans "Open layers" %}'
+    >
+        {% trans "Pick the base map, choose what is drawn over it (resorts, pins, routes, weather, slope) and set how strongly the danger colours show." %}
+    </li>
+    <li
+        data-control="#favourite-add-btn"
+        data-label='{% trans "Pins" %}'
+        data-topic="help-topic-favourites"
+        data-open='{% trans "Open pins" %}'
+    >
+        {% trans "The places and regions you follow. Add a pin, and show or hide them on the map." %}
+    </li>
+    <li
+        data-control="#report-btn"
+        data-label='{% trans "Observations" %}'
+        data-topic="help-topic-observations"
+        data-open='{% trans "Open observations" %}'
+    >
+        {% trans "Field reports: share what you saw, see your own, and show or hide everyone’s on the map." %}
+    </li>
+    <li
+        data-control="#route-add-btn"
+        data-label='{% trans "Routes" %}'
+        data-topic="help-topic-routes"
+        data-open='{% trans "Open routes" %}'
+    >
+        {% trans "Upload a GPX track to see its slope, its profile and the day’s bulletin along it." %}
+    </li>
+    <li
+        data-control="#map-custom-download-control"
+        data-label='{% trans "Offline maps" %}'
+        data-topic="help-topic-downloads"
+        data-open='{% trans "Open offline maps" %}'
+    >
+        {% trans "The maps saved to this device. Download a custom area, and see how much space they take." %}
+    </li>
+    <li
+        data-control="#map-controls-toggle"
+        data-label='{% trans "Fold “yours”" %}'
+        data-topic="help-topic-map"
+        data-open='{% trans "Fold them" %}'
+    >
+        {% trans "Fold away your four lists to clear the map. Tap again to bring them back." %}
+    </li>
+    <li
+        data-control="#map-zoom-toggle"
+        data-label='{% trans "Zoom" %}'
+        data-topic="help-topic-map"
+        data-open='{% trans "Open zoom" %}'
+    >
+        {% trans "Your zoom level. Tap it to see what the map shows as you go closer, and to zoom in or out." %}
+    </li>
+    <li
+        data-control="#map-legend-toggle"
+        data-label='{% trans "Map key" %}'
+        data-topic="help-topic-map"
+        data-open='{% trans "Open the key" %}'
+    >
+        {% trans "The danger scale, what each pin means, and where the map data comes from." %}
+    </li>
+</ul>
+{# ---- The sheet guides: five parts each, in reading order. ---- #}
+<div id="map-help-guides" hidden>
+    <div
+        data-sheet-guide="region"
+        data-sheet="#region-sheet"
+        data-eyebrow='{% trans "Region sheet" %}'
+        data-topic="help-topic-bulletins"
+        data-more='{% trans "Reading a bulletin" %}'
+    >
+        <ol>
+            <li data-anchor="[data-region-sheet-slot='rating']">
+                {% blocktrans trimmed %}<b>Danger level</b> for the whole region on this day{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-region-sheet-proxy]">
+                {% blocktrans trimmed %}<b>Pin</b> it to follow it, or <b>save it offline</b>{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-testid='region-sheet-breadcrumb']">
+                {% blocktrans trimmed %}<b>Where it sits</b>: country, area and sub-area{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-testid='panel-title']">
+                {% blocktrans trimmed %}<b>Each problem</b>, its timing and its own level{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-testid^='aspect-elevation-']">
+                {% blocktrans trimmed %}<b>Aspects and heights</b> where the problem applies{% endblocktrans %}
+            </li>
+        </ol>
+    </div>
+    <div
+        data-sheet-guide="place"
+        data-sheet="#place-sheet"
+        data-eyebrow='{% trans "Place sheet" %}'
+        data-topic="help-topic-favourites"
+        data-more='{% trans "More about places" %}'
+    >
+        <ol>
+            <li data-anchor="h2[data-row-label]">
+                {% blocktrans trimmed %}<b>The place</b> and the avalanche region it is in{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-testid='place-sheet-rating']">
+                {% blocktrans trimmed %}<b>Danger level</b> in that region on this day{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-resort-star], #place-sheet-actions">
+                {% blocktrans trimmed %}<b>Save</b> a resort, or <b>share, rename</b> or delete a pin of
+                    yours{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-testid='place-sheet-week']">
+                {% blocktrans trimmed %}<b>The week’s weather</b>: tap a day to see it{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-testid='place-sheet-links']">
+                {% blocktrans trimmed %}<b>Onward</b>: the full forecast, the resort, the bulletin{% endblocktrans %}
+            </li>
+        </ol>
+    </div>
+    <div
+        data-sheet-guide="weather"
+        data-sheet="#weather-sheet"
+        data-eyebrow='{% trans "Weather sheet" %}'
+        data-topic="help-topic-weather"
+        data-more='{% trans "More about the weather" %}'
+    >
+        <ol>
+            <li data-anchor="[data-testid='weather-detail-heading']">
+                {% blocktrans trimmed %}<b>The place</b> this forecast is for{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-testid='weather-detail-icon']">
+                {% blocktrans trimmed %}<b>The day’s weather</b> as a symbol{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-testid='weather-detail-line']">
+                {% blocktrans trimmed %}<b>High and low</b>, new snow and the strongest wind{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-testid='weather-detail-figures']">
+                {% blocktrans trimmed %}<b>Freezing level and snowfall</b>: the figures that change a
+                    plan{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-testid='weather-detail-hourly']">
+                {% blocktrans trimmed %}<b>Hour by hour</b>: temperature, snow and wind through the
+                    day{% endblocktrans %}
+            </li>
+        </ol>
+    </div>
+    {# The route panel is drawn inside #map rather than as an overlay      #}
+    {# sheet, but it is `hidden` when closed exactly as the sheets are.    #}
+    <div
+        data-sheet-guide="route"
+        data-sheet="#route-rail"
+        data-eyebrow='{% trans "Route sheet" %}'
+        data-topic="help-topic-routes"
+        data-more='{% trans "More about routes" %}'
+    >
+        <ol>
+            <li data-anchor="[data-route-rail-meta]">
+                {% blocktrans trimmed %}<b>Length, climb and descent</b> of the whole route{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-route-rail-lane]">
+                {% blocktrans trimmed %}<b>The profile</b>: drag along it to move the point on the
+                    map{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-route-point-card-track]">
+                {% blocktrans trimmed %}<b>Skier’s track</b>: how steep your line is at the point{% endblocktrans %}
+            </li>
+            <li data-anchor="[data-route-point-card-slope]">
+                {% blocktrans trimmed %}<b>Terrain slope</b>: how steep the ground around it is{% endblocktrans %}
+            </li>
+            <li data-anchor="#route-rail-menu-trigger">
+                {% blocktrans trimmed %}<b>Plan a trip, share, rename</b> or delete{% endblocktrans %}
+            </li>
+        </ol>
+    </div>
+</div>

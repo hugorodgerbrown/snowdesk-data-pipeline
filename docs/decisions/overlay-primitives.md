@@ -119,10 +119,9 @@ restore focus) listen for `overlay:dismissed` rather than binding their own
 --z-toast:  50;   /* transient toasts: share, mutation-queue, htmx-error            */
 --z-popup:  60;   /* sheets: favourite / report fly-outs                            */
 --z-modal:  70;   /* full-screen modals: forced update, reset required              */
---z-launch: 80;   /* PWA launch shell (SNOW-878) — covers the booting app entirely   */
 ```
 
-Final stacking order is launch > modal > popup > toast > banner — a deliberate
+Final stacking order is modal > popup > toast > banner — a deliberate
 reorder from the pre-SNOW-486 state, which had toasts stacking above
 sheets.
 

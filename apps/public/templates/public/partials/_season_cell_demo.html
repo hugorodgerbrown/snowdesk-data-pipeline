@@ -1,0 +1,21 @@
+{% comment %}
+apps/public/templates/public/partials/_season_cell_demo.html
+
+Component-library–only row of season cells (SNOW-1126). Renders each cell
+through public/partials/_season_cell.html inside the
+[data-testid="season-calendar"] container its CSS is scoped to.
+
+Context:
+    cells  : list[SeasonCell | None] — synthetic fixture from _component_fixtures.py
+    region : namespace with canonical_region_id + name_slug (linked cells)
+    inert  : bool — render every cell as a non-link image
+{% endcomment %}
+<div class="bg-bg py-4 px-3">
+    <div data-testid="season-calendar" class="inline-block">
+        <div class="flex">
+            {% for cell in cells %}
+                {% include "public/partials/_season_cell.html" with cell=cell %}
+            {% endfor %}
+        </div>
+    </div>
+</div>

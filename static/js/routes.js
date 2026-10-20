@@ -1,7 +1,8 @@
 /*
  * static/js/routes.js — SNOW-686 saved-routes panel: upload, list, rename
- * and delete. (SNOW-687's "Display on the map" switch lived here until
- * SNOW-904 moved every layer control into the map's layers menu.)
+ * and delete. The panel's "Show on the map" switch (SNOW-687's, removed by
+ * SNOW-904, restored beside the layers-menu row by the two-capsule column)
+ * is owned by static/js/map_panel_overlay_switch.js.
  *
  * The fourth UGC surface, built to the shape SNOW-634 set for downloads and
  * SNOW-658 generalised across favourites and field observations: its own
@@ -98,7 +99,8 @@
  *   - show()/hide() are the only writers of that overlay's visibility, so
  *     the switch and the map cannot drift.
  *
- * The roundel's `data-overlay-shown` ring follows from the same bridge,
+ * The roundel's `data-overlay-shown` state (attribute and aria-label; no
+ * visual ring since the two-capsule column) follows from the same bridge,
  * painted by static/js/map_roundel_overlay_state.js — nothing here writes
  * it.
  *
@@ -285,6 +287,8 @@
   function showListPanel() {
     sheet.replaceChildren();
     sheet.appendChild(listTemplate.content.cloneNode(true));
+    // A cloned switch starts unchecked; seed it from the overlay's setting.
+    window.pwaPanelOverlaySwitch?.sync();
 
     if (!UPLOAD_ELIGIBLE) {
       // Uploading needs an account either way, so the add CTA goes.
@@ -482,11 +486,10 @@
   // and the request is away before preventDefault() is reached. See that
   // template's own note for the full account.
 
-  // SNOW-904: the "Display on the map" switch this panel carried, and the
-  // change listener that drove window.pwaRoutesOverlay from it, are gone.
-  // The layers menu's Routes row drives the same bridge, and hands an
-  // anonymous visitor to the sign-in sheet rather than ticking a box over
-  // an empty layer.
+  // The panel's "Show on the map" switch is wired by
+  // static/js/map_panel_overlay_switch.js, bound to the layers menu's Routes
+  // row — so it inherits that row's sign-in hand-off for an anonymous
+  // visitor rather than ticking a box over an empty layer.
 
   /** Handle a click on a row's name, which frames that route on the map.
    *

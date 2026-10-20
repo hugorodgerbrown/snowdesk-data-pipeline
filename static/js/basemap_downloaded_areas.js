@@ -321,6 +321,10 @@
                   n: custom.ordinal,
                 })
               : custom.id),
+          // SNOW-1133: the stored name alone, '' when the user never
+          // gave one. `name` above is for display; this is what the
+          // account sync posts, so the localised default never reaches it.
+          storedName: custom.name || '',
           bytes: Number(custom.bytes) || 0,
           savedAt: custom.savedAt,
           // SNOW-645: see the region branch above for the "unknown" fallback.

@@ -33,6 +33,8 @@ banners landed, every page extending ``public/base.html`` looks them up
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.db import connection
 from django.test import Client
@@ -261,6 +263,21 @@ class TestHelpPageFlagGating:
 
         assert b"They do not follow your account to your phone" not in response.content
 
+    def test_the_bin_is_described_as_this_device_only(self, client: Client) -> None:
+        """SNOW-1135: Remove means this device; Forget clears the account.
+
+        The paragraph used to say the bin took an area off the account and
+        so off the user's other devices. That is no longer what it does, and
+        the help page is where a user checks before pressing it.
+        """
+        response = client.get(reverse("public:help"))
+        content = response.content.decode()
+
+        assert "removes that download from this device" in content
+        assert '"Not on this device"' in content
+        assert "use Forget on that row" in content
+        assert "so it goes from your other devices too" not in content
+
     def test_slope_panel_present_for_anonymous(self, client: Client) -> None:
         response = client.get(reverse("public:help"))
         assert b'data-testid="help-topic-slope"' in response.content
@@ -464,8 +481,21 @@ class TestHelpCoversTheMapControls:
     def test_each_control_has_a_coachmark_step(
         self, client: Client, control: str
     ) -> None:
+        """The tour rings the control, or names it in a step that does.
+
+        SNOW-1118 folded the four "yours" roundels into one step that rings
+        their capsule and lists them a row each; a row says which roundel it
+        describes with ``data-help-names``.
+        """
         home = client.get(reverse("public:map")).content
-        assert f'data-help-target="#{control}"'.encode() in home, control
+        targets = re.findall(rb'data-help-target="([^"]*)"', home)
+        targeted = any(
+            f"#{control}".encode()
+            in [t.strip() for t in target.replace(b"|", b",").split(b",")]
+            for target in targets
+        )
+        named = f'data-help-names="#{control}"'.encode() in home
+        assert targeted or named, control
 
 
 @pytest.mark.django_db
@@ -485,11 +515,10 @@ class TestHelpIllustrations:
         "help-topic-bulletins": b'data-testid="day-windows-panel"',
         "help-topic-problems": b"Wind slab",
         "help-topic-calendar": b"calendar-cell",
-        # SNOW-904: the four panel illustrations were marked by the id of
-        # the "Display on the map" switch each one rendered. That switch is
-        # gone from every panel — the layers menu is the sole control for
-        # every layer now — so each is marked by its own add-CTA label,
-        # which is the one string that differs between the four.
+        # Each panel illustration is marked by its own add-CTA label, which
+        # is the one string that differs between the four. (SNOW-904 moved
+        # these off the switch ids; the switch is back, but the labels are
+        # still the clearer marker.)
         "help-topic-favourites": b"Add a favourite",
         "help-topic-observations": b"Report an observation",
         "help-topic-routes": b"Add a route",
@@ -530,14 +559,15 @@ class TestHelpIllustrations:
             assert "inert" in wrapper, testid
             assert 'aria-hidden="true"' in wrapper, testid
 
-    def test_illustrations_render_no_panel_overlay_switch(self, client: Client) -> None:
-        """SNOW-904: no panel has a "Display on the map" switch any more.
+    def test_illustrations_never_answer_to_the_real_switch_ids(
+        self, client: Client
+    ) -> None:
+        """Each panel illustration's switch carries a namespaced id.
 
-        This test used to guard a subtler thing — map.js found the switch
-        it drove by id, so a decoration must not answer to that id. There
-        is no such switch and no such id now, on /help/ or anywhere else,
-        and the ids are still asserted absent because a reinstated switch
-        would be a second control for a layer the menu already owns.
+        static/js/map_panel_overlay_switch.js finds each panel's "Show on
+        the map" switch by id, so a decoration must never answer to one of
+        those ids — on /help/ the module is not loaded, but the guarantee
+        is cheap and the ids are the contract.
         """
         content = client.get(reverse("public:help")).content
         for real_id in (
@@ -547,6 +577,13 @@ class TestHelpIllustrations:
             b"map-downloads-overlay-toggle",
         ):
             assert real_id not in content, real_id
+        for illustration_id in (
+            b"help-illustration-toggle-favourites",
+            b"help-illustration-toggle-observations",
+            b"help-illustration-toggle-routes",
+            b"help-illustration-toggle-downloads",
+        ):
+            assert illustration_id in content, illustration_id
 
     def test_help_page_issues_no_illustration_queries(self, client: Client) -> None:
         """The illustrations are built in memory, and must stay that way.

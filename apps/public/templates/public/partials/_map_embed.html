@@ -38,28 +38,21 @@ Context expected from the including template:
   default_region_id   — str: region whose ribbon is server-rendered (CH-4115).
 
 Optional context:
-  show_intro          — bool (default False): when True, renders the
-                        #home-intro welcome overlay inside #map. It is also
-                        what the "?" roundel opens: with the panel present
-                        the roundel shows it rather than starting the tour
-                        (static/js/map_help.js), and the panel's CTA carries
-                        on into the tour from there.
+  show_tour_offer     — bool (default False): when True, renders the
+                        hidden #map-tour-offer card inside #map, which
+                        static/js/map_tour_offer.js reveals once per device
+                        after the map settles (SNOW-1117). It replaced the
+                        #home-intro welcome panel.
   is_offseason        — bool: True when today is past the season end.
-                        Drives the archive note inside #home-intro. The
-                        full-width #map-offseason-bar it also carried
-                        (SNOW-445) is gone — the strip stated a resume
-                        month the data no longer supported, and the
-                        panel's line already makes the same guarantee.
+                        Drives the archive note inside #map-tour-offer.
   map_help_autostart  — bool (default True): when False, #map-help-overlay
                         carries data-map-help-no-autostart and
                         static/js/map_help.js's first-load auto-start is
-                        skipped — the tour then only opens on request. On a
-                        page with #home-intro that request comes from the
-                        panel's "Explore the map" CTA, which is also where
-                        the "?" roundel now leads; elsewhere the roundel
-                        opens the tour itself. map.html passes False
-                        (SNOW-535): the tour must not throw itself at a
-                        visitor straight after they dismiss #home-intro.
+                        skipped — the tour then only opens on request: the
+                        "?" roundel, or #map-tour-offer's "Start the tour".
+                        map.html passes False: the offer asks first, after
+                        the map has settled, rather than the tour starting
+                        itself over a map the visitor has not seen yet.
 {% endcomment %}
 {# SNOW-188: Hidden SVG sprite for country flags shown in the search   #}
 {# result badge. Extracted to a shared include (SNOW-162) so the      #}
@@ -259,201 +252,138 @@ Optional context:
             <circle cx="12" cy="10" r="2.75" fill="var(--color-card)" />
         </svg>
     </div>
-    {# Bottom-right control stack — every roundel in one bottom-anchored      #}
-    {# column: locate, then the collapsible group (layers, bulletin fill,     #}
-    {# downloads, favourites, observations) with the help (?) roundel at its  #}
-    {# foot, then the expand/collapse toggle (level with the bottom-left (i)  #}
-    {# toggle). map.js/report.js/favourites.js bind by id, so the ordering is #}
-    {# DOM-only; #map-controls-br is on the click guard.                      #}
-    {# SNOW-664: LOCATE is the only roundel outside the collapsible group.    #}
-    {# "Where am I" is the one question worth a permanent control on a map    #}
-    {# the user is standing in; everything else is a choice about what the    #}
-    {# map shows, and a choice can wait behind the toggle. Layers used to sit #}
-    {# above locate and stay out with it — it is now the FIRST item inside    #}
-    {# the group, one slot down, so a collapsed column is locate + toggle and #}
-    {# nothing else.                                                          #}
+    {# Bottom-right control stack — two capsules in one bottom-anchored       #}
+    {# column, then the expand/collapse toggle (level with the bottom-left    #}
+    {# (i) toggle). map.js/report.js/favourites.js bind by id, so the         #}
+    {# ordering is DOM-only; #map-controls-br is on the click guard.          #}
+    {#                                                                        #}
+    {# The column is TWO GROUPS, each one glass capsule (.map-control-group  #}
+    {# in static/css/map.css — one shared background, border and shadow,     #}
+    {# hairlines between the buttons, no gap):                                #}
+    {#   1. THE MAP — locate and layers. Where you are, and what the map is   #}
+    {#      drawing. Always on screen.                                        #}
+    {#   2. YOURS — favourites, field observations, routes and downloads:     #}
+    {#      the things the reader keeps. Downloads belongs here rather than   #}
+    {#      with the map because what it opens is a list of areas THIS        #}
+    {#      reader saved, managed exactly like the other three.               #}
+    {# The chevron collapses group 2 only. SNOW-664 had collapsed layers too, #}
+    {# leaving locate alone outside; "what is the map showing" is the other   #}
+    {# question a map always has to answer, so layers stays out with locate.  #}
+    {# See docs/decisions/map-controls-are-two-groups-without-an-on-map-marker.md. #}
     {# data-expanded drives the collapsible group below. Server-rendered      #}
     {# "true" so the controls are discoverable on a first visit and present   #}
     {# with JS disabled; mapControlsCollapseInit re-reads the persisted       #}
     {# preference from localStorage on boot.                                  #}
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
-        {# SNOW-328: "Locate me" roundel — triggers the MapLibre       #}
-        {# GeolocateControl to pan/zoom to the user's position once.  #}
-        {# The control's own button is hidden via CSS; this pill is    #}
-        {# the visible affordance. Rendered on both /map/ and /.       #}
-        {# SNOW-664: FIRST in the stack, and the only child outside     #}
-        {# #map-controls-collapsible — see the stack comment above.     #}
-        {# HACK MODE (feature discovery): this roundel carries TWO modes, and #}
-        {# `data-mode` says which. Idle it is "locate me"; the tap that finds  #}
-        {# you also arms a drop zone around you, and the roundel becomes       #}
-        {# "download this" until it times out (static/js/map_drop_zone.js).    #}
-        {# One control because it is one thought — the position is a one-shot  #}
-        {# fix, not a live track, so there was never a reason for a second     #}
-        {# roundel to ask for the same fix a moment later.                     #}
-        {# Both glyphs are rendered and CSS shows one, rather than the JS      #}
-        {# writing SVG: the markup stays server-rendered and the mode switch   #}
-        {# stays a single attribute write.                                     #}
-        <div class="map-utility-pill map-utility-pill--locate">
-            <button
-                id="locate-toggle"
-                type="button"
-                class="map-utility-button hover-affordance"
-                data-mode="locate"
-                aria-label='{% trans "Locate me" %}'
+        {# Group 1, "the map": locate + layers in one capsule. Never inside   #}
+        {# #map-controls-collapsible, so the chevron cannot hide either.      #}
+        <div class="map-control-group" id="map-control-group-map" data-control-group="map">
+            {# SNOW-328: "Locate me" roundel — triggers the MapLibre       #}
+            {# GeolocateControl to pan/zoom to the user's position once.  #}
+            {# The control's own button is hidden via CSS; this pill is    #}
+            {# the visible affordance. Rendered on both /map/ and /.       #}
+            {# HACK MODE (feature discovery): this roundel carries TWO modes, and #}
+            {# `data-mode` says which. Idle it is "locate me"; the tap that finds  #}
+            {# you also arms a drop zone around you, and the roundel becomes       #}
+            {# "download this" until it times out (static/js/map_drop_zone.js).    #}
+            {# One control because it is one thought — the position is a one-shot  #}
+            {# fix, not a live track, so there was never a reason for a second     #}
+            {# roundel to ask for the same fix a moment later.                     #}
+            {# Both glyphs are rendered and CSS shows one, rather than the JS      #}
+            {# writing SVG: the markup stays server-rendered and the mode switch   #}
+            {# stays a single attribute write.                                     #}
+            <div class="map-utility-pill map-utility-pill--locate">
+                <button
+                    id="locate-toggle"
+                    type="button"
+                    class="map-utility-button hover-affordance"
+                    data-mode="locate"
+                    aria-label='{% trans "Locate me" %}'
+                >
+                    <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        aria-hidden="true"
+                        class="map-locate-glyph map-locate-glyph--locate"
+                    >
+                        <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" />
+                    </svg>
+                    {# Concentric rings around a filled centre — a radius about a  #}
+                    {# point, which is what the drop draws. Deliberately close to  #}
+                    {# the crosshair above without being it: the same place, a     #}
+                    {# different verb.                                             #}
+                    <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        class="map-locate-glyph map-locate-glyph--drop"
+                    >
+                        <circle cx="12" cy="12" r="2.5" fill="currentColor" />
+                        <circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.6" />
+                        <circle
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-dasharray="3 3"
+                        />
+                    </svg>
+                </button>
+            </div>
+            {# SNOW-58: basemap layer picker — Google-Maps-style stacked-layers   #}
+            {# pill that opens a popover of basemap options. Choice persists in   #}
+            {# localStorage; selecting a value calls maplibre setStyle() and JS   #}
+            {# re-installs the regions source + layers on style.load.             #}
+            {# Second in the "map" capsule, under locate, and never collapsed.    #}
+            {# Its menu (#basemap-menu) is still a child of the stack rather than #}
+            {# of this pill: positionMenu measures it against the stack, and the  #}
+            {# capsule clips its own children to its rounded outline.             #}
+            <div
+                class="map-utility-pill map-utility-pill--basemap"
+                id="basemap-pill"
+                data-state="collapsed"
             >
-                <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    aria-hidden="true"
-                    class="map-locate-glyph map-locate-glyph--locate"
+                <button
+                    id="basemap-toggle"
+                    type="button"
+                    class="map-utility-button hover-affordance"
+                    aria-label='{% trans "Choose basemap" %}'
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                    aria-controls="basemap-menu"
                 >
-                    <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" />
-                </svg>
-                {# Concentric rings around a filled centre — a radius about a  #}
-                {# point, which is what the drop draws. Deliberately close to  #}
-                {# the crosshair above without being it: the same place, a     #}
-                {# different verb.                                             #}
-                <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    class="map-locate-glyph map-locate-glyph--drop"
-                >
-                    <circle cx="12" cy="12" r="2.5" fill="currentColor" />
-                    <circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.6" />
-                    <circle
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                        stroke-dasharray="3 3"
-                    />
-                </svg>
-            </button>
+                    {% include "includes/_icon_layers.html" %}
+                </button>
+            </div>
         </div>
-        {# Collapsible group. Locate above stays put; these five reveal beneath  #}
-        {# it, in stack order, easing out of the toggle anchored at the foot.   #}
+        {# Group 2, "yours", in the collapsible wrapper. The chevron at the     #}
+        {# foot reveals and hides this capsule alone, easing out of the toggle. #}
         {# The wrapper is what animates (height, clipped by overflow) and the   #}
-        {# inner holds the flex column, because a height transition needs a     #}
-        {# fixed-height box wrapping an auto-height one.                        #}
-        {# The clip is on BOTH axes, which is why neither panel opened from     #}
-        {# this group lives inside it: #basemap-menu and #map-fill-flyout are   #}
-        {# both children of #map-controls-br, positioned against the stack by   #}
-        {# their own JS — see each one's comment below.                         #}
+        {# inner — which IS the capsule — holds the flex column, because a      #}
+        {# height transition needs a fixed-height box wrapping an auto-height   #}
+        {# one. The inner's children are the capsule's buttons and nothing      #}
+        {# else: mapControlsCollapseInit counts them for the open height.       #}
         <div id="map-controls-collapsible">
-            <div class="map-controls-collapsible-inner">
-                {# SNOW-58: basemap layer picker — Google-Maps-style stacked-layers   #}
-                {# pill that opens a popover of basemap options. Choice persists in   #}
-                {# localStorage; selecting a value calls maplibre setStyle() and JS   #}
-                {# re-installs the regions source + layers on style.load.             #}
-                {# SNOW-664: FIRST in the collapsible group, one slot below the       #}
-                {# always-visible locate roundel — it used to sit above locate and    #}
-                {# stay out of the group with it. Its menu (#basemap-menu) moved out  #}
-                {# to the stack in the same change: this wrapper is `overflow:        #}
-                {# hidden`, so a popover anchored to a roundel inside it would be     #}
-                {# clipped the moment it extended left, exactly as SNOW-656 found     #}
-                {# for the bulletin-fill flyout.                                      #}
-                <div
-                    class="map-utility-pill map-utility-pill--basemap"
-                    id="basemap-pill"
-                    data-state="collapsed"
-                >
-                    <button
-                        id="basemap-toggle"
-                        type="button"
-                        class="map-utility-button hover-affordance"
-                        aria-label='{% trans "Choose basemap" %}'
-                        aria-haspopup="menu"
-                        aria-expanded="false"
-                        aria-controls="basemap-menu"
-                    >
-                        {% include "includes/_icon_layers.html" %}
-                    </button>
-                </div>
-                {# SNOW-656: bulletin-fill strength — a roundel whose flyout     #}
-                {# opens to the LEFT with five opacity steps. It governs the     #}
-                {# danger choropleth (regions-fill) and the dissolved boundary   #}
-                {# of every region sharing one bulletin: the bulletin DATA,      #}
-                {# split from the Micro regions row, which now carries the       #}
-                {# geography alone.                                              #}
-                {#                                                               #}
-                {# FIVE STEPS, NOT A TOGGLE. How strong the choropleth should be #}
-                {# is not a binary — it depends on the basemap under it and on   #}
-                {# whether the reader is after the danger or the terrain. 0 is   #}
-                {# the off position, so this subsumes the toggle it replaces     #}
-                {# rather than sitting beside one. Discrete steps rather than a  #}
-                {# range input because each is then a one-tap 44px target and    #}
-                {# the stored value is one of five known numbers. Persisted      #}
-                {# under snowdesk.map.overlay.bulletins, seeded once from the    #}
-                {# old .l4 value so a device that had the tier switched off      #}
-                {# comes back at 0.                                              #}
-                {#                                                               #}
-                {# Mutually exclusive with the downloads sheet's "Show areas on  #}
-                {# the map" (both paint the same polygons) — moving either       #}
-                {# visibly moves the other. See window.pwaLayerVisibilityCore.   #}
-                {#                                                               #}
-                {# SECOND in the collapsible group — SNOW-664 moved the layers   #}
-                {# roundel in above it — so it sits two slots below the          #}
-                {# always-visible locate roundel and hides with the strip. A     #}
-                {# flyout rather than inline on the canvas: five 44px targets is #}
-                {# 220px, which does not fit beside the date pill at 375px, and  #}
-                {# a control this size should not be permanently on the map.     #}
-                <div
-                    class="map-utility-pill map-utility-pill--fill"
-                    id="map-fill-pill"
-                    data-state="collapsed"
-                >
-                    <button
-                        id="map-fill-toggle"
-                        type="button"
-                        class="map-utility-button hover-affordance"
-                        aria-label='{% trans "Bulletin fill strength" %}'
-                        aria-haspopup="true"
-                        aria-expanded="false"
-                        aria-controls="map-fill-flyout"
-                    >
-                        {# A half-filled square: the control sets how strongly    #}
-                        {# the choropleth paints, and the icon is that idea at    #}
-                        {# rest. Outline plus a half-tone wedge, so it reads at   #}
-                        {# 18px without a label.                                  #}
-                        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-                            <rect
-                                x="3"
-                                y="3"
-                                width="18"
-                                height="18"
-                                rx="4"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            />
-                            <path d="M3 12h18v5a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4z" fill="currentColor" />
-                        </svg>
-                    </button>
-                </div>
-                {# SNOW-522: "Download this area" — a user-framed custom-area    #}
-                {# basemap download, taking the slot the per-region download     #}
-                {# control (_map_download_control.html) vacated when it moved    #}
-                {# back to the ribbon header (public/partials/_season_ribbon.html). #}
-                {# Always rendered (no focused-region dependency, unlike its      #}
-                {# sibling above), so the group's height never changes under the  #}
-                {# user. See public/partials/_map_custom_download_control.html.   #}
-                {% include "public/partials/_map_custom_download_control.html" %}
+            <div
+                class="map-controls-collapsible-inner map-control-group"
+                id="map-control-group-yours"
+                data-control-group="yours"
+            >
                 {# SNOW-414: "Favourites" control — rendered regardless of              #}
                 {# authentication state, so anonymous visitors see the affordance and  #}
                 {# get a sign-in CTA on tap (favourites.js branches on                 #}
                 {# data-favourites-eligible, mirroring #report-btn's                   #}
                 {# data-report-eligible anon branch).                                  #}
                 {# SNOW-658: it opens a PANEL now — the user's saved pins, an "Add a   #}
-                {# favourite" CTA, and the "Show favourites on the map" switch that     #}
-                {# used to be a layers-menu row — rather than jumping straight into     #}
-                {# pin placement. The id is unchanged (favourites.js binds it by id,    #}
-                {# and map_help.js targets it), but the label is: it manages now.       #}
+                {# favourite" CTA, and a "Show on the map" switch bound to the layers   #}
+                {# menu's Favourites row — rather than jumping straight into pin        #}
+                {# placement. The id is unchanged (favourites.js binds it by id, and    #}
+                {# map_help.js targets it), but the label is: it manages now.           #}
                 <div class="map-utility-pill map-utility-pill--favourite">
                     <button
                         id="favourite-add-btn"
@@ -467,11 +397,12 @@ Optional context:
                         data-signin-url="{{ favourites_signin_url }}"
                         aria-label='{% trans "Your favourites" %}'
                         {# SNOW-658: "the favourites overlay is on the map right  #}
-                        {# now" — one attribute, one meaning, on all three        #}
+                        {# now" — one attribute, one meaning, on all four         #}
                         {# overlay roundels. Server-rendered false because that   #}
                         {# is the truth with JS off (nothing draws the overlay);  #}
                         {# map_roundel_overlay_state.js paints the real answer at #}
-                        {# boot and on every change.                              #}
+                        {# boot and on every change, into the aria-label. No CSS  #}
+                        {# draws it: the on-map ring was dropped by design.       #}
                         data-overlay-shown="false"
                     >
                         {# SNOW-658: the star's paths live in                    #}
@@ -530,9 +461,9 @@ Optional context:
                 {#                                                                       #}
                 {# SNOW-687: this roundel now carries `data-overlay-shown` like the       #}
                 {# other three — the routes overlay exists, and                          #}
-                {# map_roundel_overlay_state.js paints the ring here from                 #}
-                {# window.pwaRoutesOverlay.isVisible(). It said "no ring to paint yet"    #}
-                {# through SNOW-686, when there was no layer for a switch to drive.       #}
+                {# map_roundel_overlay_state.js paints it here from                       #}
+                {# window.pwaRoutesOverlay.isVisible(), into the aria-label (no visual    #}
+                {# marker: the on-map ring was dropped by design).                        #}
                 <div class="map-utility-pill map-utility-pill--route">
                     <button
                         id="route-add-btn"
@@ -568,20 +499,30 @@ Optional context:
                         {% include "includes/_icon_route.html" with size=18 only %}
                     </button>
                 </div>
+                {# SNOW-522: "Download this area" — a user-framed custom-area    #}
+                {# basemap download, taking the slot the per-region download     #}
+                {# control (_map_download_control.html) vacated when it moved    #}
+                {# back to the ribbon header (public/partials/_season_ribbon.html). #}
+                {# Always rendered (no focused-region dependency, unlike its      #}
+                {# sibling there), so the group's height never changes under the  #}
+                {# user. See public/partials/_map_custom_download_control.html.   #}
+                {# LAST in the "yours" capsule: the areas it lists are the        #}
+                {# reader's own, like the three above it.                         #}
+                {% include "public/partials/_map_custom_download_control.html" %}
                 {# SNOW-794: the help roundel LEFT this stack. Everything in the       #}
                 {# bottom-right column changes what the map is showing — layers,       #}
-                {# basemap, fill strength, downloads, the UGC pins. Help changes       #}
+                {# basemap, bulletin opacity, downloads, the UGC pins. Help changes    #}
                 {# nothing; it explains. It now sits in the bottom-left row with the   #}
                 {# legend and the date, which is the other thing there that describes  #}
                 {# the map rather than altering it.                                     #}
             </div>
         </div>
         {# SNOW-664: the layers menu is a child of .map-controls-br, NOT of the #}
-        {# #basemap-pill it belongs to — the pill moved into                    #}
-        {# #map-controls-collapsible, which is `overflow: hidden` for its       #}
-        {# height animation, and that clips both axes, so a menu opening        #}
-        {# leftward out of it would simply be cut off. Same reasoning, and the  #}
-        {# same fix, as #map-fill-flyout below (SNOW-656).                      #}
+        {# #basemap-pill it belongs to. The pill sat in #map-controls-collapsible #}
+        {# then, which is `overflow: hidden` for its height animation; it sits  #}
+        {# in the "map" capsule now, which clips its children to its rounded    #}
+        {# outline just the same, so a menu opening leftward from inside it     #}
+        {# would still be cut off.                                              #}
         {#                                                                      #}
         {# It was always positioned by JS rather than by CSS — basemapPicker-   #}
         {# Init measures the floor above the scrubber and the cap below #map's  #}
@@ -602,8 +543,16 @@ Optional context:
         {# whichever panel that subject's roundel opens, on a "one subject,    #}
         {# one way in" rule. That answered the wrong question: a reader        #}
         {# asking "what can go on my map" had to open five surfaces to find    #}
-        {# out, and no single surface answered it. The switches are gone; this #}
-        {# menu is the sole control.                                           #}
+        {# out, and no single surface answered it. SNOW-904 made this menu the #}
+        {# sole control.                                                       #}
+        {#                                                                     #}
+        {# This menu STAYS the place that answers "what is on my map" — every  #}
+        {# layer, in one list. Each of those four panels now ALSO carries a    #}
+        {# "Show on the map" switch for its own layer, bound to the same state #}
+        {# as its row here (static/js/map_panel_overlay_switch.js): flip       #}
+        {# either and the other follows. A second way in to one layer, not a   #}
+        {# second answer to the whole question. See                            #}
+        {# docs/decisions/map-controls-are-two-groups-without-an-on-map-marker.md. #}
         {# ``data-signin-url``: where the Favourites and Routes rows hand an   #}
         {# anonymous visitor off to. On the menu rather than on #map because   #}
         {# it is this surface's own hand-off, and the same page already        #}
@@ -781,6 +730,99 @@ Optional context:
                                 <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                                 {% trans "ALBINA (AT, IT)" %}
                             </button>
+                        </li>
+                        {# Bulletin opacity: how strongly the danger choropleth  #}
+                        {# (regions-fill) and the dissolved bulletin boundary    #}
+                        {# paint. SNOW-656 made it a roundel with a flyout; it   #}
+                        {# is a row here now, under the three providers whose    #}
+                        {# bulletins it shades, so every display choice is in    #}
+                        {# this one menu.                                        #}
+                        {#                                                       #}
+                        {# FIVE STEPS, NOT A TOGGLE. How strong the choropleth   #}
+                        {# should be depends on the basemap under it and on      #}
+                        {# whether the reader is after the danger or the         #}
+                        {# terrain. 0 is the off position. Discrete steps rather #}
+                        {# than a range input, so each is a one-tap target and   #}
+                        {# the stored value is one of five known numbers         #}
+                        {# (snowdesk.map.overlay.bulletins).                     #}
+                        {#                                                       #}
+                        {# The steps are NOT .basemap-menu-items: the picker's   #}
+                        {# row loop would read them as basemap radios. A click   #}
+                        {# leaves the menu open (map_basemap_picker.js).         #}
+                        {#                                                       #}
+                        {# SNOW-872: the step that opens checked follows         #}
+                        {# settings.MAP_DEFAULT_OPACITY_STEP. map.js's           #}
+                        {# applyBulletinsVisibility rewrites aria-checked on     #}
+                        {# every [data-bulletins-step] from the EFFECTIVE step   #}
+                        {# the moment it runs, so the rendered value only has to #}
+                        {# be true for first paint — and the same configured     #}
+                        {# value is what #map's data-default-opacity-step        #}
+                        {# carries.                                              #}
+                        {% trans "Bulletin opacity" as bulletin_opacity_label %}
+                        {% trans "Bulletins off" as step_label_0 %}
+                        {% trans "Bulletins at 25%" as step_label_25 %}
+                        {% trans "Bulletins at 50%" as step_label_50 %}
+                        {% trans "Bulletins at 75%" as step_label_75 %}
+                        {% trans "Bulletins at full strength" as step_label_100 %}
+                        <li role="none" class="basemap-menu-opacity">
+                            <p class="basemap-menu-opacity-label" aria-hidden="true">{{ bulletin_opacity_label }}</p>
+                            <div
+                                class="map-fill-steps"
+                                id="map-bulletin-opacity"
+                                role="radiogroup"
+                                aria-label="{{ bulletin_opacity_label }}"
+                            >
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked="{% if map_default_opacity_step == 0 %}true{% else %}false{% endif %}"
+                                    aria-label="{{ step_label_0 }}"
+                                    class="map-fill-step hover-affordance"
+                                    data-bulletins-step="0"
+                                >
+                                    <span class="map-fill-step-swatch" data-step="0" aria-hidden="true"></span>
+                                </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked="{% if map_default_opacity_step == 0.25 %}true{% else %}false{% endif %}"
+                                    aria-label="{{ step_label_25 }}"
+                                    class="map-fill-step hover-affordance"
+                                    data-bulletins-step="0.25"
+                                >
+                                    <span class="map-fill-step-swatch" data-step="0.25" aria-hidden="true"></span>
+                                </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked="{% if map_default_opacity_step == 0.5 %}true{% else %}false{% endif %}"
+                                    aria-label="{{ step_label_50 }}"
+                                    class="map-fill-step hover-affordance"
+                                    data-bulletins-step="0.5"
+                                >
+                                    <span class="map-fill-step-swatch" data-step="0.5" aria-hidden="true"></span>
+                                </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked="{% if map_default_opacity_step == 0.75 %}true{% else %}false{% endif %}"
+                                    aria-label="{{ step_label_75 }}"
+                                    class="map-fill-step hover-affordance"
+                                    data-bulletins-step="0.75"
+                                >
+                                    <span class="map-fill-step-swatch" data-step="0.75" aria-hidden="true"></span>
+                                </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked="{% if map_default_opacity_step == 1 %}true{% else %}false{% endif %}"
+                                    aria-label="{{ step_label_100 }}"
+                                    class="map-fill-step hover-affordance"
+                                    data-bulletins-step="1"
+                                >
+                                    <span class="map-fill-step-swatch" data-step="1" aria-hidden="true"></span>
+                                </button>
+                            </div>
                         </li>
                         <li role="separator" class="basemap-menu-separator"></li>
                         {# SNOW-761: one symbol per public Location — a region   #}
@@ -1031,79 +1073,6 @@ Optional context:
         {# so it never moves — the group grows and shrinks upward out of it.   #}
         {# aria-controls/aria-expanded are kept in sync by                     #}
         {# mapControlsCollapseInit, which also persists the choice.            #}
-        {# The flyout. Opens LEFT of the roundel column, the same     #}
-        {# side and offset the basemap menu uses, so every panel      #}
-        {# in this stack appears from the same edge.                  #}
-        {# SNOW-872: the segment that opens checked follows                    #}
-        {# settings.MAP_DEFAULT_OPACITY_STEP (default: 0.5, as before) rather  #}
-        {# than a literal. map.js's applyBulletinsVisibility rewrites these    #}
-        {# from the effective step the moment it runs, so the rendered value   #}
-        {# only has to be true for first paint — but a first paint that ticks  #}
-        {# a step the map is not painting is still a lie, and the same         #}
-        {# configured value is what #map's data-default-opacity-step carries.  #}
-        {% trans "Bulletins off" as step_label_0 %}
-        {% trans "Bulletins at 25%" as step_label_25 %}
-        {% trans "Bulletins at 50%" as step_label_50 %}
-        {% trans "Bulletins at 75%" as step_label_75 %}
-        {% trans "Bulletins at full strength" as step_label_100 %}
-        <div
-            id="map-fill-flyout"
-            class="map-fill-flyout"
-            role="group"
-            aria-label='{% trans "Bulletin fill strength" %}'
-            hidden
-        >
-            <button
-                type="button"
-                role="radio"
-                aria-checked="{% if map_default_opacity_step == 0 %}true{% else %}false{% endif %}"
-                aria-label="{{ step_label_0 }}"
-                class="map-fill-step hover-affordance"
-                data-bulletins-step="0"
-            >
-                <span class="map-fill-step-swatch" data-step="0" aria-hidden="true"></span>
-            </button>
-            <button
-                type="button"
-                role="radio"
-                aria-checked="{% if map_default_opacity_step == 0.25 %}true{% else %}false{% endif %}"
-                aria-label="{{ step_label_25 }}"
-                class="map-fill-step hover-affordance"
-                data-bulletins-step="0.25"
-            >
-                <span class="map-fill-step-swatch" data-step="0.25" aria-hidden="true"></span>
-            </button>
-            <button
-                type="button"
-                role="radio"
-                aria-checked="{% if map_default_opacity_step == 0.5 %}true{% else %}false{% endif %}"
-                aria-label="{{ step_label_50 }}"
-                class="map-fill-step hover-affordance"
-                data-bulletins-step="0.5"
-            >
-                <span class="map-fill-step-swatch" data-step="0.5" aria-hidden="true"></span>
-            </button>
-            <button
-                type="button"
-                role="radio"
-                aria-checked="{% if map_default_opacity_step == 0.75 %}true{% else %}false{% endif %}"
-                aria-label="{{ step_label_75 }}"
-                class="map-fill-step hover-affordance"
-                data-bulletins-step="0.75"
-            >
-                <span class="map-fill-step-swatch" data-step="0.75" aria-hidden="true"></span>
-            </button>
-            <button
-                type="button"
-                role="radio"
-                aria-checked="{% if map_default_opacity_step == 1 %}true{% else %}false{% endif %}"
-                aria-label="{{ step_label_100 }}"
-                class="map-fill-step hover-affordance"
-                data-bulletins-step="1"
-            >
-                <span class="map-fill-step-swatch" data-step="1" aria-hidden="true"></span>
-            </button>
-        </div>
         <button
             type="button"
             id="map-controls-toggle"
@@ -1431,12 +1400,10 @@ Optional context:
         {# see the note at its old site for why. It sits after the date so the  #}
         {# row reads left to right as legend, date, help: what the colours mean, #}
         {# which day they are for, how to use any of it.                        #}
-        {# On this page it opens #home-intro, the welcome panel, whose        #}
-        {# "Explore the map" CTA leads into the coachmark tour — the roundel   #}
-        {# used to start that tour directly, which left a visitor who had      #}
-        {# dismissed the panel with no way back to it. map_help.js decides     #}
-        {# from the presence of #home-intro, so a page embedding this partial  #}
-        {# without show_intro still gets the tour straight from the roundel.   #}
+        {# It starts the coachmark tour. Between SNOW-535 and SNOW-1117 it     #}
+        {# opened the #home-intro welcome panel instead; the panel is gone     #}
+        {# (the homepage says what Snowdesk is), so the roundel leads straight #}
+        {# into the tour again.                                                 #}
         <button
             id="map-help-toggle"
             type="button"
@@ -1541,6 +1508,34 @@ Optional context:
                 <span id="map-date-ribbon" class="map-date-ribbon" aria-live="polite" hidden></span>
             </button>
             {% comment %}
+            SNOW-920: shown by static/js/stale_day.js when this page is a cached
+            copy rendered on an earlier day than the server's. It names the day
+            the page is showing and offers a Reload that fetches the shell from
+            the network; nothing reloads by itself. Hidden until the server has
+            said the page is behind, so a fresh page, an offline one and a page
+            on an explicit ?d= never see it.
+            {% endcomment %}
+            <div
+                id="stale-day-notice"
+                class="stale-day-notice"
+                role="status"
+                hidden
+            >
+                <span class="stale-day-label" data-stale-day-label></span>
+                <button
+                    type="button"
+                    class="stale-day-reload hover-affordance"
+                    data-stale-day-reload
+                >
+                    {% trans "Reload" %}
+                </button>
+            </div>
+            {# SNOW-920: the label's copy, read by stale_day.js; the day is   #}
+            {# interpolated by name, never positionally.                      #}
+            <template id="stale-day-strings-template">
+                <span data-string="stale-day-showing">{% blocktrans %}Showing %(day)s{% endblocktrans %}</span>
+            </template>
+            {% comment %}
             The season scrubber (SNOW-47), now a member of this stack rather
             than a full-width bar of its own. It fills the line beside the
             date control, out to the bottom-right column — the strip that
@@ -1589,7 +1584,7 @@ Optional context:
     </div>
     {# The off-season archive notice (SNOW-343) has not lived here since      #}
     {# SNOW-445 moved it to a full-width bar above the map; that bar is now    #}
-    {# gone too, and the #home-intro panel carries the note on its own.        #}
+    {# gone too, and the note rides in #map-tour-offer, the first-visit card. #}
     {# SNOW-314: Season ribbon — flat horizontal strip of one cell per day, #}
     {# coloured by peak danger for the selected region (default CH-4115). #}
     {# Positioned above the scrubber. Requires ribbon context from view.  #}
@@ -1599,102 +1594,148 @@ Optional context:
     {# + scripts stay in _report_surface.html.                                   #}
     {# SNOW-457: help / coachmark tour — step definitions are server-rendered   #}
     {# as hidden <li> nodes so every string is translatable via {% trans %};   #}
-    {# static/js/map_help.js reads them, drops any step whose data-help-target #}
-    {# is not on screen — no match at all, or matched but not rendered         #}
-    {# (SNOW-794: the scrubber below 640px) — then sequences a highlight ring  #}
-    {# + tooltip over each one. The list is rebuilt on every open, so a step   #}
-    {# the visitor has since collapsed away is re-measured rather than stale.  #}
-    {# localStorage key 'snowdesk.map.help' persists the dismissed state,      #}
-    {# mirroring #home-intro's 'snowdesk.home.intro' pattern.                  #}
+    {# static/js/map_help.js reads them and sequences a highlight ring +       #}
+    {# tooltip over each one. localStorage key 'snowdesk.map.help' persists    #}
+    {# the dismissed state; #map-tour-offer reads it too, so a finished tour   #}
+    {# is never offered again.                                                 #}
+    {#                                                                         #}
+    {# SNOW-1118: seven steps in four chapters, about the MAP and not only its #}
+    {# buttons. The tour it replaced walked thirteen controls one by one in    #}
+    {# DOM order and never said what the colours mean or that a region opens.  #}
+    {# What each attribute does (map_help.js reads all of them):               #}
+    {#   data-help-target   one selector, a comma-separated list (one ring     #}
+    {#                      each, the card beside the first), "a | b" for the  #}
+    {#                      first of several that is on screen, or empty for a #}
+    {#                      step about the map itself (no ring, the card sits  #}
+    {#                      at the foot of the screen).                        #}
+    {#   data-help-chapter  the chapter, one of #map-help-chapters' keys; the  #}
+    {#                      progress bar groups the steps by it.               #}
+    {#   data-help-action   "show-region": the tour selects a region itself    #}
+    {#                      (the one at the middle of the map, unless one is   #}
+    {#                      already selected) so the step points at a real     #}
+    {#                      region sheet, and lets it go again on leaving.     #}
+    {#   [data-help-body]   the step's copy; [data-help-extra] is cloned into  #}
+    {#                      the card under it (the scale, the four lists).     #}
+    {# A step whose target is not on screen when the tour opens is dropped     #}
+    {# (the flag-gated roundels; checkVisibility), except an action step,      #}
+    {# whose target only appears once its action has run.                      #}
+    <ol id="map-help-chapters" hidden>
+        <li data-chapter="read">{% trans "Read the map" %}</li>
+        <li data-chapter="move">{% trans "Move" %}</li>
+        <li data-chapter="yours">{% trans "Yours" %}</li>
+        <li data-chapter="help">{% trans "Help" %}</li>
+    </ol>
     <ul id="map-help-steps" hidden>
-        <li data-help-target="#region-readout" data-help-title='{% trans "Region name" %}'>
-            {% trans "Names the selected region and its risk level on the displayed date. Tap it for the region's details and a link to the bulletin." %}
+        <li data-help-target="" data-help-chapter="read" data-help-title='{% trans "Colour is the day’s danger" %}'>
+            <p data-help-body>
+                {% trans "Every region is painted with its avalanche danger level from the day’s bulletin, on the European five-step scale." %}
+            </p>
+            {# The tiles are the region sheet's own .danger-tile, so the scale #}
+            {# the tour teaches is the one the reader meets next.              #}
+            <div data-help-extra>
+                <div class="map-help-scale">
+                    <span class="map-help-scale-level"><span class="danger-tile" data-level="low"
+                        >1</span>{% trans "Low" %}</span>
+                    <span class="map-help-scale-level"><span class="danger-tile" data-level="moderate"
+                        >2</span>{% trans "Moderate" %}</span>
+                    <span class="map-help-scale-level"><span class="danger-tile" data-level="considerable"
+                        >3</span>{% trans "Considerable" %}</span>
+                    <span class="map-help-scale-level"><span class="danger-tile" data-level="high"
+                        >4</span>{% trans "High" %}</span>
+                    <span class="map-help-scale-level"><span class="danger-tile" data-level="very_high"
+                        >5</span>{% trans "Very high" %}</span>
+                </div>
+            </div>
         </li>
-        {# SNOW-522: reworded for the ribbon-header position (it briefly lived  #}
-        {# in the bottom-right stack under SNOW-521) and moved next to          #}
-        {# #region-readout — it follows that chip in the DOM, so walking the    #}
-        {# tour top-to-bottom no longer zig-zags top-left → bottom-right →      #}
-        {# top-left. It is the only roundel left in the header since the        #}
-        {# view-bulletin one was removed.                                       #}
-        <li data-help-target="#map-download-control" data-help-title='{% trans "Download region" %}'>
-            {% trans "Make the selected region available offline." %}
+        {# The phone opens #region-sheet for a selection; a desktop names it  #}
+        {# in the #region-readout chip instead, so the target is whichever of #}
+        {# the two is on screen once the tour has selected the region.        #}
+        <li
+            data-help-target="#region-sheet | #region-readout"
+            data-help-chapter="read"
+            data-help-action="show-region"
+            data-help-title='{% trans "Tap a region" %}'
+        >
+            <p data-help-body>
+                {% trans "Its name and danger level open here. Open it further for the day’s avalanche problems and the link to the full bulletin." %}
+            </p>
         </li>
-        <li data-help-target="#search-toggle" data-help-title='{% trans "Find a region or resort" %}'>
-            {% trans "Search regions and resorts by name." %}
+        <li
+            data-help-target="#map-calendar-toggle"
+            data-help-chapter="read"
+            data-help-title='{% trans "Choose the day" %}'
+        >
+            <p data-help-body>
+                {% trans "The map shows one day at a time. Tap the date for a calendar of the season, coloured by the selected region’s danger." %}
+            </p>
         </li>
-        {# The bottom-right stack, walked top to bottom in DOM order. #}
-        {# SNOW-664: locate leads it now — it is the only roundel outside the   #}
-        {# collapsible group, and the layers roundel moved one slot down into   #}
-        {# that group, so these two swapped to keep the walk in DOM order.      #}
-        <li data-help-target="#locate-toggle" data-help-title='{% trans "Locate me" %}'>
-            {% trans "Centre the map on your current position, then tap again to save the area around you for offline use." %}
+        {# Three controls, one step: each is a way of moving the map, and a  #}
+        {# step apiece was most of what made the old tour long.              #}
+        <li
+            data-help-target="#search-toggle, #locate-toggle, #map-zoom-toggle"
+            data-help-chapter="move"
+            data-help-title='{% trans "Find your way" %}'
+        >
+            <p data-help-body>
+                {% trans "Search a region or resort by name. Locate centres the map on you. The number is your zoom: tap it to see what appears as you go closer." %}
+            </p>
         </li>
-        <li data-help-target="#basemap-toggle" data-help-title='{% trans "Map detail" %}'>
-            {% trans "Switch base maps and toggle overlays and map location data." %}
+        {# The bulletin-opacity control lives in this menu (it had its own    #}
+        {# roundel until the two capsules), so this step names it.            #}
+        <li data-help-target="#basemap-toggle" data-help-chapter="move" data-help-title='{% trans "Layers" %}'>
+            <p data-help-body>
+                {% trans "Switch the base map, choose what is drawn over it, and set how strongly the danger colours show." %}
+            </p>
         </li>
-        {# SNOW-656: bulletin-fill strength. Sits here because the tour walks    #}
-        {# the bottom-right stack in DOM order and this roundel follows the     #}
-        {# layers one inside the collapsible group. The tour force-opens that   #}
-        {# group while it runs, so the target is on screen even for a user who  #}
-        {# had the strip collapsed.                                             #}
-        <li data-help-target="#map-fill-toggle" data-help-title='{% trans "Bulletin display" %}'>
-            {% trans "Control the opacity of the bulletin colour shading." %}
+        {# The "yours" capsule as ONE step: four lists of what you have saved, #}
+        {# each with its own Show on the map switch (SNOW-658). The glyphs are #}
+        {# the roundels' own partials, so a row names the button it describes, #}
+        {# and data-help-names says which: tests/public/test_help.py holds    #}
+        {# every roundel to a step that targets or names it.                  #}
+        <li
+            data-help-target="#map-control-group-yours"
+            data-help-chapter="yours"
+            data-help-title='{% trans "Your things" %}'
+        >
+            <p data-help-body>
+                {% trans "Four lists of what you have saved. Each one has a Show on the map switch." %}
+                {% if not favourites_eligible %}
+                    {% trans "Sign in to keep them." %}
+                {% endif %}
+            </p>
+            <div data-help-extra>
+                <ul class="map-help-list">
+                    <li data-help-names="#favourite-add-btn">
+                        {% include "includes/_icon_favourite.html" with size=16 only %}
+                        <span>{% blocktrans trimmed %}<b>Pins</b> places and regions you
+                                follow{% endblocktrans %}</span>
+                    </li>
+                    <li data-help-names="#report-btn">
+                        {% include "includes/_icon_observation.html" with size=16 only %}
+                        <span>{% blocktrans trimmed %}<b>Observations</b> field reports, yours and
+                                others’{% endblocktrans %}</span>
+                    </li>
+                    <li data-help-names="#route-add-btn">
+                        {% include "includes/_icon_route.html" with size=16 only %}
+                        <span>{% blocktrans trimmed %}<b>Routes</b> GPX tracks you upload{% endblocktrans %}</span>
+                    </li>
+                    <li data-help-names="#map-custom-download-control">
+                        {% include "includes/_icon_downloads.html" with size=16 only %}
+                        <span>{% blocktrans trimmed %}<b>Offline</b> maps saved to this device{% endblocktrans %}</span>
+                    </li>
+                </ul>
+            </div>
         </li>
-        {# SNOW-522: the new custom-area download — takes the bottom-right      #}
-        {# slot the per-region control vacated when it moved to the ribbon      #}
-        {# header (the step above).                                            #}
-        <li data-help-target="#map-custom-download-control" data-help-title='{% trans "Offline maps" %}'>
-            {% trans "View and manage offline regions, download custom areas and manage storage." %}
-        </li>
-        {# SNOW-658: both roundels open a panel that LISTS what the user has    #}
-        {# already saved before offering to add another, and each panel owns    #}
-        {# the map-overlay switch that used to be a layers-menu row — so both   #}
-        {# steps describe managing, not only adding.                            #}
-        <li data-help-target="#favourite-add-btn" data-help-title='{% trans "Your favourites" %}'>
-            {% trans "See your saved pins, add another, and show or hide them on the map." %}
-        </li>
-        <li data-help-target="#report-btn" data-help-title='{% trans "Field observations" %}'>
-            {% trans "See your reports, share a new field observation, and show or hide the community's on the map." %}
-        </li>
-        {# SNOW-686/687 added the routes roundel to the stack without a step  #}
-        {# here, so the one control in the column the tour never named was    #}
-        {# also the one with no section on /help/. Sits between the field-    #}
-        {# observation roundel and the help "?", which is its DOM order.      #}
-        <li data-help-target="#route-add-btn" data-help-title='{% trans "Your routes" %}'>
-            {% trans "Upload a GPX track, see the ones you've saved, and show or hide them on the map." %}
-        </li>
-        {# The tour force-opens the collapsible group while it runs, so this   #}
-        {# step lands on a toggle whose chevron is pointing "close".           #}
-        <li data-help-target="#map-controls-toggle" data-help-title='{% trans "Hide the controls" %}'>
-            {% trans "Collapse the controls to clear the map." %}
-        </li>
-        {# SNOW-794: the season scrubber. Absent from the walk in both cases  #}
-        {# where it is absent from the map — off-season (not rendered at all)  #}
-        {# and below 640px (rendered, not drawn) — the first because the <li>  #}
-        {# target matches nothing, the second because map_help.js's buildSteps #}
-        {# now also drops targets with no box.                                 #}
-        <li data-help-target="#season-scrubber" data-help-title='{% trans "Season scrubber" %}'>
-            {% trans "Run through the season day by day. It appears while the map is showing a day inside the season." %}
-        </li>
-        {# The bottom-left stack, walked top to bottom in DOM order — which is #}
-        {# also the order the tour reaches them on screen.                      #}
-        {# The tour explains its own trigger, and this is where a user who has  #}
-        {# just been shown it learns how to get back to it. On a page carrying  #}
-        {# #home-intro the roundel re-opens that welcome panel, which leads     #}
-        {# back in here by its own CTA — so the copy names both.                #}
-        <li data-help-target="#map-help-toggle" data-help-title='{% trans "Map help" %}'>
-            {% trans "Reopen the welcome panel, and this tour." %}
-        </li>
-        <li data-help-target="#map-legend-toggle" data-help-title='{% trans "Map information" %}'>
-            {% trans "View attribution and EAWS danger level key." %}
-        </li>
-        {# SNOW-794: ONE step where there were two. #map-date-ribbon had its   #}
-        {# own ("The date currently shown on the map") while                   #}
-        {# #map-calendar-toggle had another — and the two ids now name the     #}
-        {# same control, so keeping both would have highlighted the same pill  #}
-        {# twice in one walk. The copy says both halves of what it does.       #}
-        <li data-help-target="#map-calendar-toggle" data-help-title='{% trans "Map display date" %}'>
-            {% trans "The day the map is showing. Tap it to pick another from a calendar, coloured by the selected region's danger." %}
+        {# The tour explains its own trigger, and this is where a user who has #}
+        {# just been shown it learns how to get back to it.                    #}
+        <li
+            data-help-target="#map-help-toggle"
+            data-help-chapter="help"
+            data-help-title='{% trans "Help is always here" %}'
+        >
+            <p data-help-body>
+                {% trans "Tap ? to name every control on the map, and to ask any sheet what it shows. The tour is in there too." %}
+            </p>
         </li>
     </ul>
     {# SNOW-457 (review): aria-describedby points at the step title + body so #}
@@ -1710,11 +1751,10 @@ Optional context:
         aria-describedby="map-help-tooltip-title map-help-tooltip-body"
         data-overlay
         data-overlay-persist="snowdesk.map.help=seen"
-        {# SNOW-535: opt out of map_help.js's first-load auto-start. The       #}
-        {# homepage embeds #home-intro, whose "Explore the map" CTA (and the   #}
-        {# "?" roundel) are the only ways this tour should open there — an     #}
-        {# auto-start straight after dismissing the intro read as the site     #}
-        {# throwing a second overlay at a visitor who had just cleared one.    #}
+        {# SNOW-535: opt out of map_help.js's first-load auto-start. map.html  #}
+        {# does: there the tour opens from the "?" roundel or from             #}
+        {# #map-tour-offer's "Start the tour" (SNOW-1117), which asks once the #}
+        {# map has settled rather than starting over a map not yet seen.       #}
         {# Data-driven (an attribute the including template opts into) rather  #}
         {# than a hardcoded "am I map.html" check, so another page embedding  #}
         {# this partial can keep the auto-start behaviour if that's right for  #}
@@ -1723,7 +1763,7 @@ Optional context:
         {# it would silently override the homepage's opt-out back to True.    #}
         {% if not map_help_autostart|default_if_none:True %}data-map-help-no-autostart{% endif %}
     >
-        <div id="map-help-ring" aria-hidden="true"></div>
+        <div id="map-help-ring" class="map-help-ring" aria-hidden="true"></div>
         {# SNOW-457 (review): no role on the tooltip card itself — role="group" #}
         {# is for a set of related form controls, which this isn't; the outer  #}
         {# #map-help-overlay's role="dialog" already scopes the whole widget.  #}
@@ -1756,10 +1796,17 @@ Optional context:
                     <path d="m6 6 12 12" />
                 </svg>
             </button>
+            {# SNOW-1118: the progress bar — a segment per step, grouped under  #}
+            {# its chapter's name. map_help.js draws it; aria-hidden because    #}
+            {# the step count below says the same thing in words.              #}
+            <div class="map-help-progress" id="map-help-progress" aria-hidden="true" hidden></div>
+            {# Visually hidden once the progress bar is drawn, but still the    #}
+            {# live region a screen reader announces each step from.            #}
             <p class="map-help-tooltip-step" id="map-help-step-count" aria-live="polite"></p>
             <span id="map-help-step-template" hidden>{% trans "Step {n} of {total}" %}</span>
             <h3 class="map-help-tooltip-title" id="map-help-tooltip-title"></h3>
             <p class="map-help-tooltip-body" id="map-help-tooltip-body"></p>
+            <div class="map-help-tooltip-extra" id="map-help-tooltip-extra" hidden></div>
             <div class="map-help-tooltip-actions">
                 <button
                     type="button"
@@ -1780,35 +1827,29 @@ Optional context:
             </div>
         </div>
     </div>
-    {% if show_intro %}
-        {# SNOW-314: Homepage intro overlay — absolutely positioned over #map.  #}
-        {# Dismissed by clicking the overlay or a button; localStorage key      #}
-        {# 'snowdesk.home.intro' persists the dismissed state. /#about hash     #}
-        {# forces it open, as does the "?" roundel above — a dismissal is not   #}
-        {# meant to be final, and the roundel is the way back. home_intro.js    #}
-        {# owns the behaviour.                                                  #}
-        {# aria-modal is only valid on role="dialog"/"alertdialog"; the panel is #}
-        {# role="complementary" (non-blocking, map stays interactive behind it),  #}
-        {# so the attribute is dropped — it was an axe aria-allowed-attr failure. #}
+    {% if show_tour_offer %}
+        {# SNOW-1117: the one-time offer of the map tour. It replaced the      #}
+        {# "Welcome to Snowdesk" panel (#home-intro, SNOW-314/535), which      #}
+        {# opened over the map on every first paint and said what Snowdesk is: #}
+        {# the homepage says that now, and a returning visitor saw the panel   #}
+        {# flash open before the script hid it. This card is rendered HIDDEN,  #}
+        {# so no first paint ever shows it; static/js/map_tour_offer.js        #}
+        {# reveals it once the map has settled, once per device, and never on  #}
+        {# a deep link. Its strings live here so {% trans %} reaches them.     #}
+        {# role="region" rather than dialog: it is not modal and the map stays #}
+        {# usable around it, the same choice #home-intro made.                 #}
         <div
-            id="home-intro"
-            class="home-intro"
-            role="complementary"
-            data-overlay
-            data-overlay-persist="snowdesk.home.intro=dismissed"
+            id="map-tour-offer"
+            class="map-tour-offer"
+            role="region"
+            aria-labelledby="map-tour-offer-title"
+            hidden
         >
-            <div class="home-intro-card">
-                {# SNOW-535: "×" close, top-right — the standard overlay dismiss #}
-                {# idiom (SNOW-486): data-action="dismiss" inside the [data-overlay] #}
-                {# #home-intro is enough for overlays.js's shared handler to hide + #}
-                {# persist; the icon mirrors #map-help-close's. Unlike            #}
-                {# #home-intro-dismiss below, this does NOT also open the map help #}
-                {# tour — a plain "close" reads as "not now", not "show me around". #}
+            <div class="map-tour-offer-card">
                 <button
-                    id="home-intro-close"
+                    id="map-tour-offer-close"
                     type="button"
-                    class="home-intro-close"
-                    data-action="dismiss"
+                    class="map-tour-offer-close"
                     aria-label='{% trans "Dismiss" %}'
                 >
                     <svg
@@ -1826,56 +1867,32 @@ Optional context:
                         <path d="m6 6 12 12" />
                     </svg>
                 </button>
-                <div class="home-intro-identity">
-                    <span class="home-intro-wordmark">{% trans "Welcome to Snowdesk" %}</span>
-                </div>
-                {# The wrapper groups the two body paragraphs so their shared     #}
-                {# spacing lives in one rule (static/css/map.css), separate from  #}
-                {# the offseason ref and the actions row below.                   #}
-                <div class="home-intro-taglines">
-                    <p class="home-intro-tagline">
-                        {% trans "Avalanche information across the Alps, sourced daily from SLF (Switzerland), ALBINA (Austria, Italy) and Météo-France (France). Each bulletin displays on the interactive map in its EAWS danger rating colour. Tap on a region to see the season timeline, and a link to the day's bulletin." %}
-                    </p>
-                    <p class="home-intro-tagline">
-                        {# The anchor sits inside the blocktrans so a translator can #}
-                        {# move "Register" wherever the sentence needs it.            #}
-                        {% url 'accounts:register' as register_url %}
-                        {% blocktrans trimmed %}
-                            <a href="{{ register_url }}" class="home-intro-inline-link">Register</a>
-                            with Snowdesk to view field observations, pin the places and regions you follow, and
-                            download an area to read offline.
-                        {% endblocktrans %}
-                    </p>
-                </div>
+                <p class="map-tour-offer-eyebrow">{% trans "New to the map?" %}</p>
+                <h2 class="map-tour-offer-title" id="map-tour-offer-title">{% trans "Take the one-minute tour" %}</h2>
+                <p class="map-tour-offer-body">
+                    {% trans "How to read the colours, open a region's bulletin, and what each control does." %}
+                </p>
                 {% if is_offseason %}
                     {# Off-season honesty (launch requirement): the data shown is #}
-                    {# archive, not live. Carried in the first-visit panel.       #}
-                    <p class="home-intro-offseason-ref">
+                    {# archive, not live. It moved here with the rest of the     #}
+                    {# first-visit surface when #home-intro was removed.         #}
+                    <p class="map-tour-offer-offseason">
                         {% blocktrans trimmed with start_month=archived_season_start|date:"F" %}
                             Map shows {{ season_label }} season — live bulletins resume in
                             {{ start_month }}
                         {% endblocktrans %}
                     </p>
                 {% endif %}
-                <div class="home-intro-actions">
-                    {# SNOW-486: data-action routes the click through the shared #}
-                    {# overlays.js handler, which hides the overlay and persists #}
-                    {# snowdesk.home.intro — home_intro.js listens for           #}
-                    {# overlay:dismissed to clear the /#about hash.               #}
-                    {# SNOW-535: this CTA also opens the map-help coachmark tour —#}
-                    {# home_intro.js binds its own click listener alongside the   #}
-                    {# shared dismiss handler and dispatches                      #}
-                    {# 'snowdesk:map-help-requested', which map_help.js listens   #}
-                    {# for and answers by calling its own open() entry point, so  #}
-                    {# the tour logic itself stays in one place.                 #}
+                <div class="map-tour-offer-actions">
+                    <button id="map-tour-offer-later" type="button" class="map-tour-offer-btn">
+                        {% trans "Not now" %}
+                    </button>
                     <button
-                        id="home-intro-dismiss"
+                        id="map-tour-offer-start"
                         type="button"
-                        class="home-intro-dismiss"
-                        data-action="dismiss"
-                        aria-label='{% trans "Dismiss and explore the map" %}'
+                        class="map-tour-offer-btn map-tour-offer-btn--primary"
                     >
-                        {% trans "Explore the map" %}
+                        {% trans "Start the tour" %}
                     </button>
                 </div>
             </div>

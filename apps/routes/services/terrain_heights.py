@@ -56,6 +56,26 @@ one offset it has; a track with no model height at all keeps its device
 values as they are. The run keeps the SHAPE the device recorded, which is
 the part of an altimeter reading that can be trusted over a short span.
 
+**A SPIKE ON STEEP GROUND IS REPLACED BY ITS NEIGHBOURS' MEDIAN.** On a
+45–60° face a recorded position a few metres uphill of a level bench reads
+several metres too high, so the model's height under a flat road spikes at
+single points (SNOW-1051: Col de la Chaux reads 2,203.2 m on a road at
+about 2,194 m, an 8° "climb" on the point card). ``_despiked`` replaces a
+boundary height that sits more than ``SPIKE_THRESHOLD_M`` from the median
+of the boundaries within ``SPIKE_HALF_WINDOW`` either side, and only where
+the ground is at least ``SPIKE_MIN_GROUND_DEG`` steep (the steeper of the
+two segments meeting at the boundary). A steady climb or drop, however
+steep, is monotonic inside the window, so its median is its own middle
+value and nothing moves; only a point that breaks the one-way pattern is
+touched. The window must be whole and hole-free, so the first and last
+``SPIKE_HALF_WINDOW`` boundaries and any point beside a hole are left as
+recorded. Below the gate the same sideways error is too small to matter and
+real bumps are common, so the ground is left alone. The constants come
+from a sweep over the four canonical tours (15 of 1,606 boundaries
+altered, no leg moved, 62 m of 1,528 m ascent removed); a real narrow
+bump taller than the threshold on steep ground would be flattened, which
+is the cost of the rule. The device altimeter plays no part in it.
+
 **RECORDS WITHOUT HEIGHTS ARE UNTOUCHED.** No ``heights``, no usable
 stride, or a re-walk that lands a different number of boundaries than the
 record stores (these are not the points it was sampled from) returns the
@@ -71,6 +91,7 @@ over the user's rows.
 from __future__ import annotations
 
 import bisect
+import statistics
 from typing import Any, NamedTuple
 
 from apps.routes.services.slope_segments import cumulative_distances, stride_distances
@@ -88,6 +109,19 @@ _TOTAL_PRECISION = 1
 # coordinates can sit off the line, well above float noise, and far below
 # the 5 m cell a height comes from.
 _COINCIDENT_M = 0.5
+
+# SNOW-1051 despike. How many boundaries either side of a point make its
+# window: 3 × the 25 m stride = ±75 m.
+SPIKE_HALF_WINDOW = 3
+
+# How far, in metres, a height may sit from its window's median before it
+# is replaced by it.
+SPIKE_THRESHOLD_M = 3.0
+
+# The ground angle, in degrees, from which a height is despiked. Chosen
+# from the canonical-tour sweep: 40° moves no leg, whereas 35° moves one
+# and flattens a real 39° dip.
+SPIKE_MIN_GROUND_DEG = 40.0
 
 
 class _Station(NamedTuple):
@@ -278,7 +312,10 @@ def _stations(
     if walk is None:
         return None
     cumulative, boundaries = walk
-    model = [float(height) if _is_number(height) else None for height in heights]
+    model = _despiked(
+        [float(height) if _is_number(height) else None for height in heights],
+        samples.get("segments"),
+    )
     device = [_elevation(point) for point in points]
 
     vertices = [
@@ -311,6 +348,75 @@ def _stations(
         vertices + stops,
         key=lambda station: (station.distance_m, station.vertex is None),
     )
+
+
+def _despiked(model: list[float | None], segments: Any) -> list[float | None]:
+    """Return the model heights with steep-ground spikes replaced.
+
+    See the module docstring for the rule. Holes (None) are skipped and
+    never used as a median's input; a boundary whose ground angle is not
+    known is never altered. Every window is read from the original
+    series, so one replacement never feeds the next.
+
+    Args:
+        model: The model's height at each boundary, None where it has none.
+        segments: The record's ``segments`` list (one dict per gap between
+            boundaries, ``angle_deg`` the ground's steepness), or anything
+            else when the record has none. A list of any other length than
+            ``len(model) - 1`` is ignored as not belonging to these heights.
+
+    Returns:
+        A new list the same length as ``model``.
+
+    """
+    # One segment per gap between boundaries; a list that does not pair with
+    # the heights (a truncated or stale record) says nothing about them.
+    if not isinstance(segments, list) or len(segments) != len(model) - 1:
+        return list(model)
+    result = list(model)
+    for index, height in enumerate(model):
+        if height is None:
+            continue
+        if _ground_angle(segments, index) < SPIKE_MIN_GROUND_DEG:
+            continue
+        start = index - SPIKE_HALF_WINDOW
+        if start < 0:
+            continue
+        values = model[start : index + SPIKE_HALF_WINDOW + 1]
+        window = [value for value in values if value is not None]
+        if len(window) != 2 * SPIKE_HALF_WINDOW + 1:
+            # A lopsided window (a track's end) or one with a hole in it
+            # has a median that is not the point's own on a steady slope.
+            continue
+        median = statistics.median(window)
+        if abs(height - median) > SPIKE_THRESHOLD_M:
+            result[index] = median
+    return result
+
+
+def _ground_angle(segments: list[Any], index: int) -> float:
+    """Return the steeper ground angle of the two segments at a boundary.
+
+    Args:
+        segments: The record's segments.
+        index: The boundary's index.
+
+    Returns:
+        The larger ``angle_deg`` of the segment before and the segment
+        after, in degrees; 0.0 for one that is missing or not a number,
+        so an unknown angle never passes the gate.
+
+    """
+    angles = []
+    for position in (max(0, index - 1), min(len(segments) - 1, index)):
+        segment = segments[position]
+        angle = segment.get("angle_deg") if isinstance(segment, dict) else None
+        angles.append(
+            float(angle)
+            if isinstance(angle, int | float) and not isinstance(angle, bool)
+            else 0.0
+        )
+    return max(angles)
 
 
 def _rebased_heights(stations: list[_Station]) -> list[float | None]:

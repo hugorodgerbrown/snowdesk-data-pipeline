@@ -105,8 +105,9 @@ only binds it to pointer events. Without the core on the page,
 - The route sheet's FULL is staff-only (SNOW-1099): it is the point debug
   readout. The partial declares `peek,half` for everyone else.
 - The route sheet's PEEK carries the profile (Hugo, 18 Oct 2026): it ends
-  under the hint below the profile ("Click on the profile to view terrain
-  data"), because a full-width sheet has the room and the
+  under the hint below the profile ("Tap or drag the profile to view
+  terrain data"; hidden while a point is placed, when PEEK ends at the
+  profile's foot, 19 Oct 2026), because a full-width sheet has the room and the
   profile is what a tap on a route is for. HALF adds the point header
   (unlit until a point is placed; a point placed at peek raises the sheet
   to HALF) and FULL the staff debug readout. Its half marker reads

@@ -5,8 +5,9 @@ Content partial for the help page (SNOW-456); included via the
 body_template parameter of includes/_collapsible_panel.html.
 
 Rewritten to describe the panel the triangle roundel opens (SNOW-658) —
-the user's own reports, the report action, and the community-reports
-switch that used to be a layers-menu row — and to name the five signal
+the user's own reports, the report action, and the "Show on the map"
+switch bound to the layers menu's "Field observations" row — and to name
+the five signal
 types the form actually offers (FieldObservation.OBSERVATION_TYPE).
 {% endcomment %}
 {% load i18n %}
@@ -21,8 +22,8 @@ types the form actually offers (FieldObservation.OBSERVATION_TYPE).
     <p class="mb-3 last:mb-0" data-testid="help-observations-panel">
         {% blocktrans trimmed %}
             Sign in with a verified email address, then open the triangle button on the right of the map. The panel
-            lists your own reports and offers "Report an observation". Whether the community's reports are drawn is the
-            "Field observations" row in the layers menu, with every other layer.
+            lists your own reports and offers "Report an observation". The "Show on the map" switch at its foot draws
+            the community's reports; it is the same setting as the "Field observations" row in the layers menu.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-observations-location">

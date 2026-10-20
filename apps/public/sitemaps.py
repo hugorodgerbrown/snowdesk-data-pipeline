@@ -3,7 +3,8 @@ apps/public/sitemaps.py — XML sitemaps for the public bulletin site.
 
 Four sections, registered together in config/urls.py:
 
-    bulletins  BulletinSitemap        — regions with a bulletin for today
+    bulletins  BulletinSitemap        — every region that has ever had a
+                                        bulletin (SNOW-1121)
     resorts    ResortSitemap          — every resort's detail page
     locations  LocationWeatherSitemap — every named public location's
                                         weather page (SNOW-799)
@@ -15,7 +16,9 @@ shareable URLs were invisible to search, as were the homepage and every
 reference page. And out of season — roughly May to November — the whole
 sitemap was *empty*, because no bulletin is valid today, so the site
 advertised nothing at all during the months when slow-moving pages have
-time to be indexed.
+time to be indexed. SNOW-676 fixed the file; the bulletin *section* stayed
+empty out of season until SNOW-1121, because it still listed only the
+regions with a bulletin valid today.
 
 Wire-up in config/urls.py:
 
@@ -29,29 +32,33 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from django.contrib.sitemaps import Sitemap
 from django.db.models import Max
 from django.urls import reverse
-from django.utils import timezone
 
 from apps.locations.models import Location
 from apps.regions.models import MicroRegion, Resort
 
 logger = logging.getLogger(__name__)
 
-_ZURICH_TZ = ZoneInfo("Europe/Zurich")
-
 
 class BulletinSitemap(Sitemap):
     """
-    Sitemap listing every region with a bulletin for today (Europe/Zurich).
+    Sitemap listing every region that has ever had a bulletin (SNOW-1121).
 
-    ``items()`` returns only regions that have at least one Bulletin whose
-    ``valid_to`` date (in UTC, which covers the full Zurich day) equals today.
-    The ``lastmod`` date is the most recent ``updated_at`` among those bulletins
-    for the region, retrieved via an annotation on the queryset to avoid N+1.
+    ``items()`` returns each region linked to at least one Bulletin, whatever
+    its date. The evergreen URL renders all year — out of season, with no
+    bulletin covering today, it is the page's empty state — and it is the
+    URL that will carry the bulletin once the season opens. Until SNOW-1121
+    the section listed only the regions with a bulletin valid *today*, which
+    left it empty from May to November: exactly the weeks before the season
+    when a crawler has time to index the site's richest unique pages. A
+    region no provider covers has no bulletin and stays out — its page would
+    never have anything to show.
+
+    The ``lastmod`` date is the most recent ``updated_at`` among the region's
+    bulletins, retrieved via an annotation on the queryset to avoid N+1.
 
     URL form: form-2 evergreen URL ``/<region_id>/<slug>/`` (SNOW-395).
     LLMs and search engines cite whatever URL the sitemap advertises; a
@@ -66,20 +73,20 @@ class BulletinSitemap(Sitemap):
 
     def items(self) -> Any:
         """
-        Return the set of MicroRegions with a bulletin valid for today.
+        Return every MicroRegion with at least one bulletin, of any date.
 
         Re-evaluated on every request — do not cache at module level.
         Uses ``Max("bulletins__updated_at")`` annotation so ``lastmod()``
-        can retrieve the value without an extra query per region.
+        can retrieve the value without an extra query per region; the
+        aggregate groups by region, so each appears once.
 
         Returns:
             A queryset of ``MicroRegion`` instances annotated with
             ``latest_bulletin_updated_at``.
 
         """
-        today = timezone.localdate(timezone=_ZURICH_TZ)
         return (
-            MicroRegion.objects.filter(bulletins__valid_to__date=today)
+            MicroRegion.objects.filter(bulletins__isnull=False)
             .annotate(latest_bulletin_updated_at=Max("bulletins__updated_at"))
             .distinct()
             .select_related("subregion")
@@ -214,7 +221,7 @@ class LocationWeatherSitemap(Sitemap):
     Only the evergreen, undated URL is listed — ``?date=`` picks a row
     inside the page, not a different page
     (``docs/decisions/weather-day-picker-is-a-selector-not-navigation.md``),
-    the same convention as ``BulletinSitemap``'s today-only entries.
+    the same convention as ``BulletinSitemap``'s evergreen entries.
 
     A location with no ``short_id`` is excluded (SNOW-810). It has no
     address — ``get_absolute_url`` answers "" for it — and Django's

@@ -6,7 +6,7 @@
  * the DOM once — the fixture must exist BEFORE the module is imported, and
  * each test needs a fresh IIFE run against its own fixture/localStorage/
  * window.pwaDb state, hence `vi.resetModules()` + `await import(...)` per
- * test (same pattern as tests/js/test_home_intro.js).
+ * test (same pattern as tests/js/test_map_tour_offer.js).
  *
  * `window.pwaDb` and `navigator.serviceWorker.controller` are stubbed
  * per-test — jsdom ships neither.

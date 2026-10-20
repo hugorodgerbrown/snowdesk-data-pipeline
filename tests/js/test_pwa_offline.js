@@ -16,7 +16,7 @@
  * ``pwa_offline.js`` is an IIFE that reads its DOM and wraps ``window.fetch``
  * at import time, so every test builds its fixture and installs its own
  * ``window.fetch`` mock BEFORE importing the module, then re-imports it fresh
- * via ``vi.resetModules()`` (same pattern as test_home_intro.js). Re-importing
+ * via ``vi.resetModules()`` (same pattern as test_map_tour_offer.js). Re-importing
  * per test also stops each run's wrapper stacking on the previous one's.
  *
  * ``window.pwaDb`` is left undefined for most tests: the persistence and

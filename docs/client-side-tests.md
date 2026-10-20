@@ -257,12 +257,19 @@ is delegated to CI. Runs `npm ci && npm run test:js` (`vitest run`).
   failure toast, and the SNOW-462 account-change reconcile/drain-guard
   (`test_mutation_queue*.js`, split across several files for the same
   per-module-instance-state reason as telemetry.js).
-- `overlays.js`, `home_intro.js`, `map_help.js` — the shared dismiss
-  primitive, and the two overlays' persistence/keyboard/auto-start
-  behaviour (`test_overlays.js`, `test_home_intro.js`, `test_map_help.js`;
+- `overlays.js`, `map_tour_offer.js`, `map_help.js` — the shared dismiss
+  primitive, the tour offer's timing and once-per-device rule, and the
+  tour's persistence/keyboard/auto-start behaviour (`test_overlays.js`,
+  `test_map_tour_offer.js`, `test_map_help.js`;
   the latter drops pixel-positioning assertions jsdom's zero-rect
   `getBoundingClientRect` can't support — none of the ported Playwright
   cases asserted on positions anyway).
+- `map_help_mode.js`, `help_topic_anchor.js` — help mode on the "?"
+  roundel: a tapped control shows its card instead of acting, "Open"
+  leaves and acts, a map tap goes through, and a sheet opened in help mode
+  is keyed until "Got it" or it closes; and the `/help/` topic a link
+  names opening on arrival (`test_map_help_mode.js`,
+  `test_help_topic_anchor.js`; what is drawn, not where).
 - `scrubber_core.js` / `basemap_cache_core.js` — pure math extracted from
   `map.js` (season scrubber/timelapse/ribbon) and `sw.js` (fetch
   classification, basemap cache eviction) behind thin delegators, so logic

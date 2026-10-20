@@ -39,6 +39,10 @@
  *                               reveals itself, so the two are never on
  *                               screen together for a frame.
  *   closeAll()                  close every registered overlay.
+ *   openNames()                 the names of the overlays open now —
+ *                               how a surface that appears by itself
+ *                               (the tour offer) tells it would be
+ *                               interrupting one the visitor opened.
  *   names()                     the registered names, sorted — what the
  *                               exclusivity matrix in
  *                               tests/js/test_map_overlay_exclusivity.js
@@ -48,10 +52,11 @@
  *
  * The registered set is the layers menu, the three UGC sheets (downloads,
  * favourites, field observations), the anchored map-detail popup (a resort
- * or an existing favourite pin), the legend card, the help tour's coachmark
- * and the bulletin fill-strength flyout.
+ * or an existing favourite pin), the legend card and the help tour's
+ * coachmark. (A bulletin fill-strength flyout was registered here too until
+ * its five steps moved into the layers menu.)
  *
- * The last three came in behind the rest, and are the clearest illustration
+ * The last two came in behind the rest, and are the clearest illustration
  * of why the pairwise wiring kept missing cases: each already had a dismiss
  * handler that looked like it covered this — "any click outside me closes
  * me" — and none did. Their own toggles call ``stopPropagation`` (they
@@ -123,6 +128,17 @@
   }
 
   /**
+   * The names of the registered overlays open now, sorted.
+   *
+   * @returns {string[]}
+   */
+  function openNames() {
+    return names().filter(function (name) {
+      return overlays.get(name).isOpen();
+    });
+  }
+
+  /**
    * The registered names, sorted.
    *
    * @returns {string[]}
@@ -135,6 +151,7 @@
     register: register,
     opening: opening,
     closeAll: closeAll,
+    openNames: openNames,
     names: names,
   });
 }());

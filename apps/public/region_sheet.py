@@ -38,6 +38,7 @@ from datetime import date
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
+from django.utils.cache import patch_cache_control
 
 from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.coverage import covered_region_ids
@@ -49,6 +50,14 @@ from apps.public.views import _DANGER_PANEL_META, problem_cards_for_bulletin
 from apps.regions.models import MicroRegion, Resort
 
 logger = logging.getLogger(__name__)
+
+# How long the browser may reuse a body without asking again (2026-10-19).
+# A past day's bulletin is settled, so its body keeps for a day; today's and
+# a forecast day's are amended during the day, so ten minutes, which is also
+# how long map_region_sheet.js keeps a body in memory. Private: the body is
+# rendered in the reader's language, and must never sit in a shared cache.
+PAST_DAY_MAX_AGE_S = 24 * 60 * 60
+CURRENT_DAY_MAX_AGE_S = 10 * 60
 
 
 @lowercase_region_id
@@ -67,7 +76,9 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
 
     Returns:
         The rendered ``public/partials/_region_sheet_body.html`` fragment,
-        404 for an unknown region, 400 for a malformed date.
+        privately cacheable for a day when ``d`` is a past day and for ten
+        minutes otherwise; 404 for an unknown region, 400 for a malformed
+        date.
 
     """
     raw_date = request.GET.get("d")
@@ -106,4 +117,11 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         "problem_cards": problem_cards,
         "resorts": list(Resort.objects.resorts().filter(region=region)),
     }
-    return render(request, "public/partials/_region_sheet_body.html", context)
+    response = render(request, "public/partials/_region_sheet_body.html", context)
+    settled = target_date < timezone.localdate()
+    patch_cache_control(
+        response,
+        private=True,
+        max_age=PAST_DAY_MAX_AGE_S if settled else CURRENT_DAY_MAX_AGE_S,
+    )
+    return response

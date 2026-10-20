@@ -35,7 +35,10 @@ from SNOW-658), moved by a second SNOW-645 review pass down to the very
 foot so the map BEHIND the sheet was the last thing read; SNOW-904
 removed it, along with the same switch on the three other panels, because
 a reader asking what can go on their map should not have to open five
-surfaces to find out. The map's layers menu is the sole control now.
+surfaces to find out. The two-capsule control column put it back at the
+foot as "Show on the map", bound to the same state as the layers menu's
+"Display downloaded areas" row (static/js/map_panel_overlay_switch.js) —
+the menu stays the one place that answers for every layer.
 Nothing here is positional as far as the JS is concerned: every element is
 addressed by data-attribute, never by index or sibling relationship, so
 reordering never needs a JS change.
@@ -119,7 +122,7 @@ the row's own label, so map.html loads that module once for both.
     {# groups there are is DATA (one per basemap this device holds —        #}
     {# SNOW-832), so it renders its own headings from its rows template     #}
     {# rather than taking one fixed heading from the shell.                 #}
-    {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" cta_label=downloads_add_label %}
+    {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" cta_label=downloads_add_label toggle_id="map-downloads-overlay-toggle" %}
 </template>
 {# One basemap group (SNOW-832): the swatch, the heading label, this        #}
 {# device's total for that basemap, the identity rule, and the empty `<ul>` #}
@@ -211,6 +214,10 @@ the row's own label, so map.html loads that module once for both.
     <span data-string="kind-content-incomplete">{% trans "Bulletins not saved" %}</span>
     <span data-string="kind-region">{% trans "Region" %}</span>
     <span data-string="kind-custom">{% trans "Custom area" %}</span>
+    {# SNOW-1133: an account-only area with no name, named by the day the #}
+    {# account recorded it (map_downloads_manager.js's unnamedAreaLabel). #}
+    <span data-string="unnamed-area">{% blocktrans %}Area saved %(date)s{% endblocktrans %}</span>
+    <span data-string="unnamed-area-undated">{% trans "Unnamed area" %}</span>
     {# SNOW-856: the shared z0-9 overview map — one per basemap, and the #}
     {# only row kind with no Remove control. "Shared" rather than a #}
     {# restatement of the row's own title ("Overview map"), which would #}
@@ -240,9 +247,22 @@ the row's own label, so map.html loads that module once for both.
     <span data-string="budget-bar-label">{% blocktrans %}Space used, by base map: %(segments)s{% endblocktrans %}</span>
     <span data-string="budget-bar-empty">{% trans "Nothing downloaded on this device" %}</span>
     <span data-string="budget-segment">{% blocktrans %}%(basemap)s %(size)s{% endblocktrans %}</span>
+    {# SNOW-1135: Remove means this device. The first message is for a row  #}
+    {# the account does not know about; the second for one it does, which  #}
+    {# stays listed under "Not on this device" after the removal.            #}
     <span data-string="confirm-remove">{% blocktrans %}Remove the offline map for %(name)s? This frees %(size)s on this
             device. You can download it again whenever you like.{% endblocktrans %}</span>
+    <span
+        data-string="confirm-remove-kept"
+    >{% blocktrans %}Remove the offline map for %(name)s from this device? This frees %(size)s. It stays in your list under "Not on this device", so you can download it again.{% endblocktrans %}</span>
     <span data-string="remove-failed">{% trans "That download couldn't be removed. Try again." %}</span>
+    {# SNOW-1135: Forget, on an account-only row — takes the area off the   #}
+    {# account. It cannot reach another device's tiles, so it says so.     #}
+    <span
+        data-string="confirm-forget"
+    >{% blocktrans %}Forget %(name)s? It is removed from your account. A device that still has it downloaded will add it back.{% endblocktrans %}</span>
+    <span data-string="forget-row-label">{% blocktrans %}Forget %(name)s{% endblocktrans %}</span>
+    <span data-string="forget-failed">{% trans "That area couldn't be forgotten. Try again." %}</span>
     {# SNOW-634: [data-panel-add]'s offline refusal — Offline-integrity     #}
     {# mirrors #map-frame-overlay's own Download button: no new download    #}
     {# can start without a connection, even though listing/deleting what is #}
@@ -294,9 +314,9 @@ the row's own label, so map.html loads that module once for both.
             device{% endblocktrans %}</span>
     {# SNOW-832 removed `free-space-row-label` and `confirm-free-space`   #}
     {# with the second destructive verb they belonged to — see            #}
-    {# includes/_map_downloads_row_actions.html for why it went. The trash #}
-    {# means gone everywhere again, and its two confirmations are the      #}
-    {# whole set: this one for a row with an account row behind it, the    #}
+    {# includes/_map_downloads_row_actions.html for why it went. SNOW-1135 #}
+    {# made the trash local again (Remove = this device) and moved the     #}
+    {# account half to Forget, on the account-only row.                    #}
     <span data-string="download-here-failed">{% trans "That download couldn't be started here. Try again." %}</span>
     {# SNOW-863: the refusal a reader actually reaches. One roundel drives  #}
     {# every region download, so a second "Download here" while a run is    #}

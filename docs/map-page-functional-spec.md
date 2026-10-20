@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-18
+last-reviewed: 2026-10-19
 ---
 
 # Map page — functional specification
@@ -134,7 +134,7 @@ layer menu; each remembers its state per-device in `localStorage`.
 | Layer | EAWS tier | What it is | Default |
 |-------|-----------|------------|---------|
 | **Micro regions** | L4 | The warning region — the smallest unit a bulletin, rating, and subscription attach to (e.g. `CH-4115`). Its boundary and its label. | **On** |
-| **Bulletin fill** | derived | The bulletin data painted onto those regions: **the choropleth** — the coloured fill carrying the danger rating — plus the dissolved outer boundary of every micro-region that shares one bulletin on the selected day. Shows how the warning service actually grouped terrain that day: two regions inside one outline are covered by one text. An outline appears only where a provider aggregates — a bulletin covering ONE region gets none, since dissolving one polygon would just redraw its own border ([why](decisions/a-grouping-outline-asserts-an-aggregation.md)). Météo-France is 1:1 across its whole archive, so it draws no outlines at all; SLF and ALBINA both aggregate today, and SLF will stop once SNOW-998 lands. Not a layers-menu row: it has its own five-step strength control on the map (below). | **50%** |
+| **Bulletin fill** | derived | The bulletin data painted onto those regions: **the choropleth** — the coloured fill carrying the danger rating — plus the dissolved outer boundary of every micro-region that shares one bulletin on the selected day. Shows how the warning service actually grouped terrain that day: two regions inside one outline are covered by one text. An outline appears only where a provider aggregates — a bulletin covering ONE region gets none, since dissolving one polygon would just redraw its own border ([why](decisions/a-grouping-outline-asserts-an-aggregation.md)). Météo-France is 1:1 across its whole archive, so it draws no outlines at all; SLF and ALBINA both aggregate today, and SLF will stop once SNOW-998 lands. Not an on/off row: its layers-menu row is a five-step "Bulletin opacity" control (below). | **50%** |
 | **Minor regions** | L2 | Sub-region grouping of micro-regions (e.g. `CH-41`, Lower Valais). Outline only. | Off |
 | **Major regions** | L1 | Top-level area (e.g. `CH-4`, Valais). Outline only. | Off |
 
@@ -161,8 +161,11 @@ of its mechanism survives:
 (historical).
 
 **The fill's strength is the user's choice, in five steps** — 0, 25%, 50%
-(default), 75%, 100% — from a roundel in the bottom-right stack whose flyout
-opens to the left. 0 is the off position, so the control subsumes the on/off
+(default), 75%, 100% — from the "Bulletin opacity" row of the layers menu's
+Conditions section, five swatches after the ALBINA row (`#map-bulletin-opacity`,
+a `role="radiogroup"`; picking one leaves the menu open). Until the
+two-capsule column it was a roundel of its own with a flyout
+([why it moved](decisions/map-controls-are-two-groups-without-an-on-map-marker.md)). 0 is the off position, so the control subsumes the on/off
 toggle it replaced rather than sitting beside one. The choropleth is
 translucent again as a result, which reverses an earlier decision and brings
 back its basemap drift knowingly:
@@ -414,7 +417,10 @@ track, and a tap on the profile's top line places it at that distance.
 The profile's target is the line, loosely, about 20 px either side of
 it; a tap lower down in the fill does nothing. The first tap on a route
 opens the panel with the point already placed where it landed; a later
-tap moves it. There is no leg selection, no drag along the profile, and
+tap moves it. The profile also scrubs: a press anywhere on it, at any
+height, that moves sideways drags the point along with it in real time,
+and lifting leaves it there (restored 2026-10-19). The route's line on the
+map does not scrub; it stays tap to move. There is no leg selection and
 no hover: a mouse over the line or the profile leaves the point where it
 was. A tap leaves the camera where it is: the reader tapped a line they
 can already see, at a scale they chose. Picking the route from the
@@ -525,7 +531,7 @@ core (from z14) and the point card agree with the shading under them.
 
 **Where it sits.** Under the danger choropleth, so the ratings stay
 readable on top of it. There is no separate opacity control and no
-exclusivity rule: the bulletin-fill strength control (§2) already exists
+exclusivity rule: the layers menu's Bulletin opacity row (§2) already exists
 for exactly this trade-off, and a reader who wants the terrain clean takes
 the fill to 0.
 
@@ -670,37 +676,39 @@ For what the dot on a row means — and why two rows have none — see
 
 ## 3.6a The control column, and what a first visitor gets (SNOW-664)
 
-The bottom-right roundel column is **locate, then everything else behind a
-toggle**:
+The bottom-right column is **two glass capsules, 16px apart, and a
+toggle** (`.map-control-group`; why:
+[`decisions/map-controls-are-two-groups-without-an-on-map-marker.md`](decisions/map-controls-are-two-groups-without-an-on-map-marker.md)):
 
-| Position | Control | Visible when minimised |
-|----------|---------|------------------------|
-| 1 | Locate me (`#locate-toggle`) | **yes** |
-| 2 | Layers (`#basemap-pill`) | no |
-| 3 | Bulletin fill strength (`#map-fill-toggle`) | no |
-| 4 | Downloads (`_map_custom_download_control.html` — opens the downloads sheet, SNOW-634) | no |
-| 5 | Favourites (`#favourite-add-btn`) | no |
-| 6 | Field observations (`#report-btn`) | no |
-| 7 | Routes (`#route-add-btn`, SNOW-686) | no |
+| Capsule | Control | Visible when minimised |
+|---------|---------|------------------------|
+| the map (`#map-control-group-map`) | Locate me (`#locate-toggle`) | **yes** |
+| the map | Layers (`#basemap-pill`) | **yes** |
+| yours (`#map-control-group-yours`) | Favourites (`#favourite-add-btn`) | no |
+| yours | Field observations (`#report-btn`) | no |
+| yours | Routes (`#route-add-btn`, SNOW-686) | no |
+| yours | Downloads (`_map_custom_download_control.html` — opens the downloads sheet, SNOW-634) | no |
 | foot | Expand / collapse toggle (`#map-controls-toggle`) | **yes** |
 
 The map help "?" (`#map-help-toggle`) is not in this column: it sits in the
 bottom-LEFT stack (`#map-legend`), above the legend toggle and the date row
 (SNOW-794), and under the zoom control (§3.6b).
 
-Locate is the only permanent one. "Where am I" is the question worth a
-standing control on a map the user is physically standing in; everything
-else in the column is a choice about what the map *shows*, and a choice can
-wait behind the toggle. Layers used to stay out alongside locate, which made
-a minimised column two roundels and a toggle, and left no answer to why
-those two and not a third.
+The split is by what a control is about. "The map" is how the map itself is
+read — where am I, what is drawn on it — and stays out. "Yours" is the
+reader's own things — places, reports, routes, the areas saved to this
+device — and folds behind the toggle. Downloads counts as yours: an area is
+something the reader chose and keeps, listed and managed like the other
+three. With a route open on a phone the map capsule stays and the yours
+capsule keeps only the routes roundel; the toggle hides.
 
-Both panels opened from inside the group — the layers menu and the fill
-flyout — are children of `.map-controls-br`, **not** of the roundels that
-open them. `#map-controls-collapsible` is `overflow: hidden` for its height
-animation, and that clips both axes, so a panel extending left out of it
-would be silently cut off. Each is positioned against the stack by its own
-JS on open, and each closes when the strip collapses.
+The layers menu is a child of `.map-controls-br`, **not** of the roundel
+that opens it. `#map-controls-collapsible` (the yours capsule's wrapper) is
+`overflow: hidden` for its height animation, and that clips both axes, so a
+panel extending left out of it would be silently cut off. The menu is
+positioned against the stack by its own JS on open. Its roundel lives in
+the map capsule, which never collapses, so the menu stays open when the
+yours capsule folds.
 
 ### What "locate" does while it is working (SNOW-682)
 
@@ -727,8 +735,9 @@ The same budget governs the `snowdesk:locate-request` path the field-report
 flow uses, so that sheet reaches its MANUAL "move the map to set your
 location" state promptly instead of holding "Finding your location…".
 
-**A first visit lands on:** the intro panel (`#home-intro`, dismissed state
-persisted under `snowdesk.home.intro`), SLF (CH) bulletins, Micro (EAWS L4)
+**A first visit lands on:** a clean map, with the tour offered once it
+settles (`#map-tour-offer`, answer persisted under
+`snowdesk.map.tour-offer`, SNOW-1117), SLF (CH) bulletins, Micro (EAWS L4)
 boundaries, the OpenFreeMap basemap, and bulletin fill at 50%.
 
 Four of those five are **configured, not hardcoded** (SNOW-872 for the
@@ -810,7 +819,11 @@ header carrying the roundel's own mark, a list of what the user has, and an
 `_overlay_sheet.html` primitive and follows the same two layouts.
 
 Each carried a fourth part, a footer switch labelled "Display on the map",
-until SNOW-904 made §3.6's layers menu the sole control for every layer.
+until SNOW-904 made §3.6's layers menu the sole control for every layer. The
+switch is back, labelled "Show on the map" and bound to the same setting as
+that layer's menu row (`static/js/map_panel_overlay_switch.js`), so flipping
+either moves the other; the menu stays the one place listing every layer
+([`decisions/map-controls-are-two-groups-without-an-on-map-marker.md`](decisions/map-controls-are-two-groups-without-an-on-map-marker.md)).
 
 **Below `sm`, a panel is a docked sheet**: full-width, anchored to the
 bottom edge, covering the map beneath it. That is the right shape on a
@@ -861,6 +874,11 @@ bulletin. At
 sheet still holds for every sheet that declares no detents. Why:
 [`docs/decisions/sheet-detents-are-phone-only.md`](decisions/sheet-detents-are-phone-only.md).
 
+**One bottom sheet at a time.** On a phone every detent sheet docks to the
+same foot of the screen, so opening one — the route sheet included — closes
+any other that is open. Which overlays can be open together, and at what
+zoom a tap does what, is in [`map-surface.md`](map-surface.md).
+
 ### 3.7a Pressing a row's name frames its place
 
 On the three panels whose rows are **places** — routes, favourites
@@ -899,31 +917,30 @@ than more on one.
 ## 3.8 Overlay roundel state — is it on the map right now?
 
 Each of the four roundels — downloads, favourites, field observations and,
-since SNOW-687, routes — shows whether **its own** overlay is currently
-drawn: a coloured rim, plus the same fact in the roundel's accessible label
-("Your favourites — shown on the map"). One signal, one meaning, on all of
-them.
+since SNOW-687, routes — states whether **its own** overlay is currently
+drawn, in its accessible label ("Your favourites — shown on the map"). One
+signal, one meaning, on all of them. **Nothing on the roundel draws it**:
+the coloured rim that used to was removed with the two-capsule column. A
+rim on one roundel inside a shared capsule read as a selected tab, and the
+layers menu already answers "what is on my map" in one place
+([why](decisions/map-controls-are-two-groups-without-an-on-map-marker.md)).
 
-It is live rather than a snapshot: the rim follows the layers-menu row, and
-also follows anything else that takes an overlay off the map — positioning
-a pin clears every overlay for the duration, and the roundels say so
-without any panel being open. It survives a basemap switch, which re-draws
-every layer; the downloads rim stays lit across one, since the overlay
-repaints with the new basemap's areas rather than switching off.
+The state (`data-overlay-shown`, painted by
+`static/js/map_roundel_overlay_state.js`) is live rather than a snapshot: it
+follows the layers-menu row and the panel's "Show on the map" switch, and
+also anything else that takes an overlay off the map — positioning a pin
+clears every overlay for the duration. It survives a basemap switch, which
+re-draws every layer.
 
-(Turning Bulletins on used to be one of those "anything elses" — it
-switched the downloaded-area squares off, the two paint the same polygons.
-SNOW-663 ended that: the squares are a hatch the danger colour reads
-through, and the two overlays are now independent.)
+(Turning Bulletins on used to switch the downloaded-area squares off, the
+two paint the same polygons. SNOW-663 ended that: the squares are a hatch
+the danger colour reads through, and the two overlays are now independent.)
 
-**The rim states what is drawn, not what was asked for.** Switch an
+**The label states what is drawn, not what was asked for.** Switch an
 overlay on with no data to draw — offline, first enable, a fetch that
-fails — and the switch stays ON (the setting took, and will be restored
-next time) while the rim stays off, because nothing reached the map. The
-two disagreeing is the point: it is the only way to see that a request
-has not landed. Positioning a pin clears every overlay off the map for
-the duration of the placement, and every rim goes out with them and comes
-back when it ends, for the same reason.
+fails — and the row and the switch stay ON (the setting took, and will be
+restored next time) while the label says it is not shown, because nothing
+reached the map.
 
 The downloads roundel used to carry a different signal — "this device
 holds at least one downloaded area" — which is a fact about storage, not
@@ -1140,6 +1157,8 @@ render the normal map.
 
 ## Related documents
 
+- [`map-surface.md`](map-surface.md) — zoom bands, what a tap does, and
+  which overlays can be open together.
 - [`map-and-api.md`](map-and-api.md) — implementation reference: the map
   JS, the `/api/` endpoints, the caching and payload contracts.
 - [`offline-map.md`](offline-map.md) — PWA shell, service worker, cache

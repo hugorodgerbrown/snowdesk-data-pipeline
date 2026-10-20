@@ -11,25 +11,35 @@
  *   - On first load (localStorage key 'snowdesk.map.help' absent) the tour
  *     auto-starts once — unless #map-help-overlay carries
  *     data-map-help-no-autostart, an opt-out the embedding page sets when
- *     it has its own, better way to offer the tour. home.html sets it
- *     (SNOW-535): on the homepage the tour is only ever reached through
- *     #home-intro's "Explore the map" CTA — on first load, or after
- *     re-opening that panel from the "?" roundel — never automatically
- *     straight after a visitor dismisses the card.
+ *     it has its own, better way to offer the tour. map.html sets it: there
+ *     #map-tour-offer (static/js/map_tour_offer.js, SNOW-1117) asks once the
+ *     map has settled, and its "Start the tour" opens the tour.
  *   - Steps whose target selector resolves to nothing in the DOM (the
  *     flag-gated #favourite-add-btn / #report-btn controls) are skipped
  *     automatically when the active step list is built.
- *   - The "?" roundel (#map-help-toggle) is the way back in. Where the page
- *     renders the welcome panel (#home-intro, the homepage) the roundel
- *     opens THAT rather than the tour, by dispatching
- *     'snowdesk:home-intro-requested' for home_intro.js to answer: the
- *     panel says what Snowdesk is, and its "Explore the map" CTA leads on
- *     into the tour. Without that panel — any other page embedding the map
- *     partial — the roundel opens the tour directly, from step 1,
- *     regardless of stored state.
+ *   - SNOW-1118: seven steps in four chapters, about the map and not only
+ *     its buttons. A step can point at nothing (the colours: no ring, the
+ *     card at the foot of the screen), at several controls at once (a ring
+ *     each), or at whichever of several alternatives is on screen
+ *     ("#a | #b"). Its [data-help-extra] is cloned into the card. The
+ *     progress bar draws a segment per step under its chapter's name, from
+ *     data-help-chapter and the #map-help-chapters labels.
+ *   - SNOW-1118: a step with data-help-action="show-region" selects a
+ *     region itself, by dispatching 'snowdesk:map-help-show-region', which
+ *     map.js answers (the region at the middle of the map, unless one is
+ *     already selected). Selecting opens the region sheet on a phone, and
+ *     that sheet's open would close the tour through window.pwaMapOverlays,
+ *     so the tour ignores the registry's close while it dispatches. Leaving
+ *     the step dispatches 'snowdesk:map-help-release-region' (map.js drops
+ *     a selection only the tour made) and closes whatever it opened.
+ *   - The "?" roundel (#map-help-toggle) is the way back in: it opens the
+ *     tour from step 1, regardless of stored state — except where the page
+ *     renders help mode (#map-help-mode, SNOW-1119), whose bar carries the
+ *     tour instead. Between SNOW-535 and
+ *     SNOW-1117 it opened the #home-intro welcome panel instead, which led
+ *     into the tour by its own CTA; that panel is gone.
  *   - A 'snowdesk:map-help-requested' CustomEvent opens the tour from step 1
- *     too. home_intro.js dispatches it when the "Explore the map" CTA is
- *     clicked, which is the second half of the flow above.
+ *     too. map_tour_offer.js dispatches it from "Start the tour".
  *   - Back / Next control the sequence; Next becomes "Done" on the final
  *     step. The "×" close button, Escape and Done all persist the dismissed
  *     state.
@@ -39,14 +49,14 @@
  *     opening) on close.
  *   - prefers-reduced-motion disables the ring's pulse animation and the
  *     position transitions via a 'map-help--no-motion' class, mirroring
- *     home_intro.js's '--no-motion' pattern.
+ *     map_tour_offer.js's '--no-motion' pattern.
  *   - SNOW-658: the tour is a map overlay, so it registers with
  *     window.pwaMapOverlays (static/js/map_overlay_exclusivity.js) — opening
  *     it closes every other map overlay, and opening any of them closes it.
  *     Nothing in the walkthrough depends on another overlay staying open:
  *     every step points at map chrome, never at a panel's contents.
  *
- * Mirrors the IIFE + localStorage-guard shape of home_intro.js.
+ * An IIFE with a localStorage guard, the shape map_tour_offer.js shares.
  */
 
 (function mapHelpInit() {
@@ -56,7 +66,10 @@
   if (!overlay) return;
 
   const stepsList = document.getElementById('map-help-steps');
+  const chaptersList = document.getElementById('map-help-chapters');
   const ring = document.getElementById('map-help-ring');
+  const progressEl = document.getElementById('map-help-progress');
+  const extraEl = document.getElementById('map-help-tooltip-extra');
   const tooltip = document.getElementById('map-help-tooltip');
   const titleEl = document.getElementById('map-help-tooltip-title');
   const bodyEl = document.getElementById('map-help-tooltip-body');
@@ -72,7 +85,7 @@
     !stepCountEl || !backBtn || !nextBtn || !closeBtn
   ) {
     // Malformed/partial markup — nothing sensible to drive. Fail silently
-    // rather than throwing, matching home_intro.js's early-return guard.
+    // rather than throwing, matching map_tour_offer.js's early-return guard.
     // (closeBtn is guarded for markup completeness only — its click is
     // handled by the shared overlays.js dismiss handler, not bound here;
     // see the Control bindings note below.)
@@ -87,9 +100,13 @@
   const OVERLAY_NAME = 'map-help-overlay';
   const RING_PADDING = 4;
   const TOOLTIP_MARGIN = 12;
+  // How long an action step waits for what it opened (the region sheet's
+  // slide up) before measuring it again.
+  const ACTION_SETTLE_MS = 400;
+  const SHOW_REGION_ACTION = 'show-region';
 
   // Respect prefers-reduced-motion: skip the ring pulse and the position
-  // transitions, matching home_intro.js's equivalent guard.
+  // transitions, matching map_tour_offer.js's equivalent guard.
   const prefersReducedMotion = window.matchMedia(
     '(prefers-reduced-motion: reduce)',
   ).matches;
@@ -104,15 +121,12 @@
   const doneLabel = nextBtn.dataset.labelDone || nextLabel;
 
   /**
-   * Build the active step list from the server-rendered <li> nodes,
-   * dropping any whose target is not on screen — either because the
-   * selector matches nothing (the flag-gated favourite/report controls) or
-   * because it matches an element CSS is not drawing.
+   * Whether CSS is drawing an element.
    *
-   * SNOW-794 added the second half. The season scrubber is ``display: none``
-   * in two states — below 640px, and whenever the shown day is outside the
-   * season — and in neither is it a control at all; existence alone would
-   * have kept its step and pointed the ring at a zero box.
+   * SNOW-794: the season scrubber is ``display: none`` in two states — below
+   * 640px, and whenever the shown day is outside the season — and in neither
+   * is it a control at all; existence alone would have kept its step and
+   * pointed the ring at a zero box.
    *
    * ``checkVisibility()`` is the right question: it is false for
    * ``display: none`` on the element OR any ancestor, and TRUE for something
@@ -120,27 +134,88 @@
    * shrinks to height 0 rather than hiding and its steps must survive so the
    * force-open below can reveal them. Where it is missing (older browsers,
    * and jsdom, which has no layout at all) the fallback reads the element's
-   * own computed ``display``. That catches both cases this filter exists
-   * for, since each is a rule on the scrubber itself.
+   * own computed ``display``.
    *
-   * @returns {Array<{target: string, title: string, body: string}>}
+   * @param {Element} el
+   * @returns {boolean}
+   */
+  const isDrawn = (el) => {
+    if (el.hasAttribute('hidden')) return false;
+    if (typeof el.checkVisibility === 'function') return el.checkVisibility();
+    return getComputedStyle(el).display !== 'none';
+  };
+
+  /**
+   * The elements a target spec names that are on screen now (SNOW-1118).
+   *
+   * ``"#a, #b"`` is every one of them (a ring each); ``"#a | #b"`` is the
+   * first alternative that is drawn; ``""`` is none — a step about the map
+   * itself.
+   *
+   * @param {string} spec
+   * @returns {Element[]}
+   */
+  const resolveTargets = (spec) => {
+    if (!spec) return [];
+    if (spec.includes('|')) {
+      for (const alt of spec.split('|')) {
+        const el = document.querySelector(alt.trim());
+        if (el && isDrawn(el)) return [el];
+      }
+      return [];
+    }
+    return spec
+      .split(',')
+      .map((sel) => document.querySelector(sel.trim()))
+      .filter((el) => el && isDrawn(el));
+  };
+
+  /**
+   * Build the active step list from the server-rendered <li> nodes,
+   * dropping any whose target is not on screen — either because the
+   * selector matches nothing (the flag-gated favourite/report controls) or
+   * because it matches an element CSS is not drawing. Two kinds of step are
+   * kept regardless: one with no target, which is about the map itself,
+   * and one with an action, whose target appears only once the action runs
+   * (the region sheet the tour opens).
+   *
+   * @returns {Array<{target: string, title: string, body: string,
+   *   chapter: string, action: string, extra: Element|null}>}
    */
   const buildSteps = () => {
-    const nodes = Array.from(stepsList.querySelectorAll('li[data-help-target]'));
+    const nodes = Array.from(stepsList.querySelectorAll(':scope > li'));
     return nodes
-      .map((li) => ({
-        target: li.getAttribute('data-help-target') || '',
-        title: li.getAttribute('data-help-title') || '',
-        body: li.textContent.trim(),
-      }))
+      .map((li) => {
+        const bodyNode = li.querySelector('[data-help-body]');
+        return {
+          target: (li.getAttribute('data-help-target') || '').trim(),
+          title: li.getAttribute('data-help-title') || '',
+          body: (bodyNode || li).textContent.replace(/\s+/g, ' ').trim(),
+          chapter: li.getAttribute('data-help-chapter') || '',
+          action: li.getAttribute('data-help-action') || '',
+          extra: li.querySelector('[data-help-extra]'),
+        };
+      })
       .filter((step) => {
-        if (!step.target) return false;
-        const el = document.querySelector(step.target);
-        if (!el) return false;
-        if (typeof el.checkVisibility === 'function') return el.checkVisibility();
-        return getComputedStyle(el).display !== 'none';
+        if (!step.target || step.action) return true;
+        return resolveTargets(step.target).length > 0;
       });
   };
+
+  /**
+   * The chapter labels, keyed by chapter, in their template order.
+   *
+   * @returns {Map<string, string>}
+   */
+  const readChapters = () => {
+    const labels = new Map();
+    if (!chaptersList) return labels;
+    chaptersList.querySelectorAll('li[data-chapter]').forEach((li) => {
+      labels.set(li.getAttribute('data-chapter'), li.textContent.trim());
+    });
+    return labels;
+  };
+  const chapterLabels = readChapters();
 
   // Re-derived on every open (see ``open`` below), because what is on screen
   // is not fixed at parse time: the visitor can collapse the scrubber, and
@@ -149,6 +224,18 @@
 
   let currentIndex = 0;
   let lastFocused = null;
+  // The direction of the last move, so a step whose target has gone is
+  // skipped the way the visitor was going rather than always forwards.
+  let direction = 1;
+  // True while the tour itself opens something (an action step): the
+  // registry's close is the opened surface announcing itself, not another
+  // overlay taking the screen.
+  let acting = false;
+  // The step index whose action has run and not yet been released.
+  let actedIndex = -1;
+  let settleTimer = null;
+  // Rings beyond the first, for a step that points at several controls.
+  const extraRings = [];
 
   const isOpen = () => !overlay.hasAttribute('hidden');
 
@@ -160,17 +247,61 @@
    *
    * @param {Element} targetEl
    */
-  const positionRing = (targetEl) => {
+  const positionRing = (targetEl, ringEl = ring) => {
     const rect = targetEl.getBoundingClientRect();
-    const top = rect.top - RING_PADDING;
-    const left = rect.left - RING_PADDING;
-    const width = rect.width + RING_PADDING * 2;
-    const height = rect.height + RING_PADDING * 2;
-    ring.style.top = `${top}px`;
-    ring.style.left = `${left}px`;
-    ring.style.width = `${width}px`;
-    ring.style.height = `${height}px`;
-    ring.style.borderRadius = width / height <= 3 ? '999px' : '14px';
+    // Kept on screen: a target flush with an edge (the phone's region
+    // sheet spans the width and sits on the bottom) would otherwise have
+    // its ring drawn off-screen on three sides.
+    const edge = RING_PADDING / 2;
+    const top = Math.max(edge, rect.top - RING_PADDING);
+    const left = Math.max(edge, rect.left - RING_PADDING);
+    const width = Math.min(window.innerWidth - edge, rect.right + RING_PADDING) - left;
+    const height = Math.min(window.innerHeight - edge, rect.bottom + RING_PADDING) - top;
+    ringEl.style.top = `${top}px`;
+    ringEl.style.left = `${left}px`;
+    ringEl.style.width = `${width}px`;
+    ringEl.style.height = `${height}px`;
+    ringEl.style.borderRadius = width / height <= 3 ? '999px' : '14px';
+  };
+
+  /**
+   * Draw a ring round each target: the first is #map-help-ring, the rest
+   * are made as needed and hidden when a step needs fewer. No target hides
+   * them all.
+   *
+   * @param {Element[]} targets
+   */
+  const positionRings = (targets) => {
+    ring.hidden = targets.length === 0;
+    if (targets.length) positionRing(targets[0]);
+    for (let i = 1; i < targets.length; i += 1) {
+      if (!extraRings[i - 1]) {
+        const el = document.createElement('div');
+        el.className = 'map-help-ring';
+        el.setAttribute('aria-hidden', 'true');
+        overlay.insertBefore(el, tooltip);
+        extraRings.push(el);
+      }
+      extraRings[i - 1].hidden = false;
+      positionRing(targets[i], extraRings[i - 1]);
+    }
+    extraRings.slice(Math.max(0, targets.length - 1)).forEach((el) => {
+      el.hidden = true;
+    });
+  };
+
+  /**
+   * Place the card for a step with no target: across the foot of the
+   * screen, clear of its edge, where it leaves the map it talks about in
+   * view.
+   */
+  const positionTooltipFree = () => {
+    const ttRect = tooltip.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    tooltip.style.left = `${Math.max(TOOLTIP_MARGIN, (vw - ttRect.width) / 2)}px`;
+    tooltip.style.top = `${Math.max(TOOLTIP_MARGIN, vh - ttRect.height - TOOLTIP_MARGIN * 2)}px`;
+    tooltip.dataset.side = 'none';
   };
 
   /**
@@ -226,45 +357,158 @@
   };
 
   /**
-   * Re-render the current step: tooltip copy, step counter, control
-   * state, and the ring/tooltip position.
+   * Draw the progress bar: a segment per step, grouped under its chapter's
+   * name, the steps before this one filled. Hidden, and the plain step
+   * count shown instead, when the steps carry no chapters.
+   */
+  const renderProgress = () => {
+    const chaptered = progressEl && steps.every((step) => chapterLabels.has(step.chapter));
+    stepCountEl.classList.toggle('map-help-visually-hidden', !!chaptered);
+    if (!progressEl) return;
+    progressEl.hidden = !chaptered;
+    if (!chaptered) return;
+    const current = steps[currentIndex].chapter;
+    progressEl.replaceChildren();
+    chapterLabels.forEach((label, chapter) => {
+      const indices = steps
+        .map((step, i) => (step.chapter === chapter ? i : -1))
+        .filter((i) => i !== -1);
+      if (indices.length === 0) return;
+      const group = document.createElement('div');
+      group.className = 'map-help-progress-chapter';
+      group.style.flexGrow = String(indices.length);
+      group.dataset.state = chapter === current ? 'current' : 'other';
+      const bar = document.createElement('div');
+      bar.className = 'map-help-progress-segments';
+      indices.forEach((i) => {
+        const seg = document.createElement('span');
+        seg.className = 'map-help-progress-segment';
+        seg.dataset.state = i <= currentIndex ? 'done' : 'todo';
+        bar.append(seg);
+      });
+      const name = document.createElement('span');
+      name.className = 'map-help-progress-label';
+      name.textContent = label;
+      group.append(bar, name);
+      progressEl.append(group);
+    });
+  };
+
+  /**
+   * Put the step's [data-help-extra] (the scale, the four lists) under its
+   * copy, or hide the slot. A clone, so the template's copy stays whole for
+   * the next open.
+   *
+   * @param {Element|null} extra
+   */
+  const renderExtra = (extra) => {
+    if (!extraEl) return;
+    extraEl.replaceChildren(...(extra ? Array.from(extra.cloneNode(true).childNodes) : []));
+    extraEl.hidden = !extra;
+  };
+
+  /**
+   * Let go of whatever an action step opened: the region the tour selected
+   * (map.js drops it only if the tour made it) and the surface showing it.
+   */
+  const releaseAction = () => {
+    if (actedIndex === -1) return;
+    actedIndex = -1;
+    clearTimeout(settleTimer);
+    document.dispatchEvent(new CustomEvent('snowdesk:map-help-release-region'));
+    // A region the visitor had selected themselves stays selected, but the
+    // sheet the tour opened for it would cover the next steps' controls.
+    if (isOpen()) {
+      acting = true;
+      try {
+        window.pwaMapOverlays?.opening(OVERLAY_NAME);
+      } finally {
+        acting = false;
+      }
+    }
+  };
+
+  /** Run the current step's action once, when the step is reached. */
+  const runAction = (step) => {
+    if (step.action !== SHOW_REGION_ACTION || actedIndex === currentIndex) return;
+    actedIndex = currentIndex;
+    // The sheet takes focus as it opens; hand it back to the card, so a
+    // keyboard user's next Enter is still the tour's Next.
+    const focused = document.activeElement;
+    acting = true;
+    try {
+      document.dispatchEvent(new CustomEvent('snowdesk:map-help-show-region'));
+    } finally {
+      acting = false;
+    }
+    if (focused && tooltip.contains(focused)) focused.focus();
+    // The sheet slides up; measure it again as it rises and once it has.
+    clearTimeout(settleTimer);
+    const settle = (delay) => {
+      settleTimer = setTimeout(() => {
+        reposition();
+        if (delay < ACTION_SETTLE_MS) settle(delay * 2);
+      }, delay);
+    };
+    settle(ACTION_SETTLE_MS / 4);
+  };
+
+  /**
+   * Re-render the current step: tooltip copy, step counter, progress,
+   * control state, and the ring/tooltip position.
    */
   const render = () => {
     const step = steps[currentIndex];
-    const targetEl = document.querySelector(step.target);
-    if (!targetEl) {
-      // Target vanished between build and render — skip forward rather
-      // than pointing the ring at nothing.
-      advance(1);
+    if (actedIndex !== -1 && actedIndex !== currentIndex) releaseAction();
+    runAction(step);
+    const targets = resolveTargets(step.target);
+    if (step.target && targets.length === 0) {
+      // Target vanished between build and render (or the action found
+      // nothing to open) — skip on rather than pointing the ring at nothing.
+      advance(direction);
       return;
     }
 
     titleEl.textContent = step.title;
     bodyEl.textContent = step.body;
+    renderExtra(step.extra);
     stepCountEl.textContent = stepTemplate
       .replace('{n}', String(currentIndex + 1))
       .replace('{total}', String(steps.length));
+    renderProgress();
 
     backBtn.disabled = currentIndex === 0;
     const isLast = currentIndex === steps.length - 1;
     nextBtn.textContent = isLast ? doneLabel : nextLabel;
 
-    positionRing(targetEl);
-    positionTooltip(targetEl);
-    targetEl.scrollIntoView({
-      block: 'nearest',
-      behavior: prefersReducedMotion ? 'auto' : 'smooth',
-    });
+    place(targets);
+    if (targets.length) {
+      targets[0].scrollIntoView({
+        block: 'nearest',
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      });
+    }
+  };
+
+  /**
+   * Ring the targets and set the card beside the first, or at the foot of
+   * the screen for a step with none.
+   *
+   * @param {Element[]} targets
+   */
+  const place = (targets) => {
+    positionRings(targets);
+    if (targets.length) positionTooltip(targets[0]);
+    else positionTooltipFree();
   };
 
   /** Recompute the ring/tooltip position for the current step, if open. */
   const reposition = () => {
     if (!isOpen()) return;
     const step = steps[currentIndex];
-    const targetEl = document.querySelector(step.target);
-    if (!targetEl) return;
-    positionRing(targetEl);
-    positionTooltip(targetEl);
+    const targets = resolveTargets(step.target);
+    if (step.target && targets.length === 0) return;
+    place(targets);
   };
 
   /**
@@ -275,8 +519,15 @@
    * @param {number} delta
    */
   const advance = (delta) => {
+    direction = delta < 0 ? -1 : 1;
     const next = currentIndex + delta;
-    if (next < 0) return;
+    if (next < 0) {
+      // Back from the first step found nothing to show: stay put, or close
+      // if this step cannot be shown either.
+      if (resolveTargets(steps[currentIndex].target).length || !steps[currentIndex].target) return;
+      close(false);
+      return;
+    }
     if (next >= steps.length) {
       close(true);
       return;
@@ -302,6 +553,7 @@
    */
   const open = (fromStart) => {
     if (fromStart) currentIndex = 0;
+    direction = 1;
     lastFocused = document.activeElement;
     // SNOW-658: only one overlay is open over the map at a time. Announced
     // before the tour is revealed, so the surface it replaces is gone by the
@@ -350,6 +602,7 @@
    *   the tour borrowed it from.
    */
   const close = (persist, restoreFocus = true) => {
+    releaseAction();
     overlay.setAttribute('hidden', '');
     overlay.setAttribute('aria-hidden', 'true');
     // Hand the collapsible group back to the user's own preference.
@@ -377,7 +630,9 @@
   document.addEventListener('overlay:dismissed', (event) => {
     const dismissed = event.detail && event.detail.overlay;
     if (dismissed !== overlay) return;
+    releaseAction();
     overlay.setAttribute('aria-hidden', 'true');
+    document.dispatchEvent(new CustomEvent('snowdesk:map-help-close'));
     if (lastFocused && typeof lastFocused.focus === 'function') {
       lastFocused.focus();
     } else if (toggleBtn) {
@@ -385,28 +640,12 @@
     }
   });
 
-  if (toggleBtn) {
-    // The deliberate "show me again" affordance, and the only way back to
-    // the welcome panel: before this the roundel went straight to the tour,
-    // so a visitor who had dismissed #home-intro could never read what
-    // Snowdesk is again. The panel leads into the tour by its own CTA, so
-    // handing the click over loses nothing and gains the step in front.
-    //
-    // Presence of #home-intro is the test, resolved per click rather than
-    // at parse time: it is the panel's own template that decides whether a
-    // page has one (show_intro in _map_embed.html), and asking the DOM
-    // keeps this module free of any "am I the homepage" check. Where there
-    // is no panel, nothing answers the request event — hence the fallback
-    // rather than a dispatch into the void.
-    toggleBtn.addEventListener('click', () => {
-      if (document.getElementById('home-intro')) {
-        document.dispatchEvent(
-          new CustomEvent('snowdesk:home-intro-requested'),
-        );
-        return;
-      }
-      open(true);
-    });
+  // The deliberate "show me again" affordance — on a page without help
+  // mode. Where #map-help-mode is rendered (map.html, SNOW-1119) the "?"
+  // turns help mode on instead, and the tour is its bar's "Tour" button;
+  // map_help_mode.js takes the roundel's click in the capture phase.
+  if (toggleBtn && !document.getElementById('map-help-mode')) {
+    toggleBtn.addEventListener('click', () => open(true));
   }
 
   // SNOW-658: the tour closes whenever any other map overlay opens, and
@@ -423,13 +662,15 @@
   // on a page that has not opted out.
   window.pwaMapOverlays?.register(OVERLAY_NAME, {
     isOpen: isOpen,
-    close: () => close(false, false),
+    close: () => {
+      if (acting) return;
+      close(false, false);
+    },
   });
 
-  // SNOW-535: the homepage's #home-intro "Explore the map" CTA asks for the
-  // tour via this event (home_intro.js) rather than reaching into this
-  // module's internals directly — keeps the tour-opening logic in one
-  // place while decoupling the two scripts.
+  // SNOW-1117: #map-tour-offer's "Start the tour" asks for the tour via this
+  // event (map_tour_offer.js) rather than reaching into this module's
+  // internals — the tour-opening logic stays in one place.
   document.addEventListener('snowdesk:map-help-requested', () => open(true));
 
   window.addEventListener('resize', reposition);

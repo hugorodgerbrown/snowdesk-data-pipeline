@@ -17,6 +17,11 @@
  *     favourites and routes only, never field observations, which are
  *     public data.
  *
+ * Since the two-capsule control column the menu also carries the five
+ * "Bulletin opacity" steps (they had a roundel and flyout of their own), so
+ * the last block covers those: a step dispatches the same
+ * ``snowdesk:bulletins-step`` the flyout did, and leaves the menu open.
+ *
  * The picker is a classic script reading bare identifiers from the shared
  * script scope (`writeStorage`, `OVERLAY_STORAGE_KEY`,
  * `LAYERS_SECTION_STORAGE_KEY`, …), which under Vitest have to be globals.
@@ -55,6 +60,19 @@ function buildFixture({ favouritesEligible = true, routesEligible = true } = {})
               data-basemap-url="https://tiles.example.invalid/${key}.json"
               aria-checked="${checked ? 'true' : 'false'}">${label}</button>
     </li>`;
+  const opacityRow = () => `
+    <li role="none" class="basemap-menu-opacity">
+      <p class="basemap-menu-opacity-label" aria-hidden="true">Bulletin opacity</p>
+      <div class="map-fill-steps" id="map-bulletin-opacity" role="radiogroup"
+           aria-label="Bulletin opacity">
+        ${['0', '0.25', '0.5', '0.75', '1'].map((step) => `
+          <button type="button" role="radio" class="map-fill-step"
+                  aria-checked="${step === '0.5' ? 'true' : 'false'}"
+                  data-bulletins-step="${step}">
+            <span class="map-fill-step-swatch" data-step="${step}"></span>
+          </button>`).join('')}
+      </div>
+    </li>`;
   const section = (slug, title, rows) => `
     <li role="presentation" class="basemap-menu-section">
       <button type="button" class="basemap-menu-section-label"
@@ -75,10 +93,13 @@ function buildFixture({ favouritesEligible = true, routesEligible = true } = {})
          data-favourites-eligible="${favouritesEligible}"
          data-routes-eligible="${routesEligible}"></div>
     <div class="map-controls-br" id="map-controls-br" data-expanded="true">
-      <div id="map-controls-collapsible">
+      <div class="map-control-group" id="map-control-group-map">
         <div id="basemap-pill" data-state="collapsed">
           <button id="basemap-toggle" aria-expanded="false"></button>
         </div>
+      </div>
+      <div id="map-controls-collapsible">
+        <div class="map-controls-collapsible-inner map-control-group"></div>
       </div>
       <div id="basemap-menu" data-signin-url="/account/sign-in/" hidden>
         <div class="basemap-menu-header">
@@ -97,6 +118,7 @@ function buildFixture({ favouritesEligible = true, routesEligible = true } = {})
             'conditions',
             'Conditions',
             row('country.ch', 'SLF bulletins (CH)')
+              + opacityRow()
               + row('weather', 'Weather')
               + row('community_reports', 'Field observations'),
           )}
@@ -447,5 +469,94 @@ describe('the sign-in hand-off', () => {
 
     expect(document.getElementById('map-layer-signin-sheet').hidden).toBe(true);
     expect(window.pwaFavouritesOverlay.show).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the bulletin opacity row', () => {
+  /** Every ``snowdesk:bulletins-step`` dispatched while ``fn`` runs. */
+  function captureSteps(fn) {
+    const seen = [];
+    const listener = (event) => seen.push(event.detail.step);
+    document.addEventListener('snowdesk:bulletins-step', listener);
+    try {
+      fn();
+    } finally {
+      document.removeEventListener('snowdesk:bulletins-step', listener);
+    }
+    return seen;
+  }
+
+  function step(value) {
+    return document.querySelector(`#basemap-menu [data-bulletins-step="${value}"]`);
+  }
+
+  it('dispatches the chosen step and leaves the menu open', async () => {
+    await loadPicker();
+    openMenu();
+    const menu = document.getElementById('basemap-menu');
+    expect(menu.hidden).toBe(false);
+
+    const seen = captureSteps(() => step('0.75').click());
+
+    expect(seen).toEqual([0.75]);
+    // A setting tuned against the map, not a choice that ends the visit:
+    // neither the step's own click nor the document dismiss closes it.
+    expect(menu.hidden).toBe(false);
+    expect(document.getElementById('basemap-toggle').getAttribute('aria-expanded'))
+      .toBe('true');
+  });
+
+  it('writes no aria-checked of its own', async () => {
+    // map.js mirrors the EFFECTIVE step back onto every [data-bulletins-step];
+    // an optimistic tick here could disagree with it.
+    await loadPicker();
+    openMenu();
+
+    step('1').click();
+
+    expect(step('1').getAttribute('aria-checked')).toBe('false');
+    expect(step('0.5').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('is not a menu row: no style swap, no count, no summary entry', async () => {
+    const swap = vi.fn(() => Promise.resolve({}));
+    globalThis.resolveBasemapStyle = swap;
+    await loadPicker();
+    openMenu();
+
+    step('0.25').click();
+
+    expect(swap).not.toHaveBeenCalled();
+    expect(count()).toBe('No layers on');
+    expect(summary('conditions')).toBe('None selected');
+    expect(writes).toEqual([]);
+  });
+
+  it('asks for the regions layers back when a style swap dropped them', async () => {
+    globalThis.MAP = { getLayer: () => null };
+    const reinstall = vi.fn();
+    document.addEventListener('snowdesk:regions-reinstall', reinstall);
+    await loadPicker();
+
+    step('0.5').click();
+    expect(reinstall).toHaveBeenCalledTimes(1);
+
+    // The off step paints nothing, so it needs nothing reinstalled.
+    step('0').click();
+    expect(reinstall).toHaveBeenCalledTimes(1);
+    document.removeEventListener('snowdesk:regions-reinstall', reinstall);
+  });
+
+  it('stays open when the chevron folds the "yours" group away', async () => {
+    // Layers sits in the always-visible "map" capsule now, so collapsing the
+    // other group leaves the menu's roundel on screen — the menu has no
+    // reason to close with it, as it did while layers was collapsible.
+    await loadPicker();
+    openMenu();
+
+    document.getElementById('map-controls-br').dataset.expanded = 'false';
+    await Promise.resolve();
+
+    expect(document.getElementById('basemap-menu').hidden).toBe(false);
   });
 });

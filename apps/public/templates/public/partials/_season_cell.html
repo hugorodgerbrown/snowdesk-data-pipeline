@@ -1,0 +1,114 @@
+{% load i18n snowdesk_time %}
+{% comment %}
+   One day of the season heatmap (SNOW-1126 — extracted from
+   _season_calendar.html so the bulletin page's grid and the resort page's
+   season strip draw the same cell).
+
+   The cell is wrapped in .season-cell-wrap and styled by the
+   [data-testid="season-calendar"] rules in src/css/main.css, so it must
+   render inside that container. Fills come from data-rating-min /
+   data-rating-max (or data-rating-am / -pm on a time-split day) and the
+   ALBINA band spans.
+
+   A rated day is a link to that day's bulletin unless ``inert`` is set —
+   the resort strip's cells do not link (the page's one bulletin link is
+   enough) and render as role="img" with the same text in aria-label and
+   title. Rating names are the translated EAWS labels, never |title.
+
+   Context:
+     cell   — SeasonCell, or None for a padding slot.
+     region — MicroRegion: canonical_region_id + name_slug build the link.
+              Unused when ``inert``.
+     inert  — truthy to render every dated cell as a non-link image.
+{% endcomment %}
+{% if cell is None %}
+    <div class="season-cell-wrap">
+        <div class="calendar-cell"></div>
+    </div>
+{% else %}
+    {% with day=cell.date|date:'D j N' max_label=cell.max_rating_key|danger_level_digit|danger_level_label am_label=cell.am_rating_key|danger_level_digit|danger_level_label pm_label=cell.pm_rating_key|danger_level_digit|danger_level_label %}
+        <div class="season-cell-wrap" data-month-parity="{{ cell.month_parity }}">
+            {% if cell.has_bulletin and cell.is_time_split and not cell.band_mode %}
+                {# SNOW-291: vertical AM/PM split tile — left half AM, right half PM. #}
+                {# SNOW-1128: the label is one translatable sentence, AM/PM included. #}
+                {% blocktrans asvar split_label trimmed %}{{ day }}: {{ am_label }} AM · {{ pm_label }}
+                    PM{% endblocktrans %}
+                {% if inert %}
+                    <div
+                        role="img"
+                        class="rounded-full calendar-cell calendar-cell-time-split{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
+                        data-date="{{ cell.date|date:'Y-m-d' }}"
+                        data-shape="time-split"
+                        data-rating-am="{{ cell.am_rating_key }}"
+                        data-rating-pm="{{ cell.pm_rating_key }}"
+                        data-rating-min="{{ cell.min_rating_key }}"
+                        data-rating-max="{{ cell.max_rating_key }}"
+                        title="{{ split_label }}"
+                        aria-label="{{ split_label }}"
+                    >
+                        {{ cell.date|date:'j' }}
+                    </div>
+                {% else %}
+                    <a
+                        href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
+                        class="rounded-full calendar-cell calendar-cell-time-split{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
+                        data-date="{{ cell.date|date:'Y-m-d' }}"
+                        data-shape="time-split"
+                        data-rating-am="{{ cell.am_rating_key }}"
+                        data-rating-pm="{{ cell.pm_rating_key }}"
+                        data-rating-min="{{ cell.min_rating_key }}"
+                        data-rating-max="{{ cell.max_rating_key }}"
+                        title="{{ split_label }}"
+                        aria-label="{{ split_label }}"
+                    >{{ cell.date|date:'j' }}</a>
+                {% endif %}
+            {% elif cell.has_bulletin and not inert %}
+                {# SNOW-292: band-aware tile (ALBINA elevation bands) — also the plain single-rating case. #}
+                <a
+                    href="{% url 'public:bulletin_date' region.canonical_region_id region.name_slug cell.date|date:'Y-m-d' %}"
+                    class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
+                    data-date="{{ cell.date|date:'Y-m-d' }}"
+                    data-rating-min="{{ cell.min_rating_key }}"
+                    data-rating-max="{{ cell.max_rating_key }}"
+                    {% if cell.source %}data-source="{{ cell.source }}"{% endif %}
+                    {% if cell.band_mode %}data-band-mode="{{ cell.band_mode }}"{% endif %}
+                    title="{{ day }}: {{ max_label }}"
+                    aria-label="{{ day }}: {{ max_label }}"
+                >
+                    {% for band in cell.bands %}
+                        <span
+                            class="calendar-band"
+                            data-band-id="{{ band.band_id }}"
+                            data-band-rating="{{ band.rating_key }}"
+                            data-band-period="{{ band.time_period }}"
+                        ></span>
+                    {% endfor %}
+                    {{ cell.date|date:'j' }}
+                </a>
+            {% else %}
+                {# A day with no bulletin, or any rated day of an inert strip. #}
+                <div
+                    role="img"
+                    class="rounded-full calendar-cell{% if cell.is_today %} calendar-cell-today{% endif %}{% if cell.is_selected %} calendar-cell-selected{% endif %}"
+                    data-date="{{ cell.date|date:'Y-m-d' }}"
+                    data-rating-min="{{ cell.min_rating_key }}"
+                    data-rating-max="{{ cell.max_rating_key }}"
+                    {% if cell.source %}data-source="{{ cell.source }}"{% endif %}
+                    {% if cell.band_mode %}data-band-mode="{{ cell.band_mode }}"{% endif %}
+                    title="{{ day }}{% if cell.has_bulletin %}: {{ max_label }}{% endif %}"
+                    aria-label="{{ day }}{% if cell.has_bulletin %}: {{ max_label }}{% endif %}"
+                >
+                    {% for band in cell.bands %}
+                        <span
+                            class="calendar-band"
+                            data-band-id="{{ band.band_id }}"
+                            data-band-rating="{{ band.rating_key }}"
+                            data-band-period="{{ band.time_period }}"
+                        ></span>
+                    {% endfor %}
+                    {{ cell.date|date:'j' }}
+                </div>
+            {% endif %}
+        </div>
+    {% endwith %}
+{% endif %}

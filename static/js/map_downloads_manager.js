@@ -230,9 +230,10 @@
  * ## Its one non-map dependency (SNOW-749)
  *
  * ``window.pwaDownloadsSync`` (static/js/downloads_sync.js) — the account
- * half. Three uses: the trash calls ``forget()`` alongside the local
- * eviction, ``isEnabled()`` decides nothing on its own any more (see
- * ``_handleDeleteClick``, which keys its copy off the ROW), and this
+ * half. Three uses: an account-only row's Forget calls ``forget()``
+ * (SNOW-1135 — the trash on a row this device holds is local only and
+ * never touches the account), ``isEnabled()`` decides nothing on its own
+ * (see ``_handleDeleteClick``, which keys its copy off the ROW), and this
  * module owns the one call to ``adopt()``, on DOMContentLoaded. That last
  * one is here rather than in ``downloads_sync.js`` itself because a module
  * that self-invokes on load is a module whose behaviour cannot be reasoned
@@ -327,6 +328,9 @@
     // row's map DRAWS and the area IS available offline; it is the
     // bulletins that are behind.
     'kind-content-incomplete': 'Bulletins not saved',
+    // SNOW-1133: an account-only area nobody named — see unnamedAreaLabel.
+    'unnamed-area': 'Area saved %(date)s',
+    'unnamed-area-undated': 'Unnamed area',
     'kind-region': 'Region',
     'kind-custom': 'Custom area',
     // SNOW-856: the shared z0-9 overview map. "Shared" rather than a
@@ -358,13 +362,27 @@
     'budget-bar-label': 'Space used, by base map: %(segments)s',
     'budget-bar-empty': 'Nothing downloaded on this device',
     'budget-segment': '%(basemap)s %(size)s',
-    // SNOW-XXX: one message for every row, and it speaks only about THIS
-    // device — see the confirm site for why the "removes it from your
-    // other devices too" branch went.
+    // SNOW-1135: Remove means THIS device, and only this device. Two
+    // messages, keyed off the row's own `synced`: an area the account
+    // knows about stays listed under "Not on this device", and saying so
+    // is the reassurance worth giving; one it does not know about has no
+    // such row to point at.
     'confirm-remove':
       'Remove the offline map for %(name)s? This frees %(size)s on this ' +
       'device. You can download it again whenever you like.',
+    'confirm-remove-kept':
+      'Remove the offline map for %(name)s from this device? This frees ' +
+      '%(size)s. It stays in your list under "Not on this device", so you ' +
+      'can download it again.',
     'remove-failed': "That download couldn't be removed. Try again.",
+    // SNOW-1135: Forget — the account-only row's destructive verb. It
+    // takes the area off the ACCOUNT; it cannot reach another device's
+    // tiles, and a device still holding them puts the row back.
+    'confirm-forget':
+      'Forget %(name)s? It is removed from your account. A device that ' +
+      'still has it downloaded will add it back.',
+    'forget-row-label': 'Forget %(name)s',
+    'forget-failed': "That area couldn't be forgotten. Try again.",
     // SNOW-634: [data-panel-add]'s offline refusal.
     'add-offline': "You're offline — connect to download a new area.",
     // SNOW-637: the same refusal as the disabled trigger's own label — the
@@ -642,7 +660,7 @@
   // The forget is a queued mutation, so the account row survives the
   // re-render that follows the tap — sometimes by milliseconds, sometimes
   // (offline) until the device next has signal. Without this the row the
-  // user just removed reappears immediately, which reads as the removal
+  // user just forgot reappears immediately, which reads as the Forget
   // having failed. The set is the optimistic half of the same shape the
   // favourites panel's pending pin uses, and it is deliberately
   // session-scoped: the next page load re-reads the truth, by which point
@@ -659,13 +677,12 @@
    * re-reading the area list — verifying the state rather than trusting
    * the attempt.
    *
-   * The LOCAL half of the trash, and only that: it leaves the account row
-   * alone, so ``forgetArea`` below is what pairs it with the account
-   * removal. It was also SNOW-749's "free up space" control, on its own —
-   * that control is gone (SNOW-832), and this is deliberately unchanged,
-   * because it is the same call SNOW-586's automatic budget eviction
-   * makes and an area evicted THERE must still survive as an account row
-   * to re-download.
+   * The whole of the trash (SNOW-1135): Remove means this device. It
+   * leaves the account row alone, so a synced area drops into "Not on
+   * this device" and stays one tap from coming back — the same outcome
+   * SNOW-586's automatic budget eviction has always had, through the same
+   * call. Taking an area off the ACCOUNT is ``forgetArea``'s job, offered
+   * only on the account-only row.
    *
    * @param {string} areaId
    * @returns {Promise<boolean>} Whether the area's local copy is now
@@ -701,43 +718,106 @@
   }
 
   /**
-   * Remove one area EVERYWHERE — this device's copy and the account row.
+   * Forget one area from the ACCOUNT (SNOW-1135).
    *
-   * The trash's verb. The account half is queued (so it survives a tap
-   * made with no signal) and the local half is immediate, which is why the
-   * id is remembered in ``FORGOTTEN`` rather than the row being trusted to
+   * Offered only on an account-only row, so there is nothing on this
+   * device to evict alongside it. The account half is queued (so it
+   * survives a tap made with no signal), which is why the id is
+   * remembered in ``FORGOTTEN`` rather than the row being trusted to
    * disappear from the next read.
    *
-   * Ordered account-first so that a row which is ONLY on the account —
-   * nothing here to evict — still has its trash do something. The local
-   * eviction is skipped entirely for such a row: there is no bucket, and
-   * ``evictArea``'s verification would have nothing to verify.
+   * It cannot reach another device's tiles: a device that still holds the
+   * area re-asserts the row on its next sheet open (``_reassertHeldAreas``),
+   * and the confirmation says so.
    *
    * @param {string} areaId
-   * @param {boolean} onDevice Whether this device holds the area's tiles.
-   * @returns {Promise<boolean>} Whether the removal is complete as far as
-   *   this device can tell.
+   * @returns {Promise<boolean>} Whether the forget was queued.
    */
-  async function forgetArea(areaId, onDevice) {
-    FORGOTTEN.add(areaId);
-    await window.pwaDownloadsSync?.forget(areaId);
-    if (!onDevice) {
-      // Nothing local to remove, so nothing local to verify.
-      window.pwaLayerSyncStatus?.refresh();
-      return true;
+  async function forgetArea(areaId) {
+    const sync = window.pwaDownloadsSync;
+    if (!sync || typeof sync.forget !== 'function') return false;
+    let queued = false;
+    try {
+      queued = !!(await sync.forget(areaId));
+    } catch (_err) {
+      queued = false;
     }
-    return evictArea(areaId);
+    if (!queued) return false;
+    FORGOTTEN.add(areaId);
+    return true;
+  }
+
+  /**
+   * A label for an account-only area that has no name.
+   *
+   * SNOW-1133: an unrenamed custom area's "Custom area N" is built from an
+   * ordinal only the device that made it holds, so another device has no
+   * name to show. The day the account recorded it tells two such rows
+   * apart, where a raw `custom-<uuid>` told the user nothing — and the
+   * time of day with it, so two saved on the same day still differ.
+   *
+   * @param {{savedAt?: string}} area
+   * @returns {string} '' when there is no usable date, so the caller falls
+   *   back as before.
+   */
+  function unnamedAreaLabel(area) {
+    const when = area && area.savedAt ? new Date(area.savedAt) : null;
+    if (!when || Number.isNaN(when.getTime())) return STRINGS['unnamed-area-undated'] || '';
+    let date;
+    try {
+      date = new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(when);
+    } catch (_e) {
+      date = when.toISOString().slice(0, 16).replace('T', ' ');
+    }
+    return interpolate(STRINGS['unnamed-area'], { date: date });
+  }
+
+  /**
+   * A label for an account-only area that has no name.
+   *
+   * SNOW-1133: an unrenamed custom area's "Custom area N" is built from an
+   * ordinal only the device that made it holds, so another device has no
+   * name to show. The day the account recorded it tells two such rows
+   * apart, where a raw `custom-<uuid>` told the user nothing — and the
+   * time of day with it, so two saved on the same day still differ.
+   *
+   * @param {{savedAt?: string}} area
+   * @returns {string} '' when there is no usable date, so the caller falls
+   *   back as before.
+   */
+  function unnamedAreaLabel(area) {
+    const when = area && area.savedAt ? new Date(area.savedAt) : null;
+    if (!when || Number.isNaN(when.getTime())) return STRINGS['unnamed-area-undated'] || '';
+    let date;
+    try {
+      date = new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(when);
+    } catch (_e) {
+      date = when.toISOString().slice(0, 16).replace('T', ' ');
+    }
+    return interpolate(STRINGS['unnamed-area'], { date: date });
   }
 
   /**
    * Tell the account about areas this device holds that it does not know
    * about (SNOW-XXX).
    *
-   * The other half of "the record goes when the last reference goes". The
-   * forget that accompanies a local removal takes the row away
-   * immediately; this is what puts it back while somebody still has the
-   * area, so the row tracks whether ANY device holds it rather than
-   * whichever device last touched it.
+   * A repair, not a refcount. Since SNOW-1135 removing an area here never
+   * touches the account, so the account loses a held area only when a
+   * user Forgets it from another device (or the row is lost some other
+   * way). This puts it back while this device still has the area, which
+   * is what the Forget confirmation promises.
    *
    * Deliberately not `adopt()`, which guards on this device's own
    * `basemap.syncedAreaIds` markers — an area pushed once is marked
@@ -778,7 +858,11 @@
         regionId: isCustom ? '' : String(area.id).replace(/^region-/, ''),
         bbox: area.bbox,
         basemapKey: area.basemapKey,
-        name: area.name,
+        // SNOW-1133: the stored name, never the localised default, and the
+        // terrain opt-in — without it `push` posts "false" and a
+        // re-asserted area loses the choice on the account.
+        name: typeof sync.accountName === 'function' ? sync.accountName(area) : area.name,
+        terrain: !!area.terrain,
       });
     }
   }
@@ -838,16 +922,10 @@
     );
     // SNOW-XXX: re-assert what this device holds.
     //
-    // The account row is a hint — "you downloaded this somewhere else,
-    // download it here too" — and the thing a hint must not do is outlive
-    // the fact. Deleting an area removes its account row, but another
-    // device may still hold that area, which makes the hint true again;
-    // nothing told the account so.
-    //
-    // So a row this device HAS and the account does not know about is
-    // pushed back. Between them the devices refcount it: the row exists
-    // while at least one device that opens this panel still holds the
-    // area, and stays gone once none do.
+    // A row this device HAS and the account does not know about is pushed
+    // back. Removing an area here leaves the account alone (SNOW-1135), so
+    // what this repairs is a Forget made on ANOTHER device while this one
+    // still holds the area — the Forget confirmation tells the user so.
     //
     // Online only. `synced` is false for every row when the account list
     // could not be read at all (offline, anonymous, flag off), and pushing
@@ -863,6 +941,9 @@
       isCustomAreaId: downloadCore()?.isCustomAreaId,
       // SNOW-856: the shared overview map, listed but never deletable.
       isBaseLayerAreaId: downloadCore()?.isBaseLayerAreaId,
+      // SNOW-1133: an account-only area with no stored name is named by
+      // the day it was saved, rather than by its raw id.
+      unnamedLabel: unnamedAreaLabel,
     });
     // SNOW-844: and which of them are on this device but cannot render.
     // Awaited before the rows are built, not after: the flag decides the
@@ -889,6 +970,10 @@
     // Re-clone rather than update in place — see the module header.
     sheet.textContent = '';
     sheet.appendChild(bodyTemplate.content.cloneNode(true));
+    // The "Show on the map" switch at the foot starts unchecked in the
+    // clone; seed it from window.pwaDownloadedOverlay.isEnabled() (the
+    // tri-state's derived answer — reading it writes nothing).
+    window.pwaPanelOverlaySwitch?.sync();
 
     // SNOW-645 review: the budget figure itself is no longer stated in
     // this text — it now lives in the <select> right after it ("40.3 MB
@@ -956,11 +1041,12 @@
     const empty = sheet.querySelector('[data-downloads-empty]');
     if (empty) empty.hidden = rows.length > 0;
 
-    // SNOW-904 removed SNOW-832's empty-list guard here. It hid the
-    // "Display on the map" strip when this panel had nothing to display,
-    // because a switch that cannot do what it says teaches the wrong
-    // thing. The strip is gone with every other panel switch — the layers
-    // menu is the sole control now — so there is no control left to hide.
+    // SNOW-904 removed SNOW-832's empty-list guard here, which hid the
+    // overlay switch when this panel had nothing to display. The switch is
+    // back (bound to the layers menu's downloads row), but the guard is
+    // not: the menu row it mirrors is shown whatever is downloaded, and
+    // two controls over one setting should not disagree about whether it
+    // exists.
 
     // SNOW-XXX: two groups — what is on this device, and what is only on
     // the account. SNOW-832's per-basemap headings are gone; the basemap
@@ -1410,7 +1496,9 @@
     //
     //   region here            Sync now and Remove     → menu (SNOW-951)
     //   custom area / drop     Sync, Rename and Remove → menu
-    //   not here               Download alone          → bare download
+    //   not here               Download and Forget     → menu (SNOW-1135)
+    //   not here, too little   Forget alone            → bare forget
+    //     to re-download
     //   base layer / orphan    see below
     const renameable = row.renameable && row.onDevice !== false;
     // SNOW-951: one UNCONDITIONAL action replaces SNOW-844's Repair and
@@ -1430,11 +1518,18 @@
     // content half (`_areaRecordById` finds no record for one).
     const syncable = row.onDevice !== false && !row.orphaned && row.kind !== 'base';
     const deletable = row.deletable !== false && row.onDevice !== false;
+    // SNOW-1135: an account-only row's own destructive verb. Remove is
+    // this device only, so the one way to take an area off the account is
+    // from the row that has nothing but the account behind it.
+    const forgettable = row.onDevice === false;
+    const redownloadable = forgettable && !!row.redownloadable;
     // A REGION row on this device is now ALWAYS a menu: Sync now and
     // Remove are two actions, and design-system rule 5 collapses two into
     // a "…". That is the rule applying rather than an exception to it —
-    // see the row-menu partial's own comment.
-    const useMenu = deletable && (renameable || syncable);
+    // see the row-menu partial's own comment. An account-only row that
+    // can be fetched here is the same rule again: Download here and
+    // Forget.
+    const useMenu = (deletable && (renameable || syncable)) || (forgettable && redownloadable);
 
     // `useMenu` is also gated on the template ACTUALLY carrying a menu: an
     // older cached shell whose row template predates it would otherwise
@@ -1484,7 +1579,10 @@
         // match) then fills that one while the menu item keeps the
         // value-less attribute the template renders — leaving the row
         // carrying the action twice, once dead.
-        '[data-downloads-delete], [data-downloads-sync], [data-row-rename]',
+        //
+        // SNOW-1135: and the account-only row's pair, for the same reason.
+        '[data-downloads-delete], [data-downloads-sync], [data-row-rename], ' +
+          '[data-downloads-here], [data-downloads-forget]',
       )) {
         if (inline.closest('[data-overflow-menu]')) continue;
         inline.remove();
@@ -1492,15 +1590,16 @@
     }
 
     const button = fragment.querySelector('[data-downloads-delete]');
-    // SNOW-XXX: the two verbs are mutually exclusive, and which one a row
-    // gets is decided by one fact — is this area on THIS device.
+    // Which verbs a row gets is decided by one fact — is this area on
+    // THIS device.
     //
-    //   not here → "Download here", and nothing else. The account row is a
-    //     hint ("you downloaded this somewhere else"), so there is nothing
-    //     here to delete and deleting the hint is not a thing a user wants
-    //     to do to a suggestion.
+    //   not here → "Download here" and Forget (SNOW-1135). There is
+    //     nothing here to remove; what there is to take away is the
+    //     account row itself, and that is Forget's job.
     //   here → Remove, and no "Download here" (there is nothing to fetch —
-    //     that half was already true).
+    //     that half was already true). Remove is this device only: the
+    //     account row stays, and a synced area drops into "Not on this
+    //     device" (SNOW-1135).
     //
     // SNOW-856 removes it for another reason that still stands: the base
     // layer is shared by every area under its basemap, so there is no such
@@ -1515,15 +1614,12 @@
       // in its confirmation without re-reading the record.
       button.setAttribute('data-downloads-label', row.label);
       button.setAttribute('data-downloads-size', row.size);
-      // SNOW-749: and the row's own two facts, so the handler knows
-      // whether there is anything local to evict alongside the account row
-      // — and whether there is an account row at all. Both are read off
-      // the ROW rather than off a global: a download made before the flag
-      // was opened, or one whose sync push has not landed, is
-      // `synced: false` on a page where the sync feature is switched on
-      // and working, and the confirmation must not promise to remove it
-      // from other devices it was never on.
-      button.setAttribute('data-downloads-on-device', String(row.onDevice !== false));
+      // SNOW-1135: and whether the account knows this area, read off the
+      // ROW rather than off a global — a download made before the flag
+      // was opened, or one whose push has not landed, is `synced: false`
+      // on a page where sync is on and working, and the confirmation must
+      // not promise it a "Not on this device" row it will not get.
+      button.setAttribute('data-downloads-synced', String(!!row.synced));
       // SNOW-658: and the control names the row it acts on. A server-
       // rendered panel interpolates this in its own template; a row cloned
       // from a <template> has no name until here.
@@ -1541,7 +1637,7 @@
     // does nothing is worse than no control.
     const hereBtn = fragment.querySelector('[data-downloads-here]');
     if (hereBtn) {
-      if (row.redownloadable) {
+      if (redownloadable) {
         hereBtn.setAttribute('data-downloads-here', row.id);
         hereBtn.setAttribute('data-downloads-region', row.regionId || '');
         // The box travels as JSON on the element rather than through a
@@ -1560,6 +1656,23 @@
         );
       } else {
         hereBtn.remove();
+      }
+    }
+
+    // SNOW-1135: Forget — take an account-only area off the account. Last
+    // in the menu, as the destructive item is on every list; the bare
+    // icon when it is the row's only action.
+    const forgetBtn = fragment.querySelector('[data-downloads-forget]');
+    if (forgetBtn) {
+      if (forgettable) {
+        forgetBtn.setAttribute('data-downloads-forget', row.id);
+        forgetBtn.setAttribute('data-downloads-label', row.label);
+        forgetBtn.setAttribute(
+          'aria-label',
+          interpolate(STRINGS['forget-row-label'], { name: row.label }),
+        );
+      } else {
+        forgetBtn.remove();
       }
     }
 
@@ -1776,6 +1889,7 @@
     if (_handleSyncClick(event)) return;
     if (_handleDownloadHereClick(event)) return;
     if (_handleRenameClick(event)) return;
+    if (_handleForgetClick(event)) return;
     _handleDeleteClick(event);
   });
 
@@ -2039,6 +2153,45 @@
   }
 
   /**
+   * SNOW-1135: Forget — take an account-only area off the account.
+   *
+   * Confirmed with ``window.confirm``, the same idiom as Remove, because
+   * it is the one verb on this sheet that reaches beyond this device. The
+   * copy says what it cannot do as well as what it does: another device
+   * that still holds the area puts the row back (``_reassertHeldAreas``).
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a Forget.
+   */
+  function _handleForgetClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return false;
+    const button = target.closest('[data-downloads-forget]');
+    if (!button) return false;
+
+    const areaId = button.getAttribute('data-downloads-forget');
+    if (!areaId) return true;
+
+    const name = button.getAttribute('data-downloads-label') || areaId;
+    const message = interpolate(STRINGS['confirm-forget'], { name: name });
+    if (typeof window.confirm === 'function' && !window.confirm(message)) {
+      return true;
+    }
+
+    forgetArea(areaId).then(function (ok) {
+      if (ok) {
+        render();
+        return;
+      }
+      // Nothing was queued, so the row stays and says so — a toast, as
+      // rename's failure does, because the control may be a menu item
+      // that has already closed.
+      window.MapSheet?.toast(STRINGS['forget-failed']);
+    });
+    return true;
+  }
+
+  /**
    * The delete-button half of the sheet's delegated click handler,
    * factored out so the listener above can dispatch to it after ruling
    * out the add-trigger and the rename button.
@@ -2049,11 +2202,10 @@
   function _handleDeleteClick(event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
-    // SNOW-832: one destructive verb again. SNOW-749 ran a second one
-    // through this same handler ("Free up space" — local eviction, keep
-    // the account row); see includes/_map_downloads_row_actions.html for
-    // why it went. What is left is the shape this function had before
-    // that ticket, plus the account half of the removal.
+    // SNOW-1135: Remove means THIS device. It evicts the local copy and
+    // leaves the account row alone, so a synced area drops into "Not on
+    // this device" and stays one tap from coming back. Taking an area off
+    // the account is Forget, on that row (`_handleForgetClick`).
     const button = target.closest('[data-downloads-delete]');
     if (!button) return;
 
@@ -2062,34 +2214,16 @@
 
     const name = button.getAttribute('data-downloads-label') || areaId;
     const size = button.getAttribute('data-downloads-size') || '';
-    const onDevice = button.getAttribute('data-downloads-on-device') !== 'false';
-    // Two confirmations, because there are two outcomes and the user is
-    // choosing between them:
-    //   remove (synced) — gone from here AND from the other devices;
-    //   remove (not synced) — the pre-SNOW-749 wording, correct for an
-    //     area with no account row behind it.
-    //
-    // That second branch is keyed off THIS ROW's `synced`, not off
-    // `pwaDownloadsSync.isEnabled()`. The global answers "is the feature
-    // switched on for this visitor", which is a different question and
-    // gives the wrong answer for the rows that matter most: an area
-    // downloaded before the flag opened, or one whose queued push has not
-    // drained, is unsynced on a page where the feature is fully on. Told
-    // "this removes it from your other devices too", the user would be
-    // reading a sentence about something that was never anywhere else.
-    // The queued `forget()` is still harmless for such a row (404, which
-    // the client treats as success — the row is gone either way), so the
-    // defect was purely in what we said, which is the half a user acts on.
-    // SNOW-XXX: one message, where there were two.
-    //
-    // The synced branch promised that removing took the area "from your
-    // other devices too". That was never true of the DATA — another device
-    // keeps its tiles and goes on using them offline — and it is no longer
-    // true of the account row either: a device that still holds the area
-    // re-asserts it on its next sheet open (see `render`). What removing
-    // does is take it off THIS device, and let the account entry go when
-    // the last device holding it has done the same.
-    const message = interpolate(STRINGS['confirm-remove'], { name: name, size: size });
+    // Keyed off THIS ROW's `synced`, not off `pwaDownloadsSync.isEnabled()`:
+    // an area downloaded before the flag opened, or one whose queued push
+    // has not drained, is unsynced on a page where the feature is fully
+    // on, and it will not reappear under "Not on this device" — so it must
+    // not be promised that it will.
+    const synced = button.getAttribute('data-downloads-synced') === 'true';
+    const message = interpolate(
+      STRINGS[synced ? 'confirm-remove-kept' : 'confirm-remove'],
+      { name: name, size: size },
+    );
     // window.confirm, matching pwa_reset.js's destructive-action idiom —
     // the copy names what goes and what it frees, so the choice can be
     // judged before it is made.
@@ -2097,7 +2231,7 @@
       return;
     }
 
-    forgetArea(areaId, onDevice).then(function (ok) {
+    evictArea(areaId).then(function (ok) {
       if (ok) {
         render();
         return;
@@ -2137,13 +2271,11 @@
     });
   });
 
-  // SNOW-904: this sheet's "Display on the map" switch is gone, and with it
-  // both the change handler that drove window.pwaDownloadedOverlay and the
-  // ``snowdesk:downloaded-overlay-changed`` read-back that kept it honest
-  // when something else (a placement flow, a connectivity flip) moved the
-  // overlay. The layers menu's "Display downloaded areas" row drives the
-  // same bridge and listens to the same broadcast — see
-  // map_basemap_picker.js.
+  // The sheet's "Show on the map" switch is wired by
+  // static/js/map_panel_overlay_switch.js — the change handler that drives
+  // it through the layers menu's "Display downloaded areas" row, and the
+  // read-back that keeps it honest when something else (a placement flow,
+  // a connectivity flip) moves the overlay.
 
   // SNOW-637: a sheet left open when the connection drops has to reflect it
   // there and then — waiting for the next open would leave a live-looking

@@ -127,6 +127,29 @@ describe('the handle', () => {
     expect(sheet.getAttribute('data-detent')).toBe('peek');
   });
 
+  it('a tap on a draggable header steps up too (2026-10-19)', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'peek');
+    controller.open();
+    const header = document.createElement('div');
+    header.setAttribute('data-sheet-drag', '');
+    header.innerHTML = '<span>Region name</span><button type="button">Pin</button>';
+    sheet.appendChild(header);
+    /** @type {HTMLElement} */ (header.querySelector('span')).click();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+    // A control in the header keeps its own press.
+    /** @type {HTMLElement} */ (header.querySelector('button')).click();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
+  it('a tap on content outside a draggable header does nothing', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'peek');
+    controller.open();
+    const body = document.createElement('p');
+    sheet.appendChild(body);
+    body.click();
+    expect(sheet.getAttribute('data-detent')).toBe('peek');
+  });
+
   it('is put back after a content swap removes it', async () => {
     const { sheet, controller } = attachSheet('peek,half,full', 'peek');
     controller.open();
@@ -186,6 +209,19 @@ describe('dragging', () => {
     expect(sheet.getAttribute('data-detent')).toBe('full');
   });
 
+  it('does not step the detent from the click a header drag ends with', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'half');
+    controller.open();
+    const header = document.createElement('div');
+    header.setAttribute('data-sheet-drag', '');
+    sheet.appendChild(header);
+    pointer(header, 'pointerdown', 500, 0);
+    pointer(header, 'pointermove', 480, 500);
+    pointer(header, 'pointerup', 480, 500);
+    header.click();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
   it('ignores a pointer that never moves past the slop', () => {
     const { sheet, handle, controller } = attachSheet('peek,half,full', 'half');
     controller.open();
@@ -236,6 +272,91 @@ describe('the map around the sheet', () => {
     controller.close();
     expect(padding.bottom).toBe(0);
     expect(document.documentElement.hasAttribute('data-map-sheet')).toBe(false);
+  });
+});
+
+describe('two sheets on one map (2026-10-19)', () => {
+  /**
+   * Two detent sheets in one document, each attached, plus a MAP whose
+   * jumpTo ends a move synchronously — as MapLibre's does — so a watcher
+   * that answers its own moveend would recurse here as it did on a phone.
+   */
+  function twoSheets() {
+    document.body.innerHTML = `
+      <div id="map"></div>
+      <div id="sheet-a" data-overlay hidden tabindex="-1" data-detents="peek,half" data-detent-initial="half"></div>
+      <div id="sheet-b" data-overlay hidden tabindex="-1" data-detents="peek,half" data-detent-initial="half"></div>
+    `;
+    const a = /** @type {HTMLElement} */ (document.getElementById('sheet-a'));
+    const b = /** @type {HTMLElement} */ (document.getElementById('sheet-b'));
+    stubHeight(a, 400);
+    stubHeight(b, 600);
+    const listeners = { moveend: [] };
+    let padding = { top: 0, bottom: 0, left: 0, right: 0 };
+    let depth = 0;
+    let maxDepth = 0;
+    globalThis.MAP = {
+      getPadding: () => padding,
+      setPadding: (next) => {
+        padding = next;
+      },
+      getContainer: () => ({ clientWidth: 400, clientHeight: 768 }),
+      unproject: ([x, y]) => ({ x, y }),
+      on: (name, fn) => listeners[name].push(fn),
+      jumpTo: (options) => {
+        padding = options.padding;
+        depth += 1;
+        maxDepth = Math.max(maxDepth, depth);
+        if (depth < 50) listeners.moveend.forEach((fn) => fn());
+        depth -= 1;
+      },
+    };
+    return {
+      a,
+      b,
+      ca: window.MapSheet.attach(a),
+      cb: window.MapSheet.attach(b),
+      padding: () => padding,
+      moveend: () => listeners.moveend.forEach((fn) => fn()),
+      maxDepth: () => maxDepth,
+    };
+  }
+
+  it('opening one closes the other, so they never stack', () => {
+    const t = twoSheets();
+    t.ca.open();
+    t.cb.open();
+    expect(t.a.hasAttribute('hidden')).toBe(true);
+    expect(t.b.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('a camera move does not set the sheets fighting over the padding', () => {
+    const t = twoSheets();
+    t.ca.open();
+    t.ca.close();
+    t.cb.open();
+    t.moveend();
+    // One jumpTo answers a move, and its own moveend finds nothing to do.
+    expect(t.maxDepth()).toBeLessThan(3);
+    expect(t.padding().bottom).toBe(384);
+  });
+
+  it('narrowing to a phone with two open leaves one', () => {
+    let desktop = true;
+    window.matchMedia = /** @type {any} */ ((query) => ({ matches: desktop && query.includes('min-width') }));
+    try {
+      const t = twoSheets();
+      t.ca.open();
+      t.cb.open();
+      expect(t.a.hasAttribute('hidden')).toBe(false);
+      expect(t.b.hasAttribute('hidden')).toBe(false);
+      desktop = false;
+      window.dispatchEvent(new Event('resize'));
+      expect([t.a, t.b].filter((el) => !el.hasAttribute('hidden'))).toHaveLength(1);
+    } finally {
+      // @ts-ignore jsdom has none; the binding reads its absence as a phone.
+      delete window.matchMedia;
+    }
   });
 });
 

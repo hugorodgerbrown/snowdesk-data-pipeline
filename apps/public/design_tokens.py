@@ -50,6 +50,7 @@ from apps.public._component_fixtures import (
     FORM_FIELD_VARIANTS,
     GLOSSARY_TERM_VARIANTS,
     HOURLY_CHART_VARIANTS,
+    MAP_OVERLAY_TOGGLE_VARIANTS,
     MAP_ZOOM_CONTROL_VARIANTS,
     META_CELL_VARIANTS,
     NAV_VARIANTS,
@@ -70,6 +71,7 @@ from apps.public._component_fixtures import (
     ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
+    SEASON_CELL_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
     SEGMENTED_OPTION_VARIANTS,
     SHEET_HEADER_VARIANTS,
@@ -1112,6 +1114,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
+        slug="season-cell",
+        label="Season cell",
+        description=(
+            "One day of the season heatmap (public/partials/_season_cell.html, "
+            "SNOW-1126) — shared by the bulletin page's grid and the resort "
+            "page's season strip. Fills from data-rating-min/-max, an AM/PM "
+            "split, or ALBINA band spans; labels are the translated EAWS names. "
+            "Linked to the day's bulletin, or inert (role=img, no link) on the "
+            "resort strip. Must render inside [data-testid=season-calendar]."
+        ),
+        kind="components",
+        partial="public/partials/_season_cell_demo.html",
+        variants=SEASON_CELL_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
         slug="season-scrubber",
         label="Season scrubber",
         description=(
@@ -1532,6 +1550,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
+        slug="map-overlay-toggle",
+        label="Map overlay toggle",
+        description=(
+            "The 'Show on the map' footer strip of the four map panels — a "
+            "label plus includes/_switch.html in a bg-tag box. A view "
+            "control for the map BEHIND the sheet, bound to the layers-menu "
+            "row for the same layer by static/js/map_panel_overlay_switch.js, "
+            "which finds each real switch by id; flipping either control "
+            "moves the other."
+        ),
+        kind="components",
+        partial="includes/_map_overlay_toggle.html",
+        variants=MAP_OVERLAY_TOGGLE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
         slug="ugc-panel",
         label="UGC panel",
         description=(
@@ -1541,11 +1575,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "opening roundel's icon plus the title, at one size for all "
             "three), context strip (one line saying where the data lives), "
             "list (mono uppercase section label, then hairline-separated "
-            "rows — never cards) and one add-CTA. SNOW-904 removed a fifth "
-            "part, the 'Display on the map' switch: every layer is chosen "
-            "from the map's own layers menu now, so a panel is about its "
-            "list alone. The icon, rows and header-extra slots take "
-            "template paths, since Django has no slot mechanism."
+            "rows — never cards), one add-CTA, and the 'Show on the map' "
+            "switch at the foot, bound to the layers-menu row for the "
+            "panel's own layer (the menu still lists every layer in one "
+            "place). The icon, rows and header-extra slots take template "
+            "paths, since Django has no slot mechanism."
         ),
         kind="components",
         partial="includes/_ugc_panel.html",
@@ -1658,8 +1692,9 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "profile, 400 px wide under the region chip's row on desktop "
             "and a bottom sheet on a phone. The name as the title and its "
             "figures in the routes list's meta line ('12.9km · 337m ↑ · "
-            "1906m ↓ · 2h51m'), the profile, a hint ('Click on the "
-            "profile to view terrain data'), then the point "
+            "1906m ↓ · 2h51m'), the profile, a hint ('Tap or drag the "
+            "profile to view terrain data', hidden while a point is "
+            "placed), then the point "
             "header (the aspect wheel and the reading). On a phone peek "
             "ends under the hint, half adds the point header and full "
             "(staff) the debug readout (2026-10-18). The profile is "
@@ -1687,14 +1722,15 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "slope class of its angle; the inner ring lights the heading, "
             "in the class of the track's own gradient, with the previous "
             "and next segments' headings at 35%. The centre grades the "
-            "track (SNOW-1069): one, two or three chevrons for gentle, "
-            "moderate, and steep or very steep, pointing up for a climb "
+            "track (SNOW-1069): one, two or three chevrons for its second, "
+            "third, and fourth or fifth step, pointing up for a climb "
             "and down for a descent; a level track draws a bar. Flat "
             "ground leaves the outer ring unlit, and "
             "missing terrain data fills it grey. The inner ring is filled "
             "on the track scale (SNOW-1064) — level under 5° in a lighter "
-            "blue, then gentle, moderate, steep and very steep — so its "
-            "colour agrees with the point header's word for the track; the "
+            "blue, then four steps on a climb's bounds (5 / 10 / 15 / 20°) "
+            "or a descent's (5 / 15 / 25 / 35°) — so its colour agrees "
+            "with the point header's band for the track; the "
             "outer ring keeps the slope classes. Drawn by "
             "static/js/aspect_wheel.js through aspect_wheel_core.js; "
             "mounted on the map in the route panel's point header."
@@ -1709,22 +1745,24 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         label="Point header",
         description=(
             "One point on the open route, read in words (SNOW-1064): the "
-            "aspect wheel at 48 px and two lines labelled Track and Slope "
-            "(SNOW-1094), in the route panel under the profile and its "
-            "hint at the panel's full width (2026-10-18). Track is the "
-            "heading, then steepness and kind as one phrase, "
-            "'NW → W · Gentle descent' (SNOW-1069): "
-            "the compass point the inner ring lights, or the first and "
-            "last joined by an arrow where the segment turns; the track's "
-            "step on its own scale (level, gentle, moderate, steep, very "
-            "steep); and ascent, descent, traverse or fall line. A segment "
-            "that heads into two sectors is the fall line where it "
-            "descends with either end heading straight down, otherwise an "
-            "ascent or descent by its gradient. Up or down is the wheel's "
-            "centre mark. Slope names the ground in the EAWS words, with "
-            "the side it falls on a traverse ('falling skier's right'); a "
-            "turning segment takes the side from its two ends, both where "
-            "they differ ('…, left, then right'). No degrees or aspects. "
+            "aspect wheel at 48 px with the line labelled Skier's track "
+            "beside it, centred on it, and the line labelled Terrain slope "
+            "under both at full width (2026-10-19), in the route panel "
+            "under the profile and its hint. Skier's track is the heading, "
+            "the kind and the track's band of degrees, 'NW → W · Descent · "
+            "5–15°': the compass point the inner ring lights, or the first "
+            "and last joined by an arrow where the segment turns; ascent, "
+            "descent, traverse or fall line; and the range of the track's "
+            "step, on a climb's scale (5 / 10 / 15 / 20°) or a descent's "
+            "(5 / 15 / 25 / 35°). A segment that heads into two sectors is "
+            "the fall line where it descends with either end heading "
+            "straight down, otherwise an ascent or descent by its "
+            "gradient. Up or down is the wheel's centre mark. Terrain "
+            "slope names the ground in the EAWS words with its class's "
+            "band ('Steep · 30–35°'), and the side it falls on a traverse "
+            "('falling skier's right'); a turning segment takes the side "
+            "from its two ends, both where they differ ('…, left, then "
+            "right'). Bands, never the measured angle; no aspects. "
             "Unlit until a point is placed; pressing the wheel clears the "
             "point. "
             "Filled on the map by static/js/route_point_card.js from "

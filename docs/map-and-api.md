@@ -2,7 +2,7 @@
 name: map-and-api
 description: /map/ (public:map) MapLibre choropleth, scrubber, calendar, overlay registry, /api/ endpoints (ratings, geojson, groupings), routes.geojson
 status: current
-last-reviewed: 2026-10-18
+last-reviewed: 2026-10-19
 ---
 
 # Map page and JSON API
@@ -186,14 +186,13 @@ deliberately not asserted.
 
 ### One open overlay at a time (SNOW-658)
 
-Fourteen surfaces float over the map, and only one is ever meaningful at
+Thirteen surfaces float over the map, and only one is ever meaningful at
 once: the layers menu (`basemap-menu`), the four UGC panels (downloads,
 favourites, field observations, and routes since SNOW-686), the anchored
 detail popup a resort pin or a favourite pin opens (`map-detail-popup`),
 the legend card (`#map-legend-card`), the help
-tour's coachmark (`#map-help-overlay`), the bulletin fill-strength flyout
-(`#map-fill-flyout`), the date picker (`map-calendar`, SNOW-792), the
-welcome panel (`#home-intro`), the region panel the readout chip discloses
+tour's coachmark (`#map-help-overlay`), the date picker (`map-calendar`, SNOW-792), the
+tour offer (`#map-tour-offer`, SNOW-1117), the region panel the readout chip discloses
 (`region-panel`, `map_region_panel.js`, SNOW-801), the weather sheet a
 weather symbol opens (`#weather-sheet`, `map_weather_detail.js`, SNOW-761)
 and the sign-in sheet a signed-out tap on a Favourites or Routes row opens
@@ -228,42 +227,48 @@ one that forgets to register fails there.
 
 Each panel's own roundel toggles: a second tap closes what the first
 opened, matching the layers pill. The one exception is the help "?"
-roundel, which always re-opens — the deliberate "show me again" affordance
-it has had since SNOW-457. What it re-opens is the **welcome panel**
-wherever the page renders one (`#home-intro`, i.e. the homepage): the panel
-says what Snowdesk is, and its "Explore the map" CTA carries on into the
-tour from step 1. It went straight to the tour until then, which left a
-visitor who had dismissed the panel with no route back to it. Elsewhere —
-any page embedding `_map_embed.html` without `show_intro` — the roundel
-still opens the tour itself; `static/js/map_help.js` decides from the
-presence of `#home-intro` rather than from any "am I the homepage" check,
-and asks for the panel with a `snowdesk:home-intro-requested` event that
-`home_intro.js` answers.
+roundel, which since SNOW-1119 toggles **help mode** (`_map_help_mode.html`,
+`static/js/map_help_mode.js`): every control named, a tap on one showing a
+card instead of acting, and a sheet opened while it is on keyed with
+numbered badges. Help mode is a mode, not an overlay — it does not register
+with `pwaMapOverlays`; it closes every overlay as it starts and lets taps
+on the map through, so a sheet can open under it. Its bar's "Tour" button
+is now the way into the tour (`snowdesk:map-help-requested`), which
+re-opens from step 1 as the "?" itself did from SNOW-457 to SNOW-1118.
+(Between SNOW-535 and SNOW-1117 the "?" opened the welcome panel.) Each
+control's card and each sheet's key links to its `/help/` topic;
+`static/js/help_topic_anchor.js` opens the collapsed topic the link names.
 
-The welcome panel is in the registry for that reason: while a fresh page
-load was the only way to see it, nothing else could be open behind it.
-Like the coachmark, it closes without persisting `snowdesk.home.intro` —
-being displaced is not the visitor saying "read", which is what the "×",
-Escape and the CTA mean — and re-opening it from the roundel does not clear
-that flag either, so the next load is still a clean map.
+The tour offer registers because it appears by itself, over a map the
+visitor may already be using: opening any other overlay closes it, and it
+closes without recording an answer — being displaced is not the visitor
+saying "not now", which is what its buttons, its "×" and Escape mean.
 
-The legend, the coachmark and the fill flyout joined last, and none was
+The legend, the coachmark and the (since removed) fill flyout joined last, and none was
 covered by the outside-click dismiss it already had: their toggles call
 `stopPropagation` (without it the opening click reads as a click away), so
 no other surface's document handler ever saw them open, and a surface
 opened programmatically — the downloads panel from its roundel, the detail
 popup from a MapLibre canvas event — reached no document handler at all.
-The fill flyout's third dismiss path, the observer that closes it when the
-collapsible strip hides the roundel it is anchored to, answers a different
-question again and stays — and SNOW-664 gave the layers menu the same
-observer, for the same reason: `#basemap-pill` moved into that strip, so a
-menu left open beside a hidden roundel is now an orphan there too. The
+The fill flyout had a third dismiss path, an observer that closed it when
+the collapsible strip hid the roundel it was anchored to, and SNOW-664 gave
+the layers menu the same observer once `#basemap-pill` moved into that
+strip. Both are gone: the fill flyout became the layers menu's "Bulletin
+opacity" row, and `#basemap-pill` sits in the "map" capsule the chevron
+never folds, so the menu can no longer be orphaned and stays open when the
+"yours" capsule collapses (see
+[`decisions/map-controls-are-two-groups-without-an-on-map-marker.md`](decisions/map-controls-are-two-groups-without-an-on-map-marker.md)). The
 coachmark closes
 without persisting `snowdesk.map.help`: being displaced is not the user
 saying "seen", which is what Done / Escape / "×" mean. Registering it is
 safe because every tour step targets map chrome — a roundel, the readout,
-the scrubber — and none targets a panel's contents, so nothing the tour
-closes is a step's own target.
+the date control — with one exception the tour arranges itself. Its "Tap a
+region" step (SNOW-1118) asks map.js to select a region
+(`snowdesk:map-help-show-region`), which on a phone opens the region sheet
+the step points at; the tour ignores the registry's close while it makes
+that request, so the sheet announcing itself does not end the tour.
+Leaving the step sends `snowdesk:map-help-release-region` — map.js drops
+the selection if the tour made it — and closes the sheet.
 
 The map JS reads endpoint URLs from `data-*` attributes on the `#map` element
 (`data-ratings-url`, `data-regions-url`, `data-weather-url`, … — a dozen or so
@@ -276,16 +281,18 @@ diacritic-insensitive, prefix hits rank above substring hits, and results
 carry a "Region" or "Resort" badge to disambiguate cases where a resort
 shares its name with its parent region (e.g. "Davos"). Selecting a result
 routes through the same `selectFeature` helper used by the map click handler.
-The map page carries no "go to the map" link: the
-"Explore the map" button inside the `#home-intro` overlay
-(`public/partials/_map_embed.html`, rendered when `map.html` passes
-`show_intro=True`) is a **dismiss** control — it clears the
-landing overlay to reveal the map already mounted behind it, and additionally
-opens the map-help coachmark tour (SNOW-535), which the overlay's "×" does
-not. It is the only way into the tour on this page, on a first visit and
-on every later one: the "?" roundel re-opens this panel rather than the
-tour (see "One open overlay at a time" below). The overlay's only outbound link is "Register"; `/examples/random/` is
-reachable by URL but is not linked from here.
+Nothing covers the map on load. The "Welcome to Snowdesk" panel
+(`#home-intro`) that did is gone (SNOW-1117): the homepage says what
+Snowdesk is. In its place `map.html` passes `show_tour_offer=True`, which
+renders `#map-tour-offer` hidden; `static/js/map_tour_offer.js` reveals it
+once per device, after the colours have painted and the map has settled,
+and never on a deep link (`?route_share=`, `?trip=`, `?resort=`, `?panel=`
+and the like) or over a sheet or an open route. "Start the tour" opens the
+map-help coachmark tour; "Not now", the "×" and Escape only close it. Each
+records `snowdesk.map.tour-offer = dismissed`, and a finished tour
+(`snowdesk.map.help = seen`) or a dismissed welcome panel
+(`snowdesk.home.intro = dismissed`) counts as offered too. `?tour-offer=1`
+shows it whatever was recorded, for QA.
 
 **Basemap layer picker (SNOW-58)**: a Google-Maps-style stacked-layers
 pill (`#basemap-pill`, in the bottom-right control column since SNOW-664)
@@ -409,10 +416,13 @@ knowing here:
   `routes.js` reads off `data-routes-eligible` to choose between the real
   list and an anonymous sign-in CTA; the roundel and the sheet themselves
   are always in the DOM.
-- **No map layer, so no overlay switch and no roundel ring.** The panel
-  includes `includes/_ugc_panel.html` *without* a `toggle_id`, which is why
-  that parameter is optional: a switch wired to nothing is a worse lie than
-  an absent one. The roundel likewise carries no `data-overlay-shown`.
+- **A "Show on the map" switch, bound to the layers menu's Routes row.**
+  The panel passes `toggle_id="map-routes-overlay-toggle"` to
+  `includes/_ugc_panel.html`, like the other three panels;
+  `static/js/map_panel_overlay_switch.js` keeps it and the row in step. The
+  parameter stays optional for an illustration or a panel with no layer: a
+  switch wired to nothing is a worse lie than an absent one. The roundel
+  carries `data-overlay-shown` for its aria-label only; nothing draws it.
 - **Upload is online-only** and posts multipart straight to
   `routes:create` rather than through `window.pwaMutationQueue` — the queue
   persists JSON bodies in IndexedDB and a multipart file is a different
@@ -534,7 +544,8 @@ entries duplicated verbatim, four unique to one and one to the other.
 overlay layer driven by **opacity** rather than visibility, because it is the
 map's hit-test target and `queryRenderedFeatures` returns nothing from a
 layer at `visibility: none`. Its opacity is the user's chosen step (0 / 0.25 /
-0.5 / 0.75 / 1, from the `#map-fill-toggle` flyout) AND-ed with any active
+0.5 / 0.75 / 1, from the layers menu's "Bulletin opacity" row,
+`#map-bulletin-opacity`) AND-ed with any active
 suppression; its visibility is derived from that plus the Micro regions row by
 `window.pwaLayerVisibilityCore.regionsFillLayout`, and both are applied
 through `applyBulletinsVisibility` in `map.js`, which is the single writer.
@@ -679,7 +690,7 @@ date, no `?d=`, no readable `data-today` — the swap repaints **nothing**:
 the wiped feature-state is the correct, uncoloured map (SNOW-660).
 
 The fill itself is painted **translucent**, at the step the visitor chose
-from the fill-strength flyout (SNOW-656,
+from the layers menu's "Bulletin opacity" row (SNOW-656,
 [`decisions/bulletin-fill-is-a-user-choice.md`](decisions/bulletin-fill-is-a-user-choice.md)),
 and takes the raw `RATING_COLOURS`. That reversed an earlier decision to
 paint it opaque with the translucency baked into the colours by

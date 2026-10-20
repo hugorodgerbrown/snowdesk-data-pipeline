@@ -120,25 +120,21 @@ class TestRoutesSurfaceRenders:
     def test_the_routes_layer_is_switched_from_the_layers_menu(
         self, client: Client
     ) -> None:
-        """SNOW-904: the Routes row is in the layers menu, not this panel.
+        """The Routes row is in the layers menu, and the panel has its switch.
 
-        This test asserted the opposite twice over. SNOW-686 shipped the
-        panel before its map layer existed and asserted no switch; SNOW-687
-        added ``window.pwaRoutesOverlay`` and asserted one. SNOW-904 makes
-        the layers menu the sole control for every layer, so the switch is
-        gone from this panel and from the three beside it, and the row
-        driving that same bridge is asserted instead.
-
-        The panel's own switch id is asserted absent because a reinstated
-        one would be a second control for a layer the menu already owns.
+        This test has flipped three times. SNOW-686 shipped the panel before
+        its map layer existed and asserted no switch; SNOW-687 added
+        ``window.pwaRoutesOverlay`` and asserted one; SNOW-904 made the
+        layers menu the sole control and asserted none. The two-capsule
+        control column keeps the menu row AND puts the panel's "Show on the
+        map" switch back, bound to that row — so both are asserted.
         """
         client.force_login(UserFactory.create())
 
         body = _home(client)
 
         assert 'data-overlay-key="routes"' in body
-        assert 'id="map-routes-overlay-toggle"' not in body
-        assert 'id="map-favourites-overlay-toggle"' not in body
+        assert 'id="map-routes-overlay-toggle"' in body
 
 
 @pytest.mark.django_db

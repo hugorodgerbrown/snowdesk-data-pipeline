@@ -385,7 +385,7 @@ _WITHDRAWN_ON_A_PHONE = (
     "season-ribbon",
     "map-utility-cluster",
     "map-legend",
-    "home-intro",
+    "map-tour-offer",
 )
 _PHONE_QUERY = "@media (max-width: 639.98px)"
 
@@ -461,10 +461,10 @@ def _withdrawn_ids(css: str) -> set[str]:
 class TestTheRouteOpenFurniture:
     """Desktop keeps every control; a phone keeps three (SNOW-1067)."""
 
-    def test_a_phone_withdraws_the_top_row_the_stack_and_the_intro(self) -> None:
-        """Below 640 px the region row, search, the left stack and the intro go."""
+    def test_a_phone_withdraws_the_top_row_the_stack_and_the_offer(self) -> None:
+        """Below 640 px the region row, search, the left stack and the tour offer go."""
         phone, _rest = _split_phone_blocks(_MAP_CSS.read_text(encoding="utf-8"))
-        hidden = _withdrawn_ids(phone) | {"home-intro"}
+        hidden = _withdrawn_ids(phone) | {"map-tour-offer"}
         assert set(_WITHDRAWN_ON_A_PHONE) <= hidden
         # The column goes whole only under the route sheet's peek, which
         # holds the profile and covers it (2026-10-18), never for the route
@@ -479,30 +479,37 @@ class TestTheRouteOpenFurniture:
         assert all(":root[data-map-sheet='peek']" in sel for sel in column)
 
     def test_a_phone_keeps_locate_layers_and_routes(self) -> None:
-        """Every other roundel and the chevron leave the column."""
+        """Every other button in the "yours" capsule, and the chevron, leave.
+
+        The "map" capsule (locate and layers) is outside the collapsible
+        group, so nothing here hides it; routes is the one member of the
+        "yours" capsule kept, shown open whatever the chevron's state.
+        """
         phone, _rest = _split_phone_blocks(_MAP_CSS.read_text(encoding="utf-8"))
         rules = _rules(phone)
         hidden = [sel for sel, body in rules if "display: none" in body]
         joined = " ".join(hidden)
         assert ".map-controls-toggle" in joined
-        assert ":not(#basemap-pill):not(.map-utility-pill--route)" in joined
-        # Locate sits outside the collapsible group, so nothing there hides it.
-        assert "#locate-toggle" not in joined
-        assert "map-utility-pill--locate" not in joined
-        # The two inside the group are shown open whatever its state.
+        assert (
+            ".map-controls-collapsible-inner > :not(.map-utility-pill--route)" in joined
+        )
+        for kept in ("#locate-toggle", "map-utility-pill--locate", "basemap-pill"):
+            assert kept not in joined, kept
+        assert "map-control-group-map" not in joined
+        # One button's height, plus the capsule's 1px of border.
         opened = dict(rules)["#map[data-route-rail-open] #map-controls-collapsible"]
-        assert "calc(2 * var(--map-control-lg) + 8px)" in opened
+        assert "calc(var(--map-control-lg) + 1px)" in opened
 
-    def test_desktop_withdraws_nothing_but_the_intro(self) -> None:
-        """From 640 px every control returns; the intro card is not a control."""
+    def test_desktop_withdraws_nothing_but_the_tour_offer(self) -> None:
+        """From 640 px every control returns; the tour offer is not a control."""
         _phone, rest = _split_phone_blocks(_MAP_CSS.read_text(encoding="utf-8"))
-        assert _withdrawn_ids(rest) == {"home-intro"}
+        assert _withdrawn_ids(rest) == {"map-tour-offer"}
 
     def test_the_containers_exist_in_the_map_partials(self) -> None:
         """A renamed container would leave its controls over the panel.
 
         Read from the templates rather than a rendered page: the season
-        ribbon and the intro card are conditional, and the test database
+        ribbon and the tour offer are conditional, and the test database
         has no season for the ribbon to render.
         """
         partials = Path(__file__).resolve().parents[2] / "apps" / "public" / "templates"
@@ -511,7 +518,12 @@ class TestTheRouteOpenFurniture:
             for name in ("_map_embed.html", "_season_ribbon.html")
         )
 
-        for container in (*_WITHDRAWN_ON_A_PHONE, "map-controls-br", "basemap-pill"):
+        for container in (
+            *_WITHDRAWN_ON_A_PHONE,
+            "map-controls-br",
+            "basemap-pill",
+            "map-control-group-map",
+        ):
             assert re.search(rf'id="{container}"', source), container
         assert "map-utility-pill--route" in source
 
@@ -553,9 +565,11 @@ class TestThePanelIsPinnedTopLeft:
         """Its words and wheel are the panel's point header now."""
         css = _MAP_CSS.read_text(encoding="utf-8")
         assert ".route-point-card" not in css
-        # 2026-10-02: nothing drags along the lane, so it hands no touch
-        # gesture to the script; a tap is a click.
-        assert ".route-rail-lane" not in dict(_rules(css))
+
+    def test_the_lane_hands_a_sideways_finger_to_the_scrub(self) -> None:
+        """2026-10-19: a sideways drag scrubs; an upward one still scrolls."""
+        css = _MAP_CSS.read_text(encoding="utf-8")
+        assert "touch-action: pan-y" in dict(_rules(css))[".route-rail-lane"]
 
 
 class TestTheComponentLibraryVariant:

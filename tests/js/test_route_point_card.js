@@ -123,17 +123,17 @@ describe('route_point_card.js', () => {
     const cursor = attach();
     cursor.setIndex(1);
     expect(clearButton.disabled).toBe(false);
-    expect(headline.textContent).toBe('E · Steep fall line');
-    expect(ground.textContent).toBe('Extremely steep');
+    expect(headline.textContent).toBe('E · Fall line · 25–35°');
+    expect(ground.textContent).toBe('Extremely steep · 40°+');
     expect(card.querySelector('[data-lit="faces"]')).not.toBeNull();
     cursor.setIndex(2);
-    expect(ground.textContent).toBe('Flat');
+    expect(ground.textContent).toBe('Flat · under 5°');
   });
 
   it('names the wheel with the labelled words it shows, read aloud', () => {
     const cursor = attach();
     cursor.setIndex(1);
-    expect(wheelLabel()).toBe(`Track: E, Steep fall line; Slope: ${ground.textContent}`);
+    expect(wheelLabel()).toBe("Skier's track: E, Fall line, 25 to 35 degrees; Terrain slope: Extremely steep, 40 degrees or more");
   });
 
   it('goes back to unlit when the index clears', () => {

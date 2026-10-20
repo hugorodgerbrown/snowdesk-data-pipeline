@@ -14,7 +14,8 @@ bottom it reads:
           337m ↑ · 1906m ↓ · 2h51m", routes/partials/_route.html), the
           time only when the recording has one;
   the LANE — the profile, below;
-  the HINT — "Click on the profile to view terrain data";
+  the HINT — "Tap or drag the profile to view terrain data", until a
+          point is placed;
   the POINT HEADER — the aspect wheel and the reading
           (_route_point_card.html) for the placed point. Pressing the
           wheel clears the point.
@@ -37,9 +38,9 @@ generous margin either side of the line but not down in the fill; a tap on the r
 point is drawn on the lane as a vertical line with a dot where it crosses
 the outline, the point's ELEVATION at the top of the line and its
 DISTANCE from the start at the bottom (`[data-route-rail-readout]`),
-right of the line unless they would not fit. The legs are drawn and never
-pressed: leg selection, and dragging along the profile, were removed on
-2026-10-02.
+right of the line unless they would not fit. A sideways drag from anywhere
+on the profile scrubs the point (restored 2026-10-19). The legs are drawn
+and never pressed: leg selection was removed on 2026-10-02.
 
 RENDERED ONCE, EMPTY, AND HIDDEN. static/js/route_rail.js fills it for the
 route map.js's `activateRoute` opens and hides it again when the route
@@ -169,38 +170,46 @@ Context:
         {# the control map.js builds, and hidden for an owned route.         #}
         <div data-route-rail-claim hidden></div>
     </div>
-    {# The lane. Filled per open by static/js/route_rail.js. A tap on its  #}
-    {# top line places the point; the readout shows the point's figures.  #}
-    <div class="min-w-0">
-        <div class="relative">
-            <svg
-                data-route-rail-lane
-                role="group"
-                preserveAspectRatio="none"
-                class="route-rail-lane block h-20 w-full text-route-line"
-            >
-            </svg>
-            <div
-                data-route-rail-readout
-                hidden
-                class="route-rail-readout pointer-events-none absolute inset-0 font-mono text-meta text-text-1"
-            >
-                <span
-                    data-route-rail-dot
-                    class="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-pill border-2 border-text-1 bg-route-line"
-                ></span>
-                <span data-route-rail-elevation class="absolute top-0 whitespace-nowrap leading-none"></span>
-                <span data-route-rail-distance class="absolute bottom-0.5 whitespace-nowrap leading-none"></span>
+    {# PEEK ends at the foot of this group (data-sheet-peek): the route,   #}
+    {# its profile and, until a point is placed, how to read one are the  #}
+    {# first thing a tap on a route shows. A group rather than the hint   #}
+    {# itself, so a hidden hint leaves PEEK at the profile's foot rather  #}
+    {# than at no marker at all.                                          #}
+    <div data-sheet-peek class="grid min-w-0 gap-y-2">
+        {# The lane. Filled per open by static/js/route_rail.js. A tap on  #}
+        {# its top line places the point, a sideways drag anywhere scrubs #}
+        {# it; the readout shows the point's figures.                     #}
+        <div class="min-w-0">
+            <div class="relative">
+                <svg
+                    data-route-rail-lane
+                    role="group"
+                    preserveAspectRatio="none"
+                    class="route-rail-lane block h-20 w-full text-route-line"
+                >
+                </svg>
+                <div
+                    data-route-rail-readout
+                    hidden
+                    class="route-rail-readout pointer-events-none absolute inset-0 font-mono text-meta text-text-1"
+                >
+                    <span
+                        data-route-rail-dot
+                        class="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-pill border-2 border-text-1 bg-route-line"
+                    ></span>
+                    <span data-route-rail-elevation class="absolute top-0 whitespace-nowrap leading-none"></span>
+                    <span data-route-rail-distance class="absolute bottom-0.5 whitespace-nowrap leading-none"></span>
+                </div>
             </div>
+            <div data-route-rail-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3"></div>
         </div>
-        <div data-route-rail-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3"></div>
+        {# The hint, under the profile it names, until a point is placed: #}
+        {# then the point header says what it promised, and route_rail.js #}
+        {# hides it (2026-10-19).                                         #}
+        <p data-route-rail-hint class="text-summary text-text-3">
+            {% trans "Tap or drag the profile to view terrain data" %}
+        </p>
     </div>
-    {# The hint, under the profile it names. On a phone the sheet's PEEK  #}
-    {# ends here (data-sheet-peek): the route, its profile and how to     #}
-    {# read a point are the first thing a tap on a route shows.           #}
-    <p data-route-rail-hint data-sheet-peek class="text-summary text-text-3">
-        {% trans "Click on the profile to view terrain data" %}
-    </p>
     {# The point header (SNOW-1064): the wheel and the reading, under the #}
     {# hint at the panel's full width. On a phone it is HALF's (the sheet #}
     {# stops under it, data-sheet-half) and shows unlit until a point is  #}

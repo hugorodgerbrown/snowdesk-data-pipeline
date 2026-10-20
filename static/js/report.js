@@ -24,12 +24,12 @@
  * SNOW-658: the roundel opens a PANEL, not the location flow. The panel
  * (#report-list-template, in _report_surface.html) lists the user's own
  * reports — loaded over HTMX from observations:list, so each row arrives
- * with its own delete wiring — offers [data-panel-add] to file another,
- * and offers [data-panel-add] to file another. It carried a "Display on
- * the map" switch for window.pwaCommunityReportsOverlay between SNOW-658
- * and SNOW-904; that ticket made the map's layers menu the sole control
- * for every layer, so the panel is about its own list again and the
- * "Field observations" row there drives the bridge.
+ * with its own delete wiring — and offers [data-panel-add] to file
+ * another. Its foot carries a "Show on the map" switch bound to the layers
+ * menu's "Field observations" row (SNOW-658 put one here, SNOW-904 removed
+ * it, the two-capsule column restored it beside the row);
+ * static/js/map_panel_overlay_switch.js owns it, and this module only
+ * seeds it after each clone.
  *
  * Flow when eligible (authenticated):
  *   1. User taps the floating #report-btn, then [data-panel-add] in the
@@ -536,7 +536,8 @@
     sheet.appendChild(listTemplate.content.cloneNode(true));
 
     // Reflect the overlay's REAL state rather than a flag of this module's
-    // own, the way map_downloads_manager.js's render() does.
+    // own: a cloned switch starts unchecked, so seed it from the bridge.
+    window.pwaPanelOverlaySwitch?.sync();
     const gate = sheet.querySelector('[data-report-gate]');
     const rows = sheet.querySelector('[data-report-rows]');
     if (!IS_ELIGIBLE) {
@@ -674,11 +675,10 @@
     });
   }
 
-  // SNOW-904: the "Display on the map" switch this panel carried, and the
-  // change listener that drove window.pwaCommunityReportsOverlay from it,
-  // are gone. The layers menu's "Field observations" row drives the same
-  // bridge — and, unlike Favourites and Routes beside it, needs no sign-in
-  // hand-off, because community reports are public data.
+  // The panel's "Show on the map" switch is wired by
+  // static/js/map_panel_overlay_switch.js, bound to the layers menu's
+  // "Field observations" row — which, unlike Favourites and Routes, needs
+  // no sign-in hand-off, because community reports are public data.
 
   // SNOW-658: the list is fetched, and this panel opens offline. Say so,
   // rather than leaving the loading line up forever — and never fall through

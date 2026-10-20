@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-20
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -38,7 +38,7 @@ last-reviewed: 2026-10-01
 ### Scenario 1: View the homepage, then open the map
 
 **Goal**: Verify `/` is the static homepage and `/map/` is the interactive
-map behind a dismissable landing overlay. The map was the homepage from
+map, with nothing over it on load. The map was the homepage from
 SNOW-314 until the marketing page took the root — see
 [`decisions/the-homepage-is-not-the-map.md`](decisions/the-homepage-is-not-the-map.md).
 
@@ -46,12 +46,12 @@ SNOW-314 until the marketing page took the root — see
 |------|--------|-----------------|
 | 1 | Navigate to http://localhost:8000/ | A static page loads: the "Avalanche bulletins across the Alps, on one map." heading, an "Open the map" primary button and a "How it works" secondary button, a still image of the map, and short sections on bulletins, the season, weather, routes, offline use and field reports. No MapLibre canvas, no map JavaScript |
 | 2 | Look at the page chrome | A thin top nav bar with a "Snowdesk" wordmark (no back link) sits above the page |
-| 3 | Clear `localStorage` for the site, then click "Open the map" | http://localhost:8000/map/ loads: the full-frame map, with the `#home-intro` card centred over it |
-| 4 | Locate the intro card's controls | A "×" close button (top-right of the card) and an "Explore the map" button at the foot of it |
+| 3 | Clear `localStorage` for the site, then click "Open the map" | http://localhost:8000/map/ loads: the full-frame map, with no card or panel over it |
+| 4 | Wait for the danger colours to paint, then a moment more | The tour offer (`#map-tour-offer`) slides in at the bottom left, above the zoom, help, key and date controls: "Take the one-minute tour", with "Not now", "Start the tour" and a "×" (Scenario MS7) |
 | 5 | Note the pre-selected region | CH-4115 (Martigny/Verbier) is already selected, so the readout chip and breadcrumb are populated on first paint (SNOW-342) |
 | 6 | Navigate to http://localhost:8000/?d=2026-04-08 | A 301 to `http://localhost:8000/map/?d=2026-04-08` — map state on `/` is forwarded with its query string |
 
-Out of season (today past the season end) the card also carries an
+Out of season (today past the season end) the offer also carries an
 off-season note naming the archived season's start month.
 
 ### Scenario 2: View a random sample bulletin
@@ -303,27 +303,65 @@ both hits appear and the badge makes the distinction obvious.
 | 1 | Click into the search input and clear any existing text | Dropdown is hidden |
 | 2 | Type `xyznonexistent` | Dropdown does not open (no results, no error message shown) |
 
-### Scenario MS7: "Explore the map" dismisses the intro overlay
+### Scenario MS7: The tour is offered once, after the map
 
-**Goal**: Verify the intro overlay's CTA is a *dismiss* control, not a link —
-the map is already mounted behind it — that the dismissal persists, and that
-the "?" roundel brings the card back rather than jumping straight to the tour.
+**Goal**: Verify the map opens clean, that the tour is offered once the map
+has settled and only once per device, and that the offer stays away from a
+visit that came for something in particular (SNOW-1117 — it replaced the
+"Welcome to Snowdesk" panel, which flashed open on every load).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Clear `localStorage`, navigate to http://localhost:8000/map/ | Map loads with the `#home-intro` card over it |
-| 2 | Click "Explore the map" | The card clears in place. **No navigation occurs** — the URL stays `http://localhost:8000/map/` and the map is not reloaded. The map-help coachmark tour then opens (SNOW-535) |
-| 3 | Inspect `localStorage` | `snowdesk.home.intro` is set to `dismissed` |
-| 4 | Reload the page | The map loads with no intro card |
-| 5 | Repeat from step 1, but click the "×" close button (or press Escape) | The card dismisses and persists the same way — but the map-help tour does **not** open. That extra step is what distinguishes the CTA from the "×" |
-| 6 | With the card dismissed, click the "?" roundel in the bottom-left stack | The welcome card comes back, over whatever the map was showing; any other open panel (layers, legend, a sheet) closes. `snowdesk.home.intro` is still `dismissed` |
-| 7 | Click "Explore the map" | The card clears and the coachmark tour opens on step 1 — the same route in as step 2, which is the only route in on this page |
+| 1 | Clear `localStorage`, navigate to http://localhost:8000/map/ | The map loads with nothing over it. A moment after the colours paint, the tour offer slides in at the bottom left |
+| 2 | Click "Start the tour" | The offer closes and the coachmark tour opens on step 1. **No navigation occurs** |
+| 3 | Inspect `localStorage` | `snowdesk.map.tour-offer` is `dismissed` |
+| 4 | Close the tour and reload the page | The map loads and the offer does not come back |
+| 5 | Clear `localStorage`, reload, and click "Not now" (or the "×", or press Escape) when the offer appears | The offer closes and records the same answer — but the tour does **not** open |
+| 6 | Clear `localStorage` and open http://localhost:8000/map/?resort=verbier | The resort opens and the offer never appears: a deep link came for that |
+| 7 | Clear `localStorage`, reload, and tap a region before the offer appears | The region sheet opens and the offer does not appear over it this visit; `snowdesk.map.tour-offer` is still unset |
+| 8 | Click the "?" roundel in the bottom-left stack, then "Tour" on the bar it opens | The coachmark tour opens on step 1, whatever was recorded (Scenario MS9) |
 
-To bring the overlay back without clearing `localStorage`, load
-`http://localhost:8000/map/?intro=1` — it forces the panel open, survives a server
-round-trip (unlike `#about`), and is stripped from the address bar on dismissal
-so the panel stays dismissed across a reload. It is the handle to use in QA,
-screenshots and bug reports.
+To see the offer again without clearing `localStorage`, load
+`http://localhost:8000/map/?tour-offer=1` — it shows the offer whatever was
+recorded, after the same wait, and is stripped from the address bar once the
+offer is answered. It is the handle to use in QA, screenshots and bug reports.
+
+### Scenario MS8: The tour reads the map in seven steps
+
+**Goal**: Verify the tour explains the map and not only its buttons: seven
+steps in four chapters, the second of which shows a real region
+(SNOW-1118 — it replaced a walk of thirteen controls in DOM order).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | On a phone-sized window with no region selected, click the "?" roundel, then "Tour" | The tour opens with no ring, its card across the foot of the screen: "Colour is the day's danger", with the five danger levels as numbered tiles. The progress bar reads Read the map · Move · Yours · Help, with the first segment filled |
+| 2 | Click "Next" | A region near the middle of the map is selected and its sheet opens at the foot of the screen, ringed; the card ("Tap a region") sits above it and the tour stays open |
+| 3 | Click "Next" | The region sheet closes and the selection is dropped (the address bar loses its `#` region). The date control is ringed: "Choose the day" |
+| 4 | Click "Next" | Search, locate and the zoom number are ringed together: "Find your way". The progress bar's current chapter is Move |
+| 5 | Click "Next", then "Next" | "Layers" rings the layers roundel; "Your things" rings the whole "yours" capsule and lists Pins, Observations, Routes and Offline, each with its roundel's glyph. Signed out, the copy ends "Sign in to keep them." |
+| 6 | Click "Next" | "Help is always here" rings the "?" roundel, and the button reads "Done" |
+| 7 | Select a region yourself, then repeat steps 1–3 | Step 2 rings that region's sheet rather than choosing another, and on step 3 the region stays selected |
+| 8 | At desktop width, repeat steps 1–3 | Step 2 rings the region chip at the top left instead of a sheet |
+
+### Scenario MS9: Help mode names the controls and keys each sheet
+
+**Goal**: Verify the "?" roundel puts the map into help mode — every
+control named, a tap on one explaining it rather than using it — and that
+a sheet opened in help mode is numbered and keyed (SNOW-1119 — until then
+the "?" only replayed the tour).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | On a phone-sized window, click the "?" roundel | The "?" turns dark. A bar reads "Tap anything to see what it does" with "Tour" and "Done", and every control on screen carries its name in a dark pill beside it. Nothing else opens |
+| 2 | Tap the layers roundel | The layers menu does **not** open. The roundel is ringed, the other names dim, and a card says what layers are for, with "More in Help" and "Open layers" |
+| 3 | Click "More in Help" | `/help/` opens with the Layers topic already expanded and scrolled to |
+| 4 | Go back, enter help mode again, tap the layers roundel's *name*, then "Open layers" | Help mode ends and the layers menu opens |
+| 5 | Enter help mode and tap a region on the map | The tap goes through: the region sheet opens, raised to half height, with numbered badges on its parts and a "What this shows" card keying each number. The bar steps aside |
+| 6 | Click "Got it" | The key and badges go; the bar comes back. Close the sheet and tap another region: the key comes back for the new sheet |
+| 7 | Repeat step 5 on a resort pin, a saved route, and a weather symbol | Each sheet gets its own key: the place sheet, the route rail and the weather sheet |
+| 8 | Press Escape three times with a card open over a keyed sheet | The card closes, then the key, then help mode |
+| 9 | Enter help mode and click "Tour" | Help mode ends and the tour opens on step 1 |
+| 10 | At desktop width, enter help mode | No two names overlap; each sits beside its control, above or below it where the side is taken |
 
 ---
 
@@ -571,19 +609,17 @@ the LAN — `runserver 0.0.0.0:8000`).
 | 1 | Reset state, load the map page, and interact with it | `#pwa-install-ios` appears with an animated arrow pointing to the Share icon in the Safari toolbar and the message "Tap Share, then Add to Home Screen" |
 | 2 | Follow the guide: Share → Add to Home Screen → Add | The Snowdesk icon appears on the home screen using the Apple touch icon (not a screenshot of the page); tapping it opens the app in standalone mode without Safari chrome |
 
-### Scenario P3b: One continuous launch, splash to first paint
+### Scenario P3b: The launch splash, per environment
 
 > Manual-only: Android's generated splash and iOS's startup image are
 > drawn by the OS, outside any browser Playwright can drive. The values
-> both halves read are pinned in
-> [tests/public/test_pwa_launch_parity.py](../tests/public/test_pwa_launch_parity.py)
-> and the platform branch in
-> [tests/js/test_pwa_launch_gate.js](../tests/js/test_pwa_launch_gate.js).
+> the splash reads are pinned in
+> [tests/public/test_pwa_launch_parity.py](../tests/public/test_pwa_launch_parity.py).
 > Contract: [docs/pwa-launch.md](pwa-launch.md).
 
-**Goal**: Verify the handoff from the OS launch screen to the page's first
-paint is invisible: the same logo, the same size and place, the same
-background and status bar, per environment.
+**Goal**: Verify the OS launch screen shows the right environment's icon,
+uncropped, and hands over to the page on the same background and status
+bar colour.
 
 **Preconditions**: An Android 12+ phone with Chrome, and the environment
 under test installed **from scratch** (Android caches the manifest at
@@ -591,10 +627,9 @@ install time, so uninstall first). Screen recording on.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Force-stop the app, then launch it from the home screen while recording | The splash shows the environment's icon in a circle: green on production, amber labelled "Staging" on staging |
-| 2 | Step through the recording frame by frame across the handoff | At the handoff the logo does not move, resize, change shape or change artwork, and no text appears; the background and the status bar stay cream |
-| 3 | Throttle the network to "Slow 3G" with the device on USB debugging, clear the app's storage, and launch | Shortly after the handoff the cream fades to show the nav and the empty map, and the logo eases down to a small pulsing circle in the middle; it fades out once the map draws |
-| 4 | Repeat steps 1–2 on the other environment | No production artwork appears on staging, and no staging artwork on production |
+| 1 | Force-stop the app, then launch it from the home screen while recording | The splash shows the environment's icon in a circle, with no mark cut off: green on production, amber labelled "Staging" on staging |
+| 2 | Step through the recording across the handoff | The splash gives way straight to the map page; the background and the status bar stay cream throughout |
+| 3 | Repeat steps 1–2 on the other environment | No production artwork appears on staging, and no staging artwork on production |
 
 ### Scenario P4: A new sw.js is applied silently
 
@@ -1123,7 +1158,7 @@ claims to be coverage.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Tap the bin on a row | The row goes, its squares go, and its bucket is gone from the probe |
+| 1 | Tap the bin on a row | Its squares go and its bucket is gone from the probe. Signed in, the row moves to "Not on this device" (Remove means this device — SNOW-1135); signed out, it goes |
 | 2 | Start a region download and interrupt it mid-run (Network → Offline while `busy`) | The run reports cancelled, not failed; the roundel rests at `idle` — a partial run records nothing |
 | 3 | Reopen the sheet | The leftover bucket lists under "Unknown basemap" with its bucket id as the title and "Incomplete" as its whole meta line — no size, no kind, **Remove the only action** |
 | 4 | Note what distinguishes it from P13's row | Both read "Incomplete", and the actions are the difference: an orphan has no record to repair *from*, so it gets Remove alone, where a render-incomplete area carries **Repair** as well |
@@ -1140,6 +1175,8 @@ claims to be coverage.
 | 3 | Turn on "Display downloaded areas" in B's layers menu | No squares — B holds no tiles. The budget total in B reads 0 for those rows |
 | 4 | Tap "Download here" | A region downloads directly; a custom area reopens framing fitted to the stored box |
 | 5 | Rename the custom area in A, then reload B | The new name shows in B — the definition syncs, the bytes never do |
+| 6 | In B, open a listed row's "…" menu | Download here, then Forget (SNOW-1135) |
+| 7 | Choose Forget and accept | The confirmation says it comes off your account and that a device still holding it adds it back; the row leaves B's sheet. Reopen A's sheet online, then reload B — the area is listed in B again, because A still holds it |
 
 ### Scenario D9: The two gates
 

@@ -68,10 +68,10 @@
        split above turns on. The cost is 8px of tap target (40 → 32); the
        alternative that keeps 40px is a painted shell inset inside a larger
        transparent hit box, which needs a wrapper element on the download
-       control (both its pseudo-elements are taken — ::before by the
-       busy/done fill and the other-basemap ring, ::after by the shared
-       [data-overlay-shown] rule — and its overflow: hidden would clip any
-       hit-area expander). Rejected as machinery out of proportion to 8px.
+       control (its ::before is taken by the busy/done fill and the
+       other-basemap ring — ::after was the shared [data-overlay-shown] ring
+       until that marker was dropped — and its overflow: hidden would clip
+       any hit-area expander). Rejected as machinery out of proportion to 8px.
        .ribbon-header's own min-height stays at lg so the row still centres
        against the lg search roundel opposite it.
 
@@ -143,7 +143,7 @@
        floating over the map's bottom-left corner has to clear it, because those members are what a visitor
        taps and a card overlapping them wins the hit test in silence: the
        date control simply stops responding, with no console error and
-       nothing on screen to say why. #home-intro is the one that does
+       nothing on screen to say why. #map-tour-offer is the one that does
        (its own rule, below); the stack's members read their offsets from
        --map-bottom-row-offset above, so both sides of that clearance come
        from the same two tokens. */
@@ -240,9 +240,9 @@
    every width, when two rails filled the screen. With one panel pinned
    top-left there is room to give them back.
 
-   From 640px: everything returns. Only #home-intro stays withdrawn — it
-   is an introduction to the map, not a control, and it sits where the
-   reader is looking at the route.
+   From 640px: everything returns. Only #map-tour-offer stays withdrawn —
+   it is an offer to introduce the map, not a control, and it sits where
+   the reader is looking at the route.
 
    Below 640px: a phone with a route open is someone on the move, so the
    map keeps locate, layers and routes and nothing else. Withdrawn there:
@@ -253,18 +253,19 @@
                             control, date control and season scrubber (the
                             date matters only for a route on the day, which
                             is the Tour feature's to bring back);
-     #home-intro          — the intro card, if it is showing;
-   and, in #map-controls-br, every roundel but locate, layers
-   (#basemap-pill) and routes, and the collapse chevron. The two kept
-   inside the collapsible group are shown expanded whatever its state, so
-   the three are always one tap away.
+     #map-tour-offer      — the tour offer, if it is showing;
+   and, in #map-controls-br, the collapse chevron and every button in the
+   "yours" capsule but routes. The "map" capsule (locate and layers) is
+   never collapsible, so it needs no rule; routes is shown, alone in its
+   capsule, whatever the chevron last left the group as, so the three are
+   always one tap away.
 
    `visibility: hidden` also takes the controls out of the tab order and
    the accessibility tree, which opacity alone would not. It changes after
    the fade, so the fade is seen; the return is immediate. Nothing in
    static/js sets these containers' visibility or opacity inline, so no
    script can re-show one under this rule. */
-#map[data-route-rail-open] #home-intro {
+#map[data-route-rail-open] #map-tour-offer {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -282,14 +283,20 @@
     }
 
     #map[data-route-rail-open] .map-controls-toggle,
-    #map[data-route-rail-open] .map-controls-collapsible-inner > :not(#basemap-pill):not(.map-utility-pill--route) {
+    #map[data-route-rail-open] .map-controls-collapsible-inner > :not(.map-utility-pill--route) {
         display: none;
     }
 
-    /* Two roundels and the gap between them, open whatever the chevron
-       last left the group as. */
+    /* Routes is no longer the first of its siblings on screen, so it drops
+       the hairline the capsule draws above every button after the first. */
+    #map[data-route-rail-open] .map-controls-collapsible-inner > .map-utility-pill--route {
+        border-top: 0;
+    }
+
+    /* One button's height, open whatever the chevron last left the group
+       as. */
     #map[data-route-rail-open] #map-controls-collapsible {
-        height: calc(2 * var(--map-control-lg) + 8px);
+        height: calc(var(--map-control-lg) + 1px);
         opacity: 1;
         margin-bottom: 0;
     }
@@ -303,7 +310,7 @@
     #map[data-route-rail-open] #season-ribbon,
     #map[data-route-rail-open] #map-utility-cluster,
     #map[data-route-rail-open] #map-legend,
-    #map[data-route-rail-open] #home-intro {
+    #map[data-route-rail-open] #map-tour-offer {
         transition: none;
     }
 }
@@ -325,6 +332,14 @@
             calc(100% - var(--map-edge-inset-left) - var(--map-edge-inset-right))
         );
     }
+}
+
+/* A drag along the rail's profile scrubs the point (SNOW-1065, restored
+   2026-10-19). A horizontal finger drag must reach the script rather than
+   scroll, while a vertical one still may: `pan-y` hands over the first and
+   keeps the second. */
+.route-rail-lane {
+    touch-action: pan-y;
 }
 
 /* The figures beside the profile's cursor line (2026-10-02) sit over the
@@ -365,12 +380,14 @@
     gap: 8px;
 }
 
-/* Bottom-right control stack — every roundel (basemap, locate, and the
-   flag-gated favourite + observation pills) in one bottom-anchored column,
-   with the help (?) roundel at the foot so it sits level with the bottom-left
-   (i) legend toggle (both at bottom:60px). Bottom-anchored + column means a
-   hidden roundel simply shortens the stack from the top: the column always
-   sits on the baseline, never leaving a gap above the corner. */
+/* Bottom-right control stack — two capsules (.map-control-group, below) in
+   one bottom-anchored column: "the map" (locate, layers) and "yours"
+   (favourites, field observations, routes, downloads), with the chevron at
+   the foot so it sits level with the bottom-left (i) legend toggle.
+   Bottom-anchored + column means a hidden control simply shortens the stack
+   from the top: the column always sits on the baseline, never leaving a gap
+   above the corner. The 16px gap separates the two groups; the chevron's
+   own top margin takes it back to 8px below the "yours" capsule. */
 .map-controls-br {
     position: absolute;
     right: var(--map-edge-inset-right);
@@ -379,61 +396,124 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 8px;
+    gap: 16px;
+}
+
+.map-controls-br > .map-controls-toggle {
+    margin-top: -8px;
+}
+
+/* —— Control groups (the two capsules) ————————————————————————
+   One glass capsule per group: the background, hairline border, blur and
+   shadow belong to the GROUP, and the buttons inside give theirs up, so a
+   group reads as one object with a hairline between its members rather
+   than a column of separate roundels. `border-radius: 999px` on a box one
+   button wide gives semicircular ends; `overflow: hidden` clips each
+   button's hover infill (and anything a button paints on its own
+   pseudo-elements, such as the downloads control's) to that outline.
+
+   Every member stays exactly --map-control-lg tall — the divider is a
+   border INSIDE that height (border-box) — so a capsule of n buttons is
+   n * lg, which is what #map-controls-collapsible's computed height
+   relies on.
+
+   Focus rings are drawn INSIDE the button for the same reason the hover
+   fill is clipped: an outline offset outwards would be cut off by the
+   capsule's own clip. */
+.map-control-group {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    width: var(--map-control-lg);
+    overflow: hidden;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+}
+
+.map-control-group > .map-utility-pill,
+.map-control-group > .map-glass-roundel {
+    width: 100%;
+    height: var(--map-control-lg);
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+/* As specific as the reset above (it wins on source order), or that rule's
+   `border: 0` would erase every divider. */
+.map-control-group > :is(.map-utility-pill, .map-glass-roundel) + :is(.map-utility-pill, .map-glass-roundel) {
+    border-top: 0.5px solid var(--color-border);
+}
+
+.map-control-group .map-utility-button,
+.map-control-group .map-utility-button:focus-visible {
+    width: 100%;
+    border-radius: 0;
+}
+
+.map-control-group .map-utility-button:focus-visible,
+.map-control-group > .map-glass-roundel:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: -3px;
 }
 
 /* —— Collapsible control group ————————————————————————————————
-   Eight roundels in one column read as clutter over the map. Locate and the
-   toggle stay out; the other six (layers, bulletin fill, download,
-   favourite, observations, help) collapse into the toggle.
-
-   That split is SNOW-664's, and this comment described the one before it
-   ("Layers, locate and the toggle stay out; the other four…") until the
-   roundel sizing audit — the same drift that left the fallback below stale.
+   The chevron collapses the "yours" capsule — favourites, field
+   observations, routes and downloads — and nothing else. The "map" capsule
+   (locate and layers) stays out: where you are and what the map is drawing
+   are the two questions a map always has to answer, and SNOW-664's column,
+   which folded layers away with everything else, left one of them behind
+   the chevron.
 
    The toggle is the LAST child, so the bottom-anchored stack grows and
    shrinks upward out of it: the toggle never moves under the finger that
-   is pressing it, and the revealed controls appear directly beneath layers
-   and locate in their existing stack order.
+   is pressing it, and the revealed capsule appears directly beneath the
+   "map" one.
 
-   SNOW-794: help is no longer one of them. Everything in this column
-   changes what the map SHOWS — layers, basemap, fill strength, downloads,
-   the UGC pins. Help changes nothing; it explains. It sits in the
-   bottom-left stack now, with the legend and the date.
+   SNOW-794: help is not in this column. Everything here changes what the
+   map SHOWS; help changes nothing, it explains. It sits in the
+   bottom-left stack, with the legend and the date.
 
-   Height is COMPUTED, not measured. The control scale above guarantees
-   every child is exactly --map-control-lg tall with an 8px gap, so n
-   children occupy n*lg + (n-1)*8. --map-controls-count is set from the
-   live child count by mapControlsCollapseInit, which keeps this correct if
-   a control ever becomes conditional again — SNOW-724 made the routes
-   roundel unconditional, taking the count from six to seven, and SNOW-794
-   moved the help roundel out to the bottom-left stack, taking it back to
-   six. Measuring
-   instead would mean
-   reading offsetHeight off an already-clipped box (it returns 0) or
-   un-clipping to measure and forcing a reflow on every toggle.
+   Height is COMPUTED, not measured. The capsule's members are each exactly
+   --map-control-lg tall with no gap between them (the hairline divider is
+   drawn inside each button's own height), so n members occupy n*lg, plus
+   1px for the capsule's own two 0.5px borders.
+   --map-controls-count is set from the live child count by
+   mapControlsCollapseInit, which keeps this correct if a control ever
+   becomes conditional again. Measuring instead would mean reading
+   offsetHeight off an already-clipped box (it returns 0) or un-clipping to
+   measure and forcing a reflow on every toggle.
 
    THE FALLBACK MUST TRACK THE MARKUP. It is only reached before the JS
    runs — but the group is server-rendered `data-expanded="true"` (so the
    controls are discoverable on a first visit and present with JS off), so
-   a stale fallback is a visible clip, not a harmless default. It sat at 4
-   from before SNOW-664 moved layers into the group and SNOW-656 added the
-   bulletin fill, against six real children: 4*40 + 3*8 = 184px of box for
-   280px of content, and `overflow: hidden` swallowed the top ~96px — the
-   layers and fill roundels were entirely invisible until the JS corrected
-   the count. Found by the roundel sizing audit. If you add or remove a
-   child of .map-controls-collapsible-inner, change the 6 below to match.
+   a stale fallback is a visible clip, not a harmless default: once it sat
+   at 4 against six real children and `overflow: hidden` swallowed the top
+   two until the JS corrected the count (the roundel sizing audit). The
+   "yours" capsule holds four buttons; if you add or remove a child of
+   .map-controls-collapsible-inner, change the 4 below to match
+   (tests/public/test_map_page.py asserts the two agree).
 
-   The wrapper animates height and is what clips; the inner holds the flex
-   column, because transitioning height needs a fixed-height box wrapping an
-   auto-height one. margin-bottom cancels the parent's 8px gap while
-   collapsed, so a collapsed group leaves no phantom slot in the stack. */
+   The wrapper animates height and is what clips; the inner — the capsule
+   itself — holds the flex column, because transitioning height needs a
+   fixed-height box wrapping an auto-height one. margin-bottom cancels the
+   stack's 16px gap while collapsed, so a collapsed group leaves no phantom
+   slot: the chevron sits 8px under the "map" capsule, as it sits 8px under
+   the "yours" one when the group is open. */
 #map-controls-collapsible {
     overflow: hidden;
     flex: 0 0 auto;
     height: 0;
     opacity: 0;
-    margin-bottom: -8px;
+    margin-bottom: -16px;
     transition:
         height 300ms cubic-bezier(0.32, 0.72, 0, 1),
         opacity 200ms ease-out,
@@ -441,21 +521,15 @@
 }
 
 .map-controls-br[data-expanded="true"] #map-controls-collapsible {
-    height: calc(
-        var(--map-controls-count, 6) * var(--map-control-lg) +
-            (var(--map-controls-count, 6) - 1) * 8px
-    );
+    height: calc(var(--map-controls-count, 4) * var(--map-control-lg) + 1px);
     opacity: 1;
     margin-bottom: 0;
 }
 
 /* The lift makes the group rise into place rather than materialise; it is on
-   the inner so it composites independently of the wrapper's height. */
+   the inner so it composites independently of the wrapper's height. The
+   inner is the capsule, so its column carries no gap (.map-control-group). */
 .map-controls-collapsible-inner {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
     transform: translateY(10px);
     transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -649,43 +723,6 @@
 }
 
 
-/* SNOW-656: bulletin-fill roundel — the same three declarations every other
-   member of the bottom-right stack carries.
-
-   Added by the roundel sizing audit: this rule did not exist at all. The
-   class was on the markup from the day the control shipped, but map.css
-   never defined it, so the pill fell back to `width: auto` and took its
-   width from content — the 40px button plus the pill's own two 0.5px
-   borders, i.e. 41px. Three things followed, and each is a reason one of
-   the declarations below is load-bearing rather than copied:
-
-   `width` — at 41px this roundel was a pixel wider than the other eight,
-   and .map-controls-br is `align-items: flex-end`, so the extra pixel hung
-   off the LEFT and broke the column's shared edge.
-
-   `border-radius: 999px` on a 41×40 box is an ellipse (20.5px/20px), not a
-   circle — and 41 is odd, which is the exact case the control-scale comment
-   at the top of this file warns about: a fractional corner radius that
-   Chrome's backdrop-filter clip does not honour, leaving an unclipped
-   rectangular patch at the trailing edge. This pill carries
-   backdrop-filter: blur(8px) from .map-utility-pill.
-
-   `flex: 0 0 auto` — without it this was the one child of the column that
-   could flex-shrink. #map-controls-collapsible's height is COMPUTED from a
-   child count rather than measured (see its own rule), so any drift between
-   that count and reality would have squashed this control first, silently.
-
-   `justify-content: center` has no visible effect today — the content box
-   is exactly the button's width — but it is what keeps the glyph centred if
-   anything else ever lands beside it in the pill, which is the whole reason
-   its siblings state it. */
-.map-utility-pill--fill {
-    width: var(--map-control-lg);
-    flex: 0 0 auto;
-    justify-content: center;
-}
-
-
 /* Hide the MapLibre GeolocateControl's own rendered control — our
    #locate-toggle pill is the visible affordance. Hiding only the button left
    the empty .maplibregl-ctrl-group wrapper (a white box with a shadow) visible
@@ -709,9 +746,10 @@
        (i). right:48px clears the 40px pill + 8px gap.
 
        SNOW-664: `bottom` is measured from .map-controls-br now, not from
-       #basemap-pill — the pill moved inside #map-controls-collapsible, whose
-       `overflow: hidden` would clip this menu, so it is a child of the stack
-       (like .map-fill-flyout, SNOW-656). `bottom: 0` therefore lines its
+       #basemap-pill — the pill sits inside a clipping box (the "map"
+       capsule, .map-control-group, since the column became two groups),
+       which would clip this menu, so it is a child of the stack.
+       `bottom: 0` therefore lines its
        lower edge up with the foot of the roundel column, level with the
        legend/report baseline (bottom:60px). This is the no-JS value; on a
        real load basemapPickerInit overwrites it with the measured floor just
@@ -1462,7 +1500,7 @@ html:has(> body.map-fullscreen) > body {
    Stacking: scrubber=2, legend=3 (also season-ribbon at top-left),
    utility cluster=4. (The off-season notice is not a #map chip — SNOW-445
    moved it to a bar above the map, and that bar has since been dropped;
-   the note now lives only inside #home-intro.) */
+   the note now lives only inside #map-tour-offer.) */
 
 .map-legend {
     position: absolute;
@@ -1549,45 +1587,46 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
-/* SNOW-656: the bulletin-fill flyout — five opacity steps, opening to the
-   LEFT of the bottom-right roundel column from #map-fill-toggle.
+/* Bulletin opacity — five opacity steps, a row in the layers menu's
+   Conditions group under the three providers whose bulletins it shades.
+   SNOW-656 built it as a roundel in the control column with a flyout of
+   its own; the two-capsule column moved it here, so every choice about
+   what the map draws is made in one menu.
 
-   Left, at right:48px, is the same side and offset .basemap-menu uses, so
-   every panel in this stack appears from the same edge.
+   A label above a full-width segmented row: the menu is shrink-to-fit with
+   nowrap rows (SNOW-328), so the row takes the width the row labels set
+   (`width: 0; min-width: 100%`, the same trick .basemap-menu-item-detail
+   uses) rather than widening the menu to five fixed targets. */
+.basemap-menu-opacity {
+    padding: 4px 12px 6px;
+}
 
-   It is a child of .map-controls-br, NOT of the roundel it belongs to. The
-   roundel sits inside #map-controls-collapsible, which is `overflow: hidden`
-   for its height animation — and that clips both axes, so a panel extending
-   left out of that box would simply be cut off. Anchoring to the stack keeps
-   it out of the clip; mapFillControlInit sets `top` from the roundel's own
-   offset on open, so it still lines up with the control that opened it.
+/* Indented to the row labels' own column (12px row padding + a 14px
+   checkbox + the 8px gap, less this row's 12px), so it reads as a row
+   label; the steps beneath it take the menu's full inner width. */
+.basemap-menu-opacity-label {
+    margin: 0 0 4px;
+    padding-left: 22px;
+    font-size: 13px;
+    color: var(--color-text-1);
+    white-space: nowrap;
+}
 
-   Five 44px targets is 220px, which is why this is a flyout at all: it does
-   not fit inline on the canvas at 375px, and a control this size has no
-   business being permanently on the map. */
-.map-fill-flyout {
-    position: absolute;
-    right: 48px;
+.map-fill-steps {
     display: flex;
-    align-items: center;
+    width: 0;
+    min-width: 100%;
     gap: 2px;
-    padding: 0 4px;
-    background: var(--color-glass);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    border: 0.5px solid var(--color-border);
-    border-radius: 999px;
-    box-shadow: var(--shadow-glass);
-    z-index: 5;
 }
 
-.map-fill-flyout[hidden] {
-    display: none;
-}
-
+/* Each step takes an equal share of the row, so the five fill whatever
+   width the menu's labels set. 36px tall — a menu row's own height — and
+   never narrower than the 24px WCAG 2.2 floor (the menu's 200px minimum
+   leaves each about 34px). */
 .map-fill-step {
-    width: 44px;
-    height: 44px;
+    flex: 1 1 0;
+    min-width: 24px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1627,15 +1666,13 @@ html:has(> body.map-fullscreen) > body {
 .map-fill-step-swatch[data-step="1"] { opacity: 1; }
 
 /* The selected step.
-   The ring hangs off the SWATCH, not the 44px button. On the button it was a
-   heavy circle at the full target size, which both fought the rounded-square
-   swatch inside it and sat flush against the pill's own edge — reading as if
-   the selection had broken out of the ribbon.
+   The ring hangs off the SWATCH, not the button. On the button it was a
+   heavy shape at the full target size, which fought the rounded-square
+   swatch inside it.
    Two box-shadow rings, both taking the swatch's own border-radius so they
    are concentric with it: a card-coloured gap, then a hairline in the muted
-   text tone rather than full black. 27px overall inside a 44px target leaves
-   8.5px of clear space on every side, so it stays visibly within the pill
-   while the tap target is untouched. */
+   text tone rather than full black. 27px overall, inside a 36px-tall step,
+   so it stays clear of the neighbouring steps' own rings. */
 .map-fill-step[aria-checked="true"] .map-fill-step-swatch {
     box-shadow:
         0 0 0 3px var(--color-card),
@@ -1687,6 +1724,43 @@ html:has(> body.map-fullscreen) > body {
     /* The stack is bottom-anchored and this is its last child, so it holds
        the baseline whatever comes and goes above it. */
     min-width: 0;
+}
+
+/* SNOW-920: the stale-day notice beside the date control — the day a cached
+   page is showing and a Reload. Same glass pill as the control it sits next
+   to, so it reads as part of the date row rather than as a banner. Hidden
+   until stale_day.js is told the page is behind. */
+.stale-day-notice {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--map-control-sm);
+    padding: 0 6px 0 12px;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.stale-day-notice[hidden] {
+    display: none;
+}
+
+.stale-day-reload {
+    height: calc(var(--map-control-sm) - 8px);
+    padding: 0 10px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--color-text-1);
+    color: var(--color-card);
+    font: inherit;
+    cursor: pointer;
 }
 
 /* SNOW-794: the date control — one pill that both SAYS the day and OPENS
@@ -1793,14 +1867,14 @@ html:has(> body.map-fullscreen) > body {
        a fixed low anchor with no height limit at all, so a longer legend
        (more danger levels, longer attribution strings in a future locale)
        would grow into the top of the viewport with nothing to stop it —
-       the same defect class as #home-intro and the "Manage downloads"
+       the same defect class as the old #home-intro panel and the "Manage downloads"
        sheet. Bound to the room between the shared top safe-area/gap
        token every floating map surface uses (--map-edge-inset-top,
        src/css/main.css) and this card's own distance from the viewport
        bottom (--map-legend-card-bottom-offset, set on the parent
        .map-legend above — the offset this card is already anchored from,
-       plus its own 8px gap). `dvh`, not `vh`: see .home-intro-card's own
-       comment for why. */
+       plus its own 8px gap). `dvh`, not `vh`, so a mobile URL bar does
+       not push the bottom off screen. */
     max-height: calc(100dvh - var(--map-edge-inset-top) - var(--map-legend-card-bottom-offset));
     overflow-y: auto;
     font-size: 11px;
@@ -1891,7 +1965,7 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
-/* + and −: 44 px targets, the same box as .map-fill-step, stacked on the
+/* + and −: 44 px targets, stacked on the
    track's line so the scale reads as running between them. */
 .map-zoom-step {
     display: flex;
@@ -3106,14 +3180,15 @@ html:has(> body.map-fullscreen) > body {
     opacity: 0.45;
 }
 
-/* 'idle' and (SNOW-568) 'error' are the clickable states — handleClick
-   returns for every other one. 'busy' (already running) and 'done' (an
-   informational success state) are not failures, so they keep their normal
-   colour and take the neutral default cursor rather than the not-allowed
-   above; without this the pointer contradicted the aria-disabled="true"
-   map.js sets for them. */
+/* 'busy' (already running) is not a failure, so it keeps its normal colour
+   and takes the neutral default cursor rather than the not-allowed above;
+   without this the pointer contradicted the aria-disabled="true" set for
+   it. SNOW-1130: 'done' and 'partial' are here only while disabled — a
+   tap on either refreshes the area's bulletins and weather, so online they
+   keep the pointer; offline they stay painted but cannot be pressed. */
 .map-download-control[data-download-state="busy"],
-.map-download-control[data-download-state="done"] {
+.map-download-control[data-download-state="done"][aria-disabled="true"],
+.map-download-control[data-download-state="partial"][aria-disabled="true"] {
     cursor: default;
 }
 
@@ -3318,11 +3393,13 @@ html:has(> body.map-fullscreen) > body {
     height: 100%;
 }
 
-/* White download glyph on the filled disc (the glyph strokes currentColor).
-   Reads on the green fill above in both themes (see that fill's own
-   dark-mode colour, src/css/main.css). Same icon as every other state —
-   see the display rules above for why. */
-.map-download-control[data-download-state="done"] .map-download-control-icon--idle {
+/* White glyph on the filled disc (the glyph strokes currentColor). Reads on
+   the green fill above in both themes (see that fill's own dark-mode
+   colour, src/css/main.css). SNOW-1131: 'done' shows the REFRESH glyph
+   since SNOW-924 (the display rules above), so this targets that one — it
+   still named the idle arrow, which 'done' no longer shows, and the
+   refresh arrow was drawn in ink on the solid fill. */
+.map-download-control[data-download-state="done"] .map-download-control-icon--refresh {
     color: #fff;
 }
 
@@ -3405,54 +3482,21 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
-/* SNOW-658: "the overlay this roundel's panel switches is on the map right
-   now" — the one state shared by all three overlay roundels (downloads,
-   favourites, field observations), painted from one attribute by one module
-   (static/js/map_roundel_overlay_state.js). Keyed on the attribute alone,
-   with no class in the selector, deliberately: the downloads roundel is a
-   .map-download-control and the other two are .map-utility-buttons inside a
-   pill, and a per-family rule is exactly how the three signals diverged
-   before this ticket. A fourth roundel gets this by carrying the attribute.
+/* SNOW-658 drew a 2px --color-accent inset ring on `::after` of every
+   roundel carrying `[data-overlay-shown="true"]` — "the overlay this
+   roundel's panel switches is on the map right now". It is gone by design,
+   with the two-capsule column: readers took the ring for "selected" (the
+   roundel's own state, not its layer's), and it only repeated what the map
+   already shows. The map itself carries that state, the layers menu names
+   every layer that is on, and each panel's own "Show on the map" switch
+   states it for its layer.
 
-   WHY A RING AND NOT A FILL. SNOW-645 removed a FILLED disc from
-   #map-custom-download-control after three attempts at it (an active-basemap
-   colour, then a flat neutral, then a theme-inverting neutral) all drew the
-   same complaint: a solid disc among glass roundels reads as an error or an
-   alert, not as a status. The lesson there was that the problem was painting
-   a colour at all, not which colour — so this deliberately does not reach
-   for a fill again. A 2px inset ring leaves the glass chrome and the glyph
-   exactly as they are in the off state and changes only the rim, which is
-   the same "third answer, not a shade of the other two" device the
-   'other-basemap' state above already uses on the region roundel.
-
-   The colour is --color-accent, and it is not a new choice: it is the ON
-   colour of the switch that drives this state (the track in
-   templates/includes/_switch.html is `peer-checked:bg-accent`). The control
-   and its remote indicator say the same thing in the same colour, in both
-   themes — main.css mirrors --color-accent under .dark.
-
-   Drawn on ::after rather than the element's own box-shadow so it cannot
-   contend with .map-download-control's drop shadow or with the ::before that
-   busy/done/other-basemap already own. `border-radius: inherit` gives the
-   pseudo-element its own circular geometry rather than leaning on a host
-   clip — see the 'other-basemap' rule's own comment for the bug that
-   reasoning shipped last time. If a stale static/css/output.css leaves
-   --color-accent undefined the ring simply does not paint; the state is
-   still in each roundel's aria-label, which is the accessible expression it
-   carries for its own sake. */
-[data-overlay-shown="true"] {
-    position: relative;
-}
-
-[data-overlay-shown="true"]::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    box-shadow: inset 0 0 0 2px var(--color-accent);
-    pointer-events: none;
-    z-index: 1;
-}
+   static/js/map_roundel_overlay_state.js still paints the attribute and
+   composes the roundel's aria-label from it, so the state stays available
+   to assistive technology; it simply has no visual rule. A future rule
+   keyed on the attribute would bring the marker back — see
+   docs/decisions/map-controls-are-two-groups-without-an-on-map-marker.md
+   before adding one. */
 
 /* The max-width:640px rule that hid the major/minor download icons went with
    them. Only the micro control exists, it now lives in the bottom-right stack
@@ -3484,71 +3528,54 @@ html:has(> body.map-fullscreen) > body {
 
 /* —————————————————————————————————————————————————————————
    Map-scoped z-index band (SNOW-486; extended SNOW-522)
-   #home-intro, #map-help-overlay and #map-frame-overlay are positioned
+   #map-tour-offer, #map-help-overlay and #map-frame-overlay are positioned
    against other #map controls (utility cluster, scrubber, legend) and
    live inside #map's own stacking context, so they intentionally do NOT
    use the global --z-banner/--z-toast/--z-popup/--z-modal scale declared
    in src/css/main.css's @theme — lifting them out of #map would detach
    them from the controls they're anchored to. This 0-8 scale is local
    to #map only: 0-4 cover the choropleth/legend/utility-cluster layers
-   above; 5 is #home-intro, 6 is the coachmark ring, 7 is its tooltip,
-   8 is the custom-area download's framing overlay (mask + frame + CTA
-   bar) — deliberately above the coachmark tour, since opening the
-   framing overlay while the tour happens to be open should read as the
-   framing overlay winning, not layering oddly beneath a highlight ring.
+   above; 5 is #map-tour-offer, 8 is the custom-area download's framing
+   overlay (mask + frame + CTA bar). The coachmark tour was 6 and 7 here
+   until SNOW-1118 lifted it above the sheets (see #map-help-overlay
+   below). The framing overlay is reached only from the downloads panel,
+   and that panel closes the tour as it opens (window.pwaMapOverlays), so
+   the two are never on screen together.
    ————————————————————————————————————————————————————————— */
 
 /* —————————————————————————————————————————————————————————
-   SNOW-314 — Homepage intro overlay (#home-intro)
-   Absolutely positioned over #map; rendered with show_intro=True from
-   the home() view. Dismissed via button or Escape key; restored by
-   visiting /#about. home_intro.js owns the state machine.
+   SNOW-1117 — The tour offer (#map-tour-offer)
+   A small card that asks a first-time visitor whether they would like
+   the tour. It replaced the SNOW-314 "Welcome to Snowdesk" panel
+   (#home-intro) and keeps that panel's anchoring: absolutely positioned
+   over #map, bottom-left, directly above the bottom-left stack. Rendered
+   `hidden`; static/js/map_tour_offer.js reveals it once per device after
+   the map settles.
    ————————————————————————————————————————————————————————— */
 
-.home-intro {
+.map-tour-offer {
     position: absolute;
-    /* Offset from safe areas so the card clears the status bar / notch. */
-    top: calc(env(safe-area-inset-top, 0px) + 64px);
-    /* SNOW-645 review: `bottom` is new — this element used to set `top`
-       ONLY, which leaves its height "auto" (intrinsic, sized to whatever
-       .home-intro-card inside it needs). Setting `bottom` too gives it a
-       DEFINITE height instead (this element's own containing block,
-       #map, has one: #map is `flex: 1 1 auto` inside a `flex-col` body
-       whose `min-height: 100dvh` makes #map's own height determinate in
-       the standard case — the nav bar and any off-season banner above it
-       are already excluded from #map's box by that flex layout, which a
-       raw `100dvh` figure computed HERE could not know about). That
-       definite height is what lets .home-intro-card's own `max-height:
-       100%`, below, resolve against "the real room inside #map below the
-       nav/banner chrome" rather than the full viewport including it —
-       measured directly against a live page (nav + off-season banner
-       both present) rather than assumed: a raw `100dvh`-minus-insets
-       figure here was off by the nav+banner's own height, letting the
-       card's computed max-height run past the bottom of the viewport.
-       The figure is the bottom-left stack's own clearance plus its height
-       plus the 8px gap the stack's members use between themselves: this
-       card sits directly above the help roundel, the legend toggle and the
-       date control, and must not cover them. It was the bare edge inset
-       until the date control joined that stack (SNOW-794), after which a
-       short viewport — a docked preview pane, a laptop with the off-season
-       banner up — put the card straight over the date pill, where it
-       swallowed every click on it. `--map-bottom-left-stack` is defined on
-       #map beside the offset the stack itself uses, so the two cannot
-       drift apart. */
+    /* The bottom-left stack's own clearance plus its height plus the 8px
+       gap its members use: the card sits directly above the help roundel,
+       the legend toggle, the zoom control and the date control, and must
+       not cover them. A card overlapping them wins the hit test in
+       silence (SNOW-794 found the date pill dead under the old panel).
+       --map-bottom-left-stack is defined on #map beside the offset the
+       stack itself uses, so the two cannot drift apart. */
     bottom: calc(
         var(--map-bottom-row-offset) + var(--map-bottom-left-stack) + 8px
     );
     left: calc(env(safe-area-inset-left, 0px) + 16px);
     z-index: 5;
-    /* Pointer events on the card only; the map behind the card stays interactive. */
+    /* Pointer events on the card only; the map around it stays usable. */
     pointer-events: none;
 }
 
-.home-intro[hidden] {
+.map-tour-offer[hidden] {
     display: none;
 }
 
-.home-intro-card {
+.map-tour-offer-card {
     position: relative;
     pointer-events: auto;
     background: var(--color-glass);
@@ -3557,87 +3584,61 @@ html:has(> body.map-fullscreen) > body {
     border: 0.5px solid var(--color-border);
     box-shadow: var(--shadow-glass);
     border-radius: 12px;
-    padding: 20px 22px;
-    /* SNOW-535: widened from 320px — the two-paragraph copy this carries read
-       as cramped at the old width. The card must also stay short enough to
-       clear the bottom-left (i) legend toggle (tests/e2e/test_map_bottom_bar.py).
-
-       The min() caps the card against the viewport so it never runs under the
-       right-anchored utility cluster: at 412px the flat 380px card spanned
-       x 16–396 while #basemap-toggle sits at x 360–400, so the card won the
-       hit test and the toggle could not be clicked. 96px = the 16px left
-       offset + the cluster's 44px column + 36px of breathing room. */
-    max-width: min(380px, calc(100vw - 96px));
+    padding: 16px 18px;
+    /* Capped against the viewport so it never runs under the right-hand
+       control column: 96px = the 16px left offset + the column's 44px +
+       36px of breathing room (the figure the welcome panel settled on). */
+    width: min(320px, calc(100vw - 96px));
     color: var(--color-text-1);
     font-family: var(--sans);
-    /* SNOW-645 review: bounded height, added — there was none before, so
-       long copy (an off-season notice paragraph plus both taglines) grew
-       DOWN past the bottom controls with nothing to stop it, the same
-       defect class as the "Manage downloads" sheet's own unbounded
-       growth (templates/includes/_overlay_sheet.html). `max-height: 100%`
-       resolves against .home-intro's OWN height, which is now definite
-       (top AND bottom both set — see that rule's own comment for why a
-       plain `100dvh`-minus-insets figure computed HERE was wrong by the
-       nav bar's own height, verified against a live page rather than
-       assumed). The whole card scrolls as one unit when it overflows
-       (`overflow-y: auto`) — the same "no internal pinned regions"
-       default the favourites/report map sheets use, not the downloads
-       sheet's pinned-header/footer treatment: this card has no such
-       structure to split, and this fix is deliberately NOT the
-       anchored-top-and-bottom redesign a future bulletin-panel rework
-       may still do — see .home-intro's own comment for why a plain
-       bound is now the right amount of fix here. The "×" close button
-       (.home-intro-close, absolutely positioned WITHIN this card)
-       scrolls with the content as a result — Escape and the primary CTA
-       in .home-intro-actions (itself part of the scrolling content,
-       reached by scrolling down) remain the way to dismiss without
-       scrolling back up first. */
-    max-height: 100%;
-    overflow-y: auto;
+    animation: map-tour-offer-in 220ms ease-out;
 }
 
-.home-intro-identity {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 10px;
-    /* Clears the "×" close button (top-right, 28px) so a short wordmark row
-       never sits underneath it. */
+@keyframes map-tour-offer-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.map-tour-offer--no-motion .map-tour-offer-card {
+    animation: none;
+}
+
+.map-tour-offer-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-3);
+    margin: 0 0 4px;
+    /* Clears the "×" (top-right, 28px). */
     padding-right: 28px;
 }
 
-.home-intro-wordmark {
-    font-size: 18px;
+.map-tour-offer-title {
+    font-size: 16px;
     font-weight: 600;
-    letter-spacing: -0.02em;
+    line-height: 1.3;
+    margin: 0 0 6px;
     color: var(--color-text-1);
 }
 
-.home-intro-taglines {
-    display: flex;
-    flex-direction: column;
-}
-
-.home-intro-tagline {
+.map-tour-offer-body {
     font-size: 13px;
     line-height: 1.5;
     color: var(--color-text-2);
     margin: 0 0 12px;
 }
 
-/* The taglines stack in one column at every viewport. SNOW-535 laid them out
-   side by side above 960px (in a card widened to 640px) to hold the card's
-   height down; that traded height for a 640px measure, which is too long a
-   line for 13px body text. The copy is short enough to stack instead. */
-
-/* SNOW-445 removed the old bottom-left .map-offseason-note chip in favour of
-   a full-width #map-offseason-bar above the map; that bar has since been
-   dropped as well, so neither set of styles remains. */
-
-/* Off-season reference line inside the intro card — rendered only when
-   is_offseason is True, and now the only surface carrying the archive
-   notice. */
-.home-intro-offseason-ref {
+/* Off-season reference line — rendered only when is_offseason is True, and
+   the only surface carrying the archive notice. */
+.map-tour-offer-offseason {
     font-size: 11px;
     line-height: 1.4;
     color: var(--color-text-3);
@@ -3648,51 +3649,51 @@ html:has(> body.map-fullscreen) > body {
     border-radius: 6px;
 }
 
-/* Inline link inside a tagline paragraph (the "Register" call-out). Underlined
-   rather than colour-only so it reads as a link against the muted body text. */
-.home-intro-inline-link {
-    color: var(--color-text-1);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-}
-
-.home-intro-inline-link:hover {
-    text-decoration-thickness: 2px;
-}
-
-.home-intro-actions {
+.map-tour-offer-actions {
     display: flex;
-    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
     gap: 8px;
 }
 
-.home-intro-dismiss {
+.map-tour-offer-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 8px 16px;
+    padding: 8px 14px;
     border-radius: 999px;
-    background: var(--ink);
-    color: var(--on-ink);
-    font-size: 13px;
-    font-weight: 500;
     border: none;
-    cursor: pointer;
+    background: transparent;
+    color: var(--color-text-1);
     font-family: var(--sans);
-    transition: opacity 120ms ease;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 120ms ease, background 120ms ease;
 }
 
-.home-intro-dismiss:hover {
+.map-tour-offer-btn:hover {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.map-tour-offer-btn--primary {
+    background: var(--ink);
+    color: var(--on-ink);
+}
+
+.map-tour-offer-btn--primary:hover {
+    background: var(--ink);
     opacity: 0.85;
 }
 
-.home-intro--no-motion .home-intro-dismiss {
-    transition: none;
+.map-tour-offer-btn:focus-visible,
+.map-tour-offer-close:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
 }
 
-/* SNOW-535: "×" close, top-right — mirrors .map-help-close below (SNOW-457),
-   the same corner-dismiss idiom applied to this card. */
-.home-intro-close {
+/* "×" close, top-right — the corner-dismiss idiom .map-help-close uses. */
+.map-tour-offer-close {
     position: absolute;
     top: 8px;
     right: 8px;
@@ -3710,25 +3711,14 @@ html:has(> body.map-fullscreen) > body {
     transition: color 120ms ease, background 120ms ease;
 }
 
-.home-intro-close:hover {
+.map-tour-offer-close:hover {
     color: var(--color-text-1);
     background: rgba(0, 0, 0, 0.06);
 }
 
-.home-intro--no-motion .home-intro-close {
+.map-tour-offer--no-motion .map-tour-offer-btn,
+.map-tour-offer--no-motion .map-tour-offer-close {
     transition: none;
-}
-
-.home-intro-close:focus-visible {
-    outline: 2px solid var(--color-text-1);
-    outline-offset: 2px;
-}
-
-/* Dark mode: the glass card uses the dark glass token automatically via
-   the .dark body class set by the theme head partial. */
-.dark .home-intro-card {
-    background: var(--color-glass);
-    color: var(--color-text-1);
 }
 
 /* —————————————————————————————————————————————————————————
@@ -3753,7 +3743,13 @@ html:has(> body.map-fullscreen) > body {
 #map-help-overlay {
     position: fixed;
     inset: 0;
-    z-index: 6;
+    /* SNOW-1118: above the sheets, not in #map's local 0-8 band. The tour's
+       "Tap a region" step opens the region sheet and points at it, and that
+       sheet sits on the global --z-popup level, outside #map; at 6 the ring
+       and the card slid under it. #map makes no stacking context of its own
+       (z-index auto), so this compares against the sheet directly. Below
+       --z-modal still, so a forced update or reset outranks the tour. */
+    z-index: calc(var(--z-popup) + 1);
     /* The overlay itself never intercepts pointer events — only the
        tooltip card (below) opts back in for its buttons. */
     pointer-events: none;
@@ -3768,7 +3764,10 @@ html:has(> body.map-fullscreen) > body {
     50%      { box-shadow: 0 0 0 7px rgba(0, 0, 0, 0.10); }
 }
 
-#map-help-ring {
+/* SNOW-1118: a class, not the id, because a step that points at several
+   controls (search, locate, zoom) draws a ring round each; map_help.js
+   makes the extra rings beside #map-help-ring. */
+.map-help-ring {
     position: fixed;
     border: 1.5px solid var(--ink);
     box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.22);
@@ -3782,7 +3781,11 @@ html:has(> body.map-fullscreen) > body {
         border-radius 160ms ease;
 }
 
-.map-help--no-motion #map-help-ring {
+.map-help-ring[hidden] {
+    display: none;
+}
+
+.map-help--no-motion .map-help-ring {
     animation: none;
     transition: none;
 }
@@ -3791,7 +3794,9 @@ html:has(> body.map-fullscreen) > body {
     position: fixed;
     z-index: 7;
     pointer-events: auto;
-    max-width: 300px;
+    /* SNOW-1118: a little wider than the 300px it was, for the progress
+       bar's four chapter names, and never wider than the phone it is on. */
+    width: min(340px, calc(100vw - 24px));
     background: var(--color-glass);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
@@ -3805,12 +3810,12 @@ html:has(> body.map-fullscreen) > body {
     /* SNOW-645 review: bounded height, added — this card is JS-positioned
        per coachmark step (map_help.js computes `top`/`left` at runtime,
        hence no fixed anchor to measure a precise remaining-room figure
-       from, unlike .home-intro-card / .map-legend-card above), so the
+       from, unlike .map-legend-card above), so the
        general viewport-minus-edge-insets cap every floating map surface
        now uses is the right level of precision here: a longer step's
        copy scrolls within the card rather than growing past whichever
-       edge JS happened to place it near. `dvh`, not `vh` — see
-       .home-intro-card's own comment for why. */
+       edge JS happened to place it near. `dvh`, not `vh`, so a mobile
+       URL bar does not push the bottom off screen. */
     max-height: calc(100dvh - var(--map-edge-inset-top) - var(--map-edge-inset-bottom));
     overflow-y: auto;
 }
@@ -3883,6 +3888,137 @@ html:has(> body.map-fullscreen) > body {
     margin: 0 0 14px;
 }
 
+/* SNOW-1118: the step count stays the live region a screen reader announces
+   each step from, but the progress bar says it on screen. */
+.map-help-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* SNOW-1118: the progress bar — a segment per step, grouped by chapter, with
+   the chapter's name under its segments. Each chapter's flex-grow is its
+   step count (set by map_help.js), so every segment is the same width. */
+.map-help-progress {
+    display: flex;
+    gap: 6px;
+    margin: 0 0 10px;
+    padding-right: 28px;
+}
+
+.map-help-progress[hidden] {
+    display: none;
+}
+
+.map-help-progress-chapter {
+    flex: 1 1 0;
+    /* A chapter is never narrower than its name: one step's worth of bar is
+       too short for "Yours" once the current chapter's name is bold. */
+    min-width: max-content;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.map-help-progress-segments {
+    display: flex;
+    gap: 3px;
+}
+
+.map-help-progress-segment {
+    flex: 1 1 0;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--color-border);
+}
+
+.map-help-progress-segment[data-state="done"] {
+    background: var(--ink);
+}
+
+.map-help-progress-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--color-text-3);
+}
+
+.map-help-progress-chapter[data-state="current"] .map-help-progress-label {
+    color: var(--color-text-1);
+    font-weight: 600;
+}
+
+/* SNOW-1118: what a step adds under its copy — the danger scale, the four
+   lists of yours. */
+.map-help-tooltip-extra {
+    margin: -4px 0 14px;
+}
+
+.map-help-tooltip-extra[hidden] {
+    display: none;
+}
+
+.map-help-scale {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+}
+
+.map-help-scale-level {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    font-size: 10px;
+    line-height: 1.2;
+    text-align: center;
+    color: var(--color-text-2);
+}
+
+.map-help-scale-level .danger-tile {
+    min-width: 0;
+    height: 1.75rem;
+}
+
+.map-help-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--color-text-2);
+}
+
+.map-help-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.map-help-list svg {
+    flex: 0 0 auto;
+    margin-top: 1px;
+    color: var(--color-text-1);
+}
+
+.map-help-list b {
+    font-weight: 600;
+    color: var(--color-text-1);
+}
+
 /* SNOW-457: Back + Next sit right-aligned. "Skip" moved out to the "×"
    close button, so the row no longer needs space-between. */
 .map-help-tooltip-actions {
@@ -3910,7 +4046,7 @@ html:has(> body.map-fullscreen) > body {
     transition: none;
 }
 
-/* Primary (Next / Done) reuses the same dark-pill look as .home-intro-dismiss. */
+/* Primary (Next / Done) reuses the same dark-pill look as .map-tour-offer-btn--primary. */
 .map-help-btn--primary {
     background: var(--ink);
     color: var(--on-ink);
@@ -3942,13 +4078,197 @@ html:has(> body.map-fullscreen) > body {
 }
 
 /* —————————————————————————————————————————————————————————
+   SNOW-1119 — Help mode (#map-help-mode, public/partials/_map_help_mode.html)
+   The "?" roundel names every control and guides the sheets. Everything is
+   position: fixed and placed by static/js/map_help_mode.js from the
+   controls' own rectangles, like the tour above. Above the sheets for the
+   tour's reason: a guide numbers the parts of an open sheet. The layer
+   itself takes no taps; only the bar, the cards and the names do.
+   ————————————————————————————————————————————————————————— */
+
+.map-help-mode {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-popup) + 1);
+    pointer-events: none;
+}
+
+.map-help-mode[hidden],
+.map-help-mode [hidden] {
+    display: none;
+}
+
+/* While help mode is on the "?" reads as pressed: the way out is the way in. */
+:root[data-map-help-mode] #map-help-toggle {
+    background: var(--ink);
+    color: var(--on-ink);
+}
+
+.map-help-mode-bar {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(440px, calc(100vw - 24px));
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 6px 6px 16px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--on-ink);
+    box-shadow: var(--shadow-glass);
+    pointer-events: auto;
+}
+
+.map-help-mode-bar-text {
+    flex: 1 1 auto;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.3;
+}
+
+.map-help-mode-bar-btn {
+    flex: 0 0 auto;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    color: inherit;
+    font: 500 13px var(--sans);
+    cursor: pointer;
+}
+
+.map-help-mode-bar-btn--primary {
+    background: var(--on-ink);
+    color: var(--ink);
+}
+
+.map-help-mode-bar-btn:focus-visible {
+    outline: 2px solid var(--on-ink);
+    outline-offset: 2px;
+}
+
+/* A control's name, drawn beside it. Dimmed while another's card is open. */
+.map-help-mode-label {
+    position: fixed;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: 500 12px/1.3 var(--sans);
+    white-space: nowrap;
+    box-shadow: var(--shadow-glass);
+    pointer-events: auto;
+    cursor: pointer;
+    transition: opacity 120ms ease;
+}
+
+.map-help-mode-label[data-state="dim"] {
+    opacity: 0.35;
+}
+
+/* The control card and the sheet guide share the tour card's look. */
+.map-help-mode-card {
+    position: fixed;
+    width: min(320px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    padding: 16px 18px;
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-card, 12px);
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-family: var(--sans);
+    pointer-events: auto;
+}
+
+.map-help-mode-card:focus {
+    outline: none;
+}
+
+.map-help-mode-guide {
+    left: 12px;
+    width: min(420px, calc(100vw - 24px));
+}
+
+.map-help-mode-eyebrow {
+    margin: 0 0 4px;
+    padding-right: 28px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-3);
+}
+
+.map-help-mode-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.map-help-mode-link {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-1);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.map-help-mode-key {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--color-text-2);
+}
+
+.map-help-mode-key li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.map-help-mode-key b {
+    font-weight: 600;
+    color: var(--color-text-1);
+}
+
+/* A number: in the key, and on the part of the sheet it keys. */
+.map-help-mode-badge {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font: 600 11px/1 var(--sans);
+}
+
+.map-help-mode-badge--on-sheet {
+    position: fixed;
+    box-shadow: 0 0 0 2px var(--color-card);
+}
+
+/* —————————————————————————————————————————————————————————
    SNOW-522 — Custom-area basemap download framing overlay
    (#map-frame-overlay, public/partials/_map_embed.html)
    A Google-Maps-style dim mask with a fixed, centred frame: the user
    pans/zooms the map underneath it, static/js/map.js's
    mapCustomDownloadControlInit recomputes the "up to N MB" readout once
    per animation frame. z-index 8 on the map-scoped band above (the
-   comment block above .home-intro further up this file) — deliberately
+   comment block above .map-tour-offer further up this file) — deliberately
    above the coachmark tour (6/7).
    ————————————————————————————————————————————————————————— */
 
@@ -4384,7 +4704,7 @@ body.map-framing #map-legend {
    thing as the favourites, observations and routes controls — a roundel
    that opens one surface over the map — so it sits with them, and the
    popup is positioned against .map-controls-br exactly as .basemap-menu
-   and .map-fill-flyout are. The roundel itself is inside
+   is. The roundel itself is inside
    #map-controls-collapsible, which is `overflow: hidden` for its height
    animation and would clip a popup opening leftward out of it.
    ————————————————————————————————————————————————————————— */
@@ -4435,7 +4755,8 @@ body.map-framing #map-legend {
        two terms as .map-legend-card's own bound: the shared top gap, and
        this row's distance from the viewport bottom (which since SNOW-794
        shortens when the scrubber is not drawn, so the card grows to match).
-       `dvh` not `vh`, for the reason .home-intro-card's comment gives. */
+       `dvh` not `vh`, so a mobile URL bar does not push the bottom off
+       screen. */
     max-height: calc(100dvh - var(--map-edge-inset-top) - var(--map-legend-card-bottom-offset));
     overflow-y: auto;
     /* Stated rather than inherited: nothing above this element sets it now.
@@ -5021,9 +5342,9 @@ body.map-framing #map-legend {
     /* COVERED, NOT MOVED (Hugo, 16 Oct). While a detent sheet is open on a
        phone nothing on the map moves or folds to make room for it: the
        sheet slides up over the furniture, and whatever is under it is under
-       it. The column's menus (#basemap-menu, #map-fill-flyout) close on
-       their own when the sheet opens — both are in pwaMapOverlays, which
-       map_sheet.js announces every open through. */
+       it. The column's menu (#basemap-menu) closes on its own when the
+       sheet opens — it is in pwaMapOverlays, which map_sheet.js announces
+       every open through. */
 
     /* ...BUT NOTHING IS LEFT HALF-COVERED, OR REACHABLE UNDER THE SHEET.
        Covering alone leaves two faults. The sheet's top edge lands where
@@ -5044,6 +5365,31 @@ body.map-framing #map-legend {
     :root[data-map-sheet='full'] #map-controls-br,
     :root[data-map-sheet='full'] #map-legend {
         visibility: hidden;
+    }
+
+    /* AT PEEK THE COLUMN KEEPS ITS THREE (2026-10-19). A sheet at peek is
+       someone reading one thing on the map, so the column is trimmed to
+       what a route-open phone keeps (Route-open furniture, above): the
+       "map" capsule (locate and layers), which nothing here touches, and
+       routes, the one member of the "yours" capsule kept, shown open
+       whatever the chevron last left it as. Half and full hide the column
+       whole (above). */
+    :root[data-map-sheet='peek'] .map-controls-collapsible-inner > :not(.map-utility-pill--route) {
+        display: none;
+    }
+
+    :root[data-map-sheet='peek'] .map-controls-collapsible-inner > .map-utility-pill--route {
+        border-top: 0;
+    }
+
+    :root[data-map-sheet='peek'] #map-controls-collapsible {
+        height: calc(var(--map-control-lg) + 1px);
+        opacity: 1;
+        margin-bottom: 0;
+    }
+
+    :root[data-map-sheet='peek'] .map-controls-collapsible-inner {
+        transform: none;
     }
 
     /* A TIGHT PEEK, AS GOOGLE MAPS DRAWS ONE (Hugo, 16 Oct). The handle is

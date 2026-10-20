@@ -116,6 +116,32 @@ describe('coalesceRenders — overlapping probes collapse to one extra pass', ()
     expect(order).toEqual(['start:1', 'end:1', 'start:2', 'end:2']);
   });
 
+  it('settles a joining call only after the trailing pass it queued (SNOW-1134)', async () => {
+    // A caller awaiting a render to read the settled state — "Download
+    // here" — used to get an already-resolved promise when it joined a
+    // running pass, and read the interim paint of a region not yet probed.
+    const gate = deferred();
+    let passes = 0;
+    const render = vi.fn(async () => {
+      if (passes === 0) await gate.promise;
+      passes += 1;
+    });
+    const coalesced = bridge.coalesceRenders(render);
+
+    coalesced();
+    await tick();
+    let joinedSettled = false;
+    const joined = coalesced().then(() => {
+      joinedSettled = true;
+    });
+    await tick();
+    expect(joinedSettled).toBe(false);
+
+    gate.resolve();
+    await joined;
+    expect(passes).toBe(2);
+  });
+
   it('keeps coalescing across several waves rather than latching', async () => {
     const gates = [deferred(), deferred()];
     let call = 0;

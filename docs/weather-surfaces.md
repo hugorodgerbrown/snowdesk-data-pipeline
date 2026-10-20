@@ -2,7 +2,7 @@
 name: weather-surfaces
 description: Weather UI — _weather_detail sheet, _weather_panel, _weather_day_picker, _weather_day_line, build_weather_display, is_day, weather.geojson
 status: current
-last-reviewed: 2026-10-17
+last-reviewed: 2026-10-19
 ---
 
 # Weather surfaces
@@ -11,7 +11,7 @@ Everything a user can see of the Open-Meteo domain. The data behind it —
 one `Weather` row per `(location, observed_on)`, with the forward days in
 its `forecast` column — is
 [`docs/decisions/weather-is-one-immutable-location-row.md`](decisions/weather-is-one-immutable-location-row.md);
-this document is the three places that row is read.
+this document is the places that row is read.
 
 This file replaces `docs/weather-header.md`, which described a surface that
 no longer exists. That document was about a bucket-coloured band across the
@@ -25,20 +25,28 @@ restoration.
 | Surface | Anchor | Which day |
 |---------|--------|-----------|
 | Favourite card ([`apps/favourites/templates/favourites/partials/_favourite_card.html`](../apps/favourites/templates/favourites/partials/_favourite_card.html)) | `Favourite.location` | today |
+| Resort page Forecasts rows ([`apps/public/templates/public/resort.html`](../apps/public/templates/public/resort.html)) | each curated `ResortLocation.location` | today |
 | Location forecast page ([`apps/public/templates/public/location_weather.html`](../apps/public/templates/public/location_weather.html)) | one `Location` | `?date=` or today |
 | Map overlay ([`static/js/map.js`](../static/js/map.js)) | every `Location.objects.public()` | the scrubbed date |
 
-The first two are server-rendered; the map overlay is a GeoJSON feed and a
+The first three are server-rendered; the map overlay is a GeoJSON feed and a
 MapLibre symbol layer, plus a tap sheet
 ([`apps/public/templates/public/partials/_weather_detail.html`](../apps/public/templates/public/partials/_weather_detail.html))
 that hands off to the location forecast page.
 
-**The resort page is not on this list either (SNOW-807).** It reads no
-weather at all: it is a router to the two documents, and its Forecasts
-section is a plain list of the resort's curated locations, each a link to
-its own `/weather/<short_id>/` page with the role and elevation that tell
-village from summit. SNOW-761 drew one panel per location there and
-SNOW-783 trimmed it to the day; SNOW-807 removed the rest.
+**The resort page is back on this list, in brief (SNOW-1125).** It is
+still a router to the two documents (SNOW-807): its Forecasts section is a
+list of the resort's curated locations, each a link to its own
+`/weather/<short_id>/` page with the role and elevation that tell village
+from summit. Under each link sits today's `_weather_panel.html` with
+`brief=True` — icon, condition, high/low, snowfall and wind, but no
+freezing level and no sunrise/sunset, which stay the forecast page's.
+`_resort_location_links` reads every location's row in one batched
+`Weather.objects.on_date(timezone.localdate())` query, so the page costs
+the same whatever the number of locations; a location with no row today
+renders its link alone. SNOW-761 drew one panel per location there,
+SNOW-783 trimmed it to the day and SNOW-807 removed the rest; SNOW-1125
+returned the day's headline figures.
 
 **The bulletin masthead is not on this list, and that is the point
 (SNOW-784).** It carried a row read off `MicroRegion.centroid_location`
@@ -55,7 +63,7 @@ is unaffected; see the closing note in this file.
 surface that names a location shows the day and links to the rest — the
 resort page and the favourite card both drew the whole week inline until
 SNOW-783, the resort page once per curated altitude, before SNOW-807 took
-the day off the resort page as well.
+the day off the resort page as well (SNOW-1125 put the brief day back).
 
 **The map's weather sheet is the one place the meteogram leaves the page
 (SNOW-1101), and the split is day versus week.** The sheet is the map's

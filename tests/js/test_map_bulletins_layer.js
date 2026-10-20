@@ -10,8 +10,8 @@
  * `tests/js/test_layer_visibility_core.js` covers the state machine in
  * isolation. This file covers the wiring: that `map.js` actually paints what
  * the machine says, and that the two IIFEs involved — the fill-step control
- * and the downloads panel's "Display on the map" switch, talking over
- * CustomEvents — cannot get out of step.
+ * (the layers menu's "Bulletin opacity" row) and the downloaded-areas
+ * overlay, talking over CustomEvents — cannot get out of step.
  *
  * The assertion worth stating plainly is the fill's LAYOUT. `regions-fill`
  * is the map's hit-test target: region selection resolves through
@@ -155,21 +155,16 @@ function buildFixture() {
             <button class="basemap-menu-item basemap-menu-item--overlay"
                     data-overlay-key="l4" aria-checked="true">Micro regions</button>
           </li>
+          <li role="none" class="basemap-menu-opacity">
+            <div class="map-fill-steps" id="map-bulletin-opacity" role="radiogroup">
+              <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0"></button>
+              <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0.25"></button>
+              <button role="radio" aria-checked="true" class="map-fill-step" data-bulletins-step="0.5"></button>
+              <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0.75"></button>
+              <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="1"></button>
+            </div>
+          </li>
         </ul>
-      </div>
-      <div id="map-controls-collapsible">
-        <div class="map-controls-collapsible-inner">
-          <div class="map-utility-pill map-utility-pill--fill" id="map-fill-pill" data-state="collapsed">
-            <button id="map-fill-toggle" aria-expanded="false" aria-controls="map-fill-flyout"></button>
-          </div>
-        </div>
-      </div>
-      <div id="map-fill-flyout" class="map-fill-flyout" role="group" hidden>
-        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0"></button>
-        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0.25"></button>
-        <button role="radio" aria-checked="true" class="map-fill-step" data-bulletins-step="0.5"></button>
-        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="0.75"></button>
-        <button role="radio" aria-checked="false" class="map-fill-step" data-bulletins-step="1"></button>
       </div>
     </div>`;
 }

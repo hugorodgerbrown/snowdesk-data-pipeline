@@ -534,6 +534,105 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
 SEASON_CALENDAR_VARIANTS: tuple[dict[str, Any], ...] = _build_season_calendar_variants()
 
 
+# Season cell variants (SNOW-1126) ------------------------------------------
+# The one day partial the bulletin page's heatmap and the resort page's
+# season strip share. One row per variant: a padding slot, a day with no
+# bulletin, a stable day, a variable day, an AM/PM split, an ALBINA
+# elevation split and today's ring — linked (the heatmap) and inert (the
+# resort strip, role="img", no link).
+
+
+def _build_season_cell_variants() -> tuple[dict[str, Any], ...]:
+    """Build the season-cell variants for the component library.
+
+    Imported lazily for the same reason as ``_build_season_calendar_variants``.
+
+    Returns:
+        The linked and inert rows, each one cell per state.
+
+    """
+    from apps.public.season_calendar import SeasonCell
+
+    day = datetime.date(2026, 1, 12)
+    cells: list[SeasonCell | None] = [
+        None,
+        SeasonCell(
+            date=day,
+            min_rating_key="no_rating",
+            max_rating_key="no_rating",
+            subdivision="",
+            has_bulletin=False,
+        ),
+        SeasonCell(
+            date=day + datetime.timedelta(days=1),
+            min_rating_key="moderate",
+            max_rating_key="moderate",
+            subdivision="",
+            has_bulletin=True,
+        ),
+        SeasonCell(
+            date=day + datetime.timedelta(days=2),
+            min_rating_key="moderate",
+            max_rating_key="considerable",
+            subdivision="",
+            has_bulletin=True,
+        ),
+        SeasonCell(
+            date=day + datetime.timedelta(days=3),
+            min_rating_key="considerable",
+            max_rating_key="high",
+            subdivision="",
+            has_bulletin=True,
+            am_rating_key="considerable",
+            pm_rating_key="high",
+        ),
+        SeasonCell(
+            date=day + datetime.timedelta(days=4),
+            min_rating_key="low",
+            max_rating_key="considerable",
+            subdivision="",
+            has_bulletin=True,
+            source="ALBINA",
+            bands=[
+                {
+                    "band_id": "above-2200",
+                    "label": "Above 2200 m",
+                    "rating_key": "considerable",
+                    "time_period": "all_day",
+                },
+                {
+                    "band_id": "below-2200",
+                    "label": "Below 2200 m",
+                    "rating_key": "low",
+                    "time_period": "all_day",
+                },
+            ],
+        ),
+        SeasonCell(
+            date=day + datetime.timedelta(days=5),
+            min_rating_key="high",
+            max_rating_key="high",
+            subdivision="",
+            has_bulletin=True,
+            is_today=True,
+        ),
+    ]
+    region = SimpleNamespace(canonical_region_id="CH-4115", name_slug="verbier")
+    return (
+        {
+            "caption": "Linked — the bulletin page's heatmap",
+            "context": {"cells": cells, "region": region, "inert": False},
+        },
+        {
+            "caption": "Inert — the resort page's season strip (role=img)",
+            "context": {"cells": cells, "region": region, "inert": True},
+        },
+    )
+
+
+SEASON_CELL_VARIANTS: tuple[dict[str, Any], ...] = _build_season_cell_variants()
+
+
 # Button variants (SNOW-200) ------------------------------------------------
 # Covers all three visual variants × both sizes, plus a full-width example.
 
@@ -1283,10 +1382,11 @@ SHEET_HEADER_VARIANTS: tuple[dict[str, Any], ...] = (
 
 # Switch (SNOW-645) -----------------------------------------------------------
 # First use was the "Manage downloads" sheet's map-overlay control, which
-# SNOW-904 removed with every other panel switch; the network menu's
-# "Offline mode" row (includes/_connection_panel.html, moved out of the nav's
-# account dropdown by SNOW-921) and the account settings page are the callers
-# now.
+# SNOW-904 removed with every other panel switch and the two-capsule control
+# column restored (includes/_map_overlay_toggle.html, below). The network
+# menu's "Offline mode" row (includes/_connection_panel.html, moved out of
+# the nav's account dropdown by SNOW-921) and the account settings page are
+# the other callers.
 # Pure CSS (Tailwind's peer variant) — no JS runs on this page, so both
 # states render correctly from the `checked` attribute alone.
 
@@ -1364,9 +1464,29 @@ THEME_PREFERENCE_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
-# SNOW-904 removed MAP_OVERLAY_TOGGLE_VARIANTS here, with the partial it
-# previewed. The "Display on the map" switch was a UGC panel's fifth part;
-# every layer is chosen from the map's layers menu now, so no panel has one.
+# Map overlay toggle -----------------------------------------------------------
+# The "Show on the map" footer strip of the four map panels. SNOW-658 built
+# it, SNOW-904 deleted it, and the two-capsule control column restored it —
+# bound to the layers-menu row for the same layer rather than replacing it.
+# Pure markup: static/js/map_panel_overlay_switch.js binds the four real ids,
+# and these namespaced ids are never among them.
+
+MAP_OVERLAY_TOGGLE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "As every map panel renders it",
+        "context": {
+            "id": "component-library-map-overlay-toggle-panel",
+            "label": "Show on the map",
+        },
+    },
+    {
+        "caption": "A longer label, to check the switch holds its size",
+        "context": {
+            "id": "component-library-map-overlay-toggle-long",
+            "label": "Show the community's field observations on the map",
+        },
+    },
+)
 
 
 # Overflow menu (SNOW-645) -----------------------------------------------------
@@ -1584,8 +1704,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 4, "gradeDeg": -26},
             "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 42},
         },
-        "E · Very steep fall line",
-        "Extremely steep",
+        "E · Fall line · 35°+",
+        "Extremely steep · 40°+",
     ),
     _point_card_variant(
         "Fall line climb — 22° up a 31° face",
@@ -1596,8 +1716,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 1, "gradeDeg": 23},
             "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 31},
         },
-        "N · Moderate fall line",
-        "Steep",
+        "N · Fall line · 20°+",
+        "Steep · 30–35°",
     ),
     _point_card_variant(
         "Rising traverse — 13° across a 33° north face",
@@ -1608,8 +1728,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 4, "gradeDeg": 3},
             "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 33},
         },
-        "SE · Gentle traverse",
-        "Steep, falling skier's left",
+        "SE · Traverse · 10–15°",
+        "Steep · 30–35°, falling skier's left",
     ),
     _point_card_variant(
         "Descending traverse — 9° across a 28° face",
@@ -1620,8 +1740,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 4, "slopeDeg": 28},
         },
-        "E · Gentle traverse",
-        "Moderate, falling skier's right",
+        "E · Traverse · 5–15°",
+        "Moderate · 5–30°, falling skier's right",
     ),
     _point_card_variant(
         "Level traverse — under 5° across a 36° face",
@@ -1632,8 +1752,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": {"sector": 6, "gradeDeg": 1},
             "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 36},
         },
-        "W · Level traverse",
-        "Very steep, falling skier's right",
+        "W · Traverse · under 5°",
+        "Very steep · 35–40°, falling skier's right",
     ),
     _point_card_variant(
         "Climb across the fall line — Col de la Chaux, 13° up through a kick turn",
@@ -1644,8 +1764,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 7, "slopeDeg": 35},
         },
-        "S → NE · Gentle ascent",
-        "Very steep, falling skier's right, then left",
+        "S → NE · Ascent · 10–15°",
+        "Very steep · 35–40°, falling skier's right, then left",
     ),
     _point_card_variant(
         "Climb that turns on one side — Col de la Chaux, the side from both ends",
@@ -1656,8 +1776,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 7, "slopeDeg": 31.8},
         },
-        "NE → E · Gentle ascent",
-        "Steep, falling skier's left",
+        "NE → E · Ascent · 10–15°",
+        "Steep · 30–35°, falling skier's left",
     ),
     _point_card_variant(
         "Fall line while turning — Backside, one end heads straight down",
@@ -1668,8 +1788,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 0, "slopeDeg": 30.8},
         },
-        "N → NE · Moderate fall line",
-        "Steep",
+        "N → NE · Fall line · 15–25°",
+        "Steep · 30–35°",
     ),
     _point_card_variant(
         "Climbing while heading downhill — the gradient overrules the chord",
@@ -1680,8 +1800,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "faces", "sector": 2, "slopeDeg": 31},
         },
-        "E · Gentle ascent",
-        "Steep",
+        "E · Ascent · 5–10°",
+        "Steep · 30–35°",
     ),
     _point_card_variant(
         "Flat ground — the track alone",
@@ -1692,8 +1812,8 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
             "next": None,
             "terrain": {"kind": "flat"},
         },
-        "E · Gentle descent",
-        "Flat",
+        "E · Descent · 5–15°",
+        "Flat · under 5°",
     ),
     _point_card_variant(
         "No terrain data — the ground was not sampled",
@@ -1722,8 +1842,9 @@ POINT_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
 # demo template rendering two static rows — every real caller's list
 # either loads over HTMX or is filled by JS, and this page runs neither.
 #
-# There is no `toggle_label`: SNOW-904 removed the footer switch these
-# panels used to carry, so there is no label to pass.
+# There is no `toggle_label`: the footer switch reads "Show on the map" on
+# every panel, so the shared partial owns the string. `toggle_id` is
+# namespaced so the real switch module never finds the library's copy.
 
 UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
     {
@@ -1735,6 +1856,7 @@ UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
             "section_label": "Places",
             "rows_template": "public/partials/_ugc_panel_demo_rows.html",
             "cta_label": "Add a favourite",
+            "toggle_id": "component-library-ugc-panel-toggle-favourites",
         },
     },
     {
@@ -1751,6 +1873,7 @@ UGC_PANEL_VARIANTS: tuple[dict[str, Any], ...] = (
             "header_template": "public/partials/_map_downloads_header.html",
             "rows_template": "public/partials/_ugc_panel_demo_rows.html",
             "cta_label": "Download a custom area",
+            "toggle_id": "component-library-ugc-panel-toggle-downloads",
         },
     },
 )

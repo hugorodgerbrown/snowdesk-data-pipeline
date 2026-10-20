@@ -1,8 +1,11 @@
 /*
  * tests/js/test_map_css_bottom_left_clearance.js — source-text guard for the
- * welcome panel's clearance over the map's bottom-left control stack.
+ * tour offer's clearance over the map's bottom-left control stack.
  *
- * #home-intro is anchored to the map's top-left and bounded at the bottom.
+ * #map-tour-offer (SNOW-1117) sits directly above the stack. The welcome
+ * panel it replaced (#home-intro) was anchored to the map's top-left and
+ * bounded at the bottom, and is where this defect was found.
+ *
  * Until the date control joined the bottom-left stack (SNOW-794) that bound
  * could be the bare edge inset, because the corner below the card held only
  * the (i) legend toggle. It now holds four control-height members — the
@@ -49,7 +52,7 @@ function ruleBody(selector) {
 describe('the bottom-left stack clearance token', () => {
   it('is defined on #map, from the same control-height token the stack uses', () => {
     // On #map rather than on .map-legend, which is where the stack's other
-    // shared figure lives: .map-legend is a SIBLING of #home-intro, so a
+    // shared figure lives: .map-legend is a SIBLING of #map-tour-offer, so a
     // custom property set there does not inherit to it. #map is the nearest
     // common ancestor, and already carries --map-bottom-row-offset.
     const body = ruleBody(/^#map \{/m);
@@ -58,8 +61,8 @@ describe('the bottom-left stack clearance token', () => {
     );
   });
 
-  it('is what bounds the welcome panel, so the card cannot cover the stack', () => {
-    const body = ruleBody(/^\.home-intro \{/m);
+  it('is what places the tour offer, so the card cannot cover the stack', () => {
+    const body = ruleBody(/^\.map-tour-offer \{/m);
     expect(body).toMatch(/--map-bottom-left-stack/);
     // The bare inset is what the card used to stop at, and is exactly the
     // regression this guards: it clears the map's edge but not the controls

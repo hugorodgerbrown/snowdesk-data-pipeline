@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
 status: current
-last-reviewed: 2026-10-17
+last-reviewed: 2026-10-19
 ---
 
 # Snowdesk site structure
@@ -29,7 +29,9 @@ read at length lives on the map as a layer, a pin or a sheet, and the
 routes that used to render those things as pages are permanent redirects
 into the map (`?panel=favourites|routes|reports` opens a sheet,
 `?resort=<slug>` flies to a resort). `/resorts/<slug>/` survives as a
-search landing page that routes to the two documents, and
+search landing page that answers the query — today's danger, read from the
+bulletin's own render model ([`a-resort-page-answers-the-query`](decisions/a-resort-page-answers-the-query.md),
+SNOW-1124) — and routes to the two documents, and
 `/account/settings/` because account mechanics are not map objects, and
 `/offline/` — public since SNOW-930 — because what this device has saved
 is not one either, and is most worth reading when signed out.
@@ -50,12 +52,12 @@ prefixes depend on this ordering — don't reorder
 | Route | View | Notes |
 |-------|------|-------|
 | `/` | `public.views.home` | **The homepage.** A static page — a still of the map, a pitch, short sections on what a reader gets, and links to `/map/`, `/help/`, `/compare/` and the build blog. Loads no map JavaScript. A request carrying any parameter other than attribution (`utm_*`, `ref`, …) is a map link from before the move and 301s to `/map/` with the query string intact. |
-| `/map/` | `public.views.map_page` | **The interactive map** — the app, and the manifest's `start_url`. A dismissable `#home-intro` overlay on first visit (SNOW-314). CH-4115 (Martigny/Verbier) is pre-selected so the readout chip and breadcrumb are correct on first paint (SNOW-342). `?edit=resorts` / `?edit=locations` open the editors for a superuser (SNOW-74/86/724/755). |
+| `/map/` | `public.views.map_page` | **The interactive map** — the app, and the manifest's `start_url`. Nothing over it on load; the tour is offered once, after the map settles (`#map-tour-offer`, SNOW-1117). CH-4115 (Martigny/Verbier) is pre-selected so the readout chip and breadcrumb are correct on first paint (SNOW-342). `?edit=resorts` / `?edit=locations` open the editors for a superuser (SNOW-74/86/724/755). |
 | `/<region_id>/` | `bulletin_detail` | Today's bulletin for a region, never redirecting away. |
 | `/<region_id>/<slug>/` | `bulletin_detail` | Slugged form, the canonical shareable URL. |
 | `/<region_id>/<slug>/<date_str>/` | `bulletin_detail` | A specific day. Past days are immutable. |
 | `/weather/<short_id>/` | `location_weather` | **Document two**: one location, one day (SNOW-761/789). `?date=` picks the row inside the page; the bare URL is canonical for today, the dated one for a past day (SNOW-799). Keyed on `Location.short_id` — eleven opaque characters, never the pk (SNOW-797); `/weather/<int>/` 301s. |
-| `/resorts/<slug>/` | `resort_detail` | A router, not a document (SNOW-807): the resort's own curated facts, then one link to the region's bulletin, a link per curated location to its weather page, and one link to the map with the reports sheet open at the resort. Keyed on `Resort.slug` (SNOW-796); `/resorts/<id>/<slug>/` 301s. |
+| `/resorts/<slug>/` | `resort_detail` | A search landing page, not a document (SNOW-807, SNOW-1124): the resort's own curated facts, then today's danger — the level, the bulletin headline and the avalanche problem cards, selected and rendered exactly as the bulletin page does, or a "No bulletin available" note — with one "Full bulletin →" link to the region's bulletin ([why](decisions/a-resort-page-answers-the-query.md)), the season strip — the region's danger day by day through the running 1 Nov – 30 Apr season, or the one just ended, with a text summary, rendered server-side and linking no day (SNOW-1126) — a link per curated location to its weather page with today's one-day row beside it (SNOW-1125), and one link to the map with the reports sheet open at the resort. Keyed on `Resort.slug` (SNOW-796); `/resorts/<id>/<slug>/` 301s. |
 | `/offline/` | `offline_page` | What this device holds offline — the content report, the reset control and the sync log. Public since SNOW-930 ([`decisions/what-this-device-holds-is-a-public-page.md`](decisions/what-this-device-holds-is-a-public-page.md)). |
 | `/favourites/<uuid>/` | redirect | Permanent 301 to the pin's weather page (SNOW-800); 404 for a pin with no location, and for a non-owner. |
 | `/observations/` | redirect | Permanent 301 to `/map/?panel=reports` — the map with the reports sheet open (SNOW-804). |
@@ -159,14 +161,17 @@ also mounts the SLF and ALBINA replay mirrors at `/dev/slf-mirror/` and
 
 `/sitemap.xml` has four sections, defined in
 [`apps/public/sitemaps.py`](../apps/public/sitemaps.py) and registered together
-as `SITEMAPS`: `bulletins` (regions with a bulletin valid today), `resorts`
+as `SITEMAPS`: `bulletins` (every region that has ever had a bulletin, at its evergreen
+URL, year-round; SNOW-1121), `resorts`
 (every resort page), `locations` (every *named* public location's weather
 page — never a centroid, never a favourite's pin; SNOW-799) and `static`
 (the homepage, the map, both guides, `/compare/`, and the three legal pages —
 privacy, terms of service, colophon; `/terms/` is a redirect). SNOW-676 added `resorts`
 and `static` — until then the sitemap was the bulletin section alone, which
 left the resort pages invisible to search and made the whole file *empty*
-out of season, when no bulletin is valid today. Deliberately absent, with
+out of season, when no bulletin is valid today. The bulletin section itself
+stayed empty out of season until SNOW-1121, because it listed only today's
+regions. Deliberately absent, with
 the reasoning in the module: `/examples/…` (serves a random bulletin per
 request), redirects (`/observations/` is one now), staff-only routes, and
 anything `Disallow`ed in robots.txt.

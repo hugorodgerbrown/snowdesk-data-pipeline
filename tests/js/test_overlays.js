@@ -20,7 +20,7 @@ import '../../static/js/overlays.js';
 
 /**
  * Build a `[data-overlay]` fixture using the ATTRIBUTE hide idiom (the
- * default — map-internal overlays/sheets: #home-intro, #map-help-overlay,
+ * default — map-internal overlays/sheets: #map-help-overlay,
  * #favourite-sheet, #report-sheet).
  */
 function attributeOverlayFixture() {

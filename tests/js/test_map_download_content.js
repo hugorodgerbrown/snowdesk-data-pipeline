@@ -602,6 +602,9 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
     await flapConnectivity();
 
     expect(btn.dataset.downloadState).toBe('partial');
+    // SNOW-1130: and it is announced as actionable — the remedy is a tap,
+    // and the region sheet's proxy drops presses on a disabled roundel.
+    expect(btn.getAttribute('aria-disabled')).toBe('false');
   });
 
   it('records the shortfall on the area, not in the DOM', async () => {
@@ -628,6 +631,43 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
 
     await flapConnectivity();
     expect(btn.dataset.downloadState).toBe('done');
+    // SNOW-1130: a tap on 'done' refreshes, so it is not announced disabled.
+    expect(btn.getAttribute('aria-disabled')).toBe('false');
+  });
+
+  it('announces done as disabled while offline, where no refresh can run', async () => {
+    // SNOW-1130 review: the area is still on the device, so it stays
+    // painted done — but the tap's refresh needs the network.
+    const btn = document.getElementById('map-download-control');
+    await waitFor(() => btn.dataset.downloadState === 'done');
+
+    const online = window.pwaConnectivity;
+    window.pwaConnectivity = { isOnline: () => false };
+    try {
+      await flapConnectivity();
+
+      expect(btn.dataset.downloadState).toBe('done');
+      expect(btn.getAttribute('aria-disabled')).toBe('true');
+    } finally {
+      window.pwaConnectivity = online;
+      await flapConnectivity();
+    }
+  });
+
+  it('starts one refresh for two quick taps', async () => {
+    // SNOW-1130 review: the refresh awaits the record and the content plan
+    // before its run paints 'busy', so a second tap in that window used to
+    // start a second run.
+    const btn = document.getElementById('map-download-control');
+    await waitFor(() => btn.dataset.downloadState === 'done');
+    window.pwaWarmCache.mockClear();
+
+    btn.click();
+    btn.click();
+    await waitFor(() => window.pwaWarmCache.mock.calls.length > 0);
+    await waitFor(() => btn.dataset.downloadState !== 'busy');
+
+    expect(window.pwaWarmCache).toHaveBeenCalledTimes(1);
   });
 
   it('reads a record with neither field as done, not as amber', async () => {

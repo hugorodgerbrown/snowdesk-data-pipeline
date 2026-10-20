@@ -201,13 +201,6 @@ extra_js        : scripts loaded at end of <body>. Used by
         {% block extra_head %}{% endblock %}
     </head>
     <body class="{% block body_class %}bg-bg text-text-1 font-sans min-h-screen flex flex-col{% endblock %}">
-        {# SNOW-878: PWA launch shell. FIRST in the body on purpose — it is #}
-        {# the surface that covers everything else while the app boots, so #}
-        {# its inline gate has to run before the nav paints. Hidden unless #}
-        {# this load is a cold launch of the installed app; removed by     #}
-        {# static/js/pwa_launch_shell.js when the map (or the page) is     #}
-        {# ready, and by a CSS failsafe if that script never runs.         #}
-        {% include "includes/_pwa_launch_shell.html" %}
         {% block nav %}
             {% include "includes/nav.html" %}
         {% endblock %}
@@ -341,12 +334,6 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# beforeinstallprompt on Chromium; shows an iOS Share-icon guide   #}
         {# on iOS Safari once engagement threshold is met.                   #}
         <script src="{% static 'js/pwa_install.js' %}" defer></script>
-        {# SNOW-878: dismisses the launch shell above once the map — or, on #}
-        {# a page without one, the page — is ready. Deferred like every     #}
-        {# other PWA script: it cannot affect whether the overlay SHOWS     #}
-        {# (that is settled before first paint by the partial's inline      #}
-        {# gate), only when it goes.                                        #}
-        <script src="{% static 'js/pwa_launch_shell.js' %}" defer></script>
         {% if debug_log_visible %}
             {# SNOW-812: on-device debug trace, gated by the debug_log waffle #}
             {# flag (GRP_DEBUG). Neither the recorder nor the panel reaches   #}
