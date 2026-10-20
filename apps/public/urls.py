@@ -125,6 +125,10 @@ urlpatterns = [
         ),
         name="observations",
     ),
+    # SNOW-1150: the resorts index — today's conditions board for the CORE
+    # resorts plus every resort by canton; the hub each resort page hangs
+    # off. Literal, so it too must precede the generic <region_id> patterns.
+    path("resorts/", views.resorts_index, name="resorts"),
     # Resort detail page (SNOW-504) — registered before the generic
     # <region_id:region_id>/ patterns so "resorts" never resolves as a
     # region id (though the RegionIdConverter regex already rejects it,
