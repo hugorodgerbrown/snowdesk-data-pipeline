@@ -1212,6 +1212,21 @@ class TestResortForecastStrip:
             assert "Read the full 7-day forecast →" in link
 
     @freeze_time(MIDDAY)
+    def test_a_point_without_a_short_id_still_credits_open_meteo(self) -> None:
+        """No weather page yet (backfill window): the attribution, no link."""
+        resort = ResortFactory.create()
+        location = _role_link(resort, "BASE")
+        _todays_weather(location)
+        type(location).objects.filter(pk=location.pk).update(short_id=None)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        pane = _section(content, "resort-forecast-pane-base")
+        footer = _section(pane, "resort-forecast-provenance-base")
+        assert re.search(r"Open-Meteo &middot; updated \d\d:\d\d", footer)
+        assert "Read the full 7-day forecast" not in pane
+
+    @freeze_time(MIDDAY)
     def test_a_point_with_no_row_today_says_so_and_keeps_its_link(self) -> None:
         """Yesterday's row is not today's: "No forecast yet." and the link."""
         resort = ResortFactory.create()

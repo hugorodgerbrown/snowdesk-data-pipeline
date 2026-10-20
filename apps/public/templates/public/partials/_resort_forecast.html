@@ -249,6 +249,9 @@ Context:
                     {% if point.url %}
                         {% translate "Read the full 7-day forecast →" as forecast_link_text %}
                         {% include "includes/_weather_provenance.html" with weather=point.weather testid_prefix="resort-forecast-provenance-"|add:point.role link_url=point.url link_text=forecast_link_text only %}
+                    {% elif point.weather %}
+                        {# No short_id yet (backfill window): no weather page to link, but the forecast shown still credits Open-Meteo. #}
+                        {% include "includes/_weather_provenance.html" with weather=point.weather testid_prefix="resort-forecast-provenance-"|add:point.role only %}
                     {% endif %}
                 </div>
             {% endfor %}
