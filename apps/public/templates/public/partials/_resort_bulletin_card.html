@@ -71,6 +71,7 @@ Context:
                         class="danger-tile danger-tile--outlined text-label"
                         data-level="{{ panel.danger_key }}"
                         data-testid="resort-danger-chip"
+                        role="img"
                         aria-label="{{ tile_aria }}"
                     >{{ panel.danger_number }}{{ panel.danger_subdivision }}</span>
                     <div class="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -91,7 +92,7 @@ Context:
                     <div
                         class="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5"
                         data-testid="resort-bulletin-scope"
-                        {% if problem.core_zone_text %}aria-label="{{ problem.core_zone_text }}"{% endif %}
+                        {% if problem.core_zone_text %}role="group" aria-label="{{ problem.core_zone_text }}"{% endif %}
                     >
                         {% if problem.aspects %}
                             <div class="flex shrink-0 items-center gap-1.5">
@@ -151,6 +152,7 @@ Context:
                 <div class="flex items-center gap-3">
                     <span
                         class="danger-tile border border-border-strong text-label text-text-3"
+                        role="img"
                         aria-label='{% trans "No danger rating" %}'
                     >–</span>
                     <div class="flex min-w-0 flex-1 flex-col gap-0.5">
