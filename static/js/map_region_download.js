@@ -2321,7 +2321,18 @@
       // used to resolve at once when it joined a pass already running, so
       // this read the interim 'idle' painted before any probe — and
       // started a second download of a region already on the device.
-      await applyRegion(regionId);
+      //
+      // Review: and re-asserted after it. A selection made while the probe
+      // was awaited replaces the shared focus and queues its own trailing
+      // pass, which this await now waits for — so without the check the
+      // state read and the tap below would act on the region the user
+      // just picked, not the one "Download here" asked for. Re-applying
+      // is bounded: a user tapping regions faster than a probe settles
+      // three times over gets the refusal rather than a loop.
+      for (let attempt = 0; attempt < 3 && currentRegionId !== regionId; attempt += 1) {
+        await applyRegion(regionId);
+      }
+      if (currentRegionId !== regionId) return { started: false, reason: 'busy' };
       const state = btn.dataset.downloadState;
       if (state !== 'idle' && state !== 'error' && state !== 'other-basemap') {
         // SNOW-863: the refused STATE travels back, because "it did not
@@ -2333,6 +2344,8 @@
         // untrue: trying again fails identically until the run finishes.
         return { started: false, reason: state || 'unknown' };
       }
+      // `handleClick` reads the focus synchronously on entry, and nothing
+      // has been awaited since the check above, so it starts THIS region.
       await handleClick();
       return { started: true, reason: '' };
     } finally {
