@@ -34,6 +34,13 @@ button (`[data-route-point-card-clear]`), disabled with no point, and
 pressing it keeps the route open, as the first Escape does. The panel's ×
 always closes the route.
 
+THE TERRAIN SLOPE LINE REVEALS THE TERRAIN DATA (SNOW-1146): the line is
+a button (`[data-route-terrain-toggle]`) that shows or hides the route
+panel's terrain data, every figure behind the point. On a phone it raises
+the sheet to FULL and back to HALF; from sm up it opens the data in the
+card. static/js/route_rail.js owns it, since the data is the panel's. The
+component library's static header has no toggle.
+
 The strings template carries every word the header says, under
 ``{% trans %}``, so makemessages sees them and no literal reaches the DOM
 from JavaScript (i18n-lint).
@@ -90,9 +97,33 @@ Context:
         </div>
         <div data-route-point-card-slope class="col-span-2 min-w-0">
             {% include "includes/_eyebrow.html" with tag="dt" text=slope_label %}
-            <dd data-route-point-card-ground class="text-summary text-text-3 text-balance">
-                {% if ground %}{{ ground }}{% endif %}
-            </dd>
+            {% if static %}
+                <dd data-route-point-card-ground class="text-summary text-text-3 text-balance">
+                    {% if ground %}{{ ground }}{% endif %}
+                </dd>
+            {% else %}
+                {# SNOW-1146: the line is the toggle for the route panel's  #}
+                {# terrain data (_route_rail.html), every figure behind the #}
+                {# point. A tap anywhere on the line, its label included,   #}
+                {# presses it (static/js/route_rail.js); the chevron turns  #}
+                {# while the data shows.                                    #}
+                <dd class="min-w-0">
+                    <button
+                        type="button"
+                        data-route-terrain-toggle
+                        aria-expanded="false"
+                        aria-controls="route-rail-terrain"
+                        class="flex w-full min-w-0 cursor-pointer items-start justify-between gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-selected"
+                    >
+                        <span
+                            data-route-point-card-ground
+                            class="min-w-0 text-summary text-text-3 text-balance"
+                        ></span>
+                        <span class="sr-only">{% trans "Terrain data" %}</span>
+                        {% include "includes/_icon_chevron.html" with size=16 svg_class="route-terrain-chevron mt-0.5 shrink-0 text-text-3" %}
+                    </button>
+                </dd>
+            {% endif %}
         </div>
     </dl>
 </div>

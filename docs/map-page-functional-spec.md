@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-10-20
 ---
 
 # Map page — functional specification
@@ -392,8 +392,14 @@ for the route or a placed point — is pinned top-left under the region
 readout's row on desktop, 400 px wide. On a phone it is a bottom sheet
 (SNOW-1099) that opens at peek (the route's name and figures), rises to
 half (down to the profile, never above half the screen) on the handle or
-when a point is placed, and, for staff only, to full: the point debug
-readout, the terrain table's figures for the segment under the point.
+when a point is placed, and to full: the terrain data, every figure
+behind the segment under the point (SNOW-1146; staff only until then).
+A press on the point header's terrain slope line raises the sheet to
+full and lowers it again; on desktop the same press opens the terrain
+data inside the panel. The figures are the route's own terrain rows
+(`/routes/<uuid>/terrain.json`, owner only): along route, elevation,
+slope aspect, slope angle, track direction, track gradient, segment
+index and off fall line. A pending share has no rows, and no toggle.
 Half and full fit their content rather than a fixed height
 ([why the detents are phone-only](decisions/sheet-detents-are-phone-only.md)).
 Opening a route or placing a point changes

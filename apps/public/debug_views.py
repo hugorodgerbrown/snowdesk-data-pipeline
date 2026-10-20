@@ -230,8 +230,9 @@ def route_terrain(request: HttpRequest, route_uuid: uuid.UUID) -> HttpResponse:
     ``apps.routes.services.terrain_detail.terrain_detail`` and nothing here
     derives a figure of its own. ``?format=csv`` returns the same rows as
     a download, so the table and the file cannot disagree, and
-    ``?format=json`` returns them as JSON — once for the map's staff debug
-    rail, which went with rail two (SNOW-1065), kept for scripts.
+    ``?format=json`` returns them as JSON, for scripts. The map's route
+    panel reads the same rows from the owner-scoped ``routes:terrain``
+    (SNOW-1146), so this page stays staff only.
 
     Any route, not only the viewer's own: this is staff-only, and staff
     already read ``slope_samples`` in the Route admin, which links here.
@@ -250,9 +251,8 @@ def route_terrain(request: HttpRequest, route_uuid: uuid.UUID) -> HttpResponse:
     rows = terrain_detail(route.slope_samples, route.points) or []
 
     if request.GET.get("format") == "json":
-        # One row per segment by index. The map's staff debug rail that
-        # read this went with rail two (SNOW-1065); the JSON stays, for
-        # scripts and for a debug surface brought back later.
+        # One row per segment by index, for scripts. The route panel's
+        # terrain data reads routes:terrain instead (SNOW-1146).
         return JsonResponse({"rows": rows})
 
     if request.GET.get("format") == "csv":

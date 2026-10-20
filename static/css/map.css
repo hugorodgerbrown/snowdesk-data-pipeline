@@ -184,6 +184,43 @@
     .route-rail:not([data-route-rail-point]) > [data-sheet-half] {
         display: none;
     }
+
+    /* The terrain data (SNOW-1146) opens in the card: a press on the point
+       header's terrain slope line sets `data-route-terrain-open`, and it
+       shows while that and a point both hold. */
+    .route-rail:not([data-route-terrain-open][data-route-rail-point]) [data-route-terrain] {
+        display: none;
+    }
+}
+
+/* The terrain slope line reveals the terrain data (SNOW-1146): its chevron
+   turns while the data shows, and a route with no rows to show (a pending
+   share) has neither the chevron nor the data. */
+.route-rail [data-route-point-card-slope] {
+    cursor: pointer;
+}
+
+.route-terrain-chevron {
+    transition: transform 150ms ease;
+}
+
+[data-route-terrain-toggle][aria-expanded='true'] .route-terrain-chevron {
+    transform: rotate(180deg);
+}
+
+.route-rail[data-route-terrain-unavailable] [data-route-point-card-slope] {
+    cursor: auto;
+}
+
+.route-rail[data-route-terrain-unavailable] .route-terrain-chevron,
+.route-rail[data-route-terrain-unavailable] [data-route-terrain] {
+    display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .route-terrain-chevron {
+        transition: none;
+    }
 }
 
 /* —— The route sheet on a phone (SNOW-1099) ————————————————————————————
@@ -195,8 +232,9 @@
    allows. Each detent reveals one more layer (2026-10-18): peek — where a
    tap on a route opens it — is the identity block (name, meta line, menu,
    ×), the profile and the hint under it; half adds the point header; full
-   — staff only — the point debug readout: every terrain figure behind the
-   placed point.
+   the terrain data (SNOW-1146): every terrain figure behind the placed
+   point, which a press on the point header's terrain slope line also
+   raises the sheet to.
 
    `fixed` rather than #map's absolute, so it sits on the viewport's foot
    like every other sheet, over the site footer rather than above it, and
@@ -219,10 +257,10 @@
         visibility: hidden;
     }
 
-    /* The point debug readout is FULL's alone. Hidden rather than taken
+    /* The terrain data is FULL's alone. Hidden rather than taken
        out of the flow, so FULL can measure it before it shows; HALF stops
        at the point header (`data-sheet-half`), which clips it. */
-    .route-rail:not([data-detent='full']) [data-route-rail-debug] {
+    .route-rail:not([data-detent='full']) [data-route-terrain] {
         visibility: hidden;
     }
 

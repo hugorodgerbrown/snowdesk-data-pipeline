@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — two documents (bulletin, /weather/<short_id>/) and the map; /resorts/<slug>/; SNOW-795 redirects; HTMX partial prefixes
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-10-20
 ---
 
 # Snowdesk site structure
@@ -97,7 +97,7 @@ a `DEBUG` check, so they exist in production and must stay staff-only.
 | `/_sw-version/` | Deployed `CACHE_VERSION` / `APP_VERSION` vs the live service-worker version ([`docs/offline-map.md`](offline-map.md)). |
 | `/_push-demo/` | Web Push smoke test ([`docs/push-notifications.md`](push-notifications.md)). |
 | `/_icon-sets/` | The candidate weather icon sets side by side, kept for comparison ([`docs/weather-surfaces.md`](weather-surfaces.md)). |
-| `/_route-terrain/<uuid>/` | One route's slope angle, aspect, track bearing, boundary heights and signed along-track gradient per 25 m segment, with the segments each gradient was smoothed over. The same rows as a CSV (`?format=csv`) and as JSON (`?format=json`, formerly read by the map's staff debug rail, retired by SNOW-1065; the endpoint is kept). Linked from the Route admin. Service: `apps/routes/services/terrain_detail.py` (SNOW-1020). |
+| `/_route-terrain/<uuid>/` | One route's slope angle, aspect, track bearing, boundary heights and signed along-track gradient per 25 m segment, with the segments each gradient was smoothed over. The same rows as a CSV (`?format=csv`) and as JSON (`?format=json`, kept for scripts; the route panel's terrain data reads the owner-scoped `routes:terrain` instead, SNOW-1146). Linked from the Route admin. Service: `apps/routes/services/terrain_detail.py` (SNOW-1020). |
 
 ## HTMX partial routes
 
@@ -147,7 +147,7 @@ map's; `/api/version` and `/api/sw-config` in [`docs/offline-map.md`](offline-ma
 `/oauth/authorize/`, `token/`, `register/`, `revoke/` ([`docs/oauth.md`](oauth.md)),
 `/api/telemetry` ([`docs/telemetry-pipeline.md`](telemetry-pipeline.md)),
 `/favourites/favourites.geojson`, `/routes/routes.geojson`,
-`/routes/<uuid>/share/`,
+`/routes/<uuid>/share/`, `/routes/<uuid>/terrain.json` (SNOW-1146),
 `/trips/<uuid>/route.geojson` and `/trips/s/<token>/route.geojson`,
 `/downloads/areas.json`, `/<country>/feed.rss` (per-country RSS, SNOW-396),
 `/messages/` (the site-banner dismissal endpoint, [`docs/site-banners.md`](site-banners.md)),
