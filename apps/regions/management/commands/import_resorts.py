@@ -285,6 +285,10 @@ class Command(BaseCommand):
                     # resort has weather without a separate linking step.
                     set_resort_pin(resort, resort.latitude, resort.longitude)
             for resort, _changes in plan.updates:
+                # Deliberately no set_resort_pin here: the coordinate is
+                # creation-time only (SNOW-544), so an update never moves a
+                # pin — a resort re-pinned in the map editor owns its
+                # position, and only additions above set one (SNOW-1144).
                 resort.save()
             for resort, passes in plan.pass_links:
                 resort.passes.set(passes)

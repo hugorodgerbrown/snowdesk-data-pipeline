@@ -13,11 +13,13 @@ Every path that places, moves or clears a pin comes through
 admin, and the one-time ``link_resort_locations`` backfill — so the rules
 below are stated once:
 
-* **Reuse, never duplicate.** The resort's own ``location`` first; failing
-  that, the ``Location`` its primary ``ResortLocation`` already points at
-  (the anonymous row the pre-SNOW-1144 ``link_resort_locations`` minted);
-  failing that, ``anchor_location``, which reuses an anonymous row already
-  at the coordinate.
+* **Reuse, never duplicate — anonymous rows only.** The resort's own
+  ``location`` first; failing that, the ``Location`` its primary
+  ``ResortLocation`` already points at (the anonymous row the pre-SNOW-1144
+  ``link_resort_locations`` minted); failing that, ``anchor_location``,
+  which reuses an anonymous row already at the coordinate. A named, curated
+  row — typically the village a resort is geocoded at — is never adopted
+  as the pin, even at exactly the same coordinate.
 * **A move is a correction of the same row.** When the pin moves and the row
   belongs to this resort alone, it is updated in place, so its ``Weather``
   history stays attached — the rule ``edit_location_save`` follows for a
@@ -62,17 +64,28 @@ def _current_location(resort: Resort) -> Location | None:
     minted at the pin, which carries the resort's weather history and must
     be adopted rather than duplicated.
 
+    **Anonymous rows only.** A primary link usually points at the curated,
+    named village, and resorts are often geocoded at exactly that village —
+    adopting it would make a curated row the pin: ``import_locations``
+    could then no longer delete it (``PROTECT``), and moving the village in
+    the locations editor would silently move the pin while the mirrored
+    columns went stale. A named candidate is ignored, so the caller anchors
+    a separate anonymous pin beside it (``anchor_location`` refuses named
+    rows too).
+
     Args:
         resort: The resort whose pin is being written.
 
     Returns:
-        The existing Location, or ``None`` when the resort has none.
+        The existing anonymous Location, or ``None`` when there is none.
 
     """
     if resort.location_id is not None:
-        return resort.location
+        current = resort.location
+        return current if current is not None and not current.name else None
     link = (
         resort.resort_locations.primary()
+        .filter(location__name="")
         .select_related("location")
         .order_by("id")
         .first()
@@ -189,6 +202,13 @@ def set_resort_pin(
         raise ValueError("set_resort_pin needs a saved resort.")
     if (latitude is None) != (longitude is None):
         raise ValueError("A resort pin needs both latitude and longitude, or neither.")
+
+    # Serialise concurrent pin writes for one resort (an editor save racing
+    # the backfill, say): one indexed query, held to the end of this
+    # transaction. A no-op on SQLite, which locks the whole database anyway.
+    Resort.objects.select_for_update().filter(pk=resort.pk).values_list(
+        "pk", flat=True
+    ).first()
 
     location: Location | None
     if latitude is None or longitude is None:

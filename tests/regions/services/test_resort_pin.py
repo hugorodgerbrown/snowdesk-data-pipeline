@@ -198,6 +198,38 @@ class TestReusingAPrimaryLink:
         assert set_resort_pin(resort, 46.1, 7.4) == minted
         assert Location.objects.count() == 1
 
+    def test_never_adopts_a_named_primary_link_location_at_the_pin(self) -> None:
+        """A curated village at exactly the pin gets a separate anonymous pin.
+
+        Adopting it would PROTECT a curated row from import_locations and
+        make the village editor move the pin.
+        """
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4, location=None)
+        village = LocationFactory.create(
+            name="Verbier village", kind="VILLAGE", latitude=46.1, longitude=7.4
+        )
+        ResortLocationFactory.create(
+            resort=resort, location=village, role="BASE", is_primary=True
+        )
+        before = Location.objects.values().get(pk=village.pk)
+
+        pin = set_resort_pin(resort, 46.1, 7.4)
+
+        assert pin is not None and pin.pk != village.pk
+        assert pin.name == ""
+        assert (pin.latitude, pin.longitude) == (46.1, 7.4)
+        assert Location.objects.values().get(pk=village.pk) == before
+        assert not village.pinned_resorts.exists()
+
+    def test_a_named_location_already_on_the_fk_is_replaced(self) -> None:
+        """Even an unchanged pin moves off a named row onto an anonymous one."""
+        village = LocationFactory.create(name="Village", latitude=46.1, longitude=7.4)
+        resort = ResortFactory.create(location=village, latitude=46.1, longitude=7.4)
+
+        pin = set_resort_pin(resort, 46.1, 7.4)
+
+        assert pin is not None and pin.pk != village.pk and pin.name == ""
+
     def test_moves_the_primary_link_location_when_it_is_the_resorts_own(
         self,
     ) -> None:
