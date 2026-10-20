@@ -485,10 +485,11 @@ describe('the forced-update gate is the server verdict (SNOW-609)', () => {
 });
 
 describe('window.pwaVersionInfo (SNOW-869)', () => {
-  it('publishes only the verified body', () => {
+  it('publishes the verified body, a fresh read and the reload', () => {
     // SNOW-1025 removed the banner's versioned copy, which was the only
-    // reader of the shell's own build and release.
-    expect(Object.keys(window.pwaVersionInfo)).toEqual(['verified']);
+    // reader of the shell's own build and release. SNOW-920 added
+    // ``refresh`` and ``reload`` for stale_day.js.
+    expect(Object.keys(window.pwaVersionInfo)).toEqual(['verified', 'refresh', 'reload']);
   });
 
   it('hands back the verified body', async () => {
@@ -508,6 +509,8 @@ describe('window.pwaVersionInfo (SNOW-869)', () => {
       shell: 'snowdesk-shell-bbbbbbbbbbbb',
       update_required: false,
       update_available: true,
+      // SNOW-920: empty here because this body predates the field.
+      today: '',
     });
   });
 
@@ -546,6 +549,34 @@ describe('window.pwaVersionInfo (SNOW-869)', () => {
 
   it('is frozen', () => {
     expect(Object.isFrozen(window.pwaVersionInfo)).toBe(true);
+  });
+
+  it("carries the server's day (SNOW-920)", async () => {
+    versionBody = { current: CURRENT_BUILD, today: ' 2026-10-19 ' };
+
+    const verdict = await window.pwaVersionInfo.verified();
+
+    expect(verdict.today).toBe('2026-10-19');
+  });
+
+  it('refresh asks the server again even when a body is held (SNOW-920)', async () => {
+    versionBody = { current: CURRENT_BUILD, today: '2026-10-18' };
+    await window.pwaVersionInfo.verified();
+    versionBody = { current: CURRENT_BUILD, today: '2026-10-19' };
+
+    // ``verified`` would answer from the held body; a page open across
+    // midnight needs the day NOW.
+    const verdict = await window.pwaVersionInfo.refresh();
+
+    expect(verdict.today).toBe('2026-10-19');
+    expect(versionCalls).toHaveLength(2);
+  });
+
+  it('reload clears the shell caches and reloads (SNOW-920)', async () => {
+    await window.pwaVersionInfo.reload();
+
+    expect(clearShellCaches).toHaveBeenCalledTimes(1);
+    expect(resetLocalData).not.toHaveBeenCalled();
   });
 });
 

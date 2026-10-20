@@ -1687,6 +1687,7 @@ async function _appendCustomArea(area) {
   const next = existing.filter((entry) => !entry || entry.id !== area.id);
   next.push(area);
   await _writeCustomAreas(next);
+  notifyDownloadsChanged();
   // SNOW-749: and record the DEFINITION against the account, from the same
   // moment the device record is written so the two cannot disagree about
   // what was downloaded. Enqueued through the mutation queue, so an area
@@ -2024,6 +2025,31 @@ async function evictBasemapAreas(areaIds) {
   // SNOW-570: an evicted area's ring must disappear immediately, not at
   // the next refresh trigger.
   window.pwaDownloadedOverlay?.refresh();
+  // SNOW-1134: and the region roundel, which painted 'done' for an area
+  // removed from the Manage downloads sheet until something unrelated
+  // happened to repaint it.
+  notifyDownloadsChanged();
+}
+
+/**
+ * SNOW-1134: tell the page that what this device holds has changed.
+ *
+ * Dispatched from every local write and eviction of an area's record —
+ * `evictBasemapAreas` (the Manage downloads sheet's removal and the
+ * budget's automatic eviction both arrive there), `_appendCustomArea`
+ * and the region control's `_recordRegionDownload`. ONE event, so a
+ * surface that shows download state listens once rather than to each
+ * writer; the region roundel re-probes on it. Carries no detail: the
+ * listener reads the records for itself, so the two cannot disagree.
+ *
+ * Never dispatched from a record HEAL (`_healRegionRecord`): the roundel's
+ * own probe heals, and an event there would make every probe schedule
+ * the next one.
+ *
+ * @returns {void}
+ */
+function notifyDownloadsChanged() {
+  document.dispatchEvent(new CustomEvent('snowdesk:downloads-changed'));
 }
 
 /**
@@ -3739,18 +3765,22 @@ async function repairPinnedDownload(options) {
  * the user has already moved on from. One extra pass runs after the
  * current one, however many calls arrive during it.
  *
+ * SNOW-1134: a call that joins a running pass gets that pass's promise,
+ * which settles only once the trailing pass it queued has run. It used to
+ * resolve at once, so a caller awaiting a render to read the settled state
+ * (`startRegionDownload`) read the interim 'idle' the running pass had
+ * painted for a region it had not probed yet — and downloaded a region
+ * already on the device a second time.
+ *
  * @param {function(): Promise<void>} render
  * @returns {function(): Promise<void>}
  */
 function coalesceRenders(render) {
   let running = false;
   let again = false;
-  return async function coalesced() {
-    if (running) {
-      again = true;
-      return;
-    }
-    running = true;
+  /** @type {Promise<void>} */
+  let current = Promise.resolve();
+  const loop = async () => {
     try {
       do {
         again = false;
@@ -3759,6 +3789,17 @@ function coalesceRenders(render) {
     } finally {
       running = false;
     }
+  };
+  return function coalesced() {
+    if (running) {
+      again = true;
+      return current;
+    }
+    // Claimed before `loop` runs, so a render that re-enters synchronously
+    // queues a trailing pass rather than starting a second loop.
+    running = true;
+    current = loop();
+    return current;
   };
 }
 

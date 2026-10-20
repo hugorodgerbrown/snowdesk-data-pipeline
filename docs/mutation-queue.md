@@ -107,6 +107,7 @@ autoIncrement; no indexes — rows are filtered/ordered in memory over
 | 2xx                                | Success — row deleted; counts toward the drain's reported count. |
 | `{408, 429}`, any 5xx, network error | Retry — `attempts += 1`, `next_attempt_at = now + backoff(attempts)`, `status = 'retry-scheduled'`. |
 | Any other 4xx (400/401/403/404/409/410/422/…) | Permanent failure on the FIRST attempt — `attempts += 1` (the attempt that just failed), `status = 'failed'`, no further retry. |
+| A code the mutation declared in `doneStatuses` (SNOW-1132) | Success — delete the row, ahead of every rule above. The downloads `forget` and `rename` writes declare 404: the account row is already gone, which is the outcome asked for. |
 | Retry count reaches `MAX_ATTEMPTS` (20) without a 2xx | Permanent failure — `status = 'failed'`, same as above. |
 
 `attempts` always counts attempts actually made, never attempts still

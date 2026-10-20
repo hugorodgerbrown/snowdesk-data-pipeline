@@ -75,7 +75,11 @@ Context:
                 >
             {% endif %}
             <div class="min-w-0 flex-1">
-                <h2 class="truncate text-base font-semibold leading-tight text-text-1" title="{{ heading }}">
+                <h2
+                    class="truncate text-base font-semibold leading-tight text-text-1"
+                    title="{{ heading }}"
+                    data-testid="weather-detail-heading"
+                >
                     {{ heading }}
                 </h2>
                 <p class="truncate text-meta text-text-2" data-testid="weather-detail-line">
@@ -139,7 +143,11 @@ Context:
             {# provider gave one — a dash here would be four dashes in a row #}
             {# on a summer day, which reads as a broken panel rather than as #}
             {# an absent measurement.                                        #}
-            <dl class="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-b border-border py-3">
+            {# data-testid: SNOW-1119 help mode numbers this grid in its guide. #}
+            <dl
+                class="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-b border-border py-3"
+                data-testid="weather-detail-figures"
+            >
                 {% if day.freezing_level_height is not None %}
                     <div class="flex items-baseline justify-between gap-2">
                         <dt class="text-xs text-text-3">{% trans "Freezing level" %}</dt>

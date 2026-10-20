@@ -2,22 +2,24 @@
  * static/js/map_controls_collapse.js — collapsible bottom-right map control
  * group.
  *
- * Six roundels in one column read as clutter over the map. Locate and the
- * toggle stay out; the other five (layers, bulletin fill, basemap download,
- * favourite, observations, help) collapse into the toggle.
+ * The column is two capsules (.map-control-group in static/css/map.css):
+ * "the map" — locate and layers — and "yours" — favourites, field
+ * observations, routes and downloads. The chevron collapses the "yours"
+ * capsule and nothing else, so a minimised column is locate, layers and the
+ * toggle.
  *
- * SNOW-664 moved LAYERS in. It used to stay out alongside locate, which made a
- * collapsed column two roundels plus a toggle and left the question of why
- * those two. "Where am I" is worth a permanent control on a map the user is
- * standing in; "what is the map showing" is a choice, and a choice can wait
- * behind the toggle. So a minimised column is locate and the toggle, nothing
- * else — and this module's child count follows the DOM, so the move needed no
- * change here beyond the count it already reads.
+ * SNOW-664 had folded LAYERS away with everything but locate. The two-capsule
+ * column takes it back out: "where am I" and "what is the map drawing" are
+ * the two questions a map always has to answer, so both stay on screen, and
+ * the reader's own things are what wait behind the toggle. This module's
+ * child count follows the DOM, so the move needed no change here beyond what
+ * the count reads: the "yours" capsule IS .map-controls-collapsible-inner,
+ * so its children are its buttons.
  *
  * The toggle is the LAST child of #map-controls-br, so the bottom-anchored
  * stack grows and shrinks upward out of it: the toggle never moves under the
- * finger pressing it, and the revealed controls appear directly beneath locate
- * in their existing stack order.
+ * finger pressing it, and the revealed capsule appears directly beneath the
+ * "map" one.
  *
  * The animation itself is pure CSS (static/css/map.css) driven off
  * data-expanded on the stack. This module owns only the state, the persisted
@@ -29,7 +31,7 @@
  *
  * A standalone module rather than another IIFE in map.js so it is reachable
  * from the Vitest + jsdom harness (map.js can't be imported there — its boot
- * IIFEs need MapLibre), matching map_layer_sync_status.js / home_intro.js.
+ * IIFEs need MapLibre), matching map_layer_sync_status.js / map_tour_offer.js.
  */
 
 (function mapControlsCollapseInit() {
@@ -69,7 +71,8 @@
 
   /**
    * Publish the group's child count so the CSS can compute its open height
-   * (n * --map-control-lg + (n - 1) * 8px).
+   * (n * --map-control-lg, plus the capsule's own 1px of border — the
+   * capsule's buttons sit edge to edge, with no gap between them).
    *
    * Read from the live DOM rather than hardcoded: favourite and observations
    * were both conditionally rendered in the past, and a stale count would

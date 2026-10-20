@@ -47,7 +47,6 @@ import waffle
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.cache import cache
-from django.core.cache.utils import make_template_fragment_key
 from django.db.models import Max, Prefetch
 from django.http import (
     Http404,
@@ -70,7 +69,7 @@ from django.utils.http import quote_etag
 from django.utils.text import slugify
 from django.utils.translation import (
     get_language,
-    gettext as _gettext,
+    gettext,
     gettext_lazy as _,
 )
 from django.views.decorators.cache import never_cache
@@ -93,6 +92,7 @@ from apps.bulletins.models import (
 )
 from apps.bulletins.schema import ValidTimePeriod
 from apps.bulletins.services import day_summary
+from apps.bulletins.services.day_rating import season_calendar_cache_key
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     DayCharacter,
@@ -125,6 +125,7 @@ from apps.weather.models import Weather
 from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import (
     build_point_forecast_panel,
+    build_weather_display,
 )
 
 from . import competitor_matrix
@@ -137,8 +138,10 @@ from .season_calendar import (
     build_season_grid,
     build_season_ribbon,
     season_header,
+    season_window,
+    summarise_season,
 )
-from .site_environment import LAUNCH_MARK_ICON, PWAEnvironmentIdentity
+from .site_environment import PWAEnvironmentIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -785,8 +788,7 @@ def map_page(request: HttpRequest) -> HttpResponse:
     """
     Render the interactive map at ``/map/``.
 
-    SNOW-314: the full-frame map with a dismissable landing overlay
-    (``#home-intro``). The map lived at ``/`` from SNOW-344 until the
+    SNOW-314: the full-frame map. The map lived at ``/`` from SNOW-344 until the
     marketing homepage took the root; ``/`` now 301s here when it carries
     map query parameters.
 
@@ -799,11 +801,10 @@ def map_page(request: HttpRequest) -> HttpResponse:
 
     CH-4115 (Martigny / Verbier) is pre-selected so the readout chip and
     breadcrumb are correct on first paint (SNOW-342); the scrubber paints that
-    region's season into the track. The intro overlay provides identity, a
-    factual one-liner naming the three providers, an off-season note when today
-    is past the season end, and a "Register" link. Its "Explore the map" button
-    dismisses the overlay and opens the map-help tour (SNOW-535); the "x"
-    dismisses without the tour.
+    region's season into the track. The template carries a hidden one-time
+    offer of the map tour (``#map-tour-offer``, SNOW-1117), with the off-season
+    note when today is past the season end; it replaced the ``#home-intro``
+    welcome panel now that the homepage says what Snowdesk is.
 
     Context:
       ``ribbon``              — default-region (CH-4115) SeasonRibbon or None.
@@ -812,7 +813,6 @@ def map_page(request: HttpRequest) -> HttpResponse:
       ``default_region_slug`` — str: the pre-selected region's bulletin slug.
       ``default_subregion_name`` — str: L2 sub-region name for the breadcrumb.
       ``default_major_name``  — str: L1 major-region name for the breadcrumb.
-      ``show_intro``          — True (the overlay renders on the homepage).
       ``is_offseason``        — True when today is past the active season end.
       ``edit_target``         — "resorts" when resort-edit mode is active,
                                 else "". The empty string is the normal map.
@@ -935,7 +935,6 @@ def map_page(request: HttpRequest) -> HttpResponse:
             "default_region_slug": default_region_slug,
             "default_subregion_name": default_subregion_name,
             "default_major_name": default_major_name,
-            "show_intro": True,
             "is_offseason": is_offseason,
             "season_label": season_label,
             "archived_season_start": archived_season_start,
@@ -2310,9 +2309,8 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
     Screenshots stay under ``/static/icons/pwa/screenshots/`` on every
     environment because they show the actual UI, which is identical.
 
-    SNOW-1112: ``background_color`` comes from the same identity (it is
-    the launch shell's first-paint background too), and every icon and
-    screenshot URL goes through the staticfiles storage so it carries a
+    SNOW-1112: ``background_color`` comes from the same identity, and every
+    icon and screenshot URL goes through the staticfiles storage so it carries a
     content hash in a deployed environment. Chrome re-mints an installed
     WebAPK only when a manifest icon URL changes, so an unhashed URL meant
     a redrawn icon never reached anyone who had already installed.
@@ -2353,8 +2351,8 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
         "scope": f"{base}/",
         "display": "standalone",
         # SNOW-878 / SNOW-1112: the colour Chrome paints the generated
-        # Android splash and its status bar in, so it must be the colour the
-        # launch shell paints next. There is no per-scheme mechanism in the
+        # Android splash and its status bar in, which is --color-bg, the
+        # page's own background. There is no per-scheme mechanism in the
         # manifest, so this stays the light value on every platform; the
         # dark launch screen is iOS-only, via the prefers-color-scheme
         # startup images (bin/build-pwa-splash).
@@ -2376,9 +2374,8 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
                 "purpose": "any",
             },
             {
-                # The icon Android draws on its splash, cropped to a circle
-                # — and therefore the one the launch shell draws on top of it.
-                "src": identity.icon_url(LAUNCH_MARK_ICON),
+                # The icon Android draws on its splash, cropped to a circle.
+                "src": identity.icon_url("icon-maskable-512.png"),
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "maskable",
@@ -2441,7 +2438,8 @@ def serve_robots(request: HttpRequest) -> HttpResponse:
     """
     base = settings.SITE_BASE_URL.rstrip("/")
     lines = [
-        "# Snowdesk — daily Swiss avalanche bulletins (SLF CAAML data).",
+        "# Snowdesk — daily avalanche bulletins from SLF, ALBINA and Météo-France"
+        " (CAAML v6).",
         "# Public-good safety information: crawlers and AI agents are welcome.",
         f"# Machine-readable site index: {base}/llms.txt",
         "",
@@ -3537,12 +3535,12 @@ def _build_og_description(panel: dict[str, Any] | None) -> str:
     raw_key_message = strip_tags(str(panel.get("key_message") or "")).strip()
 
     if label and number:
-        prefix = _gettext("Avalanche danger: %(label)s (%(number)s).") % {
+        prefix = gettext("Avalanche danger: %(label)s (%(number)s).") % {
             "label": label,
             "number": number,
         }
     elif label:
-        prefix = _gettext("Avalanche danger: %(label)s.") % {"label": label}
+        prefix = gettext("Avalanche danger: %(label)s.") % {"label": label}
     else:
         prefix = ""
 
@@ -3683,7 +3681,7 @@ def _build_structured_data(
     report: dict[str, Any] = {
         "@type": "Report",
         "@id": f"{canonical_url}#report",
-        "name": f"Avalanche bulletin — {region.name}",
+        "name": _bulletin_document_name(region),
         "datePublished": date_published,
         # SNOW-394: dateModified reflects the last upsert of the row so
         # LLMs and freshness-aware crawlers can tell a re-issued
@@ -3730,7 +3728,101 @@ def _build_structured_data(
         "mainEntity": report,
     }
 
+    return _serialise_json_ld(payload)
+
+
+def _bulletin_document_name(region: MicroRegion) -> str:
+    """Name a region's bulletin page in JSON-LD, in the active language.
+
+    Shared by the bulletin page's ``Report`` and the resort page's
+    ``subjectOf`` so both name the same document the same way (SNOW-1128).
+
+    Args:
+        region: The bulletin's micro-region.
+
+    Returns:
+        ``"Avalanche bulletin — <region name>"``, translated.
+
+    """
+    return gettext("Avalanche bulletin — %(region)s") % {"region": region.name}
+
+
+def _serialise_json_ld(payload: dict[str, Any]) -> str:
+    r"""
+    Serialise a JSON-LD payload for a ``<script type="application/ld+json">``.
+
+    ``</`` is escaped to ``<\/`` so a stray ``</script>`` in any string
+    field cannot end the embedding tag; JSON decoders read ``\/`` as ``/``.
+    Shared by the bulletin and resort pages so the escape cannot drift
+    between them (SNOW-1123).
+
+    Args:
+        payload: The structured-data dict.
+
+    Returns:
+        A JSON string safe for ``{{ …|safe }}`` inside the script tag.
+
+    """
     return json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+
+
+def _build_resort_structured_data(resort: Resort, canonical_url: str) -> str:
+    """
+    Build a schema.org ``SkiResort`` JSON-LD payload for the resort page.
+
+    Ties the page to the named place people search for (SNOW-1123). A
+    ``TOURING_TERRAIN`` row is typed ``Place`` instead — it has no lifts. Every
+    optional property is omitted rather than emitted empty: ``geo`` needs
+    both coordinates, ``alternateName`` and ``sameAs`` need a curated value,
+    and ``address`` needs a canton. The region's evergreen bulletin is
+    ``subjectOf`` — the resort is what that bulletin is about, and the
+    bulletin stays the full document.
+
+    Args:
+        resort: The resort, with ``region__subregion__major`` selected.
+        canonical_url: The absolute canonical URL of the resort page.
+
+    Returns:
+        A JSON string ready for ``{{ structured_data_json|safe }}``.
+
+    """
+    base = settings.SITE_BASE_URL.rstrip("/")
+    region = resort.region
+    payload: dict[str, Any] = {
+        "@context": "https://schema.org",
+        # Touring terrain (a pass, a side valley) has no lifts, so calling
+        # it a SkiResort would be false structured data; it is a Place.
+        "@type": ("SkiResort" if resort.kind == Resort.Kind.RESORT else "Place"),
+        "@id": canonical_url,
+        "name": resort.name,
+        "url": canonical_url,
+        "containedInPlace": {"@type": "Place", "name": region.name},
+        "subjectOf": {
+            "@type": "WebPage",
+            "name": _bulletin_document_name(region),
+            "url": f"{base}{region.get_absolute_url()}",
+        },
+    }
+    if resort.name_alt:
+        payload["alternateName"] = resort.name_alt
+    if resort.latitude is not None and resort.longitude is not None:
+        payload["geo"] = {
+            "@type": "GeoCoordinates",
+            "latitude": resort.latitude,
+            "longitude": resort.longitude,
+        }
+    if resort.canton:
+        address: dict[str, Any] = {
+            "@type": "PostalAddress",
+            "addressRegion": resort.canton,
+        }
+        major = region.subregion.major if region.subregion else None
+        if major is not None and major.country:
+            address["addressCountry"] = major.country
+        payload["address"] = address
+    if resort.website:
+        payload["sameAs"] = resort.website
+    return _serialise_json_ld(payload)
 
 
 def _capture_utm_to_session(request: HttpRequest) -> None:
@@ -3894,7 +3986,7 @@ def _build_period_transition_chip(
         return None
 
     direction = period_transition.direction
-    verb = _gettext("rises") if direction == "rise" else _gettext("falls")
+    verb = gettext("rises") if direction == "rise" else gettext("falls")
     level_num = period_transition.destination_number
     level_sub = period_transition.destination_subdivision or ""
     label = f"L{level_num}{level_sub}"
@@ -3902,14 +3994,14 @@ def _build_period_transition_chip(
     partition_label = period_transition.partition_label
     if partition_label:
         # e.g. "rises above 2600 m to L3"
-        chip_text = _gettext("%(verb)s %(partition)s to %(label)s") % {
+        chip_text = gettext("%(verb)s %(partition)s to %(label)s") % {
             "verb": verb,
             "partition": partition_label,
             "label": label,
         }
     else:
         # e.g. "rises to L3"
-        chip_text = _gettext("%(verb)s to %(label)s") % {
+        chip_text = gettext("%(verb)s to %(label)s") % {
             "verb": verb,
             "label": label,
         }
@@ -3919,6 +4011,50 @@ def _build_period_transition_chip(
         "chip_text": chip_text,
         "direction": direction,
     }
+
+
+def _build_bulletin_headline(
+    raw_render_model: dict[str, Any],
+    period_transition: PeriodTransition | None,
+) -> str:
+    """
+    Return the data-driven headline for a bulletin's render model (SNOW-249).
+
+    Projects the five inputs of the variant matrix — source, partition
+    type, peak rating, direction and problem family — from the render
+    model and its period transition, then looks the copy up with
+    :func:`apps.public.headlines.headline_for`. Shared by the bulletin page
+    and the resort page (SNOW-1124) so the two cannot drift.
+
+    Args:
+        raw_render_model: The panel's render model (``panel["render_model"]``).
+        period_transition: ``compute_period_transition(raw_render_model)``,
+            or ``None`` on an all-day bulletin.
+
+    Returns:
+        The translated headline string.
+
+    """
+    source: str = raw_render_model.get("source") or ""
+    partition_type: str = (
+        period_transition.partition_type if period_transition is not None else "none"
+    )
+    danger_info: dict[str, Any] = raw_render_model.get("danger") or {}
+    peak_number: str = danger_info.get("number") or "1"
+    peak_subdivision: str = danger_info.get("subdivision") or ""
+    peak_rating: str = (
+        f"{peak_number}{peak_subdivision}" if peak_subdivision else peak_number
+    )
+    direction: str = (
+        period_transition.direction if period_transition is not None else "none"
+    )
+    return headline_for(
+        source,
+        partition_type,
+        peak_rating,
+        direction,
+        derive_problem_family(raw_render_model),
+    )
 
 
 def _bulletin_detail_response(
@@ -4123,23 +4259,6 @@ def _bulletin_detail_response(
         period_transition
     )
 
-    # Bulletin headline (SNOW-249) — data-driven copy from the variant matrix.
-    # The five inputs are projected from the render model and the period transition.
-    rm_source: str = raw_render_model.get("source") or ""
-    rm_partition_type: str = (
-        period_transition.partition_type if period_transition is not None else "none"
-    )
-    _rm_danger_info: dict[str, Any] = raw_render_model.get("danger") or {}
-    rm_peak_number: str = _rm_danger_info.get("number") or "1"
-    rm_peak_subdivision: str = _rm_danger_info.get("subdivision") or ""
-    rm_peak_rating: str = (
-        f"{rm_peak_number}{rm_peak_subdivision}"
-        if rm_peak_subdivision
-        else rm_peak_number
-    )
-    rm_direction: str = (
-        period_transition.direction if period_transition is not None else "none"
-    )
     # Day movement — the same classification the day summary uses, so the
     # Day Risk Profile's flat-split caption cannot claim a change the
     # summary beside it reports as a static day. 23 of the archive's 101
@@ -4153,14 +4272,9 @@ def _bulletin_detail_response(
         set(problem_types_for(rm_traits, {"later"})),
     )
 
-    rm_family: str = derive_problem_family(raw_render_model)
-    headline: str = headline_for(
-        rm_source,
-        rm_partition_type,
-        rm_peak_rating,
-        rm_direction,
-        rm_family,
-    )
+    # Bulletin headline (SNOW-249) — one helper shared with the resort page
+    # (SNOW-1124), so the two cannot word the same day differently.
+    headline: str = _build_bulletin_headline(raw_render_model, period_transition)
 
     # SNOW-555: one derivation feeding both the JSON-LD Report below and the
     # article:* OG properties on the page.
@@ -4614,19 +4728,28 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     redirect to perform here: the URL either names a resort or it 404s.
     The pre-slug ``/resorts/<id>/<slug>/`` form is ``resort_legacy_redirect``.
 
-    A ROUTER, not a third document (SNOW-807,
-    ``docs/decisions/two-documents-and-a-map.md``). What is the resort's
-    own — name, region, the curated facts and why-it-matters line, the
-    favourite toggle — renders here; everything else is a link: the danger
-    area to the region's bulletin, each curated location to its weather
-    page, the observations to the map with the reports sheet open. The
-    page is kept because people search "Verbier avalanche", not
-    "CH-4115", and ``ResortSitemap`` publishes every resort.
+    The page answers the query it ranks for (SNOW-1124,
+    ``docs/decisions/a-resort-page-answers-the-query.md``, amending
+    ``docs/decisions/two-documents-and-a-map.md`` for resort pages). People
+    search "Verbier avalanche", not "CH-4115", so today's danger is shown
+    here: the level, the headline and the avalanche problems, read from the
+    region's bulletin through the bulletin page's own selection —
+    ``issues_for_date`` then ``_resolve_selected_issue`` (the 10:00 rule)
+    then ``_build_panel_context`` — and its headline helper. It is the same
+    render model shown read-only, never a copy, and the bulletin stays the
+    one full document: the danger area carries exactly one link to it.
+    With no bulletin covering today the page says so; it never shows a past
+    bulletin as today's.
+
+    Each curated location is a link to its weather page with today's
+    one-day row beside it (SNOW-1125 — the icon, high/low, snowfall and
+    wind); the observations are a link to the map with the reports sheet
+    open.
 
     Reuses the context-building already proven by ``apps.public.api.resort_popup``
-    (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``)
-    and by ``apps.public.api.region_summary`` (today's ``RegionDayRating`` lookup
-    for the danger chip).
+    (``favourited`` / ``favourite_uuid`` / ``can_favourite`` / ``signin_url``).
+    The meta description's danger sentence reads the same ``panel`` as the
+    tile, so the two can never name different levels.
 
     Args:
         request: The incoming HTTP request.
@@ -4637,14 +4760,32 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
 
     """
     resort = get_object_or_404(
-        Resort.objects.select_related("region"),
+        Resort.objects.select_related("region__subregion__major"),
         slug=slug,
     )
 
     region = resort.region
     today = timezone.localdate()
 
-    day_rating = RegionDayRating.objects.filter(region=region, date=today).first()
+    # SNOW-1124: today's bulletin, chosen exactly as the evergreen bulletin
+    # page chooses it, so the two pages always show the same issue.
+    selected = _resolve_selected_issue(
+        _issues_for_date(region, today), today, requested_id=None
+    )
+    panel: dict[str, Any] | None = None
+    headline = ""
+    if selected is not None:
+        panel = _build_panel_context(selected)
+        raw_render_model: dict[str, Any] = panel.get("render_model") or {}
+        if raw_render_model.get("version") == 0:
+            # A render model that failed to build: the bulletin page shows
+            # its "couldn't process" callout, and its danger key is only a
+            # "low" fallback — never show that as today's level here.
+            panel = None
+        else:
+            headline = _build_bulletin_headline(
+                raw_render_model, compute_period_transition(raw_render_model)
+            )
 
     can_favourite = False
     favourite = None
@@ -4656,7 +4797,10 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         "resort": resort,
         "region": region,
         "region_id": region.region_id,
-        "day_rating": day_rating,
+        # SNOW-1124: the bulletin page's panel and headline for today, or
+        # None / "" when no bulletin covers today.
+        "panel": panel,
+        "headline": headline,
         "target_date": today,
         "bulletin_url": region.get_absolute_url(),
         "favourited": favourite is not None,
@@ -4668,19 +4812,56 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         "is_staff": request.user.is_staff,
         "signin_url": reverse("accounts:sign_in"),
         # SNOW-807: the resort's curated locations, each a link to its own
-        # weather page — no forecast is read here. One query, no Weather.
-        "locations": _resort_location_links(resort),
+        # weather page. SNOW-1125: each also carries today's one-day row —
+        # one batched Weather query whatever the number of locations.
+        "locations": _resort_location_links(resort, today, timezone.now()),
         # SNOW-807: the map with the reports sheet open, flown to this resort
         # (static/js/map.js consumes ``?panel=`` and ``?resort=``).
         "observations_map_url": (
             f"{reverse('public:map')}?panel=reports&resort={resort.slug}"
         ),
+        # SNOW-1123: schema.org SkiResort, emitted in extra_head.
+        "structured_data_json": _build_resort_structured_data(
+            resort,
+            f"{settings.SITE_BASE_URL.rstrip('/')}{resort.get_absolute_url()}",
+        ),
     }
+    context.update(_resort_season_strip_context(region, today))
     return render(request, "public/resort.html", context)
 
 
-def _resort_location_links(resort: Resort) -> list[dict[str, Any]]:
-    """Return the resort's curated locations as links to their weather pages.
+def _resort_season_strip_context(
+    region: MicroRegion, today: datetime.date
+) -> dict[str, Any]:
+    """Build the resort page's season strip and its text summary (SNOW-1126).
+
+    Rendered server-side, not deferred the way the bulletin page's
+    ``#season-grid`` is: the strip's summary is the page's indexable account
+    of the season, and a crawler never fires the client trigger. The cost is
+    one indexed ``RegionDayRating.objects.for_region_range`` query.
+
+    The window is the running 1 Nov – 30 Apr season, or the one just ended
+    from May to October (``season_window``); the grid stops at ``today + 1``
+    within a running season.
+
+    Args:
+        region: The resort's parent micro-region.
+        today: The current local date.
+
+    Returns:
+        ``season_strip`` (a ``SeasonGrid``) and ``season_summary`` (a
+        ``SeasonSummary``, falsy — so the template hides the strip — when no
+        day in the window had a bulletin).
+
+    """
+    grid = build_season_grid(region, today, window=season_window(today))
+    return {"season_strip": grid, "season_summary": summarise_season(grid)}
+
+
+def _resort_location_links(
+    resort: Resort, today: datetime.date, now: datetime.datetime
+) -> list[dict[str, Any]]:
+    """Return the resort's curated locations as links, each with today's weather.
 
     Ordered with the primary link first — the one the resort leads with,
     normally the village, because that is where someone arrives — then by
@@ -4688,25 +4869,47 @@ def _resort_location_links(resort: Resort) -> list[dict[str, Any]]:
     ``link_resort_locations`` mints at the resort's own pin has none, and
     falls back to the resort's name (SNOW-807, after SNOW-761's block).
 
+    SNOW-1125: each link also carries today's one-day weather row, read in
+    ONE batched query over every linked location (keyed by
+    ``location_id``), so the cost is two queries whatever the number of
+    locations. A location with no row today gets ``weather_display=None``
+    and degrades to its link alone.
+
     Args:
         resort: The resort whose links to walk.
+        today: The server's local date — the ``Weather.observed_on`` read.
+        now: The reference instant for the day/night icon.
 
     Returns:
         One dict per link: ``label``, ``elevation_m``, ``role_label``,
-        ``url`` and a stable ``testid``. Empty when the resort has no
-        linked locations — a manual operator step, so that state is
-        normal for a freshly geocoded resort.
+        ``url``, ``weather_display`` (or ``None``) and a stable
+        ``testid``. Empty when the resort has no linked locations — a
+        manual operator step, so that state is normal for a freshly
+        geocoded resort.
 
     """
-    links = resort.resort_locations.select_related("location").order_by(
-        "-is_primary", "role", "location__name"
+    links = list(
+        resort.resort_locations.select_related("location").order_by(
+            "-is_primary", "role", "location__name"
+        )
     )
+    if not links:
+        return []
+    weather_by_location = {
+        row.location_id: row
+        for row in Weather.objects.on_date(today).filter(
+            location_id__in=[link.location_id for link in links]
+        )
+    }
     return [
         {
             "label": link.location.name or resort.name,
             "elevation_m": link.location.elevation_m,
             "role_label": str(link.get_role_display()),
             "url": link.location.get_absolute_url(),
+            "weather_display": build_weather_display(
+                weather_by_location.get(link.location_id), now
+            ),
             "testid": f"resort-location-{index}",
         }
         for index, link in enumerate(links)
@@ -4887,7 +5090,7 @@ def season_calendar_partial(request: HttpRequest, region_id: str) -> HttpRespons
     # ``apply_bulletin_day_ratings`` (which deletes it after ingest) so fresh
     # data is always served after the next bulletin lands.
     canonical_id = slugify(region_id)
-    cache_key = make_template_fragment_key("season_calendar", [canonical_id, today_iso])
+    cache_key = season_calendar_cache_key(canonical_id, today_iso, get_language())
     cached_body: bytes | None = cache.get(cache_key)
     if cached_body is not None:
         return HttpResponse(cached_body)
@@ -5264,9 +5467,9 @@ def _elevation_display(lower_raw: Any, upper_raw: Any) -> str:
     if lower_fmt and upper_fmt:
         return f"{lower_fmt}\u2013{upper_fmt}"
     if lower_fmt:
-        return _gettext("above %(bound)s") % {"bound": lower_fmt}
+        return gettext("above %(bound)s") % {"bound": lower_fmt}
     if upper_fmt:
-        return _gettext("below %(bound)s") % {"bound": upper_fmt}
+        return gettext("below %(bound)s") % {"bound": upper_fmt}
     return ""
 
 
@@ -5354,11 +5557,11 @@ def _problem_summary(
         return core_zone_text
     if aspects and elevation:
         aspect_str = ", ".join(aspects)
-        return _gettext("Affects %(aspect_str)s aspects %(elevation)s") % {
+        return gettext("Affects %(aspect_str)s aspects %(elevation)s") % {
             "aspect_str": aspect_str,
             "elevation": elevation.display,
         }
-    return _gettext("Affects all aspects and elevations")
+    return gettext("Affects all aspects and elevations")
 
 
 def _enrich_avalanche_problem(
@@ -5704,7 +5907,7 @@ def _pivot_label(band_elevation: dict[str, Any] | None) -> str:
         return ""
     treeline: bool = band_elevation.get("treeline", False)
     if treeline:
-        return _gettext("treeline")
+        return gettext("treeline")
     lower: int | None = band_elevation.get("lower")
     upper: int | None = band_elevation.get("upper")
     pivot = lower if lower is not None else upper
@@ -5735,7 +5938,7 @@ def _build_band_time_subheader(
     """
     if not earlier_pivot or not later_pivot or earlier_pivot == later_pivot:
         return ""
-    return _gettext("Wet line at %(earlier)s earlier, %(later)s later") % {
+    return gettext("Wet line at %(earlier)s earlier, %(later)s later") % {
         "earlier": earlier_pivot,
         "later": later_pivot,
     }

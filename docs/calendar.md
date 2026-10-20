@@ -1,8 +1,8 @@
 ---
 name: calendar
-description: RegionDayRating denormalisation and the day_rating v8 aggregation policy feeding the season heatmap season_calendar_partial HTMX fragment
+description: RegionDayRating, day_rating policy, season_calendar_partial heatmap and the resort season strip (season_window, _season_cell)
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-19
 ---
 
 # Calendar and RegionDayRating
@@ -14,6 +14,32 @@ season trigger in the top nav (`includes/nav.html` with
 a server-rendered HTMX fragment backed by a denormalised per-(region,
 date) rating table — no JSON API, no per-day render-model reads at
 request time.
+
+**The resort page's season strip** (SNOW-1126). `/resorts/<slug>/`
+renders the same grid, server-side and inline rather than as a deferred
+fragment, because its text summary is the page's indexable account of the
+season and a crawler never fires the client trigger. The cost is one
+indexed `RegionDayRating.objects.for_region_range` query; there is no
+`{% cache %}` around it, so `apply_bulletin_day_ratings`' invalidation
+has nothing to add.
+- **Window** — `season_window(today)` in `apps/public/season_calendar.py`
+  returns a `SeasonWindow(start, end, label)`: a season runs 1 November
+  to 30 April (`SEASON_OPENS` / `SEASON_CLOSES`), and from 1 May to
+  31 October the window is the season just ended. The start is clamped
+  to `settings.SEASON_START_DATE`; the label is the nominal season's.
+  `build_season_grid(region, today, window=…)` runs from the window's
+  start to the earlier of its end and `today + 1`. Without a `window` the
+  grid is the bulletin page's, unchanged.
+- **Summary** — `summarise_season(grid)` counts the days with a bulletin,
+  the days per level, the days at Considerable or higher, and the peak
+  level with the first day it was reached. A falsy summary (no day with a
+  bulletin) omits the whole section.
+- **Cells** — both grids draw each day through
+  `public/partials/_season_cell.html` (component library slug
+  `season-cell`). The strip passes `inert=True`: no cell links to its
+  day — the danger area is the page's one bulletin link — and each dated
+  cell is `role="img"` with the translated EAWS level name in its
+  `aria-label` and `title`, the same names the bulletin grid now uses.
 
 **Model**: `apps.bulletins.models.RegionDayRating` — one row per
 `(region, calendar day)` with:
@@ -71,8 +97,9 @@ request time.
 `apply_bulletin_day_ratings(bulletin)` inline after the render model is
 built — never via `post_save`. Failures are logged and ingest continues
 (the bulletin is still stored; the calendar tile picks up on the next
-rebuild). The same call deletes the `season_calendar` fragment-cache key
-for each affected region so the next open re-renders.
+rebuild). The same call deletes the `season_calendar` cache key for each
+affected region, in every `settings.LANGUAGES` language, so the next open
+re-renders.
 
 **Rebuild**: `rebuild_render_models` recomputes day ratings for every
 `(region, day)` covered by the rebuilt bulletins as a trailing step.
@@ -89,8 +116,11 @@ first open (`hx-trigger="snowdesk:load once"`, SNOW-170) and the grid
 (`public/partials/_season_calendar.html`, built by
 `apps.public.season_calendar.build_season_grid`) is swapped in with
 `hx-swap="innerHTML"`. The rendered body is cached for 25 hours under
-`make_template_fragment_key("season_calendar", [canonical_region_id,
-today])`, so a cache hit issues zero DB queries. The grid runs from
+`season_calendar_cache_key(canonical_region_id, today, language)` in
+`apps/bulletins/services/day_rating.py`, so a cache hit issues zero DB
+queries. The language is in the key because the body is rendered text:
+the month labels are Django's own translated month names (`MONTHS_3`) and
+the cell labels are `blocktrans` sentences (SNOW-1128). The grid runs from
 `settings.SEASON_START_DATE` to `today + 1` (the afternoon bulletin
 targets tomorrow); the selected tile is highlighted client-side from
 `data-selected-date`.

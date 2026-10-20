@@ -887,22 +887,24 @@ describe('the downloaded-areas overlay bridge (SNOW-645 review)', () => {
     await settle();
   });
 
-  it('renders no overlay switch of its own (SNOW-904)', async () => {
-    // This sheet drove the overlay from a "Display on the map" switch at
-    // its foot: it painted the switch from isEnabled(), called show()/hide()
-    // on change, and mirrored `snowdesk:downloaded-overlay-changed` back
-    // onto it. All three moved to the layers menu's "Display downloaded
-    // areas" row — see tests/js/test_map_layers_menu.js — so what this
-    // sheet must now do is leave the overlay alone entirely.
+  it('seeds its "Show on the map" switch and otherwise leaves the overlay alone', async () => {
+    // The sheet's foot carries a "Show on the map" switch again, bound to
+    // the layers menu's "Display downloaded areas" row by
+    // static/js/map_panel_overlay_switch.js (covered in
+    // tests/js/test_map_panel_overlay_switch.js). All this sheet does is ask
+    // that module to seed the freshly cloned switch; it never drives the
+    // overlay itself, so opening it must not show or hide anything.
+    const sync = vi.fn();
+    window.pwaPanelOverlaySwitch = { sync };
     seed({ 'basemap.regions': REGIONS });
     await loadModule();
     openSheet();
     await settle();
 
-    expect(document.getElementById('map-downloads-overlay-toggle')).toBeNull();
-    expect(document.querySelector('[data-panel-overlay-toggle]')).toBeNull();
+    expect(sync).toHaveBeenCalled();
     expect(window.pwaDownloadedOverlay.show).not.toHaveBeenCalled();
     expect(window.pwaDownloadedOverlay.hide).not.toHaveBeenCalled();
+    delete window.pwaPanelOverlaySwitch;
   });
 });
 
@@ -1956,8 +1958,9 @@ describe('the budget readout', () => {
 
 // SNOW-904 removed SNOW-832's empty-list guard and the block that covered
 // it. That guard hid the "Display on the map" strip while this panel had
-// nothing to display, because a switch that cannot do what it says teaches
-// the wrong thing. There is no strip to hide — see the bridge block above.
+// nothing to display. The strip is back (bound to the layers-menu row), but
+// the guard is not: the row it mirrors shows whatever is downloaded, and
+// two controls over one setting should not disagree about whether it exists.
 
 describe('account-only rows (SNOW-749)', () => {
   // An area on the user's ACCOUNT that this device does not hold — saved
@@ -2268,6 +2271,53 @@ describe('account-only rows (SNOW-749)', () => {
     expect(window.pwaDownloadsSync.push).toHaveBeenCalledWith(
       expect.objectContaining({ areaId: 'region-CH-2101', regionId: 'CH-2101' }),
     );
+  });
+
+  it('re-asserts with the terrain opt-in and the stored name (SNOW-1133)', async () => {
+    // Without `terrain`, push posted "false" and the account forgot the
+    // choice; without `storedName`, it froze the localised default.
+    window.pwaDownloadsSync.push = vi.fn(async () => true);
+    window.pwaDownloadsSync.accountName = (area) =>
+      typeof area.storedName === 'string' ? area.storedName : area.name;
+    installAreas([
+      {
+        id: 'custom-k1',
+        name: 'Custom area 4',
+        storedName: '',
+        bytes: 5 * MB,
+        bbox: [7.1, 46.1, 7.2, 46.2],
+        onDevice: true,
+        synced: false,
+        terrain: true,
+      },
+    ]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(window.pwaDownloadsSync.push).toHaveBeenCalledWith(
+      expect.objectContaining({ areaId: 'custom-k1', name: '', terrain: true }),
+    );
+  });
+
+  it('names two unnamed account areas saved on one day apart (SNOW-1133)', async () => {
+    // Review: the date alone gave both the same label, so neither row, nor
+    // its action names, said which area it was.
+    const box = [7.1, 46.1, 7.2, 46.2];
+    installAreas([
+      { id: 'custom-u1', bytes: 0, bbox: box, onDevice: false, synced: true,
+        savedAt: '2026-10-20T08:15:00Z' },
+      { id: 'custom-u2', bytes: 0, bbox: box, onDevice: false, synced: true,
+        savedAt: '2026-10-20T14:40:00Z' },
+    ]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const labels = rowLabels().filter((label) => label.startsWith('Area saved'));
+    expect(labels).toHaveLength(2);
+    expect(new Set(labels).size).toBe(2);
+    expect(rowLabels().some((label) => label.startsWith('custom-'))).toBe(false);
   });
 
   it('never re-asserts a row it does not hold', async () => {

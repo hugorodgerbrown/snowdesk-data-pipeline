@@ -269,3 +269,45 @@ class TestMapPage:
         assert 'data-detent-initial="peek"' in content
         assert "js/map_region_sheet.js" in content
         assert 'data-region-sheet-url="/partials/region-sheet/XX-0000/"' in content
+
+    def test_map_carries_the_blank_peek_for_the_page_to_fill(
+        self, client: Client
+    ) -> None:
+        content = client.get(reverse("public:map")).content.decode()
+        match = re.search(
+            r'<template id="region-sheet-peek-template">(.*?)</template>', content, re.S
+        )
+        assert match, "the map has no blank peek row"
+        row = match.group(1)
+        assert "data-sheet-peek" in row
+        for slot in ("rating", "name", "code", "flag", "meta"):
+            assert f'data-region-sheet-slot="{slot}"' in row
+        assert 'data-region-sheet-proxy="map-region-pin-control"' in row
+        # The level names the script fills the meta line with.
+        assert 'data-string="level-considerable"' in content
+
+
+@pytest.mark.django_db
+class TestCaching:
+    """A body is privately cacheable: a day for a past day, ten minutes otherwise."""
+
+    def _cache_control(self, client: Client, day: str | None) -> str:
+        region = MicroRegionFactory.create()
+        response = _get(client, _url(region.region_id.lower(), day))
+        assert response.status_code == 200
+        return str(response["Cache-Control"])
+
+    def test_a_past_day_keeps_for_a_day(self, client: Client) -> None:
+        yesterday = (timezone.localdate() - datetime.timedelta(days=1)).isoformat()
+        header = self._cache_control(client, yesterday)
+        assert "private" in header
+        assert "max-age=86400" in header
+
+    def test_today_keeps_for_ten_minutes(self, client: Client) -> None:
+        header = self._cache_control(client, None)
+        assert "private" in header
+        assert "max-age=600" in header
+
+    def test_a_forecast_day_keeps_for_ten_minutes(self, client: Client) -> None:
+        tomorrow = (timezone.localdate() + datetime.timedelta(days=1)).isoformat()
+        assert "max-age=600" in self._cache_control(client, tomorrow)

@@ -223,6 +223,8 @@ describe('forget', () => {
     const op = window.pwaMutationQueue.enqueue.mock.calls[0][0];
     expect(op.url).toBe('/downloads/partials/custom-a1/forget/');
     expect(op.headers['HX-Request']).toBe('true');
+    // SNOW-1132: the row already gone is the outcome asked for.
+    expect(op.doneStatuses).toEqual([404]);
   });
 
   it('lets a later download of the same area sync again', async () => {
@@ -245,6 +247,15 @@ describe('rename', () => {
     const op = window.pwaMutationQueue.enqueue.mock.calls[0][0];
     expect(op.url).toBe('/downloads/partials/custom-a1/rename/');
     expect(bodyOf(window.pwaMutationQueue.enqueue).name).toBe('North ridge');
+    // SNOW-1132: no account row means nothing left to rename.
+    expect(op.doneStatuses).toEqual([404]);
+  });
+
+  it('declares no done status on a push', async () => {
+    // A 404 on the upsert would be a real fault, not an applied write.
+    await sync.push({ areaId: 'region-CH-4115', regionId: 'CH-4115' });
+
+    expect(window.pwaMutationQueue.enqueue.mock.calls[0][0].doneStatuses).toEqual([]);
   });
 });
 
@@ -373,6 +384,20 @@ describe('adopt', () => {
 
     await expect(sync.adopt()).resolves.toBe(2);
     expect(window.pwaMutationQueue.enqueue).toHaveBeenCalledTimes(2);
+  });
+
+  it('records the stored name, never the localised default (SNOW-1133)', async () => {
+    // An unrenamed custom area's `name` is the reader's in-memory
+    // "Custom area N"; posting it froze one language into the account.
+    installDownloads([{ ...AREAS[1], name: 'Custom area 2', storedName: '' }]);
+
+    await sync.adopt();
+    expect(bodyOf(window.pwaMutationQueue.enqueue).name).toBe('');
+  });
+
+  it('names a region by its name, which has no stored form', async () => {
+    expect(sync.accountName({ name: 'Verbier' })).toBe('Verbier');
+    expect(sync.accountName({ name: 'Custom area 1', storedName: 'Ridge' })).toBe('Ridge');
   });
 
   it('is a no-op once everything is already synced', async () => {

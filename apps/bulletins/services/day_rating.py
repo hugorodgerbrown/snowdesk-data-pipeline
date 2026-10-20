@@ -83,10 +83,11 @@ import logging
 from collections.abc import Iterable
 from datetime import date, timedelta
 
+from django.conf import settings
 from django.core.cache import cache
 from django.core.cache.utils import make_template_fragment_key
 from django.db.models import Prefetch
-from django.utils import timezone
+from django.utils import timezone, translation
 
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.render_model import (
@@ -792,6 +793,33 @@ def refresh_day_ratings(pairs: Iterable[tuple["MicroRegion", date]]) -> int:
     return failures
 
 
+def season_calendar_cache_key(
+    canonical_region_id: str, day_iso: str, language: str
+) -> str:
+    """Return the cache key for one region's rendered season calendar.
+
+    Shared by ``season_calendar_partial`` (which stores the body) and
+    :func:`apply_bulletin_day_ratings` (which deletes it after ingest). The
+    body is rendered text — month names and level labels in the request's
+    language — so the language is part of the key (SNOW-1128). ``language``
+    is normalised to its ``settings.LANGUAGES`` code, so the active
+    ``"en-gb"`` and the listed ``"en"`` name the same key.
+
+    Args:
+        canonical_region_id: The region's slugified id, e.g. ``"ch-4115"``.
+        day_iso: The calendar day the body was rendered on, ISO format.
+        language: A language code, e.g. ``translation.get_language()``.
+
+    Returns:
+        The cache key string.
+
+    """
+    code = translation.get_supported_language_variant(language)
+    return make_template_fragment_key(
+        "season_calendar", [canonical_region_id, day_iso, code]
+    )
+
+
 def apply_bulletin_day_ratings(bulletin: "Bulletin") -> int:
     """
     Recompute RegionDayRating for the (region, target_day) pairs of a bulletin.
@@ -871,13 +899,15 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> int:
     # target day — the cache is per-calendar-day, not per-bulletin.
     # Uses make_template_fragment_key to produce the same key that
     # season_calendar_partial stores on a cache miss.
+    # SNOW-1128: one cached body per language, so every language's key goes.
     today_iso = timezone.localdate().isoformat()
     for region in regions:
-        cache_key = make_template_fragment_key(
-            "season_calendar", [region.canonical_region_id, today_iso]
-        )
+        cache_keys = [
+            season_calendar_cache_key(region.canonical_region_id, today_iso, code)
+            for code, _name in settings.LANGUAGES
+        ]
         try:
-            cache.delete(cache_key)
+            cache.delete_many(cache_keys)
         except Exception:
             logger.exception(
                 "Failed to invalidate season_calendar cache key for region=%s;"

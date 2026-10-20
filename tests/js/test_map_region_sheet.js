@@ -2,8 +2,9 @@
  * tests/js/test_map_region_sheet.js — the phone region sheet
  * (static/js/map_region_sheet.js, SNOW-1098).
  *
- * A tap opens it at peek and fetches its body; a selection that was not a
- * tap does not open it; while it is open it follows the selection and the
+ * A tap opens it at peek, painted from the page at once, and fetches its
+ * body, which is then kept and reused for the same region and day; a
+ * selection that was not a tap opens it too; while it is open it follows the selection and the
  * date, and a deselect closes it; a failed fetch says so; and the pin and
  * download proxies press, and mirror, the roundels they stand for.
  *
@@ -37,7 +38,17 @@ document.body.innerHTML = `
   <template id="region-sheet-strings-template">
     <span data-string="loading">Loading region details…</span>
     <span data-string="failed">Region details are unavailable offline.</span>
+    <span data-string="level-considerable">Considerable</span>
   </template>
+  <template id="region-sheet-peek-template"><div data-sheet-peek>
+    <span class="danger-tile" data-region-sheet-slot="rating" hidden></span>
+    <h2 data-region-sheet-slot="name"></h2>
+    <svg data-region-sheet-slot="flag" class="search-result-flag" hidden><use href=""></use></svg>
+    <span data-region-sheet-slot="code"></span>
+    <span data-region-sheet-slot="meta"></span>
+    <button type="button" data-region-sheet-proxy="map-region-pin-control" aria-label="Pin this region"></button>
+    <button type="button" data-region-sheet-proxy="map-download-control" aria-label="Download this region"></button>
+  </div></template>
 `;
 await import('../../static/js/i18n_strings.js');
 await import('../../static/js/sheet_detents_core.js');
@@ -56,12 +67,17 @@ async function boot() {
  *
  * @param {?string} regionId
  * @param {string} [via]
+ * @param {object} [extra] More of the event's detail (region_name, …).
  */
-function select(regionId, via) {
+function select(regionId, via, extra = {}) {
   document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
-    detail: { region_id: regionId, via },
+    detail: { region_id: regionId, via, ...extra },
   }));
 }
+
+// The module keeps fetched bodies for ten minutes. Each test starts an hour
+// after the last, so none inherits another's kept bodies.
+let now = Date.UTC(2026, 9, 19);
 
 /** Let the fetch chain settle. */
 async function settle() {
@@ -90,10 +106,75 @@ beforeEach(() => {
     Promise.resolve({ ok: true, text: () => Promise.resolve(BODY) }),
   );
   vi.stubGlobal('fetch', fetchMock);
+  now += 60 * 60 * 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  delete window.pwaRegionLevel;
+});
+
+describe('the peek painted from the page', () => {
+  it('shows the region, its level and its area before the body arrives', async () => {
+    window.pwaRegionLevel = { forRegion: () => 'considerable' };
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const sheet = await boot();
+    select('CH-4115', 'tap', { region_name: 'Martigny-Verbier', subregion_name: 'Lower Valais' });
+    const slot = (name) => sheet.querySelector(`[data-region-sheet-slot="${name}"]`);
+    expect(slot('name').textContent).toBe('Martigny-Verbier');
+    expect(slot('code').textContent).toBe('CH-4115');
+    expect(slot('meta').textContent).toBe('Considerable · Lower Valais');
+    expect(slot('rating').hidden).toBe(false);
+    expect(slot('rating').textContent).toBe('3');
+    expect(slot('rating').getAttribute('data-level')).toBe('considerable');
+    expect(slot('flag').hasAttribute('hidden')).toBe(false);
+    expect(slot('flag').querySelector('use').getAttribute('href')).toBe('#flag-ch');
+  });
+
+  it('leaves the tile hidden when the map has no level for the day', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const sheet = await boot();
+    select('CH-4115', 'tap', { region_name: 'Martigny-Verbier' });
+    expect(sheet.querySelector('[data-region-sheet-slot="rating"]').hidden).toBe(true);
+  });
+});
+
+describe('a body fetched once', () => {
+  it('is reused for the same region and day, with no second request', async () => {
+    const sheet = await boot();
+    select('CH-4115', 'tap');
+    await settle();
+    select(null);
+    select('CH-4115', 'tap');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sheet.querySelector('a[href="/CH-4115/"]')).not.toBeNull();
+  });
+
+  it('is asked for again once ten minutes have passed', async () => {
+    await boot();
+    select('CH-4115', 'tap');
+    await settle();
+    select(null);
+    now += 11 * 60 * 1000;
+    select('CH-4115', 'tap');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('is kept per day', async () => {
+    await boot();
+    select('CH-4115', 'tap');
+    await settle();
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+      detail: { date: '2026-02-03' },
+    }));
+    await settle();
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+      detail: { date: null },
+    }));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('opening', () => {
@@ -124,12 +205,39 @@ describe('opening', () => {
     expect(sheet.hasAttribute('hidden')).toBe(true);
   });
 
-  it('says so when the region cannot be fetched', async () => {
+  it('says so when the region cannot be fetched, under the peek it keeps', async () => {
     fetchMock.mockImplementation(() => Promise.reject(new Error('offline')));
+    const sheet = await boot();
+    select('CH-4115', 'tap', { region_name: 'Martigny-Verbier' });
+    await settle();
+    expect(sheet.textContent).toContain('Region details are unavailable offline.');
+    expect(sheet.textContent).toContain('Martigny-Verbier');
+  });
+});
+
+describe('reopening (2026-10-19)', () => {
+  it('reopens for the region still selected once its sheet was closed', async () => {
     const sheet = await boot();
     select('CH-4115', 'tap');
     await settle();
-    expect(sheet.textContent).toContain('Region details are unavailable offline.');
+    // The × closes it the way overlays.js's shared handler does: by
+    // hiding it. The region stays selected.
+    sheet.setAttribute('hidden', '');
+    expect(window.pwaRegionSheet.reopen()).toBe(true);
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+    expect(sheet.getAttribute('data-detent')).toBe('peek');
+    expect(sheet.textContent).toContain('Martigny-Verbier');
+  });
+
+  it('does nothing while the sheet is open, with no selection, or on a desktop', async () => {
+    const sheet = await boot();
+    expect(window.pwaRegionSheet.reopen()).toBe(false);
+    select('CH-4115', 'tap');
+    expect(window.pwaRegionSheet.reopen()).toBe(false);
+    sheet.setAttribute('hidden', '');
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    expect(window.pwaRegionSheet.reopen()).toBe(false);
+    expect(sheet.hasAttribute('hidden')).toBe(true);
   });
 });
 
@@ -239,6 +347,26 @@ describe('the proxies', () => {
 
     roundel.setAttribute('aria-disabled', 'true');
     await settle();
+    proxy.click();
+    expect(pressed).toHaveBeenCalledTimes(1);
+  });
+
+  // SNOW-1130: on a phone the proxy is the only download button, and a tap
+  // on a downloaded ('done') or half-refreshed ('partial') region refreshes
+  // its bulletins and weather. The roundel announces both as actionable, so
+  // the proxy must pass the press through.
+  it.each(['done', 'partial'])('presses the roundel in the %s state', async (state) => {
+    const sheet = await boot();
+    select('CH-4115', 'tap');
+    await settle();
+    const roundel = document.getElementById('map-download-control');
+    const pressed = vi.fn();
+    roundel.addEventListener('click', pressed);
+    roundel.setAttribute('data-download-state', state);
+    roundel.setAttribute('aria-disabled', 'false');
+    await settle();
+    const proxy = sheet.querySelector('[data-region-sheet-proxy="map-download-control"]');
+    expect(proxy.getAttribute('aria-disabled')).toBe('false');
     proxy.click();
     expect(pressed).toHaveBeenCalledTimes(1);
   });

@@ -843,11 +843,12 @@ def offline_map_page(
         ),
     )
 
-    # The first-run intro overlays the map controls this suite clicks; a
-    # returning visitor has long since dismissed it (tests/e2e/conftest.py's
-    # _suppress_home_intro makes the same choice, for the same reason).
+    # The first-run tour offer slides in over the map controls this suite
+    # clicks; a returning visitor has long since answered it
+    # (tests/e2e/conftest.py's _suppress_tour_offer makes the same choice,
+    # for the same reason).
     page.add_init_script(
-        "try { localStorage.setItem('snowdesk.home.intro', 'dismissed'); } catch (_) {}"
+        "try { localStorage.setItem('snowdesk.map.tour-offer', 'dismissed'); } catch (_) {}"
     )
     # An unhandled rejection carrying a non-Error value reaches Playwright
     # as a `pageerror` that stringifies to nothing at all — no name, no

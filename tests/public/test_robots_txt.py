@@ -30,6 +30,15 @@ def test_robots_served_as_plain_text() -> None:
     assert response["Content-Type"].startswith("text/plain")
 
 
+def test_robots_header_names_all_three_providers() -> None:
+    """SNOW-1127: the first line describes the site as it is — three providers."""
+    first_line = _body().splitlines()[0]
+    assert first_line.startswith("# Snowdesk")
+    for provider in ("SLF", "ALBINA", "Météo-France"):
+        assert provider in first_line
+    assert "Swiss" not in first_line
+
+
 def test_robots_allows_all_by_default() -> None:
     """The policy is open: a wildcard user-agent with ``Allow: /``."""
     body = _body()

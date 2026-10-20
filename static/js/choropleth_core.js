@@ -32,6 +32,8 @@
  *   BACKDROP_COLOUR
  *   compositeOverBackdrop(colour, alpha)
  *   repaintDateForStyleSwap(committed, urlParam)
+ *   SELECTED_OUTLINE_ROUTE_OPACITY
+ *   selectedOutlinePaint(routeOpen)
  */
 
 // @ts-check
@@ -212,10 +214,49 @@
     return committed || urlParam || null;
   }
 
+  /**
+   * How strongly the selected region's outline draws while a route is open:
+   * the route is what the reader is looking at, and a near-black ring
+   * crossing it reads as part of the route (2026-10-19).
+   */
+  const SELECTED_OUTLINE_ROUTE_OPACITY = 0.4;
+
+  /**
+   * The paint for `regions-line-selected`, the selected region's outline.
+   *
+   * It drew 4 px near-black at every zoom, which is right while the whole
+   * region is on screen and too heavy once the reader is in close, where
+   * the ring is one valley's edge among the terrain (2026-10-19). So it
+   * tapers with zoom — 4 px to z9, 1.5 px from z12 — and recedes further
+   * while a route is open. A region that is neither selected nor
+   * previewing stays at 0 either way: the layer draws every feature and
+   * the opacity is what picks the one (SNOW-172).
+   *
+   * @param {boolean} routeOpen Whether the route panel is open.
+   * @returns {{'line-width': Array<*>, 'line-opacity': Array<*>}}
+   */
+  function selectedOutlinePaint(routeOpen) {
+    return {
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9, 4, 12, 1.5],
+      'line-opacity': [
+        'case',
+        [
+          'any',
+          ['boolean', ['feature-state', 'selected'], false],
+          ['boolean', ['feature-state', 'previewing'], false],
+        ],
+        routeOpen ? SELECTED_OUTLINE_ROUTE_OPACITY : 1,
+        0,
+      ],
+    };
+  }
+
   self.pwaChoroplethCore = Object.freeze({
     paintRatingsFrame: paintRatingsFrame,
     BACKDROP_COLOUR: BACKDROP_COLOUR,
     compositeOverBackdrop: compositeOverBackdrop,
     repaintDateForStyleSwap: repaintDateForStyleSwap,
+    SELECTED_OUTLINE_ROUTE_OPACITY: SELECTED_OUTLINE_ROUTE_OPACITY,
+    selectedOutlinePaint: selectedOutlinePaint,
   });
 })();

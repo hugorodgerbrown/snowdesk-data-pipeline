@@ -40,6 +40,7 @@ interface Window {
   pwaChoroplethCore: any;
   /** static/js/calendar_core.js — the date picker's month grid maths. */
   pwaCalendarCore: any;
+  pwaStaleDayCore: any;
   /** static/js/scrubber_core.js — season-scrubber position and snapping. */
   pwaScrubberCore: any;
   /** static/js/search_core.js — diacritic-insensitive region/resort match. */
@@ -50,6 +51,17 @@ interface Window {
   pwaSheetDetentsCore: any;
   /** static/js/map_region_panel.js — the loaded pinned-region ids search lists on a phone. */
   pwaPinnedRegions: { ids(): string[]; ready(): Promise<void> };
+  /**
+   * static/js/map_overlay_exclusivity.js — the map's one-overlay-at-a-time
+   * registry. Read by map_help_mode.js (SNOW-1119), which closes them all.
+   */
+  pwaMapOverlays?: {
+    register(name: string, handlers: { close(): void; isOpen?(): boolean }): void;
+    opening(name: string): void;
+    closeAll(): void;
+    openNames(): string[];
+    names(): string[];
+  };
   /** static/js/hatch_core.js — the downloaded-areas hatch image. */
   pwaHatchCore: any;
   /** static/js/map_viewport_core.js — stored-camera restore and clamping. */
@@ -120,6 +132,10 @@ interface Window {
   pwaTerrainFilterSheet: any;
   /** static/js/map.js — the zoom-gated layers: list() → [{key, zoom, active}]. */
   pwaZoomGates: any;
+  /** static/js/map.js — the painted day's level for a region: forRegion(id) → "low" … "very_high" | null. */
+  pwaRegionLevel: any;
+  /** static/js/map_region_sheet.js — reopen() → whether the phone sheet reopened for the region still selected. */
+  pwaRegionSheet: any;
 }
 
 /**

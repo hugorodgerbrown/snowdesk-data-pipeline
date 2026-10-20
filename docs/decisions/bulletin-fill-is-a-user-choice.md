@@ -2,7 +2,7 @@
 name: bulletin-fill-is-a-user-choice
 description: The danger choropleth is translucent at one of five user-chosen opacity steps, 0 being off — replacing the opaque pre-blended fill
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-19
 ---
 
 # How strongly the choropleth paints is the user's call
@@ -18,11 +18,13 @@ This is why the stored preference is a number rather than a boolean, and why
 `layer_visibility_core.js` talks about an *effective opacity* rather than a
 visibility.
 
-The control is a roundel in the bottom-right stack (`#map-fill-toggle`),
-first in `#map-controls-collapsible` so it sits under locate and hides with
-the strip, opening a flyout to the left. Five discrete steps rather than a
-range input: each is then a one-tap 44px target, and what gets persisted is
-one of five known values rather than an arbitrary float nobody chose.
+The control is the "Bulletin opacity" row of the layers menu
+(`#map-bulletin-opacity`, a `role="radiogroup"` in the Conditions section
+after ALBINA); picking a step leaves the menu open. It was a roundel with a
+flyout (`#map-fill-toggle`) until the two-capsule control column moved it
+([why](map-controls-are-two-groups-without-an-on-map-marker.md)). Five discrete steps rather than a
+range input: what gets persisted is one of five known values rather than an
+arbitrary float nobody chose.
 
 **Why.** How strong the choropleth should be is not a binary. It depends on
 the basemap underneath, on whether the reader is after the danger rating or

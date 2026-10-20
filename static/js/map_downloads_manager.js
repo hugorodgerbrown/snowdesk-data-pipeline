@@ -327,6 +327,9 @@
     // row's map DRAWS and the area IS available offline; it is the
     // bulletins that are behind.
     'kind-content-incomplete': 'Bulletins not saved',
+    // SNOW-1133: an account-only area nobody named — see unnamedAreaLabel.
+    'unnamed-area': 'Area saved %(date)s',
+    'unnamed-area-undated': 'Unnamed area',
     'kind-region': 'Region',
     'kind-custom': 'Custom area',
     // SNOW-856: the shared z0-9 overview map. "Shared" rather than a
@@ -730,6 +733,37 @@
   }
 
   /**
+   * A label for an account-only area that has no name.
+   *
+   * SNOW-1133: an unrenamed custom area's "Custom area N" is built from an
+   * ordinal only the device that made it holds, so another device has no
+   * name to show. The day the account recorded it tells two such rows
+   * apart, where a raw `custom-<uuid>` told the user nothing — and the
+   * time of day with it, so two saved on the same day still differ.
+   *
+   * @param {{savedAt?: string}} area
+   * @returns {string} '' when there is no usable date, so the caller falls
+   *   back as before.
+   */
+  function unnamedAreaLabel(area) {
+    const when = area && area.savedAt ? new Date(area.savedAt) : null;
+    if (!when || Number.isNaN(when.getTime())) return STRINGS['unnamed-area-undated'] || '';
+    let date;
+    try {
+      date = new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(when);
+    } catch (_e) {
+      date = when.toISOString().slice(0, 16).replace('T', ' ');
+    }
+    return interpolate(STRINGS['unnamed-area'], { date: date });
+  }
+
+  /**
    * Tell the account about areas this device holds that it does not know
    * about (SNOW-XXX).
    *
@@ -778,7 +812,11 @@
         regionId: isCustom ? '' : String(area.id).replace(/^region-/, ''),
         bbox: area.bbox,
         basemapKey: area.basemapKey,
-        name: area.name,
+        // SNOW-1133: the stored name, never the localised default, and the
+        // terrain opt-in — without it `push` posts "false" and a
+        // re-asserted area loses the choice on the account.
+        name: typeof sync.accountName === 'function' ? sync.accountName(area) : area.name,
+        terrain: !!area.terrain,
       });
     }
   }
@@ -863,6 +901,9 @@
       isCustomAreaId: downloadCore()?.isCustomAreaId,
       // SNOW-856: the shared overview map, listed but never deletable.
       isBaseLayerAreaId: downloadCore()?.isBaseLayerAreaId,
+      // SNOW-1133: an account-only area with no stored name is named by
+      // the day it was saved, rather than by its raw id.
+      unnamedLabel: unnamedAreaLabel,
     });
     // SNOW-844: and which of them are on this device but cannot render.
     // Awaited before the rows are built, not after: the flag decides the
@@ -889,6 +930,10 @@
     // Re-clone rather than update in place — see the module header.
     sheet.textContent = '';
     sheet.appendChild(bodyTemplate.content.cloneNode(true));
+    // The "Show on the map" switch at the foot starts unchecked in the
+    // clone; seed it from window.pwaDownloadedOverlay.isEnabled() (the
+    // tri-state's derived answer — reading it writes nothing).
+    window.pwaPanelOverlaySwitch?.sync();
 
     // SNOW-645 review: the budget figure itself is no longer stated in
     // this text — it now lives in the <select> right after it ("40.3 MB
@@ -956,11 +1001,12 @@
     const empty = sheet.querySelector('[data-downloads-empty]');
     if (empty) empty.hidden = rows.length > 0;
 
-    // SNOW-904 removed SNOW-832's empty-list guard here. It hid the
-    // "Display on the map" strip when this panel had nothing to display,
-    // because a switch that cannot do what it says teaches the wrong
-    // thing. The strip is gone with every other panel switch — the layers
-    // menu is the sole control now — so there is no control left to hide.
+    // SNOW-904 removed SNOW-832's empty-list guard here, which hid the
+    // overlay switch when this panel had nothing to display. The switch is
+    // back (bound to the layers menu's downloads row), but the guard is
+    // not: the menu row it mirrors is shown whatever is downloaded, and
+    // two controls over one setting should not disagree about whether it
+    // exists.
 
     // SNOW-XXX: two groups — what is on this device, and what is only on
     // the account. SNOW-832's per-basemap headings are gone; the basemap
@@ -2137,13 +2183,11 @@
     });
   });
 
-  // SNOW-904: this sheet's "Display on the map" switch is gone, and with it
-  // both the change handler that drove window.pwaDownloadedOverlay and the
-  // ``snowdesk:downloaded-overlay-changed`` read-back that kept it honest
-  // when something else (a placement flow, a connectivity flip) moved the
-  // overlay. The layers menu's "Display downloaded areas" row drives the
-  // same bridge and listens to the same broadcast — see
-  // map_basemap_picker.js.
+  // The sheet's "Show on the map" switch is wired by
+  // static/js/map_panel_overlay_switch.js — the change handler that drives
+  // it through the layers menu's "Display downloaded areas" row, and the
+  // read-back that keeps it honest when something else (a placement flow,
+  // a connectivity flip) moves the overlay.
 
   // SNOW-637: a sheet left open when the connection drops has to reflect it
   // there and then — waiting for the next open would leave a live-looking

@@ -1,17 +1,14 @@
 """tests/public/test_pwa_launch_parity.py — the splash and the first paint agree (SNOW-1112).
 
-An installed launch is two surfaces drawn by two owners: Android's
-generated splash (from the manifest) and the launch shell the page paints
-over it (includes/_pwa_launch_shell.html). The handoff is invisible only if
-they agree on every value, per environment:
+An installed launch shows Android's generated splash (from the manifest)
+until the page paints. The handoff is clean only if they agree, per
+environment:
 
 - the manifest ``theme_color`` is the ``<meta name="theme-color">``, and both
   are the manifest ``background_color`` — otherwise the status bar changes
   colour at the handoff;
-- the manifest ``background_color`` is the colour the shell paints, which is
-  ``--color-bg`` in the stylesheet;
-- the shell's Android mark is the manifest's maskable icon — the file
-  Android's splash shows;
+- the manifest ``background_color`` is ``--color-bg``, the page's own
+  background;
 - neither the page nor the manifest names the other environment's icons,
   which is how staging used to paint the production logo.
 
@@ -62,37 +59,11 @@ def _meta_theme_color(body: str) -> str:
     return str(found[0])
 
 
-def _shell_background(body: str) -> str:
-    """Return the background the launch shell's inline critical CSS paints."""
-    match = re.search(
-        r"\.pwa-launch-shell \{[^}]*?background-color:\s*([^;]+);", body, re.DOTALL
-    )
-    assert match, "launch shell inline background-color not found"
-    return match.group(1).strip()
-
-
-def _shell_image(body: str, which: str) -> str:
-    """Return the URL the launch gate gives the ``mark`` or the ``tile``.
-
-    The images ship with no ``src``; the inline gate assigns one from a
-    server-rendered literal, so that literal is what the browser fetches.
-    """
-    match = re.search(rf"{which}: '([^']+)'", body)
-    assert match, f"launch shell {which} URL not found"
-    # ``|escapejs`` writes ``-`` as ``\u002D``; decode it as JS would.
-    decoded: str = json.loads(f'"{match.group(1)}"')
-    return decoded
-
-
-def _colour_bg_tokens() -> tuple[str, str]:
-    """Return the light and dark ``--color-bg`` values from main.css.
-
-    Two definitions of the token: the light one in ``@theme``, the dark one
-    in the ``.dark`` override further down the file.
-    """
+def _colour_bg_token() -> str:
+    """Return the light ``--color-bg`` value, the first one in main.css's ``@theme``."""
     css = (Path(settings.BASE_DIR) / "src" / "css" / "main.css").read_text()
-    light, dark = re.findall(r"--color-bg:\s*(#[0-9a-fA-F]{6});", css)[:2]
-    return light.lower(), dark.lower()
+    light: str = re.findall(r"--color-bg:\s*(#[0-9a-fA-F]{6});", css)[0]
+    return light.lower()
 
 
 @pytest.mark.parametrize("environment", ENVIRONMENTS)
@@ -107,40 +78,11 @@ def test_status_bar_colour_is_one_value_from_splash_to_first_paint(
 
 
 @pytest.mark.parametrize("environment", ENVIRONMENTS)
-def test_first_paint_background_is_the_splash_background(environment: str) -> None:
-    """The shell paints the manifest ``background_color``, which is ``--color-bg``."""
+def test_splash_background_is_the_page_background(environment: str) -> None:
+    """The manifest ``background_color`` is ``--color-bg``."""
     with override_settings(SITE_ENVIRONMENT=environment):
-        manifest, body = _manifest(), _page()
-    assert _shell_background(body) == manifest["background_color"]
-    assert manifest["background_color"].lower() == _colour_bg_tokens()[0]
-
-
-def test_ios_dark_first_paint_is_the_dark_startup_image_background() -> None:
-    """A dark-scheme iPhone hands over from a dark startup image onto dark.
-
-    ``bin/build-pwa-splash`` ships both schemes, chosen by
-    ``prefers-color-scheme``; the shell's iOS branch follows the same query
-    with the dark ``--color-bg``.
-    """
-    body = _page()
-    match = re.search(
-        r"@media \(prefers-color-scheme: dark\) \{\s*"
-        r"html\.pwa-launching--ios \.pwa-launch-shell \{\s*background-color: ([^;]+);",
-        body,
-    )
-    assert match, "iOS dark-scheme shell background not found"
-    assert match.group(1).strip().lower() == _colour_bg_tokens()[1]
-
-
-@pytest.mark.parametrize("environment", ENVIRONMENTS)
-def test_first_paint_mark_is_the_icon_androids_splash_shows(environment: str) -> None:
-    """The shell's Android mark is the manifest's maskable icon, from this environment."""
-    with override_settings(SITE_ENVIRONMENT=environment):
-        manifest, body = _manifest(), _page()
-    maskable = [i["src"] for i in manifest["icons"] if i["purpose"] == "maskable"]
-    assert maskable == [_shell_image(body, "mark")]
-    own = ENVIRONMENTS[environment]["own"]
-    assert f"/static/{own}" in _shell_image(body, "tile")
+        manifest = _manifest()
+    assert manifest["background_color"].lower() == _colour_bg_token()
 
 
 @pytest.mark.parametrize("environment", ENVIRONMENTS)
@@ -181,7 +123,7 @@ HASHED_STORAGES = {
 
 @override_settings(STORAGES=HASHED_STORAGES)
 def test_icon_urls_go_through_the_static_storage() -> None:
-    """Manifest icons and the shell marks carry the storage's content hash.
+    """Manifest icons carry the storage's content hash.
 
     Chrome re-mints an installed WebAPK only when a manifest icon URL
     changes, so a hand-built ``/static/…`` URL meant a redrawn icon never
@@ -192,8 +134,6 @@ def test_icon_urls_go_through_the_static_storage() -> None:
         assert icon["src"].endswith(".0123abcd.png"), icon
     for shot in manifest["screenshots"]:
         assert shot["src"].endswith(".0123abcd.png"), shot
-    assert _shell_image(body, "mark").endswith(".0123abcd.png")
-    assert _shell_image(body, "tile").endswith(".0123abcd.png")
     assert 'apple-touch-icon-180.0123abcd.png"' in body
 
 

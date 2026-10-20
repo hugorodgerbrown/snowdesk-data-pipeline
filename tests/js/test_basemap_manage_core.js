@@ -735,6 +735,77 @@ describe('reconcileAreas with the account (SNOW-749)', () => {
   });
 });
 
+describe('manageRows orders every kind it produces (SNOW-1133)', () => {
+  const isCustomAreaId = (id) => id.indexOf('custom-') === 0;
+  const AREAS = [
+    { id: 'custom-z', name: 'Zeta', bytes: 1, type: 'custom' },
+    { id: 'custom-d', name: 'Drop', bytes: 1, type: 'dropzone' },
+    { id: 'region-b', name: 'Verbier', bytes: 1 },
+    { id: 'region-a', name: 'Arolla', bytes: 1 },
+    { id: 'custom-a', name: 'Alpha', bytes: 1, type: 'custom' },
+  ];
+  const order = (areas) =>
+    core.manageRows(areas, { isCustomAreaId: isCustomAreaId }).map((row) => row.id);
+
+  it('puts regions, then custom areas, then drop zones, whatever the input order', () => {
+    // A drop zone had no rank, so the comparator returned NaN and the order
+    // depended on how the areas were read.
+    const expected = ['region-a', 'region-b', 'custom-a', 'custom-z', 'custom-d'];
+    expect(order(AREAS)).toEqual(expected);
+    expect(order(AREAS.slice().reverse())).toEqual(expected);
+  });
+});
+
+describe('an unnamed account-only area asks for a label (SNOW-1133)', () => {
+  const isCustomAreaId = (id) => id.indexOf('custom-') === 0;
+  const ACCOUNT_ONLY = {
+    id: 'custom-0f3c',
+    bytes: 0,
+    onDevice: false,
+    synced: true,
+    bbox: [7, 46, 8, 47],
+    savedAt: '2026-10-12T08:00:00Z',
+  };
+
+  it('labels it with the caller\'s label rather than its raw id', () => {
+    const rows = core.manageRows([ACCOUNT_ONLY], {
+      isCustomAreaId: isCustomAreaId,
+      unnamedLabel: (area) => 'Area saved ' + area.savedAt.slice(0, 10),
+    });
+    expect(rows[0].label).toBe('Area saved 2026-10-12');
+  });
+
+  it('keeps a stored name, and never asks for one on this device', () => {
+    const unnamedLabel = () => 'should not be used';
+    const rows = core.manageRows(
+      [
+        { ...ACCOUNT_ONLY, name: 'Ridge' },
+        { id: 'custom-here', name: 'Custom area 3', bytes: 5, onDevice: true, bbox: [7, 46, 8, 47] },
+      ],
+      { isCustomAreaId: isCustomAreaId, unnamedLabel: unnamedLabel },
+    );
+    expect(rows.map((row) => row.label).sort()).toEqual(['Custom area 3', 'Ridge']);
+  });
+
+  it('falls back to the id without a label function', () => {
+    const rows = core.manageRows([ACCOUNT_ONLY], { isCustomAreaId: isCustomAreaId });
+    expect(rows[0].label).toBe('custom-0f3c');
+  });
+});
+
+describe('reconcileAreas carries the stored name (SNOW-1133)', () => {
+  it('passes storedName through for a local area', () => {
+    const out = core.reconcileAreas(
+      [{ id: 'custom-a', name: 'Custom area 2', storedName: '', bytes: 1, bbox: [7, 46, 8, 47] }],
+      [],
+      {},
+      [],
+    );
+    expect(out[0].storedName).toBe('');
+    expect(out[0].name).toBe('Custom area 2');
+  });
+});
+
 describe('manageRows with the account (SNOW-749)', () => {
   const isCustomAreaId = (id) => id.indexOf('custom-') === 0;
 

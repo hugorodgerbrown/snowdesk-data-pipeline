@@ -265,3 +265,23 @@ describe('repaintDateForStyleSwap', () => {
     expect(core.repaintDateForStyleSwap('', '')).toBeNull();
   });
 });
+
+describe('selectedOutlinePaint (2026-10-19)', () => {
+  it('tapers from 4 px at z9 to 1.5 px from z12', () => {
+    expect(core.selectedOutlinePaint(false)['line-width']).toEqual([
+      'interpolate', ['linear'], ['zoom'], 9, 4, 12, 1.5,
+    ]);
+  });
+
+  it('draws the selected or previewing region at full strength, the rest at 0', () => {
+    const opacity = core.selectedOutlinePaint(false)['line-opacity'];
+    expect(opacity[0]).toBe('case');
+    expect(opacity.slice(2)).toEqual([1, 0]);
+  });
+
+  it('recedes while a route is open, and still hides the unselected', () => {
+    const opacity = core.selectedOutlinePaint(true)['line-opacity'];
+    expect(opacity.slice(2)).toEqual([core.SELECTED_OUTLINE_ROUTE_OPACITY, 0]);
+    expect(core.SELECTED_OUTLINE_ROUTE_OPACITY).toBeLessThan(1);
+  });
+});

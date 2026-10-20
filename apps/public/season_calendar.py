@@ -23,6 +23,13 @@ and invalidated by ``apply_bulletin_day_ratings`` after ingest.
 ``season_header`` is a cheap helper that returns ``{"season_label": "<NN/NN>"}``
 when the season has started (used by the bulletin view to decide whether
 to render the shell + trigger without building the full grid).
+
+SNOW-1126 adds the resort page's season strip: ``season_window`` names the
+1 Nov – 30 Apr season a date belongs to (the previous one from May to
+October), ``build_season_grid`` accepts it as an optional ``window``, and
+``summarise_season`` counts the grid into the strip's text summary. The
+strip renders server-side in ``resort_detail`` — no view-layer cache, one
+indexed range query.
 """
 
 from __future__ import annotations
@@ -30,9 +37,10 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from django.conf import settings
+from django.utils.dates import MONTHS_3
 
 from apps.bulletins.models import RegionDayRating
 
@@ -42,20 +50,38 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DAYS_PER_WEEK = 7
-_MONTH_ABBREVIATIONS = (
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
+
+# SNOW-1126: the avalanche season, as (month, day) bounds. A season opens
+# on 1 November and closes on 30 April of the following year; a date from
+# 1 May to 31 October belongs to no season, and ``season_window`` answers
+# with the one that has just ended.
+SEASON_OPENS: tuple[int, int] = (11, 1)
+SEASON_CLOSES: tuple[int, int] = (4, 30)
+
+# EAWS levels low → very high. The index is the rank ``summarise_season``
+# compares to find the peak; ``no_rating`` is deliberately absent.
+_RATED_LEVELS: tuple[str, ...] = (
+    RegionDayRating.Rating.LOW,
+    RegionDayRating.Rating.MODERATE,
+    RegionDayRating.Rating.CONSIDERABLE,
+    RegionDayRating.Rating.HIGH,
+    RegionDayRating.Rating.VERY_HIGH,
 )
+
+
+class SeasonWindow(NamedTuple):
+    """
+    The date range one season covers, from :func:`season_window`.
+
+    ``start`` is 1 November (clamped to ``settings.SEASON_START_DATE``),
+    ``end`` is 30 April of the following year, and ``label`` is the SLF-style
+    two-year identifier (``"25/26"``) of the nominal season — computed before
+    the clamp, so a clamped start never shifts the label.
+    """
+
+    start: datetime.date
+    end: datetime.date
+    label: str
 
 
 @dataclasses.dataclass(frozen=True)
@@ -209,9 +235,113 @@ class SeasonGrid:
         return bool(self.columns)
 
 
+@dataclasses.dataclass(frozen=True)
+class SeasonSummary:
+    """
+    Output of :func:`summarise_season` — the season strip's text summary.
+
+    ``days_with_bulletin`` counts the cells with ``has_bulletin``;
+    ``level_counts`` is one ``(rating_key, count)`` pair per EAWS level that
+    occurred, low → very high; ``considerable_or_higher`` is the count at
+    level 3 and above. ``peak_rating_key`` / ``peak_date`` name the highest
+    level reached and the first day it was reached, both empty/``None`` when
+    no day had a bulletin.
+    """
+
+    season_label: str
+    days_with_bulletin: int
+    level_counts: list[tuple[str, int]]
+    considerable_or_higher: int
+    peak_rating_key: str
+    peak_date: datetime.date | None
+
+    def __bool__(self) -> bool:
+        """Return ``False`` when no day had a bulletin — the strip is hidden."""
+        return self.days_with_bulletin > 0
+
+
+def season_window(today: datetime.date) -> SeasonWindow:
+    """
+    Return the season ``today`` belongs to, or the one that has just ended.
+
+    From 1 November to 30 April that is the running season; from 1 May to
+    31 October it is the previous one (``SEASON_OPENS`` / ``SEASON_CLOSES``).
+    The start is clamped to ``settings.SEASON_START_DATE``, the earliest day
+    the pipeline holds bulletins for, so a window never reaches back past the
+    archive. A clamp past the end leaves ``start > end``, which
+    :func:`build_season_grid` renders as an empty grid.
+
+    Args:
+        today: The current calendar date.
+
+    Returns:
+        The :class:`SeasonWindow` ``(start, end, label)``.
+
+    """
+    open_month, open_day = SEASON_OPENS
+    close_month, close_day = SEASON_CLOSES
+    start_year = (
+        today.year if (today.month, today.day) >= SEASON_OPENS else today.year - 1
+    )
+    nominal_start = datetime.date(start_year, open_month, open_day)
+    end = datetime.date(start_year + 1, close_month, close_day)
+    earliest: datetime.date = settings.SEASON_START_DATE
+    return SeasonWindow(
+        start=max(nominal_start, earliest),
+        end=end,
+        label=_season_label(nominal_start),
+    )
+
+
+def summarise_season(grid: SeasonGrid) -> SeasonSummary:
+    """
+    Count a season grid into the resort strip's text summary.
+
+    Pure: reads only the already-built cells. Only cells with
+    ``has_bulletin`` count — a ``no_rating`` placeholder is not a day with a
+    bulletin. The peak is the highest ``max_rating_key`` reached, dated to
+    the first day it was reached.
+
+    Args:
+        grid: A grid from :func:`build_season_grid`.
+
+    Returns:
+        The :class:`SeasonSummary`; falsy when no day had a bulletin.
+
+    """
+    counts: dict[str, int] = dict.fromkeys(_RATED_LEVELS, 0)
+    peak_rank = -1
+    peak_date: datetime.date | None = None
+    days = 0
+    for column in grid.columns:
+        for cell in column:
+            if cell is None or not cell.has_bulletin:
+                continue
+            if cell.max_rating_key not in counts:
+                continue
+            days += 1
+            counts[cell.max_rating_key] += 1
+            rank = _RATED_LEVELS.index(cell.max_rating_key)
+            if rank > peak_rank:
+                peak_rank = rank
+                peak_date = cell.date
+    considerable_rank = _RATED_LEVELS.index(RegionDayRating.Rating.CONSIDERABLE)
+    return SeasonSummary(
+        season_label=grid.season_label,
+        days_with_bulletin=days,
+        level_counts=[(key, n) for key, n in counts.items() if n],
+        considerable_or_higher=sum(
+            counts[key] for key in _RATED_LEVELS[considerable_rank:]
+        ),
+        peak_rating_key=_RATED_LEVELS[peak_rank] if peak_rank >= 0 else "",
+        peak_date=peak_date,
+    )
+
+
 def build_season_grid(
     region: "MicroRegion",
     today: datetime.date,
+    window: SeasonWindow | None = None,
 ) -> SeasonGrid:
     """
     Build the season-long heatmap grid for ``region``.
@@ -224,15 +354,27 @@ def build_season_grid(
         region: The region whose ratings to render.
         today: Current date — the day after this is the last column of
             the grid (the SLF afternoon bulletin targets ``today + 1``).
+        window: Optional :class:`SeasonWindow` (SNOW-1126, the resort
+            page's strip). When given, the grid runs from ``window.start``
+            to the earlier of ``window.end`` and ``today + 1``, and carries
+            ``window.label``. When omitted — the bulletin page's heatmap —
+            the grid runs from ``SEASON_START_DATE`` to ``today + 1``,
+            unchanged.
 
     Returns:
         A :class:`SeasonGrid` ready to render. Empty when the computed
-        end date precedes ``SEASON_START_DATE``.
+        end date precedes the start.
 
     """
-    start: datetime.date = settings.SEASON_START_DATE
-    end = today + datetime.timedelta(days=1)
-    season_label = _season_label(start)
+    start: datetime.date
+    if window is None:
+        start = settings.SEASON_START_DATE
+        end = today + datetime.timedelta(days=1)
+        season_label = _season_label(start)
+    else:
+        start = window.start
+        end = min(window.end, today + datetime.timedelta(days=1))
+        season_label = window.label
     if end < start:
         return SeasonGrid(columns=[], month_labels=[], season_label=season_label)
 
@@ -419,6 +561,10 @@ def _month_label_indices(
             continue
         month = first_dated.date.month
         if month != last_month:
-            labels[idx] = _MONTH_ABBREVIATIONS[month - 1]
+            # SNOW-1128: Django's own translated three-letter month name,
+            # resolved in the request's active language (``MONTHS_3`` is
+            # lower-case — "jan" — so title-case it as the ``M`` date format
+            # does).
+            labels[idx] = str(MONTHS_3[month]).title()
             last_month = month
     return labels

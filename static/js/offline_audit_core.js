@@ -139,6 +139,8 @@
    * @property {string} [type] 'dropzone' on a drop-zone download — see
    *   ``areaKind``.
    * @property {string} [name]
+   * @property {number} [ordinal] A custom area's number, for its default
+   *   name when it has no stored one (SNOW-1133).
    * @property {string|null} [basemapKey]
    * @property {number} [bytes]
    * @property {string[]} [deps]
@@ -1518,6 +1520,26 @@
   }
 
   /**
+   * The name an area is spoken of by in the report.
+   *
+   * SNOW-1133: a stored name when the user gave one; otherwise the same
+   * translatable "Custom area N" default the Manage downloads sheet shows,
+   * built from the record's ordinal and never stored. The raw id is the
+   * last resort, for a record that has neither.
+   *
+   * @param {AreaReading} area
+   * @param {Record<string, string>} t
+   * @returns {string}
+   */
+  function areaName(area, t) {
+    if (area.name) return area.name;
+    if (typeof area.ordinal === 'number' && Number.isFinite(area.ordinal)) {
+      return fill(s(t, 'default-custom-name'), { n: String(area.ordinal) });
+    }
+    return area.id;
+  }
+
+  /**
    * Answer one downloaded area — the row the whole feature exists for.
    *
    * Four outcomes, and the distinction between them is the point: an area
@@ -1541,7 +1563,7 @@
    */
   function answerArea(area, t, now) {
     var state = areaState(area);
-    var name = area.name || area.id;
+    var name = areaName(area, t);
     if (state.status === 'ready') {
       var content = areaContentState(area, now);
       if (content === 'stale' || content === 'never') {
@@ -1796,7 +1818,7 @@
    * @returns {string}
    */
   function areaLabel(area, t) {
-    var name = area.name || area.id;
+    var name = areaName(area, t);
     var kind = areaKind(area);
     if (kind === 'dropzone') return fill(s(t, 'label-dropzone'), { name: name });
     if (kind === 'custom') return fill(s(t, 'label-custom'), { name: name });

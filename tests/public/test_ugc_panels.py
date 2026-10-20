@@ -125,11 +125,20 @@ PANEL_SECTION_LABELS: dict[str, tuple[str, ...]] = {
 # own comment.
 DOWNLOADS_GROUP_TEMPLATE_ID = "map-downloads-group-template"
 
-# SNOW-904 removed the overlay switch from every panel: whether a layer is
-# drawn is a row in the map's layers menu, so a panel is about its own list.
-# The labels stay named here, all four of them, because a panel that grew
-# one back would be a second control for a layer the menu already owns —
-# which is the state this ticket set out to end.
+# Each panel's foot carries a "Show on the map" switch for its own layer,
+# bound to that layer's layers-menu row (the two-capsule control column,
+# restoring what SNOW-904 removed). Its id is how
+# static/js/map_panel_overlay_switch.js finds it, so each panel's is named.
+PANEL_TOGGLE_IDS = {
+    "map-downloads-body-template": "map-downloads-overlay-toggle",
+    "favourite-list-template": "map-favourites-overlay-toggle",
+    "report-list-template": "map-community-reports-overlay-toggle",
+    "route-list-template": "map-routes-overlay-toggle",
+}
+
+# The labels earlier rounds used, one per panel and then one for all. The
+# switch says "Show on the map" everywhere, fixed in includes/_ugc_panel.html,
+# so none of these may come back as a per-panel variant.
 RETIRED_TOGGLE_LABELS = (
     "Display on the map",
     "Show areas on the map",
@@ -185,8 +194,8 @@ def skeleton_classes() -> set[str]:
 
     Derived by rendering the shared partial and subtracting the class
     strings contributed by the rows template handed to it — what is left is
-    the chrome: the outer flex column, the sheet header, the scroll region
-    and the CTA.
+    the chrome: the outer flex column, the sheet header, the scroll region,
+    the CTA and the map switch.
 
     Returns:
         The skeleton's class-attribute values.
@@ -204,6 +213,7 @@ def skeleton_classes() -> set[str]:
             # all four panels share.
             "rows_template": DEMO_ROWS_TEMPLATE,
             "cta_label": "Add one",
+            "toggle_id": "skeleton-toggle",
         },
     )
     rows = render_to_string(DEMO_ROWS_TEMPLATE, {})
@@ -265,29 +275,30 @@ class TestUgcPanelSkeleton:
         assert skeleton_classes <= present, skeleton_classes - present
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
-    def test_panel_runs_the_four_parts_in_that_order(
+    def test_panel_runs_the_five_parts_in_that_order(
         self, home_html: str, template_id: str
     ) -> None:
-        """The four shell parts appear in the reading order the design sets.
+        """The five shell parts appear in the reading order the design sets.
 
-        Header, context strip, list, add CTA. There was a fifth — the map
-        toggle, last, so the map behind the sheet was the last thing read
-        (Hugo, SNOW-645 review) — until SNOW-904 made the layers menu the
-        one place a layer is switched on. Class-string containment alone
+        Header, context strip, list, add CTA, map switch — last, so the map
+        behind the sheet is the last thing read (Hugo, SNOW-645 review).
+        SNOW-904 removed the switch; the two-capsule control column put it
+        back, bound to the layers-menu row. Class-string containment alone
         would not catch a panel that shipped these in a different order.
         """
         body = _panel_body(home_html, template_id)
         header = body.index("text-lg font-semibold")
         scroll = body.index("overflow-y-auto")
         cta = body.index("data-panel-add")
+        switch = body.index("data-panel-overlay-toggle")
         line = PANEL_CONTEXT_LINES[template_id]
         if line is None:
-            # No strip on this panel — the three parts it does have still
-            # run in the same order.
-            assert header < scroll < cta
+            # No strip on this panel — the parts it does have still run in
+            # the same order.
+            assert header < scroll < cta < switch
             return
         strip = body.index(line)
-        assert header < strip < scroll < cta
+        assert header < strip < scroll < cta < switch
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
     def test_panel_header_carries_its_own_roundels_glyph(
@@ -387,19 +398,22 @@ class TestUgcPanelSkeleton:
         assert 'data-hook="group-label"' in group
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
-    def test_panel_carries_no_overlay_switch(
+    def test_panel_carries_its_own_show_on_the_map_switch(
         self, home_html: str, template_id: str
     ) -> None:
-        """SNOW-904: no panel switches a map layer on any more.
+        """Each panel's foot carries one "Show on the map" switch, by its id.
 
-        A panel that grew one back would be a second control for a layer
-        the layers menu already owns, and the reason the switches went is
-        that a reader asking what can go on their map had to open five
-        surfaces to find out. Asserted against the whole page, not just
-        this panel's body: a switch reinstated anywhere is the same defect.
+        The switch is bound to the layers-menu row for the panel's own
+        layer by static/js/map_panel_overlay_switch.js, which finds it by
+        this id — so the id is the contract, and exactly one strip per
+        panel. The label is the one fixed string; the per-panel wordings
+        earlier rounds used stay retired, page-wide.
         """
         body = _panel_body(home_html, template_id)
-        assert "data-panel-overlay-toggle" not in body
+        assert body.count("data-panel-overlay-toggle") == 1
+        assert f'id="{PANEL_TOGGLE_IDS[template_id]}"' in body
+        assert 'role="switch"' in body
+        assert "Show on the map" in body
         for retired in RETIRED_TOGGLE_LABELS:
             assert retired not in home_html
 

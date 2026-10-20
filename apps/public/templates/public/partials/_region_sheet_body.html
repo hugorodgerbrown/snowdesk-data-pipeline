@@ -10,7 +10,9 @@ full. One fragment serves all three, ordered so that each detent shows the
 next part of it:
 
   1. PEEK (``data-sheet-peek``, which is where map_sheet.js measures the
-     peek height to) — ONE ROW: the danger tile, the region's name over the
+     peek height to; its own partial, ``_region_sheet_peek.html``, because
+     the surface renders it a second time, empty, for the page to fill
+     before this body arrives) — ONE ROW: the danger tile, the region's name over the
      level and the date, the pin and download controls and the ×. The name
      truncates rather than wraps, because a peek that grows a line for a
      long name stops being a peek (Hugo's review, 16 Oct). The header is also
@@ -52,65 +54,7 @@ Context:
     {# No bulletin for the day: nothing for FULL to reveal, so the sheet stops at half (map_sheet.js reads this). #}
     data-sheet-detents="{% if day_rating %}peek,half,full{% else %}peek,half{% endif %}"
 >
-    <div data-sheet-peek data-sheet-drag>
-        <div class="flex items-center gap-3">
-            {% if day_rating %}
-                <span
-                    class="danger-tile flex-none"
-                    data-level="{{ day_rating.max_rating }}"
-                    data-testid="region-sheet-rating"
-                >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
-            {% endif %}
-            <div class="min-w-0 flex-1">
-                <h2 class="truncate text-base font-semibold leading-tight text-text-1" title="{{ region.name }}">
-                    {{ region.name }}
-                </h2>
-                {# The search row's second line: the region's code behind its country's flag, and the area it sits in. #}
-                <p class="flex min-w-0 items-center gap-2 text-meta text-text-2" data-testid="region-sheet-meta">
-                    <span class="search-result-badge">
-                        {% with country=region.region_id|slice:":2"|lower %}
-                            {% if country == "ch" or country == "at" or country == "fr" or country == "it" %}
-                                <svg class="search-result-flag search-result-flag--{{ country }}" aria-hidden="true">
-                                    <use href="#flag-{{ country }}" />
-                                </svg>
-                            {% endif %}
-                        {% endwith %}
-                        {{ region.region_id }}
-                    </span>
-                    <span class="truncate">
-                        {% if level_label %}{{ level_label }} ·{% endif %}
-                        {{ region.subregion.name_en|default:region.subregion.name_native }}
-                    </span>
-                </p>
-            </div>
-            <button
-                type="button"
-                data-region-sheet-proxy="map-region-pin-control"
-                aria-label="{% trans 'Pin this region' %}"
-                title="{% trans 'Pin this region' %}"
-                class="{% icon_button_classes %}"
-            >
-                {% include "includes/_icon_favourite.html" with size=18 only %}
-            </button>
-            <button
-                type="button"
-                data-region-sheet-proxy="map-download-control"
-                aria-label="{% trans 'Download this region' %}"
-                title="{% trans 'Download this region' %}"
-                class="{% icon_button_classes %}"
-            >
-                {% include "includes/_icon_download_arrow.html" with size=18 only %}
-            </button>
-            <button
-                type="button"
-                data-action="dismiss"
-                aria-label="{% trans 'Close' %}"
-                class="{% icon_button_classes extra='-mr-3' %}"
-            >
-                {% include "includes/_icon_close.html" only %}
-            </button>
-        </div>
-    </div>
+    {% include "public/partials/_region_sheet_peek.html" %}
 
     <p class="text-sm text-text-2" data-testid="region-sheet-breadcrumb">
         {{ country_name }}

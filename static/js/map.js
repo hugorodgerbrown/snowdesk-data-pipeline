@@ -583,7 +583,7 @@
    * statement about the map.
    *
    * The gate is on the READ rather than on the render, so ``isEnabled()`` is
-   * honest for the roundel rings too. Nothing here writes storage, so a real
+   * honest for the roundel overlay state too. Nothing here writes storage, so a real
    * preference survives signing out and back in.
    *
    * @returns {boolean} True when the overlay may start visible.
@@ -1546,19 +1546,15 @@
       },
       paint: {
         'line-color': '#1a1a1a',
-        'line-width': 4,
         // Soft halo so the outline reads against any choropleth fill colour.
         'line-blur': 0.5,
-        // Show only selected features; opacity 0 hides unselected ones
-        // without needing a filter (which cannot reference feature-state).
-        'line-opacity': [
-          'case',
-          [
-            'any',
-            ['boolean', ['feature-state', 'selected'], false],
-            ['boolean', ['feature-state', 'previewing'], false],
-          ], 1, 0,
-        ],
+        // Width tapers with zoom, and the opacity shows only selected
+        // features (opacity 0 hides the rest without a filter, which cannot
+        // reference feature-state) and recedes while a route is open
+        // (choropleth_core.js, 2026-10-19).
+        ...self.pwaChoroplethCore.selectedOutlinePaint(
+          !!window.pwaRouteRail?.isOpen?.(),
+        ),
       },
     });
     // No BASE_LAYER_FILTERS entry for regions-line-selected: it has no filter
@@ -2836,6 +2832,18 @@
     keepRouteCursorInView();
   });
 
+  // The selected region's outline recedes while a route is open and comes
+  // back when it closes (choropleth_core.js, 2026-10-19). The rail announces
+  // its open and close; a style swap re-installs the layer with the state
+  // read at that moment, so only a change needs writing here.
+  document.addEventListener('snowdesk:route-rail-changed', () => {
+    if (!map || !map.getLayer('regions-line-selected')) return;
+    const paint = self.pwaChoroplethCore.selectedOutlinePaint(
+      !!window.pwaRouteRail?.isOpen?.(),
+    );
+    map.setPaintProperty('regions-line-selected', 'line-opacity', paint['line-opacity']);
+  });
+
   // SNOW-1019: the leader line's bridge to the map — the cursor dot's
   // screen point, and a way to hear the camera move it.
   window.pwaRouteCursorMap = Object.freeze({
@@ -3258,7 +3266,8 @@
     raiseMarkerLayers();
     // Same one-install-function-announces rule installFavouritesLayer
     // carries: every path that gets these lines onto the map (or explicitly
-    // hides them) ends here, so the roundel ring is settled from one place.
+    // hides them) ends here, so the roundels' overlay state is settled from
+    // one place.
     announceOverlayVisibility();
   };
 
@@ -3690,7 +3699,8 @@
     });
     raiseMarkerLayers();
     // SNOW-658 review: as for the favourites install above — the flags are
-    // on the map only as of this line, and the roundel's ring reads paint.
+    // on the map only as of this line, and the roundel's overlay state reads
+    // paint.
     announceOverlayVisibility();
   };
 
@@ -5685,8 +5695,8 @@
       // SNOW-658 review: this is where a lazy overlay's paint actually
       // changes — the caller that dispatched this event announced a tick
       // ago, before the fetch above had installed anything, so without this
-      // the roundel ring would stay off for an overlay now on the map (or,
-      // on a re-enable of an already-loaded layer, off for a layer this
+      // the roundel's overlay state would stay off for an overlay now on the
+      // map (or, on a re-enable of an already-loaded layer, off for a layer this
       // handler's own loop has just made visible). A settled fetch that
       // installed nothing announces too: it says "still not drawn", which
       // is the state this whole distinction exists to keep honest.
@@ -5739,8 +5749,10 @@
     // preferred: while something is suppressing the choropleth the control
     // must read 0, so the user can see why the colour went.
     //
-    // Document-wide, not scoped to the layers menu — SNOW-656 moved the
-    // control onto the canvas beside the scrubbed date.
+    // Document-wide rather than scoped to one container: the control has
+    // moved twice (a roundel flyout under SNOW-656, the layers menu's
+    // "Bulletin opacity" row since the two-capsule column), and the
+    // attribute is the contract, not where it sits.
     const shown = fill.opacity;
     for (const seg of document.querySelectorAll('[data-bulletins-step]')) {
       const step = Number(seg.dataset.bulletinsStep);
@@ -6316,16 +6328,20 @@
   //
   // SNOW-658 moved Favourites and Community reports out of the layers menu and
   // onto a switch in the panel each roundel opens, so the callers were
-  // favourites.js and report.js. SNOW-904 reversed that: all four switches are
-  // gone and the menu is the only control, so the caller is once again
+  // favourites.js and report.js. SNOW-904 reversed that: all four switches
+  // went and the menu became the only control, so the caller is once again
   // map_basemap_picker.js, routing a row click through the frozen bridges
-  // published below.
+  // published below. The two-capsule control column put a "Show on the map"
+  // switch back in each panel, but it drives its layer by clicking the menu
+  // row (static/js/map_panel_overlay_switch.js), so the picker stays the
+  // caller of show()/hide() for both controls in the ordinary case.
   //
   // The bridges are what the picker calls rather than the storage write and
   // the lazy-load dispatch directly, because being INSIDE this IIFE they also
   // recompute the favourited-resort exclusion and announce visibility to the
-  // roundel rings — effects the picker cannot reach across the boundary, and
-  // which a row that only wrote localStorage would silently drop.
+  // roundels' overlay state — effects the picker cannot reach across the
+  // boundary, and which a row that only wrote localStorage would silently
+  // drop.
   // (``snowdesk:favourites-visibility-changed`` stays: other callers still
   // fire it, and its listener is the same one-line call.)
   //
@@ -6746,14 +6762,15 @@
   //
   // The two can legitimately disagree, and the case they disagree in is the
   // one that matters: enable favourites offline with nothing cached and the
-  // switch reads ON (the preference took) while the roundel's ring stays off
-  // (nothing was drawn). That is not a glitch to paper over — it is the only
-  // way the user can see that their request has not reached the map. A ring
-  // claiming "shown" over a blank map would be the same defect class as a
-  // sync dot claiming a layer is cached when it isn't.
+  // switch reads ON (the preference took) while the roundel's overlay state
+  // stays off (nothing was drawn). That is not a glitch to paper over — it is
+  // the only way the user can see that their request has not reached the
+  // map. A roundel announcing "shown" over a blank map would be the same
+  // defect class as a sync dot claiming a layer is cached when it isn't.
   //
-  // So: status indicators (the roundel ring) read isVisible(); controls that
-  // state what the user asked for (the panel switches) read isEnabled().
+  // So: status indicators (the roundel's data-overlay-shown and composed
+  // label) read isVisible(); controls that state what the user asked for
+  // (the layers-menu rows and the panel switches) read isEnabled().
 
   window.pwaFavouritesOverlay = Object.freeze({
     show() {
@@ -6790,7 +6807,8 @@
   // key, since their only key-specific branch is the favourites
   // resort-exclusion recompute. Read by static/js/routes.js (the panel
   // switch, via isEnabled) and by static/js/map_roundel_overlay_state.js
-  // (the roundel ring, via isVisible) — see the block above for why those
+  // (the roundel's overlay state, via isVisible) — see the block above for
+  // why those
   // two are different questions.
   window.pwaRoutesOverlay = Object.freeze({
     show() {
@@ -6842,6 +6860,23 @@
       zoom: gate.zoom,
       upTo: !!gate.upTo,
     })),
+  });
+
+  // The day's level the map is painting for one region (2026-10-19), read
+  // back from the feature state the choropleth writes, so the phone region
+  // sheet can show it in its peek before its body arrives. Null when the
+  // region is not loaded, or the day has no rating for it yet.
+  window.pwaRegionLevel = Object.freeze({
+    /**
+     * @param {string} regionId e.g. "CH-4115".
+     * @returns {?string} "low" … "very_high", or null.
+     */
+    forRegion: (regionId) => {
+      const feature = FEATURE_BY_REGION_ID[regionId];
+      if (!feature || feature.id == null || !map.getSource('regions')) return null;
+      const rating = map.getFeatureState({ source: 'regions', id: feature.id }).rating;
+      return rating && rating !== 'no_rating' ? rating : null;
+    },
   });
 
 
@@ -7433,16 +7468,6 @@
   });
 
   map.on('load', async () => {
-    // SNOW-878: the map is on screen — the basemap has painted, which is
-    // the moment the launch shell exists to wait for. Dispatched FIRST,
-    // synchronously, before any of the boot fetches below: everything
-    // after this point refines a map the user can already see, so making
-    // the splash wait for it would hold a full-screen overlay over a
-    // rendered map. Emitted unconditionally on every load, not only under
-    // the PWA — static/js/pwa_launch_shell.js is the only listener today
-    // and it ignores the event unless it is actually covering something.
-    document.dispatchEvent(new CustomEvent('snowdesk:map-ready'));
-
     // SNOW-235: Fetch only the choropleth-critical payloads at boot.
     // L1/L2/resorts overlay fetches have been removed from this
     // Promise.all — they are off by default and loaded lazily on first
@@ -8069,6 +8094,38 @@
         },
       }));
     };
+
+    // SNOW-1118: the tour's "Tap a region" step shows a real region rather
+    // than describing one. map_help.js asks for it, and this answers: the
+    // region already selected (its sheet opened again on a phone), or else
+    // the one under the middle of the map, or failing that any region in
+    // view. On a phone the selection opens the region sheet, as any
+    // selection does (map_region_sheet.js), and that sheet is what the step
+    // points at; a desktop names it in the readout chip.
+    //
+    // Leaving the step releases it: a selection the tour made is dropped,
+    // so the visitor ends the tour on the map they started it on. One they
+    // made themselves is theirs, and stays.
+    let tourSelectedId = null;
+    document.addEventListener('snowdesk:map-help-show-region', () => {
+      if (selectedId !== null) {
+        window.pwaRegionSheet?.reopen?.();
+        return;
+      }
+      if (!map.getLayer('regions-fill')) return;
+      const canvas = map.getCanvas();
+      const middle = [canvas.clientWidth / 2, canvas.clientHeight / 2];
+      const hit =
+        map.queryRenderedFeatures(middle, { layers: ['regions-fill'] })[0] ||
+        map.queryRenderedFeatures({ layers: ['regions-fill'] })[0];
+      if (!hit || hit.id === undefined || !REGION_LOOKUP[hit.id]) return;
+      tourSelectedId = hit.id;
+      selectFeature(hit.id, { via: 'tour' });
+    });
+    document.addEventListener('snowdesk:map-help-release-region', () => {
+      if (tourSelectedId !== null && selectedId === tourSelectedId) deselectRegion();
+      tourSelectedId = null;
+    });
 
     // SNOW-445: favourite / community-observation / report-cluster markers sit
     // ON TOP of the region choropleth. MapLibre has no stopPropagation between
@@ -9075,7 +9132,7 @@
         tgt && tgt.closest &&
         // SNOW-457: #map-help-overlay — the coachmark tooltip's Back/Next/Skip
         // buttons sit over the map, same reasoning as the other overlays.
-        tgt.closest('.season-scrubber, #map-utility-cluster, #map-controls-br, #map-legend, #home-intro, #map-help-overlay')
+        tgt.closest('.season-scrubber, #map-utility-cluster, #map-controls-br, #map-legend, #map-tour-offer, #map-help-overlay')
       ) {
         return;
       }
@@ -9120,8 +9177,20 @@
       // region, and on a phone the region chip is withdrawn while the panel
       // is open, so a region selected under it would be a change the reader
       // cannot see.
+      //
+      // A resort pin is the exception (2026-10-19): it is a thing on the
+      // map like a marker or a weather symbol, which already take their
+      // tap with a route open, so a tap on one opens it there and then
+      // rather than spending the first tap on closing the route.
       if (window.pwaRouteRail?.isOpen?.()) {
+        const resortHit = map.getLayer('resorts-pin')
+          ? map.queryRenderedFeatures(e.point, { layers: ['resorts-pin'] })[0]
+          : null;
         window.pwaRouteRail.close();
+        if (resortHit && !IS_PLAYING) {
+          closeMapDetailSurfaces();
+          openResortPopup(resortHit);
+        }
         return;
       }
 
@@ -9142,9 +9211,22 @@
         return;
       }
 
+      const region = features.find((f) => f.layer.id === 'regions-fill');
+      // A tap on the region already selected, with its phone sheet closed,
+      // reopens the sheet at ANY zoom (2026-10-19): the selection is not
+      // changed, which is the rule past REGION_SELECT_MAXZOOM, but a region
+      // the reader can see outlined is one they can get back to. With the
+      // sheet open the tap falls through as before.
+      const reopensSelected = () =>
+        !!region && region.id === selectedId && !!window.pwaRegionSheet?.reopen?.();
+
       // A region or resort was tapped. Timelapse playback suppresses selection
-      // changes (mirrors the old regions-fill IS_PLAYING guard).
-      if (IS_PLAYING) return;
+      // changes (mirrors the old regions-fill IS_PLAYING guard). Reopening the
+      // selected region's sheet changes no selection, so it still works.
+      if (IS_PLAYING) {
+        if (reopensSelected()) closeMapDetailSurfaces();
+        return;
+      }
 
       // SNOW-499: a resort pin now opens its own minimal popup (name, region,
       // favourite star, bulletin link) instead of proxying to the parent
@@ -9156,7 +9238,10 @@
         return;
       }
 
-      const region = features.find((f) => f.layer.id === 'regions-fill');
+      if (reopensSelected()) {
+        closeMapDetailSurfaces();
+        return;
+      }
       // Past REGION_SELECT_MAXZOOM a region is too big to see, so a tap on
       // one selects nothing and deselects nothing — the region in hand
       // stays in hand (Hugo, 18 Oct). It only closes the place sheet or

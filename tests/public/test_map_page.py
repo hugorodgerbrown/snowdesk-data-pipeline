@@ -152,23 +152,46 @@ def test_map_page_renders_micro_regions_overlay_toggle() -> None:
 
 
 @pytest.mark.django_db
-def test_map_page_renders_bulletin_fill_control() -> None:
+def test_bulletin_opacity_is_a_row_in_the_layers_menu() -> None:
     """
-    SNOW-656: the danger choropleth and the dissolved bulletin boundary are
-    governed by a five-step opacity control, not the Micro regions row.
+    The five bulletin-opacity steps are a row in the layers menu.
 
-    It is a roundel in the bottom-right stack whose flyout opens to the left.
-    The five steps are 0 / 0.25 / 0.5 / 0.75 / 1 — 0 being the off position,
-    so the control subsumes the toggle it replaced — and 0.5 is pre-checked,
-    matching ``layer_visibility_core``'s DEFAULT_STEP for a device with
-    nothing stored.
+    SNOW-656 governed the danger choropleth and the dissolved bulletin
+    boundary with a five-step control on a roundel of its own, whose flyout
+    opened to the left. The two-capsule column moved those steps into the
+    menu's Conditions group, directly after the ALBINA row and before the
+    hairline that leads into Weather, so every display choice is in one
+    place. The roundel and its flyout are gone.
+
+    The five steps are still 0 / 0.25 / 0.5 / 0.75 / 1 — 0 being the off
+    position — and 0.5 is pre-checked, matching ``layer_visibility_core``'s
+    DEFAULT_STEP for a device with nothing stored.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
-    content = response.content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
-    assert 'id="map-fill-toggle"' in content
-    assert 'id="map-fill-flyout"' in content
+    assert 'id="map-fill-toggle"' not in content
+    assert 'id="map-fill-pill"' not in content
+    assert 'id="map-fill-flyout"' not in content
+
+    ancestors = _ancestor_ids(content, "map-bulletin-opacity")
+    assert "basemap-menu" in ancestors, ancestors
+    assert "basemap-menu-group-conditions" in ancestors, ancestors
+
+    group = _one(
+        r'(<div[^>]*id="map-bulletin-opacity"[^>]*>)', content, "the opacity group"
+    )
+    assert 'role="radiogroup"' in group
+    assert 'aria-label="Bulletin opacity"' in group
+
+    # Directly after ALBINA, before the separator that precedes Weather.
+    albina_idx = content.index('data-overlay-key="country.albina"')
+    opacity_idx = content.index('id="map-bulletin-opacity"')
+    separator_idx = content.index('role="separator"', albina_idx)
+    weather_idx = content.index('data-overlay-key="weather"')
+    assert albina_idx < opacity_idx < separator_idx < weather_idx
+    # Nothing but the opacity row stands between ALBINA and that separator.
+    assert content[albina_idx:separator_idx].count('<li role="none"') == 1
 
     for step in ("0", "0.25", "0.5", "0.75", "1"):
         assert f'data-bulletins-step="{step}"' in content, step
@@ -181,145 +204,210 @@ def test_map_page_renders_bulletin_fill_control() -> None:
     checked = [b for b in buttons if 'aria-checked="true"' in b]
     assert len(checked) == 1, checked
     assert 'data-bulletins-step="0.5"' in checked[0]
+    # Not menu rows: the picker's row loop would read a step as a basemap
+    # radio and swap the style.
+    for button in buttons:
+        assert "basemap-menu-item" not in button, button
+
+
+# The two capsules, and their members in render order. Ids only: every one of
+# these is what the JS binds, so they are also what must not move.
+_MAP_GROUP = ("locate-toggle", "basemap-toggle")
+_YOURS_GROUP = (
+    "favourite-add-btn",
+    "report-btn",
+    "route-add-btn",
+    "map-custom-download-control",
+)
 
 
 @pytest.mark.django_db
-def test_bulletin_fill_control_is_inside_the_collapsible_group() -> None:
+def test_the_control_column_is_two_groups() -> None:
     """
-    SNOW-656: the roundel sits in ``#map-controls-collapsible``, so it hides
-    with the strip. SNOW-664 put the layers roundel in above it, so it is the
-    second item there rather than the first — still below the always-visible
-    locate roundel, which is what the assertion is about.
+    The bottom-right column is two capsules: "the map", then "yours".
 
-    The flyout itself is deliberately OUTSIDE that wrapper: the wrapper is
-    ``overflow: hidden`` for its height animation, which clips both axes, so
-    a panel opening leftward out of it would be cut off.
+    The map group — locate and layers — sits outside
+    ``#map-controls-collapsible`` and so is always on screen. The yours group
+    — favourites, field observations, routes, downloads, in that order — is
+    the collapsible group itself, so the chevron folds it alone.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
-    content = response.content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
-    collapsible_idx = content.index('id="map-controls-collapsible"')
-    inner_end_idx = content.index('id="map-fill-flyout"')
-    roundel_idx = content.index('id="map-fill-toggle"')
-    locate_idx = content.index('id="locate-toggle"')
+    for control in _MAP_GROUP:
+        ancestors = _ancestor_ids(content, control)
+        assert "map-control-group-map" in ancestors, (control, ancestors)
+        assert "map-controls-collapsible" not in ancestors, (control, ancestors)
+        assert "map-controls-br" in ancestors, (control, ancestors)
 
-    assert locate_idx < collapsible_idx < roundel_idx, (
-        "the fill roundel must follow locate, inside the collapsible group"
+    for control in _YOURS_GROUP:
+        ancestors = _ancestor_ids(content, control)
+        assert "map-control-group-yours" in ancestors, (control, ancestors)
+        assert "map-controls-collapsible" in ancestors, (control, ancestors)
+
+    order = [content.index(f'id="{control}"') for control in _MAP_GROUP + _YOURS_GROUP]
+    assert order == sorted(order), "the column's members are out of order"
+
+    # The yours capsule IS the collapsible inner, so the open-height count
+    # (its direct children) is exactly its buttons.
+    inner = _one(
+        r'(<div[^>]*id="map-control-group-yours"[^>]*>)', content, "the yours group"
     )
-    assert roundel_idx < inner_end_idx, "the flyout must come after the roundel"
-
-    # The flyout is a sibling of the collapsible wrapper, not a descendant:
-    # everything between the roundel and the flyout closes the wrapper.
-    between = content[roundel_idx:inner_end_idx]
-    assert between.count("</div>") >= 3, (
-        "the flyout appears to still be inside #map-controls-collapsible, "
-        "where overflow:hidden would clip it"
-    )
+    assert "map-controls-collapsible-inner" in inner
+    assert "map-control-group" in inner.split('class="')[1].split('"')[0].split()
 
 
 @pytest.mark.django_db
-def test_locate_is_the_only_roundel_outside_the_collapsible_group() -> None:
+def test_layers_menu_is_outside_both_groups() -> None:
     """
-    SNOW-664: a minimised control column is locate and the toggle, nothing
-    else.
+    ``#basemap-menu`` is a child of the stack, not of the capsule its pill sits in.
 
-    "Where am I" is the one question worth a permanent control on a map the
-    user is standing in; everything else in the column is a choice about what
-    the map shows, and a choice can wait behind the toggle. The layers roundel
-    used to stay out alongside locate — it is one slot down, inside the group,
-    and FIRST there so it lands directly under locate when the group is open.
+    SNOW-664 moved it out of the collapsible group, which is ``overflow:
+    hidden`` and clips both axes. The "map" capsule clips its children to its
+    rounded outline just the same, so a menu opening leftward from inside it
+    would be cut off with no other symptom.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
-    content = response.content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
-    stack_idx = content.index('id="map-controls-br"')
-    locate_idx = content.index('id="locate-toggle"')
-    collapsible_idx = content.index('id="map-controls-collapsible"')
-    layers_idx = content.index('id="basemap-pill"')
-    fill_idx = content.index('id="map-fill-pill"')
+    ancestors = _ancestor_ids(content, "basemap-menu")
+    assert "map-controls-br" in ancestors, ancestors
+    assert "map-control-group-map" not in ancestors, ancestors
+    assert "map-controls-collapsible" not in ancestors, ancestors
 
-    assert stack_idx < locate_idx < collapsible_idx, (
-        "locate must be the first child of the stack, outside the group"
-    )
-    assert collapsible_idx < layers_idx < fill_idx, (
-        "the layers roundel must be the first item INSIDE the collapsible "
-        "group, above the bulletin-fill roundel"
-    )
 
-    # Only locate stands between the stack opening and the group: any other
-    # roundel here would still be on screen with the column minimised.
-    before_group = content[stack_idx:collapsible_idx]
-    assert before_group.count("map-utility-pill--") == 1, (
-        "a second always-visible roundel has appeared beside locate"
+def test_no_css_rule_draws_the_overlay_shown_marker() -> None:
+    """
+    The on-map ring keyed on ``data-overlay-shown`` is gone, by design.
+
+    SNOW-658 drew a blue inset ring on every roundel whose overlay was on the
+    map. Readers took it for "this button is selected", and it repeated what
+    the map itself shows, so the two-capsule column dropped it. The attribute
+    stays (map_roundel_overlay_state.js composes it into the aria-label), so
+    the guard is on the stylesheet: no selector may key on it.
+    """
+    css = (settings.BASE_DIR / "static" / "css" / "map.css").read_text()
+    without_comments = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    assert "data-overlay-shown" not in without_comments
+
+
+def _uncommented_css(*parts: str) -> str:
+    """Read a stylesheet under BASE_DIR with its comments stripped."""
+    css = Path(settings.BASE_DIR, *parts).read_text()
+    return re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+
+
+def test_hover_affordance_hovers_only_where_a_pointer_can() -> None:
+    """
+    SNOW-1131: the chip fill on ``:hover`` sits inside ``(hover: hover)``.
+
+    A touch screen leaves ``:hover`` on the last element tapped, so an
+    unguarded rule left a grey wash on the download roundel after every
+    press. Every ``.hover-affordance:hover`` selector must therefore appear
+    after the media query opens and nowhere outside it.
+    """
+    css = _uncommented_css("src", "css", "main.css")
+    media = css.index("@media (hover: hover)")
+    hovers = [m.start() for m in re.finditer(r"\.hover-affordance:hover\b", css)]
+    assert hovers, "the .hover-affordance:hover rule has gone from main.css"
+    for at in hovers:
+        assert at > media, "a .hover-affordance:hover rule sits outside (hover: hover)"
+        assert css.rfind("@media", 0, at) == media
+
+
+def test_the_done_roundel_whitens_the_glyph_it_shows() -> None:
+    """
+    SNOW-1131: on the solid ``done`` disc the white rule targets the refresh glyph.
+
+    SNOW-924 made ``done`` show the refresh glyph; the colour rule still
+    named the idle arrow, which ``done`` hides, so the refresh arrow was
+    drawn in ink on the green fill.
+    """
+    css = _uncommented_css("static", "css", "map.css")
+    rule = re.search(
+        r'\[data-download-state="done"\]\s+\.map-download-control-icon--(\w+)\s*\{[^}]*color:\s*#fff',
+        css,
     )
+    assert rule is not None
+    assert rule.group(1) == "refresh"
 
 
 @pytest.mark.django_db
-def test_layers_menu_is_outside_the_collapsible_group() -> None:
+def test_help_tour_reads_the_map_in_four_chapters() -> None:
     """
-    SNOW-664: ``#basemap-menu`` is a child of the stack, not of the
-    ``#basemap-pill`` that opens it.
+    SNOW-1118: seven steps in four chapters, about the map before its buttons.
 
-    The pill moved into ``#map-controls-collapsible``, which is
-    ``overflow: hidden`` for its height animation — and that clips both axes,
-    so a menu opening leftward out of it would be cut off with no other
-    symptom. Same move, same reason, as ``#map-fill-flyout`` (SNOW-656).
+    The tour it replaced walked every control in the column in DOM order —
+    thirteen steps that never said what the colours mean or that a region
+    opens. Now it reads the map (the colours, a region, the day), then how
+    to move about it, then what is yours, then where help lives. The three
+    ways of moving share one step, and the "yours" capsule is one step that
+    rings the whole capsule. The bulletin-fill roundel's step went with the
+    roundel — the layers step names the opacity row instead.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
-    content = response.content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
-    pill_idx = content.index('id="basemap-pill"')
-    menu_idx = content.index('id="basemap-menu"')
-    flyout_idx = content.index('id="map-fill-flyout"')
-
-    assert pill_idx < menu_idx < flyout_idx, (
-        "the menu must sit between the collapsible group and the fill flyout"
+    steps = re.findall(
+        r'<li\s+data-help-target="([^"]*)"\s+data-help-chapter="([a-z]+)"', content
     )
-
-    # Everything between the pill and the menu closes the pill, the inner and
-    # the wrapper — if the menu were still nested, it would not.
-    between = content[pill_idx:menu_idx]
-    assert between.count("</div>") >= 3, (
-        "the layers menu appears to still be inside #map-controls-collapsible, "
-        "where overflow:hidden would clip it"
-    )
+    assert steps == [
+        ("", "read"),
+        ("#region-sheet | #region-readout", "read"),
+        ("#map-calendar-toggle", "read"),
+        ("#search-toggle, #locate-toggle, #map-zoom-toggle", "move"),
+        ("#basemap-toggle", "move"),
+        ("#map-control-group-yours", "yours"),
+        ("#map-help-toggle", "help"),
+    ]
+    chapters = re.findall(r'<li data-chapter="([a-z]+)">', content)
+    assert chapters == ["read", "move", "yours", "help"]
+    assert "#map-fill-toggle" not in content
 
 
 @pytest.mark.django_db
-def test_bulletin_fill_control_is_in_the_help_tour() -> None:
-    """SNOW-656: the control carries a coachmark step, between locate and the
-    custom-area download — the roundel's own position in the stack.
+@override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
+@freeze_time("2026-02-17")
+def test_help_mode_names_only_controls_the_page_draws() -> None:
     """
-    client = Client()
-    response = client.get(reverse("public:map"))
-    content = response.content.decode()
+    SNOW-1119: every control help mode names, and every sheet it keys, is
+    on the page.
 
-    steps = re.findall(r'data-help-target="([^"]+)"', content)
-    assert "#map-fill-toggle" in steps
-    assert steps.index("#locate-toggle") < steps.index("#map-fill-toggle")
-    assert steps.index("#map-fill-toggle") < steps.index("#map-custom-download-control")
+    Help mode finds each control by its selector and draws its name beside
+    it; a control renamed in the template would simply lose its name and
+    its card, with nothing failing. This holds the list to the page. The
+    region chip and its download control live in the season ribbon, which
+    renders only once the season has a rated day.
+    """
+    region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny Verbier")
+    RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 2, 17))
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    assert 'id="map-help-mode"' in content
+    assert "js/map_help_mode.js" in content
+    selectors = re.findall(r'data-(?:control|sheet)="#([\w-]+)"', content)
+    assert len(selectors) == 19
+    missing = [s for s in selectors if f'id="{s}"' not in content]
+    assert missing == []
 
 
 @pytest.mark.django_db
-def test_help_tour_walks_the_control_stack_in_dom_order() -> None:
+def test_help_mode_links_each_card_to_a_help_topic() -> None:
     """
-    SNOW-664: locate leads the bottom-right leg of the tour, then layers.
+    SNOW-1119: each card's "More in Help" lands on a topic that exists.
 
-    The tour is a top-to-bottom walk of the page, so its order is a
-    projection of the DOM's. When the two roundels swapped, the steps had to
-    swap with them or the highlight ring would jump up the column and back
-    down again.
+    The cards and sheet guides link to ``/help/#<topic>``; the topic ids
+    are the ``anchor_id`` each collapsible panel on /help/ renders.
     """
     client = Client()
-    response = client.get(reverse("public:map"))
-    content = response.content.decode()
+    content = client.get(reverse("public:map")).content.decode()
+    help_page = client.get(reverse("public:help")).content.decode()
 
-    steps = re.findall(r'data-help-target="([^"]+)"', content)
-    assert steps.index("#locate-toggle") < steps.index("#basemap-toggle")
-    assert steps.index("#basemap-toggle") < steps.index("#map-fill-toggle")
+    topics = set(re.findall(r'data-topic="([\w-]+)"', content))
+    assert topics
+    missing = [t for t in sorted(topics) if f'id="{t}"' not in help_page]
+    assert missing == []
 
 
 @pytest.mark.django_db
@@ -827,10 +915,12 @@ def test_map_layer_menu_holds_every_user_data_row() -> None:
 
     The cost was that a reader asking what can go on their map had to open
     five surfaces to find out, and no single surface answered it. All four
-    are rows here now, driving the same ``window.pwa*Overlay`` bridges, and
-    the panel switches are gone — asserted absent rather than merely
-    unlisted, because a reinstated switch would be a second control for a
-    layer this menu already owns.
+    are rows here now, driving the same ``window.pwa*Overlay`` bridges.
+
+    The two-capsule control column put a "Show on the map" switch back in
+    each panel, bound to its row here rather than replacing it — so the
+    menu still holds every row, and each switch renders inside its own
+    panel's <template>, never in the menu.
 
     Asserted for a signed-in user, mirroring the test this replaces.
     """
@@ -842,13 +932,18 @@ def test_map_layer_menu_holds_every_user_data_row() -> None:
 
     for key in ("favourites", "community_reports", "routes", "downloads"):
         assert f'data-overlay-key="{key}"' in content, key
+    # The menu runs from its own opening tag to the chevron that follows it
+    # in the stack; no panel switch may render inside that span.
+    menu_start = content.index('id="basemap-menu"')
+    menu_end = content.index('id="map-controls-toggle"')
     for toggle_id in (
         "map-favourites-overlay-toggle",
         "map-community-reports-overlay-toggle",
         "map-routes-overlay-toggle",
         "map-downloads-overlay-toggle",
     ):
-        assert toggle_id not in content, toggle_id
+        toggle_idx = content.index(f'id="{toggle_id}"')
+        assert not menu_start < toggle_idx < menu_end, toggle_id
 
 
 @pytest.mark.django_db
@@ -1139,7 +1234,8 @@ def test_collapsible_group_css_fallback_matches_the_rendered_child_count() -> No
 
     It has gone stale once already — it sat at 4 after SNOW-664 moved the
     layers roundel into the group and SNOW-656 added the bulletin fill,
-    hiding both on a pre-JS paint. This is a cross-file invariant that
+    hiding both on a pre-JS paint. (It is 4 again now, honestly: the group
+    is the "yours" capsule's four buttons.) This is a cross-file invariant that
     neither file can hold alone, which is why it is asserted here rather
     than left to the comment above the rule.
     """
@@ -1546,7 +1642,7 @@ def test_help_roundel_moved_out_of_the_overlay_column() -> None:
     ``#map-help-toggle`` sits in the bottom-left stack, not the right column.
 
     Everything in ``.map-controls-br`` changes what the map SHOWS — layers,
-    basemap, fill strength, downloads, the UGC pins. Help changes nothing;
+    basemap, downloads, the UGC pins. Help changes nothing;
     it explains, which is what the bottom-left stack is for.
 
     The move also drops the collapsible group's child count by one, and
@@ -1624,25 +1720,21 @@ def test_map_calendar_toggle_sits_on_the_bottom_row_beside_the_scrubber() -> Non
 
 @pytest.mark.django_db
 def test_map_calendar_is_in_the_help_tour() -> None:
-    """The toggle carries a coachmark step, in bottom-left stack order.
+    """The date control has its own step, in the "Read the map" chapter.
 
-    The tour walks the map's chrome in DOM order, so once SNOW-794 moved the
-    calendar into the bottom-left stack its step moved with it: the scrubber
-    is introduced with the rest of the map, then the stack is walked from
-    the top down — help, legend, and the date control on the bottom line.
+    SNOW-1118: the map shows one day at a time, which is part of reading it,
+    so the step sits with the colours and the region rather than at the end
+    of a walk down the bottom-left stack (SNOW-794's order).
     """
     client = Client()
-    response = client.get(reverse("public:map"))
-    content = response.content.decode()
+    content = client.get(reverse("public:map")).content.decode()
 
-    steps = re.findall(r'data-help-target="([^"]+)"', content)
-    assert "#map-calendar-toggle" in steps
-    # SNOW-794: the walk follows the bottom-left stack top to bottom — help,
-    # legend, then the date row the calendar toggle sits on. The scrubber
-    # step comes before all three, with the rest of the map chrome.
-    assert steps.index("#season-scrubber") < steps.index("#map-calendar-toggle")
-    assert steps.index("#map-help-toggle") < steps.index("#map-legend-toggle")
-    assert steps.index("#map-legend-toggle") < steps.index("#map-calendar-toggle")
+    step = re.search(
+        r'<li\s+data-help-target="#map-calendar-toggle"\s+data-help-chapter="([a-z]+)"',
+        content,
+    )
+    assert step is not None
+    assert step.group(1) == "read"
 
 
 @pytest.mark.django_db

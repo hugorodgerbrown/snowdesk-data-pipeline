@@ -4,42 +4,46 @@
  *
  * Downloads, Favourites, Field observations and Routes each open a panel,
  * and each has a layer on the map. Until this module the roundel itself
- * said nothing about whether that layer was being drawn, so the only way to
- * find out whether your favourites were on the map was to open the panel
- * and look — and the downloads roundel, the one roundel that DID carry a
- * state, carried a different fact entirely ("this device holds at least one
- * downloaded area"). One roundel, two meanings, no way to tell which you
- * were reading.
- *
- * SNOW-904: the control each roundel used to report on was a "Display on
- * the map" switch in its own panel's footer; every layer is switched from
- * the map's layers menu now. The ring is unchanged — it reads
- * ``isVisible()`` off MapLibre, never off a control — so it reports on the
- * menu row exactly as it reported on the switch.
+ * said nothing about whether that layer was being drawn — and the downloads
+ * roundel, the one roundel that DID carry a state, carried a different fact
+ * entirely ("this device holds at least one downloaded area"). One roundel,
+ * two meanings, no way to tell which you were reading.
  *
  * So: ONE mechanism for all of them. Every roundel below carries
  * ``data-overlay-shown="true|false"``, meaning exactly one thing on each —
  * "the overlay this roundel's panel switches is currently drawn on the map"
- * — painted by one function, from one event, into one CSS rule
- * (static/css/map.css, `[data-overlay-shown="true"]`). Three hand-rolled
- * signals is how they diverged in the first place; a new roundel joins by
- * adding a line to ROUNDELS — which is exactly what SNOW-687's routes
- * roundel did, and all it did.
+ * — painted by one function, from one event, and composed into the
+ * roundel's ``aria-label``. A new roundel joins by adding a line to
+ * ROUNDELS — which is exactly what SNOW-687's routes roundel did, and all
+ * it did.
+ *
+ * NO VISUAL MARKER, BY DESIGN. SNOW-658 also drew a blue inset ring on every
+ * roundel whose attribute read "true" (static/css/map.css). The two-capsule
+ * control column dropped it: readers took the ring for "this button is
+ * selected", and it only repeated what the map itself already shows. The
+ * map carries that state, the layers menu names every layer that is on, and
+ * each panel's own "Show on the map" switch (map_panel_overlay_switch.js)
+ * states it for its layer. This module still paints the attribute and the
+ * label, because the accessible state is useful on its own — a screen
+ * reader hears "Your favourites — shown on the map" — and nothing about it
+ * needed a ring. See
+ * docs/decisions/map-controls-are-two-groups-without-an-on-map-marker.md.
  *
  * PAINT, not preference. Each bridge's ``isVisible()`` answers from the
  * layers MapLibre is actually drawing (SNOW-658 review), so an overlay the
  * user has switched on but whose data never arrived — offline, first enable,
- * a failed fetch — leaves its ring off, and a placement flow that clears the
- * map down to the basemap takes every one of them off for its duration. The panel
- * switch inside each roundel's own panel reads the bridge's ``isEnabled()``
- * instead and can therefore read ON while the ring is off: the switch states
- * what was asked for, the ring states what happened. A ring that claimed
+ * a failed fetch — leaves its state off, and a placement flow that clears
+ * the map down to the basemap takes every one of them off for its duration.
+ * The layers-menu row and the panel switch read the bridge's ``isEnabled()``
+ * instead and can therefore read ON while this state is off: the controls
+ * state what was asked for, this states what happened. A label that claimed
  * "shown" over a blank map would be this project's oldest status-indicator
  * defect wearing a new hat.
  *
  * The state is LIVE, not boot-only. ``snowdesk:overlay-visibility-changed``
  * (static/js/map.js's ``announceOverlayVisibility``) fires from every writer
- * of any of these overlays: the panel switches, the bulletins-exclusivity
+ * of any of these overlays: the bridges' show()/hide() (behind the layers-menu
+ * rows and the panel switches), the bulletins-exclusivity
  * path that switches the downloaded squares off from the layers menu, the
  * boot seed, the ``styledata`` re-install after a basemap swap, each lazy
  * overlay's install (and the settle of a load that installed nothing), and
@@ -47,11 +51,11 @@
  * re-reads every bridge — so a new writer only has to announce, never to
  * describe.
  *
- * Accessibility: the ring is decorative-but-meaningful, so the state is also
- * in the roundel's own ``aria-label``, which is the idiom these roundels
- * already used (the downloads roundel swapped between two translated labels
- * before this ticket). Not ``aria-pressed``: all of these buttons OPEN a panel,
- * and a toggle-button role would announce the panel, not the overlay.
+ * Accessibility: the state lives in the roundel's own ``aria-label``, which
+ * is the idiom these roundels already used (the downloads roundel swapped
+ * between two translated labels before SNOW-658). Not ``aria-pressed``: all
+ * of these buttons OPEN a panel, and a toggle-button role would announce
+ * the panel, not the overlay.
  *
  * LOAD ORDER: needs the bridges, which map.js publishes at parse time,
  * so its <script> tag sits after the map bundle in home.html. It is not a

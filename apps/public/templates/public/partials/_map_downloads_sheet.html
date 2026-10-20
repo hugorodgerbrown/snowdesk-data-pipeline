@@ -35,7 +35,10 @@ from SNOW-658), moved by a second SNOW-645 review pass down to the very
 foot so the map BEHIND the sheet was the last thing read; SNOW-904
 removed it, along with the same switch on the three other panels, because
 a reader asking what can go on their map should not have to open five
-surfaces to find out. The map's layers menu is the sole control now.
+surfaces to find out. The two-capsule control column put it back at the
+foot as "Show on the map", bound to the same state as the layers menu's
+"Display downloaded areas" row (static/js/map_panel_overlay_switch.js) —
+the menu stays the one place that answers for every layer.
 Nothing here is positional as far as the JS is concerned: every element is
 addressed by data-attribute, never by index or sibling relationship, so
 reordering never needs a JS change.
@@ -119,7 +122,7 @@ the row's own label, so map.html loads that module once for both.
     {# groups there are is DATA (one per basemap this device holds —        #}
     {# SNOW-832), so it renders its own headings from its rows template     #}
     {# rather than taking one fixed heading from the shell.                 #}
-    {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" cta_label=downloads_add_label %}
+    {% include "includes/_ugc_panel.html" with title=downloads_sheet_title icon_template="includes/_icon_downloads.html" header_template="public/partials/_map_downloads_header.html" rows_template="public/partials/_map_downloads_rows.html" cta_label=downloads_add_label toggle_id="map-downloads-overlay-toggle" %}
 </template>
 {# One basemap group (SNOW-832): the swatch, the heading label, this        #}
 {# device's total for that basemap, the identity rule, and the empty `<ul>` #}
@@ -211,6 +214,10 @@ the row's own label, so map.html loads that module once for both.
     <span data-string="kind-content-incomplete">{% trans "Bulletins not saved" %}</span>
     <span data-string="kind-region">{% trans "Region" %}</span>
     <span data-string="kind-custom">{% trans "Custom area" %}</span>
+    {# SNOW-1133: an account-only area with no name, named by the day the #}
+    {# account recorded it (map_downloads_manager.js's unnamedAreaLabel). #}
+    <span data-string="unnamed-area">{% blocktrans %}Area saved %(date)s{% endblocktrans %}</span>
+    <span data-string="unnamed-area-undated">{% trans "Unnamed area" %}</span>
     {# SNOW-856: the shared z0-9 overview map — one per basemap, and the #}
     {# only row kind with no Remove control. "Shared" rather than a #}
     {# restatement of the row's own title ("Overview map"), which would #}

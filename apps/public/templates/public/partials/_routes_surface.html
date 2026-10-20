@@ -41,9 +41,10 @@ Five shared modules are loaded once each by map.html before this partial
 SNOW-687 closed the gap SNOW-686 left: there IS a routes map layer now, a
 MapLibre line pair driven by window.pwaRoutesOverlay. This panel carried a
 "Display on the map" switch for it until SNOW-904, which made the map's
-layers menu the sole control for every layer — the routes row there drives
-the same bridge, so nothing about the layer changed, only where it is
-switched on.
+layers menu the sole control for every layer. The two-capsule control
+column gave it back as "Show on the map", bound to the same state as the
+menu's Routes row (static/js/map_panel_overlay_switch.js) — the menu still
+answers "what is on my map", this answers it for routes.
 
 WHAT THIS SURFACE DOES NOT HAVE, and why each absence is deliberate:
 
@@ -108,11 +109,10 @@ Context expected:
     {% trans "Routes are private unless you share one." as routes_context_line %}
     {% trans "Tracks" as routes_section_label %}
     {# SNOW-687 gave this panel a "Display on the map" switch at its foot; #}
-    {# SNOW-904 took it away again, along with the three beside it on the  #}
-    {# other panels. The layers menu is the only control for the routes    #}
-    {# overlay now, so no toggle_id is passed and routes.js delegates on   #}
-    {# nothing here.                                                        #}
-    {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label %}
+    {# SNOW-904 took it away; the two-capsule column brought it back as    #}
+    {# "Show on the map", bound to the layers menu's Routes row by         #}
+    {# static/js/map_panel_overlay_switch.js, which finds it by this id.   #}
+    {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label toggle_id="map-routes-overlay-toggle" %}
 </template>
 {# Optimistic-confirmation template (SNOW-886) — cloned into #route-sheet  #}
 {# by routes.js the instant route_create answers 200, modelled on           #}

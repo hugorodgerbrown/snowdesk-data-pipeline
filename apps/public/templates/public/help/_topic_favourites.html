@@ -6,8 +6,9 @@ body_template parameter of includes/_collapsible_panel.html.
 
 Rewritten to describe the panel the star roundel opens (SNOW-658) rather
 than the pin-placement flow it used to start directly. SNOW-904 took the
-panel's "Display on the map" switch away again: whether favourites are
-drawn is a layers-menu row, like every other layer.
+panel's "Display on the map" switch away; the two-capsule control column
+gave it back as "Show on the map", bound to the layers menu's Favourites
+row, so either control draws them.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
@@ -20,8 +21,9 @@ drawn is a layers-menu row, like every other layer.
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-favourites-panel">
         {% blocktrans trimmed %}
-            That same panel lists everything you have saved. Rename a pin in place, remove one, and use the "Display on
-            the map" switch at the foot to draw them all &mdash; the switch lives here rather than in the layers menu.
+            That same panel lists everything you have saved. Rename a pin in place, remove one, and use the "Show on the
+            map" switch at the foot to draw them all &mdash; it is the same setting as the Favourites row in the layers
+            menu, so turning one moves the other.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0">

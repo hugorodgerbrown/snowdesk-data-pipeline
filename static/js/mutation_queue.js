@@ -535,7 +535,7 @@
         headers: headers,
         body: row.body != null ? row.body : undefined,
       });
-      outcome = core.classifyStatus(response.status);
+      outcome = core.classifyStatus(response.status, row.done_statuses);
     } catch (_networkErr) {
       outcome = 'retry';
     }
@@ -566,7 +566,10 @@
    * Sync registration for the offline/tab-closed case.
    *
    * @param {object} [operation] Caller-supplied mutation descriptor:
-   *   ``{method, url, headers, body}``. ``method`` defaults to ``'POST'``.
+   *   ``{method, url, headers, body, doneStatuses}``. ``method`` defaults
+   *   to ``'POST'``. SNOW-1132: ``doneStatuses`` is an optional list of
+   *   response codes that mean the mutation is already applied (a 404 on
+   *   a delete); the drain treats them as success.
    * @returns {Promise<void>}
    */
   async function enqueue(operation) {
@@ -587,6 +590,7 @@
         status: 'queued',
         next_attempt_at: Date.now(),
         principal: _currentPrincipal(),
+        done_statuses: Array.isArray(op.doneStatuses) ? op.doneStatuses.slice() : [],
       };
       await window.pwaDb.put(STORE, row);
       await _updateBadge();

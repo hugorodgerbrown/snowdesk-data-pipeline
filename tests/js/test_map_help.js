@@ -22,9 +22,9 @@
  * SNOW-535 replaced the "does auto-start read #home-intro's visibility"
  * mechanism with a data-driven opt-out (`data-map-help-no-autostart` on
  * `#map-help-overlay`, set by home.html) and added a
- * `snowdesk:map-help-requested` CustomEvent — dispatched by
- * `#home-intro`'s "Explore the map" CTA (home_intro.js) — as a second way
- * to open the tour alongside the "?" roundel. `buildFixture`'s
+ * `snowdesk:map-help-requested` CustomEvent — dispatched today by
+ * `#map-tour-offer`'s "Start the tour" (map_tour_offer.js, SNOW-1117) — as
+ * a second way to open the tour alongside the "?" roundel. `buildFixture`'s
  * `homeIntroShowing` option and the home-intro fixture markup were dropped
  * accordingly; `noAutostart` replaces them wherever a case needs auto-start
  * suppressed to isolate a different open path.
@@ -35,8 +35,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const STORAGE_KEY = 'snowdesk.map.help';
 const DISMISSED_VALUE = 'seen';
 
-// Mirrors the template's 13 step definitions (apps/public/templates/public/
-// partials/_map_embed.html), in template order.
+// The tour's step list as it stood before SNOW-1118: one plain <li> per
+// control, its text the body, no chapters. The template carries seven
+// chaptered steps now (tests/js/test_map_help_chapters.js walks that shape),
+// but map_help.js still reads this simpler one — a step without a
+// [data-help-body] uses its own text, and steps without chapters show the
+// "Step n of m" line instead of the progress bar — so this file keeps it to
+// cover the sequencing, persistence and keyboard behaviour on their own.
 //
 // Every one of those targets is server-rendered unconditionally — none of
 // them is gated on a waffle flag or an auth check any more (#favourite-add-btn
@@ -270,8 +275,8 @@ describe('auto-start', () => {
   });
 
   it('does not auto-start when the embedding page opts out via data-map-help-no-autostart', async () => {
-    // SNOW-535: home.html sets this — the tour there only opens via the "?"
-    // roundel or #home-intro's "Explore the map" CTA.
+    // map.html sets this — the tour there only opens via the "?" roundel
+    // or #map-tour-offer's "Start the tour" (SNOW-1117).
     buildFixture({ noAutostart: true });
     await loadModules();
 
@@ -279,46 +284,27 @@ describe('auto-start', () => {
   });
 });
 
-describe('the "?" roundel where the page has a welcome panel', () => {
-  it('opens #home-intro instead of the tour', async () => {
-    // The roundel is the only way back to the welcome panel, so on a page
-    // that renders one it hands the click over rather than starting the
-    // tour: the panel's own "Explore the map" CTA is what leads in here.
-    // home_intro.js answers the event; this fixture has no such module, so
-    // the assertion is that the request goes out and the tour stays shut.
+describe('the "?" roundel', () => {
+  it('opens the tour from step 1', async () => {
+    // SNOW-1117: between SNOW-535 and this ticket the roundel opened the
+    // #home-intro welcome panel where the page had one. The panel is gone,
+    // so the roundel leads straight into the tour on every page.
     buildFixture({ noAutostart: true });
-    document.body.insertAdjacentHTML('beforeend', '<div id="home-intro"></div>');
     await loadModules();
-    const requested = vi.fn();
-    document.addEventListener('snowdesk:home-intro-requested', requested);
 
     document.getElementById('map-help-toggle').click();
 
-    expect(requested).toHaveBeenCalledTimes(1);
-    expect(overlayHidden()).toBe(true);
-  });
-
-  it('opens the tour directly when there is no welcome panel', async () => {
-    // Any other page embedding the map partial without show_intro: nothing
-    // would answer the request event, so the roundel must not dispatch it.
-    buildFixture({ noAutostart: true });
-    await loadModules();
-    const requested = vi.fn();
-    document.addEventListener('snowdesk:home-intro-requested', requested);
-
-    document.getElementById('map-help-toggle').click();
-
-    expect(requested).not.toHaveBeenCalled();
     expect(overlayHidden()).toBe(false);
+    const [step] = currentStepAndTotal();
+    expect(step).toBe(1);
   });
 });
 
 describe('snowdesk:map-help-requested', () => {
   it('opens the tour from step 1, same as the "?" roundel', async () => {
-    // SNOW-535: this is the event home_intro.js dispatches when its
-    // "Explore the map" CTA is clicked, alongside the shared dismiss
-    // handling — noAutostart isolates this from the auto-start path so the
-    // assertion is only about the event-driven open.
+    // SNOW-1117: this is the event map_tour_offer.js dispatches from
+    // "Start the tour" — noAutostart isolates this from the auto-start path
+    // so the assertion is only about the event-driven open.
     buildFixture({ noAutostart: true });
     await loadModules();
 

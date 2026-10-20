@@ -56,11 +56,11 @@ DEFAULT_DATE = "2026-02-12"
 # The region whose sheet the phone capture opens.
 DEFAULT_REGION = "CH-1111"
 
-# What static/js/home_intro.js and static/js/map_help.js write when their
-# card is dismissed. Set before any page script runs.
+# What static/js/map_tour_offer.js and static/js/map_help.js write when the
+# offer is answered and the tour finished. Set before any page script runs.
 DISMISS_INTRO = (
     "try {"
-    " localStorage.setItem('snowdesk.home.intro', 'dismissed');"
+    " localStorage.setItem('snowdesk.map.tour-offer', 'dismissed');"
     " localStorage.setItem('snowdesk.map.help', 'seen');"
     " } catch (e) {}"
 )

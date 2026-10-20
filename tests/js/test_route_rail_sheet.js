@@ -48,7 +48,9 @@ document.body.innerHTML = `
         </div>
         <div data-route-rail-ticks></div>
       </div>
-      <p data-route-rail-hint data-sheet-peek>Click on the profile to view terrain data</p>
+      <div data-sheet-peek>
+        <p data-route-rail-hint>Tap or drag the profile to view terrain data</p>
+      </div>
       <div data-sheet-half></div>
       <dl data-route-rail-debug>
         <div data-route-rail-debug-hint>Place a point on the profile to read its figures.</div>
@@ -182,6 +184,16 @@ describe('the detents', () => {
     window.pwaRouteRail.open(feature());
     window.pwaRouteRail.cursor().setIndex(5);
     expect(rail.getAttribute('data-detent')).toBe('half');
+  });
+
+  it('hides the hint while a point is placed, and brings it back on clear', () => {
+    const hint = /** @type {HTMLElement} */ (rail.querySelector('[data-route-rail-hint]'));
+    window.pwaRouteRail.open(feature());
+    expect(hint.hidden).toBe(false);
+    window.pwaRouteRail.cursor().setIndex(5);
+    expect(hint.hidden).toBe(true);
+    window.pwaRouteRail.cursor().setIndex(null);
+    expect(hint.hidden).toBe(false);
   });
 
   it('leaves a sheet at full where it is when a point moves', () => {

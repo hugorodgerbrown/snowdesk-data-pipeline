@@ -101,10 +101,21 @@
    * - 1xx / 3xx (unexpected from a mutation endpoint) → 'retry', so an
    *   unusual response doesn't silently drop a mutation.
    *
+   * SNOW-1132: ``doneStatuses`` lists the codes that mean "already applied"
+   * for THIS mutation, and they classify as 'success' ahead of every rule
+   * above. A delete of a row that is already gone is the case: the
+   * downloads forget endpoint answers 404 for it, and a permanent failure
+   * there left a red badge that could never clear for an outcome that was
+   * exactly what the user asked for.
+   *
    * @param {number} status
+   * @param {number[]} [doneStatuses] Codes the caller declared as done.
    * @returns {'success'|'permanent'|'retry'}
    */
-  function classifyStatus(status) {
+  function classifyStatus(status, doneStatuses) {
+    if (Array.isArray(doneStatuses) && doneStatuses.indexOf(status) !== -1) {
+      return 'success';
+    }
     if (status >= 200 && status < 300) return 'success';
     if (status === 408 || status === 429) return 'retry';
     if (status >= 500) return 'retry';

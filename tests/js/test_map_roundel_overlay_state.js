@@ -23,16 +23,22 @@
  *      layer off the map and puts it back — the path an implementation that
  *      painted only at boot would still pass every other test here;
  *   4. a lazy overlay's own load settling, long after the switch that asked
- *      for it: the layers appear (ring on) or never do (ring stays off);
+ *      for it: the layers appear (state on) or never do (state stays off);
  *   5. a placement flow, which clears every app layer off the map without
  *      going anywhere near a bridge.
  *
  * 4 and 5 are the SNOW-658 review's subject: ``isVisible()`` answers from
  * the layers MapLibre is drawing, not from the stored preference, so the
- * ring can only ever claim what is on screen. The preference lives on as
+ * state can only ever claim what is on screen. The preference lives on as
  * ``isEnabled()``, which is what the panel switch reads — the two are
  * asserted apart below, because the state where they disagree (asked for,
  * not drawn) is the state this distinction exists to make visible.
+ *
+ * The state used to drive a blue on-map ring as well (SNOW-658). That ring
+ * was dropped by design with the two-capsule control column — readers took
+ * it for "selected" — so what is asserted here is the attribute and the
+ * composed aria-label, which the module still paints. "Lit" and "on" below
+ * mean ``data-overlay-shown="true"``.
  *
  * Booting map.js in jsdom follows test_map_favourites_overlay_bridge.js's
  * pattern — see its header, and test_map_download_bytes.js's, for the
@@ -286,10 +292,10 @@ beforeEach(async () => {
 // enable genuinely reaches the network. map.js loads each lazy overlay once
 // per session, so a later test could only ever exercise the short-circuit.
 describe('an overlay whose data never arrives', () => {
-  it('leaves the ring off when the fetch fails', async () => {
+  it('leaves the state off when the fetch fails', async () => {
     // Offline, first enable, no cached copy: the preference is written and
     // nothing at all is installed. The user needs to see that this did not
-    // reach the map, which a ring reading the preference would hide.
+    // reach the map, which a state reading the preference would hide.
     globalThis.fetch.mockImplementationOnce(() => Promise.reject(new Error('offline')));
 
     window.pwaCommunityReportsOverlay.show();
@@ -310,7 +316,7 @@ describe('an overlay whose data never arrives', () => {
 describe('each roundel tracks its own overlay', () => {
   it('paints from the layers, not from the stored preference', async () => {
     // The distinction the SNOW-658 review turns on: the preference below
-    // never moves, and the ring still goes out, because the pins did.
+    // never moves, and the state still goes off, because the pins did.
     window.pwaFavouritesOverlay.show();
     await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
 
@@ -331,7 +337,7 @@ describe('each roundel tracks its own overlay', () => {
 
   it('follows the favourites overlay in both directions', async () => {
     // show() is asynchronous by nature — it asks the lazy-load path for the
-    // layers and they are painted a tick later — so the ring lights on the
+    // layers and they are painted a tick later — so the state lights on the
     // announcement that load makes, not on the click.
     window.pwaFavouritesOverlay.show();
     await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
@@ -352,9 +358,9 @@ describe('each roundel tracks its own overlay', () => {
 
   it('follows the routes overlay in both directions', async () => {
     // SNOW-687's roundel. Asserted the same way as the other three and for
-    // the same reason: the ring lights on the announcement its lazy load
+    // the same reason: the state lights on the announcement its lazy load
     // makes, not on the switch, so a bridge that forgot to announce would
-    // leave the ring dark over a drawn route.
+    // leave the state dark over a drawn route.
     window.pwaRoutesOverlay.show();
     await waitFor(() => shown(ROUTES_ROUNDEL) === 'true');
     expect(shown(ROUTES_ROUNDEL)).toBe('true');
@@ -376,7 +382,7 @@ describe('each roundel tracks its own overlay', () => {
 describe('an overlay that was asked for but never drawn', () => {
   it('reports not-shown while its layers are not installed', async () => {
     // First enable offline: the preference is written and the fetch brings
-    // back nothing, so there is no layer to paint. A ring reading the
+    // back nothing, so there is no layer to paint. A state reading the
     // preference would claim "shown" over a map with no pins on it.
     uninstallLayers('favourites-pin', 'favourites-label');
 
@@ -388,7 +394,7 @@ describe('an overlay that was asked for but never drawn', () => {
     expect(shown(FAVOURITES_ROUNDEL)).toBe('false');
   });
 
-  it('lights the ring when the layers finally install', async () => {
+  it('lights the state when the layers finally install', async () => {
     uninstallLayers('favourites-pin', 'favourites-label');
     window.pwaFavouritesOverlay.show();
     await settle();
@@ -404,10 +410,10 @@ describe('an overlay that was asked for but never drawn', () => {
 });
 
 describe('a placement flow clears the map', () => {
-  it('drops the rings for its duration and gives them back', async () => {
+  it('drops the states for its duration and gives them back', async () => {
     // static/js/map_placement_focus.js hides every geojson-sourced layer
     // without touching a bridge — the overlays genuinely are gone, so the
-    // rings have to go with them, and come back when the flow ends.
+    // states have to go with them, and come back when the flow ends.
     window.pwaFavouritesOverlay.show();
     await window.pwaDownloadedOverlay.show();
     await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
@@ -427,8 +433,8 @@ describe('a placement flow clears the map', () => {
     expect(shown(DOWNLOADS_ROUNDEL)).toBe('true');
   });
 
-  it('repaints once per transition, so the rings do not flicker', async () => {
-    // A ring that flickered — off, on, off — through every placement flow
+  it('repaints once per transition, so the states do not flicker', async () => {
+    // A state that flickered — off, on, off — through every placement flow
     // would be worse than one that lied, so count the repaints rather than
     // reading the value at the end. Two announcements, one per transition,
     // each already carrying the settled value (this module's own listener

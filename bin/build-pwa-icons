@@ -22,7 +22,7 @@
  * Staging set (static/icons/pwa-staging/, SNOW-399) — same four files but
  * on an amber tile, with the mountain raised and the word "Staging" set in
  * a band beneath it. On the maskable variant every mark sits inside the
- * circle Android actually shows (see MASKABLE_MARK_RADIUS), so neither the
+ * circle the launcher shows (see MASKABLE_MARK_RADIUS), so neither the
  * glyph nor the word is cropped.
  *
  * Snowdesk deploys the same codebase to staging (*.onrender.com) and
@@ -111,11 +111,14 @@ const FOREGROUND_COLOUR = '#f2f0ec';
 
 // The radius, as a fraction of the maskable canvas, that every light mark
 // on the tile (the mountain, and on staging the label) must sit inside.
-// Android 12+ shows a maskable icon on its launch splash, and on a round
-// launcher, as a circle two thirds of the canvas wide: radius 1/3. The
-// W3C 80% safe zone is looser than that, which is how the old season
-// label and staging asterisk came to be sliced off on the splash (SNOW-1112
-// follow-up). 0.30 keeps a tenth of the circle as air around the marks.
+// The tightest crop the icon gets is the home-screen launcher: Android
+// draws a maskable icon as an adaptive icon, a 108dp layer of which a
+// 72dp circle shows (two thirds, radius 1/3) and a 66dp circle is the
+// safe zone (radius 0.306). The W3C 80% safe zone is looser than that,
+// which is how the old season label and staging asterisk came to be
+// sliced off (SNOW-1112 follow-up). 0.30 is just inside Android's safe
+// zone, so the marks cannot grow without the launcher cropping them. The
+// launch splash is looser still: on Android 17 it shows the whole icon.
 const MASKABLE_MARK_RADIUS = 0.3;
 
 // A pixel counts as a light mark when every channel is above this: the
