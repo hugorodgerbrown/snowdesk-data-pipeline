@@ -10,6 +10,8 @@ Covers:
   clearing  — the FK and mirror clear; the Location survives.
   guards    — an unsaved resort or a half pair is refused; an unchanged pin
               writes nothing.
+  locking   — the resort lock is FOR UPDATE OF the resort row alone, so a
+              nullable join beside it is legal on PostgreSQL (SNOW-1154).
 """
 
 from __future__ import annotations
@@ -17,11 +19,16 @@ from __future__ import annotations
 import datetime
 
 import pytest
+from django.db import connection
+from django.db.backends.postgresql.base import (
+    DatabaseWrapper as PostgresDatabaseWrapper,
+)
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from apps.locations.models import Location
 from apps.regions.models import Resort
-from apps.regions.services.resort_pin import set_resort_pin
+from apps.regions.services.resort_pin import locked_resort, set_resort_pin
 from apps.weather.models import Weather
 from tests.factories import (
     FavouriteFactory,
@@ -304,3 +311,37 @@ class TestGuards:
         set_resort_pin(resort, 46.1, 7.4)
 
         assert Resort.objects.get(pk=resort.pk).updated_at == before
+
+
+class TestLockedResort:
+    """The resort lock compiles to a PostgreSQL lock on the resort row only."""
+
+    @staticmethod
+    def _postgres_sql(queryset: QuerySet[Resort]) -> str:
+        """Compile ``queryset`` with the PostgreSQL backend, without connecting."""
+        settings_dict = {
+            **connection.settings_dict,
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": "snowdesk",
+            "OPTIONS": {},
+        }
+        postgres = PostgresDatabaseWrapper(settings_dict, alias="postgres-sql-only")
+        # Feature flags read the server version; pin one so nothing connects.
+        postgres.__dict__["pg_version"] = 160000
+        # select_for_update asks whether it is inside a transaction; answer as
+        # set_resort_pin's atomic block would, without opening a connection.
+        postgres.get_autocommit = lambda: False  # type: ignore[method-assign]
+        sql, _params = queryset.query.get_compiler(connection=postgres).as_sql()
+        return str(sql)
+
+    def test_locks_only_the_resort_row_through_a_nullable_join(self) -> None:
+        """
+        ``select_related("location")`` is a LEFT OUTER JOIN; the lock names the
+        resort table alone, which PostgreSQL accepts (SNOW-1154).
+        """
+        resort = ResortFactory.create()
+
+        sql = self._postgres_sql(locked_resort(resort.pk).select_related("location"))
+
+        assert "LEFT OUTER JOIN" in sql
+        assert sql.endswith('FOR UPDATE OF "regions_resort"')
