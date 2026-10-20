@@ -44,6 +44,7 @@ from __future__ import annotations
 import logging
 
 from django.db import transaction
+from django.db.models import QuerySet
 
 from apps.locations.models import Location
 from apps.locations.services.anchor import anchor_location
@@ -54,6 +55,27 @@ logger = logging.getLogger(__name__)
 # The resort columns this service owns. A caller that saves the resort itself
 # with ``update_fields`` must leave these out — the service has written them.
 PIN_FIELDS = ("latitude", "longitude", "location")
+
+
+def locked_resort(pk: int) -> QuerySet[Resort]:
+    """
+    Return the queryset that row-locks one resort, and only the resort row.
+
+    ``of=("self",)`` keeps the lock on ``regions_resort`` alone. Without it,
+    any join a caller adds (``select_related("location")`` is a LEFT OUTER
+    JOIN, because the pin is nullable) is locked too, and PostgreSQL refuses
+    it: "FOR UPDATE cannot be applied to the nullable side of an outer join"
+    (SNOW-1154). SQLite ignores ``FOR UPDATE`` altogether, so only this
+    helper's compiled-SQL test sees the difference.
+
+    Args:
+        pk: The resort's primary key.
+
+    Returns:
+        A ``select_for_update(of=("self",))`` queryset filtered to that resort.
+
+    """
+    return Resort.objects.select_for_update(of=("self",)).filter(pk=pk)
 
 
 def _current_location(resort: Resort) -> Location | None:
@@ -209,11 +231,7 @@ def set_resort_pin(
     # The lock reads the row's current pin onto the caller's instance, so a
     # writer that waited on another works from what that one committed, not
     # from the stale ``location_id`` it loaded before the lock.
-    locked = (
-        Resort.objects.select_for_update()
-        .only("location", "latitude", "longitude")
-        .get(pk=resort.pk)
-    )
+    locked = locked_resort(resort.pk).only("location", "latitude", "longitude").get()
     resort.location_id = locked.location_id
     resort.latitude = locked.latitude
     resort.longitude = locked.longitude

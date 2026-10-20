@@ -54,7 +54,7 @@ from django.db import transaction
 
 from apps.core.command_iteration import announce_link_run, iterate_rows
 from apps.regions.models import Resort
-from apps.regions.services.resort_pin import set_resort_pin
+from apps.regions.services.resort_pin import locked_resort, set_resort_pin
 
 logger = logging.getLogger(__name__)
 
@@ -211,12 +211,7 @@ class Command(BaseCommand):
                 with transaction.atomic():
                     # Lock and re-read: an editor save could move or clear
                     # the pin between the walk and here.
-                    locked = (
-                        Resort.objects.select_for_update()
-                        .select_related("location")
-                        .filter(pk=resort.pk)
-                        .first()
-                    )
+                    locked = locked_resort(resort.pk).select_related("location").first()
                     if (
                         locked is None
                         or locked.latitude is None
