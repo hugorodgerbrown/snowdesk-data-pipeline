@@ -28,7 +28,7 @@
  *
  * Publishes (frozen `window.pwaRoutePointCard`):
  *
- *   attach({cursor, slope, coordinates, profile, legs, sampleCount, spanM})
+ *   attach({cursor, slope, coordinates, profile, sampleCount})
  *              — follow one route's cursor, showing the header for a point
  *   detach()   — stop following and show the header unlit
  *   element    — the header itself
@@ -155,8 +155,7 @@
    * Follow one route's cursor.
    *
    * @param {{cursor: *, slope: *, coordinates: *, profile: *,
-   *   legs: Array<{from: number, to: number}>, sampleCount: number,
-   *   spanM: number}} options What the rail opened the route with.
+   *   sampleCount: number}} options What the rail opened the route with.
    */
   function attach(options) {
     detach();
@@ -167,7 +166,11 @@
     route = {
       paths: slopeCore && slope ? slopeCore.segmentPaths(slope, options.coordinates) : [],
       gradients: core
-        ? core.segmentGradients(options.profile, options.sampleCount, options.spanM, options.legs)
+        ? core.segmentGradients(
+          options.profile,
+          options.sampleCount,
+          slope ? core.boundaryDistances(slope, options.coordinates) : null,
+        )
         : [],
       angles: slope && Array.isArray(slope.angles) ? slope.angles : [],
       // Undefined, not [], when the payload predates SNOW-976: the wheel

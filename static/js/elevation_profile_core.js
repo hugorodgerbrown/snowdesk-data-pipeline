@@ -737,6 +737,7 @@
   }
 
   self.pwaElevationProfileCore = Object.freeze({
+    haversineM: haversineM,
     readProfile: readProfile,
     buildPaths: buildPaths,
     slopeBands: slopeBands,

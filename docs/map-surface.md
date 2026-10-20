@@ -2,7 +2,7 @@
 name: map-surface
 description: Map zoom bands (REGION_SELECT_MAXZOOM), tap priority, overlay kinds, pwaMapOverlays, one bottom sheet, camera padding owner
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-10-20
 ---
 
 # The map surface: zoom, taps and overlays
@@ -36,6 +36,7 @@ z  4    5    6    7    8    9   10   11   12   13   14   15 … 18
                                                  terrain filter / slope tiles 12–14, overzoomed above
    route drawn as LEGS (climb / descent) ..........|
                                                       route drawn in SLOPE CLASSES 14 → (ROUTE_SLOPE_MINZOOM)
+   route cursor a DOT ..................................|  its 25 m SEGMENT 14 → (SNOW-1145)
                        weather symbols 7 →, decluttered to ≤ 11
 ```
 

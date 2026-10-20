@@ -820,8 +820,6 @@ describe('lifetime', () => {
       const attached = calls.find((call) => call[0] === 'attach');
       expect(attached[1].cursor).toBe(window.pwaRouteRail.cursor());
       expect(attached[1].sampleCount).toBe(24);
-      expect(attached[1].spanM).toBe(620);
-      expect(attached[1].legs).toHaveLength(2);
       calls.length = 0;
       window.pwaRouteRail.close();
       expect(calls).toEqual([['detach']]);

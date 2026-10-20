@@ -743,9 +743,13 @@ describe('the first tap places the point on every kind of route (2026-10-02)', (
 
     expect(rail.last().feature.properties.uuid).toBe('stale-route');
     expect(cursor.state().index).toBe(0);
-    const [dot] = sources.get('route-cursor-point').data.features;
+    const features = sources.get('route-cursor-point').data.features;
+    expect(features).toHaveLength(1);
+    const [dot] = features;
     expect(dot.geometry.coordinates[1]).toBeCloseTo(46.505);
     expect(dot.properties.colour).toBeUndefined();
+    // SNOW-1145: no segment to stand for, so it stays a ring from z14.
+    expect(dot.properties.segment).toBeUndefined();
     cursor.setIndex(null);
   });
 });
@@ -815,6 +819,47 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     expect(window.snowdeskMapState.overlayLayers.routes).toContain('routes-cursor-point-halo');
   });
 
+  it('draws the cursor\'s segment in the ring\'s place from z14 (SNOW-1145)', () => {
+    const ids = [...layers.keys()];
+    const routeLayers = window.snowdeskMapState.overlayLayers.routes;
+    const stack = ['routes-cursor-segment-casing', 'routes-cursor-segment-halo', 'routes-cursor-segment'];
+    for (const id of stack) {
+      const layer = layers.get(id);
+      expect(layer.type).toBe('line');
+      expect(layer.source).toBe('route-cursor-point');
+      expect(layer.minzoom).toBe(14);
+      expect(layer.filter).toEqual(['==', ['geometry-type'], 'LineString']);
+      // Square ends, so where the 25 m starts and stops is unambiguous.
+      expect(layer.layout['line-cap']).toBe('butt');
+      expect(routeLayers).toContain(id);
+    }
+    // Casing under the white band under the class colour, all under the dot.
+    expect(ids.indexOf(stack[0])).toBeLessThan(ids.indexOf(stack[1]));
+    expect(ids.indexOf(stack[1])).toBeLessThan(ids.indexOf(stack[2]));
+    expect(ids.indexOf(stack[2])).toBeLessThan(ids.indexOf('routes-cursor-point-halo'));
+    expect(layers.get('routes-cursor-segment').paint['line-color'][1]).toEqual(['get', 'colour']);
+    // The ring and its halo give way where a segment is drawn.
+    for (const id of ['routes-cursor-point-halo', 'routes-cursor-point']) {
+      expect(layers.get(id).filter).toEqual(['==', ['geometry-type'], 'Point']);
+    }
+    expect(layers.get('routes-cursor-point').paint['circle-stroke-opacity']).toEqual([
+      'step', ['zoom'], 1, 14, ['case', ['to-boolean', ['get', 'segment']], 0, 1],
+    ]);
+  });
+
+  it('puts the cursor\'s segment beside the dot on a sampled route (SNOW-1145)', () => {
+    const cursor = openSampledRoute();
+
+    cursor.setIndex(1);
+    const [dot, segment] = sources.get('route-cursor-point').data.features;
+    expect(dot.properties.segment).toBe(true);
+    expect(segment.geometry.type).toBe('LineString');
+    expect(segment.properties.index).toBe(1);
+    expect(segment.properties.colour).toBe(dot.properties.colour);
+    cursor.setIndex(null);
+    rail.state.cursor = null;
+  });
+
   it('draws no selection stretch (SNOW-1052)', () => {
     expect(sources.has('route-cursor-selection')).toBe(false);
     expect(layers.has('routes-cursor-selection')).toBe(false);
@@ -866,7 +911,7 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     rail.state.cursor = null;
   });
 
-  it('repaints the dot when a basemap swap rebuilds the layers', async () => {
+  it('repaints the dot and its segment when a basemap swap rebuilds the layers', async () => {
     const cursor = openSampledRoute();
     cursor.setIndex(1);
 
@@ -874,7 +919,7 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     for (const id of [...sources.keys()]) sources.delete(id);
     for (const handler of mapStub.handlers.styledata || []) await handler();
 
-    expect(sources.get('route-cursor-point').data.features).toHaveLength(1);
+    expect(sources.get('route-cursor-point').data.features).toHaveLength(2);
     cursor.setIndex(null);
     rail.state.cursor = null;
   });

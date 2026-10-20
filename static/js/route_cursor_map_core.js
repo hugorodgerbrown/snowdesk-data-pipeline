@@ -42,16 +42,26 @@
  * line does. With no slope core loaded it carries no `colour`, and map.js
  * falls back to the route's own colour.
  *
- * Nothing here draws a stretch of line. SNOW-1052 removed band and
- * passage selection from rail two (itself retired by SNOW-1065), and with it the highlighted stretch
- * (`selectionLine`) the map drew for a selection; the map draws the
- * cursor's dot and nothing else.
+ * ## From z14 the cursor IS its segment (SNOW-1145)
+ *
+ * The point card describes one segment, 25 m of track, and from
+ * ROUTE_SLOPE_MINZOOM the map draws the cursor as exactly that segment:
+ * `cursorSegment` is the segment's own path, the one the slope line draws
+ * it along, in its class colour. Two consecutive indices share a boundary
+ * point, so their segments meet end to end with neither gap nor overlap,
+ * and the reader can see where the segment the card is about starts and
+ * stops. Below z14 the line is drawn in legs, a segment is a few pixels,
+ * and the dot stays. This is not the highlighted run SNOW-1052
+ * removed (`selectionLine`, a rail selection of many segments): it is the
+ * one segment the cursor is on.
  *
  * Exports (frozen `self.pwaRouteCursorMapCore`):
  *
  *   sampleCount(slope)                   → N, or 0 with no usable record
  *   cursorPoint(slope, index, coords)    → Point Feature, or null; its
  *                                          `colour` is the segment's class
+ *   cursorSegment(slope, index, coords)  → LineString Feature along the
+ *                                          segment's path, or null
  *   segmentMidpoints(slope, coords)      → [[lon, lat]] per segment
  *   shareMidpoints(coords, count)        → [[lon, lat]] per equal share
  *                                          of the line, for a route with
@@ -293,6 +303,44 @@
   }
 
   /**
+   * The cursor's segment as a line: its own path, in its colour (SNOW-1145).
+   *
+   * The path the slope line draws the segment along where the record's
+   * `seams` place it on the track, every point of it usable; the chord
+   * between its two ends otherwise, as the line is then drawn. Segment i
+   * ends on `points[i + 1]` and segment i + 1 starts on it, so the
+   * features for two consecutive indices meet end to end.
+   *
+   * @param {?Slope} slope
+   * @param {?number} index
+   * @param {*} [coordinates] The feature's `geometry.coordinates`.
+   * @returns {?Feature} Null for a null index, no record, an index outside
+   *   the route, or an end that is not a usable point.
+   */
+  function cursorSegment(slope, index, coordinates) {
+    const count = sampleCount(slope);
+    if (index === null || !Number.isInteger(index) || !count) return null;
+    if (index < 0 || index >= count || !slope || !slope.points) return null;
+    const a = slope.points[index];
+    const b = slope.points[index + 1];
+    if (!isPoint(a) || !isPoint(b)) return null;
+    const paths = segmentPathsOf(slope, coordinates);
+    const path = paths ? paths[index] : null;
+    const line = Array.isArray(path) && path.length >= 2 && path.every(isPoint)
+      ? path.map((p) => [p[0], p[1]])
+      : [[a[0], a[1]], [b[0], b[1]]];
+    /** @type {Object<string, *>} */
+    const properties = { index: index };
+    const colour = segmentColour(slope, index);
+    if (colour) properties.colour = colour;
+    return {
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: line },
+      properties: properties,
+    };
+  }
+
+  /**
    * The sample whose segment middle is nearest a screen point.
    *
    * @param {Array<?{x: number, y: number}>} midpointsPx Each segment's
@@ -411,6 +459,7 @@
     panOffset: panOffset,
     sampleCount: sampleCount,
     cursorPoint: cursorPoint,
+    cursorSegment: cursorSegment,
     segmentMidpoints: segmentMidpoints,
     shareMidpoints: shareMidpoints,
     nearestSample: nearestSample,

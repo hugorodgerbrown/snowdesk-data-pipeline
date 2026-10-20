@@ -219,9 +219,19 @@ and every point reads more clearly as one or the other.
 - The aspect on the wire is one of eight sectors (SNOW-976), so the
   45° and 135° edges carry up to 22.5° of rounding. Sending a bearing
   would sharpen the edges without changing the rule.
-- `segmentGradients` lives in `route_point_card_core.js`, its one reader;
-  it is the same window, stopped at a leg's ends, rail two used (rail two
-  was retired by SNOW-1065).
+- `segmentGradients` lives in `route_point_card_core.js`, its one reader.
+  Until SNOW-1145 it read the window rail two used (retired by
+  SNOW-1065): one stride, 25 m, either side of the segment's middle,
+  stopped at a leg's ends, so 50 m of track. Since SNOW-1145 it reads the
+  segment's own 25 m, the same segment the colour, the heading, the ground
+  and the map's cursor describe, between the sampler's own boundaries
+  (`boundaryDistances`, placed by the record's `seams`; the last segment
+  absorbs the remainder, so equal shares would not match). A segment
+  never crosses a leg boundary,
+  so the leg clipping went with it. On the two Mont Fort canonical tours
+  between a fifth and a quarter of segments moved to a neighbouring
+  track step; none
+  newly exceeds the ground's angle by more than 5°.
 - A new surface that describes a point uses `trackBand` / `groundWord` /
   `groundBand` and the track scale rather than inventing its own words
   or bounds.

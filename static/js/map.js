@@ -2555,11 +2555,29 @@
   };
 
   /**
+   * The cursor's segment on the open route as a line, or null (SNOW-1145).
+   *
+   * Only a route with a slope record has segments; one never sampled
+   * answers null and keeps its dot.
+   *
+   * @param {?number} index The cursor's index.
+   * @returns {?object} A LineString Feature, or null.
+   */
+  const routeCursorSegment = (index) => {
+    const core = self.pwaRouteCursorMapCore;
+    if (!core || typeof core.cursorSegment !== 'function' || !routeCursorTarget) return null;
+    if (index === null || index === undefined) return null;
+    return core.cursorSegment(routeCursorTarget.slope, index, routeCursorTarget.coordinates);
+  };
+
+  /**
    * Put the cursor's index on the map (SNOW-1019).
    *
    * Writes it into module state first, so a source installed later — a
    * basemap re-install — starts from it, then into the source if it is
-   * there.
+   * there. The source holds the dot and, on a sampled route, the
+   * segment the dot stands for (SNOW-1145), which the map draws in the
+   * dot's place from ROUTE_SLOPE_MINZOOM.
    *
    * @param {?{index: ?number}} state The cursor's state, or null to clear
    *   the dot.
@@ -2567,8 +2585,13 @@
    */
   const paintRouteCursor = (state) => {
     const point = state ? routeCursorFeature(state.index) : null;
+    const segment = point ? routeCursorSegment(state.index) : null;
+    // SNOW-1145: a dot with a segment to stand for hides from z14, where
+    // the segment is drawn in its place; one without (a route never
+    // sampled) stays a ring at every zoom.
+    if (point && segment) point.properties.segment = true;
     routeCursorPointData = point
-      ? { type: 'FeatureCollection', features: [point] }
+      ? { type: 'FeatureCollection', features: segment ? [point, segment] : [point] }
       : EMPTY_ROUTE_CURSOR_FC;
     const pointSource = map.getSource('route-cursor-point');
     if (pointSource) pointSource.setData(routeCursorPointData);
@@ -3116,6 +3139,37 @@
       type: 'geojson',
       data: routeCursorPointData,
     });
+    // SNOW-1145: from ROUTE_SLOPE_MINZOOM the cursor IS its segment — the
+    // 25 m the point card describes, drawn along its own path in its
+    // class colour inside a white band and a dark casing. Square ends
+    // ('butt'), so where the segment starts and stops is unambiguous, and
+    // two consecutive indices meet end to end at their shared boundary.
+    // The widths keep the class colour wider than the slope line under it
+    // and the white band clear of it at every zoom. Below the minzoom the
+    // line is drawn in legs and a segment is a few pixels: the dot stays.
+    const cursorSegmentLayers = [
+      ['routes-cursor-segment-casing', ROUTE_CASING_COLOUR, 13.2, 15.5],
+      ['routes-cursor-segment-halo', ROUTE_CURSOR_HALO, 10.2, 12.5],
+      ['routes-cursor-segment', null, 5.7, 8],
+    ];
+    for (const [id, colour, z12, z16] of cursorSegmentLayers) {
+      map.addLayer({
+        id,
+        type: 'line',
+        source: 'route-cursor-point',
+        minzoom: ROUTE_SLOPE_MINZOOM,
+        filter: ['==', ['geometry-type'], 'LineString'],
+        layout: {
+          visibility: overlayState.routes ? 'visible' : 'none',
+          'line-cap': 'butt',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': colour || ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 12, z12, 16, z16],
+        },
+      });
+    }
     // SNOW-1064: the ring's white under-stroke from ROUTE_SLOPE_MINZOOM,
     // so a ring in the 30–35° yellow still reads over the yellow line it
     // sits on. Below the minzoom the filled dot carries its own halo.
@@ -3124,6 +3178,7 @@
       type: 'circle',
       source: 'route-cursor-point',
       minzoom: ROUTE_SLOPE_MINZOOM,
+      filter: ['==', ['geometry-type'], 'Point'],
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
       },
@@ -3132,21 +3187,25 @@
         'circle-radius': 7,
         'circle-stroke-color': ROUTE_CURSOR_HALO,
         'circle-stroke-width': 5.5,
+        // SNOW-1145: no ring where the segment is drawn instead.
+        'circle-stroke-opacity': ['case', ['to-boolean', ['get', 'segment']], 0, 1],
       },
     });
     map.addLayer({
       id: 'routes-cursor-point',
       type: 'circle',
       source: 'route-cursor-point',
+      filter: ['==', ['geometry-type'], 'Point'],
       layout: {
         visibility: overlayState.routes ? 'visible' : 'none',
       },
       // SNOW-1064: from ROUTE_SLOPE_MINZOOM the route is drawn per 25 m
-      // segment in slope classes, and a segment is about 4 px long, so a
-      // filled dot would cover the very segment the point header describes.
-      // There the dot becomes a RING in the segment's class colour with a
-      // clear centre about one segment wide, so the line's colour under it
-      // shows through. Below it the dot stays filled.
+      // segment in slope classes, so a filled dot would cover the very
+      // segment the point header describes. There the dot becomes a RING
+      // in the segment's class colour with a clear centre, so the line's
+      // colour under it shows through. Below it the dot stays filled.
+      // SNOW-1145: on a sampled route the ring gives way to the segment
+      // itself (the layers above); only a route never sampled keeps it.
       paint: {
         // The slope class of the segment under the cursor (SNOW-1052), the
         // colour the point header's outer ring lights; the route's own colour
@@ -3160,6 +3219,11 @@
           ROUTE_SLOPE_MINZOOM, ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
         ],
         'circle-stroke-width': ['step', ['zoom'], 2, ROUTE_SLOPE_MINZOOM, 3],
+        'circle-stroke-opacity': [
+          'step', ['zoom'],
+          1,
+          ROUTE_SLOPE_MINZOOM, ['case', ['to-boolean', ['get', 'segment']], 0, 1],
+        ],
       },
     });
     syncRouteLegLegend();

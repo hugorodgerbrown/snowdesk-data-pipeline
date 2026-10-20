@@ -415,9 +415,17 @@ leader line stay.
 
 **The route cursor on the map (SNOW-1019; points only since
 2026-10-02).** While a route's rail is open, the map and the route panel
-share one cursor, which holds a point or nothing. The point is a dot on
-the line, filled in the slope-class colour of the segment under it, or
-grey where the terrain had no answer. A tap places it, and nothing else
+share one cursor, which holds a point or nothing. A point is one 25 m
+segment of the track, and everything the point header says is about
+that segment. Zoomed out, below z14, it is a dot on the line, filled in
+the slope-class colour of the segment under it, or grey where the
+terrain had no answer. From z14, where the line itself is drawn in slope
+classes, the map draws the segment itself in place of the dot
+(SNOW-1145): its own 25 m of the line, thicker, in its class colour,
+inside a white band and a dark casing, with square ends where it starts
+and stops. Two consecutive points meet end to end at their shared
+boundary. A route never sampled has no segments and keeps a ring from
+z14. A tap places it, and nothing else
 does: a tap on a route's line places it at the nearest spot on the
 track, and a tap on the profile's top line places it at that distance.
 The profile's target is the line, loosely, about 20 px either side of
@@ -442,7 +450,8 @@ no marker or weather symbol takes, while a route is open, closes the
 panel and does nothing else. Escape clears a point, then closes the
 panel; the panel's × always closes it. Closing the rail clears the dot.
 All of it is hidden with the routes overlay.
-A dashed leader line in the route colour runs from the dot on the map to
+A dashed leader line in the route colour runs from the point on the map
+(the dot, or the middle of the drawn segment) to
 a small up-pointing notch on the panel's bottom edge, directly below the
 profile's cursor line, so one place can be followed across the map and
 the profile. It is hidden while the map has no point.
