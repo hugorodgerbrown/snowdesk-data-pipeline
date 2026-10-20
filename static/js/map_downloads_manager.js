@@ -421,6 +421,12 @@
     // until the first finishes.
     'download-here-busy': 'Another download is still running — try again when it finishes.',
     'download-here-already': 'That area is already downloaded on this device.',
+    // SNOW-1136: a restore fetches the stored area as stored, so it can be
+    // too big for this device where it fitted the one that made it.
+    'download-here-too-big': 'That area is larger than this device can hold.',
+    // SNOW-1136: a region restored under a basemap other than its own.
+    'confirm-other-basemap':
+      '%(name)s was downloaded for %(stored)s. Download it for %(active)s on this device?',
   });
 
   var interpolate = self.pwaStrings.interpolate;
@@ -863,6 +869,9 @@
         // re-asserted area loses the choice on the account.
         name: typeof sync.accountName === 'function' ? sync.accountName(area) : area.name,
         terrain: !!area.terrain,
+        // SNOW-1136: a drop zone re-asserted as a box would come back as a
+        // rectangle on the next device that restores it.
+        type: area.type,
       });
     }
   }
@@ -1650,6 +1659,15 @@
         // SNOW-1072: the account row's terrain-data choice, so the
         // download it starts here fetches the same tile families.
         hereBtn.setAttribute('data-downloads-terrain', row.terrain ? 'true' : 'false');
+        // SNOW-1136: what a restore needs to bring back the SAME area —
+        // its kind (a drop zone is a circle, not the box it is stored as),
+        // its stored name ('' when never renamed, never the localised
+        // label), the basemap it was downloaded for, and the label to name
+        // it by in a confirm.
+        hereBtn.setAttribute('data-downloads-kind', row.kind || '');
+        hereBtn.setAttribute('data-downloads-name', row.storedName || '');
+        hereBtn.setAttribute('data-downloads-basemap', row.basemapKey || '');
+        hereBtn.setAttribute('data-downloads-label', row.label || '');
         hereBtn.setAttribute(
           'aria-label',
           interpolate(STRINGS['download-here-row-label'], { name: row.label }),
@@ -2017,14 +2035,20 @@
    * Hands off to whichever start control owns the kind of area it is,
    * rather than reimplementing a run: a region goes to
    * ``window.pwaRegionDownload.start`` (map_region_download.js), a custom
-   * area to ``window.pwaCustomAreaDownload.openFramingAt``
-   * (map_custom_download.js). Both are the same code path the roundel and
-   * the add-trigger already use, so the pre-flight, the budget check, the
-   * eviction confirm and the recording cannot drift from them.
+   * area or drop zone to ``window.pwaCustomAreaDownload.restoreArea``
+   * (map_custom_download.js). Both run through the same pinned-download
+   * runner the roundel and the framing overlay use, so the budget check,
+   * the eviction confirm and the recording cannot drift from them.
    *
-   * The sheet hides on the way out, mirroring the add-trigger: framing
-   * needs the map, and a region run paints its progress on the ribbon
-   * roundel behind this sheet.
+   * SNOW-1136: a custom area is RESTORED — the account row's own id,
+   * stored name, box and kind — rather than framed again, which minted a
+   * second area for the same place. A region whose account row names a
+   * basemap other than the active one is confirmed first
+   * (``_confirmOtherBasemap``), since the run fetches the one on screen.
+   *
+   * The sheet hides on the way out, mirroring the add-trigger: a region
+   * run paints its progress on the ribbon roundel behind this sheet, and a
+   * restore fits the map to the area and fills in its grid there.
    *
    * @param {MouseEvent} event
    * @returns {boolean} Whether this click was a "Download here".
@@ -2083,6 +2107,12 @@
     // device's preference for the one download it starts.
     const terrain = button.getAttribute('data-downloads-terrain') === 'true';
 
+    // SNOW-1136: asked BEFORE the sheet hides, so a "no" leaves the user
+    // where they were, looking at the row they tapped.
+    if (regionId && window.pwaRegionDownload && !_confirmOtherBasemap(button)) {
+      return true;
+    }
+
     sheet.hidden = true;
     if (regionId && window.pwaRegionDownload) {
       window.pwaRegionDownload.start(regionId, { terrain: terrain }).then(function (outcome) {
@@ -2105,12 +2135,75 @@
       });
       return true;
     }
-    if (Array.isArray(bbox) && window.pwaCustomAreaDownload?.openFramingAt) {
-      window.pwaCustomAreaDownload.openFramingAt(bbox, { terrain: terrain });
+    if (Array.isArray(bbox) && window.pwaCustomAreaDownload?.restoreArea) {
+      // SNOW-1136: restored as the SAME area — the account row's own id,
+      // stored name, box and kind — rather than framed again, which minted
+      // a second area and left this row behind as "Not on this device".
+      window.pwaCustomAreaDownload
+        .restoreArea({
+          areaId: areaId,
+          bbox: bbox,
+          name: button.getAttribute('data-downloads-name') || '',
+          type: button.getAttribute('data-downloads-kind') === 'dropzone' ? 'dropzone' : 'custom',
+          terrain: terrain,
+        })
+        .then(function (outcome) {
+          // A run that started has already answered for itself: the grid
+          // on the map, and the shared download-error toast for a failure.
+          if (outcome && outcome.started) return;
+          const reason = (outcome && outcome.reason) || '';
+          if (reason === 'signin') return;
+          window.MapSheet?.toast(STRINGS[_restoreMessage(reason)]);
+        });
       return true;
     }
     window.MapSheet?.toast(STRINGS['download-here-failed']);
     return true;
+  }
+
+  /**
+   * SNOW-1136: the strings key for a refused custom-area restore.
+   *
+   * `_downloadHereMessage`'s mapping plus the two refusals only a restore
+   * reaches: offline (the network can drop between the tap and the run's
+   * own check) and a stored area too big for this device.
+   *
+   * @param {string} reason From `pwaCustomAreaDownload.restoreArea`.
+   * @returns {string} A key of `STRINGS`.
+   */
+  function _restoreMessage(reason) {
+    if (reason === 'offline') return 'add-offline';
+    if (reason === 'over-ceiling') return 'download-here-too-big';
+    return _downloadHereMessage(reason);
+  }
+
+  /**
+   * SNOW-1136: whether a region restore may go ahead under the active
+   * basemap.
+   *
+   * A region download fetches the basemap on screen, whatever the account
+   * row says it was downloaded for. When the two differ the user is asked
+   * first — naming both — and a "no" does nothing. When either is unknown
+   * (a row recorded before SNOW-645, or no picker) there is nothing to
+   * contrast, so it goes ahead as it always did.
+   *
+   * @param {HTMLElement} button The row's "Download here" control.
+   * @returns {boolean} Whether to start the download.
+   */
+  function _confirmOtherBasemap(button) {
+    const storedKey = button.getAttribute('data-downloads-basemap') || '';
+    const activeKey = window.pwaBasemapDownloads?.activeBasemapKey?.() || '';
+    if (!storedKey || !activeKey || storedKey === activeKey) return true;
+    // No dialog to ask with (an embedded view that stubs it away) reads as
+    // no question to answer — the same guard Remove's confirm makes.
+    if (typeof window.confirm !== 'function') return true;
+    return window.confirm(
+      interpolate(STRINGS['confirm-other-basemap'], {
+        name: button.getAttribute('data-downloads-label') || '',
+        stored: basemapName(storedKey),
+        active: basemapName(activeKey),
+      }),
+    );
   }
 
   /**

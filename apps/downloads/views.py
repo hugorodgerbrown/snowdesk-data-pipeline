@@ -43,9 +43,9 @@ wrong first:
   ceiling to borrow any more: the limit on a download is the free storage
   of the device running it, which only that device can know
   (``basemap_download_core.js``'s ``deviceCeilingMb``). This matters
-  because a stored bbox is replayed on another device by ``openFramingAt``,
-  and that other device may have far more room than the one that framed
-  it.
+  because a stored bbox is replayed on another device by ``restoreArea``
+  (static/js/map_custom_download.js), and that other device may have far
+  more room than the one that framed it.
 - An over-long ``name``, ``region_id`` or ``basemap_key`` is **refused**,
   never truncated, in both write paths. See ``_too_long_error``.
 
@@ -192,9 +192,9 @@ def _clean_bbox(raw: str) -> list[float] | None:
     rate. The size check is what actually stops it.
 
     The size check exists because a stored bbox is not inert data: another
-    device replays it through ``openFramingAt`` in
-    static/js/map_downloads_manager.js, which fits the map to it and offers
-    a download. A box this server knows to be undownloadable is a row whose
+    device replays it through ``restoreArea`` in
+    static/js/map_custom_download.js, which downloads it as stored
+    (SNOW-1136). A box this server knows to be undownloadable is a row whose
     only purpose is to be acted on and cannot be, so it is refused at the
     door rather than stored for a second device to discover.
 

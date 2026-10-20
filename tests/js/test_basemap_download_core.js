@@ -457,6 +457,37 @@ describe('circleBlob', () => {
   });
 });
 
+/*
+ * SNOW-1136: a drop zone's account row carries its bbox and `shape:
+ * 'circle'`, nothing more — the centre and radius are read back off the
+ * box, which is map_drop_zone.js's `circleBBox` of them.
+ */
+describe('circleBlobForBBox', () => {
+  const [minZ, maxZ] = core.MICRO_BAND;
+  const lat = 46.0961;
+  const lon = 7.2286;
+  const radiusKm = 10;
+  const latD = radiusKm / 111.32;
+  const lonD = radiusKm / (111.32 * Math.cos((lat * Math.PI) / 180));
+  const bbox = [lon - lonD, lat - latD, lon + lonD, lat + latD];
+
+  it('fetches exactly the circle the drop zone fetched', () => {
+    const restored = core.circleBlobForBBox(bbox, minZ, maxZ);
+    const dropped = core.circleBlob(lat, lon, radiusKm, minZ, maxZ);
+    expect(restored.count).toBe(dropped.count);
+    expect(restored.z).toEqual(dropped.z);
+  });
+
+  it('is not the box around it', () => {
+    const restored = core.circleBlobForBBox(bbox, minZ, maxZ);
+    expect(restored.count).toBeLessThan(core.buildBlob(bbox, minZ, maxZ).count);
+  });
+
+  it('passes the ceiling through', () => {
+    expect(core.circleBlobForBBox(bbox, minZ, maxZ, 1).over_ceiling).toBe(true);
+  });
+});
+
 describe('deviceCeilingMb', () => {
   const MB = 1024 * 1024;
 

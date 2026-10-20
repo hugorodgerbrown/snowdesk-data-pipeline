@@ -2258,18 +2258,34 @@ describe('account-only rows (SNOW-749)', () => {
     delete window.pwaRegionDownload;
   });
 
-  it('opens framing over a custom area\'s stored box', async () => {
+  const ACCOUNT_ONLY_DROP_ZONE = {
+    id: 'custom-d1',
+    name: 'Drop zone 3',
+    storedName: 'Drop zone 3',
+    type: 'dropzone',
+    bytes: 0,
+    onDevice: false,
+    synced: true,
+    bbox: [7.9, 46.4, 8.1, 46.6],
+    basemapKey: 'openfreemap_liberty',
+  };
+
+  it('restores a custom area as the same area, not a new framing (SNOW-1136)', async () => {
+    // Framing minted a fresh id, so the account kept the old row as "Not
+    // on this device" beside the new one, and the name was lost.
     installAreas([
       {
         id: 'custom-a1',
         name: 'Ridge',
+        storedName: 'Ridge',
         bytes: 0,
         onDevice: false,
         synced: true,
         bbox: [7.9, 46.4, 8.1, 46.6],
+        terrain: true,
       },
     ]);
-    window.pwaCustomAreaDownload.openFramingAt = vi.fn();
+    window.pwaCustomAreaDownload.restoreArea = vi.fn(async () => ({ started: true, reason: '' }));
     await loadModule();
     openSheet();
     await settle();
@@ -2277,10 +2293,124 @@ describe('account-only rows (SNOW-749)', () => {
     row().querySelector('[data-downloads-here]').click();
     await settle();
 
-    expect(window.pwaCustomAreaDownload.openFramingAt).toHaveBeenCalledWith(
-      [7.9, 46.4, 8.1, 46.6],
-      { terrain: false },
+    expect(window.pwaCustomAreaDownload.restoreArea).toHaveBeenCalledWith({
+      areaId: 'custom-a1',
+      bbox: [7.9, 46.4, 8.1, 46.6],
+      name: 'Ridge',
+      type: 'custom',
+      terrain: true,
+    });
+    expect(window.pwaCustomAreaDownload.openFraming).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).not.toHaveBeenCalled();
+  });
+
+  it('restores a drop zone as a drop zone (SNOW-1136)', async () => {
+    installAreas([ACCOUNT_ONLY_DROP_ZONE]);
+    window.pwaCustomAreaDownload.restoreArea = vi.fn(async () => ({ started: true, reason: '' }));
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.pwaCustomAreaDownload.restoreArea).toHaveBeenCalledWith(
+      expect.objectContaining({ areaId: 'custom-d1', name: 'Drop zone 3', type: 'dropzone' }),
     );
+  });
+
+  it('restores an unnamed area with no name, never its localised label (SNOW-1136)', async () => {
+    installAreas([{ ...ACCOUNT_ONLY_DROP_ZONE, type: undefined, name: undefined, storedName: '' }]);
+    window.pwaCustomAreaDownload.restoreArea = vi.fn(async () => ({ started: true, reason: '' }));
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.pwaCustomAreaDownload.restoreArea).toHaveBeenCalledWith(
+      expect.objectContaining({ name: '', type: 'custom' }),
+    );
+  });
+
+  it('says why a restore was refused (SNOW-1136)', async () => {
+    installAreas([ACCOUNT_ONLY_DROP_ZONE]);
+    window.pwaCustomAreaDownload.restoreArea = vi.fn(async () => ({
+      started: false,
+      reason: 'over-ceiling',
+    }));
+    await loadModule();
+    openSheet();
+    await settle();
+
+    row().querySelector('[data-downloads-here]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledWith(
+      'That area is larger than this device can hold.',
+    );
+  });
+
+  describe('a region on a basemap that is not the active one (SNOW-1136)', () => {
+    function installWithActive(activeKey) {
+      installAreas([{ ...ACCOUNT_ONLY_REGION, basemapKey: 'swisstopo_winter' }]);
+      window.pwaBasemapDownloads.activeBasemapKey = vi.fn(() => activeKey);
+      window.pwaBasemapDownloads.basemapLabel = vi.fn((key) =>
+        key === 'swisstopo_winter' ? 'Swisstopo (CH)' : 'OpenFreeMap',
+      );
+      window.pwaRegionDownload = { start: vi.fn(async () => ({ started: true, reason: '' })) };
+    }
+
+    afterEach(() => {
+      delete window.pwaRegionDownload;
+      vi.restoreAllMocks();
+    });
+
+    it('asks first, naming both basemaps', async () => {
+      installWithActive('openfreemap_liberty');
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      await loadModule();
+      openSheet();
+      await settle();
+
+      row().querySelector('[data-downloads-here]').click();
+      await settle();
+
+      expect(confirmSpy).toHaveBeenCalledWith(
+        'Aletsch was downloaded for Swisstopo (CH). Download it for OpenFreeMap on this device?',
+      );
+      expect(window.pwaRegionDownload.start).toHaveBeenCalledWith('CH-1000', { terrain: false });
+    });
+
+    it('does nothing when the answer is no', async () => {
+      installWithActive('openfreemap_liberty');
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      await loadModule();
+      openSheet();
+      await settle();
+
+      row().querySelector('[data-downloads-here]').click();
+      await settle();
+
+      expect(window.pwaRegionDownload.start).not.toHaveBeenCalled();
+      expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+      expect(window.MapSheet.toast).not.toHaveBeenCalled();
+    });
+
+    it('does not ask when the basemaps match', async () => {
+      installWithActive('swisstopo_winter');
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      await loadModule();
+      openSheet();
+      await settle();
+
+      row().querySelector('[data-downloads-here]').click();
+      await settle();
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(window.pwaRegionDownload.start).toHaveBeenCalled();
+    });
   });
 
   it('refuses Download here while offline', async () => {

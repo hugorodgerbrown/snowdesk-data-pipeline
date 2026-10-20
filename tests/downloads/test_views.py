@@ -170,8 +170,8 @@ class TestAreaSyncGuards:
         there is no fixed ceiling any more, because how much a download may
         cost is a question about the device running it. What survives is a
         guard against a box no device could ever hold: a stored bbox is not
-        inert, since another device replays it through ``openFramingAt``
-        and is offered a download.
+        inert, since another device replays it through ``restoreArea``
+        and downloads it as stored (SNOW-1136).
         """
         response = client.post(
             SYNC_URL, {**CUSTOM_PAYLOAD, "bbox": bbox}, **HTMX_HEADERS

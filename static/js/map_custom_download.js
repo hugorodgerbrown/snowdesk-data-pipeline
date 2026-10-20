@@ -163,10 +163,12 @@
   // reset.
   const CANCEL_LABEL_DEFAULT = cancelBtn.textContent;
 
-  // SNOW-1072: a "Download here" for an account row carries that row's own
-  // terrain-data choice, which wins over this device's preference for the
-  // framing session it opens. Null means no override. Set by `openFraming`
-  // from its options, so a plain open always starts from the preference.
+  // SNOW-1072: a caller-supplied terrain-data choice, which wins over this
+  // device's preference for the framing session it opens. Null means no
+  // override. Set by `openFraming` from its options, so a plain open always
+  // starts from the preference. SNOW-1136: "Download here" no longer frames
+  // (see `restoreArea`, which takes the account row's choice directly), so
+  // no published entry point passes one today.
   let terrainOverride = null;
 
   /**
@@ -1507,6 +1509,232 @@
   // state; the roundel derives nothing from storage any more, so the read
   // went with it.
 
+  // SNOW-1136: the restore entry point — "Download here" for a custom area
+  // or drop zone that is on the ACCOUNT and not on this device. Its own
+  // state rather than `runState`, which belongs to the framing overlay and
+  // paints its CTA; a restore opens no overlay. Both are consulted before
+  // either starts, so the two can never run side by side.
+  let restoring = false;
+
+  // SNOW-1136: the same sign-in gate map_region_download.js applies to
+  // "Download here" for a region, read off the same element (this
+  // control's own roundel — see that module's DOWNLOADS_CONFIG_EL note).
+  const NEEDS_SIGNIN = btn.dataset.downloadsEligible !== 'true';
+  const DOWNLOADS_SIGNIN_URL = btn.dataset.signinUrl || '';
+
+  // How long a restore waits for the style to settle after fitting the map
+  // to the area before running anyway — the runner itself refuses a run
+  // with no tile sources, so an unsettled style still reaches an answer.
+  const RESTORE_STYLE_SETTLE_MS = 8000;
+
+  /**
+   * Resolve once the map's style is loaded, or after a bounded wait.
+   *
+   * The same wait map_drop_zone.js's `styleSettled` makes, for the same
+   * reason: fitting the camera to the area is the step before the run, and
+   * `activeBasemapTileSources` reads nothing while the style is dirty.
+   *
+   * @returns {Promise<void>} Always resolves.
+   */
+  function _styleSettled() {
+    return new Promise((resolve) => {
+      if (!MAP || typeof MAP.isStyleLoaded !== 'function' || MAP.isStyleLoaded()) {
+        resolve();
+        return;
+      }
+      let done = false;
+      const settle = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      MAP.once('idle', settle);
+      setTimeout(settle, RESTORE_STYLE_SETTLE_MS);
+    });
+  }
+
+  /**
+   * Whether `bbox` is four finite numbers describing a non-empty box.
+   *
+   * @param {unknown} bbox
+   * @returns {boolean}
+   */
+  function _usableBBox(bbox) {
+    return (
+      Array.isArray(bbox) &&
+      bbox.length === 4 &&
+      bbox.every((value) => typeof value === 'number' && Number.isFinite(value)) &&
+      bbox[0] < bbox[2] &&
+      bbox[1] < bbox[3]
+    );
+  }
+
+  /**
+   * SNOW-1136: download a STORED area onto this device as the same area —
+   * the same id, name, box and kind — without framing it again.
+   *
+   * "Download here" used to open framing over the stored box
+   * (`openFramingAt`), and confirming that minted a NEW `custom-<uuid>`:
+   * the account then held two rows for one place (the old one still "Not
+   * on this device"), the name was lost, the box was re-derived from this
+   * device's viewport, and a drop zone came back as a rectangle. This runs
+   * the stored definition instead, so the run lands under the account
+   * row's own id and the sheet shows ONE row, on this device and synced.
+   *
+   * The pre-flight is the framed confirm's, in the same order: signed in,
+   * not already running, online, the size priced at the active basemap's
+   * own figure (terrain included) against this device's ceiling — then
+   * `runPinnedDownload`, which is the very runner `handleConfirm` calls and
+   * which owns the quota check, the budget plan and the eviction confirm.
+   * The recording is `handleConfirm`'s too, with the stored id, name and
+   * kind in place of fresh ones.
+   *
+   * A drop zone is fetched as its circle (`circleBlobForBBox`), not as the
+   * box the account stores — the box is that circle's bounding box, and
+   * the centre and radius are read back off it.
+   *
+   * The map is fitted to the area first, unanimated, so the progress grid
+   * the run draws is on screen — there is no overlay to report progress
+   * in, and the grid filling in is how a run without one says it is going.
+   *
+   * @param {{areaId: string, bbox: number[], name?: string, type?: string,
+   *   terrain?: boolean}} options The account row: `areaId` is its
+   *   `custom-` id, `bbox` its `[west, south, east, north]` (lon, lat)
+   *   box, `name` its STORED name ('' when never renamed), `type`
+   *   'dropzone' for a drop zone, and `terrain` its terrain-data choice.
+   * @returns {Promise<{started: boolean, reason: string, ok?: boolean}>}
+   *   `started` false with a `reason` the caller can word — `'signin'`
+   *   (already sent to sign in, say nothing), `'busy'`, `'offline'`,
+   *   `'done'` (this device already holds it), `'over-ceiling'`, or
+   *   `'invalid'`. Once handed to the runner it resolves when the run has
+   *   settled, with `ok` saying whether the area was recorded. A run that
+   *   was refused there or fell short has already said so through the
+   *   shared download-error toast; a declined eviction says nothing,
+   *   because the user chose it.
+   */
+  async function restoreArea(options) {
+    const opts = options || /** @type {any} */ ({});
+    const core = self.pwaBasemapDownloadCore;
+    const areaId = typeof opts.areaId === 'string' ? opts.areaId : '';
+    if (!core || !core.isCustomAreaId(areaId) || !_usableBBox(opts.bbox) || !MAP) {
+      return { started: false, reason: 'invalid' };
+    }
+    if (NEEDS_SIGNIN) {
+      if (DOWNLOADS_SIGNIN_URL) window.location.assign(DOWNLOADS_SIGNIN_URL);
+      return { started: false, reason: 'signin' };
+    }
+    if (restoring || runState === 'busy') return { started: false, reason: 'busy' };
+    if (!networkInUse()) return { started: false, reason: 'offline' };
+
+    restoring = true;
+    try {
+      // Already here — a second tab, or a sheet that rendered before a run
+      // elsewhere finished. Running again would replace a good download.
+      const existing = await _readCustomAreas();
+      if (existing.some((entry) => entry && entry.id === areaId)) {
+        return { started: false, reason: 'done' };
+      }
+
+      const bbox = opts.bbox.slice();
+      const isDropZone = opts.type === 'dropzone';
+      const terrain = !!opts.terrain;
+      const name = typeof opts.name === 'string' ? opts.name : '';
+
+      MAP.fitBounds(_boundsFromBBox(bbox), { animate: false });
+      await _styleSettled();
+      // What this device can hold, re-read as framing re-reads it on open.
+      await refreshBasemapDeviceCeiling();
+      const ceilingMb = basemapDeviceCeilingMb();
+      const [minZ, maxZ] = core.MICRO_BAND;
+      const blob = isDropZone
+        ? core.circleBlobForBBox(bbox, minZ, maxZ, ceilingMb)
+        : core.buildBlob(bbox, minZ, maxZ, ceilingMb);
+      // `_updateReadout`'s backstop, verbatim: the run's real price at the
+      // active basemap, plus terrain data, against the device's ceiling. A
+      // box another device could hold may not fit this one.
+      const terrainMb = terrain ? terrainClassMbForBlob(blob) : 0;
+      const scaledMb = core.sourceScaledMb(blob.mb, activeBasemapTileSources(MAP), blob.count);
+      if (blob.over_ceiling || scaledMb + terrainMb > ceilingMb) {
+        return { started: false, reason: 'over-ceiling' };
+      }
+
+      // The runner returns once the warm is DISPATCHED, and calls `finish`
+      // when it settles — so the outcome is a promise `finish` resolves.
+      // A run the runner refuses before warming (quota, budget, a declined
+      // eviction, no tile sources) never reaches `finish`; it leaves its
+      // last paint at something other than 'busy', which is how the wait
+      // below knows not to start.
+      let ok = false;
+      let lastPaint = '';
+      let settle = () => {};
+      const settled = new Promise((resolve) => {
+        settle = resolve;
+      });
+      await runPinnedDownload({
+        areaId: areaId,
+        mb: blob.mb,
+        terrain: terrain,
+        terrainMb: terrainMb,
+        count: blob.count,
+        // No overlay to paint: the progress grid on the map is the run's
+        // visible state, and the runner reports a refused or failed run
+        // through the shared download-error toast itself.
+        paint: (state) => {
+          lastPaint = state;
+        },
+        loadBlob: () => blob,
+        finish: async (
+          result,
+          runBlob,
+          { core: runCore, progressFill, tileSources, basemapKey, renderDeps, content },
+        ) => {
+          const cancelled = !!(result && result.cancelled);
+          const outcome = runCore.contentOutcome(content);
+          if (!cancelled && runCore.downloadSucceeded(result)) {
+            // `handleConfirm`'s record, field for field, under the STORED
+            // id, name and kind rather than fresh ones — which is what
+            // makes the account row and this record one area.
+            const area = {
+              id: areaId,
+              ordinal: await _nextCustomAreaOrdinal(),
+              ...(isDropZone ? { type: 'dropzone' } : {}),
+              // Only a name the user gave it. An unrenamed area takes its
+              // "Custom area N" default from `ordinal` at read time, in
+              // this device's language.
+              ...(name ? { name: name } : {}),
+              bbox: bbox,
+              band: runBlob.band,
+              centre_tile: runBlob.centre_tile,
+              template: tileSources,
+              basemapKey: basemapKey || null,
+              deps: Array.isArray(renderDeps) ? renderDeps : [],
+              bytes: Number(result.bytes) || 0,
+              ...(outcome.complete ? { contentAt: new Date().toISOString() } : {}),
+              ...(outcome.incomplete ? { contentIncomplete: true } : {}),
+              ...(terrain ? { terrain: true } : {}),
+              savedAt: new Date().toISOString(),
+            };
+            await _appendCustomArea(area);
+            await progressFill.finish(true);
+            ok = true;
+          } else {
+            await progressFill.finish(false);
+            if (!cancelled) revealBasemapDownloadError(result ? result.reason : null);
+          }
+          // The same post-run refreshes `handleConfirm` makes.
+          window.pwaLayerSyncStatus?.refresh();
+          window.pwaDownloadedOverlay?.refresh();
+          refreshBasemapDeviceCeiling();
+          settle();
+        },
+      });
+      if (lastPaint === 'busy') await settled;
+      return { started: true, reason: '', ok: ok };
+    } finally {
+      restoring = false;
+    }
+  }
+
   window.pwaCustomAreaDownload = Object.freeze({
     // SNOW-634: the sheet's add-trigger reaches framing through this —
     // same frozen-global idiom as pwaBasemapDownloads/pwaLayersMenu/
@@ -1517,38 +1745,11 @@
     // no such state now, and the sheet's own list is what reports a delete.
     openFraming: () => openFraming(),
 
-    /**
-     * SNOW-749: open framing over `bbox` — the "Download here" path for an
-     * area that exists on the user's ACCOUNT but not on this device.
-     *
-     * Fits the map to the stored box first, then opens framing from there.
-     * Deliberately NOT a silent re-download of the exact original tile
-     * set: the frame's size is derived from the current zoom (see
-     * `_updateReadout`), so a different device at a different viewport
-     * would fetch a different set anyway — and the user gets to see and
-     * confirm what they are about to spend their budget on, which is the
-     * same contract every other custom download has.
-     *
-     * @param {number[]} bbox `[west, south, east, north]` in (lon, lat)
-     *   order — the account row's own, in the order the server stores it.
-     *   Anything else opens framing where the map already is, which is
-     *   what `openFraming` does on its own.
-     * @param {{terrain?: boolean}} [options] SNOW-1072: the account row's
-     *   own terrain-data choice, which this session repeats in place of
-     *   the device's preference.
-     * @returns {void}
-     */
-    openFramingAt: function (bbox, options) {
-      if (MAP && Array.isArray(bbox) && bbox.length === 4) {
-        MAP.fitBounds(
-          [
-            [bbox[0], bbox[1]],
-            [bbox[2], bbox[3]],
-          ],
-          { animate: false },
-        );
-      }
-      openFraming(options);
-    },
+    // SNOW-1136: the Manage downloads sheet's "Download here" for an area
+    // on the account that this device does not hold — restored as the SAME
+    // area, under its stored id, name, box and kind. It replaces SNOW-749's
+    // `openFramingAt`, which framed the stored box again and so minted a
+    // second area; see `restoreArea`.
+    restoreArea: (options) => restoreArea(options),
   });
 })();

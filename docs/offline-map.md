@@ -2435,6 +2435,14 @@ settings plus the basemap key, so syncing it would pin an external tile
 endpoint into a DB row; `bytes` is a per-device measurement, not a property
 of the area.
 
+`shape` (SNOW-1136) IS synced: `box` for a framed area, `circle` for a drop
+zone, posted by `downloads_sync.js`'s `push` from the local record's
+`type` (`shapeFor`) and read back by `reconcileAreas` as `type:
+'dropzone'`. No centre or radius travels with it — a drop zone's `bbox` is
+its circle's own bounding box, so `basemap_download_core.js`'s
+`circleBlobForBBox` reads both back off it and fetches the same clipped
+tile set the drop did.
+
 **What the server refuses.** `apps/downloads/views.py` prices a posted
 bbox rather than only range-checking it: bounding each ordinate to a valid
 lon/lat leaves `[-179, -89, 179, 89]` acceptable, and that box is 357
@@ -2447,8 +2455,8 @@ server copy, a client copy and a third here. It is the same ceiling the
 framing control already enforces, so no box a real client can frame is
 ever refused — this is the backstop for a client we did not ship.
 
-It matters because a stored bbox is not inert: another device replays it
-through `openFramingAt` and is offered a download. A box the server knows
+It matters because a stored bbox is not inert: another device restores it
+through `restoreArea` (SNOW-1136) and downloads it as stored. A box the server knows
 to be undownloadable would be a row whose only purpose is to be acted on
 and cannot be.
 
@@ -2541,13 +2549,24 @@ the one that must not move.
 
 **"Download here"** hands off to whichever start control owns the kind of
 area it is, rather than reimplementing a run: a region to
-`window.pwaRegionDownload.start(regionId)`, a custom area to
-`window.pwaCustomAreaDownload.openFramingAt(bbox)`, which fits the map to
-the stored box and opens framing there. The custom case is deliberately not
-a silent re-fetch of the original tile set — the frame's size derives from
-the current zoom, so a different device at a different viewport would fetch
-a different set anyway, and the user gets to see and confirm what they are
-spending their budget on.
+`window.pwaRegionDownload.start(regionId)`, a custom area or drop zone to
+`window.pwaCustomAreaDownload.restoreArea({areaId, bbox, name, type,
+terrain})`.
+
+SNOW-1136 made the custom case a RESTORE. It used to be
+`openFramingAt(bbox)`, which opened framing over the stored box — and
+confirming minted a fresh `custom-<uuid>`, so the account held two rows for
+one place (the old one still "Not on this device"), the name was lost, the
+box was re-derived from this device's viewport and a drop zone came back as
+a rectangle. `restoreArea` fits the map to the box and runs the stored
+definition under the stored id through the same `runPinnedDownload` a
+framed confirm uses, with the same pre-flight (signed in, not busy, online,
+priced against this device's ceiling, then the runner's quota, budget and
+eviction confirm), and records it with the stored name and kind — so the
+sheet shows one row, on this device and synced. A region whose account row
+names a basemap other than the active one is confirmed first ("%(name)s was
+downloaded for %(stored)s. Download it for %(active)s on this device?"),
+because the run fetches the basemap on screen; declining does nothing.
 
 **Remove means this device; Forget clears the account (SNOW-1135).** The
 trash on a row this device holds calls only the local eviction: the
@@ -2715,7 +2734,8 @@ is re-cloned from its `<template>` on every open, and re-applied on every
 `snowdesk:connectivity-changed` so an open sheet reacts in place); online
 it hides the sheet and calls `window.pwaCustomAreaDownload.openFraming()`
 — `map_custom_download.js`'s own bridge for it; SNOW-749 added
-`openFramingAt(bbox)` beside it for the "Download here" hand-off. The
+`openFramingAt(bbox)` beside it for the "Download here" hand-off, which
+SNOW-1136 replaced with `restoreArea`. The
 roundel carries no state describing what is downloaded; see "The roundel
 says nothing about what is downloaded" above.
 
