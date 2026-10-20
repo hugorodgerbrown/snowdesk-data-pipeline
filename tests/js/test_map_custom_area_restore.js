@@ -252,7 +252,7 @@ function accountRowFromPush(pushed) {
     basemap_key: pushed.basemapKey || '',
     name: pushed.name || '',
     terrain: !!pushed.terrain,
-    shape: pushed.type === 'dropzone' ? 'circle' : 'box',
+    shape: pushed.type === 'dropzone' ? 'CIRCLE' : 'BOX',
     created_at: '2026-10-01T00:00:00.000Z',
   };
 }
@@ -393,6 +393,29 @@ describe('restoring a custom area (SNOW-1136)', () => {
 
     expect(second).toEqual({ started: false, reason: 'busy' });
     await first;
+  });
+
+  it('holds the page-wide download lock until the restore settles', async () => {
+    // Review: a restore hides the sheet and opens no overlay, so the user
+    // can reach another start control mid-run. Every pinned download takes
+    // one shared lock, which the region roundel, framing and drop zone check.
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const warm = window.pwaWarmCache.getMockImplementation();
+    window.pwaWarmCache.mockImplementationOnce(async (urls, options) => {
+      await gate;
+      return warm(urls, options);
+    });
+
+    const pending = window.pwaCustomAreaDownload.restoreArea({ areaId: AREA_ID, bbox: BBOX });
+    await vi.waitFor(() => expect(window.pwaWarmCache).toHaveBeenCalled());
+    expect(window.pwaBasemapDownloads.isBusy()).toBe(true);
+
+    release();
+    await pending;
+    expect(window.pwaBasemapDownloads.isBusy()).toBe(false);
   });
 
   it('refuses while the app is not using the network', async () => {

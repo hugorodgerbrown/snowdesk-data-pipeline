@@ -197,10 +197,10 @@ describe('push', () => {
     await sync.push({ areaId: 'custom-c2', bbox: bbox });
     await sync.push({ areaId: 'region-CH-4115', regionId: 'CH-4115' });
 
-    expect(bodyOf(window.pwaMutationQueue.enqueue, 0).shape).toBe('circle');
-    expect(bodyOf(window.pwaMutationQueue.enqueue, 1).shape).toBe('box');
-    expect(bodyOf(window.pwaMutationQueue.enqueue, 2).shape).toBe('box');
-    expect(bodyOf(window.pwaMutationQueue.enqueue, 3).shape).toBe('box');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 0).shape).toBe('CIRCLE');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 1).shape).toBe('BOX');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 2).shape).toBe('BOX');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 3).shape).toBe('BOX');
   });
 
   it('does nothing at all on a page with no downloads surface', async () => {
@@ -501,8 +501,8 @@ describe('adopt', () => {
     installDownloads([AREAS[0], { ...AREAS[1], type: 'dropzone' }]);
     await sync.adopt();
 
-    expect(bodyOf(window.pwaMutationQueue.enqueue, 0).shape).toBe('box');
-    expect(bodyOf(window.pwaMutationQueue.enqueue, 1).shape).toBe('circle');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 0).shape).toBe('BOX');
+    expect(bodyOf(window.pwaMutationQueue.enqueue, 1).shape).toBe('CIRCLE');
   });
 
   it('does nothing for an anonymous visitor', async () => {

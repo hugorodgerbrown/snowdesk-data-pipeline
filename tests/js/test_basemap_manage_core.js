@@ -1067,7 +1067,7 @@ describe('a drop zone on the account stays a drop zone (SNOW-1136)', () => {
     basemap_key: 'openfreemap_liberty',
     name: 'Drop zone 3',
     terrain: false,
-    shape: 'circle',
+    shape: 'CIRCLE',
     created_at: '2026-07-01T00:00:00.000Z',
     ...overrides,
   });
@@ -1080,7 +1080,7 @@ describe('a drop zone on the account stays a drop zone (SNOW-1136)', () => {
   });
 
   it('leaves a box as an ordinary custom area', () => {
-    const areas = core.reconcileAreas([], [], {}, [accountRow({ shape: 'box' })]);
+    const areas = core.reconcileAreas([], [], {}, [accountRow({ shape: 'BOX' })]);
     expect(areas[0].type).toBeUndefined();
 
     // An older server that sends no shape at all reads the same way.
@@ -1091,7 +1091,7 @@ describe('a drop zone on the account stays a drop zone (SNOW-1136)', () => {
   it('labels the account-only row "Drop zone" through manageRows', () => {
     const areas = core.reconcileAreas([], [], {}, [
       accountRow(),
-      accountRow({ area_id: 'custom-c1', shape: 'box', name: 'Ridge' }),
+      accountRow({ area_id: 'custom-c1', shape: 'BOX', name: 'Ridge' }),
     ]);
     const rows = core.manageRows(areas, { isCustomAreaId });
 
@@ -1102,7 +1102,7 @@ describe('a drop zone on the account stays a drop zone (SNOW-1136)', () => {
   it('carries the stored name onto the row, \'\' when never renamed', () => {
     const areas = core.reconcileAreas([], [], {}, [
       accountRow(),
-      accountRow({ area_id: 'custom-c1', shape: 'box', name: '' }),
+      accountRow({ area_id: 'custom-c1', shape: 'BOX', name: '' }),
     ]);
     const rows = core.manageRows(areas, {
       isCustomAreaId,

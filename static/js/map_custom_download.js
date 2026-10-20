@@ -1264,6 +1264,12 @@
     // running one — so the Download button, unlike the roundel, needs its
     // own re-entrancy guard.
     if (runState === 'busy') return;
+    // SNOW-1136 review: one pinned download at a time across every entry
+    // point — see `pinnedDownloadBusy`.
+    if (typeof pinnedDownloadBusy === 'function' && pinnedDownloadBusy()) {
+      revealBasemapDownloadError('busy');
+      return;
+    }
     // Offline-integrity: never start a download offline, even if a race
     // left the button enabled at the moment of the click. SNOW-748: a
     // user-forced offline mode counts — the worker refuses the run either
@@ -1624,6 +1630,11 @@
       return { started: false, reason: 'signin' };
     }
     if (restoring || runState === 'busy') return { started: false, reason: 'busy' };
+    // SNOW-1136 review: any other pinned download — region, framing, drop
+    // zone — holds the shared lock too.
+    if (typeof pinnedDownloadBusy === 'function' && pinnedDownloadBusy()) {
+      return { started: false, reason: 'busy' };
+    }
     if (!networkInUse()) return { started: false, reason: 'offline' };
 
     restoring = true;

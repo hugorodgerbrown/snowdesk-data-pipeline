@@ -22,9 +22,9 @@ class Migration(migrations.Migration):
             model_name="downloadarea",
             name="shape",
             field=models.CharField(
-                choices=[("box", "Box"), ("circle", "Circle (drop zone)")],
-                default="box",
-                help_text="Whether a custom area is a framed box or a drop zone (a circle inside its bbox) — SNOW-1136. Synced so another device restores a drop zone as a drop zone. Always 'box' for a region.",
+                choices=[("BOX", "Box"), ("CIRCLE", "Circle (drop zone)")],
+                default="BOX",
+                help_text="Whether a custom area is a framed box or a drop zone (a circle inside its bbox) — SNOW-1136. Synced so another device restores a drop zone as a drop zone. Always 'BOX' for a region.",
                 max_length=16,
             ),
         ),
