@@ -4800,6 +4800,12 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
                 raw_render_model, compute_period_transition(raw_render_model)
             )
 
+    # SNOW-1143: each problem card paired with one line comparing its band
+    # with the resort's lift range; the disclaimer renders only with a line.
+    problem_rows = _resort_problem_rows(
+        (panel or {}).get("problem_cards") or [], resort
+    )
+
     can_favourite = False
     favourite = None
     if request.user.is_authenticated:
@@ -4814,6 +4820,8 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         # None / "" when no bulletin covers today.
         "panel": panel,
         "headline": headline,
+        "problem_rows": problem_rows,
+        "problem_band_note": any(row["relation_text"] for row in problem_rows),
         "target_date": today,
         "bulletin_url": region.get_absolute_url(),
         "favourited": favourite is not None,
@@ -4869,6 +4877,192 @@ def _resort_season_strip_context(
     """
     grid = build_season_grid(region, today, window=season_window(today))
     return {"season_strip": grid, "season_summary": summarise_season(grid)}
+
+
+def _problem_band_relation(
+    elevation: ElevationBounds | None,
+    *,
+    resort_name: str,
+    base_m: int,
+    top_m: int,
+    scope_in_prose: bool = False,
+) -> str | None:
+    """Return one line saying how a problem's band sits on a resort's lifts.
+
+    SNOW-1143. A straight numeric comparison of the problem card's
+    elevation band (``card["elevation"]``, an :class:`ElevationBounds`
+    whose ``lower`` / ``upper`` are CAAML strings — digits, ``"treeline"``
+    or empty) with the resort's lift range ``base_m``..``top_m``. It makes
+    no claim about the terrain, the piste or the off-piste — only where the
+    two numbers fall against each other.
+
+    Edge semantics (``L`` the band's lower bound, ``U`` its upper bound,
+    ``B`` the base and ``T`` the top; a bound equal to an end of the lift
+    range counts as reaching it):
+
+    * "above L" — ``L <= B`` is within the lift range; ``L >= T`` is above
+      the top lift (the band at most touches the top station); otherwise it
+      covers the upper part.
+    * "below U" — ``U >= T`` is within; ``U <= B`` is below the base;
+      otherwise it covers the lower part.
+    * "L–U" — ``U <= B`` is below the base; ``L >= T`` is above the top;
+      ``L <= B`` and ``U >= T`` is within; ``L <= B`` alone (``U`` inside)
+      covers the lower part, worded as "below U"; ``U >= T`` alone (``L``
+      inside) covers the upper part, worded as "above L"; both strictly
+      inside is "between L and U".
+    * A ``"treeline"`` bound on either side gets no verdict: the treeline
+      has no number to compare, so the line states the band and the lift
+      range side by side ("Above the treeline. Verbier's lifts run …").
+      The side follows the bound that carries the token (a lower-bound
+      treeline is "above", an upper-bound one "below"), as the card's own
+      elevation chip does.
+    * No elevation at all means the problem applies at every elevation —
+      unless the card carries its spatial scope in prose instead
+      (``scope_in_prose``: no aspects, no elevation, and prose that
+      mentions place — the card's own "See description below" state),
+      where an "all elevations" claim could contradict the text, so no
+      line is returned.
+
+    Args:
+        elevation: The card's elevation bounds, or ``None``.
+        resort_name: The resort's display name.
+        base_m: The resort's base elevation in metres.
+        top_m: The resort's top elevation in metres.
+        scope_in_prose: The card shows "See description below" rather than
+            structured aspects or elevations.
+
+    Returns:
+        The translated relation line, or ``None`` when no claim is made.
+
+    """
+    lower_raw = elevation.lower if elevation else ""
+    upper_raw = elevation.upper if elevation else ""
+
+    if not lower_raw and not upper_raw:
+        if scope_in_prose:
+            return None
+        return gettext("All elevations, including all of %(resort)s") % {
+            "resort": resort_name
+        }
+
+    treeline_lower = lower_raw.lower() == "treeline"
+    treeline_upper = upper_raw.lower() == "treeline"
+    if treeline_lower or treeline_upper:
+        params = {"resort": resort_name, "base": base_m, "top": top_m}
+        if treeline_lower:
+            return (
+                gettext("Above the treeline. %(resort)s's lifts run %(base)s–%(top)s m")
+                % params
+            )
+        return (
+            gettext("Below the treeline. %(resort)s's lifts run %(base)s–%(top)s m")
+            % params
+        )
+
+    lower = int(lower_raw) if lower_raw.isdigit() else None
+    upper = int(upper_raw) if upper_raw.isdigit() else None
+    if lower is None and upper is None:
+        # A bound the card could not read as a number: no claim to make.
+        return None
+    return _numeric_band_relation(
+        lower, upper, resort_name=resort_name, base_m=base_m, top_m=top_m
+    )
+
+
+def _numeric_band_relation(
+    lower: int | None,
+    upper: int | None,
+    *,
+    resort_name: str,
+    base_m: int,
+    top_m: int,
+) -> str:
+    """Compare a numeric elevation band with a resort's lift range (SNOW-1143).
+
+    The numeric half of :func:`_problem_band_relation`, whose docstring
+    defines the edge semantics. At least one bound is set.
+
+    Args:
+        lower: The band's lower bound in metres, or ``None`` (open below).
+        upper: The band's upper bound in metres, or ``None`` (open above).
+        resort_name: The resort's display name.
+        base_m: The resort's base elevation in metres.
+        top_m: The resort's top elevation in metres.
+
+    Returns:
+        The translated relation line.
+
+    """
+    if upper is not None and upper <= base_m:
+        return gettext("Below %(resort)s's base (%(base)s m)") % {
+            "resort": resort_name,
+            "base": base_m,
+        }
+    if lower is not None and lower >= top_m:
+        return gettext("Above %(resort)s's top lift (%(top)s m)") % {
+            "resort": resort_name,
+            "top": top_m,
+        }
+
+    reaches_base = lower is None or lower <= base_m
+    reaches_top = upper is None or upper >= top_m
+    if reaches_base and reaches_top:
+        return gettext("Within %(resort)s's lift range") % {"resort": resort_name}
+    if reaches_top:
+        return gettext("Above %(lower)s m: covers the upper part of %(resort)s") % {
+            "lower": lower,
+            "resort": resort_name,
+        }
+    if reaches_base:
+        return gettext("Below %(upper)s m: covers the lower part of %(resort)s") % {
+            "upper": upper,
+            "resort": resort_name,
+        }
+    return gettext("Between %(lower)s and %(upper)s m: covers part of %(resort)s") % {
+        "lower": lower,
+        "upper": upper,
+        "resort": resort_name,
+    }
+
+
+def _resort_problem_rows(
+    cards: list[dict[str, Any]], resort: Resort
+) -> list[dict[str, Any]]:
+    """Pair each problem card with its band-vs-lift-range line (SNOW-1143).
+
+    The resort page renders the card through the bulletin page's own
+    ``_rating_block.html``, untouched, then the line beneath it. A resort
+    missing either elevation, or whose top is not above its base, gets no
+    lines at all — there is no range to compare with.
+
+    Args:
+        cards: The panel's ``problem_cards``.
+        resort: The resort whose lift range the bands are compared with.
+
+    Returns:
+        One ``{"card", "relation_text"}`` dict per card, in card order;
+        ``relation_text`` is ``None`` where no line renders.
+
+    """
+    base_m = resort.base_elevation_m
+    top_m = resort.top_elevation_m
+    rows: list[dict[str, Any]] = []
+    for card in cards:
+        relation_text: str | None = None
+        if base_m is not None and top_m is not None and base_m < top_m:
+            relation_text = _problem_band_relation(
+                card.get("elevation"),
+                resort_name=resort.name,
+                base_m=base_m,
+                top_m=top_m,
+                scope_in_prose=(
+                    not card.get("aspects")
+                    and not card.get("elevation")
+                    and bool(card.get("prose_mentions_spatial"))
+                ),
+            )
+        rows.append({"card": card, "relation_text": relation_text})
+    return rows
 
 
 def _resort_location_links(

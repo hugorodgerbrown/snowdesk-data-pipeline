@@ -28,6 +28,10 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
     from the bulletin page's own selection, with exactly one link in the
     danger area; no bulletin today means the note, never an old bulletin;
     and a query-count ceiling.
+  - SNOW-1143: under each problem card, one line comparing its elevation
+    band with the resort's lift range (every relation and edge, treeline
+    on both sides, no elevation), plus a disclaimer only when a line
+    renders; neither when the resort lacks a base or top elevation.
   - SNOW-1123: the schema.org SkiResort JSON-LD — core properties, optional
     ones omitted when unset, and a ``</script>`` that cannot break out.
   - Resort facts block (SNOW-695): the curated Resort columns the page
@@ -63,6 +67,12 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     build_render_model,
 )
+from apps.public.views import (
+    ElevationBounds,
+    _format_elevation,
+    _problem_band_relation,
+    _resort_problem_rows,
+)
 from apps.regions.models import MicroRegion, Resort
 from tests.factories import (
     BulletinFactory,
@@ -79,29 +89,35 @@ from tests.factories import (
 
 
 def _todays_bulletin(
-    region: MicroRegion, *, valid_from: datetime.datetime | None = None
+    region: MicroRegion,
+    *,
+    valid_from: datetime.datetime | None = None,
+    **problem_overrides: Any,
 ) -> Bulletin:
     """Create an SLF bulletin covering all of today with one wind-slab problem.
 
     The render model is built from the CAAML properties exactly as ingestion
     builds it, so the page reads the same shape production stores.
+    ``problem_overrides`` replace keys of the one problem; a ``None`` value
+    removes the key (``elevation=None`` is a problem with no elevation).
     """
     today = timezone.now().date()
     start = valid_from or datetime.datetime(
         today.year, today.month, today.day, tzinfo=datetime.UTC
     )
+    problem: dict[str, Any] = {
+        "problemType": "wind_slab",
+        "comment": "<p>Fresh wind slabs on shady slopes.</p>",
+        "aspects": ["N", "NE", "E"],
+        "elevation": {"lowerBound": "2200"},
+        "dangerRatingValue": "considerable",
+        "validTimePeriod": "all_day",
+    }
+    problem.update(problem_overrides)
+    problem = {key: value for key, value in problem.items() if value is not None}
     properties: dict[str, Any] = {
         "dangerRatings": [{"mainValue": "considerable"}],
-        "avalancheProblems": [
-            {
-                "problemType": "wind_slab",
-                "comment": "<p>Fresh wind slabs on shady slopes.</p>",
-                "aspects": ["N", "NE", "E"],
-                "elevation": {"lowerBound": "2200"},
-                "dangerRatingValue": "considerable",
-                "validTimePeriod": "all_day",
-            }
-        ],
+        "avalancheProblems": [problem],
         "customData": {
             "CH": {"aggregation": [{"category": "dry", "problemTypes": ["wind_slab"]}]}
         },
@@ -347,6 +363,246 @@ class TestResortTodaysDanger:
             response = client.get(resort.get_absolute_url())
 
         assert response.status_code == 200
+
+
+# SNOW-1143: Verbier's lift range, the worked example in the ticket.
+_BASE = 821
+_TOP = 3330
+
+
+def _relation(elevation: dict[str, str] | None, **kwargs: Any) -> str | None:
+    """Run ``_problem_band_relation`` for Verbier on a CAAML elevation dict."""
+    return _problem_band_relation(
+        _format_elevation(elevation),
+        resort_name="Verbier",
+        base_m=_BASE,
+        top_m=_TOP,
+        **kwargs,
+    )
+
+
+class TestProblemBandRelation:
+    """SNOW-1143: a problem's band against the resort's lift range."""
+
+    @pytest.mark.parametrize(
+        ("elevation", "expected"),
+        [
+            # "above L"
+            ({"lowerBound": "2200"}, "Above 2200 m: covers the upper part of Verbier"),
+            ({"lowerBound": "822"}, "Above 822 m: covers the upper part of Verbier"),
+            ({"lowerBound": "3329"}, "Above 3329 m: covers the upper part of Verbier"),
+            ({"lowerBound": "821"}, "Within Verbier's lift range"),
+            ({"lowerBound": "500"}, "Within Verbier's lift range"),
+            ({"lowerBound": "3330"}, "Above Verbier's top lift (3330 m)"),
+            ({"lowerBound": "3600"}, "Above Verbier's top lift (3330 m)"),
+            # "below U"
+            ({"upperBound": "1800"}, "Below 1800 m: covers the lower part of Verbier"),
+            ({"upperBound": "3329"}, "Below 3329 m: covers the lower part of Verbier"),
+            ({"upperBound": "3330"}, "Within Verbier's lift range"),
+            ({"upperBound": "4000"}, "Within Verbier's lift range"),
+            ({"upperBound": "821"}, "Below Verbier's base (821 m)"),
+            ({"upperBound": "600"}, "Below Verbier's base (821 m)"),
+            # "L–U"
+            (
+                {"lowerBound": "1800", "upperBound": "2400"},
+                "Between 1800 and 2400 m: covers part of Verbier",
+            ),
+            (
+                {"lowerBound": "821", "upperBound": "3330"},
+                "Within Verbier's lift range",
+            ),
+            (
+                {"lowerBound": "600", "upperBound": "3600"},
+                "Within Verbier's lift range",
+            ),
+            (
+                {"lowerBound": "600", "upperBound": "2400"},
+                "Below 2400 m: covers the lower part of Verbier",
+            ),
+            (
+                {"lowerBound": "1800", "upperBound": "3600"},
+                "Above 1800 m: covers the upper part of Verbier",
+            ),
+            (
+                {"lowerBound": "3330", "upperBound": "3800"},
+                "Above Verbier's top lift (3330 m)",
+            ),
+            (
+                {"lowerBound": "400", "upperBound": "821"},
+                "Below Verbier's base (821 m)",
+            ),
+        ],
+    )
+    def test_numeric_bands(self, elevation: dict[str, str], expected: str) -> None:
+        """Every relation, with each edge on the right side of the line."""
+        assert _relation(elevation) == expected
+
+    def test_no_elevation_is_all_elevations(self) -> None:
+        """A problem with no elevation applies everywhere, Verbier included."""
+        assert _relation(None) == "All elevations, including all of Verbier"
+        assert (
+            _problem_band_relation(None, resort_name="Verbier", base_m=1, top_m=2)
+            == "All elevations, including all of Verbier"
+        )
+
+    def test_no_elevation_with_scope_in_prose_makes_no_claim(self) -> None:
+        """'See description below' cards get no line: the prose holds the scope."""
+        assert _relation(None, scope_in_prose=True) is None
+
+    def test_treeline_lower_bound_gives_no_verdict(self) -> None:
+        """Above the treeline: the band and the lift range side by side."""
+        assert _relation({"lowerBound": "treeline"}) == (
+            "Above the treeline. Verbier's lifts run 821–3330 m"
+        )
+        assert _relation({"lowerBound": "treeline", "upperBound": "2800"}) == (
+            "Above the treeline. Verbier's lifts run 821–3330 m"
+        )
+
+    def test_treeline_upper_bound_gives_no_verdict(self) -> None:
+        """Below the treeline: the band and the lift range side by side."""
+        assert _relation({"upperBound": "treeline"}) == (
+            "Below the treeline. Verbier's lifts run 821–3330 m"
+        )
+        bounds = ElevationBounds(
+            lower="", upper="treeline", display="below treeline", bound_type="UPPER"
+        )
+        assert _problem_band_relation(
+            bounds, resort_name="Verbier", base_m=_BASE, top_m=_TOP
+        ) == ("Below the treeline. Verbier's lifts run 821–3330 m")
+
+    def test_unreadable_bound_makes_no_claim(self) -> None:
+        """A bound that is neither a number nor the treeline gets no line."""
+        assert _relation({"lowerBound": "ridge"}) is None
+
+
+@pytest.mark.django_db
+class TestResortProblemRows:
+    """SNOW-1143: ``_resort_problem_rows`` pairs each card with its line."""
+
+    def _cards(self) -> list[dict[str, Any]]:
+        """Two cards: one above 2200 m, one with no elevation."""
+        return [
+            {"elevation": _format_elevation({"lowerBound": "2200"}), "aspects": []},
+            {"elevation": _format_elevation(None), "aspects": ["N"]},
+        ]
+
+    def test_pairs_each_card_with_its_line(self) -> None:
+        """Card order is kept and each card carries its own line."""
+        resort = ResortFactory.create(
+            name="Verbier", base_elevation_m=_BASE, top_elevation_m=_TOP
+        )
+        cards = self._cards()
+
+        rows = _resort_problem_rows(cards, resort)
+
+        assert [row["card"] for row in rows] == cards
+        assert [row["relation_text"] for row in rows] == [
+            "Above 2200 m: covers the upper part of Verbier",
+            "All elevations, including all of Verbier",
+        ]
+
+    def test_scope_in_prose_card_gets_no_line(self) -> None:
+        """No aspects, no elevation, spatial prose: no 'all elevations' claim."""
+        resort = ResortFactory.create(base_elevation_m=_BASE, top_elevation_m=_TOP)
+        card = {
+            "elevation": _format_elevation(None),
+            "aspects": [],
+            "prose_mentions_spatial": True,
+        }
+
+        assert _resort_problem_rows([card], resort)[0]["relation_text"] is None
+
+    @pytest.mark.parametrize(
+        ("base", "top"),
+        [(None, _TOP), (_BASE, None), (None, None), (2000, 2000), (2500, 2000)],
+    )
+    def test_no_lines_without_a_lift_range(
+        self, base: int | None, top: int | None
+    ) -> None:
+        """Missing or inverted resort elevations: no line on any card."""
+        resort = ResortFactory.create(base_elevation_m=base, top_elevation_m=top)
+
+        rows = _resort_problem_rows(self._cards(), resort)
+
+        assert len(rows) == 2
+        assert all(row["relation_text"] is None for row in rows)
+
+
+@pytest.mark.django_db
+class TestResortProblemBandsOnPage:
+    """SNOW-1143: the band line and its disclaimer on the rendered page."""
+
+    def test_line_and_disclaimer_render_in_the_problems_section(self) -> None:
+        """Under the card, outside the one-link danger area."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(
+            name="Verbier",
+            region=region,
+            base_elevation_m=_BASE,
+            top_elevation_m=_TOP,
+        )
+        _todays_bulletin(region)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        problems = content[content.index('data-testid="resort-problems"') :]
+        note_at = problems.index('data-testid="resort-problem-band-note"')
+        card_at = problems.index('data-testid="rating-block"')
+        band_at = problems.index('data-testid="resort-problem-band"')
+        assert note_at < card_at < band_at
+        text = html.unescape(problems)
+        assert "Compared with Verbier's lift range (821–3330 m)." in text
+        assert "Off-piste terrain may differ." in text
+        assert html.escape("Above 2200 m: covers the upper part of Verbier") in problems
+        area = _danger_area(content)
+        assert "resort-problem-band" not in area
+        assert len(re.findall(r"<a\b", area)) == 1
+
+    def test_no_elevation_problem_reads_all_elevations(self) -> None:
+        """A problem with no elevation names all of the resort."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(
+            name="Verbier",
+            region=region,
+            base_elevation_m=_BASE,
+            top_elevation_m=_TOP,
+        )
+        _todays_bulletin(region, elevation=None)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert "All elevations, including all of Verbier" in content
+
+    def test_absent_when_the_resort_has_no_elevations(self) -> None:
+        """No lift range: the cards render without a line or a disclaimer."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        _todays_bulletin(region)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="rating-block"' in content
+        assert 'data-testid="resort-problem-band"' not in content
+        assert 'data-testid="resort-problem-band-note"' not in content
+
+    def test_no_disclaimer_when_no_line_renders(self) -> None:
+        """A 'See description below' card alone leaves out the disclaimer."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(
+            region=region, base_elevation_m=_BASE, top_elevation_m=_TOP
+        )
+        _todays_bulletin(
+            region,
+            elevation=None,
+            aspects=None,
+            comment="<p>Wind slabs above 2400 m on north-facing slopes.</p>",
+        )
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="aspect-elevation-fallback"' in content
+        assert 'data-testid="resort-problem-band"' not in content
+        assert 'data-testid="resort-problem-band-note"' not in content
 
 
 @pytest.mark.django_db
