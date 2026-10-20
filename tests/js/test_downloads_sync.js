@@ -402,6 +402,15 @@ describe('adopt', () => {
     expect(window.pwaMutationQueue.enqueue).toHaveBeenCalledTimes(2);
   });
 
+  it('uses a list it is handed, without reading it again (SNOW-1140)', async () => {
+    // The sheet reads the list once at boot for this and its restore
+    // notice; a second read would be a second account request.
+    installDownloads([]);
+
+    await expect(sync.adopt(AREAS)).resolves.toBe(2);
+    expect(window.pwaBasemapDownloads.areas).not.toHaveBeenCalled();
+  });
+
   it('records the stored name, never the localised default (SNOW-1133)', async () => {
     // An unrenamed custom area's `name` is the reader's in-memory
     // "Custom area N"; posting it froze one language into the account.

@@ -141,6 +141,7 @@ function buildFixture() {
           <span data-group-swatch class="basemap-identity-fill" aria-hidden="true"></span>
           <p data-hook="group-label" class="uppercase"></p>
           <span data-group-total></span>
+          <button type="button" data-hook="group-action">Download all</button>
         </div>
         <span data-group-rule class="basemap-identity-fill" aria-hidden="true"></span>
         <ul data-group-rows></ul>
@@ -228,7 +229,17 @@ function buildFixture() {
       <span data-string="rename-prompt">Name this area</span>
       <span data-string="rename-failed">That name couldn't be saved. Try again.</span>
       <span data-string="row-menu-label">More actions for %(name)s</span>
+      <span data-string="confirm-download-all">Download %(count)s areas to this device? They download one at a time.</span>
+      <span data-string="confirm-download-all-other">Download %(count)s areas to this device? They download one at a time. %(other)s of them were saved for another basemap and will download with %(active)s.</span>
+      <span data-string="restore-notice">%(count)s of your downloads aren't on this device</span>
+      <span data-string="restore-notice-one">%(count)s of your downloads isn't on this device</span>
     </template>
+    <div id="map-downloads-restore-notice" class="hidden" data-overlay data-overlay-hide="class">
+      <p id="map-downloads-restore-notice-title"> </p>
+      <p id="map-downloads-restore-notice-body">Download them again from Your downloads while you have a connection.</p>
+      <button type="button" id="map-downloads-restore-notice-open">Show downloads</button>
+      <button type="button" data-action="dismiss">×</button>
+    </div>
   `;
 }
 
@@ -569,6 +580,9 @@ async function loadModule() {
   // interaction lives in its own module shared with the favourites panel.
   // home.html loads it ahead of this one; so does this fixture.
   await import('../../static/js/inline_rename.js');
+  // SNOW-1140: the "Download all" queue's rules, loaded ahead of the
+  // manager as the sheet partial loads it.
+  await import('../../static/js/downloads_restore_queue_core.js');
   await import('../../static/js/map_downloads_manager.js');
 }
 
@@ -3710,5 +3724,404 @@ describe('terrain data (SNOW-1072)', () => {
     input.dispatchEvent(new Event('change', { bubbles: true }));
 
     expect(bridge.setTerrainDataPreferred).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('"Download all" (SNOW-1140)', () => {
+  // A new device sees the account's other areas under "Not on this
+  // device". One tap restores them all, one at a time, through the same
+  // per-row paths "Download here" uses.
+
+  const ACCOUNT_REGION = {
+    id: 'region-CH-1000',
+    name: 'Aletsch',
+    bytes: 0,
+    onDevice: false,
+    synced: true,
+    regionId: 'CH-1000',
+    basemapKey: 'openfreemap_liberty',
+  };
+  const ACCOUNT_CUSTOM = {
+    id: 'custom-a9',
+    name: 'Ridge',
+    storedName: 'Ridge',
+    bytes: 0,
+    onDevice: false,
+    synced: true,
+    bbox: [7.9, 46.4, 8.1, 46.6],
+    basemapKey: 'openfreemap_liberty',
+  };
+  const HERE = {
+    id: 'region-CH-2101',
+    name: 'Verbier',
+    bytes: 40 * MB,
+    savedAt: '2026-08-01T10:00:00.000Z',
+    onDevice: true,
+    synced: true,
+    basemapKey: 'openfreemap_liberty',
+  };
+
+  /**
+   * A page with one download lock: each start takes it, and `finish()`
+   * records the running area on this device and frees it, broadcasting as
+   * the real recorder does.
+   */
+  function installPage(areas, activeKey = 'openfreemap_liberty') {
+    const page = { areas: areas.map((a) => ({ ...a })), busy: false, running: null };
+    window.pwaBasemapDownloads = {
+      areas: vi.fn(async () => page.areas.map((a) => ({ ...a }))),
+      evict: vi.fn(async () => {}),
+      rename: vi.fn(async () => true),
+      basemapLabel: vi.fn((key) => (key === 'swisstopo_winter' ? 'Swisstopo (CH)' : 'OpenFreeMap')),
+      basemapOrder: vi.fn(() => ['openfreemap_liberty', 'swisstopo_winter']),
+      activeBasemapKey: vi.fn(() => activeKey),
+      isBusy: vi.fn(() => page.busy),
+    };
+    const begin = (areaId) => {
+      page.busy = true;
+      page.running = areaId;
+      return { started: true, reason: '' };
+    };
+    window.pwaRegionDownload = {
+      start: vi.fn(async (regionId) => begin('region-' + regionId)),
+    };
+    window.pwaCustomAreaDownload.restoreArea = vi.fn(async (opts) => begin(opts.areaId));
+    page.finish = () => {
+      const area = page.areas.find((a) => a.id === page.running);
+      if (area) area.onDevice = true;
+      page.running = null;
+      page.busy = false;
+      document.dispatchEvent(new CustomEvent('snowdesk:downloads-changed'));
+    };
+    return page;
+  }
+
+  beforeEach(() => {
+    installDbStub({});
+    window.pwaDownloadsSync = {
+      isEnabled: vi.fn(() => true),
+      forget: vi.fn(async () => true),
+      push: vi.fn(async () => true),
+    };
+  });
+
+  afterEach(() => {
+    delete window.pwaDownloadsSync;
+    delete window.pwaRegionDownload;
+    vi.restoreAllMocks();
+  });
+
+  /** The "Download all" control in the open sheet, or null. */
+  function downloadAll() {
+    return document.querySelector('#map-downloads-sheet [data-hook="group-action"]');
+  }
+
+  it('heads the "Not on this device" group when two rows can be restored', async () => {
+    installPage([HERE, ACCOUNT_REGION, ACCOUNT_CUSTOM]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const actions = document.querySelectorAll('#map-downloads-sheet [data-hook="group-action"]');
+    expect(actions).toHaveLength(1);
+    const group = actions[0].closest('[data-panel-group]');
+    expect(group.querySelector('[data-hook="group-label"]').textContent).toBe('Not on this device');
+  });
+
+  it('is not offered for a single restorable row', async () => {
+    // That row's own "Download here" is the action.
+    installPage([HERE, ACCOUNT_REGION]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(downloadAll()).toBeNull();
+  });
+
+  it('does not count a row too thin to restore', async () => {
+    installPage([ACCOUNT_REGION, { ...ACCOUNT_CUSTOM, bbox: null }]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(downloadAll()).toBeNull();
+  });
+
+  it('asks once, then restores the rows in order, one at a time', async () => {
+    const page = installPage([ACCOUNT_REGION, ACCOUNT_CUSTOM]);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    downloadAll().click();
+    await settle();
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'Download 2 areas to this device? They download one at a time.',
+    );
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
+    expect(window.pwaRegionDownload.start).toHaveBeenCalledWith('CH-1000', { terrain: false });
+    // The first still holds the lock: the second waits.
+    expect(window.pwaCustomAreaDownload.restoreArea).not.toHaveBeenCalled();
+
+    page.finish();
+    await settle();
+    expect(window.pwaCustomAreaDownload.restoreArea).toHaveBeenCalledWith({
+      areaId: 'custom-a9',
+      bbox: [7.9, 46.4, 8.1, 46.6],
+      name: 'Ridge',
+      type: 'custom',
+      terrain: false,
+    });
+    page.finish();
+    await settle();
+    expect(window.MapSheet.toast).not.toHaveBeenCalled();
+  });
+
+  it('says once that areas saved for another basemap download with this one', async () => {
+    const page = installPage([{ ...ACCOUNT_REGION, basemapKey: 'swisstopo_winter' }, ACCOUNT_CUSTOM]);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    downloadAll().click();
+    await settle();
+
+    // One question, not the per-row one as well.
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'Download 2 areas to this device? They download one at a time. 1 of them were saved ' +
+        'for another basemap and will download with OpenFreeMap.',
+    );
+    expect(window.pwaRegionDownload.start).toHaveBeenCalled();
+    // Run the queue out, so no listener outlives the test.
+    page.finish();
+    await settle();
+    page.finish();
+    await settle();
+  });
+
+  it('does nothing when the answer is no', async () => {
+    installPage([ACCOUNT_REGION, ACCOUNT_CUSTOM]);
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    downloadAll().click();
+    await settle();
+
+    expect(window.pwaRegionDownload.start).not.toHaveBeenCalled();
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+  });
+
+  it("stops at the first refusal with that refusal's own toast", async () => {
+    const page = installPage([ACCOUNT_REGION, ACCOUNT_CUSTOM, { ...ACCOUNT_CUSTOM, id: 'custom-b2' }]);
+    window.pwaCustomAreaDownload.restoreArea = vi.fn(async () => ({
+      started: false,
+      reason: 'over-ceiling',
+    }));
+    await loadModule();
+    openSheet();
+    await settle();
+
+    downloadAll().click();
+    await settle();
+    page.finish();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledWith(
+      'That area is larger than this device can hold.',
+    );
+    // The third is left as a row.
+    expect(window.pwaCustomAreaDownload.restoreArea).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses while offline', async () => {
+    installPage([ACCOUNT_REGION, ACCOUNT_CUSTOM]);
+    await loadModule();
+    openSheet();
+    await settle();
+    setOnline(false);
+
+    downloadAll().click();
+    await settle();
+
+    expect(window.pwaRegionDownload.start).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalledWith(
+      "You're offline — connect to download a new area.",
+    );
+  });
+
+  it('is disabled on a sheet reopened while the queue runs', async () => {
+    const page = installPage([ACCOUNT_REGION, ACCOUNT_CUSTOM, { ...ACCOUNT_CUSTOM, id: 'custom-b2' }]);
+    await loadModule();
+    openSheet();
+    await settle();
+
+    downloadAll().click();
+    await settle();
+    openSheet();
+    await settle();
+
+    expect(downloadAll().hasAttribute('disabled')).toBe(true);
+    page.finish();
+    await settle();
+    page.finish();
+    await settle();
+    page.finish();
+    await settle();
+    expect(downloadAll()).toBeNull();
+  });
+});
+
+describe('the restore notice (SNOW-1140)', () => {
+  // Once per account per device: a signed-in user whose account holds
+  // areas this device does not is told so on the map, and the notice
+  // opens the sheet. Never offline, never anonymous.
+
+  const ACCOUNT_AREAS = [
+    { id: 'region-CH-1000', name: 'Aletsch', bytes: 0, onDevice: false, synced: true, regionId: 'CH-1000' },
+    {
+      id: 'custom-a9',
+      name: 'Ridge',
+      bytes: 0,
+      onDevice: false,
+      synced: true,
+      bbox: [7.9, 46.4, 8.1, 46.6],
+    },
+  ];
+
+  function installAreas(areas) {
+    window.pwaBasemapDownloads = {
+      areas: vi.fn(async () => areas.map((a) => ({ ...a }))),
+      basemapLabel: vi.fn(() => 'OpenFreeMap'),
+      basemapOrder: vi.fn(() => ['openfreemap_liberty']),
+    };
+  }
+
+  function setAccount(id) {
+    const meta = document.createElement('meta');
+    meta.name = 'pwa-user-id';
+    meta.content = id;
+    document.head.appendChild(meta);
+  }
+
+  function notice() {
+    return document.getElementById('map-downloads-restore-notice');
+  }
+
+  async function boot({ eligible = true, account = '42', areas = ACCOUNT_AREAS } = {}) {
+    installDbStub({});
+    installAreas(areas);
+    if (account) setAccount(account);
+    installDownloadsGate({ eligible });
+    await loadModule();
+    await settle();
+  }
+
+  beforeEach(() => {
+    window.pwaDownloadsSync = { isEnabled: vi.fn(() => true), adopt: vi.fn(async () => 0) };
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    delete window.pwaDownloadsSync;
+    document.head.querySelectorAll('meta[name="pwa-user-id"]').forEach((el) => el.remove());
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('says how many of the account\'s downloads are not here', async () => {
+    await boot();
+
+    expect(notice().classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('map-downloads-restore-notice-title').textContent).toBe(
+      "2 of your downloads aren't on this device",
+    );
+  });
+
+  it('reads the list once for itself and adopt', async () => {
+    await boot();
+
+    expect(window.pwaBasemapDownloads.areas).toHaveBeenCalledTimes(1);
+    expect(window.pwaDownloadsSync.adopt).toHaveBeenCalledWith(expect.any(Array));
+  });
+
+  it('says it of one area in the singular', async () => {
+    await boot({ areas: ACCOUNT_AREAS.slice(0, 1) });
+
+    expect(document.getElementById('map-downloads-restore-notice-title').textContent).toBe(
+      "1 of your downloads isn't on this device",
+    );
+  });
+
+  it('is shown once per account on this device', async () => {
+    await boot();
+    expect(notice().classList.contains('hidden')).toBe(false);
+
+    // The next load, same account.
+    buildFixture();
+    await boot();
+    expect(notice().classList.contains('hidden')).toBe(true);
+
+    // Another account on the same device has not seen it.
+    buildFixture();
+    document.head.querySelectorAll('meta[name="pwa-user-id"]').forEach((el) => el.remove());
+    await boot({ account: '43' });
+    expect(notice().classList.contains('hidden')).toBe(false);
+  });
+
+  it('does not repeat in the session when localStorage is unreadable', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (key) {
+      if (this === window.localStorage) throw new Error('SecurityError');
+      return Object.prototype.hasOwnProperty.call(this, key) ? this[key] : null;
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (key, value) {
+      if (this === window.localStorage) throw new Error('SecurityError');
+      this[key] = String(value);
+    });
+    await boot();
+    expect(notice().classList.contains('hidden')).toBe(false);
+
+    buildFixture();
+    await boot();
+    expect(notice().classList.contains('hidden')).toBe(true);
+  });
+
+  it('is never shown offline', async () => {
+    setOnline(false);
+    await boot();
+
+    expect(notice().classList.contains('hidden')).toBe(true);
+    // And not remembered as shown, so the next online load can show it.
+    expect(window.localStorage.length).toBe(0);
+  });
+
+  it('is never shown to a signed-out visitor', async () => {
+    await boot({ eligible: false, account: '' });
+
+    expect(notice().classList.contains('hidden')).toBe(true);
+  });
+
+  it('is not shown when everything on the account is already here', async () => {
+    await boot({ areas: [{ ...ACCOUNT_AREAS[0], onDevice: true, bytes: 40 * MB }] });
+
+    expect(notice().classList.contains('hidden')).toBe(true);
+  });
+
+  it('opens the sheet when tapped, and gets out of the way', async () => {
+    await boot();
+
+    document.getElementById('map-downloads-restore-notice-open').click();
+    await settle();
+
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+    expect(notice().classList.contains('hidden')).toBe(true);
   });
 });

@@ -430,6 +430,18 @@
     // SNOW-1136: a region restored under a basemap other than its own.
     'confirm-other-basemap':
       '%(name)s was downloaded for %(stored)s. Download it for %(active)s on this device?',
+    // SNOW-1140: "Download all" — one confirm for the whole queue. The
+    // second form replaces the per-row basemap question for a queue that
+    // holds areas saved for another basemap. `count` is always 2 or more.
+    'confirm-download-all':
+      'Download %(count)s areas to this device? They download one at a time.',
+    'confirm-download-all-other':
+      'Download %(count)s areas to this device? They download one at a time. ' +
+      '%(other)s of them were saved for another basemap and will download with %(active)s.',
+    // SNOW-1140: the one-time map notice's title (the banner's body and
+    // CTA are server-rendered on the banner itself).
+    'restore-notice': "%(count)s of your downloads aren't on this device",
+    'restore-notice-one': "%(count)s of your downloads isn't on this device",
   });
 
   var interpolate = self.pwaStrings.interpolate;
@@ -454,6 +466,19 @@
   // the first has finished with the worker. Both rows still say "running"
   // throughout, which is what is true of both.
   var syncing = new Set();
+
+  // SNOW-1140: the rows the last render offered for restoring here, in
+  // the order they were listed — what "Download all" queues. Module state
+  // for the same reason `syncing` is: the delegated click handler sees a
+  // cloned button, not the rows it was built from.
+  /** @type {Array<Object>} */
+  var restorable = [];
+
+  // SNOW-1140: true while a "Download all" queue is running. A second
+  // press would start a second queue racing the first for the one
+  // download lock; `buildGroup` re-applies `disabled` from this on every
+  // render, because the button that was pressed is re-cloned.
+  var restoreQueueRunning = false;
 
   // SNOW-749: the sign-in gate's configuration, read off the roundel that
   // opens this sheet (#map-custom-download-control — see its own template
@@ -880,6 +905,68 @@
   }
 
   /**
+   * The areas this sheet lists: everything the reader returned, less what
+   * was forgotten this session and the shared overview maps.
+   *
+   * @param {Array<Object>} allAreas As ``readAreas`` returns them.
+   * @returns {Array<Object>}
+   */
+  function listedAreas(allAreas) {
+    const isBaseLayerAreaId = downloadCore()?.isBaseLayerAreaId;
+    return allAreas.filter(
+      // SNOW-749: drop anything the user has forgotten this session whose
+      // queued mutation has not drained yet — see FORGOTTEN's own comment.
+      // An area forgotten and then RE-DOWNLOADED here is back on the
+      // device, so it is listed again: the local record is newer than the
+      // pending forget, and the user is looking at the thing they just made.
+      (area) => !FORGOTTEN.has(area.id) || area.onDevice !== false,
+    ).filter(
+      // The shared overview maps are the app's own map data, not
+      // downloads — see basemap_manage_core.js's `manageRows`. Filtered
+      // once, here, so the rows, the segments, the legend and the "Using X
+      // of Y" total all describe the same set: what the user downloaded.
+      // Their size is stated in account settings, under Reset local data.
+      (area) => !(isBaseLayerAreaId && isBaseLayerAreaId(String(area.id || ''))),
+    );
+  }
+
+  /**
+   * The sheet's rows for ``list``, through the manage core.
+   *
+   * One place, because the sheet and the boot-time restore notice
+   * (SNOW-1140) must agree about which rows exist.
+   *
+   * @param {Object} core ``pwaBasemapManageCore``.
+   * @param {Array<Object>} list As ``listedAreas`` returns it.
+   * @returns {Array<Object>}
+   */
+  function manageRowsFor(core, list) {
+    return core.manageRows(list, {
+      // SNOW-635: a predicate, not a single id — see manageRows's own
+      // docstring for why. No `customLabel` any more either — a custom
+      // row's label is `area.name`, already filled by the reader.
+      isCustomAreaId: downloadCore()?.isCustomAreaId,
+      // SNOW-856: the shared overview map, listed but never deletable.
+      isBaseLayerAreaId: downloadCore()?.isBaseLayerAreaId,
+      // SNOW-1133: an account-only area with no stored name is named by
+      // the day it was saved, rather than by its raw id.
+      unnamedLabel: unnamedAreaLabel,
+    });
+  }
+
+  /**
+   * SNOW-1140: the rows that can be restored onto this device — on the
+   * account, not here, and carrying enough (a region id or a box) for
+   * "Download here" to act on. Exactly the rows that get that control.
+   *
+   * @param {Array<Object>} rows ``manageRows``' own rows.
+   * @returns {Array<Object>} In list order.
+   */
+  function restorableRows(rows) {
+    return rows.filter((row) => row && row.onDevice === false && !!row.redownloadable);
+  }
+
+  /**
    * Populate the budget ``<select>`` from the core's offered choices.
    *
    * Built here rather than server-rendered so the offered sizes live in
@@ -921,17 +1008,7 @@
     // An area forgotten and then RE-DOWNLOADED here is back on the device,
     // so it is listed again: the local record is newer than the pending
     // forget, and the user is looking at the thing they just made.
-    const isBaseLayerAreaId = downloadCore()?.isBaseLayerAreaId;
-    const list = allAreas.filter(
-      (area) => !FORGOTTEN.has(area.id) || area.onDevice !== false,
-    ).filter(
-      // The shared overview maps are the app's own map data, not
-      // downloads — see basemap_manage_core.js's `manageRows`. Filtered
-      // once, here, so the rows, the segments, the legend and the "Using X
-      // of Y" total all describe the same set: what the user downloaded.
-      // Their size is stated in account settings, under Reset local data.
-      (area) => !(isBaseLayerAreaId && isBaseLayerAreaId(String(area.id || ''))),
-    );
+    const list = listedAreas(allAreas);
     // Re-assert what this device holds.
     //
     // A row this device HAS and the account does not know about is pushed
@@ -946,17 +1023,9 @@
 
     const chosenMb = core.clampBudgetMb(budgetMb);
     const summary = core.budgetSummary(list, core.megabytesToBytes(chosenMb));
-    const rows = core.manageRows(list, {
-      // SNOW-635: a predicate, not a single id — see manageRows's own
-      // docstring for why. No `customLabel` any more either — a custom
-      // row's label is `area.name`, already filled by the reader.
-      isCustomAreaId: downloadCore()?.isCustomAreaId,
-      // SNOW-856: the shared overview map, listed but never deletable.
-      isBaseLayerAreaId: downloadCore()?.isBaseLayerAreaId,
-      // SNOW-1133: an account-only area with no stored name is named by
-      // the day it was saved, rather than by its raw id.
-      unnamedLabel: unnamedAreaLabel,
-    });
+    const rows = manageRowsFor(core, list);
+    // SNOW-1140: what "Download all" would queue, in list order.
+    restorable = restorableRows(rows);
     // SNOW-844: and which of them are on this device but cannot render.
     // Awaited before the rows are built, not after: the flag decides the
     // row's subtitle and whether it carries a Repair control, and a
@@ -1232,6 +1301,23 @@
     }
     const total = fragment.querySelector('[data-group-total]');
     if (total) total.remove();
+
+    // SNOW-1140: "Download all" heads the "Not on this device" group, and
+    // only when two or more of its rows can be restored here — with one,
+    // that row's own "Download here" is the action, and a second control
+    // for the same tap is noise. Removed rather than disabled everywhere
+    // else, because a disabled control still says "this is a thing you
+    // could do". Disabled (not removed) while a queue is running, so a
+    // reopened sheet shows the action as taken.
+    const action = fragment.querySelector('[data-hook="group-action"]');
+    if (action) {
+      const count = group.key === 'account' ? restorableRows(group.rows).length : 0;
+      if (count < 2) {
+        action.remove();
+      } else if (restoreQueueRunning) {
+        action.setAttribute('disabled', '');
+      }
+    }
 
     const rows = fragment.querySelector('[data-group-rows]');
     if (rows) {
@@ -1819,6 +1905,9 @@
     // ``window.pwaLayersMenu?.close()`` this function used to make, which
     // covered the one sibling it happened to know about.
     window.pwaMapOverlays?.opening(SHEET_ID);
+    // SNOW-1140: the notice points at this sheet; once it is open the
+    // notice has nothing left to say.
+    hideRestoreNotice();
     await render();
     sheet.hidden = false;
     // SNOW-658: inset the sheet past the scrubber and the roundel column on
@@ -1924,6 +2013,7 @@
     ) {
       return;
     }
+    if (_handleDownloadAllClick(event)) return;
     if (_handleSyncClick(event)) return;
     if (_handleDownloadHereClick(event)) return;
     if (_handleRenameClick(event)) return;
@@ -2198,6 +2288,176 @@
   }
 
   /**
+   * SNOW-1140: "Download all" — restore every restorable row, one at a
+   * time, through the same two start paths each row's "Download here"
+   * uses.
+   *
+   * The ordering and the stop rules are
+   * ``window.pwaDownloadsRestoreQueueCore``'s
+   * (static/js/downloads_restore_queue_core.js); this supplies the real
+   * effects and words the stop. One confirm up front, in place of the
+   * per-row basemap question (``_confirmDownloadAll``). The sheet hides
+   * on the way out, as it does for one row: a region run paints its
+   * progress on the roundel behind it, a restore fills its grid on the map.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a "Download all".
+   */
+  function _handleDownloadAllClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return false;
+    const button = target.closest('[data-hook="group-action"]');
+    if (!button) return false;
+
+    if (restoreQueueRunning) return true;
+    // SNOW-748: the mode, not the radio — as every other start here.
+    if (!networkInUse()) {
+      window.MapSheet?.toast(STRINGS['add-offline']);
+      return true;
+    }
+    const items = restorable.map(restoreItem);
+    if (items.length < 2) return true;
+    const queueCore = window.pwaDownloadsRestoreQueueCore;
+    if (!queueCore) {
+      window.MapSheet?.toast(STRINGS['download-here-failed']);
+      return true;
+    }
+    // Asked BEFORE the sheet hides, so a "no" leaves the user where they
+    // were — the same rule the per-row confirm keeps.
+    if (!_confirmDownloadAll(items)) return true;
+
+    sheet.hidden = true;
+    _runDownloadAll(queueCore, items);
+    return true;
+  }
+
+  /**
+   * SNOW-1140: what the queue carries for one row — the same fields the
+   * row's own "Download here" control is stamped with.
+   *
+   * @param {Object} row A restorable ``manageRows`` row.
+   * @returns {{areaId: string, regionId: string, bbox: ?Array<number>,
+   *   terrain: boolean, kind: string, name: string, basemapKey: string,
+   *   label: string}}
+   */
+  function restoreItem(row) {
+    return {
+      areaId: row.id,
+      regionId: row.regionId || '',
+      bbox: Array.isArray(row.bbox) ? row.bbox : null,
+      terrain: !!row.terrain,
+      kind: row.kind || '',
+      name: row.storedName || '',
+      basemapKey: row.basemapKey || '',
+      label: row.label || '',
+    };
+  }
+
+  /**
+   * SNOW-1140: the one confirm "Download all" asks.
+   *
+   * States the count, and — when any of the areas were saved for a
+   * basemap other than the one on screen — that they will download with
+   * the current one. Both start paths fetch the active basemap whatever
+   * the account row names, so this counts custom areas as well as
+   * regions; the per-row question is never asked on this path.
+   *
+   * @param {Array<{basemapKey: string}>} items
+   * @returns {boolean} Whether to start.
+   */
+  function _confirmDownloadAll(items) {
+    if (typeof window.confirm !== 'function') return true;
+    const activeKey = window.pwaBasemapDownloads?.activeBasemapKey?.() || '';
+    const other = activeKey
+      ? items.filter((item) => item.basemapKey && item.basemapKey !== activeKey).length
+      : 0;
+    const message = other
+      ? interpolate(STRINGS['confirm-download-all-other'], {
+          count: String(items.length),
+          other: String(other),
+          active: basemapName(activeKey),
+        })
+      : interpolate(STRINGS['confirm-download-all'], { count: String(items.length) });
+    return window.confirm(message);
+  }
+
+  /**
+   * SNOW-1140: start one queued restore through its row's own start path.
+   *
+   * @param {ReturnType<typeof restoreItem>} item
+   * @returns {Promise<{started: boolean, reason: string, ok?: boolean}>}
+   */
+  function _startRestore(item) {
+    if (item.regionId && window.pwaRegionDownload) {
+      return window.pwaRegionDownload.start(item.regionId, { terrain: item.terrain });
+    }
+    if (Array.isArray(item.bbox) && window.pwaCustomAreaDownload?.restoreArea) {
+      return window.pwaCustomAreaDownload.restoreArea({
+        areaId: item.areaId,
+        bbox: item.bbox,
+        name: item.name,
+        type: item.kind === 'dropzone' ? 'dropzone' : 'custom',
+        terrain: item.terrain,
+      });
+    }
+    return Promise.resolve({ started: false, reason: 'invalid' });
+  }
+
+  /**
+   * SNOW-1140: the strings key for a queue that stopped, or '' for none.
+   *
+   * @param {{stopped: string|null, silent: boolean}} result
+   * @returns {string}
+   */
+  function _queueStopMessage(result) {
+    if (!result.stopped || result.silent) return '';
+    // Already sent to sign in — nobody is looking at this page.
+    if (result.stopped === 'signin') return '';
+    // A run that never let go of the lock: the queue gave up waiting.
+    if (result.stopped === 'timeout') return 'download-here-busy';
+    return _restoreMessage(result.stopped);
+  }
+
+  /**
+   * SNOW-1140: run the queue with the page's real effects.
+   *
+   * @param {Object} queueCore ``window.pwaDownloadsRestoreQueueCore``.
+   * @param {Array<Object>} items
+   * @returns {Promise<void>}
+   */
+  async function _runDownloadAll(queueCore, items) {
+    restoreQueueRunning = true;
+    const deps = {
+      online: networkInUse,
+      isBusy: () => !!window.pwaBasemapDownloads?.isBusy?.(),
+      subscribe: (/** @type {() => void} */ listener) => {
+        document.addEventListener('snowdesk:downloads-changed', listener);
+        return () => document.removeEventListener('snowdesk:downloads-changed', listener);
+      },
+      presentIds: async () =>
+        new Set(
+          (await readAreas())
+            .filter((area) => area && area.onDevice !== false)
+            .map((area) => area.id),
+        ),
+      start: _startRestore,
+    };
+    let result;
+    try {
+      result = await queueCore.runQueue(items, deps);
+    } catch (_err) {
+      result = { stopped: 'failed', silent: false };
+    } finally {
+      restoreQueueRunning = false;
+    }
+    const key = _queueStopMessage(result);
+    if (key) window.MapSheet?.toast(STRINGS[key]);
+    // A sheet reopened mid-queue showed the action disabled; it is free
+    // again, and the rows have moved.
+    if (!sheet.hidden) render();
+  }
+
+  /**
    * SNOW-1136: whether a region restore may go ahead under the active
    * basemap.
    *
@@ -2445,14 +2705,143 @@
    *
    * @returns {void}
    */
-  function _adoptLocalAreas() {
+  async function _adoptLocalAreas() {
     // Guarded here as well as inside `adopt()` itself. The duplication is
     // deliberate: this states the precondition at the CALL site, where a
     // reader asks "when does this run", rather than leaving the answer two
     // modules away.
     if (!DOWNLOADS_ELIGIBLE) return;
-    window.pwaDownloadsSync?.adopt();
+    // SNOW-1140: ONE read for both boot-time consumers. The list carries
+    // the account's areas (a request, when online), and `adopt` used to
+    // make that read itself; the restore notice needs the same list, so it
+    // is read here and handed to both rather than fetched twice.
+    const areas = await readAreas();
+    window.pwaDownloadsSync?.adopt(areas);
+    _maybeShowRestoreNotice(areas);
   }
+
+  // ---- SNOW-1140: the one-time "not on this device" notice ---------------
+
+  var NOTICE_ID = 'map-downloads-restore-notice';
+  var NOTICE_KEY_PREFIX = 'snowdesk.downloadsRestoreNotice.';
+
+  // The last-resort memory, for a device whose Web Storage is unreadable:
+  // without it a blocked localStorage would repeat the notice on every
+  // load, which is the one thing it must not do. sessionStorage is tried
+  // before it, so the session is usually covered beyond this page.
+  var noticeShownHere = false;
+
+  /**
+   * The signed-in account's id — the ``pwa-user-id`` meta tag, through
+   * db.js's reader where it has loaded. '' when there is none.
+   *
+   * @returns {string}
+   */
+  function currentAccountId() {
+    try {
+      const id = window.pwaDb?.context?.().user_id;
+      if (id) return String(id);
+    } catch (_err) {
+      // Fall through to the tag itself.
+    }
+    const meta = document.querySelector('meta[name="pwa-user-id"]');
+    return (meta && meta.getAttribute('content')) || '';
+  }
+
+  /**
+   * Whether the notice has already been shown for ``key``.
+   *
+   * Every access is guarded: Web Storage throws outright in some private
+   * modes and under a blocked-cookies policy.
+   *
+   * @param {string} key
+   * @returns {boolean}
+   */
+  function noticeShown(key) {
+    if (noticeShownHere) return true;
+    for (const name of ['localStorage', 'sessionStorage']) {
+      try {
+        if (window[name].getItem(key) === '1') return true;
+      } catch (_err) {
+        // Unreadable; try the next, then the page's own flag.
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Remember that the notice was shown for ``key`` — on this device for
+   * good when localStorage takes the write, for the session otherwise.
+   *
+   * @param {string} key
+   * @returns {void}
+   */
+  function markNoticeShown(key) {
+    noticeShownHere = true;
+    try {
+      window.localStorage.setItem(key, '1');
+      return;
+    } catch (_err) {
+      // Fall back to the session.
+    }
+    try {
+      window.sessionStorage.setItem(key, '1');
+    } catch (_err) {
+      // The page flag above is all there is.
+    }
+  }
+
+  /**
+   * SNOW-1140: tell a signed-in user, once, that their account holds
+   * areas this device does not — the only way they would otherwise learn
+   * it is to open this sheet and spot the dimmed group.
+   *
+   * Shown when: the visitor is signed in, the app is using the network,
+   * the account lists at least one area this device can restore, the
+   * sheet is not already open, and the notice has not been shown for
+   * this account on this device. It downloads nothing; its CTA opens the
+   * sheet. "Shown" is remembered on reveal, not on dismissal — a notice
+   * ignored is a notice seen.
+   *
+   * @param {Array<Object>} areas The reconciled list, as ``readAreas``
+   *   returns it.
+   * @returns {void}
+   */
+  function _maybeShowRestoreNotice(areas) {
+    if (!DOWNLOADS_ELIGIBLE || !networkInUse()) return;
+    const core = manageCore();
+    const banner = document.getElementById(NOTICE_ID);
+    if (!core || !banner || !sheet.hidden) return;
+    const accountId = currentAccountId();
+    // Nothing to remember it against: a notice that cannot be remembered
+    // would repeat, so it is not shown at all.
+    if (!accountId) return;
+    const count = restorableRows(manageRowsFor(core, listedAreas(areas))).length;
+    if (count === 0) return;
+    const key = NOTICE_KEY_PREFIX + accountId;
+    if (noticeShown(key)) return;
+
+    const title = document.getElementById(NOTICE_ID + '-title');
+    if (title) {
+      title.textContent = interpolate(
+        STRINGS[count === 1 ? 'restore-notice-one' : 'restore-notice'],
+        { count: String(count) },
+      );
+    }
+    banner.classList.remove('hidden');
+    markNoticeShown(key);
+  }
+
+  /** @returns {void} */
+  function hideRestoreNotice() {
+    document.getElementById(NOTICE_ID)?.classList.add('hidden');
+  }
+
+  // The CTA opens the sheet; the × is overlays.js's shared dismiss.
+  document.getElementById(NOTICE_ID + '-open')?.addEventListener('click', function () {
+    hideRestoreNotice();
+    open();
+  });
 
   // Only ``'complete'`` runs it now; every other state waits for
   // DOMContentLoaded.
