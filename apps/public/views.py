@@ -5115,7 +5115,7 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
             f"{settings.SITE_BASE_URL.rstrip('/')}{resort.get_absolute_url()}",
         ),
     }
-    context.update(_resort_season_strip_context(region, today))
+    context.update(_resort_season_calendar_context(region, today))
     return render(request, "public/resort.html", context)
 
 
@@ -5155,7 +5155,7 @@ def _resort_eyebrow(resort: Resort) -> str:
     return " · ".join(part for part in parts if part)
 
 
-def _resort_season_strip_context(
+def _resort_season_calendar_context(
     region: MicroRegion, today: datetime.date
 ) -> dict[str, Any]:
     """Build the resort page's season calendar and its summary (SNOW-1126).

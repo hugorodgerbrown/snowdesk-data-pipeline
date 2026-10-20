@@ -94,7 +94,9 @@
                navigating: the ring moves, the readout takes the cell's level
                and its data-day-long / data-day-short dates, and the link points
                at the cell's own href, shown unless the day is the page's own.
-               A day with no bulletin reads "No bulletin" with no link. CSS
+               A day with no bulletin reads "No bulletin" with no link. The
+               panel is aria-live="polite", so a selection is announced, and the
+               selected cell carries aria-current="date". CSS
                orders the panel between the calendar and the key
                (.season-sheet-body).
             {% endcomment %}
@@ -102,6 +104,7 @@
                 class="season-readout flex flex-wrap items-center gap-4 rounded-tag border border-border-strong bg-card-subtle p-4"
                 data-season-readout
                 data-testid="season-readout"
+                aria-live="polite"
                 hidden
             >
                 <span class="danger-tile text-xl" data-readout-tile data-level="no_rating" aria-hidden="true">

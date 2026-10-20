@@ -318,6 +318,9 @@ describe('the post-swap handler', () => {
       ),
     ).toBe(true);
     expect(grid.querySelectorAll('.season-day-ring')).toHaveLength(1);
+    expect(
+      grid.querySelector('[data-date="2026-01-15"]').getAttribute('aria-current'),
+    ).toBe('date');
 
     const other = document.createElement('div');
     other.id = 'something-else';
@@ -399,6 +402,10 @@ describe('the post-swap handler', () => {
       const ringed = grid.querySelectorAll('[data-date].season-day-ring');
       expect(ringed).toHaveLength(1);
       expect(ringed[0].getAttribute('data-date')).toBe('2026-01-09');
+      // aria-current moves with the ring: on the new day, off the old one.
+      const current = grid.querySelectorAll('[aria-current="date"]');
+      expect(current).toHaveLength(1);
+      expect(current[0].getAttribute('data-date')).toBe('2026-01-09');
       // The key's "Selected day" swatch keeps its ring.
       expect(
         grid.querySelector('.season-key-swatch').classList.contains('season-day-ring'),

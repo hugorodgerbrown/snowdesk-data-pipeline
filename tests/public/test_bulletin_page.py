@@ -2733,6 +2733,7 @@ class TestSeasonSheet:
         opening = content.split('data-testid="season-readout"')[1].split(">")[0]
 
         assert "hidden" in opening
+        assert 'aria-live="polite"' in opening
         assert "Sunday 15 March 2026" in readout
         assert (
             "Read the bulletin for <span data-readout-day>15 March</span>"

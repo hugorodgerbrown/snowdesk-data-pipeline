@@ -60,9 +60,7 @@
         {% plural %}
             Season {{ label }}: {{ days }} days with a bulletin
         {% endblocktrans %}
-        {% blocktrans count days=season_summary.considerable_or_higher trimmed asvar season_high %}
-            {{ days }} at Considerable or higher
-        {% plural %}
+        {% blocktrans with days=season_summary.considerable_or_higher trimmed asvar season_high %}
             {{ days }} at Considerable or higher
         {% endblocktrans %}
     {% endif %}

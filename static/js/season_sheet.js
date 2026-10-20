@@ -120,7 +120,13 @@
     grid.querySelectorAll(DAY_RING).forEach(function (el) {
       el.classList.remove('season-day-ring');
     });
+    grid.querySelectorAll('[aria-current="date"]').forEach(function (el) {
+      el.removeAttribute('aria-current');
+    });
     cell.classList.add('season-day-ring');
+    // The ring is visual; aria-current tells a screen reader which day the
+    // readout (an aria-live region) is describing.
+    cell.setAttribute('aria-current', 'date');
 
     var readout = sheet.querySelector('[data-season-readout]');
     if (!readout) return;
