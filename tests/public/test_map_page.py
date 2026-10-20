@@ -1786,6 +1786,64 @@ def test_downloads_strings_template_carries_the_focus_label() -> None:
     assert "Zoom to" in strings
 
 
+@pytest.mark.django_db
+def test_downloads_row_menu_offers_download_here_first_and_forget_last() -> None:
+    """SNOW-1135: an account-only row's pair, in the menu, in rule-4 order.
+
+    The menu carries every item ``buildRow`` may keep, and it strips the
+    ones a row does not earn — so the ORDER is fixed here, in the rendered
+    template: the constructive action first, the destructive one last.
+    Forget also renders as a bare icon, for an account-only row that has
+    it as its only action.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    row_template = content.split('id="map-downloads-row-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    menu = row_template.split('role="menu"', 1)[1]
+    inline = row_template.split('role="menu"', 1)[0]
+    positions = [
+        menu.index(hook)
+        for hook in (
+            "data-downloads-here",
+            "data-downloads-sync",
+            "data-downloads-rename",
+            "data-downloads-delete",
+            "data-downloads-forget",
+        )
+    ]
+    assert positions == sorted(positions)
+    assert "data-downloads-forget" in inline
+
+
+@pytest.mark.django_db
+def test_downloads_strings_template_carries_the_forget_copy() -> None:
+    """SNOW-1135: Forget's confirm, its accessible name and its failure line.
+
+    Plus the Remove confirm for a synced row, which points at "Not on this
+    device" — where the area stays after a removal.
+    """
+    client = Client()
+    response = client.get(reverse("public:map"))
+    content = response.content.decode()
+
+    strings = content.split('id="map-downloads-strings-template"', 1)[1].split(
+        "</template>", 1
+    )[0]
+    for key in (
+        "confirm-forget",
+        "forget-row-label",
+        "forget-failed",
+        "confirm-remove-kept",
+    ):
+        assert f'data-string="{key}"' in strings
+    assert "removed from your account" in strings
+    assert "Not on this device" in strings
+
+
 _MAP_STATE_JS = Path(__file__).parent.parent.parent / "static" / "js" / "map_state.js"
 
 

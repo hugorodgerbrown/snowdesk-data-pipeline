@@ -13,8 +13,17 @@ lives in docs/design-system.md's interaction principles — go there for the
 statement and the reasoning; what follows is only how this row applies it.
 
 So this row renders both shapes and buildRow keeps whichever the row has
-earned — the bare download for an account-only row, the bare trash for an
-orphan, the menu for anything with two things to offer.
+earned — the bare trash for an orphan, the bare Forget for an account-only
+row with too little recorded to download, the menu for anything with two
+things to offer.
+
+SNOW-1135 split the destructive verb in two by WHERE it acts. Remove (the
+trash) means THIS device: it evicts the local copy and leaves the account
+row, so a synced area drops into "Not on this device" and can be
+downloaded again. Forget (`data-downloads-forget`) takes an area off the
+ACCOUNT, and is offered only on an account-only row — so the two never
+share a row. An account-only row that can be downloaded here therefore
+carries two actions, Download here and Forget, and is a menu.
 
 SNOW-951 moved a REGION on this device from the first list to the last.
 "Sync now" is offered to every row this device holds, so a region carries
@@ -42,7 +51,10 @@ above use:
                         user's ACCOUNT and not on this device. FIRST in the
                         cluster: it is the only constructive action a row
                         has, and it is the whole point of an account-only
-                        row being listed at all.
+                        row being listed at all. Since SNOW-1135 it lives
+                        in the menu (beside Forget); the inline copy below
+                        is kept so the template carries every hook buildRow
+                        may stamp.
 
 SNOW-749 added a SECOND destructive control beside the trash —
 `data-downloads-evict`, "Free up space", which removed this device's tiles
@@ -50,16 +62,19 @@ and kept the account row so the area was one tap to bring back. SNOW-832
 removes it, on Hugo's call. Two destructive verbs on one row cost the
 reader a decision on every row in order to offer, on some of them, a
 slightly gentler outcome that nothing on the row explained: the difference
-between them lived in a confirm dialogue neither glyph could show. Trash
-means gone everywhere again, everywhere, and `confirm-forget` already says
-so for a row that is on both. The automatic budget eviction
-(`evictBasemapAreas`) is untouched — that path was never this button's.
+between them lived in a confirm dialogue neither glyph could show.
+SNOW-1135 reverses the half of that which made the trash reach the account:
+a "remove" that also removed the area from every other device was
+surprising, and the account half was undone anyway by any device still
+holding the area. The trash is local again — the outcome "Free up space"
+had — and the account half is Forget, on a different row, so no row ever
+carries two destructive verbs and the SNOW-832 objection still holds.
 {% endcomment %}
 {# The constructive action, first. Removed by buildRow for every row that #}
 {# is already on this device — there is nothing to fetch.                 #}
-{# ONE action → a bare icon. These two are the rows that have exactly     #}
-{# one: an account-only row can only be downloaded, and an orphan can     #}
-{# only be removed.                                                       #}
+{# ONE action → a bare icon. An orphan can only be removed; an           #}
+{# account-only row with too little recorded to download can only be      #}
+{# forgotten (SNOW-1135). The inline Download here is kept as a hook only. #}
 <button
     type="button"
     data-downloads-here
@@ -76,8 +91,21 @@ so for a row that is on both. The automatic budget eviction
 >
     {% include "includes/_icon_trash.html" only %}
 </button>
+{# SNOW-1135: Forget — takes an account-only area off the account. The    #}
+{# bin again, because it is the same kind of act (destructive, last), and #}
+{# it never shares a row with Remove: one is offered only where the area  #}
+{# is on this device, the other only where it is not.                     #}
+<button
+    type="button"
+    data-downloads-forget
+    aria-label="{% trans 'Forget' %}"
+    class="{% icon_button_classes variant='destructive' %}"
+>
+    {% include "includes/_icon_trash.html" only %}
+</button>
 {# MORE THAN ONE → the "…". A region on this device can be synced and     #}
-{# removed; a custom area or a drop zone can also be renamed.             #}
+{# removed; a custom area or a drop zone can also be renamed; an          #}
+{# account-only row can be downloaded here or forgotten (SNOW-1135).      #}
 {# buildRow keeps either this trigger or the bare trash above, never      #}
 {# both, and rewrites the two ids per clone (the partial's own header     #}
 {# requires that of any caller that clones it).                           #}

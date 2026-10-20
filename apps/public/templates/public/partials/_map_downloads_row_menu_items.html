@@ -15,7 +15,9 @@ every panel. On this panel it means:
 
   a REGION on this device      Sync now and Remove → this menu.
   a CUSTOM AREA or DROP ZONE   Sync now, Rename and Remove → this menu.
-  a row NOT on this device     Download alone → the bare download icon.
+  a row NOT on this device     Download here and Forget → this menu
+                               (SNOW-1135); Forget alone → the bare icon
+                               when the row records too little to download.
   an ORPHAN                    Remove alone → the bare trash.
 
 SNOW-951 replaced the two CONDITIONAL items this menu used to carry —
@@ -33,9 +35,12 @@ The consequence is that a REGION row on this device is always a menu now
 — Sync now and Remove are two actions, and design-system rule 5 collapses
 two into a "…". That is the rule applying rather than an exception to it.
 
-ORDER: Sync now → Rename → Remove. The restorative action leads, the
-rename follows, and the destructive item is last as it is on every list
-in the app.
+ORDER: Sync now → Rename → Remove for a row on this device; Download here
+→ Forget for a row that is not (SNOW-1135). The constructive or
+restorative action leads, the rename follows, and the destructive item is
+last as it is on every list in the app. The two sets never share a row,
+so buildRow removes whichever does not apply. Remove means this device
+only; Forget takes the area off the account.
 
 The buttons are value-less here, exactly as the inline controls were: this
 partial is rendered ONCE inside the row `<template>`, and
@@ -48,6 +53,19 @@ rename click without knowing which panel it is on) and
 Remove last, as everywhere else: the destructive item is in the same place
 wherever a user meets it.
 {% endcomment %}
+{# SNOW-1135: an account-only row's constructive action, first. #}
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-downloads-here
+        aria-label="{% trans 'Download here' %}"
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_download_arrow.html" only %}
+        {% trans "Download here" %}
+    </button>
+</li>
 {# The cycle glyph rather than the spanner: this is "bring it up to date", #}
 {# which is what it does on every row — the repair half only runs on the   #}
 {# rows that need one, and a spanner on a healthy area would promise a     #}
@@ -87,5 +105,19 @@ wherever a user meets it.
     >
         {% include "includes/_icon_trash.html" only %}
         {% trans "Remove" %}
+    </button>
+</li>
+{# SNOW-1135: an account-only row's destructive action, last. Takes the  #}
+{# area off the account; another device still holding it adds it back. #}
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-downloads-forget
+        aria-label="{% trans 'Forget' %}"
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text"
+    >
+        {% include "includes/_icon_trash.html" only %}
+        {% trans "Forget" %}
     </button>
 </li>
