@@ -47,6 +47,31 @@ interface Window {
     formatDay(value: unknown, options?: { locale?: string }): string;
     formatStamp(value: unknown, options?: { now?: Date; locale?: string }): string;
   };
+  /** static/js/offline_ready_core.js — "Get ready for offline": drain, then every area in turn (SNOW-1141). */
+  pwaOfflineReadyCore: {
+    DEFAULT_DRAIN_TIMEOUT_MS: number;
+    run(deps: {
+      drain(): unknown;
+      waiting(): Promise<number> | number;
+      areas: string[];
+      syncOne(id: string): Promise<'ready' | 'partial' | 'absent'> | 'ready' | 'partial' | 'absent';
+      onStep?(step: any): void;
+      drainTimeoutMs?: number;
+      wait?(ms: number): Promise<void>;
+    }): Promise<{
+      total: number;
+      ready: number;
+      waiting: number;
+      outcomes: Array<{ id: string; outcome: 'ready' | 'partial' | 'absent' }>;
+    }>;
+    areaOutcome(result: { tiles?: string; content?: boolean } | null | undefined): 'ready' | 'partial' | 'absent';
+    waitingCount(rows: unknown): number;
+    describe(
+      result: { total: number; ready: number; waiting: number },
+      strings: Record<string, string>,
+    ): { summary: string; queue: string };
+    progressText(step: any, strings: Record<string, string>): string;
+  };
   /** static/js/downloads_restore_queue_core.js — the "Download all" queue's order and stop rules (SNOW-1140). */
   pwaDownloadsRestoreQueueCore: {
     DEFAULT_TIMEOUT_MS: number;
