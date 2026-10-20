@@ -1,0 +1,198 @@
+{% load i18n card_tags snowdesk_time %}
+{% comment %}
+public/partials/_resort_bulletin_card.html — the resort page's "Regional
+avalanche bulletin" section (SNOW-1156): an eyebrow and ONE compact card
+summarising today's danger, which leads into the region's full bulletin.
+
+The resort page is a landing page (docs/decisions/a-resort-page-answers-the-
+query.md): it answers "what is the danger today" in one card and defers
+every detail — the problem cards, their prose, the snowpack — to the
+bulletin. Drawn to Hugo's approved board (BulletinInSeason /
+BulletinOffSeason). Two states, driven by ``panel``:
+
+  * Rated (``panel`` set):
+      1. A band in the level's EAWS tint and text tokens (``.danger-band``)
+         holding the level's ``.danger-tile`` (number + subdivision, outlined
+         so the low and moderate fills keep an edge on their tint), the level
+         word and "{region} region".
+      2. One row with the first (dominant) problem card's aspect rose and
+         elevation pictogram — the filters ``_rating_block.html`` draws them
+         with. Omitted when there is no problem, or it has neither value.
+      3. The bulletin headline (``public/_bulletin_headline.html``, empty
+         ``headline`` renders nothing), then the mono attribution line
+         "{provider} · updated HH:MM" (the time omitted when unknown, the
+         whole line when both are), then "Read the full {region} bulletin →".
+  * No bulletin (``panel`` None): a neutral band with an outlined "–" tile,
+    "No bulletin today" and the region; the season note naming the resort's
+    typical season (a sentence without dates when either end is unset); and
+    "Latest {region} bulletin →". No attribution line.
+
+The card is ``[data-testid="resort-danger"]`` and holds exactly ONE ``<a>`` —
+tests/e2e/test_resort_page.py clicks ``[data-testid="resort-danger"] a``.
+Nothing inside may carry a link of its own, which is why the problem prose
+(whose markup can) is not drawn here.
+
+Context:
+  panel                 — dict from views._build_panel_context (danger_key,
+                          danger_number, danger_subdivision, danger_label,
+                          problem_cards), or None.
+  headline              — str: the bulletin page's headline; "" without a
+                          panel.
+  region                — MicroRegion (or anything with ``name``).
+  resort                — Resort (or anything with typical_season_open /
+                          typical_season_close, "MM-DD" strings).
+  bulletin_url          — str: the region's evergreen bulletin URL, or
+                          without a panel the dated page of its latest
+                          bulletin (views._resort_bulletin_url).
+  target_date           — datetime.date: today, named in the eyebrow.
+  bulletin_provider     — str: "SLF" / "ALBINA" / "Météo-France", or "".
+  bulletin_updated_time — str: "HH:MM" in Central European time, or "".
+  class_extra           — optional classes on the outer ``<section>``.
+{% endcomment %}
+<section
+    {% if class_extra %}class="{{ class_extra }}"{% endif %}
+    aria-labelledby="resort-bulletin-heading"
+    data-testid="resort-bulletin"
+>
+    {% blocktrans with day=target_date|date:"l j F" trimmed asvar bulletin_eyebrow %}
+        Regional avalanche bulletin • {{ day }}
+    {% endblocktrans %}
+    {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-bulletin-heading" text=bulletin_eyebrow class_extra="mb-3" only %}
+    <div class="overflow-hidden rounded-card border border-border bg-card" data-testid="resort-danger">
+        {% if panel %}
+            <div
+                class="danger-band border-b border-border px-4 py-3"
+                data-level="{{ panel.danger_key }}"
+                data-testid="resort-bulletin-band"
+            >
+                <div class="flex items-center gap-3">
+                    {% blocktrans with level=panel.danger_label trimmed asvar tile_aria %}
+                        Danger level {{ level }}
+                    {% endblocktrans %}
+                    <span
+                        class="danger-tile danger-tile--outlined text-label"
+                        data-level="{{ panel.danger_key }}"
+                        data-testid="resort-danger-chip"
+                        role="img"
+                        aria-label="{{ tile_aria }}"
+                    >{{ panel.danger_number }}{{ panel.danger_subdivision }}</span>
+                    <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span
+                            class="text-label font-semibold leading-tight"
+                            data-testid="resort-danger-label"
+                        >{{ panel.danger_label }}</span>
+                        <span class="text-xs">
+                            {% blocktrans with region=region.name trimmed %}
+                                {{ region }} region
+                            {% endblocktrans %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            {% with problem=panel.problem_cards.0 %}
+                {% if problem.aspects or problem.elevation %}
+                    <div
+                        class="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5"
+                        data-testid="resort-bulletin-scope"
+                        {% if problem.core_zone_text %}role="group" aria-label="{{ problem.core_zone_text }}"{% endif %}
+                    >
+                        {% if problem.aspects %}
+                            <div class="flex shrink-0 items-center gap-1.5">
+                                {# aspect_rose returns a fixed SVG built from numeric values; safe to render unescaped. #}
+                                <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
+                                {{ problem.aspects|aspect_rose:32|safe }}
+                                <span class="text-xs text-text-2">
+                                    {% if problem.aspects|length == 8 %}
+                                        {% trans "All aspects" %}
+                                    {% else %}
+                                        {{ problem.aspects|join:", " }}
+                                    {% endif %}
+                                </span>
+                            </div>
+                        {% endif %}
+                        {% if problem.elevation %}
+                            <div class="flex shrink-0 items-center gap-1.5">
+                                {# elevation_icon returns a fixed SVG built from numeric values; safe to render unescaped. #}
+                                <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
+                                {{ problem.elevation|elevation_icon:20|safe }}
+                                <span class="text-xs text-text-2">{{ problem.elevation.display }}</span>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+            <div class="p-4">
+                {# Its own bottom margin spaces it from the lines below. #}
+                {% include "public/_bulletin_headline.html" %}
+                {% if bulletin_provider or bulletin_updated_time %}
+                    <p class="mb-3 font-mono text-xs text-text-3" data-testid="resort-bulletin-attribution">
+                        {% if bulletin_provider and bulletin_updated_time %}
+                            {% blocktrans with provider=bulletin_provider time=bulletin_updated_time trimmed %}
+                                {{ provider }} · updated {{ time }}
+                            {% endblocktrans %}
+                        {% elif bulletin_provider %}
+                            {{ bulletin_provider }}
+                        {% else %}
+                            {% blocktrans with time=bulletin_updated_time trimmed %}
+                                Updated {{ time }}
+                            {% endblocktrans %}
+                        {% endif %}
+                    </p>
+                {% endif %}
+                <a
+                    href="{{ bulletin_url }}"
+                    class="inline-block text-sm text-accent hover:text-accent-hover"
+                    data-testid="resort-danger-link"
+                >
+                    {% blocktrans with region=region.name trimmed %}
+                        Read the full {{ region }} bulletin →
+                    {% endblocktrans %}
+                </a>
+            </div>
+        {% else %}
+            <div class="border-b border-border bg-tag px-4 py-3 text-text-2" data-testid="resort-bulletin-band">
+                <div class="flex items-center gap-3">
+                    <span
+                        class="danger-tile border border-border-strong text-label text-text-3"
+                        role="img"
+                        aria-label='{% trans "No danger rating" %}'
+                    >–</span>
+                    <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span
+                            class="text-label font-semibold leading-tight text-text-1"
+                            data-testid="resort-no-rating"
+                        >{% trans "No bulletin today" %}</span>
+                        <span class="text-xs">
+                            {% blocktrans with region=region.name trimmed %}
+                                {{ region }} region
+                            {% endblocktrans %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex flex-col gap-3 p-4">
+                <p class="text-sm leading-prose text-text-2" data-testid="resort-bulletin-season-note">
+                    {% with s_open=resort.typical_season_open|month_day s_close=resort.typical_season_close|month_day %}
+                        {% if s_open and s_close %}
+                            {% blocktrans with open=s_open|date:"j F" close=s_close|date:"j F" trimmed %}
+                                Bulletins for this region are issued through the winter season, which usually runs from
+                                {{ open }} to {{ close }}.
+                            {% endblocktrans %}
+                        {% else %}
+                            {% trans "Bulletins for this region are issued through the winter season." %}
+                        {% endif %}
+                    {% endwith %}
+                </p>
+                <a
+                    href="{{ bulletin_url }}"
+                    class="self-start text-sm text-accent hover:text-accent-hover"
+                    data-testid="resort-danger-link"
+                >
+                    {% blocktrans with region=region.name trimmed %}
+                        Latest {{ region }} bulletin →
+                    {% endblocktrans %}
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</section>

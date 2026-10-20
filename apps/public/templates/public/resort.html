@@ -11,8 +11,10 @@ answers-the-query.md, amending SNOW-807's docs/decisions/two-documents-and-
 a-map.md for resort pages). People search "Verbier avalanche", not
 "CH-4115", and a page that only links onward cannot rank for that — so
 today's danger is shown here. It is the bulletin page's own render model,
-selected the same way and rendered through the same partials, read-only:
-the bulletin stays the one full document, and this page holds no copy.
+selected the same way, read-only: the bulletin stays the one full document,
+and this page holds no copy. SNOW-1156 made it a LANDING page: today's
+danger is one compact card that leads into the bulletin, and the problem
+cards and SNOW-1143's band-vs-lift-range lines are gone.
 
 FRAME (SNOW-1155, to Hugo's approved design board). A header, then two
 columns on a desktop (``lg``): the sections below in a main column, and the
@@ -40,36 +42,32 @@ Header:
     flies the camera to the pin). SNOW-807's "Reports near here on the
     map" link is gone; this one replaces it.
 
-Main column, top to bottom (each section's own design is a later ticket —
-SNOW-1155 moved them, it did not redraw them):
-  1. Today's danger (SNOW-1124). ``[data-testid="resort-danger"]`` is ONE
-     link to the parent region's evergreen bulletin, carrying today's
-     ``.danger-tile`` and level word (or the no-bulletin note) and the
-     "Full bulletin →" label, followed by the bulletin headline
-     (``public/_bulletin_headline.html``). tests/e2e/test_resort_page.py
-     clicks ``[data-testid="resort-danger"] a`` — keep exactly one. Below
-     it, OUTSIDE that block because their prose and field notes can carry
-     links, the avalanche problem cards (``public/_rating_block.html``,
-     the bulletin page's own loop) with aspects, elevations and the full
-     problem prose. With no bulletin covering today only the note and the
-     link render — never a past bulletin as today's. SNOW-1143: under each
-     card, one line comparing its elevation band with the resort's lift
-     range (``[data-testid="resort-problem-band"]``), and one disclaimer
-     under the heading (``resort-problem-band-note``) only when a line
-     renders — neither when the resort lacks a base or top elevation.
-  2. The season strip (SNOW-1126), described where it renders.
-  3. Forecasts — the resort's pin Location first (SNOW-1144), then its
-     curated locations, each a link to its own weather page
-     (``/weather/<short_id>/``), with the role and elevation that tell
-     village from summit. SNOW-761 drew one block per
-     location, SNOW-783 trimmed it to the day and SNOW-807 removed the
-     rest; SNOW-1125 puts today's one-day row back under each link in the
-     brief form of ``includes/_weather_panel.html`` (icon, condition,
-     high/low, snowfall, wind — no freezing level, no sun times). A
-     location with no row today renders its link alone. Every pin writer
-     goes through ``set_resort_pin``, so a pinned resort always has at least
-     its pin here; only a resort with no pin and no curated locations
-     renders no section at all.
+Main column — the order follows the season (SNOW-1156). In season (``panel``
+set: a bulletin covers today) the bulletin card, then the forecasts, then
+the season strip; out of season the forecasts, then the bulletin card, then
+the season strip. The card is one include rendered in one of two places,
+and one ``gap-12`` spaces whichever order the sections take.
+  * Regional avalanche bulletin (SNOW-1156) —
+    ``public/partials/_resort_bulletin_card.html``, which documents its two
+    states: the level band, the first problem's aspects and elevation, the
+    headline, "{provider} · updated HH:MM" and "Read the full {region}
+    bulletin →"; or "No bulletin today", the resort's typical season and
+    "Latest {region} bulletin →". Never a past bulletin as today's. The
+    card is ``[data-testid="resort-danger"]`` and holds exactly one
+    ``<a>`` — tests/e2e/test_resort_page.py clicks it.
+  * Forecasts — the resort's pin Location first (SNOW-1144), then its
+    curated locations, each a link to its own weather page
+    (``/weather/<short_id>/``), with the role and elevation that tell
+    village from summit. SNOW-761 drew one block per
+    location, SNOW-783 trimmed it to the day and SNOW-807 removed the
+    rest; SNOW-1125 puts today's one-day row back under each link in the
+    brief form of ``includes/_weather_panel.html`` (icon, condition,
+    high/low, snowfall, wind — no freezing level, no sun times). A
+    location with no row today renders its link alone. Every pin writer
+    goes through ``set_resort_pin``, so a pinned resort always has at least
+    its pin here; only a resort with no pin and no curated locations
+    renders no section at all.
+  * The season strip (SNOW-1126), described where it renders.
 
 Sidebar: "About this resort" (SNOW-695, redrawn by SNOW-1155) via
 ``public/partials/_resort_facts.html`` — its own eyebrow above a card
@@ -92,10 +90,10 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    when no bulletin covers today.
   headline                      — str: the bulletin page's headline for the
                                    same render model; "" without a panel.
-  problem_rows                  — list of {"card", "relation_text"}: each of
-                                   panel.problem_cards with its band-vs-lift-
-                                   range line, or None (SNOW-1143).
-  problem_band_note             — bool: any row carries a line.
+  bulletin_provider             — str: "SLF" / "ALBINA" / "Météo-France", or
+                                   "" (views._resort_bulletin_attribution).
+  bulletin_updated_time         — str: the bulletin's publication time,
+                                   "HH:MM" Central European time, or "".
   target_date                   — datetime.date: today.
   bulletin_url                  — str: the region's evergreen bulletin URL.
   favourited                    — bool.
@@ -221,68 +219,50 @@ Context expected (built by ``apps.public.views.resort_detail``):
         </header>
 
         <div class="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
-            <div class="min-w-0 lg:flex-1">
-                {# SNOW-1122: the target search terms in the body, not only in the   #}
-                {# meta tags — people search "{resort} avalanche" / "conditions".     #}
-                {% translate "Avalanche danger and mountain conditions" as conditions_heading_label %}
-                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-conditions-heading" text=conditions_heading_label class_extra="mb-2" only %}
-                {# SNOW-807: the whole danger area is ONE link to the bulletin —     #}
-                {# keep exactly one <a> inside [data-testid="resort-danger"].         #}
-                {# SNOW-1124: the tile reads the bulletin page's panel, not a copy.   #}
-                <div class="mb-6" data-testid="resort-danger">
-                    <a
-                        href="{{ bulletin_url }}"
-                        class="hover-affordance flex flex-wrap items-center gap-4 rounded-card border border-border p-4"
-                        data-testid="resort-danger-link"
-                    >
-                        {% if panel %}
-                            <span
-                                class="danger-tile"
-                                data-level="{{ panel.danger_key }}"
-                                data-testid="resort-danger-chip"
-                            >{{ panel.danger_number }}{{ panel.danger_subdivision }}</span>
-                            <span
-                                class="text-sm text-text-2"
-                                data-testid="resort-danger-label"
-                            >{{ panel.danger_label }}</span>
-                        {% else %}
-                            <span class="text-sm text-text-3" data-testid="resort-no-rating">
-                                {% blocktrans with d=target_date|date:"j M Y" trimmed %}No bulletin available for
-                                    {{ d }}{% endblocktrans %}
-                            </span>
-                        {% endif %}
-                        <span class="text-sm font-medium text-text-1 underline">{% trans "Full bulletin →" %}</span>
-                    </a>
-                    {% if panel %}
-                        <div class="mt-4">
-                            {% include "public/_bulletin_headline.html" %}
-                        </div>
-                    {% endif %}
-                </div>
+            {# SNOW-1156: one gap spaces the sections, whichever order they take. #}
+            <div class="flex min-w-0 flex-col gap-12 lg:flex-1">
+                {# SNOW-1156: in season (a bulletin covers today) the bulletin card  #}
+                {# leads; out of season the forecasts lead and the card follows.    #}
+                {# The card is one include, rendered in one of two places.          #}
+                {% if panel %}
+                    {% include "public/partials/_resort_bulletin_card.html" %}
+                {% endif %}
 
-                {# SNOW-1124: the bulletin page's own problem cards, outside the       #}
-                {# one-link block above — their prose and field notes may hold links. #}
-                {% if panel.problem_cards %}
-                    <section class="mb-6" aria-labelledby="resort-problems-heading" data-testid="resort-problems">
-                        {% translate "Avalanche Problems" as avalanche_problems_label %}
-                        {% include "includes/_eyebrow.html" with tag="h3" heading_id="resort-problems-heading" text=avalanche_problems_label class_extra="mb-3" only %}
-                        {% if problem_band_note %}
-                            <p class="-mt-1 mb-3 text-caption text-text-2" data-testid="resort-problem-band-note">
-                                {% blocktrans with resort=resort.name base=resort.base_elevation_m top=resort.top_elevation_m trimmed %}
-                                    Compared with {{ resort }}'s lift range ({{ base }}–{{ top }} m). Off-piste
-                                    terrain may differ.
-                                {% endblocktrans %}
-                            </p>
-                        {% endif %}
-                        {% for row in problem_rows %}
-                            {% include "public/_rating_block.html" with card=row.card %}
-                            {% if row.relation_text %}
-                                <p class="-mt-2 mb-4 text-caption text-text-2" data-testid="resort-problem-band">
-                                    {{ row.relation_text }}
-                                </p>
-                            {% endif %}
-                        {% endfor %}
+                {# ── Forecasts: the resort's curated locations, each a link (SNOW-807) ── #}
+                {% if locations %}
+                    <section aria-labelledby="resort-locations-heading" data-testid="resort-locations">
+                        {% translate "Forecasts" as locations_heading_label %}
+                        {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-locations-heading" text=locations_heading_label class_extra="mb-2" only %}
+                        <ul class="flex flex-col gap-2 text-sm">
+                            {% for place in locations %}
+                                <li data-testid="{{ place.testid }}">
+                                    <a
+                                        class="hover-affordance text-text-1 underline"
+                                        href="{{ place.url }}"
+                                        data-testid="{{ place.testid }}-link"
+                                    >{{ place.label }}</a>
+                                    <span class="text-text-3">
+                                        <span aria-hidden="true">
+                                            &middot;
+                                        </span>{{ place.role_label }}{% if place.elevation_m is not None %}<span
+                                                aria-hidden="true"
+                                            >
+                                                &middot;
+                                            </span>{{ place.elevation_m|floatformat:0 }} m{% endif %}
+                                    </span>
+                                    {% if place.weather_display %}
+                                        <div class="mt-1">
+                                            {% include "includes/_weather_panel.html" with weather_display=place.weather_display testid_prefix=place.testid|add:"-weather" location_label="" brief=True only %}
+                                        </div>
+                                    {% endif %}
+                                </li>
+                            {% endfor %}
+                        </ul>
                     </section>
+                {% endif %}
+
+                {% if not panel %}
+                    {% include "public/partials/_resort_bulletin_card.html" %}
                 {% endif %}
 
                 {% comment %}
@@ -295,10 +275,10 @@ Context expected (built by ``apps.public.views.resort_detail``):
             The text summary is both the accessible equivalent of the cells
             and the indexable content. The grid is the bulletin page's own
             (_season_calendar.html) with inert=True: no cell links to its
-            day, the danger area above is the page's one bulletin link.
+            day, the bulletin card is the page's one bulletin link.
                 {% endcomment %}
                 {% if season_summary %}
-                    <section class="mb-6" aria-labelledby="resort-season-heading" data-testid="resort-season">
+                    <section aria-labelledby="resort-season-heading" data-testid="resort-season">
                         {% translate "Danger through the season" as season_heading_label %}
                         {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-season-heading" text=season_heading_label class_extra="mb-2" only %}
                         <p class="mb-2 text-sm text-text-2" data-testid="resort-season-summary">
@@ -327,39 +307,6 @@ Context expected (built by ``apps.public.views.resort_detail``):
                         <div class="overflow-x-auto">
                             {% include "public/partials/_season_calendar.html" with season_calendar=season_strip inert=True %}
                         </div>
-                    </section>
-                {% endif %}
-
-                {# ── Forecasts: the resort's curated locations, each a link (SNOW-807) ── #}
-                {% if locations %}
-                    <section class="mt-6" aria-labelledby="resort-locations-heading" data-testid="resort-locations">
-                        {% translate "Forecasts" as locations_heading_label %}
-                        {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-locations-heading" text=locations_heading_label class_extra="mb-2" only %}
-                        <ul class="flex flex-col gap-2 text-sm">
-                            {% for place in locations %}
-                                <li data-testid="{{ place.testid }}">
-                                    <a
-                                        class="hover-affordance text-text-1 underline"
-                                        href="{{ place.url }}"
-                                        data-testid="{{ place.testid }}-link"
-                                    >{{ place.label }}</a>
-                                    <span class="text-text-3">
-                                        <span aria-hidden="true">
-                                            &middot;
-                                        </span>{{ place.role_label }}{% if place.elevation_m is not None %}<span
-                                                aria-hidden="true"
-                                            >
-                                                &middot;
-                                            </span>{{ place.elevation_m|floatformat:0 }} m{% endif %}
-                                    </span>
-                                    {% if place.weather_display %}
-                                        <div class="mt-1">
-                                            {% include "includes/_weather_panel.html" with weather_display=place.weather_display testid_prefix=place.testid|add:"-weather" location_label="" brief=True only %}
-                                        </div>
-                                    {% endif %}
-                                </li>
-                            {% endfor %}
-                        </ul>
                     </section>
                 {% endif %}
             </div>

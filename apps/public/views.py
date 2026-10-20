@@ -42,6 +42,7 @@ import logging
 import random
 import unicodedata
 import uuid
+import zoneinfo
 from typing import Any, cast
 
 import waffle
@@ -145,7 +146,11 @@ from .season_calendar import (
     summarise_season,
 )
 from .site_environment import PWAEnvironmentIdentity
-from .templatetags.snowdesk_time import danger_level_digit, danger_level_label
+from .templatetags.snowdesk_time import (
+    danger_level_digit,
+    danger_level_label,
+    parse_iso,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -5003,14 +5008,22 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     ``docs/decisions/a-resort-page-answers-the-query.md``, amending
     ``docs/decisions/two-documents-and-a-map.md`` for resort pages). People
     search "Verbier avalanche", not "CH-4115", so today's danger is shown
-    here: the level, the headline and the avalanche problems, read from the
-    region's bulletin through the bulletin page's own selection —
-    ``issues_for_date`` then ``_resolve_selected_issue`` (the 10:00 rule)
-    then ``_build_panel_context`` — and its headline helper. It is the same
-    render model shown read-only, never a copy, and the bulletin stays the
-    one full document: the danger area carries exactly one link to it.
-    With no bulletin covering today the page says so; it never shows a past
-    bulletin as today's.
+    here, read from the region's bulletin through the bulletin page's own
+    selection — ``issues_for_date`` then ``_resolve_selected_issue`` (the
+    10:00 rule) then ``_build_panel_context`` — and its headline helper. It
+    is the same render model shown read-only, never a copy, and the
+    bulletin stays the one full document: the danger card carries exactly
+    one link to it. With no bulletin covering today the page says so; it
+    never shows a past bulletin as today's.
+
+    SNOW-1156 made the page a landing page that leads into the bulletin:
+    today's danger is ONE compact card
+    (``public/partials/_resort_bulletin_card.html``) — the level, the region,
+    the first problem's aspects and elevation, the headline and a
+    "{provider} · updated HH:MM" line (``_resort_bulletin_attribution``) —
+    and the problem cards and SNOW-1143's band-vs-lift-range lines are
+    gone. In season (a panel today) the card leads the main column; out of
+    season the forecasts lead and the card follows.
 
     Each curated location is a link to its weather page with today's
     one-day row beside it (SNOW-1125 — the icon, high/low, snowfall and
@@ -5061,12 +5074,6 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
                 raw_render_model, compute_period_transition(raw_render_model)
             )
 
-    # SNOW-1143: each problem card paired with one line comparing its band
-    # with the resort's lift range; the disclaimer renders only with a line.
-    problem_rows = _resort_problem_rows(
-        (panel or {}).get("problem_cards") or [], resort
-    )
-
     can_favourite = False
     favourite = None
     if request.user.is_authenticated:
@@ -5081,10 +5088,10 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         # None / "" when no bulletin covers today.
         "panel": panel,
         "headline": headline,
-        "problem_rows": problem_rows,
-        "problem_band_note": any(row["relation_text"] for row in problem_rows),
+        # SNOW-1156: the card's "SLF · updated 17:00" line.
+        **_resort_bulletin_attribution(panel),
         "target_date": today,
-        "bulletin_url": region.get_absolute_url(),
+        "bulletin_url": _resort_bulletin_url(region, selected, today),
         "favourited": favourite is not None,
         "favourite_uuid": str(favourite.uuid) if favourite else "",
         "can_favourite": can_favourite,
@@ -5174,190 +5181,91 @@ def _resort_season_strip_context(
     return {"season_strip": grid, "season_summary": summarise_season(grid)}
 
 
-def _problem_band_relation(
-    elevation: ElevationBounds | None,
-    *,
-    resort_name: str,
-    base_m: int,
-    top_m: int,
-    scope_in_prose: bool = False,
-) -> str | None:
-    """Return one line saying how a problem's band sits on a resort's lifts.
+# The wall clock the resort page's bulletin card states its "updated" time
+# in (SNOW-1156). Every provider Snowdesk ingests — SLF, ALBINA (Tyrol,
+# South Tyrol, Trentino) and Météo-France — publishes for the Alps under
+# Central European Time, so one zone reads each provider's own clock: SLF's
+# evening bulletin says 17:00 here, as it does on slf.ch.
+_BULLETIN_LOCAL_TZ = zoneinfo.ZoneInfo("Europe/Zurich")
 
-    SNOW-1143. A straight numeric comparison of the problem card's
-    elevation band (``card["elevation"]``, an :class:`ElevationBounds`
-    whose ``lower`` / ``upper`` are CAAML strings — digits, ``"treeline"``
-    or empty) with the resort's lift range ``base_m``..``top_m``. It makes
-    no claim about the terrain, the piste or the off-piste — only where the
-    two numbers fall against each other.
 
-    Edge semantics (``L`` the band's lower bound, ``U`` its upper bound,
-    ``B`` the base and ``T`` the top; a bound equal to an end of the lift
-    range counts as reaching it):
+def _resort_bulletin_url(
+    region: MicroRegion,
+    selected: Bulletin | None,
+    today: datetime.date,
+) -> str:
+    """
+    Return where the resort page's bulletin card links.
 
-    * "above L" — ``L <= B`` is within the lift range; ``L >= T`` is above
-      the top lift (the band at most touches the top station); otherwise it
-      covers the upper part.
-    * "below U" — ``U >= T`` is within; ``U <= B`` is below the base;
-      otherwise it covers the lower part.
-    * "L–U" — ``U <= B`` is below the base; ``L >= T`` is above the top;
-      ``L <= B`` and ``U >= T`` is within; ``L <= B`` alone (``U`` inside)
-      covers the lower part, worded as "below U"; ``U >= T`` alone (``L``
-      inside) covers the upper part, worded as "above L"; both strictly
-      inside is "between L and U".
-    * A ``"treeline"`` bound on either side gets no verdict: the treeline
-      has no number to compare, so the line states the band and the lift
-      range side by side ("Above the treeline. Verbier's lifts run …").
-      The side follows the bound that carries the token (a lower-bound
-      treeline is "above", an upper-bound one "below"), as the card's own
-      elevation chip does.
-    * No elevation at all means the problem applies at every elevation —
-      unless the card carries its spatial scope in prose instead
-      (``scope_in_prose``: no aspects, no elevation, and prose that
-      mentions place — the card's own "See description below" state),
-      where an "all elevations" claim could contradict the text, so no
-      line is returned.
+    With a bulletin covering today, the region's evergreen URL — it shows
+    that same issue. Without one, the evergreen page would only repeat
+    "no bulletin", so the "Latest {region} bulletin" link goes to the dated
+    page of the region's most recent bulletin instead; the evergreen URL
+    remains the fallback when the region has none at all.
 
     Args:
-        elevation: The card's elevation bounds, or ``None``.
-        resort_name: The resort's display name.
-        base_m: The resort's base elevation in metres.
-        top_m: The resort's top elevation in metres.
-        scope_in_prose: The card shows "See description below" rather than
-            structured aspects or elevations.
+        region: The resort's MicroRegion.
+        selected: Today's selected issue, or None.
+        today: The page's calendar day.
 
     Returns:
-        The translated relation line, or ``None`` when no claim is made.
+        A bulletin page URL for the region.
 
     """
-    lower_raw = elevation.lower if elevation else ""
-    upper_raw = elevation.upper if elevation else ""
-
-    if not lower_raw and not upper_raw:
-        if scope_in_prose:
-            return None
-        return gettext("All elevations, including all of %(resort)s") % {
-            "resort": resort_name
-        }
-
-    treeline_lower = lower_raw.lower() == "treeline"
-    treeline_upper = upper_raw.lower() == "treeline"
-    if treeline_lower or treeline_upper:
-        params = {"resort": resort_name, "base": base_m, "top": top_m}
-        if treeline_lower:
-            return (
-                gettext("Above the treeline. %(resort)s's lifts run %(base)s–%(top)s m")
-                % params
-            )
-        return (
-            gettext("Below the treeline. %(resort)s's lifts run %(base)s–%(top)s m")
-            % params
-        )
-
-    lower = int(lower_raw) if lower_raw.isdigit() else None
-    upper = int(upper_raw) if upper_raw.isdigit() else None
-    if lower is None and upper is None:
-        # A bound the card could not read as a number: no claim to make.
-        return None
-    return _numeric_band_relation(
-        lower, upper, resort_name=resort_name, base_m=base_m, top_m=top_m
+    if selected is not None:
+        return region.get_absolute_url()
+    latest = (
+        Bulletin.objects.filter(regions=region, valid_to__date__lt=today)
+        .order_by("-valid_to")
+        .only("valid_to")
+        .first()
+    )
+    if latest is None:
+        return region.get_absolute_url()
+    return region.get_absolute_url(
+        target_date=timezone.localtime(latest.valid_to).date()
     )
 
 
-def _numeric_band_relation(
-    lower: int | None,
-    upper: int | None,
-    *,
-    resort_name: str,
-    base_m: int,
-    top_m: int,
-) -> str:
-    """Compare a numeric elevation band with a resort's lift range (SNOW-1143).
+def _resort_bulletin_attribution(panel: dict[str, Any] | None) -> dict[str, str]:
+    """Name the provider and local publication time of today's bulletin.
 
-    The numeric half of :func:`_problem_band_relation`, whose docstring
-    defines the edge semantics. At least one bound is set.
-
-    Args:
-        lower: The band's lower bound in metres, or ``None`` (open below).
-        upper: The band's upper bound in metres, or ``None`` (open above).
-        resort_name: The resort's display name.
-        base_m: The resort's base elevation in metres.
-        top_m: The resort's top elevation in metres.
-
-    Returns:
-        The translated relation line.
-
-    """
-    if upper is not None and upper <= base_m:
-        return gettext("Below %(resort)s's base (%(base)s m)") % {
-            "resort": resort_name,
-            "base": base_m,
-        }
-    if lower is not None and lower >= top_m:
-        return gettext("Above %(resort)s's top lift (%(top)s m)") % {
-            "resort": resort_name,
-            "top": top_m,
-        }
-
-    reaches_base = lower is None or lower <= base_m
-    reaches_top = upper is None or upper >= top_m
-    if reaches_base and reaches_top:
-        return gettext("Within %(resort)s's lift range") % {"resort": resort_name}
-    if reaches_top:
-        return gettext("Above %(lower)s m: covers the upper part of %(resort)s") % {
-            "lower": lower,
-            "resort": resort_name,
-        }
-    if reaches_base:
-        return gettext("Below %(upper)s m: covers the lower part of %(resort)s") % {
-            "upper": upper,
-            "resort": resort_name,
-        }
-    return gettext("Between %(lower)s and %(upper)s m: covers part of %(resort)s") % {
-        "lower": lower,
-        "upper": upper,
-        "resort": resort_name,
-    }
-
-
-def _resort_problem_rows(
-    cards: list[dict[str, Any]], resort: Resort
-) -> list[dict[str, Any]]:
-    """Pair each problem card with its band-vs-lift-range line (SNOW-1143).
-
-    The resort page renders the card through the bulletin page's own
-    ``_rating_block.html``, untouched, then the line beneath it. A resort
-    missing either elevation, or whose top is not above its base, gets no
-    lines at all — there is no range to compare with.
+    SNOW-1156: the resort page's bulletin card ends with a mono line,
+    "SLF · updated 17:00". The provider is the short display name the
+    bulletin page's Source cell uses (``BULLETIN_SOURCE_LINKS``), read from
+    the panel's render model and falling back to ``Bulletin.source``. The
+    time is the render model's ``metadata.publication_time``, falling back
+    to ``Bulletin.issued_at``, as ``HH:MM`` in Central European time
+    (``_BULLETIN_LOCAL_TZ``). It is formatted here rather than in the
+    template because the ``date`` filter would convert an aware datetime
+    back to the site's UTC.
 
     Args:
-        cards: The panel's ``problem_cards``.
-        resort: The resort whose lift range the bands are compared with.
+        panel: Today's ``_build_panel_context`` dict, or ``None``.
 
     Returns:
-        One ``{"card", "relation_text"}`` dict per card, in card order;
-        ``relation_text`` is ``None`` where no line renders.
+        ``bulletin_provider`` and ``bulletin_updated_time``, each ``""``
+        when unknown (always both ``""`` without a panel).
 
     """
-    base_m = resort.base_elevation_m
-    top_m = resort.top_elevation_m
-    rows: list[dict[str, Any]] = []
-    for card in cards:
-        relation_text: str | None = None
-        if base_m is not None and top_m is not None and base_m < top_m:
-            relation_text = _problem_band_relation(
-                card.get("elevation"),
-                resort_name=resort.name,
-                base_m=base_m,
-                top_m=top_m,
-                scope_in_prose=(
-                    not card.get("aspects")
-                    and not card.get("elevation")
-                    and bool(card.get("prose_mentions_spatial"))
-                ),
-            )
-        rows.append({"card": card, "relation_text": relation_text})
-    return rows
+    if not panel:
+        return {"bulletin_provider": "", "bulletin_updated_time": ""}
+    bulletin: Bulletin | None = panel.get("bulletin")
+    render_model: dict[str, Any] = panel.get("render_model") or {}
+    source = render_model.get("source") or (bulletin.source if bulletin else "")
+    provider = BULLETIN_SOURCE_LINKS.get(source, ("", ""))[0]
+
+    published: datetime.datetime | None = parse_iso(
+        (render_model.get("metadata") or {}).get("publication_time")
+    )
+    if published is None and bulletin is not None:
+        published = bulletin.issued_at
+    updated = (
+        published.astimezone(_BULLETIN_LOCAL_TZ).strftime("%H:%M")
+        if published is not None
+        else ""
+    )
+    return {"bulletin_provider": provider, "bulletin_updated_time": updated}
 
 
 def _resort_location_links(
