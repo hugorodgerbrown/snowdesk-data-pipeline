@@ -1,0 +1,37 @@
+{% extends "includes/_status_page.html" %}
+{% comment %}
+templates/errors/page.html — Full-site error page for 403, CSRF failure and 404 (SNOW-1151).
+
+Rendered by ``apps/public/errors.py`` with the request, so the reader keeps
+the nav, their account menu and the footer. ``page`` is an
+``apps.public.errors.ErrorPage``; the copy lives there, not here, so this
+page and the context-free ``errors/_standalone.html`` say the same thing
+for the same status.
+
+400 and 500 never render this template: see the module docstring of
+``apps/public/errors.py`` for why they must not touch context processors.
+{% endcomment %}
+{% load i18n %}
+
+{# sharing=False: an error page is not a destination. Its URL is whatever #}
+{# the reader mistyped or followed, and a link preview of it would only    #}
+{# advertise a dead end.                                                   #}
+{% block page_meta %}
+    {% blocktrans asvar page_title with heading=page.heading %}{{ heading }} — Snowdesk{% endblocktrans %}
+    {% include "includes/_page_meta.html" with title=page_title description=page.body sharing=False %}
+{% endblock page_meta %}
+
+{% block status_heading %}{{ page.heading }}{% endblock %}
+
+{% block status_body %}{{ page.body }}{% endblock %}
+
+{% block status_cta %}
+    <div class="mt-6 flex flex-col gap-2">
+        {% url 'public:map' as map_url %}
+        {% trans "Open the map" as map_label %}
+        {% include "includes/_button.html" with label=map_label href=map_url variant="primary" full_width=True %}
+        {% url 'public:home' as home_url %}
+        {% trans "Go to the homepage" as home_label %}
+        {% include "includes/_button.html" with label=home_label href=home_url variant="secondary" full_width=True %}
+    </div>
+{% endblock %}

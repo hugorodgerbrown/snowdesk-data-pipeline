@@ -6,8 +6,9 @@ Renders every design-system entry from ``apps/public/design_tokens.py`` under
 Components (rendered HTML partials); main column HTMX-swaps via the
 sidebar. Also hosts the Web Push demo (``/_push-demo/``), the SW
 shell-version page (``/_sw-version/``, SNOW-517), the icon-set
-comparison grid (``/_icon-sets/``, SNOW-791), and one route's terrain
-per segment (``/_route-terrain/<uuid>/``, SNOW-1020).
+comparison grid (``/_icon-sets/``, SNOW-791), one route's terrain
+per segment (``/_route-terrain/<uuid>/``, SNOW-1020), and the error-page
+previews (``/_errors/<kind>/``, SNOW-1151).
 
 Auth: ``staff_member_required`` only — no DEBUG gate. Every page here is
 reachable in production by any staff user, by design (everyone with
@@ -25,6 +26,7 @@ import uuid
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import (
+    Http404,
     HttpRequest,
     HttpResponse,
     HttpResponseNotFound,
@@ -36,6 +38,7 @@ from apps.accounts.push_config import VAPID_PUBLIC_KEY
 from apps.core.decorators import require_htmx
 from apps.core.sw_shell import cache_version
 from apps.public.design_tokens import LIBRARY_GROUPS, get_category
+from apps.public.errors import ERROR_PAGES, error_response
 from apps.routes.models import Route
 from apps.routes.services.terrain_detail import COLUMNS, terrain_detail
 from apps.weather.icon_sets import (
@@ -117,6 +120,33 @@ def push_demo(request: HttpRequest) -> HttpResponse:
         "_debug/push_demo.html",
         {"vapid_public_key": VAPID_PUBLIC_KEY},
     )
+
+
+@staff_member_required
+def error_preview(request: HttpRequest, kind: str) -> HttpResponse:
+    """Render one error page exactly as its handler would (SNOW-1151).
+
+    The handlers only run with ``DEBUG`` off, so a development build never
+    shows them; this route does, in every environment. The response carries
+    the error's real status and goes through the same negotiation, so an
+    ``Accept: application/json`` or ``HX-Request`` preview shows those
+    shapes too.
+
+    Args:
+        request: The staff request.
+        kind: A key of ``apps.public.errors.ERROR_PAGES`` — ``400``,
+            ``403``, ``csrf``, ``404`` or ``500``.
+
+    Returns:
+        The error response for ``kind``.
+
+    Raises:
+        Http404: ``kind`` is not a known error page.
+
+    """
+    if kind not in ERROR_PAGES:
+        raise Http404(kind)
+    return error_response(request, kind)
 
 
 @staff_member_required

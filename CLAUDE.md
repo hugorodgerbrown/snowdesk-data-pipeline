@@ -717,6 +717,8 @@ Read these when working in the relevant area:
 | Calendar and RegionDayRating | [`docs/calendar.md`](docs/calendar.md) |
 | Internationalisation | [`docs/i18n.md`](docs/i18n.md) |
 | Lighthouse CI (budgets, perf settings) | [`docs/lighthouse.md`](docs/lighthouse.md) |
+| Error pages (handler400/403/404/500, CSRF_FAILURE_VIEW, apps/public/errors.py ERROR_PAGES, JSON / HTMX / HTML negotiation, the /_errors/<kind>/ staff preview) | [`docs/error-pages.md`](docs/error-pages.md) |
+| Why the 500 and 400 pages render without context processors, request.user or the database (errors/_standalone.html, not public/base.html) | [`docs/decisions/the-500-page-renders-without-context.md`](docs/decisions/the-500-page-renders-without-context.md) |
 | Admin-managed site banners (PersistentMessage rows, apps/public/banners.py, _persistent_banners.html, the dismissal endpoint) | [`docs/site-banners.md`](docs/site-banners.md) |
 | Why /help/ illustrations are live partials rendered from apps/public/component_previews.py, not screenshots (inert wrappers, the test_help.py id assertion) | [`docs/decisions/help-illustrations-are-live-mocks.md`](docs/decisions/help-illustrations-are-live-mocks.md) |
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
