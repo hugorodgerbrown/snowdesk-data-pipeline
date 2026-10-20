@@ -36,6 +36,8 @@ Only raised errors and unmatched URLs reach these handlers.
    `htmx:responseError` (see `accounts/partials/_htmx_error_banner.html`).
 3. **HTML** for everything else.
 
+Every shape carries `Vary: Accept, HX-Request`, because one URL can return any of the three. Without it, a cache could store the JSON 404 for an API client and later serve it to a browser.
+
 ## Two kinds of HTML page
 
 - **Full site:** `templates/errors/page.html` extends `_status_page.html` and

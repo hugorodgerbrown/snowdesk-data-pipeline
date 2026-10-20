@@ -51,6 +51,7 @@ from django.http import (
 )
 from django.shortcuts import render
 from django.template.loader import render_to_string
+from django.utils.cache import patch_vary_headers
 from django.utils.functional import Promise
 from django.utils.translation import get_language, gettext_lazy as _
 from django.views.decorators.csrf import requires_csrf_token
@@ -220,12 +221,32 @@ def _standalone_response(request: HttpRequest, page: ErrorPage) -> HttpResponse:
 def error_response(request: HttpRequest, kind: str) -> HttpResponse:
     """Build the negotiated response for one error ``kind``.
 
+    Every shape carries ``Vary: Accept, HX-Request``: one URL can now answer
+    with JSON, plain text or HTML, so a cache that kept the JSON 404 for an
+    API client must not hand it to a browser asking for the same URL.
+
     Args:
         request: The request that produced the error.
         kind: A key of ``ERROR_PAGES``.
 
     Returns:
         A JSON, plain-text or HTML response carrying the error's status.
+
+    """
+    response = _negotiate(request, kind)
+    patch_vary_headers(response, ("Accept", "HX-Request"))
+    return response
+
+
+def _negotiate(request: HttpRequest, kind: str) -> HttpResponse:
+    """Pick JSON, plain text or HTML for ``kind`` — see ``error_response``.
+
+    Args:
+        request: The request that produced the error.
+        kind: A key of ``ERROR_PAGES``.
+
+    Returns:
+        The response, before any ``Vary`` header is added.
 
     """
     page = ERROR_PAGES[kind]

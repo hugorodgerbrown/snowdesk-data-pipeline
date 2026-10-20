@@ -89,6 +89,14 @@ class TestNotFound:
         assert response["Content-Type"].startswith("text/plain")
         assert response.content.decode() == "Page not found"
 
+    @pytest.mark.parametrize("headers", [{}, JSON, HTMX])
+    def test_every_shape_varies_on_accept_and_htmx(
+        self, client: Client, headers: dict[str, Any]
+    ) -> None:
+        response = client.get("/no-such-page/at-all/", **headers)
+        vary = {v.strip() for v in response["Vary"].split(",")}
+        assert {"Accept", "HX-Request"} <= vary
+
     def test_render_failure_falls_back_to_standalone(self, client: Client) -> None:
         with mock.patch.object(errors, "render", side_effect=RuntimeError):
             response = client.get("/no-such-page/at-all/")
