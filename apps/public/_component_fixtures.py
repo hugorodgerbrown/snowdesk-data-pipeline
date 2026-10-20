@@ -1124,6 +1124,22 @@ RESORT_WHY_IT_MATTERS_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
+        # SNOW-1155: the resort page header draws the curated line as its
+        # tagline, at body size. Only the curated branch reads the flag.
+        "caption": "Curated line — resort page tagline",
+        "context": {
+            "resort": SimpleNamespace(
+                name="Verbier",
+                why_it_matters=(
+                    "Home of the Freeride World Tour, lots of marked itineraries"
+                ),
+            ),
+            "is_staff": False,
+            "can_favourite": True,
+            "tagline": True,
+        },
+    },
+    {
         "caption": "Blank — staff curation hint",
         "context": {
             "resort": SimpleNamespace(name="Haldigrat", why_it_matters=""),
@@ -1150,27 +1166,49 @@ RESORT_WHY_IT_MATTERS_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
-# Resort facts block (SNOW-695) -----------------------------------------------
+# Resort facts block (SNOW-695; a definition list since SNOW-1155) ------------
 # The curated Resort columns the detail page stored but never rendered. The
 # partial reads ``resort`` directly, so — like the why-it-matters fixtures
 # above — a ``SimpleNamespace`` stand-in carries just the attributes used.
-# Three variants cover the whole contract: fully curated, partially curated
-# (including a base elevation with no top, and a season open with no close),
-# and nothing curated at all, which must render no container rather than an
-# empty one.
+# Four variants cover the whole contract: fully curated (Verbier, the design
+# board's own values, with notes as the full-width last row), fully curated
+# with no notes (the board's exact shape), partially curated (including a
+# base elevation with no top, and a season open with no close), and nothing
+# curated at all, which must render no section rather than an empty one.
+# ``class_extra`` gives each the resort page's own 320px sidebar width
+# (``lg:w-80``, the class resort.html passes).
 RESORT_FACTS_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "Fully curated",
+        "caption": "Fully curated — notes as the full-width last row",
         "solo": True,
         "context": {
+            "class_extra": "lg:w-80",
+            "resort": SimpleNamespace(
+                operator_name="Téléverbier",
+                website="https://www.verbier.ch/",
+                notes=(
+                    "Lift-served access to Mont Fort; the Vallon d'Arbi and "
+                    "Mont Gelé faces are marked itineraries, not pistes."
+                ),
+                num_lifts=34,
+                num_runs=92,
+                total_piste_km=210,
+                base_elevation_m=1500,
+                top_elevation_m=3330,
+                typical_season_open="12-01",
+                typical_season_close="04-30",
+            ),
+        },
+    },
+    {
+        "caption": "Fully curated, no notes — the design board's shape",
+        "solo": True,
+        "context": {
+            "class_extra": "lg:w-80",
             "resort": SimpleNamespace(
                 operator_name="Zermatt Bergbahnen AG",
                 website="https://www.zermatt.ch/",
-                notes=(
-                    "Lift-served access to the Theodul glacier; the "
-                    "Hohtälli and Rothorn sectors open onto committing "
-                    "north-facing terrain."
-                ),
+                notes="",
                 num_lifts=34,
                 num_runs=53,
                 total_piste_km=196.5,
@@ -1185,6 +1223,7 @@ RESORT_FACTS_VARIANTS: tuple[dict[str, Any], ...] = (
         "caption": "Partially curated — one-sided elevation and season",
         "solo": True,
         "context": {
+            "class_extra": "lg:w-80",
             "resort": SimpleNamespace(
                 operator_name="",
                 website="",
@@ -1200,7 +1239,7 @@ RESORT_FACTS_VARIANTS: tuple[dict[str, Any], ...] = (
         },
     },
     {
-        "caption": "Nothing curated — renders no container at all",
+        "caption": "Nothing curated — renders no section at all",
         "solo": True,
         "context": {
             "resort": SimpleNamespace(
