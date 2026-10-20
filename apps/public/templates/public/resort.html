@@ -194,14 +194,18 @@ Context expected (built by ``apps.public.views.resort_detail``):
             {# map leads the row (max-lg:order-first), as the board draws it. #}
             <div class="flex flex-wrap gap-3" data-testid="resort-actions">
                 {% include "favourites/partials/_resort_favourite_button.html" %}
-                <a
-                    href="{% url 'public:map' %}?resort={{ resort.slug|urlencode }}"
-                    class="{% button_classes variant='primary' size='compact' %} inline-flex min-h-11 flex-1 items-center justify-center gap-2 max-lg:order-first lg:flex-none"
-                    data-testid="resort-map-link"
-                >
-                    {% include "includes/_icon_map.html" only %}
-                    {% trans "See on the map" %}
-                </a>
+                {# Only a pinned resort is on the map feed (Resort.objects.geocoded()); #}
+                {# without a pin the deep link would land on the generic map.          #}
+                {% if resort.pin_coordinates %}
+                    <a
+                        href="{% url 'public:map' %}?resort={{ resort.slug|urlencode }}"
+                        class="{% button_classes variant='primary' size='compact' %} inline-flex min-h-11 flex-1 items-center justify-center gap-2 max-lg:order-first lg:flex-none"
+                        data-testid="resort-map-link"
+                    >
+                        {% include "includes/_icon_map.html" only %}
+                        {% trans "See on the map" %}
+                    </a>
+                {% endif %}
             </div>
         </header>
 

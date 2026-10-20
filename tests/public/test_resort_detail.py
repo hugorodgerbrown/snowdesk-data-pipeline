@@ -1346,6 +1346,15 @@ class TestResortHeader:
         assert link.group(1) == f"{reverse('public:map')}?resort={resort.slug}"
         assert "See on the map" in content
 
+    def test_see_on_the_map_is_hidden_without_a_pin(self) -> None:
+        """A resort with no pin is not on the map feed, so no map action."""
+        resort = ResortFactory.create(latitude=None, longitude=None, location=None)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert 'data-testid="resort-map-link"' not in content
+        assert "See on the map" not in content
+
     def test_the_reports_link_is_gone(self) -> None:
         """SNOW-807's "Reports near here on the map" was replaced (SNOW-1155)."""
         resort = ResortFactory.create(geocoded=True)
