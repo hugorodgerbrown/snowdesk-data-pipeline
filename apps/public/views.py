@@ -4885,7 +4885,7 @@ def _problem_band_relation(
     resort_name: str,
     base_m: int,
     top_m: int,
-    prose_mentions_spatial: bool = False,
+    scope_in_prose: bool = False,
 ) -> str | None:
     """Return one line saying how a problem's band sits on a resort's lifts.
 
@@ -4917,17 +4917,19 @@ def _problem_band_relation(
       treeline is "above", an upper-bound one "below"), as the card's own
       elevation chip does.
     * No elevation at all means the problem applies at every elevation —
-      unless the card's prose carries the spatial scope instead
-      (``prose_mentions_spatial``, the card's "See description below"
-      state), where an "all elevations" claim could contradict the text,
-      so no line is returned.
+      unless the card carries its spatial scope in prose instead
+      (``scope_in_prose``: no aspects, no elevation, and prose that
+      mentions place — the card's own "See description below" state),
+      where an "all elevations" claim could contradict the text, so no
+      line is returned.
 
     Args:
         elevation: The card's elevation bounds, or ``None``.
         resort_name: The resort's display name.
         base_m: The resort's base elevation in metres.
         top_m: The resort's top elevation in metres.
-        prose_mentions_spatial: The card's ``prose_mentions_spatial`` flag.
+        scope_in_prose: The card shows "See description below" rather than
+            structured aspects or elevations.
 
     Returns:
         The translated relation line, or ``None`` when no claim is made.
@@ -4937,7 +4939,7 @@ def _problem_band_relation(
     upper_raw = elevation.upper if elevation else ""
 
     if not lower_raw and not upper_raw:
-        if prose_mentions_spatial:
+        if scope_in_prose:
             return None
         return gettext("All elevations, including all of %(resort)s") % {
             "resort": resort_name
@@ -5053,7 +5055,11 @@ def _resort_problem_rows(
                 resort_name=resort.name,
                 base_m=base_m,
                 top_m=top_m,
-                prose_mentions_spatial=bool(card.get("prose_mentions_spatial")),
+                scope_in_prose=(
+                    not card.get("aspects")
+                    and not card.get("elevation")
+                    and bool(card.get("prose_mentions_spatial"))
+                ),
             )
         rows.append({"card": card, "relation_text": relation_text})
     return rows
