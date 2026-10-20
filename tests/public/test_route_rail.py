@@ -239,23 +239,35 @@ class TestRailTwoIsGone:
         assert "data-route-rail-window" not in rail
 
     @pytest.mark.parametrize("staff", [False, True])
-    def test_the_point_debug_readout_is_staff_only(
-        self, client: Client, staff: bool
-    ) -> None:
-        """SNOW-1099 brings the debug readout back as the phone sheet's FULL.
+    def test_the_terrain_data_is_everyones(self, client: Client, staff: bool) -> None:
+        """SNOW-1146 opens SNOW-1099's staff debug readout to every user.
 
-        Staff only, with FULL among the detents; everyone else gets peek and
-        half and no readout.
+        FULL is among everyone's detents, the data and its toggle render,
+        and the rows come from the owner-scoped routes:terrain, not the
+        staff terrain page.
         """
         client.force_login(UserFactory.create(is_staff=staff))
         rail = _rail(_home(client))
 
-        assert ("data-route-rail-debug" in rail) is staff
-        expected = "peek,half,full" if staff else "peek,half"
-        assert f'data-detents="{expected}"' in rail
+        assert 'data-detents="peek,half,full"' in rail
+        assert 'id="route-rail-terrain"' in rail
+        assert "data-route-terrain-toggle" in rail
+        assert 'aria-controls="route-rail-terrain"' in rail
+        nil = "00000000-0000-0000-0000-000000000000"
+        terrain_url = reverse("routes:terrain", kwargs={"uuid": nil})
+        assert f'data-route-terrain-url-template="{terrain_url}"' in rail
+        assert "/_route-terrain/" not in rail
+
+    def test_banking_is_left_out(self, client: Client) -> None:
+        """Banking went with the staff readout; the segment index replaced it."""
+        client.force_login(UserFactory.create())
+        rail = _rail(_home(client))
+
+        assert 'data-route-terrain-field="bank"' not in rail
+        assert 'data-route-terrain-field="sample"' in rail
 
     def test_the_staff_terrain_json_stays(self, client: Client) -> None:
-        """The server half of the debug rail is kept for later use."""
+        """The staff terrain page keeps its JSON, for scripts."""
         client.force_login(UserFactory.create(is_staff=True))
         route = RouteFactory.create()
 

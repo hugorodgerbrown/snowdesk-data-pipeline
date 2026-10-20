@@ -113,6 +113,7 @@ from apps.routes.services.shares import (
 )
 from apps.routes.services.slope_summary import summarise_record
 from apps.routes.services.slope_wire import compact_slope
+from apps.routes.services.terrain_detail import terrain_detail
 from apps.routes.services.terrain_heights import terrain_points
 
 logger = logging.getLogger(__name__)
@@ -699,6 +700,46 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
         unsafe_after=None,
     )
     return response
+
+
+@require_GET
+# Per-user data, as routes.geojson: never held by a shared cache.
+@cache_control(private=True, no_store=True)
+def route_terrain(request: HttpRequest, uuid: UUID) -> JsonResponse:
+    """Return one of the requesting user's routes' terrain rows as JSON.
+
+    SNOW-1146. Backs the route panel's terrain data, the figures behind
+    the point on the profile, which every user reveals from the point
+    header's terrain slope line. Until then the readout was staff only
+    and read the staff terrain table (``public:route_terrain``,
+    ``?format=json``), which serves any route; this serves the owner's
+    own, so the staff page stays staff only. The rows are the same
+    ``terrain_detail`` rows, one per segment by index, and carry no
+    coordinate — distances, heights and bearings only.
+
+    Not ``@require_htmx`` — a JS ``fetch()`` from static/js/route_rail.js,
+    loaded the first time the data is revealed for a route.
+
+    Args:
+        request: The incoming GET request.
+        uuid: The Route's uuid, from the URL.
+
+    Returns:
+        ``{"rows": [...]}`` (empty for a route never sampled), 403 for an
+        anonymous caller, 404 for a route the caller does not own.
+
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required"}, status=403)
+
+    try:
+        route = Route.objects.for_user(request.user).get(uuid=uuid)
+    except Route.DoesNotExist:
+        return JsonResponse({"error": "not_found"}, status=404)
+
+    return JsonResponse(
+        {"rows": terrain_detail(route.slope_samples, route.points) or []}
+    )
 
 
 # ---------------------------------------------------------------------------

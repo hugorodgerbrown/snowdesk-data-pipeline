@@ -2,7 +2,7 @@
 name: the-point-card-names-the-experience
 description: Point card Skier's track and Terrain slope lines; degree bands; climb vs descent scale (trackBand, groundBand, TRACK_BOUNDS, turnOf)
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-10-20
 ---
 
 # The point card names the experience
@@ -209,8 +209,13 @@ and every point reads more clearly as one or the other.
 
 ## Consequences
 
-- The measured angle is not on the card, only its step's band. The
-  staff terrain table (`/_route-terrain/<uuid>/`) keeps every number.
+- The measured angle is not on the card, only its step's band. Every
+  number sits one press away: the terrain slope line reveals the route
+  panel's terrain data (SNOW-1146), the measured slope angle, aspect,
+  track gradient and the rest for the segment under the point, read
+  from the same rows as the staff terrain table
+  (`/_route-terrain/<uuid>/`). The words stay the headline; the figures
+  are there for whoever asks for them.
 - The aspect on the wire is one of eight sectors (SNOW-976), so the
   45° and 135° edges carry up to 22.5° of rounding. Sending a bearing
   would sharpen the edges without changing the rule.

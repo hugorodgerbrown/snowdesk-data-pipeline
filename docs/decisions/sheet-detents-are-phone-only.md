@@ -2,7 +2,7 @@
 name: sheet-detents-are-phone-only
 description: Phone sheet detents (_overlay_sheet.html detents, data-sheet-detents, bindDetents); forms take none; sheet covers, never moves, map controls
 status: current
-last-reviewed: 2026-10-18
+last-reviewed: 2026-10-20
 ---
 
 # Sheet detents are phone-only, and forms take none
@@ -102,18 +102,22 @@ only binds it to pointer events. Without the core on the page,
   route sheet's point header), but never mid-drag. Content that must count
   toward FULL while hidden below it is hidden with `visibility`, not
   `display: none`, which has no box to measure.
-- The route sheet's FULL is staff-only (SNOW-1099): it is the point debug
-  readout. The partial declares `peek,half` for everyone else.
+- The route sheet's FULL is the terrain data (SNOW-1146; staff-only as
+  the point debug readout under SNOW-1099): every figure behind the
+  point. Every user has `peek,half,full`. A press on the point header's
+  terrain slope line raises the sheet to FULL and lowers it to HALF, so
+  FULL has a visible way in as well as the drag.
 - The route sheet's PEEK carries the profile (Hugo, 18 Oct 2026): it ends
   under the hint below the profile ("Tap or drag the profile to view
   terrain data"; hidden while a point is placed, when PEEK ends at the
   profile's foot, 19 Oct 2026), because a full-width sheet has the room and the
   profile is what a tap on a route is for. HALF adds the point header
   (unlit until a point is placed; a point placed at peek raises the sheet
-  to HALF) and FULL the staff debug readout. Its half marker reads
+  to HALF) and FULL the terrain data. Its half marker reads
   `data-sheet-half="fit"`, capped at FULL's room rather than half the
-  screen, because on a short phone the profile already fills half and a
-  non-staff sheet has no FULL to reveal a clipped header. The peek covers
+  screen, because on a short phone the profile already fills half, and
+  a clipped header would leave the terrain slope line that opens FULL out
+  of reach. The peek covers
   locate, so the whole bottom-right column is hidden under it.
 - The place sheet (SNOW-1100, resort and saved pins) stops HALF under the
   day's weather: the level is already on the peek row, so the weather is

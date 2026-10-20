@@ -4,16 +4,18 @@
  *
  * The rail binds window.MapSheet's detents on its first open, opens them
  * with the route and resets them on close. A point placed while the sheet
- * peeks raises it to half. The staff-only FULL detent is the point debug
- * readout: the terrain rows load the first time the sheet reaches FULL for
- * a route, once, and fill the readout for the segment under the point. The
- * leader line stops on the sheet's top edge rather than the panel's foot.
+ * peeks raises it to half. The FULL detent is the terrain data (SNOW-1146;
+ * a staff debug readout until then): the terrain rows load the first time
+ * the data is revealed for a route, once, and fill it for the segment
+ * under the point. A press on the point header's terrain slope line
+ * reveals it — FULL on a phone, opened in the card from sm up. The leader
+ * line stops on the sheet's top edge rather than the panel's foot.
  *
  * map_sheet.js's own binding (heights, drags, the fit) is covered in
  * test_map_sheet_detents.js; a fake stands in for it here, so this file
  * holds the rail to the controller's contract and nothing more. A file of
  * its own because the rail reads its markup once at load, and this markup
- * carries the staff hooks test_route_rail.js's does not.
+ * carries the terrain hooks test_route_rail.js's does not.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,7 +34,7 @@ document.body.innerHTML = `
   <div id="map">
     <section id="route-rail" data-route-rail hidden
              data-detents="peek,half,full" data-detent-initial="peek"
-             data-route-terrain-url-template="/_route-terrain/${NIL}/?format=json">
+             data-route-terrain-url-template="/routes/${NIL}/terrain.json">
       <div data-row-renameable data-sheet-drag>
         <h2 id="route-rail-eyebrow">Route</h2>
         <p data-route-rail-title><span data-row-label data-route-rail-name></span></p>
@@ -51,18 +53,24 @@ document.body.innerHTML = `
       <div data-sheet-peek>
         <p data-route-rail-hint>Tap or drag the profile to view terrain data</p>
       </div>
-      <div data-sheet-half></div>
-      <dl data-route-rail-debug>
-        <div data-route-rail-debug-hint>Place a point on the profile to read its figures.</div>
-        <dd data-route-rail-debug-field="sample">–</dd>
-        <dd data-route-rail-debug-field="km">–</dd>
-        <dd data-route-rail-debug-field="heights">–</dd>
-        <dd data-route-rail-debug-field="aspect">–</dd>
-        <dd data-route-rail-debug-field="angle">–</dd>
-        <dd data-route-rail-debug-field="bearing">–</dd>
-        <dd data-route-rail-debug-field="track">–</dd>
-        <dd data-route-rail-debug-field="bank">–</dd>
-        <dd data-route-rail-debug-field="fall">–</dd>
+      <div data-sheet-half>
+        <div data-route-point-card-slope>
+          <dt>Terrain slope</dt>
+          <dd><button type="button" data-route-terrain-toggle aria-expanded="false">
+            <span data-route-point-card-ground></span>
+          </button></dd>
+        </div>
+      </div>
+      <dl data-route-terrain>
+        <div data-route-terrain-hint>Place a point on the profile to read its figures.</div>
+        <dd data-route-terrain-field="sample">–</dd>
+        <dd data-route-terrain-field="km">–</dd>
+        <dd data-route-terrain-field="heights">–</dd>
+        <dd data-route-terrain-field="aspect">–</dd>
+        <dd data-route-terrain-field="angle">–</dd>
+        <dd data-route-terrain-field="bearing">–</dd>
+        <dd data-route-terrain-field="track">–</dd>
+        <dd data-route-terrain-field="fall">–</dd>
       </dl>
     </section>
   </div>
@@ -119,7 +127,7 @@ function feature(uuid = UUID) {
 }
 
 /**
- * One terrain row, as /_route-terrain/<uuid>/?format=json serves it.
+ * One terrain row, as routes:terrain serves it.
  *
  * @param {number} i
  * @param {object} [overrides]
@@ -144,7 +152,7 @@ function row(i, overrides = {}) {
 }
 
 /** @param {string} name @returns {string} The readout field's text. */
-const field = (name) => rail.querySelector(`[data-route-rail-debug-field="${name}"]`).textContent;
+const field = (name) => rail.querySelector(`[data-route-terrain-field="${name}"]`).textContent;
 
 /** Let the fetch's promise chain and the detent observer run. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -160,6 +168,7 @@ beforeEach(() => {
 
 afterEach(() => {
   window.pwaRouteRail.close();
+  rail.removeAttribute('data-detent');
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -204,7 +213,7 @@ describe('the detents', () => {
   });
 });
 
-describe('the point debug readout', () => {
+describe('the terrain data', () => {
   it('loads nothing until the sheet reaches full', async () => {
     window.pwaRouteRail.open(feature());
     rail.setAttribute('data-detent', 'half');
@@ -220,7 +229,7 @@ describe('the point debug readout', () => {
     rail.setAttribute('data-detent', 'full');
     await settle();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe(`/_route-terrain/${UUID}/?format=json`);
+    expect(fetchMock.mock.calls[0][0]).toBe(`/routes/${UUID}/terrain.json`);
   });
 
   it('loads again for the next route', async () => {
@@ -233,8 +242,8 @@ describe('the point debug readout', () => {
     rail.setAttribute('data-detent', 'full');
     await settle();
     expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
-      `/_route-terrain/${UUID}/?format=json`,
-      `/_route-terrain/${other}/?format=json`,
+      `/routes/${UUID}/terrain.json`,
+      `/routes/${other}/terrain.json`,
     ]);
   });
 
@@ -242,7 +251,7 @@ describe('the point debug readout', () => {
     window.pwaRouteRail.open(feature());
     rail.setAttribute('data-detent', 'full');
     await settle();
-    expect(rail.querySelector('[data-route-rail-debug-hint]').hidden).toBe(false);
+    expect(rail.querySelector('[data-route-terrain-hint]').hidden).toBe(false);
     expect(field('angle')).toBe('–');
   });
 
@@ -251,41 +260,26 @@ describe('the point debug readout', () => {
     rail.setAttribute('data-detent', 'full');
     await settle();
     window.pwaRouteRail.cursor().setIndex(5);
-    expect(rail.querySelector('[data-route-rail-debug-hint]').hidden).toBe(true);
+    expect(rail.querySelector('[data-route-terrain-hint]').hidden).toBe(true);
     expect(field('sample')).toBe('5 of 24');
-    expect(field('km')).toBe('0.125 km → 0.150 km');
+    expect(field('km')).toBe('0.13 → 0.15 km');
     expect(field('heights')).toBe('2822 → 2829.2 m');
-    expect(field('aspect')).toBe('308° NW');
+    expect(field('aspect')).toBe('NW · 308°');
     expect(field('angle')).toBe('20.1°');
-    expect(field('bearing')).toBe('108° E');
-    expect(field('track')).toBe('14.5° · 3..7');
-    expect(field('bank')).toBe('Falling 7.1° to skier’s left');
+    expect(field('bearing')).toBe('E · 108°');
+    expect(field('track')).toBe('14.5°');
     expect(field('fall')).toBe('160°');
   });
 
-  it('names the segments the smoothed gradient skipped, and a rejected one', async () => {
+  it('reads a rejected track gradient as a dash', async () => {
     const rows = Array.from({ length: 24 }, (_, i) => row(i));
-    rows[4] = row(4, { track_gradient_rejected: true });
-    rows[6] = row(6, { ele_to_m: null });
-    rows[5] = row(5, { track_gradient_rejected: true });
+    rows[5] = row(5, { track_gradient_deg: null, track_gradient_rejected: true });
     fetchMock.mockImplementation(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ rows }) }));
     window.pwaRouteRail.open(feature());
     rail.setAttribute('data-detent', 'full');
     await settle();
     window.pwaRouteRail.cursor().setIndex(5);
-    expect(field('track')).toBe('14.5° · 3..7 less 4, 5, 6 · rejected');
-  });
-
-  it('reads a level bank in words', async () => {
-    const rows = Array.from({ length: 24 }, (_, i) => row(i, { roll_deg: i === 2 ? 0 : 3.5 }));
-    fetchMock.mockImplementation(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ rows }) }));
-    window.pwaRouteRail.open(feature());
-    rail.setAttribute('data-detent', 'full');
-    await settle();
-    window.pwaRouteRail.cursor().setIndex(2);
-    expect(field('bank')).toBe('Level (0°)');
-    window.pwaRouteRail.cursor().setIndex(3);
-    expect(field('bank')).toBe('Falling 3.5° to skier’s right');
+    expect(field('track')).toBe('–');
   });
 
   it('keeps dashes when the rows fail to load, and retries at the next full', async () => {
@@ -310,6 +304,69 @@ describe('the point debug readout', () => {
     rail.setAttribute('data-detent', 'half');
     await settle();
     expect(rail.scrollTop).toBe(0);
+  });
+});
+
+describe('the terrain slope line reveals the data', () => {
+  const toggle = () => rail.querySelector('[data-route-terrain-toggle]');
+  const line = () => rail.querySelector('[data-route-point-card-slope]');
+
+  it('raises a phone sheet to full, and lowers it to half', async () => {
+    window.pwaRouteRail.open(feature());
+    toggle().click();
+    await settle();
+    expect(rail.getAttribute('data-detent')).toBe('full');
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    toggle().click();
+    await settle();
+    expect(rail.getAttribute('data-detent')).toBe('half');
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('takes a press on the line’s label too', () => {
+    window.pwaRouteRail.open(feature());
+    line().querySelector('dt').click();
+    expect(rail.getAttribute('data-detent')).toBe('full');
+  });
+
+  it('follows a drag to full', async () => {
+    window.pwaRouteRail.open(feature());
+    rail.setAttribute('data-detent', 'full');
+    await settle();
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('opens the data in the card at a desktop width', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    window.pwaRouteRail.open(feature());
+    toggle().click();
+    expect(rail.hasAttribute('data-route-terrain-open')).toBe(true);
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    toggle().click();
+    expect(rail.hasAttribute('data-route-terrain-open')).toBe(false);
+  });
+
+  it('opens shut for the next route', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    window.pwaRouteRail.open(feature());
+    toggle().click();
+    window.pwaRouteRail.close();
+    window.pwaRouteRail.open(feature());
+    expect(rail.hasAttribute('data-route-terrain-open')).toBe(false);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('offers nothing for a pending share, which has no rows', () => {
+    const pending = feature();
+    delete pending.properties.uuid;
+    window.pwaRouteRail.open(pending);
+    expect(rail.hasAttribute('data-route-terrain-unavailable')).toBe(true);
+    expect(toggle().disabled).toBe(true);
+    line().querySelector('dt').click();
+    expect(rail.getAttribute('data-detent')).toBe('peek');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

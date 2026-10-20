@@ -24,8 +24,17 @@ ON A PHONE THE THREE SHEET STATES ARE THREE DEPTHS of that list
 (2026-10-18): PEEK, the state a tap on a route opens, ends under the hint,
 so the profile is there from the first tap; HALF adds the point header,
 unlit until a point is placed (a point placed at peek raises the sheet to
-it); FULL, staff only, adds the point debug readout. From sm up the panel
-has no detents: the point header shows while a point is placed.
+it); FULL adds the TERRAIN DATA, every figure behind the point. From sm up
+the panel has no detents: the point header shows while a point is placed,
+and the terrain data while it is open.
+
+THE TERRAIN DATA IS EVERYONE'S, AND HIDDEN UNTIL ASKED FOR (SNOW-1146).
+It was a staff debug readout (SNOW-1099). A press on the point header's
+TERRAIN SLOPE line (`[data-route-terrain-toggle]`) reveals it: on a phone
+by raising the sheet to FULL, which a drag also reaches; from sm up by
+opening it in the card (`data-route-terrain-open`). The figures come from
+the owner's own terrain rows (routes:terrain); a pending share has no
+uuid and so no rows, and shows no toggle.
 
 Then the LANE, the elevation profile drawn as one filled shape per leg
 under one outline, with distance ticks along its foot. 400 px wide on
@@ -106,11 +115,9 @@ Context:
     data-route-delete-url-template="{{ route_delete_url_template }}"
     data-route-plan-trip-url="{% url 'trips:new' %}"
     {% if not static %}
-        data-detents="{% if request.user.is_staff %}peek,half,full{% else %}peek,half{% endif %}"
+        data-detents="peek,half,full"
         data-detent-initial="peek"
-        {% if request.user.is_staff %}
-            data-route-terrain-url-template="{% url 'public:route_terrain' route_uuid='00000000-0000-0000-0000-000000000000' %}?format=json"
-        {% endif %}
+        data-route-terrain-url-template="{% url 'routes:terrain' uuid='00000000-0000-0000-0000-000000000000' %}"
     {% endif %}
     class="{% if not static %}route-rail {% endif %}grid grid-cols-1 gap-x-4 gap-y-2 rounded-card border border-border bg-card px-4 py-3 shadow-glass"
 >
@@ -220,57 +227,56 @@ Context:
         {% include "includes/_route_point_card.html" with static=False %}
     </div>
     {% comment %}
-    SNOW-1099: the phone sheet's FULL detent, staff only — the point debug
-    readout rail two carried until SNOW-1065: every figure behind the point
-    on the profile, one segment of the staff terrain table
-    (public:route_terrain, `?format=json`), which static/js/route_rail.js
-    fetches the first time the sheet reaches full and repaints as the point
-    moves. Never shown from sm up, where the panel has no detents. English
-    only, like the terrain page beside it: a staff surface, not translated.
+    The TERRAIN DATA (SNOW-1146; the staff point debug readout of SNOW-1099
+    until then): every figure behind the point on the profile, one
+    segment of the route's terrain rows (routes:terrain), which
+    static/js/route_rail.js fetches the first time the data is revealed for
+    a route and repaints as the point moves. FULL's alone on a phone; from
+    sm up it shows while `data-route-terrain-open` is set
+    (static/css/map.css). Banking, which the staff readout carried, is left
+    out: no reader without the explainer can use it; the segment's index
+    sits in its place.
     {% endcomment %}
-    {% if request.user.is_staff and not static %}
+    {% if not static %}
         <dl
-            data-route-rail-debug
-            class="sm:hidden grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border pt-2 font-mono text-meta text-text-2"
+            id="route-rail-terrain"
+            data-route-terrain
+            class="grid grid-cols-2 gap-x-4 gap-y-1 border-t border-border pt-2 font-mono text-meta text-text-2"
         >
-            <div data-route-rail-debug-hint class="col-span-full text-text-3">
-                Place a point on the profile to read its figures.
+            <div data-route-terrain-hint class="col-span-full text-text-3">
+                {% trans "Place a point on the profile to read its figures." %}
             </div>
             <div class="min-w-0">
-                <dt class="text-text-3">Segment</dt>
-                <dd data-route-rail-debug-field="sample" class="break-words text-text-1">–</dd>
+                <dt class="text-text-3">{% trans "Along route" context "route terrain data" %}</dt>
+                <dd data-route-terrain-field="km" class="break-words text-text-1">–</dd>
             </div>
             <div class="min-w-0">
-                <dt class="text-text-3">Along route</dt>
-                <dd data-route-rail-debug-field="km" class="break-words text-text-1">–</dd>
+                <dt class="text-text-3">{% trans "Elevation" context "route terrain data" %}</dt>
+                <dd data-route-terrain-field="heights" class="break-words text-text-1">–</dd>
             </div>
             <div class="min-w-0">
-                <dt class="text-text-3">Elevation</dt>
-                <dd data-route-rail-debug-field="heights" class="break-words text-text-1">–</dd>
+                <dt class="text-text-3">{% trans "Slope aspect" context "route terrain data" %}</dt>
+                <dd data-route-terrain-field="aspect" class="break-words text-text-1">–</dd>
             </div>
             <div class="min-w-0">
-                <dt class="text-text-3">Slope aspect</dt>
-                <dd data-route-rail-debug-field="aspect" class="break-words text-text-1">–</dd>
+                <dt class="text-text-3">{% trans "Slope angle" context "route terrain data" %}</dt>
+                <dd data-route-terrain-field="angle" class="break-words text-text-1">–</dd>
             </div>
             <div class="min-w-0">
-                <dt class="text-text-3">Slope angle</dt>
-                <dd data-route-rail-debug-field="angle" class="break-words text-text-1">–</dd>
+                <dt class="text-text-3">{% trans "Track direction" context "route terrain data" %}</dt>
+                <dd data-route-terrain-field="bearing" class="break-words text-text-1">–</dd>
             </div>
             <div class="min-w-0">
-                <dt class="text-text-3">Track direction</dt>
-                <dd data-route-rail-debug-field="bearing" class="break-words text-text-1">–</dd>
+                <dt class="text-text-3">{% trans "Track gradient" context "route terrain data" %}</dt>
+                <dd data-route-terrain-field="track" class="break-words text-text-1">–</dd>
             </div>
             <div class="min-w-0">
-                <dt class="text-text-3">Track angle (smoothed)</dt>
-                <dd data-route-rail-debug-field="track" class="break-words text-text-1">–</dd>
+                <dt class="text-text-3">{% trans "Segment" context "route terrain data" %}</dt>
+                <dd data-route-terrain-field="sample" class="break-words text-text-1">–</dd>
             </div>
             <div class="min-w-0">
-                <dt class="text-text-3">Banking</dt>
-                <dd data-route-rail-debug-field="bank" class="break-words text-text-1">–</dd>
-            </div>
-            <div class="min-w-0">
-                <dt class="text-text-3">Track to fall line</dt>
-                <dd data-route-rail-debug-field="fall" class="break-words text-text-1">–</dd>
+                <dt class="text-text-3">{% trans "Off fall line" context "route terrain data" %}</dt>
+                <dd data-route-terrain-field="fall" class="break-words text-text-1">–</dd>
             </div>
         </dl>
     {% endif %}
@@ -314,5 +320,18 @@ Context:
         <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
         <span data-string="share-copied">{% trans "Link copied." %}</span>
         <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
+        {# SNOW-1146: the terrain data's figures. #}
+        <span data-string="terrain-of">{% blocktrans %}%(index)s of %(count)s{% endblocktrans %}</span>
+        <span data-string="terrain-span">{% blocktrans %}%(from)s → %(to)s{% endblocktrans %}</span>
+        <span data-string="terrain-deg">{% blocktrans %}%(value)s°{% endblocktrans %}</span>
+        <span data-string="terrain-bearing">{% blocktrans %}%(compass)s · %(value)s°{% endblocktrans %}</span>
+        <span data-string="compass-0">{% trans "N" context "compass point" %}</span>
+        <span data-string="compass-1">{% trans "NE" context "compass point" %}</span>
+        <span data-string="compass-2">{% trans "E" context "compass point" %}</span>
+        <span data-string="compass-3">{% trans "SE" context "compass point" %}</span>
+        <span data-string="compass-4">{% trans "S" context "compass point" %}</span>
+        <span data-string="compass-5">{% trans "SW" context "compass point" %}</span>
+        <span data-string="compass-6">{% trans "W" context "compass point" %}</span>
+        <span data-string="compass-7">{% trans "NW" context "compass point" %}</span>
     </template>
 </section>

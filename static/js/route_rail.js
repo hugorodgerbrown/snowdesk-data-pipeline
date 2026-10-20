@@ -100,14 +100,16 @@
  * each detent reveals one more layer (2026-10-18): PEEK, where a tap on a
  * route opens it, is the header, the profile and the hint
  * (`data-sheet-peek`); HALF adds the point header (`data-sheet-half`); and
- * FULL — staff only, declared by the partial — is the point debug readout
- * (`[data-route-rail-debug]`): the staff terrain table's figures for the
- * segment under the point, fetched from /_route-terrain/<uuid>/?format=json
- * the first time the sheet reaches FULL for a route, never before. A point
+ * FULL is the terrain data (`[data-route-terrain]`, SNOW-1146; a staff
+ * debug readout until then): the route's terrain rows for the segment
+ * under the point, fetched from routes:terrain the first time the data is
+ * revealed for a route, never before. A press on the point header's
+ * TERRAIN SLOPE line raises the sheet to FULL, or lowers it to HALF; from
+ * `sm` up the same press opens the data in the card. A point
  * placed while the sheet peeks raises it to HALF. The sheet is below the
  * map's dot, so the leader line stops on its top edge (`isSheet`), and
  * map.js pads the camera's foot rather than its head. At `sm` and above
- * none of this applies.
+ * there are no detents.
  *
  * PINNED TOP-LEFT (SNOW-1068). While open, `#map` carries
  * `data-route-rail-open`, which static/css/map.css reads to withdraw the
@@ -168,6 +170,18 @@
     'rename-failed': "That name couldn't be saved. Try again.",
     'share-copied': 'Link copied.',
     'share-failed': "That link couldn't be created. Try again.",
+    'terrain-of': '%(index)s of %(count)s',
+    'terrain-span': '%(from)s → %(to)s',
+    'terrain-deg': '%(value)s°',
+    'terrain-bearing': '%(compass)s · %(value)s°',
+    'compass-0': 'N',
+    'compass-1': 'NE',
+    'compass-2': 'E',
+    'compass-3': 'SE',
+    'compass-4': 'S',
+    'compass-5': 'SW',
+    'compass-6': 'W',
+    'compass-7': 'NW',
   });
   var interpolate = self.pwaStrings.interpolate;
 
@@ -191,10 +205,13 @@
   var renameInput = rail.querySelector('[data-row-rename-input]');
   var claimEl = rail.querySelector('[data-route-rail-claim]');
   var hintEl = /** @type {HTMLElement|null} */ (rail.querySelector('[data-route-rail-hint]'));
-  // SNOW-1099: the phone sheet's staff-only FULL detent — the point debug
-  // readout — and the terrain rows it reads.
-  var debugEl = /** @type {HTMLElement|null} */ (rail.querySelector('[data-route-rail-debug]'));
-  var debugHintEl = rail.querySelector('[data-route-rail-debug-hint]');
+  // SNOW-1146: the terrain data — every figure behind the point, FULL's on
+  // a phone and opened in the card from sm up — the rows it reads, and the
+  // point header's terrain slope line, which reveals it.
+  var terrainEl = /** @type {HTMLElement|null} */ (rail.querySelector('[data-route-terrain]'));
+  var terrainHintEl = rail.querySelector('[data-route-terrain-hint]');
+  var terrainToggle = /** @type {HTMLButtonElement|null} */ (rail.querySelector('[data-route-terrain-toggle]'));
+  var terrainLine = rail.querySelector('[data-route-point-card-slope]');
   var TERRAIN_URL_TEMPLATE = rail.dataset.routeTerrainUrlTemplate || '';
   var NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -207,8 +224,8 @@
   var detentsBound = false;
   /** The uuid whose terrain rows are loaded or loading, or null. */
   var terrainFor = null;
-  /** The open route's staff terrain rows, by segment index. */
-  var debugRows = [];
+  /** The open route's terrain rows, by segment index. */
+  var terrainRows = [];
 
   /** The open route's cursor, or null. */
   var cursor = null;
@@ -475,7 +492,7 @@
     var index = state && typeof state.index === 'number' ? state.index : null;
     drawCursorLine(index);
     paintPointMode(index);
-    paintDebug(index);
+    paintTerrain(index);
   }
 
   /**
@@ -625,6 +642,7 @@
     resetTerrain();
     bindSheet();
     if (detents) detents.open();
+    fillTerrainToggle();
     announceRailChanged();
     return true;
   }
@@ -653,6 +671,7 @@
     rail.hidden = true;
     if (mapEl) mapEl.removeAttribute('data-route-rail-open');
     if (detents) detents.reset();
+    rail.removeAttribute('data-route-terrain-open');
     resetTerrain();
     announceRailChanged();
   }
@@ -666,31 +685,100 @@
     var sheet = window.MapSheet;
     if (!sheet || typeof sheet.bindDetents !== 'function') return;
     detents = sheet.bindDetents(rail, { onClose: close });
-    if (!detents || !debugEl || typeof MutationObserver !== 'function') return;
+    if (!detents || !terrainEl || typeof MutationObserver !== 'function') return;
     // The terrain rows load the first time the sheet reaches FULL for a
     // route, never before: most opens never go there. Leaving FULL puts the
-    // sheet's scroll back at the top; map.css hides the readout below full.
+    // sheet's scroll back at the top; map.css hides the data below full.
+    // A drag reaches FULL as the terrain slope line does, so the line's
+    // expanded state follows the detent rather than its own presses.
     new MutationObserver(function () {
       if (rail.getAttribute('data-detent') === 'full') loadTerrain();
       else rail.scrollTop = 0;
+      paintTerrainToggle();
     }).observe(rail, { attributes: true, attributeFilter: ['data-detent'] });
+  }
+
+  // ---- the terrain data (SNOW-1146) ---------------------------------------
+  //
+  // The point debug readout staff had on a phone's FULL detent (SNOW-1099),
+  // now every owner's, on a phone and from sm up, revealed from the point
+  // header's TERRAIN SLOPE line. Every figure is a terrain_detail row's own
+  // (routes:terrain, the rows /_route-terrain/ shows staff), for the
+  // segment under the point, so the two cannot disagree.
+
+  /**
+   * Whether the terrain data is showing: FULL on a phone; the card's own
+   * open mark from sm up.
+   *
+   * @returns {boolean}
+   */
+  function terrainShown() {
+    if (isSheet()) return rail.getAttribute('data-detent') === 'full';
+    return rail.hasAttribute('data-route-terrain-open');
+  }
+
+  /** Mark the terrain slope line expanded while the data shows. */
+  function paintTerrainToggle() {
+    if (terrainToggle) terrainToggle.setAttribute('aria-expanded', String(terrainShown()));
+  }
+
+  /**
+   * Show or hide the terrain data. A phone sheet steps between FULL and
+   * HALF, the detents either side of it; from sm up the card opens it in
+   * place. A route with no uuid (a pending share) has no rows to show.
+   *
+   * @param {boolean} show
+   */
+  function showTerrain(show) {
+    if (!terrainEl || !current.uuid) return;
+    if (isSheet() && detents) {
+      detents.set(show ? 'full' : 'half');
+    } else if (show) {
+      rail.setAttribute('data-route-terrain-open', '');
+    } else {
+      rail.removeAttribute('data-route-terrain-open');
+    }
+    if (show) loadTerrain();
+    paintTerrainToggle();
+  }
+
+  /**
+   * Seat the terrain slope line's toggle for the route just opened: shut,
+   * and pressable only for a route with rows to fetch.
+   */
+  function fillTerrainToggle() {
+    var available = !!(terrainEl && current.uuid && TERRAIN_URL_TEMPLATE);
+    if (available) rail.removeAttribute('data-route-terrain-unavailable');
+    else rail.setAttribute('data-route-terrain-unavailable', '');
+    if (terrainToggle) terrainToggle.disabled = !available;
+    rail.removeAttribute('data-route-terrain-open');
+    paintTerrainToggle();
+  }
+
+  // The whole line is the target, its label included; the button inside it
+  // carries the keyboard and the accessible state, and its own press
+  // bubbles here.
+  if (terrainLine) {
+    terrainLine.addEventListener('click', function () {
+      if (rail.hidden || rail.hasAttribute('data-route-terrain-unavailable')) return;
+      showTerrain(!terrainShown());
+    });
   }
 
   /** Forget the previous route's terrain rows. */
   function resetTerrain() {
     terrainFor = null;
-    debugRows = [];
-    paintDebug(null);
+    terrainRows = [];
+    paintTerrain(null);
   }
 
   /**
-   * Fetch the open route's staff terrain rows for the point debug readout,
-   * once per route. Staff only: the partial renders the readout and the URL
-   * for staff alone, and the view behind it is staff-gated. A pending share
-   * has no uuid, and so no rows.
+   * Fetch the open route's terrain rows, once per route, the first time
+   * they are shown. Owner-scoped (routes:terrain); a pending share has no
+   * uuid, and so no rows.
    */
   function loadTerrain() {
-    if (!debugEl || !TERRAIN_URL_TEMPLATE || !current.uuid) return;
+    if (!terrainEl || !TERRAIN_URL_TEMPLATE || !current.uuid) return;
     if (terrainFor === current.uuid) return;
     var uuid = current.uuid;
     terrainFor = uuid;
@@ -699,56 +787,75 @@
       .then(function (body) {
         // The route may have closed or changed while the rows loaded.
         if (terrainFor !== uuid) return;
-        debugRows = body && Array.isArray(body.rows) ? body.rows : [];
-        paintDebug(cursor ? cursor.state().index : null);
+        terrainRows = body && Array.isArray(body.rows) ? body.rows : [];
+        paintTerrain(cursor ? cursor.state().index : null);
       })
       .catch(function () {
-        // The readout reads "–" without the rows; the next FULL retries.
+        // The data reads "–" without the rows; the next reveal retries.
         if (terrainFor === uuid) terrainFor = null;
       });
   }
 
-  // ---- the point debug readout (staff, FULL on a phone; SNOW-1099) -------
-  //
-  // Rail two's debug rail, brought back for the point the profile places
-  // (SNOW-1065 removed it with rail two). Every figure is the staff terrain
-  // table's own, for the segment under the point, so the readout and
-  // /_route-terrain/ cannot disagree. English only: a staff surface.
-
   /**
-   * A figure with its unit, or "–" for one that is not known.
+   * Whether a value is a finite number.
    *
    * @param {*} value
-   * @param {string} unit
-   * @returns {string}
+   * @returns {boolean}
    */
-  function debugFigure(value, unit) {
-    return typeof value === 'number' && isFinite(value) ? value + unit : '–';
+  function isFigure(value) {
+    return typeof value === 'number' && isFinite(value);
   }
 
   /**
-   * A bearing in degrees with its eight-point compass name.
+   * An angle in degrees ("20.1°"), or "–" for one that is not known.
+   *
+   * @param {*} value
+   * @returns {string}
+   */
+  function terrainDegrees(value) {
+    return isFigure(value) ? interpolate(STRINGS['terrain-deg'], { value: value }) : '–';
+  }
+
+  /**
+   * A bearing with its eight-point compass name ("NW · 308°").
    *
    * @param {*} degrees
    * @returns {string}
    */
-  function debugBearing(degrees) {
-    if (typeof degrees !== 'number' || !isFinite(degrees)) return '–';
-    var names = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-    return degrees + '° ' + names[Math.round(degrees / 45) % 8];
+  function terrainBearing(degrees) {
+    if (!isFigure(degrees)) return '–';
+    return interpolate(STRINGS['terrain-bearing'], {
+      compass: STRINGS['compass-' + (Math.round(degrees / 45) % 8)],
+      value: degrees,
+    });
   }
 
   /**
-   * The bank in words ("Falling 46.8° to skier's left"); a positive bank
-   * falls to the right (bank.py's sign).
+   * A span between two figures, the unit on the second ("2822 → 2829.2 m").
    *
-   * @param {*} bank
+   * @param {*} from
+   * @param {*} to
+   * @param {string} unit The unit string, `%(value)s` its placeholder.
+   * @param {function(number): (string|number)} [format] Writes each figure.
    * @returns {string}
    */
-  function debugBanking(bank) {
-    if (typeof bank !== 'number' || !isFinite(bank)) return '–';
-    if (bank === 0) return 'Level (0°)';
-    return 'Falling ' + Math.abs(bank) + '° to skier’s ' + (bank > 0 ? 'right' : 'left');
+  function terrainSpan(from, to, unit, format) {
+    if (!isFigure(from) || !isFigure(to)) return '–';
+    var write = format || function (value) { return value; };
+    return interpolate(STRINGS['terrain-span'], {
+      from: write(from),
+      to: interpolate(unit, { value: write(to) }),
+    });
+  }
+
+  /**
+   * Metres as kilometres to two places, the profile's own precision.
+   *
+   * @param {number} metres
+   * @returns {string}
+   */
+  function inKm(metres) {
+    return (metres / 1000).toFixed(2);
   }
 
   /**
@@ -759,68 +866,40 @@
    * @param {*} aspect
    * @returns {string}
    */
-  function debugOffFallLine(bearing, aspect) {
-    if (typeof bearing !== 'number' || typeof aspect !== 'number') return '–';
+  function terrainOffFallLine(bearing, aspect) {
+    if (!isFigure(bearing) || !isFigure(aspect)) return '–';
     var delta = Math.abs(bearing - aspect) % 360;
-    return Math.round(delta > 180 ? 360 - delta : delta) + '°';
+    return terrainDegrees(Math.round(delta > 180 ? 360 - delta : delta));
   }
 
   /**
-   * The smoothed track gradient and the segments it was summed over
-   * ("-12.4° · 190..194"), naming any in the window that contributed
-   * nothing (rejected, or with no height), and flagging a rejected segment.
-   *
-   * @param {*} row
-   * @returns {string}
-   */
-  function debugTrack(row) {
-    if (!row) return '–';
-    var text = debugFigure(row.track_gradient_deg, '°');
-    var from = row.track_gradient_from;
-    var to = row.track_gradient_to;
-    if (Number.isInteger(from) && Number.isInteger(to)) {
-      var skipped = [];
-      for (var k = from; k <= to; k += 1) {
-        var other = debugRows[k];
-        if (!other || other.track_gradient_rejected
-            || typeof other.ele_from_m !== 'number' || typeof other.ele_to_m !== 'number') {
-          skipped.push(k);
-        }
-      }
-      text += ' · ' + from + '..' + to + (skipped.length ? ' less ' + skipped.join(', ') : '');
-    }
-    return row.track_gradient_rejected ? text + ' · rejected' : text;
-  }
-
-  /**
-   * Fill the readout for the segment under the point; every field reads
-   * "–" with no point, or before the rows arrive.
+   * Fill the terrain data for the segment under the point; every field
+   * reads "–" with no point, or before the rows arrive. The track
+   * gradient is the smoothed one, and "–" where it was rejected.
    *
    * @param {?number} index
    */
-  function paintDebug(index) {
-    if (!debugEl) return;
-    var row = index === null ? null : debugRows[index] || null;
-    if (debugHintEl) /** @type {HTMLElement} */ (debugHintEl).hidden = index !== null;
+  function paintTerrain(index) {
+    if (!terrainEl) return;
+    var row = index === null ? null : terrainRows[index] || null;
+    if (terrainHintEl) /** @type {HTMLElement} */ (terrainHintEl).hidden = index !== null;
     var values = !row ? {} : {
-      sample: String(row.i) + ' of ' + debugRows.length,
-      km: typeof row.from_m === 'number' && typeof row.length_m === 'number'
-        ? (row.from_m / 1000).toFixed(3) + ' km → ' + ((row.from_m + row.length_m) / 1000).toFixed(3) + ' km'
+      sample: interpolate(STRINGS['terrain-of'], { index: row.i, count: terrainRows.length }),
+      km: isFigure(row.length_m)
+        ? terrainSpan(row.from_m, row.from_m + row.length_m, STRINGS['unit-km'], inKm)
         : '–',
-      heights: debugFigure(row.ele_from_m, '') + ' → ' + debugFigure(row.ele_to_m, ' m'),
-      aspect: debugBearing(row.aspect_deg),
-      angle: debugFigure(row.angle_deg, '°'),
-      bearing: debugBearing(row.bearing_deg),
-      track: debugTrack(row),
-      bank: debugBanking(row.roll_deg),
-      fall: debugOffFallLine(row.bearing_deg, row.aspect_deg),
+      heights: terrainSpan(row.ele_from_m, row.ele_to_m, STRINGS['unit-m']),
+      aspect: terrainBearing(row.aspect_deg),
+      angle: terrainDegrees(row.angle_deg),
+      bearing: terrainBearing(row.bearing_deg),
+      track: row.track_gradient_rejected ? '–' : terrainDegrees(row.track_gradient_deg),
+      fall: terrainOffFallLine(row.bearing_deg, row.aspect_deg),
     };
     Array.prototype.forEach.call(
-      debugEl.querySelectorAll('[data-route-rail-debug-field]'),
+      terrainEl.querySelectorAll('[data-route-terrain-field]'),
       function (cell) {
-        var value = values[cell.getAttribute('data-route-rail-debug-field')];
+        var value = values[cell.getAttribute('data-route-terrain-field')];
         cell.textContent = value || '–';
-        cell.title = value || '';
       },
     );
   }

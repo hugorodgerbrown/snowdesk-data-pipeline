@@ -58,6 +58,7 @@ from apps.routes.models import Route
 from apps.routes.services.canonical import CANONICAL_DIR
 from apps.routes.services.gpx import parse_gpx
 from apps.routes.services.leg_wire import wire_legs
+from apps.routes.services.terrain_detail import terrain_detail
 from apps.routes.services.terrain_heights import climb_totals, terrain_points
 from tests.factories import (
     DRIFTING_TRACK,
@@ -2384,6 +2385,88 @@ class TestRoutesGeojsonPendingShares:
         _follow(client, share.token)
 
         response = client.get(GEOJSON_URL)
+
+        assert "private" in response["Cache-Control"]
+        assert "no-store" in response["Cache-Control"]
+
+
+# ---------------------------------------------------------------------------
+# routes:terrain (SNOW-1146)
+# ---------------------------------------------------------------------------
+
+
+def _terrain_url(uuid: object) -> str:
+    """Return the owner-scoped terrain rows URL for a route uuid."""
+    return f"/routes/{uuid}/terrain.json"
+
+
+@pytest.mark.django_db
+class TestRouteTerrain:
+    """The route panel's terrain data, the owner's own rows only."""
+
+    def test_anonymous_gets_403_json(self, client: Client) -> None:
+        """An anonymous caller is refused, as routes.geojson refuses one."""
+        route = RouteFactory.create()
+
+        response = client.get(_terrain_url(route.uuid))
+
+        assert response.status_code == 403
+        assert response.json() == {"error": "authentication_required"}
+
+    def test_another_users_route_is_404(self, client: Client) -> None:
+        """A route the caller does not own is not found, staff included."""
+        route = RouteFactory.create(
+            points=DRIFTING_TRACK, slope_samples=drifting_track_record()
+        )
+        client.force_login(UserFactory.create(is_staff=True))
+
+        response = client.get(_terrain_url(route.uuid))
+
+        assert response.status_code == 404
+
+    def test_an_unknown_route_is_404(self, client: Client) -> None:
+        """A uuid that names no route is not found."""
+        client.force_login(UserFactory.create())
+
+        response = client.get(_terrain_url(uuid4()))
+
+        assert response.status_code == 404
+
+    def test_the_owner_gets_the_terrain_detail_rows(self, client: Client) -> None:
+        """The rows are terrain_detail's own, so the staff page cannot disagree."""
+        user = UserFactory.create()
+        route = RouteFactory.create(
+            user=user, points=DRIFTING_TRACK, slope_samples=drifting_track_record()
+        )
+        client.force_login(user)
+
+        response = client.get(_terrain_url(route.uuid))
+
+        assert response.status_code == 200
+        rows = response.json()["rows"]
+        assert rows == json.loads(
+            json.dumps(terrain_detail(route.slope_samples, route.points))
+        )
+        assert rows
+        assert "aspect_deg" in rows[0]
+
+    def test_an_unsampled_route_has_no_rows(self, client: Client) -> None:
+        """A route never sampled answers an empty list, not an error."""
+        user = UserFactory.create()
+        route = RouteFactory.create(user=user, slope_samples=None)
+        client.force_login(user)
+
+        response = client.get(_terrain_url(route.uuid))
+
+        assert response.json() == {"rows": []}
+
+    def test_response_is_private_and_no_store(self, client: Client) -> None:
+        """Per-user data must never be held by an intermediate cache."""
+        user = UserFactory.create()
+        route = RouteFactory.create(user=user)
+        client.force_login(user)
+
+        response = client.get(_terrain_url(route.uuid))
 
         assert "private" in response["Cache-Control"]
         assert "no-store" in response["Cache-Control"]
