@@ -2202,19 +2202,23 @@ both the map page and `/offline/` load (SNOW-930 moved that page off
 `MAP_STRINGS` and its orphaned-bucket measurement. The "Reset local data"
 breakdown reads this same list, so the two surfaces cannot disagree about
 what is on the device — and the sheet
-now carries a line linking to it, because the shared overview maps, the
-cached pages, the unsent mutations and the preferences are none of them
-listed or budgeted here.
+now carries a line linking to it ("See what this device holds", pointing
+at `/offline/` since SNOW-1137 — it pointed at Settings before the
+breakdown moved), because the shared overview maps, the cached pages, the
+unsent mutations and the preferences are none of them listed or budgeted
+here.
 
 **A row can be listed and still not render (SNOW-844).** The sheet asks
 the same render-dependency question the roundel does (see `incomplete`
 above), per row, through `markIncompleteRows`. A row that fails it takes
 the orphan's "Incomplete" line and dims with it — in both cases what this
-device holds is not a usable download — but unlike an orphan it gains a
-**Repair** control: there is a record behind it naming exactly what to
-fetch, where an orphan has no record at all, so SNOW-612's remove-only
-treatment of orphans is unaffected. Repair goes through the runner's short
-path, never the download one. A row for a basemap that is not on screen
+device holds is not a usable download — but unlike an orphan it can be
+fixed: there is a record behind it naming exactly what to fetch, where an
+orphan has no record at all, so SNOW-612's remove-only treatment of
+orphans is unaffected. SNOW-951 folded SNOW-844's conditional **Repair**
+control (and SNOW-932's Refresh) into one unconditional **Sync now** item
+in every on-device row's "…" menu; its tile half goes through the runner's
+short repair path, never the download one. A row for a basemap that is not on screen
 whose record names no dependencies is skipped, not accused — the third
 case of the resolution rule in
 [`decisions/a-downloaded-area-is-verified-by-what-it-renders.md`](decisions/a-downloaded-area-is-verified-by-what-it-renders.md).
@@ -2249,117 +2253,102 @@ and the panel switch its `checked`.
 The two disagree legitimately when the overlay is on and the active basemap
 has nothing downloaded: the row reads ON over an empty source.
 
-**Layout — "1c: grouped by kind · budget in the header · CTA in its
-group" (SNOW-645, Hugo's design).** Top to bottom:
+**Layout (current, SNOW-1137 audit).** Top to bottom:
 
-1. **Header.** The title — "Your downloads" since SNOW-749, which retired
-   "Downloads on this device" because the areas stopped being device-local
-   even though the map data did not — reads noticeably larger/bolder than every other
-   sheet's — `includes/_sheet_header.html`'s own `title_class` override
-   (`"text-lg font-bold"`), added for this. The × itself is the SAME
-   control every sheet has (see "Sheet header ×", below) — the size and
-   shape change there is universal, not specific to this sheet.
-2. **Budget, folded into the header.** One row: the segmented bar (fills
-   the remaining width — see "Budget bar segments" below),
-   `"Using <used> of"`, then the budget `<select>` itself, styled as a
-   rounded pill (e.g. "500 MB"). "Using" is SNOW-646/832: the readout said
-   "18.4 MB of 500 MB" and never said what the number WAS; one static
-   translated word makes it a sentence, and the context strip one line
-   above already says whose device it is about. A caption underneath: "Your areas follow your account. The
-   map data and the budget stay on this device." (SNOW-749 rewrote it —
-   "Downloads and budget stay on this device." had become half false.)
-   This REVERSES SNOW-641's own conclusion (that the total and
-   the budget control belonged at the FOOT, beside the "you already
-   have" list) — worth recording so a future reader does not assume
-   SNOW-641's reasoning still holds; Hugo's design reads the budget as
-   part of what the sheet fundamentally IS, not a footnote below the list.
-3. **Rows, grouped by BASEMAP (SNOW-832)** — one heading per basemap this
-   device holds something for, in the order the PICKER offers them
-   (`map_basemap_downloads.js`'s `basemapOrder()`, read off the picker's
-   own `[data-basemap-key]` DOM so `_BASEMAP_LABELS` stays the single
-   definition of both label and order). Each heading is a round swatch, the
-   basemap's own translated name in the shared mono uppercase eyebrow
-   (`uppercase` is a Tailwind transform, never typed into the msgid), this
-   device's total for the group, and a 2px identity rule under the line.
-   See "Grouping by basemap" below for what replaced what, and why.
-4. **The add-custom-area CTA**, full-width and outlined, in its own
-   bordered group at the foot (see "Running order" below).
+1. **Header.** The downloads icon and the title "Your downloads" (since
+   SNOW-749, which retired "Downloads on this device" because the areas
+   stopped being device-local even though the map data did not), at the
+   one size every `includes/_ugc_panel.html` panel uses. The roundel that
+   opens it is labelled "Manage downloads". There is no context-strip
+   caption on this panel any more — the account caption SNOW-749 wrote
+   ("Your areas follow your account. The map data and the budget stay on
+   this device.") is gone, and the two group headings below carry that
+   split instead.
+2. **Budget block** (`_map_downloads_header.html`, the panel's
+   `header_template`). SNOW-867's layout: the running figure and the
+   budget `<select>` on one line — no "Using … of" words, since two
+   numbers with a bar between them already say what they are and the
+   `<select>` IS the cap — then the segmented bar full-width beneath (see
+   "Budget bar segments" below), the over-budget warning when it applies,
+   the SNOW-1072 "Terrain data" switch where the terrain filter is
+   configured, and the "See what this device holds" link to `/offline/`.
+3. **Rows, in two groups by PRESENCE** (`groupRowsByPresence` in
+   `basemap_manage_core.js`): "On this device", then "Not on this
+   device". An empty group is omitted. The split is the one that changes
+   what a row can DO — an account-only row can be downloaded here, an
+   on-device row can be removed, never both.
+4. **The add-custom-area CTA**, full-width and outlined, at the foot, with
+   the "Show on the map" switch below it.
 
-**Grouping by basemap (SNOW-832, Hugo's handoff).** SNOW-645 split the
-list under two FIXED headings — REGIONS, then CUSTOM AREAS — and carried
-the basemap as each row's subtitle plus a coloured rule down its left
-edge. This turns that inside out. The heading names the BASEMAP, because
-that is the axis along which a stored area is or is not usable (switching
-basemap is switching to a map you have not stored — the point the
-"basemap scope" help paragraph already had to make); the kind is only how
-the area was framed, so it moved down into the row's own meta line beside
-the size: `Region · 5.1 MB`.
+**The basemap moved onto the row.** SNOW-832 grouped the list under one
+heading per basemap, each with a swatch, its own total and an identity
+rule; that grouping was replaced by the presence split above, because a
+user with eight areas across three basemaps had three headings, three
+totals and three rules between them and their list. The basemap is still
+on every on-device row: a `.basemap-identity-fill` dot (the same rule the
+bar segments use) and a word in the meta line —
+`Region · Swisstopo (CH) · 13.6 MB`, with ` · Bulletins not saved`
+appended when the area's content half fell short (SNOW-932). An
+account-only row carries neither dot nor basemap nor size — nothing of it
+is stored here, so no basemap has been chosen and a colour would imply one
+— and its meta line is the kind alone. The kinds are Region, Custom area,
+Drop zone and Shared (the z0-9 base layer).
 
-Three consequences follow, and each is a deletion:
-
-- **the row's rule is gone.** Identity is a group heading now, said once
-  per group instead of once per row. It took `includes/_ugc_panel_row.html`'s
-  whole `rule` slot with it — that slot never had another caller, and
-  `.basemap-identity-fill`'s keyless green ("downloaded, basemap unknown")
-  is a claim only this panel could make.
-- **the row's size column is gone.** It folded into the meta line, so
-  `[data-row-value]` is no longer rendered for a `js_filled` row. The slot
-  stays in the shared partial, documented as currently unused: it is the
-  shape a measured quantity takes on that row, and re-deriving it at the
-  next caller is how the three panels diverged in the first place.
-- **render()'s orphan pre-pass is gone, and the inference behind it with
-  it.** SNOW-645 resolved an orphaned bucket's basemap by INFERENCE —
-  opening the bucket and matching its cached tile URLs against the
-  templates on record — purely to tint that rule. A group is a claim about
-  which basemap a download BELONGS to, which is exactly the claim a
-  decoration read off whatever happens to be on disk may not make, so an
-  orphan keeps its empty `basemapKey` and lands in the unnamed group. The
-  function (`orphanBasemapKey`) had no other caller, so it went too, with
-  its export entry and its tests; `basemapDownloadedTemplates()` and
-  `cachedTilesFromURLs`, which it borrowed, both stay — the
-  downloaded-tiles overlay is their real caller.
-
-**Ordering.** Rows sort **regions before custom areas, alphabetically
-within each**, tie-broken by id — replacing SNOW-586's largest-first. The
-reason is that the sheet stopped being a list: a row is FOUND by name
-before it is judged by size, and a list read for a name cannot be ordered
-by a number. `budgetSegments()` re-sorts by bytes itself for the bar, so
+**Ordering.** Within each group rows sort by kind (base layer, regions,
+custom areas, drop zones), **alphabetically within each**, tie-broken by
+id — replacing SNOW-586's largest-first. A row is FOUND by name before it
+is judged by size, and a list read for a name cannot be ordered by a
+number. `budgetSegments()` re-sorts by bytes itself for the bar, so
 nothing that reads by size lost its ordering.
-
-**The unnamed group.** A record written before SNOW-645, an orphaned
-bucket, an account row with no basemap, or a key the picker no longer
-offers all fall into one group headed "Unknown basemap" and painted
-`bg-sync-off` — the "absent, not an error" grey — never
-`.basemap-identity-fill`'s keyless green, for the SNOW-749 reason: nothing
-on this panel may read as available offline when it is not. It is always
-LAST, whatever the picker order says, because it is the group that cannot
-be named.
-
-**A group total can read smaller than its rows suggest.** `totalBytes` is
-what THIS DEVICE holds, so an account-only row contributes 0 — correct,
-and the panel's whole point: listed is not the same as available offline.
 
 **Markup.** `includes/_ugc_panel_group.html` (registered in
 `design_tokens.py`, with fixtures) holds the heading shape and the `<ul>`;
 `_map_downloads_rows.html` holds the container render() appends into and
-the empty state (shortened to "No areas downloaded yet.", dropping a
-direction at "the button below" that could go stale); the group
-`<template>` itself sits beside the ROW template in
-`_map_downloads_sheet.html`, not nested inside the body template — legal
-and clone-safe, but it makes the body template unreadable to anything that
-finds its end at the next `</template>`, which `getElementById` and
+the empty state ("No areas downloaded yet."); the group `<template>`
+itself sits beside the ROW template in `_map_downloads_sheet.html`, not
+nested inside the body template — legal and clone-safe, but it makes the
+body template unreadable to anything that finds its end at the next
+`</template>`, which `getElementById` and
 `tests/public/test_ugc_panels.py` both effectively do. The include carries
 `only`, without which the group partial's `{% include rows_template %}`
 would find the panel's own `rows_template` still in scope and recurse.
 
-Trailing on each row: its actions —
-`includes/_map_downloads_row_actions.html`, a "Download here" (account-only
-rows), a pencil (renameable rows) and a trash, each a 44×44 icon control.
-SNOW-658 tried a "…" overflow menu here for a day; Hugo's "Map panels —
-common format" design has no ellipsis menu on any panel, and Remove is one
-tap in the same place on all three. Rename opens the row's own inline label
-editor (`static/js/inline_rename.js`, shared with the favourites panel)
-rather than a `window.prompt`.
+**Row actions** (`includes/_map_downloads_row_actions.html` and
+`_map_downloads_row_menu_items.html`). Design-system rule 5 applies: a row
+with two or more actions gets a "…" menu, a row with exactly one gets a
+bare icon. SNOW-658 tried a "…" menu for a day and Hugo's "Map panels —
+common format" design then ruled it out (a visible trash on every row);
+that ruling was reversed for every panel on 2026-09-07, so the "no
+ellipsis menu on any panel" line this section used to carry no longer
+holds. Today:
+
+| Row | Actions | Shape |
+|-----|---------|-------|
+| Region on this device | Sync now, Remove | menu |
+| Custom area / drop zone on this device | Sync now, Rename, Remove | menu |
+| Not on this device, fetchable here | Download here, Forget | menu (SNOW-1135) |
+| Not on this device, too little to re-download | Forget | bare icon |
+| Base layer | none | — |
+| Orphan bucket (no record) | Remove | bare icon |
+
+Remove means THIS device only — a synced area drops into "Not on this
+device" — and Forget is how an area leaves the account (SNOW-1135).
+"Download here" restores the same area — the same region, box or drop
+zone — onto this device (SNOW-1136). Rename opens the row's own inline
+label editor (`static/js/inline_rename.js`, shared with the favourites
+panel) rather than a `window.prompt`.
+
+**History: the per-basemap grouping (SNOW-832, superseded).** SNOW-645
+split the list under two FIXED headings — REGIONS, then CUSTOM AREAS —
+and carried the basemap as each row's subtitle plus a coloured rule down
+its left edge. SNOW-832 turned that inside out, heading the list by
+BASEMAP with a per-group total, and in doing so deleted three things that
+stay deleted: the row's left rule (taking `includes/_ugc_panel_row.html`'s
+`rule` slot with it), the row's separate size column (`[data-row-value]`
+is not rendered for a `js_filled` row; the size lives in the meta line),
+and render()'s orphan pre-pass (`orphanBasemapKey`), which inferred an
+orphan's basemap from its cached tile URLs. The presence grouping kept all
+three deletions; an orphan still has an empty `basemapKey` and so no dot.
 
 **Incomplete/orphan rows (SNOW-612).** Title is the bucket id itself
 (`manageRows` falls back to `id` only when there is no record — true only
@@ -2390,7 +2379,8 @@ decoration only, never a stored fact.
 SNOW-832 removed the rule, which was its only caller, and did not adopt
 the inference for the group heading: a group is a claim about which
 basemap a download belongs to, precisely what that cap forbade. An orphan
-lands in the unnamed group instead. That left a function nothing called,
+landed in the unnamed group instead (under today's presence grouping it
+sits in "On this device" with no dot). That left a function nothing called,
 so the same ticket deleted it — the standing rule is to fix what you find
 rather than leave it for later, and an exported, tested, uncalled
 inference is an invitation for a future reader to find a use for it that
@@ -2542,9 +2532,9 @@ the one that must not move.
 
 | `onDevice` | `synced` | How it reads |
 |---|---|---|
-| yes | yes | Normal row. Trash removes it from this device only (SNOW-1135); the confirmation (`confirm-remove-kept`) says it stays listed under "Not on this device". |
-| yes | no | Normal row, unchanged from before this ticket. Reachable for an area downloaded before the feature shipped (and not yet adopted), or one whose queued push has not drained, which is why the trash's confirmation copy is keyed off the row's own `synced` flag and not off a global: the global would promise a "Not on this device" row the area will not get. |
-| no | yes | Dimmed title, and its whole meta line reads "On your account — not downloaded here" rather than a kind and a size (SNOW-832 — a size would be "0.0 MB", a download that somehow takes no space rather than one that is not here). It sits inside its own basemap's group, and contributes 0 to that group's total. "Download here" and Forget (SNOW-1135), collapsed into the row's "…" menu in that order — or the bare Forget alone when the row records too little to download; no rename — the rename writes to a local record this device does not have. |
+| yes | yes | Normal row. Remove (in its "…" menu) takes it off this device only (SNOW-1135); the confirmation (`confirm-remove-kept`) says it stays listed under "Not on this device". |
+| yes | no | Normal row, unchanged from before this ticket. Reachable for an area downloaded before the feature shipped (and not yet adopted), or one whose queued push has not drained, which is why Remove's confirmation copy is keyed off the row's own `synced` flag and not off a global: the global would promise a "Not on this device" row the area will not get. |
+| no | yes | Dimmed title, no basemap dot, and a meta line of the kind alone — no size (SNOW-832 — a size would be "0.0 MB", a download that somehow takes no space rather than one that is not here) and no basemap (nothing is stored, so none has been chosen). It sits in the "Not on this device" group, under a heading that already says so, and contributes 0 to the total. "Download here" and Forget (SNOW-1135), collapsed into the row's "…" menu in that order — or the bare Forget alone when the row records too little to download; no rename — the rename writes to a local record this device does not have. |
 | no | no | Not produced by `reconcileAreas`; tolerated by `manageRows`, which paints it as the row above without the account claim. |
 
 **"Download here"** hands off to whichever start control owns the kind of
@@ -2627,10 +2617,12 @@ more collapse into a "…" (`includes/_overflow_menu.html` +
 trash on every row — and SNOW-830 narrowed it; Hugo reversed it, and
 SNOW-951 then gave every row this device holds a "Sync now", so a region
 carries two actions and gets the menu. So the row renders both shapes and
-`buildRow` keeps whichever the row has earned: the bare "Download here"
-for an account-only row, the bare trash for an orphan (its one action is
-still Remove), and the menu — Sync now → Rename → Remove, destructive
-last as on every panel — for anything with two things to offer.
+`buildRow` keeps whichever the row has earned: the bare Forget for an
+account-only row that records too little to download, the bare trash for
+an orphan (its one action is still Remove), and the menu for anything with
+two things to offer — Download here → Forget on an account-only row
+(SNOW-1135), Sync now → Rename → Remove on one this device holds,
+destructive last as on every panel.
 `buildRow` strips the Rename item, the hidden editor and the row's own
 `data-row-renameable` marker together for a row that cannot be renamed
 — a region's name is its real name, and an orphan has no record to write
@@ -2660,13 +2652,12 @@ nothing else.
 SNOW-646/832: the track is no longer `aria-hidden`. It was, while it was
 one flat fill saying nothing the sentence beside it did not already say.
 Segmented, it encodes a COMPOSITION stated nowhere else on the panel — and
-since SNOW-832 that composition is a legend for the groups beneath it — so
-it is a `role="img"` with an `aria-label` `render()` builds from the same
-segments it paints ("Space used, by base map: Swisstopo (CH) 120 MB,
+the per-row basemap dots beneath it are its legend — so it is a `role="img"` with an `aria-label` `render()` builds from the same
+segments it paints ("Space used, by basemap: Swisstopo (CH) 120 MB,
 OpenFreeMap 40.0 MB"; "Nothing downloaded on this device" when there are
 none). A `role="img"`, not a `progressbar`: the reading is "what is in
-it", not "how far along" — the "Using X of Y" sentence beside it already
-carries the proportion.
+it", not "how far along" — the figure and the budget `<select>` above it
+already carry the proportion.
 
 Over budget, the bar itself can no longer turn solid red
 (it is carrying real basemap colours), so the signal moved to
