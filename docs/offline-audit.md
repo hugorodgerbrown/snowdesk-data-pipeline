@@ -482,10 +482,18 @@ the report is allowed to say a fetch worked is after checking.
 SNOW-925 offered it only to a row reading `stale` or `never`, on the
 ground that a `fresh` area has nothing to do. SNOW-951 widened
 `completableArea` to every area whose tiles verify, and the reason is who
-is asking: the control is now also what the network menu's per-area "sync
-now" lands on, and to a user about to lose signal `fresh` is an inference
-from a stamp while the thing they are going to rely on is the data. See
+is asking: the control is now also what the network menu lands on (one
+area per press under SNOW-951, every area under SNOW-1141's `?sync=all`),
+and to a user about to lose signal `fresh` is an inference from a stamp while the thing they are going to rely on is the data. See
 [a-pre-departure-sync-is-unconditional.md](decisions/a-pre-departure-sync-is-unconditional.md).
+
+**`?sync=all` runs every area** (SNOW-1141) — the network menu's "Get
+ready for offline" handed to this page. The report runs, then
+`offline_ready_core.js` (the same runner the menu uses on the map) drains
+the mutation queue and fetches each area's content in turn; an area with no
+control (its tiles do not verify) counts as not ready and is not fetched.
+The report runs again over the result, and the status line under it states
+the outcome ("1 of 2 ready · 2 changes still waiting to send").
 
 **`?sync=<area id>` runs it on arrival** (SNOW-951). The page takes its
 report first — if the area cannot be updated, no control is painted for
