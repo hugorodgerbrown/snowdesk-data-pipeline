@@ -449,6 +449,17 @@
     completed: 'Saved. Re-checking…',
     'complete-failed':
       'Not everything could be saved. Re-checking what landed.',
+    // SNOW-1141: `?sync=all`, the network menu's "Get ready for offline"
+    // handed to this page. The same sentences as the menu's own (the same
+    // msgids, rendered in this page's template), worded by
+    // `offline_ready_core.js`'s `describe` / `progressText`.
+    'ready-running': 'Getting ready…',
+    'ready-progress': 'Getting ready… (%(n)s of %(total)s)',
+    'ready-all': 'Ready — %(total)s areas up to date',
+    'ready-all-one': 'Ready — 1 area up to date',
+    'ready-some': '%(ready)s of %(total)s ready',
+    'queue-waiting': '%(n)s changes still waiting to send',
+    'queue-waiting-one': '1 change still waiting to send',
   };
 
   /**
@@ -2538,9 +2549,10 @@
    * SNOW-951: the area the URL asks this page to bring up to date, taken
    * once and removed from the address bar in the same breath.
    *
-   * The network menu's per-area "sync now" button runs in place on the map
-   * page, where `pwaBasemapDownloads.syncArea` exists, and NAVIGATES here
-   * everywhere else — `basemap_download_core.js` is 140KB of map-and-this-
+   * The network menu's "Get ready for offline" (SNOW-1141; per-area until
+   * then) runs in place on the map page, where
+   * `pwaBasemapDownloads.syncArea` exists, and NAVIGATES here with
+   * `?sync=all` everywhere else — `basemap_download_core.js` is 140KB of map-and-this-
    * page-only code, there is no lazy-script precedent in the tree, and the
    * two content-fetch implementations genuinely differ (day range, which
    * feeds), so a third copy of the stamp rule is exactly what this avoids.
@@ -2551,8 +2563,8 @@
    * for once, and a second bound host on the same page finds nothing left
    * to take.
    *
-   * @returns {string} The requested id, or `''`. Either an area id as
-   *   minted (`region-CH-4115`, `custom-a1`) or a bare region id — see
+   * @returns {string} The requested id, `'all'`, or `''`. An id is either
+   *   an area id as minted (`region-CH-4115`, `custom-a1`) or a bare region id — see
    *   `syncRequestedArea` for why both are accepted and why resolving
    *   between them happens here rather than in the menu.
    */
@@ -2842,6 +2854,10 @@
      * @returns {Promise<void>}
      */
     async function syncRequestedArea(requested) {
+      if (requested === 'all') {
+        await syncAllAreas();
+        return;
+      }
       await run();
       var core = self.pwaBasemapDownloadCore;
       var candidates = [requested];
@@ -2856,6 +2872,72 @@
       }
       if (!match) return;
       await completeArea(match.getAttribute('data-audit-complete'), match);
+    }
+
+    /**
+     * SNOW-1141: `?sync=all` — the network menu's "Get ready for offline",
+     * run here because this page is not the map.
+     *
+     * The SAME runner as the menu's (`offline_ready_core.js`): the queue
+     * drains first, then every downloaded area in the report in turn.
+     * What differs is only what "one area" means on this page — its own
+     * content fetch (`fetchAreaContent`, as the row's Sync now control
+     * uses), and nothing at all for an area whose tiles do not verify:
+     * this page cannot mend tiles, so such an area counts as not ready and
+     * its row keeps the remedy the report already names.
+     *
+     * The report runs FIRST, to learn which areas there are and which can
+     * be fetched, and AGAIN LAST, which is the proof: nothing on the site
+     * claims a download succeeded without re-reading it. The outcome line
+     * goes in the status line under the report, after that last run.
+     *
+     * @returns {Promise<void>}
+     */
+    async function syncAllAreas() {
+      await run();
+      var ready = self.pwaOfflineReadyCore;
+      if (!ready || !lastReport || running) return;
+      var areas = [];
+      lastReport.sections.forEach(function (section) {
+        section.checks.forEach(function (check) {
+          if (check.areaId) areas.push(check.areaId);
+        });
+      });
+      var fetchable = {};
+      var controls = output.querySelectorAll('[data-audit-complete]');
+      for (var i = 0; i < controls.length; i += 1) {
+        var id = controls[i].getAttribute('data-audit-complete');
+        if (id) fetchable[id] = true;
+      }
+      var report = lastReport;
+      running = true;
+      var result;
+      try {
+        result = await ready.run({
+          drain: function () {
+            var queue = self.pwaMutationQueue;
+            return queue && typeof queue.drain === 'function' ? queue.drain() : undefined;
+          },
+          waiting: async function () {
+            var db = self.pwaDb;
+            if (!db || typeof db.getAll !== 'function') return 0;
+            return ready.waitingCount(await db.getAll('queue:mutations'));
+          },
+          areas: areas,
+          syncOne: async function (areaId) {
+            if (!Object.prototype.hasOwnProperty.call(fetchable, areaId)) return 'partial';
+            return (await fetchAreaContent(root, areaId, report)) ? 'ready' : 'partial';
+          },
+          onStep: function (step) {
+            say(ready.progressText(step, t));
+          },
+        });
+      } finally {
+        running = false;
+      }
+      await run();
+      var described = ready.describe(result, t);
+      say([described.summary, described.queue].filter(Boolean).join(' · '));
     }
 
     if (saveButton) {
@@ -2886,8 +2968,8 @@
       });
     }
 
-    // SNOW-951: the handover from the network menu's per-area button on a
-    // page that is not the map. Last in `bind`, because it runs the report
+    // SNOW-951/1141: the handover from the network menu on a page that is
+    // not the map — one area by id, or `all` for "Get ready for offline". Last in `bind`, because it runs the report
     // and everything above it has to be listening by then.
     var requestedSync = takeRequestedSyncArea();
     if (requestedSync) syncRequestedArea(requestedSync);
