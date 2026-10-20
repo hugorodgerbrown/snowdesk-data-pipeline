@@ -328,6 +328,10 @@
           // record written before the field existed — reads as fine rather
           // than as unknown.
           contentIncomplete: !!entry.contentIncomplete,
+          // SNOW-1139: when the run last fetched this area's content — the
+          // Manage downloads sheet dates a row whose bulletins are from an
+          // earlier day. '' on a record that never fetched any.
+          contentAt: entry.contentAt || '',
           // SNOW-1072: whether this area includes terrain data. The class
           // tiles it implies are derived from `z`/`bbox` above, never
           // recorded; the flag is the choice, which nothing can derive.
@@ -390,6 +394,8 @@
           band: Array.isArray(custom.band) ? custom.band : null,
           // SNOW-932: see the region branch above.
           contentIncomplete: !!custom.contentIncomplete,
+          // SNOW-1139: see the region branch above.
+          contentAt: custom.contentAt || '',
           // SNOW-1072: see the region branch above.
           terrain: !!custom.terrain,
         });

@@ -1057,6 +1057,41 @@ describe('the terrain-data flag travels to the row (SNOW-1072)', () => {
   });
 });
 
+describe('when an area\'s content was fetched travels to the row (SNOW-1139)', () => {
+  const AT = '2026-10-12T07:00:00.000Z';
+
+  it('carries a recorded area its contentAt, and reads absence as empty', () => {
+    const areas = core.reconcileAreas(
+      [
+        { id: 'region-CH-4115', bytes: 1, savedAt: 'x', contentAt: AT },
+        { id: 'region-CH-2101', bytes: 1, savedAt: 'x' },
+      ],
+      ['region-CH-4115', 'region-CH-2101'],
+      {},
+      [],
+    );
+
+    expect(areas.find((a) => a.id === 'region-CH-4115').contentAt).toBe(AT);
+    expect(areas.find((a) => a.id === 'region-CH-2101').contentAt).toBe('');
+  });
+
+  it('keeps it through manageRows for a row on this device', () => {
+    const rows = core.manageRows([{ id: 'region-CH-4115', bytes: 1, contentAt: AT }], {});
+    expect(rows[0].contentAt).toBe(AT);
+  });
+
+  it('drops it for an orphan and an account-only row, which hold no content here', () => {
+    const rows = core.manageRows(
+      [
+        { id: 'region-CH-4115', bytes: 1, orphaned: true, contentAt: AT },
+        { id: 'region-CH-2101', bytes: 0, onDevice: false, contentAt: AT },
+      ],
+      {},
+    );
+    for (const row of rows) expect(row.contentAt).toBe('');
+  });
+});
+
 describe('a drop zone on the account stays a drop zone (SNOW-1136)', () => {
   const isCustomAreaId = (id) => String(id).startsWith('custom-');
   const accountRow = (overrides) => ({

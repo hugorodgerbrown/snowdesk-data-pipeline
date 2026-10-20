@@ -328,6 +328,9 @@
     // row's map DRAWS and the area IS available offline; it is the
     // bulletins that are behind.
     'kind-content-incomplete': 'Bulletins not saved',
+    // SNOW-1139: the clause for a row whose bulletins are from an earlier
+    // day — the record's `contentAt`, dated. Absent for today's.
+    'kind-content-saved': 'Bulletins saved %(date)s',
     // SNOW-1133: an account-only area nobody named — see unnamedAreaLabel.
     'unnamed-area': 'Area saved %(date)s',
     'unnamed-area-undated': 'Unnamed area',
@@ -1352,8 +1355,10 @@
    *
    * @param {{id: string, kind: string, orphaned?: boolean, label: string,
    *   renameable?: boolean, size: string, basemapKey?: string,
-   *   incomplete?: boolean,
-   *   contentIncomplete?: boolean}} row SNOW-844's `incomplete`
+   *   incomplete?: boolean, contentAt?: string,
+   *   contentIncomplete?: boolean}} row SNOW-1139's `contentAt` is when
+   *   the area's bulletins were fetched, '' when never — dated on the meta
+   *   line when it is an earlier day than today. SNOW-844's `incomplete`
    *   is set by `markIncompleteRows`, never by the manage core —
    *   answering it needs Cache Storage, which that module deliberately
    *   never touches. SNOW-932's `contentIncomplete` comes the OTHER way,
@@ -1446,6 +1451,9 @@
     }
 
     const subtitle = fragment.querySelector('[data-row-meta]');
+    // SNOW-1139: read at paint time, not at IIFE time — base.html loads it
+    // in <head>, but a row is only ever built long after both have run.
+    const stamp = window.pwaCachedStampCore;
     if (subtitle) {
       // SNOW-844: a row that cannot render takes the same "Incomplete"
       // line an orphan does, and for a reason the reader does not need
@@ -1487,6 +1495,18 @@
         // not dimmed for, and for the same reason.
         if (row.contentIncomplete) {
           subtitle.textContent += ' · ' + (STRINGS['kind-content-incomplete'] || '');
+        } else if (stamp && row.contentAt && stamp.isBeforeToday(row.contentAt)) {
+          // SNOW-1139: the bulletins this area holds were fetched on an
+          // earlier day. Same clause shape as the shortfall above, and
+          // never beside it — a row whose content fell short already says
+          // so, and dating the older run it kept would be a second caveat
+          // about the same half. Today's content says nothing: a fresh
+          // download is the normal case, and the line is for the other.
+          subtitle.textContent +=
+            ' · ' +
+            interpolate(STRINGS['kind-content-saved'], {
+              date: stamp.formatDay(row.contentAt),
+            });
         }
       }
       // No per-branch dimming here any more (SNOW-832). SNOW-645 dimmed
