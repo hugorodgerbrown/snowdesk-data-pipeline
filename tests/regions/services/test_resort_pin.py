@@ -110,6 +110,26 @@ class TestMovingAPin:
         assert (original.latitude, original.longitude) == (46.3, 7.5)
         assert Location.objects.count() == 1
 
+    def test_a_stale_instance_follows_the_committed_pin(self) -> None:
+        """
+        A stale instance uses the row's committed pin, not its own.
+
+        A writer holding an instance loaded before another's write moves that
+        writer's Location rather than minting a new one.
+        """
+        resort = ResortFactory.create(latitude=46.1, longitude=7.4)
+        stale = Resort.objects.get(pk=resort.pk)
+        # Another writer moves the pin off to a fresh row in between.
+        other = LocationFactory.create(name="", latitude=46.9, longitude=7.9)
+        Resort.objects.filter(pk=resort.pk).update(
+            location=other, latitude=46.9, longitude=7.9
+        )
+
+        moved = set_resort_pin(stale, 46.95, 7.95)
+
+        assert moved is not None
+        assert moved.pk == other.pk
+
     def test_keeps_its_weather_rows(self) -> None:
         """Weather on the moved Location stays attached to it."""
         resort = ResortFactory.create(latitude=46.1, longitude=7.4)

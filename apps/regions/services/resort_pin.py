@@ -206,9 +206,17 @@ def set_resort_pin(
     # Serialise concurrent pin writes for one resort (an editor save racing
     # the backfill, say): one indexed query, held to the end of this
     # transaction. A no-op on SQLite, which locks the whole database anyway.
-    Resort.objects.select_for_update().filter(pk=resort.pk).values_list(
-        "pk", flat=True
-    ).first()
+    # The lock reads the row's current pin onto the caller's instance, so a
+    # writer that waited on another works from what that one committed, not
+    # from the stale ``location_id`` it loaded before the lock.
+    locked = (
+        Resort.objects.select_for_update()
+        .only("location", "latitude", "longitude")
+        .get(pk=resort.pk)
+    )
+    resort.location_id = locked.location_id
+    resort.latitude = locked.latitude
+    resort.longitude = locked.longitude
 
     location: Location | None
     if latitude is None or longitude is None:
