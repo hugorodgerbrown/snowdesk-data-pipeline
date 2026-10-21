@@ -29,6 +29,12 @@ And the SNOW-545 reservation contract:
   whole retention window.
 * An expired row is *reclaimed* — renewed and overwritten — rather than
   colliding forever with a blind insert.
+
+And the SNOW-1169 exemption:
+
+* The MCP and OAuth machine endpoints in ``IDEMPOTENCY_EXEMPT_PATHS`` run
+  the view every time, write no row and log nothing — and the constant is
+  pinned to the URLconf so a remounted route cannot drift from it.
 """
 
 from __future__ import annotations
@@ -41,9 +47,11 @@ import pytest
 from django.contrib.auth.models import User
 from django.http import HttpRequest, HttpResponse
 from django.test import Client
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.core.idempotency import (
+    IDEMPOTENCY_EXEMPT_PATHS,
     IDEMPOTENCY_RECORD_TTL_SECONDS,
     IdempotencyMiddleware,
 )
@@ -496,6 +504,65 @@ def test_fingerprint_mismatch_logs_warning(caplog: pytest.LogCaptureFixture) -> 
     assert any(
         "pwa.idempotency.fingerprint_mismatch" in record.message
         for record in caplog.records
+    )
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1169 — machine endpoints are exempt from deduplication.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("path", sorted(IDEMPOTENCY_EXEMPT_PATHS))
+def test_exempt_path_runs_the_view_every_time(
+    path: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An exempt path ignores the key: two runs, no row, no missing log."""
+    view = _CountingView()
+    middleware = IdempotencyMiddleware(view)
+
+    with caplog.at_level(logging.INFO, logger="apps.core.idempotency"):
+        middleware(_post(path=path, key="exempt-key", body=b"same"))
+        middleware(_post(path=path, key="exempt-key", body=b"same"))
+        middleware(_post(path=path))
+
+    assert view.calls == 3
+    assert IdempotencyRecord.objects.count() == 0
+    assert not any("pwa.idempotency" in record.message for record in caplog.records)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "path", ["/account/", "/api/mcp-other/", "/oauth/token/extra/"]
+)
+def test_non_exempt_path_still_replays(path: str) -> None:
+    """The control and the near-miss paths are deduplicated as before."""
+    view = _CountingView(status=201, body=b"created")
+    middleware = IdempotencyMiddleware(view)
+
+    first = middleware(_post(path=path, key="control-key", body=b"same"))
+    second = middleware(_post(path=path, key="control-key", body=b"same"))
+
+    assert view.calls == 1
+    assert first.content == second.content == b"created"
+    assert IdempotencyRecord.objects.filter(key="control-key").count() == 1
+
+
+def test_exempt_paths_match_the_urlconf() -> None:
+    """The hard-coded paths are exactly where the five routes are mounted.
+
+    If a route is remounted, this fails until the exemption moves with it —
+    otherwise the moved endpoint would silently regain replay.
+    """
+    assert IDEMPOTENCY_EXEMPT_PATHS == frozenset(
+        reverse(name)
+        for name in (
+            "api:mcp:endpoint",
+            "api:mcp:endpoint_noslash",
+            "oauth:token",
+            "oauth:register",
+            "oauth:revoke",
+        )
     )
 
 
