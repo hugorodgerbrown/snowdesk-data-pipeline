@@ -121,9 +121,10 @@ class TestPruneOrphanLocations:
         ``Weather`` is deliberately absent: its foreign key is CASCADE, and
         deleting an orphan's weather with it is the point of the command.
         """
-        # get_accessor_name() is None only for a related_name="+" relation,
-        # which has no reverse accessor for _orphans() to filter on; keep the
-        # None so such a relation still fails the guard rather than vanishing.
+        # get_accessor_name() is typed str | None; str() satisfies mypy. A
+        # related_name="+" relation is hidden, so _meta.related_objects never
+        # lists it and this guard cannot see it -- nor could _orphans() filter
+        # on it, since it has no reverse accessor.
         protected = {
             str(rel.get_accessor_name())
             for rel in Location._meta.related_objects
