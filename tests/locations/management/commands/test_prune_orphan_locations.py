@@ -19,6 +19,7 @@ from io import StringIO
 
 import pytest
 from django.core.management import call_command
+from django.db.models import PROTECT
 
 from apps.locations.models import Location
 from apps.trips.models import Trip
@@ -28,12 +29,27 @@ from tests.factories import (
     FieldObservationFactory,
     LocationFactory,
     MicroRegionFactory,
+    ResortFactory,
     ResortLocationFactory,
     TripFactory,
     WeatherFactory,
 )
 
 COMMAND = "prune_orphan_locations"
+
+# Every PROTECT relation onto Location, as (parametrisation id, reverse
+# accessor). ``_orphans()`` must exclude each accessor; the meta guard
+# ``test_every_protect_relation_is_excluded`` keeps this list honest against
+# the model, so a new PROTECT foreign key fails a test before it can make
+# ``--commit`` raise (SNOW-1171).
+REFERRERS: tuple[tuple[str, str], ...] = (
+    ("resort", "resort_locations"),
+    ("region", "micro_regions"),
+    ("resort_pin", "pinned_resorts"),
+    ("favourite", "favourites"),
+    ("report", "field_observations"),
+    ("trip", "trips"),
+)
 
 
 @pytest.mark.django_db
@@ -63,27 +79,70 @@ class TestPruneOrphanLocations:
 
         assert Location.objects.filter(pk=curated.pk).exists()
 
-    @pytest.mark.parametrize("referrer", ["resort", "region", "favourite", "report"])
+    @pytest.mark.parametrize("referrer", [name for name, _ in REFERRERS])
     def test_a_referenced_location_survives(self, referrer: str) -> None:
         """Every inbound reference protects the row.
 
-        Parametrised over all four because missing one would delete live
-        data — and the reverse accessor names are easy to get wrong
-        (``field_observations``, not ``observations``).
+        Parametrised over all six because missing one would delete live
+        data or, for a PROTECT relation, abort the whole sweep — and the
+        reverse accessor names are easy to get wrong (``field_observations``,
+        not ``observations``). Each branch is explicit, so a new entry in
+        ``REFERRERS`` without one fails rather than quietly reusing another
+        referrer's setup.
         """
         location = LocationFactory.create(anonymous=True)
         if referrer == "resort":
             ResortLocationFactory.create(location=location)
         elif referrer == "region":
             MicroRegionFactory.create(centroid_location=location)
+        elif referrer == "resort_pin":
+            ResortFactory.create(location=location)
         elif referrer == "favourite":
             FavouriteFactory.create(location=location)
-        else:
+        elif referrer == "report":
             FieldObservationFactory.create(location=location)
+        elif referrer == "trip":
+            TripFactory.create(meeting_point=location)
+        else:
+            pytest.fail(f"No setup branch for referrer {referrer!r}")
 
         call_command(COMMAND, "--commit", stdout=StringIO())
 
         assert Location.objects.filter(pk=location.pk).exists()
+
+    def test_every_protect_relation_is_excluded(self) -> None:
+        """Every PROTECT relation onto Location is covered by ``REFERRERS``.
+
+        SNOW-1171 was a PROTECT foreign key (``Trip.meeting_point``) added
+        without a matching exclusion in ``_orphans()``, which made every
+        ``--commit`` raise. This reads the relations off the model so the
+        next one fails here, naming the accessor, instead of in production.
+
+        ``Weather`` is deliberately absent: its foreign key is CASCADE, and
+        deleting an orphan's weather with it is the point of the command.
+        """
+        # get_accessor_name() is None only for a related_name="+" relation,
+        # which has no reverse accessor for _orphans() to filter on; keep the
+        # None so such a relation still fails the guard rather than vanishing.
+        protected = {
+            str(rel.get_accessor_name())
+            for rel in Location._meta.related_objects
+            if rel.on_delete is PROTECT
+        }
+        covered = {accessor for _, accessor in REFERRERS}
+
+        missing = protected - covered
+        assert not missing, (
+            f"PROTECT relation(s) {sorted(missing)} onto Location are not "
+            "excluded: add each accessor as `<accessor>__isnull=True` in "
+            "prune_orphan_locations._orphans() and as a branch in REFERRERS "
+            "and test_a_referenced_location_survives."
+        )
+        stale = covered - protected
+        assert not stale, (
+            f"REFERRERS lists {sorted(stale)}, which is no longer a PROTECT "
+            "relation onto Location — remove or reclassify it."
+        )
 
     def test_a_live_trip_meeting_point_is_not_an_orphan(self) -> None:
         """A trip's meeting point is spared, and the sweep still completes.
