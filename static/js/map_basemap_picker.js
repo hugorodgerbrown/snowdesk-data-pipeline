@@ -616,6 +616,13 @@
                 );
               }
             }
+            // The weather symbols sit beside a resort pin rather than over
+            // it, but only while the pins are drawn: hiding them hands the
+            // symbols their own points back. Enabling goes through
+            // overlay-load above, which does the same on its way out.
+            if (overlayKey === 'resorts') {
+              document.dispatchEvent(new CustomEvent('snowdesk:resorts-hidden'));
+            }
           }
           // SNOW-499's snowdesk:favourites-visibility-changed dispatch stood
           // here, recomputing the resort layer's favourited-resort exclusion

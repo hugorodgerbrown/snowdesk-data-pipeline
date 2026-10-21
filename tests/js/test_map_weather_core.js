@@ -377,3 +377,90 @@ describe('collapseToLowest', () => {
     });
   });
 });
+
+describe('markResortPins', () => {
+  const pin = (lon, lat) => ({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [lon, lat] },
+    properties: { id: 'arolla', name: 'Arolla' },
+  });
+
+  it('flags a station standing on a resort pin and no other', () => {
+    // The village station and the resort pin are one Location, so they
+    // share a coordinate exactly; the station up the valley does not.
+    const fc = {
+      type: 'FeatureCollection',
+      features: [
+        makeFeature({}, { lon: 7.48194, lat: 46.02404, id: 'village' }),
+        makeFeature({}, { lon: 7.4801, lat: 46.0410, id: 'valley' }),
+      ],
+    };
+
+    const marked = core.markResortPins(fc, {
+      type: 'FeatureCollection',
+      features: [pin(7.48194, 46.02404)],
+    });
+
+    expect(marked.features.map((f) => f.properties.at_resort)).toEqual([true, false]);
+    expect(marked.features[0].properties.resort_id).toBe('arolla');
+    expect(marked.features[0].properties.resort_name).toBe('Arolla');
+    expect(marked.features[1].properties.resort_id).toBe('');
+  });
+
+  it("puts the resort's name on the second row in place of the height", () => {
+    const DATE = '2026-10-21';
+    const day = { [DATE]: { code: 71, tmax: 5 } };
+    const fc = core.projectFeatureCollectionForDate({
+      type: 'FeatureCollection',
+      features: [
+        makeFeature(day, { lon: 7.48194, lat: 46.02404, elevation: 1984, id: 'village' }),
+        makeFeature(day, { lon: 7.4801, lat: 46.0410, elevation: 2030, id: 'valley' }),
+      ],
+    }, DATE);
+
+    const marked = core.markResortPins(fc, {
+      type: 'FeatureCollection',
+      features: [pin(7.48194, 46.02404)],
+    });
+
+    const [village, valley] = marked.features.map((f) => f.properties);
+    expect([village.label_break, village.elev_mark, village.label_elev])
+      .toEqual(['\n', '', 'Arolla']);
+    expect(valley.label_elev).toBe('2030 m');
+    expect(valley.elev_mark).not.toBe('');
+  });
+
+  it('absorbs float formatting but not a near neighbour', () => {
+    const fc = {
+      type: 'FeatureCollection',
+      features: [
+        makeFeature({}, { lon: 7.481940000001, lat: 46.024039999999, id: 'same' }),
+        makeFeature({}, { lon: 7.4820, lat: 46.0241, id: 'next-door' }),
+      ],
+    };
+
+    const marked = core.markResortPins(fc, {
+      type: 'FeatureCollection',
+      features: [pin(7.48194, 46.02404)],
+    });
+
+    expect(marked.features.map((f) => f.properties.at_resort)).toEqual([true, false]);
+  });
+
+  it('flags nothing when no resort pins are drawn', () => {
+    const fc = { type: 'FeatureCollection', features: [makeFeature({})] };
+
+    const marked = core.markResortPins(fc, null);
+
+    expect(marked.features[0].properties.at_resort).toBe(false);
+  });
+
+  it('never mutates its input', () => {
+    const feature = makeFeature({});
+    const fc = { type: 'FeatureCollection', features: [feature] };
+
+    core.markResortPins(fc, { type: 'FeatureCollection', features: [pin(7.4, 46.1)] });
+
+    expect(feature.properties).not.toHaveProperty('at_resort');
+  });
+});

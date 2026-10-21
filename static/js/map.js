@@ -1887,6 +1887,10 @@
     BASE_LAYER_FILTERS['resorts-pin'] = map.getFilter('resorts-pin') ?? null;
     BASE_LAYER_FILTERS['resorts-label'] = map.getFilter('resorts-label') ?? null;
     raiseMarkerLayers();
+    // Weather symbols step aside for a resort pin only once the pins exist
+    // (weatherDataForCurrentView), and the two overlays load in either
+    // order — so pins arriving after the symbols move them.
+    refreshWeatherSourceData();
     // Re-apply in case favourites data (and therefore favouritedResortIds)
     // was already known before this layer installed.
     applyResortsFavouritedFilter();
@@ -4051,12 +4055,23 @@
   // A null `currentDisplayedDate` — no day asked for — projects every
   // feature to `icon: ''`, which the layer's own filter drops, so the map
   // carries no weather symbols for a day the visitor never chose.
+  //
+  // Last, the stations that stand on a resort pin are flagged so the layer
+  // sets their symbol beside the pin rather than over it. Only while the
+  // resort pins are drawn: with the overlay off there is nothing to step
+  // aside for, and the symbol goes back to centring on its own point.
   const weatherDataForCurrentView = () => {
     const collapsed = window.pwaWeatherCore.collapseToLowest(
       weatherGeojsonCache, weatherClusterRadius(),
     );
-    return window.pwaWeatherCore.projectFeatureCollectionForDate(
+    const projected = window.pwaWeatherCore.projectFeatureCollectionForDate(
       collapsed, currentDisplayedDate,
+    );
+    const resortsDrawn =
+      readBoolStorage(OVERLAY_STORAGE_KEY.resorts, overlayState.resorts)
+      && !!map.getSource('resorts');
+    return window.pwaWeatherCore.markResortPins(
+      projected, resortsDrawn ? resortsGeojsonCache : null,
     );
   };
 
@@ -4187,7 +4202,16 @@
         ],
         'text-font': overlayTextFont,
         'text-size': WEATHER_TEXT_SIZE,
-        'text-anchor': 'center',
+        // A station on a resort pin is the SAME point as the pin (the
+        // village Location), so a centred symbol buries the pin, takes its
+        // tap and knocks the resort's name out by collision. Those stations
+        // set the symbol to the pin's right instead: one em clears the
+        // largest pin (CORE at z12, 9.5 px + its 1.5 px stroke) at this
+        // text size. See markResortPins in map_weather_core.js.
+        'text-anchor': ['case', ['get', 'at_resort'], 'left', 'center'],
+        'text-offset': [
+          'case', ['get', 'at_resort'], ['literal', [1, 0]], ['literal', [0, 0]],
+        ],
         'text-allow-overlap': false,
         'text-padding': 4,
         // Ems of text-size. It looks tight for two rows because it is
@@ -5653,6 +5677,12 @@
    */
   const panelOverlayPainted = (key) => layerPainted(OVERLAY_LAYERS[key][0]);
 
+  // Bridge for basemapPickerInit's resorts toggle-off: the weather symbols
+  // that stepped aside for a resort pin go back to centring on their point
+  // (see weatherDataForCurrentView). A re-enable of already-loaded pins
+  // takes overlay-load, below, which does the reverse.
+  document.addEventListener('snowdesk:resorts-hidden', refreshWeatherSourceData);
+
   // SNOW-235: Bridge for the basemapPickerInit IIFE — dispatched when
   // the user enables an overlay tier that hasn't been fetched yet.
   // We fetch the GeoJSON, install the layers, then make them visible.
@@ -5733,6 +5763,9 @@
       if (key === 'weather' && stillEnabled && wasLoaded) {
         refreshWeatherSourceData();
       }
+      // The resort-pin half of snowdesk:resorts-hidden: a re-enable installs
+      // nothing, so installResortsLayer's own refresh does not run.
+      if (key === 'resorts') refreshWeatherSourceData();
       // SNOW-499: making the favourites overlay (re-)visible means any
       // favourited resort should hide its plain dot again, now the star is
       // back. ensureOverlayLoaded short-circuits for an already-loaded
@@ -9248,11 +9281,30 @@
       // collapse — the lowest — which is the reading the symbol is drawing,
       // so the sheet answers for the same place the map showed. The feed
       // carries the opaque short id, never the pk (SNOW-797).
+      //
+      // A symbol standing on a resort pin is not a second thing: the pin IS
+      // that station (Resort.location), and the symbol is the resort's own
+      // weather set beside it (see the layer's `text-anchor`). So it opens
+      // the resort, whose sheet carries the forecast, and the tap goes on
+      // down the resort path below — route close, playback guard and all.
+      // A resort pin under any other symbol outranks it too: the pin is the
+      // smaller target of the two.
+      let resortFromWeather = null;
       if (map.getLayer('weather-point')) {
         const weatherHit = map.queryRenderedFeatures(e.point, {
           layers: ['weather-point'],
         })[0];
-        if (weatherHit) {
+        const resortUnder = weatherHit && map.getLayer('resorts-pin')
+          ? map.queryRenderedFeatures(e.point, { layers: ['resorts-pin'] })[0]
+          : null;
+        if (weatherHit && weatherHit.properties.at_resort) {
+          resortFromWeather = {
+            properties: {
+              id: weatherHit.properties.resort_id,
+              name: weatherHit.properties.resort_name,
+            },
+          };
+        } else if (weatherHit && !resortUnder) {
           window.pwaWeatherDetail?.open(
             weatherHit.properties.short_id, currentDisplayedDate,
           );
@@ -9272,9 +9324,9 @@
       // tap with a route open, so a tap on one opens it there and then
       // rather than spending the first tap on closing the route.
       if (window.pwaRouteRail?.isOpen?.()) {
-        const resortHit = map.getLayer('resorts-pin')
+        const resortHit = resortFromWeather || (map.getLayer('resorts-pin')
           ? map.queryRenderedFeatures(e.point, { layers: ['resorts-pin'] })[0]
-          : null;
+          : null);
         window.pwaRouteRail.close();
         if (resortHit && !IS_PLAYING) {
           closeMapDetailSurfaces();
@@ -9291,7 +9343,7 @@
         ? map.queryRenderedFeatures(e.point, { layers })
         : [];
 
-      if (features.length === 0) {
+      if (features.length === 0 && !resortFromWeather) {
         // Genuine tap on empty map area (outside any region) — deselects the
         // region (greys the ribbon, drops the readout to date-only, removes the
         // highlight) and closes any anchored resort/favourite popup. Runs even
@@ -9321,7 +9373,8 @@
       // parent region's selection (former SNOW-78 behaviour). Since
       // SNOW-1161 that is the place sheet on every width; its bulletin
       // button is the path on to the region's day.
-      const resort = features.find((f) => f.layer.id === 'resorts-pin');
+      const resort = resortFromWeather
+        || features.find((f) => f.layer.id === 'resorts-pin');
       if (resort) {
         openResortFeature(resort);
         return;

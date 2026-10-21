@@ -94,6 +94,10 @@
  *     draws.
  *   collapseToLowest(featureCollection, radiusDegrees)
  *     Cluster overlapping stations and keep the LOWEST of each — see (3).
+ *   markResortPins(featureCollection, resortCollection)
+ *     Flag the stations that stand on a resort pin (and name the resort),
+ *     so the layer sets the symbol beside the pin and a tap opens the
+ *     resort rather than a second sheet for the same place.
  */
 
 (function () {
@@ -413,6 +417,78 @@
     };
   }
 
+  /**
+   * The key two features share when they stand on the same point.
+   *
+   * Five decimal places is about a metre — both feeds read the coordinate
+   * off the same ``Location`` row, so a shared point matches exactly and
+   * the rounding only absorbs float formatting, never a near neighbour.
+   *
+   * @param {Object} feature
+   * @returns {string|null} The key, or null for a feature with no point.
+   */
+  function pointKey(feature) {
+    var coordinates =
+      (feature && feature.geometry && feature.geometry.coordinates) || null;
+    if (!coordinates) return null;
+    return coordinates[0].toFixed(5) + ',' + coordinates[1].toFixed(5);
+  }
+
+  /**
+   * Flag every station that stands on a resort pin, and name the resort.
+   *
+   * A resort's pin IS a station — ``Resort.location`` is the Location its
+   * weather hangs off (SNOW-1144) — so every resort pin has a symbol on
+   * exactly the same point, and a symbol centred there buries the pin. The
+   * layer reads `at_resort` to set the symbol beside the pin instead, and
+   * the map's tap reads `resort_id` / `resort_name` to open the resort
+   * rather than a second, station-only sheet for the same place. The
+   * second row of the symbol becomes the resort's name. Every
+   * other feature gets `at_resort: false` and empty strings, so the
+   * layer's `case` never meets a missing value.
+   *
+   * @param {{type: string, features: Array<Object>}|null|undefined} featureCollection
+   *   The weather features, already projected.
+   * @param {{type: string, features: Array<Object>}|null|undefined} resortCollection
+   *   The resort pins drawn on the map, or null when none are.
+   * @returns {{type: string, features: Array<Object>}} A new
+   *   FeatureCollection — neither input is mutated.
+   */
+  function markResortPins(featureCollection, resortCollection) {
+    var features = (featureCollection && featureCollection.features) || [];
+    var resorts = (resortCollection && resortCollection.features) || [];
+    var pins = Object.create(null);
+    for (var i = 0; i < resorts.length; i++) {
+      var key = pointKey(resorts[i]);
+      // First wins: a Location several resorts are pinned to is drawn as
+      // one pin, and the tap opens the same resort that pin would.
+      if (key && !pins[key]) pins[key] = resorts[i].properties || {};
+    }
+    return {
+      type: 'FeatureCollection',
+      features: features.map(function (feature) {
+        var resort = pins[pointKey(feature)] || null;
+        var properties = Object.assign({}, feature.properties, {
+          at_resort: resort !== null,
+          resort_id: resort && resort.id != null ? String(resort.id) : '',
+          resort_name: (resort && resort.name) || '',
+        });
+        // The symbol is the resort's own weather, so its second row names
+        // the resort rather than the station's height. That is also the
+        // only place the name can go: resorts-label sits under the pin, and
+        // a symbol beside the pin takes that space in collision and knocks
+        // the name out. A day with no reading keeps its empty row as-is —
+        // the layer's filter drops that feature anyway.
+        if (resort !== null && properties.icon && resort.name) {
+          properties.label_break = '\n';
+          properties.elev_mark = '';
+          properties.label_elev = resort.name;
+        }
+        return Object.assign({}, feature, { properties: properties });
+      }),
+    };
+  }
+
   window.pwaWeatherCore = Object.freeze({
     iconForCode: iconForCode,
     formatTemp: formatTemp,
@@ -426,5 +502,6 @@
     isDateInForecastWindow: isDateInForecastWindow,
     iconFilenamesForPayload: iconFilenamesForPayload,
     collapseToLowest: collapseToLowest,
+    markResortPins: markResortPins,
   });
 })();
