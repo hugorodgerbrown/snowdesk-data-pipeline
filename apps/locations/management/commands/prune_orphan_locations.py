@@ -13,10 +13,11 @@ appearing and rebinds to the oldest surviving row; this command clears what
 the earlier behaviour left behind.
 
 **It is deliberately narrow.** Only an *anonymous* location with no
-``ResortLocation``, no ``MicroRegion``, no ``Favourite`` and no
-``FieldObservation`` is a candidate. A named location is curated data owned
-by ``import_locations`` and is never touched, even when nothing points at it
-— an unreferenced curated place is a curation question, not garbage.
+``ResortLocation``, no ``MicroRegion``, no resort pin (``Resort.location``),
+no ``Favourite``, no ``FieldObservation`` and no ``Trip`` meeting point is a
+candidate. A named location is curated data owned by ``import_locations``
+and is never touched, even when nothing points at it — an unreferenced
+curated place is a curation question, not garbage.
 
 Deleting a ``Location`` cascades to its ``Weather`` rows, which is the point:
 that data describes a place nothing can reach any more.
@@ -54,8 +55,9 @@ class Command(BaseCommand):
 
     help = (
         "Delete anonymous Locations no ResortLocation, MicroRegion, "
-        "Favourite or FieldObservation points at, along with their "
-        "Weather. Read-only unless --commit is passed."
+        "resort pin, Favourite, FieldObservation or Trip meeting point "
+        "points at, along with their Weather. Read-only unless --commit "
+        "is passed."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -84,6 +86,10 @@ class Command(BaseCommand):
             pinned_resorts__isnull=True,
             favourites__isnull=True,
             field_observations__isnull=True,
+            # SNOW-1171: a trip's meeting point. Trip.meeting_point is
+            # PROTECT too, so a live trip's pin counted as an orphan raised
+            # ProtectedError and rolled the whole sweep back.
+            trips__isnull=True,
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -106,8 +112,8 @@ class Command(BaseCommand):
 
         if commit and location_count:
             with transaction.atomic():
-                # Streamed, not materialised. The queryset above spans four
-                # joins, so a delete() over it would emit a DELETE carrying
+                # Streamed, not materialised. The queryset above spans a join
+                # per referrer, so a delete() over it would emit a DELETE carrying
                 # those joins on some backends — but collecting every pk
                 # first, to delete WHERE pk IN (...), holds the whole orphan
                 # estate in memory to build a clause the database then has
