@@ -673,6 +673,44 @@ class TestUpsertBulletin:
             region__region_id="CH-7111",
         ).exists()
 
+    def test_narrowed_correction_reconciles_the_dropped_region(self) -> None:
+        """SNOW-1168: a re-ingest that drops a region leaves it no stale rating.
+
+        The first issue rates CH-4115 and CH-7111 low. The correction, under
+        the same bulletin ID, rates CH-7111 high and no longer covers
+        CH-4115. Before the fix only CH-7111 was recomputed, so CH-4115 kept
+        a low rating sourced from a bulletin that no longer covers it — and
+        the map served it. It must now fall to ``no_rating`` (no other
+        bulletin covers it that day) while CH-7111 reads high.
+        """
+        run = PipelineRunFactory.create()
+        upsert_bulletin(
+            _make_raw_bulletin(
+                bulletin_id="corr-001",
+                dangerRatings=[{"mainValue": "low"}],
+            ),
+            run,
+        )
+        target = date(2025, 3, 16)
+        assert (
+            RegionDayRating.objects.get(region__region_id="CH-4115", date=target)
+        ).max_rating == RegionDayRating.Rating.LOW
+
+        upsert_bulletin(
+            _make_raw_bulletin(
+                bulletin_id="corr-001",
+                dangerRatings=[{"mainValue": "high"}],
+                regions=[{"regionID": "CH-7111", "name": "Engadin"}],
+            ),
+            run,
+        )
+
+        dropped = RegionDayRating.objects.get(region__region_id="CH-4115", date=target)
+        assert dropped.max_rating == RegionDayRating.Rating.NO_RATING
+        assert dropped.source_bulletin is None
+        kept = RegionDayRating.objects.get(region__region_id="CH-7111", date=target)
+        assert kept.max_rating == RegionDayRating.Rating.HIGH
+
     # ------------------------------------------------------------------
     # source (SNOW-581)
     # ------------------------------------------------------------------

@@ -829,79 +829,18 @@ def season_calendar_cache_key(
     )
 
 
-def apply_bulletin_day_ratings(bulletin: "Bulletin") -> int:
+def _invalidate_season_calendars(regions: Iterable["MicroRegion"]) -> None:
     """
-    Recompute RegionDayRating for the (region, target_day) pairs of a bulletin.
+    Delete every language's cached season calendar for each of ``regions``.
 
-    A bulletin targets exactly one calendar day — read from ``bulletin.target_date``
-    (populated at ingest time), falling back to ``target_day_for_valid_from`` for
-    any un-backfilled row: morning issues (valid_from.hour < 12) target their
-    own date; evening issues (valid_from.hour >= 12) target the following date.
-
-    For each region linked to the bulletin, calls ``recompute_region_day`` for
-    that single target day.  The recompute also pulls in the complementary
-    candidate (morning + prior-evening pair) so the chosen bulletin for the day
-    is always up to date.
-
-    Each region is recomputed independently: a failure for one region does not
-    stop the others. When a recompute fails, the stale RegionDayRating row for
-    that ``(region, target_day)`` pair is **deleted** so the public API can
-    never keep serving an out-of-date rating — a bulletin that flipped from
-    low to high danger must not leave the old low rating live. A missing row is
-    rendered as ``no_rating`` ("no current data") downstream, which is the
-    correct, safe fallback (SNOW-461).
-
-    After recomputing, invalidates the season-calendar fragment cache key for
-    each affected region so the next HTMX open re-queries rather than serving
-    stale markup. Cache failures are logged and never abort ingest.
-
-    Designed to be called inline from ``upsert_bulletin`` after the
-    RegionBulletin links are created. Day-rating failures never abort ingest
-    (the authoritative data lives in Bulletin/RegionBulletin), but the caller
-    should treat a non-zero return as a ``records_failed`` increment so the
-    pipeline run is marked failed and cron/CI surface it.
+    Reads only ``canonical_region_id`` (derived from ``region_id``), so the
+    slim regions :func:`day_rating_pairs` returns are sufficient. Cache
+    failures are logged and never abort ingest.
 
     Args:
-        bulletin: The Bulletin whose linked (region, target_day) pairs to refresh.
-
-    Returns:
-        The number of regions whose recompute failed (0 on full success).
+        regions: The regions whose season-calendar bodies are now stale.
 
     """
-    from apps.bulletins.models import RegionDayRating
-
-    target = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
-
-    # Gather distinct regions linked to this bulletin.
-    regions = list(bulletin.regions.all())
-
-    failed_count = 0
-    for region in regions:
-        try:
-            recompute_region_day(region, target, commit=True)
-        except Exception:
-            failed_count += 1
-            logger.exception(
-                "recompute_region_day failed for bulletin=%s region=%s day=%s"
-                " — deleting the stale rating so the public API cannot serve it.",
-                bulletin.bulletin_id,
-                region.canonical_region_id,
-                target,
-            )
-            # Invalidate the now-untrustworthy row for this (region, day) so a
-            # stale (possibly lower) rating is never served. A guarded delete —
-            # a failure here must not abort the remaining regions.
-            try:
-                RegionDayRating.objects.filter(region=region, date=target).delete()
-            except Exception:
-                logger.exception(
-                    "Failed to invalidate stale RegionDayRating for bulletin=%s"
-                    " region=%s day=%s — a stale rating may remain public.",
-                    bulletin.bulletin_id,
-                    region.canonical_region_id,
-                    target,
-                )
-
     # Invalidate the season-calendar response cache for each affected region so
     # the next HTMX open re-queries with the freshly written RegionDayRating rows.
     # Keyed to today (the date the response was cached on), not the bulletin's
@@ -924,11 +863,109 @@ def apply_bulletin_day_ratings(bulletin: "Bulletin") -> int:
                 region.canonical_region_id,
             )
 
+
+def apply_bulletin_day_ratings(
+    bulletin: "Bulletin",
+    *,
+    prior_pairs: Iterable[tuple["MicroRegion", date]] = (),
+) -> int:
+    """
+    Recompute RegionDayRating for the (region, target_day) pairs of a bulletin.
+
+    A bulletin targets exactly one calendar day — read from ``bulletin.target_date``
+    (populated at ingest time), falling back to ``target_day_for_valid_from`` for
+    any un-backfilled row: morning issues (valid_from.hour < 12) target their
+    own date; evening issues (valid_from.hour >= 12) target the following date.
+
+    For each region linked to the bulletin, calls ``recompute_region_day`` for
+    that single target day.  The recompute also pulls in the complementary
+    candidate (morning + prior-evening pair) so the chosen bulletin for the day
+    is always up to date.
+
+    ``prior_pairs`` are the (region, day) pairs the bulletin covered *before*
+    an update rewrote its region links or moved its target day — captured by
+    the caller with :func:`day_rating_pairs` ahead of the mutation. They are
+    recomputed alongside the current pairs, so a correction that drops a
+    region, or moves off a day, reconciles the rating it leaves behind rather
+    than leaving it sourced from a bulletin that no longer covers it
+    (SNOW-1168). Pairs are deduplicated on ``(region.pk, day)``. Defaults to
+    none, which is the first-ingest case.
+
+    Each pair is recomputed independently: a failure for one pair does not
+    stop the others. When a recompute fails, the stale RegionDayRating row for
+    that ``(region, day)`` pair is **deleted** so the public API can
+    never keep serving an out-of-date rating — a bulletin that flipped from
+    low to high danger must not leave the old low rating live. A missing row is
+    rendered as ``no_rating`` ("no current data") downstream, which is the
+    correct, safe fallback (SNOW-461).
+
+    After recomputing, invalidates the season-calendar fragment cache key for
+    each affected region (current and prior) so the next HTMX open re-queries
+    rather than serving stale markup. Cache failures are logged and never
+    abort ingest.
+
+    Designed to be called inline from ``upsert_bulletin`` after the
+    RegionBulletin links are created. Day-rating failures never abort ingest
+    (the authoritative data lives in Bulletin/RegionBulletin), but the caller
+    should treat a non-zero return as a ``records_failed`` increment so the
+    pipeline run is marked failed and cron/CI surface it.
+
+    Args:
+        bulletin: The Bulletin whose linked (region, target_day) pairs to refresh.
+        prior_pairs: (region, day) pairs the bulletin covered before an
+            update, to reconcile alongside the current ones.
+
+    Returns:
+        The number of pairs whose recompute failed (0 on full success).
+
+    """
+    from apps.bulletins.models import RegionDayRating
+
+    target = bulletin.target_date or target_day_for_valid_from(bulletin.valid_from)
+
+    # The current pairs first, then any prior pair not already among them —
+    # keyed on (pk, day) so instances from different querysets collapse.
+    pairs: dict[tuple[int, date], tuple["MicroRegion", date]] = {}
+    for region in bulletin.regions.all():
+        pairs[(region.pk, target)] = (region, target)
+    for region, day in prior_pairs:
+        pairs.setdefault((region.pk, day), (region, day))
+
+    failed_count = 0
+    for region, day in pairs.values():
+        try:
+            recompute_region_day(region, day, commit=True)
+        except Exception:
+            failed_count += 1
+            logger.exception(
+                "recompute_region_day failed for bulletin=%s region=%s day=%s"
+                " — deleting the stale rating so the public API cannot serve it.",
+                bulletin.bulletin_id,
+                region.canonical_region_id,
+                day,
+            )
+            # Invalidate the now-untrustworthy row for this (region, day) so a
+            # stale (possibly lower) rating is never served. A guarded delete —
+            # a failure here must not abort the remaining pairs.
+            try:
+                RegionDayRating.objects.filter(region=region, date=day).delete()
+            except Exception:
+                logger.exception(
+                    "Failed to invalidate stale RegionDayRating for bulletin=%s"
+                    " region=%s day=%s — a stale rating may remain public.",
+                    bulletin.bulletin_id,
+                    region.canonical_region_id,
+                    day,
+                )
+
+    regions = {region.pk: region for region, _day in pairs.values()}
+    _invalidate_season_calendars(regions.values())
+
     logger.debug(
-        "apply_bulletin_day_ratings: bulletin=%s target_day=%s regions=%d failed=%d",
+        "apply_bulletin_day_ratings: bulletin=%s target_day=%s pairs=%d failed=%d",
         bulletin.bulletin_id,
         target,
-        len(regions),
+        len(pairs),
         failed_count,
     )
     return failed_count
