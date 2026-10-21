@@ -8,15 +8,26 @@ same shapes so a resort panel cannot be read as a region panel (Hugo, 21
 Oct). Stroked in currentColor, as the search row's pin is, so it reads in
 both themes without a literal colour for the hole.
 
-Context: none. Decorative: the name beside it says what it is.
+SNOW-1177: a resort's tile draws the gondola cabin (``_icon_resort.html``),
+the glyph its search row clones; a saved pin keeps the placemark, because a
+saved pin is any point the reader chose, not a resort.
+
+Context:
+    kind : str — "resort" for the cabin; anything else (the place sheet
+           passes "favourite") keeps the placemark.
+Decorative: the name beside it says what it is.
 {% endcomment %}
 <span
     class="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full bg-card-hover text-text-1"
     aria-hidden="true"
     data-testid="resort-tile"
 >
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z" />
-        <circle cx="12" cy="10" r="2.5" />
-    </svg>
+    {% if kind == "resort" %}
+        {% include "includes/_icon_resort.html" with size=16 only %}
+    {% else %}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z" />
+            <circle cx="12" cy="10" r="2.5" />
+        </svg>
+    {% endif %}
 </span>

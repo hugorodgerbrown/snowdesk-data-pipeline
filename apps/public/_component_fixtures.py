@@ -885,7 +885,11 @@ SHEET_DATE_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 RESORT_TILE_VARIANTS: tuple[dict[str, Any], ...] = (
-    {"caption": "A place's lead tile", "context": {}},
+    {
+        "caption": "A resort: the gondola cabin (SNOW-1177)",
+        "context": {"kind": "resort"},
+    },
+    {"caption": "A saved pin: the placemark", "context": {"kind": "favourite"}},
 )
 
 EYEBROW_VARIANTS: tuple[dict[str, Any], ...] = (

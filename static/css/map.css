@@ -1473,7 +1473,7 @@
     color: var(--ink);
 }
 
-/* The pin inside the resort tile. `display` is explicit because the global
+/* The gondola cabin inside the resort tile (SNOW-1177). `display` is explicit because the global
    reset sets `svg { display: block }`; the tile centres it either way. */
 .search-result-pin {
     display: block;

@@ -175,6 +175,13 @@ class TestResortPeek:
         assert f"Data from {timezone.localdate():%-d %b %Y}" in _text(row)
         assert "data-another-day" not in row
 
+    def test_the_tile_draws_the_gondola_cabin(self, client: Client) -> None:
+        """SNOW-1177: a resort's tile is the cabin, not the placemark."""
+        resort = _resort()
+        peek = _peek(_get(client, _resort_url(resort.slug)).content.decode())
+        assert 'd="M3 6.5 21 3"' in peek
+        assert "a7 7 0 1 0-14 0" not in peek
+
     def test_another_day_highlights_the_date_row(self, client: Client) -> None:
         """The row takes over from SNOW-1165's strip, button and all."""
         resort = _resort()
@@ -234,6 +241,15 @@ class TestFavouritePeek:
         assert "data-row-rename-input" in content
         assert 'id="place-sheet-actions"' in content
         assert "data-row-remove" in content
+
+    def test_the_tile_keeps_the_placemark(self, client: Client) -> None:
+        """SNOW-1177: a saved pin is any point, not a resort — no cabin."""
+        favourite = FavouriteFactory.create()
+        client.force_login(favourite.user)
+        peek = _peek(_get(client, _favourite_url(favourite.uuid)).content.decode())
+        assert 'data-testid="resort-tile"' in peek
+        assert "a7 7 0 1 0-14 0" in peek
+        assert 'd="M3 6.5 21 3"' not in peek
 
     def test_unnamed_pin_is_labelled(self, client: Client) -> None:
         favourite = FavouriteFactory.create(name="")
