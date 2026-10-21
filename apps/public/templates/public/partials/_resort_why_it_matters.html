@@ -10,16 +10,17 @@ no prepared pistes and no avalanche control on the descents. Piste km says
 none of that.
 
 Shared by the two surfaces that present a resort: ``public/resort.html``
-(under the heading) and ``public/partials/_resort_popup.html`` (the
-resort-pin popup, where the user is deciding whether the pin is worth a
-tap).
+(under the heading) and the map's place sheet
+(``public/partials/_place_sheet_body.html``, where the reader is deciding
+whether the place is worth a closer look). SNOW-1161: the sheet includes
+this partial only when the line is written, so the blank states below are
+the resort page's alone; the resort popup that also showed them is gone.
 
 The field is curated over time rather than in one pass, so the blank state
 is a first-class state with three branches, not an omission:
 
   * ``is_staff``          — a dashed "Add a why-it-matters line" curation
-                            hint, matching ``_resort_meta_row.html``'s staff
-                            placeholder.
+                            hint.
   * anonymous             — an invitation to register. That is the point of
                             the empty state: an unwritten line is the most
                             natural place on the page to ask for a sign-up.

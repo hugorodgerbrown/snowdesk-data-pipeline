@@ -13,10 +13,12 @@ Covers both views, ``resort_sheet_partial`` and ``favourite_sheet_partial``:
     FULL to show, peek and half otherwise.
   - A pin's problems are judged against its Location's height, the pin's
     own legacy height only as a fallback.
-  - HALF ends under the day's weather; a forward day reads today's row and
-    shows that row's forecast entry for the day.
-  - FULL: the problems, the week, a resort's details and the links on, the
-    forecast link carrying the day.
+  - HALF: a resort's "why it matters" line only when written, its one-line
+    fact summary, then the day's weather; a forward day reads today's row
+    and shows that row's forecast entry for the day. No week (SNOW-1161).
+  - FULL: the problems and the links on — the day's bulletin first, then
+    the resort page — and the forecast link carrying the day. No facts
+    list and no dashed placeholder (SNOW-1161).
   - The map page carries the sheet, its script and the URL templates.
 """
 
@@ -273,7 +275,9 @@ class TestWeather:
         content = _get(client, _resort_url(resort.slug)).content.decode()
         assert 'data-testid="place-sheet-weather" data-sheet-half' in content
         assert "1500 m" in content
-        assert 'data-testid="place-sheet-week"' in content
+        # SNOW-1161: the week is the weather page's, not the sheet's.
+        assert 'data-testid="place-sheet-week"' not in content
+        assert 'data-testid="place-sheet-forecast-link"' in content
 
     def test_forward_day_reads_todays_forecast(self, client: Client) -> None:
         resort = _resort()
@@ -285,7 +289,7 @@ class TestWeather:
             client, _resort_url(resort.slug, tomorrow.isoformat())
         ).content.decode()
         assert "place-sheet-forward-day" in content
-        assert 'data-testid="place-sheet-week"' in content
+        assert 'data-testid="place-sheet-week"' not in content
         assert "Forecast ·" in content
 
     def test_forward_day_beyond_the_forecast_has_no_day(self, client: Client) -> None:
@@ -307,11 +311,65 @@ class TestWeather:
 class TestFull:
     """FULL: a resort's details and the links onward."""
 
-    def test_resort_shows_its_details_and_page(self, client: Client) -> None:
-        resort = _resort()
+    def test_resort_shows_its_summary_and_page(self, client: Client) -> None:
+        resort = _resort(
+            base_elevation_m=1500,
+            top_elevation_m=3330,
+            num_lifts=34,
+            total_piste_km=210,
+            operator_name="",
+        )
         content = _get(client, _resort_url(resort.slug)).content.decode()
-        assert 'data-testid="place-sheet-details"' in content
+        assert (
+            'data-testid="place-sheet-facts">1,500–3,330 m · 34 lifts · 210 km piste<'
+        ) in content
         assert f'href="{resort.get_absolute_url()}"' in content
+
+    def test_resort_has_no_facts_list_and_no_placeholders(self, client: Client) -> None:
+        """SNOW-1161: the full list is the page's; no blank is ever drawn."""
+        resort = _resort(
+            num_lifts=6,
+            total_piste_km=35,
+            operator_name="",
+            website="",
+            num_runs=None,
+            base_elevation_m=None,
+            top_elevation_m=None,
+        )
+        client.force_login(UserFactory.create(is_staff=True))
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert 'data-testid="place-sheet-details"' not in content
+        assert "About this resort" not in content
+        assert "border-dashed" not in content
+        assert "Add operator name" not in content
+        assert "6 lifts · 35 km piste" in content
+
+    def test_a_resort_with_no_facts_has_no_summary(self, client: Client) -> None:
+        resort = _resort(
+            num_lifts=None,
+            num_runs=None,
+            total_piste_km=None,
+            base_elevation_m=None,
+            top_elevation_m=None,
+        )
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert 'data-testid="place-sheet-facts"' not in content
+
+    def test_written_why_it_matters_shows(self, client: Client) -> None:
+        resort = _resort(why_it_matters="Four lifts, national freeride reputation.")
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert "Four lifts, national freeride reputation." in content
+
+    @pytest.mark.parametrize("is_staff", [None, False, True])
+    def test_unwritten_why_it_matters_shows_nothing(
+        self, client: Client, is_staff: bool | None
+    ) -> None:
+        """SNOW-1161: the blank states (prompt, hint) are the page's alone."""
+        resort = _resort(why_it_matters="")
+        if is_staff is not None:
+            client.force_login(UserFactory.create(is_staff=is_staff))
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert "resort-why-it-matters" not in content
 
     def test_forecast_link_carries_the_day(self, client: Client) -> None:
         resort = _resort()
@@ -362,13 +420,26 @@ class TestFull:
             client, _resort_url(resort.slug, day.isoformat())
         ).content.decode()
         assert f'href="{resort.region.get_absolute_url(day)}"' in content
-        assert "Open bulletin for" in content
+        assert f"Read the {resort.region.name} bulletin for 3 Feb" in content
+        # The bulletin is the primary button and comes before the resort.
+        links = content[content.index('data-testid="place-sheet-links"') :]
+        assert links.index(resort.region.get_absolute_url(day)) < links.index(
+            resort.get_absolute_url()
+        )
 
     def test_unrated_covered_day_says_no_bulletin(self, client: Client) -> None:
+        """SNOW-1161: the peek row says it, with the page's empty tile."""
         resort = _resort()
         content = _get(client, _resort_url(resort.slug)).content.decode()
-        assert "No bulletin available for" in content
-        assert "Open bulletin for" not in content
+        peek = content[
+            : content.index("data-sheet-half")
+            if "data-sheet-half" in content
+            else len(content)
+        ]
+        assert 'data-testid="danger-tile-empty"' in peek
+        assert "No bulletin ·" in peek
+        assert "No bulletin available for" not in content
+        assert "bulletin for" not in content
 
     def test_saved_resort_without_a_slug_has_no_resort_link(
         self, client: Client
@@ -387,7 +458,7 @@ class TestFull:
         client.force_login(favourite.user)
         content = _get(client, _favourite_url(favourite.uuid)).content.decode()
         assert f'href="{resort.get_absolute_url()}"' in content
-        assert 'data-testid="place-sheet-details"' not in content
+        assert 'data-testid="place-sheet-facts"' not in content
 
 
 @pytest.mark.django_db

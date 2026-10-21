@@ -1,12 +1,14 @@
 """
-apps/public/place_sheet.py — the body of the map's phone place sheet (SNOW-1100).
+apps/public/place_sheet.py — the body of the map's place sheet (SNOW-1100).
 
 A tap on a resort pin or a saved pin opened a 320px MapLibre popup anchored
 above it (``mountDetailPopup`` in ``static/js/map.js``), which on a phone
 covered much of the ground around the place the reader had asked about. On
 a phone the tap now opens ``#place-sheet``, a sheet with the three detents
-SNOW-1097 gave ``includes/_overlay_sheet.html``, at PEEK. Desktop keeps the
-popup (``docs/decisions/sheet-detents-are-phone-only.md``).
+SNOW-1097 gave ``includes/_overlay_sheet.html``, at PEEK. Since SNOW-1161 a
+resort opens this sheet on a desktop too, as the inset panel with no
+detents (``docs/decisions/the-map-opens-a-resort-in-the-sheet.md``); a
+saved pin keeps its desktop popup.
 
 One fragment serves both kinds and all three detents, ordered so each
 detent reveals the next part of it:
@@ -15,16 +17,19 @@ detent reveals the next part of it:
     code, the level and the region's name, then the place's actions and ×.
     A resort's action is its Save star; a saved pin's are the panel row's
     own "…" menu (Share → Rename → Delete, the order every list keeps);
-  - HALF — the day's weather at the place;
+  - HALF — for a resort its "why it matters" line (when written) and its
+    one-line fact summary, then the day's weather at the place and the link
+    to its forecast page;
   - FULL — the region's avalanche problems (a saved pin's annotated against
-    its own altitude), the week at the place, then for a resort its curated
-    details, and the links onward: the forecast page, the resort page, the
-    bulletin.
+    its own altitude), then the links onward: the day's bulletin, then the
+    resort page. SNOW-1161 took the week and the full facts list off the
+    sheet; both are the resort page's.
 
 Both views read the day the map is showing (``?d=``, today by default), as
 the region sheet does, so a reader looking at a past day reads that day's
-weather and rating. A place with no weather row for the day has nothing for
-FULL to reveal, and the fragment narrows its detents to peek and half.
+weather and rating. A place with no rating for the day and no resort page
+has nothing for FULL to reveal, and the fragment narrows its detents to peek
+and half.
 """
 
 from __future__ import annotations
@@ -151,7 +156,6 @@ def _place_context(
         if row_date == target_date
         else None,
         "forward_day": forward_day,
-        "forecast_panel": forecast_panel,
         # The page opens a forward day inside today's row with that day
         # selected (SNOW-1105), so the link names the day itself.
         "forecast_url": f"{base_url}?date={target_date.isoformat()}"
@@ -162,10 +166,10 @@ def _place_context(
 
 @require_htmx
 def resort_sheet_partial(request: HttpRequest, slug: str) -> HttpResponse:
-    """Render the phone place sheet's body for one resort.
+    """Render the place sheet's body for one resort.
 
-    Public, as the resort popup is: resorts are a reference layer. Only the
-    Save star is per-user, so the response is never cached.
+    Public: resorts are a reference layer. Only the Save star is per-user,
+    so the response is never cached.
 
     Args:
         request: The incoming HTMX GET request.
@@ -215,7 +219,6 @@ def resort_sheet_partial(request: HttpRequest, slug: str) -> HttpResponse:
             "favourite_uuid": str(favourite.uuid) if favourite else "",
             "signin_url": reverse("accounts:sign_in"),
             "resort_url": resort.get_absolute_url(),
-            "is_staff": request.user.is_staff,
         }
     )
     response = render(request, "public/partials/_place_sheet_body.html", context)

@@ -333,8 +333,9 @@ def favourite_create(request: HttpRequest) -> HttpResponse:
 def favourite_create_from_resort(request: HttpRequest) -> HttpResponse:
     """Create a Favourite from a public Resort and return the saved-pin partial.
 
-    Entry point is the resort-pin popup's favourite star
-    (``apps/public/templates/public/partials/_resort_popup.html``), submitted via
+    Entry point is the place sheet's resort star
+    (``apps/public/templates/public/partials/_place_sheet_body.html``; the
+    resort popup that also carried it went with SNOW-1161), submitted via
     ``static/js/favourites.js``'s client mutation queue — same offline-capable
     path as ``favourite_create`` (SNOW-499).
 

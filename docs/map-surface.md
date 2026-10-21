@@ -65,7 +65,12 @@ map click dispatcher"). It stops at the first rule that claims the tap:
 4. **A route is open**: the tap closes the route rail. On a resort pin it
    also opens that resort, as rule 5 would; anywhere else it does nothing
    more, since it was aimed at leaving the route, not at a region.
-5. **On a resort pin**: the resort popup opens.
+5. **On a resort pin**: the resort's place sheet opens — at peek on a
+   phone, as the inset panel on a desktop (SNOW-1161, which retired the
+   resort popup). A resort reached from search, from the region sheet's
+   "Resorts in this region" or from the resort page's "See on the map"
+   opens the same sheet, after flying to the pin
+   ([`decisions/the-map-opens-a-resort-in-the-sheet.md`](decisions/the-map-opens-a-resort-in-the-sheet.md)).
 6. **On the region already selected, with its phone sheet closed**: reopens
    the sheet, at any zoom, and changes nothing else
    (`window.pwaRegionSheet.reopen`). The sheet closes while the region stays
@@ -91,7 +96,7 @@ opens, closes and coexists (CLAUDE.md, design-system rule 6).
 | **Object sheet** | region sheet, place sheet, weather sheet, route rail | a tap on something on the map | bottom sheet with detents (peek, half, full) | ×, drag below peek, Escape, deselecting, another object sheet |
 | **Roundel panel** | routes, favourites, reports, downloads lists; region panel | its roundel | full-width docked panel, no detents | its roundel, its ×, another overlay |
 | **Form panel** | field report, terrain filter | a call to action | docked panel, no detents, no drag-to-close | its own buttons, its × |
-| **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, tour offer, resort popup | its toggle | anchored card | a click away, another overlay |
+| **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, tour offer, a saved pin's desktop popup | its toggle | anchored card | a click away, another overlay |
 
 Help mode (SNOW-1119, the "?" roundel) is none of these: it is a layer
 over the whole map that names the controls and keys whichever object sheet

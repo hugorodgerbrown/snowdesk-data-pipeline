@@ -214,9 +214,11 @@ return to it across sessions. It is the user's own private data.
   the region's danger tile, the pin's name over the region's code, level
   and name, the panel row's own "…" menu (Share → Rename → Delete, acting
   from inside the sheet) and the ×. Half adds the day's weather at the
-  pin; full adds the region's problems judged against the pin's altitude,
-  the week, and the links to the forecast and the bulletin. A favourite is a dropped pin, a saved
-  resort (SNOW-499, the star on a resort's popup) or a region pin
+  pin and its "Full forecast →"; full adds the region's problems judged
+  against the pin's altitude and the links to the bulletin and, for a
+  saved resort, the resort page (the week went to the weather page with
+  SNOW-1161). A favourite is a dropped pin, a saved resort (SNOW-499, the
+  star on a resort's place sheet) or a region pin
   (SNOW-802 — a region with no coordinate, listed in the region panel
   rather than the pins sheet, SNOW-814).
 - **Who can use it.** Signed-in users — authentication is the whole gate
@@ -249,16 +251,19 @@ fixture — they are not a layer any avalanche service publishes**, and the
 placement of each pin may in future be crowd-sourced or corrected by
 users. They are shown as reference, not as authoritative geography.
 
-- **What it shows.** A circle pin at each geocoded resort. A resort pin is
-  a _proxy for its parent region_ — tapping one selects that micro-region
-  and shows its rating, exactly as tapping the region fill would. On a
-  desktop the tap also opens the resort popup; on a phone it opens the
-  **place sheet** (SNOW-1100) at peek — the danger tile, the resort's name
-  over its region, the Save star and the × — rising to half for the day's
-  weather at the resort's primary location and to full for the region's
-  problems, the week, the resort's details and the links onward. Both the
-  sheet's weather and its bulletin follow the scrubbed day; a forward day
-  reads today's forecast for it.
+- **What it shows.** A circle pin at each geocoded resort. Tapping one
+  opens the **place sheet** (SNOW-1100; on every width since SNOW-1161,
+  which retired the desktop resort popup): at peek on a phone — the danger
+  tile (an outlined "–" on a day with no bulletin), the resort's name over
+  its region, the Save star and the × — rising to half for its curated
+  "why it matters" line (only when written), a one-line fact summary
+  ("1,500–3,330 m · 34 lifts · 210 km piste") and the day's weather at the
+  resort's pin, and to full for the region's problems and the links onward:
+  the day's bulletin (primary) and the resort page (secondary). On a
+  desktop the same body is the inset panel. Both the sheet's weather and
+  its bulletin follow the scrubbed day; a forward day reads today's
+  forecast for it. The full facts list, the week and the season are the
+  resort page's (SNOW-1161).
 - **Pin size carries the tier (SNOW-543).** Each resort has a curated
   `tier` — Core, Standard or Minor — and the pin radius is interpolated
   from it, so Zermatt and a one-lift village hill no longer read as

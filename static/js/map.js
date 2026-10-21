@@ -136,12 +136,6 @@
   // popup this file no longer has. `static/js/map_region_panel.js` reads the
   // same `data-region-summary-url` attribute for itself, so the attribute and
   // the endpoint behind it both stay; only this unused copy is gone.
-  // SNOW-499: The resort-pin popup URL template — the literal '__SLUG__'
-  // is string-replaced with the tapped resort's slug before each fetch.
-  // Rendered via {% url 'api:resort_popup' slug='__SLUG__' %}; public
-  // endpoint, always present regardless of favourites eligibility. The
-  // slug is the feed's ``id`` (SNOW-796) — no integer key anywhere here.
-  const RESORT_POPUP_URL_TEMPLATE = mapEl.dataset.resortPopupUrl || '';
 
   // SNOW-660: ``bootDateKey`` — min(today, seasonEnd), SNOW-236's cold-open
   // date — used to live here, and every date-consuming path fell back to it
@@ -7970,47 +7964,97 @@
       return popup;
     };
 
-    // SNOW-499: fetch the resort detail body and anchor it in a popup at the
-    // tapped resort pin.
-    const openResortPopup = async (resortFeature) => {
-      const resortId = resortFeature.properties && resortFeature.properties.id;
+    // SNOW-499 / SNOW-1161: a tapped resort opens the place sheet, on every
+    // width — at PEEK on a phone, as the inset panel on a desktop. The
+    // resort popup that answered a desktop click until SNOW-1161 described
+    // the resort a third way (no danger, no weather, its own Save control);
+    // docs/decisions/the-map-opens-a-resort-in-the-sheet.md.
+    const openResortSheet = (resortId, name) => {
       if (resortId == null) return false;
-      // SNOW-1100: on a phone the tap opens the place sheet, which leaves
-      // the ground around the pin in view; the popup is the desktop's.
-      if (window.pwaPlaceSheet?.open({
-        kind: 'resort',
-        id: String(resortId),
-        name: resortFeature.properties.name || '',
-      })) {
-        closeDetailPopup();
-        return true;
-      }
-      if (!RESORT_POPUP_URL_TEMPLATE) return false;
-
-      const url = RESORT_POPUP_URL_TEMPLATE.replace(
-        '__SLUG__', encodeURIComponent(String(resortId)),
-      );
-      try {
-        const resp = await fetch(url, { headers: { Accept: 'application/json' } });
-        if (!resp.ok) return false;
-        const data = await resp.json();
-        mountDetailPopup(resortFeature.geometry.coordinates, { html: data.html });
-        return true;
-      } catch (_err) {
+      if (!window.pwaPlaceSheet?.open({ kind: 'resort', id: String(resortId), name: name || '' })) {
         return false;
       }
+      closeDetailPopup();
+      return true;
+    };
+    const openResortFeature = (resortFeature) =>
+      openResortSheet(
+        resortFeature.properties && resortFeature.properties.id,
+        resortFeature.properties && resortFeature.properties.name,
+      );
+
+    /**
+     * Take the reader to one resort: fly to its pin and open its sheet.
+     *
+     * SNOW-1161 — every way into a resort from INSIDE the map lands here
+     * (the resort page's "See on the map", a search pick, the region
+     * sheet's "Resorts in this region"), so a resort reached any way
+     * looks the same as a resort tapped. Zooms in only, as
+     * ``pwaMapFocus.point`` does. A slug or name matching nothing in the
+     * loaded feed is silent and returns false, so the caller can fall back.
+     *
+     * @param {(props: Object) => boolean} matches Picks the resort's
+     *   feature by its properties.
+     * @returns {boolean} Whether a resort was found and opened.
+     */
+    const focusResort = (matches) => {
+      const features = resortsGeojsonCache && resortsGeojsonCache.features;
+      if (!Array.isArray(features)) return false;
+      const feature = features.find((f) => f && f.properties && matches(f.properties));
+      if (!feature) return false;
+      map.flyTo({
+        center: feature.geometry.coordinates,
+        zoom: Math.max(map.getZoom(), POINT_FOCUS_ZOOM),
+      });
+      openResortFeature(feature);
+      return true;
     };
 
-    // SNOW-499: favourites.js dispatches this once a resort-popup favourite
-    // toggle (star tap) has been submitted, so the popup — whose state was
-    // captured at open time — closes rather than showing stale content. The
-    // next tap on the same pin re-fetches fresh state.
-    //
-    // SNOW-658: its sibling `snowdesk:favourite-detail-close` went with the
-    // rename/delete forms the favourite popup used to host. It existed to
-    // close a popup whose row had just deleted itself; the popup now shows
-    // only a name and a saved time, so nothing dispatched it any more.
-    document.addEventListener('snowdesk:resort-popup-close', closeDetailPopup);
+    /**
+     * ``focusResort`` once the resorts feed is on the map.
+     *
+     * The resorts overlay can be switched off, and its feed is fetched only
+     * when it is shown. Someone asking for one resort means to see its pin,
+     * so an overlay left off is switched on through the panel's own path —
+     * the favourite deep link's reasoning — and the resort is opened once
+     * the source installs, exactly once (``sourcedata`` is what the source
+     * emits whichever path loaded it).
+     *
+     * @param {(props: Object) => boolean} matches As ``focusResort``.
+     * @param {() => void} [onMissing] Called when the loaded feed has no
+     *   such resort.
+     * @returns {void}
+     */
+    const openResort = (matches, onMissing) => {
+      // Before the cached path too: a feed loaded earlier and then hidden
+      // would otherwise open the sheet over an invisible pin.
+      if (!overlayState.resorts) showPanelOverlay('resorts');
+      if (focusResort(matches)) return;
+      if (resortsGeojsonCache) {
+        onMissing?.();
+        return;
+      }
+      const onResortsSourceData = (e) => {
+        if (e.sourceId !== 'resorts' || !map.isSourceLoaded('resorts')) return;
+        map.off('sourcedata', onResortsSourceData);
+        if (!focusResort(matches)) onMissing?.();
+      };
+      map.on('sourcedata', onResortsSourceData);
+    };
+
+    // SNOW-1161: the region sheet's "Resorts in this region" asks for a
+    // resort by slug (map_region_sheet.js) instead of leaving the map. A
+    // resort with no pin is not in the feed, so it goes to its page — the
+    // link the region sheet held back.
+    document.addEventListener('snowdesk:resort-open', (ev) => {
+      const slug = ev.detail && ev.detail.slug;
+      const href = ev.detail && ev.detail.href;
+      if (!slug) return;
+      openResort((props) => props.id === slug, () => {
+        if (href) window.location.assign(href);
+      });
+    });
+
 
     // Pin-positioning focus (static/js/map_placement_focus.js) clears every
     // app layer off the basemap while the user places a favourite, an
@@ -8556,7 +8600,8 @@
     };
 
     /**
-     * Honour a ``/?resort=<slug>`` arrival: fly to that resort's pin.
+     * Honour a ``/?resort=<slug>`` arrival: fly to that resort's pin and
+     * open its sheet (SNOW-1161).
      *
      * The resort is resolved by identity in the already-loaded ``resorts``
      * source — its feature ``id`` IS the slug since SNOW-796 — the same
@@ -8569,36 +8614,12 @@
     const openResortDeepLink = () => {
       const slug = consumeResortDeepLink();
       if (!slug) return;
-
-      // Someone who followed a link to one resort means to see its pin, so
-      // an overlay left switched off is switched back on through the
-      // panel's own path — the same reasoning as the favourite deep link.
-      if (!overlayState.resorts) showPanelOverlay('resorts');
-
-      const flyToResort = () => {
-        const features = resortsGeojsonCache && resortsGeojsonCache.features;
-        if (!Array.isArray(features)) return false;
-        const feature = features.find(
-          (f) => f && f.properties && f.properties.id === slug,
-        );
-        if (!feature) return false;
-        map.flyTo({
-          center: feature.geometry.coordinates,
-          zoom: FAVOURITE_DEEP_LINK_ZOOM,
-        });
-        return true;
-      };
-
-      if (flyToResort()) return;
-
-      // Otherwise wait for the resorts source to install, exactly once —
-      // ``sourcedata`` is what the source emits whichever path loaded it.
-      const onResortsSourceData = (e) => {
-        if (e.sourceId !== 'resorts' || !map.isSourceLoaded('resorts')) return;
-        map.off('sourcedata', onResortsSourceData);
-        flyToResort();
-      };
-      map.on('sourcedata', onResortsSourceData);
+      // SNOW-1161: arriving from the resort page opens the resort's sheet
+      // too, at PEEK on a phone, so the reader lands on the resort they
+      // asked for rather than an unnamed pin. The map opens on today
+      // (map-defaults-to-today-not-the-last-rated-day), which is the day
+      // the page they came from was showing.
+      openResort((props) => props.id === slug);
     };
 
     openResortDeepLink();
@@ -9257,7 +9278,7 @@
         window.pwaRouteRail.close();
         if (resortHit && !IS_PLAYING) {
           closeMapDetailSurfaces();
-          openResortPopup(resortHit);
+          openResortFeature(resortHit);
         }
         return;
       }
@@ -9296,13 +9317,13 @@
         return;
       }
 
-      // SNOW-499: a resort pin now opens its own minimal popup (name, region,
-      // favourite star, bulletin link) instead of proxying to the parent
-      // region's selection (former SNOW-78 behaviour) — the popup's "View
-      // bulletin" link is the replacement path to the region.
+      // SNOW-499: a resort pin opens the resort rather than proxying to the
+      // parent region's selection (former SNOW-78 behaviour). Since
+      // SNOW-1161 that is the place sheet on every width; its bulletin
+      // button is the path on to the region's day.
       const resort = features.find((f) => f.layer.id === 'resorts-pin');
       if (resort) {
-        openResortPopup(resort);
+        openResortFeature(resort);
         return;
       }
 
@@ -9747,6 +9768,23 @@
     };
 
     const chooseResult = (item) => {
+      // SNOW-1161: a resort row opens the resort — its pin and its sheet —
+      // rather than its parent region, which is what a resort tapped on the
+      // map does. A resort the pin feed does not carry (no coordinates yet)
+      // falls through to its region, the row's own badge.
+      if (item.type === 'resort') {
+        inputEl.value = isPhoneWidth() ? '' : item.primary;
+        collapseSearch();
+        openResort(
+          (props) => props.name === item.primary && (!props.region_id || props.region_id === item.regionID),
+          () => chooseRegion(item),
+        );
+        return;
+      }
+      chooseRegion(item);
+    };
+
+    const chooseRegion = (item) => {
       const feature = FEATURE_BY_REGION_ID[item.regionID];
       if (!feature) return;
       // On a phone the field empties again: the region sheet names the pick,

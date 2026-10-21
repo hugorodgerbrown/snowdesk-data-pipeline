@@ -120,8 +120,8 @@ class TestResortsGeojson:
         assert len(body["features"]) == 1
         assert body["features"][0]["geometry"]["coordinates"] == [7.0, 46.0]
 
-    def test_a_resort_not_yet_backfilled_keeps_its_popup_coordinates(self) -> None:
-        """SNOW-1144 transition: the popup's favourite star carries the pin."""
+    def test_a_resort_not_yet_backfilled_keeps_its_sheet_coordinates(self) -> None:
+        """SNOW-1144 transition: the place sheet's favourite star carries the pin."""
         resort = ResortFactory.create(
             name="Legacy", latitude=46.0, longitude=7.0, location=None
         )
@@ -129,8 +129,9 @@ class TestResortsGeojson:
         client = Client()
         client.force_login(UserFactory.create())
         html = client.get(
-            reverse("api:resort_popup", kwargs={"slug": resort.slug})
-        ).json()["html"]
+            reverse("public:resort_sheet_partial", kwargs={"slug": resort.slug}),
+            HTTP_HX_REQUEST="true",
+        ).content.decode()
 
         assert 'data-resort-lat="46.0"' in html
         assert 'data-resort-lon="7.0"' in html

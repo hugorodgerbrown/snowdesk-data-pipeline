@@ -22,7 +22,9 @@ BulletinOffSeason). Two states, driven by ``panel``:
          ``headline`` renders nothing), then the mono attribution line
          "{provider} · updated HH:MM" (the time omitted when unknown, the
          whole line when both are), then "Read the full {region} bulletin →".
-  * No bulletin (``panel`` None): a neutral band with an outlined "–" tile,
+  * No bulletin (``panel`` None): a neutral band with the outlined "–" tile
+    (``includes/_danger_tile_empty.html``, which the place sheet's peek
+    shares),
     "No bulletin today" and the region; the season note naming the resort's
     typical season (a sentence without dates when either end is unset); and
     "Latest {region} bulletin →". No attribution line.
@@ -152,11 +154,7 @@ Context:
         {% else %}
             <div class="border-b border-border bg-tag px-4 py-3 text-text-2" data-testid="resort-bulletin-band">
                 <div class="flex items-center gap-3">
-                    <span
-                        class="danger-tile border border-border-strong text-label text-text-3"
-                        role="img"
-                        aria-label='{% trans "No danger rating" %}'
-                    >–</span>
+                    {% include "includes/_danger_tile_empty.html" only %}
                     <div class="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span
                             class="text-label font-semibold leading-tight text-text-1"

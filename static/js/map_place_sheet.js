@@ -1,16 +1,22 @@
 /*
  * static/js/map_place_sheet.js — the place sheet a resort or pin tap opens
- * on a phone (SNOW-1100).
+ * (SNOW-1100; a resort's on every width since SNOW-1161).
  *
  * A tap on a resort pin or a saved pin opened a 320px popup anchored above
  * it (map.js's mountDetailPopup), which on a phone covered the ground around
  * the place the reader had asked about. On a phone the tap now opens
  * #place-sheet at PEEK — the region's danger tile, the place's name, the
  * region, and the place's actions — which leaves that ground in view;
- * dragging up reveals the day's weather and the region's problems (HALF)
- * and the week, a resort's details and the links onward (FULL). The detents
- * are SNOW-1097's, bound by `window.MapSheet.attach` because the partial
- * declares them. At `sm` and up map.js keeps the popup and never calls in.
+ * dragging up reveals the day's weather (HALF) and the region's problems
+ * and the links onward (FULL). The detents are SNOW-1097's, bound by
+ * `window.MapSheet.attach` because the partial declares them.
+ *
+ * A RESORT OPENS HERE ON A DESKTOP TOO (SNOW-1161). There the sheet is the
+ * inset panel `_overlay_sheet.html` draws at `sm` and up, with no detents.
+ * The resort popup map.js anchored there described a resort a third way —
+ * no danger, no weather, a third Save control — and was retired; see
+ * docs/decisions/the-map-opens-a-resort-in-the-sheet.md. A saved pin keeps
+ * its desktop popup, so for a pin this module still answers on a phone only.
  *
  * map.js decides which surface a tap opens and calls
  * `window.pwaPlaceSheet.open({kind, id, name, createdAt})`; this module
@@ -141,13 +147,22 @@
   };
 
   /**
-   * Open the sheet for one place. Called by map.js on a phone only.
+   * Whether this sheet answers for a kind of place at the current width: a
+   * resort on every width (SNOW-1161), a saved pin on a phone only.
+   *
+   * @param {?{kind: string}} which
+   * @returns {boolean}
+   */
+  const takes = (which) => !!which && (which.kind === 'resort' || isPhone());
+
+  /**
+   * Open the sheet for one place.
    *
    * @param {{kind: string, id: string, name?: string, createdAt?: string}} next
    * @returns {boolean} Whether the sheet took the tap.
    */
   const open = (next) => {
-    if (!next || !next.id || !isPhone()) return false;
+    if (!next || !next.id || !takes(next)) return false;
     place = next;
     // Another place's body must not show under the new one's loading line.
     if (controller.isOpen()) sheet.replaceChildren();
@@ -251,16 +266,16 @@
   document.addEventListener('snowdesk:favourites-changed', () => {
     if (controller.isOpen() && place) load();
   });
-  // favourites.js closes the resort popup after a star press; the sheet
-  // stays, and repaints when the change lands (above).
 
   document.addEventListener('snowdesk:date-changed', (ev) => {
     dateKey = /** @type {CustomEvent} */ (ev).detail?.date || null;
     if (controller.isOpen()) load();
   });
 
+  // A saved pin's sheet is the phone's; widening past `sm` hands it back
+  // to the popup. A resort's stays open as the desktop panel.
   window.addEventListener('resize', () => {
-    if (controller.isOpen() && !isPhone()) close();
+    if (controller.isOpen() && !takes(place)) close();
   });
 
   window.pwaPlaceSheet = Object.freeze({

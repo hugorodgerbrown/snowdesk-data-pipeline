@@ -43,6 +43,7 @@ from apps.public._component_fixtures import (
     CARD_VARIANTS,
     CHIP_VARIANTS,
     COLLAPSIBLE_PANEL_VARIANTS,
+    DANGER_TILE_EMPTY_VARIANTS,
     DAY_CHARACTER_VARIANTS,
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
@@ -68,7 +69,6 @@ from apps.public._component_fixtures import (
     RESORT_BULLETIN_CARD_VARIANTS,
     RESORT_FACTS_VARIANTS,
     RESORT_FORECAST_VARIANTS,
-    RESORT_META_ROW_VARIANTS,
     RESORT_WHY_IT_MATTERS_VARIANTS,
     ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
@@ -1376,6 +1376,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
+        slug="danger-tile-empty",
+        label="Danger tile — no rating",
+        description=(
+            "An outlined '–' in the shape of .danger-tile, for a day with no "
+            "bulletin, so a row that holds a level's tile keeps its shape. "
+            "Shared by the resort page's bulletin card and the place sheet's "
+            "peek row (SNOW-1161)."
+        ),
+        kind="components",
+        partial="includes/_danger_tile_empty.html",
+        variants=DANGER_TILE_EMPTY_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
         slug="three-word-address",
         label="Three word address",
         description=(
@@ -1405,21 +1419,6 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
-        slug="resort-meta-row",
-        label="Resort meta row",
-        description=(
-            "Label + value/placeholder row used for the single-value resort "
-            "metadata fields (operator, lifts, runs) in the resort-pin popup "
-            "(SNOW-501). A blank value never omits the row — it renders a "
-            "dashed-box placeholder: a public em-dash, or an explicit "
-            '"Add <field>" hint when ``is_staff`` is set, cueing curation.'
-        ),
-        kind="components",
-        partial="public/partials/_resort_meta_row.html",
-        variants=RESORT_META_ROW_VARIANTS,
-        panel_layout="stack",
-    ),
-    FoundationCategory(
         slug="resort-facts",
         label="Resort facts block",
         description=(
@@ -1427,17 +1426,17 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "redrawn as a definition list by SNOW-1155): a section eyebrow "
             "above a card holding one <dl> — mono uppercase label left, "
             "15px value (text-label) right-aligned, a hairline between "
-            "rows — for operator, website, lifts, runs, piste, elevation "
-            "range, typical season and notes. Elevation carries a thousands "
-            "separator (1,500–3,330 m), the season reads 1 Dec – 30 Apr, the "
-            'website is "Official website" with the external-link glyph, '
-            "and notes is the one full-width, left-aligned row. Unlike the "
-            "resort-popup meta row, which keeps a dashed placeholder so "
-            "missing curation stays visible to staff, this block omits an "
-            "unset row entirely and omits the whole section, eyebrow "
-            "included, when every field is unset. Elevation and season each "
-            "compose two nullable columns and degrade to a one-sided "
-            "from/to reading."
+            "rows — for elevation range, lifts, runs, piste, typical season, "
+            "operator, website and notes. Formatted by "
+            "apps.public.resort_facts, the one formatter the place sheet's "
+            "summary line also reads (SNOW-1161): elevation carries a "
+            "thousands separator (1,500–3,330 m), the season reads 1 Dec – "
+            '30 Apr, the website is "Official website" with the '
+            "external-link glyph, and notes is the one full-width, "
+            "left-aligned row. An unset field renders no row, and the whole "
+            "section, eyebrow included, is omitted when every field is "
+            "unset. Elevation and season each compose two nullable columns "
+            "and degrade to a one-sided from/to reading."
         ),
         kind="components",
         partial="public/partials/_resort_facts.html",
