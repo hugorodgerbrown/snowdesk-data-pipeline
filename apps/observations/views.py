@@ -53,8 +53,8 @@ from uuid import UUID
 
 import waffle
 from django.contrib.auth.models import User
-from django.http import HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.http import Http404, HttpRequest, HttpResponse
+from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -66,6 +66,7 @@ from apps.core.coordinates import validate_accuracy_radius_km, validate_coordina
 from apps.core.decorators import require_htmx
 from apps.locations.models import Location
 from apps.observations.models import FieldObservation
+from apps.observations.services.observations import delete_observation
 from apps.regions.services.point_match import region_for_point
 
 logger = logging.getLogger(__name__)
@@ -496,6 +497,9 @@ def observation_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
     404 rather than a deletion: ownership is enforced by the query, not by
     trusting the id in the URL.
 
+    The delete goes through ``delete_observation`` so the report's minted
+    anonymous ``Location`` is erased with it (SNOW-1170).
+
     Args:
         request: The incoming HTMX POST request.
         uuid: The observation's uuid.
@@ -508,10 +512,10 @@ def observation_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
     if gate is not None:
         return gate
 
-    observation = get_object_or_404(
-        FieldObservation, uuid=uuid, user=cast(User, request.user)
-    )
-    observation.delete()
+    try:
+        delete_observation(cast(User, request.user), uuid)
+    except FieldObservation.DoesNotExist as exc:
+        raise Http404("No FieldObservation matches the given query.") from exc
     logger.info("FieldObservation deleted: user=%s uuid=%s", request.user.pk, uuid)
     return HttpResponse("")
 
