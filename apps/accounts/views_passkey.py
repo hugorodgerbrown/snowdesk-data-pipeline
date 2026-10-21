@@ -40,6 +40,7 @@ from apps.core.decorators import require_htmx
 
 from .models import PasskeyCredential
 from .redirects import safe_next
+from .services.active_user import user_may_sign_in
 from .services.passkey import (
     PasskeyError,
     PasskeyUnknownCredentialError,
@@ -96,8 +97,10 @@ def passkey_auth_response(request: HttpRequest) -> JsonResponse:
     is not a same-site destination — this endpoint must never hand the
     browser somebody else's host.
 
-    On failure: returns a 4xx JSON error.  If the credential is unknown (e.g.
-    revoked but still cached in the browser), returns HTTP 404 with
+    On failure: returns a 4xx JSON error — including for a deactivated
+    (``is_active=False``) account, which gets ``verification_failed``
+    (SNOW-1167).  If the credential is unknown (e.g. revoked but still
+    cached in the browser), returns HTTP 404 with
     ``{"error": "unknown_credential", "credentialId": "…"}`` so the browser
     JS can call ``PublicKeyCredential.signalUnknownCredential()``.
 
@@ -134,6 +137,12 @@ def passkey_auth_response(request: HttpRequest) -> JsonResponse:
         )
     except PasskeyError as exc:
         logger.info("Passkey auth failed: %s", exc)
+        return JsonResponse({"error": "verification_failed"}, status=400)
+
+    if not user_may_sign_in(user):
+        # SNOW-1167: a genuine assertion for a deactivated account is answered
+        # exactly as a failed one, and no session is made.
+        logger.info("Passkey auth: rejected inactive user pk=%s", user.pk)
         return JsonResponse({"error": "verification_failed"}, status=400)
 
     login(request, user, backend=_TOKEN_BACKEND)

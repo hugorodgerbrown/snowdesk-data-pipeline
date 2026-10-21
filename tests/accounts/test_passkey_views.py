@@ -4,7 +4,9 @@ tests/accounts/test_passkey_views.py — Tests for the passkey HTTP views.
 Covers:
   passkey_auth_request     — GET returns 200 JSON with challenge; stores session key.
   passkey_auth_response    — success sets session + 200; unknown credential 404;
-                             empty body 400; rate-limited 429; malformed JSON 400.
+                             empty body 400; rate-limited 429; malformed JSON 400;
+                             inactive user → 400 verification_failed, no session
+                             (SNOW-1167).
   passkey_register_request — authenticated → 200 JSON; unauthenticated → 403.
   passkey_register_response — success 200; unauthenticated → 403; verification
                                failure 400; empty body 400; rate-limited 429.
@@ -122,6 +124,26 @@ class TestPasskeyAuthResponse:
         data = json.loads(resp.content)
         assert data["ok"] is True
         assert client.session.get("_auth_user_id") == str(user.pk)
+
+    def test_inactive_user_is_refused_without_a_session(self) -> None:
+        """SNOW-1167: a genuine assertion for an inactive user is refused."""
+        user = UserFactory.create(is_active=False)
+        client = Client()
+        _set_auth_challenge(client, "dGVzdA")
+
+        with patch(
+            "apps.accounts.views_passkey._verify_auth_response",
+            return_value=user,
+        ):
+            resp = client.post(
+                reverse("accounts:passkey_auth_response"),
+                data=json.dumps({"id": "dGVzdA"}),
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 400
+        assert json.loads(resp.content) == {"error": "verification_failed"}
+        assert client.session.get("_auth_user_id") is None
 
     def test_unknown_credential_returns_404(self) -> None:
         client = Client()
