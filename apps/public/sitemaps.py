@@ -24,15 +24,23 @@ Wire-up in config/urls.py:
 
     path("sitemap.xml", sitemap, {"sitemaps": SITEMAPS}, name="sitemap")
 
-The sites framework (django.contrib.sites + SITE_ID = 1) is required for
-Django's sitemap view to build absolute URLs.
+Every section inherits from ``OriginSitemap``, which takes the scheme and
+host of each ``<loc>`` from ``settings.SITE_BASE_URL`` — the same origin
+robots.txt, the feeds and the OG tags use. Django's default reads them from
+the ``django_site`` row instead (``SITE_ID = 1``), and that row is the
+``example.com`` the sites migration creates: until SNOW-1175 every URL the
+live sitemap advertised was on a domain Snowdesk does not own.
+django.contrib.sites stays installed only because the sitemap view imports
+it.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
+from django.conf import settings
 from django.contrib.sitemaps import Sitemap
 from django.db.models import Max
 from django.urls import reverse
@@ -43,7 +51,46 @@ from apps.regions.models import MicroRegion, Resort
 logger = logging.getLogger(__name__)
 
 
-class BulletinSitemap(Sitemap):
+class OriginSitemap(Sitemap):
+    """
+    A ``Sitemap`` whose absolute URLs use ``settings.SITE_BASE_URL`` (SNOW-1175).
+
+    Django's ``Sitemap`` takes the host from ``get_current_site(request)`` —
+    the ``django_site`` row, ``example.com`` unless someone edits it by hand
+    in every environment — and the scheme from the request, which is
+    whatever the proxy hop spoke. ``SITE_BASE_URL`` is already the one
+    per-environment origin setting, so both come from it instead.
+    """
+
+    def get_protocol(self, protocol: str | None = None) -> str:
+        """
+        Return the scheme of ``SITE_BASE_URL``, ignoring the request's.
+
+        Args:
+            protocol: The request's scheme, as Django's sitemap view passes it
+                (unused).
+
+        Returns:
+            ``"https"`` or ``"http"``.
+
+        """
+        return urlsplit(str(settings.SITE_BASE_URL)).scheme
+
+    def get_domain(self, site: Any = None) -> str:
+        """
+        Return the host (and any port) of ``SITE_BASE_URL``, ignoring the Site row.
+
+        Args:
+            site: The ``Site`` Django's sitemap view resolved (unused).
+
+        Returns:
+            The netloc, e.g. ``"snowdesk.info"``.
+
+        """
+        return urlsplit(str(settings.SITE_BASE_URL)).netloc
+
+
+class BulletinSitemap(OriginSitemap):
     """
     Sitemap listing every region that has ever had a bulletin (SNOW-1121).
 
@@ -129,7 +176,7 @@ class BulletinSitemap(Sitemap):
         return getattr(item, "latest_bulletin_updated_at", None)
 
 
-class ResortSitemap(Sitemap):
+class ResortSitemap(OriginSitemap):
     """
     Sitemap listing every resort's detail page (SNOW-676).
 
@@ -198,7 +245,7 @@ class ResortSitemap(Sitemap):
         return item.updated_at
 
 
-class LocationWeatherSitemap(Sitemap):
+class LocationWeatherSitemap(OriginSitemap):
     """
     Sitemap listing the weather page of every *named* public location (SNOW-799).
 
@@ -292,7 +339,7 @@ class LocationWeatherSitemap(Sitemap):
         return getattr(item, "latest_weather_fetched_at", None) or item.updated_at
 
 
-class StaticViewSitemap(Sitemap):
+class StaticViewSitemap(OriginSitemap):
     """
     Sitemap listing the public pages that aren't generated from data (SNOW-676).
 

@@ -149,9 +149,24 @@ class CountryBulletinFeed(Feed):
         """Return the entry title — the region name as at bulletin issue."""
         return item.region_name_at_time or item.region.name
 
+    def feed_url(self, obj: str) -> str:
+        """
+        Return the feed's own absolute URL, for its ``rel="self"`` link.
+
+        Absolute so Django's ``add_domain`` leaves it alone: given a path,
+        it prefixes the ``django_site`` row's domain, which is
+        ``example.com`` (SNOW-1175).
+        """
+        base = settings.SITE_BASE_URL.rstrip("/")
+        return f"{base}{reverse('public:country_bulletin_feed', args=[obj])}"
+
     def item_link(self, item: RegionBulletin) -> str:
-        """Return the entry link — the region's evergreen bulletin URL."""
-        return item.region.get_absolute_url()
+        """
+        Return the entry link — the region's absolute evergreen bulletin URL.
+
+        Absolute for the same reason as :meth:`feed_url` (SNOW-1175).
+        """
+        return f"{settings.SITE_BASE_URL.rstrip('/')}{item.region.get_absolute_url()}"
 
     def item_description(self, item: RegionBulletin) -> str:
         """

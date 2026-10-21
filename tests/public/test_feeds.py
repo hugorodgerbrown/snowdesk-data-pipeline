@@ -227,3 +227,16 @@ def test_map_page_advertises_country_feeds_via_rel_alternate(
         assert pattern.search(body), (
             f"expected rel=alternate RSS link for /{country}/feed.rss on the map"
         )
+
+
+@pytest.mark.django_db
+def test_feed_links_ignore_the_example_com_site_row(client: Client) -> None:
+    """Self and entry links use SITE_BASE_URL, not the django_site row (SNOW-1175)."""
+    _make_bulletin_for_region("CH-4115", "CH", name="Martigny-Verbier")
+
+    with override_settings(SITE_BASE_URL="https://snowdesk.info"):
+        body = client.get("/ch/feed.rss").content.decode()
+
+    assert "example.com" not in body
+    assert '<link href="https://snowdesk.info/ch/feed.rss" rel="self"' in body
+    assert '<link href="https://snowdesk.info/ch-4115/martigny-verbier/"' in body

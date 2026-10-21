@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -486,3 +487,37 @@ class TestLocationWeatherSitemap:
         assert client.get(peak.get_absolute_url()).status_code == 200
         content = client.get(reverse("sitemap")).content.decode()
         assert row.fetched_at.date().isoformat() in content
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1175 — the origin comes from SITE_BASE_URL, not the django_site row
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestSitemapOrigin:
+    """Every <loc> is on SITE_BASE_URL's origin, whatever the Site row says."""
+
+    def test_locs_ignore_the_example_com_site_row(self, client: Client) -> None:
+        """The untouched ``example.com`` Site row never reaches the sitemap."""
+        from django.contrib.sites.models import Site
+
+        assert Site.objects.get_current().domain == "example.com"
+        _make_bulletin_for_region(MicroRegionFactory.create(), _zurich_today())
+        ResortFactory.create()
+
+        with override_settings(SITE_BASE_URL="https://snowdesk.info"):
+            locs = _locs(client)
+
+        assert locs
+        assert {urlsplit(loc)[:2] for loc in locs} == {("https", "snowdesk.info")}
+
+    def test_scheme_comes_from_site_base_url_not_the_request(
+        self, client: Client
+    ) -> None:
+        """A plain-HTTP hop (Render's proxy) does not downgrade the scheme."""
+        with override_settings(SITE_BASE_URL="https://staging.snowdesk.info"):
+            locs = _locs(client)
+
+        assert locs
+        assert all(loc.startswith("https://staging.snowdesk.info/") for loc in locs)

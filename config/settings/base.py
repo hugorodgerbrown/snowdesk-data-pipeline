@@ -1283,9 +1283,10 @@ SITE_ENVIRONMENT = config("SITE_ENVIRONMENT", default="production")
 PRODUCTION_DATABASE_URL = config("PRODUCTION_DATABASE_URL", default="")
 
 # django.contrib.sites — required by django.contrib.sitemaps (SNOW-218).
-# Set to 1 (the default "example.com" site created by the sites migration).
-# Overridden at deploy time to match the production domain via
-# the django_site fixture or by editing the Site table directly.
+# 1 is the "example.com" row the sites migration creates, and nothing
+# public reads its domain: the sitemap and the feeds build absolute URLs
+# from SITE_BASE_URL (SNOW-1175 — the row was never edited, so until then
+# every sitemap URL was on example.com).
 SITE_ID = 1
 
 # ---------------------------------------------------------------------------
