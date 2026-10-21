@@ -348,18 +348,12 @@ class SeasonMonths:
         return bool(self.months)
 
 
-# The day-axis labels above (beside, on a phone) the month rows: 1, then
-# every fifth day. Fixed — every month row is drawn against 31 slots.
+# The day-axis labels above (beside, on a phone) the month rows: the first
+# day of each group of five — 1, 6, 11, 16, 21, 26 — so the 13th reads as
+# the third day under 11 (SNOW-1163; CSS draws the gap before each group).
+# Fixed — every month row is drawn against 31 slots.
 SEASON_AXIS: tuple[str, ...] = tuple(
-    str(day) if day == 1 or day % 5 == 0 else "" for day in range(1, 32)
-)
-
-# Every level key a single day can read as, no bulletin first — the
-# bulletin sheet's selected-day readout renders one tile digit and one name
-# per key and season_sheet.js shows the one the selected day holds.
-SEASON_LEVEL_KEYS: tuple[str, ...] = (
-    RegionDayRating.Rating.NO_RATING,
-    *_RATED_LEVELS,
+    str(day) if day % 5 == 1 and day < 31 else "" for day in range(1, 32)
 )
 
 # Level ranks for the split rule and the ring rule. ``no_rating`` is absent.
@@ -754,12 +748,11 @@ def season_header(today: datetime.date) -> dict[str, Any] | None:
     """
     Return a minimal context dict for the season trigger/shell, or ``None``.
 
-    Returns ``{"season_label": "<NN/NN>", "season_name": "<NNNN/NN>",
-    "levels": SEASON_LEVEL_KEYS}`` when the season has started (i.e.
-    ``today + 1 >= SEASON_START_DATE``), so the bulletin view can decide
-    whether to render the trigger and shell without building the full grid.
-    ``season_name`` heads the sheet and ``levels`` feeds its selected-day
-    readout (SNOW-1158). Returns ``None`` before the season start.
+    Returns ``{"season_label": "<NN/NN>", "season_name": "<NNNN/NN>"}``
+    when the season has started (i.e. ``today + 1 >= SEASON_START_DATE``),
+    so the bulletin view can decide whether to render the trigger and shell
+    without building the full grid. ``season_name`` heads the sheet.
+    Returns ``None`` before the season start.
 
     Args:
         today: Current calendar date.
@@ -775,7 +768,6 @@ def season_header(today: datetime.date) -> dict[str, Any] | None:
     return {
         "season_label": _season_label(start),
         "season_name": _season_long_label(start),
-        "levels": SEASON_LEVEL_KEYS,
     }
 
 

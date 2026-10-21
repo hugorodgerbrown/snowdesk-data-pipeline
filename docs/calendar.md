@@ -2,7 +2,7 @@
 name: calendar
 description: RegionDayRating, day_rating policy, the shared season calendar (_season_calendar.html, build_season_months), season_calendar_partial
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-21
 ---
 
 # Calendar and RegionDayRating
@@ -25,7 +25,8 @@ of its markup or its CSS (`.season-cal`, `.season-day` in
   ring_date=None)` reshapes the week-column `SeasonGrid` into
   `SeasonMonths`: one `SeasonMonth` per month of the span, each with one
   `MonthDay` per day of that month — 28 to 31, February 29 in a leap year
-  — plus the 31-slot axis labels (1, 5, 10 … 30) and the four-digit season
+  — plus the 31-slot axis labels (1, 6, 11 … 26, the first day of each
+  group of five) and the four-digit season
   name ("2025/26").
 - **Span** — from the season's start (the window's start, or the grid's
   first day) through that season's April, past April only to the last
@@ -37,7 +38,11 @@ of its markup or its CSS (`.season-cal`, `.season-day` in
   axis row above); a container query under 30rem re-lays the same markup
   as month columns of 10px bars with the axis down the left. A container
   query, not a media query, because the calendar decides by its own
-  width: a ~700px resort column, a 640px sheet.
+  width: a ~700px resort column, a 640px sheet. In both layouts the days
+  are grouped in fives (SNOW-1163) — 1–5, 6–10 … 26–31, the last group six
+  days long — by an 8px gap before days 6, 11, 16, 21 and 26: a taller
+  margin on a phone, a gap track in the wide grid. CSS draws it with
+  `:nth-child`, so the markup and the cached fragment are unchanged.
 - **Cell states** (`data-state`) — `none` (no bulletin: outlined), the
   five rating keys (filled), `split` (two levels in one day: `data-lo`
   left, `data-hi` right) and `future` (not yet: a day after today with no
@@ -51,18 +56,19 @@ of its markup or its CSS (`.season-cal`, `.season-day` in
 - **Ring** — `.season-day-ring`, a 2px `--color-text-1` ring. On the
   resort page `season_ring_date(grid, window, today)` puts it on today in a
   running season and on the first High (or Very high) day of a finished
-  one, or nowhere. On the bulletin page it is the selected day, added
+  one, or nowhere. On the bulletin page it is the page's own day, added
   client-side (below).
 - **Variants** — unlinked (resort, help, library): the calendar is one
   `role="img"` whose `aria-label` is the season summary ("Season 2025/26:
   150 days with a bulletin, 40 at Considerable or higher."), each cell has
   a `title` ("14 Jan 2026 · Considerable"), nothing is a link, and the
-  short key reads No bulletin, Low, Moderate, Considerable, High (Very high
+  key reads No bulletin, Low, Moderate, Considerable, High (Very high
   only when a day reached it). Linked (bulletin sheet): each day with a
-  bulletin is a link to that day with an `aria-label`, the calendar is not
-  an image (its links would leave the accessibility tree), and the full
-  key counts each level (`SeasonSummary.key_counts`) and explains "Two
-  levels in one day" and "Selected day".
+  bulletin is a link to that day with an `aria-label`, and the calendar is
+  not an image (its links would leave the accessibility tree). Both
+  variants share that one key — colours only, no counts, no entries for
+  the split cell or the ring (SNOW-1163, which retired the linked
+  variant's counted key).
 
 **The resort page's season calendar** (SNOW-1126, redrawn by SNOW-1158).
 `/resorts/<slug>/` renders the calendar server-side and inline rather than
@@ -171,30 +177,24 @@ calendar (`public/partials/_season_calendar.html`, from
 `apps/bulletins/services/day_rating.py`, so a cache hit issues zero DB
 queries. The language is in the key because the body is rendered text:
 the month labels are Django's own translated month names (`MONTHS_3`) and
-the cell labels are `blocktrans` sentences (SNOW-1128). The grid runs from
+the cell labels are `blocktrans` sentences (SNOW-1128). The key also carries
+`SEASON_CALENDAR_MARKUP_VERSION`: bump it whenever the calendar's markup
+changes shape, or a deploy serves the previous release's cached body
+against the new CSS for up to 25 hours (SNOW-1163). The grid runs from
 `settings.SEASON_START_DATE` to `today + 1` (the afternoon bulletin
 targets tomorrow); the calendar draws only the span above. The body is
-the same for every day of the season: nothing in it is per page — each
-cell carries its own long and short dates (`data-day-long`,
-`data-day-short`, formatted in the request's language) for the readout.
+the same for every day of the season: nothing in it is per page.
 
-**Selected day** (SNOW-1158). The bulletin page's selected day starts as
-its own `page_date`, carried as `data-selected-date` on `#season-grid`.
-After the swap `static/js/season_sheet.js` adds `.season-day-ring` to that
-day's cell and fills the sheet's readout panel, which the shell renders
-outside the cached fragment: one hidden tile digit and level name per key
-in `season_header(today)["levels"]`, the page's long date, and "Read the
-bulletin for {d month} →". The script shows the level matching the
-selected cell's `data-level` (the peak). With JS, a click (or Enter) on a
-rated day SELECTS it rather than following its link: the ring moves, the
-readout takes the cell's level and its `data-day-long` / `data-day-short`,
-and the link takes the cell's own `href`. The link is hidden on the page's
-own day (it would link to itself) and on a day with no bulletin. A
-modified click (open in a new tab) and every click without JS still
-navigate. CSS (`.season-sheet-body`) orders the panel between the calendar
-and the key. The sheet's header carries the resort page's eyebrow, its
-season named by `season_header`'s `season_name`. There are no season tabs:
-the page has never offered a second season.
+**The page's own day** (SNOW-1158, made one-tap by SNOW-1163). The
+bulletin page's day is carried as `data-selected-date` on `#season-grid`;
+after the swap `static/js/season_sheet.js` adds `.season-day-ring` and
+`aria-current="date"` to that day's cell. Every rated day is a plain link,
+and nothing intercepts the click, so one tap opens that day's bulletin.
+SNOW-1158's select-then-read readout panel ("Read the bulletin for …")
+was removed by SNOW-1163: it cost a second tap to reach a bulletin. The
+sheet's header carries the resort page's eyebrow, its season named by
+`season_header`'s `season_name`. There are no season tabs: the page has
+never offered a second season.
 
 **Route ordering**: `partials/season/...` is registered before
 `<region_id:region_id>/` in [`apps/public/urls.py`](../apps/public/urls.py). Same

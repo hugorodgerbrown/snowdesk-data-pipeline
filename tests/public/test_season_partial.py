@@ -24,9 +24,11 @@ import datetime
 import re
 from datetime import UTC
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
+from django.core.cache.utils import make_template_fragment_key
 from django.template.loader import render_to_string
 from django.test import Client, override_settings
 from django.urls import reverse
@@ -101,15 +103,21 @@ class TestSeasonPartialContent:
         assert b'data-testid="season-calendar"' in response.content
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_is_the_linked_calendar_with_the_full_key(self, client: Client) -> None:
-        """SNOW-1158: the linked variant — no role=img, the counted key."""
+    def test_is_the_linked_calendar_with_the_colour_key(self, client: Client) -> None:
+        """The linked variant — no role=img — with the colours-only key (SNOW-1163)."""
         region = MicroRegionFactory.create()
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         content = response.content.decode()
         assert 'data-variant="linked"' in content
         assert 'role="img"' not in content
-        assert "Two levels in one day" in content
-        assert "Selected day" in content
+        key = content.split('data-testid="season-calendar-key"')[1].split("</ul>")[0]
+        assert "No bulletin" in key
+        assert 'data-level="high"' in key
+        # No counts, no split swatch, no ring swatch.
+        assert "font-mono text-text-1" not in key
+        assert "Two levels in one day" not in content
+        assert "This bulletin" not in content
+        assert "season-day-ring" not in key
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_every_cell_carries_data_date_attribute(self, client: Client) -> None:
@@ -170,14 +178,9 @@ class TestSeasonPartialContent:
         assert f'data-date="{rated_day.isoformat()}"' in cell
         assert 'data-state="moderate"' in cell
         assert 'data-level="moderate"' in cell
-        # SNOW-1158: the readout's two date forms, server-rendered per cell.
-        long_date = (
-            rated_day.strftime("%A ")
-            + f"{rated_day.day} "
-            + (rated_day.strftime("%B %Y"))
-        )
-        assert f'data-day-long="{long_date}"' in cell
-        assert f'data-day-short="{rated_day.day} {rated_day.strftime("%B")}"' in cell
+        # SNOW-1163: no readout any more, so no per-cell date strings for it.
+        assert "data-day-long" not in cell
+        assert "data-day-short" not in cell
         # A day with no bulletin is not a link.
         assert len(re.findall(r"<a\s", content)) == 1
 
@@ -258,6 +261,19 @@ class TestSeasonPartialCache:
             de = season_calendar_cache_key("ch-4115", "2026-01-12", "de")
         assert en == en_gb
         assert en != de
+
+    def test_cache_key_carries_the_markup_version(self) -> None:
+        """SNOW-1163: a markup change misses every body the last release cached."""
+        current = season_calendar_cache_key("ch-4115", "2026-01-12", "en")
+        previous = make_template_fragment_key(
+            "season_calendar", ["ch-4115", "2026-01-12", "en"]
+        )
+        assert current != previous
+        with patch(
+            "apps.bulletins.services.day_rating.SEASON_CALENDAR_MARKUP_VERSION", "99"
+        ):
+            bumped = season_calendar_cache_key("ch-4115", "2026-01-12", "en")
+        assert bumped != current
 
     @override_settings(
         SEASON_START_DATE=_SEASON_START,

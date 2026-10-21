@@ -1177,12 +1177,20 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 
    ONE markup, two layouts. .season-cal is a size container; in a wide one
    (≥ 30rem) the months are rows — a 36px label column, then 31 day slots
-   (a dot each, aspect-ratio 1) against the 1 · 5 · 10 … 30 axis row above.
+   (a dot each, aspect-ratio 1) against the 1 · 6 · 11 … 26 axis row above.
    In a narrow one the same elements re-flow into month COLUMNS of short
    bars (10px tall), the axis a 22px column down the left. A container
    query rather than a media query, because the calendar sits in a
    ~700px column on the resort page and in a 640px sheet on the bulletin
    page, and each must decide by its own width.
+
+   Groups of five (SNOW-1163): days 1–5, 6–10 … 26–31 are set apart by
+   an 8px gap before days 6, 11, 16, 21 and 26, so a date is found by
+   counting from its group's first day — the one the axis labels. Wide:
+   a 5px gap track (plus the 3px gaps) between groups, each group's first
+   slot placed past it and the rest auto-placed after it. Narrow: a 6px
+   top margin on that slot (plus the 2px gap). The axis ticks are slots of
+   the same grid, so they move with the days.
 
    Cell states — data-state: "none" (no bulletin, outlined), the five EAWS
    keys (filled), "split" (two levels: data-lo left half, data-hi — the
@@ -1207,9 +1215,20 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
 }
 .season-cal-days {
     display: grid;
-    grid-template-columns: repeat(31, minmax(0, 1fr));
+    grid-template-columns:
+        repeat(5, minmax(0, 1fr)) 5px
+        repeat(5, minmax(0, 1fr)) 5px
+        repeat(5, minmax(0, 1fr)) 5px
+        repeat(5, minmax(0, 1fr)) 5px
+        repeat(5, minmax(0, 1fr)) 5px
+        repeat(6, minmax(0, 1fr));
     gap: 3px;
 }
+.season-cal-days > :nth-child(6)  { grid-column-start: 7; }
+.season-cal-days > :nth-child(11) { grid-column-start: 13; }
+.season-cal-days > :nth-child(16) { grid-column-start: 19; }
+.season-cal-days > :nth-child(21) { grid-column-start: 25; }
+.season-cal-days > :nth-child(26) { grid-column-start: 31; }
 .season-cal-tick {
     display: flex;
     justify-content: center;
@@ -1262,6 +1281,10 @@ details[open] > .snowdesk-panel-summary .snowdesk-panel-chevron {
         display: flex;
         flex-direction: column;
         gap: 2px;
+    }
+    /* 6, 11, 16, 21, 26 — not 31, which ends the last group. */
+    .season-cal-days > :nth-child(5n+6):not(:nth-child(31)) {
+        margin-top: 6px;
     }
     .season-cal-tick {
         display: block;
@@ -1332,26 +1355,10 @@ a.season-day:focus-visible {
     text-transform: uppercase;
     color: var(--color-text-3);
 }
-.season-cal-key-full {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 20px;
-    padding-top: 20px;
-    border-top: 1px solid var(--color-border);
-    font-size: var(--text-summary);
-    line-height: 18px;
-    color: var(--color-text-2);
-}
-.season-cal-key-full .season-key-swatch {
-    width: 12px;
-    height: 12px;
-}
-
-/* The bulletin sheet's order: calendar, then the selected-day readout
-   (rendered by the sheet shell, outside the cached fragment), then the
-   key. #season-grid and the fragment's root step out of the box tree so
-   all three are flex items of one column — which also drops the root's
-   size container, so the body is the container the layout query reads. */
+/* The bulletin sheet: calendar, then the key. #season-grid and the
+   fragment's root step out of the box tree so both are flex items of one
+   column — which also drops the root's size container, so the body is the
+   container the layout query reads. */
 .season-sheet-body {
     container-type: inline-size;
     display: flex;
@@ -1363,8 +1370,6 @@ a.season-day:focus-visible {
     display: contents;
     container-type: normal;
 }
-.season-sheet-body .season-readout { order: 1; }
-.season-sheet-body .season-cal-key-full { order: 2; }
 
 /* —— Season heatmap sheet primitive (SNOW-117) ——————————————————
    Slide-down full-width panel anchored to the top of the viewport.

@@ -793,6 +793,13 @@ def refresh_day_ratings(pairs: Iterable[tuple["MicroRegion", date]]) -> int:
     return failures
 
 
+# Bumped whenever the season calendar's markup changes shape, so a deploy
+# never serves a body cached by the previous release against the new CSS
+# for the rest of its 25-hour life (SNOW-1163 removed the counted key and
+# its .season-cal-key-full rules).
+SEASON_CALENDAR_MARKUP_VERSION = "2"
+
+
 def season_calendar_cache_key(
     canonical_region_id: str, day_iso: str, language: str
 ) -> str:
@@ -801,7 +808,8 @@ def season_calendar_cache_key(
     Shared by ``season_calendar_partial`` (which stores the body) and
     :func:`apply_bulletin_day_ratings` (which deletes it after ingest). The
     body is rendered text — month names and level labels in the request's
-    language — so the language is part of the key (SNOW-1128). ``language``
+    language — so the language is part of the key (SNOW-1128), and so is
+    :data:`SEASON_CALENDAR_MARKUP_VERSION` (SNOW-1163). ``language``
     is normalised to its ``settings.LANGUAGES`` code, so the active
     ``"en-gb"`` and the listed ``"en"`` name the same key.
 
@@ -816,7 +824,8 @@ def season_calendar_cache_key(
     """
     code = translation.get_supported_language_variant(language)
     return make_template_fragment_key(
-        "season_calendar", [canonical_region_id, day_iso, code]
+        "season_calendar",
+        [SEASON_CALENDAR_MARKUP_VERSION, canonical_region_id, day_iso, code],
     )
 
 
