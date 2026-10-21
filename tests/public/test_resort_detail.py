@@ -322,8 +322,8 @@ class TestResortTodaysDanger:
         assert "SLF · updated" in text
         assert len(re.findall(r"<a\b", area)) == 1
 
-    def test_the_problem_cards_and_band_lines_are_gone(self) -> None:
-        """SNOW-1156 retired the problem cards and SNOW-1143's lift-range lines."""
+    def test_the_problems_follow_the_card_and_band_lines_stay_gone(self) -> None:
+        """SNOW-1164 put the problems back under the card; SNOW-1143's lines stay gone."""
         region = MicroRegionFactory.create()
         resort = ResortFactory.create(
             region=region, base_elevation_m=821, top_elevation_m=3330
@@ -332,10 +332,12 @@ class TestResortTodaysDanger:
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        assert 'data-testid="resort-problems"' not in content
-        assert 'data-testid="rating-block"' not in content
+        assert 'data-testid="resort-problems"' in content
+        assert content.index('data-testid="resort-danger"') < content.index(
+            'data-testid="resort-problems"'
+        )
+        assert 'data-testid="rating-block"' in content
         assert 'data-testid="resort-problem-band' not in content
-        assert "Fresh wind slabs on shady slopes." not in content
         assert "lift range" not in content
         assert "Avalanche danger and mountain conditions" not in content
 
@@ -2116,3 +2118,84 @@ class TestResortSeasonStrip:
             response = client.get(url)
 
         assert response.status_code == 200
+
+
+@pytest.mark.django_db
+class TestResortDatedPage:
+    """SNOW-1164: the page takes a day, as the bulletin page does."""
+
+    _DAY = datetime.date(2026, 2, 3)
+
+    def _dated_url(self, resort: Resort, day: datetime.date | str) -> str:
+        """Reverse the dated resort URL."""
+        date_str = day if isinstance(day, str) else day.isoformat()
+        return reverse(
+            "public:resort_date", kwargs={"slug": resort.slug, "date_str": date_str}
+        )
+
+    def test_get_absolute_url_names_another_day(self) -> None:
+        resort = ResortFactory.create()
+        assert resort.get_absolute_url(self._DAY) == self._dated_url(resort, self._DAY)
+        assert resort.get_absolute_url(timezone.localdate()) == reverse(
+            "public:resort", kwargs={"slug": resort.slug}
+        )
+
+    def test_todays_dated_url_redirects_to_the_bare_one(self) -> None:
+        resort = ResortFactory.create()
+        response = Client().get(self._dated_url(resort, timezone.localdate()))
+        assert response.status_code == 302
+        assert response["Location"] == resort.get_absolute_url()
+
+    def test_a_malformed_day_is_404(self) -> None:
+        resort = ResortFactory.create()
+        assert Client().get(self._dated_url(resort, "not-a-day")).status_code == 404
+
+    def test_another_day_shows_that_days_bulletin(self) -> None:
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        _todays_bulletin(
+            region,
+            valid_from=datetime.datetime(2026, 2, 3, tzinfo=datetime.UTC),
+        )
+        content = Client().get(self._dated_url(resort, self._DAY)).content.decode()
+        assert "Tuesday 3 February" in content
+        assert 'data-testid="resort-bulletin-band"' in content
+        assert f'href="{region.get_absolute_url(self._DAY)}"' in content
+        assert "Danger on 3 February 2026: 3 – Considerable." in content
+
+    def test_another_day_is_noindex_and_today_is_not(self) -> None:
+        resort = ResortFactory.create()
+        dated = Client().get(self._dated_url(resort, self._DAY)).content.decode()
+        bare = Client().get(resort.get_absolute_url()).content.decode()
+        assert 'name="robots" content="noindex' in dated
+        assert 'name="robots"' not in bare
+
+    def test_an_empty_day_says_this_day_not_today(self) -> None:
+        resort = ResortFactory.create()
+        content = Client().get(self._dated_url(resort, self._DAY)).content.decode()
+        assert "No bulletin this day" in content
+        assert "No bulletin today" not in content
+
+
+@pytest.mark.django_db
+class TestResortProblems:
+    """SNOW-1164: each of the day's problems is judged against the resort's height."""
+
+    def test_a_problem_above_the_pin_says_so(self) -> None:
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region, latitude=46.1, longitude=7.4)
+        assert resort.location is not None
+        resort.location.elevation_m = 1500.0
+        resort.location.save()
+        _todays_bulletin(region)  # wind slab above 2200 m
+        content = Client().get(resort.get_absolute_url()).content.decode()
+        assert 'data-relevance="ABOVE"' in content
+        assert "Above this location" in content
+
+    def test_a_resort_with_no_height_shows_the_problems_unjudged(self) -> None:
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region, latitude=None, longitude=None)
+        _todays_bulletin(region)
+        content = Client().get(resort.get_absolute_url()).content.decode()
+        assert 'data-testid="resort-problems"' in content
+        assert 'data-testid="altitude-relevance-chip"' not in content

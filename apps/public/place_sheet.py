@@ -10,26 +10,27 @@ resort opens this sheet on a desktop too, as the inset panel with no
 detents (``docs/decisions/the-map-opens-a-resort-in-the-sheet.md``); a
 saved pin keeps its desktop popup.
 
-One fragment serves both kinds and all three detents, ordered so each
-detent reveals the next part of it:
+One fragment serves both kinds and all three detents. PEEK is one row for
+both: the region's danger tile, the place's name over the region's code,
+the level and the region's name, then the place's actions and ×. A
+resort's action is its Save star; a saved pin's are the panel row's own
+"…" menu (Share → Rename → Delete, the order every list keeps).
 
-  - PEEK — the region's danger tile, the place's name over the region's
-    code, the level and the region's name, then the place's actions and ×.
-    A resort's action is its Save star; a saved pin's are the panel row's
-    own "…" menu (Share → Rename → Delete, the order every list keeps);
-  - HALF — for a resort its "why it matters" line (when written) and its
-    one-line fact summary, then the day's weather at the place and the link
-    to its forecast page;
-  - FULL — the region's avalanche problems (a saved pin's annotated against
-    its own altitude), then the links onward: the day's bulletin, then the
-    resort page. SNOW-1161 took the week and the full facts list off the
-    sheet; both are the resort page's.
+Under the peek row a RESORT shows the resort page's own body for the map's
+day (SNOW-1164, ``views.build_resort_body`` and
+``public/partials/_resort_body.html``), so on a phone the sheet at full
+height is the page: the bulletin card, the problems judged against the
+resort's height, the forecast, the season calendar and the facts. The
+sheet's own links onward ("Read the bulletin", "View resort") went with
+it. A SAVED PIN keeps its own: HALF the day's weather at the place and the
+link to its forecast page, FULL the region's problems annotated against
+the pin's altitude, then the day's bulletin and a saved resort's page.
 
 Both views read the day the map is showing (``?d=``, today by default), as
 the region sheet does, so a reader looking at a past day reads that day's
-weather and rating. A place with no rating for the day and no resort page
-has nothing for FULL to reveal, and the fragment narrows its detents to peek
-and half.
+weather and rating. A saved pin with no rating for the day and no resort
+page has nothing for FULL to reveal, and the fragment narrows its detents
+to peek and half.
 """
 
 from __future__ import annotations
@@ -52,7 +53,11 @@ from apps.favourites.models import Favourite
 from apps.favourites.relevance import annotate_problem_relevance
 from apps.locations.models import Location
 from apps.locations.services.what3words import what3words_map_url
-from apps.public.views import _DANGER_PANEL_META, problem_cards_for_bulletin
+from apps.public.views import (
+    _DANGER_PANEL_META,
+    build_resort_body,
+    problem_cards_for_bulletin,
+)
 from apps.regions.models import MicroRegion, Resort
 from apps.weather.models import Weather
 from apps.weather.services.weather_display import (
@@ -83,6 +88,31 @@ def _target_date(request: HttpRequest) -> date | None:
         return None
 
 
+def _peek_context(region: MicroRegion | None, target_date: date) -> dict[str, Any]:
+    """Build what the peek row says about the place's region on the day.
+
+    Args:
+        region: The region the place sits in, or None outside coverage.
+        target_date: The day the map is showing.
+
+    Returns:
+        ``region``, ``day_rating`` (a RegionDayRating or None) and
+        ``level_label`` (the level's name, or "").
+
+    """
+    day_rating = (
+        RegionDayRating.objects.filter(region=region, date=target_date).first()
+        if region is not None
+        else None
+    )
+    level_meta = _DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
+    return {
+        "region": region,
+        "day_rating": day_rating,
+        "level_label": level_meta["label"] if level_meta else "",
+    }
+
+
 def _place_context(
     *,
     region: MicroRegion | None,
@@ -104,12 +134,8 @@ def _place_context(
         The shared half of the template context.
 
     """
-    day_rating = None
     problem_cards: list[dict[str, Any]] = []
     if region is not None:
-        day_rating = RegionDayRating.objects.filter(
-            region=region, date=target_date
-        ).first()
         bulletin = select_bulletin_for_date(region, target_date)
         if bulletin is not None:
             cards = problem_cards_for_bulletin(bulletin)
@@ -118,8 +144,6 @@ def _place_context(
                 if elevation is not None
                 else cards
             )
-    level_meta = _DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
-
     # A forward day has no row of its own: the fetch writes today's row and
     # carries the days after it in that row's ``forecast`` column, which is
     # what the map's weather layer draws from too. So a forward day reads
@@ -143,9 +167,7 @@ def _place_context(
             None,
         )
     return {
-        "region": region,
-        "day_rating": day_rating,
-        "level_label": level_meta["label"] if level_meta else "",
+        **_peek_context(region, target_date),
         "target_date": target_date,
         "bulletin_url": region.get_absolute_url(target_date)
         if region is not None
@@ -187,40 +209,22 @@ def resort_sheet_partial(request: HttpRequest, slug: str) -> HttpResponse:
         Resort.objects.select_related("region", "location"), slug=slug
     )
 
-    # SNOW-1144: the resort's pin is where it is, and where its weather is.
-    # A resort with no pin falls back to its primary link, normally the
-    # village.
-    location = resort.location
-    if location is None:
-        link = (
-            resort.resort_locations.select_related("location")
-            .order_by("-is_primary", "role", "location__name")
-            .first()
-        )
-        location = link.location if link is not None else None
-
     favourite = None
     if request.user.is_authenticated:
         favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
 
-    context = _place_context(
-        region=resort.region,
-        location=location,
-        target_date=target_date,
-        elevation=location.elevation_m if location is not None else None,
-    )
-    context.update(
-        {
-            "kind": "resort",
-            "name": resort.name,
-            "resort": resort,
-            "can_favourite": request.user.is_authenticated,
-            "favourited": favourite is not None,
-            "favourite_uuid": str(favourite.uuid) if favourite else "",
-            "signin_url": reverse("accounts:sign_in"),
-            "resort_url": resort.get_absolute_url(),
-        }
-    )
+    # SNOW-1164: under the peek row, the resort page's own body for the
+    # map's day — built by the page's own builder, so the two cannot drift.
+    context = {
+        **build_resort_body(request, resort, target_date),
+        **_peek_context(resort.region, target_date),
+        "kind": "resort",
+        "name": resort.name,
+        "can_favourite": request.user.is_authenticated,
+        "favourited": favourite is not None,
+        "favourite_uuid": str(favourite.uuid) if favourite else "",
+        "signin_url": reverse("accounts:sign_in"),
+    }
     response = render(request, "public/partials/_place_sheet_body.html", context)
     response["Cache-Control"] = "private, no-store"
     return response

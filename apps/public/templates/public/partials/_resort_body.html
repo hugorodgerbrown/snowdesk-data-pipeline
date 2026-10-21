@@ -1,0 +1,94 @@
+{% load i18n %}
+{% comment %}
+public/partials/_resort_body.html — a resort's body, on its page and in the
+map's place sheet (SNOW-1164).
+
+ONE BODY, TWO CONTAINERS. ``public/resort.html`` wraps it in the page's
+frame (the header with its eyebrow, title, tagline and actions);
+``public/partials/_place_sheet_body.html`` wraps it in the sheet, under the
+one-row peek. On a phone the sheet at full height therefore IS the page,
+and the two cannot drift: a fact about a resort is added here, never to the
+sheet or the page alone. Context from ``apps.public.views.build_resort_body``.
+
+The sections, in the order the season gives them (SNOW-1156): in season (a
+panel for the day) the bulletin card, the day's problems judged against the
+resort's height, then the forecast and the season calendar; out of season
+the forecast leads and the card follows. Then the curated facts — a sidebar
+on a desktop page, the last section everywhere else.
+
+``in_map`` (set by the place sheet) keeps the body to one column whatever
+the viewport, since the desktop inset panel is a phone's width, and
+tightens the gap between sections to the sheet's.
+
+Context (beyond what each included partial documents):
+  panel, headline, bulletin_url, bulletin_provider, bulletin_updated_time
+                  — the bulletin card's (``_resort_bulletin_card.html``).
+  problem_cards   — the panel's problem cards, each with
+                    ``altitude_relevance`` when the resort has a height.
+  target_date     — the day shown; ``is_today`` — whether it is today.
+  forecast_points — the forecast's (``_resort_forecast.html``).
+  season_months, season_summary — the season calendar's.
+  in_map          — bool: rendered inside the map's place sheet.
+{% endcomment %}
+<div class="flex flex-col gap-8{% if not in_map %} lg:flex-row lg:items-start lg:gap-10{% endif %}">
+    {# SNOW-1156: one gap spaces the sections, whichever order they take. #}
+    <div class="flex min-w-0 flex-col {% if in_map %}gap-8{% else %}gap-12 lg:flex-1{% endif %}">
+        {# SNOW-1156: in season (a bulletin covers today) the bulletin card  #}
+        {# leads; out of season the forecast leads and the card follows.    #}
+        {# The card is one include, rendered in one of two places.          #}
+        {% if panel %}
+            {% include "public/partials/_resort_bulletin_card.html" %}
+            {# SNOW-1164: the day's problems, each judged against the resort's #}
+            {# height — the verdict the map's place sheet used to carry alone. #}
+            {% if problem_cards %}
+                <section aria-labelledby="resort-problems-heading" data-testid="resort-problems">
+                    {% translate "Avalanche problems" as problems_eyebrow %}
+                    {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-problems-heading" text=problems_eyebrow class_extra="mb-3" only %}
+                    <div class="space-y-3">
+                        {% for card in problem_cards %}
+                            {% include "favourites/partials/_favourite_problem.html" with card=card %}
+                        {% endfor %}
+                    </div>
+                </section>
+            {% endif %}
+        {% endif %}
+
+        {# ── Forecast: the Base / Mid / Summit strip (SNOW-1157) ── #}
+        {% if forecast_points %}
+            {% include "public/partials/_resort_forecast.html" %}
+        {% endif %}
+
+        {% if not panel %}
+            {% include "public/partials/_resort_bulletin_card.html" %}
+        {% endif %}
+
+        {% comment %}
+    SNOW-1126 / SNOW-1158 — the season calendar. The region's danger
+    day by day through the running 1 Nov – 30 Apr season (the one just
+    ended, from May to October), rendered server-side so a crawler
+    reads it. Context from views._resort_season_calendar_context:
+    season_months (SeasonMonths) and season_summary (SeasonSummary,
+    falsy when no day had a bulletin — the section is then omitted).
+    The calendar is the one shared partial (_season_calendar.html),
+    unlinked: one role="img" whose aria-label is the season summary,
+    then the short key, in a card. No cell links to its day — the
+    bulletin card is the page's one bulletin link.
+        {% endcomment %}
+        {% if season_summary %}
+            <section aria-labelledby="resort-season-heading" data-testid="resort-season">
+                {% blocktrans with region=region.name season=season_months.season_label trimmed asvar season_heading_label %}
+                    Avalanche danger • {{ region }} region • {{ season }}
+                {% endblocktrans %}
+                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-season-heading" text=season_heading_label class_extra="mb-3" only %}
+                <div class="rounded-card border border-border bg-card p-5 sm:p-6">
+                    {% include "public/partials/_season_calendar.html" with linked=False %}
+                </div>
+            </section>
+        {% endif %}
+    </div>
+    {% if in_map %}
+        {% include "public/partials/_resort_facts.html" %}
+    {% else %}
+        {% include "public/partials/_resort_facts.html" with class_extra="lg:w-80 lg:shrink-0" %}
+    {% endif %}
+</div>

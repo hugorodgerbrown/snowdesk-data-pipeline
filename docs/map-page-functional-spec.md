@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-21
 ---
 
 # Map page — functional specification
@@ -49,11 +49,14 @@ danger tile, the region's name, and under it the search row's flag and
 region code with the day's level and the area name (no date — the date
 control says that), beside the pin and download controls at 32px and the
 ×. Peek keeps the selected ground in view; that was the complaint that
-removed the old popup. Dragging up to **half** shows where the region is,
-the day's avalanche problems and its resorts. **Full** adds the link to
-the bulletin page, which is not re-rendered in the sheet, and exists only
-on a day with a bulletin: with none there is nothing to reveal, so the
-sheet stops at half. While it is open it follows the selection and the
+removed the old popup. Under the peek row is the bulletin page's own body
+for the day (SNOW-1164, [why](decisions/the-sheet-is-the-page.md)):
+**half** shows where the region is and the top of it, **full** scrolls the
+whole of it — the day summary, the risk profile, the problems, the
+snowpack and weather, the source line — then the region's resorts. There
+is no link on to the bulletin page: on a phone the sheet is the page. A
+day with no bulletin has nothing for full to reveal, so the sheet stops at
+half. While it is open it follows the selection and the
 day, and deselecting the region closes it. Its pin and download buttons
 press the ribbon's roundels, so each keeps one owner.
 
@@ -255,15 +258,13 @@ users. They are shown as reference, not as authoritative geography.
   opens the **place sheet** (SNOW-1100; on every width since SNOW-1161,
   which retired the desktop resort popup): at peek on a phone — the danger
   tile (an outlined "–" on a day with no bulletin), the resort's name over
-  its region, the Save star and the × — rising to half for its curated
-  "why it matters" line (only when written), a one-line fact summary
-  ("1,500–3,330 m · 34 lifts · 210 km piste") and the day's weather at the
-  resort's pin, and to full for the region's problems and the links onward:
-  the day's bulletin (primary) and the resort page (secondary). On a
-  desktop the same body is the inset panel. Both the sheet's weather and
-  its bulletin follow the scrubbed day; a forward day reads today's
-  forecast for it. The full facts list, the week and the season are the
-  resort page's (SNOW-1161).
+  its region, the Save star and the × — and under it the resort page's own
+  body for the scrubbed day (SNOW-1164,
+  [why](decisions/the-sheet-is-the-page.md)): its curated "why it
+  matters" line (only when written), the bulletin card, the day's problems
+  judged against the resort's height, the Base / Mid / Summit forecast,
+  the season calendar and the facts, in one column. On a desktop the same
+  body is the inset panel. A forward day reads today's forecast row.
 - **Pin size carries the tier (SNOW-543).** Each resort has a curated
   `tier` — Core, Standard or Minor — and the pin radius is interpolated
   from it, so Zermatt and a one-lift village hill no longer read as

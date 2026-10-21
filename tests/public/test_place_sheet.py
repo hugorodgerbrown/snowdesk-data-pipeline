@@ -13,12 +13,13 @@ Covers both views, ``resort_sheet_partial`` and ``favourite_sheet_partial``:
     FULL to show, peek and half otherwise.
   - A pin's problems are judged against its Location's height, the pin's
     own legacy height only as a fallback.
-  - HALF: a resort's "why it matters" line only when written, its one-line
-    fact summary, then the day's weather; a forward day reads today's row
-    and shows that row's forecast entry for the day. No week (SNOW-1161).
-  - FULL: the problems and the links on — the day's bulletin first, then
-    the resort page — and the forecast link carrying the day. No facts
-    list and no dashed placeholder (SNOW-1161).
+  - A saved pin's HALF: the day's weather at the pin; a forward day reads
+    today's row and shows that row's forecast entry for the day; the
+    forecast link and the bulletin link carry the day.
+  - A resort's body (SNOW-1164): the resort page's own body for the map's
+    day — the same sections the page renders, in one column, without the
+    page's frame and without the sheet's old links onward — led by its
+    "why it matters" line only when written.
   - The map page carries the sheet, its script and the URL templates.
 """
 
@@ -265,14 +266,24 @@ class TestDetents:
         assert 'data-sheet-detents="peek,half"' in content
 
 
+def _pin(client: Client) -> Any:
+    """A saved pin in a fresh region at 1500 m, signed in as its owner."""
+    favourite = FavouriteFactory.create(region=MicroRegionFactory.create())
+    assert favourite.location is not None
+    favourite.location.elevation_m = 1500.0
+    favourite.location.save()
+    client.force_login(favourite.user)
+    return favourite
+
+
 @pytest.mark.django_db
-class TestWeather:
-    """HALF ends under the day's weather; FULL carries the week."""
+class TestPinWeather:
+    """A saved pin's HALF ends under the day's weather at the pin."""
 
     def test_todays_row_is_the_half_detents_end(self, client: Client) -> None:
-        resort = _resort()
-        WeatherFactory.create(location=_primary_location(resort))
-        content = _get(client, _resort_url(resort.slug)).content.decode()
+        favourite = _pin(client)
+        WeatherFactory.create(location=favourite.location)
+        content = _get(client, _favourite_url(favourite.uuid)).content.decode()
         assert 'data-testid="place-sheet-weather" data-sheet-half' in content
         assert "1500 m" in content
         # SNOW-1161: the week is the weather page's, not the sheet's.
@@ -280,80 +291,106 @@ class TestWeather:
         assert 'data-testid="place-sheet-forecast-link"' in content
 
     def test_forward_day_reads_todays_forecast(self, client: Client) -> None:
-        resort = _resort()
+        favourite = _pin(client)
         tomorrow = timezone.localdate() + datetime.timedelta(days=1)
         WeatherFactory.create(
-            location=_primary_location(resort), forecast=[_forecast_day(tomorrow)]
+            location=favourite.location, forecast=[_forecast_day(tomorrow)]
         )
         content = _get(
-            client, _resort_url(resort.slug, tomorrow.isoformat())
+            client, _favourite_url(favourite.uuid, tomorrow.isoformat())
         ).content.decode()
         assert "place-sheet-forward-day" in content
-        assert 'data-testid="place-sheet-week"' not in content
         assert "Forecast ·" in content
 
     def test_forward_day_beyond_the_forecast_has_no_day(self, client: Client) -> None:
-        resort = _resort()
-        WeatherFactory.create(location=_primary_location(resort))
+        favourite = _pin(client)
+        WeatherFactory.create(location=favourite.location)
         later = timezone.localdate() + datetime.timedelta(days=3)
-        content = _get(client, _resort_url(resort.slug, later.isoformat())).content
-        assert b"place-sheet-forward-day" not in content
-        assert b'data-testid="place-sheet-weather"' not in content
+        content = _get(client, _favourite_url(favourite.uuid, later.isoformat()))
+        assert b"place-sheet-forward-day" not in content.content
+        assert b'data-testid="place-sheet-weather"' not in content.content
 
     def test_no_row_means_no_weather(self, client: Client) -> None:
-        resort = _resort()
-        content = _get(client, _resort_url(resort.slug)).content.decode()
+        favourite = _pin(client)
+        content = _get(client, _favourite_url(favourite.uuid)).content.decode()
         assert 'data-testid="place-sheet-weather"' not in content
-        assert 'data-testid="place-sheet-week"' not in content
+
+    def test_forecast_link_carries_the_day(self, client: Client) -> None:
+        favourite = _pin(client)
+        content = _get(client, _favourite_url(favourite.uuid, "2026-02-03")).content
+        url = f"{favourite.location.get_absolute_url()}?date=2026-02-03"
+        assert url.encode() in content
+
+    def test_location_without_a_page_gets_no_forecast_link(
+        self, client: Client
+    ) -> None:
+        favourite = _pin(client)
+        favourite.location.short_id = None
+        favourite.location.save()
+        content = _get(client, _favourite_url(favourite.uuid)).content.decode()
+        assert "Full forecast" not in content
+        assert 'href="?date=' not in content
+
+    def test_rated_day_links_to_the_dated_bulletin(self, client: Client) -> None:
+        favourite = _pin(client)
+        day = datetime.date(2026, 2, 3)
+        RegionDayRatingFactory.create(
+            region=favourite.region, date=day, max_rating="moderate"
+        )
+        content = _get(
+            client, _favourite_url(favourite.uuid, day.isoformat())
+        ).content.decode()
+        assert f'href="{favourite.region.get_absolute_url(day)}"' in content
+        assert f"Read the {favourite.region.name} bulletin for 3 Feb" in content
 
 
 @pytest.mark.django_db
-class TestFull:
-    """FULL: a resort's details and the links onward."""
+class TestResortBody:
+    """SNOW-1164: under the peek row, the resort page's own body."""
 
-    def test_resort_shows_its_summary_and_page(self, client: Client) -> None:
-        resort = _resort(
-            base_elevation_m=1500,
-            top_elevation_m=3330,
-            num_lifts=34,
-            total_piste_km=210,
-            operator_name="",
+    def test_the_body_is_the_resort_pages_body(self, client: Client) -> None:
+        resort = _resort(num_lifts=34, operator_name="Téléverbier")
+        WeatherFactory.create(location=_primary_location(resort))
+        sheet = _get(client, _resort_url(resort.slug)).content.decode()
+        page = client.get(resort.get_absolute_url()).content.decode()
+        assert 'data-testid="place-sheet-resort-body"' in sheet
+        for testid in ("resort-bulletin", "resort-danger", "resort-facts"):
+            assert f'data-testid="{testid}"' in sheet
+            assert f'data-testid="{testid}"' in page
+        assert "Téléverbier" in sheet
+
+    def test_the_body_leaves_the_pages_frame_behind(self, client: Client) -> None:
+        resort = _resort(latitude=46.1, longitude=7.4)
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        for testid in (
+            "resort-heading",
+            "resort-map-link",
+            "resort-all-resorts-link",
+            "resort-actions",
+        ):
+            assert f'data-testid="{testid}"' not in content
+
+    def test_the_sheets_own_links_are_gone(self, client: Client) -> None:
+        resort = _resort()
+        RegionDayRatingFactory.create(
+            region=resort.region, date=timezone.localdate(), max_rating="moderate"
         )
         content = _get(client, _resort_url(resort.slug)).content.decode()
-        assert (
-            'data-testid="place-sheet-facts">1,500–3,330 m · 34 lifts · 210 km piste<'
-        ) in content
-        assert f'href="{resort.get_absolute_url()}"' in content
-
-    def test_resort_has_no_facts_list_and_no_placeholders(self, client: Client) -> None:
-        """SNOW-1161: the full list is the page's; no blank is ever drawn."""
-        resort = _resort(
-            num_lifts=6,
-            total_piste_km=35,
-            operator_name="",
-            website="",
-            num_runs=None,
-            base_elevation_m=None,
-            top_elevation_m=None,
-        )
-        client.force_login(UserFactory.create(is_staff=True))
-        content = _get(client, _resort_url(resort.slug)).content.decode()
-        assert 'data-testid="place-sheet-details"' not in content
-        assert "About this resort" not in content
-        assert "border-dashed" not in content
-        assert "Add operator name" not in content
-        assert "6 lifts · 35 km piste" in content
-
-    def test_a_resort_with_no_facts_has_no_summary(self, client: Client) -> None:
-        resort = _resort(
-            num_lifts=None,
-            num_runs=None,
-            total_piste_km=None,
-            base_elevation_m=None,
-            top_elevation_m=None,
-        )
-        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert 'data-testid="place-sheet-links"' not in content
+        assert "View resort" not in content
         assert 'data-testid="place-sheet-facts"' not in content
+
+    def test_the_body_is_one_column_in_the_map(self, client: Client) -> None:
+        resort = _resort(num_lifts=34)
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert "lg:flex-row" not in content
+        assert "lg:w-80" not in content
+
+    def test_the_body_shows_the_maps_day(self, client: Client) -> None:
+        resort = _resort()
+        content = _get(client, _resort_url(resort.slug, "2026-02-03")).content
+        assert b"Tuesday 3 February" in content
+        assert b"No bulletin this day" in content
 
     def test_written_why_it_matters_shows(self, client: Client) -> None:
         resort = _resort(why_it_matters="Four lifts, national freeride reputation.")
@@ -370,62 +407,6 @@ class TestFull:
             client.force_login(UserFactory.create(is_staff=is_staff))
         content = _get(client, _resort_url(resort.slug)).content.decode()
         assert "resort-why-it-matters" not in content
-
-    def test_forecast_link_carries_the_day(self, client: Client) -> None:
-        resort = _resort()
-        day = datetime.date(2026, 2, 3)
-        content = _get(client, _resort_url(resort.slug, day.isoformat())).content
-        location = _primary_location(resort)
-        assert f"{location.get_absolute_url()}?date=2026-02-03".encode() in content
-
-    def test_a_pinned_resort_reads_its_pin_not_its_primary_link(
-        self, client: Client
-    ) -> None:
-        """SNOW-1144: the sheet's weather location is the resort's pin."""
-        resort = _resort(latitude=46.1, longitude=7.4)
-        assert resort.location is not None
-        day = datetime.date(2026, 2, 3)
-        content = _get(client, _resort_url(resort.slug, day.isoformat())).content
-        pin_url = f"{resort.location.get_absolute_url()}?date=2026-02-03"
-        village_url = f"{_primary_location(resort).get_absolute_url()}?date="
-        assert pin_url.encode() in content
-        assert village_url.encode() not in content
-
-    def test_forward_day_links_to_the_day_itself(self, client: Client) -> None:
-        """The page opens a forward day inside today's row (SNOW-1105)."""
-        resort = _resort()
-        tomorrow = timezone.localdate() + datetime.timedelta(days=1)
-        content = _get(client, _resort_url(resort.slug, tomorrow.isoformat())).content
-        location = _primary_location(resort)
-        assert f"{location.get_absolute_url()}?date={tomorrow}".encode() in content
-
-    def test_location_without_a_page_gets_no_forecast_link(
-        self, client: Client
-    ) -> None:
-        resort = _resort()
-        location = _primary_location(resort)
-        location.short_id = None
-        location.save()
-        content = _get(client, _resort_url(resort.slug)).content.decode()
-        assert "Full forecast" not in content
-        assert 'href="?date=' not in content
-
-    def test_rated_day_links_to_the_dated_bulletin(self, client: Client) -> None:
-        resort = _resort()
-        day = datetime.date(2026, 2, 3)
-        RegionDayRatingFactory.create(
-            region=resort.region, date=day, max_rating="moderate"
-        )
-        content = _get(
-            client, _resort_url(resort.slug, day.isoformat())
-        ).content.decode()
-        assert f'href="{resort.region.get_absolute_url(day)}"' in content
-        assert f"Read the {resort.region.name} bulletin for 3 Feb" in content
-        # The bulletin is the primary button and comes before the resort.
-        links = content[content.index('data-testid="place-sheet-links"') :]
-        assert links.index(resort.region.get_absolute_url(day)) < links.index(
-            resort.get_absolute_url()
-        )
 
     def test_unrated_covered_day_says_no_bulletin(self, client: Client) -> None:
         """SNOW-1161: the peek row says it, with the page's empty tile."""

@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 from django.core.validators import RegexValidator
 from django.db import models
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.text import slugify
 
 from apps.core.models import BaseModel
@@ -1054,13 +1055,27 @@ class Resort(BaseModel):
             self.slug = unique_resort_slug(self.name)
         super().save(*args, **kwargs)
 
-    def get_absolute_url(self) -> str:
-        """Return the canonical resort-page URL — ``/resorts/<slug>/``.
+    def get_absolute_url(self, target_date: datetime.date | None = None) -> str:
+        """Return the resort-page URL — ``/resorts/<slug>/``, or a day's.
 
         The slug is the resort's whole identity in the URL (SNOW-796): no
         primary key, no name-derived suffix to keep in step with the name.
+        A day other than today is ``/resorts/<slug>/<YYYY-MM-DD>/``
+        (SNOW-1164); today, or no day, is the bare URL.
+
+        Args:
+            target_date: The day the page should show, or None for today.
+
+        Returns:
+            The URL path.
+
         """
-        return reverse("public:resort", kwargs={"slug": self.slug})
+        if target_date is None or target_date == timezone.localdate():
+            return reverse("public:resort", kwargs={"slug": self.slug})
+        return reverse(
+            "public:resort_date",
+            kwargs={"slug": self.slug, "date_str": target_date.isoformat()},
+        )
 
 
 def unique_resort_slug(name: str) -> str:

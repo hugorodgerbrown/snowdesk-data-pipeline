@@ -49,7 +49,9 @@ Context:
                     None), url, weather (Weather or None), panel
                     (ForecastPanel or None). The caller renders nothing
                     when it is empty.
-  target_date     — datetime.date: today, named in the eyebrow.
+  target_date     — datetime.date: the day shown, named in the eyebrow.
+  is_today        — bool: the first tile is today, so it says "Today";
+                    on another day it names its date (SNOW-1164).
   selector_name   — str, optional: the radio group's ``name`` and id
                     prefix. Defaults to ``resort-forecast-point``; the
                     component library passes one per variant.
@@ -65,8 +67,11 @@ Context:
         Forecast • {{ day }}
     {% endblocktrans %}
     {% include "includes/_eyebrow.html" with tag="h2" heading_id=group_name|add:"-heading" text=forecast_eyebrow class_extra="mb-3" only %}
-    <div class="rounded-card border border-border bg-card">
-        <div class="relative flex flex-col gap-6 p-4 sm:gap-7 sm:p-6">
+    {# SNOW-1164: the strip lays itself out by its card's width, not the  #}
+    {# viewport's (@container, @md: = 28rem), because the same body sits  #}
+    {# in the map's ~350px inset panel on a desktop as well as the page.  #}
+    <div class="@container rounded-card border border-border bg-card">
+        <div class="relative flex flex-col gap-6 p-4 @md:gap-7 @md:p-6">
             {% for point in forecast_points %}
                 <input
                     type="radio"
@@ -112,10 +117,10 @@ Context:
                     data-testid="resort-forecast-pane-{{ point.role }}"
                 >
                     {% if point.panel %}
-                        <div class="grid grid-cols-6 gap-1 sm:grid-cols-[minmax(0,1.9fr)_repeat(6,minmax(0,1fr))] sm:gap-2">
+                        <div class="grid grid-cols-6 gap-1 @md:grid-cols-[minmax(0,1.9fr)_repeat(6,minmax(0,1fr))] @md:gap-2">
                             {% for day in point.panel.days %}
                                 {% with weekday=day.date|date:"l" condition=day.condition_label|lower %}
-                                    {% if forloop.first %}
+                                    {% if forloop.first and is_today %}
                                         {% blocktrans trimmed asvar day_name %}
                                             Today, {{ weekday }}
                                         {% endblocktrans %}
@@ -146,14 +151,14 @@ Context:
                                         <div
                                             role="group"
                                             aria-label="{{ tile_label }}"
-                                            class="col-span-full flex items-center gap-4 rounded-card border border-border-strong bg-card px-4 py-3 sm:col-span-1 sm:flex-col sm:gap-1.5 sm:px-3"
+                                            class="col-span-full flex items-center gap-4 rounded-card border border-border-strong bg-card px-4 py-3 @md:col-span-1 @md:flex-col @md:gap-1.5 @md:px-3"
                                             data-testid="resort-forecast-today"
                                             data-date="{{ day.date|date:'Y-m-d' }}"
                                         >
                                             <div class="flex min-w-14 flex-col items-center gap-1.5">
                                                 <span
                                                     class="font-mono text-meta uppercase tracking-wider text-text-3"
-                                                >{% translate "Today" %}</span>
+                                                >{% if is_today %}{% translate "Today" %}{% else %}{{ day.date|date:"D j M" }}{% endif %}</span>
                                                 <img
                                                     src="{% weather_icon_url day.icon_filename %}"
                                                     class="{% weather_icon_class %} h-8 w-8"
@@ -161,7 +166,7 @@ Context:
                                                     aria-hidden="true"
                                                 >
                                             </div>
-                                            <dl class="grid min-w-0 flex-1 grid-cols-[auto_auto] items-baseline justify-between gap-x-2 gap-y-0.5 sm:w-full">
+                                            <dl class="grid min-w-0 flex-1 grid-cols-[auto_auto] items-baseline justify-between gap-x-2 gap-y-0.5 @md:w-full">
                                                 <dt class="font-mono text-meta uppercase leading-5 tracking-wider text-text-3">
                                                     {% translate "Max" %}
                                                 </dt>
@@ -200,7 +205,7 @@ Context:
                                         <div
                                             role="group"
                                             aria-label="{{ tile_label }}"
-                                            class="flex flex-col items-center gap-1.5 rounded-card border border-border bg-card-subtle px-0.5 py-2.5 sm:px-1 sm:py-3"
+                                            class="flex flex-col items-center gap-1.5 rounded-card border border-border bg-card-subtle px-0.5 py-2.5 @md:px-1 @md:py-3"
                                             data-testid="resort-forecast-day"
                                             data-date="{{ day.date|date:'Y-m-d' }}"
                                         >

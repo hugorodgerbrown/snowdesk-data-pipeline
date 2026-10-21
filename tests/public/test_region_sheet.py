@@ -10,10 +10,10 @@ Covers:
     controls and the ×, inside the ``data-sheet-peek`` header.
   - The detents the body allows: all three on a rated day, peek and half
     otherwise (``data-sheet-detents``, read by static/js/map_sheet.js).
-  - HALF: the breadcrumb, the day's problem cards from the default
-    bulletin, and the region's resorts linked to their pages.
-  - FULL: the bulletin link for the day, or the no-bulletin and
-    uncovered lines when there is none.
+  - HALF and FULL: the breadcrumb, then the bulletin page's own body for
+    the day (SNOW-1164) — the same sections the page renders, without the
+    page's chrome or its superuser debug block — and the region's resorts
+    linked to their pages. No link on to the bulletin: the sheet is it.
 """
 
 from __future__ import annotations
@@ -200,17 +200,42 @@ class TestDetents:
 class TestHalf:
     """What half adds: where it is, the problems, the resorts."""
 
-    def test_problems_come_from_the_days_bulletin(self, client: Client) -> None:
+    def test_the_body_is_the_bulletin_pages_body(self, client: Client) -> None:
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        sheet = _get(client, _url(region.region_id.lower())).content.decode()
+        page = client.get(region.get_absolute_url()).content.decode()
+        assert 'data-testid="region-sheet-bulletin"' in sheet
+        for testid in (
+            "day-risk-profile-heading",
+            "avalanche-problems-heading",
+            "metadata-strip",
+        ):
+            assert f'data-testid="{testid}"' in sheet
+            assert f'data-testid="{testid}"' in page
+        assert "Wind slab comment text." in sheet
+
+    def test_the_body_leaves_the_pages_chrome_behind(self, client: Client) -> None:
         region = MicroRegionFactory.create()
         _rated_today(region)
         content = _get(client, _url(region.region_id.lower())).content.decode()
-        assert 'data-testid="region-sheet-problems"' in content
-        assert "Avalanche problems" in content
+        assert 'data-testid="bulletin-map-link"' not in content
+        assert "Open bulletin for" not in content
 
-    def test_no_bulletin_means_no_problems_section(self, client: Client) -> None:
+    def test_superuser_debug_stays_on_the_page(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        admin = django_user_model.objects.create_superuser("root", "r@example.com", "x")
+        client.force_login(admin)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="superuser-debug"' not in content
+
+    def test_no_bulletin_means_no_body_sections(self, client: Client) -> None:
         region = MicroRegionFactory.create()
         content = _get(client, _url(region.region_id.lower())).content.decode()
-        assert 'data-testid="region-sheet-problems"' not in content
+        assert 'data-testid="avalanche-problems-heading"' not in content
 
     def test_resorts_link_to_their_pages(self, client: Client) -> None:
         region = MicroRegionFactory.create()
@@ -228,34 +253,23 @@ class TestHalf:
 
 
 @pytest.mark.django_db
-class TestFull:
-    """What full adds: the way to the bulletin page."""
-
-    def test_rated_day_links_to_the_bulletin(self, client: Client) -> None:
-        region = MicroRegionFactory.create()
-        _rated_today(region)
-        content = _get(client, _url(region.region_id.lower())).content.decode()
-        assert f'href="{region.get_absolute_url()}"' in content
-        assert "Open bulletin for" in content
-
-    def test_dated_request_links_to_the_dated_bulletin(self, client: Client) -> None:
-        region = MicroRegionFactory.create()
-        day = datetime.date(2026, 2, 3)
-        RegionDayRatingFactory.create(region=region, date=day, max_rating="moderate")
-        content = _get(
-            client, _url(region.region_id.lower(), day.isoformat())
-        ).content.decode()
-        assert f'href="{region.get_absolute_url(day)}"' in content
-        assert "3 Feb 2026" in content
+class TestNoBulletin:
+    """A day with no bulletin says so, in the body's own words."""
 
     def test_unrated_day_says_no_bulletin(self, client: Client) -> None:
         region = MicroRegionFactory.create()
         content = _get(client, _url(region.region_id.lower())).content.decode()
-        assert "Open bulletin for" not in content
         assert (
-            "No bulletin available for" in content
+            "No bulletin available" in content
             or "Avalanche data is not published" in content
         )
+
+    def test_dated_request_shows_that_day(self, client: Client) -> None:
+        region = MicroRegionFactory.create()
+        day = datetime.date(2026, 2, 3)
+        RegionDayRatingFactory.create(region=region, date=day, max_rating="moderate")
+        response = _get(client, _url(region.region_id.lower(), day.isoformat()))
+        assert response.context["page_date"] == day
 
 
 @pytest.mark.django_db

@@ -64,7 +64,7 @@ Context:
     class="space-y-4"
     data-testid="place-sheet-body"
     data-place-kind="{{ kind }}"
-    data-sheet-detents="{% if resort_url or day_rating %}peek,half,full{% else %}peek,half{% endif %}"
+    data-sheet-detents="{% if kind == 'resort' or resort_url or day_rating %}peek,half,full{% else %}peek,half{% endif %}"
 >
     <div
         data-sheet-peek
@@ -181,68 +181,69 @@ Context:
         </div>
     </div>
 
-    {# HALF ends under the day's weather at the place (data-sheet-half): #}
-    {# the danger level is already on the peek row, so a resort's line   #}
-    {# and summary, then the weather, are what half adds. The problems    #}
-    {# follow, for FULL.                                                  #}
-    <div class="space-y-4">
-        {% if kind == "resort" %}
-            {# SNOW-1161: only when written — the blank states are the page's. #}
-            {% if resort.why_it_matters %}
-                {% include "public/partials/_resort_why_it_matters.html" %}
-            {% endif %}
-            {% with summary=resort|resort_fact_summary %}
-                {% if summary %}
-                    <p class="text-sm text-text-2" data-testid="place-sheet-facts">{{ summary }}</p>
-                {% endif %}
-            {% endwith %}
+    {% if kind == "resort" %}
+        {# SNOW-1164: under the peek row, the resort page's own body for   #}
+        {# the map's day. The curated line leads it, as it does the page's #}
+        {# header — only when written; the blank states are the page's.   #}
+        {% if resort.why_it_matters %}
+            {% include "public/partials/_resort_why_it_matters.html" %}
         {% endif %}
-        {% if weather_display %}
-            <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
-                {% if location.elevation_m is not None %}
-                    {% blocktrans with m=location.elevation_m|floatformat:0 d=target_date|date:"D j M" trimmed asvar weather_label %}
-                        Weather · {{ d }} · {{ m }} m
-                    {% endblocktrans %}
-                {% else %}
-                    {% blocktrans with d=target_date|date:"D j M" trimmed asvar weather_label %}Weather ·
+        <div data-testid="place-sheet-resort-body">
+            {% include "public/partials/_resort_body.html" with in_map=True %}
+        </div>
+    {% else %}
+        {# A saved pin: HALF ends under the day's weather at the place       #}
+        {# (data-sheet-half), since the danger level is already on the peek  #}
+        {# row. The problems follow, for FULL.                                #}
+        <div class="space-y-4">
+            {% if weather_display %}
+                <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
+                    {% if location.elevation_m is not None %}
+                        {% blocktrans with m=location.elevation_m|floatformat:0 d=target_date|date:"D j M" trimmed asvar weather_label %}
+                            Weather · {{ d }} · {{ m }} m
+                        {% endblocktrans %}
+                    {% else %}
+                        {% blocktrans with d=target_date|date:"D j M" trimmed asvar weather_label %}Weather ·
+                            {{ d }}{% endblocktrans %}
+                    {% endif %}
+                    {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="place-sheet-weather" location_label=weather_label only %}
+                    {% include "public/partials/_place_sheet_forecast_link.html" %}
+                </section>
+            {% elif forward_day %}
+                {# A forward day: today's row forecast it, so its line says so. #}
+                <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
+                    {% blocktrans with d=target_date|date:"D j M" trimmed asvar forward_label %}Forecast ·
                         {{ d }}{% endblocktrans %}
-                {% endif %}
-                {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="place-sheet-weather" location_label=weather_label only %}
-                {% include "public/partials/_place_sheet_forecast_link.html" %}
-            </section>
-        {% elif forward_day %}
-            {# A forward day: today's row forecast it, so its line says so. #}
-            <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
-                {% blocktrans with d=target_date|date:"D j M" trimmed asvar forward_label %}Forecast ·
-                    {{ d }}{% endblocktrans %}
-                {% include "includes/_eyebrow.html" with text=forward_label tag="h3" %}
-                {% include "includes/_weather_day_line.html" with day=forward_day testid_prefix="place-sheet-forward-day" only %}
-                {% include "public/partials/_place_sheet_forecast_link.html" %}
-            </section>
-        {% elif forecast_url %}
-            <div data-sheet-half>{% include "public/partials/_place_sheet_forecast_link.html" %}</div>
-        {% endif %}
-        {% if problem_cards %}
-            <section class="space-y-2" data-testid="place-sheet-problems">
-                {% translate "Avalanche problems" as problems_eyebrow %}
-                {% include "includes/_eyebrow.html" with text=problems_eyebrow tag="h3" %}
-                {% for card in problem_cards %}
-                    {% include "favourites/partials/_favourite_problem.html" with card=card %}
-                {% endfor %}
-            </section>
-        {% endif %}
-    </div>
+                    {% include "includes/_eyebrow.html" with text=forward_label tag="h3" %}
+                    {% include "includes/_weather_day_line.html" with day=forward_day testid_prefix="place-sheet-forward-day" only %}
+                    {% include "public/partials/_place_sheet_forecast_link.html" %}
+                </section>
+            {% elif forecast_url %}
+                <div data-sheet-half>{% include "public/partials/_place_sheet_forecast_link.html" %}</div>
+            {% endif %}
+            {% if problem_cards %}
+                <section class="space-y-2" data-testid="place-sheet-problems">
+                    {% translate "Avalanche problems" as problems_eyebrow %}
+                    {% include "includes/_eyebrow.html" with text=problems_eyebrow tag="h3" %}
+                    {% for card in problem_cards %}
+                        {% include "favourites/partials/_favourite_problem.html" with card=card %}
+                    {% endfor %}
+                </section>
+            {% endif %}
+        </div>
 
-    {# FULL: the links on — the day's bulletin first, then the resort page. #}
-    <div class="flex flex-col gap-2" data-testid="place-sheet-links">
-        {% if day_rating %}
-            {% blocktrans with region=region.name d=target_date|date:"j M" trimmed asvar bulletin_label %}
-                Read the {{ region }} bulletin for {{ d }} →
-            {% endblocktrans %}
-            {% include "includes/_button.html" with label=bulletin_label href=bulletin_url full_width=True %}
-        {% endif %}
-        {% if resort_url %}
-            {% include "includes/_button.html" with label=_("View resort →") href=resort_url variant="secondary" full_width=True %}
-        {% endif %}
-    </div>
+        {# FULL: the links on — the day's bulletin first, then a saved     #}
+        {# resort's page.                                                   #}
+        <div class="flex flex-col gap-2" data-testid="place-sheet-links">
+            {% if day_rating %}
+                {% blocktrans with region=region.name d=target_date|date:"j M" trimmed asvar bulletin_label %}
+                    Read the {{ region }} bulletin for {{ d }} →
+                {% endblocktrans %}
+                {% include "includes/_button.html" with label=bulletin_label href=bulletin_url full_width=True %}
+            {% endif %}
+            {% if resort_url %}
+                {% include "includes/_button.html" with label=_("View resort →") href=resort_url variant="secondary" full_width=True %}
+            {% endif %}
+        </div>
+    {% endif %}
 </div>

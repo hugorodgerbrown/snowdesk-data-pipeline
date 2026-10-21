@@ -46,7 +46,11 @@ Context:
   bulletin_url          — str: the region's evergreen bulletin URL, or
                           without a panel the dated page of its latest
                           bulletin (views._resort_bulletin_url).
-  target_date           — datetime.date: today, named in the eyebrow.
+  target_date           — datetime.date: the day shown, named in the eyebrow
+                          (today on the bare page; the map's day in the
+                          sheet and on a dated page, SNOW-1164).
+  is_today              — bool: target_date is today, so the empty state
+                          says "today" rather than "this day".
   bulletin_provider     — str: "SLF" / "ALBINA" / "Météo-France", or "".
   bulletin_updated_time — str: "HH:MM" in Central European time, or "".
   class_extra           — optional classes on the outer ``<section>``.
@@ -159,7 +163,7 @@ Context:
                         <span
                             class="text-label font-semibold leading-tight text-text-1"
                             data-testid="resort-no-rating"
-                        >{% trans "No bulletin today" %}</span>
+                        >{% if is_today %}{% trans "No bulletin today" %}{% else %}{% trans "No bulletin this day" %}{% endif %}</span>
                         <span class="text-xs">
                             {% blocktrans with region=region.name trimmed %}
                                 {{ region }} region

@@ -1109,6 +1109,7 @@ def _resort_bulletin_card_context(
         ),
         "bulletin_url": "#",
         "target_date": datetime.date(2026, 1, 14),
+        "is_today": True,
         "bulletin_provider": provider,
         "bulletin_updated_time": updated,
     }
@@ -3921,6 +3922,7 @@ def _build_resort_forecast_variants() -> tuple[dict[str, Any], ...]:
             "context": {
                 "forecast_points": points(_SNOW_WEEK, winter),
                 "target_date": winter,
+                "is_today": True,
                 "selector_name": "component-library-forecast-snow",
             },
         },
@@ -3930,6 +3932,7 @@ def _build_resort_forecast_variants() -> tuple[dict[str, Any], ...]:
             "context": {
                 "forecast_points": points(_RAIN_WEEK, autumn),
                 "target_date": autumn,
+                "is_today": True,
                 "selector_name": "component-library-forecast-rain",
             },
         },
@@ -3941,6 +3944,7 @@ def _build_resort_forecast_variants() -> tuple[dict[str, Any], ...]:
                     _forecast_point("base", "Base", None, _SNOW_WEEK, anchor=winter)
                 ],
                 "target_date": winter,
+                "is_today": True,
                 "selector_name": "component-library-forecast-single",
             },
         },
@@ -3956,6 +3960,7 @@ def _build_resort_forecast_variants() -> tuple[dict[str, Any], ...]:
                     _forecast_point("top", "Summit", 3330, None, anchor=winter),
                 ],
                 "target_date": winter,
+                "is_today": True,
                 "selector_name": "component-library-forecast-sparse",
             },
         },
