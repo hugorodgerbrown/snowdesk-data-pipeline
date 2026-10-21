@@ -21,6 +21,7 @@ import pytest
 from django.core.management import call_command
 
 from apps.locations.models import Location
+from apps.trips.models import Trip
 from apps.weather.models import Weather
 from tests.factories import (
     FavouriteFactory,
@@ -28,6 +29,7 @@ from tests.factories import (
     LocationFactory,
     MicroRegionFactory,
     ResortLocationFactory,
+    TripFactory,
     WeatherFactory,
 )
 
@@ -82,6 +84,29 @@ class TestPruneOrphanLocations:
         call_command(COMMAND, "--commit", stdout=StringIO())
 
         assert Location.objects.filter(pk=location.pk).exists()
+
+    def test_a_live_trip_meeting_point_is_not_an_orphan(self) -> None:
+        """A trip's meeting point is spared, and the sweep still completes.
+
+        SNOW-1171. ``Trip.meeting_point`` is PROTECT, so a sweep that counted
+        a live meeting point as an orphan did not delete it — it raised
+        ``ProtectedError`` and the one transaction rolled the whole sweep
+        back. While any trip existed, no orphan could ever be cleared.
+        """
+        trip = TripFactory.create()
+        orphan = LocationFactory.create(anonymous=True)
+        WeatherFactory.create(location=orphan)
+
+        out = StringIO()
+        call_command(COMMAND, stdout=out)
+        assert "1 orphaned location(s)" in out.getvalue()
+
+        call_command(COMMAND, "--commit", stdout=StringIO())
+
+        assert not Location.objects.filter(pk=orphan.pk).exists()
+        assert not Weather.objects.filter(location_id=orphan.pk).exists()
+        assert Trip.objects.filter(pk=trip.pk).exists()
+        assert Location.objects.filter(pk=trip.meeting_point_id).exists()
 
     def test_dry_run_deletes_nothing(self) -> None:
         """Read-only by default, per the command design rules."""
