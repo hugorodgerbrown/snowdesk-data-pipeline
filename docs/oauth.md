@@ -2,7 +2,7 @@
 name: oauth
 description: OAuth 2.1 for /api/mcp/ — .well-known metadata, /oauth/authorize|token|register, OAuthGrant, CIMD guard, mint_mcp_token
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-21
 ---
 
 # OAuth for the MCP server
@@ -196,5 +196,9 @@ ask you to reconnect. The ngrok inspector shows the exact request sequence.
   Untested against Claude's DCR path; CIMD is advertised and preferred.
 - **The open endpoint closed at deploy.** Any anonymous MCP user lost access
   when this shipped; that was the chosen cutover.
-- **IdempotencyMiddleware** logs `pwa.idempotency.missing` for every OAuth
-  and MCP POST. The noise predates this change.
+- **IdempotencyMiddleware** skips `/api/mcp/`, `/api/mcp`,
+  `/oauth/token/`, `/oauth/register/` and `/oauth/revoke/`
+  (`IDEMPOTENCY_EXEMPT_PATHS`, SNOW-1169). The MCP endpoint checks its
+  bearer inside the view, so a replayed `Idempotency-Key` used to return
+  the cached 200 with no token or a revoked one. Exempt requests are never
+  reserved or replayed and log no `pwa.idempotency.missing` line.

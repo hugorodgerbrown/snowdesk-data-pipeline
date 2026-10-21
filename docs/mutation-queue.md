@@ -224,7 +224,9 @@ enqueued row mints its key once, at enqueue time
 via the `Idempotency-Key` header — this is what lets the server
 deduplicate a retried mutation rather than re-executing it. See
 [`offline-first.md`](offline-first.md#idempotency-snow-371) for the
-server-side cache/TTL contract.
+server-side cache/TTL contract. The MCP and OAuth machine endpoints
+(`/api/mcp/`, `/api/mcp`, `/oauth/token/`, `/oauth/register/`,
+`/oauth/revoke/`) are exempt and ignore the header (SNOW-1169).
 
 ### CSRF on replay
 
