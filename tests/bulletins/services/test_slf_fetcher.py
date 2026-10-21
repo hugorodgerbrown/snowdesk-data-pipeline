@@ -711,6 +711,51 @@ class TestUpsertBulletin:
         kept = RegionDayRating.objects.get(region__region_id="CH-7111", date=target)
         assert kept.max_rating == RegionDayRating.Rating.HIGH
 
+    def test_moved_day_correction_reconciles_the_old_day(self) -> None:
+        """SNOW-1168: a re-ingest that moves the target day clears the old day.
+
+        The first issue is an evening one (17:00Z on the 15th, so it forecasts
+        the 16th). The correction, same bulletin ID, is a morning issue on the
+        17th, so its target day moves to the 17th. The 16th
+        must fall to ``no_rating`` (nothing else covers it) rather than keep
+        the rating the bulletin no longer gives it, and the 17th is written.
+        """
+        run = PipelineRunFactory.create()
+        upsert_bulletin(
+            _make_raw_bulletin(
+                bulletin_id="move-001",
+                dangerRatings=[{"mainValue": "low"}],
+            ),
+            run,
+        )
+        old_day, new_day = date(2025, 3, 16), date(2025, 3, 17)
+        assert (
+            RegionDayRating.objects.get(region__region_id="CH-4115", date=old_day)
+        ).max_rating == RegionDayRating.Rating.LOW
+
+        upsert_bulletin(
+            _make_raw_bulletin(
+                bulletin_id="move-001",
+                dangerRatings=[{"mainValue": "high"}],
+                validTime={
+                    "startTime": "2025-03-17T07:00:00Z",
+                    "endTime": "2025-03-17T17:00:00Z",
+                },
+            ),
+            run,
+        )
+
+        for region_id in ("CH-4115", "CH-7111"):
+            old_row = RegionDayRating.objects.get(
+                region__region_id=region_id, date=old_day
+            )
+            assert old_row.max_rating == RegionDayRating.Rating.NO_RATING
+            assert old_row.source_bulletin is None
+            new_row = RegionDayRating.objects.get(
+                region__region_id=region_id, date=new_day
+            )
+            assert new_row.max_rating == RegionDayRating.Rating.HIGH
+
     def test_first_ingest_passes_no_prior_pairs(self) -> None:
         """SNOW-1168: a bulletin seen for the first time has nothing to reconcile."""
         run = PipelineRunFactory.create()
