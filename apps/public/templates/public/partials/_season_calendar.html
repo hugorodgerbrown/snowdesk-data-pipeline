@@ -28,18 +28,20 @@
      * not linked (resort page, help, library) — the calendar is ONE
        role="img" whose aria-label is the season summary; cells carry a
        title ("14 Jan 2026 · Considerable") and nothing inside is a link.
-       The key is the short one: No bulletin, Low … High.
      * linked (bulletin page) — each day with a bulletin is a link to that
        day (aria-label + title); the calendar is not an image, because an
        image's children are presentational and the links would vanish from
-       the accessibility tree. The key is the full one: a count per level,
-       "Two levels in one day" and "This bulletin" (the ring). One tap on a
-       day follows its link straight to that day's bulletin (SNOW-1163).
+       the accessibility tree. One tap on a day follows its link straight to
+       that day's bulletin (SNOW-1163).
+
+   Both variants share one key (SNOW-1163): the colours alone — No
+   bulletin, Low … High, Very high only when a day reached it — with no
+   counts and no entries for the split cell or the ring.
 
    Context:
      season_months  — SeasonMonths (apps.public.season_calendar.build_season_months).
      season_summary — SeasonSummary: the aria-label (not linked) and the
-                      key's levels and counts.
+                      key's levels.
      linked         — truthy on the bulletin page.
      region         — MicroRegion (canonical_region_id + name_slug), only
                       read when ``linked``.
@@ -120,49 +122,18 @@
             </div>
         {% endfor %}
     </div>
-    {% if linked %}
-        {# The full key: a count per level, then the drawing's other marks. #}
-        <ul class="season-cal-key-full" data-testid="season-calendar-key">
-            {% for key, count in season_summary.key_counts %}
-                <li class="inline-flex items-center gap-2" data-level="{{ key }}">
-                    <span class="season-day season-key-swatch" data-state="{{ key }}" aria-hidden="true"></span>
-                    {{ key|danger_level_digit|danger_level_label }}
-                    <span class="font-mono text-text-1">{{ count }}</span>
-                </li>
-            {% endfor %}
-            <li class="inline-flex items-center gap-2">
-                <span class="season-day season-key-swatch" data-state="none" aria-hidden="true"></span>
-                {% translate "No bulletin" %}
+    {# The key, one for both variants: the colours alone (SNOW-1163). #}
+    {% translate "Danger rating key" as key_label %}
+    <ul class="season-cal-key" aria-label="{{ key_label }}" data-testid="season-calendar-key">
+        <li class="inline-flex items-center gap-1.5">
+            <span class="season-day season-key-swatch" data-state="none" aria-hidden="true"></span>
+            {% translate "No bulletin" %}
+        </li>
+        {% for key, count in season_summary.key_counts %}
+            <li class="inline-flex items-center gap-1.5" data-level="{{ key }}">
+                <span class="season-day season-key-swatch" data-state="{{ key }}" aria-hidden="true"></span>
+                {{ key|danger_level_digit|danger_level_label }}
             </li>
-            <li class="inline-flex items-center gap-2">
-                <span
-                    class="season-day season-key-swatch"
-                    data-state="split"
-                    data-lo="moderate"
-                    data-hi="considerable"
-                    aria-hidden="true"
-                ></span>
-                {% translate "Two levels in one day" %}
-            </li>
-            <li class="inline-flex items-center gap-2">
-                <span class="season-day season-key-swatch season-day-ring" data-state="high" aria-hidden="true"></span>
-                {% translate "This bulletin" %}
-            </li>
-        </ul>
-    {% else %}
-        {# The short key — the states a reader meets on the calendar. #}
-        {% translate "Danger rating key" as key_label %}
-        <ul class="season-cal-key" aria-label="{{ key_label }}" data-testid="season-calendar-key">
-            <li class="inline-flex items-center gap-1.5">
-                <span class="season-day season-key-swatch" data-state="none" aria-hidden="true"></span>
-                {% translate "No bulletin" %}
-            </li>
-            {% for key, count in season_summary.key_counts %}
-                <li class="inline-flex items-center gap-1.5" data-level="{{ key }}">
-                    <span class="season-day season-key-swatch" data-state="{{ key }}" aria-hidden="true"></span>
-                    {{ key|danger_level_digit|danger_level_label }}
-                </li>
-            {% endfor %}
-        </ul>
-    {% endif %}
+        {% endfor %}
+    </ul>
 </div>

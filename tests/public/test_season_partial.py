@@ -101,17 +101,21 @@ class TestSeasonPartialContent:
         assert b'data-testid="season-calendar"' in response.content
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
-    def test_is_the_linked_calendar_with_the_full_key(self, client: Client) -> None:
-        """SNOW-1158: the linked variant — no role=img, the counted key."""
+    def test_is_the_linked_calendar_with_the_colour_key(self, client: Client) -> None:
+        """The linked variant — no role=img — with the colours-only key (SNOW-1163)."""
         region = MicroRegionFactory.create()
         response = client.get(_url(region.region_id.lower()), HTTP_HX_REQUEST="true")
         content = response.content.decode()
         assert 'data-variant="linked"' in content
         assert 'role="img"' not in content
-        assert "Two levels in one day" in content
-        # SNOW-1163: the ring marks the bulletin the page is on.
-        assert "This bulletin" in content
-        assert "Selected day" not in content
+        key = content.split('data-testid="season-calendar-key"')[1].split("</ul>")[0]
+        assert "No bulletin" in key
+        assert 'data-level="high"' in key
+        # No counts, no split swatch, no ring swatch.
+        assert "font-mono text-text-1" not in key
+        assert "Two levels in one day" not in content
+        assert "This bulletin" not in content
+        assert "season-day-ring" not in key
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_every_cell_carries_data_date_attribute(self, client: Client) -> None:

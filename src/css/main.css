@@ -1355,21 +1355,6 @@ a.season-day:focus-visible {
     text-transform: uppercase;
     color: var(--color-text-3);
 }
-.season-cal-key-full {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 20px;
-    padding-top: 20px;
-    border-top: 1px solid var(--color-border);
-    font-size: var(--text-summary);
-    line-height: 18px;
-    color: var(--color-text-2);
-}
-.season-cal-key-full .season-key-swatch {
-    width: 12px;
-    height: 12px;
-}
-
 /* The bulletin sheet: calendar, then the key. #season-grid and the
    fragment's root step out of the box tree so both are flex items of one
    column — which also drops the root's size container, so the body is the

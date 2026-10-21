@@ -62,12 +62,13 @@ of its markup or its CSS (`.season-cal`, `.season-day` in
   `role="img"` whose `aria-label` is the season summary ("Season 2025/26:
   150 days with a bulletin, 40 at Considerable or higher."), each cell has
   a `title` ("14 Jan 2026 · Considerable"), nothing is a link, and the
-  short key reads No bulletin, Low, Moderate, Considerable, High (Very high
+  key reads No bulletin, Low, Moderate, Considerable, High (Very high
   only when a day reached it). Linked (bulletin sheet): each day with a
-  bulletin is a link to that day with an `aria-label`, the calendar is not
-  an image (its links would leave the accessibility tree), and the full
-  key counts each level (`SeasonSummary.key_counts`) and explains "Two
-  levels in one day" and "This bulletin" (the ring).
+  bulletin is a link to that day with an `aria-label`, and the calendar is
+  not an image (its links would leave the accessibility tree). Both
+  variants share that one key — colours only, no counts, no entries for
+  the split cell or the ring (SNOW-1163, which retired the linked
+  variant's counted key).
 
 **The resort page's season calendar** (SNOW-1126, redrawn by SNOW-1158).
 `/resorts/<slug>/` renders the calendar server-side and inline rather than
