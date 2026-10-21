@@ -9314,7 +9314,10 @@
         const resortUnder = weatherHit && map.getLayer('resorts-pin')
           ? map.queryRenderedFeatures(e.point, { layers: ['resorts-pin'] })[0]
           : null;
-        if (weatherHit && weatherHit.properties.at_resort) {
+        // A resort with no slug yet (a row the slug backfill has not
+        // reached) feeds `id: null`, projected to '' — it has no sheet to
+        // open, so its symbol keeps the weather-detail tap.
+        if (weatherHit && weatherHit.properties.at_resort && weatherHit.properties.resort_id) {
           resortFromWeather = {
             properties: {
               id: weatherHit.properties.resort_id,
