@@ -74,14 +74,16 @@ map click dispatcher"). It stops at the first rule that claims the tap:
    Under its peek row the sheet shows the resort page's own body for the
    map's day, as the region sheet shows the bulletin page's
    ([`decisions/the-sheet-is-the-page.md`](decisions/the-sheet-is-the-page.md)).
-6. **On the region already selected, with its phone sheet closed**: reopens
+6. **On the region already selected, with its sheet closed**: reopens
    the sheet, at any zoom, and changes nothing else
    (`window.pwaRegionSheet.reopen`). The sheet closes while the region stays
    selected (its ×, a route opening over it), and past z10 this is the only
    way back to it. It works during timelapse playback too, because it
    changes no selection.
 7. **On a region, at z10 or below**: selects it, or deselects it if it was
-   already selected. On a phone the selection opens the region sheet.
+   already selected. The selection opens the region sheet, on every width
+   (SNOW-1173: a desktop opened nothing for a region until then, while a
+   resort or a weather symbol opened the inset panel).
    **Above z10**: closes the place sheet or popup and leaves the selection
    alone.
 8. **On empty map**: deselects the region and closes any popup.
@@ -97,7 +99,7 @@ opens, closes and coexists (CLAUDE.md, design-system rule 6).
 | Kind | Examples | Opened by | Phone shape | Closed by |
 |---|---|---|---|---|
 | **Object sheet** | region sheet, place sheet, weather sheet, route rail | a tap on something on the map | bottom sheet with detents (peek, half, full) | ×, drag below peek, Escape, deselecting, another object sheet |
-| **Roundel panel** | routes, favourites, reports, downloads lists; region panel | its roundel | full-width docked panel, no detents | its roundel, its ×, another overlay |
+| **Roundel panel** | routes, favourites, reports, downloads lists | its roundel | full-width docked panel, no detents | its roundel, its ×, another overlay |
 | **Form panel** | field report, terrain filter | a call to action | docked panel, no detents, no drag-to-close | its own buttons, its × |
 | **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, tour offer, a saved pin's desktop popup | its toggle | anchored card | a click away, another overlay |
 
@@ -150,8 +152,10 @@ one.
 So on a phone: opening a route closes the region sheet (the region stays
 selected and outlined), a search pick that opens the region sheet closes the
 route, and a weather symbol tapped beside a route replaces the route sheet.
-On a desktop the route rail is a panel pinned top-left and the region sheet
-never opens, so nothing changes there.
+On a desktop the route rail is a panel pinned top-left and the object
+sheets are the inset panel at the right, so a route and the region sheet
+can both be on screen; the object sheets still replace one another there,
+through `pwaMapOverlays`.
 
 ## 4. The camera padding and the root marks
 

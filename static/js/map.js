@@ -133,9 +133,8 @@
   // full-season fetch via getSeasonRatings().
   RATINGS_URL = mapEl.dataset.ratingsUrl;
   // SNOW-895: `REGION_SUMMARY_URL_TEMPLATE` was read here, for the region
-  // popup this file no longer has. `static/js/map_region_panel.js` reads the
-  // same `data-region-summary-url` attribute for itself, so the attribute and
-  // the endpoint behind it both stay; only this unused copy is gone.
+  // popup this file no longer has. SNOW-1173 then retired the chip panel
+  // that was the attribute's last reader, and the attribute with it.
 
   // SNOW-660: ``bootDateKey`` — min(today, seasonEnd), SNOW-236's cold-open
   // date — used to live here, and every date-consuming path fell back to it
@@ -7876,10 +7875,9 @@
     // the timelapse were all permanent no-ops — code that read as careful
     // sequencing and did nothing whatsoever.
     //
-    // The ENDPOINT is not dead and did not go with it: `api:region_summary`
-    // is what `map_region_panel.js` fetches, caches per region and date, and
-    // prefetches (SNOW-879). Only the MapLibre popup that used to render its
-    // response is gone.
+    // `api:region_summary` outlived the popup as the chip panel's source
+    // until SNOW-1173 retired that panel; the region sheet's body
+    // (`public:region_sheet_partial`) is what the map reads now.
 
     // SNOW-499: a single "detail popup" handle, separate from the region
     // popup — a resort or an *existing* favourite is a point fixed to the
@@ -8156,9 +8154,9 @@
     //   history entry.
     //
     // ``via`` (SNOW-1098) rides out on the event so a listener can tell a
-    // map TAP from the other routes into a selection. Only the region
-    // sheet reads it: a tap on a phone opens the sheet, while a search
-    // pick, a deep link or a pinned-region row select without one.
+    // map TAP from the other routes into a selection. The region sheet
+    // opens for every route since 16 Oct, and on every width since
+    // SNOW-1173, so it no longer branches on it.
     const selectFeature = async (
       numericId,
       { urlMode = 'push', via = '' } = {},
@@ -8208,11 +8206,11 @@
 
     // SNOW-1118: the tour's "Tap a region" step shows a real region rather
     // than describing one. map_help.js asks for it, and this answers: the
-    // region already selected (its sheet opened again on a phone), or else
-    // the one under the middle of the map, or failing that any region in
-    // view. On a phone the selection opens the region sheet, as any
-    // selection does (map_region_sheet.js), and that sheet is what the step
-    // points at; a desktop names it in the readout chip.
+    // region already selected (its sheet opened again), or else the one
+    // under the middle of the map, or failing that any region in view. The
+    // selection opens the region sheet on every width, as any selection
+    // does (map_region_sheet.js, SNOW-1173), and that sheet is what the
+    // step points at.
     //
     // Leaving the step releases it: a selection the tour made is dropped,
     // so the visitor ends the tour on the map they started it on. One they
@@ -9301,7 +9299,7 @@
       }
 
       const region = features.find((f) => f.layer.id === 'regions-fill');
-      // A tap on the region already selected, with its phone sheet closed,
+      // A tap on the region already selected, with its sheet closed,
       // reopens the sheet at ANY zoom (2026-10-19): the selection is not
       // changed, which is the rule past REGION_SELECT_MAXZOOM, but a region
       // the reader can see outlined is one they can get back to. With the
@@ -9554,16 +9552,13 @@
     // the input (CSS transition) and moves focus. The pill stays expanded
     // as long as the user is interacting with it; Escape or an outside
     // pointerdown collapses it back (see handlers below).
-    // PHONE: SEARCH REPLACES THE REGION CHIP (Hugo, 16 Oct). map.css gives
-    // search the whole top row and hides the chip, whose panel was where the
-    // pinned regions lived; so an empty field lists them, and typing replaces
-    // them with matches. The rows come from map_region_panel.js's loaded
-    // list (window.pwaPinnedRegions) — one loader for the list, the pin
-    // roundel and this. A visitor has none, and sees nothing until they type.
-    // On a desktop the chip and its panel are unchanged, so nothing lists.
-    const PHONE_QUERY = '(max-width: 639.98px)';
-    const isPhoneWidth = () =>
-      typeof window.matchMedia === 'function' && window.matchMedia(PHONE_QUERY).matches;
+    // SEARCH IS WHERE THE PINNED REGIONS ARE (Hugo, 16 Oct, for the phone;
+    // SNOW-1173 for every width). They lived in the region chip's dropdown
+    // panel until that panel was retired, so an empty field lists them, and
+    // typing replaces them with matches. The rows come from
+    // map_region_panel.js's loaded list (window.pwaPinnedRegions) — one
+    // loader for the list, the pin roundel and this. A visitor has none, and
+    // sees nothing until they type.
 
     const pinnedResults = () => {
       const ids = window.pwaPinnedRegions?.ids?.() || [];
@@ -9573,10 +9568,6 @@
     };
 
     const showEmptyState = () => {
-      if (!isPhoneWidth()) {
-        closeResults();
-        return;
-      }
       previewTop = false;
       renderResults(pinnedResults());
       // The list may still be loading on a first focus straight after boot.
@@ -9645,7 +9636,7 @@
       // When idx === -1 (Enter not pressed yet, ArrowUp past the top),
       // preview the first result so the highlight tracks what Enter
       // would pick.
-      // The pinned list (an empty field, on a phone) previews nothing until
+      // The pinned list (an empty field) previews nothing until
       // a row is arrowed to: nothing has been asked for yet, and an outline
       // on the first pinned region read as a second selection.
       const previewItem = currentResults[idx >= 0 ? idx : (previewTop ? 0 : -1)];
@@ -9773,7 +9764,7 @@
       // map does. A resort the pin feed does not carry (no coordinates yet)
       // falls through to its region, the row's own badge.
       if (item.type === 'resort') {
-        inputEl.value = isPhoneWidth() ? '' : item.primary;
+        inputEl.value = '';
         collapseSearch();
         openResort(
           (props) => props.name === item.primary && (!props.region_id || props.region_id === item.regionID),
@@ -9787,19 +9778,19 @@
     const chooseRegion = (item) => {
       const feature = FEATURE_BY_REGION_ID[item.regionID];
       if (!feature) return;
-      // On a phone the field empties again: the region sheet names the pick,
-      // and an empty field is what lists the pinned regions next time.
-      inputEl.value = isPhoneWidth() ? '' : item.primary;
+      // The field empties again: the region sheet names the pick, and an
+      // empty field is what lists the pinned regions next time.
+      inputEl.value = '';
       collapseSearch();
       // Moves the selection (highlight + ribbon + readout + hash). Picking the
       // region that is already selected is a no-op — the deselect toggle is a
       // map gesture only, so a search pick never clears the selection.
       selectFeature(feature.id);
-      // On a phone the pinned regions moved here from the chip's panel,
-      // whose rows framed what they selected (row_focus.js's rule); a pick
-      // from search does the same there, so the region lands above the
-      // sheet it opens rather than wherever the map happened to be.
-      if (isPhoneWidth()) window.pwaMapFocus?.region?.(item.regionID);
+      // The pinned regions moved here from the chip's panel, whose rows
+      // framed what they selected (row_focus.js's rule); a pick from search
+      // does the same, so the region lands beside the sheet it opens rather
+      // than wherever the map happened to be.
+      window.pwaMapFocus?.region?.(item.regionID);
     };
 
     inputEl.addEventListener('input', () => {

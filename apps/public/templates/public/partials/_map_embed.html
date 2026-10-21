@@ -70,14 +70,11 @@ Optional context:
     data-ratings-url="{% url 'api:ratings' %}"
     data-resorts-url="{% url 'api:resorts_by_region' %}"
     data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
-    data-region-summary-url="{% url 'api:region_summary' region_id='XX-0000' %}"
-    {# SNOW-1098: the phone region sheet's body, read by map_region_sheet.js. #}
+    {# SNOW-1098: the region sheet's body, read by map_region_sheet.js.       #}
     data-region-sheet-url="{% url 'public:region_sheet_partial' region_id='XX-0000' %}"
     {# SNOW-1100: the phone place sheet's bodies, read by map_place_sheet.js. #}
     data-resort-sheet-url="{% url 'public:resort_sheet_partial' slug='__SLUG__' %}"
     data-favourite-sheet-url="{% url 'public:favourite_sheet_partial' uuid='00000000-0000-0000-0000-000000000000' %}"
-    {# SNOW-801: read by map_region_panel.js for the region panel's resorts.  #}
-    data-resorts-by-region-url="{% url 'api:resorts_by_region' %}"
     data-bulletin-groupings-url="{% url 'api:bulletin_groupings_geojson' %}"
     data-default-basemap-key="{{ default_basemap_key }}"
     {# SNOW-872: the map's opening view — which providers' bulletins are      #}
@@ -1672,9 +1669,9 @@ Optional context:
                 </div>
             </div>
         </li>
-        {# The phone opens #region-sheet for a selection; a desktop names it  #}
-        {# in the #region-readout chip instead, so the target is whichever of #}
-        {# the two is on screen once the tour has selected the region.        #}
+        {# A selection opens #region-sheet on every width (SNOW-1173); the    #}
+        {# chip is the fallback target for a tour step that finds the sheet   #}
+        {# closed (a region already selected and its sheet dismissed).        #}
         <li
             data-help-target="#region-sheet | #region-readout"
             data-help-chapter="read"

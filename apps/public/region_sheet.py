@@ -23,10 +23,10 @@ The body is ``public/partials/_region_body.html`` with its context from
 page's own rule (``_resolve_selected_issue``), so the sheet and the page
 cannot show different issues or describe them differently.
 
-The chip's region panel (``static/js/map_region_panel.js``) keeps its region
-summary: the sheet is phone-only and opened by a map tap, the panel is
-reached from the chip at every width, and taking the summary out of the
-panel would leave a desktop reader with none.
+The sheet opens on every width since SNOW-1173: a bottom sheet on a phone,
+the inset panel on a desktop. That ticket retired the chip's region panel,
+which had kept a smaller copy of the region's summary for the desktop
+while the sheet was phone-only; the chip now reopens this sheet.
 """
 
 from __future__ import annotations

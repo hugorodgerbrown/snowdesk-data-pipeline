@@ -390,26 +390,26 @@ pages redirect into the map's sheets.
 
 ### Scenario 11: Pin a region from the map
 
-**Goal**: Verify the region + date panel's pin control creates a region pin and the same panel lists it.
+**Goal**: Verify the pin control creates a region pin and search lists it (SNOW-814; SNOW-1173 moved the list from the chip's retired panel into search).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | While signed in (Scenario 10), tap a region on the map | A star roundel sits in the header between the region chip and the download roundel, outlined — the region is not pinned |
-| 2 | Click the star roundel | It fills (no page reload). Open the region + date panel from the chip: a row for the region is in the "Pinned regions" section at the foot, marked as the one on screen |
-| 3 | Read that row | The region's name and a solid star to unpin — nothing else. No rating, no date, no link: the list is navigation, and the summary above it is what follows the scrubber (SNOW-814) |
+| 1 | While signed in (Scenario 10), tap a region on the map | The region sheet opens (the inset panel at the right on a desktop, a bottom sheet at peek on a phone). A star roundel sits in its header and, on a desktop, in the ribbon header between the region chip and the download roundel, outlined — the region is not pinned |
+| 2 | Click the star roundel | It fills, in the sheet and the ribbon together (no page reload) |
+| 3 | Open search and leave the field empty | The region is listed before anything is typed, with no rating and no date: the list is navigation |
 | 4 | Open the pins sheet from its roundel | The region is NOT listed there — that sheet lists places (SNOW-814) |
-| 5 | Sign out and reload | The star roundel is still there, muted, and links to the sign-in page. The chip is inert with nothing selected, and no "Pinned regions" section renders |
+| 5 | Sign out and reload | The star roundel is still there, muted, and links to the sign-in page. The chip is disabled with nothing selected, and an empty search lists nothing |
 
 ### Scenario 12: Switch region from the pinned list, and unpin
 
-**Goal**: Verify the pinned list navigates, and that unpinning keeps the panel's two controls in agreement.
+**Goal**: Verify the pinned list navigates, and that unpinning keeps the list and the star in agreement.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | While signed in with two pinned regions (Scenario 11 twice), deselect every region and press the "No region selected" chip | The chip is pressable and opens onto "Pinned regions" alone |
-| 2 | Press one region's name in the list | The map frames that region, the chip renames to it, the URL hash becomes `#<region_id>`, and the panel repaints with that region's summary above the list |
-| 3 | Scrub to another date, then read the list again | That region's row is marked as the current one and the others are not, and no row shows a date — only the summary above changes with the scrubber |
-| 4 | Press the solid star on that row | The row disappears without a page reload, AND the star roundel in the header hollows — the two read the same list and must never disagree |
+| 1 | While signed in with two pinned regions (Scenario 11 twice), open search with the field empty | Both regions are listed |
+| 2 | Press one of them | The map frames that region, the chip renames to it, the URL hash becomes `#<region_id>`, and the region sheet opens for it |
+| 3 | Close the sheet with its ×, then press the region chip (desktop) or tap the region again (phone) | The sheet opens again for the same region (SNOW-1173) |
+| 4 | Press the filled star in the sheet's header | It hollows, and so does the ribbon's; open search with the field empty and the region is no longer listed — the two read the same list and must never disagree |
 
 ### Scenario 13: Delete the account from settings
 
@@ -427,8 +427,8 @@ pages redirect into the map's sheets.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Pin exactly one region (Scenario 11) and open the region + date panel | One row is listed under "Pinned regions" |
-| 2 | Press its star | The row goes; the section reads "Pin a region and it will be listed here."; the header roundel hollows; the user stays signed in |
+| 1 | Pin exactly one region (Scenario 11) and open search with the field empty | One region is listed |
+| 2 | Select it and press the filled star in its sheet | The star hollows; an empty search lists nothing; the user stays signed in |
 | 3 | Navigate to http://localhost:8000/account/settings/ | The settings page renders — the account survives |
 
 ### Scenario 15: The old account URLs redirect into the map

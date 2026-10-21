@@ -12,14 +12,15 @@ last-reviewed: 2026-10-21
 **A region and a resort each have one body, rendered in two containers.**
 The page wraps it in the site's frame; the map's sheet wraps it under its
 one-row peek (SNOW-1164, Hugo, 21 Oct 2026). On a phone the sheet at full
-height therefore *is* the page.
+height therefore *is* the page; on a desktop it is the inset panel at the
+map's right, for a region as for a resort (SNOW-1173).
 
 | | Region | Resort |
 |---|---|---|
 | Builder | `views.build_bulletin_body` | `views.build_resort_body` |
 | Body | `public/partials/_region_body.html` | `public/partials/_resort_body.html` |
 | Page | `bulletin.html` (`bulletin_detail`) | `resort.html` (`resort_detail`) |
-| Sheet | `_region_sheet_body.html` (`region_sheet_partial`, phone only) | `_place_sheet_body.html` (`resort_sheet_partial`, every width) |
+| Sheet | `_region_sheet_body.html` (`region_sheet_partial`, every width since SNOW-1173) | `_place_sheet_body.html` (`resort_sheet_partial`, every width) |
 
 The sheet passes `in_map=True`. The body then drops what only makes sense
 off the map — the region page's superuser debug block — and the resort body

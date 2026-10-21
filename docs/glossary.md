@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-21
 ---
 
 # Glossary — domain terms to code symbols
@@ -195,7 +195,7 @@ Which coordinate on which model is exact, approximate or derived:
 | Term | Meaning | Code |
 |------|---------|------|
 | Account | The single public-user identity (`OneToOne` to `auth.User`, SNOW-514 collapsed the former `Subscriber` model into this). Auto-created at every public entry point (sign-in, register). `is_verified` is the sole "email proven reachable" gate, set by every email-proving link. `AUTH_USER_MODEL` is Django's built-in `auth.User`; `Account` is a domain profile, not the user model | `apps/accounts/models.py` |
-| Region pin | A `Favourite` whose subject is the `MicroRegion` itself — `region` set, `location`/`latitude`/`longitude`/`elevation` null, one per `(user, region)` by partial unique constraint (SNOW-802). What a `Subscription` row became — a pair meant to drive bulletin emails that never did, dropped by SNOW-805: a bookmark on a region's bulletin, made with the star roundel in the map's ribbon header and listed in the region + date panel that header's chip opens (SNOW-814 — a pill inside that panel, and a row in the pins sheet, until then), never in `favourites.geojson` | `Favourite.is_region_pin`; `FavouriteQuerySet.region_pins()` / `.placed()`; `favourites:region_toggle`; `favourites:region_list` |
+| Region pin | A `Favourite` whose subject is the `MicroRegion` itself — `region` set, `location`/`latitude`/`longitude`/`elevation` null, one per `(user, region)` by partial unique constraint (SNOW-802). What a `Subscription` row became — a pair meant to drive bulletin emails that never did, dropped by SNOW-805: a bookmark on a region's bulletin, made with the star roundel in the map's ribbon header and listed by the map's search before anything is typed (SNOW-1173; the region + date panel the header's chip opened from SNOW-814, and a row in the pins sheet before that), never in `favourites.geojson` | `Favourite.is_region_pin`; `FavouriteQuerySet.region_pins()` / `.placed()`; `favourites:region_toggle`; `favourites:region_list` |
 | Signed token | `TimestampSigner` tokens for account access, email verification, password reset and email change — all expiring | `apps/accounts/services/token.py` |
 | PasskeyCredential | WebAuthn platform passkey for an `auth.User` (FK to `User`, not `Account` — any authenticated user, including staff without an Account profile, can register one) | `apps/accounts/models.py` |
 | Connected app | An `OAuthGrant`: one user's approval of one OAuth client (Claude, Claude Code, a `mint_mcp_token` local token) to call the MCP server as them. Listed on `/account/settings/`; Disconnect revokes it and every token under it (SNOW-1035) | `apps/oauth/models.py` (`OAuthGrant`, `OAuthClient`, `OAuthToken`, `AuthorizationCode`); `docs/oauth.md` |

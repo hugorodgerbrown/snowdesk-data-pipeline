@@ -2,7 +2,7 @@
 name: user-journeys
 description: Personas (anonymous visitor, signed-in user) and core journeys J1–J7 — two documents and a map — URL surfaces and invariants
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-21
 ---
 
 # User personas and core journeys
@@ -140,14 +140,14 @@ ten seconds.
 > "Keep this region where I can find it."
 
 The conversion journey. An anonymous visitor taps the pin control in the
-map's region panel, is offered sign-in, registers or requests an
+map's region sheet or ribbon header, is offered sign-in, registers or requests an
 account-access link, and comes back to a map that remembers the region.
 
 **Entry points:**
-- The star roundel in the region + date panel's header
+- The star roundel in the ribbon header
   (`public/partials/_season_ribbon.html`, driven by
-  `static/js/map_region_panel.js`) — a sign-in path for a visitor, a
-  toggle for a signed-in user.
+  `static/js/map_region_panel.js`) and its proxy in the region sheet's
+  header — a sign-in path for a visitor, a toggle for a signed-in user.
 - `/account/register/` and `/account/sign-in/`.
 
 **URL surface:**
@@ -164,8 +164,9 @@ account-access link, and comes back to a map that remembers the region.
   the region (SNOW-802); answers `{"pinned": bool}` (SNOW-814 — the control
   is a roundel rendered once in the ribbon header, so what the caller needs
   back is the fact, not a rendered control).
-- `GET /favourites/partials/regions/` — the user's pinned regions, listed
-  in the region + date panel (SNOW-814).
+- `GET /favourites/partials/regions/` — the user's pinned regions, loaded
+  into a hidden host and listed by search before anything is typed
+  (SNOW-814; SNOW-1173 retired the chip's panel that listed them).
 
 **Key invariants:**
 - Email normalisation happens at every entry point: `email.lower()`
@@ -174,9 +175,10 @@ account-access link, and comes back to a map that remembers the region.
 - Token verification is salt-scoped: account-access tokens cannot be
   replayed as email-verification tokens, and vice versa.
 - A region pin has no coordinate and never appears in
-  `favourites.geojson`; it is a row in the region + date panel the map's
-  readout chip opens (SNOW-814 — it was in the pins sheet until then, where
-  none of that sheet's affordances applied to it), and nothing on the map.
+  `favourites.geojson`; it is listed by the map's search before anything is
+  typed (SNOW-1173 — the region + date panel the readout chip opened held
+  it from SNOW-814, and the pins sheet before that, where none of that
+  sheet's affordances applied to it), and nothing on the map.
 - The favourites cap applies to region pins as to any other pin; the
   one-time backfill from `Subscription` rows bypassed it.
 

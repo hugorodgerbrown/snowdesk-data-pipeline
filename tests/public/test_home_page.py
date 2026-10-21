@@ -391,15 +391,15 @@ class TestHomePageReadoutData:
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     @freeze_time("2026-02-17")
-    def test_region_readout_is_a_disclosure_button(self) -> None:
-        """#region-readout is a <button> that discloses #region-panel (SNOW-801).
+    def test_region_readout_is_a_button_for_the_region_sheet(self) -> None:
+        """#region-readout is a <button> that opens #region-sheet (SNOW-1173).
 
-        SNOW-342 made it a <div>: an info-only chip, with the bulletin link
-        split out into the separate #region-readout-action roundel. That
-        split survives — the roundel still goes straight to the bulletin —
-        but the chip itself is now the control that opens the region + date
-        panel, so it has to be a real button carrying the disclosure
-        attributes.
+        SNOW-342 made it a <div>: an info-only chip. SNOW-801 made it a
+        disclosure for a dropdown panel of its own, #region-panel. SNOW-1173
+        retired that panel: a region opens the region sheet on every width,
+        and the chip reopens it, so its aria-controls names the sheet and
+        the dropdown is not rendered at all. The pinned regions the panel
+        listed are loaded into a hidden host for search instead.
 
         Requires CH-4115 and a RegionDayRating row so the ribbon block renders.
         """
@@ -416,11 +416,12 @@ class TestHomePageReadoutData:
         assert "<button" in content
         assert 'id="region-readout"' in content
         assert 'aria-expanded="false"' in content
-        assert 'aria-controls="region-panel"' in content
-        assert 'id="region-panel"' in content
-        # The view-bulletin roundel is gone: the panel carries an "Open
-        # bulletin" link, so the roundel was a second control to one
-        # destination. The download roundel beside it stays.
+        assert 'aria-controls="region-sheet"' in content
+        assert 'id="region-sheet"' in content
+        assert 'id="region-panel"' not in content
+        assert 'id="region-pin-rows"' in content
+        # A visitor has no pinned list, so the host carries no URL to load.
+        assert "data-region-pin-list-url" not in content
         assert 'id="region-readout-action"' not in content
         assert "map-download-control" in content
 

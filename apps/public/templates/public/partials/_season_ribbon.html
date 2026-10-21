@@ -68,18 +68,14 @@ for it was dead.
             {# colour for the scrubbed day and leads the chip; map.js fills the  #}
             {# name text and the swatch background. The pill is an info display; #}
             {# the bulletin link is the separate action roundel below.           #}
-            {# SNOW-801: the chip is a DISCLOSURE, not an info display. It     #}
-            {# opens                                                            #}
-            {# #region-panel below it — the region + date surface, and the     #}
-            {# header of the same box. The view-bulletin roundel that used to  #}
-            {# sit beside it is gone: the panel carries an "Open bulletin for  #}
-            {# <date>" link, so the roundel was a second control to one        #}
-            {# destination. aria-live stays: map.js writes the region name     #}
-            {# here on selection and that announcement is still wanted.        #}
-            {# SNOW-801: chip and panel share one column so they share an edge  #}
-            {# and                                                              #}
-            {# a width — joined, they are one surface rather than two boxes    #}
-            {# that happen to be stacked.                                      #}
+            {# SNOW-801 made the chip a disclosure for a dropdown panel of its  #}
+            {# own; SNOW-1173 retired that panel. The chip now opens the region #}
+            {# sheet (#region-sheet, public/partials/_region_sheet_surface.html) #}
+            {# for the region it names, on a desktop as on a phone, so          #}
+            {# aria-controls names the sheet and aria-expanded follows it       #}
+            {# (static/js/map_region_panel.js). aria-live stays: map.js writes  #}
+            {# the region name here on selection and that announcement is       #}
+            {# still wanted.                                                    #}
             <div id="region-surface" class="region-surface">
                 <button
                     id="region-readout"
@@ -87,7 +83,7 @@ for it was dead.
                     class="region-readout"
                     aria-live="polite"
                     aria-expanded="false"
-                    aria-controls="region-panel"
+                    aria-controls="region-sheet"
                 >
                     <span class="region-readout-swatch" aria-hidden="true"></span>
                     {# region name as a Major › Minor › Micro breadcrumb: the    #}
@@ -103,8 +99,8 @@ for it was dead.
                     <span class="region-readout-name"><span class="region-readout-crumbs"></span><span
                             class="region-readout-leaf"
                         >{% trans "No region selected" %}</span></span>
-                    {# Chevron marks the pill as expandable. Rotates on open, via #}
-                    {# .region-readout[aria-expanded="true"] in map.css.           #}
+                    {# Chevron marks the pill as pressable: it points on, to the  #}
+                    {# region sheet the press opens (SNOW-1173), not down.         #}
                     <svg
                         class="region-readout-chevron"
                         width="12"
@@ -117,45 +113,27 @@ for it was dead.
                         stroke-linejoin="round"
                         aria-hidden="true"
                     >
-                        <path d="m6 9 6 6 6-6" />
+                        <path d="m9 18 6-6-6-6" />
                     </svg>
                 </button>
 
                 {% comment %}
-            SNOW-801: the region + date surface. Opened by the #region-readout chip
-            above, filled by static/js/map_region_panel.js from
-            /api/region/<id>/summary/ (the same server-rendered HTML the map
-            popup used) plus the resorts in the region.
-
-            It sits INSIDE #season-ribbon, which is already a column flex
-            container at the map's top-left, so it drops directly under the
-            chip without any anchoring maths.
-
-            `hidden` at rest, and height-bounded with its own scroll: a surface
-            floating over the map must never grow with its content
-            (docs/decisions — the floating-card / _overlay_sheet rule). dvh, not
-            vh, so a mobile URL bar does not push the bottom off screen.
-                {% endcomment %}
-                {% comment %}
-            SNOW-814: ``data-region-pin-list-url`` is what turns this panel into
-            the home of the user's pinned regions. Rendered for a signed-in user
-            only — its absence is how map_region_panel.js knows there is no list
-            to load, which is also why the chip stays inert for a visitor with
-            nothing selected. The list itself arrives over HTMX from
-            favourites:region_list, so every row is the server's own
-            (includes/_ugc_panel_row.html) with its Remove form already wired.
+            SNOW-814 / SNOW-1173: the hidden host for the user's pinned regions.
+            map_region_panel.js loads favourites:region_list into it over HTMX
+            and publishes the ids as window.pwaPinnedRegions, which search lists
+            before anything is typed and the pin roundel reads its state from.
+            It was the last section of the chip's dropdown panel until SNOW-1173
+            retired the panel; nothing here is drawn. Rendered with its URLs for
+            a signed-in user only — their absence is how the module knows there
+            is no list to load.
                 {% endcomment %}
                 <div
-                    id="region-panel"
-                    class="region-panel"
-                    role="group"
-                    aria-labelledby="region-readout"
+                    id="region-pin-rows"
+                    data-region-pin-rows
                     {% if request.user.is_authenticated %}
                         data-region-pin-list-url="{% url 'favourites:region_list' %}"
                         {# The 'XX-0000' token is the codebase's placeholder for  #}
-                        {# a region id in a JS-built URL — see _map_embed.html's  #}
-                        {# data-region-summary-url, which map_region_panel.js     #}
-                        {# already substitutes into the same way.                 #}
+                        {# a region id in a JS-built URL.                         #}
                         data-region-pin-toggle-url="{% url 'favourites:region_toggle' region_id='XX-0000' %}"
                     {% endif %}
                     hidden
@@ -183,21 +161,6 @@ for it was dead.
         {# so every user-facing string is a trans tag here and is read back   #}
         {# via window.pwaStrings.read (static/js/i18n_strings.js).            #}
         <template id="region-panel-strings-template">
-            <span data-string="resorts">{% trans "Resorts in this region" %}</span>
-            <span data-string="unavailable">{% trans "Region details are unavailable offline." %}</span>
-            {# SNOW-879: the placeholder the summary slot holds while its     #}
-            {# fetch is out. The panel paints its frame on the opening press  #}
-            {# rather than after the round trip, so this slot is on screen    #}
-            {# for the moment the request takes and needs words of its own —  #}
-            {# "unavailable" above would be a wrong answer, not an early one. #}
-            <span data-string="loading">{% trans "Loading region details…" %}</span>
-            {# SNOW-814: the pinned-regions section's eyebrow, and the line it #}
-            {# shows when the list cannot be fetched. The empty state is the   #}
-            {# server's (favourites/partials/_region_pin_list.html) and is     #}
-            {# deliberately a different sentence: "you have pinned nothing" is #}
-            {# a claim about the user's data that a failed request cannot make.#}
-            <span data-string="pinned">{% trans "Pinned regions" %}</span>
-            <span data-string="pinned-failed">{% trans "Your pinned regions couldn't be loaded." %}</span>
             {# SNOW-814: the pin roundel's labels and its failure toast. The  #}
             {# roundel's own aria-label/title are rewritten as its state      #}
             {# changes, so every one of them has to pass through a template.  #}

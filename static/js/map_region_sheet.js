@@ -1,6 +1,6 @@
 /*
- * static/js/map_region_sheet.js — the region sheet a tap opens on a phone
- * (SNOW-1098).
+ * static/js/map_region_sheet.js — the region sheet a selection opens
+ * (SNOW-1098; on every width since SNOW-1173).
  *
  * Tapping a region selected it and showed nothing about it: the popup that
  * used to answer the tap covered the terrain the reader had just tapped, and
@@ -10,15 +10,24 @@
  * link (FULL). The detents themselves are SNOW-1097's, bound by
  * `window.MapSheet.attach` because the partial declares them.
  *
- * WHEN IT OPENS. For every selection below the `sm` breakpoint — a tap, a
- * search pick, a pinned region, a deep link (Hugo, 16 Oct). On a phone the
- * region chip is gone (map.css hides the ribbon and gives its row to
- * search), so the sheet is the one surface that names the selection. On a
- * desktop nothing changes: the chip's region panel is the way in there.
+ * WHEN IT OPENS. For every selection, on every width — a tap, a search
+ * pick, a pinned region, a deep link (Hugo, 16 Oct for the phone; 21 Oct,
+ * SNOW-1173, for the desktop). On a phone the region chip is gone (map.css
+ * hides the ribbon and gives its row to search), so the sheet is the one
+ * surface that names the selection. At `sm` and up the same sheet is the
+ * inset panel the place and weather sheets already are (no detents, see
+ * docs/decisions/sheet-detents-are-phone-only.md), and the chip that names
+ * the selection reopens it: the chip's own dropdown, which carried a second
+ * copy of the region's summary, is gone. A desktop region tap used to open
+ * nothing while a resort or weather tap opened this panel, which read as
+ * two different maps.
  *
  * THE RIBBON STAYS IN THE DOM on a phone, hidden, because the proxies in
  * the sheet's header press its pin and download roundels, which keep owning
- * the verbs. The root carries `data-region-sheet` while the sheet is open.
+ * the verbs. On a desktop the ribbon stays on screen and the proxies stay
+ * in the sheet: the sheet is the same object on every width, and its
+ * header carries the verbs on that object wherever it is shown. The root
+ * carries `data-region-sheet` while the sheet is open.
  *
  * WHILE IT IS OPEN it follows the map: another region selected (by any
  * route) repaints it for that region at the detent it is resting at, a date
@@ -31,7 +40,8 @@
  * attributes (data-pin-state, data-download-state, the basemap key), its
  * inline style (the --download-progress fill), its ARIA and its glyphs. The
  * ribbon is hidden while the sheet is open, so the proxy is the only place
- * a filled star, a rising download fill or an error glyph can show. Each verb keeps one owner (map_region_panel.js and
+ * a filled star, a rising download fill or an error glyph can show on a
+ * phone. Each verb keeps one owner (map_region_panel.js and
  * map_region_download.js), so the sheet's star cannot disagree with the
  * header's.
  *
@@ -62,9 +72,6 @@
 
   const URL_TEMPLATE = mapEl.dataset.regionSheetUrl || '';
   if (!URL_TEMPLATE) return;
-
-  // Tailwind's `sm` — the width at which the inset panel replaces the sheet.
-  const DESKTOP_QUERY = '(min-width: 640px)';
 
   /**
    * Whether a proxy copies this attribute from the roundel it stands for:
@@ -126,9 +133,6 @@
   // Invalidates a fetch when a newer one starts, so a slow answer for the
   // region the reader has already moved on from never paints over the new one.
   let seq = 0;
-
-  const isPhone = () =>
-    typeof window.matchMedia !== 'function' || !window.matchMedia(DESKTOP_QUERY).matches;
 
   /**
    * Replace the sheet's body with one line of text.
@@ -379,11 +383,11 @@
       load();
       return;
     }
-    // On a phone the sheet opens however the region was picked — a tap, a
-    // search pick, a pinned region, a deep link (Hugo, 16 Oct). The region
-    // chip is gone there, so the sheet is the one surface that names the
-    // selection; a pick that opened nothing would leave it unnamed.
-    if (!isPhone()) return;
+    // The sheet opens however the region was picked — a tap, a search pick,
+    // a pinned region, a deep link — and on every width (SNOW-1173). On a
+    // phone it is the one surface that names the selection; on a desktop it
+    // is the inset panel a resort or a weather point opens, so a region tap
+    // answers the way theirs do.
     // Load first: it paints the peek row synchronously (from the page, or
     // a kept body), so PEEK is measured from that row rather than the
     // empty-sheet fallback, and the sheet does not open tall and drop.
@@ -391,36 +395,34 @@
     controller.open();
   });
 
-  // REOPENING (2026-10-19). On a phone the sheet is the one surface that
-  // names the selection, and it can close while the region stays selected
-  // (its ×, a drag below peek, a route opening over it). Past z10 a tap on
-  // a region changes nothing, so a selected region whose sheet was closed
-  // there was outlined on the map with no way back to it. map.js's tap
-  // dispatcher asks this first for a tap on the region already selected.
+  // REOPENING (2026-10-19). The sheet can close while the region stays
+  // selected (its ×, a drag below peek, a route opening over it). Past z10 a
+  // tap on a region changes nothing, so a selected region whose sheet was
+  // closed there was outlined on the map with no way back to it. map.js's
+  // tap dispatcher asks this first for a tap on the region already
+  // selected, and on a desktop the region chip asks it on a press
+  // (map_region_panel.js, SNOW-1173).
   window.pwaRegionSheet = Object.freeze({
     /**
      * Open the sheet again for the region still selected.
      *
-     * @returns {boolean} Whether it opened: false on a desktop, with no
-     *   selection, or with the sheet already open.
+     * @returns {boolean} Whether it opened: false with no selection, or
+     *   with the sheet already open.
      */
     reopen: () => {
-      if (!regionId || !isPhone() || controller.isOpen()) return false;
+      if (!regionId || controller.isOpen()) return false;
       load();
       controller.open();
       return true;
     },
+    /** @returns {boolean} Whether the sheet is on screen. */
+    isOpen: () => controller.isOpen(),
+    /** @returns {void} */
+    close,
   });
 
   document.addEventListener('snowdesk:date-changed', (ev) => {
     dateKey = ev.detail?.date || null;
     if (controller.isOpen()) load();
-  });
-
-  // A phone turned to a width where the inset panel takes over: the sheet
-  // has no desktop shape, so it closes rather than stranding a docked sheet
-  // on a desktop layout.
-  window.addEventListener('resize', () => {
-    if (controller.isOpen() && !isPhone()) close();
   });
 }());

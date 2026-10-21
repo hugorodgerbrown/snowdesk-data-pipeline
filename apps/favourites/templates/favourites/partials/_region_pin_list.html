@@ -4,8 +4,12 @@ favourites/partials/_region_pin_list.html — the user's pinned regions, as a
 list (SNOW-814).
 
 Rendered by apps.favourites.views.region_pin_list and swapped by
-static/js/map_region_panel.js into the pinned-regions section of the region
-+ date panel — the surface the #region-readout chip discloses.
+static/js/map_region_panel.js into a hidden host in the ribbon
+(#region-pin-rows), from which search lists the pinned regions before
+anything is typed and the pin roundel reads its state. Until SNOW-1173 it
+was drawn, as the last section of the region + date panel the
+#region-readout chip disclosed; that panel is gone, and these rows are now
+read for their ids rather than shown.
 
 WHY IT IS HERE AND NOT IN THE FAVOURITES SHEET. A region pin was a row in
 the pins sheet from SNOW-802 until SNOW-814, beside dropped pins and saved

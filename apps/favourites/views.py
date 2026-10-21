@@ -951,9 +951,10 @@ def favourite_region_toggle(request: HttpRequest, region_id: str) -> HttpRespons
 def region_pin_list(request: HttpRequest) -> HttpResponse:
     """Render the requesting user's pinned regions (SNOW-814).
 
-    Loaded over HTMX by ``static/js/map_region_panel.js`` into the region +
-    date panel's pinned-regions section — the surface the ``#region-readout``
-    chip discloses. Until SNOW-814 these rows sat in the map's pins sheet
+    Loaded over HTMX by ``static/js/map_region_panel.js`` into a hidden host
+    in the ribbon, from which search lists the pinned regions and the pin
+    roundel reads its state (SNOW-1173 retired the region + date panel that
+    drew them). Until SNOW-814 these rows sat in the map's pins sheet
     beside dropped pins and saved resorts, where none of that sheet's
     affordances (the map layer, rename, the forecast card) applied to them;
     see ``favourites/partials/_region_pin_list.html`` for the full argument.
