@@ -407,7 +407,7 @@ describe('markResortPins', () => {
     expect(marked.features[1].properties.resort_id).toBe('');
   });
 
-  it("puts the resort's name on the second row in place of the height", () => {
+  it("leads the second row with the resort's name, ahead of the height", () => {
     const DATE = '2026-10-21';
     const day = { [DATE]: { code: 71, tmax: 5 } };
     const fc = core.projectFeatureCollectionForDate({
@@ -424,10 +424,29 @@ describe('markResortPins', () => {
     });
 
     const [village, valley] = marked.features.map((f) => f.properties);
-    expect([village.label_break, village.elev_mark, village.label_elev])
-      .toEqual(['\n', '', 'Arolla']);
+    expect([village.label_break, village.label_name, village.label_elev])
+      .toEqual(['\n', 'Arolla · ', '1984 m']);
+    expect(village.elev_mark).not.toBe('');
+    expect(valley.label_name).toBe('');
     expect(valley.label_elev).toBe('2030 m');
-    expect(valley.elev_mark).not.toBe('');
+  });
+
+  it('gives a resort with no elevation a row of its name alone', () => {
+    const DATE = '2026-10-21';
+    const fc = core.projectFeatureCollectionForDate({
+      type: 'FeatureCollection',
+      features: [makeFeature({ [DATE]: { code: 71, tmax: 5 } }, {
+        lon: 7.48194, lat: 46.02404, elevation: null,
+      })],
+    }, DATE);
+
+    const [village] = core.markResortPins(fc, {
+      type: 'FeatureCollection',
+      features: [pin(7.48194, 46.02404)],
+    }).features.map((f) => f.properties);
+
+    expect([village.label_break, village.label_name, village.elev_mark, village.label_elev])
+      .toEqual(['\n', 'Arolla', '', '']);
   });
 
   it('absorbs float formatting but not a near neighbour', () => {

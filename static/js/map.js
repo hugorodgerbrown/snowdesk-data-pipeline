@@ -4191,6 +4191,10 @@
           ' ', {'font-scale': WEATHER_TEMP_SCALE},
           ['get', 'label_temp'], {'font-scale': WEATHER_TEMP_SCALE},
           ['get', 'label_break'], {},
+          // A station on a resort pin leads its second row with the
+          // resort's name (`Arolla · `); empty everywhere else. See
+          // markResortPins in map_weather_core.js.
+          ['get', 'label_name'], {'font-scale': WEATHER_ELEV_SCALE},
           ['image', ['get', 'elev_mark']], {},
           // The mark's own gap. An inline image's advance is exactly its
           // width, so without this the digits start against its edge.
@@ -4209,6 +4213,10 @@
         // largest pin (CORE at z12, 9.5 px + its 1.5 px stroke) at this
         // text size. See markResortPins in map_weather_core.js.
         'text-anchor': ['case', ['get', 'at_resort'], 'left', 'center'],
+        // ...and set both rows flush to that left edge. Centred rows would
+        // float the short temperature row away from the pin over the wider
+        // `Arolla · 1984 m` beneath it.
+        'text-justify': ['case', ['get', 'at_resort'], 'left', 'center'],
         'text-offset': [
           'case', ['get', 'at_resort'], ['literal', [1, 0]], ['literal', [0, 0]],
         ],

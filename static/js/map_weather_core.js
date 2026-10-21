@@ -257,6 +257,8 @@
       label_break: day ? formatElevationBreak(properties.elevation_m) : '',
       elev_mark: day ? elevationMarkFor(properties.elevation_m) : '',
       label_elev: day ? formatElevation(properties.elevation_m) : '',
+      // Filled in by markResortPins for a station on a resort pin.
+      label_name: '',
     });
     return Object.assign({}, feature, { properties: newProperties });
   }
@@ -443,7 +445,7 @@
    * layer reads `at_resort` to set the symbol beside the pin instead, and
    * the map's tap reads `resort_id` / `resort_name` to open the resort
    * rather than a second, station-only sheet for the same place. The
-   * second row of the symbol becomes the resort's name. Every
+   * second row of the symbol leads with the resort's name. Every
    * other feature gets `at_resort: false` and empty strings, so the
    * layer's `case` never meets a missing value.
    *
@@ -473,16 +475,17 @@
           resort_id: resort && resort.id != null ? String(resort.id) : '',
           resort_name: (resort && resort.name) || '',
         });
-        // The symbol is the resort's own weather, so its second row names
-        // the resort rather than the station's height. That is also the
-        // only place the name can go: resorts-label sits under the pin, and
-        // a symbol beside the pin takes that space in collision and knocks
-        // the name out. A day with no reading keeps its empty row as-is —
-        // the layer's filter drops that feature anyway.
+        // The symbol is the resort's own weather, so its second row leads
+        // with the resort's name, ahead of the height: `Arolla · ▲ 1984 m`.
+        // That is also the only place the name can go: resorts-label sits
+        // under the pin, and a symbol beside the pin takes that space in
+        // collision and knocks the name out. With no elevation the row is
+        // the name alone. A day with no reading is left as it is — the
+        // layer's filter drops that feature anyway.
         if (resort !== null && properties.icon && resort.name) {
+          var hasElevation = properties.label_elev !== '';
           properties.label_break = '\n';
-          properties.elev_mark = '';
-          properties.label_elev = resort.name;
+          properties.label_name = hasElevation ? resort.name + ' · ' : resort.name;
         }
         return Object.assign({}, feature, { properties: properties });
       }),
