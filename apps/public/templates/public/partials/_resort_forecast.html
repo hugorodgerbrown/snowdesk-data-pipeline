@@ -63,9 +63,14 @@ Context:
     aria-labelledby="{{ group_name }}-heading"
     data-testid="resort-forecast"
 >
-    {% blocktrans with day=target_date|date:"l j F" trimmed asvar forecast_eyebrow %}
-        Forecast • {{ day }}
-    {% endblocktrans %}
+    {# In the map the sheet's date row names the day (Hugo, 21 Oct). #}
+    {% if in_map %}
+        {% trans "Forecast" as forecast_eyebrow %}
+    {% else %}
+        {% blocktrans with day=target_date|date:"l j F" trimmed asvar forecast_eyebrow %}
+            Forecast • {{ day }}
+        {% endblocktrans %}
+    {% endif %}
     {% include "includes/_eyebrow.html" with tag="h2" heading_id=group_name|add:"-heading" text=forecast_eyebrow class_extra="mb-3" only %}
     {# SNOW-1164: the strip lays itself out by its card's width, not the  #}
     {# viewport's (@container, @md: = 28rem), because the same body sits  #}

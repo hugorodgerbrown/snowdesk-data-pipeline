@@ -100,11 +100,15 @@ def _render_model() -> dict[str, Any]:
     }
 
 
-def _meta_line(content: str) -> str:
-    """Return the peek header's second line (``region-sheet-meta``)."""
-    match = re.search(r'data-testid="region-sheet-meta">(.*?)</p>', content, re.S)
-    assert match, "the peek header has no second line"
-    return match.group(1)
+def _date_row(content: str) -> str:
+    """Return the peek's date row (``sheet-date-row``), to its button."""
+    start = content.index('data-testid="sheet-date-row"')
+    return content[start - 60 : content.index("</button>", start)]
+
+
+def _text(markup: str) -> str:
+    """Return ``markup``'s text, tags dropped and whitespace collapsed."""
+    return " ".join(re.sub(r"<[^>]+>", " ", markup).split())
 
 
 def _rated_today(region: Any) -> None:
@@ -153,36 +157,38 @@ class TestPeek:
         assert 'data-level="considerable"' in content
         assert "Considerable" in content
 
-    def test_another_day_shows_the_strip_above_the_peek(self, client: Client) -> None:
-        """SNOW-1165: another day says so, with a button the map handles."""
+    def test_another_day_highlights_the_date_row(self, client: Client) -> None:
+        """Hugo, 21 Oct: the peek's date row took over SNOW-1165's strip."""
         region = MicroRegionFactory.create()
         content = _get(
             client, _url(region.region_id.lower(), "2026-02-03")
         ).content.decode()
-        start = content.index('data-testid="another-day-strip"')
-        assert start < content.index("data-sheet-peek")
-        strip = content[start : content.index("</div>", start)]
-        assert "Tue 3 Feb 2026" in strip
-        assert "data-back-to-today" in strip
+        assert 'data-testid="another-day-strip"' not in content
+        row = _date_row(content)
+        assert "data-another-day" in row
+        assert "Data from 3 Feb 2026" in _text(row)
+        assert "data-back-to-today" in row
 
     def test_today_shows_no_strip(self, client: Client) -> None:
         region = MicroRegionFactory.create()
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="another-day-strip"' not in content
 
-    def test_second_line_is_the_search_rows_badge_and_area_not_the_date(
+    def test_header_is_the_tile_and_the_name_then_the_date(
         self, client: Client
     ) -> None:
+        """Hugo, 21 Oct: no code, level or area squeezed under the name."""
         region = MicroRegionFactory.create()
         _rated_today(region)
-        meta = _meta_line(_get(client, _url(region.region_id.lower())).content.decode())
-        country = region.region_id[:2].lower()
-        assert "search-result-badge" in meta
-        assert region.region_id in meta
-        if country in {"ch", "at", "fr", "it"}:
-            assert f'href="#flag-{country}"' in meta
-        assert region.subregion.name_en in meta
-        assert timezone.localdate().strftime("%b") not in meta
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-meta"' not in content
+        assert "search-result-badge" not in content[: content.index("sheet-date-row")]
+        row = _date_row(content)
+        assert "data-another-day" not in row
+        assert f"Data from {timezone.localdate():%-d %b %Y}" in _text(row)
+        assert content.index('data-region-sheet-slot="name"') < content.index(
+            "sheet-date-row"
+        )
 
     def test_header_carries_the_two_proxies_and_a_close(self, client: Client) -> None:
         region = MicroRegionFactory.create()
@@ -195,6 +201,7 @@ class TestPeek:
         region = MicroRegionFactory.create()
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-rating"' not in content
+        assert 'data-level="no_rating"' in content
 
 
 @pytest.mark.django_db
@@ -311,11 +318,10 @@ class TestMapPage:
         assert match, "the map has no blank peek row"
         row = match.group(1)
         assert "data-sheet-peek" in row
-        for slot in ("rating", "name", "code", "flag", "meta"):
+        for slot in ("rating", "name"):
             assert f'data-region-sheet-slot="{slot}"' in row
         assert 'data-region-sheet-proxy="map-region-pin-control"' in row
-        # The level names the script fills the meta line with.
-        assert 'data-string="level-considerable"' in content
+        assert "data-sheet-date-day" in row
 
 
 @pytest.mark.django_db

@@ -19,10 +19,11 @@ of this response.
 
 Content, in the order a skier reads it, split across the phone detents
 (SNOW-1101; docs/decisions/sheet-detents-are-phone-only.md):
-  PEEK — the day's line: the symbol, the name, the high/low, new snow and
-         wind, then the ×. The row is ``data-sheet-peek`` and
+  PEEK — the symbol, "<name> · <height>" and the ×; the day's full-width
+         "Data from" row; then the high/low, new snow and wind (Hugo, 21
+         Oct — the height and the day used to sit in HALF). The row is ``data-sheet-peek`` and
          ``data-sheet-drag``.
-  HALF — the rest: elevation and date, the condition, the figures that
+  HALF — the rest: the condition, the figures that
          change a plan (freezing level, snowfall, wind, precipitation
          chance), and a link to the full forecast when there is one.
   FULL — the day's meteogram (includes/_hourly_chart.html), when the row
@@ -61,51 +62,32 @@ Context:
     data-location-short-id="{{ location.short_id }}"
     data-sheet-detents="{% if hourly_chart %}peek,half,full{% elif day %}peek,half{% else %}peek{% endif %}"
 >
-    {# PEEK (SNOW-1101): the day's line, in one row — the symbol, the name  #}
-    {# over the high/low, new snow and wind, then the ×. The row the reader #}
-    {# drags by. Each figure renders only when the provider gave one.       #}
+    {# PEEK (SNOW-1101; Hugo, 21 Oct): the header row — the symbol, the   #}
+    {# name with the location's height ("Belalp · 1934 m", which is what  #}
+    {# makes a reading mean anything) and the × — then the day on its own #}
+    {# full-width row, then the high/low, new snow and wind. The block    #}
+    {# the reader drags by. Each figure renders only when given.          #}
     <div data-sheet-peek data-sheet-drag>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-4">
             {% if day %}
                 <img
                     src="{% weather_icon_url day.icon_filename %}"
-                    class="h-8 w-8 flex-none"
+                    class="h-9 w-9 flex-none"
                     alt="{{ day.condition_label }}"
                     data-testid="weather-detail-icon"
                 >
             {% endif %}
             <div class="min-w-0 flex-1">
                 <h2
-                    class="truncate text-base font-semibold leading-tight text-text-1"
+                    class="truncate text-lg font-semibold leading-tight text-text-1"
                     title="{{ heading }}"
                     data-testid="weather-detail-heading"
                 >
-                    {{ heading }}
-                </h2>
-                <p class="truncate text-meta text-text-2" data-testid="weather-detail-line">
-                    {% if day %}
-                        {% if is_forecast %}
-                            <span
-                                class="font-medium text-accent"
-                                data-testid="weather-detail-forecast-tag"
-                            >{% trans "Forecast" %}</span> &middot;
-                        {% endif %}
-                        {% if day.temp_max is not None %}
-                            {{ day.temp_max|floatformat:0 }}&deg;{% if day.temp_min is not None %}&thinsp;/&thinsp;{{ day.temp_min|floatformat:0 }}&deg;{% endif %}
-                        {% endif %}
-                        {% if day.snowfall_sum %}
-                            &middot; {% blocktrans with cm=day.snowfall_sum|floatformat:"-1" trimmed %}{{ cm }} cm
-                                new{% endblocktrans %}
-                        {% endif %}
-                        {% if day.wind_speed_max is not None %}
-                            &middot; {{ day.wind_speed_max|floatformat:0 }}&nbsp;km/h
-                        {% endif %}
-                    {% elif is_forecast %}
-                        {% trans "No forecast for this day yet" %}
-                    {% else %}
-                        {% trans "No weather recorded" %}
+                    {{ heading }}{% if location.elevation_m is not None %}
+                        <span class="font-normal text-text-2" data-testid="weather-detail-elevation"
+                        >&middot; {{ location.elevation_m|floatformat:0 }}&nbsp;m</span>
                     {% endif %}
-                </p>
+                </h2>
             </div>
             {% trans "Close" as weather_sheet_close_label %}
             <button
@@ -117,17 +99,36 @@ Context:
                 {% include "includes/_icon_close.html" only %}
             </button>
         </div>
+        {% include "includes/_sheet_date_row.html" with day=target_date another_day=another_day only %}
+        <p class="mt-4 truncate text-sm text-text-2" data-testid="weather-detail-line">
+            {% if day %}
+                {% if is_forecast %}
+                    <span
+                        class="font-medium text-accent"
+                        data-testid="weather-detail-forecast-tag"
+                    >{% trans "Forecast" %}</span> &middot;
+                {% endif %}
+                {% if day.temp_max is not None %}
+                    {{ day.temp_max|floatformat:0 }}&deg;{% if day.temp_min is not None %}&thinsp;/&thinsp;{{ day.temp_min|floatformat:0 }}&deg;{% endif %}
+                {% endif %}
+                {% if day.snowfall_sum %}
+                    &middot; {% blocktrans with cm=day.snowfall_sum|floatformat:"-1" trimmed %}{{ cm }} cm
+                        new{% endblocktrans %}
+                {% endif %}
+                {% if day.wind_speed_max is not None %}
+                    &middot; {{ day.wind_speed_max|floatformat:0 }}&nbsp;km/h
+                {% endif %}
+            {% elif is_forecast %}
+                {% trans "No forecast for this day yet" %}
+            {% else %}
+                {% trans "No weather recorded" %}
+            {% endif %}
+        </p>
     </div>
 
     {# HALF: the rest of the card — when, what, the figures, the way out. #}
     {# It ends under ``data-sheet-half``; the meteogram below is FULL.     #}
     <div class="space-y-4" data-sheet-half>
-        <p class="text-xs text-text-3" data-testid="weather-detail-meta">
-            {% if location.elevation_m is not None %}
-                {{ location.elevation_m|floatformat:0 }}&nbsp;m &middot;
-            {% endif %}
-            {{ target_date|date:"l j F Y" }}
-        </p>
         {% if day %}
             <p class="text-sm text-text-2" data-testid="weather-detail-today">{{ day.condition_label }}</p>
             {% if is_forecast and issued_at %}

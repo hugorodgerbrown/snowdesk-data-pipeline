@@ -70,6 +70,7 @@ from apps.public._component_fixtures import (
     RESORT_BULLETIN_CARD_VARIANTS,
     RESORT_FACTS_VARIANTS,
     RESORT_FORECAST_VARIANTS,
+    RESORT_TILE_VARIANTS,
     RESORT_WHY_IT_MATTERS_VARIANTS,
     ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
@@ -77,6 +78,7 @@ from apps.public._component_fixtures import (
     SEASON_CELL_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
     SEGMENTED_OPTION_VARIANTS,
+    SHEET_DATE_ROW_VARIANTS,
     SHEET_HEADER_VARIANTS,
     SITE_FOOTER_VARIANTS,
     STATUS_PAGE_VARIANTS,
@@ -1029,11 +1031,10 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         label="Another-day strip",
         description=(
             "'Showing Wed 8 Apr 2026 · Back to today' (SNOW-1165) — rendered "
-            "only when a region or resort page, or a map sheet, shows a day "
-            "that is not today. On a page it sits full width under the nav "
-            "and links to the bare URL; in a sheet it sits above the peek "
-            "row and its button moves the map's scrubber to today "
-            "(static/js/map_today.js). Status-info palette by meaning."
+            "only when a region or resort page shows a day that is not "
+            "today, full width under the nav, linking to the bare URL. The "
+            "map's sheets say it in their own date row instead (sheet-date-"
+            "row). Status-info palette by meaning."
         ),
         kind="components",
         partial="includes/_another_day_strip.html",
@@ -1398,12 +1399,39 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         description=(
             "An outlined '–' in the shape of .danger-tile, for a day with no "
             "bulletin, so a row that holds a level's tile keeps its shape. "
-            "Shared by the resort page's bulletin card and the place sheet's "
-            "peek row (SNOW-1161)."
+            "Drawn by the resort page's bulletin card (SNOW-1156)."
         ),
         kind="components",
         partial="includes/_danger_tile_empty.html",
         variants=DANGER_TILE_EMPTY_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="sheet-date-row",
+        label="Sheet date row",
+        description=(
+            '"Data from 21 Oct 2026", full width under a map sheet\'s '
+            "header (region, place and weather alike), so every sheet names "
+            "the day it is for once and its sections need not. On a day "
+            "that is not today it turns to the info colours and offers "
+            "Back to today."
+        ),
+        kind="components",
+        partial="includes/_sheet_date_row.html",
+        variants=SHEET_DATE_ROW_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="resort-tile",
+        label="Resort tile",
+        description=(
+            "The round pin tile a place (a resort or a saved pin) leads "
+            "with, where a region leads with its square danger tile — the "
+            "search rows' two shapes, carried onto the place sheet."
+        ),
+        kind="components",
+        partial="includes/_resort_tile.html",
+        variants=RESORT_TILE_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

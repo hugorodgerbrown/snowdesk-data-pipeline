@@ -1,0 +1,22 @@
+{% comment %}
+templates/includes/_resort_tile.html — the round pin tile that leads a place
+(a resort or a saved pin) where a region leads with its square danger tile.
+
+The search rows drew the two shapes first (SNOW-1173: "a resort is a place
+on the map, a region a bulletin with a level"); the place sheet carries the
+same shapes so a resort panel cannot be read as a region panel (Hugo, 21
+Oct). Stroked in currentColor, as the search row's pin is, so it reads in
+both themes without a literal colour for the hole.
+
+Context: none. Decorative: the name beside it says what it is.
+{% endcomment %}
+<span
+    class="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full bg-card-hover text-text-1"
+    aria-hidden="true"
+    data-testid="resort-tile"
+>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z" />
+        <circle cx="12" cy="10" r="2.5" />
+    </svg>
+</span>

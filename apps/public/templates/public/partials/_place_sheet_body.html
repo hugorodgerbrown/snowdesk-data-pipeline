@@ -9,11 +9,13 @@ into ``#place-sheet``, an ``includes/_overlay_sheet.html`` that declares the
 detents peek, half and full. One fragment serves both kinds and all three
 detents, ordered so that each detent shows the next part of it:
 
-  1. PEEK (``data-sheet-peek``) — ONE ROW, the region sheet's: the region's
-     danger tile (``includes/_danger_tile_empty.html``'s outlined "–" on a
-     covered day with no rating, SNOW-1161), the place's name over the
-     region's code badge, the level (or "No bulletin") and the region's
-     name, then the actions and the ×. A resort's action is the Save star; a
+  1. PEEK (``data-sheet-peek``) — the header ROW, then the day: the round
+     pin tile (``includes/_resort_tile.html``, a place's shape in search;
+     the square danger tile is a region's), the place's name, the actions
+     and the ×; under them, full width, "Data from <day>"
+     (``includes/_sheet_date_row.html``). Nothing else — no level, code or
+     region in the header (Hugo, 21 Oct: it could not be told from the
+     region sheet, and had too much squeezed in). A resort's action is the Save star; a
      saved pin's are the panel row's own "…" menu
      (``_favourite_row_menu_items.html``: Share → Rename → Delete). The
      header is ``data-sheet-drag`` and, for a saved pin, also the row the
@@ -66,29 +68,21 @@ Context:
     data-place-kind="{{ kind }}"
     data-sheet-detents="{% if kind == 'resort' or resort_url or day_rating %}peek,half,full{% else %}peek,half{% endif %}"
 >
-    {# SNOW-1165: as the region sheet — see _region_sheet_body.html. #}
-    {% if another_day %}
-        {% include "includes/_another_day_strip.html" with day=target_date placement="sheet" only %}
-    {% endif %}
+    {# Another day says so in the peek's date row, as the region sheet's #}
+    {# does (Hugo, 21 Oct; it replaced SNOW-1165's strip above the row).  #}
     <div
         data-sheet-peek
         data-sheet-drag
         {% if kind == "favourite" %}id="place-sheet-row" data-row-renameable{% endif %}
     >
-        <div class="flex items-center gap-3">
-            {% if day_rating %}
-                <span
-                    class="danger-tile flex-none"
-                    data-level="{{ day_rating.max_rating }}"
-                    data-testid="place-sheet-rating"
-                >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
-            {% elif region %}
-                {% include "includes/_danger_tile_empty.html" only %}
-            {% endif %}
+        <div class="flex items-center gap-4">
+            {# A place leads with the round pin tile, as its search row does; #}
+            {# the square danger tile is a region's (Hugo, 21 Oct).           #}
+            {% include "includes/_resort_tile.html" only %}
             <div class="min-w-0 flex-1">
                 <h2
                     data-row-label
-                    class="truncate text-base font-semibold leading-tight text-text-1"
+                    class="truncate text-lg font-semibold leading-tight text-text-1"
                     title="{{ label }}"
                 >
                     {{ label }}
@@ -102,38 +96,9 @@ Context:
                         value="{{ name }}"
                         maxlength="100"
                         aria-label="{{ rename_label }}"
-                        class="-mx-1.5 w-full min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-base font-semibold text-text-1 focus:outline-none"
+                        class="-mx-1.5 w-full min-w-0 rounded-pill border border-accent bg-card px-1.5 py-0.5 text-lg font-semibold text-text-1 focus:outline-none"
                     >
                 {% endif %}
-                {# The region sheet's second line: the region's code behind its #}
-                {# country's flag, then the level and the region's name.        #}
-                <p class="flex min-w-0 items-center gap-2 text-meta text-text-2" data-testid="place-sheet-meta">
-                    {% if region %}
-                        <span class="search-result-badge">
-                            {% with country=region.region_id|slice:":2"|lower %}
-                                {% if country == "ch" or country == "at" or country == "fr" or country == "it" %}
-                                    <svg
-                                        class="search-result-flag search-result-flag--{{ country }}"
-                                        aria-hidden="true"
-                                    >
-                                        <use href="#flag-{{ country }}" />
-                                    </svg>
-                                {% endif %}
-                            {% endwith %}
-                            {{ region.region_id }}
-                        </span>
-                        <span class="truncate">
-                            {% if level_label %}
-                                {{ level_label }} ·
-                            {% elif not day_rating %}
-                                {% trans "No bulletin" %} ·
-                            {% endif %}
-                            {{ region.name }}
-                        </span>
-                    {% else %}
-                        <span class="truncate">{% trans "No avalanche bulletin covers this spot" %}</span>
-                    {% endif %}
-                </p>
             </div>
             {% if kind == "resort" %}
                 {% if can_favourite %}
@@ -183,6 +148,8 @@ Context:
                 {% include "includes/_icon_close.html" only %}
             </button>
         </div>
+        {# The day, on its own full-width row under the header (Hugo, 21 Oct). #}
+        {% include "includes/_sheet_date_row.html" with day=target_date another_day=another_day only %}
     </div>
 
     {% if kind == "resort" %}
@@ -196,10 +163,31 @@ Context:
             {% include "public/partials/_resort_body.html" with in_map=True %}
         </div>
     {% else %}
-        {# A saved pin: HALF ends under the day's weather at the place       #}
-        {# (data-sheet-half), since the danger level is already on the peek  #}
-        {# row. The problems follow, for FULL.                                #}
+        {# A saved pin: the region's level leads (a resort's is in its      #}
+        {# bulletin card; neither is in the header since Hugo's review of   #}
+        {# 21 Oct), then HALF ends under the day's weather at the place     #}
+        {# (data-sheet-half). The problems follow, for FULL.                #}
         <div class="space-y-4">
+            <p class="flex min-w-0 items-center gap-3 text-sm text-text-2" data-testid="place-sheet-level">
+                {% if region %}
+                    {% if day_rating %}
+                        <span
+                            class="danger-tile flex-none"
+                            data-level="{{ day_rating.max_rating }}"
+                            data-testid="place-sheet-rating"
+                        >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
+                    {% else %}
+                        {% include "includes/_danger_tile_empty.html" only %}
+                    {% endif %}
+                    <span class="truncate">
+                        {% firstof level_label _("No bulletin") as level_text %}
+                        {% blocktrans with level=level_text region=region.name trimmed %}{{ level }} · in
+                            {{ region }}{% endblocktrans %}
+                    </span>
+                {% else %}
+                    {% trans "No avalanche bulletin covers this spot" %}
+                {% endif %}
+            </p>
             {% if weather_display %}
                 <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
                     {% if location.elevation_m is not None %}
