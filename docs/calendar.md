@@ -177,7 +177,10 @@ calendar (`public/partials/_season_calendar.html`, from
 `apps/bulletins/services/day_rating.py`, so a cache hit issues zero DB
 queries. The language is in the key because the body is rendered text:
 the month labels are Django's own translated month names (`MONTHS_3`) and
-the cell labels are `blocktrans` sentences (SNOW-1128). The grid runs from
+the cell labels are `blocktrans` sentences (SNOW-1128). The key also carries
+`SEASON_CALENDAR_MARKUP_VERSION`: bump it whenever the calendar's markup
+changes shape, or a deploy serves the previous release's cached body
+against the new CSS for up to 25 hours (SNOW-1163). The grid runs from
 `settings.SEASON_START_DATE` to `today + 1` (the afternoon bulletin
 targets tomorrow); the calendar draws only the span above. The body is
 the same for every day of the season: nothing in it is per page.

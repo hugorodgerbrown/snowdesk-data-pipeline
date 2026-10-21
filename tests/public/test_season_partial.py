@@ -24,9 +24,11 @@ import datetime
 import re
 from datetime import UTC
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
+from django.core.cache.utils import make_template_fragment_key
 from django.template.loader import render_to_string
 from django.test import Client, override_settings
 from django.urls import reverse
@@ -259,6 +261,19 @@ class TestSeasonPartialCache:
             de = season_calendar_cache_key("ch-4115", "2026-01-12", "de")
         assert en == en_gb
         assert en != de
+
+    def test_cache_key_carries_the_markup_version(self) -> None:
+        """SNOW-1163: a markup change misses every body the last release cached."""
+        current = season_calendar_cache_key("ch-4115", "2026-01-12", "en")
+        previous = make_template_fragment_key(
+            "season_calendar", ["ch-4115", "2026-01-12", "en"]
+        )
+        assert current != previous
+        with patch(
+            "apps.bulletins.services.day_rating.SEASON_CALENDAR_MARKUP_VERSION", "99"
+        ):
+            bumped = season_calendar_cache_key("ch-4115", "2026-01-12", "en")
+        assert bumped != current
 
     @override_settings(
         SEASON_START_DATE=_SEASON_START,
