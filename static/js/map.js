@@ -7218,11 +7218,13 @@
    *
    * SNOW-1173: a region picked from search selects it, which opens the
    * region sheet, and then frames it. On a desktop that sheet is the inset
-   * panel down the map's right side, so the fit reserves its width —
-   * measured, from the panel's left edge to the canvas's right — or the
-   * region would come to rest half under the sheet describing it. A phone's
-   * sheet is a bottom sheet whose camera padding map_sheet.js already owns,
-   * so a sheet that is not docked on the right reserves nothing here.
+   * panel down the map's left side (on its right until 2026-10-21), so the
+   * fit reserves its width — measured, from the canvas's left to the
+   * panel's right edge — or the region would come to rest half under the
+   * sheet describing it. Either side is measured, so the fit follows the
+   * panel wherever the stylesheet docks it. A phone's sheet is a bottom
+   * sheet across the width, whose camera padding map_sheet.js already
+   * owns, so a sheet docked on neither side reserves nothing here.
    *
    * @returns {{top: number, right: number, bottom: number, left: number}}
    */
@@ -7234,9 +7236,15 @@
     const canvas = container.getBoundingClientRect();
     const box = sheet.getBoundingClientRect();
     if (!(canvas.width > 0) || !(box.width > 0)) return padding;
-    // Docked on the right: its left edge is past the canvas's middle.
-    if (box.left <= canvas.left + canvas.width / 2) return padding;
-    reserveFitEdge(padding, 'right', 'left', canvas.right - box.left, canvas.width);
+    // Docked on whichever side it sits nearer. A phone's sheet is inset
+    // equally from both, so it is docked on neither.
+    const leftGap = Math.round(box.left - canvas.left);
+    const rightGap = Math.round(canvas.right - box.right);
+    if (leftGap < rightGap) {
+      reserveFitEdge(padding, 'left', 'right', box.right - canvas.left, canvas.width);
+    } else if (rightGap < leftGap) {
+      reserveFitEdge(padding, 'right', 'left', canvas.right - box.left, canvas.width);
+    }
     return padding;
   };
 

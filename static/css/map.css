@@ -1703,6 +1703,62 @@ html:has(> body.map-fullscreen) > body {
     );
 }
 
+/* No ring round a whole sheet (2026-10-21). Each sheet built on
+   includes/_overlay_sheet.html takes focus as it opens (tabindex="-1"), so
+   Escape and the keyboard reach it; the browser then drew its focus ring
+   round the entire panel, for a press nobody made on it. The sheet is a
+   focus target, not a control: the controls inside it keep their rings.
+   The phone's detent rule below says the same for its full-width shape. */
+[data-overlay][tabindex='-1']:focus {
+    outline: none;
+}
+
+/* —— The selection column (2026-10-21) ———————————————————————————
+   From 640px the region, place and weather sheets dock down the map's LEFT
+   side, under the search pill they were picked from
+   (includes/_overlay_sheet.html's `side`, placed by map_overlay_bounds.js),
+   and stop on the date row like every sheet. That column runs over the
+   stack's upper members — the zoom control, help and the legend toggle —
+   so while one is open those members step aside to sit just beyond it.
+   The date row stays where it is, under the sheet whose day it sets: it is
+   the stack's bottom line and the sheets' floor, and moving it would move
+   the floor out from under the sheet.
+
+   `:has()` rather than a flag a script keeps: the sheet's own `hidden` is
+   the one thing that knows it is open, so nothing can fall out of step.
+   The legend card and the calendar open over the map from this stack, and
+   each closes the sheet as it opens (map_overlay_exclusivity.js), so
+   neither is ever beside an open one. */
+@media (min-width: 640px) {
+    .map-legend > :not(#map-date-row) {
+        transition: transform 150ms ease;
+    }
+
+    :root:has([data-sheet-side='left']:not([hidden])) .map-legend > :not(#map-date-row) {
+        transform: translateX(calc(25rem + 8px));
+    }
+
+    /* The tour offer floats over the same corner and is an offer, not a
+       control, so it withdraws for the sheet as it does for a route. */
+    :root:has([data-sheet-side='left']:not([hidden])) #map-tour-offer {
+        visibility: hidden;
+        pointer-events: none;
+    }
+
+    /* The search results drop over the column, so the pill they hang
+       from rises above the sheets' level while the pages share a corner.
+       The pill row and the column never overlap otherwise. */
+    .map-utility-cluster {
+        z-index: calc(var(--z-popup) + 1);
+    }
+}
+
+@media (min-width: 640px) and (prefers-reduced-motion: reduce) {
+    .map-legend > :not(#map-date-row) {
+        transition: none;
+    }
+}
+
 /* ``.map-date-pill`` (the 28px readout that floated above the scrubber thumb)
    was removed along with its mapDatePillInit IIFE in static/js/map.js. The
    scrubbed date has been reported by .map-date-ribbon in the bottom-left row
@@ -3938,8 +3994,11 @@ html:has(> body.map-fullscreen) > body {
        sheet sits on the global --z-popup level, outside #map; at 6 the ring
        and the card slid under it. #map makes no stacking context of its own
        (z-index auto), so this compares against the sheet directly. Below
-       --z-modal still, so a forced update or reset outranks the tour. */
-    z-index: calc(var(--z-popup) + 1);
+       --z-modal still, so a forced update or reset outranks the tour.
+       One more than that since 2026-10-21, to stay over the desktop search
+       pill, which rises to --z-popup + 1 to drop its results over the
+       left-hand selection column. */
+    z-index: calc(var(--z-popup) + 2);
     /* The overlay itself never intercepts pointer events — only the
        tooltip card (below) opts back in for its buttons. */
     pointer-events: none;
@@ -4272,14 +4331,15 @@ html:has(> body.map-fullscreen) > body {
    The "?" roundel names every control and guides the sheets. Everything is
    position: fixed and placed by static/js/map_help_mode.js from the
    controls' own rectangles, like the tour above. Above the sheets for the
-   tour's reason: a guide numbers the parts of an open sheet. The layer
+   tour's reason: a guide numbers the parts of an open sheet, and over the
+   desktop search pill at --z-popup + 1 for the tour's too. The layer
    itself takes no taps; only the bar, the cards and the names do.
    ————————————————————————————————————————————————————————— */
 
 .map-help-mode {
     position: fixed;
     inset: 0;
-    z-index: calc(var(--z-popup) + 1);
+    z-index: calc(var(--z-popup) + 2);
     pointer-events: none;
 }
 

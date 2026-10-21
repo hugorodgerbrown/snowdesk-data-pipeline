@@ -358,6 +358,11 @@
    * ONE BOTTOM SHEET AT A TIME ON A PHONE (2026-10-19). Every detent sheet
    * docks to the same foot of the screen, so a second one opening lands on
    * top of the first — the region sheet's peek sat over the route sheet's.
+   * AND ONE LEFT COLUMN ON A DESKTOP (2026-10-21): the detent sheets are the
+   * region, place and weather sheets and the route panel, and from 640px
+   * all four dock in the column under the search pill, so a second one
+   * there would land on the first just the same. The rule holds at every
+   * width.
    * window.pwaMapOverlays cannot settle this: the route sheet stays out of
    * it on purpose (route_rail.js, "its own lifetime"), so nothing it
    * announces would close it and it announces nothing. The rule is stated
@@ -367,7 +372,6 @@
    * @param {HTMLElement} el The sheet that is opening.
    */
   function closeOtherSheets(el) {
-    if (!isPhone()) return;
     boundSheets = boundSheets.filter(function (entry) {
       return entry.el.isConnected;
     });
@@ -724,16 +728,8 @@
       if (next) set(next);
     });
 
-    // Crossing into a phone width with two sheets open (the route panel
-    // beside a desktop card) would dock both on the same foot: the first
-    // sheet to hear the resize closes the other, as an open there would.
-    var wasPhone = isPhone();
     window.addEventListener('resize', function () {
-      var phone = isPhone();
-      var crossed = phone && !wasPhone;
-      wasPhone = phone;
       if (!current) return;
-      if (crossed && isOpen()) closeOtherSheets(el);
       fit(current);
       applySurroundings();
     });

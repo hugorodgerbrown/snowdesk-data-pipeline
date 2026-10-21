@@ -431,5 +431,6 @@ Depth is **glass, not shadow**. Floating controls: `glass` (rgba(255,255,255,.85
 - Don't re-tint, reuse or theme the EAWS colours.
 - Don't add accent colour or visual weight to make a feature feel important.
 - Don't put two inline actions in a restricted area; collapse them into "…".
+- Do open a surface beside its trigger: on desktop, map selections open in the left column under search (slide up on mobile); right-hand roundels open panels on the right.
 - Don't give a roundel panel detents or let it cover the roundel that opened it.
 - Don't use an odd height on a round map control.

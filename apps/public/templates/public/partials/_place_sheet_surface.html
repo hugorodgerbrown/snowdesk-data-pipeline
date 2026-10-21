@@ -16,7 +16,7 @@ Context expected:
   renders.)
 {% endcomment %}
 {% trans "Place" as place_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="place-sheet" aria_label=place_sheet_aria_label detents="peek,half,full" initial="peek" %}
+{% include "includes/_overlay_sheet.html" with id="place-sheet" aria_label=place_sheet_aria_label detents="peek,half,full" initial="peek" side="left" %}
 <script defer src="{% static 'js/map_place_sheet.js' %}"></script>
 {# The module's own user-facing strings — see docs/i18n.md. #}
 <template id="place-sheet-strings-template">

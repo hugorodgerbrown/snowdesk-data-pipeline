@@ -341,18 +341,16 @@ describe('two sheets on one map (2026-10-19)', () => {
     expect(t.padding().bottom).toBe(384);
   });
 
-  it('narrowing to a phone with two open leaves one', () => {
-    let desktop = true;
-    window.matchMedia = /** @type {any} */ ((query) => ({ matches: desktop && query.includes('min-width') }));
+  it('opening one closes the other at a desktop width too (2026-10-21)', () => {
+    // From 640px the detent sheets share the left column under the search
+    // pill, so they would stack there as they do on a phone's foot.
+    window.matchMedia = /** @type {any} */ ((query) => ({ matches: query.includes('min-width') }));
     try {
       const t = twoSheets();
       t.ca.open();
       t.cb.open();
-      expect(t.a.hasAttribute('hidden')).toBe(false);
+      expect(t.a.hasAttribute('hidden')).toBe(true);
       expect(t.b.hasAttribute('hidden')).toBe(false);
-      desktop = false;
-      window.dispatchEvent(new Event('resize'));
-      expect([t.a, t.b].filter((el) => !el.hasAttribute('hidden'))).toHaveLength(1);
     } finally {
       // @ts-ignore jsdom has none; the binding reads its absence as a phone.
       delete window.matchMedia;

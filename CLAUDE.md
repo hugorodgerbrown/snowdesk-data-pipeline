@@ -420,7 +420,7 @@ blocks every PR that introduces a violation:
    is mandated by the standard, so in JS the token rules above apply and
    this one does not.
 
-Three further rules govern how a surface **behaves** rather than how it is
+Four further rules govern how a surface **behaves** rather than how it is
 built. No linter enforces these — `ds-lint` cannot count a row's calls to
 action or judge a menu's order — so they hold only if a reviewer holds
 them. Full statement and history:
@@ -446,6 +446,13 @@ them. Full statement and history:
    desktop it sits beside the column; on a phone it docks full width over
    it and closes with its ×, by choice, SNOW-1106; no detents) and a **form panel** (a task — no detents, no drag-to-close).
    SNOW-1102 was cancelled for breaking this.
+7. **A surface opens beside its trigger.** On a desktop a map selection
+   (region, place, weather, route) docks in the left column under the
+   search pill (`_overlay_sheet.html` `side="left"`); on a phone it slides
+   up. Right-hand roundels open their panels on the right. One object sheet
+   at a time, at every width; on a desktop what the column covers steps
+   aside and the date row stays put; a sheet draws no focus ring round
+   itself.
 
 Per-line escape hatch, only when a token genuinely can't express the
 constraint. The reason is required and audit-visible
@@ -691,7 +698,8 @@ Read these when working in the relevant area:
 | Map page functional spec (coverage, layers, UGC, basemaps, scrubber) | [`docs/map-page-functional-spec.md`](docs/map-page-functional-spec.md) |
 | How the map surface works — zoom bands (REGION_SELECT_MAXZOOM, ROUTE_SLOPE_MINZOOM), the tap dispatcher's priority, the four overlay kinds, pwaMapOverlays vs one-bottom-sheet-at-a-time, map_sheet.js as the one writer of the camera padding and data-map-sheet | [`docs/map-surface.md`](docs/map-surface.md) |
 | Why the map's control column is two capsules with no on-map marker (.map-control-group, "the map" = locate + layers, "yours" = favourites, observations, routes, downloads folded by the chevron; the data-overlay-shown ring removed; bulletin opacity as the layers-menu #map-bulletin-opacity row; the per-panel "Show on the map" switch, map_panel_overlay_switch.js) | [`docs/decisions/map-controls-are-two-groups-without-an-on-map-marker.md`](docs/decisions/map-controls-are-two-groups-without-an-on-map-marker.md) |
-| Why a phone map sheet rests at peek, half or full and a desktop one does not (_overlay_sheet.html `detents` / `initial`, data-sheet-peek, data-sheet-drag, data-sheet-detents, sheet_detents_core.js, MapSheet.bindDetents; forms declare none; the sheet covers the map controls and moves none; the region and place sheets are the desktop inset panel) | [`docs/decisions/sheet-detents-are-phone-only.md`](docs/decisions/sheet-detents-are-phone-only.md) |
+| Why a desktop map panel opens beside what opened it (selections — region, place, weather, route — in the left column under search via _overlay_sheet.html `side="left"`, map_overlay_bounds.js; roundel and form panels on the right; one object sheet at every width, closeOtherSheets; the bottom-left roundels step aside, the date row stays; no focus ring on a sheet) | [`docs/decisions/a-panel-opens-beside-what-opened-it.md`](docs/decisions/a-panel-opens-beside-what-opened-it.md) |
+| Why a phone map sheet rests at peek, half or full and a desktop one does not (_overlay_sheet.html `detents` / `initial`, data-sheet-peek, data-sheet-drag, data-sheet-detents, sheet_detents_core.js, MapSheet.bindDetents; forms declare none; the sheet covers the map controls and moves none; the region and place sheets are the desktop inset panel, docked left) | [`docs/decisions/sheet-detents-are-phone-only.md`](docs/decisions/sheet-detents-are-phone-only.md) |
 | Compressed-views peak rating rule (choropleth, tooltip, calendar) | [`docs/compressed-views-rating-rule.md`](docs/compressed-views-rating-rule.md) |
 | Why a grouping outline asserts an aggregation (BulletinGrouping, MIN_GROUPED_REGIONS, degenerate(), purge_degenerate_bulletin_groupings; why a day can return zero features) | [`docs/decisions/a-grouping-outline-asserts-an-aggregation.md`](docs/decisions/a-grouping-outline-asserts-an-aggregation.md) |
 | On-device debug trace (window.pwaDebugLog, log:debug store, debug_log flag / GRP_DEBUG, the sw.js emitters) | [`docs/debug-log.md`](docs/debug-log.md) |

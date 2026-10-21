@@ -23,7 +23,7 @@ Context expected:
   data-weather-detail-url, which _map_embed.html renders.)
 {% endcomment %}
 {% trans "Weather detail" as weather_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="weather-sheet" aria_label=weather_sheet_aria_label detents="peek,half,full" initial="peek" %}
+{% include "includes/_overlay_sheet.html" with id="weather-sheet" aria_label=weather_sheet_aria_label detents="peek,half,full" initial="peek" side="left" %}
 <script defer src="{% static 'js/map_weather_detail.js' %}"></script>
 {# SNOW-1101: the FULL detent carries the meteogram, whose info button  #}
 {# opens its legend; this is the one handler it needs (see the forecast #}
