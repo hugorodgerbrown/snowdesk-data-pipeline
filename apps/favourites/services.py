@@ -22,12 +22,12 @@ from uuid import UUID
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import ProtectedError
 from django.utils import timezone
 
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
 from apps.locations.services.elevation import fetch_elevation
+from apps.locations.services.orphans import delete_location_if_orphaned
 from apps.locations.services.what3words import convert_to_3wa
 from apps.regions.services.point_match import region_for_point
 
@@ -368,7 +368,7 @@ def delete_favourite(user: "User", uuid: UUID) -> None:
     with transaction.atomic():
         favourite.delete()
         if location is not None:
-            _delete_location_if_orphaned(location)
+            delete_location_if_orphaned(location)
     logger.info("Favourite deleted: user=%s uuid=%s", user.pk, uuid)
 
 
@@ -401,36 +401,8 @@ def delete_favourites_for_user(user: "User") -> int:
             location = favourite.location
             favourite.delete()
             if location is not None:
-                _delete_location_if_orphaned(location)
+                delete_location_if_orphaned(location)
             deleted += 1
     if deleted:
         logger.info("Favourites deleted for user=%s: %s row(s)", user.pk, deleted)
     return deleted
-
-
-def _delete_location_if_orphaned(location: Location) -> None:
-    """Delete an anonymous Location that nothing references any more.
-
-    Called after the row that referenced it has gone. Inline at the delete
-    site rather than via a signal, per the project's no-signals-for-side-
-    effects rule.
-
-    Args:
-        location: The location whose last known referent was just removed.
-
-    """
-    if location.name:
-        # Curated data. A user deleting a favourite that happened to sit on
-        # Mont Fort must not delete Mont Fort.
-        return
-    try:
-        # Ask the database rather than enumerating reverse relations. Every
-        # referent of Location is PROTECT, so a ProtectedError *is* the
-        # answer "something still references this" — and it stays correct as
-        # SNOW-709 and SNOW-696 add referents this function has never heard
-        # of. A savepoint keeps the failed delete from poisoning the
-        # surrounding atomic block.
-        with transaction.atomic():
-            location.delete()
-    except ProtectedError:
-        logger.debug("Location id=%s still referenced; left in place.", location.pk)

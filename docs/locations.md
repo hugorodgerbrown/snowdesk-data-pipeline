@@ -2,7 +2,7 @@
 name: locations
 description: Coordinate reference — Location, Favourite, Resort, FieldObservation, MicroRegion.centre, Route.points, GeoIP; apps/core/geo haversine
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-21
 ---
 
 # Locations — what every coordinate in this codebase means
@@ -66,6 +66,10 @@ Verbier, Nendaz, Veysonnaz and Thyon all reference through `ResortLocation`,
 so the sharing falls out of the model instead of being four copies of the
 scalar `3330`. A location minted from a favourite or an observation carries
 no `name` and no `kind`, and is an anonymous point like any other.
+When the row that minted it is deleted, the anonymous location is erased by
+`apps.locations.services.orphans.delete_location_if_orphaned` (named
+locations, and any still referenced, survive) — called by the favourites,
+trips and observations delete services (SNOW-1170).
 
 `elevation_m` is nullable and resolved out-of-band, because resolving it
 needs an Open-Meteo call that cannot ride on a model save.

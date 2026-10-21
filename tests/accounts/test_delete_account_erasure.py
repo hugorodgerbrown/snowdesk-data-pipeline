@@ -34,12 +34,15 @@ from django.urls import reverse
 from apps.accounts.models import Account
 from apps.bulletins.models import BulletinShareClick
 from apps.core.models import RequestLog
+from apps.locations.models import Location
+from apps.observations.models import FieldObservation
 from tests.factories import (
     AccountFactory,
     BulletinShareFactory,
     DownloadAreaFactory,
     FavouriteFactory,
     FieldObservationFactory,
+    LocationFactory,
     PasskeyCredentialFactory,
     PushSubscriptionFactory,
     RequestLogFactory,
@@ -282,6 +285,55 @@ class TestEveryKindOfAttachedDataDeletes:
 
         assert not Account.objects.filter(pk=account.pk).exists()
         assert not User.objects.filter(pk=user.pk).exists()
+
+
+@pytest.mark.django_db
+class TestObservationLocationsAreErased:
+    """The anonymous Location each field report minted goes with the account.
+
+    ``FieldObservation.user`` is ``CASCADE`` and ``FieldObservation.location``
+    is ``PROTECT``, so a plain cascade deletes the reports and strands their
+    locations, each still holding the exact coordinate the person stood at
+    (SNOW-1170).
+    """
+
+    def test_no_location_survives_at_a_reports_coordinate(self) -> None:
+        """Every report's anonymous location is swept by erasure."""
+        account = AccountFactory.create()
+        coordinates = [(46.11, 7.11), (46.12, 7.12), (46.13, 7.13)]
+        for latitude, longitude in coordinates:
+            FieldObservationFactory.create(
+                user=account.user, latitude=latitude, longitude=longitude
+            )
+
+        _delete(account)
+
+        for latitude, longitude in coordinates:
+            assert not Location.objects.filter(
+                latitude=latitude, longitude=longitude
+            ).exists()
+
+    def test_a_named_location_survives(self) -> None:
+        """Curated data is not the reporter's to erase."""
+        account = AccountFactory.create()
+        mont_fort = LocationFactory.create(name="Mont Fort")
+        FieldObservationFactory.create(user=account.user, location=mont_fort)
+
+        _delete(account)
+
+        assert Location.objects.filter(pk=mont_fort.pk).exists()
+
+    def test_a_location_another_user_reported_at_survives(self) -> None:
+        """A shared anonymous location stays while a bystander still uses it."""
+        account = AccountFactory.create()
+        shared = LocationFactory.create(anonymous=True)
+        FieldObservationFactory.create(user=account.user, location=shared)
+        theirs = FieldObservationFactory.create(location=shared)
+
+        _delete(account)
+
+        assert Location.objects.filter(pk=shared.pk).exists()
+        assert FieldObservation.objects.filter(pk=theirs.pk).exists()
 
 
 @pytest.mark.django_db(transaction=True)

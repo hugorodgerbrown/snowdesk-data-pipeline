@@ -42,6 +42,7 @@ from django.urls import reverse
 from django.utils import dateformat, timezone
 from waffle.testutils import override_flag
 
+from apps.locations.models import Location
 from apps.observations.models import FieldObservation
 from tests.factories import (
     AccountFactory,
@@ -1379,10 +1380,37 @@ class TestObservationDelete:
 
     def test_another_users_uuid_is_a_404_not_a_deletion(self, client: Client) -> None:
         """Ownership is enforced by the query, not by trusting the URL."""
-        theirs = FieldObservationFactory.create()
+        their_location = LocationFactory.create(anonymous=True)
+        theirs = FieldObservationFactory.create(location=their_location)
         client.force_login(_verified_user())
 
         response = client.post(_delete_url(theirs), **HTMX_HEADERS)
 
         assert response.status_code == 404
         assert FieldObservation.objects.filter(pk=theirs.pk).exists()
+        assert Location.objects.filter(pk=their_location.pk).exists()
+
+    def test_the_reports_anonymous_location_is_erased(self, client: Client) -> None:
+        """Deleting a report erases the coordinate it minted (SNOW-1170)."""
+        user = _verified_user()
+        location = LocationFactory.create(anonymous=True)
+        observation = FieldObservationFactory.create(user=user, location=location)
+        client.force_login(user)
+
+        response = client.post(_delete_url(observation), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert not Location.objects.filter(pk=location.pk).exists()
+
+    def test_a_named_location_survives(self, client: Client) -> None:
+        """A report filed at a curated place does not delete the place."""
+        user = _verified_user()
+        mont_fort = LocationFactory.create(name="Mont Fort")
+        observation = FieldObservationFactory.create(user=user, location=mont_fort)
+        client.force_login(user)
+
+        response = client.post(_delete_url(observation), **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        assert not FieldObservation.objects.filter(uuid=observation.uuid).exists()
+        assert Location.objects.filter(pk=mont_fort.pk).exists()
