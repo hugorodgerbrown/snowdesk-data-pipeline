@@ -1,0 +1,39 @@
+{% comment %}
+templates/includes/_icon_resort.html — the resort glyph: a gondola cabin on
+its cable (SNOW-1177).
+
+Leads every resort tile, the round tile that tells a resort from a region's
+square danger tile: the map search's resort rows (cloned by map.js from
+#search-resort-icon-template in public/partials/_map_embed.html) and the
+resort panel header. It replaced a generic placemark, which said "a place"
+and nothing about what kind; the cabin names the lift system, which is what
+makes a place a resort, without picking one sport the way a skier would.
+Hugo's pick from five drawn options (gondola, chairlift, mountain and lift,
+skier, peak) — the cabin is the one that stays a clean silhouette at 12–16px
+and cannot be read as a summit or a region.
+
+STYLE — a 24-grid 2px stroke, matching the rest of the house set
+(docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 16, the
+            search row's tile.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:16 }}"
+    height="{{ size|default:16 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M3 6.5 21 3" />
+    <path d="M12 4.8V9" />
+    <rect x="6.5" y="9" width="11" height="11.5" rx="2.5" />
+    <path d="M6.5 14h11" />
+</svg>

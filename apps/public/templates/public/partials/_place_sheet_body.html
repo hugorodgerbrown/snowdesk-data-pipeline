@@ -78,7 +78,7 @@ Context:
         <div class="flex items-center gap-4">
             {# A place leads with the round pin tile, as its search row does; #}
             {# the square danger tile is a region's (Hugo, 21 Oct).           #}
-            {% include "includes/_resort_tile.html" only %}
+            {% include "includes/_resort_tile.html" with kind=kind only %}
             <div class="min-w-0 flex-1">
                 <h2
                     data-row-label

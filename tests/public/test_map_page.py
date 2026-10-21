@@ -423,6 +423,28 @@ def test_map_page_renders_resorts_legend_entry() -> None:
 
 
 @pytest.mark.django_db
+def test_map_page_renders_the_resort_glyph_template() -> None:
+    """SNOW-1177: the search's resort rows clone the gondola cabin.
+
+    map.js builds each resort row's tile from #search-resort-icon-template,
+    so the template must carry the _icon_resort.html partial — the cabin's
+    cable and body — rather than the placemark it replaced.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    match = re.search(
+        r'<template id="search-resort-icon-template">(.*?)</template>',
+        content,
+        re.DOTALL,
+    )
+    assert match is not None
+    glyph = match.group(1)
+    assert 'class="search-result-pin"' in glyph
+    assert 'd="M3 6.5 21 3"' in glyph
+    assert '<rect x="6.5" y="9"' in glyph
+    assert "a7 7 0 1 0-14 0" not in glyph
+
+
+@pytest.mark.django_db
 def test_map_data_attribution_section_ships_hidden() -> None:
     """SNOW-640: the "Map data" section starts collapsed, not empty.
 

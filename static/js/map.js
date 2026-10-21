@@ -9769,16 +9769,21 @@
     // `rating` the choropleth paints from.
     const DANGER_DIGIT = { low: '1', moderate: '2', considerable: '3', high: '4', very_high: '5' };
 
+    // SNOW-1177: the resort glyph the embed renders from _icon_resort.html.
+    const resortIconTemplate = /** @type {HTMLTemplateElement|null} */ (
+      document.getElementById('search-resort-icon-template')
+    );
+
     /**
      * The leading tile of a result row (SNOW-1173).
      *
      * A resort is a place and a region is a bulletin, so the two lead with
-     * different things: a resort a round pin tile, the shape of its marker
-     * on the map; a region a square .danger-tile carrying the displayed
-     * day's level, as the region sheet's header does — read off the same
-     * feature-state the map is painted from, so the row and the polygon
-     * cannot disagree. A region with no rating that day gets the tile's
-     * no_rating state with a dash.
+     * different things: a resort a round tile with the gondola cabin
+     * (SNOW-1177), round like its marker on the map; a region a square
+     * .danger-tile carrying the displayed day's level, as the region
+     * sheet's header does — read off the same feature-state the map is
+     * painted from, so the row and the polygon cannot disagree. A region
+     * with no rating that day gets the tile's no_rating state with a dash.
      *
      * @param {{type: string, regionID: string}} r The row.
      * @returns {Element} The tile, decorative (aria-hidden).
@@ -9788,24 +9793,14 @@
         const tile = document.createElement('span');
         tile.className = 'search-result-tile search-result-tile--resort';
         tile.setAttribute('aria-hidden', 'true');
-        // Stroked in currentColor rather than filled with a punched-out
-        // centre: a filled pin needs a literal colour for the hole, and the
-        // tile behind it is a token that is not the same colour in both
-        // themes. Same idiom as the search toggle's own icon.
-        const pin = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        pin.setAttribute('class', 'search-result-pin');
-        pin.setAttribute('viewBox', '0 0 24 24');
-        pin.setAttribute('fill', 'none');
-        pin.setAttribute('stroke', 'currentColor');
-        pin.setAttribute('stroke-width', '2');
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', 'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z');
-        const hole = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        hole.setAttribute('cx', '12');
-        hole.setAttribute('cy', '10');
-        hole.setAttribute('r', '2.5');
-        pin.append(path, hole);
-        tile.append(pin);
+        // SNOW-1177: the gondola cabin, cloned from the partial the
+        // embed renders into #search-resort-icon-template, so the row and
+        // the resort panel header draw one source. A page without the
+        // template gets the bare tile, still round, still a resort.
+        const pin = resortIconTemplate
+          ? resortIconTemplate.content.firstElementChild.cloneNode(true)
+          : null;
+        if (pin) tile.append(pin);
         return tile;
       }
       const feature = FEATURE_BY_REGION_ID[r.regionID];

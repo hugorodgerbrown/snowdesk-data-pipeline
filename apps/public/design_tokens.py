@@ -1425,9 +1425,10 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="resort-tile",
         label="Resort tile",
         description=(
-            "The round pin tile a place (a resort or a saved pin) leads "
-            "with, where a region leads with its square danger tile — the "
-            "search rows' two shapes, carried onto the place sheet."
+            "The round tile a place (a resort or a saved pin) leads with, "
+            "where a region leads with its square danger tile — the search "
+            "rows' two shapes, carried onto the place sheet. A resort draws "
+            "the gondola cabin, a saved pin the placemark."
         ),
         kind="components",
         partial="includes/_resort_tile.html",

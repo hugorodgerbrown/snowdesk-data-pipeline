@@ -54,8 +54,8 @@ enumerated here.
 **Consequences.** A new mark means a new `_icon_*.html`, not an inline
 `<svg>` in the template that happens to need it first — and a second
 surface wanting the same mark includes the partial rather than pasting the
-path. Icon partials carry no component-library registry entry (none of the
-twenty-three do — the registry's "Icons" foundation lists the favicon and
+path. Icon partials carry no component-library registry entry (none of them
+do — the registry's "Icons" foundation lists the favicon and
 EAWS pictogram assets, not these partials): the library documents composed
 surfaces, and an icon is a primitive of one.
 
