@@ -96,8 +96,9 @@ def _peek_context(region: MicroRegion | None, target_date: date) -> dict[str, An
         target_date: The day the map is showing.
 
     Returns:
-        ``region``, ``day_rating`` (a RegionDayRating or None) and
-        ``level_label`` (the level's name, or "").
+        ``region``, ``day_rating`` (a RegionDayRating or None),
+        ``level_label`` (the level's name, or "") and ``another_day``
+        (whether the day is not today, for the sheet's strip, SNOW-1165).
 
     """
     day_rating = (
@@ -110,6 +111,7 @@ def _peek_context(region: MicroRegion | None, target_date: date) -> dict[str, An
         "region": region,
         "day_rating": day_rating,
         "level_label": level_meta["label"] if level_meta else "",
+        "another_day": target_date != timezone.localdate(),
     }
 
 

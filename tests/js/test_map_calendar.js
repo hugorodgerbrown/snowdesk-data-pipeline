@@ -731,6 +731,30 @@ describe('on a phone the date lives in the top row', () => {
     expect(card.parentNode).toBe(document.body);
   });
 
+  it('takes the "Today" half with it, and puts both back in order (SNOW-1165)', async () => {
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<div id="map-utility-cluster"><div id="search-pill"></div></div>',
+    );
+    const toggle = document.getElementById('map-calendar-toggle');
+    toggle.insertAdjacentHTML('afterend', '<button id="map-today-control" type="button"></button>');
+    const today = document.getElementById('map-today-control');
+    const after = today.nextSibling;
+    const card = document.getElementById('map-calendar');
+    const width = stubPhone(true);
+    await loadCalendar();
+
+    const cluster = document.getElementById('map-utility-cluster');
+    expect(cluster.firstElementChild).toBe(toggle);
+    expect(toggle.nextElementSibling).toBe(today);
+    expect(today.nextElementSibling).toBe(card);
+
+    width.set(false);
+    expect(toggle.parentNode.id).toBe('season-scrubber');
+    expect(toggle.nextSibling).toBe(today);
+    expect(today.nextSibling).toBe(after);
+  });
+
   it('stays where it is on a desktop', async () => {
     document.body.insertAdjacentHTML('beforeend', '<div id="map-utility-cluster"></div>');
     stubPhone(false);

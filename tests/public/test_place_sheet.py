@@ -149,6 +149,22 @@ class TestResortPeek:
         assert "Considerable" in content
         assert resort.region.region_id in content
 
+    def test_another_day_shows_the_strip(self, client: Client) -> None:
+        """SNOW-1165: the sheet's strip, whose button the map handles."""
+        resort = _resort()
+        content = _get(client, _resort_url(resort.slug, "2026-02-03")).content.decode()
+        start = content.index('data-testid="another-day-strip"')
+        assert start < content.index("data-sheet-peek")
+        strip = content[start : content.index("</div>", start)]
+        assert "Tue 3 Feb 2026" in strip
+        assert "data-back-to-today" in strip
+        assert "<a " not in strip
+
+    def test_today_shows_no_strip(self, client: Client) -> None:
+        resort = _resort()
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert 'data-testid="another-day-strip"' not in content
+
     def test_anonymous_reader_gets_the_sign_in_star(self, client: Client) -> None:
         resort = _resort()
         content = _get(client, _resort_url(resort.slug)).content.decode()

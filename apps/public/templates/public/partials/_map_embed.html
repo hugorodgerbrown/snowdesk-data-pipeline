@@ -1502,6 +1502,37 @@ Optional context:
                 <span id="map-date-ribbon" class="map-date-ribbon" aria-live="polite" hidden></span>
             </button>
             {% comment %}
+            SNOW-1165: "Today", joined to the date control's right-hand end.
+            Always shown and disabled while the map is on today, so the way
+            back is in the same place on every day; static/js/map_today.js
+            enables it on any other day and, on a press, moves the scrubber
+            to today. Rendered disabled: a bare /map/ is today (SNOW-793),
+            and a ?d= for another day is enabled by the script on boot.
+            {% endcomment %}
+            <button
+                id="map-today-control"
+                type="button"
+                class="map-today-control hover-affordance"
+                aria-label='{% trans "Back to today" %}'
+                disabled
+            >
+                <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="M9 14 4 9l5-5" />
+                    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+                </svg>
+                <span>{% trans "Today" %}</span>
+            </button>
+            {% comment %}
             SNOW-920: shown by static/js/stale_day.js when this page is a cached
             copy rendered on an earlier day than the server's. It names the day
             the page is showing and offers a Reload that fetches the shell from

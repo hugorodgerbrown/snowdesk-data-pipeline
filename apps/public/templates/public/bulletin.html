@@ -147,6 +147,12 @@ reachable via the SNOW-81 deep-link in the masthead.
 {% endblock %}
 
 {% block content %}
+    {# SNOW-1165: another day's bulletin says so, full width under the nav, #}
+    {# and links to the bare URL, which is today — see resort.html.         #}
+    {% if page_date and not is_today %}
+        {% url 'public:bulletin' region_id=region.canonical_region_id slug=slug as today_url %}
+        {% include "includes/_another_day_strip.html" with day=page_date href=today_url only %}
+    {% endif %}
     {# ── Season heatmap sheet ─────────────────────────────────────────── #}
     {# The shell is fixed-position; rendering it at the top of the content #}
     {# area keeps it logically adjacent to the trigger. The inner grid is  #}

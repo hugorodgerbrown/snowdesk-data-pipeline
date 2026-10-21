@@ -6392,3 +6392,42 @@ class TestBulletinFavicon:
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
         assert re.search(r'<link rel="icon"[^>]*favicon-staging[^>]*\.svg', content)
         assert "favicon-moderate" not in content
+
+
+# ---------------------------------------------------------------------------
+# Test: another day's bulletin links back to today (SNOW-1165)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestBackToToday:
+    """A dated bulletin page says it is not today, and links to the bare URL."""
+
+    def test_another_day_links_to_the_bare_url(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """The strip names the day and links to the region's undated URL."""
+        content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
+        bare = reverse(
+            "public:bulletin", kwargs={"region_id": "ch-4115", "slug": "valais"}
+        )
+        start = content.index('data-testid="another-day-strip"')
+        strip = content[start : content.index("</div>", start)]
+        assert "Showing Sun 15 Mar 2026" in strip
+        assert f'<a href="{bare}"' in strip
+
+    def test_an_empty_day_links_back_too(
+        self, client: Client, region: MicroRegion
+    ) -> None:
+        """A day with no bulletin is still another day."""
+        content = client.get(_url("ch-4115", "valais", "2026-03-16")).content.decode()
+        assert 'data-testid="another-day-strip"' in content
+
+    def test_today_has_no_strip(self, client: Client, region: MicroRegion) -> None:
+        """The undated page is today, so it carries no strip."""
+        url = reverse(
+            "public:bulletin", kwargs={"region_id": "ch-4115", "slug": "valais"}
+        )
+        response = client.get(url, follow=True)
+        assert response.status_code == 200
+        assert 'data-testid="another-day-strip"' not in response.content.decode()

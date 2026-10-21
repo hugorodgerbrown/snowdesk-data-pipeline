@@ -1,0 +1,49 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_another_day_strip.html — "Showing Wed 8 Apr 2026 · Back
+to today" (SNOW-1165).
+
+Most people, most of the time, are on today, so a page or sheet showing any
+other day says so plainly and offers the way back. Rendered only when the
+day is not today — there is no hidden state — by:
+
+  - the region and resort PAGES, full width directly under the nav, where
+    "Back to today" is a link to the page's bare URL (the bare URL is
+    today), so it works with JavaScript off;
+  - the map's region and place SHEETS, at the top of the sheet above the
+    peek row, where "Back to today" is a button carrying
+    ``data-back-to-today``: static/js/map_today.js moves the scrubber to
+    today rather than leaving the map. The sheet re-renders on every change
+    of day, so the strip comes and goes with it.
+
+Status-info palette by meaning: it is information about what is on screen,
+not a warning, and the EAWS yellows and oranges must never be borrowed for
+anything that is not a danger level.
+
+Parameters (passed via {% include … with … %}):
+  day       — the date being shown (a date object).
+  href      — the page's bare URL. Renders a link; omit in a sheet.
+  placement — "page" (default: full width, a rule beneath) or "sheet"
+              (a rounded band inside the sheet's padding).
+{% endcomment %}
+<div
+    role="note"
+    data-testid="another-day-strip"
+    class="flex items-center gap-2 bg-status-info-bg text-sm text-status-info-text {% if placement == 'sheet' %}rounded-tag px-3 py-2{% else %}border-b border-border px-4 py-2.5{% endif %}"
+>
+    {% include "includes/_icon_calendar.html" with svg_class="shrink-0" only %}
+    <span class="min-w-0 flex-1 font-medium">
+        {% blocktrans with day=day|date:"D j M Y" trimmed %}Showing {{ day }}{% endblocktrans %}
+    </span>
+    {% if href %}
+        <a href="{{ href }}" class="shrink-0 font-semibold underline underline-offset-2">{% trans "Back to today" %}</a>
+    {% else %}
+        <button
+            type="button"
+            data-back-to-today
+            class="shrink-0 cursor-pointer font-semibold underline underline-offset-2"
+        >
+            {% trans "Back to today" %}
+        </button>
+    {% endif %}
+</div>

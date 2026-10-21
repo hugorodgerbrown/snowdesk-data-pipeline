@@ -467,16 +467,23 @@
   // search roundel, and come back when the width grows past it. Moved
   // rather than duplicated: the listeners above stay bound to the one
   // element, and map.css's phone rules place the card under the row.
+  //
+  // SNOW-1165: the control's "Today" half (#map-today-control) travels with
+  // it, so the two stay one pill. Put back in reverse: each element's
+  // remembered next sibling may be the one after it in this list, which has
+  // to be home first.
   const cluster = document.getElementById('map-utility-cluster');
   if (cluster && typeof window.matchMedia === 'function') {
     const phone = window.matchMedia('(max-width: 639.98px)');
-    const homes = [toggle, root].map((el) => ({ el, parent: el.parentNode, next: el.nextSibling }));
+    const today = document.getElementById('map-today-control');
+    const moved = today ? [toggle, today, root] : [toggle, root];
+    const homes = moved.map((el) => ({ el, parent: el.parentNode, next: el.nextSibling }));
     const place = () => {
       if (phone.matches) {
-        cluster.prepend(toggle, root);
+        cluster.prepend(...moved);
         return;
       }
-      homes.forEach(({ el, parent, next }) => {
+      homes.slice().reverse().forEach(({ el, parent, next }) => {
         if (el.parentNode !== parent) parent.insertBefore(el, next);
       });
     };

@@ -114,6 +114,8 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         "day_rating": day_rating,
         "level_label": level_meta["label"] if level_meta else "",
         "target_date": target_date,
+        # SNOW-1165: the sheet's "Showing … · Back to today" strip.
+        "another_day": target_date != timezone.localdate(),
         "country_name": COUNTRY_NAMES.get(country, country),
         "covered": region.region_id in covered_region_ids(),
         "provider_name": _PROVIDER_BY_COUNTRY.get(country, ""),

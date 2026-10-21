@@ -546,6 +546,11 @@ in addition to the shared map assets.
     {# day is behind the server's. Needs pwa_version_check.js (base.html).  #}
     <script defer src="{% static 'js/stale_day_core.js' %}"></script>
     <script defer src="{% static 'js/stale_day.js' %}"></script>
+    {# SNOW-1165: the date control's "Today" half and the sheets' "Back to #}
+    {# today" strip. The core first; the scrubber it asks to move loads   #}
+    {# earlier, with the rest of the map bundle.                          #}
+    <script defer src="{% static 'js/today_core.js' %}"></script>
+    <script defer src="{% static 'js/map_today.js' %}"></script>
     {# SNOW-344: edit-resorts JS (moved from map.html). #}
     {% if edit_target == "resorts" %}<script defer src="{% static 'js/map_edit_resorts.js' %}"></script>{% endif %}
     {# SNOW-755: edit-locations JS. The core module carries the logic and #}
