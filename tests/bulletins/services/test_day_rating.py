@@ -49,10 +49,13 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from django.core.cache import cache
 from django.db import connection
+from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 
-from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from apps.bulletins.services.day_rating import (
     DAY_RATING_VERSION,
     _derive_albina_bands,
@@ -65,6 +68,7 @@ from apps.bulletins.services.day_rating import (
     day_rating_pairs,
     recompute_region_day,
     refresh_day_ratings,
+    season_calendar_cache_key,
     slim_regions_prefetch,
     target_day_for_valid_from,
 )
@@ -881,6 +885,196 @@ class TestApplyBulletinDayRatings:
         ).exists()
         ok_row = RegionDayRating.objects.get(region=region_ok, date=target)
         assert ok_row.max_rating == "high"
+
+    # ------------------------------------------------------------------
+    # prior_pairs — a correction that narrows coverage (SNOW-1168)
+    # ------------------------------------------------------------------
+
+    def _two_region_bulletin(
+        self, region_a: MicroRegion, region_b: MicroRegion, key: str = "low"
+    ) -> Bulletin:
+        """Create a morning-of-2026-02-10 bulletin rated ``key`` over A and B."""
+        vf = datetime.datetime(2026, 2, 10, 8, 0, tzinfo=UTC)
+        vt = datetime.datetime(2026, 2, 10, 17, 0, tzinfo=UTC)
+        bulletin = _make_bulletin_for_region(
+            region_a, vf, vt, traits=[_trait(1, "dry")], headline_key=key
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin, region=region_b, region_name_at_time=region_b.name
+        )
+        return bulletin
+
+    def _narrow_to(self, bulletin: Bulletin, region: MicroRegion, key: str) -> None:
+        """Rewrite ``bulletin`` as rated ``key`` over ``region`` alone."""
+        RegionBulletin.objects.filter(bulletin=bulletin).exclude(region=region).delete()
+        bulletin.render_model = {
+            **bulletin.render_model,
+            "danger": {**bulletin.render_model["danger"], "key": key},
+            "traits": [_trait(4, "dry")],
+        }
+        bulletin.save(update_fields=["render_model"])
+
+    def test_narrowed_coverage_without_cover_falls_to_no_rating(self) -> None:
+        """A dropped region no other bulletin covers ends on ``no_rating``."""
+        region_a = MicroRegionFactory.create(region_id="CH-1111")
+        region_b = MicroRegionFactory.create(region_id="CH-2222")
+        target = datetime.date(2026, 2, 10)
+        bulletin = self._two_region_bulletin(region_a, region_b)
+        apply_bulletin_day_ratings(bulletin)
+        assert RegionDayRating.objects.get(region=region_a, date=target).max_rating == (
+            "low"
+        )
+
+        prior = day_rating_pairs([bulletin])
+        self._narrow_to(bulletin, region_b, "high")
+        failures = apply_bulletin_day_ratings(bulletin, prior_pairs=prior)
+
+        assert failures == 0
+        dropped = RegionDayRating.objects.get(region=region_a, date=target)
+        assert dropped.max_rating == RegionDayRating.Rating.NO_RATING
+        assert dropped.source_bulletin is None
+        kept = RegionDayRating.objects.get(region=region_b, date=target)
+        assert kept.max_rating == "high"
+        assert kept.source_bulletin == bulletin
+
+    def test_narrowed_coverage_falls_back_to_the_remaining_bulletin(self) -> None:
+        """A dropped region still covered that day ends on the other bulletin."""
+        region_a = MicroRegionFactory.create(region_id="CH-1111")
+        region_b = MicroRegionFactory.create(region_id="CH-2222")
+        target = datetime.date(2026, 2, 10)
+        # Prior-evening issue for Feb 10 over A — the morning one outranks it
+        # until the correction drops A.
+        evening = _make_bulletin_for_region(
+            region_a,
+            datetime.datetime(2026, 2, 9, 17, 0, tzinfo=UTC),
+            datetime.datetime(2026, 2, 10, 17, 0, tzinfo=UTC),
+            traits=[_trait(2, "dry")],
+            headline_key="moderate",
+        )
+        bulletin = self._two_region_bulletin(region_a, region_b)
+        apply_bulletin_day_ratings(bulletin)
+        assert (
+            RegionDayRating.objects.get(region=region_a, date=target).source_bulletin
+            == bulletin
+        )
+
+        prior = day_rating_pairs([bulletin])
+        self._narrow_to(bulletin, region_b, "high")
+        apply_bulletin_day_ratings(bulletin, prior_pairs=prior)
+
+        dropped = RegionDayRating.objects.get(region=region_a, date=target)
+        assert dropped.source_bulletin == evening
+        assert dropped.max_rating == "moderate"
+        assert (
+            RegionDayRating.objects.get(region=region_b, date=target).max_rating
+            == "high"
+        )
+
+    def test_moved_day_reconciles_the_old_day(self) -> None:
+        """A bulletin moved off a day leaves that day no rating it sourced."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        old_day = datetime.date(2026, 2, 10)
+        new_day = datetime.date(2026, 2, 11)
+        bulletin = _make_bulletin_for_region(
+            region,
+            datetime.datetime(2026, 2, 10, 8, 0, tzinfo=UTC),
+            datetime.datetime(2026, 2, 10, 17, 0, tzinfo=UTC),
+            traits=[_trait(1, "dry")],
+            headline_key="low",
+        )
+        apply_bulletin_day_ratings(bulletin)
+
+        prior = day_rating_pairs([bulletin])
+        bulletin.valid_from = datetime.datetime(2026, 2, 11, 8, 0, tzinfo=UTC)
+        bulletin.valid_to = datetime.datetime(2026, 2, 11, 17, 0, tzinfo=UTC)
+        bulletin.target_date = new_day
+        bulletin.save(update_fields=["valid_from", "valid_to", "target_date"])
+        apply_bulletin_day_ratings(bulletin, prior_pairs=prior)
+
+        old_row = RegionDayRating.objects.get(region=region, date=old_day)
+        assert old_row.max_rating == RegionDayRating.Rating.NO_RATING
+        assert old_row.source_bulletin is None
+        new_row = RegionDayRating.objects.get(region=region, date=new_day)
+        assert new_row.max_rating == "low"
+        assert new_row.source_bulletin == bulletin
+
+    @override_settings(LANGUAGES=[("en", "English"), ("de", "Deutsch")])
+    def test_dropped_region_season_calendars_are_invalidated(self) -> None:
+        """The dropped region's cached calendars go, in every language."""
+        region_a = MicroRegionFactory.create(region_id="CH-1111")
+        region_b = MicroRegionFactory.create(region_id="CH-2222")
+        bulletin = self._two_region_bulletin(region_a, region_b)
+        prior = day_rating_pairs([bulletin])
+        self._narrow_to(bulletin, region_b, "high")
+        today_iso = timezone.localdate().isoformat()
+        keys = [
+            season_calendar_cache_key(region_a.canonical_region_id, today_iso, code)
+            for code in ("en", "de")
+        ]
+        for key in keys:
+            cache.set(key, b"stale", 90000)
+
+        apply_bulletin_day_ratings(bulletin, prior_pairs=prior)
+
+        assert [cache.get(key) for key in keys] == [None, None]
+
+    def test_prior_only_pair_failure_is_deleted_and_counted(self) -> None:
+        """A failed recompute of a prior-only pair deletes its row and counts."""
+        region_a = MicroRegionFactory.create(region_id="CH-1111")
+        region_b = MicroRegionFactory.create(region_id="CH-2222")
+        target = datetime.date(2026, 2, 10)
+        bulletin = self._two_region_bulletin(region_a, region_b)
+        apply_bulletin_day_ratings(bulletin)
+        prior = day_rating_pairs([bulletin])
+        self._narrow_to(bulletin, region_b, "high")
+
+        real_recompute = recompute_region_day
+
+        def _fail_only_dropped_region(
+            region: MicroRegion, day: datetime.date, *, commit: bool = True
+        ) -> None:
+            """Raise for the dropped region, run the real recompute otherwise."""
+            if region.region_id == "CH-1111":
+                raise RuntimeError("boom")
+            real_recompute(region, day, commit=commit)
+
+        with patch(
+            "apps.bulletins.services.day_rating.recompute_region_day",
+            side_effect=_fail_only_dropped_region,
+        ):
+            failures = apply_bulletin_day_ratings(bulletin, prior_pairs=prior)
+
+        assert failures == 1
+        assert not RegionDayRating.objects.filter(region=region_a, date=target).exists()
+        assert (
+            RegionDayRating.objects.get(region=region_b, date=target).max_rating
+            == "high"
+        )
+
+    def test_prior_pairs_default_and_dedup(self) -> None:
+        """No prior pairs recomputes the current ones; a repeat is not run twice."""
+        region_a = MicroRegionFactory.create(region_id="CH-1111")
+        region_b = MicroRegionFactory.create(region_id="CH-2222")
+        bulletin = self._two_region_bulletin(region_a, region_b)
+        target = datetime.date(2026, 2, 10)
+
+        with patch(
+            "apps.bulletins.services.day_rating.recompute_region_day"
+        ) as recompute:
+            apply_bulletin_day_ratings(bulletin)
+        assert {(c.args[0].pk, c.args[1]) for c in recompute.call_args_list} == {
+            (region_a.pk, target),
+            (region_b.pk, target),
+        }
+
+        # The same pairs as prior pairs — distinct instances, equal (pk, day).
+        with patch(
+            "apps.bulletins.services.day_rating.recompute_region_day"
+        ) as recompute:
+            apply_bulletin_day_ratings(
+                bulletin, prior_pairs=day_rating_pairs([bulletin])
+            )
+        assert recompute.call_count == 2
 
 
 # ---------------------------------------------------------------------------
