@@ -407,7 +407,7 @@ describe('markResortPins', () => {
     expect(marked.features[1].properties.resort_id).toBe('');
   });
 
-  it("leads the second row with the resort's name, ahead of the height", () => {
+  it("leads the second row with the resort's name and drops the mountain mark", () => {
     const DATE = '2026-10-21';
     const day = { [DATE]: { code: 71, tmax: 5 } };
     const fc = core.projectFeatureCollectionForDate({
@@ -424,10 +424,10 @@ describe('markResortPins', () => {
     });
 
     const [village, valley] = marked.features.map((f) => f.properties);
-    expect([village.label_break, village.label_name, village.label_elev])
-      .toEqual(['\n', 'Arolla · ', '1984 m']);
-    expect(village.elev_mark).not.toBe('');
+    expect([village.label_break, village.label_name, village.elev_mark, village.label_elev])
+      .toEqual(['\n', 'Arolla ·', '', '1984 m']);
     expect(valley.label_name).toBe('');
+    expect(valley.elev_mark).not.toBe('');
     expect(valley.label_elev).toBe('2030 m');
   });
 

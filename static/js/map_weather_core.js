@@ -476,7 +476,11 @@
           resort_name: (resort && resort.name) || '',
         });
         // The symbol is the resort's own weather, so its second row leads
-        // with the resort's name, ahead of the height: `Arolla · ▲ 1984 m`.
+        // with the resort's name, ahead of the height: `Arolla · 1984 m`.
+        // No mountain mark: it is there to stop a bare "1300 m" reading as
+        // a distance, and beside a resort's name the height is implied.
+        // No trailing space after the dot either — the layer's own gap
+        // section after the (now empty) mark supplies it.
         // That is also the only place the name can go: resorts-label sits
         // under the pin, and a symbol beside the pin takes that space in
         // collision and knocks the name out. With no elevation the row is
@@ -485,7 +489,8 @@
         if (resort !== null && properties.icon && resort.name) {
           var hasElevation = properties.label_elev !== '';
           properties.label_break = '\n';
-          properties.label_name = hasElevation ? resort.name + ' · ' : resort.name;
+          properties.label_name = hasElevation ? resort.name + ' ·' : resort.name;
+          properties.elev_mark = '';
         }
         return Object.assign({}, feature, { properties: properties });
       }),

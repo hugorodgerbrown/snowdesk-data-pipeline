@@ -4192,7 +4192,8 @@
           ['get', 'label_temp'], {'font-scale': WEATHER_TEMP_SCALE},
           ['get', 'label_break'], {},
           // A station on a resort pin leads its second row with the
-          // resort's name (`Arolla · `); empty everywhere else. See
+          // resort's name (`Arolla ·`), and drops the mark; empty
+          // everywhere else. See
           // markResortPins in map_weather_core.js.
           ['get', 'label_name'], {'font-scale': WEATHER_ELEV_SCALE},
           ['image', ['get', 'elev_mark']], {},
@@ -4252,9 +4253,17 @@
     // exists with no icons registered; MapLibre logs a warning and omits
     // the icon rather than throwing, so it is a brief "no icons yet" flash
     // rather than a broken layer.
+    //
+    // This write takes a turn in ``weatherRefreshToken`` like any refresh:
+    // the resort pins can land while these icons are still decoding, and
+    // their refresh projects the symbols beside the pins. Without the
+    // token this slower first write would settle last and put the symbols
+    // back over the pins.
+    const token = ++weatherRefreshToken;
     ensureWeatherIconsRegistered(
       window.pwaWeatherCore.iconFilenamesForPayload(weatherGeojsonCache),
     ).then(() => {
+      if (token !== weatherRefreshToken) return;
       const src = map.getSource('weather');
       if (src) src.setData(projected);
     });
