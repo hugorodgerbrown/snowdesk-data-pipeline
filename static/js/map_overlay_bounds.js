@@ -161,6 +161,7 @@
    * @returns {void}
    */
   function clear(el) {
+    el.style.top = '';
     el.style.bottom = '';
     el.style.right = '';
     el.style.maxHeight = '';
@@ -188,6 +189,29 @@
     var bounds = compute();
     if (!bounds) {
       clear(el);
+      return;
+    }
+
+    // A selection sheet docks down the LEFT side (2026-10-21,
+    // includes/_overlay_sheet.html's `side`): under the search pill it was
+    // picked from, on the same floor, with its `left` left to the partial's
+    // inset. Its top is the pill row's bottom plus the column's gap, the
+    // shelf the route panel sits on too; with no row to measure it takes
+    // the full height a right-hand sheet would.
+    if (el.dataset.sheetSide === 'left') {
+      var cluster = document.getElementById('map-utility-cluster');
+      var clusterBox = cluster ? cluster.getBoundingClientRect() : null;
+      var top =
+        clusterBox && clusterBox.height > 0
+          ? clusterBox.bottom + SIDE_GAP
+          : bounds.floorY - bounds.maxHeight;
+      // Hung from that top rather than stood on the floor, so a short
+      // sheet stays a short card under the pill; the floor caps its
+      // height instead.
+      el.style.top = Math.round(top) + 'px';
+      el.style.bottom = 'auto';
+      el.style.right = '';
+      el.style.maxHeight = Math.max(0, Math.round(bounds.floorY - top)) + 'px';
       return;
     }
 

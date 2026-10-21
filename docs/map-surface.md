@@ -140,9 +140,11 @@ one.
   registered overlay at a time. Every sheet made with `MapSheet.attach` joins
   automatically under its DOM id; flyouts and cards register by hand.
   Opening any of them closes every other registered one.
-- **One bottom sheet at a time on a phone** (`static/js/map_sheet.js`,
-  `closeOtherSheets`). Every detent sheet docks to the same foot of the
-  screen, so opening one closes any other that is open, through its owner's
+- **One object sheet at a time** (`static/js/map_sheet.js`,
+  `closeOtherSheets`). On a phone every detent sheet docks to the same foot
+  of the screen, and on a desktop all four dock in the left column under
+  the search pill (since 2026-10-21), so opening one closes any other that
+  is open, at every width, through its owner's
   own close so its teardown runs. This is what covers the **route rail**,
   which stays out of `pwaMapOverlays` on purpose: it has its own lifetime
   (a flyout opening must not close the route the reader is studying), so
@@ -152,10 +154,11 @@ one.
 So on a phone: opening a route closes the region sheet (the region stays
 selected and outlined), a search pick that opens the region sheet closes the
 route, and a weather symbol tapped beside a route replaces the route sheet.
-On a desktop the route rail is a panel pinned top-left and the object
-sheets are the inset panel at the right, so a route and the region sheet
-can both be on screen; the object sheets still replace one another there,
-through `pwaMapOverlays`.
+On a desktop the same holds: the route rail is pinned top-left and, since
+2026-10-21, the region, place and weather sheets dock in that column too,
+under the search pill they are picked from, so a route and the region sheet
+replace one another there as they do on a phone. The roundel and form
+panels stay inset at the right, beside the column that opens them.
 
 ## 4. The camera padding and the root marks
 

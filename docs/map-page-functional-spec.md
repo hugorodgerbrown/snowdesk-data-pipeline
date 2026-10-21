@@ -38,8 +38,9 @@ visitor just tapped.
 
 **Every selection opens the region sheet** (SNOW-1098 on a phone, SNOW-1173
 on a desktop): a map tap, a search pick, a pinned region from search, and
-a deep link (`/map/#CH-4115`). On a desktop it is the inset panel at the
-map's right that a resort or a weather point opens, with no detents, and
+a deep link (`/map/#CH-4115`). On a desktop it is the inset panel down the
+map's left, under the search pill, that a resort or a weather point opens
+(§3.7, "Which side"), with no detents, and
 picking the selected region again from search reopens it. The region
 chip's own dropdown — the **region panel** of
 SNOW-801, a second, smaller copy of the region's summary with an "Open
@@ -884,6 +885,23 @@ The inset is measured at open time from the real furniture rather than
 guessed, so it stays correct as the scrubber and the roundel stack change
 size (`static/js/map_overlay_bounds.js`).
 
+**Which side (2026-10-21).** On a desktop a panel docks on the side of the
+thing that opened it. The region, resort and weather sheets describe a
+**selection** — something tapped on the map or picked from search — so they
+dock down the map's **left**, under the search pill, in the same 400px
+column as the route panel: picking a place in search and having it open on
+the far side of the map read as discordant, and the left column now means
+"what you have selected". Their top is the pill row's bottom plus 8px and
+their floor is the date row, like every panel. While one is open the
+bottom-left stack's upper members (zoom, help, legend) step aside to sit
+just beyond the column; the date row stays put beneath it, since it sets
+the day the panel shows. The tour offer withdraws for it, and search's
+results drop over it. A region framed from search lands beside the column,
+not under it. The lists and forms — Downloads, Favourites, Field
+observations, Routes, the terrain filter and the layers sign-in — stay
+inset on the **right**, beside the roundel column that opens them, with the
+layers menu. The partial's `side="left"` is what marks a selection sheet.
+
 **This difference is deliberate, and it is not a bug in either direction.**
 "The panel fills the screen on my phone" and "the panel doesn't fill the
 screen on my laptop" are both the intended behaviour. Both layouts are
@@ -918,7 +936,9 @@ sheet still holds for every sheet that declares no detents. Why:
 
 **One bottom sheet at a time.** On a phone every detent sheet docks to the
 same foot of the screen, so opening one — the route sheet included — closes
-any other that is open. Which overlays can be open together, and at what
+any other that is open. On a desktop the same four share the left column
+(above), so the rule holds there too: a region picked while a route is
+open closes the route panel, and opening a route closes the region sheet. Which overlays can be open together, and at what
 zoom a tap does what, is in [`map-surface.md`](map-surface.md).
 
 ### 3.7a Pressing a row's name frames its place

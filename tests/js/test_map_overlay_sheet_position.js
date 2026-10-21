@@ -1,6 +1,7 @@
 /*
  * tests/js/test_map_overlay_sheet_position.js — where a UGC sheet opens on
- * desktop, and what it must not overlap (SNOW-658).
+ * desktop, and what it must not overlap (SNOW-658); and where a selection
+ * sheet docked down the left opens (2026-10-21).
  *
  * The three sheets (#map-downloads-sheet, #favourite-sheet, #report-sheet)
  * are `position: fixed` and includes/_overlay_sheet.html can only put them in
@@ -192,6 +193,72 @@ describe('below the sm breakpoint', () => {
 
     expect(sheet.style.right).toBe('88px');
     expect(sheet.style.bottom).toBe('96px');
+  });
+});
+
+/**
+ * A selection sheet docked down the left (2026-10-21): the region sheet,
+ * marked `data-sheet-side="left"`, under a search pill row whose box ends at
+ * y=116 — the pill's 12px inset and 40px height below #map's top at 64.
+ */
+function buildLeftFixture({ cluster = true, width = 1024 } = {}) {
+  buildFixture({ width });
+  document.body.insertAdjacentHTML(
+    'beforeend',
+    `${cluster ? '<div id="map-utility-cluster"></div>' : ''}
+    <div id="region-sheet" data-sheet-side="left" hidden></div>`,
+  );
+  if (cluster) {
+    setRect(document.getElementById('map-utility-cluster'), {
+      top: 76, bottom: 116, left: 12, right: 212,
+    });
+  }
+  return document.getElementById('region-sheet');
+}
+
+describe('where a selection sheet opens on desktop', () => {
+  it('hangs from the search pill row, a gap below it', async () => {
+    const sheet = await positionSheet(buildLeftFixture());
+
+    // The row's bottom (116) + the 8px gap.
+    expect(sheet.style.top).toBe('124px');
+    // Hung from the top, so a short sheet stays short; `auto` beats the
+    // partial's `sm:bottom-4`, which would otherwise stretch it.
+    expect(sheet.style.bottom).toBe('auto');
+  });
+
+  it('stops on the same floor as every sheet', async () => {
+    const sheet = await positionSheet(buildLeftFixture());
+
+    // floor (680 - 8 = 672) - its top (124).
+    expect(sheet.style.maxHeight).toBe('548px');
+  });
+
+  it('leaves its left edge to the CSS and clears no right column', async () => {
+    const sheet = await positionSheet(buildLeftFixture());
+
+    expect(sheet.style.left).toBe('');
+    expect(sheet.style.right).toBe('');
+  });
+
+  it('takes the full height a right-hand sheet would with no pill row', async () => {
+    const sheet = await positionSheet(buildLeftFixture({ cluster: false }));
+
+    // #map top (64) + the 8px top gap, and the 600px a right sheet gets.
+    expect(sheet.style.top).toBe('72px');
+    expect(sheet.style.maxHeight).toBe('600px');
+  });
+
+  it('clears its top on the way down to a phone width', async () => {
+    const sheet = await positionSheet(buildLeftFixture());
+    expect(sheet.style.top).toBe('124px');
+
+    setViewport(375, 768);
+    window.dispatchEvent(new Event('resize'));
+
+    expect(sheet.style.top).toBe('');
+    expect(sheet.style.bottom).toBe('');
+    expect(sheet.style.maxHeight).toBe('');
   });
 });
 

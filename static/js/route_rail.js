@@ -27,7 +27,9 @@
  * map_sheet.js's bindDetents closes whichever of them is open when another
  * opens: a route opened closes the region sheet, and a region sheet opened
  * by a search pick closes the route. That is the one exception to its own
- * lifetime, and it holds only where they would stack on the same foot.
+ * lifetime, and it holds only where they would stack: on a phone's foot,
+ * and since 2026-10-21 in the desktop's left column, where the region,
+ * place and weather sheets now dock under the search pill beside it.
  *
  * WHAT THIS MODULE OWNS. The rail's markup, filled per open; one route
  * cursor per open route (`createRouteCursor`, static/js/route_cursor_core.js,

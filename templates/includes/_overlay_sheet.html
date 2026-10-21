@@ -83,6 +83,18 @@ Optional context:
                 take none: docs/decisions/sheet-detents-are-phone-only.md.
   initial     — The detent the sheet opens at; default the lowest declared.
                 Ignored without ``detents``.
+  side        — ``"left"`` docks the DESKTOP panel down the map's left
+                side instead of its right; default the right. Ignored
+                below the ``sm`` breakpoint and when ``static``. The three
+                sheets that describe a selection — region, place and
+                weather, each opened by a tap on the map or a pick from
+                search — pass it, so they open under the search pill they
+                were picked from, in the 400px column the route panel uses
+                (``sm:w-[25rem]`` unless ``width`` says otherwise). The
+                lists and forms opened from the roundel column stay on the
+                right beside it. ``data-sheet-side="left"`` is what
+                map_overlay_bounds.js places by and what map.css slides the
+                bottom-left roundels aside for (2026-10-21).
 
 The handle is a ``<button>`` with an accessible name, not a bare grip: a
 press cycles to the next detent, so a keyboard or switch user can reach all
@@ -154,7 +166,8 @@ bug in a subtler form.
     {% if not static %}hidden{% endif %}
     tabindex="-1"
     data-overlay
-    class="{% if static %}relative{% else %}fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)] max-h-[calc(100dvh-var(--map-edge-inset-top)-var(--map-edge-inset-bottom))]{% if scroll_body %} flex flex-col overflow-hidden{% else %} overflow-y-auto{% endif %}{% endif %} rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:bottom-4 sm:left-auto sm:right-4 {% firstof width 'sm:w-96' %}"
+    class="{% if static %}relative{% else %}fixed bottom-[var(--map-edge-inset-bottom)] left-[var(--map-edge-inset-left)] right-[var(--map-edge-inset-right)] z-[var(--z-popup)] max-h-[calc(100dvh-var(--map-edge-inset-top)-var(--map-edge-inset-bottom))]{% if scroll_body %} flex flex-col overflow-hidden{% else %} overflow-y-auto{% endif %}{% endif %} rounded-card border border-border bg-card px-4 pb-8 pt-4 shadow-glass sm:bottom-4 {% if side == 'left' %}sm:right-auto {% firstof width 'sm:w-[25rem]' %}{% else %}sm:left-auto sm:right-4 {% firstof width 'sm:w-96' %}{% endif %}"
+    {% if side == 'left' and not static %}data-sheet-side="left"{% endif %}
     aria-label="{{ aria_label }}"
     {% if detents %}data-detents="{{ detents }}" data-detent-initial="{{ initial|default:'' }}"{% endif %}
 >
