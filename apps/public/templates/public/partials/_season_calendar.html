@@ -18,9 +18,9 @@
    a rating key — the EAWS fill; "split" — two levels in one day, data-lo
    left and data-hi (the peak) right; "future" — not yet, a faint tint.
    data-level is always the day's PEAK (RegionDayRating.max_rating — the
-   compressed-views rule, docs/compressed-views-rating-rule.md); the
-   bulletin sheet's readout reads it. One day may carry .season-day-ring,
-   the 2px ring: the resort page's today / first High day, server-side; the
+   compressed-views rule, docs/compressed-views-rating-rule.md). One day
+   may carry .season-day-ring, the 2px ring — always the day the page shows
+   (SNOW-1163): the resort page's today or dated day, server-side; the
    bulletin page's own day, added by static/js/season_sheet.js from
    #season-grid's data-selected-date so the cached fragment stays one body.
 

@@ -141,7 +141,6 @@ from .season_calendar import (
     build_season_months,
     build_season_ribbon,
     season_header,
-    season_ring_date,
     season_window,
     summarise_season,
 )
@@ -5224,9 +5223,10 @@ def build_resort_body(
             timezone.now(),
             link_date=None if target_date == today else target_date,
         ),
-        # The calendar is the season's, ringed on today, whichever day the
-        # body shows: its grid stops at today.
-        **_resort_season_calendar_context(region, today),
+        # The calendar is the season's, its grid stopping at today, and
+        # rings the day the page shows: today, or the dated URL's day
+        # (SNOW-1163).
+        **_resort_season_calendar_context(region, today, target_date),
     }
 
 
@@ -5285,7 +5285,7 @@ def _resort_eyebrow(resort: Resort) -> str:
 
 
 def _resort_season_calendar_context(
-    region: MicroRegion, today: datetime.date
+    region: MicroRegion, today: datetime.date, page_date: datetime.date
 ) -> dict[str, Any]:
     """Build the resort page's season calendar and its summary (SNOW-1126).
 
@@ -5299,12 +5299,15 @@ def _resort_season_calendar_context(
     from May to October (``season_window``); the grid stops at ``today + 1``
     within a running season, and SNOW-1158's month view draws the rest of
     the season as "not yet". A bulletin after 30 April (read up to 31
-    October) extends the calendar to its month. The ring is today in
-    season, else the season's first High day (``season_ring_date``).
+    October) extends the calendar to its month. The ring is the day the
+    page shows, ``page_date`` — today, or the dated URL's day — and is
+    absent when that day is not drawn (SNOW-1163 retired the off-season
+    "first High day" ring).
 
     Args:
         region: The resort's parent micro-region.
         today: The current local date.
+        page_date: The day the resort page shows; the ringed day.
 
     Returns:
         ``season_months`` (a ``SeasonMonths``) and ``season_summary`` (a
@@ -5323,7 +5326,7 @@ def _resort_season_calendar_context(
     )
     return {
         "season_months": build_season_months(
-            grid, today, window=window, ring_date=season_ring_date(grid, window, today)
+            grid, today, window=window, ring_date=page_date
         ),
         "season_summary": summarise_season(grid),
     }

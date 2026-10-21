@@ -313,9 +313,9 @@ def _board_cell(date: datetime.date, char: str) -> Any:
 def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
     """Build the season calendar's three page variants for the library.
 
-    A finished season (ring on its first High day), the same season so far
+    A finished season (today ringed, SNOW-1163), the same season so far
     (today ringed, the rest "not yet") — both the resort page's unlinked
-    calendar — and the bulletin page's linked one with the full key.
+    calendar — and the bulletin page's linked one.
 
     Returns:
         The variants, each a context for ``_season_calendar_demo.html``.
@@ -324,7 +324,6 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
     from apps.public.season_calendar import (
         SeasonWindow,
         build_season_months,
-        season_ring_date,
         summarise_season,
     )
 
@@ -350,13 +349,13 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
     region = SimpleNamespace(canonical_region_id="CH-4115", name_slug="verbier")
     return (
         {
-            "caption": "Resort page — a finished season, its first High day ringed",
+            "caption": "Resort page — a finished season, today ringed",
             "context": {
                 "season_months": build_season_months(
                     full,
                     finished_today,
                     window=window,
-                    ring_date=season_ring_date(full, window, finished_today),
+                    ring_date=finished_today,
                 ),
                 "season_summary": summarise_season(full),
                 "linked": False,
@@ -369,14 +368,14 @@ def _build_season_calendar_variants() -> tuple[dict[str, Any], ...]:
                     so_far,
                     so_far_today,
                     window=window,
-                    ring_date=season_ring_date(so_far, window, so_far_today),
+                    ring_date=so_far_today,
                 ),
                 "season_summary": summarise_season(so_far),
                 "linked": False,
             },
         },
         {
-            "caption": "Bulletin page — linked days, the full key (JS rings the day)",
+            "caption": "Bulletin page — linked days (JS rings the page's day)",
             "context": {
                 "season_months": build_season_months(full, finished_today),
                 "season_summary": summarise_season(full),
