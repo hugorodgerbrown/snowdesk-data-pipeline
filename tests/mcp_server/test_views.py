@@ -5,13 +5,16 @@ Covers the HTTP-layer contract: POST-only JSON-RPC dispatch, the 405
 method guard, CSRF exemption, ``Cache-Control: no-store`` on every
 response, the ``block=True`` per-IP rate limit, and (SNOW-1035) bearer
 authentication — the 401 challenge on both URL spellings, a rejected
-token, and the per-user rate limit.
+token, and the per-user rate limit. SNOW-1169: the endpoint is exempt from
+``IdempotencyMiddleware``, so a repeated ``Idempotency-Key`` can never replay
+a cached 200 past the bearer check.
 """
 
 from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
+from unittest import mock
 
 import pytest
 from django.core.cache import cache
@@ -20,7 +23,9 @@ from django.test.utils import override_settings
 from django.urls import reverse
 from freezegun import freeze_time
 
-from apps.oauth.services.tokens import issue_token_pair
+from apps.core.models import IdempotencyRecord
+from apps.mcp_server import protocol
+from apps.oauth.services.tokens import issue_token_pair, revoke_token
 from tests.factories import OAuthGrantFactory
 
 if TYPE_CHECKING:
@@ -249,3 +254,85 @@ def test_non_bearer_scheme_is_treated_as_no_token(client: Client) -> None:
     )
     assert response.status_code == 401
     assert "invalid_token" not in response["WWW-Authenticate"]
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1169 — an Idempotency-Key never replays past the bearer check
+# ---------------------------------------------------------------------------
+
+_REPLAY_BODY = {"jsonrpc": "2.0", "id": 7, "method": "ping"}
+_REPLAY_KEY = "mcp-replay-key"
+
+
+def _keyed_post(client: Client, path: str, authorization: str | None) -> _Response:
+    """POST the fixed replay body to ``path`` under the fixed Idempotency-Key."""
+    headers = {"Idempotency-Key": _REPLAY_KEY}
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    return client.post(
+        path,
+        data=json.dumps(_REPLAY_BODY),
+        content_type="application/json",
+        headers=headers,
+    )
+
+
+def _prime(client: Client, path: str, token: str) -> None:
+    """Send the keyed request once with a valid bearer and check it succeeded."""
+    primed = _keyed_post(client, path, f"Bearer {token}")
+    assert primed.status_code == 200
+    assert json.loads(primed.content)["id"] == 7
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("path", ["/api/mcp/", "/api/mcp"])
+def test_replayed_key_without_a_bearer_is_401(
+    client: Client, token: str, path: str
+) -> None:
+    """The same key and body with no Authorization header is challenged, not replayed."""
+    _prime(client, path, token)
+    replay = _keyed_post(client, path, None)
+    assert replay.status_code == 401
+    assert replay["WWW-Authenticate"].startswith("Bearer resource_metadata=")
+    assert replay["Cache-Control"] == "no-store"
+    assert not IdempotencyRecord.objects.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("path", ["/api/mcp/", "/api/mcp"])
+def test_replayed_key_with_a_garbage_bearer_is_401(
+    client: Client, token: str, path: str
+) -> None:
+    """The same key and body with an unknown bearer is ``invalid_token``."""
+    _prime(client, path, token)
+    replay = _keyed_post(client, path, "Bearer sd_at_garbage")
+    assert replay.status_code == 401
+    assert 'error="invalid_token"' in replay["WWW-Authenticate"]
+    assert replay["Cache-Control"] == "no-store"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("path", ["/api/mcp/", "/api/mcp"])
+def test_replayed_key_after_revocation_is_401(
+    client: Client, token: str, path: str
+) -> None:
+    """Revoking the token stops the same key and body from being served."""
+    _prime(client, path, token)
+    revoke_token(token)
+    replay = _keyed_post(client, path, f"Bearer {token}")
+    assert replay.status_code == 401
+    assert 'error="invalid_token"' in replay["WWW-Authenticate"]
+    assert replay["Cache-Control"] == "no-store"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("path", ["/api/mcp/", "/api/mcp"])
+def test_valid_repeat_of_a_key_re_executes(
+    client: Client, token: str, path: str
+) -> None:
+    """A valid repeat of the same key and body runs the dispatcher again."""
+    with mock.patch.object(protocol, "dispatch", wraps=protocol.dispatch) as dispatch:
+        _prime(client, path, token)
+        _prime(client, path, token)
+    assert dispatch.call_count == 2
+    assert not IdempotencyRecord.objects.exists()

@@ -23,6 +23,8 @@ from django.utils import timezone
 from freezegun import freeze_time
 from pytest_django.fixtures import Settings
 
+from apps.core.models import IdempotencyRecord
+from apps.oauth import views as oauth_views
 from apps.oauth.models import OAuthClient, OAuthGrant
 from apps.oauth.services import clients
 from apps.oauth.services.pkce import s256_challenge
@@ -352,6 +354,24 @@ class TestRevoke:
         """RFC 7009: an unknown token is not an error."""
         response = client.post(reverse("oauth:revoke"), {"token": "sd_at_nope"})
         assert response.status_code == 200
+
+    def test_a_repeated_idempotency_key_reaches_the_view_both_times(
+        self, client: Client
+    ) -> None:
+        """SNOW-1169: the endpoint is exempt, so nothing is cached or replayed."""
+        data = {"token": "sd_at_nope"}
+        with mock.patch.object(
+            oauth_views, "revoke_token", wraps=oauth_views.revoke_token
+        ) as revoke:
+            for _ in range(2):
+                response = client.post(
+                    reverse("oauth:revoke"),
+                    data,
+                    headers={"Idempotency-Key": "revoke-replay-key"},
+                )
+                assert response.status_code == 200
+        assert revoke.call_count == 2
+        assert not IdempotencyRecord.objects.exists()
 
 
 # ---------------------------------------------------------------------------
