@@ -2,7 +2,7 @@
 name: design-system
 description: Design handover — editorial and interaction principles, icon vs ellipsis rule, design tokens, the component layer, field guidance
 status: current
-last-reviewed: 2026-10-17
+last-reviewed: 2026-10-21
 ---
 
 
@@ -272,8 +272,8 @@ Map panels are built on `templates/includes/_overlay_sheet.html`, with
 one exception: the route's object sheet is its own partial,
 `templates/includes/_route_rail.html`, which carries the same detent marks
 and handle. Either way a panel comes in one of three named kinds, and **the kind is decided by what the reader did to open it**, not
-by what the panel holds. On a desktop all three are the same inset card
-beside the map. They differ on a phone, and the difference is the rule.
+by what the panel holds. On a phone they differ in shape; on a desktop they
+differ in side (below).
 
 | Kind | Opened by | On a phone | Detents | Closed by | Today |
 |---|---|---|---|---|---|
@@ -307,6 +307,18 @@ has no detents and no drag-to-close. It still closes on the dismissals
 every map overlay shares (its ×, Escape, a tap outside, another overlay
 opening), and those discard what was typed; guarding a half-written form
 against them would be its own ticket.
+
+**Where it opens: beside what opened it (21 Oct 2026).** On a desktop an
+object sheet is a **selection**, so it docks in the left column under the
+search pill it was picked from; roundel and form panels inset on the right,
+beside the roundel column that opened them. The left side is what you have
+selected; the right is the map's controls and your own lists. Four rules
+come with it: a surface opens beside its trigger; one object sheet at a
+time, at every width (the route panel shares the column); on a desktop the
+roundels a side panel covers step aside while the date row, its floor,
+stays put; and a sheet takes focus without drawing a ring round itself.
+Why, and the option declined:
+[`docs/decisions/a-panel-opens-beside-what-opened-it.md`](decisions/a-panel-opens-beside-what-opened-it.md).
 
 A new map panel picks its kind from the "Opened by" column before anything
 else. When a row in a roundel panel leads to one thing on the map, that
