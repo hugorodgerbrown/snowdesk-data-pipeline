@@ -678,7 +678,8 @@ the existing one, so every deploy stranded 461 rows and their `Weather`.
 Staging accumulated three generations in a day.
 
 Only an **anonymous** location with no `ResortLocation`, `MicroRegion`,
-`Favourite` or `FieldObservation` is a candidate. A named location is
+resort pin (`Resort.location`), `Favourite`, `FieldObservation` or `Trip`
+meeting point is a candidate. A named location is
 curated data owned by `import_locations` and is never touched, even when
 nothing references it — an unreferenced curated place is a curation
 question, not garbage. Deleting a `Location` cascades to its `Weather`,
