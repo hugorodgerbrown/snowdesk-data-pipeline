@@ -11,7 +11,8 @@ Covers:
   confirm view — GET renders the set-password form for a valid token; POST sets
                 the new password, logs in and redirects; mismatch re-renders;
                 a replayed (already-used) or bad token → link-expired 400;
-                rate-limited 10/m.
+                an inactive user → link-expired 400, password unchanged
+                (SNOW-1167); rate-limited 10/m.
   round trip — after reset the new password signs in and the old one fails.
 """
 
@@ -234,6 +235,32 @@ class TestResetConfirmView:
     def test_bad_token_returns_400(self, client: Client) -> None:
         url = reverse("accounts:reset_password_confirm", args=["not-a-token"])
         assert client.get(url).status_code == 400
+
+    def test_get_inactive_user_returns_400(self, client: Client) -> None:
+        """SNOW-1167: a deactivated user gets the link-expired page on GET."""
+        user = _user_with_password()
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+        response = client.get(self._confirm_url(user))
+        assert response.status_code == 400
+        assert "_auth_user_id" not in client.session
+
+    def test_post_inactive_user_returns_400_and_keeps_password(
+        self, client: Client
+    ) -> None:
+        """SNOW-1167: POST neither saves the new password nor signs in."""
+        user = _user_with_password()
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+        old_hash = user.password
+        response = client.post(
+            self._confirm_url(user),
+            {"new_password1": _NEW, "new_password2": _NEW},
+        )
+        assert response.status_code == 400
+        assert "_auth_user_id" not in client.session
+        user.refresh_from_db()
+        assert user.password == old_hash
 
     def test_replay_after_reset_is_expired(self, client: Client) -> None:
         """A token cannot be reused once the password has been changed."""
