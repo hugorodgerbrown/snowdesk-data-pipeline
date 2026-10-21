@@ -109,7 +109,9 @@ class TestSeasonPartialContent:
         assert 'data-variant="linked"' in content
         assert 'role="img"' not in content
         assert "Two levels in one day" in content
-        assert "Selected day" in content
+        # SNOW-1163: the ring marks the bulletin the page is on.
+        assert "This bulletin" in content
+        assert "Selected day" not in content
 
     @override_settings(SEASON_START_DATE=_SEASON_START)
     def test_every_cell_carries_data_date_attribute(self, client: Client) -> None:
@@ -170,14 +172,9 @@ class TestSeasonPartialContent:
         assert f'data-date="{rated_day.isoformat()}"' in cell
         assert 'data-state="moderate"' in cell
         assert 'data-level="moderate"' in cell
-        # SNOW-1158: the readout's two date forms, server-rendered per cell.
-        long_date = (
-            rated_day.strftime("%A ")
-            + f"{rated_day.day} "
-            + (rated_day.strftime("%B %Y"))
-        )
-        assert f'data-day-long="{long_date}"' in cell
-        assert f'data-day-short="{rated_day.day} {rated_day.strftime("%B")}"' in cell
+        # SNOW-1163: no readout any more, so no per-cell date strings for it.
+        assert "data-day-long" not in cell
+        assert "data-day-short" not in cell
         # A day with no bulletin is not a link.
         assert len(re.findall(r"<a\s", content)) == 1
 

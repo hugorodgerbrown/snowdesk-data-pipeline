@@ -2704,8 +2704,7 @@ class TestSeasonSheet:
 
     The grid markup is deferred — served by the season_calendar_partial
     view on first open. The bulletin page itself does NOT contain
-    data-testid="season-calendar" or any .season-day cell; it does carry
-    the selected-day readout (SNOW-1158), filled client-side.
+    data-testid="season-calendar" or any .season-day cell.
     """
 
     def test_renders_sheet_and_trigger_when_season_active(
@@ -2722,38 +2721,14 @@ class TestSeasonSheet:
         assert 'data-testid="season-calendar"' not in content
         assert 'class="season-day' not in content
 
-    def test_sheet_carries_the_selected_day_readout(
+    def test_sheet_has_no_selected_day_readout(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
     ) -> None:
-        """SNOW-1158: the readout starts on the page's day, hidden until JS fills it."""
+        """SNOW-1163: one tap on a day opens its bulletin, so there is no readout."""
         url = _url("ch-4115", "valais", "2026-03-15")
         content = client.get(url).content.decode()
-        readout = content.split('data-testid="season-readout"')[1]
-        readout = readout.split("</a>")[0]
-        opening = content.split('data-testid="season-readout"')[1].split(">")[0]
-
-        assert "hidden" in opening
-        assert 'aria-live="polite"' in opening
-        assert "Sunday 15 March 2026" in readout
-        assert (
-            "Read the bulletin for <span data-readout-day>15 March</span>"
-            in " ".join(readout.split())
-        )
-        # The page's own day is selected first: the link would point here,
-        # so it starts hidden (season_sheet.js shows it for another day).
-        link = readout.split("data-readout-link")[1].split(">")[0]
-        assert "hidden" in link
-        assert f'href="{url}"' in readout
-        # One hidden tile digit and one hidden name per level the day can hold.
-        for key in (
-            "no_rating",
-            "low",
-            "moderate",
-            "considerable",
-            "high",
-            "very_high",
-        ):
-            assert readout.count(f'data-readout-level="{key}" hidden') == 2
+        assert "data-season-readout" not in content
+        assert "data-readout-link" not in content
 
     def test_sheet_heading_names_the_region_and_the_season(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion

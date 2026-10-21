@@ -67,7 +67,6 @@ from django.utils import translation
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.public.season_calendar import (
     SEASON_AXIS,
-    SEASON_LEVEL_KEYS,
     SeasonCell,
     SeasonGrid,
     SeasonSummary,
@@ -1005,17 +1004,16 @@ class TestSeasonMonths:
         assert february.days[28].state == "high"
         assert months.season_label == "2027/28"
 
-    def test_axis_labels_one_and_every_fifth_day(self) -> None:
-        """1, 5, 10 … 30 over 31 slots."""
+    def test_axis_labels_start_each_group_of_five(self) -> None:
+        """1, 6, 11 … 26 over 31 slots — the first day of each group (SNOW-1163)."""
         assert len(SEASON_AXIS) == 31
         assert [label for label in SEASON_AXIS if label] == [
             "1",
-            "5",
-            "10",
-            "15",
-            "20",
-            "25",
-            "30",
+            "6",
+            "11",
+            "16",
+            "21",
+            "26",
         ]
 
     def test_in_progress_season_draws_future_days_faint(self) -> None:
@@ -1254,13 +1252,11 @@ class TestSeasonCalendarKeyAndHeader:
         assert summary.key_counts[-1] == ("very_high", 1)
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
-    def test_season_header_names_the_season_and_the_levels(self) -> None:
-        """The sheet's eyebrow name and the readout's level keys."""
+    def test_season_header_names_the_season(self) -> None:
+        """The sheet's eyebrow name."""
         result = season_header(datetime.date(2026, 3, 15))
         assert result is not None
         assert result["season_name"] == "2025/26"
-        assert result["levels"] == SEASON_LEVEL_KEYS
-        assert SEASON_LEVEL_KEYS[0] == "no_rating"
 
 
 @pytest.mark.django_db

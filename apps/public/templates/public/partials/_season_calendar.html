@@ -21,7 +21,7 @@
    compressed-views rule, docs/compressed-views-rating-rule.md); the
    bulletin sheet's readout reads it. One day may carry .season-day-ring,
    the 2px ring: the resort page's today / first High day, server-side; the
-   bulletin page's selected day, added by static/js/season_sheet.js from
+   bulletin page's own day, added by static/js/season_sheet.js from
    #season-grid's data-selected-date so the cached fragment stays one body.
 
    Two variants, by ``linked``:
@@ -33,13 +33,8 @@
        day (aria-label + title); the calendar is not an image, because an
        image's children are presentational and the links would vanish from
        the accessibility tree. The key is the full one: a count per level,
-       "Two levels in one day" and "Selected day". Every cell also carries
-       its date in the readout's two forms, data-day-long ("Monday 6 April
-       2026") and data-day-short ("6 April"), formatted here in the active
-       language: with JS a click selects a day rather than following its
-       link (static/js/season_sheet.js), and the readout reads them, so the
-       cached fragment stays one body per day and no date string is built
-       in JavaScript. Without JS the links navigate.
+       "Two levels in one day" and "This bulletin" (the ring). One tap on a
+       day follows its link straight to that day's bulletin (SNOW-1163).
 
    Context:
      season_months  — SeasonMonths (apps.public.season_calendar.build_season_months).
@@ -107,8 +102,6 @@
                                 data-state="{{ day.state }}"
                                 data-level="{{ day.level }}"
                                 {% if day.low_key %}data-lo="{{ day.low_key }}" data-hi="{{ day.high_key }}"{% endif %}
-                                data-day-long="{{ day.date|date:'l j F Y' }}"
-                                data-day-short="{{ day.date|date:'j F' }}"
                                 title="{{ day_title }}"
                                 aria-label="{{ day_title }}"
                             ></a>
@@ -119,10 +112,6 @@
                                 data-state="{{ day.state }}"
                                 data-level="{{ day.level }}"
                                 {% if day.low_key %}data-lo="{{ day.low_key }}" data-hi="{{ day.high_key }}"{% endif %}
-                                {% if linked %}
-                                    data-day-long="{{ day.date|date:'l j F Y' }}"
-                                    data-day-short="{{ day.date|date:'j F' }}"
-                                {% endif %}
                                 title="{{ day_title }}"
                             ></span>
                         {% endif %}
@@ -157,7 +146,7 @@
             </li>
             <li class="inline-flex items-center gap-2">
                 <span class="season-day season-key-swatch season-day-ring" data-state="high" aria-hidden="true"></span>
-                {% translate "Selected day" %}
+                {% translate "This bulletin" %}
             </li>
         </ul>
     {% else %}
