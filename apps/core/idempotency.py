@@ -40,6 +40,15 @@ Design notes
   values stored at cache-write time. A mismatch — reusing a key across a
   different path, body, or user — returns ``409`` instead of serving the
   wrong cached response or running the view again.
+* Machine endpoints are exempt (SNOW-1169). ``IDEMPOTENCY_EXEMPT_PATHS``
+  — the MCP endpoint and the OAuth token / register / revoke endpoints —
+  pass straight through: no reservation, no replay, no
+  ``pwa.idempotency.missing`` log. The MCP endpoint authenticates its
+  bearer token *inside* the view, so the fingerprint's principal is
+  always ``""`` and a replay would hand the cached 200 to anyone holding
+  the key and body — with no token, a revoked one, and past the rate
+  limits. None of these endpoints has a first-party caller that sends
+  the header, so there is nothing to deduplicate there.
 
 The retention window is 24h in ``IDEMPOTENCY_RECORD_TTL_SECONDS``.
 Cleanup of expired rows is not automated in this ticket — the table is
@@ -75,6 +84,33 @@ MAX_KEY_LENGTH: int = 128
 # Retention window — one day. Matches spec §5.5 ("default 24h").
 IDEMPOTENCY_RECORD_TTL_SECONDS: int = 24 * 60 * 60
 
+# Paths the middleware never deduplicates (SNOW-1169). Each is a
+# client-only machine protocol, not a PWA mutation:
+#
+# * ``/api/mcp/`` and its slash-less alias ``/api/mcp`` authenticate a
+#   bearer token inside the view, after this middleware has run. The
+#   replay fingerprint's principal is therefore always ``""``, so a
+#   cached response would be served to a request with no token, a
+#   garbage one or a revoked one, and would skip the per-user rate limit.
+# * ``/oauth/token/``, ``/oauth/register/`` and ``/oauth/revoke/`` are
+#   the OAuth 2.1 endpoints an MCP client calls. They are not
+#   session-authenticated, and replaying a token response would hand
+#   out a credential without re-checking the code or refresh token.
+#
+# No first-party client sends ``Idempotency-Key`` to any of them, so
+# exempting them loses nothing. Exact matches only — the paths are
+# pinned to the URLconf by a ``reverse()`` guard test, so a remounted
+# route fails the suite rather than silently re-opening the replay.
+IDEMPOTENCY_EXEMPT_PATHS: frozenset[str] = frozenset(
+    {
+        "/api/mcp/",
+        "/api/mcp",
+        "/oauth/token/",
+        "/oauth/register/",
+        "/oauth/revoke/",
+    }
+)
+
 
 class IdempotencyMiddleware:
     """Deduplicate state-changing requests by ``Idempotency-Key`` header.
@@ -85,6 +121,8 @@ class IdempotencyMiddleware:
     with a valid header check the cache first, and if a cached response
     exists within the retention window, return it verbatim. Otherwise
     the view runs and its response is cached before being returned.
+    Requests to ``IDEMPOTENCY_EXEMPT_PATHS`` (the MCP and OAuth machine
+    endpoints, SNOW-1169) pass straight through, header or not.
     """
 
     def __init__(
@@ -97,6 +135,9 @@ class IdempotencyMiddleware:
     def __call__(self, request: HttpRequest) -> HttpResponse:
         """Reserve the key, then run the view; replay on a lost claim."""
         if request.method not in STATE_CHANGING_METHODS:
+            return self.get_response(request)
+
+        if request.path in IDEMPOTENCY_EXEMPT_PATHS:
             return self.get_response(request)
 
         raw_key: str = request.META.get(_KEY_HEADER_META, "") or ""
