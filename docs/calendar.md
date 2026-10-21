@@ -156,7 +156,10 @@ built — never via `post_save`. Failures are logged and ingest continues
 (the bulletin is still stored; the calendar tile picks up on the next
 rebuild). The same call deletes the `season_calendar` cache key for each
 affected region, in every `settings.LANGUAGES` language, so the next open
-re-renders.
+re-renders. On an update, `upsert_bulletin` first captures the stored row's
+`(region, day)` pairs with `day_rating_pairs` and passes them as
+`prior_pairs`, so a correction that drops a region or moves off a day
+reconciles the rating it leaves behind (SNOW-1168).
 
 **Rebuild**: `rebuild_render_models` recomputes day ratings for every
 `(region, day)` covered by the rebuilt bulletins as a trailing step.
