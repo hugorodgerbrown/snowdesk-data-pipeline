@@ -2,7 +2,7 @@
 name: resorts-are-search-rows
 description: Map search shows a row per resort, not just per region, and ranks by match quality rather than EAWS region id
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-21
 ---
 
 # Resorts are search rows, and ranking is by match quality
@@ -65,7 +65,14 @@ character narrows the set, so the best match stays pinned at the top.
   as a row. It would duplicate a row selecting the same region — the case
   SNOW-188's type badge existed to disambiguate.
 - Rows are visually distinguished by a pin glyph, not a text badge; the badge
-  slot keeps the region id and country flag SNOW-188 introduced. The
+  slot keeps the region id and country flag SNOW-188 introduced.
+  **Amended by SNOW-1173 (21 Oct 2026):** a glyph was not enough — the first
+  rows for "verb" were four resorts reading as regions, each carrying a code
+  that names a bulletin rather than a resort. The dropdown now lists the two
+  kinds under "Resorts" and "Regions" headings (`groupResults`; the kind
+  holding the best match leads, so ranking still decides the top row), a
+  resort row leads with a round pin tile and reads "in <region>" with no
+  badge, and a region row leads with a danger tile for the displayed day. The
   region/resort *word* exists only for screen readers, via
   `map-strings-template`.
 - Resort rows depend on `/api/resorts-by-region/`, fetched at boot. That leg

@@ -70,14 +70,11 @@ Optional context:
     data-ratings-url="{% url 'api:ratings' %}"
     data-resorts-url="{% url 'api:resorts_by_region' %}"
     data-resorts-geojson-url="{% url 'api:resorts_geojson' %}"
-    data-region-summary-url="{% url 'api:region_summary' region_id='XX-0000' %}"
-    {# SNOW-1098: the phone region sheet's body, read by map_region_sheet.js. #}
+    {# SNOW-1098: the region sheet's body, read by map_region_sheet.js.       #}
     data-region-sheet-url="{% url 'public:region_sheet_partial' region_id='XX-0000' %}"
     {# SNOW-1100: the phone place sheet's bodies, read by map_place_sheet.js. #}
     data-resort-sheet-url="{% url 'public:resort_sheet_partial' slug='__SLUG__' %}"
     data-favourite-sheet-url="{% url 'public:favourite_sheet_partial' uuid='00000000-0000-0000-0000-000000000000' %}"
-    {# SNOW-801: read by map_region_panel.js for the region panel's resorts.  #}
-    data-resorts-by-region-url="{% url 'api:resorts_by_region' %}"
     data-bulletin-groupings-url="{% url 'api:bulletin_groupings_geojson' %}"
     data-default-basemap-key="{{ default_basemap_key }}"
     {# SNOW-872: the map's opening view — which providers' bulletins are      #}
@@ -211,6 +208,27 @@ Optional context:
                     <circle cx="11" cy="11" r="7" />
                     <path d="m20 20-3-3" />
                 </svg>
+            </button>
+            {# SNOW-1173: on a desktop the region chip is folded into search  #}
+            {# (Hugo, 21 Oct). At rest the pill reads as the chip did — the   #}
+            {# day's danger swatch and the selected region's name — and a     #}
+            {# press opens search, whose empty field lists the pinned         #}
+            {# regions. map_region_panel.js mirrors it from #region-readout,  #}
+            {# which map.js and map_season_ribbon.js still write. map.css     #}
+            {# hides it on a phone, where the pill is a roundel.             #}
+            <button
+                id="search-region-label"
+                type="button"
+                class="search-region-label hover-affordance"
+                aria-controls="search-input"
+                aria-live="polite"
+                data-prompt='{% trans "Find a region or resort" %}'
+            >
+                <span class="region-readout-swatch" data-search-region-swatch hidden aria-hidden="true"></span>
+                <span
+                    class="search-region-label-name"
+                    data-search-region-name
+                >{% trans "Find a region or resort" %}</span>
             </button>
             <input
                 id="search-input"
@@ -1672,11 +1690,11 @@ Optional context:
                 </div>
             </div>
         </li>
-        {# The phone opens #region-sheet for a selection; a desktop names it  #}
-        {# in the #region-readout chip instead, so the target is whichever of #}
-        {# the two is on screen once the tour has selected the region.        #}
+        {# A selection opens #region-sheet on every width (SNOW-1173); search, #}
+        {# which names the selection on a desktop, is the fallback target for  #}
+        {# a tour step that finds the sheet closed.                            #}
         <li
-            data-help-target="#region-sheet | #region-readout"
+            data-help-target="#region-sheet | #search-pill"
             data-help-chapter="read"
             data-help-action="show-region"
             data-help-title='{% trans "Tap a region" %}'
@@ -2318,6 +2336,12 @@ Optional context:
     {# from the pin glyph and the secondary line.                          #}
     <span data-string="search-type-region">{% trans "Region" %}</span>
     <span data-string="search-type-resort">{% trans "Resort" %}</span>
+    {# SNOW-1173: the dropdown's group headings, and a resort row's line  #}
+    {# naming the region it sits in.                                       #}
+    <span data-string="search-group-resorts">{% trans "Resorts" %}</span>
+    <span data-string="search-group-regions">{% trans "Regions" %}</span>
+    <span data-string="search-group-pinned">{% trans "Pinned regions" %}</span>
+    <span data-string="search-resort-in">{% blocktrans %}in %(region)s{% endblocktrans %}</span>
     {# SNOW-658 removed "custom-control-idle"/"custom-control-done" —      #}
     {# #map-custom-download-control's two labels for a downloads state it  #}
     {# no longer carries. Its label is server-rendered on the button       #}

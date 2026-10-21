@@ -1,6 +1,6 @@
 /*
- * tests/js/test_map_region_sheet.js — the phone region sheet
- * (static/js/map_region_sheet.js, SNOW-1098).
+ * tests/js/test_map_region_sheet.js — the region sheet
+ * (static/js/map_region_sheet.js, SNOW-1098; every width since SNOW-1173).
  *
  * A tap opens it at peek, painted from the page at once, and fetches its
  * body, which is then kept and reused for the same region and day; a
@@ -15,7 +15,8 @@
  * built and the modules imported ONCE; each test starts from a deselected,
  * closed sheet and fresh roundels instead.
  * jsdom's `matchMedia` stub (tests/js/setup.js) answers `matches: false`,
- * which both this module and map_sheet.js read as a phone.
+ * which map_sheet.js reads as a phone; the 'on a desktop' cases stub it
+ * to `matches: true`, where the same sheet is the inset panel.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -201,11 +202,12 @@ describe('opening', () => {
     expect(fetchMock).toHaveBeenCalled();
   });
 
-  it('does not open on a desktop', async () => {
+  it('opens on a desktop too, as a resort or weather tap does (SNOW-1173)', async () => {
     const sheet = await boot();
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
     select('CH-4115', 'tap');
-    expect(sheet.hasAttribute('hidden')).toBe(true);
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+    expect(fetchMock).toHaveBeenCalled();
   });
 
   it('says so when the region cannot be fetched, under the peek it keeps', async () => {
@@ -232,15 +234,21 @@ describe('reopening (2026-10-19)', () => {
     expect(sheet.textContent).toContain('Martigny-Verbier');
   });
 
-  it('does nothing while the sheet is open, with no selection, or on a desktop', async () => {
+  it('does nothing while the sheet is open or with no selection', async () => {
     const sheet = await boot();
     expect(window.pwaRegionSheet.reopen()).toBe(false);
     select('CH-4115', 'tap');
     expect(window.pwaRegionSheet.reopen()).toBe(false);
-    sheet.setAttribute('hidden', '');
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('reopens on a desktop too (SNOW-1173)', async () => {
+    const sheet = await boot();
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
-    expect(window.pwaRegionSheet.reopen()).toBe(false);
-    expect(sheet.hasAttribute('hidden')).toBe(true);
+    select('CH-4115', 'tap');
+    sheet.setAttribute('hidden', '');
+    expect(window.pwaRegionSheet.reopen()).toBe(true);
+    expect(sheet.hasAttribute('hidden')).toBe(false);
   });
 });
 

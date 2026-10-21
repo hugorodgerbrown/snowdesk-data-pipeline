@@ -133,9 +133,8 @@
   // full-season fetch via getSeasonRatings().
   RATINGS_URL = mapEl.dataset.ratingsUrl;
   // SNOW-895: `REGION_SUMMARY_URL_TEMPLATE` was read here, for the region
-  // popup this file no longer has. `static/js/map_region_panel.js` reads the
-  // same `data-region-summary-url` attribute for itself, so the attribute and
-  // the endpoint behind it both stay; only this unused copy is gone.
+  // popup this file no longer has. SNOW-1173 then retired the chip panel
+  // that was the attribute's last reader, and the attribute with it.
 
   // SNOW-660: ``bootDateKey`` — min(today, seasonEnd), SNOW-236's cold-open
   // date — used to live here, and every date-consuming path fell back to it
@@ -7214,6 +7213,33 @@
     return padding;
   };
 
+  /**
+   * Fit padding that frames a region beside the open region sheet.
+   *
+   * SNOW-1173: a region picked from search selects it, which opens the
+   * region sheet, and then frames it. On a desktop that sheet is the inset
+   * panel down the map's right side, so the fit reserves its width —
+   * measured, from the panel's left edge to the canvas's right — or the
+   * region would come to rest half under the sheet describing it. A phone's
+   * sheet is a bottom sheet whose camera padding map_sheet.js already owns,
+   * so a sheet that is not docked on the right reserves nothing here.
+   *
+   * @returns {{top: number, right: number, bottom: number, left: number}}
+   */
+  const paddingClearingRegionSheet = () => {
+    const padding = { ...FIT_PADDING };
+    const sheet = document.getElementById('region-sheet');
+    const container = map && map.getContainer ? map.getContainer() : null;
+    if (!sheet || sheet.hidden || !container) return padding;
+    const canvas = container.getBoundingClientRect();
+    const box = sheet.getBoundingClientRect();
+    if (!(canvas.width > 0) || !(box.width > 0)) return padding;
+    // Docked on the right: its left edge is past the canvas's middle.
+    if (box.left <= canvas.left + canvas.width / 2) return padding;
+    reserveFitEdge(padding, 'right', 'left', canvas.right - box.left, canvas.width);
+    return padding;
+  };
+
   // The fit behind both `bounds` and `region` below. A module-scope
   // function rather than one bridge method calling another through `this`:
   // a caller that destructures the frozen bridge (`const { region } =
@@ -7230,11 +7256,15 @@
   // dismisses the panel before calling this bridge. There is nothing
   // docked over the map to frame around, and padding for a surface that
   // is not on screen would push the route off-centre for no one.
-  const focusBounds = (bbox, maxZoom) => {
+  //
+  // The one exception is `padding`, which only `region` passes: a search
+  // pick opens the region sheet BEFORE it frames the region (SNOW-1173),
+  // so that fit has a panel on screen to clear.
+  const focusBounds = (bbox, maxZoom, padding) => {
     if (!map || !Array.isArray(bbox) || bbox.length !== 4) return;
     if (!bbox.every((n) => Number.isFinite(n))) return;
     map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {
-      padding: { ...FIT_PADDING },
+      padding: padding || { ...FIT_PADDING },
       // The key is OMITTED, not set to undefined, when no cap is given.
       // A present-but-undefined `maxZoom` leaves the behaviour to
       // MapLibre's own handling of it, which is not a thing to depend on
@@ -7330,7 +7360,7 @@
       const feature = FEATURE_BY_REGION_ID[regionId];
       if (!feature || !feature.geometry) return;
       const [[w, s], [e, n]] = featureBBox(feature);
-      focusBounds([w, s, e, n], REGION_FIT_MAX_ZOOM);
+      focusBounds([w, s, e, n], REGION_FIT_MAX_ZOOM, paddingClearingRegionSheet());
     },
   });
 
@@ -7926,10 +7956,9 @@
     // the timelapse were all permanent no-ops — code that read as careful
     // sequencing and did nothing whatsoever.
     //
-    // The ENDPOINT is not dead and did not go with it: `api:region_summary`
-    // is what `map_region_panel.js` fetches, caches per region and date, and
-    // prefetches (SNOW-879). Only the MapLibre popup that used to render its
-    // response is gone.
+    // `api:region_summary` outlived the popup as the chip panel's source
+    // until SNOW-1173 retired that panel; the region sheet's body
+    // (`public:region_sheet_partial`) is what the map reads now.
 
     // SNOW-499: a single "detail popup" handle, separate from the region
     // popup — a resort or an *existing* favourite is a point fixed to the
@@ -8206,9 +8235,9 @@
     //   history entry.
     //
     // ``via`` (SNOW-1098) rides out on the event so a listener can tell a
-    // map TAP from the other routes into a selection. Only the region
-    // sheet reads it: a tap on a phone opens the sheet, while a search
-    // pick, a deep link or a pinned-region row select without one.
+    // map TAP from the other routes into a selection. The region sheet
+    // opens for every route since 16 Oct, and on every width since
+    // SNOW-1173, so it no longer branches on it.
     const selectFeature = async (
       numericId,
       { urlMode = 'push', via = '' } = {},
@@ -8258,11 +8287,11 @@
 
     // SNOW-1118: the tour's "Tap a region" step shows a real region rather
     // than describing one. map_help.js asks for it, and this answers: the
-    // region already selected (its sheet opened again on a phone), or else
-    // the one under the middle of the map, or failing that any region in
-    // view. On a phone the selection opens the region sheet, as any
-    // selection does (map_region_sheet.js), and that sheet is what the step
-    // points at; a desktop names it in the readout chip.
+    // region already selected (its sheet opened again), or else the one
+    // under the middle of the map, or failing that any region in view. The
+    // selection opens the region sheet on every width, as any selection
+    // does (map_region_sheet.js, SNOW-1173), and that sheet is what the
+    // step points at.
     //
     // Leaving the step releases it: a selection the tour made is dropped,
     // so the visitor ends the tour on the map they started it on. One they
@@ -9373,7 +9402,7 @@
       }
 
       const region = features.find((f) => f.layer.id === 'regions-fill');
-      // A tap on the region already selected, with its phone sheet closed,
+      // A tap on the region already selected, with its sheet closed,
       // reopens the sheet at ANY zoom (2026-10-19): the selection is not
       // changed, which is the rule past REGION_SELECT_MAXZOOM, but a region
       // the reader can see outlined is one they can get back to. With the
@@ -9589,6 +9618,10 @@
     const resultsEl = document.getElementById('search-results');
     const pillEl = document.getElementById('search-pill');
     const toggleEl = document.getElementById('search-toggle');
+    // SNOW-1173: on a desktop the region chip is folded into search — this
+    // label names the selection at rest (map_region_panel.js fills it) and
+    // a press opens search, as the toggle does. map.css hides it on a phone.
+    const regionLabelEl = document.getElementById('search-region-label');
     let currentResults = [];
     let activeIdx = -1;
     // False while the list is the pinned regions rather than matches.
@@ -9627,16 +9660,13 @@
     // the input (CSS transition) and moves focus. The pill stays expanded
     // as long as the user is interacting with it; Escape or an outside
     // pointerdown collapses it back (see handlers below).
-    // PHONE: SEARCH REPLACES THE REGION CHIP (Hugo, 16 Oct). map.css gives
-    // search the whole top row and hides the chip, whose panel was where the
-    // pinned regions lived; so an empty field lists them, and typing replaces
-    // them with matches. The rows come from map_region_panel.js's loaded
-    // list (window.pwaPinnedRegions) — one loader for the list, the pin
-    // roundel and this. A visitor has none, and sees nothing until they type.
-    // On a desktop the chip and its panel are unchanged, so nothing lists.
-    const PHONE_QUERY = '(max-width: 639.98px)';
-    const isPhoneWidth = () =>
-      typeof window.matchMedia === 'function' && window.matchMedia(PHONE_QUERY).matches;
+    // SEARCH IS WHERE THE PINNED REGIONS ARE (Hugo, 16 Oct, for the phone;
+    // SNOW-1173 for every width). They lived in the region chip's dropdown
+    // panel until that panel was retired, so an empty field lists them, and
+    // typing replaces them with matches. The rows come from
+    // map_region_panel.js's loaded list (window.pwaPinnedRegions) — one
+    // loader for the list, the pin roundel and this. A visitor has none, and
+    // sees nothing until they type.
 
     const pinnedResults = () => {
       const ids = window.pwaPinnedRegions?.ids?.() || [];
@@ -9646,17 +9676,13 @@
     };
 
     const showEmptyState = () => {
-      if (!isPhoneWidth()) {
-        closeResults();
-        return;
-      }
       previewTop = false;
-      renderResults(pinnedResults());
+      renderResults(pinnedResults(), MAP_STRINGS['search-group-pinned']);
       // The list may still be loading on a first focus straight after boot.
       window.pwaPinnedRegions?.ready?.().then(() => {
         if (!inputEl.value && document.activeElement === inputEl) {
           previewTop = false;
-          renderResults(pinnedResults());
+          renderResults(pinnedResults(), MAP_STRINGS['search-group-pinned']);
         }
       });
     };
@@ -9694,6 +9720,11 @@
       openSearch();
     });
 
+    regionLabelEl?.addEventListener('click', (e) => {
+      e.preventDefault();
+      openSearch();
+    });
+
     const closeResults = () => {
       resultsEl.hidden = true;
       inputEl.setAttribute('aria-expanded', 'false');
@@ -9703,7 +9734,8 @@
     };
 
     const setActive = (idx) => {
-      const items = resultsEl.children;
+      // Rows only: the group headings are not options (renderResults).
+      const items = resultsEl.querySelectorAll('.search-result');
       if (activeIdx >= 0 && items[activeIdx]) items[activeIdx].classList.remove('active');
       activeIdx = idx;
       if (idx >= 0 && items[idx]) {
@@ -9718,118 +9750,193 @@
       // When idx === -1 (Enter not pressed yet, ArrowUp past the top),
       // preview the first result so the highlight tracks what Enter
       // would pick.
-      // The pinned list (an empty field, on a phone) previews nothing until
+      // The pinned list (an empty field) previews nothing until
       // a row is arrowed to: nothing has been asked for yet, and an outline
       // on the first pinned region read as a second selection.
       const previewItem = currentResults[idx >= 0 ? idx : (previewTop ? 0 : -1)];
       setPreview(previewItem ? previewItem.regionID : null);
     };
 
-    const renderResults = (results) => {
+    // The day's level as a .danger-tile digit, keyed as the feature-state
+    // `rating` the choropleth paints from.
+    const DANGER_DIGIT = { low: '1', moderate: '2', considerable: '3', high: '4', very_high: '5' };
+
+    /**
+     * The leading tile of a result row (SNOW-1173).
+     *
+     * A resort is a place and a region is a bulletin, so the two lead with
+     * different things: a resort a round pin tile, the shape of its marker
+     * on the map; a region a square .danger-tile carrying the displayed
+     * day's level, as the region sheet's header does — read off the same
+     * feature-state the map is painted from, so the row and the polygon
+     * cannot disagree. A region with no rating that day gets the tile's
+     * no_rating state with a dash.
+     *
+     * @param {{type: string, regionID: string}} r The row.
+     * @returns {Element} The tile, decorative (aria-hidden).
+     */
+    const resultTile = (r) => {
+      if (r.type === 'resort') {
+        const tile = document.createElement('span');
+        tile.className = 'search-result-tile search-result-tile--resort';
+        tile.setAttribute('aria-hidden', 'true');
+        // Stroked in currentColor rather than filled with a punched-out
+        // centre: a filled pin needs a literal colour for the hole, and the
+        // tile behind it is a token that is not the same colour in both
+        // themes. Same idiom as the search toggle's own icon.
+        const pin = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        pin.setAttribute('class', 'search-result-pin');
+        pin.setAttribute('viewBox', '0 0 24 24');
+        pin.setAttribute('fill', 'none');
+        pin.setAttribute('stroke', 'currentColor');
+        pin.setAttribute('stroke-width', '2');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z');
+        const hole = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        hole.setAttribute('cx', '12');
+        hole.setAttribute('cy', '10');
+        hole.setAttribute('r', '2.5');
+        pin.append(path, hole);
+        tile.append(pin);
+        return tile;
+      }
+      const feature = FEATURE_BY_REGION_ID[r.regionID];
+      const state = feature && map ? map.getFeatureState({ source: 'regions', id: feature.id }) : null;
+      const level = state && DANGER_DIGIT[state.rating] ? state.rating : 'no_rating';
+      const tile = document.createElement('span');
+      tile.className = 'danger-tile search-result-tile';
+      tile.dataset.level = level;
+      tile.setAttribute('aria-hidden', 'true');
+      tile.textContent = DANGER_DIGIT[level] || '–';
+      return tile;
+    };
+
+    /**
+     * Render the dropdown: the rows under one heading per kind.
+     *
+     * SNOW-1173: resort and region rows had the same shape — a name, a line
+     * under it and the region's code — so the first rows for "verb" were
+     * four resorts reading as regions, each with a code that names a
+     * bulletin rather than a resort (Hugo, 21 Oct). They are now grouped
+     * (search_core's groupResults: the kind holding the best match leads)
+     * and drawn differently: a resort row has the pin tile and "in
+     * <region>" and no badge; a region row has its danger tile and keeps
+     * the flag and code. An empty field passes `heading`, so its pinned
+     * regions sit under "Pinned regions" in one group, with the selected
+     * region marked.
+     *
+     * Headings are role="presentation" items outside the option sequence:
+     * the keyboard and aria-activedescendant walk `.search-result` rows
+     * only, so `currentResults[i]` is still the i-th row.
+     *
+     * @param {Array<Object>} results Ranked rows.
+     * @param {string} [heading] One heading for every row, in place of
+     *   the per-kind groups.
+     * @returns {void}
+     */
+    const renderResults = (results, heading) => {
       resultsEl.replaceChildren();
-      currentResults = results;
       activeIdx = -1;
       if (results.length === 0) {
+        currentResults = results;
         closeResults();
         return;
       }
-      results.forEach((r, i) => {
-        const li = document.createElement('li');
-        li.className = 'search-result';
-        li.setAttribute('role', 'option');
-        li.id = `search-result-${i}`;
+      const groups = heading
+        ? [{ type: 'pinned', items: results }]
+        : searchCore.groupResults(results);
+      const GROUP_HEADINGS = {
+        resort: MAP_STRINGS['search-group-resorts'],
+        region: MAP_STRINGS['search-group-regions'],
+        pinned: heading,
+      };
+      // The rows in the order they are drawn, which is the order the
+      // keyboard walks — grouping can move a row from where it ranked.
+      currentResults = groups.flatMap((g) => g.items);
+      let i = 0;
+      groups.forEach((group) => {
+        const head = document.createElement('li');
+        head.className = 'search-group-heading';
+        head.setAttribute('role', 'presentation');
+        head.textContent = GROUP_HEADINGS[group.type] || '';
+        resultsEl.append(head);
+        group.items.forEach((r) => {
+          const li = document.createElement('li');
+          li.className = 'search-result';
+          li.setAttribute('role', 'option');
+          li.id = `search-result-${i}`;
+          i += 1;
+          li.dataset.resultType = r.type;
+          if (heading && selectedId !== null && FEATURE_BY_REGION_ID[r.regionID]?.id === selectedId) {
+            li.classList.add('is-current');
+            li.setAttribute('aria-current', 'true');
+          }
 
-        // Text column (primary/secondary) and a region-ID badge side by side.
-        // SNOW-697: rows are regions OR resorts. The badge carries the EAWS
-        // region ID either way — for a resort that is the region it sits
-        // in, which is both what the row selects and the bulletin the user
-        // is on their way to, so it is context rather than clutter.
-        li.dataset.resultType = r.type;
+          const text = document.createElement('div');
+          text.className = 'search-result-text';
+          const primary = document.createElement('div');
+          primary.className = 'search-result-primary';
+          const typeLabel = document.createElement('span');
+          typeLabel.className = 'search-result-type';
+          // Trailing space inside the hidden span, not a text node between
+          // the two: the span is clipped to a 1px box, so a separator
+          // outside it can collapse and leave a screen reader reading
+          // "ResortVerbier" as one word. Invisible either way.
+          typeLabel.textContent = (r.type === 'resort'
+            ? MAP_STRINGS['search-type-resort']
+            : MAP_STRINGS['search-type-region']) + ' ';
+          primary.append(typeLabel, document.createTextNode(r.primary));
 
-        const text = document.createElement('div');
-        text.className = 'search-result-text';
-        const primary = document.createElement('div');
-        primary.className = 'search-result-primary';
-        // A pin glyph marks the resort rows. Sighted users get the
-        // region/resort distinction from this plus the secondary line;
-        // the visually-hidden word below is what carries it to a screen
-        // reader, which cannot see either.
-        if (r.type === 'resort') {
-          // Stroked in currentColor rather than filled with a punched-out
-          // centre: a filled pin needs a literal colour for the hole, and
-          // the row behind it is --color-card, which is not the same colour
-          // in both themes. Stroke-only inherits and is right in either.
-          // Same idiom as the search toggle's own icon in _map_embed.html.
-          const pin = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-          pin.setAttribute('class', 'search-result-pin');
-          pin.setAttribute('viewBox', '0 0 24 24');
-          pin.setAttribute('fill', 'none');
-          pin.setAttribute('stroke', 'currentColor');
-          pin.setAttribute('stroke-width', '2');
-          pin.setAttribute('aria-hidden', 'true');
-          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-          path.setAttribute('d', 'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z');
-          const hole = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-          hole.setAttribute('cx', '12');
-          hole.setAttribute('cy', '10');
-          hole.setAttribute('r', '2.5');
-          pin.append(path, hole);
-          primary.append(pin);
-        }
-        const typeLabel = document.createElement('span');
-        typeLabel.className = 'search-result-type';
-        // Trailing space inside the hidden span, not a text node between
-        // the two: the span is clipped to a 1px box, so a separator
-        // outside it can collapse and leave a screen reader reading
-        // "ResortVerbier" as one word. Invisible either way.
-        typeLabel.textContent = (r.type === 'resort'
-          ? MAP_STRINGS['search-type-resort']
-          : MAP_STRINGS['search-type-region']) + ' ';
-        primary.append(typeLabel, document.createTextNode(r.primary));
+          const secondary = document.createElement('div');
+          secondary.className = 'search-result-secondary';
+          // Region row: the parent L2 sub-region name, blank where the
+          // fixture has no descriptive L2 (AT/IT). Resort row: "in" the
+          // region it belongs to, so resorts sharing a first word stay told
+          // apart and the region it opens on is named in words.
+          secondary.textContent = r.type === 'resort'
+            ? self.pwaStrings.interpolate(MAP_STRINGS['search-resort-in'], { region: r.secondary })
+            : r.secondary;
+          text.append(primary, secondary);
+          li.append(resultTile(r), text);
 
-        const secondary = document.createElement('div');
-        secondary.className = 'search-result-secondary';
-        // Region row: the parent L2 sub-region name, blank where the
-        // fixture has no descriptive L2 (AT/IT). Resort row: the name of
-        // the region it belongs to, so resorts sharing a first word stay
-        // told apart.
-        secondary.textContent = r.secondary;
-        text.append(primary, secondary);
-
-        const badge = document.createElement('span');
-        badge.className = 'search-result-badge';
-        // SNOW-188: Prefix the region-ID code with the country flag.
-        // Country is the ISO-3166 alpha-2 prefix of the EAWS region ID
-        // (CH-4115 → ch). Only the four countries with flag symbols in
-        // the map.html sprite render a flag; an unknown prefix falls
-        // back to the bare ID rather than a broken <use>.
-        const country = (r.regionID.split('-')[0] || '').toLowerCase();
-        if (['ch', 'at', 'fr', 'it'].includes(country)) {
-          const flag = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-          flag.setAttribute('class', `search-result-flag search-result-flag--${country}`);
-          flag.setAttribute('aria-hidden', 'true');
-          const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-          use.setAttribute('href', `#flag-${country}`);
-          flag.append(use);
-          badge.append(flag);
-        }
-        badge.append(document.createTextNode(r.regionID));
-
-        li.append(text, badge);
-        // pointerdown only holds the input's focus (preventDefault), and the
-        // pick happens on click. Picking on pointerdown hid the list before
-        // the tap ended, so the rest of the tap landed on the map under it
-        // and selected whichever region was there (Hugo, 16 Oct). Nothing
-        // closes the list on blur, and the outside-pointerdown handler below
-        // ignores the list, so the row is still there when its click fires.
-        li.addEventListener('pointerdown', (e) => {
-          e.preventDefault();
+          // The flag and code name a bulletin region, so only a region row
+          // carries them (SNOW-1173). SNOW-188: the country is the
+          // ISO-3166 alpha-2 prefix of the EAWS id (CH-4115 → ch). Only the
+          // four countries with flag symbols in the map.html sprite render
+          // a flag; an unknown prefix falls back to the bare id rather than
+          // a broken <use>.
+          if (r.type !== 'resort') {
+            const badge = document.createElement('span');
+            badge.className = 'search-result-badge';
+            const country = (r.regionID.split('-')[0] || '').toLowerCase();
+            if (['ch', 'at', 'fr', 'it'].includes(country)) {
+              const flag = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+              flag.setAttribute('class', `search-result-flag search-result-flag--${country}`);
+              flag.setAttribute('aria-hidden', 'true');
+              const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+              use.setAttribute('href', `#flag-${country}`);
+              flag.append(use);
+              badge.append(flag);
+            }
+            badge.append(document.createTextNode(r.regionID));
+            li.append(badge);
+          }
+          // pointerdown only holds the input's focus (preventDefault), and
+          // the pick happens on click. Picking on pointerdown hid the list
+          // before the tap ended, so the rest of the tap landed on the map
+          // under it and selected whichever region was there (Hugo, 16
+          // Oct). Nothing closes the list on blur, and the
+          // outside-pointerdown handler below ignores the list, so the row
+          // is still there when its click fires.
+          li.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+          });
+          li.addEventListener('click', (e) => {
+            e.preventDefault();
+            chooseResult(r);
+          });
+          resultsEl.append(li);
         });
-        li.addEventListener('click', (e) => {
-          e.preventDefault();
-          chooseResult(r);
-        });
-        resultsEl.append(li);
       });
       resultsEl.hidden = false;
       inputEl.setAttribute('aria-expanded', 'true');
@@ -9846,7 +9953,7 @@
       // map does. A resort the pin feed does not carry (no coordinates yet)
       // falls through to its region, the row's own badge.
       if (item.type === 'resort') {
-        inputEl.value = isPhoneWidth() ? '' : item.primary;
+        inputEl.value = '';
         collapseSearch();
         openResort(
           (props) => props.name === item.primary && (!props.region_id || props.region_id === item.regionID),
@@ -9860,19 +9967,22 @@
     const chooseRegion = (item) => {
       const feature = FEATURE_BY_REGION_ID[item.regionID];
       if (!feature) return;
-      // On a phone the field empties again: the region sheet names the pick,
-      // and an empty field is what lists the pinned regions next time.
-      inputEl.value = isPhoneWidth() ? '' : item.primary;
+      // The field empties again: the region sheet names the pick, and an
+      // empty field is what lists the pinned regions next time.
+      inputEl.value = '';
       collapseSearch();
       // Moves the selection (highlight + ribbon + readout + hash). Picking the
-      // region that is already selected is a no-op — the deselect toggle is a
-      // map gesture only, so a search pick never clears the selection.
+      // region that is already selected changes nothing — the deselect
+      // toggle is a map gesture only, so a search pick never clears the
+      // selection — but it reopens that region's sheet if it was closed
+      // (SNOW-1173: on a desktop search is where the chip that did this went).
+      if (feature.id === selectedId) window.pwaRegionSheet?.reopen?.();
       selectFeature(feature.id);
-      // On a phone the pinned regions moved here from the chip's panel,
-      // whose rows framed what they selected (row_focus.js's rule); a pick
-      // from search does the same there, so the region lands above the
-      // sheet it opens rather than wherever the map happened to be.
-      if (isPhoneWidth()) window.pwaMapFocus?.region?.(item.regionID);
+      // The pinned regions moved here from the chip's panel, whose rows
+      // framed what they selected (row_focus.js's rule); a pick from search
+      // does the same, so the region lands beside the sheet it opens rather
+      // than wherever the map happened to be.
+      window.pwaMapFocus?.region?.(item.regionID);
     };
 
     inputEl.addEventListener('input', () => {

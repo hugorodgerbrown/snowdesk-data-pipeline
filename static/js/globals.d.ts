@@ -95,7 +95,7 @@ interface Window {
   pwaLayerVisibilityCore: any;
   /** static/js/sheet_detents_core.js — where a phone map sheet settles (SNOW-1097). */
   pwaSheetDetentsCore: any;
-  /** static/js/map_region_panel.js — the loaded pinned-region ids search lists on a phone. */
+  /** static/js/map_region_panel.js — the loaded pinned-region ids search lists when empty. */
   pwaPinnedRegions: { ids(): string[]; ready(): Promise<void> };
   /**
    * static/js/map_overlay_exclusivity.js — the map's one-overlay-at-a-time
@@ -180,7 +180,7 @@ interface Window {
   pwaZoomGates: any;
   /** static/js/map.js — the painted day's level for a region: forRegion(id) → "low" … "very_high" | null. */
   pwaRegionLevel: any;
-  /** static/js/map_region_sheet.js — reopen() → whether the phone sheet reopened for the region still selected. */
+  /** static/js/map_region_sheet.js — reopen() → whether the sheet reopened for the region still selected. */
   pwaRegionSheet: any;
 }
 

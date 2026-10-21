@@ -44,12 +44,14 @@ def test_map_page_renders() -> None:
     assert response.status_code == 200
     content = response.content.decode()
     assert 'id="map"' in content
-    # SNOW-318: the region popup is restored; data-region-summary-url must be
-    # present on #map so map.js can construct the per-region summary fetch URL.
-    # The 'XX-0000' placeholder is the literal string Django renders for the
-    # region_id kwarg; map.js string-replaces it with the real region id at
-    # runtime.
-    assert "data-region-summary-url" in content
+    # SNOW-1098: data-region-sheet-url must be present on #map so
+    # map_region_sheet.js can build the per-region sheet URL. The 'XX-0000'
+    # placeholder is the literal string Django renders for the region_id
+    # kwarg; the module string-replaces it with the real region id. (SNOW-1173
+    # dropped data-region-summary-url: the chip's dropdown that read it is
+    # gone.)
+    assert "data-region-sheet-url" in content
+    assert "data-region-summary-url" not in content
     assert "XX-0000" in content
     # SNOW-236: data-season-end must be present on #map so map.js can clamp
     # the cold-open fetch to the last populated date after season end.
@@ -353,7 +355,7 @@ def test_help_tour_reads_the_map_in_four_chapters() -> None:
     )
     assert steps == [
         ("", "read"),
-        ("#region-sheet | #region-readout", "read"),
+        ("#region-sheet | #search-pill", "read"),
         ("#map-calendar-toggle", "read"),
         ("#search-toggle, #locate-toggle, #map-zoom-toggle", "move"),
         ("#basemap-toggle", "move"),

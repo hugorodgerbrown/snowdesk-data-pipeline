@@ -86,6 +86,10 @@ only binds it to pointer events. Without the core on the page,
   this decision is unchanged by it, or by SNOW-1164 putting the resort
   page's body in it ([`the-sheet-is-the-page`](the-sheet-is-the-page.md))
   ([`the-map-opens-a-resort-in-the-sheet`](the-map-opens-a-resort-in-the-sheet.md)).
+- The region sheet opens on a desktop too since SNOW-1173, which retired
+  the region chip's dropdown panel: a region tap there opened nothing while
+  a resort or a weather symbol opened the inset panel. It is the same inset
+  panel, with no detents, so this decision is unchanged by it either.
 - The camera padding is applied with the view held still (the centre moves
   to the point already under the new padded centre), so a settle never
   moves the ground. At full the padding stays at the previous detent's,

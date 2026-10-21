@@ -1,157 +1,67 @@
 /*
- * static/js/map_region_panel.js — the region + date surface (SNOW-801).
+ * static/js/map_region_panel.js — the region label in search, the pin
+ * roundel and the pinned-regions list (SNOW-801, SNOW-814; the panel itself
+ * and the visible chip retired by SNOW-1173).
  *
- * The #region-readout chip at the map's top-left is a disclosure button;
- * this module is what it discloses. The panel answers "what is this region,
- * on this day" in one place: the danger chip and geographic breadcrumb the
- * map popup used to carry, the bulletin link, and the resorts inside the
- * region.
+ * The file keeps its SNOW-801 name, though the panel it was named for is
+ * gone. Until SNOW-1173 the #region-readout chip at the map's top-left
+ * disclosed a dropdown, #region-panel, carrying the region's summary, its
+ * resorts, an "Open bulletin for <date>" link and the user's pinned regions.
+ * On a phone the chip was already hidden and every selection opened the
+ * region sheet (static/js/map_region_sheet.js), which carries the same facts
+ * in full; on a desktop the dropdown was a second, smaller copy of that
+ * sheet, and a region tap opened nothing while a resort or a weather tap
+ * opened the inset panel. Hugo, 21 Oct: "Weather and Resort both open the
+ * overlay on desktop, but Region still opens the small dropdown top left."
  *
- * WHY A PANEL ON THE CHIP RATHER THAN A MARK ON THE MAP. Three map-anchored
- * treatments were tried and rejected — a chevron roundel, the EAWS danger
- * pictogram, and an (i) roundel, each on the region's centroid. The problem
- * was never the mark: a second affordance on the map led to a restatement of
- * what the chip already said (name, danger level, a way to the bulletin), so
- * nothing put on the map for it could feel earned. Hanging the surface off
- * the chip means the affordance already exists, is already discoverable, and
- * the panel has room to carry what the chip cannot.
+ * So the sheet now opens on every width, and what is left here is:
  *
- * The view-bulletin roundel that used to sit beside the chip is gone: this
- * panel carries an "Open bulletin for <date>" link, so the roundel was a
- * second control to a single destination. The download roundel stays — it
- * has a destination of its own.
+ *   - THE CHIP IS FOLDED INTO SEARCH. With the dropdown gone the chip was a
+ *     label, so on a desktop it moved into the search box, which moved to
+ *     the top-left where the chip was (Hugo, 21 Oct: "If the region chip is
+ *     essentially a label, can we combine it into the search box"). The
+ *     ribbon that held the chip, its star and its download is not drawn on
+ *     any width now — the region sheet's header carries the star and the
+ *     download — but it stays in the DOM: map.js and map_season_ribbon.js
+ *     still write the selection's name and the day's swatch into
+ *     #region-readout, and this module mirrors those into the search box's
+ *     #search-region-label, so the two writers did not need a second
+ *     target. A press on the label opens search (map.js), whose empty field
+ *     lists the pinned regions; picking the region already selected reopens
+ *     its sheet.
  *
- * Content comes from /api/region/<id>/summary/ — the same server-rendered,
- * autoescaped HTML the MapLibre popup used, so there is one definition of
- * what a region summary says — plus /api/resorts-by-region/ for the resort
- * list.
+ *   - THE PIN ROUNDEL (SNOW-814) — the star in the (undrawn) ribbon header
+ *     (public/partials/_map_region_pin_control.html), which the region
+ *     sheet's header proxies on every width. It lives with the pinned list
+ *     because the roundel's state and the list are the SAME fact: "is this
+ *     region in my list". One loader, one derivation, and they cannot
+ *     drift.
  *
- * NOTHING IS FETCHED ON THE OPENING PRESS THAT COULD HAVE BEEN FETCHED
- * BEFORE IT (SNOW-879). That claim used to be aspirational: the two
- * requests ran one after the other, and every `appendChild` waited for both,
- * so the box the chip disclosed was empty for two round trips and the panel
- * read as the slowest surface on the map. Three things changed and the order
- * matters. The resort lookup is warmed at idle from the foot of this module
- * — it is the same answer for every region, so there was never a reason to
- * wait for a selection to ask for it. The summary fetch now runs CONCURRENTLY
- * with whatever is left of that warm rather than after it. And `paint` runs
- * on the press with whatever is already in hand, then again when the summary
- * lands, so the panel is never a blank box — see `paint`'s three-state
- * `summaryHtml` for why "still coming" and "came back empty" are two
- * different sentences.
- *
- * Summaries are then kept per `regionId|dateKey` (`summaryCache`), so
- * stepping back to a region you just looked at costs nothing. `renderedKey`
- * still short-circuits the repeat of the CURRENT key; the cache is what
- * catches the return to a previous one.
- *
- * A PLACEHOLDER NEVER REPLACES AN ANSWER (SNOW-880). SNOW-879 painted its
- * frame on every render, which fixed the blank box on the way IN and broke
- * the far more common move: changing region with the panel already open went
- * body -> placeholder -> body, collapsing the panel to two lines and
- * springing it back inside about a tenth of a second. That is a flash, not
- * loading. The placeholder is now painted only when nothing on screen is
- * worth keeping — see the pre-paint condition in `render`, and `paintedKey`,
- * which is what the panel is SHOWING as opposed to what `render` last
- * decided. Changing region under an open panel holds the previous answer
- * until the new one is ready, so the box stays still and the user sees one
- * change rather than three.
- *
- * THIS MODULE ALSO OWNS THE PIN ROUNDEL (SNOW-814) — the star between the
- * chip and the download control (public/partials/_map_region_pin_control.html).
- * It sits here rather than in a module of its own because the roundel's
- * state and the pinned list below are the SAME fact: "is this region in my
- * list". Two owners would be two answers, which is exactly what the pill it
- * replaced produced — a server-rendered "★ Pinned" beside a list that had
- * been reloaded since. One loader, one derivation, and they cannot drift.
- *
- * PINNED REGIONS LIVE HERE (SNOW-814). The panel's last section is the
- * user's own pinned regions, loaded over HTMX from favourites:region_list.
- * They were rows in the pins sheet from SNOW-802 until this ticket, beside
- * dropped pins and saved resorts, and none of that sheet's affordances
- * reached them — no map layer to switch on, no rename, no forecast card, no
- * coordinate to fly to. The chip that names the selected region is where a
- * list of regions belongs: the pin control is already in this panel, so
- * pinning a region and finding the ones you pinned are one surface.
- *
- * It also gives the chip something to disclose with NOTHING selected, which
- * it did not have — it was simply disabled, a control that looked pressable
- * and was not. A signed-in user now opens it onto their pinned regions; a
- * visitor still gets an inert chip, because for them the panel would be
- * empty.
- *
- * Pressing a pinned region's name SELECTS it — the hash, which is map.js's
- * own deep-link route into ``selectFeature`` — and then frames it through
- * ``window.pwaMapFocus.region``. Selecting rather than only framing is the
- * difference between a switcher and a bookmark list: a press that flew the
- * map to Zermatt while the chip above still read "Martigny-Verbier" would be
- * the panel contradicting its own header.
- *
- * NOT YET COVERED BY TESTS. There is no tests/js suite for this module, and
- * that is a gap rather than a decision — its logic (the render cache key,
- * the fetch sequencing, the open/close state) is exactly the kind jsdom can
- * hold, so it belongs in tests/js rather than tests/e2e. Tracked on SNOW-801.
- *
- * SNOW-1098: on a phone the chip is not drawn (map.css hides the ribbon)
- * and every selection opens the region sheet instead
- * (static/js/map_region_sheet.js), which carries the same facts at peek,
- * half and full. This panel keeps its summary for the desktop, where the
- * sheet never opens and the chip is the only way in. Its pinned list also
- * serves search on a phone, through window.pwaPinnedRegions below.
- *
- * The content stops at the resorts list. Neighbouring regions' ratings and
- * the week's trend are the obvious next two; the ratings cache already holds
- * what the trend would need.
+ *   - THE PINNED-REGIONS LIST, loaded over HTMX from favourites:region_list
+ *     into a hidden host in the ribbon (#region-pin-rows) and published as
+ *     window.pwaPinnedRegions, which search lists before anything is typed.
+ *     That was the phone's arrangement from 16 Oct (search replaced the chip
+ *     there); SNOW-1173 made it every width's, so a desktop finds its pinned
+ *     regions where a phone does, and picking one selects it and opens the
+ *     sheet like any other selection.
  */
 
 (function regionPanelInit() {
   'use strict';
 
   const chip = document.getElementById('region-readout');
-  const panel = document.getElementById('region-panel');
-  const mapEl = document.getElementById('map');
-  const ribbon = document.getElementById('season-ribbon');
-  if (!chip || !panel || !mapEl) return;
+  const pinnedRows = document.getElementById('region-pin-rows');
+  if (!chip || !pinnedRows) return;
 
-  const SUMMARY_URL_TEMPLATE = mapEl.dataset.regionSummaryUrl || '';
-  const RESORTS_URL = mapEl.dataset.resortsByRegionUrl || '/api/resorts-by-region/';
-  // SNOW-814: absent for a visitor — there is no list to load, and no
-  // pinned-regions section is rendered. See the partial's own note.
-  const PIN_LIST_URL = panel.dataset.regionPinListUrl || '';
-  // The toggle endpoint with the codebase's 'XX-0000' region-id token in it,
-  // the same shape as the summary URL above.
-  const PIN_TOGGLE_URL_TEMPLATE = panel.dataset.regionPinToggleUrl || '';
+  // SNOW-814: absent for a visitor — there is no list to load.
+  const PIN_LIST_URL = pinnedRows.dataset.regionPinListUrl || '';
+  // The toggle endpoint with the codebase's 'XX-0000' region-id token in it.
+  const PIN_TOGGLE_URL_TEMPLATE = pinnedRows.dataset.regionPinToggleUrl || '';
   const pinControl = document.getElementById('map-region-pin-control');
-  const OVERLAY_NAME = 'region-panel';
+  const label = document.getElementById('search-region-label');
 
-  // The region and date the panel is currently showing, so a re-open with
-  // nothing changed does not refetch, and a change while open repaints.
+  /** @type {?string} The region the chip names, or null. */
   let currentRegionId = null;
-  let currentDate = null;
-  let renderedKey = null;
-  // SNOW-880: the key whose SETTLED body is on screen right now, or null when
-  // the panel holds no answer (nothing painted yet, or only a placeholder).
-  // Distinct from `renderedKey`, which the selection and date handlers null to
-  // force a repaint — that says what `render` should do next, this says what
-  // the user is currently looking at, and only the second one can answer
-  // "is there something here worth keeping".
-  let paintedKey = null;
-  let resortsByRegion = null;
-  // SNOW-879: the in-flight `/api/resorts-by-region/` fetch, so the idle
-  // warm at the foot of this module and a panel open that beats it share
-  // one request rather than racing two.
-  let resortsWork = null;
-  // SNOW-879: summary HTML by `regionId|dateKey`. The panel used to refetch
-  // on every selection, so stepping back to a region you had just looked at
-  // cost a round trip to be told the same thing. Bounded (SUMMARY_CACHE_MAX)
-  // because a long scrub over the season ribbon visits a new key per day.
-  const summaryCache = new Map();
-  const SUMMARY_CACHE_MAX = 60;
-  // Invalidates an in-flight fetch when a newer one starts, mirroring
-  // openRegionPopup's summarySeq guard in map.js.
-  let seq = 0;
-
-  const isOpen = () => !panel.hidden;
 
   /**
    * Read Django's CSRF cookie.
@@ -167,74 +77,20 @@
     return match ? decodeURIComponent(match[1]) : '';
   };
 
-  /**
-   * Close the panel and return the chip to its collapsed state.
-   *
-   * @returns {void}
-   */
-  const close = () => {
-    if (!isOpen()) return;
-    panel.hidden = true;
-    chip.setAttribute('aria-expanded', 'false');
-    ribbon?.classList.remove('is-open');
-  };
-
   // Server-translated strings. `makemessages` does not scan JavaScript, so a
   // literal here would ship as English to every locale — the i18n-lint rule.
-  // The fallbacks are not decoration: a page that renders this module without
-  // the template must still put words on screen.
   const STRINGS = self.pwaStrings.read('region-panel-strings-template', {
-    resorts: 'Resorts in this region',
-    unavailable: 'Region details are unavailable offline.',
-    loading: 'Loading region details…',
-    pinned: 'Pinned regions',
-    // Hyphenated, because the key IS the template's `data-string` value and
-    // the two are compared literally (tests/test_js_strings_are_translatable).
-    'pinned-failed': "Your pinned regions couldn't be loaded.",
     'pin-region': 'Pin this region',
     'unpin-region': 'Unpin this region',
     'pin-failed': "That region couldn't be pinned. Try again.",
   });
 
   /**
-   * Build one titled section of the panel.
-   *
-   * @param {string} eyebrow The section's uppercase label.
-   * @returns {HTMLDivElement} The section, with its eyebrow already in it.
-   */
-  const buildSection = (eyebrow) => {
-    const section = document.createElement('div');
-    section.className = 'region-panel-section';
-    const label = document.createElement('p');
-    label.className = 'region-panel-eyebrow';
-    label.textContent = eyebrow;
-    section.appendChild(label);
-    return section;
-  };
-
-  // The pinned-regions section is built ONCE and moved between renders
-  // rather than rebuilt with the rest of the panel. Its content does not
-  // depend on the selected region or the displayed date — the two things
-  // `render` keys on — so rebuilding it on a date scrub would refetch a list
-  // that had not changed, and would throw away a row the user was mid-way
-  // through removing.
-  const pinnedSection = PIN_LIST_URL ? buildSection(STRINGS.pinned) : null;
-  const pinnedRows = document.createElement('div');
-  // A real attribute, because window.pwaRowRemoved.watch takes a SELECTOR:
-  // its listeners are delegated from the document and outlive any element
-  // reference this module holds.
-  pinnedRows.setAttribute('data-region-pin-rows', '');
-  if (pinnedSection) pinnedSection.appendChild(pinnedRows);
-  // Whether the rows currently in `pinnedRows` are still true. A pin toggle
-  // anywhere on the page invalidates them; the next open reloads.
-  let pinsLoaded = false;
-
-  /**
    * Whether the loaded list holds a row for ``regionId``.
    *
    * The list IS the state. Reading it rather than tracking a flag is what
-   * keeps the roundel and the rows from disagreeing: an unpin from a row,
-   * a pin from the roundel and a reload all change one thing.
+   * keeps the roundel and the list from disagreeing: an unpin, a pin and a
+   * reload all change one thing.
    *
    * @param {?string} regionId An EAWS micro-region id, or null.
    * @returns {boolean} True when the region is pinned.
@@ -243,8 +99,7 @@
     if (!regionId) return false;
     // Compared as attribute VALUES rather than built into a selector: a
     // region id in a selector string needs CSS.escape, which jsdom does not
-    // implement, so the tests/js suite this module needs would be testing a
-    // different code path from the browser's.
+    // implement.
     return [...pinnedRows.querySelectorAll('[data-row-focus-region]')].some(
       (button) => button.getAttribute('data-row-focus-region') === regionId,
     );
@@ -281,423 +136,69 @@
   };
 
   /**
-   * Mark the pinned row for the region the panel is currently describing.
-   *
-   * The selected region is usually IN this list — pinning it is what the
-   * panel's own control above does — so without a mark the same region is
-   * named twice on one surface with nothing to tell the two apart. Marking
-   * rather than hiding: a row that vanished when you selected it would make
-   * the list reorder itself under the cursor, and "which of my regions am I
-   * looking at" is a question the list should answer.
-   *
-   * The press stays live on the marked row: it recentres the map on the
-   * region, which is worth having after the user has panned away with the
-   * panel open. It is only not a change of subject.
-   *
-   * `aria-current="true"` rather than a class alone, so the answer is
-   * available to a screen reader too.
-   *
-   * @returns {void}
-   */
-  const markCurrent = () => {
-    pinnedRows.querySelectorAll('[data-row-focus-region]').forEach((button) => {
-      const isCurrent = !!currentRegionId
-        && button.getAttribute('data-row-focus-region') === currentRegionId;
-      button.closest('li')?.classList.toggle('is-current', isCurrent);
-      if (isCurrent) button.setAttribute('aria-current', 'true');
-      else button.removeAttribute('aria-current');
-    });
-  };
-
-  /**
    * (Re)load the pinned-regions rows from favourites:region_list.
    *
-   * Over HTMX rather than `fetch` + innerHTML, for the reason the pins
-   * sheet loads its own list that way: each row arrives carrying a Remove
-   * form, and htmx.ajax is what processes those into live requests. It is
-   * also what keeps the endpoint behind `@require_htmx` (invariant 4).
+   * Over HTMX rather than `fetch` + innerHTML because the endpoint is
+   * behind `@require_htmx` (invariant 4), and its rows are the server's own
+   * (includes/_ugc_panel_row.html), so the ids read off them are the list
+   * the user would see anywhere else.
    *
    * @returns {Promise<void>} Settles once the rows are in the document.
    */
   const loadPins = () => {
     if (!PIN_LIST_URL || typeof htmx === 'undefined') return Promise.resolve();
-    pinsLoaded = true;
-    // `htmx.ajax` resolves once the swap has settled. The completion is taken
-    // from the promise rather than from an `htmx:afterSwap` listener on the
-    // container: this call passes no source element, so htmx raises its
-    // lifecycle events against document.body, and a listener bound to the
-    // target never hears them.
+    // `htmx.ajax` resolves once the swap has settled.
     return htmx
       .ajax('GET', PIN_LIST_URL, { target: pinnedRows, swap: 'innerHTML' })
       .then(() => {
-        markCurrent();
         syncPinControl();
       });
   };
 
-  // A failed load must not leave the container empty. Empty is the SERVER's
-  // way of saying "you have pinned nothing" (the list partial's own empty
-  // state), and a request that merely failed has not established that — the
-  // same distinction the pins sheet draws, and the reason its error line and
-  // its empty state are two different sentences.
-  //
-  // Delegated from the document, and filtered on the target, for the reason
-  // row_removed.js gives: htmx raises the lifecycle events for an `htmx.ajax`
-  // call with no source element against document.body, so a listener bound to
-  // the container never hears them.
-  for (const name of ['htmx:responseError', 'htmx:sendError']) {
-    document.addEventListener(name, (ev) => {
-      if (ev.detail?.target !== pinnedRows) return;
-      pinnedRows.textContent = '';
-      const p = document.createElement('p');
-      p.className = 'region-panel-empty';
-      p.textContent = STRINGS['pinned-failed'];
-      pinnedRows.appendChild(p);
-      // Not loaded after all — the next open tries again rather than
-      // leaving the failure on screen for the rest of the session.
-      pinsLoaded = false;
+  /**
+   * Copy what the chip says onto search's region label: the selection's
+   * name and the day's danger swatch, or the search prompt with nothing
+   * selected.
+   *
+   * The chip stays the one place map.js and map_season_ribbon.js write to
+   * (see the header); this follows it rather than repeating their logic.
+   *
+   * @returns {void}
+   */
+  const mirrorLabel = () => {
+    if (!label) return;
+    const name = label.querySelector('[data-search-region-name]');
+    const swatch = /** @type {HTMLElement|null} */ (
+      label.querySelector('[data-search-region-swatch]')
+    );
+    const hasRegion = chip.classList.contains('has-region');
+    const leaf = chip.querySelector('.region-readout-leaf')?.textContent || '';
+    const chipSwatch = /** @type {HTMLElement|null} */ (
+      chip.querySelector('.region-readout-swatch')
+    );
+    label.classList.toggle('has-region', hasRegion);
+    if (name) name.textContent = hasRegion ? leaf : label.dataset.prompt || '';
+    if (swatch) {
+      swatch.hidden = !hasRegion;
+      swatch.style.background = hasRegion && chipSwatch ? chipSwatch.style.background : '';
+    }
+  };
+  if (label && typeof MutationObserver === 'function') {
+    new MutationObserver(mirrorLabel).observe(chip, {
+      attributes: true,
+      attributeFilter: ['class', 'style'],
+      characterData: true,
+      childList: true,
+      subtree: true,
     });
   }
 
-  /**
-   * Put the pinned-regions section into the panel, loading it if stale.
-   *
-   * The load happens HERE rather than in `open` because htmx swaps into an
-   * element by walking the document: a target still detached from the tree
-   * — which the section is until this append — has nowhere for the response
-   * to land.
-   *
-   * @returns {void}
-   */
-  const attachPinned = () => {
-    if (!pinnedSection) return;
-    panel.appendChild(pinnedSection);
-    if (!pinsLoaded) loadPins();
-    else markCurrent();
-  };
-
-  /**
-   * Fetch `/api/resorts-by-region/` once per page, warm or not.
-   *
-   * SNOW-879: this used to sit INSIDE `render`, awaited after the summary
-   * fetch had already settled — so the first open of the panel paid two
-   * round trips end to end for two requests that have nothing to do with
-   * each other. It is region-independent and never refetched, which is
-   * exactly what makes it warmable: the call at the foot of this module
-   * starts it while the map is still settling, and by the time the chip is
-   * pressed the answer is usually already here.
-   *
-   * A failed fetch resolves to `{}` and is NOT retried, matching the
-   * behaviour this replaces — a panel with no resort list is a section
-   * missing, not a panel broken.
-   *
-   * @returns {Promise<Object>} region_id → resort names.
-   */
-  const ensureResorts = () => {
-    if (resortsByRegion !== null) return Promise.resolve(resortsByRegion);
-    if (resortsWork) return resortsWork;
-    resortsWork = fetch(RESORTS_URL, { headers: { Accept: 'application/json' } })
-      .then((resp) => (resp.ok ? resp.json() : {}))
-      .catch(() => ({}))
-      .then((data) => {
-        resortsByRegion = data;
-        return data;
-      });
-    return resortsWork;
-  };
-
-  /**
-   * Fetch one region's summary HTML, caching a successful answer.
-   *
-   * Resolves to '' on any failure — offline, a 404, a malformed body — so
-   * the caller has one falsy case to paint the unavailable line from, and
-   * never a rejection to guard.
-   *
-   * @param {string} regionId The EAWS region id.
-   * @param {?string} dateKey The displayed date (YYYY-MM-DD), or null.
-   * @param {string} key The `regionId|dateKey` cache key.
-   * @returns {Promise<string>} The summary HTML, or '' when unavailable.
-   */
-  const fetchSummary = (regionId, dateKey, key) => {
-    let url = SUMMARY_URL_TEMPLATE.replace('XX-0000', encodeURIComponent(regionId));
-    if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
-    return fetch(url, { headers: { Accept: 'application/json' } })
-      .then((resp) => (resp.ok ? resp.json() : null))
-      .then((data) => {
-        const html = (data && data.html) || '';
-        if (html) {
-          // Oldest-first eviction. `Map` iterates in insertion order, so the
-          // first key is the least recently ADDED — not the least recently
-          // read, which a scrub does not distinguish anyway.
-          if (summaryCache.size >= SUMMARY_CACHE_MAX) {
-            summaryCache.delete(summaryCache.keys().next().value);
-          }
-          summaryCache.set(key, html);
-        }
-        return html;
-      })
-      .catch(() => '');
-  };
-
-  /**
-   * Paint the panel body from what is in hand right now.
-   *
-   * Called twice on a cold open — once on the opening press with whatever is
-   * already cached, once when the summary lands. That is the point: `render`
-   * used to clear and rebuild the panel only AFTER its awaits, so the box
-   * the chip disclosed was genuinely empty for the length of the round trip.
-   *
-   * `summaryHtml` carries three states and they are three different
-   * sentences: a string is the summary, `undefined` is "still coming"
-   * (STRINGS.loading), and '' is "asked and got nothing" (STRINGS.unavailable).
-   * Collapsing the last two would tell an online user with a slow connection
-   * that they are offline.
-   *
-   * @param {string} regionId The EAWS region id.
-   * @param {string|undefined} summaryHtml Summary HTML, '' or undefined.
-   * @returns {void}
-   */
-  const paint = (regionId, summaryHtml) => {
-    panel.textContent = '';
-
-    if (summaryHtml) {
-      // Server-rendered by Django templates with autoescaping on — the same
-      // HTML map.js hands to Popup.setHTML, and safe on the same grounds.
-      const section = document.createElement('div');
-      section.className = 'region-panel-section';
-      section.innerHTML = summaryHtml;
-      // The summary's own header is the danger chip and the region name —
-      // exactly what the ribbon above is already showing. Dropping it is
-      // what stops the surface saying the region's name twice. A real seam
-      // in the server template (public/_region_tooltip.html), not a guess at
-      // the markup: everything else in there (breadcrumb, bulletin link,
-      // editorial) is content the ribbon has no room for.
-      section.querySelector('.region-tooltip-header')?.remove();
-      panel.appendChild(section);
-    } else {
-      const p = document.createElement('p');
-      p.className = 'region-panel-empty';
-      p.textContent = summaryHtml === undefined ? STRINGS.loading : STRINGS.unavailable;
-      panel.appendChild(p);
-    }
-
-    const resorts = (resortsByRegion && resortsByRegion[regionId]) || [];
-    if (resorts.length) {
-      const section = buildSection(STRINGS.resorts);
-      const list = document.createElement('ul');
-      list.className = 'region-panel-resorts';
-      resorts.forEach((name) => {
-        const li = document.createElement('li');
-        li.textContent = name;
-        list.appendChild(li);
-      });
-      section.appendChild(list);
-      panel.appendChild(section);
-    }
-
-    // SNOW-814: last, and deliberately so. The panel is opened FROM the
-    // selected region's name, so what that region is comes first; the list
-    // of other regions is where you go when this one is not the one you
-    // wanted. With nothing selected it is the whole panel (see the early
-    // return in `render`) and the question does not arise.
-    attachPinned();
-  };
-
-  /**
-   * Render the panel body for one region and date.
-   *
-   * @param {string} regionId The EAWS region id.
-   * @param {?string} dateKey The displayed date (YYYY-MM-DD), or null.
-   * @param {{fromOpen?: boolean}} [options] ``fromOpen: true`` when this
-   *   render is the panel being disclosed rather than its subject changing
-   *   underneath an already-open panel. It is what decides whether a
-   *   placeholder may be painted — see the pre-paint below.
-   * @returns {Promise<void>}
-   */
-  const render = async (regionId, dateKey, options) => {
-    const key = `${regionId}|${dateKey || ''}`;
-    if (key === renderedKey) return;
-
-    // SNOW-814: nothing selected. The panel is then the pinned list alone —
-    // no summary to fetch, no resorts to list — and it is reached only by a
-    // signed-in user, since the chip is inert without a list to show.
-    if (!regionId) {
-      seq += 1;
-      panel.textContent = '';
-      attachPinned();
-      renderedKey = key;
-      paintedKey = key;
-      return;
-    }
-
-    const mine = ++seq;
-    const cachedSummary = summaryCache.get(key);
-
-    // SNOW-879: everything already in hand. This is the re-open and the
-    // step back to a region just visited, and it now costs no network at
-    // all — one synchronous paint and done.
-    if (cachedSummary !== undefined && resortsByRegion !== null) {
-      paint(regionId, cachedSummary);
-      renderedKey = key;
-      paintedKey = key;
-      return;
-    }
-
-    // SNOW-880: paint the placeholder frame ONLY when there is nothing on
-    // screen worth keeping — a cold open, or an open onto a body left behind
-    // by a region the user has since moved away from.
-    //
-    // Not when the panel is already open and its subject changes under it.
-    // SNOW-879 pre-painted unconditionally, and switching regions with the
-    // panel open therefore went body -> placeholder -> body: the panel
-    // collapsed to two lines and sprang back within about a tenth of a
-    // second, which reads as a flash rather than as loading. The old body is
-    // the better thing to hold for that moment. It is what the user was just
-    // reading, it keeps the panel's box still, and the swap when the summary
-    // lands is then a single change from one region's answer to the next.
-    //
-    // Both halves of the condition matter. `fromOpen` alone would keep a
-    // stale body across a re-open; `paintedKey !== key` alone would let a
-    // mid-flight switch repaint the placeholder and reintroduce the flash.
-    if ((options && options.fromOpen) && paintedKey !== key) {
-      paint(regionId, cachedSummary);
-    }
-
-    const [summaryHtml] = await Promise.all([
-      cachedSummary === undefined
-        ? fetchSummary(regionId, dateKey, key)
-        : Promise.resolve(cachedSummary),
-      ensureResorts(),
-    ]);
-    // A newer render started while these were out; its own paint is the
-    // one that should stand.
-    if (mine !== seq) return;
-
-    paint(regionId, summaryHtml);
-    renderedKey = key;
-    paintedKey = key;
-  };
-
-  /**
-   * Open the panel for the currently selected region.
-   *
-   * @returns {void}
-   */
-  const open = () => {
-    // SNOW-814: a region is no longer required. With none selected the panel
-    // is the pinned list, which is content in its own right; with neither a
-    // region nor a list there is nothing to disclose and `syncEnabled` has
-    // already made the chip inert.
-    if (!currentRegionId && !pinnedSection) return;
-    // Close every other map overlay first, so the two are never both on
-    // screen for a frame. The registry owns the matrix; this surface only
-    // states that it is opening.
-    window.pwaMapOverlays?.opening(OVERLAY_NAME);
-    panel.hidden = false;
-    chip.setAttribute('aria-expanded', 'true');
-    ribbon?.classList.add('is-open');
-    render(currentRegionId, currentDate, { fromOpen: true });
-    // `render` short-circuits when nothing it keys on has changed, and a
-    // re-open after a selection made while closed is exactly that case — so
-    // the mark is refreshed here rather than only on the paths that repaint.
-    markCurrent();
-  };
-
-  chip.addEventListener('click', (ev) => {
-    // Without this the opening click reads as a click-away to the document
-    // handler below and the panel closes on the same gesture that opened it.
-    ev.stopPropagation();
-    if (isOpen()) close(); else open();
-  });
-
-  // Outside click and Escape. Both only ever close THIS surface; the region
-  // selection, the ribbon and the hash are untouched.
-  //
-  // A click on the MAP is not "outside". It arrives before the
-  // snowdesk:region-selected it causes, so treating it as a dismissal
-  // closed the panel on the very gesture that picked the region it should
-  // have been updating. The map drives the panel through the selection
-  // event instead: selecting a region repaints it, deselecting closes it.
-  document.addEventListener('click', (ev) => {
-    if (!isOpen()) return;
-    if (panel.contains(ev.target)) return;
-    if (mapEl.contains(ev.target)) return;
-    close();
-  });
-  document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && isOpen()) {
-      close();
-      chip.focus();
-    }
-  });
-
-  // SNOW-814: the chip is inert only when there is genuinely nothing behind
-  // it — no region selected AND no pinned list to fall back on, which is a
-  // visitor's state. A signed-in user's chip stays pressable with nothing
-  // selected, because their pinned regions are what it opens onto. Before
-  // this it was disabled whenever no region was selected, which made the
-  // page's most prominent control dead at first paint.
-  const syncEnabled = () => {
-    chip.disabled = !currentRegionId && !pinnedSection;
-  };
-
   document.addEventListener('snowdesk:region-selected', (ev) => {
     currentRegionId = ev.detail?.region_id || null;
-    renderedKey = null;
-    syncEnabled();
     syncPinControl();
-    // Deselecting no longer closes a panel that still has something to say.
-    // It repaints down to the pinned list instead — the same surface the
-    // chip would open onto from here, so the two states cannot disagree.
-    if (!currentRegionId && !pinnedSection) {
-      close();
-      return;
-    }
-    if (isOpen()) render(currentRegionId, currentDate);
-  });
-
-  document.addEventListener('snowdesk:date-changed', (ev) => {
-    currentDate = ev.detail?.date || null;
-    renderedKey = null;
-    if (isOpen() && currentRegionId) render(currentRegionId, currentDate);
-  });
-
-  // SNOW-814: pressing a pinned region's name SELECTS it and frames it.
-  //
-  // Selection goes through the hash because that is map.js's own public way
-  // in — `selectFeature` is closed over by the map IIFE, and the deep link
-  // (`/#CH-4115`) is the contract it already honours, hashchange and all. So
-  // the row press produces exactly the state a shared link would, including
-  // the history entry, rather than a second private path into the same
-  // machinery.
-  //
-  // Framing is a separate call rather than a consequence: `selectFeature`
-  // does not move the camera, and somebody who pressed a region's name has
-  // asked to be taken there — the rule every panel row follows
-  // (static/js/row_focus.js).
-  //
-  // The panel stays OPEN, unlike the sheets' rows, which close on a focus
-  // press. They are full-width docks on a phone and would hide the map they
-  // just flew; this panel is a small surface at the top-left, the map is
-  // visible around it, and it repaints to the region just selected — which
-  // is the answer to "what did I just pick".
-  panel.addEventListener('click', (ev) => {
-    const button = ev.target.closest?.('[data-row-focus-region]');
-    if (!button) return;
-    const regionId = button.getAttribute('data-row-focus-region');
-    if (!regionId) return;
-    ev.preventDefault();
-    if (regionId !== currentRegionId) window.location.hash = '#' + regionId;
-    window.pwaMapFocus?.region?.(regionId);
-  });
-
-  // A pin toggled anywhere — this panel's own control, or the region popup's
-  // — makes the list stale. Marking rather than reloading: the next open
-  // fetches it, and a toggle made while the panel is open reloads at once so
-  // the section cannot show a region the user has just unpinned.
-  document.addEventListener('snowdesk:region-pin-changed', () => {
-    pinsLoaded = false;
-    loadPins();
+    // The region sheet opens with this selection and carries the star, so
+    // a list that failed to load is retried now rather than left wrong.
+    ensurePins();
   });
 
   // The pin roundel. Online-only and outside the mutation queue, like the
@@ -734,7 +235,6 @@
         pinControl.setAttribute('aria-label', label);
         pinControl.setAttribute('title', label);
         window.pwaTelemetry?.emit('map.region.pin_toggled', { pinned: !!data.pinned });
-        pinsLoaded = false;
         loadPins();
       })
       .catch(() => {
@@ -746,49 +246,48 @@
       });
   });
 
-  // A row unpinned by its own star empties one <li>; the empty state is a
-  // server-side clause only a fresh response carries, so re-read the list.
-  // The same hook, and the same reason, as the pins sheet's.
+  // Search lists the pinned regions before anything is typed. It reads the
+  // rows this module loaded rather than fetching its own copy, so the list
+  // in search and the pin roundel are one fact. `ids` is in list order;
+  // `ready` settles once the first load has.
   //
-  // Re-reading is also what moves the roundel: `loadPins` syncs it from the
-  // rows that come back, so unpinning the selected region from its row
-  // hollows the star in the header. Two controls for one fact, and one
-  // loader deciding what that fact is.
-  window.pwaRowRemoved?.watch('[data-region-pin-rows]', () => {
-    pinsLoaded = false;
-    loadPins();
-  });
-
-  // Search lists the pinned regions before anything is typed (Hugo, 16 Oct
-  // — on a phone it replaces the chip, whose panel was the list's home). It
-  // reads the rows this module loaded rather than fetching its own copy, so
-  // the list in search, the rows here and the pin roundel are one fact.
-  // `ids` is in list order; `ready` settles once the first load has.
+  // A failed load is retried on the next ask. Nothing else ever reloads the
+  // list once boot is past — the chip's panel retried on each open until
+  // SNOW-1173 retired it — so a transient failure at boot would otherwise
+  // leave search with no pinned regions all session, and the star offering
+  // to pin a region that is pinned (whose toggle would unpin it).
   /** @type {Promise<void>} */
   let pinsReady = Promise.resolve();
+  // True once a load has come back 2xx; htmx resolves its promise for an
+  // error response too, so the request's own outcome is what says.
+  let pinsLoaded = false;
+  let pinsLoading = false;
+  pinnedRows.addEventListener('htmx:afterRequest', (ev) => {
+    pinsLoaded = pinsLoaded || !!ev.detail?.successful;
+  });
+  const ensurePins = () => {
+    if (!PIN_LIST_URL || pinsLoaded || pinsLoading) return pinsReady;
+    pinsLoading = true;
+    pinsReady = loadPins()
+      .catch(() => {})
+      .finally(() => {
+        pinsLoading = false;
+      });
+    return pinsReady;
+  };
   window.pwaPinnedRegions = Object.freeze({
     ids: () =>
       [...pinnedRows.querySelectorAll('[data-row-focus-region]')]
         .map((button) => button.getAttribute('data-row-focus-region'))
         .filter(Boolean),
-    ready: () => pinsReady,
+    ready: ensurePins,
   });
 
-  window.pwaMapOverlays?.register(OVERLAY_NAME, { isOpen, close });
-  syncEnabled();
-  // Load the list at boot for a signed-in user, not on first open: the pin
+  mirrorLabel();
+  // Load the list at boot for a signed-in user, not on first use: the pin
   // roundel is in the header from the first paint and its state comes from
   // this list, so deferring the fetch would leave the star lying about
   // whichever region the page opened on.
-  if (PIN_LIST_URL) pinsReady = loadPins().catch(() => {});
-  // SNOW-879: and warm the resort lookup, for the same reason one line up —
-  // it is the panel's other prerequisite, it does not depend on which region
-  // is selected, and fetching it here means the first open of the panel is
-  // not the thing that pays for it. Deferred to idle so it never competes
-  // with the map's own first paint; `requestIdleCallback` is absent on
-  // Safari <17, hence the timeout fallback.
-  const warmResorts = () => ensureResorts().catch(() => {});
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(warmResorts);
-  else setTimeout(warmResorts, 1200);
+  ensurePins();
   syncPinControl();
 }());

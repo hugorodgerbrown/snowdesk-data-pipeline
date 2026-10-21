@@ -6,7 +6,9 @@ public/partials/_map_region_pin_control.html — the region pin roundel
 Lives in the ribbon header (public/partials/_season_ribbon.html), between
 the #region-readout chip and the download roundel, and pins or unpins the
 region the chip names. Driven by static/js/map_region_panel.js, which owns
-the pinned list this control's state is read from.
+the pinned list this control's state is read from. The region sheet's
+header carries a proxy of it (map_region_sheet.js), so it has one owner on
+every width.
 
 WHAT IT REPLACED. Until SNOW-814 this was a pill INSIDE the region summary
 — "☆ Pin this region" / "★ Pinned"
@@ -27,7 +29,7 @@ both are why it is a roundel now:
 
 THE STATE IS DERIVED, NOT SERVER-RENDERED. The button ships in its
 "no-region" state and map_region_panel.js sets `data-pin-state` from the
-pinned list it loads for the panel — so the roundel and the list are the
+pinned list it loads (for search, since SNOW-1173) — so the roundel and the list are the
 same fact read twice, and cannot disagree the way the pill and the list
 could. See that module's syncPinControl.
 

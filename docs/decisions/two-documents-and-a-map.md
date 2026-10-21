@@ -2,7 +2,7 @@
 name: two-documents-and-a-map
 description: Two document pages — bulletin and weather — plus the map; regions, resorts, routes are map objects; trips and /resorts/ are pages
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-21
 ---
 
 # Two documents and a map
@@ -139,7 +139,9 @@ name and canton, which is how that set is searched for.
   and pinning is a star roundel in that chip's own header beside the
   download roundel — the region's two verbs together, on the surface that
   already names it — while the sheet is places again. One model, two lists, and the second one is
-  what makes the chip mean something with nothing selected.
+  what makes the chip mean something with nothing selected. (SNOW-1173
+  later retired that panel: pinned regions are listed by search, and the
+  chip reopens the region sheet.)
 - **The weather page is promoted, and it is the weaker of the two.** It had
   full sharing metadata but no sitemap entry, and none of the MCP server's
   thirteen tools reached it — every one was region- or bulletin-scoped. It

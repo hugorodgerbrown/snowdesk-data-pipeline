@@ -30,20 +30,23 @@ and how is it changing?"**
 Tapping a region selects it: the region is outlined, and the season
 ribbon and its readout chip at the top of the map switch to that
 region — its name as a geographic breadcrumb and its danger swatch for the
-selected day. The chip is a disclosure button: pressing it opens the
-**region panel** (SNOW-801), which carries the link to the full bulletin
-for the shown day, the resorts inside the region, and the region's pin
-(SNOW-814). The
+selected day. The
 selection is mirrored in the URL fragment (`#CH-4115`), so it is
-deep-linkable and the back button drops it. On a desktop nothing is
-overlaid on the map itself: tapping a region does not open a popup over
-the terrain the visitor just tapped.
+deep-linkable and the back button drops it. Nothing is anchored to the
+map itself: tapping a region does not open a popup over the terrain the
+visitor just tapped.
 
-**On a phone (below 640px) every selection opens the region sheet**
-(SNOW-1098), a bottom sheet with the detents of §3.7: a map tap, a search
-pick, a pinned region from search, and a deep link (`/map/#CH-4115`). The
-region chip is not drawn on a phone (see below), so the sheet is the one
-surface that names what is selected. It slides up from the foot and opens
+**Every selection opens the region sheet** (SNOW-1098 on a phone, SNOW-1173
+on a desktop): a map tap, a search pick, a pinned region from search, and
+a deep link (`/map/#CH-4115`). On a desktop it is the inset panel at the
+map's right that a resort or a weather point opens, with no detents, and
+picking the selected region again from search reopens it. The region
+chip's own dropdown — the **region panel** of
+SNOW-801, a second, smaller copy of the region's summary with an "Open
+bulletin" link — is gone: a region tap opened nothing on a desktop while a
+resort or a weather tap opened the panel, which read as two maps. With
+the dropdown gone the chip was a label, so it is not drawn on any width
+now (see below) and the sheet is the surface that names what is selected. It slides up from the foot and opens
 at **peek**, one compact row in the manner of Google Maps' peek: the
 danger tile, the region's name, and under it the search row's flag and
 region code with the day's level and the area name (no date — the date
@@ -53,22 +56,38 @@ removed the old popup. Under the peek row is the bulletin page's own body
 for the day (SNOW-1164, [why](decisions/the-sheet-is-the-page.md)):
 **half** shows where the region is and the top of it, **full** scrolls the
 whole of it — the day summary, the risk profile, the problems, the
-snowpack and weather, the source line — then the region's resorts. There
-is no link on to the bulletin page: on a phone the sheet is the page. A
+snowpack and weather, the source line — then the region's resorts. On a
+desktop the same body scrolls inside the panel. There is no link on to
+the bulletin page: the sheet is the page. A
 day with no bulletin has nothing for full to reveal, so the sheet stops at
 half. While it is open it follows the selection and the
 day, and deselecting the region closes it. Its pin and download buttons
 press the ribbon's roundels, so each keeps one owner.
 
-**The phone's top row is the date and search** (Hugo, 16 Oct 2026). On a
-phone the ribbon (the chip, its pin and its download) is not drawn: the
-sheet names the selection, carries the pin and the download, and the
-pinned regions the chip's panel listed are listed by search. The row
-holds the date control at the left — moved up from the bottom-left stack,
-where a peeking sheet covered it — and the search roundel at the right.
-Opening search grows it across the whole row, over the date, because
-nobody needs both at once. On a desktop the chip, its panel and the
-bottom-left date are unchanged.
+**The top row is search** (Hugo, 16 Oct 2026 on a phone; SNOW-1173 on a
+desktop). The ribbon (the chip, its pin and its download) is not drawn on
+any width: the sheet names the selection and carries the pin and the
+download (its header's buttons press the ribbon's roundels, which stay in
+the DOM), and the pinned regions are listed by search, which retired the
+chip's panel they used to live in. On a phone the row holds the date
+control at the left — moved up from the bottom-left stack, where a peeking
+sheet covered it — and the search roundel at the right; opening search
+grows it across the whole row, over the date, because nobody needs both at
+once. On a desktop the chip is folded into search: the search pill sits at
+the top-left where the chip was and, at rest, names the selected region
+with the day's danger swatch, or reads "Find a region or resort" with
+nothing selected; the date stays at the bottom left.
+
+**Search lists resorts and regions apart** (SNOW-1173). The two kinds of
+row had one shape, so a query like "verb" opened on four resorts that read
+as regions, each with a region code that names a bulletin, not a resort.
+The dropdown now groups them under "Resorts" and "Regions" — the kind
+holding the best match leads, so "verb" opens on Verbier and "bagn" on the
+Bagnes regions — and draws them differently: a resort row has a round pin
+tile and "in <region>", and no code; a region row has a square danger tile
+with the displayed day's level and keeps the flag and code. An empty field
+lists the pinned regions as region rows under "Pinned regions", the
+selected one marked with a bar at its left edge.
 
 Tapping the selected region again deselects it, as does tapping empty
 map area outside any region; the ribbon greys out and the readout drops
@@ -146,7 +165,8 @@ filled with the colour of its peak danger rating for the selected date.
 Regions with no bulletin that day are left uncoloured (`no_rating`).
 Selecting a region — by tapping the fill, tapping a resort pin inside
 it, or picking it from search — outlines the region and points the
-readout chip at it; the region panel is one press on that chip away.
+readout chip at it, and opens the region sheet; once it is closed the
+sheet is one press on that chip away.
 
 **Why the geography and the bulletin fill are separate** (SNOW-656). The
 geography is fixed and date-independent; the data painted onto it changes with
@@ -222,8 +242,9 @@ return to it across sessions. It is the user's own private data.
   saved resort, the resort page (the week went to the weather page with
   SNOW-1161). A favourite is a dropped pin, a saved resort (SNOW-499, the
   star on a resort's place sheet) or a region pin
-  (SNOW-802 — a region with no coordinate, listed in the region panel
-  rather than the pins sheet, SNOW-814).
+  (SNOW-802 — a region with no coordinate, listed by search before
+  anything is typed rather than in the pins sheet; SNOW-814 put it in the
+  chip's region panel, and SNOW-1173 retired that panel).
 - **Who can use it.** Signed-in users — authentication is the whole gate
   since SNOW-724 retired the rollout flag. Anonymous visitors see the
   roundel and the panel, get a sign-in prompt inside it, and their
