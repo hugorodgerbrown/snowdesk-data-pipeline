@@ -873,6 +873,21 @@ DANGER_TILE_EMPTY_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "No rating", "context": {}},
 )
 
+SHEET_DATE_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Today",
+        "context": {"day": datetime.date(2026, 10, 21), "another_day": False},
+    },
+    {
+        "caption": "Another day — highlighted, with Back to today",
+        "context": {"day": datetime.date(2026, 10, 17), "another_day": True},
+    },
+)
+
+RESORT_TILE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "A place's lead tile", "context": {}},
+)
+
 EYEBROW_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Bulletin section heading", "context": {"text": "Day Risk Profile"}},
     {"caption": "Bulletin section heading", "context": {"text": "Avalanche Problems"}},
@@ -1221,15 +1236,12 @@ RESORT_BULLETIN_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
 # than pinned to the real viewport edge. (Toast's own fixtures sit above,
 # pre-dating this consolidation.)
 
-# SNOW-1165: the "Showing … · Back to today" strip, in its two placements.
+# SNOW-1165: the "Showing … · Back to today" strip. The pages' only, since
+# the map's sheets took their own date row (Hugo, 21 Oct).
 ANOTHER_DAY_STRIP_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Page — full width under the nav, a link to the bare URL",
         "context": {"day": datetime.date(2026, 4, 8), "href": "#"},
-    },
-    {
-        "caption": "Sheet — inside the map sheet, a button the map handles",
-        "context": {"day": datetime.date(2026, 4, 8), "placement": "sheet"},
     },
 )
 

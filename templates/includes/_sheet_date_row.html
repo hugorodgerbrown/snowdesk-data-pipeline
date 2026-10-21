@@ -1,0 +1,35 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_sheet_date_row.html — "Data from 21 Oct 2026", a full-
+width row under a map sheet's header (Hugo, 21 Oct).
+
+The region sheet named no day at all, a long way from the date control
+that decides it, and the sheets' headers had too much squeezed into their
+second lines. So the header is the tile, the name and the actions, and
+the day has its own row beneath it, in the date control's own format. It
+sits inside the peek, so a phone's sheet at its lowest still says it.
+
+On a day that is not today (``data-another-day``) the row turns to the
+info colours and offers "Back to today" — it replaced the separate
+another-day strip the region and place sheets carried above the header
+(SNOW-1165), which said the same thing a second time. The button is
+always rendered and shown by the attribute (src/css/main.css,
+``.sheet-date-row``), so map_region_sheet.js, which fills the blank peek
+copy, only has to set the day and the attribute; map_today.js handles the
+press, as it did the strip's.
+
+Context:
+  day         — the date the sheet is for, or None (the region sheet's
+                blank peek copy, which map_region_sheet.js fills through
+                ``data-sheet-date-day``).
+  another_day — True when ``day`` is not today.
+{% endcomment %}
+<div class="sheet-date-row" data-testid="sheet-date-row" {% if another_day %}data-another-day{% endif %}>
+    {% include "includes/_icon_calendar.html" with svg_class="shrink-0" only %}
+    <span class="min-w-0 flex-1 truncate">
+        {% trans "Data from" %} <span data-sheet-date-day>{% if day %}{{ day|date:"j M Y" }}{% endif %}</span>
+    </span>
+    <button type="button" data-back-to-today class="shrink-0 cursor-pointer font-semibold underline underline-offset-2">
+        {% trans "Back to today" %}
+    </button>
+</div>

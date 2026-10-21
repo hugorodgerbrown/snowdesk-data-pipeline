@@ -45,7 +45,7 @@
  *
  * THE PEEK PAINTS AT ONCE, AND A BODY IS FETCHED ONCE (2026-10-19). Every
  * selection used to wait on a round trip before the peek said anything,
- * though its name, code, area and the day's level are already on the page,
+ * though its name, the day's level and the day are already on the page,
  * and every look at the same region fetched the same body again. Now:
  *
  *   - the peek row is cloned from `#region-sheet-peek-template` (the same
@@ -84,18 +84,11 @@
   const STRINGS = self.pwaStrings.read('region-sheet-strings-template', {
     loading: 'Loading region details…',
     failed: 'Region details are unavailable offline.',
-    'level-low': 'Low',
-    'level-moderate': 'Moderate',
-    'level-considerable': 'Considerable',
-    'level-high': 'High',
-    'level-very_high': 'Very high',
   });
 
   // The digit a danger tile shows for each level, as the server's
   // `danger_level_digit` filter writes it.
   const LEVEL_DIGITS = { low: '1', moderate: '2', considerable: '3', high: '4', very_high: '5' };
-  // The countries the search row draws a flag for (the sprite's symbols).
-  const FLAGGED = ['ch', 'at', 'fr', 'it'];
 
   // How long a fetched body is reused without asking again. Matches the
   // view's max-age for today; a past day's body would keep for longer, but
@@ -123,9 +116,8 @@
 
   /** @type {?string} */
   let regionId = null;
-  /** The selection's own words, for the peek painted from the page. */
+  /** The selection's own name, for the peek painted from the page. */
   let regionName = '';
-  let subregionName = '';
   /** @type {?string} */
   let dateKey = null;
   // Invalidates a fetch when a newer one starts, so a slow answer for the
@@ -147,8 +139,45 @@
   };
 
   /**
-   * Fill a blank peek row from the page: the selection's name, code and
-   * area, and the level the map is painting for the day.
+   * Today as ``YYYY-MM-DD``, on the device's calendar.
+   *
+   * @returns {string}
+   */
+  const todayKey = () => {
+    const now = new Date();
+    const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
+    return now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+  };
+
+  /**
+   * A day as the date control and the server's date line write it,
+   * "21 Oct 2026" (Django's ``j M Y``) — in that order whatever the
+   * locale's own, since an "en" Intl puts the month first. Formatted in UTC
+   * so the calendar day never shifts with the device's zone.
+   *
+   * @param {string} isoDay ``YYYY-MM-DD``.
+   * @returns {string}
+   */
+  const formatDay = (isoDay) => {
+    try {
+      const parts = new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).formatToParts(new Date(isoDay + 'T00:00:00Z'));
+      const part = (/** @type {string} */ type) =>
+        (parts.find((p) => p.type === type)?.value || '').replace(/\.$/, '');
+      return [part('day'), part('month'), part('year')].filter(Boolean).join(' ');
+    } catch (_err) {
+      return isoDay;
+    }
+  };
+
+  /**
+   * Fill a blank peek row from the page: the selection's name, the level
+   * the map is painting for the day, and the day itself — highlighted, as
+   * the server's line is, when it is not today.
    *
    * @param {Element} row A clone of the template's row.
    * @returns {void}
@@ -160,28 +189,17 @@
     if (tile && level && LEVEL_DIGITS[level]) {
       tile.setAttribute('data-level', level);
       tile.textContent = LEVEL_DIGITS[level];
-      tile.hidden = false;
     }
     const name = slot('name');
     if (name) {
       name.textContent = regionName || regionId || '';
       name.setAttribute('title', regionName || regionId || '');
     }
-    const code = slot('code');
-    if (code) code.textContent = regionId || '';
-    const country = (regionId || '').slice(0, 2).toLowerCase();
-    const flag = slot('flag');
-    if (flag && FLAGGED.indexOf(country) !== -1) {
-      flag.classList.add('search-result-flag--' + country);
-      flag.removeAttribute('hidden');
-      flag.querySelector('use')?.setAttribute('href', '#flag-' + country);
-    }
-    const meta = slot('meta');
-    if (meta) {
-      meta.textContent = [level ? STRINGS['level-' + level] : '', subregionName]
-        .filter(Boolean)
-        .join(' · ');
-    }
+    const today = todayKey();
+    const day = dateKey || today;
+    const dayEl = row.querySelector('[data-sheet-date-day]');
+    if (dayEl) dayEl.textContent = formatDay(day);
+    row.querySelector('.sheet-date-row')?.toggleAttribute('data-another-day', day !== today);
   };
 
   /**
@@ -372,7 +390,6 @@
     const detail = ev.detail || {};
     regionId = detail.region_id || null;
     regionName = detail.region_name || '';
-    subregionName = detail.subregion_name || '';
     if (!regionId) {
       close();
       return;

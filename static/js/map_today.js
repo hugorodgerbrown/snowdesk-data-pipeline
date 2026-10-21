@@ -5,10 +5,10 @@
  *
  *   - #map-today-control, the "Today" half of the date control. Always shown;
  *     enabled whenever the map is on a day other than today (today_core.js).
- *   - any ``[data-back-to-today]`` button — the "Showing … · Back to today"
- *     strip at the top of the region and place sheets
- *     (includes/_another_day_strip.html), which the sheets render server-side
- *     for another day and re-render on every change of day. One delegated
+ *   - any ``[data-back-to-today]`` button — the "Back to today" in a map
+ *     sheet's date row (includes/_sheet_date_row.html, Hugo, 21 Oct; the
+ *     SNOW-1165 strip above the peek row until then), which the sheets
+ *     render server-side and re-render on every change of day. One delegated
  *     listener, because the sheets' content is swapped in and out.
  *
  * Decisions, and why:

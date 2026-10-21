@@ -26,6 +26,7 @@ Covers both views, ``resort_sheet_partial`` and ``favourite_sheet_partial``:
 from __future__ import annotations
 
 import datetime
+import re
 from typing import Any
 from unittest import mock
 
@@ -88,6 +89,28 @@ def _resort(**kwargs: Any) -> Resort:
     return resort
 
 
+def _peek(content: str) -> str:
+    """Return the sheet's peek block, up to the end of its date row."""
+    start = content.index("data-sheet-peek")
+    return content[
+        start : content.index(
+            "</button>", content.index('data-testid="sheet-date-row"')
+        )
+    ]
+
+
+def _date_row(peek: str) -> str:
+    """Return the date row's markup from a peek block."""
+    return peek[peek.index('data-testid="sheet-date-row"') - 60 :]
+
+
+def _text(markup: str | bytes) -> str:
+    """Return ``markup``'s text, tags dropped and whitespace collapsed."""
+    if isinstance(markup, bytes):
+        markup = markup.decode()
+    return " ".join(re.sub(r"<[^>]+>", " ", markup).split())
+
+
 def _primary_location(resort: Resort) -> Any:
     """Return the resort's primary location."""
     return resort.resort_locations.get(is_primary=True).location
@@ -134,31 +157,33 @@ class TestGuards:
 class TestResortPeek:
     """A resort's peek row: name, rating, region and the Save star."""
 
-    def test_header_names_the_resort_and_its_regions_level(
-        self, client: Client
-    ) -> None:
+    def test_header_is_the_pin_tile_the_name_and_the_date(self, client: Client) -> None:
+        """Hugo, 21 Oct: no level, code or region in the header."""
         resort = _resort()
         RegionDayRatingFactory.create(
             region=resort.region, date=timezone.localdate(), max_rating="considerable"
         )
         content = _get(client, _resort_url(resort.slug)).content.decode()
         assert 'data-place-kind="resort"' in content
-        assert "data-sheet-peek" in content
-        assert "Verbier" in content
-        assert 'data-testid="place-sheet-rating"' in content
-        assert "Considerable" in content
-        assert resort.region.region_id in content
+        peek = _peek(content)
+        assert 'data-testid="resort-tile"' in peek
+        assert "Verbier" in peek
+        assert "danger-tile" not in peek
+        assert "search-result-badge" not in peek
+        assert "Considerable" not in peek
+        row = _date_row(peek)
+        assert f"Data from {timezone.localdate():%-d %b %Y}" in _text(row)
+        assert "data-another-day" not in row
 
-    def test_another_day_shows_the_strip(self, client: Client) -> None:
-        """SNOW-1165: the sheet's strip, whose button the map handles."""
+    def test_another_day_highlights_the_date_row(self, client: Client) -> None:
+        """The row takes over from SNOW-1165's strip, button and all."""
         resort = _resort()
         content = _get(client, _resort_url(resort.slug, "2026-02-03")).content.decode()
-        start = content.index('data-testid="another-day-strip"')
-        assert start < content.index("data-sheet-peek")
-        strip = content[start : content.index("</div>", start)]
-        assert "Tue 3 Feb 2026" in strip
-        assert "data-back-to-today" in strip
-        assert "<a " not in strip
+        assert 'data-testid="another-day-strip"' not in content
+        row = _date_row(_peek(content))
+        assert "data-another-day" in row
+        assert "Data from 3 Feb 2026" in _text(row)
+        assert "data-back-to-today" in row
 
     def test_today_shows_no_strip(self, client: Client) -> None:
         resort = _resort()
@@ -405,8 +430,16 @@ class TestResortBody:
     def test_the_body_shows_the_maps_day(self, client: Client) -> None:
         resort = _resort()
         content = _get(client, _resort_url(resort.slug, "2026-02-03")).content
-        assert b"Tuesday 3 February" in content
         assert b"No bulletin this day" in content
+
+    def test_section_eyebrows_leave_the_day_to_the_date_row(
+        self, client: Client
+    ) -> None:
+        """Hugo, 21 Oct: every section follows the map's day, named once."""
+        resort = _resort()
+        content = _get(client, _resort_url(resort.slug, "2026-02-03")).content
+        assert "Data from 3 Feb 2026" in _text(content)
+        assert b"Tuesday 3 February" not in content
 
     def test_forecast_links_carry_the_maps_day(self, client: Client) -> None:
         resort = _resort(latitude=46.1, longitude=7.4)
@@ -439,18 +472,11 @@ class TestResortBody:
         assert "resort-why-it-matters" not in content
 
     def test_unrated_covered_day_says_no_bulletin(self, client: Client) -> None:
-        """SNOW-1161: the peek row says it, with the page's empty tile."""
+        """SNOW-1161: the bulletin card's empty tile, nothing in the header."""
         resort = _resort()
         content = _get(client, _resort_url(resort.slug)).content.decode()
-        peek = content[
-            : content.index("data-sheet-half")
-            if "data-sheet-half" in content
-            else len(content)
-        ]
-        assert 'data-testid="danger-tile-empty"' in peek
-        assert "No bulletin ·" in peek
-        assert "No bulletin available for" not in content
-        assert "bulletin for" not in content
+        assert 'data-testid="danger-tile-empty"' not in _peek(content)
+        assert "No bulletin today" in content
 
     def test_saved_resort_without_a_slug_has_no_resort_link(
         self, client: Client

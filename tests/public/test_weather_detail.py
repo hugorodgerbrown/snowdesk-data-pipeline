@@ -292,6 +292,21 @@ class TestCard:
         assert "22" in html  # wind
         assert "60%" in html  # precipitation probability
 
+    def test_header_names_the_height_and_the_day_row_follows(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Hugo, 21 Oct: "Belalp · 1934 m", then "Data from <day>"."""
+        response = client.get(_card_url(resort_location), {"date": TODAY.isoformat()})
+        html = response.json()["html"]
+        start = html.index('data-testid="weather-detail-heading"')
+        heading = html[start : html.index("</h2>", start)]
+        assert "1450" in heading
+        row_at = html.index('data-testid="sheet-date-row"')
+        assert start < row_at < html.index('data-testid="weather-detail-line"')
+        row = html[row_at : html.index("</button>", row_at)]
+        assert "Data from" in row
+        assert TODAY.strftime("%b %Y") in row
+
     def test_names_an_anonymous_location_by_its_resort(
         self, client: Client, resort_location: Location
     ) -> None:

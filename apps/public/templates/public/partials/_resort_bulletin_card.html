@@ -23,8 +23,7 @@ BulletinOffSeason). Two states, driven by ``panel``:
          "{provider} · updated HH:MM" (the time omitted when unknown, the
          whole line when both are), then "Read the full {region} bulletin →".
   * No bulletin (``panel`` None): a neutral band with the outlined "–" tile
-    (``includes/_danger_tile_empty.html``, which the place sheet's peek
-    shares),
+    (``includes/_danger_tile_empty.html``),
     "No bulletin today" and the region; the season note naming the resort's
     typical season (a sentence without dates when either end is unset); and
     "Latest {region} bulletin →". No attribution line.
@@ -60,9 +59,15 @@ Context:
     aria-labelledby="resort-bulletin-heading"
     data-testid="resort-bulletin"
 >
-    {% blocktrans with day=target_date|date:"l j F" trimmed asvar bulletin_eyebrow %}
-        Regional avalanche bulletin • {{ day }}
-    {% endblocktrans %}
+    {# In the map the sheet's date row names the day once, for every section #}
+    {# (Hugo, 21 Oct), so the eyebrow does not repeat it.                  #}
+    {% if in_map %}
+        {% trans "Regional avalanche bulletin" as bulletin_eyebrow %}
+    {% else %}
+        {% blocktrans with day=target_date|date:"l j F" trimmed asvar bulletin_eyebrow %}
+            Regional avalanche bulletin • {{ day }}
+        {% endblocktrans %}
+    {% endif %}
     {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-bulletin-heading" text=bulletin_eyebrow class_extra="mb-3" only %}
     <div class="overflow-hidden rounded-card border border-border bg-card" data-testid="resort-danger">
         {% if panel %}

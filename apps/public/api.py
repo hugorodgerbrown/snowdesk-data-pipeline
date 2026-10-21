@@ -1817,6 +1817,8 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
                     "heading": location.name or _weather_detail_heading(location),
                     "day": day,
                     "is_forecast": is_forecast,
+                    # The date row turns to "another day" off today (Hugo, 21 Oct).
+                    "another_day": target_date != today,
                     # When the forecast was issued: the row's last fetch.
                     "issued_at": weather.fetched_at if weather else None,
                     "hourly_chart": hourly_chart,

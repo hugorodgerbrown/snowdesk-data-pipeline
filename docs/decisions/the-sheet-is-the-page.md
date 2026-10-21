@@ -62,9 +62,12 @@ split.
 - The address bar does not change while a sheet is open; back still closes
   it. A "you are not on today" marker is SNOW-1165: a "Showing … · Back to
   today" strip (`includes/_another_day_strip.html`) that the page renders
-  full width under the nav, as a link to its bare URL, and the sheet
-  renders above its peek row, as a button `static/js/map_today.js` turns
-  into a scrubber move. It is deliberately NOT in the shared body, because
+  full width under the nav, as a link to its bare URL. In a sheet the
+  same fact is the peek's own date row (`includes/_sheet_date_row.html`,
+  Hugo, 21 Oct 2026: "Data from 21 Oct 2026", highlighted on another day,
+  with a button `static/js/map_today.js` turns into a scrubber move); it
+  names the day once for every section, so the body's eyebrows drop their
+  dates in the map (`in_map`). It is deliberately NOT in the shared body, because
   the way back differs by container: a page navigates, the map moves its
   day. The map itself carries an always-shown "Today" half on its date
   control, disabled on today.
