@@ -46,6 +46,7 @@ from django.db import transaction
 from apps.bulletins.models import Bulletin, PipelineRun, RegionBulletin
 from apps.bulletins.services.day_rating import (
     apply_bulletin_day_ratings,
+    day_rating_pairs,
     target_day_for_valid_from,
 )
 from apps.bulletins.services.fetcher_common import (
@@ -696,6 +697,19 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
     # failure can never commit a bulletin with a half-written link set — the
     # bulletin and its associations move between consistent versions atomically.
     with transaction.atomic():
+        # Capture the (region, day) pairs the stored row covers *before* the
+        # update rewrites its target day and the delete below drops its links:
+        # afterwards they are unrecoverable, and a correction that narrows the
+        # coverage would leave the dropped regions' ratings sourced from a
+        # bulletin that no longer covers them (SNOW-1168). Slim read — only
+        # what day_rating_pairs needs.
+        existing = (
+            Bulletin.objects.filter(bulletin_id=bulletin_id)
+            .only("pk", "target_date", "valid_from")
+            .first()
+        )
+        prior_pairs = day_rating_pairs([existing]) if existing else set()
+
         bulletin, created = Bulletin.objects.update_or_create(
             bulletin_id=bulletin_id,
             defaults=defaults,
@@ -738,12 +752,13 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
     # must not abort ingest. But a failed recompute would otherwise leave a
     # stale, possibly wrong (e.g. low-when-now-high) rating live, so
     # apply_bulletin_day_ratings invalidates the affected rows and reports how
-    # many regions failed; we add those to records_failed so the pipeline run
-    # is marked failed and cron/CI surface it (SNOW-461). The broad except is a
-    # backstop for an unexpected wholesale failure (e.g. the region query) —
-    # count it as one failure so the run still fails.
+    # many pairs failed; we add those to records_failed so the pipeline run
+    # is marked failed and cron/CI surface it (SNOW-461). The prior pairs make
+    # it reconcile what a correction dropped as well (SNOW-1168). The broad
+    # except is a backstop for an unexpected wholesale failure (e.g. the
+    # region query) — count it as one failure so the run still fails.
     try:
-        rating_failures = apply_bulletin_day_ratings(bulletin)
+        rating_failures = apply_bulletin_day_ratings(bulletin, prior_pairs=prior_pairs)
     except Exception:
         logger.exception(
             "apply_bulletin_day_ratings failed for bulletin %s — ingest continues",

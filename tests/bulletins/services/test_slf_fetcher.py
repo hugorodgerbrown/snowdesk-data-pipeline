@@ -673,6 +673,124 @@ class TestUpsertBulletin:
             region__region_id="CH-7111",
         ).exists()
 
+    def test_narrowed_correction_reconciles_the_dropped_region(self) -> None:
+        """SNOW-1168: a re-ingest that drops a region leaves it no stale rating.
+
+        The first issue rates CH-4115 and CH-7111 low. The correction, under
+        the same bulletin ID, rates CH-7111 high and no longer covers
+        CH-4115. Before the fix only CH-7111 was recomputed, so CH-4115 kept
+        a low rating sourced from a bulletin that no longer covers it — and
+        the map served it. It must now fall to ``no_rating`` (no other
+        bulletin covers it that day) while CH-7111 reads high.
+        """
+        run = PipelineRunFactory.create()
+        upsert_bulletin(
+            _make_raw_bulletin(
+                bulletin_id="corr-001",
+                dangerRatings=[{"mainValue": "low"}],
+            ),
+            run,
+        )
+        target = date(2025, 3, 16)
+        assert (
+            RegionDayRating.objects.get(region__region_id="CH-4115", date=target)
+        ).max_rating == RegionDayRating.Rating.LOW
+
+        upsert_bulletin(
+            _make_raw_bulletin(
+                bulletin_id="corr-001",
+                dangerRatings=[{"mainValue": "high"}],
+                regions=[{"regionID": "CH-7111", "name": "Engadin"}],
+            ),
+            run,
+        )
+
+        dropped = RegionDayRating.objects.get(region__region_id="CH-4115", date=target)
+        assert dropped.max_rating == RegionDayRating.Rating.NO_RATING
+        assert dropped.source_bulletin is None
+        kept = RegionDayRating.objects.get(region__region_id="CH-7111", date=target)
+        assert kept.max_rating == RegionDayRating.Rating.HIGH
+
+    def test_moved_day_correction_reconciles_the_old_day(self) -> None:
+        """SNOW-1168: a re-ingest that moves the target day clears the old day.
+
+        The first issue is an evening one (17:00Z on the 15th, so it forecasts
+        the 16th). The correction, same bulletin ID, is a morning issue on the
+        17th, so its target day moves to the 17th. The 16th
+        must fall to ``no_rating`` (nothing else covers it) rather than keep
+        the rating the bulletin no longer gives it, and the 17th is written.
+        """
+        run = PipelineRunFactory.create()
+        upsert_bulletin(
+            _make_raw_bulletin(
+                bulletin_id="move-001",
+                dangerRatings=[{"mainValue": "low"}],
+            ),
+            run,
+        )
+        old_day, new_day = date(2025, 3, 16), date(2025, 3, 17)
+        assert (
+            RegionDayRating.objects.get(region__region_id="CH-4115", date=old_day)
+        ).max_rating == RegionDayRating.Rating.LOW
+
+        upsert_bulletin(
+            _make_raw_bulletin(
+                bulletin_id="move-001",
+                dangerRatings=[{"mainValue": "high"}],
+                validTime={
+                    "startTime": "2025-03-17T07:00:00Z",
+                    "endTime": "2025-03-17T17:00:00Z",
+                },
+            ),
+            run,
+        )
+
+        for region_id in ("CH-4115", "CH-7111"):
+            old_row = RegionDayRating.objects.get(
+                region__region_id=region_id, date=old_day
+            )
+            assert old_row.max_rating == RegionDayRating.Rating.NO_RATING
+            assert old_row.source_bulletin is None
+            new_row = RegionDayRating.objects.get(
+                region__region_id=region_id, date=new_day
+            )
+            assert new_row.max_rating == RegionDayRating.Rating.HIGH
+
+    def test_first_ingest_passes_no_prior_pairs(self) -> None:
+        """SNOW-1168: a bulletin seen for the first time has nothing to reconcile."""
+        run = PipelineRunFactory.create()
+        with patch(
+            "apps.bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
+            return_value=0,
+        ) as apply:
+            upsert_bulletin(_make_raw_bulletin(bulletin_id="first-001"), run)
+
+        bulletin = Bulletin.objects.get(bulletin_id="first-001")
+        apply.assert_called_once_with(bulletin, prior_pairs=set())
+
+    def test_update_passes_the_pairs_captured_before_the_relink(self) -> None:
+        """SNOW-1168: the prior pairs are the stored row's, not the new links."""
+        run = PipelineRunFactory.create()
+        upsert_bulletin(_make_raw_bulletin(bulletin_id="prior-001"), run)
+
+        with patch(
+            "apps.bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
+            return_value=0,
+        ) as apply:
+            upsert_bulletin(
+                _make_raw_bulletin(
+                    bulletin_id="prior-001",
+                    regions=[{"regionID": "CH-7111", "name": "Engadin"}],
+                ),
+                run,
+            )
+
+        prior = apply.call_args.kwargs["prior_pairs"]
+        assert {(region.region_id, day) for region, day in prior} == {
+            ("CH-4115", date(2025, 3, 16)),
+            ("CH-7111", date(2025, 3, 16)),
+        }
+
     # ------------------------------------------------------------------
     # source (SNOW-581)
     # ------------------------------------------------------------------
@@ -1226,6 +1344,39 @@ class TestUpsertBulletinGroupingHook:
         upsert_bulletin(raw, run)
 
         assert Bulletin.objects.count() == 1
+        assert BulletinGrouping.objects.count() == 0
+
+    def test_narrowed_reingest_leaves_no_stale_grouping(self) -> None:
+        """SNOW-1168: a correction down to one region drops the grouping it had."""
+        major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+        sub = SubRegionFactory.create(prefix="CH-41", major=major)
+        for region_id, west in (("CH-4115", 6.9), ("CH-7111", 7.0)):
+            east = round(west + 0.1, 1)
+            MicroRegionFactory.create(
+                region_id=region_id,
+                subregion=sub,
+                boundary={
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [west, 46.4],
+                            [east, 46.4],
+                            [east, 46.5],
+                            [west, 46.5],
+                            [west, 46.4],
+                        ]
+                    ],
+                },
+            )
+        run = PipelineRunFactory.create()
+        upsert_bulletin(_make_raw_bulletin(), run)
+        assert BulletinGrouping.objects.count() == 1
+
+        upsert_bulletin(
+            _make_raw_bulletin(regions=[{"regionID": "CH-7111", "name": "Engadin"}]),
+            run,
+        )
+
         assert BulletinGrouping.objects.count() == 0
 
     def test_upsert_swallows_grouping_exception_and_still_creates_bulletin(
