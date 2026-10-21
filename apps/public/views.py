@@ -4344,6 +4344,9 @@ def _bulletin_detail_response(
                 "slug": slugify(region.name),
                 "subregion_name": subregion_name,
                 "page_date": target_date,
+                # SNOW-1165: the empty state needs it as much as a populated
+                # page does — another day's empty page still links back.
+                "is_today": target_date == today,
                 "prev_date": prev_date,
                 "next_date": next_date,
                 "year": datetime.date.today().year,

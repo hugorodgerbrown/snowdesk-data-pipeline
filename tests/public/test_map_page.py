@@ -472,6 +472,25 @@ def test_map_page_loads_assets() -> None:
 
 
 @pytest.mark.django_db
+def test_the_date_control_has_a_today_half() -> None:
+    """SNOW-1165: "Today" follows the date control, rendered disabled.
+
+    A bare /map/ is today, so the server renders it disabled and
+    map_today.js enables it on any other day. Its core loads before it.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    toggle = content.index('id="map-calendar-toggle"')
+    start = content.index('id="map-today-control"')
+    assert toggle < start
+    tag = content[content.rindex("<button", 0, start) : content.index(">", start)]
+    assert 'type="button"' in tag
+    assert "disabled" in tag
+    assert "aria-label='Back to today'" in tag
+    core = content.index("/static/js/today_core.js")
+    assert core < content.index("/static/js/map_today.js")
+
+
+@pytest.mark.django_db
 @override_settings(BASEMAP="swisstopo_winter")
 def test_map_page_injects_default_basemap_key() -> None:
     """

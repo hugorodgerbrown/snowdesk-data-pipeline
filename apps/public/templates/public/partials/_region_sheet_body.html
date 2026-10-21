@@ -57,6 +57,11 @@ Context:
     {# No bulletin for the day: nothing for FULL to reveal, so the sheet stops at half (map_sheet.js reads this). #}
     data-sheet-detents="{% if bulletin %}peek,half,full{% else %}peek,half{% endif %}"
 >
+    {# SNOW-1165: another day says so, above the peek row so it shows at   #}
+    {# every detent. Its "Back to today" is map_today.js's to handle.      #}
+    {% if another_day %}
+        {% include "includes/_another_day_strip.html" with day=target_date placement="sheet" only %}
+    {% endif %}
     {% include "public/partials/_region_sheet_peek.html" %}
 
     <p class="text-sm text-text-2" data-testid="region-sheet-breadcrumb">

@@ -66,6 +66,10 @@ Context:
     data-place-kind="{{ kind }}"
     data-sheet-detents="{% if kind == 'resort' or resort_url or day_rating %}peek,half,full{% else %}peek,half{% endif %}"
 >
+    {# SNOW-1165: as the region sheet — see _region_sheet_body.html. #}
+    {% if another_day %}
+        {% include "includes/_another_day_strip.html" with day=target_date placement="sheet" only %}
+    {% endif %}
     <div
         data-sheet-peek
         data-sheet-drag

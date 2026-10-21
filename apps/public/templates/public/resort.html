@@ -177,6 +177,14 @@ Context expected (built by ``apps.public.views.resort_detail``):
 {% endblock page_meta %}
 
 {% block content %}
+    {# SNOW-1165: another day's page says so, full width under the nav, and #}
+    {# links to the bare URL, which is today. In the page rather than the    #}
+    {# shared body: the map's sheet draws its own strip, whose "Back to      #}
+    {# today" moves the scrubber instead of leaving the map.                 #}
+    {% if not is_today %}
+        {% url 'public:resort' slug=resort.slug as today_url %}
+        {% include "includes/_another_day_strip.html" with day=target_date href=today_url only %}
+    {% endif %}
     <main
         class="{% page_shell_classes extra='lg:max-w-grid-max' %}"
         data-testid="resort-detail"

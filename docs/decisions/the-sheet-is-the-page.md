@@ -59,7 +59,14 @@ split.
   `@md:`), not the viewport's, because it now sits in the inset panel too.
 - A saved pin's place sheet is unchanged: it has no page.
 - The address bar does not change while a sheet is open; back still closes
-  it. A "you are not on today" marker is SNOW-1165.
+  it. A "you are not on today" marker is SNOW-1165: a "Showing … · Back to
+  today" strip (`includes/_another_day_strip.html`) that the page renders
+  full width under the nav, as a link to its bare URL, and the sheet
+  renders above its peek row, as a button `static/js/map_today.js` turns
+  into a scrubber move. It is deliberately NOT in the shared body, because
+  the way back differs by container: a page navigates, the map moves its
+  day. The map itself carries an always-shown "Today" half on its date
+  control, disabled on today.
 - Supersedes the ownership table in
   [`the-map-opens-a-resort-in-the-sheet`](the-map-opens-a-resort-in-the-sheet.md)
   and amends [`a-resort-page-answers-the-query`](a-resort-page-answers-the-query.md).

@@ -41,6 +41,10 @@ interface Window {
   /** static/js/calendar_core.js — the date picker's month grid maths. */
   pwaCalendarCore: any;
   pwaStaleDayCore: any;
+  /** static/js/today_core.js — whether the map's "Today" control has anywhere to go (SNOW-1165). */
+  pwaTodayCore: {
+    canGoToToday(date: string | null | undefined, today: string | null | undefined): boolean;
+  };
   /** static/js/cached_stamp_core.js — the cached-copy stamp and download freshness (SNOW-1139). */
   pwaCachedStampCore: {
     isBeforeToday(value: unknown, now?: Date): boolean;

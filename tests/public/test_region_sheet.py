@@ -153,6 +153,23 @@ class TestPeek:
         assert 'data-level="considerable"' in content
         assert "Considerable" in content
 
+    def test_another_day_shows_the_strip_above_the_peek(self, client: Client) -> None:
+        """SNOW-1165: another day says so, with a button the map handles."""
+        region = MicroRegionFactory.create()
+        content = _get(
+            client, _url(region.region_id.lower(), "2026-02-03")
+        ).content.decode()
+        start = content.index('data-testid="another-day-strip"')
+        assert start < content.index("data-sheet-peek")
+        strip = content[start : content.index("</div>", start)]
+        assert "Tue 3 Feb 2026" in strip
+        assert "data-back-to-today" in strip
+
+    def test_today_shows_no_strip(self, client: Client) -> None:
+        region = MicroRegionFactory.create()
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="another-day-strip"' not in content
+
     def test_second_line_is_the_search_rows_badge_and_area_not_the_date(
         self, client: Client
     ) -> None:

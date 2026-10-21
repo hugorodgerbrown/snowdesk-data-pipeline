@@ -1801,6 +1801,44 @@ html:has(> body.map-fullscreen) > body {
     cursor: pointer;
 }
 
+/* SNOW-1165: "Today" — the date control's right-hand half. One pill read
+   as two presses: the date opens the picker, "Today" goes back to today.
+   The date control squares its right end when this follows it, the row's
+   8px gap is taken back, and a hairline divides the two.
+
+   Always shown; disabled on today. Disabled dims the content only, the
+   roundel rule (DESIGN.md), so the pill keeps its shape on every day. */
+.map-date-control:has(+ .map-today-control) {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.map-today-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: var(--map-control-sm);
+    margin-left: -8px;
+    padding: 0 12px 0 10px;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 0 999px 999px 0;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    /* The readout's own face, so the two halves read as one pill. */
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+
+.map-today-control:disabled > * {
+    opacity: 0.45;
+}
+
 /* SNOW-794: the date control — one pill that both SAYS the day and OPENS
    the picker. The glass pill treatment moved from .map-date-ribbon (which
    was the readout half) onto the button that now wraps it; the readout
@@ -5497,7 +5535,8 @@ body.map-framing #map-legend {
         width: 100%;
     }
 
-    .map-utility-cluster > .map-date-control {
+    .map-utility-cluster > .map-date-control,
+    .map-utility-cluster > .map-today-control {
         height: var(--map-control-lg);
     }
 

@@ -36,6 +36,7 @@ from typing import Any
 from django.conf import settings
 
 from apps.public._component_fixtures import (
+    ANOTHER_DAY_STRIP_VARIANTS,
     ASPECT_WHEEL_VARIANTS,
     BULLETIN_HEADLINE_VARIANTS,
     BUTTON_VARIANTS,
@@ -1021,6 +1022,22 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_overlay_banner.html",
         variants=OVERLAY_BANNER_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="another-day-strip",
+        label="Another-day strip",
+        description=(
+            "'Showing Wed 8 Apr 2026 · Back to today' (SNOW-1165) — rendered "
+            "only when a region or resort page, or a map sheet, shows a day "
+            "that is not today. On a page it sits full width under the nav "
+            "and links to the bare URL; in a sheet it sits above the peek "
+            "row and its button moves the map's scrubber to today "
+            "(static/js/map_today.js). Status-info palette by meaning."
+        ),
+        kind="components",
+        partial="includes/_another_day_strip.html",
+        variants=ANOTHER_DAY_STRIP_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

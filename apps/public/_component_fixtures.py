@@ -1222,6 +1222,19 @@ RESORT_BULLETIN_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
 # than pinned to the real viewport edge. (Toast's own fixtures sit above,
 # pre-dating this consolidation.)
 
+# SNOW-1165: the "Showing … · Back to today" strip, in its two placements.
+ANOTHER_DAY_STRIP_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "Page — full width under the nav, a link to the bare URL",
+        "context": {"day": datetime.date(2026, 4, 8), "href": "#"},
+    },
+    {
+        "caption": "Sheet — inside the map sheet, a button the map handles",
+        "context": {"day": datetime.date(2026, 4, 8), "placement": "sheet"},
+    },
+)
+
+
 OVERLAY_BANNER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "caption": "Strip — off-season notice",

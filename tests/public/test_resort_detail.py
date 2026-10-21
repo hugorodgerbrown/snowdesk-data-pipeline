@@ -2176,6 +2176,24 @@ class TestResortDatedPage:
         assert "No bulletin this day" in content
         assert "No bulletin today" not in content
 
+    def test_another_day_links_back_to_today(self) -> None:
+        """SNOW-1165: the strip names the day and links to the bare URL."""
+        resort = ResortFactory.create()
+        content = Client().get(self._dated_url(resort, self._DAY)).content.decode()
+        start = content.index('data-testid="another-day-strip"')
+        strip = content[start : content.index("</div>", start)]
+        assert "Showing Tue 3 Feb 2026" in strip
+        assert f'<a href="{resort.get_absolute_url()}"' in strip
+        assert "Back to today" in strip
+        # Above the page, not inside the shared body.
+        assert start < content.index('data-testid="resort-detail"')
+
+    def test_today_has_no_strip(self) -> None:
+        """SNOW-1165: the bare URL is today, so it carries no strip."""
+        resort = ResortFactory.create()
+        content = Client().get(resort.get_absolute_url()).content.decode()
+        assert 'data-testid="another-day-strip"' not in content
+
 
 @pytest.mark.django_db
 class TestResortProblems:
