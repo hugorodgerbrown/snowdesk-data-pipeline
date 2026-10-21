@@ -2,7 +2,7 @@
 name: accounts
 description: accounts app — Account model, registration, is_verified gate, signed-token salts, the one /account/settings/ page, the redirects
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-21
 ---
 
 # Accounts
@@ -101,6 +101,8 @@ Production uses `DatabaseCache` (`LOCATION = "django_cache"`) so rate-limit coun
 
 - `analytics_utm` — the `utm_source` / `utm_medium` / `utm_campaign` trio captured on first arrival (`apps/public/views.py`) and read back at sign-up (`apps/accounts/views.py`) so an account can be attributed to the campaign that brought the visitor, several pages later.
 - `route_shares` — a list of `RouteShare` tokens this browser has **followed but not claimed** (SNOW-764). Written by `routes:share_redirect`, dropped by `routes:share_claim`, and read by the routes panel, the routes map layer and the map page's context. It lives in the session precisely because the recipient of a share link is usually signed out when they tap it, and the pending claim has to survive the sign-in round trip — [`docs/decisions/route-share-pending-claim-in-session.md`](decisions/route-share-pending-claim-in-session.md). Bounded by `ROUTE_SHARE_MAX_PENDING`; the helpers are in `apps/routes/services/shares.py`.
+
+**Inactive users (SNOW-1167)** — `User.is_active = False` is the account kill switch, and every token path honours it through one predicate, `user_may_sign_in` (`apps/accounts/services/active_user.py`). `TokenBackend.get_user` returns `None` for an inactive user, so a session made by a magic link, verify link, reset link, email-change link or passkey becomes anonymous on its next request. The four email-link views (`account_view`, `verify_view`, `reset_password_confirm_view`, `change_email_confirm_view`) answer an inactive user with the same `link_expired` 400 as a bad link — before the GET confirm page and before any write, analytics call or `login()` — and `passkey_auth_response` answers with the same `verification_failed` 400 as a failed assertion. The refusal is logged at `info` with the user's pk only. Password sign-in already refused inactive users through `ModelBackend`.
 
 **Email** — Django's standard SMTP backend. No custom backend.
 

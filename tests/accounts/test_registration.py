@@ -10,7 +10,8 @@ Covers:
                    re-renders; email lowercased; rate-limit 429.
   verify_view    — GET renders confirm page without verifying (prefetch-safe);
                    POST verifies + logs in + redirects to setup; bad/expired
-                   token → 400; unknown email → 400; Referrer-Policy set.
+                   token → 400; unknown email → 400; Referrer-Policy set;
+                   inactive user → 400 with no session (SNOW-1167).
   setup_view     — unauthenticated → redirect to sign-in; authenticated → 200.
   send_verification_email — one email, correct recipient, /account/verify/ URL,
                    token round-trips under SALT_EMAIL_VERIFICATION.
@@ -207,6 +208,28 @@ class TestVerifyView:
         # A well-signed token for an email with no User row.
         response = client.get(self._url("ghost@example.com"))
         assert response.status_code == 400
+
+    def test_get_inactive_user_returns_400(self, client: Client) -> None:
+        """SNOW-1167: a deactivated user gets the link-expired page on GET."""
+        AccountFactory.create(
+            user__email="v@example.com", user__is_active=False, is_verified=False
+        )
+        response = client.get(self._url("v@example.com"))
+        assert response.status_code == 400
+        assert "_auth_user_id" not in client.session
+
+    def test_post_inactive_user_returns_400_without_verifying(
+        self, client: Client
+    ) -> None:
+        """SNOW-1167: POST neither verifies nor signs in a deactivated user."""
+        account = AccountFactory.create(
+            user__email="v@example.com", user__is_active=False, is_verified=False
+        )
+        response = client.post(self._url("v@example.com"))
+        assert response.status_code == 400
+        assert "_auth_user_id" not in client.session
+        account.refresh_from_db()
+        assert account.is_verified is False
 
 
 # ---------------------------------------------------------------------------

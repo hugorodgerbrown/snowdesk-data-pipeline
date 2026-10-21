@@ -96,6 +96,7 @@ from .identity import user_identity
 from .logging_utils import mask_email
 from .models import Account
 from .redirects import safe_next
+from .services.active_user import user_may_sign_in
 from .services.deletion import erase_account
 from .services.email import (
     send_account_access_email,
@@ -479,6 +480,11 @@ def verify_view(request: HttpRequest, token: str) -> HttpResponse:
         response["Referrer-Policy"] = _REFERRER_NO_REFERRER
         return response
 
+    if not user_may_sign_in(user):
+        # SNOW-1167: a deactivated account gets the same answer as a bad link.
+        logger.info("verify_view: rejected inactive user pk=%s", user.pk)
+        return _link_expired(request)
+
     if request.method == "GET":
         response = render(request, "accounts/verify.html", {"token": token})
         response["Referrer-Policy"] = _REFERRER_CONFIRM_PAGE
@@ -665,9 +671,15 @@ def reset_password_confirm_view(request: HttpRequest, token: str) -> HttpRespons
 
     if user is None:
         logger.debug("reset_password_confirm received an invalid/expired/used token")
-        response = render(request, _LINK_EXPIRED_TEMPLATE, {}, status=400)
-        response["Referrer-Policy"] = _REFERRER_NO_REFERRER
-        return response
+        return _link_expired(request)
+
+    if not user_may_sign_in(user):
+        # SNOW-1167: a deactivated account gets the same answer as a bad link,
+        # before the form can save a new password.
+        logger.info(
+            "reset_password_confirm_view: rejected inactive user pk=%s", user.pk
+        )
+        return _link_expired(request)
 
     if request.method == "GET":
         response = render(
@@ -852,6 +864,11 @@ def change_email_confirm_view(request: HttpRequest, token: str) -> HttpResponse:
         return _link_expired(request)
 
     user, new_email = result
+    if not user_may_sign_in(user):
+        # SNOW-1167: a deactivated account gets the same answer as a bad link.
+        logger.info("change_email_confirm_view: rejected inactive user pk=%s", user.pk)
+        return _link_expired(request)
+
     account = Account.objects.filter(user=user).first()
     # The pending slot must still name this address (a fresh request overwrites
     # it, and completion clears it — both invalidate an old link) and the
@@ -1003,6 +1020,12 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
         logger.warning(
             "account_view: valid token for unknown email %s", mask_email(email)
         )
+        return _link_expired(request)
+
+    if not user_may_sign_in(user):
+        # SNOW-1167: a deactivated account gets the same answer as a bad link —
+        # before the confirm page, the Account verify, analytics and login().
+        logger.info("account_view: rejected inactive user pk=%s", user.pk)
         return _link_expired(request)
 
     # The destination the emailed link was minted for, re-validated on arrival

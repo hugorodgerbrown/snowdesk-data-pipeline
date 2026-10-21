@@ -11,7 +11,8 @@ Covers:
   confirm view — GET renders confirm without swapping; POST swaps username +
                  email atomically, verifies, clears pending, logs in, FYIs the
                  old address; bad/stale/used token → 400; a taken-at-confirm
-                 address → 400.
+                 address → 400; an inactive user → 400 with nothing swapped
+                 (SNOW-1167).
 """
 
 from __future__ import annotations
@@ -218,6 +219,29 @@ class TestChangeEmailConfirmView:
     def test_bad_token_returns_400(self, client: Client) -> None:
         url = reverse("accounts:change_email_confirm", args=["nope"])
         assert client.get(url).status_code == 400
+
+    def test_get_inactive_user_returns_400(self, client: Client) -> None:
+        """SNOW-1167: a deactivated user gets the link-expired page on GET."""
+        account = self._pending_account()
+        account.user.is_active = False
+        account.user.save(update_fields=["is_active"])
+        assert client.get(self._url(account)).status_code == 400
+
+    def test_post_inactive_user_returns_400_without_swapping(
+        self, client: Client
+    ) -> None:
+        """SNOW-1167: POST leaves username, email and the pending slot alone."""
+        account = self._pending_account()
+        account.user.is_active = False
+        account.user.save(update_fields=["is_active"])
+        response = client.post(self._url(account))
+        assert response.status_code == 400
+        assert "_auth_user_id" not in client.session
+        account.user.refresh_from_db()
+        account.refresh_from_db()
+        assert account.user.username == "old@example.com"
+        assert account.user.email == "old@example.com"
+        assert account.pending_email == "new@example.com"
 
     def test_stale_token_when_pending_cleared(self, client: Client) -> None:
         """A token whose pending slot no longer matches is rejected."""

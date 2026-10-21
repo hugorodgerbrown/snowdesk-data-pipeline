@@ -4,7 +4,9 @@ tests/accounts/test_views.py — Tests for accounts views.
 Covers:
   account_view        — valid token verifies an unverified account; redirects
                         to manage with ?just_confirmed=1; idempotent on
-                        re-click; bad/expired token → 400.
+                        re-click; bad/expired token → 400; an inactive user
+                        gets the link-expired 400 on GET and POST with no
+                        session, no verify and no analytics (SNOW-1167).
   delete_account      — hard-deletes account; clears session; HX-Redirect to
                         /account/deleted/; no session → 403; non-HTMX → 400;
                         sweeps the Location a deleted favourite was the last
@@ -295,6 +297,53 @@ class TestAccountView:
         client = Client()
         response = client.get(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 400
+
+
+@pytest.mark.django_db
+class TestAccountViewInactiveUser:
+    """SNOW-1167: a magic link never signs in an is_active=False user."""
+
+    @pytest.fixture(autouse=True)
+    def use_locmem_backend(self, settings: Settings) -> None:
+        """Use in-memory email backend to avoid real dispatch."""
+        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+    def _inactive_account(self) -> Account:
+        """Create an unverified account whose user is deactivated."""
+        return AccountFactory.create(
+            user__email="disabled@example.com",
+            user__is_active=False,
+            is_verified=False,
+        )
+
+    def test_get_returns_link_expired(self) -> None:
+        """GET answers the link-expired 400 instead of the confirm page."""
+        self._inactive_account()
+        token = _valid_account_token("disabled@example.com")
+        client = Client()
+        response = client.get(reverse("accounts:account", kwargs={"token": token}))
+        assert response.status_code == 400
+        assert "accounts/link_expired.html" in [t.name for t in response.templates]
+        assert client.session.get("_auth_user_id") is None
+
+    def test_post_returns_link_expired_without_side_effects(self) -> None:
+        """POST signs nobody in, leaves the Account unverified, tracks nothing."""
+        account = self._inactive_account()
+        token = _valid_account_token("disabled@example.com")
+        client = Client()
+        with (
+            patch("apps.accounts.views.analytics.track") as mock_track,
+            patch("apps.accounts.views.analytics.alias") as mock_alias,
+        ):
+            response = client.post(reverse("accounts:account", kwargs={"token": token}))
+        assert response.status_code == 400
+        assert "accounts/link_expired.html" in [t.name for t in response.templates]
+        assert client.session.get("_auth_user_id") is None
+        account.refresh_from_db()
+        assert account.is_verified is False
+        assert account.verified_at is None
+        mock_track.assert_not_called()
+        mock_alias.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
