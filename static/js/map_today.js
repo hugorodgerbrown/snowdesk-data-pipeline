@@ -20,11 +20,20 @@
  *     the control again and re-renders the open sheet without its strip.
  *   - TODAY IS THE PAGE'S. ``#season-scrubber[data-today]``, as every other
  *     date decision on the map (SNOW-793). The browser clock is never asked.
+ *   - A STRIP ON THE MAP'S OWN TODAY MEANS A STALE SHELL. The sheets judge
+ *     "another day" against the server's date, the map against the shell's
+ *     ``data-today``. They differ only when a cached shell has outlived its
+ *     day (SNOW-920), and then scrubbing to ``data-today`` would change
+ *     nothing and leave the strip up. So the strip's button reloads the
+ *     shell instead, as the stale-day notice's Reload does, which brings a
+ *     ``data-today`` that agrees with the server.
  *   - ENABLED DURING PLAYBACK. A timelapse is still another day, and pressing
  *     "Today" mid-play is a reasonable way to stop it: the scrubber's commit
  *     stops the timelapse, as any scrub does.
  *
- * Depends on today_core.js, loaded before it.
+ * Depends on today_core.js, loaded before it, and on pwa_version_check.js
+ * (``window.pwaVersionInfo.reload``) for the stale-shell case, falling back
+ * to a plain reload without it.
  */
 (function mapTodayInit() {
   'use strict';
@@ -61,6 +70,15 @@
     );
   }
 
+  /** Fetch a fresh shell, whose ``data-today`` is the server's day. */
+  function reloadShell() {
+    const info = window.pwaVersionInfo;
+    const reload = info && typeof info.reload === 'function' ? info.reload : null;
+    Promise.resolve(reload ? reload() : window.location.reload()).catch(() =>
+      window.location.reload()
+    );
+  }
+
   document.addEventListener('snowdesk:date-changed', (e) => {
     date = (e.detail && e.detail.date) || null;
     apply();
@@ -72,6 +90,10 @@
     const target = e.target instanceof Element ? e.target.closest('[data-back-to-today]') : null;
     if (!target) return;
     e.preventDefault();
+    if (today && date === today) {
+      reloadShell();
+      return;
+    }
     goToToday();
   });
 

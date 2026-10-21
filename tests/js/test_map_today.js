@@ -109,11 +109,26 @@ describe('the "Today" control', () => {
 
 describe("a sheet's strip", () => {
   it('asks the scrubber for today from a button swapped in after load', async () => {
+    history.replaceState(null, '', '/map/?d=2026-04-08');
     await load();
     document.getElementById('sheet').innerHTML =
       '<div><button type="button" data-back-to-today><span>Back to today</span></button></div>';
     document.querySelector('[data-back-to-today] span').click();
     expect(scrubs).toEqual([{ date: '2026-10-21', source: 'today' }]);
+  });
+
+  it("reloads the shell when the map is already on its own today", async () => {
+    // A cached shell past midnight: the server says another day, the shell's
+    // data-today is the map's day, and scrubbing to it would change nothing.
+    const reload = vi.fn(async () => {});
+    window.pwaVersionInfo = { reload };
+    await load();
+    document.getElementById('sheet').innerHTML =
+      '<button type="button" data-back-to-today>Back to today</button>';
+    document.querySelector('[data-back-to-today]').click();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(scrubs).toEqual([]);
+    delete window.pwaVersionInfo;
   });
 
   it('ignores clicks anywhere else', async () => {
