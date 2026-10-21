@@ -36,9 +36,9 @@ from uuid import UUID
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import ProtectedError
 
 from apps.locations.models import Location
+from apps.locations.services.orphans import delete_location_if_orphaned
 from apps.routes.models import Route
 from apps.trips.models import Trip, TripParticipant
 from apps.trips.services.slope import enqueue_trip_slope_sampling
@@ -402,37 +402,6 @@ def update_trip(
 # ---------------------------------------------------------------------------
 
 
-def _delete_location_if_orphaned(location: Location) -> None:
-    """Delete an anonymous Location that nothing references any more.
-
-    The trips twin of ``apps.favourites.services._delete_location_if_orphaned``
-    — same rule, same reasoning, and deliberately not imported from there:
-    that function is private to the favourites service, and reaching across
-    apps for a private helper is how one app's refactor breaks another's
-    erasure guarantee. Both are eight lines; a shared home for them is a
-    move for whichever ticket adds the third caller.
-
-    Args:
-        location: The location whose last known referent was just removed.
-
-    """
-    if location.name:
-        # Curated data. A trip meeting at Mont Fort must not delete Mont
-        # Fort when it is cancelled.
-        return
-    try:
-        # Ask the database rather than enumerating reverse relations. Every
-        # referent of Location is PROTECT, so a ProtectedError *is* the
-        # answer "something still references this", and it stays correct as
-        # later tickets add referents this function has never heard of. A
-        # savepoint keeps the failed delete from poisoning the surrounding
-        # atomic block.
-        with transaction.atomic():
-            location.delete()
-    except ProtectedError:
-        logger.debug("Location id=%s still referenced; left in place.", location.pk)
-
-
 def delete_trip(user: "User", uuid: UUID) -> None:
     """Delete one of the organiser's own trips, meeting point included.
 
@@ -454,7 +423,7 @@ def delete_trip(user: "User", uuid: UUID) -> None:
     location = trip.meeting_point
     with transaction.atomic():
         trip.delete()
-        _delete_location_if_orphaned(location)
+        delete_location_if_orphaned(location)
     logger.info("Trip deleted: user=%s uuid=%s", user.pk, uuid)
 
 
@@ -487,7 +456,7 @@ def delete_trips_for_user(user: "User") -> int:
         ):
             location = trip.meeting_point
             trip.delete()
-            _delete_location_if_orphaned(location)
+            delete_location_if_orphaned(location)
             deleted += 1
     if deleted:
         logger.info("Trips deleted for user=%s: %s row(s)", user.pk, deleted)

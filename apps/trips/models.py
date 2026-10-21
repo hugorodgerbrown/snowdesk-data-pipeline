@@ -176,7 +176,7 @@ class Trip(BaseModel):
     above is what the page reads.
 
     ``meeting_point`` is ``PROTECT``, and that is not negotiable.
-    ``apps.favourites.services._delete_location_if_orphaned`` asks the
+    ``apps.locations.services.orphans.delete_location_if_orphaned`` asks the
     database "is anything still referencing this location?" by catching
     ``ProtectedError``; a ``SET_NULL`` or ``CASCADE`` referent would answer
     "no" while still pointing at the row, and would silently break that
