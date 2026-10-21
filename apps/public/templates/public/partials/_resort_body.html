@@ -11,8 +11,8 @@ and the two cannot drift: a fact about a resort is added here, never to the
 sheet or the page alone. Context from ``apps.public.views.build_resort_body``.
 
 The sections, in the order the season gives them (SNOW-1156): in season (a
-panel for the day) the bulletin card, the day's problems judged against the
-resort's height, then the forecast and the season calendar; out of season
+panel for the day) the bulletin card, the day's problem cards as the bulletin
+gives them, then the forecast and the season calendar; out of season
 the forecast leads and the card follows. Then the curated facts — a sidebar
 on a desktop page, the last section everywhere else.
 
@@ -23,8 +23,8 @@ tightens the gap between sections to the sheet's.
 Context (beyond what each included partial documents):
   panel, headline, bulletin_url, bulletin_provider, bulletin_updated_time
                   — the bulletin card's (``_resort_bulletin_card.html``).
-  problem_cards   — the panel's problem cards, each with
-                    ``altitude_relevance`` when the resort has a height.
+  problem_cards   — the panel's problem cards. No "Above this location"
+                    verdict: a resort spans a range of heights.
   target_date     — the day shown; ``is_today`` — whether it is today.
   forecast_points — the forecast's (``_resort_forecast.html``).
   season_months, season_summary — the season calendar's.
@@ -38,15 +38,15 @@ Context (beyond what each included partial documents):
         {# The card is one include, rendered in one of two places.          #}
         {% if panel %}
             {% include "public/partials/_resort_bulletin_card.html" %}
-            {# SNOW-1164: the day's problems, each judged against the resort's #}
-            {# height — the verdict the map's place sheet used to carry alone. #}
+            {# SNOW-1164: the day's problems as the bulletin gives them — no    #}
+            {# one-height verdict, since a resort spans a range of heights.    #}
             {% if problem_cards %}
                 <section aria-labelledby="resort-problems-heading" data-testid="resort-problems">
                     {% translate "Avalanche problems" as problems_eyebrow %}
                     {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-problems-heading" text=problems_eyebrow class_extra="mb-3" only %}
                     <div class="space-y-3">
                         {% for card in problem_cards %}
-                            {% include "favourites/partials/_favourite_problem.html" with card=card %}
+                            {% include "public/_rating_block.html" with card=card %}
                         {% endfor %}
                     </div>
                 </section>

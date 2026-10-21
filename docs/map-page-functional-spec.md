@@ -261,8 +261,8 @@ users. They are shown as reference, not as authoritative geography.
   its region, the Save star and the × — and under it the resort page's own
   body for the scrubbed day (SNOW-1164,
   [why](decisions/the-sheet-is-the-page.md)): its curated "why it
-  matters" line (only when written), the bulletin card, the day's problems
-  judged against the resort's height, the Base / Mid / Summit forecast,
+  matters" line (only when written), the bulletin card, the day's problem
+  cards, the Base / Mid / Summit forecast,
   the season calendar and the facts, in one column. On a desktop the same
   body is the inset panel. A forward day reads today's forecast row.
 - **Pin size carries the tier (SNOW-543).** Each resort has a curated

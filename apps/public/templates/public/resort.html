@@ -44,7 +44,7 @@ Header:
     map" link is gone; this one replaces it.
 
 BODY (SNOW-1164). Everything under the header — the bulletin card, the
-day's problems judged against the resort's height, the forecast, the
+day's problem cards, the forecast, the
 season calendar, and the curated facts in a ~320px sidebar on a desktop
 (last on a phone) — is ``public/partials/_resort_body.html``, which
 documents each section. The map's place sheet renders the same partial, so
@@ -75,8 +75,8 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    "HH:MM" Central European time, or "".
   target_date                   — datetime.date: the day shown.
   is_today                      — bool: target_date is today.
-  problem_cards                 — list[dict]: the day's problems, with
-                                   altitude_relevance (views.build_resort_body).
+  problem_cards                 — list[dict]: the day's problem cards
+                                   (views.build_resort_body).
   bulletin_url                  — str: the region's evergreen bulletin URL.
   favourited                    — bool.
   favourite_uuid                — str: "" when not favourited.

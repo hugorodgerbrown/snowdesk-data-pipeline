@@ -19,11 +19,11 @@ resort's action is its Save star; a saved pin's are the panel row's own
 Under the peek row a RESORT shows the resort page's own body for the map's
 day (SNOW-1164, ``views.build_resort_body`` and
 ``public/partials/_resort_body.html``), so on a phone the sheet at full
-height is the page: the bulletin card, the problems judged against the
-resort's height, the forecast, the season calendar and the facts. The
-sheet's own links onward ("Read the bulletin", "View resort") went with
-it. A SAVED PIN keeps its own: HALF the day's weather at the place and the
-link to its forecast page, FULL the region's problems annotated against
+height is the page: the bulletin card, the day's problem cards, the
+forecast, the season calendar and the facts. The sheet's own links
+onward ("Read the bulletin", "View resort") went with it. A SAVED PIN
+keeps its own: HALF the day's weather at the place and the link to its
+forecast page, FULL the region's problems annotated against
 the pin's altitude, then the day's bulletin and a saved resort's page.
 
 Both views read the day the map is showing (``?d=``, today by default), as

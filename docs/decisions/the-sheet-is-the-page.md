@@ -47,11 +47,14 @@ split.
 - The sheets' own links onward ("Open bulletin", "Read the bulletin",
   "View resort") are gone; the body's own links stay — the resort body's
   bulletin card still leads to the full bulletin.
-- The resort body gained the place sheet's one extra, **the day's problems
-  judged against the resort's height** ("Above this location",
-  `annotate_problem_relevance`), so the page shows the problem cards again
-  after SNOW-1156 retired them. The pin's weather was already the forecast
-  strip's Base point.
+- The resort body gained the place sheet's one extra, **the day's
+  problems**, so the page shows the problem cards again after SNOW-1156
+  retired them. They come without the sheet's "Above / Below this
+  location" verdict (`annotate_problem_relevance`): a resort spans a range
+  of heights, so a verdict against one of them read as one about the whole
+  resort (Hugo, 21 Oct 2026). Each card states its own band. A saved pin,
+  which is one point, keeps the verdict. The pin's weather was already the
+  forecast strip's Base point.
 - The forecast strip lays itself out by its card's width (`@container`,
   `@md:`), not the viewport's, because it now sits in the inset panel too.
 - A saved pin's place sheet is unchanged: it has no page.

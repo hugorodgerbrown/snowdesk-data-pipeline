@@ -119,7 +119,6 @@ from apps.core.services.request_log import capture as capture_request_log
 from apps.core.sw_shell import inject_cache_version, served_cache_version
 from apps.core.utils import html_to_markdown
 from apps.favourites.models import Favourite
-from apps.favourites.relevance import annotate_problem_relevance
 from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
 from apps.regions.cantons import canton_label
@@ -5160,10 +5159,11 @@ def build_resort_body(
     issue (SNOW-1124). A render model that failed to build gives no panel:
     its danger key is only a "low" fallback, never a level to show.
 
-    The problems are the panel's own cards, each judged against the
-    resort's height — its pin, else its primary location — by
-    ``annotate_problem_relevance`` ("Above this location", SNOW-422), the
-    verdict the map's place sheet carried before it showed this body.
+    The problems are the panel's own cards, shown as the bulletin gives
+    them. They carry no "Above / Below this location" verdict
+    (``annotate_problem_relevance``): a resort spans a range of heights, so
+    a verdict against one of them read as one about the whole resort (Hugo,
+    21 Oct 2026). Each card already states its own elevation band.
 
     Args:
         request: The incoming request, read for ``is_staff``.
@@ -5193,12 +5193,6 @@ def build_resort_body(
             )
 
     problem_cards: list[dict[str, Any]] = list(panel["problem_cards"]) if panel else []
-    if problem_cards:
-        location = _resort_height_location(resort)
-        if location is not None and location.elevation_m is not None:
-            problem_cards = annotate_problem_relevance(
-                problem_cards, location.elevation_m
-            )
 
     return {
         "resort": resort,
@@ -5231,30 +5225,6 @@ def build_resort_body(
         # body shows: its grid stops at today.
         **_resort_season_calendar_context(region, today),
     }
-
-
-def _resort_height_location(resort: Resort) -> Location | None:
-    """Return the location that stands for a resort's height.
-
-    The pin (SNOW-1144: where the resort is, and where its weather is), else
-    the resort's primary link, normally the village — the order the place
-    sheet always used.
-
-    Args:
-        resort: The resort, with ``location`` loaded.
-
-    Returns:
-        A Location, or None when the resort has neither.
-
-    """
-    if resort.location is not None:
-        return resort.location
-    link = (
-        resort.resort_locations.select_related("location")
-        .order_by("-is_primary", "role", "location__name")
-        .first()
-    )
-    return link.location if link is not None else None
 
 
 def _dated_weather_url(location: Location, day: datetime.date | None) -> str:

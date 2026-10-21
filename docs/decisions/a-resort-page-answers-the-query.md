@@ -1,6 +1,6 @@
 ---
 name: a-resort-page-answers-the-query
-description: resort_detail is a landing page: the day's danger in one card, problems judged against its height; /resorts/<slug>/<date>/
+description: resort_detail is a landing page: the day's danger in one card, the day's problem cards; /resorts/<slug>/<date>/
 status: current
 last-reviewed: 2026-10-21
 ---
@@ -112,11 +112,12 @@ covers it, and its link goes to that day's bulletin page. Only today's
 page is indexed; another day's is `noindex`.
 
 Under the card the body lists the day's problem cards
-(`public/_rating_block.html`), each with the place sheet's verdict against
-the resort's height — "Above / Below this location", "Applies at this
-altitude" (`annotate_problem_relevance`, the pin's height, else the
-primary location's). Hugo chose this on 21 Oct 2026 when the sheet's
-extras moved into the body. It reverses the first half of SNOW-1156's
-retirement; the lift-range line stays retired, and the card itself is
+(`public/_rating_block.html`) as the bulletin gives them. Hugo chose this
+on 21 Oct 2026 when the sheet's extras moved into the body. The sheet's
+"Above / Below this location" verdict did not come with them: it judged
+each band against one height (the pin, normally the village), and on a
+resort that spans 1,500–3,330 m it read as a claim about the whole
+resort. It reverses the first half of SNOW-1156's retirement; the
+lift-range line stays retired, and the card itself is
 unchanged and still holds exactly one link.
 

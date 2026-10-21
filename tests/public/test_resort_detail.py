@@ -2179,9 +2179,10 @@ class TestResortDatedPage:
 
 @pytest.mark.django_db
 class TestResortProblems:
-    """SNOW-1164: each of the day's problems is judged against the resort's height."""
+    """SNOW-1164: the day's problems, with no one-height verdict."""
 
-    def test_a_problem_above_the_pin_says_so(self) -> None:
+    def test_the_problems_carry_no_location_verdict(self) -> None:
+        """A resort spans a range of heights, so "Above this location" misleads."""
         region = MicroRegionFactory.create()
         resort = ResortFactory.create(region=region, latitude=46.1, longitude=7.4)
         assert resort.location is not None
@@ -2189,13 +2190,6 @@ class TestResortProblems:
         resort.location.save()
         _todays_bulletin(region)  # wind slab above 2200 m
         content = Client().get(resort.get_absolute_url()).content.decode()
-        assert 'data-relevance="ABOVE"' in content
-        assert "Above this location" in content
-
-    def test_a_resort_with_no_height_shows_the_problems_unjudged(self) -> None:
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region, latitude=None, longitude=None)
-        _todays_bulletin(region)
-        content = Client().get(resort.get_absolute_url()).content.decode()
         assert 'data-testid="resort-problems"' in content
         assert 'data-testid="altitude-relevance-chip"' not in content
+        assert "Above this location" not in content
