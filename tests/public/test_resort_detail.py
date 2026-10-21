@@ -2021,19 +2021,46 @@ class TestResortSeasonStrip:
         assert 'data-state="none"' in self._cell(strip, "2026-02-19")
 
     @freeze_time("2026-10-19 12:00:00+00:00")
-    def test_a_finished_season_rings_its_first_high_day(self) -> None:
-        """Off-season the ring is on the season's first High day."""
+    def test_a_finished_season_rings_today_never_its_first_high_day(self) -> None:
+        """SNOW-1163: off-season the ring is still today, not the first High day."""
         region = MicroRegionFactory.create()
         resort = ResortFactory.create(region=region)
         self._rate(region, datetime.date(2026, 1, 3), "considerable")
         self._rate(region, datetime.date(2026, 1, 9), "high")
-        self._rate(region, datetime.date(2026, 2, 9), "high")
+        self._rate(region, datetime.date(2026, 10, 19), "moderate")
 
         strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
 
-        assert "season-day-ring" in self._cell(strip, "2026-01-09")
+        assert "season-day-ring" in self._cell(strip, "2026-10-19")
+        assert "season-day-ring" not in self._cell(strip, "2026-01-09")
         assert strip.count("season-day season-day-ring") == 1
+
+    @freeze_time("2026-10-19 12:00:00+00:00")
+    def test_no_ring_when_today_is_not_drawn(self) -> None:
+        """SNOW-1163: a finished season whose months stop before today rings nothing."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        self._rate(region, datetime.date(2026, 1, 9), "high")
+
+        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
+
+        assert "season-day-ring" not in strip
         assert 'data-state="future"' not in strip
+
+    @freeze_time("2026-02-20 12:00:00+00:00")
+    def test_a_dated_page_rings_its_own_day(self) -> None:
+        """SNOW-1163: /resorts/<slug>/<date>/ rings that date, not today."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(region=region)
+        self._rate(region, datetime.date(2026, 1, 5), "high")
+        self._rate(region, datetime.date(2026, 2, 3), "moderate")
+
+        url = reverse("public:resort_date", args=[resort.slug, "2026-02-03"])
+        strip = self._strip(Client().get(url).content.decode())
+
+        assert "season-day-ring" in self._cell(strip, "2026-02-03")
+        assert "season-day-ring" not in self._cell(strip, "2026-02-20")
+        assert strip.count("season-day season-day-ring") == 1
 
     @freeze_time("2026-02-20 12:00:00+00:00")
     def test_cells_do_not_link_to_their_days(self) -> None:

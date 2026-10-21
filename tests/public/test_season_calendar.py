@@ -41,7 +41,7 @@ SNOW-1153 — the season summary carries no season-wide peak.
 SNOW-1128 — month labels come from Django's translated month names, in the
 active language.
 
-SNOW-1158 — the month-shaped view (build_season_months, season_ring_date):
+SNOW-1158 — the month-shaped view (build_season_months):
   - Every month in the span drawn in full: 30/31-day months, February's 28
     and a leap year's 29. The span runs from the season start through
     April, past it only to the last month with a bulletin, never beyond
@@ -75,7 +75,6 @@ from apps.public.season_calendar import (
     build_season_months,
     build_season_ribbon,
     season_header,
-    season_ring_date,
     season_window,
     summarise_season,
 )
@@ -1110,41 +1109,6 @@ class TestSeasonMonths:
         assert months.ring_date == today
 
 
-class TestSeasonRingDate:
-    """season_ring_date — today in season, the first High day after it."""
-
-    grid = _grid(
-        [
-            _cell(datetime.date(2026, 1, 3), "considerable"),
-            _cell(datetime.date(2026, 1, 9), "high"),
-            _cell(datetime.date(2026, 2, 1), "very_high"),
-        ]
-    )
-
-    def test_in_season_rings_today(self) -> None:
-        """A running season rings today, High days or not."""
-        today = datetime.date(2026, 3, 2)
-        assert season_ring_date(self.grid, _WINDOW, today) == today
-
-    def test_finished_season_rings_the_first_high_day(self) -> None:
-        """After 30 April: the first day at High or above."""
-        assert season_ring_date(
-            self.grid, _WINDOW, datetime.date(2026, 10, 19)
-        ) == datetime.date(2026, 1, 9)
-
-    def test_very_high_counts_as_high(self) -> None:
-        """A season whose first day above Considerable was Very high rings it."""
-        grid = _grid([_cell(datetime.date(2026, 2, 1), "very_high")])
-        assert season_ring_date(
-            grid, _WINDOW, datetime.date(2026, 10, 19)
-        ) == datetime.date(2026, 2, 1)
-
-    def test_finished_season_without_high_rings_nothing(self) -> None:
-        """No High day → no ring."""
-        grid = _grid([_cell(datetime.date(2026, 1, 3), "considerable")])
-        assert season_ring_date(grid, _WINDOW, datetime.date(2026, 10, 19)) is None
-
-
 class TestSeasonMonthsSplitDays:
     """Two levels in one day draw as one split cell (SNOW-1158)."""
 
@@ -1278,9 +1242,7 @@ class TestSeasonMonthsFromTheDatabase:
         today = datetime.date(2026, 1, 10)
         window = season_window(today)
         grid = build_season_grid(region, today, window=window)
-        months = build_season_months(
-            grid, today, window=window, ring_date=season_ring_date(grid, window, today)
-        )
+        months = build_season_months(grid, today, window=window, ring_date=today)
         january = months.months[2].days
         assert january[4].state == "split"
         assert january[9].is_ring

@@ -34,9 +34,9 @@ indexed range query.
 SNOW-1158 redraws every season calendar as one shared, month-shaped
 component (``public/partials/_season_calendar.html``). ``build_season_months``
 reshapes a ``SeasonGrid`` into months × days — a cell state per day (a level,
-"split" for a two-level day, "none", or "future" after today) — and
-``season_ring_date`` picks the resort page's ringed day: today in season, the
-first High day of a finished one. The week-column grid stays the data source;
+"split" for a two-level day, "none", or "future" after today) — and rings
+the day the page is showing (SNOW-1163 retired the "first High day" ring of
+a finished season). The week-column grid stays the data source;
 nothing renders its columns directly any more.
 """
 
@@ -356,7 +356,7 @@ SEASON_AXIS: tuple[str, ...] = tuple(
     str(day) if day % 5 == 1 and day < 31 else "" for day in range(1, 32)
 )
 
-# Level ranks for the split rule and the ring rule. ``no_rating`` is absent.
+# Level ranks for the split rule. ``no_rating`` is absent.
 _LEVEL_RANK: dict[str, int] = {key: rank for rank, key in enumerate(_RATED_LEVELS)}
 
 
@@ -427,37 +427,6 @@ def summarise_season(grid: SeasonGrid) -> SeasonSummary:
             counts[key] for key in _RATED_LEVELS[considerable_rank:]
         ),
     )
-
-
-def season_ring_date(
-    grid: SeasonGrid, window: SeasonWindow, today: datetime.date
-) -> datetime.date | None:
-    """
-    Pick the resort calendar's ringed day (SNOW-1158).
-
-    In a running season (``today`` on or before ``window.end``) the ring is
-    today. In a finished season it is the first day whose peak was High or
-    higher — the day a reader most wants to find — or ``None`` when the
-    season never reached High.
-
-    Args:
-        grid: The season's grid from :func:`build_season_grid`.
-        window: The :class:`SeasonWindow` the grid was built for.
-        today: The current calendar date.
-
-    Returns:
-        The date to ring, or ``None``.
-
-    """
-    if window.start <= today <= window.end:
-        return today
-    high_rank = _LEVEL_RANK[RegionDayRating.Rating.HIGH]
-    for cell in _grid_cells(grid):
-        if cell.has_bulletin and _LEVEL_RANK.get(cell.max_rating_key, -1) >= (
-            high_rank
-        ):
-            return cell.date
-    return None
 
 
 def build_season_months(

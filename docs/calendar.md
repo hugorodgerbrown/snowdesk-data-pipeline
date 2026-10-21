@@ -53,11 +53,12 @@ of its markup or its CSS (`.season-cal`, `.season-day` in
   `data-level` is the peak on every cell. The AM/PM direction and the
   ALBINA band geometry the old heatmap drew (left/right by time, top/bottom
   and 2×2 by band) are no longer drawn — the day's title names both levels.
-- **Ring** — `.season-day-ring`, a 2px `--color-text-1` ring. On the
-  resort page `season_ring_date(grid, window, today)` puts it on today in a
-  running season and on the first High (or Very high) day of a finished
-  one, or nowhere. On the bulletin page it is the page's own day, added
-  client-side (below).
+- **Ring** — `.season-day-ring`, a 2px `--color-text-1` ring, always on
+  the day the page shows (SNOW-1163). On the resort page it is
+  `target_date` — today, or the dated URL's day — passed as `ring_date`,
+  and absent when that day is not drawn; SNOW-1163 removed
+  `season_ring_date` and its off-season "first High day" ring. On the
+  bulletin page it is the page's own day, added client-side (below).
 - **Variants** — unlinked (resort, help, library): the calendar is one
   `role="img"` whose `aria-label` is the season summary ("Season 2025/26:
   150 days with a bulletin, 40 at Considerable or higher."), each cell has
