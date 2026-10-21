@@ -2,7 +2,7 @@
 name: a-trip-is-one-object-with-a-roster
 description: Trip is one row with a TripParticipant roster, never copied per person; the geometry is a snapshot and the meeting point a per-trip Location
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-21
 ---
 
 # A trip is one object with a roster
@@ -55,7 +55,8 @@ is explicit that null means "the source file carried no elevation data", not
 terrain somebody is about to ski.
 
 **Because `PROTECT` is what makes the orphan sweep honest.**
-`apps.favourites.services._delete_location_if_orphaned` asks the database
+`apps.locations.services.orphans.delete_location_if_orphaned` (shared by
+favourites, trips and observations since SNOW-1170) asks the database
 whether anything still references a location, by attempting the delete and
 catching `ProtectedError`. That probe is correct only while *every* referent
 of `Location` protects it. A `SET_NULL` or `CASCADE` trip would answer "no,
