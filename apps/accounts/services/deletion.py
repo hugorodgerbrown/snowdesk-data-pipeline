@@ -2,13 +2,12 @@
 apps/accounts/services/deletion.py — the one account-erasure path.
 
 Provides ``erase_account``: delete a person's ``auth.User``, their
-``Account`` profile, and the two classes of row a plain ``CASCADE`` cannot
-reach.
+``Account`` profile, and the rows a plain ``CASCADE`` cannot reach.
 
 The Privacy Policy promises that deleting an account removes the account,
 the saved items and the request records "in one operation and without
-delay". Two things stand between the ``CASCADE`` and that promise, and both
-need Python to run:
+delay". Four things stand between the ``CASCADE`` and that promise, and all
+of them need Python to run:
 
 * **Request records written before the account existed.** Sign-up happens
   anonymously, so that ``RequestLog`` row has ``account=None``; the link
@@ -25,6 +24,10 @@ need Python to run:
   is ``PROTECT``, so the meeting point of every trip this account organised
   would outlive the account, holding the real coordinates of a real place
   somebody agreed to meet at.
+* **The anonymous ``Location`` each FIELD REPORT minted** (SNOW-1170).
+  ``FieldObservation.user`` is ``CASCADE`` and ``FieldObservation.location``
+  is ``PROTECT``, so the cascade would strand the exact coordinate every
+  report was filed at.
 
 This lives in a service rather than in ``delete_account`` because the view
 is not the only caller: deleting an ``Account`` through the Django admin
@@ -40,6 +43,7 @@ from django.db import transaction
 
 from apps.core.models import RequestLog
 from apps.favourites.services import delete_favourites_for_user
+from apps.observations.services.observations import delete_observations_for_user
 from apps.trips.services.trips import delete_trips_for_user
 
 if TYPE_CHECKING:
@@ -87,12 +91,14 @@ def erase_account(user: "UserType", account: "Account | None") -> None:
        ``Location`` is swept as its last referent goes.
     3. Delete the organised trips the same way and for the same reason —
        a trip's meeting point is a minted anonymous ``Location`` too.
-    4. Delete the user — the ``CASCADE`` takes the account, the signed-in
-       request rows, observations, routes, trip participations, passkeys,
-       push subscriptions and clicks.
-    5. Delete the collected request rows, now that nothing points at them.
+    4. Delete the field observations the same way — each report minted an
+       anonymous ``Location`` at the exact coordinate it was filed from.
+    5. Delete the user — the ``CASCADE`` takes the account, the signed-in
+       request rows, routes, trip participations, passkeys, push
+       subscriptions and clicks.
+    6. Delete the collected request rows, now that nothing points at them.
 
-    All five commit together or none of them do. Erasure that half succeeds
+    All six commit together or none of them do. Erasure that half succeeds
     is the worst of the three outcomes: the account is gone, so the person
     has no way back in to ask again, while the rows carrying their IP
     address and coordinates are still there and no longer attached to
@@ -113,6 +119,7 @@ def erase_account(user: "UserType", account: "Account | None") -> None:
     with transaction.atomic():
         delete_favourites_for_user(user)
         delete_trips_for_user(user)
+        delete_observations_for_user(user)
         user.delete()
         if orphan_log_ids:
             RequestLog.objects.filter(pk__in=orphan_log_ids).delete()
