@@ -711,6 +711,41 @@ class TestUpsertBulletin:
         kept = RegionDayRating.objects.get(region__region_id="CH-7111", date=target)
         assert kept.max_rating == RegionDayRating.Rating.HIGH
 
+    def test_first_ingest_passes_no_prior_pairs(self) -> None:
+        """SNOW-1168: a bulletin seen for the first time has nothing to reconcile."""
+        run = PipelineRunFactory.create()
+        with patch(
+            "apps.bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
+            return_value=0,
+        ) as apply:
+            upsert_bulletin(_make_raw_bulletin(bulletin_id="first-001"), run)
+
+        bulletin = Bulletin.objects.get(bulletin_id="first-001")
+        apply.assert_called_once_with(bulletin, prior_pairs=set())
+
+    def test_update_passes_the_pairs_captured_before_the_relink(self) -> None:
+        """SNOW-1168: the prior pairs are the stored row's, not the new links."""
+        run = PipelineRunFactory.create()
+        upsert_bulletin(_make_raw_bulletin(bulletin_id="prior-001"), run)
+
+        with patch(
+            "apps.bulletins.services.slf_fetcher.apply_bulletin_day_ratings",
+            return_value=0,
+        ) as apply:
+            upsert_bulletin(
+                _make_raw_bulletin(
+                    bulletin_id="prior-001",
+                    regions=[{"regionID": "CH-7111", "name": "Engadin"}],
+                ),
+                run,
+            )
+
+        prior = apply.call_args.kwargs["prior_pairs"]
+        assert {(region.region_id, day) for region, day in prior} == {
+            ("CH-4115", date(2025, 3, 16)),
+            ("CH-7111", date(2025, 3, 16)),
+        }
+
     # ------------------------------------------------------------------
     # source (SNOW-581)
     # ------------------------------------------------------------------
@@ -1264,6 +1299,39 @@ class TestUpsertBulletinGroupingHook:
         upsert_bulletin(raw, run)
 
         assert Bulletin.objects.count() == 1
+        assert BulletinGrouping.objects.count() == 0
+
+    def test_narrowed_reingest_leaves_no_stale_grouping(self) -> None:
+        """SNOW-1168: a correction down to one region drops the grouping it had."""
+        major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+        sub = SubRegionFactory.create(prefix="CH-41", major=major)
+        for region_id, west in (("CH-4115", 6.9), ("CH-7111", 7.0)):
+            east = round(west + 0.1, 1)
+            MicroRegionFactory.create(
+                region_id=region_id,
+                subregion=sub,
+                boundary={
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [west, 46.4],
+                            [east, 46.4],
+                            [east, 46.5],
+                            [west, 46.5],
+                            [west, 46.4],
+                        ]
+                    ],
+                },
+            )
+        run = PipelineRunFactory.create()
+        upsert_bulletin(_make_raw_bulletin(), run)
+        assert BulletinGrouping.objects.count() == 1
+
+        upsert_bulletin(
+            _make_raw_bulletin(regions=[{"regionID": "CH-7111", "name": "Engadin"}]),
+            run,
+        )
+
         assert BulletinGrouping.objects.count() == 0
 
     def test_upsert_swallows_grouping_exception_and_still_creates_bulletin(
