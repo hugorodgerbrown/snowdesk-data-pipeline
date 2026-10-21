@@ -1703,6 +1703,16 @@ html:has(> body.map-fullscreen) > body {
     );
 }
 
+/* No ring round a whole sheet (2026-10-21). Each sheet built on
+   includes/_overlay_sheet.html takes focus as it opens (tabindex="-1"), so
+   Escape and the keyboard reach it; the browser then drew its focus ring
+   round the entire panel, for a press nobody made on it. The sheet is a
+   focus target, not a control: the controls inside it keep their rings.
+   The phone's detent rule below says the same for its full-width shape. */
+[data-overlay][tabindex='-1']:focus {
+    outline: none;
+}
+
 /* —— The selection column (2026-10-21) ———————————————————————————
    From 640px the region, place and weather sheets dock down the map's LEFT
    side, under the search pill they were picked from
