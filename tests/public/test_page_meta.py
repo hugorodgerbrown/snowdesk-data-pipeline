@@ -266,6 +266,45 @@ class TestNoWhitespaceLeaks:
             assert "  " not in title.group("title"), f"{label}: double space in <title>"
 
 
+class TestNoDoubleEscaping:
+    """A name with an apostrophe is escaped exactly once in every title tag.
+
+    Page titles are built with ``{% blocktrans … asvar %}``, which escapes
+    the name and marks the result safe. ``|squish`` used to return a plain
+    string, so autoescape ran again and the tab for "Val d'Entremont-Val
+    Ferret" read "Val d&#x27;Entremont…" (the HTML had ``&amp;#x27;``).
+    """
+
+    @pytest.fixture
+    def apostrophe_pages(self, db: None) -> dict[str, str]:
+        """URLs of a bulletin and a resort page whose names carry an apostrophe."""
+        subregion = SubRegionFactory.create()
+        region = MicroRegionFactory.create(
+            region_id="CH-4244",
+            name="Val d'Entremont-Val Ferret",
+            subregion=subregion,
+        )
+        resort = ResortFactory.create(name="Val d'Isère", region=region)
+        return {
+            "bulletin": region.get_absolute_url(),
+            "resort": resort.get_absolute_url(),
+        }
+
+    def test_title_and_share_tags_escape_apostrophe_once(
+        self, client: Client, apostrophe_pages: dict[str, str]
+    ) -> None:
+        """<title>, og:title and twitter:title carry &#x27;, never &amp;#x27;."""
+        for label, url in apostrophe_pages.items():
+            html = client.get(url).content.decode()
+            assert "&amp;#x27;" not in html, f"{label}: apostrophe double-escaped"
+            title = _TITLE_RE.search(html)
+            assert title is not None, f"{label}: no <title> tag"
+            assert "d&#x27;" in title.group("title"), f"{label}: {title.group()!r}"
+            assert "d&#x27;" in _meta_content(html, "og:title"), label
+            twitter = re.search(r'<meta name="twitter:title" content="([^"]*)"', html)
+            assert twitter is not None and "d&#x27;" in twitter.group(1), label
+
+
 class TestBulletinEmptyState:
     """A bulletin page for a date with no data keeps its identity."""
 

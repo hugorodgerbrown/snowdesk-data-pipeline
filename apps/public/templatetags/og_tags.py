@@ -70,7 +70,7 @@ def og_locale(value: str | None) -> str:
         return ""
 
 
-@register.filter
+@register.filter(is_safe=True)
 def squish(value: str | None) -> str:
     """
     Collapse every run of whitespace in ``value`` to a single space.
@@ -90,6 +90,14 @@ def squish(value: str | None) -> str:
 
     Returns an empty string for ``None`` or empty input, matching
     ``og_locale``'s None-safe shape.
+
+    ``is_safe=True`` keeps an already-escaped value escaped exactly once.
+    Page titles arrive from ``{% blocktrans … asvar %}``, which escapes its
+    variables and marks the result safe; returning a plain ``str`` dropped
+    that mark, so autoescape ran a second time and "Val d'Entremont"
+    reached the browser tab as "Val d&amp;#x27;Entremont". Collapsing
+    whitespace cannot introduce markup, so safety passes through, and an
+    unsafe input is still escaped by autoescape as before.
 
     Args:
         value: The raw attribute value, possibly spanning several lines.
