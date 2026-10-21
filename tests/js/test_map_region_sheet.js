@@ -26,7 +26,7 @@ const BODY = `
     <button type="button" data-region-sheet-proxy="map-region-pin-control" aria-label="Pin this region"></button>
     <button type="button" data-region-sheet-proxy="map-download-control" aria-label="Download this region"></button>
   </div>
-  <a href="/CH-4115/">Open bulletin</a>
+  <div data-testid="region-sheet-bulletin"><h3>Avalanche problems</h3></div>
   <a href="/resorts/verbier/" data-resort-slug="verbier">Verbier</a>
 `;
 
@@ -152,7 +152,7 @@ describe('a body fetched once', () => {
     select(null);
     select('CH-4115', 'tap');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(sheet.querySelector('a[href="/CH-4115/"]')).not.toBeNull();
+    expect(sheet.querySelector('[data-testid="region-sheet-bulletin"]')).not.toBeNull();
   });
 
   it('is asked for again once ten minutes have passed', async () => {

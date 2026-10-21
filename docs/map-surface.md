@@ -2,7 +2,7 @@
 name: map-surface
 description: Map zoom bands (REGION_SELECT_MAXZOOM), tap priority, overlay kinds, pwaMapOverlays, one bottom sheet, camera padding owner
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-21
 ---
 
 # The map surface: zoom, taps and overlays
@@ -71,6 +71,9 @@ map click dispatcher"). It stops at the first rule that claims the tap:
    "Resorts in this region" or from the resort page's "See on the map"
    opens the same sheet, after flying to the pin
    ([`decisions/the-map-opens-a-resort-in-the-sheet.md`](decisions/the-map-opens-a-resort-in-the-sheet.md)).
+   Under its peek row the sheet shows the resort page's own body for the
+   map's day, as the region sheet shows the bulletin page's
+   ([`decisions/the-sheet-is-the-page.md`](decisions/the-sheet-is-the-page.md)).
 6. **On the region already selected, with its phone sheet closed**: reopens
    the sheet, at any zoom, and changes nothing else
    (`window.pwaRegionSheet.reopen`). The sheet closes while the region stays

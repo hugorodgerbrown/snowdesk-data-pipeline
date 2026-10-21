@@ -2,7 +2,7 @@
 name: the-map-opens-a-resort-in-the-sheet
 description: Inside the map a resort opens in the place sheet, on every width; outside it, the page; one formatter for resort facts
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-21
 ---
 
 # The map opens a resort in the sheet
@@ -11,8 +11,9 @@ last-reviewed: 2026-10-20
 
 **If the map is on screen, a resort opens in the place sheet. If it isn't,
 it opens the resort page.** One labelled link crosses each way: the
-sheet's "View resort →" and the page's "See on the map", which flies to
-the pin and opens the sheet (SNOW-1161, Hugo, 20 Oct 2026).
+sheet's "View resort →" (removed by SNOW-1164) and the page's "See on the
+map", which flies to the pin and opens the sheet (SNOW-1161, Hugo, 20 Oct
+2026).
 
 Every way into a resort from inside the map lands on the same sheet: a pin
 tap, a search pick, the region sheet's "Resorts in this region" (its links
@@ -21,16 +22,16 @@ keep the page as their `href`, for a new tab or no JS) and a
 the MapLibre resort popup and `api:resort_popup` are gone. A saved pin
 keeps its desktop popup.
 
-The two surfaces answer different questions, so they own different things:
+*(Superseded by [`the-sheet-is-the-page`](the-sheet-is-the-page.md),
+SNOW-1164: the sheet and the page no longer own different things. Under
+its peek row the sheet shows the resort page's own body for the map's day,
+and the sheet's "View resort →" is gone. The routing rule above stands.)*
 
-| | Place sheet | Resort page |
-|---|---|---|
-| Question | this place, on the map's day | this resort, today |
-| Danger | the map's day: tile, level, problems | today's one-card summary |
-| Weather | the day at the pin, then "Full forecast →" | Base / Mid / Summit, the week |
-| Facts | one line: elevation · lifts · piste | the full facts card |
-| Why it matters | only when written | tagline, with its blank states |
-| Season calendar | — (the scrubber is the map's season) | yes |
+SNOW-1161's split, kept for the record: the sheet answered "this place, on
+the map's day" (the day's danger, the weather at the pin, a one-line fact
+summary, "why it matters" only when written) and the page "this resort,
+today" (the one-card summary, Base / Mid / Summit, the full facts card,
+the season calendar).
 
 Both read one formatter for a resort's facts, `apps.public.resort_facts`.
 No public surface draws a curation placeholder; staff curate in

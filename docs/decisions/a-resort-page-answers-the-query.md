@@ -1,8 +1,8 @@
 ---
 name: a-resort-page-answers-the-query
-description: /resorts/<slug>/ (resort_detail) is a landing page: today's danger in one card (_resort_bulletin_card.html); problem cards retired
+description: resort_detail is a landing page: the day's danger in one card, the day's problem cards; /resorts/<slug>/<date>/
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-21
 ---
 
 # A resort page answers the query
@@ -10,6 +10,9 @@ last-reviewed: 2026-10-20
 Amends [`two-documents-and-a-map`](two-documents-and-a-map.md) for resort
 pages only (SNOW-1124). Narrowed by SNOW-1156: the page is a **landing
 page** that answers the query in one card and leads into the bulletin.
+Amended by SNOW-1164 ([`the-sheet-is-the-page`](the-sheet-is-the-page.md)):
+the page's body is also the map's resort sheet, so it takes a day, and
+it shows the day's problems again — see the last section.
 
 ## Decision
 
@@ -98,3 +101,23 @@ the same level and the same words.
 - The rest of `two-documents-and-a-map` stands: the bulletin and the
   weather page are the two documents, and nothing else gains a page from
   this amendment.
+
+## The page takes a day, and the problems return (SNOW-1164)
+
+The map's resort sheet now renders this page's body for the map's day, so
+the page takes one too: `/resorts/<slug>/<YYYY-MM-DD>/`. The bare URL is
+still today, and the rules above read "the day" for "today": the issue is
+selected for that day, the card says "No bulletin this day" when none
+covers it, and its link goes to that day's bulletin page. Only today's
+page is indexed; another day's is `noindex`.
+
+Under the card the body lists the day's problem cards
+(`public/_rating_block.html`) as the bulletin gives them. Hugo chose this
+on 21 Oct 2026 when the sheet's extras moved into the body. The sheet's
+"Above / Below this location" verdict did not come with them: it judged
+each band against one height (the pin, normally the village), and on a
+resort that spans 1,500–3,330 m it read as a claim about the whole
+resort. It reverses the first half of SNOW-1156's retirement; the
+lift-range line stays retired, and the card itself is
+unchanged and still holds exactly one link.
+

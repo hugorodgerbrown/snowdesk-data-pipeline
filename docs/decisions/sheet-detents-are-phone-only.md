@@ -2,7 +2,7 @@
 name: sheet-detents-are-phone-only
 description: Phone sheet detents (_overlay_sheet.html detents, data-sheet-detents, bindDetents); forms take none; sheet covers, never moves, map controls
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-21
 ---
 
 # Sheet detents are phone-only, and forms take none
@@ -83,7 +83,8 @@ only binds it to pointer events. Without the core on the page,
   `static/css/map.css`. Do not add a desktop branch.
 - A resort's place sheet opens on a desktop too since SNOW-1161, which
   retired the resort popup. It is the inset panel there, with no detents —
-  this decision is unchanged by it
+  this decision is unchanged by it, or by SNOW-1164 putting the resort
+  page's body in it ([`the-sheet-is-the-page`](the-sheet-is-the-page.md))
   ([`the-map-opens-a-resort-in-the-sheet`](the-map-opens-a-resort-in-the-sheet.md)).
 - The camera padding is applied with the view held still (the centre moves
   to the point already under the new padded centre), so a settle never

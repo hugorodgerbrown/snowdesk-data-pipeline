@@ -4086,6 +4086,141 @@ def _build_bulletin_headline(
     )
 
 
+def build_bulletin_body(
+    request: HttpRequest,
+    region: MicroRegion,
+    page_date: datetime.date,
+    selected: Bulletin | None,
+) -> dict[str, Any]:
+    """
+    Build what ``public/partials/_region_body.html`` reads for one bulletin.
+
+    SNOW-1164: the region's body is rendered in two containers, the bulletin
+    page and the map's region sheet, and this is the one place either gets
+    its context, so the two cannot describe the same day differently. The
+    page adds its chrome (title, canonical URL, structured data, the season
+    sheet) around it; the sheet adds its peek row.
+
+    Args:
+        request: The incoming request (the observation counts read the
+            reader's flags).
+        region: The region the body describes.
+        page_date: The calendar day the body describes.
+        selected: The bulletin chosen for that day, or ``None`` when no
+            issue covers it.
+
+    Returns:
+        ``bulletin``, ``page_date`` and ``is_today`` always; with a bulletin,
+        also ``panel``, ``day_windows``, ``day_movement``, the source label
+        and URL, the observation counts, ``next_update_time`` and the hero
+        fields the page's masthead reads (``morning_rating``,
+        ``period_transition``, ``period_transition_chip``, ``headline``).
+
+    """
+    if selected is None:
+        return {
+            "bulletin": None,
+            "page_date": page_date,
+            "is_today": page_date == timezone.now().date(),
+        }
+
+    today = timezone.now().date()
+    is_today = page_date == today
+    next_update_time: datetime.datetime | None = None
+    now = timezone.now()
+    if (
+        is_today
+        and not _has_later_bulletin(region, page_date)
+        and selected.next_update
+        and selected.next_update > now
+    ):
+        next_update_time = selected.next_update
+
+    panel = _build_panel_context(selected)
+
+    day_windows: list[dict[str, Any]] = _build_day_windows(
+        selected, render_model=panel.get("render_model")
+    )
+
+    # Derive the source label and URL for the metadata strip Source cell
+    # (SNOW-211). Read from the panel's render model — not selected.render_model
+    # — so v3 bulletins benefit from _build_panel_context's on-the-fly rebuild
+    # to v4 (which is the version that introduced the ``source`` key).
+    source_key = (panel.get("render_model") or {}).get("source", "")
+    bulletin_source_label, bulletin_source_url = BULLETIN_SOURCE_LINKS.get(
+        source_key, ("", "")
+    )
+
+    # SNOW-324: per-type field-observation counts for the current-day bulletin
+    # page.  Only fetched when the flag is active; zero-overhead on historic
+    # pages because the ``is_today`` guard short-circuits the query.
+    observation_counts: list[tuple[str, int]] = (
+        _get_observation_counts(request, region, page_date) if is_today else []
+    )
+
+    # SNOW-330: whether any user-located (MANUAL or GPS_REFINED) report exists
+    # for this region today.  Drives the public footnote under the counts strip.
+    # Only fetched when flag is active and page is today.
+    observation_has_user_located: bool = (
+        _get_observation_has_user_located(request, region, page_date)
+        if is_today
+        else False
+    )
+
+    # Morning rating badge context (SNOW-246). Projected from the panel's
+    # render-model adapter — no source-conditional branches in the template.
+    # subdivision is already a display char ("+", "-", "=") or "" for sources
+    # that don't carry per-rating subdivision (ALBINA, METEOFRANCE).
+    morning_rating: dict[str, str] | None = _build_morning_rating(panel)
+
+    # Period transition — rise/fall/flat-but-split chip beside the hero badge
+    # (SNOW-248). Derived from the render model's danger.ratings list; source-
+    # neutral (no if source == "slf" branches). ``None`` on all-day bulletins.
+    raw_render_model: dict[str, Any] = panel.get("render_model") or {}
+    period_transition: PeriodTransition | None = compute_period_transition(
+        raw_render_model
+    )
+    # Hero chip: rise/fall only — flat-but-split (direction="none") is suppressed.
+    period_transition_chip: dict[str, str] | None = _build_period_transition_chip(
+        period_transition
+    )
+
+    # Day movement — the same classification the day summary uses, so the
+    # Day Risk Profile's flat-split caption cannot claim a change the
+    # summary beside it reports as a static day. 23 of the archive's 101
+    # flat splits change nothing the reader can act on; see docs/day-summary.md.
+    rm_traits: list[dict[str, Any]] = raw_render_model.get("traits") or []
+    day_movement: str = day_summary.classify_movement(
+        period_transition.direction
+        if period_transition is not None and period_transition.has_split
+        else "",
+        set(problem_types_for(rm_traits, {"all_day", "earlier"})),
+        set(problem_types_for(rm_traits, {"later"})),
+    )
+
+    # Bulletin headline (SNOW-249) — one helper shared with the resort page
+    # (SNOW-1124), so the two cannot word the same day differently.
+    headline: str = _build_bulletin_headline(raw_render_model, period_transition)
+
+    return {
+        "bulletin": selected,
+        "panel": panel,
+        "page_date": page_date,
+        "is_today": is_today,
+        "next_update_time": next_update_time,
+        "day_windows": day_windows,
+        "day_movement": day_movement,
+        "bulletin_source_label": bulletin_source_label,
+        "bulletin_source_url": bulletin_source_url,
+        "observation_counts": observation_counts,
+        "observation_has_user_located": observation_has_user_located,
+        "morning_rating": morning_rating,
+        "period_transition": period_transition,
+        "period_transition_chip": period_transition_chip,
+        "headline": headline,
+    }
+
+
 def _bulletin_detail_response(
     request: HttpRequest,
     region: MicroRegion,
@@ -4223,87 +4358,15 @@ def _bulletin_detail_response(
         patch_cache_control(response, public=True, max_age=60)
         return response
 
-    is_today = page_date == today
-    next_update_time: datetime.datetime | None = None
-    now = timezone.now()
-    if (
-        is_today
-        and not _has_later_bulletin(region, page_date)
-        and selected.next_update
-        and selected.next_update > now
-    ):
-        next_update_time = selected.next_update
-
-    panel = _build_panel_context(selected)
-
-    day_windows: list[dict[str, Any]] = _build_day_windows(
-        selected, render_model=panel.get("render_model")
-    )
-
+    body = build_bulletin_body(request, region, page_date, selected)
+    panel = body["panel"]
+    next_update_time = body["next_update_time"]
     season_calendar = season_header(today)
 
-    # Derive the source label and URL for the metadata strip Source cell
-    # (SNOW-211). Read from the panel's render model — not selected.render_model
-    # — so v3 bulletins benefit from _build_panel_context's on-the-fly rebuild
-    # to v4 (which is the version that introduced the ``source`` key).
-    source_key = (panel.get("render_model") or {}).get("source", "")
-    bulletin_source_label, bulletin_source_url = BULLETIN_SOURCE_LINKS.get(
-        source_key, ("", "")
-    )
-
-    # SNOW-324: per-type field-observation counts for the current-day bulletin
-    # page.  Only fetched when the flag is active; zero-overhead on historic
-    # pages because the ``is_today`` guard short-circuits the query.
-    observation_counts: list[tuple[str, int]] = (
-        _get_observation_counts(request, region, page_date) if is_today else []
-    )
-
-    # SNOW-330: whether any user-located (MANUAL or GPS_REFINED) report exists
-    # for this region today.  Drives the public footnote under the counts strip.
-    # Only fetched when flag is active and page is today.
-    observation_has_user_located: bool = (
-        _get_observation_has_user_located(request, region, page_date)
-        if is_today
-        else False
-    )
-
-    # Emit bulletin_viewed (no-ops silently on /examples/* paths).
+    # Emit bulletin_viewed (no-ops silently on /examples/* paths). The page
+    # only: the map's region sheet renders the same body without counting
+    # a view (SNOW-1164).
     _track_bulletin_viewed(request, region, selected, panel)
-
-    # Morning rating badge context (SNOW-246). Projected from the panel's
-    # render-model adapter — no source-conditional branches in the template.
-    # subdivision is already a display char ("+", "-", "=") or "" for sources
-    # that don't carry per-rating subdivision (ALBINA, METEOFRANCE).
-    morning_rating: dict[str, str] | None = _build_morning_rating(panel)
-
-    # Period transition — rise/fall/flat-but-split chip beside the hero badge
-    # (SNOW-248). Derived from the render model's danger.ratings list; source-
-    # neutral (no if source == "slf" branches). ``None`` on all-day bulletins.
-    raw_render_model: dict[str, Any] = panel.get("render_model") or {}
-    period_transition: PeriodTransition | None = compute_period_transition(
-        raw_render_model
-    )
-    # Hero chip: rise/fall only — flat-but-split (direction="none") is suppressed.
-    period_transition_chip: dict[str, str] | None = _build_period_transition_chip(
-        period_transition
-    )
-
-    # Day movement — the same classification the day summary uses, so the
-    # Day Risk Profile's flat-split caption cannot claim a change the
-    # summary beside it reports as a static day. 23 of the archive's 101
-    # flat splits change nothing the reader can act on; see docs/day-summary.md.
-    rm_traits: list[dict[str, Any]] = raw_render_model.get("traits") or []
-    day_movement: str = day_summary.classify_movement(
-        period_transition.direction
-        if period_transition is not None and period_transition.has_split
-        else "",
-        set(problem_types_for(rm_traits, {"all_day", "earlier"})),
-        set(problem_types_for(rm_traits, {"later"})),
-    )
-
-    # Bulletin headline (SNOW-249) — one helper shared with the resort page
-    # (SNOW-1124), so the two cannot word the same day differently.
-    headline: str = _build_bulletin_headline(raw_render_model, period_transition)
 
     # SNOW-555: one derivation feeding both the JSON-LD Report below and the
     # article:* OG properties on the page.
@@ -4312,31 +4375,19 @@ def _bulletin_detail_response(
     )
 
     context = {
+        # The body (SNOW-1164): everything public/partials/_region_body.html
+        # reads, from the one builder the map's region sheet also uses.
+        **body,
         "region": region,
         "region_name": region_name,
         "region_id": region.region_id.lower(),
         "slug": slugify(region.name),
-        "bulletin": selected,
-        "panel": panel,
-        "page_date": page_date,
-        "is_today": is_today,
         "prev_date": prev_date,
         "next_date": next_date,
-        "next_update_time": next_update_time,
         "year": today.year,
         # Season heatmap — surfaced as a slide-down sheet (SNOW-117).
         "season_calendar": season_calendar,
-        # Masthead context.
-        "day_windows": day_windows,
         "subregion_name": subregion_name,
-        # Hero rating badge — morning level + optional subdivision (SNOW-246).
-        "morning_rating": morning_rating,
-        # Period transition chip — rise/fall beside the hero badge (SNOW-248).
-        # None on all-day or flat-but-split bulletins.
-        "period_transition": period_transition,
-        "period_transition_chip": period_transition_chip,
-        # Day movement — gates the flat-split caption (SNOW day-summary work).
-        "day_movement": day_movement,
         # Canonical form-3 URL — see SNOW-99.
         "canonical_url": canonical_url,
         # Context-aware back-link for the nav bar (SNOW-183) and, since
@@ -4344,9 +4395,6 @@ def _bulletin_detail_response(
         # and everything that used to follow it — adjoining regions, resorts,
         # the reader's pins, the subscribe form — is a map object.
         "map_url": map_url,
-        # Source agency label and URL for the metadata strip Source cell (SNOW-211).
-        "bulletin_source_label": bulletin_source_label,
-        "bulletin_source_url": bulletin_source_url,
         # OG description — plain-text summary for og:description / twitter:description
         # (SNOW-218).  Built from the panel's danger rating and key message.
         "og_description": _build_og_description(panel),
@@ -4361,15 +4409,6 @@ def _bulletin_detail_response(
         # structured data can never disagree about when this was issued.
         "article_published_time": article_published_time,
         "article_modified_time": article_modified_time,
-        # Bulletin headline — data-driven variant copy (SNOW-249).
-        "headline": headline,
-        # SNOW-324: per-type field-observation counts for the current-day
-        # bulletin page.  Empty dict on historic pages (flag off or not today).
-        "observation_counts": observation_counts,
-        # SNOW-330: True when any user-located (MANUAL/GPS_REFINED) report
-        # exists for this region today.  Drives a public footnote under the
-        # counts strip.  False on historic pages or when flag is inactive.
-        "observation_has_user_located": observation_has_user_located,
     }
     response = _render_bulletin_page(request, context, bulletin=selected)
 
@@ -4990,7 +5029,9 @@ def resorts_index(request: HttpRequest) -> HttpResponse:
     return render(request, "public/resorts_index.html", context)
 
 
-def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
+def resort_detail(
+    request: HttpRequest, slug: str, date_str: str | None = None
+) -> HttpResponse:
     """
     Render the public resort detail page.
 
@@ -5040,41 +5081,43 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
     The meta description's danger sentence reads the same ``panel`` as the
     tile, so the two can never name different levels.
 
+    SNOW-1164 split the page into a frame and a body: the body — the
+    bulletin card, the problems judged against the resort's height, the
+    forecast, the season calendar and the facts — is ``build_resort_body``
+    and ``public/partials/_resort_body.html``, which the map's place sheet
+    renders too, so on a phone the sheet at full height IS this page. The
+    page adds only the frame: the header with its eyebrow, title, tagline
+    and actions, the metadata and the structured data.
+
+    The page takes a day (``/resorts/<slug>/<YYYY-MM-DD>/``, SNOW-1164), the
+    way the bulletin page does, so the map's sheet and this page can show
+    the same day. The bare URL is today; the dated URL for today redirects
+    to it, so today has one address, and any other day is ``noindex`` —
+    it is reached from the map, never from search.
+
     Args:
         request: The incoming HTTP request.
         slug: The Resort's slug, from the URL.
+        date_str: The ``YYYY-MM-DD`` segment of the dated URL, or None.
 
     Returns:
-        The rendered resort page.
+        The rendered resort page; a redirect for the dated URL of today;
+        404 for an unknown resort or a malformed date.
 
     """
+    today = timezone.localdate()
+    target_date = today
+    if date_str is not None:
+        try:
+            target_date = datetime.date.fromisoformat(date_str)
+        except ValueError as exc:
+            raise Http404("Not a date") from exc
     resort = get_object_or_404(
         Resort.objects.select_related("region__subregion__major", "location"),
         slug=slug,
     )
-
-    region = resort.region
-    today = timezone.localdate()
-
-    # SNOW-1124: today's bulletin, chosen exactly as the evergreen bulletin
-    # page chooses it, so the two pages always show the same issue.
-    selected = _resolve_selected_issue(
-        _issues_for_date(region, today), today, requested_id=None
-    )
-    panel: dict[str, Any] | None = None
-    headline = ""
-    if selected is not None:
-        panel = _build_panel_context(selected)
-        raw_render_model: dict[str, Any] = panel.get("render_model") or {}
-        if raw_render_model.get("version") == 0:
-            # A render model that failed to build: the bulletin page shows
-            # its "couldn't process" callout, and its danger key is only a
-            # "low" fallback — never show that as today's level here.
-            panel = None
-        else:
-            headline = _build_bulletin_headline(
-                raw_render_model, compute_period_transition(raw_render_model)
-            )
+    if date_str is not None and target_date == today:
+        return redirect(resort.get_absolute_url())
 
     can_favourite = False
     favourite = None
@@ -5083,29 +5126,11 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
         favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
 
     context = {
-        "resort": resort,
-        "region": region,
-        "region_id": region.region_id,
-        # SNOW-1124: the bulletin page's panel and headline for today, or
-        # None / "" when no bulletin covers today.
-        "panel": panel,
-        "headline": headline,
-        # SNOW-1156: the card's "SLF · updated 17:00" line.
-        **_resort_bulletin_attribution(panel),
-        "target_date": today,
-        "bulletin_url": _resort_bulletin_url(region, selected, today),
+        **build_resort_body(request, resort, target_date),
         "favourited": favourite is not None,
         "favourite_uuid": str(favourite.uuid) if favourite else "",
         "can_favourite": can_favourite,
-        # SNOW-542: the why-it-matters partial shows a curation hint instead
-        # of the public blank state for staff, exactly as the popup's
-        # metadata rows already do.
-        "is_staff": request.user.is_staff,
         "signin_url": reverse("accounts:sign_in"),
-        # SNOW-1157: the forecast strip's Base / Mid / Summit points, each
-        # with today's row and its week — one batched Weather query whatever
-        # the number of points.
-        "forecast_points": _resort_forecast_points(resort, today, timezone.now()),
         # SNOW-1155: the header's mono eyebrow — alternative name, canton,
         # country — each part omitted when blank.
         "resort_eyebrow": _resort_eyebrow(resort),
@@ -5115,8 +5140,109 @@ def resort_detail(request: HttpRequest, slug: str) -> HttpResponse:
             f"{settings.SITE_BASE_URL.rstrip('/')}{resort.get_absolute_url()}",
         ),
     }
-    context.update(_resort_season_calendar_context(region, today))
     return render(request, "public/resort.html", context)
+
+
+def build_resort_body(
+    request: HttpRequest, resort: Resort, target_date: datetime.date
+) -> dict[str, Any]:
+    """Build the context of a resort's body, shared by its page and sheet.
+
+    SNOW-1164: one body, two containers. ``public/partials/_resort_body.html``
+    renders this on the resort page (``resort_detail``) and in the map's
+    place sheet (``apps.public.place_sheet.resort_sheet_partial``), so a
+    fact about a resort is added here and reaches both.
+
+    The day's bulletin is chosen exactly as the bulletin page chooses it
+    (``_issues_for_date`` then ``_resolve_selected_issue``, the 10:00 rule,
+    then ``_build_panel_context``), so the two pages always show the same
+    issue (SNOW-1124). A render model that failed to build gives no panel:
+    its danger key is only a "low" fallback, never a level to show.
+
+    The problems are the panel's own cards, shown as the bulletin gives
+    them. They carry no "Above / Below this location" verdict
+    (``annotate_problem_relevance``): a resort spans a range of heights, so
+    a verdict against one of them read as one about the whole resort (Hugo,
+    21 Oct 2026). Each card already states its own elevation band.
+
+    Args:
+        request: The incoming request, read for ``is_staff``.
+        resort: The resort, with ``region`` and ``location`` loaded.
+        target_date: The day to show — today on the bare page, the map's
+            day in the sheet.
+
+    Returns:
+        The body's context; see ``_resort_body.html`` for each key.
+
+    """
+    region = resort.region
+    today = timezone.localdate()
+    selected = _resolve_selected_issue(
+        _issues_for_date(region, target_date), target_date, requested_id=None
+    )
+    panel: dict[str, Any] | None = None
+    headline = ""
+    if selected is not None:
+        panel = _build_panel_context(selected)
+        raw_render_model: dict[str, Any] = panel.get("render_model") or {}
+        if raw_render_model.get("version") == 0:
+            panel = None
+        else:
+            headline = _build_bulletin_headline(
+                raw_render_model, compute_period_transition(raw_render_model)
+            )
+
+    problem_cards: list[dict[str, Any]] = list(panel["problem_cards"]) if panel else []
+
+    return {
+        "resort": resort,
+        "region": region,
+        "region_id": region.region_id,
+        # SNOW-1124: the bulletin page's panel and headline for the day, or
+        # None / "" when no bulletin covers it.
+        "panel": panel,
+        "headline": headline,
+        "problem_cards": problem_cards,
+        # SNOW-1156: the card's "SLF · updated 17:00" line.
+        **_resort_bulletin_attribution(panel),
+        "target_date": target_date,
+        "is_today": target_date == today,
+        "bulletin_url": _resort_bulletin_url(region, selected, target_date),
+        # SNOW-542: the why-it-matters partial shows a curation hint instead
+        # of the public blank state for staff, exactly as the popup's
+        # metadata rows already do.
+        "is_staff": request.user.is_staff,
+        # SNOW-1157: the forecast strip's Base / Mid / Summit points. A
+        # forward day has no row of its own — today's row carries it in its
+        # forecast — so it reads today's.
+        "forecast_points": _resort_forecast_points(
+            resort,
+            min(target_date, today),
+            timezone.now(),
+            link_date=None if target_date == today else target_date,
+        ),
+        # The calendar is the season's, ringed on today, whichever day the
+        # body shows: its grid stops at today.
+        **_resort_season_calendar_context(region, today),
+    }
+
+
+def _dated_weather_url(location: Location, day: datetime.date | None) -> str:
+    """Return a location's weather page URL, opened on ``day`` when given.
+
+    Args:
+        location: The forecast point's Location.
+        day: The day to open, or None for the bare page.
+
+    Returns:
+        ``/weather/<short_id>/`` with ``?date=<day>`` when a day is given,
+        or "" for a location with no page yet.
+
+    """
+    url = location.get_absolute_url()
+    if url and day is not None:
+        return f"{url}?date={day.isoformat()}"
+    return url
 
 
 def _resort_eyebrow(resort: Resort) -> str:
@@ -5216,23 +5342,26 @@ def _resort_bulletin_url(
     """
     Return where the resort page's bulletin card links.
 
-    With a bulletin covering today, the region's evergreen URL — it shows
-    that same issue. Without one, the evergreen page would only repeat
-    "no bulletin", so the "Latest {region} bulletin" link goes to the dated
-    page of the region's most recent bulletin instead; the evergreen URL
-    remains the fallback when the region has none at all.
+    With a bulletin covering the day, that day's page — the evergreen URL
+    for today, the dated one otherwise (SNOW-1164) — which shows that same
+    issue. Without one, the page would only repeat "no bulletin", so the
+    "Latest {region} bulletin" link goes to the dated page of the region's
+    most recent bulletin before the day instead; the evergreen URL remains
+    the fallback when the region has none at all.
 
     Args:
         region: The resort's MicroRegion.
-        selected: Today's selected issue, or None.
-        today: The page's calendar day.
+        selected: The day's selected issue, or None.
+        today: The day the body shows.
 
     Returns:
         A bulletin page URL for the region.
 
     """
     if selected is not None:
-        return region.get_absolute_url()
+        if today == timezone.localdate():
+            return region.get_absolute_url()
+        return region.get_absolute_url(target_date=today)
     latest = (
         Bulletin.objects.filter(regions=region, valid_to__date__lt=today)
         .order_by("-valid_to")
@@ -5299,7 +5428,11 @@ _RESORT_FORECAST_ROLES: tuple[tuple[str, Any], ...] = (
 
 
 def _resort_forecast_points(
-    resort: Resort, today: datetime.date, now: datetime.datetime
+    resort: Resort,
+    today: datetime.date,
+    now: datetime.datetime,
+    *,
+    link_date: datetime.date | None = None,
 ) -> list[dict[str, Any]]:
     """Return the resort page's forecast points: Base, Mid and Summit (SNOW-1157).
 
@@ -5324,6 +5457,10 @@ def _resort_forecast_points(
         resort: The resort whose links to walk, with ``location`` loaded.
         today: The server's local date — the ``Weather.observed_on`` read.
         now: The reference instant for each day's day/night icon.
+        link_date: The day the body shows when it is not today (SNOW-1164):
+            each point's link then opens its weather page on that day
+            (``?date=``), as the map's place sheet always did. None links
+            the bare page.
 
     Returns:
         One dict per point: ``role`` (``"base"``/``"mid"``/``"top"``),
@@ -5367,7 +5504,7 @@ def _resort_forecast_points(
                     if location.elevation_m is not None
                     else None
                 ),
-                "url": location.get_absolute_url(),
+                "url": _dated_weather_url(location, link_date),
                 "weather": weather,
                 "panel": panel,
             }

@@ -21,6 +21,9 @@ URL structure:
                                                chip, bulletin link, favourite
                                                toggle (SNOW-504; slug-keyed
                                                since SNOW-796).
+  /resorts/<slug>/<date>/                      The resort page on that day
+                                               (SNOW-1164); today's redirects
+                                               to the bare URL.
   /resorts/<id>/<slug>/                         Permanent 301 redirect to the
                                                slug-keyed page (SNOW-796).
   /examples/random/                            Renders a random bulletin inline
@@ -145,6 +148,14 @@ urlpatterns = [
         "resorts/<int:resort_id>/<slug:slug>/",
         views.resort_legacy_redirect,
         name="resort_legacy",
+    ),
+    # SNOW-1164: the resort page on a named day, so the map's sheet and the
+    # page can show the same one. After the legacy route, whose first
+    # segment is an integer; the dated URL for today redirects to the bare.
+    path(
+        "resorts/<slug:slug>/<str:date_str>/",
+        views.resort_detail,
+        name="resort_date",
     ),
     # SNOW-761: the full forecast for one Location — the page the map's
     # weather card hands off to via "View forecast". Keyed on Location

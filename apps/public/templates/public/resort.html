@@ -43,41 +43,16 @@ Header:
     SNOW-1161 — the one link from this page onto the map). SNOW-807's "Reports near here on the
     map" link is gone; this one replaces it.
 
-Main column — the order follows the season (SNOW-1156). In season (``panel``
-set: a bulletin covers today) the bulletin card, then the forecast, then
-the season calendar; out of season the forecast, then the bulletin card,
-then the season calendar. The card is one include rendered in one of two places,
-and one ``gap-12`` spaces whichever order the sections take.
-  * Regional avalanche bulletin (SNOW-1156) —
-    ``public/partials/_resort_bulletin_card.html``, which documents its two
-    states: the level band, the first problem's aspects and elevation, the
-    headline, "{provider} · updated HH:MM" and "Read the full {region}
-    bulletin →"; or "No bulletin today", the resort's typical season and
-    "Latest {region} bulletin →". Never a past bulletin as today's. The
-    card is ``[data-testid="resort-danger"]`` and holds exactly one
-    ``<a>`` — tests/e2e/test_resort_page.py clicks it.
-  * Forecast (SNOW-1157) — ``public/partials/_resort_forecast.html``, which
-    documents itself: "Forecast • {today}", then Base / Mid / Summit chips
-    (CSS-only radios, Base checked) over one seven-day strip per point —
-    today first and wider with Max / Min / New snow, then six unlabelled
-    days — each pane closing with "Open-Meteo · updated HH:MM" and "Read
-    the full 7-day forecast →" to that point's ``/weather/<short_id>/``.
-    The points are the resort's BASE / MID / TOP ``ResortLocation`` links,
-    the pin standing in for Base (``views._resort_forecast_points``). It
-    replaced SNOW-807/SNOW-1125's list of location links with a one-day
-    row each. A resort with no point renders no section at all.
-  * The season calendar (SNOW-1126, redrawn by SNOW-1158) — "Avalanche
-    danger • {region} region • {season}" over a card holding the shared
-    ``public/partials/_season_calendar.html``, unlinked: months × days, a
-    ring on today in season (on the first High day of a finished season),
-    and the short key. Its role="img" aria-label carries the season summary
-    the visible text used to. Described where it renders.
+BODY (SNOW-1164). Everything under the header — the bulletin card, the
+day's problem cards, the forecast, the
+season calendar, and the curated facts in a ~320px sidebar on a desktop
+(last on a phone) — is ``public/partials/_resort_body.html``, which
+documents each section. The map's place sheet renders the same partial, so
+on a phone the sheet at full height is this page; add a fact there, never
+here or to the sheet alone.
 
-Sidebar: "About this resort" (SNOW-695, redrawn by SNOW-1155) via
-``public/partials/_resort_facts.html`` — its own eyebrow above a card
-holding a definition list of operator, website, lifts, runs, piste,
-elevation range, season and notes, each row omitted when unset and the
-whole section omitted when all are.
+THE DAY. The bare URL is today; ``/resorts/<slug>/<YYYY-MM-DD>/`` is that
+day (``resort_date``), and its metadata is ``noindex``.
 
 Resorts with ``needs_review=True`` or null coordinates still render here —
 only the map-anchor affordance is skipped, and this page has none.
@@ -98,7 +73,10 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    "" (views._resort_bulletin_attribution).
   bulletin_updated_time         — str: the bulletin's publication time,
                                    "HH:MM" Central European time, or "".
-  target_date                   — datetime.date: today.
+  target_date                   — datetime.date: the day shown.
+  is_today                      — bool: target_date is today.
+  problem_cards                 — list[dict]: the day's problem cards
+                                   (views.build_resort_body).
   bulletin_url                  — str: the region's evergreen bulletin URL.
   favourited                    — bool.
   favourite_uuid                — str: "" when not favourited.
@@ -169,9 +147,15 @@ Context expected (built by ``apps.public.views.resort_detail``):
     {# Read from the same panel as the danger tile, so the description  #}
     {# and the page can never name different levels (SNOW-1124).       #}
     {% if panel and panel.danger_number %}
-        {% blocktrans with level=panel.danger_number label=panel.danger_label trimmed asvar danger_line %}
-            Danger today: {{ level }} – {{ label }}.
-        {% endblocktrans %}
+        {% if is_today %}
+            {% blocktrans with level=panel.danger_number label=panel.danger_label trimmed asvar danger_line %}
+                Danger today: {{ level }} – {{ label }}.
+            {% endblocktrans %}
+        {% else %}
+            {% blocktrans with level=panel.danger_number label=panel.danger_label day=target_date|date:"j F Y" trimmed asvar danger_line %}
+                Danger on {{ day }}: {{ level }} – {{ label }}.
+            {% endblocktrans %}
+        {% endif %}
     {% endif %}
     {% if forecast_points %}
         {% blocktrans with name=resort.name region=region.name danger=danger_line|default:"" trimmed asvar page_description %}
@@ -183,7 +167,13 @@ Context expected (built by ``apps.public.views.resort_detail``):
             {{ name }} avalanche conditions. {{ danger }} The {{ region }} avalanche bulletin, issued daily.
         {% endblocktrans %}
     {% endif %}
-    {% include "includes/_page_meta.html" with title=page_title description=page_description %}
+    {# SNOW-1164: another day's page is reached from the map, never from    #}
+    {# search, so only today's — the bare URL — is offered to an index.      #}
+    {% if is_today %}
+        {% include "includes/_page_meta.html" with title=page_title description=page_description %}
+    {% else %}
+        {% include "includes/_page_meta.html" with title=page_title description=page_description noindex=True %}
+    {% endif %}
 {% endblock page_meta %}
 
 {% block content %}
@@ -228,50 +218,7 @@ Context expected (built by ``apps.public.views.resort_detail``):
             </div>
         </header>
 
-        <div class="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
-            {# SNOW-1156: one gap spaces the sections, whichever order they take. #}
-            <div class="flex min-w-0 flex-col gap-12 lg:flex-1">
-                {# SNOW-1156: in season (a bulletin covers today) the bulletin card  #}
-                {# leads; out of season the forecast leads and the card follows.    #}
-                {# The card is one include, rendered in one of two places.          #}
-                {% if panel %}
-                    {% include "public/partials/_resort_bulletin_card.html" %}
-                {% endif %}
-
-                {# ── Forecast: the Base / Mid / Summit strip (SNOW-1157) ── #}
-                {% if forecast_points %}
-                    {% include "public/partials/_resort_forecast.html" %}
-                {% endif %}
-
-                {% if not panel %}
-                    {% include "public/partials/_resort_bulletin_card.html" %}
-                {% endif %}
-
-                {% comment %}
-            SNOW-1126 / SNOW-1158 — the season calendar. The region's danger
-            day by day through the running 1 Nov – 30 Apr season (the one just
-            ended, from May to October), rendered server-side so a crawler
-            reads it. Context from views._resort_season_calendar_context:
-            season_months (SeasonMonths) and season_summary (SeasonSummary,
-            falsy when no day had a bulletin — the section is then omitted).
-            The calendar is the one shared partial (_season_calendar.html),
-            unlinked: one role="img" whose aria-label is the season summary,
-            then the short key, in a card. No cell links to its day — the
-            bulletin card is the page's one bulletin link.
-                {% endcomment %}
-                {% if season_summary %}
-                    <section aria-labelledby="resort-season-heading" data-testid="resort-season">
-                        {% blocktrans with region=region.name season=season_months.season_label trimmed asvar season_heading_label %}
-                            Avalanche danger • {{ region }} region • {{ season }}
-                        {% endblocktrans %}
-                        {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-season-heading" text=season_heading_label class_extra="mb-3" only %}
-                        <div class="rounded-card border border-border bg-card p-5 sm:p-6">
-                            {% include "public/partials/_season_calendar.html" with linked=False %}
-                        </div>
-                    </section>
-                {% endif %}
-            </div>
-            {% include "public/partials/_resort_facts.html" with class_extra="lg:w-80 lg:shrink-0" %}
-        </div>
+        {# SNOW-1164: the body is shared with the map's place sheet. #}
+        {% include "public/partials/_resort_body.html" %}
     </main>
 {% endblock %}

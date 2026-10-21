@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-21
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -184,16 +184,16 @@ and regions/resorts fixtures are loaded.
 
 ### Scenario M2: Tap a region to open the bottom sheet
 
-**Goal**: Verify clicking a region surfaces today's danger rating, linked
-resorts, and a working CTA to the bulletin page.
+**Goal**: Verify clicking a region opens a sheet that is the bulletin page
+for the map's day, with the region's resorts under it (SNOW-1164).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | On http://localhost:8000/map/, click a region with a bulletin (e.g. Verbier / CH-4115) | A bottom sheet slides up from the page bottom |
 | 2 | Read the sheet title | Shows the region name (e.g. "Verbier") |
-| 3 | Read the sheet body | Shows today's danger rating and any linked resort names |
-| 4 | Locate the CTA | "Read today's bulletin →" link visible at the bottom of the sheet |
-| 5 | Click the CTA | Browser navigates to the region's bulletin page for today (e.g. `/CH-4115/verbier/`) |
+| 3 | Drag the sheet to full | Shows the bulletin page's own body for the day — day summary, risk profile, problems, snowpack and weather, source line — then the region's resorts (SNOW-1164) |
+| 4 | Compare with the bulletin page | The same sections as `/CH-4115/martigny-verbier/` for that day, without the page's title card or "See on the map" |
+| 5 | Tap a resort under "Resorts in this region" | The resort's sheet opens on the map, showing the resort page's body for the same day |
 | 6 | Return to /map/ and click a different region | Sheet content updates; the newly selected region's outline thickens and darkens |
 | 7 | Click the × close button on the sheet | Sheet dismisses; the region's selection outline is removed |
 

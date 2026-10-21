@@ -7,22 +7,21 @@ because it covered the terrain the reader had just tapped. On a phone the
 tap now opens ``#region-sheet``, a sheet with the three detents SNOW-1097
 gave ``includes/_overlay_sheet.html``, and it opens at PEEK, which leaves the
 tapped ground in view. This view renders what goes inside it, one fragment
-for all three detents, ordered so each detent reveals the next part:
+for all three detents:
 
   - PEEK — the region's name, the day's danger level and the date, and the
     pin and download controls (proxies for the two roundels in the ribbon
     header, so the pin and the download each keep one owner);
-  - HALF — where the region is, the day's avalanche problems, and the
-    resorts in the region;
-  - FULL — a link to the bulletin page. The sheet links to the bulletin
-    rather than re-rendering it, because that page is the full-fidelity
-    render (``docs/decisions/bulletin-fidelity-over-simplification.md``).
+  - HALF and FULL — the region's bulletin for the day, which is the bulletin
+    page's own body (SNOW-1164). On a phone the sheet at full height covers
+    the screen, so a link on to the page gave the reader nothing more; the
+    sheet now IS the page, under its peek row. Then the resorts in the
+    region, which are map objects and so belong to the sheet alone.
 
-The problems are the bulletin page's own cards
-(``apps.public.views.problem_cards_for_bulletin``) from the day's default
-bulletin (``select_bulletin_for_date``), the same pair the favourite card
-uses, so the sheet cannot describe a problem differently from the page it
-links to.
+The body is ``public/partials/_region_body.html`` with its context from
+``apps.public.views.build_bulletin_body``, and the bulletin is chosen by the
+page's own rule (``_resolve_selected_issue``), so the sheet and the page
+cannot show different issues or describe them differently.
 
 The chip's region panel (``static/js/map_region_panel.js``) keeps its region
 summary: the sheet is phone-only and opened by a map tap, the panel is
@@ -42,11 +41,15 @@ from django.utils.cache import patch_cache_control
 
 from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.coverage import covered_region_ids
-from apps.bulletins.services.selection import select_bulletin_for_date
 from apps.core.decorators import require_htmx
 from apps.public.api import _PROVIDER_BY_COUNTRY, COUNTRY_NAMES
 from apps.public.decorators import lowercase_region_id
-from apps.public.views import _DANGER_PANEL_META, problem_cards_for_bulletin
+from apps.public.views import (
+    _DANGER_PANEL_META,
+    _issues_for_date,
+    _resolve_selected_issue,
+    build_bulletin_body,
+)
 from apps.regions.models import MicroRegion, Resort
 
 logger = logging.getLogger(__name__)
@@ -97,24 +100,23 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
     country = region.subregion.major.country
     day_rating = RegionDayRating.objects.filter(region=region, date=target_date).first()
 
-    problem_cards: list[dict] = []
-    if day_rating is not None:
-        bulletin = select_bulletin_for_date(region, target_date)
-        if bulletin is not None:
-            problem_cards = problem_cards_for_bulletin(bulletin)
+    selected = _resolve_selected_issue(
+        _issues_for_date(region, target_date), target_date, None
+    )
 
     level_meta = _DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
 
     context = {
+        # The bulletin page's body (SNOW-1164), from the page's own builder.
+        **build_bulletin_body(request, region, target_date, selected),
+        "in_map": True,
         "region": region,
         "day_rating": day_rating,
         "level_label": level_meta["label"] if level_meta else "",
         "target_date": target_date,
-        "bulletin_url": region.get_absolute_url(target_date if raw_date else None),
         "country_name": COUNTRY_NAMES.get(country, country),
         "covered": region.region_id in covered_region_ids(),
         "provider_name": _PROVIDER_BY_COUNTRY.get(country, ""),
-        "problem_cards": problem_cards,
         "resorts": list(Resort.objects.resorts().filter(region=region)),
     }
     response = render(request, "public/partials/_region_sheet_body.html", context)
