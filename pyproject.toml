@@ -57,7 +57,7 @@ test = [
     # PWA icon PNGs (SNOW-724). Pillow already resolves as a transitive of
     # the runtime pdfplumber dependency; declared here so the assertion
     # doesn't rest on someone else's dependency tree.
-    "pillow>=12,<13",
+    "pillow>=13,<14",
 ]
 type = [
     "mypy>=2.3.0,<2.5",  # 2.1.0 crashes the django-stubs plugin loader (SNOW-356) — do not widen until fixed upstream
@@ -92,7 +92,7 @@ offline = [
     # drew, by sampling a screenshot. Pillow is already in the `test` group for
     # the PWA icon assertions; declared again here because this group does not
     # include that one.
-    "pillow>=12,<13",
+    "pillow>=13,<14",
 ]
 e2e = [
     # Upper-bounded below 1.62: that release (bundling a newer Chromium
