@@ -392,6 +392,20 @@ class TestResortBody:
         assert b"Tuesday 3 February" in content
         assert b"No bulletin this day" in content
 
+    def test_forecast_links_carry_the_maps_day(self, client: Client) -> None:
+        resort = _resort(latitude=46.1, longitude=7.4)
+        assert resort.location is not None
+        content = _get(client, _resort_url(resort.slug, "2026-02-03")).content
+        url = f"{resort.location.get_absolute_url()}?date=2026-02-03"
+        assert url.encode() in content
+
+    def test_todays_forecast_links_are_bare(self, client: Client) -> None:
+        resort = _resort(latitude=46.1, longitude=7.4)
+        assert resort.location is not None
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert f'href="{resort.location.get_absolute_url()}"' in content
+        assert "?date=" not in content
+
     def test_written_why_it_matters_shows(self, client: Client) -> None:
         resort = _resort(why_it_matters="Four lifts, national freeride reputation.")
         content = _get(client, _resort_url(resort.slug)).content.decode()

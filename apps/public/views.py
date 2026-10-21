@@ -5222,7 +5222,10 @@ def build_resort_body(
         # forward day has no row of its own — today's row carries it in its
         # forecast — so it reads today's.
         "forecast_points": _resort_forecast_points(
-            resort, min(target_date, today), timezone.now()
+            resort,
+            min(target_date, today),
+            timezone.now(),
+            link_date=None if target_date == today else target_date,
         ),
         # The calendar is the season's, ringed on today, whichever day the
         # body shows: its grid stops at today.
@@ -5252,6 +5255,24 @@ def _resort_height_location(resort: Resort) -> Location | None:
         .first()
     )
     return link.location if link is not None else None
+
+
+def _dated_weather_url(location: Location, day: datetime.date | None) -> str:
+    """Return a location's weather page URL, opened on ``day`` when given.
+
+    Args:
+        location: The forecast point's Location.
+        day: The day to open, or None for the bare page.
+
+    Returns:
+        ``/weather/<short_id>/`` with ``?date=<day>`` when a day is given,
+        or "" for a location with no page yet.
+
+    """
+    url = location.get_absolute_url()
+    if url and day is not None:
+        return f"{url}?date={day.isoformat()}"
+    return url
 
 
 def _resort_eyebrow(resort: Resort) -> str:
@@ -5437,7 +5458,11 @@ _RESORT_FORECAST_ROLES: tuple[tuple[str, Any], ...] = (
 
 
 def _resort_forecast_points(
-    resort: Resort, today: datetime.date, now: datetime.datetime
+    resort: Resort,
+    today: datetime.date,
+    now: datetime.datetime,
+    *,
+    link_date: datetime.date | None = None,
 ) -> list[dict[str, Any]]:
     """Return the resort page's forecast points: Base, Mid and Summit (SNOW-1157).
 
@@ -5462,6 +5487,10 @@ def _resort_forecast_points(
         resort: The resort whose links to walk, with ``location`` loaded.
         today: The server's local date — the ``Weather.observed_on`` read.
         now: The reference instant for each day's day/night icon.
+        link_date: The day the body shows when it is not today (SNOW-1164):
+            each point's link then opens its weather page on that day
+            (``?date=``), as the map's place sheet always did. None links
+            the bare page.
 
     Returns:
         One dict per point: ``role`` (``"base"``/``"mid"``/``"top"``),
@@ -5505,7 +5534,7 @@ def _resort_forecast_points(
                     if location.elevation_m is not None
                     else None
                 ),
-                "url": location.get_absolute_url(),
+                "url": _dated_weather_url(location, link_date),
                 "weather": weather,
                 "panel": panel,
             }
