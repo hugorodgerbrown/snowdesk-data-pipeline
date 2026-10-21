@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -509,8 +510,7 @@ class TestSitemapOrigin:
             locs = _locs(client)
 
         assert locs
-        assert all(loc.startswith("https://snowdesk.info/") for loc in locs), locs
-        assert not any("example.com" in loc for loc in locs)
+        assert {urlsplit(loc)[:2] for loc in locs} == {("https", "snowdesk.info")}
 
     def test_scheme_comes_from_site_base_url_not_the_request(
         self, client: Client
