@@ -12,22 +12,21 @@
  *
  * WHEN IT OPENS. For every selection, on every width — a tap, a search
  * pick, a pinned region, a deep link (Hugo, 16 Oct for the phone; 21 Oct,
- * SNOW-1173, for the desktop). On a phone the region chip is gone (map.css
- * hides the ribbon and gives its row to search), so the sheet is the one
- * surface that names the selection. At `sm` and up the same sheet is the
- * inset panel the place and weather sheets already are (no detents, see
- * docs/decisions/sheet-detents-are-phone-only.md), and the chip that names
- * the selection reopens it: the chip's own dropdown, which carried a second
- * copy of the region's summary, is gone. A desktop region tap used to open
+ * SNOW-1173, for the desktop). The region chip is not drawn on any width
+ * (map.css hides the ribbon; on a desktop search, at the top-left, names
+ * the selection instead), so the sheet is the surface that says what is
+ * selected. At `sm` and up the same sheet is the inset panel the place and
+ * weather sheets already are (no detents, see
+ * docs/decisions/sheet-detents-are-phone-only.md); the chip's dropdown,
+ * which carried a second copy of the region's summary, is gone. A desktop
+ * region tap used to open
  * nothing while a resort or weather tap opened this panel, which read as
  * two different maps.
  *
- * THE RIBBON STAYS IN THE DOM on a phone, hidden, because the proxies in
- * the sheet's header press its pin and download roundels, which keep owning
- * the verbs. On a desktop the ribbon stays on screen and the proxies stay
- * in the sheet: the sheet is the same object on every width, and its
- * header carries the verbs on that object wherever it is shown. The root
- * carries `data-region-sheet` while the sheet is open.
+ * THE RIBBON STAYS IN THE DOM, undrawn on every width since SNOW-1173,
+ * because the proxies in the sheet's header press its pin and download
+ * roundels, which keep owning the verbs. The root carries
+ * `data-region-sheet` while the sheet is open.
  *
  * WHILE IT IS OPEN it follows the map: another region selected (by any
  * route) repaints it for that region at the detent it is resting at, a date
@@ -40,8 +39,7 @@
  * attributes (data-pin-state, data-download-state, the basemap key), its
  * inline style (the --download-progress fill), its ARIA and its glyphs. The
  * ribbon is hidden while the sheet is open, so the proxy is the only place
- * a filled star, a rising download fill or an error glyph can show on a
- * phone. Each verb keeps one owner (map_region_panel.js and
+ * a filled star, a rising download fill or an error glyph can show. Each verb keeps one owner (map_region_panel.js and
  * map_region_download.js), so the sheet's star cannot disagree with the
  * header's.
  *
@@ -400,8 +398,8 @@
   // tap on a region changes nothing, so a selected region whose sheet was
   // closed there was outlined on the map with no way back to it. map.js's
   // tap dispatcher asks this first for a tap on the region already
-  // selected, and on a desktop the region chip asks it on a press
-  // (map_region_panel.js, SNOW-1173).
+  // selected, and search asks it when the region already selected is
+  // picked again (SNOW-1173).
   window.pwaRegionSheet = Object.freeze({
     /**
      * Open the sheet again for the region still selected.
@@ -415,10 +413,6 @@
       controller.open();
       return true;
     },
-    /** @returns {boolean} Whether the sheet is on screen. */
-    isOpen: () => controller.isOpen(),
-    /** @returns {void} */
-    close,
   });
 
   document.addEventListener('snowdesk:date-changed', (ev) => {

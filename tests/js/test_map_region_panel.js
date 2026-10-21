@@ -1,19 +1,18 @@
 /*
- * tests/js/test_map_region_panel.js — the region chip, its pin roundel and
- * the pinned-regions list (static/js/map_region_panel.js; SNOW-814, and
- * SNOW-1173, which retired the chip's dropdown panel).
+ * tests/js/test_map_region_panel.js — search's region label, the pin
+ * roundel and the pinned-regions list (static/js/map_region_panel.js;
+ * SNOW-814, and SNOW-1173, which retired the chip's dropdown panel and
+ * folded the chip into search).
  *
  * What is left of the module, all of it jsdom's to hold:
  *
- *   the chip opens the region sheet for the region it names, or closes it
- *   when it is open — the chip's own dropdown is gone, and the sheet is the
- *   surface on every width; with nothing selected it is disabled, because
- *   the pinned list it used to open onto is in search now;
- *   its aria-expanded follows the sheet, however the sheet was closed;
+ *   search's #search-region-label mirrors the (undrawn) chip — the
+ *   selection's name and the day's swatch, or the search prompt;
  *   the pin roundel in the ribbon header derives its state from the loaded
  *   list, and toggling it writes through favourites:region_toggle;
  *   search reads the same loaded list (window.pwaPinnedRegions), so the
- *   pinned regions it lists are the ones the roundel agrees with.
+ *   pinned regions it lists are the ones the roundel agrees with — and a
+ *   list that failed to load is retried the next time it is asked for.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,7 +24,10 @@ const TOGGLE_URL_TEMPLATE = '/favourites/partials/region/XX-0000/toggle/';
 
 document.body.innerHTML = `
   <div id="season-ribbon">
-    <button id="region-readout" aria-expanded="false" aria-controls="region-sheet"></button>
+    <button id="region-readout" aria-controls="region-sheet">
+      <span class="region-readout-swatch"></span>
+      <span class="region-readout-leaf"></span>
+    </button>
     <div id="region-pin-rows" data-region-pin-rows
          data-region-pin-list-url="${PIN_LIST_URL}"
          data-region-pin-toggle-url="${TOGGLE_URL_TEMPLATE}"
@@ -39,6 +41,10 @@ document.body.innerHTML = `
     </template>
   </div>
   <div id="region-sheet" hidden></div>
+  <button id="search-region-label" data-prompt="Find a region or resort">
+    <span data-search-region-swatch hidden></span>
+    <span data-search-region-name>Find a region or resort</span>
+  </button>
 `;
 
 // What favourites:region_list would answer with. Mutable, because the
@@ -61,9 +67,15 @@ function rowsHtml() {
 
 // htmx.ajax fills whatever target it is handed, the way the real one does,
 // so the module's own DOM reads run against real rows.
+// `listFails` makes the next load answer an error: htmx still resolves its
+// promise then, and reports the outcome on htmx:afterRequest, as the real
+// one does.
+let listFails = false;
 globalThis.htmx = {
   ajax: vi.fn((verb, url, opts) => {
-    opts.target.innerHTML = rowsHtml();
+    const successful = !listFails;
+    if (successful) opts.target.innerHTML = rowsHtml();
+    opts.target.dispatchEvent(new CustomEvent('htmx:afterRequest', { detail: { successful } }));
     return Promise.resolve();
   }),
 };
@@ -72,21 +84,12 @@ globalThis.fetch = vi.fn(() => Promise.resolve({ ok: false }));
 document.cookie = 'csrftoken=tok';
 window.MapSheet = { toast: vi.fn() };
 
-// map_region_sheet.js's public face, standing in for the module: it opens
-// and closes the sheet the way MapSheet does, by its `hidden` attribute.
-const sheet = /** @type {HTMLElement} */ (document.getElementById('region-sheet'));
-window.pwaRegionSheet = {
-  isOpen: vi.fn(() => !sheet.hasAttribute('hidden')),
-  reopen: vi.fn(() => {
-    sheet.removeAttribute('hidden');
-    return true;
-  }),
-  close: vi.fn(() => sheet.setAttribute('hidden', '')),
-};
-
+// The boot load fails: the first describe below is the retry it needs.
+listFails = true;
 await import('../../static/js/map_region_panel.js');
 
 const chip = /** @type {HTMLButtonElement} */ (document.getElementById('region-readout'));
+const label = /** @type {HTMLElement} */ (document.getElementById('search-region-label'));
 const pinControl = /** @type {HTMLElement} */ (document.getElementById('map-region-pin-control'));
 
 /** Let the module's fetch/htmx promise chains run to completion. */
@@ -107,42 +110,55 @@ beforeEach(() => {
     ['CH-4115', 'Martigny-Verbier'],
     ['CH-4222', 'Zermatt'],
   ];
-  sheet.setAttribute('hidden', '');
+  listFails = false;
   globalThis.htmx.ajax.mockClear();
-  window.pwaRegionSheet.reopen.mockClear();
-  window.pwaRegionSheet.close.mockClear();
 });
 
-describe('the chip (SNOW-1173)', () => {
-  it('is disabled with nothing selected — there is nothing for it to open', () => {
-    selectRegion(null);
-    expect(chip.disabled).toBe(true);
-  });
-
-  it('opens the region sheet for the region it names', () => {
-    selectRegion('CH-4115');
-    expect(chip.disabled).toBe(false);
-    chip.click();
-    expect(window.pwaRegionSheet.reopen).toHaveBeenCalledTimes(1);
-    expect(sheet.hasAttribute('hidden')).toBe(false);
-  });
-
-  it('closes the sheet when it is already open', () => {
-    selectRegion('CH-4115');
-    sheet.removeAttribute('hidden');
-    chip.click();
-    expect(window.pwaRegionSheet.close).toHaveBeenCalledTimes(1);
-    expect(window.pwaRegionSheet.reopen).not.toHaveBeenCalled();
-  });
-
-  it('says whether the sheet is open, however it was opened or closed', async () => {
-    sheet.removeAttribute('hidden');
+describe('a list that failed to load at boot (SNOW-1173)', () => {
+  it('is fetched again when search next asks for it, and then not again', async () => {
     await settle();
-    expect(chip.getAttribute('aria-expanded')).toBe('true');
-    // The sheet's own ×, Escape or another overlay hides it directly.
-    sheet.setAttribute('hidden', '');
+    // Boot asked once and got an error: no rows, so no pinned regions.
+    expect(window.pwaPinnedRegions.ids()).toEqual([]);
+    globalThis.htmx.ajax.mockClear();
+
+    // beforeEach has cleared `listFails`: the connection is back.
+    await window.pwaPinnedRegions.ready();
+    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+    expect(window.pwaPinnedRegions.ids()).toEqual(['CH-4115', 'CH-4222']);
+
+    // A list that has loaded is not fetched on every ask.
+    await window.pwaPinnedRegions.ready();
+    expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("search's region label (SNOW-1173)", () => {
+  /** Write the chip the way map_season_ribbon.js does. */
+  function writeChip(name, background) {
+    chip.classList.toggle('has-region', !!name);
+    chip.querySelector('.region-readout-leaf').textContent = name || '';
+    /** @type {HTMLElement} */ (chip.querySelector('.region-readout-swatch')).style.background =
+      background || '';
+  }
+
+  it("names the selection and carries the day's swatch", async () => {
+    writeChip('Martigny-Verbier', 'yellow');
     await settle();
-    expect(chip.getAttribute('aria-expanded')).toBe('false');
+    const swatch = /** @type {HTMLElement} */ (label.querySelector('[data-search-region-swatch]'));
+    expect(label.classList.contains('has-region')).toBe(true);
+    expect(label.querySelector('[data-search-region-name]').textContent).toBe('Martigny-Verbier');
+    expect(swatch.hidden).toBe(false);
+    expect(swatch.style.background).toBe('yellow');
+  });
+
+  it('shows the search prompt with nothing selected', async () => {
+    writeChip('Martigny-Verbier', 'yellow');
+    await settle();
+    writeChip(null);
+    await settle();
+    expect(label.classList.contains('has-region')).toBe(false);
+    expect(label.querySelector('[data-search-region-name]').textContent).toBe('Find a region or resort');
+    expect(/** @type {HTMLElement} */ (label.querySelector('[data-search-region-swatch]')).hidden).toBe(true);
   });
 });
 

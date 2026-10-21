@@ -277,3 +277,31 @@ describe('runSearch', () => {
     expect(core.runSearch([null, {}, { searchable: 'x' }], 'x')).toEqual([]);
   });
 });
+
+describe('groupResults (SNOW-1173)', () => {
+  const { groupResults } = self.pwaSearchCore;
+  const row = (type, primary) => ({
+    type, primary, secondary: '', primaryKey: primary.toLowerCase(), regionID: 'CH-4115', searchable: '',
+  });
+
+  it('leads with the kind that holds the best-ranked row', () => {
+    const groups = groupResults([
+      row('resort', 'Verbier'),
+      row('region', 'Martigny-Verbier'),
+      row('resort', 'Nendaz'),
+    ]);
+    expect(groups.map((g) => g.type)).toEqual(['resort', 'region']);
+    expect(groups[0].items.map((r) => r.primary)).toEqual(['Verbier', 'Nendaz']);
+    expect(groups[1].items.map((r) => r.primary)).toEqual(['Martigny-Verbier']);
+  });
+
+  it('puts regions first when a region ranks first', () => {
+    const groups = groupResults([row('region', 'Haut Val de Bagnes'), row('resort', 'Bruson')]);
+    expect(groups.map((g) => g.type)).toEqual(['region', 'resort']);
+  });
+
+  it('returns no group for a kind with no rows, and nothing for no rows', () => {
+    expect(groupResults([row('region', 'Zermatt')]).map((g) => g.type)).toEqual(['region']);
+    expect(groupResults([])).toEqual([]);
+  });
+});

@@ -355,7 +355,7 @@ def test_help_tour_reads_the_map_in_four_chapters() -> None:
     )
     assert steps == [
         ("", "read"),
-        ("#region-sheet | #region-readout", "read"),
+        ("#region-sheet | #search-pill", "read"),
         ("#map-calendar-toggle", "read"),
         ("#search-toggle, #locate-toggle, #map-zoom-toggle", "move"),
         ("#basemap-toggle", "move"),

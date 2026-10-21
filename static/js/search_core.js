@@ -51,6 +51,8 @@
  *     Both of the above in one call — what ``map.js`` indexes with.
  *   runSearch(index, query, maxResults)
  *     The matching rows, ranked and capped.
+ *   groupResults(results)
+ *     Those rows split by type, in rank order, for the headed dropdown.
  *
  * Every entry, whichever builder made it, has the same shape::
  *
@@ -270,7 +272,40 @@
     });
   }
 
+  /**
+   * Split ranked rows into a group per row type, for the dropdown's two
+   * headed sections (SNOW-1173).
+   *
+   * Resort and region rows read the same at a glance, and a resort is not a
+   * bulletin region, so the dropdown lists them apart under "Resorts" and
+   * "Regions". The groups keep ``runSearch``'s ranking twice over: rows keep
+   * their order inside a group, and the groups come in the order their first
+   * rows do — so whichever kind holds the best match leads ("verb" opens on
+   * Verbier, "bagn" on the Bagnes regions), and the keyboard's top row is
+   * still the best match.
+   *
+   * @param {SearchEntry[]} results Ranked rows, as ``runSearch`` returns.
+   * @returns {Array<{type: string, items: SearchEntry[]}>} One entry per
+   *   type present, none for an absent one.
+   */
+  function groupResults(results) {
+    /** @type {Array<{type: string, items: SearchEntry[]}>} */
+    var groups = [];
+    (results || []).forEach(function (item) {
+      var group = groups.find(function (g) {
+        return g.type === item.type;
+      });
+      if (!group) {
+        group = { type: item.type, items: [] };
+        groups.push(group);
+      }
+      group.items.push(item);
+    });
+    return groups;
+  }
+
   self.pwaSearchCore = Object.freeze({
+    groupResults: groupResults,
     MAX_RESULTS: MAX_RESULTS,
     normalise: normalise,
     buildRegionEntry: buildRegionEntry,

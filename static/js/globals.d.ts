@@ -180,7 +180,7 @@ interface Window {
   pwaZoomGates: any;
   /** static/js/map.js — the painted day's level for a region: forRegion(id) → "low" … "very_high" | null. */
   pwaRegionLevel: any;
-  /** static/js/map_region_sheet.js — reopen() → whether the sheet reopened for the region still selected; isOpen(); close(). */
+  /** static/js/map_region_sheet.js — reopen() → whether the sheet reopened for the region still selected. */
   pwaRegionSheet: any;
 }
 

@@ -242,16 +242,13 @@ describe('reopening (2026-10-19)', () => {
     expect(sheet.hasAttribute('hidden')).toBe(false);
   });
 
-  it('reopens on a desktop, where the region chip asks it to (SNOW-1173)', async () => {
+  it('reopens on a desktop too (SNOW-1173)', async () => {
     const sheet = await boot();
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
     select('CH-4115', 'tap');
     sheet.setAttribute('hidden', '');
-    expect(window.pwaRegionSheet.isOpen()).toBe(false);
     expect(window.pwaRegionSheet.reopen()).toBe(true);
-    expect(window.pwaRegionSheet.isOpen()).toBe(true);
-    window.pwaRegionSheet.close();
-    expect(sheet.hasAttribute('hidden')).toBe(true);
+    expect(sheet.hasAttribute('hidden')).toBe(false);
   });
 });
 

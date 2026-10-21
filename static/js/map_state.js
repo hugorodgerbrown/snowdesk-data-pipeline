@@ -405,6 +405,11 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // and both name a region are indistinguishable read aloud.
   'search-type-region': 'Region',
   'search-type-resort': 'Resort',
+  // SNOW-1173: the dropdown's group headings and a resort row's region line.
+  'search-group-resorts': 'Resorts',
+  'search-group-regions': 'Regions',
+  'search-group-pinned': 'Pinned regions',
+  'search-resort-in': 'in %(region)s',
   // SNOW-658 removed 'custom-control-idle'/'custom-control-done' — the
   // custom-area roundel's two labels for a state it no longer has (see
   // map_custom_download.js's header). Its label is server-rendered now,

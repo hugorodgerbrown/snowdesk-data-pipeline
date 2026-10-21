@@ -1319,6 +1319,82 @@
     appearance: none;
 }
 
+/* SNOW-1173: the region chip folded into search (Hugo, 21 Oct). The ribbon
+   header — the chip, its star and its download — is not drawn on any width
+   now: the region sheet names the selection and carries the star and the
+   download, which its header proxies. It stays in the DOM because map.js
+   and map_season_ribbon.js write the selection into #region-readout and the
+   proxies press the ribbon's roundels. On a phone it was already hidden
+   (Hugo, 16 Oct); see the phone top-row block further down. The rule is
+   the `display: none` in .season-ribbon's own block below. */
+
+/* The selection's name and swatch inside the search pill, a desktop's
+   resting state of search (map_region_panel.js mirrors them from the chip).
+   Not drawn on a phone, where the pill is a roundel and the sheet names the
+   selection. */
+.search-region-label {
+    display: none;
+}
+
+@media (min-width: 640px) {
+    /* Search takes the chip's place at the top-left. */
+    .map-utility-cluster {
+        left: var(--map-edge-inset-left);
+        right: auto;
+    }
+
+    /* At rest the pill is a box naming the selection, not a roundel: the
+       search icon, the day's swatch and the region's name, or the search
+       prompt with nothing selected. */
+    .map-utility-pill--search[data-state="collapsed"] {
+        width: auto;
+        max-width: min(calc(100vw - 76px), 320px);
+    }
+
+    .map-utility-pill--search[data-state="collapsed"] .search-region-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        height: var(--map-control-lg);
+        padding: 0 14px 0 0;
+        margin: 0;
+        background: transparent;
+        border: 0;
+        font: inherit;
+        font-size: 14px;
+        color: var(--color-text-3);
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .map-utility-pill--search .search-region-label.has-region {
+        color: var(--color-text-1);
+    }
+
+    .search-region-label-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .search-region-label:focus-visible {
+        outline: 2px solid var(--color-text-1);
+        outline-offset: -2px;
+    }
+
+    /* The collapsed input still takes no room, so the label sits beside the
+       icon rather than after an empty field. */
+    .map-utility-pill--search[data-state="collapsed"] .search-input {
+        flex: 0 0 0;
+    }
+
+    .search-results {
+        left: 0;
+        right: auto;
+    }
+}
+
 /* Search-results dropdown — anchored below the cluster, right-aligned
    to it. Width caps at 320px on wide viewports and shrinks to fit
    narrow ones. Sits on top of everything that isn't the bottom sheet. */
@@ -1334,7 +1410,8 @@
     border: 0.5px solid var(--color-border);
     border-radius: 12px;
     box-shadow: var(--shadow-glass);
-    max-height: 320px;
+    /* Room for the group headings (SNOW-1173) beside a full page of rows. */
+    max-height: 400px;
     overflow-y: auto;
     z-index: 5;
 }
@@ -1367,26 +1444,60 @@
 }
 
 .search-result-primary {
-    font-size: 13px;
+    font-size: 14px;
     color: var(--ink);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-/* SNOW-697: the pin glyph marking a resort row. Sized to the cap height of
-   the 13px primary line and nudged up a little so it sits optically on the
-   text baseline rather than hanging below it. */
+/* SNOW-1173: a row's leading tile — the resort's round pin tile, or the
+   region's square .danger-tile (its colours come from main.css; this only
+   sizes it to the row). Different shapes because they are different things:
+   a resort is a place on the map, a region a bulletin with a level. */
+.search-result-tile {
+    flex: 0 0 auto;
+    min-width: 32px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 14px;
+}
+
+.search-result-tile--resort {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #ece8dc;
+    color: var(--ink);
+}
+
+/* The pin inside the resort tile. `display` is explicit because the global
+   reset sets `svg { display: block }`; the tile centres it either way. */
 .search-result-pin {
-    /* `display` is explicit because the global reset sets `svg { display:
-       block }`, which would put the glyph on its own line above the name —
-       this sits inside a plain block, not a flex row like the badge does. */
-    display: inline-block;
-    width: 11px;
-    height: 11px;
-    margin-right: 5px;
-    vertical-align: -1px;
+    display: block;
+    width: 16px;
+    height: 16px;
+}
+
+/* SNOW-1173: the group headings ("Resorts", "Regions", "Pinned regions") —
+   the eyebrow the retired region panel used for its pinned list. Not
+   options: role="presentation", skipped by the keyboard. */
+.search-group-heading {
+    padding: 10px 12px 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
     color: var(--muted);
+    cursor: default;
+}
+
+/* The selected region in the pinned list: the left bar the region panel's
+   rows used for the same fact. */
+.search-result.is-current {
+    box-shadow: inset 3px 0 0 var(--ink);
 }
 
 /* SNOW-697: the row-type word ("Region" / "Resort"). Present for screen
@@ -1407,7 +1518,7 @@
 }
 
 .search-result-secondary {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2832,7 +2943,10 @@ html:has(> body.map-fullscreen) > body {
        viewport before this cap existed. */
     max-width: calc(100% - 24px - var(--map-control-lg) - 12px);
     z-index: 3;
-    display: flex;
+    /* SNOW-1173: not drawn on any width — see the note by
+       .search-region-label. Its layout below is kept for the day a surface
+       needs the header back. */
+    display: none;
     flex-direction: column;
     align-items: flex-start;
     gap: 3px;
@@ -5334,7 +5448,8 @@ body.map-framing #map-legend {
        (map_region_sheet.js), its header carries the pin and the download,
        and pinned regions list in search before anything is typed (map.js).
        The ribbon stays in the DOM because the sheet's pin and download
-       proxies press its roundels.
+       proxies press its roundels (and since SNOW-1173 it is undrawn on a
+       desktop too — the rule is above, outside this query).
 
        The row they leave holds the date, at the left where the chip was —
        map_calendar.js moves the date control and its calendar card up here
@@ -5342,10 +5457,6 @@ body.map-framing #map-legend {
        the search roundel at the right. Search opens over the date: the
        pill grows leftwards across the whole row, because nobody needs the
        date and a query at the same moment. */
-    .season-ribbon {
-        display: none;
-    }
-
     .map-utility-cluster {
         left: var(--map-edge-inset-left);
         right: var(--map-edge-inset-right);

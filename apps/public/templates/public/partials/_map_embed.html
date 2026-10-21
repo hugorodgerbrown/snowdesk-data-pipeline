@@ -209,6 +209,27 @@ Optional context:
                     <path d="m20 20-3-3" />
                 </svg>
             </button>
+            {# SNOW-1173: on a desktop the region chip is folded into search  #}
+            {# (Hugo, 21 Oct). At rest the pill reads as the chip did — the   #}
+            {# day's danger swatch and the selected region's name — and a     #}
+            {# press opens search, whose empty field lists the pinned         #}
+            {# regions. map_region_panel.js mirrors it from #region-readout,  #}
+            {# which map.js and map_season_ribbon.js still write. map.css     #}
+            {# hides it on a phone, where the pill is a roundel.             #}
+            <button
+                id="search-region-label"
+                type="button"
+                class="search-region-label hover-affordance"
+                aria-controls="search-input"
+                aria-live="polite"
+                data-prompt='{% trans "Find a region or resort" %}'
+            >
+                <span class="region-readout-swatch" data-search-region-swatch hidden aria-hidden="true"></span>
+                <span
+                    class="search-region-label-name"
+                    data-search-region-name
+                >{% trans "Find a region or resort" %}</span>
+            </button>
             <input
                 id="search-input"
                 class="search-input"
@@ -1669,11 +1690,11 @@ Optional context:
                 </div>
             </div>
         </li>
-        {# A selection opens #region-sheet on every width (SNOW-1173); the    #}
-        {# chip is the fallback target for a tour step that finds the sheet   #}
-        {# closed (a region already selected and its sheet dismissed).        #}
+        {# A selection opens #region-sheet on every width (SNOW-1173); search, #}
+        {# which names the selection on a desktop, is the fallback target for  #}
+        {# a tour step that finds the sheet closed.                            #}
         <li
-            data-help-target="#region-sheet | #region-readout"
+            data-help-target="#region-sheet | #search-pill"
             data-help-chapter="read"
             data-help-action="show-region"
             data-help-title='{% trans "Tap a region" %}'
@@ -2315,6 +2336,12 @@ Optional context:
     {# from the pin glyph and the secondary line.                          #}
     <span data-string="search-type-region">{% trans "Region" %}</span>
     <span data-string="search-type-resort">{% trans "Resort" %}</span>
+    {# SNOW-1173: the dropdown's group headings, and a resort row's line  #}
+    {# naming the region it sits in.                                       #}
+    <span data-string="search-group-resorts">{% trans "Resorts" %}</span>
+    <span data-string="search-group-regions">{% trans "Regions" %}</span>
+    <span data-string="search-group-pinned">{% trans "Pinned regions" %}</span>
+    <span data-string="search-resort-in">{% blocktrans %}in %(region)s{% endblocktrans %}</span>
     {# SNOW-658 removed "custom-control-idle"/"custom-control-done" —      #}
     {# #map-custom-download-control's two labels for a downloads state it  #}
     {# no longer carries. Its label is server-rendered on the button       #}

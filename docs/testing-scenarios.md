@@ -251,17 +251,17 @@ follow the scrubbed date.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | On http://localhost:8000/map/, click into the search input placeholder "Find a region or resort" | Input receives focus |
-| 2 | Type `Graubünden` | A dropdown appears below the input with up to eight results; a row for "Graubünden" is visible with a "Region" badge |
+| 2 | Type `Graubünden` | A dropdown appears below the input with up to eight results; a row for "Graubünden" is visible under the "Regions" heading, led by its danger tile and carrying its flag and region code |
 | 3 | Click the "Graubünden" row | Dropdown closes; the map pans/zooms to the region and its bottom sheet opens with today's rating |
 
-### Scenario MS2: Search for a resort and land on its parent region
+### Scenario MS2: Search for a resort and land on it
 
-**Goal**: Verify resort hits route to the region sheet, not a separate page.
+**Goal**: Verify resort hits are listed apart from regions and open the resort (SNOW-1161, SNOW-1173).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | In the map search box, type `Verbier` | Results dropdown shows a "Verbier" row with a "Resort" badge and "Les 4 Vallées" (or similar region name) as secondary text |
-| 2 | Click the row | Dropdown closes; the map pans to CH-4115 and the bottom sheet opens showing Verbier listed among the region's resorts |
+| 1 | In the map search box, type `verb` | The dropdown leads with a "Resorts" heading — Verbier, Nendaz, Thyon, Veysonnaz, each with a round pin tile and "in Martigny-Verbier", and no region code — then a "Regions" heading over Martigny-Verbier with its danger tile, flag and CH-4115 |
+| 2 | Click the "Verbier" row | Dropdown closes; the map flies to Verbier's pin and its resort sheet opens |
 
 ### Scenario MS3: Diacritic-insensitive matching
 
@@ -272,15 +272,14 @@ follow the scrubbed date.
 | 1 | In the map search box, type `evolene` (no accent) | Results include "Évolène" with its diacritics intact |
 | 2 | Clear and type `graubunden` (no umlaut) | Results include "Graubünden" |
 
-### Scenario MS4: Region and resort with the same name disambiguated by badge
+### Scenario MS4: The better match decides which group leads
 
-**Goal**: Verify that when a resort shares its name with its parent region,
-both hits appear and the badge makes the distinction obvious.
+**Goal**: Verify the Resorts and Regions groups are ordered by their best match (SNOW-1173), and that a resort named like its region is not listed twice.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | In the map search box, type `Davos` | Two rows appear: one "Davos" with a "Region" badge, and one "Davos" with a "Resort" badge |
-| 2 | Hover/scroll the results | The badges are visually distinct (different colour/shape) so the two rows can't be confused |
+| 1 | In the map search box, type `verb` | "Resorts" leads: a resort name starts with the query, the region's name only contains it |
+| 2 | Clear and type `bagn` | "Regions" leads, with one "Haut Val de Bagnes" row: the touring resort of the same name is not emitted as a second row |
 
 ### Scenario MS5: Keyboard navigation of results
 
@@ -341,7 +340,7 @@ steps in four chapters, the second of which shows a real region
 | 5 | Click "Next", then "Next" | "Layers" rings the layers roundel; "Your things" rings the whole "yours" capsule and lists Pins, Observations, Routes and Offline, each with its roundel's glyph. Signed out, the copy ends "Sign in to keep them." |
 | 6 | Click "Next" | "Help is always here" rings the "?" roundel, and the button reads "Done" |
 | 7 | Select a region yourself, then repeat steps 1–3 | Step 2 rings that region's sheet rather than choosing another, and on step 3 the region stays selected |
-| 8 | At desktop width, repeat steps 1–3 | Step 2 rings the region chip at the top left instead of a sheet |
+| 8 | At desktop width, repeat steps 1–3 | Step 2 rings the region's inset sheet at the right, or the search pill at the top left when no sheet is open |
 
 ### Scenario MS9: Help mode names the controls and keys each sheet
 
@@ -394,11 +393,11 @@ pages redirect into the map's sheets.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | While signed in (Scenario 10), tap a region on the map | The region sheet opens (the inset panel at the right on a desktop, a bottom sheet at peek on a phone). A star roundel sits in its header and, on a desktop, in the ribbon header between the region chip and the download roundel, outlined — the region is not pinned |
-| 2 | Click the star roundel | It fills, in the sheet and the ribbon together (no page reload) |
-| 3 | Open search and leave the field empty | The region is listed before anything is typed, with no rating and no date: the list is navigation |
+| 1 | While signed in (Scenario 10), tap a region on the map | The region sheet opens (the inset panel at the right on a desktop, a bottom sheet at peek on a phone). A star roundel sits in its header, outlined — the region is not pinned |
+| 2 | Click the star roundel | It fills (no page reload) |
+| 3 | Open search and leave the field empty | The region is listed under "Pinned regions" before anything is typed, as a region row with its danger tile, flag and code, and a bar at its left edge while it is the selected region |
 | 4 | Open the pins sheet from its roundel | The region is NOT listed there — that sheet lists places (SNOW-814) |
-| 5 | Sign out and reload | The star roundel is still there, muted, and links to the sign-in page. The chip is disabled with nothing selected, and an empty search lists nothing |
+| 5 | Sign out and reload | The sheet's star roundel is still there, muted, and links to the sign-in page. An empty search lists nothing |
 
 ### Scenario 12: Switch region from the pinned list, and unpin
 
@@ -407,9 +406,9 @@ pages redirect into the map's sheets.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | While signed in with two pinned regions (Scenario 11 twice), open search with the field empty | Both regions are listed |
-| 2 | Press one of them | The map frames that region, the chip renames to it, the URL hash becomes `#<region_id>`, and the region sheet opens for it |
-| 3 | Close the sheet with its ×, then press the region chip (desktop) or tap the region again (phone) | The sheet opens again for the same region (SNOW-1173) |
-| 4 | Press the filled star in the sheet's header | It hollows, and so does the ribbon's; open search with the field empty and the region is no longer listed — the two read the same list and must never disagree |
+| 2 | Press one of them | The map frames that region beside the sheet, the URL hash becomes `#<region_id>`, the region sheet opens for it, and on a desktop the search pill names it with its danger swatch |
+| 3 | Close the sheet with its ×, then pick the same region from search | The sheet opens again for the same region (SNOW-1173) |
+| 4 | Press the filled star in the sheet's header | It hollows; open search with the field empty and the region is no longer listed — the two read the same list and must never disagree |
 
 ### Scenario 13: Delete the account from settings
 
