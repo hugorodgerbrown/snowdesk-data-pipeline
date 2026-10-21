@@ -11,6 +11,11 @@ subsequent request to reload the User from the session.  It returns a plain
 ``auth.User`` instance; the account profile (if any) is accessed via
 ``user.account`` (the OneToOneField reverse accessor).
 
+A user whose ``is_active`` is ``False`` is not returned (SNOW-1167): the
+policy lives in ``apps.accounts.services.active_user.user_may_sign_in``, so
+deactivating an account ends its token-backend session on the next request
+— the person is simply anonymous from then on.
+
 ``ModelBackend`` still handles staff password logins via the Django admin form.
 """
 
@@ -22,6 +27,8 @@ from typing import TYPE_CHECKING, Any
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import BaseBackend
 from django.contrib.auth.models import User
+
+from .services.active_user import user_may_sign_in
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
@@ -47,9 +54,15 @@ class TokenBackend(BaseBackend):
         return None
 
     def get_user(self, user_id: int) -> User | None:
-        """Return the User for the given primary key, or None."""
+        """
+        Return the active User for the given primary key, or None.
+
+        An inactive user is answered as ``None`` — the same as an unknown pk —
+        so a session belonging to a deactivated account stops authenticating.
+        """
         UserModel = get_user_model()  # noqa: N806 — conventional upper-case alias
         try:
-            return UserModel.objects.get(pk=user_id)
+            user = UserModel.objects.get(pk=user_id)
         except UserModel.DoesNotExist:
             return None
+        return user if user_may_sign_in(user) else None
