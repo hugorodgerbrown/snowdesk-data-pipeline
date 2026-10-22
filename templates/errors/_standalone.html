@@ -37,7 +37,7 @@ context-processor values and includes the nav, whose account menu reads
         {% include "includes/theme_head.html" %}
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
         {# SNOW-1180: FIVEBAR_DOMAIN is passed in the plain context dict. #}
-        {% include "includes/_fivebar_tag.html" with domain=FIVEBAR_DOMAIN status=page.status %}
+        {% include "includes/_fivebar_tag.html" with domain=FIVEBAR_DOMAIN status=page.status path=FIVEBAR_PATH %}
     </head>
     <body class="bg-bg text-text-1 font-sans min-h-screen flex flex-col">
         <nav class="border-b border-border">
