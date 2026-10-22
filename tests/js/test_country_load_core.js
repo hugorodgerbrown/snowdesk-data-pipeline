@@ -139,3 +139,66 @@ describe('syncDotAction', () => {
     expect(core.syncDotAction()).toBe('refresh');
   });
 });
+
+describe('createSourceBatch', () => {
+  // SNOW-1186: boot used to setData each source once PER COUNTRY, and every
+  // setData re-tiles the whole merged collection and repaints.
+
+  const recorder = () => {
+    const calls = [];
+    return { calls, apply: (id, data) => calls.push([id, data]) };
+  };
+
+  it('applies at once when not held, so a user toggle stays immediate', () => {
+    const { calls, apply } = recorder();
+    const batch = core.createSourceBatch(apply);
+    batch.push('regions', () => 'fc-1');
+    expect(calls).toEqual([['regions', 'fc-1']]);
+  });
+
+  it('writes each source once on release, with the data as it stands then', () => {
+    const { calls, apply } = recorder();
+    const batch = core.createSourceBatch(apply);
+    let cache = 'ch';
+    batch.hold();
+    cache = 'ch+fr';
+    batch.push('regions', () => cache);
+    cache = 'ch+fr+at';
+    batch.push('regions', () => cache);
+    batch.push('major-regions', () => 'major');
+    cache = 'ch+fr+at+it';
+    batch.push('regions', () => cache);
+    expect(calls).toEqual([]);
+
+    batch.release();
+    expect(calls).toEqual([['regions', 'ch+fr+at+it'], ['major-regions', 'major']]);
+  });
+
+  it('is idempotent, so the cap and the all-landed signal can both release', () => {
+    const { calls, apply } = recorder();
+    const batch = core.createSourceBatch(apply);
+    batch.hold();
+    batch.push('regions', () => 'fc');
+    batch.release();
+    batch.release();
+    expect(calls).toHaveLength(1);
+    expect(batch.isHeld()).toBe(false);
+  });
+
+  it('writes straight through after release, for a country landing past the cap', () => {
+    const { calls, apply } = recorder();
+    const batch = core.createSourceBatch(apply);
+    batch.hold();
+    batch.release();
+    batch.push('regions', () => 'late');
+    expect(calls).toEqual([['regions', 'late']]);
+  });
+
+  it('releases nothing when nothing was pushed', () => {
+    const { calls, apply } = recorder();
+    const batch = core.createSourceBatch(apply);
+    batch.hold();
+    batch.release();
+    expect(calls).toEqual([]);
+  });
+});
