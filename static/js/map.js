@@ -5051,7 +5051,23 @@
   //   - Season ratings are already fetched into ``SEASON_RATINGS_PROMISE``,
   //     which IS the cache this function otherwise merges into — so there is
   //     nothing to merge and no second fetch to make.
-  const _loadCountry = async (code, { isBootCountry = false, userInitiated = false } = {}) => {
+  // SNOW-1186: every country load writes its merged geometry through this,
+  // so boot can hold the writes while its countries land and flush each
+  // source once. Unheld it applies at once. Pure half in
+  // country_load_core.js.
+  // The longest boot holds geometry back for a slow sibling. Long enough
+  // to cover the three foreign countries landing on a phone connection,
+  // short enough that a hung one never leaves the rest undrawn for long.
+  const BOOT_GEOMETRY_HOLD_MS = 5000;
+  const sourceBatch = self.pwaCountryLoadCore.createSourceBatch((id, data) => {
+    const source = map.getSource(id);
+    if (source) source.setData(data);
+  });
+
+  const _loadCountry = async (
+    code,
+    { isBootCountry = false, userInitiated = false, onGeometryMerged = null } = {},
+  ) => {
     if (loadedCountries.has(code)) return;
     const upper = code.toUpperCase();
     // SNOW-898: which of this country's four feeds this load must actually
@@ -5113,8 +5129,7 @@
           ...geojsonCache,
           features: [...geojsonCache.features, ...newRegions.features],
         };
-        const regionsSource = map.getSource('regions');
-        if (regionsSource) regionsSource.setData(geojsonCache);
+        sourceBatch.push('regions', () => geojsonCache);
         // Notify the search section so it can extend the index with the
         // newly-loaded regions (snowdesk:regions-loaded listener in the
         // search block is idempotent via INDEXED_REGIONS).
@@ -5138,8 +5153,7 @@
           majorGeojsonCache,
           { type: 'FeatureCollection', features: [...newMajor.features] },
         );
-        const majorSource = map.getSource('major-regions');
-        if (majorSource) majorSource.setData(majorGeojsonCache);
+        sourceBatch.push('major-regions', () => majorGeojsonCache);
       }
 
       if (newSub && newSub.features) {
@@ -5147,9 +5161,13 @@
           subGeojsonCache,
           { type: 'FeatureCollection', features: [...newSub.features] },
         );
-        const subSource = map.getSource('sub-regions');
-        if (subSource) subSource.setData(subGeojsonCache);
+        sourceBatch.push('sub-regions', () => subGeojsonCache);
       }
+
+      // SNOW-1186: this country's geometry is in the caches. Boot is waiting
+      // on this, not on the whole load — the ratings below can take seconds
+      // longer, and nothing about drawing the outlines needs them.
+      if (onGeometryMerged) onGeometryMerged();
 
       // SNOW-518: the L1/L2/L4 feeds just fetched for this country have now
       // flowed through the SW cache — green their dashboard dots so the layers
@@ -7824,9 +7842,34 @@
     for (const code of COUNTRY_KEYS) {
       if (countryState[code]) bootCountries.add(code);
     }
-    for (const code of bootCountries) {
-      ensureCountryLoaded(code, { isBootCountry: code === 'ch' }).catch(() => {});
-    }
+    //
+    // SNOW-1186: their geometry reaches the sources in ONE write per source
+    // rather than one per country. Each `setData` re-tiles the whole merged
+    // collection and repaints, so FR, AT and IT landing a second apart meant
+    // three re-tiles of a growing set and a repaint after each. The hold is
+    // released when every boot country's geometry has merged (or its load
+    // has failed), and capped so one slow country cannot keep the others
+    // off the map: past the cap, whatever has landed is drawn and later
+    // arrivals write straight through as before.
+    sourceBatch.hold();
+    // Inside a country load a throwing setData was caught by its catch and
+    // logged; the deferred flush runs outside it, so it is caught here.
+    const releaseHold = () => {
+      try {
+        sourceBatch.release();
+      } catch (err) {
+        console.warn('[map] Failed to apply boot country geometry', err);
+      }
+    };
+    const holdCap = setTimeout(releaseHold, BOOT_GEOMETRY_HOLD_MS);
+    Promise.all([...bootCountries].map((code) => new Promise((resolve) => {
+      ensureCountryLoaded(code, { isBootCountry: code === 'ch', onGeometryMerged: resolve })
+        .catch(() => {})
+        .finally(resolve);
+    }))).then(() => {
+      clearTimeout(holdCap);
+      releaseHold();
+    });
 
     // SNOW-235: Restore any overlay tiers the user had enabled in a prior
     // session. These fire after the choropleth installs (not awaited) so

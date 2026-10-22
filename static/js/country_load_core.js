@@ -43,10 +43,15 @@
  * offline when it is not, which is the one thing that dashboard exists to
  * answer.
  *
+ * SNOW-1186 added a third piece that belongs to the same load: WHEN a
+ * country's merged geometry reaches its MapLibre source. See
+ * `createSourceBatch` below.
+ *
  * Exports (frozen `self.pwaCountryLoadCore`):
  *
  *   planCountryFeeds(options)
  *   syncDotAction(options)
+ *   createSourceBatch(apply)
  */
 
 (function () {
@@ -127,8 +132,68 @@
     return (opts.rowCountryCount || 1) === 1 ? 'mark-cached' : 'refresh';
   }
 
+  /**
+   * Hold source updates while several country loads land, then apply each
+   * source once (SNOW-1186).
+   *
+   * Boot loads every boot country at once, and each one merged its geometry
+   * into the shared cache and called `setData` straight away. Every
+   * `setData` makes MapLibre's worker re-tile the WHOLE merged collection
+   * and the map repaint, so three countries landing meant three full
+   * re-tiles of an ever-larger set and a repaint after each. Under
+   * Lighthouse's software WebGL a repaint is 0.4-0.6 s of main thread.
+   *
+   * `push` takes a READER, not the data: while held only the latest
+   * reader per source is kept, and it is called at `release`, so the flush
+   * applies the cache as it stands then, not as it stood at the first push.
+   * Not held, `push` applies at once, which keeps a user's country toggle
+   * exactly as immediate as it was. `release` applies every held source
+   * even when one throws, then rethrows the first error.
+   *
+   * @param {function(string, *): void} apply Writes data into one source,
+   *   by id. map.js passes `getSource(id)?.setData(data)`.
+   * @returns {{hold: function(): void, push: function(string, function(): *): void,
+   *   release: function(): void, isHeld: function(): boolean}}
+   */
+  function createSourceBatch(apply) {
+    var held = false;
+    var dirty = new Map();
+    return {
+      hold: function () { held = true; },
+      push: function (id, read) {
+        if (held) {
+          dirty.set(id, read);
+          return;
+        }
+        apply(id, read());
+      },
+      // Idempotent, so the timeout cap and the all-landed signal can both
+      // call it without coordinating which went first.
+      release: function () {
+        if (!held) return;
+        held = false;
+        var pending = Array.from(dirty);
+        dirty.clear();
+        // One source failing must not leave the others stale: the queue is
+        // already cleared, so an entry skipped here is never retried. Apply
+        // every entry, then rethrow the first failure for the caller to log.
+        var failure = null;
+        pending.forEach(function (entry) {
+          try {
+            apply(entry[0], entry[1]());
+          } catch (err) {
+            if (!failure) failure = err;
+          }
+        });
+        if (failure) throw failure;
+      },
+      isHeld: function () { return held; },
+    };
+  }
+
   self.pwaCountryLoadCore = Object.freeze({
     planCountryFeeds: planCountryFeeds,
     syncDotAction: syncDotAction,
+    createSourceBatch: createSourceBatch,
   });
 })();
