@@ -13,6 +13,9 @@ Two families:
 * **The command run register** (``CommandRun``, SNOW-1189) —
   ``list_commands``, ``list_command_runs``, ``get_command_run`` and
   ``command_history``.
+* **Deploy steps** (SNOW-1192) — ``deploy_steps_status`` checks the
+  ``DEPLOY_STEPS`` file ``bin/cut-release`` ships with each release against
+  the register.
 * **Health** — ``build_info``, ``ingest_status``, ``bulletin_coverage``,
   ``task_queue_health``, ``weather_freshness``, ``location_estate_health``
   and ``feature_flags``.
@@ -28,8 +31,11 @@ import datetime as dt
 import logging
 import os
 import platform
+import re
+import shlex
 import uuid
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 import django
@@ -435,6 +441,140 @@ def _handle_command_history(arguments: dict[str, Any]) -> dict[str, Any]:
     if command is None:
         raise ToolError("'command' is required.")
     return command_history(command)
+
+
+# ---------------------------------------------------------------------------
+# Deploy steps
+# ---------------------------------------------------------------------------
+
+# The release ordinal in the header bin/cut-release writes.
+_STEPS_RELEASE = re.compile(r"release v(\d+)")
+
+
+def _read_deploy_steps(path: Path) -> tuple[str | None, list[str]] | None:
+    """Read a ``DEPLOY_STEPS`` file into its release and its steps.
+
+    Args:
+        path: The file to read.
+
+    Returns:
+        ``(release, steps)`` — the release named in the header (or None)
+        and the non-comment lines — or None when the file is absent.
+
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    match = _STEPS_RELEASE.search(text)
+    steps = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    return (match.group(1) if match else None), steps
+
+
+def _step_status(step: str, release: str, known: set[str]) -> dict[str, Any]:
+    """Return one step's state on this release from the register.
+
+    A step that passes ``--commit`` is done only by a successful commit
+    run; any other step by any successful run. Only runs stamped with the
+    release now deployed count — a run on an earlier build is the step
+    rehearsed, not the step done.
+
+    Args:
+        step: The step as written, e.g. ``backfill_resort_slugs --commit``.
+        release: The release now deployed.
+        known: The project's command names.
+
+    Returns:
+        ``step``, ``command``, ``state`` (``DONE``, ``FAILED``,
+        ``DRY_RUN_ONLY``, ``PENDING`` or ``UNKNOWN_COMMAND``) and the
+        deciding run, if any.
+
+    """
+    try:
+        tokens = shlex.split(step)
+    except ValueError:
+        tokens = step.split()
+    command = tokens[0] if tokens else ""
+    entry: dict[str, Any] = {"step": step, "command": command, "run": None}
+    if command not in known:
+        entry["state"] = "UNKNOWN_COMMAND"
+        return entry
+    runs = CommandRun.objects.for_command(command).filter(release=release)
+    if "--commit" in tokens:
+        runs = runs.filter(mode=CommandRun.MODE.COMMIT)
+    runs = runs.order_by("-started_at")
+    done = runs.filter(status=CommandRun.STATUS.SUCCEEDED).first()
+    latest = done or runs.first()
+    if done:
+        entry["state"] = "DONE"
+    elif latest:
+        entry["state"] = "FAILED"
+    elif (
+        CommandRun.objects.for_command(command)
+        .filter(release=release, mode=CommandRun.MODE.DRY_RUN)
+        .exists()
+    ):
+        entry["state"] = "DRY_RUN_ONLY"
+    else:
+        entry["state"] = "PENDING"
+    entry["run"] = _run_row(latest) if latest else None
+    return entry
+
+
+def deploy_steps_status(path: Path | None = None) -> dict[str, Any]:
+    """Return which of this release's deploy steps have run here.
+
+    Reads ``DEPLOY_STEPS`` — written into the release commit by
+    ``bin/cut-release`` from the release's ``Deploy-Step:`` trailers — and
+    checks each step against the register for the release now deployed.
+
+    Args:
+        path: The steps file; defaults to ``DEPLOY_STEPS`` at the repo root.
+            A test seam.
+
+    Returns:
+        ``release`` (deployed), ``file_release`` (named in the file),
+        ``steps`` (one entry per step, see ``_step_status``), ``outstanding``
+        and ``summary``.
+
+    """
+    release = settings.APP_RELEASE
+    parsed = _read_deploy_steps(path or Path(settings.BASE_DIR) / "DEPLOY_STEPS")
+    if parsed is None:
+        return {
+            "release": release,
+            "file_release": None,
+            "steps": [],
+            "outstanding": 0,
+            "summary": (
+                "This build has no DEPLOY_STEPS file; it predates SNOW-1192 or "
+                "was not cut by bin/cut-release."
+            ),
+        }
+    file_release, steps = parsed
+    known = {name for name, app in get_commands().items() if app.startswith("apps.")}
+    entries = [_step_status(step, release, known) for step in steps]
+    outstanding = sum(1 for entry in entries if entry["state"] != "DONE")
+    summary = (
+        f"Release {release}: {len(entries) - outstanding}/{len(entries)} deploy "
+        "step(s) done."
+        if entries
+        else f"Release {release} ships no deploy steps."
+    )
+    if file_release and file_release != release:
+        # Staging runs main, whose VERSION lags the release being prepared.
+        summary += f" The file names release {file_release}, not {release}."
+    return {
+        "release": release,
+        "file_release": file_release,
+        "steps": entries,
+        "outstanding": outstanding,
+        "summary": summary,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -911,6 +1051,17 @@ OPS_TOOLS: dict[str, ToolSpec] = {
             "required": ["command"],
         },
         handler=_handle_command_history,
+    ),
+    "deploy_steps_status": ToolSpec(
+        name="deploy_steps_status",
+        description=(
+            "Return the deploy steps the current release shipped with (its "
+            "Deploy-Step trailers) and, for each, whether it has run "
+            "successfully on this release: DONE, FAILED, DRY_RUN_ONLY, "
+            "PENDING or UNKNOWN_COMMAND, with the deciding run."
+        ),
+        input_schema=_NO_ARGUMENTS,
+        handler=_no_arguments(deploy_steps_status),
     ),
     "build_info": ToolSpec(
         name="build_info",

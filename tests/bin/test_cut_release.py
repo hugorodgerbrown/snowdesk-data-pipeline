@@ -514,3 +514,43 @@ def test_lists_a_two_ticket_subject_once(repo: Path) -> None:
         )
         == 1
     )
+
+
+# SNOW-1192: the release's steps are also written to DEPLOY_STEPS in the bump
+# commit, so the deployed build carries its own list for the ops MCP to check
+# against the command run register. The dry run prints the file it would
+# write; the --commit branch splices that same text into the tree.
+
+
+def test_prints_the_deploy_steps_file_it_would_write(repo: Path) -> None:
+    """The DEPLOY_STEPS file names the release and lists each step once."""
+    _commit_with_body(
+        repo,
+        "apps/regions/management/commands/backfill_slugs.py",
+        "SNOW-2: backfill resort slugs",
+        "Deploy-Step: backfill_resort_slugs --commit",
+    )
+    _git(repo, "push", "origin", "main")
+
+    out = _run(repo).stdout
+    steps_file = out.split("── DEPLOY_STEPS ", 1)[1]
+
+    assert "# Deploy steps for release v24" in steps_file
+    assert "\nbackfill_resort_slugs --commit\n" in steps_file
+
+
+def test_deploy_steps_file_is_header_only_without_steps(repo: Path) -> None:
+    """A release with no steps still ships the file, holding the header alone.
+
+    Writing it every time means the file never carries a previous release's
+    steps into a release that has none.
+    """
+    _commit_with_body(repo, "apps/x.py", "SNOW-3: something ordinary", "No trailer.")
+    _git(repo, "push", "origin", "main")
+
+    out = _run(repo).stdout
+    steps_file = out.split("── DEPLOY_STEPS ", 1)[1].split("──\n", 1)[1]
+    body = steps_file.split("────", 1)[0]
+
+    lines = [line for line in body.splitlines() if line.strip()]
+    assert lines and all(line.startswith("#") for line in lines)

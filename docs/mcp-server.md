@@ -629,6 +629,7 @@ Every tool is read-only and answers about the environment it runs on.
 | `list_command_runs` | Runs from the `CommandRun` register, newest first, filtered by command, status, mode, `invoked_via`, release, git SHA prefix, `since` |
 | `get_command_run` | One run in full: argv, counts, output tail, traceback, host and Render instance, and the runs it started |
 | `command_history` | One command's runs grouped by build, latest dry run beside latest commit run, and whether it committed on the build now deployed |
+| `deploy_steps_status` | Each step in the release's `DEPLOY_STEPS` (from its `Deploy-Step:` trailers) as `DONE`, `FAILED`, `DRY_RUN_ONLY`, `PENDING` or `UNKNOWN_COMMAND` on the release now deployed |
 | `build_info` | Git SHA, release, `released_at` (the `BUILT_AT` stamp `bin/build.sh` writes), `booted_at`, Python/Django, unapplied migrations |
 | `ingest_status` | Per provider: latest issue, hours since, target date; the last `fetch_bulletins` run; 24 h of `PipelineRun` by status |
 | `bulletin_coverage` | Per provider, for a day: regions expected versus rated, and which are missing |

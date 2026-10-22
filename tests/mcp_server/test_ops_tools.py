@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 from datetime import UTC
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -477,3 +478,98 @@ class TestFeatureFlags:
         assert "sync_log" in result["missing_from_db"]
         rogue = next(f for f in result["flags"] if f["name"] == "rogue_flag")
         assert rogue["everyone"] is True
+
+
+@pytest.mark.django_db
+class TestDeployStepsStatus:
+    """deploy_steps_status: the release's steps against the register."""
+
+    @pytest.fixture(autouse=True)
+    def _release_46(self, settings: Any) -> None:
+        """Deploy release 46 for every test in the class."""
+        settings.APP_RELEASE = "46"
+
+    @pytest.fixture
+    def steps_file(self, tmp_path: Path) -> Path:
+        """A DEPLOY_STEPS file as bin/cut-release writes it for v46."""
+        path = tmp_path / "DEPLOY_STEPS"
+        path.write_text(
+            "# Deploy steps for release v46: run each once after production "
+            "deploys.\n"
+            "# Written by bin/cut-release from the Deploy-Step: trailers.\n"
+            "relink_bulletin_regions --commit\n"
+            "fill_what3words --commit\n"
+            "fetch_weather --commit\n"
+            "backfill_resort_slugs --commit\n"
+            "no_such_command --commit\n"
+        )
+        return path
+
+    def test_each_state(self, steps_file: Path) -> None:
+        """Done, failed, rehearsed, pending and unknown are told apart."""
+        CommandRunFactory.create(release="46")
+        CommandRunFactory.create(
+            command="fill_what3words",
+            release="46",
+            status=CommandRun.STATUS.PARTIAL,
+            exit_code=1,
+        )
+        CommandRunFactory.create(
+            command="fetch_weather", release="46", mode=CommandRun.MODE.DRY_RUN
+        )
+        # Committed on the previous release: rehearsed, not done here.
+        CommandRunFactory.create(command="backfill_resort_slugs", release="45")
+
+        result = ops_tools.deploy_steps_status(steps_file)
+
+        states = {entry["command"]: entry["state"] for entry in result["steps"]}
+        assert states == {
+            "relink_bulletin_regions": "DONE",
+            "fill_what3words": "FAILED",
+            "fetch_weather": "DRY_RUN_ONLY",
+            "backfill_resort_slugs": "PENDING",
+            "no_such_command": "UNKNOWN_COMMAND",
+        }
+        assert result["outstanding"] == 4
+        assert result["summary"] == "Release 46: 1/5 deploy step(s) done."
+
+    def test_a_later_success_outranks_an_earlier_failure(
+        self, steps_file: Path
+    ) -> None:
+        """A retry that succeeded makes the step done."""
+        now = timezone.now()
+        CommandRunFactory.create(
+            release="46",
+            status=CommandRun.STATUS.FAILED,
+            started_at=now - dt.timedelta(minutes=10),
+        )
+        ok = CommandRunFactory.create(release="46", started_at=now)
+
+        result = ops_tools.deploy_steps_status(steps_file)
+
+        relink = result["steps"][0]
+        assert relink["state"] == "DONE"
+        assert relink["run"]["id"] == str(ok.uuid)
+
+    def test_no_file(self, tmp_path: Path) -> None:
+        """A build without the file says so rather than reporting zero steps."""
+        result = ops_tools.deploy_steps_status(tmp_path / "DEPLOY_STEPS")
+        assert result["file_release"] is None
+        assert "no DEPLOY_STEPS file" in result["summary"]
+
+    def test_header_only_and_mismatched_release(self, tmp_path: Path) -> None:
+        """A step-less file reads as none; a lagging file is called out."""
+        path = tmp_path / "DEPLOY_STEPS"
+        path.write_text("# Deploy steps for release v45: run each once.\n")
+
+        result = ops_tools.deploy_steps_status(path)
+
+        assert result["steps"] == []
+        assert result["summary"] == (
+            "Release 46 ships no deploy steps. The file names release 45, not 46."
+        )
+
+    def test_is_registered(self) -> None:
+        """The tool is callable through the ops server."""
+        result = _call("deploy_steps_status")
+        assert result["isError"] is False

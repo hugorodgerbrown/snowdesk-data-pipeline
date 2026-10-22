@@ -312,6 +312,15 @@ script reads. A release with no steps gets no section — an always-present
 heading would invite the operator to hunt for something that is not there,
 which is how a real one stops being noticed.
 
+**Shipping the list.** The same steps go into a tracked `DEPLOY_STEPS`
+file beside `VERSION`, written into the bump commit by `cut-release` and
+rewritten on every release (header only when a release has none), so the
+deployed build carries its own list. The ops MCP tool `deploy_steps_status`
+(SNOW-1192, [mcp-server.md](mcp-server.md#the-ops-server-staff-only))
+compares it with the command run register: a step is `DONE` once a
+successful run (a `COMMIT` run, if the step passes `--commit`) is stamped
+with the release now deployed. Runs on an earlier build do not count.
+
 **Recording that a step ran.** Every run of a project command lands in the
 command run register (`CommandRun`, SNOW-1189) with the git SHA and release
 number it ran on, dry runs included. Before running a step in a Render
