@@ -199,6 +199,13 @@ class Command(RegisteredCommand):
                         "Pass --commit to persist."
                     )
                 )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("locations", counts["locations"])
+        self.tally("filled", counts["filled"])
+        self.tally("already_present", counts["already_present"])
+        self.tally("unresolved", counts["unresolved"])
+        self.tally("requests", counts["requests"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "backfill_weather finished: locations=%d filled=%d already_present=%d "
             "unresolved=%d requests=%d failed=%d commit=%s",

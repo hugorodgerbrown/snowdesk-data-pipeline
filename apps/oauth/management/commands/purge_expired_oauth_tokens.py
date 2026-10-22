@@ -124,6 +124,9 @@ class Command(RegisteredCommand):
         codes = AuthorizationCode.objects.expired_before(cutoff)
 
         if not options["commit"]:
+            # Counts for the command run register (SNOW-1190).
+            self.tally("tokens_deleted", tokens.count())
+            self.tally("codes_deleted", codes.count())
             if verbosity >= 1:
                 self.stdout.write(
                     self.style.WARNING(
@@ -136,6 +139,9 @@ class Command(RegisteredCommand):
 
         tokens_deleted, tokens_failed = self._delete_all(tokens, "token", verbosity)
         codes_deleted, codes_failed = self._delete_all(codes, "code", verbosity)
+        self.tally("tokens_deleted", tokens_deleted)
+        self.tally("codes_deleted", codes_deleted)
+        self.tally("failed", tokens_failed + codes_failed)
 
         logger.info(
             "purge_expired_oauth_tokens: deleted %d token(s), %d code(s)",

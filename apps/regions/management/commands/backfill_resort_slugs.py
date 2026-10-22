@@ -170,6 +170,9 @@ class Command(RegisteredCommand):
                         "persist."
                     )
                 )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("minted", counts["minted"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "backfill_resort_slugs finished: minted=%d failed=%d commit=%s",
             counts["minted"],

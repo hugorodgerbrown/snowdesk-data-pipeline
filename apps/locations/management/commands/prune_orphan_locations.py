@@ -136,6 +136,9 @@ class Command(RegisteredCommand):
                     f"{'' if commit else ' Pass --commit to delete.'}"
                 )
             )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("locations", location_count)
+        self.tally("weather", weather_count)
         logger.info(
             "prune_orphan_locations finished: locations=%d weather=%d commit=%s",
             location_count,

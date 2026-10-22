@@ -428,6 +428,11 @@ class Command(RegisteredCommand):
         if commit and pairs and not skip_day_ratings:
             failed += self._refresh_day_ratings(pairs, verbosity)
 
+        # Counts for the command run register (SNOW-1190).
+        self.tally("rekeyed", changed)
+        self.tally("current", skipped)
+        self.tally("failed", failed)
+
         if verbosity:
             prefix = "Re-keyed" if commit else "Would re-key"
             self.stdout.write(

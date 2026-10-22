@@ -244,6 +244,10 @@ class Command(RegisteredCommand):
                     f"{counts['failed']} failed.{suffix}"
                 )
             )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("linked", counts["linked"])
+        self.tally("unchanged", counts["unchanged"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "link_resort_locations finished: linked=%d unchanged=%d failed=%d "
             "commit=%s",

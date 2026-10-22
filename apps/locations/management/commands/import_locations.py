@@ -173,6 +173,16 @@ class Command(RegisteredCommand):
         )
 
         plan = _build_plan(rows, link_rows, modes)
+        # Counts for the command run register (SNOW-1190). The plan is
+        # applied whole or not at all, so these are both what a dry run
+        # would change and what a commit run did.
+        self.tally("added", len(plan.additions))
+        self.tally("updated", len(plan.updates))
+        self.tally("deleted", len(plan.deletions))
+        self.tally("links_added", len(plan.link_additions))
+        self.tally("links_updated", len(plan.link_updates))
+        self.tally("links_deleted", len(plan.link_deletions))
+        self.tally("invalid_rows", len(plan.errors))
         self._report_plan(plan, modes, verbosity)
 
         if plan.errors:

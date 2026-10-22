@@ -112,6 +112,10 @@ class Command(RegisteredCommand):
                     )
                 )
 
+        # Counts for the command run register (SNOW-1190).
+        self.tally("updated", totals["updated"])
+        self.tally("unchanged", totals["unchanged"])
+        self.tally("failed", totals["failed"])
         logger.info(
             "compute_basemap_download finished: updated=%d unchanged=%d "
             "failed=%d commit=%s",

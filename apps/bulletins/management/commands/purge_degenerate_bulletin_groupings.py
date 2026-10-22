@@ -243,6 +243,10 @@ class Command(RegisteredCommand):
                 self.style.SUCCESS(f"Done — deleted {deleted}, {failed} failed.")
             )
 
+        # Counts for the command run register (SNOW-1190).
+        self.tally("candidates", len(pks))
+        self.tally("deleted", deleted)
+        self.tally("failed", failed)
         logger.info(
             "purge_degenerate_bulletin_groupings finished: "
             "candidates=%d deleted=%d failed=%d commit=%s",

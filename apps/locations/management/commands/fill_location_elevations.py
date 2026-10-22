@@ -140,6 +140,9 @@ class Command(RegisteredCommand):
                 location, counts, commit=commit, delay=delay, verbosity=verbosity
             )
 
+        # Counts for the command run register (SNOW-1190).
+        self.tally("resolved", counts["resolved"])
+        self.tally("failed", counts["failed"])
         self.stdout.write(f"{counts['resolved']} resolved, {counts['failed']} failed.")
         if not commit:
             self.stdout.write("Dry-run (no --commit) — nothing written.")

@@ -470,6 +470,10 @@ class Command(RegisteredCommand):
         # a dry-run just as loudly as a real run.
         self._check_unreplaced_gate(report)
 
+        # Counts for the command run register (SNOW-1190). In a
+        # read-only run the count is what WOULD be deleted.
+        self.tally("deleted", len(report.replaceable_pks))
+
         if not report.replaceable_pks:
             if verbosity:
                 self.stdout.write(self.style.SUCCESS("Nothing to purge."))

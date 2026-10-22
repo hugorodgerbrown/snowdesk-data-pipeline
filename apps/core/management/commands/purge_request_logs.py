@@ -146,6 +146,8 @@ class Command(RegisteredCommand):
             return
 
         if not commit:
+            # Counts for the command run register (SNOW-1190).
+            self.tally("deleted", expired_count)
             if verbosity >= 1:
                 self.stdout.write(
                     self.style.WARNING(
@@ -174,6 +176,7 @@ class Command(RegisteredCommand):
         # dict and anything cascaded is reported as what it is.
         _, by_model = RequestLog.objects.filter(created_at__lt=cutoff).delete()
         deleted = by_model.get(RequestLog._meta.label, 0)  # noqa: SLF001
+        self.tally("deleted", deleted)
         cascaded = sum(
             count
             for label, count in by_model.items()

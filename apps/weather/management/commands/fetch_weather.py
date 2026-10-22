@@ -151,6 +151,10 @@ class Command(RegisteredCommand):
                         "to persist."
                     )
                 )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("created", counts["created"])
+        self.tally("updated", counts["updated"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "fetch_weather finished: created=%d updated=%d failed=%d commit=%s",
             counts["created"],

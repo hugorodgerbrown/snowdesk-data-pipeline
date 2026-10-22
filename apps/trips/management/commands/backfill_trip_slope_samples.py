@@ -315,6 +315,11 @@ class Command(RegisteredCommand):
                         "made, no data written. Pass --commit to fill them in."
                     )
                 )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("copied", counts["copied"])
+        self.tally("sampled", counts["sampled"])
+        self.tally("unanswered", counts["unanswered"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "backfill_trip_slope_samples finished: copied=%d sampled=%d "
             "unanswered=%d failed=%d commit=%s",

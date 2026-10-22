@@ -174,6 +174,9 @@ class Command(RegisteredCommand):
                         "--commit to persist."
                     )
                 )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("minted", counts["minted"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "backfill_location_short_ids finished: minted=%d failed=%d commit=%s",
             counts["minted"],

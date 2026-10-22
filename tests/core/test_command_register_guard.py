@@ -14,6 +14,8 @@ in its own source, next to the comment that has to say why.
 
 from __future__ import annotations
 
+import inspect
+
 from django.core.management import get_commands, load_command_class
 
 from apps.core.command_register import RegisteredCommand
@@ -66,3 +68,35 @@ def test_only_credential_printers_skip_output_capture() -> None:
         if not getattr(load_command_class(app, name), "capture_output", True)
     )
     assert uncaptured == ["dev_magic_link", "mint_mcp_token", "mint_vapid_keypair"]
+
+
+# The prefixes this codebase uses for a command that changes data — the
+# backfills, relinks and reloads run after a deploy (SNOW-1190), plus the
+# purges, syncs and fetches the scheduler runs. Each must tally what it
+# changes, or its register row records that it ran and not what it did.
+_WRITING_PREFIXES = (
+    "backfill_",
+    "compute_",
+    "fetch_",
+    "fill_",
+    "import_",
+    "link_",
+    "prune_",
+    "purge_",
+    "refresh_",
+    "rekey_",
+    "relink_",
+    "sync_",
+    "uppercase_",
+)
+
+
+def test_every_data_changing_command_tallies() -> None:
+    """A backfill, relink, import, purge or fetch records its counts."""
+    silent = sorted(
+        name
+        for name, app in _project_commands().items()
+        if name.startswith(_WRITING_PREFIXES)
+        and "self.tally(" not in inspect.getsource(type(load_command_class(app, name)))
+    )
+    assert silent == [], f"Call self.tally() for what these change: {silent}"

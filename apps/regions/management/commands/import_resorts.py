@@ -210,6 +210,14 @@ class Command(RegisteredCommand):
         rows = _read_sheet(options["file"], modes)
         pass_rows = _read_passes_sheet(options["passes_file"])
         plan = _build_plan(rows, modes, pass_rows)
+        # Counts for the command run register (SNOW-1190). The plan is
+        # applied whole or not at all, so these are both what a dry run
+        # would change and what a commit run did.
+        self.tally("added", len(plan.additions))
+        self.tally("updated", len(plan.updates))
+        self.tally("deleted", len(plan.deletions))
+        self.tally("passes_added", len(plan.pass_additions))
+        self.tally("invalid_rows", len(plan.errors))
 
         self._report_plan(plan, modes, verbosity)
 

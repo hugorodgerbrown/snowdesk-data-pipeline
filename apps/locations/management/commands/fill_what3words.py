@@ -247,6 +247,9 @@ class Command(RegisteredCommand):
             verbosity: Django's ``--verbosity`` level.
 
         """
+        # Counts for the command run register (SNOW-1190).
+        self.tally("filled", counts["filled"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "fill_what3words finished: filled=%d failed=%d commit=%s",
             counts["filled"],

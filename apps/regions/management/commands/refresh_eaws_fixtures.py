@@ -115,6 +115,10 @@ class Command(RegisteredCommand):
         # this command already rewrites centre/bbox/boundary in place on
         # this same file.
         region_changes = _update_basemap_download_inplace(regions)
+        # Counts for the command run register (SNOW-1190).
+        self.tally("major_changes", major_changes)
+        self.tally("sub_changes", sub_changes)
+        self.tally("region_changes", region_changes)
 
         if verbosity >= 1:
             self.stdout.write(

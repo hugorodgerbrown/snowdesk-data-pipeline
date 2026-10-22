@@ -146,6 +146,10 @@ What a command author does:
   WOULD change. Tally every outcome, zeros included, so a dry run's row and
   a commit run's row compare key for key. A `failed` count above zero makes
   the run `PARTIAL`, whether it then returns or raises `CommandError`.
+  Every command named `backfill_`, `compute_`, `fetch_`, `fill_`,
+  `import_`, `link_`, `prune_`, `purge_`, `refresh_`, `rekey_`, `relink_`,
+  `sync_` or `uppercase_` must tally (SNOW-1190); the guard test fails one
+  that does not.
 - **Change nothing else.** Exit codes, output and transactions are as
   before; the row is written around the command, never inside it.
 - **Opt out only for a reason.** `record_runs = False` with a comment saying

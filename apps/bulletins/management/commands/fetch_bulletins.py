@@ -580,6 +580,19 @@ class Command(RegisteredCommand):
                 )
             )
 
+        # Counts for the command run register (SNOW-1190): the totals across
+        # every source in the run, plus each source's own. A render model
+        # that failed to build is a ``failed`` record, so the run reads as
+        # PARTIAL.
+        prefix = source.name.lower()
+        for key, n in (
+            ("created", run.records_created),
+            ("updated", run.records_updated),
+            ("failed", run.records_failed),
+        ):
+            self.tally(key, n)
+            self.tally(f"{prefix}_{key}", n)
+
         logger.info(
             "fetch_bulletins finished: source=%s run=%s status=%s "
             "created=%s updated=%s failed=%s",

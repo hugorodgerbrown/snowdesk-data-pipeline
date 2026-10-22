@@ -285,6 +285,11 @@ class Command(RegisteredCommand):
                     f"{counts['failed']} failed. {suffix}"
                 )
             )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("resolved", counts["resolved"])
+        self.tally("unchanged", counts["unchanged"])
+        self.tally("skipped", counts["skipped"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "refresh_centroid_elevations finished: resolved=%d unchanged=%d "
             "skipped=%d failed=%d commit=%s",

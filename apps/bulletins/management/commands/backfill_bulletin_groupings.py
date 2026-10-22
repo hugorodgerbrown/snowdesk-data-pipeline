@@ -211,6 +211,10 @@ class Command(RegisteredCommand):
             )
         )
 
+        # Counts for the command run register (SNOW-1190).
+        self.tally("processed", processed)
+        self.tally("skipped", skipped)
+        self.tally("failed", failed)
         logger.info(
             "backfill_bulletin_groupings finished: "
             "processed=%d skipped=%d failed=%d commit=%s",

@@ -115,6 +115,9 @@ class Command(RegisteredCommand):
                 f"{failed} would fail. Pass --commit to persist."
             )
 
+        # Counts for the command run register (SNOW-1190).
+        self.tally("processed", processed)
+        self.tally("failed", failed)
         logger.info(
             "backfill_bulletin_target_dates finished: processed=%d failed=%d commit=%s",
             processed,

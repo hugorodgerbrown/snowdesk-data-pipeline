@@ -121,6 +121,8 @@ class Command(RegisteredCommand):
                 "Pass --commit to persist."
             )
 
+        # Counts for the command run register (SNOW-1190).
+        self.tally("converted", total)
         logger.info(
             "uppercase_bulletin_choice_values finished: converted=%d commit=%s",
             total,

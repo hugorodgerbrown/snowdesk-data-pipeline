@@ -305,6 +305,10 @@ class Command(RegisteredCommand):
                         "No data written. Pass --commit to persist."
                     )
                 )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("linked", counts["linked"])
+        self.tally("skipped", counts["skipped"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "link_region_centroid_locations finished: linked=%d skipped=%d "
             "failed=%d commit=%s",

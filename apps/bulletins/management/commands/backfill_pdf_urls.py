@@ -127,6 +127,10 @@ class Command(RegisteredCommand):
 
         counts, batch = _process_queryset(self, qs, commit, verbosity=verbosity)
         _log_summary(self, verbosity, commit, counts, len(batch) if not commit else 0)
+        # Counts for the command run register (SNOW-1190). An unresolvable
+        # bulletin is recorded as ``failed`` so the run reads as PARTIAL.
+        for key, n in counts.items():
+            self.tally("failed" if key == "error" else str(key).lower(), n)
         logger.info("backfill_pdf_urls finished: %s commit=%s", counts, commit)
 
         if counts["error"] > 0:
