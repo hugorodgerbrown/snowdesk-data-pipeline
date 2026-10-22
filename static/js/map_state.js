@@ -127,6 +127,11 @@ const OVERLAY_STORAGE_KEY = {
   // visually far heavier than a pin, so the overlay is opt-in the way
   // community_reports is.
   routes: 'snowdesk.map.overlay.routes',
+  // SNOW-1185: the Boundaries section's "Show unsupported regions" row —
+  // the micro regions no provider has ever rated (``covered === false`` on
+  // regions.geojson). Defaults OFF: an outline over ground nobody forecasts
+  // reads as coverage the map does not have.
+  unsupported: 'snowdesk.map.overlay.unsupported',
   // SNOW-1073 removed ``slope`` ('snowdesk.map.overlay.slope'), the switch
   // for swisstopo's slope raster. The slope layer is the terrain filter's
   // slope mode now, and a stored ``slope=true`` is deliberately IGNORED

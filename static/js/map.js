@@ -438,6 +438,9 @@
     // map with it on would greet a visitor who came to read the ratings
     // with terrain. window.pwaTerrainFilter is its one writer.
     terrain_filter: false,
+    // SNOW-1185: regions no provider has ever rated stay off the map unless
+    // asked for — see applyCountryFilters.
+    unsupported: false,
   };
 
   // SNOW-656: the Bulletins row's live state — the persisted preference plus
@@ -541,7 +544,7 @@
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter']) {
+  for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'unsupported']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
   // The three EAWS boundary tiers. At most one is configured on, so each asks
@@ -1131,11 +1134,15 @@
   // if the source is still around (defensive, MapLibre normally drops
   // sources during setStyle but this lets a future ``diff`` setStyle
   // strategy land without breaking us).
-  // SNOW-54: solid fill for permanently-uncovered regions (those the pipeline
-  // never rates). A touch darker than no_rating (#e0e0e0) so an uncovered area
-  // reads as a distinct flat grey rather than "no bulletin today" — applied in
-  // the regions-fill paint below, keyed on the static ``covered`` property.
-  const UNCOVERED_FILL_COLOUR = '#b5b5b5';
+  // SNOW-54: the fill for permanently-uncovered regions (those the pipeline
+  // never rates), keyed on the static ``covered`` property in the
+  // regions-fill paint below. It was a flat grey (#b5b5b5) until SNOW-1185:
+  // a third of the estate painted solid read as ground the map covers. Those
+  // regions are now filtered out unless "Show unsupported regions" is on, and
+  // drawn as an outline when it is — TRANSPARENT rather than filtered out of
+  // the fill, because the fill is the hit-test target and a shown region has
+  // to stay tappable.
+  const UNCOVERED_FILL_COLOUR = 'rgba(0, 0, 0, 0)';
 
   // The choropleth's two blend weights (0.55 resting, 0.85 emphasised) lived
   // here. They were `fill-opacity` values until #625 made them weights
@@ -1426,7 +1433,8 @@
     // which falls through the ``match`` arms to the default no_rating colour.
     //
     // SNOW-54: permanently-uncovered regions (static ``covered === false``
-    // property from the API) get a distinct flat grey instead of no_rating.
+    // property from the API) take UNCOVERED_FILL_COLOUR instead of no_rating
+    // — transparent since SNOW-1185, so a shown one is an outline.
     // The case checks ``covered`` first; these regions never carry a rating, so
     // ordering is safe and the rating ``match`` handles every covered region.
     //
@@ -4869,14 +4877,29 @@
   // hideable by opacity rather than visibility, and a transparent feature IS
   // still clickable — deliberately, so borders stay tappable with the colour
   // off — but that is orthogonal: filtering removes the feature outright.
+  //
+  // SNOW-1185: the three micro-region layers also drop every region no
+  // provider has ever rated (``covered === false``) unless the Boundaries
+  // section's "Show unsupported regions" row is on. Composed here rather
+  // than at install time because it changes at runtime, and BASE_LAYER_FILTERS
+  // is the install-time snapshot every other composer starts from. The
+  // country filter stays the LAST term, which is where readers of the
+  // composition (tests/js/test_map_boundaries_follow_basemap.js) look for it.
+  const UNSUPPORTED_REGION_LAYER_IDS = new Set(['regions-fill', 'regions-line', 'regions-label']);
+  const SUPPORTED_ONLY_FILTER = ['!=', ['get', 'covered'], false];
   const applyCountryFilters = () => {
     const enabled = COUNTRY_KEYS.filter(code => countryState[code]);
     const providerFilter = countryMatchFilter(enabled);
     const boundaryFilter = countryMatchFilter(boundaryCountryCodes());
     const setComposed = (layerId, countryFilter) => {
       if (!map.getLayer(layerId)) return;
-      const base = BASE_LAYER_FILTERS[layerId];
-      const composed = base ? ['all', base, countryFilter] : countryFilter;
+      const terms = [
+        BASE_LAYER_FILTERS[layerId],
+        UNSUPPORTED_REGION_LAYER_IDS.has(layerId) && !overlayState.unsupported
+          ? SUPPORTED_ONLY_FILTER
+          : null,
+      ].filter(Boolean);
+      const composed = terms.length ? ['all', ...terms, countryFilter] : countryFilter;
       map.setFilter(layerId, composed);
     };
     for (const layerId of BULLETIN_DATA_LAYER_IDS) setComposed(layerId, providerFilter);
@@ -6429,6 +6452,21 @@
     hide: hideDownloadedOverlay,
     isVisible: () => layerPainted('cached-tiles-fill'),
     isEnabled: () => downloadedOverlayVisible,
+  });
+
+  // SNOW-1185: the Boundaries section's "Show unsupported regions" row. Not a
+  // layer of its own — the same three micro-region layers, with or without
+  // the regions no provider has ever rated — so showing it is a re-filter,
+  // never a fetch: ``covered`` already rides on every feature.
+  const setUnsupportedRegionsShown = (shown) => {
+    writeStorage(OVERLAY_STORAGE_KEY.unsupported, String(shown));
+    overlayState.unsupported = shown;
+    applyCountryFilters();
+  };
+  window.pwaUnsupportedRegions = Object.freeze({
+    show: () => setUnsupportedRegionsShown(true),
+    hide: () => setUnsupportedRegionsShown(false),
+    isEnabled: () => overlayState.unsupported,
   });
 
   // ==== The user-data overlays, driven from the layers menu ====
@@ -10128,7 +10166,7 @@
       // downloadedOverlayVisible instead, which this handler must not touch
       // — a basemap swap must not silently close the downloads overlay out
       // from under an open "Manage downloads" sheet.
-      for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter']) {
+      for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'unsupported']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
       // l1, l2, l4 and bulletins are re-seeded before any install fn runs: the

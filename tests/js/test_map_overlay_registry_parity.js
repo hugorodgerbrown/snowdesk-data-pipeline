@@ -42,6 +42,10 @@
  *     ``window.pwaTerrainFilter``. Its bridge sets the visibility of
  *     ``OVERLAY_LAYERS.terrain_filter`` itself, under the key its storage
  *     uses; the row's key is never looked up in this registry.
+ *   - ``unsupported`` (SNOW-1185), "Show unsupported regions", routed to
+ *     ``window.pwaUnsupportedRegions``. It owns no layers at all: it
+ *     re-filters the micro-region layers through applyCountryFilters, and
+ *     an entry here would have a visibility loop hide the whole L4 tier.
  *
  * The three other rows SNOW-904 added — favourites, community_reports and
  * routes — are NOT excluded. They are routed to bridges too, but those
@@ -80,7 +84,7 @@ function templateOverlayKeys() {
 
 // SNOW-904: keys whose click is handed to a bridge that owns its own layer
 // ids. See the module docstring for why this is two keys and not five.
-const BRIDGE_OWNED_LAYERS = new Set(['downloads', 'terrain']);
+const BRIDGE_OWNED_LAYERS = new Set(['downloads', 'terrain', 'unsupported']);
 
 describe('layers-menu overlay registry parity', () => {
   it('every non-country row has an entry in OVERLAY_LAYERS', () => {

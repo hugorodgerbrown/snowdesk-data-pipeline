@@ -950,6 +950,20 @@ Optional context:
                                 {% trans "Micro regions (EAWS L4)" %}
                             </button>
                         </li>
+                        {# SNOW-1185: the micro regions no provider has ever rated.  #}
+                        {# Off on every first visit, so this is rendered unchecked; #}
+                        {# map.js re-seeds aria-checked from localStorage at boot.  #}
+                        <li role="none">
+                            <button
+                                type="button"
+                                role="menuitemcheckbox"
+                                class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                                data-overlay-key="unsupported"
+                                aria-checked="false"
+                            >
+                                {% trans "Show unsupported regions" %}
+                            </button>
+                        </li>
                     </ul>
                 </li>
                 {# SNOW-904: the basemap radios, and under a hairline the two    #}

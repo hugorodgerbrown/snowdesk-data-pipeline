@@ -404,3 +404,58 @@ describe('a country is loaded at most once at a time', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+describe('regions no provider has ever rated (SNOW-1185)', () => {
+  const MICRO_LAYERS = ['regions-fill', 'regions-line', 'regions-label'];
+  const SUPPORTED_ONLY = ['!=', ['get', 'covered'], false];
+
+  /** Whether a layer's composed filter carries the covered-only term. */
+  const dropsUnsupported = (mapStub, layerId) => {
+    const filter = mapStub.getFilter(layerId);
+    return Array.isArray(filter) && filter[0] === 'all'
+      && filter.some((term) => JSON.stringify(term) === JSON.stringify(SUPPORTED_ONLY));
+  };
+
+  it('leaves them off the micro-region layers by default', async () => {
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+
+    for (const layerId of MICRO_LAYERS) {
+      expect(dropsUnsupported(mapStub, layerId)).toBe(true);
+    }
+    // The coarser tiers are unions of micro regions, so they are left alone.
+    expect(dropsUnsupported(mapStub, 'sub-regions-line')).toBe(false);
+    // And the country filter is still the last term, where it always was.
+    expect(filterCodes(mapStub, 'regions-fill')).toEqual(['CH']);
+    expect(filterCodes(mapStub, 'regions-line')).toEqual(ALL_CODES);
+  });
+
+  it('brings them back when the row is switched on, and remembers it', async () => {
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+
+    window.pwaUnsupportedRegions.show();
+    for (const layerId of MICRO_LAYERS) {
+      expect(dropsUnsupported(mapStub, layerId)).toBe(false);
+    }
+    expect(localStorage.getItem('snowdesk.map.overlay.unsupported')).toBe('true');
+    expect(window.pwaUnsupportedRegions.isEnabled()).toBe(true);
+
+    window.pwaUnsupportedRegions.hide();
+    for (const layerId of MICRO_LAYERS) {
+      expect(dropsUnsupported(mapStub, layerId)).toBe(true);
+    }
+    expect(localStorage.getItem('snowdesk.map.overlay.unsupported')).toBe('false');
+  });
+
+  it('keeps a provider toggle from dropping the choice', async () => {
+    const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
+    window.pwaUnsupportedRegions.show();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:country-toggle', {
+      detail: { code: 'at', next: true },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(dropsUnsupported(mapStub, 'regions-fill')).toBe(false);
+    expect(filterCodes(mapStub, 'regions-fill')).toEqual(['CH', 'AT']);
+  });
+});
