@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, purge_expired_oauth_tokens, mint_mcp_token, backfill_*
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-22
 ---
 
 # Management commands
@@ -1098,6 +1098,27 @@ incident that invalidates derived state:
 
   Flags: `--commit`, `--bulletin-id ID`, `--batch-size N` (default 500 —
   the streamed-queryset iterator's chunk size, SNOW-602), `--skip-day-ratings`.
+- `relink_bulletin_regions --source albina --commit` — rebuilds one
+  provider's `RegionBulletin` links from each bulletin's stored `raw_data`
+  (SNOW-1187). Every 2025/26 ALBINA bulletin was found linked to the wrong
+  micro regions — `region_name_at_time` was right, the `MicroRegion` pks had
+  moved under it — so Tyrol's danger painted onto South Tyrol and regions
+  ALBINA never publishes read as covered. Skips bulletins already linked as
+  their payload says (idempotent) and leaves alone any whose payload resolves
+  to no region at all. Each relinked bulletin is one transaction: the links,
+  a refresh of every (region, day) pair on both sides of the relink, the
+  grouping outline, and the deletion of the sourceless `no_rating` rows left
+  on regions no bulletin is linked to, so coverage follows. A failure rolls
+  that bulletin back (so a re-run retries it) and the command exits non-zero.
+  No network. Read-only by default.
+
+  ```bash
+  uv run python manage.py relink_bulletin_regions --source albina
+  uv run python manage.py relink_bulletin_regions --source albina --commit
+  ```
+
+  Flags: `--source {slf,albina,meteofrance}` (required), `--commit`,
+  `--bulletin-id ID`, `--batch-size N` (default 500).
 - `rekey_meteofrance_bulletins --commit` — one-off migration of FR bulletins from
   the old `FR-{NN}-{covered date}` identifier to
   `FR-{NN}-{covered date}-{publication timestamp}` (SNOW-559). The old id could
