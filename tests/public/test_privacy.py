@@ -65,6 +65,11 @@ class TestPrivacyTelemetryCopy:
         response = client.get(reverse("public:privacy"))
         assert b"PostHog" in response.content
 
+    def test_sharing_section_names_fivebar(self, client: Client) -> None:
+        """SNOW-1180: section 5 names fivebar, which the browser contacts directly."""
+        response = client.get(reverse("public:privacy"))
+        assert b"<strong>fivebar</strong> (fiveb.ar)" in response.content
+
     def test_sharing_section_names_sentry(self, client: Client) -> None:
         """SNOW-1181: section 5 names Sentry as the error-report processor."""
         response = client.get(reverse("public:privacy"))

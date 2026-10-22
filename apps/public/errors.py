@@ -204,12 +204,18 @@ def _standalone_response(request: HttpRequest, page: ErrorPage) -> HttpResponse:
 
     """
     try:
+        # SNOW-1180: the fivebar domain and token-free path, from the
+        # context processor's function called directly — this shell must
+        # not run the context processors themselves.
+        from apps.public.context_processors import fivebar
+
         html: str = render_to_string(
             STANDALONE_TEMPLATE,
             {
                 "page": page,
                 "LANGUAGE_CODE": get_language() or "en",
                 "request": request,
+                **fivebar(request),
             },
         )
     except Exception:
@@ -263,7 +269,13 @@ def _negotiate(request: HttpRequest, kind: str) -> HttpResponse:
     if not page.full_site:
         return _standalone_response(request, page)
     try:
-        return render(request, SITE_TEMPLATE, {"page": page}, status=page.status)
+        # SNOW-1180: fivebar_status becomes the fivebar tag's data-status.
+        return render(
+            request,
+            SITE_TEMPLATE,
+            {"page": page, "fivebar_status": page.status},
+            status=page.status,
+        )
     except Exception:
         logger.exception("Error page for %s failed; using standalone", kind)
         return _standalone_response(request, page)

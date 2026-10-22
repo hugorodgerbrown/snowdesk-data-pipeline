@@ -925,6 +925,7 @@ def favourite_region_toggle(request: HttpRequest, region_id: str) -> HttpRespons
             "region_removed",
             user_identity(request.user),
             {"region_id": region.region_id, "source": "map"},
+            page=analytics.page_of(request),
         )
     else:
         try:
@@ -941,6 +942,7 @@ def favourite_region_toggle(request: HttpRequest, region_id: str) -> HttpRespons
             "region_added",
             user_identity(request.user),
             {"region_id": region.region_id, "source": "map"},
+            page=analytics.page_of(request),
         )
 
     return JsonResponse({"pinned": pinned})

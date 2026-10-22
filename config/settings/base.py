@@ -322,6 +322,9 @@ TEMPLATES = [
                 # telemetry master switch into a <meta> tag read by
                 # static/js/telemetry.js (docs/telemetry-pipeline.md).
                 "apps.public.context_processors.pwa_telemetry",
+                # SNOW-1180: injects FIVEBAR_DOMAIN so base.html renders the
+                # fivebar tag only where it is configured.
+                "apps.public.context_processors.fivebar",
                 # SNOW-812: injects debug_log_visible (the debug_log waffle
                 # flag, scoped to GRP_DEBUG) so base.html can decide whether
                 # to render the on-device debug-trace panel and load its
@@ -415,6 +418,19 @@ AUTHENTICATION_BACKENDS = [
 
 POSTHOG_API_KEY = config("POSTHOG_API_KEY", default="")
 POSTHOG_HOST = config("POSTHOG_HOST", default="https://eu.i.posthog.com")
+
+# ---------------------------------------------------------------------------
+# Analytics (fivebar) — SNOW-1180
+# ---------------------------------------------------------------------------
+# FIVEBAR_DOMAIN is the site as fivebar names it (``snowdesk.info``). Set, it
+# renders the fivebar tag in public/base.html and admits FIVEBAR_ORIGIN to
+# the CSP; empty — the default, and every dev/test run — means no tag and
+# no CSP entry. FIVEBAR_TOKEN is a send-only server-events token, used by
+# ``apps/analytics/fivebar.py`` for the goal events; empty means none are
+# sent. The two are separate because the tag needs no token.
+FIVEBAR_DOMAIN = config("FIVEBAR_DOMAIN", default="")
+FIVEBAR_TOKEN = config("FIVEBAR_TOKEN", default="")
+FIVEBAR_ORIGIN = "https://fiveb.ar"
 
 # ---------------------------------------------------------------------------
 # PWA telemetry master switch
@@ -937,6 +953,7 @@ def csp_defaults(
     tile_origin: str,
     *,
     terrain_class_origin: str | None = None,
+    analytics_origin: str | None = None,
 ) -> dict[str, list[str]]:
     """Return the baseline CSP directives, allowlisting ``tile_origin``.
 
@@ -959,6 +976,9 @@ def csp_defaults(
         tile_origin: ``scheme://host[:port]`` of the basemap tile origin.
         terrain_class_origin: ``scheme://host[:port]`` of the terrain-class
             tile origin, or None to leave it out of the policy.
+        analytics_origin: the fivebar origin (SNOW-1180), appended to
+            ``script-src`` for its tag and ``connect-src`` for what the tag
+            sends, or None — no FIVEBAR_DOMAIN — to leave it out.
 
     Returns:
         The CSP directive name → source-list mapping.
@@ -972,6 +992,9 @@ def csp_defaults(
         "script-src": [
             "'self'",
             "{nonce}",
+            # SNOW-1180: the fivebar tag's script, and (connect-src below)
+            # where it sends pageviews. Absent unless FIVEBAR_DOMAIN is set.
+            *([analytics_origin] if analytics_origin else []),
         ],
         # 'unsafe-inline' is required because (a) map.html uses inline style=""
         # attributes on legend swatches and the debug pill, and (b) map.js +
@@ -1020,6 +1043,7 @@ def csp_defaults(
             # Env-derived like tile_origin above, so the setting and the
             # policy cannot drift.
             *([terrain_class_origin] if terrain_class_origin else []),
+            *([analytics_origin] if analytics_origin else []),
         ],
         "manifest-src": ["'self'"],
         "report-uri": ["{report_uri}"],
@@ -1077,6 +1101,7 @@ TERRAIN_CLASS_TILE_ORIGIN = optional_basemap_origin(TERRAIN_CLASS_TILE_URL)
 CSP_DEFAULTS = csp_defaults(
     OPENFREEMAP_ORIGIN,
     terrain_class_origin=TERRAIN_CLASS_TILE_ORIGIN,
+    analytics_origin=FIVEBAR_ORIGIN if FIVEBAR_DOMAIN else None,
 )
 
 
