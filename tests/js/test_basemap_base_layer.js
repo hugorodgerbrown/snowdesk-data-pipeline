@@ -524,3 +524,36 @@ describe('planEviction with a base layer present', () => {
     expect(plan.projectedBytes).toBe(60 * MB);
   });
 });
+
+describe('baseLayerReformattedEntries (SNOW-1188)', () => {
+  const PNG = 'https://tiles.snowdesk-data.info/natural_earth/ne2sr/6/33/22.png';
+  const WEBP = 'https://tiles.snowdesk-data.info/natural_earth/ne2sr/6/33/22.webp';
+  const PBF = 'https://tiles.snowdesk-data.info/planet/7/66/45.pbf';
+
+  it('names a stale tile whose other format the band wants', () => {
+    expect(core.baseLayerReformattedEntries([PNG], [WEBP, PBF])).toEqual([PNG]);
+  });
+
+  it('accepts the expected set as a Set too', () => {
+    expect(core.baseLayerReformattedEntries([PNG], new Set([WEBP]))).toEqual([PNG]);
+  });
+
+  it('leaves out a stale tile the band no longer wants in any format', () => {
+    const z9 = 'https://tiles.snowdesk-data.info/planet/9/266/181.pbf';
+    expect(core.baseLayerReformattedEntries([PNG, z9], [WEBP, PBF])).toEqual([PNG]);
+  });
+
+  it('does not pair the same tile on another host or path', () => {
+    const otherHost = 'https://tiles.openfreemap.org/natural_earth/ne2sr/6/33/22.png';
+    const otherPath = 'https://tiles.snowdesk-data.info/other/ne2sr/6/33/22.png';
+    expect(core.baseLayerReformattedEntries([otherHost, otherPath], [WEBP])).toEqual([]);
+  });
+
+  it('ignores documents and returns nothing for unusable input', () => {
+    const sprite = 'https://tiles.snowdesk-data.info/sprites/ofm@2x.png';
+    expect(core.baseLayerReformattedEntries([sprite], [WEBP])).toEqual([]);
+    expect(core.baseLayerReformattedEntries([], [WEBP])).toEqual([]);
+    expect(core.baseLayerReformattedEntries(null, [WEBP])).toEqual([]);
+    expect(core.baseLayerReformattedEntries([PNG], null)).toEqual([]);
+  });
+});

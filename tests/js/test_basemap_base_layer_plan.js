@@ -165,7 +165,11 @@ function installCachesStub() {
       return {
         keys: async () => [...buckets.get(name)].map((url) => ({ url })),
         put: async () => {},
-        match: async () => undefined,
+        // Every seeded entry reads as a 100 KB body, so a test can check
+        // what `_dropBaseLayerEntries` takes off the record (SNOW-1188).
+        match: async (url) =>
+          buckets.get(name).has(url) ? { blob: async () => ({ size: 100 * 1024 }) } : undefined,
+        delete: async (url) => buckets.get(name).delete(url),
       };
     }),
     delete: vi.fn(async (name) => buckets.delete(name)),
@@ -532,5 +536,62 @@ describe('re-banding still fires, and only on tiles (SNOW-929)', () => {
 
     expect(cachesStub.buckets.has(BASE_BUCKET)).toBe(true);
     expect(plan.urls).toEqual([]);
+  });
+});
+
+describe('a tile that only changed format is swapped, not the band (SNOW-1188)', () => {
+  // SNOW-1183 moved the relief raster from .png to .webp on the same host
+  // and path. A bucket pinned before then holds the old format, which
+  // re-banding rightly calls stale; evicting the bucket for it would
+  // download all 21 MB again to change a few hundred kilobytes.
+
+  /** The current plan's urls, with every tile in the format it used to have. */
+  async function bandInOldFormat() {
+    const all = await window.pwaBasemapDownloads.baseLayerPlan();
+    return all.urls.map((url) => (core.isTileEntryURL(url) ? url.replace(/\.pbf$/, '.png') : url));
+  }
+
+  it('keeps the bucket and replaces only the re-formatted tiles', async () => {
+    const old = await bandInOldFormat();
+    cachesStub.buckets.set(BASE_BUCKET, new Set(old));
+
+    const plan = await window.pwaBasemapDownloads.baseLayerPlan();
+
+    const bucket = cachesStub.buckets.get(BASE_BUCKET);
+    expect(bucket).toBeTruthy();
+    expect([...bucket].some((url) => url.endsWith('.png') && core.isTileEntryURL(url))).toBe(false);
+    // The documents stayed, so the plan asks for the new tiles alone.
+    expect(bucket.has(STYLE_URL)).toBe(true);
+    expect(plan.urls).toHaveLength(56);
+    expect(plan.urls.every((url) => url.endsWith('.pbf'))).toBe(true);
+  });
+
+  it("takes the deleted tiles' size off the record", async () => {
+    const old = await bandInOldFormat();
+    cachesStub.buckets.set(BASE_BUCKET, new Set(old));
+    window.pwaDb.rows.set('basemap.baseLayers', [
+      { basemapKey: 'openfreemap_liberty', bytes: 21 * MB },
+    ]);
+
+    await window.pwaBasemapDownloads.baseLayerPlan();
+
+    const record = window.pwaDb.rows
+      .get('basemap.baseLayers')
+      .find((entry) => entry.basemapKey === 'openfreemap_liberty');
+    expect(record.bytes).toBe(21 * MB - 56 * 100 * 1024);
+  });
+
+  it('still drops the bucket when an older band is in it as well', async () => {
+    // A format change does not excuse a superset: SNOW-863's migration
+    // still owns that case, whatever else the bucket holds.
+    const old = await bandInOldFormat();
+    cachesStub.buckets.set(
+      BASE_BUCKET,
+      new Set([...old, 'https://tiles.example.invalid/9/266/181.pbf']),
+    );
+
+    await window.pwaBasemapDownloads.baseLayerPlan();
+
+    expect(cachesStub.buckets.has(BASE_BUCKET)).toBe(false);
   });
 });

@@ -1298,8 +1298,19 @@ async function resolveBaseLayerPlan() {
   // OWN contents twice over — once to judge staleness, and once to decide
   // which documents are missing from it (see below). Two reads of the same
   // bucket is two chances for them to disagree.
-  const bucketEntries = await _baseLayerBucketURLs(areaId);
-  const stale = core.baseLayerStaleEntries(bucketEntries, all).length > 0;
+  let bucketEntries = await _baseLayerBucketURLs(areaId);
+  const staleEntries = core.baseLayerStaleEntries(bucketEntries, all);
+  // SNOW-1188: tiles that only changed format (the relief raster's .png
+  // to .webp, SNOW-1183) are replaced one by one rather than costing the
+  // whole bucket. Anything else stale still means an older band.
+  const reformatted = core.baseLayerReformattedEntries(staleEntries, all);
+  const reformatOnly = staleEntries.length > 0 && reformatted.length === staleEntries.length;
+  if (reformatOnly) {
+    await _dropBaseLayerEntries(areaId, basemapKey, reformatted);
+    const dropped = new Set(reformatted);
+    bucketEntries = bucketEntries.filter((url) => !dropped.has(url));
+  }
+  const stale = staleEntries.length > 0 && !reformatOnly;
   if (stale) {
     await evictBasemapAreas([areaId]);
     await _forgetBaseLayerRecord(basemapKey);
@@ -1363,6 +1374,7 @@ async function resolveBaseLayerPlan() {
     deps: deps.length,
     missing: urls.length,
     rebanded: stale,
+    reformatted: reformatOnly ? reformatted.length : 0,
   });
   return { areaId: areaId, basemapKey, bandKey, bbox, urls, deps };
 }
@@ -1405,6 +1417,58 @@ async function _baseLayerBucketURLs(areaId) {
     return requests.map((request) => request.url);
   } catch (_e) {
     return [];
+  }
+}
+
+/**
+ * Delete `urls` from `areaId`'s pinned bucket and take their size off the
+ * basemap's `basemap.baseLayers` record (SNOW-1188).
+ *
+ * The narrow alternative to evicting the bucket, for tiles that only
+ * changed format. Sizes are read from the cached bodies before each
+ * delete, so the record keeps matching what is on disk once the plan
+ * fetches the replacements and `recordBaseLayer` adds their bytes.
+ *
+ * Best-effort: an entry that cannot be read or deleted stays where it
+ * is. A leftover tile costs at most a few hundred kilobytes and the next
+ * plan finds it again.
+ *
+ * @param {string} areaId
+ * @param {string|null} basemapKey
+ * @param {string[]} urls
+ * @returns {Promise<void>}
+ */
+async function _dropBaseLayerEntries(areaId, basemapKey, urls) {
+  if (!('caches' in window) || !urls.length) return;
+  let freed = 0;
+  try {
+    const cache = await caches.open(self.pwaBasemapDownloadCore.pinnedCacheName(areaId));
+    for (const url of urls) {
+      try {
+        const response = await cache.match(url);
+        const size = response ? (await response.blob()).size : 0;
+        if (await cache.delete(url)) freed += size;
+      } catch (_e) {
+        // Best-effort — see docstring.
+      }
+    }
+  } catch (_e) {
+    return;
+  }
+  forgetPinnedBucketMeasurement(areaId);
+  if (!freed || !basemapKey || !window.pwaDb) return;
+  try {
+    const existing = await _readBaseLayers();
+    await window.pwaDb.put('meta:app', {
+      key: window.pwaBasemapAreas.BASE_LAYERS_KEY,
+      value: existing.map((entry) =>
+        entry && entry.basemapKey === basemapKey
+          ? { ...entry, bytes: Math.max(0, (Number(entry.bytes) || 0) - freed) }
+          : entry,
+      ),
+    });
+  } catch (_e) {
+    // Best-effort — see docstring.
   }
 }
 

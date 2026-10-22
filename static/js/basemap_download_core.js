@@ -233,6 +233,10 @@
  *     ``baseLayerStaleEntries`` for why folding the documents into the
  *     expected set would let a provider bin a 21 MB band by renaming a
  *     sprite path.
+ *   baseLayerReformattedEntries(staleEntries, expectedTiles)
+ *     SNOW-1188: the stale tiles that are only another format of a tile
+ *     the band still wants, so a format change replaces those tiles
+ *     instead of evicting the bucket.
  *   planEviction(areas, incoming, budgetBytes)
  *     Given the areas currently on disk and an incoming run, decides
  *     whether it fits the standing budget and, if not, which areas to
@@ -1345,6 +1349,55 @@
       stale.push(entry);
     }
     return stale;
+  }
+
+  /**
+   * The url with its tile extension dropped, so two formats of the same
+   * tile compare equal; ``null`` for anything that is not a tile.
+   *
+   * Origin and path only: the query string is dropped too, for the same
+   * reason ``isTileEntryURL`` ignores it.
+   *
+   * @param {string} url
+   * @returns {string | null}
+   */
+  function _tileIdentity(url) {
+    if (!isTileEntryURL(url)) return null;
+    const parsed = new URL(url, 'https://snowdesk.info');
+    return parsed.origin + parsed.pathname.replace(/\.[a-z]+$/i, '');
+  }
+
+  /**
+   * Which of ``staleEntries`` are only an earlier FORMAT of a tile the
+   * current band still asks for (SNOW-1188).
+   *
+   * SNOW-1183 moved the Natural Earth relief raster from ``.png`` to
+   * ``.webp`` on the same host and path. Every base-layer bucket pinned
+   * before then holds the ``.png`` urls, which ``baseLayerStaleEntries``
+   * rightly calls stale, and SNOW-863's answer to a stale bucket is to
+   * evict it whole: about 21 MB downloaded again on every device, to swap
+   * a few hundred kilobytes of relief. A tile that has only changed format
+   * is not evidence of an older band, so the caller replaces just these.
+   *
+   * @param {string[]} staleEntries What ``baseLayerStaleEntries`` returned.
+   * @param {Set<string> | string[]} expectedTiles The same expected set
+   *   that call was given.
+   * @returns {string[]} The entries whose same tile, in another format, is
+   *   in ``expectedTiles``, in the order given. The caller compares its
+   *   length with ``staleEntries`` to decide whether the bucket can be
+   *   kept.
+   */
+  function baseLayerReformattedEntries(staleEntries, expectedTiles) {
+    if (!Array.isArray(staleEntries) || staleEntries.length === 0) return [];
+    const wanted = new Set();
+    for (const url of expectedTiles || []) {
+      const identity = _tileIdentity(url);
+      if (identity) wanted.add(identity);
+    }
+    return staleEntries.filter((entry) => {
+      const identity = _tileIdentity(entry);
+      return identity !== null && wanted.has(identity);
+    });
   }
 
   /**
@@ -3095,6 +3148,7 @@
     baseLayerTileURLs: baseLayerTileURLs,
     isTileEntryURL: isTileEntryURL,
     baseLayerStaleEntries: baseLayerStaleEntries,
+    baseLayerReformattedEntries: baseLayerReformattedEntries,
     pinnedCacheName: pinnedCacheName,
     planEviction: planEviction,
     MICRO_BAND: MICRO_BAND,
