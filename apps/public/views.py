@@ -2525,8 +2525,10 @@ def serve_sitemap(request: HttpRequest, name: str) -> HttpResponse:
     Console to report it as not fetched. ``render_sitemap`` builds a file
     once per its ``cache_seconds`` and a hit is a single cache read.
 
-    The response carries ``Cache-Control: public`` for the same lifetime so
-    the edge can hold it too — possible only because the body is rendered
+    The response carries ``Cache-Control: public`` for what remains of that
+    lifetime — the body's age is cached with it — so the edge can hold it
+    too without stacking a second full lifetime on the first. Possible only
+    because the body is rendered
     without the request (see ``render_sitemap``) and the paths are exempt
     from PostHog, the two things that read ``request.user`` and so added
     ``Vary: Cookie``.
@@ -2546,11 +2548,16 @@ def serve_sitemap(request: HttpRequest, name: str) -> HttpResponse:
     if sitemap_file is None:
         raise Http404("No such sitemap.")
     cache_key = sitemap_cache_key(name)
-    body: bytes | None = cache.get(cache_key)
-    if body is None:
-        body = render_sitemap(name)
-        cache.set(cache_key, body, sitemap_file.cache_seconds)
-    return _sitemap_response(body, sitemap_file.cache_seconds)
+    now = timezone.now().timestamp()
+    cached: tuple[float, bytes] | None = cache.get(cache_key)
+    if cached is None:
+        cached = (now, render_sitemap(name))
+        cache.set(cache_key, cached, sitemap_file.cache_seconds)
+    rendered_at, body = cached
+    # The edge may hold the body only for what is left of the server entry's
+    # lifetime, or the two caches stack and a change takes twice as long.
+    max_age = max(0, sitemap_file.cache_seconds - int(now - rendered_at))
+    return _sitemap_response(body, max_age)
 
 
 def _sitemap_response(body: bytes, max_age: int) -> HttpResponse:

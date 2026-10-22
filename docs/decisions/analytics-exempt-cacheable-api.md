@@ -2,7 +2,7 @@
 name: analytics-exempt-cacheable-api
 description: Cacheable public endpoints are exempt from PosthogContextMiddleware to prevent Vary: Cookie from defeating CDN caching
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-22
 ---
 
 # Cacheable public endpoints exempt from PosthogContextMiddleware
@@ -21,15 +21,15 @@ The set covers two categories:
   SNOW-338. All set `Cache-Control: public` and read no per-user state, so
   the exemption fully removes `Vary: Cookie` from their responses.
 
-**`/sitemap.xml` is deliberately excluded.** During SNOW-338 it was verified
-empirically that `/sitemap.xml` (a) sets **no** `Cache-Control` header at all —
-so it is not a shared-cacheable surface — and (b) carries `Vary: Cookie` from
-the sitemap-view middleware path **regardless of PostHog**: the header persists
-with `POSTHOG_API_KEY` unset, and the sitemap view itself does not access the
-session. Exempting it from `PosthogContextMiddleware` would therefore be dead
-config — it would neither strip `Vary: Cookie` nor make the response cacheable.
-Making the sitemap a genuine public-cacheable surface (set `Cache-Control:
-public` and eliminate the non-PostHog `Vary: Cookie` source) is tracked in
+**The sitemaps are exempt since SNOW-1178** (`/sitemap.xml`, the index, and
+`/sitemap-main.xml`, `/sitemap-regions.xml`, `/sitemap-resorts.xml`). SNOW-338
+excluded `/sitemap.xml` because Django's sitemap view set no `Cache-Control`
+and carried `Vary: Cookie` even with PostHog off — the template context
+processors (`pwa_user_identity`, `messages`) read `request.user` while
+rendering. SNOW-1178 replaced that view with `serve_sitemap_index` /
+`serve_sitemap`, which render without the request and send `Cache-Control:
+public`, so PostHog's `request.user` read was the last `Vary: Cookie` source
+and the exemption now does what it does for the files above. This closes
 SNOW-340.
 
 **Why.** `PosthogContextMiddleware` reads `request.user` for identity tagging
@@ -66,4 +66,5 @@ in `config/urls.py`. The behaviour is regression-tested with
 `@override_settings(POSTHOG_API_KEY="phc_test")` in
 `tests/public/test_map_api.py` (API endpoints) and in the per-surface test
 files for each static route (SNOW-338). `tests/public/test_sitemap.py`
-additionally guards the deliberate *non*-exemption of `/sitemap.xml`.
+checks that every sitemap path is exempt and served without `Vary: Cookie`
+(SNOW-1178).

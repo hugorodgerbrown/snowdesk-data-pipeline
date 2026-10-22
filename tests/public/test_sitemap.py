@@ -34,6 +34,7 @@ from django.test import Client, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from freezegun import freeze_time
 
 from apps.public.sitemaps import (
     SITEMAP_FILES,
@@ -354,6 +355,16 @@ class TestSitemapCache:
         assert path not in _sitemap(client)
         cache.clear()
         assert path in _sitemap(client)
+
+    def test_the_edge_gets_only_the_remaining_lifetime(self, client: Client) -> None:
+        """A body cached 50 minutes ago is offered to the edge for 10 more."""
+        url = _file_url("regions")
+        with freeze_time("2026-10-22 08:00:00"):
+            client.get(url)
+        with freeze_time("2026-10-22 08:50:00"):
+            response = client.get(url)
+
+        assert response["Cache-Control"] == "public, max-age=600"
 
     def test_the_cache_is_keyed_on_the_origin(self, client: Client) -> None:
         """A body rendered for one SITE_BASE_URL is never served for another."""
