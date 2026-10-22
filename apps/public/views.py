@@ -4037,6 +4037,7 @@ def _track_bulletin_viewed(
             "days_since_publish": days_since_publish,
             "view_context": view_context,
         },
+        page=analytics.page_of(request),
     )
 
 
@@ -5652,7 +5653,9 @@ def _record_share_click(request: HttpRequest, share: BulletinShare) -> None:
     share_props: dict[str, object] = {"region_id": share.region.region_id}
     if req_log.country_code:
         share_props["country_code"] = req_log.country_code
-    analytics.track("share_link_clicked", distinct_id, share_props)
+    analytics.track(
+        "share_link_clicked", distinct_id, share_props, page=analytics.page_of(request)
+    )
 
 
 # Ceiling on share-link follows per (token, IP) per hour (SNOW-551).

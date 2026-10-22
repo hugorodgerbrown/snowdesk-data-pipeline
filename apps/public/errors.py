@@ -44,6 +44,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 
+from django.conf import settings
 from django.http import (
     HttpRequest,
     HttpResponse,
@@ -210,6 +211,11 @@ def _standalone_response(request: HttpRequest, page: ErrorPage) -> HttpResponse:
                 "page": page,
                 "LANGUAGE_CODE": get_language() or "en",
                 "request": request,
+                # SNOW-1180: a plain settings string, read here rather than
+                # by a context processor, which this shell must not run.
+                "FIVEBAR_DOMAIN": (
+                    getattr(settings, "FIVEBAR_DOMAIN", "") or ""
+                ).strip(),
             },
         )
     except Exception:
@@ -263,7 +269,13 @@ def _negotiate(request: HttpRequest, kind: str) -> HttpResponse:
     if not page.full_site:
         return _standalone_response(request, page)
     try:
-        return render(request, SITE_TEMPLATE, {"page": page}, status=page.status)
+        # SNOW-1180: fivebar_status becomes the fivebar tag's data-status.
+        return render(
+            request,
+            SITE_TEMPLATE,
+            {"page": page, "fivebar_status": page.status},
+            status=page.status,
+        )
     except Exception:
         logger.exception("Error page for %s failed; using standalone", kind)
         return _standalone_response(request, page)

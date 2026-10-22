@@ -318,6 +318,10 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     # --- Third-party services ---------------------------------------------
     SettingSpec("POSTHOG_HOST", validator=absolute_url, note="PostHog ingest host"),
     SettingSpec("POSTHOG_API_KEY", secret=True, note="PostHog project key"),
+    # SNOW-1180: fivebar. The domain is a bare host (``snowdesk.info``),
+    # not a URL, so ``absolute_url`` would reject a correct value.
+    SettingSpec("FIVEBAR_DOMAIN", note="fivebar site domain (renders the tag)"),
+    SettingSpec("FIVEBAR_TOKEN", secret=True, note="fivebar send-only events token"),
     SettingSpec(
         "OPENFREEMAP_STYLE_URL", validator=absolute_url, note="Basemap style JSON"
     ),

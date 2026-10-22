@@ -348,7 +348,12 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
     sign_in_props: dict[str, object] = {}
     if req_log.country_code:
         sign_in_props["country_code"] = req_log.country_code
-    analytics.track("sign_in_requested", str(account.uuid), sign_in_props)
+    analytics.track(
+        "sign_in_requested",
+        str(account.uuid),
+        sign_in_props,
+        page=analytics.page_of(request),
+    )
 
     return render(request, "accounts/manage_sent.html", {})
 
@@ -1074,6 +1079,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
             "subscription_confirmed",
             distinct_id,
             {"hours_since_started": hours_since},
+            page=analytics.page_of(request),
         )
         anon_id: str | None = request.session.get("analytics_anon_id")
         if anon_id:
@@ -1241,6 +1247,7 @@ def delete_account(request: HttpRequest) -> HttpResponse:
         "unsubscribed",
         distinct_id,
         {"reason": "account_deleted", "account_age_days": account_age_days},
+        page=analytics.page_of(request),
     )
 
     response = HttpResponse(status=200)

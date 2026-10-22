@@ -366,6 +366,12 @@ Reviewing this page: the browser-facing third parties are enumerated by
             </h2>
             <ul class="list-disc pl-5 space-y-1">
                 <li>
+                    {% blocktrans trimmed %}
+                        <a class="underline" href="https://fiveb.ar/" target="_blank" rel="noopener">fivebar</a>
+                        — cookieless page analytics
+                    {% endblocktrans %}
+                </li>
+                <li>
                     {% url 'public:privacy' as privacy_url %}
                     {% blocktrans trimmed %}
                         <a class="underline" href="https://posthog.com/" target="_blank" rel="noopener">PostHog</a>

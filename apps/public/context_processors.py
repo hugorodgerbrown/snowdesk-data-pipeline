@@ -125,6 +125,24 @@ def pwa_telemetry(request: HttpRequest) -> dict[str, Any]:
     }
 
 
+def fivebar(request: HttpRequest) -> dict[str, Any]:
+    """
+    Inject the fivebar site domain into every template context (SNOW-1180).
+
+    Exposes ``FIVEBAR_DOMAIN`` (from ``settings``, default empty) so
+    ``base.html`` renders the fivebar tag only where it is configured. An
+    empty value — dev, test, any unconfigured deploy — renders no tag.
+
+    Args:
+        request: The incoming HTTP request (unused — value comes from settings).
+
+    Returns:
+        ``{"FIVEBAR_DOMAIN": str}``.
+
+    """
+    return {"FIVEBAR_DOMAIN": (getattr(settings, "FIVEBAR_DOMAIN", "") or "").strip()}
+
+
 def pwa_dev_shell_bypass(request: HttpRequest) -> dict[str, Any]:
     """
     Inject the dev-only shell-cache bypass flag into every template context (SNOW-585).
