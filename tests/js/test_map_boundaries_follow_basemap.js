@@ -407,6 +407,11 @@ describe('a country is loaded at most once at a time', () => {
 
 describe('regions no provider has ever rated (SNOW-1185)', () => {
   const MICRO_LAYERS = ['regions-fill', 'regions-line', 'regions-label'];
+
+  /** The selection ring carries the term alone — it has no country filter. */
+  const ringDropsUnsupported = (mapStub) => JSON.stringify(
+    mapStub.getFilter('regions-line-selected'),
+  ) === JSON.stringify(SUPPORTED_ONLY);
   const SUPPORTED_ONLY = ['!=', ['get', 'covered'], false];
 
   /** Whether a layer's composed filter carries the covered-only term. */
@@ -422,6 +427,8 @@ describe('regions no provider has ever rated (SNOW-1185)', () => {
     for (const layerId of MICRO_LAYERS) {
       expect(dropsUnsupported(mapStub, layerId)).toBe(true);
     }
+    // Nor does a region selected by search or hash keep its ring.
+    expect(ringDropsUnsupported(mapStub)).toBe(true);
     // The coarser tiers are unions of micro regions, so they are left alone.
     expect(dropsUnsupported(mapStub, 'sub-regions-line')).toBe(false);
     // And the country filter is still the last term, where it always was.
@@ -438,11 +445,13 @@ describe('regions no provider has ever rated (SNOW-1185)', () => {
     }
     expect(localStorage.getItem('snowdesk.map.overlay.unsupported')).toBe('true');
     expect(window.pwaUnsupportedRegions.isEnabled()).toBe(true);
+    expect(mapStub.getFilter('regions-line-selected')).toBe(null);
 
     window.pwaUnsupportedRegions.hide();
     for (const layerId of MICRO_LAYERS) {
       expect(dropsUnsupported(mapStub, layerId)).toBe(true);
     }
+    expect(ringDropsUnsupported(mapStub)).toBe(true);
     expect(localStorage.getItem('snowdesk.map.overlay.unsupported')).toBe('false');
   });
 

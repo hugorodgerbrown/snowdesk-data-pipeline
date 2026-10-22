@@ -4909,6 +4909,18 @@
     // and feature-state, which cannot appear in filter expressions (MapLibre v4).
     // Country filtering is implicit: only features visible through regions-fill
     // (which does carry the provider filter) can be clicked and selected.
+    //
+    // SNOW-1185: it does take the covered-only term, though. A region can be
+    // selected without a click — from search, a ``#REGION-ID`` hash, or
+    // before "Show unsupported regions" is switched back off — and an
+    // unfiltered ring would then outline a region the map is hiding.
+    // ``covered`` is a static property, so this is an ordinary filter.
+    if (map.getLayer('regions-line-selected')) {
+      map.setFilter(
+        'regions-line-selected',
+        overlayState.unsupported ? null : SUPPORTED_ONLY_FILTER,
+      );
+    }
 
     // SNOW-323: bulletin-groupings-line carries a ``countries`` JSON *array*
     // rather than a scalar ``country`` string, so the scalar 'match' filter
