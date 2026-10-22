@@ -147,7 +147,8 @@
    * reader per source is kept, and it is called at `release`, so the flush
    * applies the cache as it stands then, not as it stood at the first push.
    * Not held, `push` applies at once, which keeps a user's country toggle
-   * exactly as immediate as it was.
+   * exactly as immediate as it was. `release` applies every held source
+   * even when one throws, then rethrows the first error.
    *
    * @param {function(string, *): void} apply Writes data into one source,
    *   by id. map.js passes `getSource(id)?.setData(data)`.
@@ -173,7 +174,18 @@
         held = false;
         var pending = Array.from(dirty);
         dirty.clear();
-        pending.forEach(function (entry) { apply(entry[0], entry[1]()); });
+        // One source failing must not leave the others stale: the queue is
+        // already cleared, so an entry skipped here is never retried. Apply
+        // every entry, then rethrow the first failure for the caller to log.
+        var failure = null;
+        pending.forEach(function (entry) {
+          try {
+            apply(entry[0], entry[1]());
+          } catch (err) {
+            if (!failure) failure = err;
+          }
+        });
+        if (failure) throw failure;
       },
       isHeld: function () { return held; },
     };

@@ -194,6 +194,22 @@ describe('createSourceBatch', () => {
     expect(calls).toEqual([['regions', 'late']]);
   });
 
+  it('applies every held source even when one of them throws', () => {
+    // The queue is cleared before the flush, so a source skipped after a
+    // throw would stay stale for the rest of the session.
+    const calls = [];
+    const batch = core.createSourceBatch((id, data) => {
+      if (id === 'regions') throw new Error('bad geometry');
+      calls.push([id, data]);
+    });
+    batch.hold();
+    batch.push('regions', () => 'l4');
+    batch.push('major-regions', () => 'l1');
+    batch.push('sub-regions', () => 'l2');
+    expect(() => batch.release()).toThrow('bad geometry');
+    expect(calls).toEqual([['major-regions', 'l1'], ['sub-regions', 'l2']]);
+  });
+
   it('releases nothing when nothing was pushed', () => {
     const { calls, apply } = recorder();
     const batch = core.createSourceBatch(apply);
