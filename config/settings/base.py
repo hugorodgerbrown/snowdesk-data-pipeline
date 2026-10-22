@@ -530,10 +530,13 @@ _POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
         # Favicon has two routes: bare path and trailing-slash variant.
         "/favicon.ico",
         "/favicon.ico/",
-        # SNOW-1178: the sitemap is cached and served ``Cache-Control:
-        # public``; reading ``request.user`` here would add ``Vary: Cookie``
-        # and defeat the edge cache, as for the files above.
+        # SNOW-1178: the sitemaps are served ``Cache-Control: public``;
+        # reading ``request.user`` here would add ``Vary: Cookie`` and
+        # defeat the edge cache, as for the files above.
         "/sitemap.xml",
+        "/sitemap-main.xml",
+        "/sitemap-regions.xml",
+        "/sitemap-resorts.xml",
     }
 )
 

@@ -57,6 +57,7 @@ from apps.public.views import (
     serve_manifest,
     serve_robots,
     serve_sitemap,
+    serve_sitemap_index,
     serve_sw,
     serve_sw_kill,
 )
@@ -153,13 +154,12 @@ if settings.DEBUG:
         ]
     )
 
-urlpatterns.append(
-    path(
-        "sitemap.xml",
-        serve_sitemap,
-        name="sitemap",
-    )
-)
+# SNOW-1178: an index and one file per content type, each cached for its
+# own lifetime (``apps.public.sitemaps.SITEMAP_FILES``).
+urlpatterns += [
+    path("sitemap.xml", serve_sitemap_index, name="sitemap"),
+    path("sitemap-<slug:name>.xml", serve_sitemap, name="sitemap_file"),
+]
 # observations/ partials must be registered BEFORE ``apps.public.urls`` because
 # the generic ``<region_id:region_id>/`` catch-all in apps.public.urls would otherwise
 # swallow ``partials/report/…`` and resolve "partials" as a region_id.

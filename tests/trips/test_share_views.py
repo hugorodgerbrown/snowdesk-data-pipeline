@@ -45,6 +45,7 @@ from pytest_django.fixtures import Settings
 from waffle.testutils import override_flag
 
 from apps.locations.models import Location
+from apps.public.sitemaps import SITEMAP_FILES
 from apps.trips.models import Trip
 from apps.trips.services.shares import mint_trip_share, revoke_trip_share
 from tests.factories import LocationFactory, TripFactory, UserFactory
@@ -357,11 +358,14 @@ def test_the_sitemap_lists_no_trip_url(client: Client) -> None:
     """Per-user and token-bearing pages stay out of the sitemap.
 
     Asserted rather than assumed because the exclusion is by omission —
-    ``SITEMAPS`` lists sections rather than excluding routes — so nothing
+    ``SITEMAP_FILES`` lists sections rather than excluding routes — so nothing
     else would notice a trips section being added.
     """
     TripFactory.create()
-    body = client.get(reverse("sitemap")).content.decode()
+    body = "".join(
+        client.get(reverse("sitemap_file", kwargs={"name": name})).content.decode()
+        for name in SITEMAP_FILES
+    )
     assert "/trips/" not in body
 
 
