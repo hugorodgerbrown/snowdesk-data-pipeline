@@ -4703,6 +4703,11 @@
             BULLETIN_TERRAIN_CORE.maskClassifier(state.classify, mask),
             BULLETIN_TERRAIN_CORE.PALETTE, tile,
           );
+        } else if (bulletinTerrain === state && map.getSource('regions')) {
+          // A failed tile (offline and uncached, an outage) paints nothing,
+          // so give the region its danger fill back rather than leave it
+          // blank. The next sync hides it again and the tiles retry.
+          map.setFeatureState({ source: 'regions', id: state.featureId }, { terrain: false });
         }
       }
     }

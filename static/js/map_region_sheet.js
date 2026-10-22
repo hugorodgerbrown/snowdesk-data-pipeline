@@ -424,6 +424,9 @@
       paintBody(kept);
       return Promise.resolve();
     }
+    // The map must not go on painting the last region's or day's rules
+    // under a sheet that now names another while this body loads.
+    if (window.pwaBulletinTerrain) window.pwaBulletinTerrain.clearRegion();
     const peeked = paintPeek();
     if (!peeked) paintLine(STRINGS.loading);
     return fetch(url, { headers: { 'HX-Request': 'true' } })
@@ -438,9 +441,6 @@
       })
       .catch(() => {
         if (mine !== seq || !controller.isOpen()) return;
-        // The map must not go on painting the last region's rules under a
-        // sheet that now names another one.
-        if (window.pwaBulletinTerrain) window.pwaBulletinTerrain.clearRegion();
         // The peek the page painted is still true: keep it, and say below
         // it that the rest could not be fetched.
         if (!peeked) {
