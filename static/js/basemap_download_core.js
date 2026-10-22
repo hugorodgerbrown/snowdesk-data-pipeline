@@ -1259,9 +1259,11 @@
   //   /planet, /basemapvectorneu/root.json  TileJSON
   //
   // ``.jpg``/``.jpeg`` are here for completeness rather than for a basemap
-  // this project ships: every current style serves ``.pbf`` vector tiles,
-  // and OpenFreeMap's natural-earth source serves ``.png`` rasters.
-  const TILE_ENTRY_PATH = /\/\d+\/\d+\/\d+\.(?:pbf|mvt|png|jpg|jpeg)$/i;
+  // this project ships: every current style serves ``.pbf``/``.mvt`` vector
+  // tiles, and the natural-earth relief raster is ``.webp`` on our own
+  // origin (snowdesk-tiles transcodes it) and ``.png`` on OpenFreeMap's —
+  // and in any bucket pinned before the switch.
+  const TILE_ENTRY_PATH = /\/\d+\/\d+\/\d+\.(?:pbf|mvt|png|webp|jpg|jpeg)$/i;
 
   /**
    * Whether ``url`` names a TILE rather than one of the documents that

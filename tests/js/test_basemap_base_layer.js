@@ -316,6 +316,10 @@ describe('isTileEntryURL', () => {
     ).toBe(true);
     expect(core.isTileEntryURL('https://example.invalid/9/266/180.jpg')).toBe(true);
     expect(core.isTileEntryURL('https://example.invalid/9/266/180.jpeg')).toBe(true);
+    // The self-hosted relief raster, transcoded to WebP by snowdesk-tiles.
+    expect(
+      core.isTileEntryURL('https://tiles.snowdesk-data.info/natural_earth/ne2sr/6/33/22.webp'),
+    ).toBe(true);
   });
 
   it('ignores a query string and a fragment', () => {
