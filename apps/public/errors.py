@@ -44,7 +44,6 @@ from __future__ import annotations
 import dataclasses
 import logging
 
-from django.conf import settings
 from django.http import (
     HttpRequest,
     HttpResponse,
@@ -205,17 +204,18 @@ def _standalone_response(request: HttpRequest, page: ErrorPage) -> HttpResponse:
 
     """
     try:
+        # SNOW-1180: the fivebar domain and token-free path, from the
+        # context processor's function called directly — this shell must
+        # not run the context processors themselves.
+        from apps.public.context_processors import fivebar
+
         html: str = render_to_string(
             STANDALONE_TEMPLATE,
             {
                 "page": page,
                 "LANGUAGE_CODE": get_language() or "en",
                 "request": request,
-                # SNOW-1180: a plain settings string, read here rather than
-                # by a context processor, which this shell must not run.
-                "FIVEBAR_DOMAIN": (
-                    getattr(settings, "FIVEBAR_DOMAIN", "") or ""
-                ).strip(),
+                **fivebar(request),
             },
         )
     except Exception:

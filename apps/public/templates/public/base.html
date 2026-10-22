@@ -136,7 +136,7 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# SNOW-1180: fivebar page analytics — cookieless, so no consent    #}
         {# banner. fivebar_status is set only by errors/page.html's view,   #}
         {# so an error page reports its status from Safari too.             #}
-        {% include "includes/_fivebar_tag.html" with domain=FIVEBAR_DOMAIN status=fivebar_status %}
+        {% include "includes/_fivebar_tag.html" with domain=FIVEBAR_DOMAIN status=fivebar_status path=FIVEBAR_PATH %}
         {% if SW_DEV_SHELL_BYPASS %}
             {# SNOW-585: only rendered when settings.SW_DEV_SHELL_BYPASS is on   #}
             {# (development default; always off in production — see            #}

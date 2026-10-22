@@ -13,6 +13,10 @@ Parameters:
              pages pass it as ``data-status`` and fivebar counts the page on
              its Errors page rather than among the top pages
              (https://fiveb.ar/docs/error-pages). Ordinary pages omit it.
+    path   : optional FIVEBAR_PATH — the page's path with its token replaced
+             (``/account/access/:token/``), sent as ``data-path`` so the
+             token never reaches fivebar
+             (https://fiveb.ar/docs/script-attributes#data-path).
 {% endcomment %}
 {% if domain %}
     <script
@@ -20,6 +24,7 @@ Parameters:
         nonce="{{ request.csp_nonce }}"
         data-domain="{{ domain }}"
         {% if status %}data-status="{{ status }}"{% endif %}
+        {% if path %}data-path="{{ path }}"{% endif %}
         src="https://fiveb.ar/js/tally.js"
     ></script>
 {% endif %}
