@@ -52,8 +52,8 @@ guard makes it as complete as a hook.
   release number identifies the build; GitHub maps the SHA to a tag.
 - The register is readable in the admin and over MCP, so it must never
   hold a credential: arguments named like a secret are redacted, and a
-  command whose OUTPUT is a credential (`mint_mcp_token`,
-  `mint_vapid_keypair`, `dev_magic_link`) sets `capture_output = False`.
+  command whose OUTPUT is a credential (`mint_vapid_keypair`,
+  `dev_magic_link`) sets `capture_output = False`.
   The admin allows no add, edit or delete.
 - Who ran it relies on `SNOWDESK_OPERATOR`, because a Render shell runs
   every operator as one OS user.

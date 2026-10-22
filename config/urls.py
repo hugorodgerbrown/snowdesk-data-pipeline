@@ -46,10 +46,7 @@ from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
 from apps.core.views import healthz, livez
-from apps.oauth.views import (
-    authorization_server_metadata,
-    protected_resource_metadata,
-)
+from apps.oauth.views import ProtectedResourceMetadataView, authorize as oauth_authorize
 from apps.public.views import (
     serve_favicon,
     serve_llms_full_txt,
@@ -112,26 +109,21 @@ urlpatterns = [
     path("llms-full.txt", serve_llms_full_txt, name="llms_full_txt"),
     path("favicon.ico", serve_favicon, name="favicon_ico"),
     path("favicon.ico/", serve_favicon, name="favicon_ico_slash"),
-    # SNOW-1035: OAuth 2.1 for the MCP endpoint. The discovery documents sit
-    # at the root, where RFC 8414 / RFC 9728 put them; the protected-resource
-    # document also answers with a path suffix, because Claude asks for
-    # ``/.well-known/oauth-protected-resource/api/mcp/`` and requires the
-    # ``resource`` in it to match the URL the user typed.
+    # SNOW-1193: OAuth 2.1 for the MCP endpoints is mcp-auth on
+    # django-oauth-toolkit — the discovery documents at /.well-known/ and
+    # authorize/token/register/revoke under /oauth/. Snowdesk's consent gate
+    # (verify your email first) is registered at mcp-auth's authorize path
+    # FIRST, so it answers that path and hands on to mcp-auth's own view.
+    # The path form of the protected-resource document is Snowdesk's too,
+    # for the same reason, so ``resource`` keeps /api/mcp/'s trailing slash
+    # (Claude requires it to equal the URL the user typed).
+    path("oauth/authorize/", oauth_authorize, name="oauth_authorize"),
     path(
-        ".well-known/oauth-protected-resource",
-        protected_resource_metadata,
-        name="oauth_protected_resource",
+        ".well-known/oauth-protected-resource/<path:resource_path>",
+        ProtectedResourceMetadataView.as_view(),
+        name="oauth_protected_resource_path",
     ),
-    path(
-        ".well-known/oauth-protected-resource/<path:suffix>",
-        protected_resource_metadata,
-        name="oauth_protected_resource_suffix",
-    ),
-    path(
-        ".well-known/oauth-authorization-server",
-        authorization_server_metadata,
-        name="oauth_authorization_server",
-    ),
+    path("", include("mcp_auth.urls")),
     path("oauth/", include("apps.oauth.urls")),
 ]
 

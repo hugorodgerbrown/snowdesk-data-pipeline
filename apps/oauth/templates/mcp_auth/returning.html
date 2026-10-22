@@ -1,16 +1,18 @@
 {% extends "includes/_status_page.html" %}
 {% comment %}
-apps/oauth/templates/oauth/returning.html — hand-off back to the app (SNOW-1035).
+apps/oauth/templates/mcp_auth/returning.html — hand-off back to the app (SNOW-1035, SNOW-1193).
 
-Rendered by the consent POST in place of a 302. The site CSP's
-``form-action 'self'`` covers the redirects that follow a form submission,
-so a 302 from the POST to the app's redirect URI would be blocked once the
-CSP is enforced; a meta refresh is an ordinary navigation and is not. The
-link is the fallback for a browser that ignores the refresh.
+Rendered by mcp-auth's consent POST in place of a 302
+(``MCP_AUTH["CONSENT_RETURN"] = "page"``). The site CSP's ``form-action
+'self'`` covers the redirects that follow a form submission, so a 302 from
+the POST to the app's callback would be blocked; a meta refresh is an
+ordinary navigation and is not. The link is the fallback for a browser that
+ignores the refresh. mcp-auth sets ``no-store`` and ``no-referrer`` on the
+response; the referrer meta repeats the second for the refresh itself.
 
-``target`` is the app's registered redirect URI (https, or http on a
-loopback host — apps.oauth.services.redirects) plus ``code``/``error`` and
-``state``. It is autoescaped in both attributes.
+``target`` is the app's registered callback plus ``code``/``error`` and
+``state``, checked by mcp-auth against the allowlisted patterns. It is
+autoescaped in both attributes.
 {% endcomment %}
 {% load i18n %}
 
@@ -27,7 +29,7 @@ loopback host — apps.oauth.services.redirects) plus ``code``/``error`` and
 {% endblock %}
 
 {% block status_heading %}
-    {% blocktrans trimmed with host=host %}
+    {% blocktrans trimmed with host=redirect_host %}
         Returning to {{ host }}
     {% endblocktrans %}
 {% endblock %}

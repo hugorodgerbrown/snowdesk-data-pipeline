@@ -112,16 +112,19 @@ apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
                  not contradict the no-signals-for-side-effects rule below
   mcp_server/    JSON-RPC MCP tools at POST /api/mcp/ (docs/mcp-server.md);
                  no models of its own — it reads the bulletins/regions tables.
-                 Every call needs a bearer token from oauth/ (SNOW-1035).
-                 ops_tools.py is the staff ops catalogue (SNOW-1191)
-  oauth/         Snowdesk's own OAuth 2.1 authorization server for the MCP
-                 endpoint (SNOW-1035, docs/oauth.md) — ``OAuthClient``,
-                 ``OAuthGrant`` (a "connected app", listed and disconnected
-                 on /account/settings/), ``AuthorizationCode``,
-                 ``OAuthToken``; the /.well-known/ discovery documents, the
-                 consent page at /oauth/authorize/, token/register/revoke.
-                 Hand-written, no OAuth library — read
-                 docs/decisions/snowdesk-is-its-own-oauth-server.md first
+                 Every call needs an mcp-auth bearer token (SNOW-1193).
+                 ops_tools.py is the staff ops catalogue, served at the
+                 sibling POST /api/ops/mcp/ (SNOW-1191) — never nest it
+                 under /api/mcp/: token audience is a URL prefix
+  oauth/         Snowdesk's side of the MCP OAuth server (docs/oauth.md).
+                 The server is mcp-auth on django-oauth-toolkit (SNOW-1193),
+                 mounted from config/urls.py; this app holds the connect
+                 rule (policy.verified_account), the verify-first gate in
+                 front of /oauth/authorize/, the consent and returning
+                 templates, the settings-page disconnect and the token
+                 purge. No models — read
+                 docs/decisions/mcp-auth-replaces-the-hand-written-oauth-server.md
+                 before changing the flow
   public/        Public-facing bulletin site (route map: docs/site-structure.md)
     api.py       Plain JsonResponse endpoints — the map's feeds, plus
                  share-create, /api/version + sw-config, the bulletin
@@ -766,8 +769,9 @@ Read these when working in the relevant area:
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |
 | Telemetry pipeline (/api/telemetry receiver, event allowlist, pwa.* signals) | [`docs/telemetry-pipeline.md`](docs/telemetry-pipeline.md) |
 | MCP server (POST /api/mcp/ JSON-RPC tools, season cost caps, fuzzy region search; the staff ops catalogue ops_tools — CommandRun register, build_info, ingest and estate health) | [`docs/mcp-server.md`](docs/mcp-server.md) |
-| OAuth for the MCP server (/.well-known/oauth-protected-resource, /oauth/authorize, token, register, revoke; OAuthGrant = connected app; CIMD SSRF guard; mint_mcp_token; Claude connector requirements) | [`docs/oauth.md`](docs/oauth.md) |
-| Why Snowdesk is its own hand-written OAuth server (no library, no anonymous MCP tier, public clients + PKCE) | [`docs/decisions/snowdesk-is-its-own-oauth-server.md`](docs/decisions/snowdesk-is-its-own-oauth-server.md) |
+| OAuth for the MCP endpoints (mcp-auth on django-oauth-toolkit; /.well-known/oauth-protected-resource, /oauth/authorize, token, register, revoke; verified_account; the verify-first gate; connected apps + oauth:disconnect; CONSENT_RETURN page; MCPAuthContract; mint_mcp_token) | [`docs/oauth.md`](docs/oauth.md) |
+| Why mcp-auth replaced the hand-written OAuth server (SNOW-1193; shared contract test, sibling /api/ops/mcp/, the CSP and the meta-refresh return) | [`docs/decisions/mcp-auth-replaces-the-hand-written-oauth-server.md`](docs/decisions/mcp-auth-replaces-the-hand-written-oauth-server.md) |
+| HISTORICAL — why Snowdesk was its own hand-written OAuth server (SNOW-1035; superseded by SNOW-1193) | [`docs/decisions/snowdesk-is-its-own-oauth-server.md`](docs/decisions/snowdesk-is-its-own-oauth-server.md) |
 | IndexedDB scaffolding (window.pwaDb, queue:events, meta:app, Reset Required) | [`docs/indexeddb-scaffolding.md`](docs/indexeddb-scaffolding.md) |
 | Mutation queue (window.pwaMutationQueue, Idempotency-Key, backoff, Background Sync, sync badge, failure toast) | [`docs/mutation-queue.md`](docs/mutation-queue.md) |
 | Rebuild the Météo-France archive NDJSON from the local BRA PDFs | [`docs/runbooks/rebuild-meteofrance-archive.md`](docs/runbooks/rebuild-meteofrance-archive.md) |

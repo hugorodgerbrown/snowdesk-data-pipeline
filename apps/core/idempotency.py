@@ -87,11 +87,12 @@ IDEMPOTENCY_RECORD_TTL_SECONDS: int = 24 * 60 * 60
 # Paths the middleware never deduplicates (SNOW-1169). Each is a
 # client-only machine protocol, not a PWA mutation:
 #
-# * ``/api/mcp/`` and its slash-less alias ``/api/mcp`` authenticate a
-#   bearer token inside the view, after this middleware has run. The
-#   replay fingerprint's principal is therefore always ``""``, so a
-#   cached response would be served to a request with no token, a
-#   garbage one or a revoked one, and would skip the per-user rate limit.
+# * ``/api/mcp/`` and ``/api/ops/mcp/``, with their slash-less aliases,
+#   authenticate a bearer token inside the view, after this middleware
+#   has run. The replay fingerprint's principal is therefore always
+#   ``""``, so a cached response would be served to a request with no
+#   token, a garbage one or a revoked one, and would skip the per-user
+#   rate limit (and, on the ops endpoint, the staff check).
 # * ``/oauth/token/``, ``/oauth/register/`` and ``/oauth/revoke/`` are
 #   the OAuth 2.1 endpoints an MCP client calls. They are not
 #   session-authenticated, and replaying a token response would hand
@@ -105,6 +106,8 @@ IDEMPOTENCY_EXEMPT_PATHS: frozenset[str] = frozenset(
     {
         "/api/mcp/",
         "/api/mcp",
+        "/api/ops/mcp/",
+        "/api/ops/mcp",
         "/oauth/token/",
         "/oauth/register/",
         "/oauth/revoke/",

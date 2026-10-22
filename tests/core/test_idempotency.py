@@ -549,7 +549,7 @@ def test_non_exempt_path_still_replays(path: str) -> None:
 
 
 def test_exempt_paths_match_the_urlconf() -> None:
-    """The hard-coded paths are exactly where the five routes are mounted.
+    """The hard-coded paths are exactly where the seven routes are mounted.
 
     If a route is remounted, this fails until the exemption moves with it —
     otherwise the moved endpoint would silently regain replay.
@@ -559,9 +559,11 @@ def test_exempt_paths_match_the_urlconf() -> None:
         for name in (
             "api:mcp:endpoint",
             "api:mcp:endpoint_noslash",
-            "oauth:token",
-            "oauth:register",
-            "oauth:revoke",
+            "api:mcp:ops",
+            "api:mcp:ops_noslash",
+            "oauth2_provider:token",
+            "oauth2_provider:dcr-register",
+            "oauth2_provider:revoke-token",
         )
     )
 

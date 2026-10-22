@@ -108,7 +108,7 @@
                 body: JSON.stringify({ jsonrpc: "2.0", id: rpcId++, method, params }),
               });
               if (res.status === 401) {
-                log("note", "401 from the MCP endpoint — mint a token with `manage.py mint_mcp_token --email <you> --commit` and paste it into Token.");
+                log("note", "401 from the MCP endpoint — mint a token with `manage.py mint_mcp_token --username <you> --resource <MCP URL> --commit` and paste it into Token.");
                 throw new Error("401 Unauthorized");
               }
               const body = await res.json();

@@ -11,12 +11,19 @@ call sites.
 """
 
 import datetime
+import secrets
 from datetime import UTC
 from typing import Any
 
 import factory
 from django.contrib.auth.models import User
 from django.utils import timezone as django_timezone
+from oauth2_provider.models import (
+    AccessToken,
+    Application,
+    RefreshToken,
+    set_token_value,
+)
 
 from apps.accounts.models import Account, PasskeyCredential, PushSubscription
 from apps.bulletins.models import (
@@ -36,7 +43,6 @@ from apps.core.models import CommandRun, RequestLog
 from apps.downloads.models import DownloadArea
 from apps.favourites.models import Favourite
 from apps.locations.models import Location, ResortLocation
-from apps.oauth.models import AuthorizationCode, OAuthClient, OAuthGrant, OAuthToken
 from apps.observations.models import FieldObservation
 from apps.regions.models import (
     MajorRegion,
@@ -908,90 +914,84 @@ class DownloadAreaFactory(factory.django.DjangoModelFactory[DownloadArea]):
     name = ""
 
 
-class OAuthClientFactory(factory.django.DjangoModelFactory[OAuthClient]):
-    """Factory for OAuthClient instances (SNOW-1035).
+class OAuthApplicationFactory(factory.django.DjangoModelFactory[Application]):
+    """Factory for django-oauth-toolkit Application rows (SNOW-1193).
 
-    Defaults to a DCR client whose one redirect URI is Claude's hosted
-    callback — the common case the consent page and the settings page render.
+    Defaults to the public, PKCE, authorization-code client a dynamic
+    registration creates for Claude, with its hosted callback as the one
+    redirect URI.
     """
 
     class Meta:
         """Factory metadata."""
 
-        model = OAuthClient
+        model = Application
 
-    client_id = factory.Sequence(lambda n: f"sd_client_test{n}")
-    kind = OAuthClient.KIND.DCR
-    client_name = "Claude"
-    redirect_uris = factory.LazyFunction(
-        lambda: ["https://claude.ai/api/mcp/auth_callback"]
-    )
-    metadata_fetched_at = None
+    name = "Claude"
+    client_type = Application.CLIENT_PUBLIC
+    authorization_grant_type = Application.GRANT_AUTHORIZATION_CODE
+    redirect_uris = "https://claude.ai/api/mcp/auth_callback"
 
 
-class OAuthGrantFactory(factory.django.DjangoModelFactory[OAuthGrant]):
-    """Factory for OAuthGrant instances — an active "connected app"."""
+class OAuthAccessTokenFactory(factory.django.DjangoModelFactory[AccessToken]):
+    """Factory for a live access token bound to ``/api/mcp/`` (SNOW-1193).
+
+    The token value goes through ``set_token_value``, as the toolkit's own
+    issuance does, so the stored row is redacted exactly like a real one.
+    Pass ``raw_token=`` to know the value a test will present; it is also
+    left on the instance as ``raw_token``.
+    """
 
     class Meta:
         """Factory metadata."""
 
-        model = OAuthGrant
+        model = AccessToken
 
     user = factory.SubFactory(UserFactory, is_staff=False)
-    client = factory.SubFactory(OAuthClientFactory)
+    application = factory.SubFactory(OAuthApplicationFactory)
     scope = "mcp offline_access"
-    resource = "http://testserver/api/mcp/"
-    last_used_at = None
-    revoked_at = None
-
-
-class AuthorizationCodeFactory(factory.django.DjangoModelFactory[AuthorizationCode]):
-    """Factory for AuthorizationCode instances.
-
-    ``code_hash`` is a unique placeholder: a test that exchanges a code mints
-    it through ``apps.oauth.services.tokens.issue_code`` instead, which is
-    the only path that returns the plaintext.
-    """
-
-    class Meta:
-        """Factory metadata."""
-
-        model = AuthorizationCode
-
-    grant = factory.SubFactory(OAuthGrantFactory)
-    code_hash = factory.Sequence(lambda n: f"{n:064x}")
-    redirect_uri = "https://claude.ai/api/mcp/auth_callback"
-    code_challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
-    resource = "http://testserver/api/mcp/"
-    scope = "mcp offline_access"
-    expires_at = factory.LazyFunction(
-        lambda: django_timezone.now() + datetime.timedelta(minutes=5)
-    )
-    used_at = None
-
-
-class OAuthTokenFactory(factory.django.DjangoModelFactory[OAuthToken]):
-    """Factory for OAuthToken instances — a live access token by default.
-
-    As with ``AuthorizationCodeFactory``, ``token_hash`` is a placeholder; a
-    test that presents a token mints it through the tokens service.
-    """
-
-    class Meta:
-        """Factory metadata."""
-
-        model = OAuthToken
-
-    grant = factory.SubFactory(OAuthGrantFactory)
-    kind = OAuthToken.KIND.ACCESS
-    token_hash = factory.Sequence(lambda n: f"{n + 10**6:064x}")
-    resource = "http://testserver/api/mcp/"
-    scope = "mcp offline_access"
-    expires_at = factory.LazyFunction(
+    resource = factory.LazyFunction(lambda: ["http://testserver/api/mcp/"])
+    expires = factory.LazyFunction(
         lambda: django_timezone.now() + datetime.timedelta(hours=1)
     )
-    revoked_at = None
-    replaced_by = None
+    raw_token = factory.LazyFunction(lambda: secrets.token_urlsafe(32))
+
+    @classmethod
+    def _create(
+        cls, model_class: type[AccessToken], *args: Any, **kwargs: Any
+    ) -> AccessToken:
+        """Store the token through ``set_token_value``, keeping the raw value."""
+        raw_token = kwargs.pop("raw_token")
+        token = model_class(**kwargs)
+        set_token_value(token, raw_token)
+        token.save()
+        token.raw_token = raw_token
+        return token
+
+
+class OAuthRefreshTokenFactory(factory.django.DjangoModelFactory[RefreshToken]):
+    """Factory for an unrevoked refresh token (SNOW-1193)."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = RefreshToken
+
+    user = factory.SubFactory(UserFactory, is_staff=False)
+    application = factory.SubFactory(OAuthApplicationFactory)
+    revoked = None
+    raw_token = factory.LazyFunction(lambda: secrets.token_urlsafe(32))
+
+    @classmethod
+    def _create(
+        cls, model_class: type[RefreshToken], *args: Any, **kwargs: Any
+    ) -> RefreshToken:
+        """Store the token through ``set_token_value``."""
+        raw_token = kwargs.pop("raw_token")
+        token = model_class(**kwargs)
+        set_token_value(token, raw_token)
+        token.save()
+        return token
 
 
 class WeatherFactory(factory.django.DjangoModelFactory[Weather]):

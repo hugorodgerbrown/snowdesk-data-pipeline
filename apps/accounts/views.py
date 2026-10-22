@@ -79,11 +79,11 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django_ratelimit.core import get_usage
 from django_ratelimit.decorators import ratelimit
+from mcp_auth.connected import connected_apps
 
 from apps import analytics
 from apps.core.decorators import require_htmx
 from apps.core.services.request_log import capture as capture_request_log
-from apps.oauth.models import OAuthGrant
 
 from .forms import (
     ChangeEmailForm,
@@ -1150,11 +1150,11 @@ def settings_view(request: HttpRequest) -> HttpResponse:
 
     Context keys:
         account          — authenticated Account instance.
-        connected_apps   — the user's active ``OAuthGrant`` rows with their
-                           clients (SNOW-1035), listed under Account with a
-                           Disconnect control each. Passed from here rather
-                           than read in the template so the query is one,
-                           and visible.
+        connected_apps   — one row per app the user is connected to through
+                           mcp-auth (SNOW-1193): the application and the
+                           host its codes go to, listed under Account with a
+                           Disconnect control each. Built here rather than
+                           in the template so the queries are visible.
 
     Args:
         request: Incoming HTTP request.
@@ -1171,13 +1171,34 @@ def settings_view(request: HttpRequest) -> HttpResponse:
         "accounts/settings.html",
         {
             "account": _get_account(request),
-            "connected_apps": list(
-                OAuthGrant.objects.for_user(request.user)
-                .active()
-                .select_related("client")
-            ),
+            "connected_apps": _connected_app_rows(request.user),
         },
     )
+
+
+def _connected_app_rows(user: UserType) -> list[dict[str, object]]:
+    """Return the settings page's connected-apps rows for ``user``.
+
+    Args:
+        user: The signed-in user.
+
+    Returns:
+        One ``{"application", "host"}`` dict per connected app, by name.
+        ``host`` is the netloc of the app's first redirect URI — the fact the
+        consent page showed — or ``""`` for a locally minted token's app,
+        which has none.
+
+    """
+    rows: list[dict[str, object]] = []
+    for application in connected_apps(user):
+        uris = application.redirect_uris.split()
+        rows.append(
+            {
+                "application": application,
+                "host": urlsplit(uris[0]).netloc if uris else "",
+            }
+        )
+    return rows
 
 
 # ---------------------------------------------------------------------------

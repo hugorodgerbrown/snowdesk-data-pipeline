@@ -67,7 +67,7 @@ def test_only_credential_printers_skip_output_capture() -> None:
         for name, app in _project_commands().items()
         if not getattr(load_command_class(app, name), "capture_output", True)
     )
-    assert uncaptured == ["dev_magic_link", "mint_mcp_token", "mint_vapid_keypair"]
+    assert uncaptured == ["dev_magic_link", "mint_vapid_keypair"]
 
 
 # The prefixes this codebase uses for a command that changes data — the

@@ -156,8 +156,9 @@ What a command author does:
   why; today only `run_scheduler`, which never finishes.
 - **Keep credentials out.** A command whose output is a credential sets
   `capture_output = False`: the run is still recorded, its output is not.
-  Today `mint_mcp_token`, `mint_vapid_keypair` and `dev_magic_link`; the
-  guard test pins the list.
+  Today `mint_vapid_keypair` and `dev_magic_link`; the guard test pins the
+  list. (`mint_mcp_token` prints a token too, but it is mcp-auth's command,
+  not a project one, so it is not registered at all.)
 
 What an operator does: set `SNOWDESK_OPERATOR=<your name>` in the shell
 before running a command against a deployed environment. A Render shell runs
@@ -185,7 +186,7 @@ worker logs.
 | Bulletin ingestion | `fetch_bulletins --source slf albina meteofrance --commit` | `0,5 * * * *` (every hour at :00 and :05 UTC) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
 | Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every active location. Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
-| OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes MCP OAuth tokens and authorization codes dead for more than a week (SNOW-1035). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
+| OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes expired MCP OAuth tokens and authorization codes with django-oauth-toolkit's `clear_expired()` (SNOW-1193). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
 | Run-register prune | `prune_command_runs --commit` | `50 3 * * *` (daily, 03:50 UTC) | Marks `CommandRun` rows a killed process left `RUNNING` for over six hours as `INTERRUPTED`, and deletes `SCHEDULER` runs older than 90 days (SNOW-1189). Every other run is kept for good. |
 | what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
 | Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports resorts with a coordinate but no pin `Location` (`Resort.location`, SNOW-1144) — each one a resort whose weather is not fetched, still on the map only through the transitional fallback to its mirrored coordinates (removed by SNOW-1147), with nothing else saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. Since SNOW-1144 every pin writer goes through `set_resort_pin`, so after the one-time backfill this should never fire; if it does, an operator runs `link_resort_locations --commit` by hand. |
@@ -246,36 +247,33 @@ its real outcome when it finishes. Rows of `SCHEDULER` runs older than
 Shell, build and `call_command` runs are never deleted — "did this ever run
 here?" is the question the register exists to answer. Scheduled daily.
 
-### `purge_expired_oauth_tokens` — delete dead OAuth tokens and codes
+### `purge_expired_oauth_tokens` — delete expired OAuth tokens and codes
 
-Deletes `OAuthToken` rows that expired or were revoked, and
-`AuthorizationCode` rows that expired, more than `--days` (default 7) days
-ago (SNOW-1035, [`docs/oauth.md`](oauth.md)). A dead row is never accepted
-again; the week of grace keeps recent ones visible in the admin. A rotated
-refresh token is neither expired nor revoked until its thirty days run out,
-so it survives — presenting it again is how reuse is detected. Grants are
-not touched: a revoked grant records that a user disconnected an app.
-Streams each set newest-first through `iterate_rows`.
+Runs django-oauth-toolkit's own `clear_expired()` — expired access tokens,
+refresh tokens past their lifetime or revoked, and expired authorization
+codes — so the rule for which rows are dead stays with the models that
+define them (SNOW-1193, [`docs/oauth.md`](oauth.md)). What it adds is the
+command contract: read-only without `--commit`, and the counts deleted
+(`access_tokens_deleted`, `refresh_tokens_deleted`, `codes_deleted`) land in
+the register — in a dry run too, counted by running `clear_expired()` in a
+transaction that is rolled back. Exempt from row streaming: the toolkit deletes in batches of
+its own, with no per-row work to count down.
 
 ```bash
-uv run python manage.py purge_expired_oauth_tokens            # report only
+uv run python manage.py purge_expired_oauth_tokens            # report row counts
 uv run python manage.py purge_expired_oauth_tokens --commit   # delete
 ```
 
 ### `mint_mcp_token` — an MCP access token for local testing
 
-Mints a one-hour access token for one account under a `LOCAL` client, so
-the MCP endpoint can be exercised with curl without the browser OAuth flow
-(SNOW-1035). `--email` is **required** — the documented exception to rule
-1, because the command's purpose is a token acting as one named account.
-The token is printed once (at every verbosity: it is the output); the
-grant shows on the account's settings page and Disconnect revokes it.
-`--resource` sets the audience when calling a host other than
-`SITE_BASE_URL` (a tunnel).
+mcp-auth's command, not a project one (so it does not follow these rules and
+is not registered). Read-only without `--commit`; prints the token once.
+Snowdesk usernames are email addresses, and `--resource` must name the
+endpoint the token is for (the default is mcp-auth's `/mcp`):
 
 ```bash
-uv run python manage.py mint_mcp_token --email you@example.com            # report only
-TOKEN=$(uv run python manage.py mint_mcp_token --email you@example.com --commit -v 0)
+TOKEN=$(uv run python manage.py mint_mcp_token --username you@example.com \
+    --resource http://localhost:8000/api/mcp/ --commit -v 0)
 ```
 
 ### `seed_test_data` — build the navigable test dataset (local dev and CI)

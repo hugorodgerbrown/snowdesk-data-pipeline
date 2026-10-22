@@ -1,11 +1,16 @@
 ---
 name: snowdesk-is-its-own-oauth-server
 description: Why the MCP endpoint is gated by a hand-written OAuth 2.1 server in apps/oauth — no library, no anonymous tier, PKCE
-status: current
-last-reviewed: 2026-10-01
+status: historical
+last-reviewed: 2026-10-22
 ---
 
 # Snowdesk is its own OAuth server, written by hand
+
+> **Superseded by SNOW-1193.** The hand-written server was deleted and the
+> MCP endpoints moved onto mcp-auth — see
+> [`mcp-auth-replaces-the-hand-written-oauth-server.md`](mcp-auth-replaces-the-hand-written-oauth-server.md).
+> Kept for the record of why it was written.
 
 **Decision.** `POST /api/mcp/` requires an OAuth access token issued by
 Snowdesk itself (SNOW-1035). The authorization server is hand-written on

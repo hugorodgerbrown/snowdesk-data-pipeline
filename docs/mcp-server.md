@@ -1,6 +1,6 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC server at POST /api/mcp/ — OAuth bearer auth, read-only tools, MCP Apps view, staff ops catalogue (ops_tools)
+description: MCP JSON-RPC at POST /api/mcp/ and staff /api/ops/mcp/ (ops_tools) — mcp-auth bearer auth, tools, MCP Apps view
 status: current
 last-reviewed: 2026-10-22
 ---
@@ -37,8 +37,8 @@ sidesteps standing up an ASGI stack for this one surface.
   405 below), so a URL pasted without the slash would otherwise fail to
   connect. See `apps/mcp_server/urls.py`.
 * **`GET /api/mcp/`** → `405` with `Allow: POST`.
-* **Requires a Snowdesk account (SNOW-1035).** Every request carries an
-  OAuth access token — see [Authentication](#authentication) below.
+* **Requires a verified Snowdesk account (SNOW-1035, SNOW-1193).** Every
+  request carries an OAuth access token — see [Authentication](#authentication) below.
 * **CSRF-exempt** — JSON-RPC clients cannot mint CSRF tokens, the endpoint
   reads no session cookie (the bearer token is the only credential), and
   every tool is read-only. Same rationale as
@@ -46,7 +46,8 @@ sidesteps standing up an ASGI stack for this one surface.
 * **Rate-limited** twice: 120 requests/minute per source IP
   (`django-ratelimit`, `block=True` — an over-limit request is rejected
   with a bare `403` before the view body runs, which also throttles token
-  guessing), and 60 requests/minute per authenticated user (`429`).
+  guessing), and 60 requests/minute per authenticated user (`429`,
+  mcp-auth's `USER_RATE_PER_MINUTE`).
 * **`Cache-Control: no-store`** on every response — every reply is
   per-request JSON-RPC state, never safe to cache.
 * **Stateless** — no `Mcp-Session-Id` handling; each request is
@@ -62,27 +63,31 @@ sidesteps standing up an ASGI stack for this one surface.
 
 ## Authentication
 
-Snowdesk is its own OAuth 2.1 authorization server; the flow, endpoints and
-token model are in [`docs/oauth.md`](oauth.md). What the MCP endpoint does:
+The OAuth server is mcp-auth on django-oauth-toolkit (SNOW-1193); the flow,
+endpoints and what Snowdesk adds are in [`docs/oauth.md`](oauth.md). Both
+views are wrapped in mcp-auth's `@mcp_endpoint`, which:
 
-* It reads `Authorization: Bearer <token>` **before** parsing the body and
-  hands the token to `apps.oauth.services.tokens.authenticate_bearer`,
-  which checks it is a live access token, its grant has not been
-  disconnected, and its audience (`resource`) is this origin's MCP URL.
-* No token, or a rejected one, is a `401` with a JSON body (not a JSON-RPC
-  envelope) and:
+* reads `Authorization: Bearer <token>` **before** the body, and accepts it
+  only if it is an unexpired access token with the `mcp` scope, bound to
+  this endpoint's URL (RFC 8707 — a token with no `resource` is refused),
+  held by an account the connect rule (`apps.oauth.policy.verified_account`)
+  admits;
+* answers anything else with a `401` and
 
   ```
-  WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource<path>", scope="mcp"
+  WWW-Authenticate: Bearer … resource_metadata="<origin>/.well-known/oauth-protected-resource<path>"
   ```
 
-  plus `, error="invalid_token"` when a token was sent. `<path>` is the
-  path called — `/api/mcp/` or `/api/mcp` — so the metadata document's
-  `resource` equals the URL the user typed, which Claude requires. Claude
-  ignores this header on any status but 401.
-* Access tokens live one hour; a connector refreshes them with its
-  thirty-day rotating refresh token. Disconnecting the app on
-  `/account/settings/` makes the next call a 401.
+  where `<path>` is the path called, so the metadata document's `resource`
+  equals the URL the user typed, which Claude requires (Claude ignores the
+  header on any status but 401);
+* applies the per-user limit, sets `no-store`, offers only POST, and is
+  CSRF-exempt.
+
+Access tokens live one hour; a connector refreshes them with its thirty-day
+rotating refresh token. Disconnecting the app on `/account/settings/` makes
+the next call a 401. mcp-auth's `MCPAuthContract` runs against both
+endpoints in `tests/mcp_server/test_views.py`.
 
 ## Methods
 
@@ -567,11 +572,12 @@ page's **Token** field (kept in `sessionStorage`; the host forwards it as
 `Authorization: Bearer …` and reconnects):
 
 ```bash
-uv run python manage.py mint_mcp_token --email you@example.com --commit -v 0
+uv run python manage.py mint_mcp_token --username you@example.com \
+    --resource http://localhost:8000/api/mcp/ --commit -v 0
 ```
 
-The token's audience defaults to `SITE_BASE_URL` + `/api/mcp/`; if Django
-runs on a different port, pass `--resource http://localhost:<port>/api/mcp/`.
+`--resource` must name the endpoint (mcp-auth's default is `/mcp`); change
+the port if Django runs elsewhere.
 With no token, or a rejected one, the host logs the `401`.
 
 Add `?worker=blob` to allow `worker-src blob:` and see the MapLibre path.
@@ -638,8 +644,16 @@ Every tool is read-only and answers about the environment it runs on.
 | `location_estate_health` | Location count by kind, and rows without elevation, without what3words, and orphaned (`LocationQuerySet.orphaned()`) |
 | `feature_flags` | Each waffle flag's live targeting, switches, and drift from `apps/core/fixtures/waffle_flags.json` |
 
-The staff-only endpoint that serves it lands with the move to mcp-auth
-(SNOW-1193); until then the catalogue is reachable only from code and tests.
+**Served at `POST /api/ops/mcp/`** (and `/api/ops/mcp`), by
+`apps.mcp_server.views.ops_mcp_endpoint`: the same `@mcp_endpoint`
+authentication, and then a `403` (`{"error": "forbidden"}`, no challenge)
+for an account that is not staff — the token is good, and a 401 would only
+send the client round the OAuth dance again. It is a sibling of `/api/mcp/`,
+never beneath it: django-oauth-toolkit accepts a token at any URL under its
+`resource`, so a public-catalogue token would otherwise open the ops server.
+Connect it in Claude as a second custom connector,
+`https://<host>/api/ops/mcp/`; the OAuth flow binds that connection's
+tokens to the ops URL.
 
 ## Error codes
 
@@ -669,7 +683,7 @@ documents, registers (CIMD, or DCR as the fallback), and opens Snowdesk's
 sign-in and consent page in the browser. After Allow, tools work. Locally,
 put the dev server behind a tunnel (`ngrok http 8000`) and add the tunnel
 URL — Claude's hosted apps cannot reach `localhost`. Details in
-[`docs/oauth.md`](oauth.md#testing-locally).
+[`docs/oauth.md`](oauth.md#testing).
 
 **MCP Inspector** (local smoke test) runs the same OAuth flow:
 
@@ -682,7 +696,8 @@ npx @modelcontextprotocol/inspector
 prints it once:
 
 ```bash
-TOKEN=$(uv run python manage.py mint_mcp_token --email you@example.com --commit -v 0)
+TOKEN=$(uv run python manage.py mint_mcp_token --username you@example.com \
+    --resource http://localhost:8000/api/mcp/ --commit -v 0)
 
 curl -s -X POST http://localhost:8000/api/mcp/ \
   -H 'Content-Type: application/json' \
@@ -729,8 +744,8 @@ challenge.
 
 ## See also
 
-* [`docs/oauth.md`](oauth.md) — the OAuth 2.1 authorization server the
-  endpoint's bearer tokens come from.
+* [`docs/oauth.md`](oauth.md) — the OAuth 2.1 authorization server (mcp-auth)
+  the endpoints' bearer tokens come from.
 * [`docs/telemetry-pipeline.md`](telemetry-pipeline.md) — the other
   CSRF-exempt, rate-limited, stateless JSON POST endpoint in this
   codebase; `mcp_endpoint` mirrors its shape.
