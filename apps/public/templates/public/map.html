@@ -364,6 +364,11 @@ in addition to the shared map assets.
     {# not inside the bundle's temporal-dead-zone run, so it sits here with   #}
     {# the other cores (tests/js/test_terrain_filter_core.js).                 #}
     <script defer src="{% static 'js/terrain_filter_core.js' %}"></script>
+    {# SNOW-979: the problem-terrain layer's pure half                       #}
+    {# (window.pwaBulletinTerrainCore) — the bulletin's rules as four states, #}
+    {# the region clipping and the palette. Reads the terrain filter's core  #}
+    {# at parse time, so it comes straight after it.                         #}
+    <script defer src="{% static 'js/bulletin_terrain_core.js' %}"></script>
     {# SNOW-761: the weather overlay's pure transforms                       #}
     {# (window.pwaWeatherCore) — the WMO code -> weather icon mapping, the #}
     {# temperature-and-altitude label, the date projection and the           #}

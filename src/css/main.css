@@ -464,6 +464,27 @@
   --color-terrain-match: #2563eb;
   --color-terrain-nodata: #475569;
 
+  /* —— problem terrain (SNOW-979) ——————————————
+     The region sheet's "Show problem terrain on the map"
+     layer paints steep ground the day's bulletin describes
+     in that problem's EAWS colour (the --color-eaws-* above:
+     the colour IS the rating), and these two for the rest of
+     the steep ground, so none of it is ever left blank:
+
+     --color-bulletin-terrain-undescribed: steep ground no
+       problem describes — a 135° hatch, the other way from
+       the no-data hatch, and warm rather than slate.
+     --color-bulletin-terrain-undecided: ground a problem
+       describes but the pixel test cannot place (a treeline
+       band, a prose-only trait) — a flat see-through grey.
+
+     Theme-invariant, like every map mark. Mirrored as
+     literals in static/js/bulletin_terrain_core.js; a
+     Vitest test holds them equal.
+     ————————————————————————————————————————— */
+  --color-bulletin-terrain-undescribed: #57534e;
+  --color-bulletin-terrain-undecided: #78716c;
+
   /* —— the track scale's first step (SNOW-1064) ——
      The aspect wheel's INNER ring names the track on its
      own five-step scale (level < 5°, gentle < 15°,

@@ -10,6 +10,9 @@ Covers:
     controls and the ×, inside the ``data-sheet-peek`` header.
   - The detents the body allows: all three on a rated day, peek and half
     otherwise (``data-sheet-detents``, read by static/js/map_sheet.js).
+  - SNOW-979: the "Show problem terrain on the map" switch above the
+    bulletin, its key and its rules — only for a region inside the
+    terrain tiles, with the tiles configured, on a day with a bulletin.
   - HALF and FULL: the breadcrumb, then the bulletin page's own body for
     the day (SNOW-1164) — the same sections the page renders, without the
     page's chrome or its superuser debug block — and the region's resorts
@@ -19,6 +22,7 @@ Covers:
 from __future__ import annotations
 
 import datetime
+import json
 import re
 from typing import Any
 
@@ -28,6 +32,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.public.region_sheet import _problem_terrain_key
 from apps.regions.models import Resort
 from tests.factories import (
     BulletinFactory,
@@ -348,3 +353,140 @@ class TestCaching:
     def test_a_forecast_day_keeps_for_ten_minutes(self, client: Client) -> None:
         tomorrow = (timezone.localdate() + datetime.timedelta(days=1)).isoformat()
         assert "max-age=600" in self._cache_control(client, tomorrow)
+
+
+_TILES = "https://tiles.example/terrain-class/v1/{z}/{x}/{y}.png"
+
+
+def _rules_json(content: str) -> Any:
+    """The problem-terrain rules the body carries, parsed."""
+    match = re.search(
+        r'<script id="region-sheet-terrain-rules" type="application/json">(.*?)</script>',
+        content,
+        re.S,
+    )
+    assert match, "no rules json_script in the body"
+    return json.loads(match.group(1))
+
+
+@pytest.mark.django_db
+class TestProblemTerrainSwitch:
+    """SNOW-979: the "Show problem terrain on the map" switch above the bulletin."""
+
+    def test_rated_swiss_region_carries_the_switch_and_its_rules(
+        self, client: Client, settings: Any
+    ) -> None:
+        """The switch, its key, and the bulletin's problem as one rule."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-terrain"' in content
+        assert 'id="region-sheet-terrain-toggle"' in content
+        assert _rules_json(content) == [
+            {
+                "rating": 3,
+                "aspects": [0, 1, 2],
+                "lower": 2200,
+                "upper": None,
+                "decided": True,
+            }
+        ]
+        key = content[content.index("data-region-sheet-terrain-key") :]
+        assert "map-legend-swatch--terrain-considerable" in key
+        assert "Considerable problem" in _text(key)
+        assert "Steep, not described" in _text(key)
+        # No undecided rule, so no undecided swatch.
+        assert "map-legend-swatch--terrain-undecided" not in key
+
+    def test_switch_sits_above_the_bulletin(
+        self, client: Client, settings: Any
+    ) -> None:
+        """Hugo, 22 Oct: above the bulletin it paints."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert content.index('data-testid="region-sheet-terrain"') < content.index(
+            'data-testid="region-sheet-bulletin"'
+        )
+
+    def test_key_and_zoom_line_render_hidden(
+        self, client: Client, settings: Any
+    ) -> None:
+        """The script shows them once it has read the switch's state."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert re.search(r"data-region-sheet-terrain-key\s+hidden", content)
+        assert re.search(r"data-region-sheet-terrain-zoom\s+hidden", content)
+
+    def test_no_switch_while_the_terrain_tiles_are_unconfigured(
+        self, client: Client, settings: Any
+    ) -> None:
+        """The terrain filter's own gate."""
+        settings.TERRAIN_CLASS_TILE_URL = ""
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-terrain"' not in content
+        assert "region-sheet-terrain-rules" not in content
+
+    def test_no_switch_outside_the_terrain_tiles(
+        self, client: Client, settings: Any
+    ) -> None:
+        """A region outside Switzerland: a switch that paints nothing is a promise."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create(region_id="AT-07-01")
+        region.subregion.major.country = "AT"
+        region.subregion.major.save()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-terrain"' not in content
+
+    def test_no_switch_on_a_day_without_a_bulletin(
+        self, client: Client, settings: Any
+    ) -> None:
+        """Nothing to describe, nothing to paint."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-terrain"' not in content
+
+
+class TestProblemTerrainKey:
+    """The switch's key lists only what the day can paint."""
+
+    def test_levels_highest_first_and_undecided_when_any_rule_is(self) -> None:
+        """Two decided levels, one undecided rule."""
+        rules: list[Any] = [
+            {"rating": 2, "aspects": [], "lower": None, "upper": None, "decided": True},
+            {
+                "rating": 4,
+                "aspects": [4],
+                "lower": None,
+                "upper": None,
+                "decided": False,
+            },
+            {
+                "rating": 3,
+                "aspects": [0],
+                "lower": 2400,
+                "upper": None,
+                "decided": True,
+            },
+        ]
+        key = _problem_terrain_key(rules)
+        assert [row["level"] for row in key["levels"]] == ["considerable", "moderate"]
+        assert key["undecided"] is True
+
+    def test_no_undecided_rule_no_undecided_row(self) -> None:
+        """A day whose every problem can be placed."""
+        rules: list[Any] = [
+            {"rating": 1, "aspects": [], "lower": None, "upper": None, "decided": True}
+        ]
+        assert _problem_terrain_key(rules) == {
+            "levels": [{"level": "low", "label": "Low"}],
+            "undecided": False,
+        }

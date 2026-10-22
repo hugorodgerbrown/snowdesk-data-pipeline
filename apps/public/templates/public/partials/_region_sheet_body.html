@@ -47,6 +47,9 @@ Context:
   provider_name  — The provider that does not publish here, for the
                    uncovered line.
   resorts        — Resort rows in the region, possibly empty.
+  terrain_rules, terrain_key — The problem-terrain switch's rules and key
+                 (SNOW-979, ``_region_sheet_terrain.html``); empty rules
+                 draw no switch.
   bulletin, panel, … — The body's context, from
                    ``apps.public.views.build_bulletin_body``; ``in_map`` True.
 {% endcomment %}
@@ -68,6 +71,12 @@ Context:
         <span aria-hidden="true">›</span>
         {{ region.subregion.name_en|default:region.subregion.name_native }}
     </p>
+
+    {# SNOW-979: above the bulletin it paints — only when the day has   #}
+    {# ground to describe and the region is inside the terrain tiles.  #}
+    {% if terrain_rules %}
+        {% include "public/partials/_region_sheet_terrain.html" %}
+    {% endif %}
 
     {% if bulletin or covered %}
         {# One child, so the wrapper's space-y does not respace the body's own blocks. #}

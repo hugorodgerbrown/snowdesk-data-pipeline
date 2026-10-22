@@ -330,6 +330,19 @@ describe('while open', () => {
     expect(sheet.textContent).toContain('second');
     expect(sheet.textContent).not.toContain('first');
   });
+
+  it("stops painting the last region's problem terrain while the next body loads", async () => {
+    const clearRegion = vi.fn();
+    window.pwaBulletinTerrain = { clearRegion, showRegion: vi.fn() };
+    await boot();
+    select('CH-4115', 'tap');
+    await settle();
+    clearRegion.mockClear();
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    select('CH-4116');
+    expect(clearRegion).toHaveBeenCalled();
+    delete window.pwaBulletinTerrain;
+  });
 });
 
 describe('the proxies', () => {

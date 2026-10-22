@@ -284,7 +284,18 @@ describe('the step control paints regions-fill', () => {
     clickStep(0.5);
     const expr = mapStub.getPaintProperty('regions-fill', 'fill-opacity');
     expect(expr[0]).toBe('case');
-    expect(expr[2]).toBeGreaterThan(expr[expr.length - 1]);
+    // expr[1..2] is SNOW-979's arm (below); the emphasis is the next pair.
+    expect(expr[4]).toBeGreaterThan(expr[expr.length - 1]);
+  });
+
+  it('drops the fill of a region the problem-terrain layer paints', () => {
+    // SNOW-979: the layer paints each problem's ground in its own EAWS
+    // colour, so the region's flat tint under it must not mix in. First
+    // arm, so it beats the selection's emphasis.
+    clickStep(0.5);
+    const expr = mapStub.getPaintProperty('regions-fill', 'fill-opacity');
+    expect(expr[1]).toEqual(['boolean', ['feature-state', 'terrain'], false]);
+    expect(expr[2]).toBe(0);
   });
 
   it('persists the step, not merely on/off', () => {

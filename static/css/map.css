@@ -2485,6 +2485,29 @@ html:has(> body.map-fullscreen) > body {
     );
 }
 
+/* SNOW-979: the region sheet's problem-terrain key. A problem's ground is
+   its EAWS colour at the two-thirds the map paints it at
+   (bulletin_terrain_core.js FILL_ALPHA); steep ground no problem describes
+   is a hatch the other way from no data, and warm; ground a problem
+   describes but cannot be placed is a flat grey at the map's ~43%. */
+.map-legend-swatch--terrain-low          { background: color-mix(in srgb, var(--color-eaws-low) 68%, transparent); }
+.map-legend-swatch--terrain-moderate     { background: color-mix(in srgb, var(--color-eaws-moderate) 68%, transparent); }
+.map-legend-swatch--terrain-considerable { background: color-mix(in srgb, var(--color-eaws-considerable) 68%, transparent); }
+.map-legend-swatch--terrain-high         { background: color-mix(in srgb, var(--color-eaws-high) 68%, transparent); }
+.map-legend-swatch--terrain-very_high    { background: color-mix(in srgb, var(--color-eaws-very-high) 68%, transparent); }
+.map-legend-swatch--terrain-undecided {
+    background: color-mix(in srgb, var(--color-bulletin-terrain-undecided) 43%, transparent);
+}
+.map-legend-swatch--terrain-undescribed {
+    background: repeating-linear-gradient(
+        135deg,
+        var(--color-bulletin-terrain-undescribed) 0,
+        var(--color-bulletin-terrain-undescribed) 1.5px,
+        transparent 1.5px,
+        transparent 4px
+    );
+}
+
 /* SNOW-1017: the route's two kinds of leg, drawn as the lines they are —
    a climb dashed, a descent solid, in the rail's two colours. A gradient
    rather than a border-style, so each keeps the square footprint every
