@@ -42,8 +42,20 @@ in addition to the shared map assets.
     {# tiles in CORS mode, and a preconnect without it warms a separate       #}
     {# connection pool that those requests never touch.                       #}
     <link rel="preconnect" href="{{ basemap_origin }}" crossorigin>
-    <link rel="prefetch" href="{% url 'api:regions_geojson' %}?country=ch">
-    <link rel="prefetch" href="{% url 'api:ratings' %}?d={{ season_end|date:'Y-m-d' }}&country=ch">
+    {# The two boot feeds map.js fetches first, started from the head so they #}
+    {# load in parallel with the scripts instead of after them. Preload, not  #}
+    {# prefetch: prefetch is a hint for the NEXT navigation, so map.js's own   #}
+    {# fetch() never reused it and the regions feed was downloaded twice.      #}
+    {# as="fetch" + crossorigin (anonymous) match fetch()'s default cors mode  #}
+    {# and same-origin credentials; without either the preload is not reused. #}
+    {# The URLs must stay byte-identical to the ones map.js builds.            #}
+    <link rel="preload" as="fetch" crossorigin href="{% url 'api:regions_geojson' %}?country=ch">
+    <link
+        rel="preload"
+        as="fetch"
+        crossorigin
+        href="{% url 'api:ratings' %}?d={{ display_date|date:'Y-m-d' }}&country=ch"
+    >
     <link rel="stylesheet" href="{% static 'css/maplibre-gl.css' %}">
     <link rel="stylesheet" href="{% static 'css/map.css' %}">
     {# The explainer is an opt-in map mode. Keep its styles off the normal #}

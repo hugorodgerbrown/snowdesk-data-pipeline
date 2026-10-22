@@ -1931,6 +1931,22 @@ html:has(> body.map-fullscreen) > body {
     min-width: 0;
 }
 
+/* On a phone map_calendar.js moves the date control up into
+   #map-utility-cluster, but only once the deferred scripts run. Until then
+   the control stood here for one paint, and when it left, the 32px it held
+   came off the bottom of the stack and every roundel above it dropped:
+   Lighthouse's whole CLS on /map. Keeping it out of view while it is still
+   in this row means the stack paints at its final height from the start.
+   `#map-date-row >` stops matching the moment the control is moved, so it
+   shows up in its new place with nothing more to undo. Same breakpoint as
+   map_calendar.js's `phone` query. */
+@media (max-width: 639.98px) {
+    #map-date-row > #map-calendar-toggle,
+    #map-date-row > #map-today-control {
+        display: none;
+    }
+}
+
 /* SNOW-920: the stale-day notice beside the date control — the day a cached
    page is showing and a Reload. Same glass pill as the control it sits next
    to, so it reads as part of the date row rather than as a banner. Hidden

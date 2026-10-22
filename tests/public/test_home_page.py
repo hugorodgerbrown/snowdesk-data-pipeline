@@ -28,6 +28,9 @@ Covers:
   - A crossorigin <link rel="preconnect"> warms the active basemap's origin,
     and follows BASEMAP_ORIGIN rather than being hardcoded.
     discarded while the anchor is still hrefless.
+  - The regions and ratings boot feeds are preloaded (as="fetch",
+    crossorigin) and the ratings URL names ``?d=`` or today, never the
+    season end.
   - base.html preloads only the Latin DM Sans subset; the Latin-ext subset is
     left to unicode-range, which a preload would have bypassed.
 """
@@ -878,6 +881,53 @@ class TestHomePageBasemapPreconnect:
             '<link rel="preconnect" href="https://vectortiles.geo.admin.ch" '
             "crossorigin>"
         ]
+
+
+@pytest.mark.django_db
+class TestBootFeedPreloads:
+    """The head preloads the two feeds map.js's boot leg fetches first.
+
+    Preloads, so map.js's own ``fetch()`` is answered from them rather than
+    downloading again (the old ``prefetch`` hints never were). The ratings URL
+    names the day the boot leg asks for — ``readDisplayDate()``, the ``?d=``
+    or else today — never the season end it used to name.
+    """
+
+    @staticmethod
+    def _preloads(query: str = "") -> list[str]:
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:map") + query).content.decode()
+        # djangofmt wraps a long tag one attribute per line; fold it back.
+        tags = re.findall(r'<link\s+rel="preload"\s+as="fetch"[^>]*>', content)
+        return [re.sub(r"\s+", " ", tag).replace(" >", ">") for tag in tags]
+
+    @freeze_time("2026-02-17")
+    def test_preloads_regions_and_todays_ratings(self) -> None:
+        """With no ``?d=`` the ratings preload names today."""
+        assert self._preloads() == [
+            '<link rel="preload" as="fetch" crossorigin '
+            'href="/api/regions.geojson?country=ch">',
+            '<link rel="preload" as="fetch" crossorigin '
+            'href="/api/ratings/?d=2026-02-17&country=ch">',
+        ]
+
+    @freeze_time("2026-02-17")
+    def test_ratings_preload_follows_the_requested_day(self) -> None:
+        """A ``?d=`` deep link preloads that day, as map.js fetches it."""
+        preloads = self._preloads("?d=2026-01-05")
+        assert preloads[1].endswith('href="/api/ratings/?d=2026-01-05&country=ch">')
+
+    @freeze_time("2026-06-15")  # past the May 31 season end
+    def test_off_season_preloads_today_not_the_season_end(self) -> None:
+        """Off season the boot leg still asks for today; so does the preload."""
+        preloads = self._preloads()
+        assert preloads[1].endswith('href="/api/ratings/?d=2026-06-15&country=ch">')
+
+    def test_no_prefetch_hints_remain(self) -> None:
+        """``prefetch`` is for the next navigation and was never reused."""
+        client = Client(SERVER_NAME="localhost")
+        content = client.get(reverse("public:map")).content.decode()
+        assert 'rel="prefetch"' not in content
 
 
 @pytest.mark.django_db
