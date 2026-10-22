@@ -21,7 +21,7 @@
     "jsdom": "^29.1.1",
     "sharp": "^0.35.3",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "comments": {
     "engines": "Node 22 is the floor because the lockfile is resolved against it: @lhci/cli -> lighthouse -> puppeteer-core -> @puppeteer/browsers 3.x pulls the proxy-agent 8.x chain on Node 22 and the 6.x chain on Node 20, so a lock regenerated on Node 20 makes `npm ci` fail on every CI job with EUSAGE / \"Missing: proxy-agent@8.0.2 from lock file\". .nvmrc pins the same version for nvm users. Keep this in step with node-version in .github/workflows/{e2e,js,lighthouse,security-audit}.yml.",
