@@ -11,12 +11,17 @@ server-initiated messages, no batching — every call is a single request in,
 a single response (or, for a notification, no response at all) out.
 
 ``dispatch()`` is the only entry point ``apps/mcp_server/views.py`` calls.
+It serves one :class:`ToolServer` per call: the public avalanche catalogue
+by default, or the staff ops catalogue (``apps.mcp_server.ops_tools``,
+SNOW-1191) at ``/api/mcp/ops/``. The envelope and method set are shared;
+only the name, the tools and the views differ.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from typing import Any, NamedTuple
 
 from django.conf import settings
@@ -121,6 +126,18 @@ def _result_envelope(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
 
+class ToolServer(NamedTuple):
+    """One MCP server this endpoint can speak as: its name and its catalogue."""
+
+    name: str
+    tools: Mapping[str, Any]
+    resources: Mapping[str, Any]
+
+
+#: The public avalanche-data server at ``/api/mcp/``.
+PUBLIC_SERVER = ToolServer(name="snowdesk", tools=TOOLS, resources=UI_RESOURCES)
+
+
 class _ParsedRequest(NamedTuple):
     """A validated JSON-RPC request, ready to route to a method handler."""
 
@@ -166,7 +183,9 @@ def _parse_request(payload: Any) -> _ParsedRequest | dict[str, Any]:
     )
 
 
-def _invoke_handler(handler: Any, parsed: _ParsedRequest) -> dict[str, Any]:
+def _invoke_handler(
+    handler: Any, parsed: _ParsedRequest, server: ToolServer
+) -> dict[str, Any]:
     """Call a method handler and turn any failure into an error envelope.
 
     Split out of :func:`dispatch` purely to keep that function's cyclomatic
@@ -176,6 +195,7 @@ def _invoke_handler(handler: Any, parsed: _ParsedRequest) -> dict[str, Any]:
     Args:
         handler: The resolved method handler.
         parsed: The validated request being dispatched.
+        server: The server the request was sent to.
 
     Returns:
         Either ``{"result": ...}`` or ``{"error": {"code": ..., "message":
@@ -183,7 +203,7 @@ def _invoke_handler(handler: Any, parsed: _ParsedRequest) -> dict[str, Any]:
 
     """
     try:
-        return {"result": handler(parsed.params)}
+        return {"result": handler(parsed.params, server)}
     except ProtocolError as exc:
         return {"error": {"code": exc.code, "message": exc.message}}
     except Exception:
@@ -193,11 +213,13 @@ def _invoke_handler(handler: Any, parsed: _ParsedRequest) -> dict[str, Any]:
         return {"error": {"code": INTERNAL_ERROR, "message": "Internal error"}}
 
 
-def dispatch(payload: Any) -> dict[str, Any] | None:
+def dispatch(payload: Any, server: ToolServer = PUBLIC_SERVER) -> dict[str, Any] | None:
     """Route one parsed JSON-RPC request to its MCP method handler.
 
     Args:
         payload: The parsed JSON request body.
+        server: The server answering — the public one unless the caller
+            names another.
 
     Returns:
         A JSON-RPC response envelope, or ``None`` for a notification (a
@@ -217,7 +239,7 @@ def dispatch(payload: Any) -> dict[str, Any] | None:
             parsed.request_id, METHOD_NOT_FOUND, f"Unknown method: {parsed.method}"
         )
 
-    outcome = _invoke_handler(handler, parsed)
+    outcome = _invoke_handler(handler, parsed, server)
     if parsed.is_notification:
         return None
     if "error" in outcome:
@@ -227,7 +249,7 @@ def dispatch(payload: Any) -> dict[str, Any] | None:
     return _result_envelope(parsed.request_id, outcome["result"] or {})
 
 
-def _handle_initialize(params: dict[str, Any]) -> dict[str, Any]:
+def _handle_initialize(params: dict[str, Any], server: ToolServer) -> dict[str, Any]:
     """Handle the ``initialize`` method — the MCP handshake.
 
     Negotiates the protocol version per the MCP spec: if the client
@@ -239,6 +261,7 @@ def _handle_initialize(params: dict[str, Any]) -> dict[str, Any]:
     Args:
         params: The client's ``initialize`` params (``protocolVersion``,
             ``capabilities``, ``clientInfo``).
+        server: The server answering; its name is the ``serverInfo`` name.
 
     Returns:
         The ``InitializeResult`` dict: ``protocolVersion``,
@@ -254,17 +277,18 @@ def _handle_initialize(params: dict[str, Any]) -> dict[str, Any]:
     return {
         "protocolVersion": negotiated,
         "capabilities": {"tools": {}, "resources": {}},
-        "serverInfo": {"name": "snowdesk", "version": settings.APP_VERSION},
+        "serverInfo": {"name": server.name, "version": settings.APP_VERSION},
     }
 
 
-def _handle_ping(params: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001 — ping carries no params
+def _handle_ping(params: dict[str, Any], server: ToolServer) -> dict[str, Any]:  # noqa: ARG001 — ping carries no params and is the same on every server
     """Handle the ``ping`` method — a liveness check with an empty result."""
     return {}
 
 
 def _handle_notifications_initialized(
     params: dict[str, Any],  # noqa: ARG001 — notification carries no params we use
+    server: ToolServer,  # noqa: ARG001 — the acknowledgement is the same on every server
 ) -> dict[str, Any]:
     """Acknowledge the client's ``notifications/initialized`` notification.
 
@@ -276,15 +300,19 @@ def _handle_notifications_initialized(
     return {}
 
 
-def _handle_tools_list(params: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001 — tools/list carries no params
-    """Handle ``tools/list`` — advertise the fixed v1 tool set.
+def _handle_tools_list(params: dict[str, Any], server: ToolServer) -> dict[str, Any]:  # noqa: ARG001 — tools/list carries no params
+    """Handle ``tools/list`` — advertise the server's fixed tool set.
+
+    Args:
+        params: Unused.
+        server: The server whose tools to list.
 
     Returns:
         ``{"tools": [...]}`` — one entry per registered tool, each with
         ``name``, ``description``, and ``inputSchema``.
 
     """
-    return {"tools": [_tool_listing(spec) for spec in TOOLS.values()]}
+    return {"tools": [_tool_listing(spec) for spec in server.tools.values()]}
 
 
 def _tool_listing(spec: Any) -> dict[str, Any]:
@@ -308,21 +336,30 @@ def _tool_listing(spec: Any) -> dict[str, Any]:
     return entry
 
 
-def _handle_resources_list(params: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001 — no pagination, so no params
+def _handle_resources_list(
+    params: dict[str, Any], server: ToolServer
+) -> dict[str, Any]:  # noqa: ARG001 — no pagination, so no params
     """Handle ``resources/list`` — advertise the MCP Apps ``ui://`` views.
+
+    Args:
+        params: Unused.
+        server: The server whose views to list (none, for ops).
 
     Returns:
         ``{"resources": [...]}`` — one entry per view.
 
     """
-    return {"resources": [resource.listing() for resource in UI_RESOURCES.values()]}
+    return {"resources": [resource.listing() for resource in server.resources.values()]}
 
 
-def _handle_resources_read(params: dict[str, Any]) -> dict[str, Any]:
+def _handle_resources_read(
+    params: dict[str, Any], server: ToolServer
+) -> dict[str, Any]:
     """Handle ``resources/read`` — return one view's HTML and CSP metadata.
 
     Args:
         params: ``{"uri": <ui:// uri>}``.
+        server: The server whose views to read from.
 
     Returns:
         ``{"contents": [...]}`` with the single matching content item.
@@ -335,17 +372,18 @@ def _handle_resources_read(params: dict[str, Any]) -> dict[str, Any]:
     uri = params.get("uri")
     if not isinstance(uri, str) or not uri:
         raise ProtocolError(INVALID_PARAMS, "Missing or invalid 'uri'")
-    resource = UI_RESOURCES.get(uri)
+    resource = server.resources.get(uri)
     if resource is None:
         raise ProtocolError(RESOURCE_NOT_FOUND, f"Resource not found: {uri}")
     return {"contents": [resource.contents()]}
 
 
-def _handle_tools_call(params: dict[str, Any]) -> dict[str, Any]:
+def _handle_tools_call(params: dict[str, Any], server: ToolServer) -> dict[str, Any]:
     """Handle ``tools/call`` — invoke one registered tool by name.
 
     Args:
         params: ``{"name": <tool name>, "arguments": {...}}``.
+        server: The server whose tool to call.
 
     Returns:
         An MCP ``CallToolResult`` dict: ``content`` (always present),
@@ -362,7 +400,7 @@ def _handle_tools_call(params: dict[str, Any]) -> dict[str, Any]:
     name = params.get("name")
     if not isinstance(name, str) or not name:
         raise ProtocolError(INVALID_PARAMS, "Missing or invalid 'name'")
-    spec = TOOLS.get(name)
+    spec = server.tools.get(name)
     if spec is None:
         raise ProtocolError(INVALID_PARAMS, f"Unknown tool: {name}")
     arguments = params.get("arguments", {})

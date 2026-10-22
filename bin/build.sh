@@ -6,6 +6,11 @@
 
 set -o errexit
 
+# Stamp the build time. settings.APP_RELEASED_AT reads it, so /api/version and
+# the ops MCP's build_info report when this code went live rather than when
+# the process last booted (SNOW-1191). Gitignored; the checkout is ephemeral.
+date -u +%Y-%m-%dT%H:%M:%S+00:00 > BUILT_AT
+
 # Python dependencies. Keep the environment in the project so this works in
 # both Render and cloud development environments; the latter does not provide
 # an active virtualenv. `--no-dev` mirrors the old `--only main`; `--frozen`

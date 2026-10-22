@@ -1,8 +1,8 @@
 ---
 name: mcp-server
-description: MCP JSON-RPC server at POST /api/mcp/ — OAuth bearer auth, seventeen read-only tools, resources/read, MCP Apps show_danger_map view
+description: MCP JSON-RPC server at POST /api/mcp/ — OAuth bearer auth, read-only tools, MCP Apps view, staff ops catalogue (ops_tools)
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-22
 ---
 
 # MCP server
@@ -614,6 +614,31 @@ To triage a view that will not open:
 A user behind such a filter still gets the tool's text result; only the
 map is lost. The blocked host is Anthropic's, so it cannot be worked
 around from this server.
+
+## The ops server (staff only)
+
+`apps/mcp_server/ops_tools.py` (SNOW-1191) is a second catalogue served by
+the same protocol code: `protocol.dispatch(payload, server)` takes a
+`ToolServer` (name, tools, views), and the ops one is `snowdesk-ops` with
+`OPS_TOOLS` and no views. The public endpoint cannot call an ops tool.
+Every tool is read-only and answers about the environment it runs on.
+
+| Tool | Answers |
+|------|---------|
+| `list_commands` | Which commands have run here (run count, commit runs, last run) and which project commands never have |
+| `list_command_runs` | Runs from the `CommandRun` register, newest first, filtered by command, status, mode, `invoked_via`, release, git SHA prefix, `since` |
+| `get_command_run` | One run in full: argv, counts, output tail, traceback, host and Render instance, and the runs it started |
+| `command_history` | One command's runs grouped by build, latest dry run beside latest commit run, and whether it committed on the build now deployed |
+| `build_info` | Git SHA, release, `released_at` (the `BUILT_AT` stamp `bin/build.sh` writes), `booted_at`, Python/Django, unapplied migrations |
+| `ingest_status` | Per provider: latest issue, hours since, target date; the last `fetch_bulletins` run; 24 h of `PipelineRun` by status |
+| `bulletin_coverage` | Per provider, for a day: regions expected versus rated, and which are missing |
+| `task_queue_health` | `django_tasks_db` backlog by status, oldest waiting task, 24 h of failures (inline backends report no queue) |
+| `weather_freshness` | Active locations with today's `Weather` row, the last fetch time and the last `fetch_weather` run |
+| `location_estate_health` | Location count by kind, and rows without elevation, without what3words, and orphaned (`LocationQuerySet.orphaned()`) |
+| `feature_flags` | Each waffle flag's live targeting, switches, and drift from `apps/core/fixtures/waffle_flags.json` |
+
+The staff-only endpoint that serves it lands with the move to mcp-auth
+(SNOW-1193); until then the catalogue is reachable only from code and tests.
 
 ## Error codes
 

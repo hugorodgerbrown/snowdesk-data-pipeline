@@ -112,7 +112,8 @@ apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
                  not contradict the no-signals-for-side-effects rule below
   mcp_server/    JSON-RPC MCP tools at POST /api/mcp/ (docs/mcp-server.md);
                  no models of its own — it reads the bulletins/regions tables.
-                 Every call needs a bearer token from oauth/ (SNOW-1035)
+                 Every call needs a bearer token from oauth/ (SNOW-1035).
+                 ops_tools.py is the staff ops catalogue (SNOW-1191)
   oauth/         Snowdesk's own OAuth 2.1 authorization server for the MCP
                  endpoint (SNOW-1035, docs/oauth.md) — ``OAuthClient``,
                  ``OAuthGrant`` (a "connected app", listed and disconnected
@@ -764,7 +765,7 @@ Read these when working in the relevant area:
 | Async operations (background threads, failure modes) | [`docs/async-operations.md`](docs/async-operations.md) |
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |
 | Telemetry pipeline (/api/telemetry receiver, event allowlist, pwa.* signals) | [`docs/telemetry-pipeline.md`](docs/telemetry-pipeline.md) |
-| MCP server (POST /api/mcp/ JSON-RPC tools, season cost caps, fuzzy region search) | [`docs/mcp-server.md`](docs/mcp-server.md) |
+| MCP server (POST /api/mcp/ JSON-RPC tools, season cost caps, fuzzy region search; the staff ops catalogue ops_tools — CommandRun register, build_info, ingest and estate health) | [`docs/mcp-server.md`](docs/mcp-server.md) |
 | OAuth for the MCP server (/.well-known/oauth-protected-resource, /oauth/authorize, token, register, revoke; OAuthGrant = connected app; CIMD SSRF guard; mint_mcp_token; Claude connector requirements) | [`docs/oauth.md`](docs/oauth.md) |
 | Why Snowdesk is its own hand-written OAuth server (no library, no anonymous MCP tier, public clients + PKCE) | [`docs/decisions/snowdesk-is-its-own-oauth-server.md`](docs/decisions/snowdesk-is-its-own-oauth-server.md) |
 | IndexedDB scaffolding (window.pwaDb, queue:events, meta:app, Reset Required) | [`docs/indexeddb-scaffolding.md`](docs/indexeddb-scaffolding.md) |

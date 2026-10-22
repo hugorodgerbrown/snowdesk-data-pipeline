@@ -74,23 +74,14 @@ class Command(RegisteredCommand):
     def _orphans(self) -> Any:
         """Return the anonymous locations nothing references.
 
+        The rule itself is ``LocationQuerySet.orphaned()``, shared with the
+        ops MCP's estate report (SNOW-1191).
+
         Returns:
             A queryset of orphaned ``Location`` rows.
 
         """
-        return Location.objects.anonymous().filter(
-            resort_locations__isnull=True,
-            micro_regions__isnull=True,
-            # SNOW-1144: a resort's pin. Its FK is PROTECT, so leaving this
-            # out would not delete a pin — it would raise mid-sweep.
-            pinned_resorts__isnull=True,
-            favourites__isnull=True,
-            field_observations__isnull=True,
-            # SNOW-1171: a trip's meeting point. Trip.meeting_point is
-            # PROTECT too, so a live trip's pin counted as an orphan raised
-            # ProtectedError and rolled the whole sweep back.
-            trips__isnull=True,
-        )
+        return Location.objects.orphaned()
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Report, and optionally delete, the orphaned locations."""
