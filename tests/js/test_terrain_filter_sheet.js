@@ -63,6 +63,9 @@ function buildFixture() {
       <h2>Terrain filter</h2>
       <input type="radio" name="terrain-filter-mode" value="match" checked>
       <input type="radio" name="terrain-filter-mode" value="slope">
+      <input type="radio" name="terrain-filter-mode" value="bulletin">
+      <section data-terrain-filter-bulletin hidden>Problem terrain</section>
+      <div data-terrain-filter-manual></div>
       <span data-terrain-filter-slope-line></span>
       <div data-terrain-filter-ramp data-mode="match">
         ${ramp.map((label, i) => `<button type="button" data-slope-class="${i}" aria-pressed="false">${label}</button>`).join('')}
@@ -283,6 +286,17 @@ describe('the mode (SNOW-1073)', () => {
     radio('match').checked = true;
     radio('match').dispatchEvent(changeEvent());
     expect(lastFilter()).toMatchObject({ mode: 'match' });
+  });
+
+  it('opens on "By bulletin" with its key in place of the controls (SNOW-1194)', () => {
+    // Set while the sheet was shut (the region sheet's switch), so no
+    // announcement reached a sheet that did not exist yet.
+    bridge.state.filter = { mode: 'bulletin', minSlope: 30 };
+    bridge.state.enabled = true;
+    window.pwaTerrainFilterSheet.open();
+    expect(radio('bulletin').checked).toBe(true);
+    expect(q('[data-terrain-filter-bulletin]').hidden).toBe(false);
+    expect(q('[data-terrain-filter-manual]').hidden).toBe(true);
   });
 
   it('summarises the filter in the legend without naming the mode, and shows its key', () => {

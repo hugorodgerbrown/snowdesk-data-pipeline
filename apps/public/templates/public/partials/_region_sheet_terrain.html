@@ -1,17 +1,23 @@
 {% load i18n %}
 {% comment %}
 public/partials/_region_sheet_terrain.html — the region sheet's "Show problem
-terrain on the map" switch, its colour key, and the rules it paints (SNOW-979).
+terrain on the map" switch and its colour key (SNOW-979, SNOW-1194).
 
 Above the bulletin, under the region's name and date (Hugo, 22 Oct: mockup
 option A). The strip is the panels' own "Show on the map" switch,
 ``includes/_map_overlay_toggle.html``, inside a box of the same ``bg-tag``
-that also holds the key, so the two read as one control. The key lists only
-what the day can paint: one swatch per level a problem is rated at, the
-undecided grey when a problem cannot be placed, then the hatch for steep
-ground no problem describes and the no-data hatch, which every day can
-show. The line under it says what the shading claims and what it does not
-— where the bulletin describes its problems, not a hazard map.
+that also holds the key, so the two read as one control.
+
+Since SNOW-1194 the switch is a shortcut to the terrain filter's "By
+bulletin" colour, which paints EVERY region by its own bulletin from
+``/api/problem-terrain/`` (Hugo, 22 Oct: region by region was choppy). It
+is on exactly when the filter is on in that colour; turning it on sets
+both, turning it off turns the filter off. The key stays this region's:
+one swatch per level its bulletin paints today, the undecided grey when a
+problem cannot be placed, then the hatch for steep ground no problem
+describes and the no-data hatch, which every day can show. The line under
+it says what the shading claims and what it does not — where the bulletin
+describes its problems, not a hazard map.
 
 ``static/js/map_region_sheet.js`` binds the switch to
 ``window.pwaBulletinTerrain`` (map.js), shows the key while it is on, and
@@ -19,44 +25,21 @@ shows the zoom line while the map is too far out for the tiles. The key and
 the zoom line render ``hidden`` so a body painted from the cache does not
 flash them before the script has read the switch's state.
 
-The swatches are ``.map-legend-swatch--*`` (static/css/map.css), painted from
-the same tokens static/js/bulletin_terrain_core.js paints the map with.
+The rows are ``includes/_bulletin_terrain_key.html``, the same key the
+terrain filter's sheet and the map legend show for the whole scale.
 
 Context (from apps.public.region_sheet.region_sheet_partial):
-  terrain_rules — the rules, written out as a json_script for the page.
-  terrain_key   — ``levels`` [{level, label}] and ``undecided``.
+  terrain_key — ``levels`` [{level, label}] and ``undecided``.
 {% endcomment %}
 <div class="rounded-tag bg-tag" data-testid="region-sheet-terrain">
     {% translate "Show problem terrain on the map" as terrain_label %}
     {% include "includes/_map_overlay_toggle.html" with id="region-sheet-terrain-toggle" label=terrain_label %}
     <div class="space-y-2 border-t border-border mx-3 pb-3 pt-2" data-region-sheet-terrain-key hidden>
-        <ul class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-2">
-            {% for row in terrain_key.levels %}
-                <li class="map-legend-row">
-                    <span
-                        class="map-legend-swatch map-legend-swatch--terrain-{{ row.level }}"
-                        aria-hidden="true"
-                    ></span>
-                    {% blocktrans with level=row.label trimmed %}{{ level }} problem{% endblocktrans %}
-                </li>
-            {% endfor %}
-            {% if terrain_key.undecided %}
-                <li class="map-legend-row">
-                    <span class="map-legend-swatch map-legend-swatch--terrain-undecided" aria-hidden="true"></span>
-                    {% translate "Described, can't be placed" %}
-                </li>
-            {% endif %}
-            <li class="map-legend-row">
-                <span class="map-legend-swatch map-legend-swatch--terrain-undescribed" aria-hidden="true"></span>
-                {% translate "Steep, not described" %}
-            </li>
-            <li class="map-legend-row">
-                <span class="map-legend-swatch map-legend-swatch--terrain-nodata" aria-hidden="true"></span>
-                {% translate "No terrain data" %}
-            </li>
-        </ul>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-2">
+            {% include "includes/_bulletin_terrain_key.html" with key=terrain_key %}
+        </div>
         <p class="text-xs text-text-3">
-            {% translate "Ground of 30° and over inside each problem's aspects and heights: where the bulletin describes its problems, not every slope that can slide." %}
+            {% translate "Every region is painted by its own bulletin; the key is this one's. Ground of 30° and over inside a problem's aspects and heights: where the bulletin describes its problems, not every slope that can slide." %}
             <a
                 href="{% url 'public:help' %}#help-topic-bulletin-terrain"
                 class="underline"
@@ -66,5 +49,4 @@ Context (from apps.public.region_sheet.region_sheet_partial):
             {% translate "Zoom in on the map to see it." %}
         </p>
     </div>
-    {{ terrain_rules|json_script:"region-sheet-terrain-rules" }}
 </div>

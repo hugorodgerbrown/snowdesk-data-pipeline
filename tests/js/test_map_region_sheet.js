@@ -331,17 +331,59 @@ describe('while open', () => {
     expect(sheet.textContent).not.toContain('first');
   });
 
-  it("stops painting the last region's problem terrain while the next body loads", async () => {
-    const clearRegion = vi.fn();
-    window.pwaBulletinTerrain = { clearRegion, showRegion: vi.fn() };
-    await boot();
+});
+
+describe('the problem-terrain switch', () => {
+  const TERRAIN_BODY = `${BODY}
+    <div data-testid="region-sheet-terrain">
+      <input type="checkbox" id="region-sheet-terrain-toggle">
+      <div data-region-sheet-terrain-key hidden></div>
+      <p data-region-sheet-terrain-zoom hidden></p>
+    </div>`;
+
+  /** A bridge whose state the test drives, as map.js's would. */
+  function bridge(on, where = 'ok') {
+    const state = { on, where };
+    window.pwaBulletinTerrain = {
+      isEnabled: () => state.on,
+      availability: () => state.where,
+      setEnabled: vi.fn((next) => { state.on = next; }),
+    };
+    return state;
+  }
+
+  afterEach(() => {
+    delete window.pwaBulletinTerrain;
+  });
+
+  it('starts at the filter\'s state, key shown and zoom line when the map is too far out', async () => {
+    bridge(true, 'zoom-in');
+    fetchMock.mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve(TERRAIN_BODY) }));
     select('CH-4115', 'tap');
     await settle();
-    clearRegion.mockClear();
-    fetchMock.mockImplementation(() => new Promise(() => {}));
-    select('CH-4116');
-    expect(clearRegion).toHaveBeenCalled();
-    delete window.pwaBulletinTerrain;
+    const input = /** @type {HTMLInputElement} */ (sheet.querySelector('#region-sheet-terrain-toggle'));
+    expect(input.checked).toBe(true);
+    expect(sheet.querySelector('[data-region-sheet-terrain-key]').hidden).toBe(false);
+    expect(sheet.querySelector('[data-region-sheet-terrain-zoom]').hidden).toBe(false);
+  });
+
+  it('turns the filter on with the region, and follows it back off', async () => {
+    const state = bridge(false);
+    fetchMock.mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve(TERRAIN_BODY) }));
+    select('CH-4115', 'tap');
+    await settle();
+    const input = /** @type {HTMLInputElement} */ (sheet.querySelector('#region-sheet-terrain-toggle'));
+    expect(input.checked).toBe(false);
+    input.checked = true;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(window.pwaBulletinTerrain.setEnabled).toHaveBeenCalledWith(true, 'CH-4115');
+    // The filter's own sheet switches it off: the switch here follows.
+    state.on = false;
+    document.dispatchEvent(new CustomEvent('snowdesk:terrain-filter-changed', {
+      detail: { enabled: false, availability: 'ok' },
+    }));
+    expect(input.checked).toBe(false);
+    expect(sheet.querySelector('[data-region-sheet-terrain-key]').hidden).toBe(true);
   });
 });
 

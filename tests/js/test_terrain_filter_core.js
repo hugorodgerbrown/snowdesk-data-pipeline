@@ -298,6 +298,15 @@ describe('filter state', () => {
     expect(core.normaliseFilter({ mode: 3 }).mode).toBe('match');
     expect(core.parseFilter(core.serialiseFilter({ mode: 'slope' })).mode).toBe('slope');
   });
+
+  it('keeps the bulletin mode and the reader\'s settings under it (SNOW-1194)', () => {
+    const stored = core.serialiseFilter({ mode: 'bulletin', aspects: [0, 1], minSlope: 35 });
+    const back = core.parseFilter(stored);
+    expect(back.mode).toBe('bulletin');
+    expect(back.aspects).toEqual([0, 1]);
+    expect(back.minSlope).toBe(35);
+    expect(core.filterHash({ mode: 'bulletin' })).toBe('ff-30----b');
+  });
 });
 
 describe('summarise', () => {
@@ -333,6 +342,14 @@ describe('summarise', () => {
     expect(core.summarise({ mode: 'slope' }, strings)).toBe('All aspects · 30°+');
     expect(core.summarise({ mode: 'slope', aspects: [0, 1], maxElevation: 3600 }, strings, { short: true }))
       .toBe('2 aspects · 30°+ · below 3,600 m');
+  });
+
+  it('says "by bulletin" alone in the bulletin mode, which sets the rest', () => {
+    const withBulletin = { ...strings, bulletin: 'By each region\'s bulletin' };
+    expect(core.summarise({ mode: 'bulletin', aspects: [0], minSlope: 40 }, withBulletin))
+      .toBe('By each region\'s bulletin');
+    expect(core.summarise({ mode: 'bulletin' }, withBulletin, { short: true }))
+      .toBe('By each region\'s bulletin');
   });
 });
 

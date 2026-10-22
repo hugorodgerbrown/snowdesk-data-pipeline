@@ -1,14 +1,15 @@
 /*
  * static/js/bulletin_terrain_core.js — the pure half of the map's
- * problem-terrain layer (SNOW-979).
+ * problem-terrain layer (SNOW-979, SNOW-1194).
  *
- * The region sheet's "Show problem terrain on the map" switch paints the
- * selected region's steep ground by what the day's bulletin says about it.
- * It is the terrain filter (SNOW-978) with its settings taken from the
- * bulletin rather than from the reader: the same terrain-class tiles, the
- * same `paintTile`, a different classifier and palette. The server sends
- * the rules (apps/bulletins/services/problem_terrain.py) in the sheet's
- * body; this turns them into a per-pixel answer.
+ * The terrain filter's "By bulletin" colour — and the region sheet's "Show
+ * problem terrain on the map" switch, its shortcut — paints every region's
+ * steep ground by what that region's bulletin says about it. It is the
+ * terrain filter (SNOW-978) with its settings taken from the bulletins
+ * rather than from the reader: the same terrain-class tiles, the same
+ * `paintTile`, a different classifier and palette. The server sends the
+ * day's rules for every region (/api/problem-terrain/, grouped by
+ * bulletin); this turns them into a per-pixel answer.
  *
  * FOUR STATES, and blank is never one of them for steep ground:
  *
@@ -26,11 +27,15 @@
  * is everything outside the region. See
  * docs/decisions/the-bulletin-terrain-layer-paints-what-it-cannot-decide.md.
  *
- * CLIPPING. `regionMask` rasterises the region's boundary into a tile's
+ * CLIPPING. `regionMask` rasterises one region's boundary into a tile's
  * pixel grid (even-odd scanline fill, sampled at pixel centres, in Web
- * Mercator), and `maskClassifier` wraps a classifier so a pixel outside
- * the mask is NONE. Pure arithmetic rather than a canvas Path2D, so the
- * clipping is tested in jsdom like everything else here.
+ * Mercator). A tile can straddle several regions, each with its own rules,
+ * so `regionIndex` stacks their masks into one grid of region slots and
+ * `indexClassifier` sends each pixel to its own region's classifier — a
+ * pixel in no region is NONE. Pure arithmetic rather than a canvas Path2D,
+ * so the clipping is tested in jsdom like everything else here. `ringsBBox`
+ * and `tileBBox` let the caller skip, cheaply, every region a tile cannot
+ * touch.
  *
  * Reads `self.pwaTerrainFilterCore` at parse time, so terrain_filter_core.js
  * must load first.
@@ -41,11 +46,14 @@
  *
  *   PROTOCOL / STEEP_BAND / STATE / PALETTE / FILL_ALPHA
  *   normaliseRules(raw)          → Rule[]
+ *   normaliseDay(raw)            → Day (the /api/problem-terrain/ payload)
  *   createClassifier(rules)      → (cell) => PALETTE index
- *   maskClassifier(classify, mask)
  *   ringsOf(geometry)            → lng/lat rings of a Polygon / MultiPolygon
+ *   ringsBBox(rings) / tileBBox(tile) / bboxesOverlap(a, b)
  *   regionMask(rings, tile, size?) → Uint8Array | null (null: tile outside)
- *   rulesHash(regionId, rules)
+ *   regionIndex(masks)           → Uint8Array | null, slot k+1 = masks[k]
+ *   indexClassifier(classifiers, index)
+ *   dayHash(day)
  *   protocolTileUrl(hash) / parseProtocolUrl(url)
  */
 
@@ -81,6 +89,15 @@
    */
 
   /** @typedef {ReadonlyArray<ReadonlyArray<ReadonlyArray<number>>>} Rings */
+
+  /** @typedef {[number, number, number, number]} BBox west, south, east, north */
+
+  /**
+   * @typedef {object} Day
+   * @property {string} date The day, YYYY-MM-DD, or '' when unknown.
+   * @property {Map<string, Rule[]>} bulletins Rules by bulletin id.
+   * @property {Map<string, string>} regions Bulletin id by region id.
+   */
 
   /** The custom protocol MapLibre fetches painted tiles through. */
   const PROTOCOL = 'bulletinterrain';
@@ -205,6 +222,33 @@
   }
 
   /**
+   * Read the day's payload: every region's bulletin, every bulletin's rules.
+   *
+   * A region naming a bulletin the payload does not carry is dropped, so
+   * every region in `regions` has rules to paint (possibly none, which
+   * paints its steep ground as undescribed).
+   *
+   * @param {*} raw The parsed /api/problem-terrain/ response.
+   * @returns {Day}
+   */
+  function normaliseDay(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    /** @type {Map<string, Rule[]>} */
+    const bulletins = new Map();
+    const rawBulletins = src.bulletins && typeof src.bulletins === 'object' ? src.bulletins : {};
+    for (const [id, rules] of Object.entries(rawBulletins)) {
+      bulletins.set(id, normaliseRules(rules));
+    }
+    /** @type {Map<string, string>} */
+    const regions = new Map();
+    const rawRegions = src.regions && typeof src.regions === 'object' ? src.regions : {};
+    for (const [regionId, id] of Object.entries(rawRegions)) {
+      if (typeof id === 'string' && bulletins.has(id)) regions.set(regionId, id);
+    }
+    return { date: typeof src.date === 'string' ? src.date : '', bulletins, regions };
+  }
+
+  /**
    * Whether a rule admits a pixel of data.
    *
    * @param {Rule} rule
@@ -244,22 +288,6 @@
   }
 
   /**
-   * Wrap a classifier so a pixel outside the region paints nothing.
-   *
-   * The shape terrain_filter_core.paintTile calls: `(cell, px, py, tile)`.
-   *
-   * @param {(cell: Cell) => number} classify
-   * @param {Uint8Array} mask From regionMask, TILE_SIZE² entries.
-   * @returns {(cell: Cell, px: number, py: number, tile: TileCoord) => number}
-   */
-  function maskClassifier(classify, mask) {
-    const size = Math.round(Math.sqrt(mask.length));
-    return function clipped(cell, px, py, _tile) {
-      return mask[py * size + px] ? classify(cell) : STATE.NONE;
-    };
-  }
-
-  /**
    * The outer and inner rings of a GeoJSON Polygon or MultiPolygon.
    *
    * Every ring goes into one list: the even-odd fill makes a hole a hole
@@ -273,6 +301,52 @@
     if (geometry.type === 'Polygon') return geometry.coordinates;
     if (geometry.type === 'MultiPolygon') return geometry.coordinates.flat();
     return [];
+  }
+
+  /**
+   * The lng/lat bounding box of a region's rings.
+   *
+   * @param {Rings} rings
+   * @returns {BBox|null} null when there are no points.
+   */
+  function ringsBBox(rings) {
+    let west = Infinity;
+    let south = Infinity;
+    let east = -Infinity;
+    let north = -Infinity;
+    for (const ring of rings) {
+      for (const p of ring) {
+        if (p[0] < west) west = p[0];
+        if (p[0] > east) east = p[0];
+        if (p[1] < south) south = p[1];
+        if (p[1] > north) north = p[1];
+      }
+    }
+    return Number.isFinite(west) ? [west, south, east, north] : null;
+  }
+
+  /**
+   * The lng/lat bounding box of one XYZ tile.
+   *
+   * @param {TileCoord} tile
+   * @returns {BBox}
+   */
+  function tileBBox(tile) {
+    const n = 2 ** tile.z;
+    const lng = (/** @type {number} */ x) => (x / n) * 360 - 180;
+    const lat = (/** @type {number} */ y) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * 180) / Math.PI;
+    return [lng(tile.x), lat(tile.y + 1), lng(tile.x + 1), lat(tile.y)];
+  }
+
+  /**
+   * Whether two boxes share any ground, edges included.
+   *
+   * @param {BBox} a
+   * @param {BBox} b
+   * @returns {boolean}
+   */
+  function bboxesOverlap(a, b) {
+    return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
   }
 
   /**
@@ -358,23 +432,70 @@
   }
 
   /**
-   * The tile URL's cache-buster: a different region or a different day's
-   * rules is a different URL, so MapLibre never shows a stale paint.
+   * Stack several regions' masks into one grid of region slots.
    *
-   * @param {string} regionId
-   * @param {ReadonlyArray<Rule>} rules
-   * @returns {string}
+   * Slot k + 1 is `masks[k]`; 0 is no region. Neighbouring regions share
+   * an edge, not ground, so where two masks both claim a pixel (a pixel
+   * centre exactly on the shared boundary) the later one simply wins.
+   *
+   * @param {ReadonlyArray<Uint8Array|null>} masks From regionMask, in slot order.
+   * @returns {Uint8Array|null} null when no mask has any pixel.
    */
-  function rulesHash(regionId, rules) {
-    const part = (/** @type {number} */ v) => (Number.isFinite(v) ? String(v) : '');
-    const body = rules
-      .map((r) => [r.rating, r.mask.toString(16), part(r.lower), part(r.upper), r.decided ? 1 : 0].join('.'))
-      .join('_');
-    return `${regionId}~${body}`;
+  function regionIndex(masks) {
+    /** @type {Uint8Array|null} */
+    let index = null;
+    masks.forEach((mask, k) => {
+      if (!mask) return;
+      if (!index) index = new Uint8Array(mask.length);
+      for (let i = 0; i < mask.length; i += 1) {
+        if (mask[i]) index[i] = k + 1;
+      }
+    });
+    return index;
   }
 
   /**
-   * @param {string} hash From rulesHash().
+   * Send each pixel to its own region's classifier.
+   *
+   * The shape terrain_filter_core.paintTile calls: `(cell, px, py, tile)`.
+   *
+   * @param {ReadonlyArray<(cell: Cell) => number>} classifiers Slot k + 1's is classifiers[k].
+   * @param {Uint8Array} index From regionIndex, TILE_SIZE² entries.
+   * @returns {(cell: Cell, px: number, py: number, tile: TileCoord) => number}
+   */
+  function indexClassifier(classifiers, index) {
+    const size = Math.round(Math.sqrt(index.length));
+    return function byRegion(cell, px, py, _tile) {
+      const slot = index[py * size + px];
+      return slot ? classifiers[slot - 1](cell) : STATE.NONE;
+    };
+  }
+
+  /**
+   * The tile URL's cache-buster: another day, or the same day re-issued
+   * with different rules or regions, is a different URL, so MapLibre never
+   * shows a stale paint. A short FNV-1a digest of everything that paints.
+   *
+   * @param {Day} day From normaliseDay.
+   * @returns {string}
+   */
+  function dayHash(day) {
+    const part = (/** @type {number} */ v) => (Number.isFinite(v) ? String(v) : '');
+    const ids = [...day.bulletins.keys()].sort();
+    const body = ids.map((id) => id + ':' + (day.bulletins.get(id) || [])
+      .map((r) => [r.rating, r.mask.toString(16), part(r.lower), part(r.upper), r.decided ? 1 : 0].join('.'))
+      .join('_')).join('|')
+      + '#' + [...day.regions.entries()].sort().map((e) => e.join('=')).join(',');
+    let h = 0x811c9dc5;
+    for (let i = 0; i < body.length; i += 1) {
+      h ^= body.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return `${day.date}~${h.toString(36)}`;
+  }
+
+  /**
+   * @param {string} hash From dayHash().
    * @returns {string}
    */
   function protocolTileUrl(hash) {
@@ -398,11 +519,16 @@
     PALETTE,
     FILL_ALPHA,
     normaliseRules,
+    normaliseDay,
     createClassifier,
-    maskClassifier,
     ringsOf,
+    ringsBBox,
+    tileBBox,
+    bboxesOverlap,
     regionMask,
-    rulesHash,
+    regionIndex,
+    indexClassifier,
+    dayHash,
     protocolTileUrl,
     parseProtocolUrl,
   });

@@ -45,6 +45,13 @@
  *             line and the point card. The aspect, slope-range and
  *             elevation settings mask it exactly as they mask the tint.
  *
+ *   'bulletin' — "By bulletin" (SNOW-1194): every region painted by its own
+ *             bulletin, which sets the slope, aspect and height itself. This
+ *             file paints nothing for it — map.js hides the filter's raster
+ *             and draws the problem-terrain layer instead
+ *             (bulletin_terrain_core.js) — and the reader's own settings
+ *             are kept, untouched, for when they switch back.
+ *
  * An absent or unknown mode is 'match', so a filter stored before the mode
  * existed reads back as it always did.
  *
@@ -89,8 +96,9 @@
 
   /**
    * @typedef {object} TerrainFilter
-   * @property {'match'|'slope'} mode What a matching pixel is painted with:
-   *   the match tint, or its slope class.
+   * @property {'match'|'slope'|'bulletin'} mode What a matching pixel is painted
+   *   with: the match tint, its slope class, or (SNOW-1194) the bulletins'
+   *   problem terrain, which another layer draws.
    * @property {ReadonlyArray<number>} aspects Octants that match, 0 (N) … 7 (NW), sorted.
    * @property {number} minSlope Lowest matching slope, a SLOPE_LADDER value.
    * @property {number|null} maxSlope Exclusive upper slope, or null for none.
@@ -222,10 +230,11 @@
   ]);
 
   /**
-   * The two modes, the default first: 'match' paints matching ground in
-   * one tint, 'slope' paints it by slope class.
+   * The three modes, the default first: 'match' paints matching ground in
+   * one tint, 'slope' paints it by slope class, 'bulletin' hands the map to
+   * the problem-terrain layer (SNOW-1194).
    */
-  const MODES = Object.freeze(['match', 'slope']);
+  const MODES = Object.freeze(['match', 'slope', 'bulletin']);
 
   const SLOPE_PALETTE_INDEX = Object.freeze({ NONE: 0, NODATA: 1, FIRST_CLASS: 2 });
 
@@ -422,6 +431,7 @@
       part(f.maxElevation),
     ];
     if (f.mode === 'slope') parts.push('s');
+    if (f.mode === 'bulletin') parts.push('b');
     return parts.join('-');
   }
 
@@ -523,7 +533,7 @@
    * @param {Uint8ClampedArray} src The class tile's RGBA pixels.
    * @param {Uint8ClampedArray} out Where to write; same length as `src`.
    * @param {Classifier} classify From createFilterClassifier, or
-   *   bulletin_terrain_core.js's maskClassifier (SNOW-979).
+   *   bulletin_terrain_core.js's indexClassifier (SNOW-1194).
    * @param {ReadonlyArray<PaletteEntry>} palette Index → colour.
    * @param {TileCoord} tile The tile being painted.
    * @returns {Uint8ClampedArray} `out`.
@@ -623,6 +633,7 @@
    * Aspects, slope angle, elevation — the mode is not named (SNOW-1109).
    * Long: "N, NE, NW · 35°+ · above 2,400 m". Short: "3 aspects · 35°+ ·
    * above 2,400 m". The elevation part is left out when both bounds are null.
+   * In the bulletin mode it is `strings.bulletin` alone, both lengths.
    *
    * @param {*} filter The filter.
    * @param {Object<string, string>} strings The sheet's strings — see
@@ -632,6 +643,9 @@
    */
   function summarise(filter, strings, options) {
     const f = normaliseFilter(filter);
+    // The bulletin sets slope, aspect and height, so the reader's own
+    // settings say nothing about what is on the map (SNOW-1194).
+    if (f.mode === 'bulletin') return strings.bulletin;
     const opts = options || {};
     const num = opts.formatNumber || ((/** @type {number} */ n) => n.toLocaleString('en-GB'));
     const parts = [];

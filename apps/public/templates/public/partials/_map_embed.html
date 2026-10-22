@@ -1245,6 +1245,13 @@ Optional context:
                             href="{% url 'public:help' %}#help-topic-slope"
                         >{% trans "Slope angle" %}</a>
                     </div>
+                    {# SNOW-1194: "By bulletin" — every region by its own bulletin. #}
+                    <div class="map-legend-title" data-terrain-filter-key="bulletin" hidden>
+                        <a
+                            class="map-legend-attribution-link"
+                            href="{% url 'public:help' %}#help-topic-bulletin-terrain"
+                        >{% trans "Problem terrain" %}</a>
+                    </div>
                     {% include "includes/_terrain_filter_key.html" %}
                     {# What the filter is set to, in words — "N, NE, NW · 35°+ ·   #}
                     {# above 2,400 m" — written by terrain_filter_sheet.js. It    #}
