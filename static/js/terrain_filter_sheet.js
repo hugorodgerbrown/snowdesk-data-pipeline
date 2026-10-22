@@ -225,6 +225,10 @@
     for (const radio of sheetEl.querySelectorAll('input[name="terrain-filter-mode"]')) {
       radio.checked = radio.value === filter.mode;
     }
+    // A sheet cloned on open starts in the template's mode, which the last
+    // announcement never saw (the region sheet's switch can set "By
+    // bulletin" while this sheet is shut).
+    syncModeKeys(sheetEl, filter.mode);
     for (const wedge of sheetEl.querySelectorAll('[data-octant]')) {
       const on = filter.aspects.includes(Number(wedge.dataset.octant));
       wedge.setAttribute('aria-pressed', on ? 'true' : 'false');

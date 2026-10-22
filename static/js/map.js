@@ -4980,6 +4980,12 @@
     // currentDisplayedDate is updated by an earlier listener (registration
     // order), so it is the new day by the time this runs.
     document.addEventListener('snowdesk:date-changed', () => {
+      // Drop the old day at once: until the new one arrives — or for good,
+      // if its fetch fails — the map must not paint one day's choropleth
+      // with another day's problem terrain.
+      if (bulletinTerrainDay && bulletinTerrainDay.date !== currentDisplayedDate) {
+        setBulletinTerrainDay(null);
+      }
       clearTimeout(bulletinTerrainDayTimer);
       bulletinTerrainDayTimer = setTimeout(refreshBulletinTerrainDay, BULLETIN_TERRAIN_DAY_DELAY_MS);
     });
