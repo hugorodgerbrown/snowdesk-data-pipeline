@@ -233,3 +233,11 @@ class TestIdempotencyReplaySignal:
             middleware(_post("replay-key-1"))
         second_events = [c.args[1] for c in second_capture.info.call_args_list]
         assert "pwa.idempotency.replay" in second_events
+
+
+def test_telemetry_lines_reach_the_log_at_info() -> None:
+    """The INFO lines are not dropped by the WARNING root (Codex P1, #1158)."""
+    import logging
+
+    for name in ("apps.analytics.signals", "apps.analytics.views"):
+        assert logging.getLogger(name).isEnabledFor(logging.INFO), name

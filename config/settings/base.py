@@ -1519,6 +1519,14 @@ LOGGING = {
             "level": "DEBUG",
             "propagate": False,
         },
+        # SNOW-1182: the telemetry.client / telemetry.signal lines are the
+        # only record of the PWA ops events now that PostHog is gone, and
+        # most are INFO, which the WARNING root would drop.
+        "apps.analytics": {
+            "handlers": ["console", "file_errors"],
+            "level": "INFO",
+            "propagate": False,
+        },
         # Python `warnings.warn(...)` calls are routed here via
         # `logging.captureWarnings(True)` below, so DeprecationWarning and
         # friends land in errors.log alongside everything else.
