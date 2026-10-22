@@ -1,18 +1,29 @@
 """
-apps/mcp_server/views.py — HTTP view for the hosted MCP JSON-RPC endpoint.
+apps/mcp_server/views.py — HTTP views for the hosted MCP JSON-RPC endpoints.
 
-Exposes a single view, ``mcp_endpoint``, mounted at ``POST /api/mcp/``
-(``apps/public/api_urls.py``). Mirrors the shape of
-``apps/analytics/views.py::telemetry_receive`` — the other stateless,
-CSRF-exempt, rate-limited JSON POST endpoint in this codebase — but returns
-a JSON-RPC 2.0 envelope rather than a bare 204.
+Two endpoints, one shape, different tool catalogues:
 
-**Authentication (SNOW-1035).** Every request needs an OAuth access token
-issued by Snowdesk's own authorization server (``apps.oauth``), sent as
-``Authorization: Bearer …``. Without one the answer is ``401`` with a
-``WWW-Authenticate`` header naming the protected-resource metadata, which
-is how an MCP client (Claude) discovers where to send the user to sign in.
-Claude ignores that header on any other status, so it must be a 401.
+* ``mcp_endpoint`` at ``POST /api/mcp/`` — the public catalogue (bulletins,
+  danger ratings, resorts) for any connected account.
+* ``ops_mcp_endpoint`` at ``POST /api/ops/mcp/`` (SNOW-1191) — the staff ops
+  catalogue (the command run register, build info, ingest and estate
+  health). A connected account that is not staff gets a 403.
+
+The ops endpoint is a sibling path, not ``/api/mcp/ops/``: django-oauth-
+toolkit checks a token's audience by URL prefix, so a token bound to
+``/api/mcp/`` would also be accepted beneath it. Each endpoint's tokens are
+bound to its own URL.
+
+**Authentication (SNOW-1193).** Both are mcp-auth ``@mcp_endpoint`` views:
+every request needs an OAuth access token from the mcp-auth server mounted
+in ``config/urls.py``, bound to the endpoint (RFC 8707) and held by an
+account the connect rule (``apps.oauth.policy.verified_account``) admits.
+Anything else is a ``401`` whose ``WWW-Authenticate`` header names the
+protected-resource metadata, which is how an MCP client (Claude) discovers
+where to send the user to sign in. mcp-auth also applies the per-user rate
+limit, marks every response ``no-store``, refuses any verb but POST with a
+405, and exempts the view from CSRF (it reads only the Authorization
+header). The per-IP limit here throttles token guessing from one address.
 """
 
 from __future__ import annotations
@@ -21,162 +32,87 @@ import json
 import logging
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
-from django_ratelimit.core import is_ratelimited
 from django_ratelimit.decorators import ratelimit
+from mcp_auth.resource import mcp_endpoint as require_mcp_token
 
 from apps.mcp_server import protocol
-from apps.oauth.services.resource import request_origin
-from apps.oauth.services.tokens import authenticate_bearer
+from apps.mcp_server.ops_tools import OPS_TOOLS
 
 logger = logging.getLogger(__name__)
 
-
-def _no_store(response: HttpResponse) -> HttpResponse:
-    """Attach ``Cache-Control: no-store`` to a response.
-
-    Every response from this endpoint is per-request JSON-RPC state; none
-    of it is safe to cache at any layer (browser, CDN, or intermediate
-    proxy).
-
-    Args:
-        response: The response to annotate.
-
-    Returns:
-        The same response, mutated in place, for chaining.
-
-    """
-    response["Cache-Control"] = "no-store"
-    return response
+OPS_SERVER = protocol.ToolServer("snowdesk-ops", OPS_TOOLS, {})
 
 
-# Per-user ceiling. The per-IP limit on the decorator stays (raised to
-# 120/m) to throttle token guessing from one address; this one bounds what a
-# single account can spend, whichever address its client calls from.
-USER_RATE: str = "60/m"
+def _answer(request: HttpRequest, server: protocol.ToolServer) -> HttpResponse:
+    """Dispatch one JSON-RPC request body against ``server``.
 
-
-def _bearer_token(request: HttpRequest) -> str | None:
-    """Return the token from ``Authorization: Bearer <token>``, or None.
+    * The body must be a single JSON object (batched JSON-RPC requests are
+      not supported). A malformed body yields a JSON-RPC ``-32700 Parse
+      error`` envelope rather than a raw 400, so MCP clients can handle it
+      via their normal error path.
+    * A JSON-RPC *notification* (a request object with no ``id`` key, e.g.
+      ``notifications/initialized``) is processed but gets no body —
+      ``202 Accepted``, which the MCP Streamable HTTP transport requires.
+      A ``204`` here left Claude's connector stuck after the handshake,
+      never listing tools.
 
     Args:
-        request: The incoming request.
+        request: The authenticated POST.
+        server: The tool catalogue to answer from.
 
     Returns:
-        The token, or None when the header is absent or another scheme.
+        The JSON-RPC result or error envelope, or a bare 202.
 
     """
-    header = request.headers.get("Authorization", "")
-    scheme, _, value = header.partition(" ")
-    if scheme.lower() != "bearer" or not value.strip():
-        return None
-    return value.strip()
-
-
-def _unauthorised(request: HttpRequest, *, token_sent: bool) -> HttpResponse:
-    """Return the 401 that starts an MCP client's OAuth discovery.
-
-    ``resource_metadata`` names the protected-resource document for the
-    exact path the client called, so its ``resource`` matches the URL the
-    user typed (``/api/mcp/`` or ``/api/mcp``).
-
-    Args:
-        request: The incoming request.
-        token_sent: Whether a bearer token was presented (and rejected),
-            which adds ``error="invalid_token"`` (RFC 6750 §3.1).
-
-    Returns:
-        A 401 JSON response with the ``WWW-Authenticate`` challenge.
-
-    """
-    metadata = (
-        f"{request_origin(request)}/.well-known/oauth-protected-resource{request.path}"
-    )
-    challenge = f'Bearer resource_metadata="{metadata}", scope="mcp"'
-    if token_sent:
-        challenge += ', error="invalid_token"'
-    response = JsonResponse(
-        {
-            "error": "invalid_token" if token_sent else "unauthorized",
-            "error_description": "A Snowdesk account is required. Connect with OAuth.",
-        },
-        status=401,
-    )
-    response["WWW-Authenticate"] = challenge
-    return _no_store(response)
-
-
-# JSON-RPC clients (Claude Desktop, MCP Inspector, curl) cannot mint CSRF
-# tokens — the same rationale as apps.analytics.views.telemetry_receive. The
-# endpoint is read-only from the caller's point of view (every tool is a
-# query, nothing mutates Snowdesk state), so the CSRF risk surface is empty.
-# Rationale: docs/mcp-server.md.
-# nosemgrep: python.django.security.audit.csrf-exempt.no-csrf-exempt
-@csrf_exempt
-@require_POST
-@ratelimit(key="ip", rate="120/m", block=True)
-def mcp_endpoint(request: HttpRequest) -> HttpResponse:
-    """Handle one JSON-RPC 2.0 request against the MCP tool server.
-
-    Contract:
-
-    * Only ``POST`` is accepted; ``@require_POST`` returns 405 with
-      ``Allow: POST`` for any other verb.
-    * CSRF-exempt — see the module-level comment above.
-    * Requires a Snowdesk OAuth access token (``Authorization: Bearer``).
-      No token, or a rejected one, is a ``401`` carrying the
-      ``WWW-Authenticate`` challenge — see the module docstring.
-    * Rate-limited to 120 requests / minute per source IP
-      (``django-ratelimit``, ``block=True`` — over-limit requests are
-      rejected automatically rather than falling through to the view),
-      and to 60 requests / minute per user (``429``).
-    * The request body must be a single JSON object (batched JSON-RPC
-      requests are not supported in v1). A malformed body yields a
-      JSON-RPC ``-32700 Parse error`` envelope rather than a raw 400, so
-      MCP clients can handle it via their normal error path.
-    * Every response — success or error — carries
-      ``Cache-Control: no-store`` and ``Content-Type: application/json``.
-    * A JSON-RPC *notification* (a request object with no ``id`` key,
-      e.g. ``notifications/initialized``) is accepted and processed but
-      gets no response body — returns ``202 Accepted``, which the MCP
-      Streamable HTTP transport requires ("the server MUST return HTTP
-      status code 202 Accepted with no body"). A ``204`` here left
-      Claude's connector stuck after the handshake, never listing tools.
-
-    Args:
-        request: The incoming POST request.
-
-    Returns:
-        A JSON HttpResponse carrying the JSON-RPC result or error
-        envelope, a bare 202 for notifications, 401 without a valid
-        token, or 429 over the per-user limit.
-
-    """
-    raw_token = _bearer_token(request)
-    user = authenticate_bearer(raw_token, request) if raw_token else None
-    if user is None:
-        return _unauthorised(request, token_sent=raw_token is not None)
-
-    if is_ratelimited(
-        request,
-        group="mcp:user",
-        key=lambda _group, _request: f"user:{user.pk}",
-        rate=USER_RATE,
-        increment=True,
-    ):
-        return _no_store(JsonResponse({"error": "rate_limited"}, status=429))
-
     try:
         payload = json.loads(request.body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        logger.info("mcp_server: invalid JSON body: %s", exc)
-        return _no_store(JsonResponse(protocol.parse_error_response(), status=200))
+    except UnicodeDecodeError, json.JSONDecodeError:
+        logger.info("mcp_server: invalid JSON body on %s", request.path)
+        return JsonResponse(protocol.parse_error_response(), status=200)
 
-    response_body = protocol.dispatch(payload)
+    response_body = protocol.dispatch(payload, server)
     if response_body is None:
-        # Notification — MCP/JSON-RPC forbids a response body, and the
-        # Streamable HTTP transport requires 202, not 204 (see docstring).
-        return _no_store(HttpResponse(status=202))
+        return HttpResponse(status=202)
+    return JsonResponse(response_body)
 
-    return _no_store(JsonResponse(response_body))
+
+@ratelimit(key="ip", rate="120/m", block=True)
+@require_mcp_token
+def mcp_endpoint(request: HttpRequest) -> HttpResponse:
+    """Handle one JSON-RPC 2.0 request against the public tool catalogue.
+
+    Args:
+        request: The incoming POST, authenticated by ``@mcp_endpoint``.
+
+    Returns:
+        The JSON-RPC answer (see :func:`_answer`).
+
+    """
+    return _answer(request, protocol.PUBLIC_SERVER)
+
+
+@ratelimit(key="ip", rate="120/m", block=True)
+@require_mcp_token
+def ops_mcp_endpoint(request: HttpRequest) -> HttpResponse:
+    """Handle one JSON-RPC 2.0 request against the staff ops catalogue.
+
+    A 403, not a 401: the token is good, and a 401 would send the client
+    round the OAuth dance again for an account that will never be staff.
+
+    Args:
+        request: The incoming POST, authenticated by ``@mcp_endpoint``.
+
+    Returns:
+        The JSON-RPC answer (see :func:`_answer`), or 403 for a non-staff
+        account.
+
+    """
+    if not request.user.is_staff:
+        return JsonResponse(
+            {
+                "error": "forbidden",
+                "error_description": "The ops server is for Snowdesk staff.",
+            },
+            status=403,
+        )
+    return _answer(request, OPS_SERVER)

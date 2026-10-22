@@ -1,204 +1,138 @@
 ---
 name: oauth
-description: OAuth 2.1 for /api/mcp/ — .well-known metadata, /oauth/authorize|token|register, OAuthGrant, CIMD guard, mint_mcp_token
+description: MCP OAuth via mcp-auth — /.well-known, /oauth/authorize|token|register, verified_account, oauth:disconnect, mint_mcp_token
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-10-22
 ---
 
 # OAuth for the MCP server
 
-Since SNOW-1035 the MCP endpoint (`POST /api/mcp/`, [`docs/mcp-server.md`](mcp-server.md))
-needs a Snowdesk account. Snowdesk is its own OAuth 2.1 authorization
-server, written by hand on Django primitives in `apps/oauth/`, following
-the MCP authorization spec (2025-11-25) and Claude's connector requirements
-(claude.com/docs/connectors/building/authentication). Why hand-written, and
-why no anonymous tier: [`docs/decisions/snowdesk-is-its-own-oauth-server.md`](decisions/snowdesk-is-its-own-oauth-server.md).
+Both MCP endpoints — the public catalogue at `POST /api/mcp/` and the staff
+ops catalogue at `POST /api/ops/mcp/` ([`docs/mcp-server.md`](mcp-server.md))
+— need a Snowdesk account. Since SNOW-1193 the authorization server is
+[mcp-auth](https://github.com/hugorodgerbrown/mcp-auth), the hardened
+django-oauth-toolkit preset shared by every Titan project, which follows the
+MCP authorization spec and Claude's connector requirements and runs them as
+a contract test in our suite. Why mcp-auth replaced the hand-written server
+of SNOW-1035: [`docs/decisions/mcp-auth-replaces-the-hand-written-oauth-server.md`](decisions/mcp-auth-replaces-the-hand-written-oauth-server.md).
+
+## What is mcp-auth's and what is Snowdesk's
+
+| Piece | Owner | Where |
+|-------|-------|-------|
+| Discovery documents, consent view, token / register / revoke, switch-account | mcp-auth | `path("", include("mcp_auth.urls"))` in `config/urls.py` |
+| Token, refresh, code and application tables | django-oauth-toolkit | `oauth2_provider` migrations |
+| `@mcp_endpoint` — bearer → `request.user`, 401 challenge, per-user limit, `no-store` | mcp-auth | `apps/mcp_server/views.py` |
+| Settings preset (`OAUTH2_PROVIDER = oauth2_settings(...)`) and `MCP_AUTH` | Snowdesk config | `config/settings/base.py` |
+| Who may connect: `verified_account` | Snowdesk | `apps/oauth/policy.py` |
+| The verify-first gate in front of the consent page | Snowdesk | `apps/oauth/views.py::authorize` |
+| `resource` keeping `/api/mcp/`'s trailing slash | Snowdesk | `apps/oauth/views.py::ProtectedResourceMetadataView` |
+| Consent and returning pages in the site's look | Snowdesk | `apps/oauth/templates/mcp_auth/` |
+| Connected apps on `/account/settings/` and their Disconnect | Snowdesk | `apps/accounts/views.py::settings_view`, `apps/oauth/views.py::disconnect` |
+| Daily purge, under the command contract | Snowdesk | `purge_expired_oauth_tokens` |
+
+`apps.oauth` sits before `mcp_auth` in `INSTALLED_APPS` so its templates
+override the package's. It has no models of its own any more; migration
+0003 dropped the four tables of the hand-written server.
 
 ## The flow, as Claude runs it
 
-1. Claude POSTs to the URL the user added (`/api/mcp/` or `/api/mcp`) with
-   no token and gets `401` with
-   `WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource<path>", scope="mcp"`.
-2. It fetches that protected-resource document. `resource` in it is the
-   origin plus the path suffix exactly as requested, so it matches the URL
-   the user typed — Claude requires that match byte for byte.
-3. It fetches `/.well-known/oauth-authorization-server`. Because the
-   document carries `client_id_metadata_document_supported: true` **and**
-   `"none"` in `token_endpoint_auth_methods_supported`, Claude identifies
-   itself by a Client ID Metadata Document URL. Otherwise it would fall back
-   to Dynamic Client Registration at `/oauth/register/`; both work.
-4. It opens `/oauth/authorize/?response_type=code&client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&state=…&scope=mcp offline_access&resource=…`
-   in the browser. A signed-out user goes to `/account/sign-in/?next=<that URL>`
-   and comes back. An unverified account is asked to verify first. Otherwise
-   the consent page names the app, the host the code will go to, and what
-   access means (read-only avalanche data, as this user).
-5. Allow issues a five-minute single-use code and sends the browser back to
-   the redirect URI with `code` and `state`; Deny sends `error=access_denied`.
-6. Claude exchanges the code at `/oauth/token/` (form-encoded, with the PKCE
-   verifier) for a one-hour access token and — because it asked for
-   `offline_access` — a thirty-day refresh token.
-7. Every MCP call carries `Authorization: Bearer <access token>`. Near
-   expiry Claude refreshes; the refresh token rotates each time.
+1. Claude POSTs to the URL the user added with no token and gets `401` with
+   `WWW-Authenticate: Bearer … resource_metadata="<origin>/.well-known/oauth-protected-resource<path>"`.
+2. It fetches that document. `resource` is the origin plus the path called,
+   trailing slash kept — Claude requires it to equal the URL the user typed.
+   django-oauth-toolkit's view strips the slash, so Snowdesk registers its
+   own subclass for the path form ahead of mcp-auth's route.
+3. It fetches `/.well-known/oauth-authorization-server`, identifies itself
+   by its Client ID Metadata Document (or registers at `/oauth/register/`).
+4. It opens `/oauth/authorize/?…&resource=<the URL>` in the browser. A
+   signed-out user goes to `accounts:sign_in` (`LOGIN_URL`) with `?next=`
+   and comes back. A signed-in account that has not verified its address
+   gets `oauth/verify_first.html` (403). Otherwise mcp-auth's consent view
+   renders Snowdesk's `mcp_auth/authorize.html`: the app, the host the code
+   goes to (with a warning for a loopback callback), the account it will act
+   as, and "Use another account".
+5. Allow or Cancel posts back. The answer is `mcp_auth/returning.html`, a
+   page that moves on with a meta refresh, not a 302 — see below.
+6. Claude exchanges the code at `/oauth/token/` with its PKCE verifier for a
+   one-hour access token and a thirty-day rotating refresh token, both bound
+   to the `resource` it asked for (RFC 8707).
+7. Every MCP call carries `Authorization: Bearer <access token>`.
+   `@mcp_endpoint` checks scope, expiry, audience and the connect rule on
+   every call, so deactivating an account cuts its apps off at once.
+
+**Audience is a URL prefix.** django-oauth-toolkit accepts a token at any
+URL beneath its `resource`. That is why the ops server is the sibling
+`/api/ops/mcp/` and not `/api/mcp/ops/`: a public-catalogue token must not
+open it. A user who connects both gets two connections, one per URL.
+
+**The consent POST does not answer with a 302.** The site CSP carries
+`form-action 'self'`, and browsers apply it to the redirect that follows a
+form post. django-csp-plus builds the header in middleware with no
+per-response hook, so `MCP_AUTH["CONSENT_RETURN"] = "page"` makes mcp-auth
+render the returning page instead: a navigation, which `form-action` does
+not govern, plus a link for a browser that ignores the refresh.
 
 ## Endpoints
 
-| URL | Name | Method | Purpose |
-|-----|------|--------|---------|
-| `/.well-known/oauth-protected-resource` | `oauth_protected_resource` | GET | RFC 9728 metadata for `<origin>/api/mcp/` |
-| `/.well-known/oauth-protected-resource/<path>` | `oauth_protected_resource_suffix` | GET | Same, with `resource = <origin>/<path>` echoed exactly |
-| `/.well-known/oauth-authorization-server` | `oauth_authorization_server` | GET | RFC 8414 metadata: endpoints, `S256`, `none`, `mcp offline_access`, CIMD supported |
-| `/oauth/authorize/` | `oauth:authorize` | GET + POST | Consent page; the POST records Allow / Deny |
-| `/oauth/token/` | `oauth:token` | POST | `authorization_code` and `refresh_token` grants (form-encoded); 60/min per IP |
-| `/oauth/register/` | `oauth:register` | POST | Dynamic Client Registration (JSON), always a public client; 10/hour per IP |
-| `/oauth/revoke/` | `oauth:revoke` | POST | RFC 7009; always 200 |
-| `/oauth/grants/<uuid>/revoke/` | `oauth:grant_revoke` | POST | HTMX Disconnect from `/account/settings/`; owner-only |
+| URL | Name | Purpose |
+|-----|------|---------|
+| `/.well-known/oauth-protected-resource` | `oauth2_provider:oauth-resource-metadata` | RFC 9728, `resource` = the origin |
+| `/.well-known/oauth-protected-resource/<path>` | `oauth_protected_resource_path` (Snowdesk's) | Same, `resource` = origin + path verbatim |
+| `/.well-known/oauth-authorization-server` | `oauth2_provider:oauth-server-metadata` | RFC 8414 |
+| `/oauth/authorize/` | `oauth_authorize` (Snowdesk's gate) → mcp-auth's consent view | Consent page and its POST; 30/min per IP |
+| `/oauth/switch-account/` | `oauth2_provider:switch-account` | Signs out and returns through sign-in |
+| `/oauth/token/` | `oauth2_provider:token` | Code and refresh grants; 60/min per IP |
+| `/oauth/register/` | `oauth2_provider:dcr-register` | Dynamic Client Registration; 10/min per IP |
+| `/oauth/revoke/` | `oauth2_provider:revoke-token` | RFC 7009 |
+| `/oauth/connected/` | `oauth2_provider:connected-apps` | mcp-auth's own list; nothing links to it |
+| `/oauth/apps/<id>/disconnect/` | `oauth:disconnect` | HTMX Disconnect from `/account/settings/`; empty 200 removes the row |
 
-The discovery documents are public and cacheable for an hour. The origin in
-every URL comes from the request (`request.build_absolute_uri("/")`), not
-`SITE_BASE_URL`, so a staging host or a tunnel serves its own consistent
-set; `ALLOWED_HOSTS` bounds which hosts that can be, and
-`SECURE_PROXY_SSL_HEADER` makes it https behind Render.
+`IdempotencyMiddleware` skips both MCP endpoints and the token, register
+and revoke URLs (`IDEMPOTENCY_EXEMPT_PATHS`, SNOW-1169): each checks its
+own credential inside the view, after the middleware has run.
 
-## Token model
+## Commands
 
-`apps/oauth/models.py`:
+- **`mint_mcp_token`** (mcp-auth's) — a token for curl. Read-only without
+  `--commit`. Snowdesk usernames are email addresses:
 
-- **`OAuthClient`** — `client_id` (random for DCR, the document URL for
-  CIMD), `kind` (`DCR` / `CIMD` / `LOCAL`), `client_name`, `redirect_uris`,
-  `metadata_fetched_at`. Public clients only; PKCE binds a code to the
-  client that asked.
-- **`OAuthGrant`** — one per (user, client): the "connected app" row
-  `/account/settings/` lists. Approving again reactivates it. Revoking it
-  revokes every token and unused code under it.
-- **`AuthorizationCode`** — five minutes, single use, stores the redirect
-  URI, PKCE challenge, resource and scope the user approved.
-- **`OAuthToken`** — `ACCESS` (one hour) or `REFRESH` (thirty days), with
-  `resource` as the audience; a spent refresh token carries `consumed_at`,
-  and `replaced_by` when a successor was issued.
+  ```bash
+  TOKEN=$(uv run python manage.py mint_mcp_token --username you@example.com \
+      --resource http://localhost:8000/api/mcp/ --commit -v 0)
+  curl -s -X POST http://localhost:8000/api/mcp/ \
+    -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
+  ```
 
-Codes and tokens are `sd_ac_` / `sd_at_` / `sd_rt_` + `secrets.token_urlsafe(32)`.
-Only the SHA-256 hex digest is stored; the plaintext is returned once.
+  Pass `--resource http://localhost:8000/api/ops/mcp/` for the ops server.
+  The account must pass the connect rule (verified). The token's app shows
+  on the settings page as "Local token (mint_mcp_token)" and Disconnect
+  revokes it. It is not a `RegisteredCommand` — it is the package's — and
+  it prints a credential, so it would keep its output out of the register
+  anyway.
+- **`purge_expired_oauth_tokens`** — django-oauth-toolkit's
+  `clear_expired()` under Snowdesk's command contract: read-only without
+  `--commit`, tallies `access_tokens_deleted`, `refresh_tokens_deleted` and
+  `codes_deleted`. Scheduled daily at 03:45 UTC (`schedule.py`).
 
-Rules in `apps/oauth/services/tokens.py`:
+## Testing
 
-- **Exchange** checks the code exists, is unused, is unexpired, belongs to
-  the presenting client, its grant is active, the `redirect_uri` equals the
-  authorize request's, the PKCE verifier matches, and any `resource`
-  re-sent matches. Failures are `invalid_grant` (`invalid_target` for the
-  resource).
-- **Refresh rotates.** Presenting a refresh token that was already spent
-  (`consumed_at` set — including a refresh that narrowed away
-  `offline_access` and so issued no successor) is reuse: the whole grant is revoked, and both the attacker and the
-  legitimate client must reconnect. An unknown, expired or revoked refresh
-  token is `invalid_grant`, which is what tells Claude to start over.
-- **Bearer auth** (`authenticate_bearer`) rejects an unknown, expired or
-  revoked token, a revoked grant, an inactive user, and a token whose
-  audience is not this origin's MCP URL. It stamps `grant.last_used_at` at
-  most once a minute.
+`tests/mcp_server/test_views.py` subclasses mcp-auth's `MCPAuthContract`
+once per endpoint, so Claude's connector requirements — discovery,
+registration, consent, the code and refresh exchange, audience binding, the
+connect rule, disconnect — run against Snowdesk's own URLs and settings on
+every build. Snowdesk's additions are in `tests/oauth/`.
 
-`purge_expired_oauth_tokens --commit` runs daily at 03:45 UTC
-(`schedule.py`) and deletes tokens and codes dead for more than a week.
-
-## Redirect URIs
-
-`apps/oauth/services/redirects.py`. A registered URI is `https` with a
-host, or `http` on `localhost` / `127.0.0.1`; no fragment, no credentials.
-Matching is exact, except that a loopback URI matches a registered loopback
-URI on any port (RFC 8252 §7.3) — Claude Code binds a fresh port each run.
-Claude's hosted apps use `https://claude.ai/api/mcp/auth_callback`.
-
-`/oauth/authorize/` sends an anonymous visitor to sign-in before it reads
-the `client_id`, so no anonymous request can make the server fetch a client
-metadata document; it is also rate-limited to thirty requests a minute per
-IP, and a failed metadata fetch is remembered for five minutes. An unknown
-client or an unregistered redirect URI renders an error page and never
-redirects, so `/oauth/authorize/` cannot be used as an open
-redirector. The consent page adds a warning when every redirect URI is
-loopback: the code goes to a program on the user's machine, not a named
-site.
-
-**The consent POST does not answer with a 302.** The site CSP carries
-`form-action 'self'`, and Chrome applies it to the redirects after a form
-submission. django-csp-plus builds the header in middleware from settings
-and database rules with no per-response hook, so the POST renders
-`oauth/returning.html`, which moves on with `<meta http-equiv="refresh">`
-and a link. A meta refresh is a navigation, not a form submission.
-
-## CIMD and the SSRF guard
-
-A CIMD `client_id` is an https URL Snowdesk fetches — a server-side request
-to an address the requester chose. `apps/oauth/services/cimd.py`:
-
-- only `https` URLs with a non-root path, no credentials, no fragment;
-- the host is resolved with `socket.getaddrinfo` and refused if any address
-  is private, loopback, link-local, reserved, multicast or unspecified
-  (IPv4-mapped IPv6 is unwrapped first);
-- `requests.get(timeout=3, allow_redirects=False, stream=True)`, body capped
-  at 64 KB, non-200 refused (a redirect is not followed);
-- the body must be a JSON object whose `client_id` equals the URL and whose
-  `redirect_uris` is a non-empty list of registrable URIs.
-
-The result is cached on an `OAuthClient` row and refetched after 24 hours.
-
-**Residual risk: DNS rebinding.** `requests` resolves the host again when
-it connects, so a name that answers publicly to the check and privately to
-the connection passes. The exposure is one GET whose response must parse as
-a matching metadata document before anything is kept, and is never shown to
-the requester. Closing it needs the connection pinned to the checked
-address.
-
-## Testing locally
-
-**curl.** Mint a token for a dev account (it prints once; `-v 0` prints only
-the token):
-
-```bash
-TOKEN=$(uv run python manage.py mint_mcp_token --email you@example.com --commit -v 0)
-curl -s -X POST http://localhost:8000/api/mcp/ \
-  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
-```
-
-Without the header the answer is a 401 with the `WWW-Authenticate`
-challenge. The token's audience defaults to `SITE_BASE_URL` + `/api/mcp/`;
-pass `--resource` when calling another host. The token appears on the
-account's settings page as "Local token (mint_mcp_token)" and Disconnect
-revokes it.
-
-**Claude.** Claude's hosted apps cannot reach `localhost`. Run
-`ngrok http 8000` and add `https://<tunnel>/api/mcp/` as a custom
-connector. The development settings already allow ngrok hosts in
-`ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` (`config/settings/development.py`),
-so the consent POST works over the tunnel with no `.env` change; another
-tunnel provider needs its host added to both. Claude should find the
-metadata, register, send you to sign-in and consent, and return. Disconnect
-on `/account/settings/` and the next tool call is a 401 that makes Claude
-ask you to reconnect. The ngrok inspector shows the exact request sequence.
-
-## Claude's requirements, and where each is met
-
-| Requirement | Where |
-|-------------|-------|
-| 401 + `WWW-Authenticate: Bearer resource_metadata=…` (ignored on a 200) | `apps/mcp_server/views.py::_unauthorised` |
-| PRM `resource` equals the URL typed, path included | `protected_resource_metadata` (path suffix echoed) |
-| CIMD used only with `client_id_metadata_document_supported` + `none` | `authorization_server_metadata` |
-| `offline_access` in AS `scopes_supported` to get a refresh token | `authorization_server_metadata`; `issue_token_pair` |
-| PKCE S256 required and advertised | `pkce.py`; `code_challenge_methods_supported` |
-| Loopback redirects on any port | `redirects.py::redirect_uri_allowed` |
-| Token endpoint form-encoded; `/register` JSON | `token`, `register` views |
-| Invalid refresh → `invalid_grant`; refresh tokens rotate | `tokens.py::refresh` |
-| Consent shows the redirect host; warns on loopback-only | `oauth/consent.html` |
+**Against Claude.** Claude's hosted apps cannot reach `localhost`. Run
+`ngrok http 8000` and add `https://<tunnel>/api/mcp/` as a custom connector;
+the development settings already allow ngrok hosts. Disconnect on
+`/account/settings/` and the next tool call is a 401 that makes Claude ask
+you to reconnect.
 
 ## Known risks
 
-- **DCR auth methods.** A DCR request asking for `client_secret_*` is
-  answered with `none` (RFC 7591 lets the server amend requested metadata).
-  Untested against Claude's DCR path; CIMD is advertised and preferred.
-- **The open endpoint closed at deploy.** Any anonymous MCP user lost access
-  when this shipped; that was the chosen cutover.
-- **IdempotencyMiddleware** skips `/api/mcp/`, `/api/mcp`,
-  `/oauth/token/`, `/oauth/register/` and `/oauth/revoke/`
-  (`IDEMPOTENCY_EXEMPT_PATHS`, SNOW-1169). The MCP endpoint checks its
-  bearer inside the view, so a replayed `Idempotency-Key` used to return
-  the cached 200 with no token or a revoked one. Exempt requests are never
-  reserved or replayed and log no `pwa.idempotency.missing` line.
+- **Every connection made before SNOW-1193 reconnects once.** The tokens
+  lived in the dropped tables.
+- **mcp-auth is pinned to a commit** until `v0.1.6` is tagged; switch the
+  `[tool.uv.sources]` pin to the tag then.

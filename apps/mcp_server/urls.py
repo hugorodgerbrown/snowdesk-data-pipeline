@@ -15,6 +15,11 @@ this POST-only view answers with 405), so the handshake fails before it
 starts. Serving both spellings from the same view removes that footgun; the
 canonical trailing-slash form stays the documented URL and the reverse
 target.
+
+The staff ops server (SNOW-1191) is ``POST /api/ops/mcp/`` (``api:mcp:ops``),
+with the same slash-less alias. It is a sibling of ``mcp/`` rather than a
+child, because a token's audience is checked by URL prefix — see
+``views.py``.
 """
 
 from django.urls import path
@@ -26,4 +31,6 @@ app_name = "mcp"
 urlpatterns = [
     path("mcp/", views.mcp_endpoint, name="endpoint"),
     path("mcp", views.mcp_endpoint, name="endpoint_noslash"),
+    path("ops/mcp/", views.ops_mcp_endpoint, name="ops"),
+    path("ops/mcp", views.ops_mcp_endpoint, name="ops_noslash"),
 ]

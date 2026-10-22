@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 from decouple import Csv, config
 from django.core.exceptions import ImproperlyConfigured
+from mcp_auth.conf import oauth2_settings
 
 # SNOW-1181: Sentry is initialised from settings, as its Django integration
 # expects, so it is active before the first request and in every management
@@ -249,8 +250,13 @@ INSTALLED_APPS = [
     "apps.trips",
     "apps.downloads",
     "apps.mcp_server",
-    # SNOW-1035: the OAuth 2.1 authorization server that gates /api/mcp/.
+    # SNOW-1193: OAuth 2.1 for the MCP endpoints is mcp-auth, on
+    # django-oauth-toolkit. apps.oauth is Snowdesk's glue — the connect
+    # rule, the consent page's look, the settings-page disconnect — and sits
+    # before mcp_auth so its templates override the package's.
     "apps.oauth",
+    "mcp_auth",
+    "oauth2_provider",
 ]
 
 MIDDLEWARE = [
@@ -1567,3 +1573,26 @@ LOGGING = {
 }
 
 logging.captureWarnings(True)
+
+
+# ---------------------------------------------------------------------------
+# OAuth 2.1 for the MCP endpoints (mcp-auth, SNOW-1193)
+# ---------------------------------------------------------------------------
+# The django-oauth-toolkit preset every Titan project shares: one-hour access
+# tokens, thirty-day rotating refresh tokens, PKCE S256, hashed storage,
+# DCR and client metadata documents. docs/oauth.md has the flow.
+OAUTH2_PROVIDER = oauth2_settings(
+    resource_name="Snowdesk",
+    scope_description="Read avalanche bulletins, danger ratings and resorts as you",
+)
+MCP_AUTH = {
+    # A verified account, checked at consent and on every MCP call.
+    "CAN_CONNECT": "apps.oauth.policy.verified_account",
+    # The site CSP is django-csp-plus middleware, which the consent view's
+    # csp_override cannot widen; its form-action 'self' would block the 302
+    # after Allow. A meta-refresh page is a navigation, not a form submission.
+    "CONSENT_RETURN": "page",
+}
+# Where DOT's consent view (and any login_required view) sends a visitor who
+# is not signed in; sign-in returns them through ?next=.
+LOGIN_URL = "accounts:sign_in"

@@ -30,9 +30,10 @@ pre-loaded with the recurring data-pipeline job:
   says so (SNOW-885). It raises on a non-empty answer, so the failure shows
   in the worker log rather than needing somebody to read a count.
 - **purge_expired_oauth_tokens** — fires at 03:45 UTC, running
-  ``purge_expired_oauth_tokens --commit``. Deletes MCP OAuth tokens and
-  codes that have been dead for a week (SNOW-1035); nothing else removes
-  them, and a Claude connector refreshing hourly writes two rows an hour.
+  ``purge_expired_oauth_tokens --commit``. Deletes expired MCP OAuth
+  tokens and codes with django-oauth-toolkit's ``clear_expired()``
+  (SNOW-1193); nothing else removes them, and a Claude connector
+  refreshing hourly writes two rows an hour.
 
 Every job carries guard settings (``coalesce=True``, ``max_instances=1``,
 ``misfire_grace_time=300``) so a slow run does not stack up duplicate
@@ -138,7 +139,7 @@ def _run_check_resort_locations() -> None:
 
 
 def _run_purge_expired_oauth_tokens() -> None:
-    """Invoke ``purge_expired_oauth_tokens`` to delete long-dead OAuth tokens."""
+    """Invoke ``purge_expired_oauth_tokens`` to delete expired OAuth tokens."""
     from django.core.management import (
         call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
     )

@@ -3,24 +3,20 @@ apps/oauth/management/commands/purge_expired_oauth_tokens.py.
 
 Management command.
 
-Deletes OAuth tokens that expired, or were revoked, more than seven days
-ago, and authorization codes that expired more than seven days ago
-(SNOW-1035). An expired or revoked row is never accepted again, so keeping
-it serves nothing; the week of grace keeps recent rows readable in the
-admin while an operator looks into a report.
+Clears expired OAuth rows from django-oauth-toolkit's tables (SNOW-1193):
+access tokens past their hour, refresh tokens past their thirty days or
+revoked, and authorization codes past their minutes. The deletion itself is
+the toolkit's own ``clear_expired()`` — the rule that decides which rows are
+dead lives with the models that define them. This command adds what the
+toolkit's ``cleartokens`` lacks under Snowdesk's command contract: it is
+read-only without ``--commit``, and a run records how many rows of each
+kind went in the command run register.
 
-A rotated refresh token is neither expired nor revoked until its thirty
-days run out, so it survives to do its job — presenting it again is how
-reuse is detected, and reuse revokes the grant.
+A rotated refresh token is revoked rather than deleted when it is spent;
+presenting it again is how reuse is detected, so ``clear_expired()`` keeps
+it until its own lifetime ends.
 
-Grants are not touched: a revoked grant is the record that a user
-disconnected an app, and it is deleted with the user or the client.
-
-Read-only by default — pass ``--commit`` to delete
-(docs/decisions/dry-run-default-commands.md). Scheduled daily in
-``schedule.py``.
-
-Typical use::
+Scheduled daily in ``schedule.py``. Typical use::
 
     python manage.py purge_expired_oauth_tokens
     python manage.py purge_expired_oauth_tokens --commit
@@ -30,29 +26,41 @@ from __future__ import annotations
 
 import logging
 from argparse import ArgumentParser
-from datetime import timedelta
 from typing import Any
 
-from django.core.management.base import CommandError
-from django.db import DatabaseError
-from django.db.models import Model, QuerySet
-from django.utils import timezone
+from oauth2_provider.models import (
+    clear_expired,
+    get_access_token_model,
+    get_grant_model,
+    get_refresh_token_model,
+)
 
-from apps.core.command_iteration import iterate_rows, positive_int
 from apps.core.command_register import RegisteredCommand
-from apps.oauth.models import AuthorizationCode, OAuthToken
 
 logger = logging.getLogger(__name__)
 
-GRACE_DAYS: int = 7
+
+def _row_counts() -> dict[str, int]:
+    """Return the number of rows in each table ``clear_expired()`` prunes.
+
+    Returns:
+        Row counts keyed ``access_tokens``, ``refresh_tokens``, ``codes``.
+
+    """
+    return {
+        "access_tokens": get_access_token_model().objects.count(),
+        "refresh_tokens": get_refresh_token_model().objects.count(),
+        "codes": get_grant_model().objects.count(),
+    }
 
 
 class Command(RegisteredCommand):
-    """Delete long-dead OAuth tokens and authorization codes."""
+    """Clear expired OAuth tokens and codes with the toolkit's own rule."""
 
     help = (
-        "Deletes OAuth tokens expired or revoked, and codes expired, more "
-        f"than {GRACE_DAYS} days ago. Read-only without --commit."
+        "Deletes expired OAuth access tokens, refresh tokens and authorization "
+        "codes using django-oauth-toolkit's clear_expired(). Read-only without "
+        "--commit."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -65,96 +73,38 @@ class Command(RegisteredCommand):
         parser.add_argument(
             "--commit",
             action="store_true",
-            help="Delete the rows. Without this flag nothing is written.",
+            help="Delete the expired rows. Without this flag nothing is written.",
         )
-        parser.add_argument(
-            "--days",
-            type=positive_int,
-            default=GRACE_DAYS,
-            metavar="N",
-            help=f"Grace period in days (default {GRACE_DAYS}).",
-        )
-
-    def _delete_all(
-        self, queryset: QuerySet[Any], label: str, verbosity: int
-    ) -> tuple[int, int]:
-        """Stream ``queryset`` newest-first and delete each row.
-
-        Args:
-            queryset: The rows to delete.
-            label: A noun for the countdown lines.
-            verbosity: Django's ``--verbosity``.
-
-        Returns:
-            ``(deleted, failed)`` counts.
-
-        """
-        deleted = failed = 0
-        row: Model
-        for row in iterate_rows(
-            self,
-            queryset,
-            verbosity=verbosity,
-            describe=lambda r: f"{label} expired {r.expires_at:%Y-%m-%d %H:%M}",
-        ):
-            try:
-                row.delete()
-                deleted += 1
-            except DatabaseError:
-                logger.exception(
-                    "purge_expired_oauth_tokens: %s %s failed", label, row.pk
-                )
-                failed += 1
-        return deleted, failed
 
     def handle(self, *args: Any, **options: Any) -> None:
-        """Delete the expired rows, or report them when not committing.
+        """Report, and with --commit clear, the expired rows.
+
+        Exempt from row-by-row streaming (CLAUDE.md management-command rule
+        5): the toolkit deletes in batches of its own, with no per-row work
+        to show a countdown for.
 
         Args:
             *args: Unused positional arguments.
             **options: Parsed command-line options.
 
-        Raises:
-            CommandError: When any row fails to delete.
-
         """
-        verbosity: int = options["verbosity"]
-        cutoff = timezone.now() - timedelta(days=options["days"])
-        tokens = OAuthToken.objects.spent_before(cutoff)
-        codes = AuthorizationCode.objects.expired_before(cutoff)
-
-        if not options["commit"]:
-            # Counts for the command run register (SNOW-1190).
-            self.tally("tokens_deleted", tokens.count())
-            self.tally("codes_deleted", codes.count())
-            if verbosity >= 1:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"Would delete {tokens.count()} token(s) and "
-                        f"{codes.count()} code(s) dead since before "
-                        f"{cutoff:%Y-%m-%d %H:%M} UTC. Re-run with --commit."
-                    )
-                )
-            return
-
-        tokens_deleted, tokens_failed = self._delete_all(tokens, "token", verbosity)
-        codes_deleted, codes_failed = self._delete_all(codes, "code", verbosity)
-        self.tally("tokens_deleted", tokens_deleted)
-        self.tally("codes_deleted", codes_deleted)
-        self.tally("failed", tokens_failed + codes_failed)
-
-        logger.info(
-            "purge_expired_oauth_tokens: deleted %d token(s), %d code(s)",
-            tokens_deleted,
-            codes_deleted,
-        )
-        if verbosity >= 1:
+        commit: bool = options["commit"]
+        before = _row_counts()
+        if not commit:
             self.stdout.write(
-                self.style.SUCCESS(
-                    f"Deleted {tokens_deleted} token(s) and {codes_deleted} code(s)."
-                )
+                "Read-only run — pass --commit to clear expired tokens. Rows now: "
+                + ", ".join(f"{name}={count}" for name, count in before.items())
             )
-        if tokens_failed or codes_failed:
-            raise CommandError(
-                f"{tokens_failed} token(s) and {codes_failed} code(s) failed to delete."
+            return
+        clear_expired()
+        after = _row_counts()
+        deleted = {name: before[name] - after[name] for name in before}
+        for name, count in deleted.items():
+            self.tally(f"{name}_deleted", count)
+        if options["verbosity"] >= 1:
+            self.stdout.write(
+                "Deleted "
+                + ", ".join(f"{count} {name}" for name, count in deleted.items())
+                + "."
             )
+        logger.info("purge_expired_oauth_tokens: deleted %s", deleted)
