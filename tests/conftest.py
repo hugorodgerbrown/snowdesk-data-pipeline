@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import posthog
 import pytest
+import sentry_sdk
 from pytest_django.fixtures import Settings
 
 # Test-only password hashing. MD5 is unusable for storing a real credential;
@@ -58,6 +59,13 @@ def pytest_configure() -> None:
     from django.conf import settings as django_settings
 
     django_settings.PASSWORD_HASHERS = [_FAST_PASSWORD_HASHER]
+
+    # SNOW-1181: settings initialise Sentry when SENTRY_DSN is set, and a
+    # bare ``pytest`` run picks that up from a developer's ``.env``.
+    # Re-initialising with an explicit empty DSN (``None`` would fall back
+    # to the environment variable) leaves a client that sends nothing.
+    # ``tox.ini`` also blanks SENTRY_DSN for the test env.
+    sentry_sdk.init(dsn="")
 
 
 @pytest.fixture(autouse=True)

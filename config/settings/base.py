@@ -15,6 +15,11 @@ from urllib.parse import urlsplit
 from decouple import Csv, config
 from django.core.exceptions import ImproperlyConfigured
 
+# SNOW-1181: Sentry is initialised from settings, as its Django integration
+# expects, so it is active before the first request and in every management
+# command. The module imports nothing from Django.
+from apps.core.sentry import init_sentry
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -1270,6 +1275,17 @@ SITE_NAME = "Snowdesk"
 # by the PWA manifest view (``apps.public.views.serve_manifest``) and the site
 # ``<head>`` (``apps/public/templates/public/base.html``).
 SITE_ENVIRONMENT = config("SITE_ENVIRONMENT", default="production")
+
+# ---------------------------------------------------------------------------
+# Error tracking (Sentry) — SNOW-1181
+# ---------------------------------------------------------------------------
+# Empty — the default, and every dev/test run — leaves the SDK
+# uninitialised. Set on Render to the project's DSN (sentry.io EU region to
+# start; any Sentry-compatible host is a DSN change). Events are labelled
+# with SITE_ENVIRONMENT and RELEASE_VERSION, so production and staging can
+# share one project. What is and is not sent: apps/core/sentry.py.
+SENTRY_DSN = config("SENTRY_DSN", default="")
+SENTRY_ENABLED = init_sentry(SENTRY_DSN, SITE_ENVIRONMENT, RELEASE_VERSION)
 
 # SNOW-729: read-only production DSN, used only by `bin/sync-staging-data`
 # to refresh staging's bulletins and resorts.

@@ -318,6 +318,14 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     # --- Third-party services ---------------------------------------------
     SettingSpec("POSTHOG_HOST", validator=absolute_url, note="PostHog ingest host"),
     SettingSpec("POSTHOG_API_KEY", secret=True, note="PostHog project key"),
+    # SNOW-1181: a DSN is an https URL with the public key as its userinfo,
+    # so ``absolute_url`` checks its shape; empty means Sentry is off.
+    SettingSpec(
+        "SENTRY_DSN",
+        validator=absolute_url,
+        secret=True,
+        note="Sentry project DSN (empty: off)",
+    ),
     SettingSpec(
         "OPENFREEMAP_STYLE_URL", validator=absolute_url, note="Basemap style JSON"
     ),

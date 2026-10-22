@@ -36,6 +36,7 @@ from apps.analytics.schema import (
     TelemetrySchemaError,
     parse_payload,
 )
+from apps.core import sentry
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,10 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
     # ``ratings()`` elsewhere in the codebase narrows a tuple return.
     events = cast("list[dict[str, object]]", maybe_events)
 
+    # SNOW-1181: browser errors go to Sentry before anything below can drop
+    # the batch — error reporting does not depend on an analytics key.
+    _forward_js_errors(events)
+
     # SNOW-384: no PostHog key configured (dev/test, or an unconfigured
     # deploy) — the client still gets its 204 so ``queue:events`` drains
     # normally client-side (telemetry.js's local buffering is a purely
@@ -230,6 +235,25 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
 
     logger.debug("telemetry forwarded events=%d", forwarded)
     return HttpResponse(status=204)
+
+
+def _forward_js_errors(events: list[dict[str, object]]) -> None:
+    """Report each ``js.error`` envelope in a batch to Sentry (SNOW-1181).
+
+    A no-op for every other event, and for all of them when Sentry is not
+    initialised (``capture_js_error`` then sends nothing).
+
+    Args:
+        events: The validated envelopes of one request.
+
+    """
+    for event in events:
+        if event["event"] == "js.error":
+            sentry.capture_js_error(
+                cast("dict[str, object]", event.get("properties") or {}),
+                client_version=str(event["client_version"]),
+                platform=cast("str | None", event.get("platform")),
+            )
 
 
 def _resolve_distinct_id(request: HttpRequest, event: dict[str, object]) -> str:
