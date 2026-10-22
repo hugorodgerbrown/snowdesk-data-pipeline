@@ -28,7 +28,10 @@ Privacy
   block-list in ``apps/analytics/__init__.py`` has already run.
 
 Sending never waits on fivebar: each POST is handed to a small background
-thread pool, and every failure is logged, never raised. No-op unless both
+thread pool, and every failure is logged, never raised. At most
+``_MAX_PENDING`` sends wait or run at once; past that, events are dropped
+(and logged) rather than queued, so a slow fivebar cannot grow the backlog
+without bound. No-op unless both
 ``FIVEBAR_TOKEN`` and ``FIVEBAR_DOMAIN`` are set, so dev and test never send.
 """
 
@@ -36,6 +39,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -90,7 +94,14 @@ _PROP_NAME = re.compile(r"^[a-z0-9_-]{1,32}$")
 # would only fill the breakdown with one-off values.
 _SKIPPED_PROPS: frozenset[str] = frozenset({"client_timestamp"})
 
+# Sends queued or in flight before new ones are dropped. Two workers with a
+# five-second timeout drain ~24 a minute when fivebar hangs; the receiver
+# admits far more than that from one client, so the pool's own unbounded
+# queue is not a limit.
+_MAX_PENDING = 200
+
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="fivebar")
+_pending = threading.BoundedSemaphore(_MAX_PENDING)
 
 
 def page_of(request: HttpRequest) -> str:
@@ -169,6 +180,20 @@ def _post(token: str, payload: dict[str, object]) -> None:
         )
 
 
+def _post_and_release(token: str, payload: dict[str, object]) -> None:
+    """Run ``_post`` and free its ``_pending`` slot, however it ends.
+
+    Args:
+        token: The fivebar send-only API token.
+        payload: The event JSON.
+
+    """
+    try:
+        _post(token, payload)
+    finally:
+        _pending.release()
+
+
 def send(
     event: str,
     distinct_id: str,
@@ -178,7 +203,8 @@ def send(
     """Send one goal event to fivebar, in the background.
 
     No-op when the event is not in ``GOAL_EVENTS`` or when ``FIVEBAR_TOKEN``
-    or ``FIVEBAR_DOMAIN`` is unset.
+    or ``FIVEBAR_DOMAIN`` is unset. Dropped, with a WARNING, when
+    ``_MAX_PENDING`` sends are already waiting.
 
     Args:
         event: The event name; becomes the fivebar goal's name.
@@ -201,4 +227,11 @@ def send(
         "id": distinct_id,
         "props": _props(properties),
     }
-    _executor.submit(_post, token, payload)
+    if not _pending.acquire(blocking=False):
+        logger.warning("fivebar backlog full, dropped event=%s", event)
+        return
+    try:
+        _executor.submit(_post_and_release, token, payload)
+    except RuntimeError:
+        # The pool is shutting down (interpreter exit).
+        _pending.release()

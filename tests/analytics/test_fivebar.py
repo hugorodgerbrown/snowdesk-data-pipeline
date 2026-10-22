@@ -10,6 +10,7 @@ No test reaches the network: the executor and ``requests.post`` are patched.
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -89,6 +90,47 @@ class TestSend:
     def test_record_write_failure_is_not_a_goal(self) -> None:
         """The one failure-shaped ``map.*`` event stays off the goal list."""
         assert "map.basemap.record_write_failed" not in fivebar.GOAL_EVENTS
+
+
+class TestBacklog:
+    """A slow fivebar cannot grow the send backlog without bound (Codex P1)."""
+
+    @_CONFIGURED
+    def test_full_backlog_drops_and_logs(self) -> None:
+        """Past ``_MAX_PENDING`` waiting sends, new events are dropped."""
+        held: list[Any] = []
+
+        class _Holding:
+            def submit(self, fn: Any, *args: Any) -> None:
+                held.append((fn, args))
+
+        with (
+            patch.object(fivebar, "_executor", _Holding()),
+            patch.object(fivebar, "_pending", threading.BoundedSemaphore(2)),
+            patch.object(fivebar, "_post"),
+            patch.object(fivebar.logger, "warning") as warning,
+        ):
+            for _ in range(3):
+                fivebar.send("region_added", "acct-1", {})
+            assert len(held) == 2
+            warning.assert_called_once()
+            fn, args = held[0]
+            fn(*args)  # one completes and frees its slot
+            fivebar.send("region_added", "acct-1", {})
+            assert len(held) == 3
+
+    @_CONFIGURED
+    def test_slot_is_freed_when_the_post_raises(self) -> None:
+        """An unexpected error in ``_post`` still releases the slot."""
+        sem = threading.BoundedSemaphore(1)
+        with (
+            patch.object(fivebar, "_executor", _InlineExecutor()),
+            patch.object(fivebar, "_pending", sem),
+            patch.object(fivebar, "_post", side_effect=ValueError),
+            pytest.raises(ValueError),
+        ):
+            fivebar.send("region_added", "acct-1", {})
+        assert sem.acquire(blocking=False)
 
 
 class TestProps:
