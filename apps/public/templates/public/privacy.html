@@ -279,6 +279,14 @@ Two rules for editing this file:
                         your IP address as part of these events.
                     {% endblocktrans %}
                 </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <strong>Sentry</strong> (sentry.io, hosted in the EU) — receives error reports from our server
+                        so we can fix what breaks, including errors your browser reports to us. A report says what
+                        failed and where in our code; it never includes your email address, your IP address, or anything
+                        you typed.
+                    {% endblocktrans %}
+                </li>
                 {% comment %}
                     SNOW-773: the three entries below are hosts the BROWSER contacts
                     directly, not ones our server calls. They therefore see a reader's

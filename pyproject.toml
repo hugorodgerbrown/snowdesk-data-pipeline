@@ -36,6 +36,7 @@ dependencies = [
     "shapely>=2.1.2,<3",
     "rapidfuzz>=3.14.5,<4",
     "django-persistent-messages>=0.5",
+    "sentry-sdk[django]>=2,<3",
 ]
 
 [dependency-groups]

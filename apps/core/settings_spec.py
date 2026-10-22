@@ -322,6 +322,14 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     # not a URL, so ``absolute_url`` would reject a correct value.
     SettingSpec("FIVEBAR_DOMAIN", note="fivebar site domain (renders the tag)"),
     SettingSpec("FIVEBAR_TOKEN", secret=True, note="fivebar send-only events token"),
+    # SNOW-1181: a DSN is an https URL with the public key as its userinfo,
+    # so ``absolute_url`` checks its shape; empty means Sentry is off.
+    SettingSpec(
+        "SENTRY_DSN",
+        validator=absolute_url,
+        secret=True,
+        note="Sentry project DSN (empty: off)",
+    ),
     SettingSpec(
         "OPENFREEMAP_STYLE_URL", validator=absolute_url, note="Basemap style JSON"
     ),
