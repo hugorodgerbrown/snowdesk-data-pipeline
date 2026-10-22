@@ -114,7 +114,7 @@ autoIncrement; no indexes — rows are filtered/ordered in memory over
 pending — a row marked `failed` on the first permanent-4xx response
 carries `attempts: 1`, not `0`, and the `pwa.mutation.failed_permanent`
 telemetry event's `attempts` property reflects the same value (so a
-PostHog query can distinguish "failed on the first attempt" from "never
+log search can distinguish "failed on the first attempt" from "never
 attempted").
 
 Classification lives in `static/js/mutation_queue_core.js::classifyStatus`

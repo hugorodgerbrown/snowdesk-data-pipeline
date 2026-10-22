@@ -599,10 +599,9 @@ into it.
 
 Not yet shipped (tracked as separate SNOW-368 children):
 
-- The actual PostHog dashboard/alert *configuration* (charts, saved
-  insights, alert thresholds) building on top of the SNOW-384 signal —
-  deliberately out of that ticket's pivoted scope ("plumbing, not
-  PostHog UI work").
+- Alerting on the SNOW-384 signal. Since SNOW-1182 the `pwa.*` events are
+  log lines (`docs/telemetry-pipeline.md`), so this means log-based alerts
+  on the WARNING-level failure events rather than PostHog dashboards.
 
 Shipped from the observability + IndexedDB track:
 
@@ -646,8 +645,8 @@ Shipped from the observability + IndexedDB track:
   switch, forced-update, freshness, and reset-forced client emits; and the
   `window.pwaMutationQueue` no-op stub SNOW-376 later filled in. See
   [`telemetry-pipeline.md`](telemetry-pipeline.md) for the full
-  call-site table. PostHog dashboard/alert configuration itself is a
-  separate, still-open follow-up.
+  call-site table. The dashboards were never built, and SNOW-1182 removed
+  PostHog; the events are log lines now.
 - **SNOW-482** — Splits the single in-memory freshness ledger into two
   persisted `meta:app` clocks (`sync.last_at` /
   `freshness.last_generated_at` — the latter removed again by SNOW-615,

@@ -303,7 +303,7 @@ def pwa_page(live_server: LiveServer, page: Page) -> Iterator[PwaPage]:
        buffer: ``telemetry.js`` POSTs it to ``/api/telemetry`` on
        ``pagehide`` (every reload!), on a 30s interval, and past a depth
        threshold, deleting the rows on any 2xx — and the receiver returns
-       204 even with no PostHog key configured. An init-script stub makes
+       204 whatever it does with the events. An init-script stub makes
        ``window.fetch`` resolve with a synthetic 503 for that endpoint on
        every page load of this fixture; ``telemetry.js``'s 5xx branch
        leaves the rows in place for the next (equally stubbed) retry. A

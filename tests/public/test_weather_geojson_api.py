@@ -192,9 +192,8 @@ class TestCaching:
         """``Vary: Cookie`` would defeat the CDN cache entirely.
 
         The ``@vary_on_headers`` decorator is necessary but not sufficient —
-        the path also has to be in ``_POSTHOG_EXEMPT_PATHS`` or the
-        middleware's ``request.user`` read makes SessionMiddleware add the
-        header back.
+        any middleware that read ``request.user`` here would make
+        SessionMiddleware add the header back.
         """
         response = Client().get(reverse("api:weather_geojson"))
 

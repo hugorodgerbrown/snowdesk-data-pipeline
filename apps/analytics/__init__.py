@@ -1,40 +1,27 @@
 """
 apps/analytics/__init__.py — Public surface for server-side event capture.
 
-Provides two callables consumed throughout the codebase:
+Provides one callable consumed throughout the codebase:
 
   track(event, distinct_id, properties, page=...)
-      Capture a single named event to PostHog, and — for the events that
-      are fivebar goals — to fivebar (``apps/analytics/fivebar.py``,
-      SNOW-1180).  Each destination is a no-op when its own key is empty
-      (local development, test runs, any environment without explicit
-      opt-in).
+      Send a single named event to fivebar (``apps/analytics/fivebar.py``,
+      SNOW-1180) when it is one of fivebar's goals.  A no-op when fivebar
+      is not configured (local development, test runs, any environment
+      without explicit opt-in).
 
-  alias(distinct_id, alias_id)
-      Link two distinct identifiers in PostHog so that pre-auth anonymous
-      sessions are joined to the authenticated subscriber identity on
-      confirmation.  No-op under the same condition as ``track()``.
+Safe to call on every request path — the send happens on a background
+thread, and its failures are logged, never raised.  PII keys (``email``,
+``ip``, ``token``, ``credential_id``) are rejected at the call site by
+raising ``AnalyticsPIIError`` *before* anything is sent.
 
-Both functions are safe to call on every request path — analytics failures
-are caught, logged via ``logger.exception`` (ERROR with traceback), and
-never propagate to the caller.  PII
-keys (``email``, ``ip``, ``token``, ``credential_id``) are rejected at the
-call site by raising ``AnalyticsPIIError`` *before* any network call is
-attempted.
-
-The global ``posthog`` module-level client is initialised in
-``apps/analytics/apps.py`` ``AppConfig.ready()``; ``track()`` and ``alias()``
-call ``posthog.capture`` / ``posthog.alias`` directly so they share the
-same client as ``PosthogContextMiddleware`` without any singleton of their
-own.
+SNOW-1182 removed PostHog, and with it ``alias()``: fivebar keeps no
+person profiles, so there is no anonymous identity to join to an account.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import Any
-
-import posthog
 
 from apps.analytics import fivebar
 from apps.analytics.exceptions import AnalyticsPIIError
@@ -53,8 +40,8 @@ _PII_KEYS: frozenset[str] = frozenset({"email", "ip", "token", "credential_id"})
 def _assert_no_pii(properties: dict[str, object]) -> None:
     """Raise ``AnalyticsPIIError`` when any PII key is present in properties.
 
-    Called unconditionally — even when PostHog is disabled — so tests and
-    any future callers cannot accidentally pass PII regardless of the key
+    Called unconditionally — even when fivebar is not configured — so tests
+    and any future callers cannot accidentally pass PII regardless of the
     configuration.
 
     Args:
@@ -80,94 +67,27 @@ def track(
     *,
     page: str = "/",
 ) -> None:
-    """Capture one named event to PostHog and, if it is a goal, to fivebar.
+    """Send one named event to fivebar, if it is a goal.
 
-    The PostHog capture is a no-op when ``settings.POSTHOG_API_KEY`` is
-    unset or empty; the fivebar send is a no-op unless the event is in
-    ``fivebar.GOAL_EVENTS`` and fivebar is configured.  Any exception
-    raised by the PostHog client is caught and logged at ERROR so
-    analytics failures never break user-facing requests.
+    The send is a no-op unless the event is in ``fivebar.GOAL_EVENTS`` and
+    fivebar is configured.
 
     Args:
-        event: The event name (e.g. ``"subscription_started"``).
-        distinct_id: Stable identifier for the actor — ``str(subscriber.pk)``
-            for authenticated events, or a session-scoped anonymous UUID for
-            pre-auth events.
+        event: The event name (e.g. ``"region_added"``).
+        distinct_id: Stable identifier for the actor — ``Account.uuid`` for
+            authenticated events, or a session-scoped id for anonymous ones.
         properties: Optional dict of event properties.  Must not contain any
             of the PII keys ``email``, ``ip``, ``token``, or
             ``credential_id``.
         page: The route pattern the event happened on, from
-            ``fivebar.page_of(request)``. Used only by fivebar.
+            ``analytics.page_of(request)``.
 
     Raises:
-        AnalyticsPIIError: Immediately (before any network call) if
+        AnalyticsPIIError: Immediately (before anything is sent) if
             ``properties`` contains a PII key.
 
     """
     props: dict[str, Any] = properties or {}
     _assert_no_pii(props)
-
     fivebar.send(event, distinct_id, props, page)
-
-    from django.conf import settings
-
-    api_key: str = (getattr(settings, "POSTHOG_API_KEY", "") or "").strip()
-    if not api_key:
-        logger.debug(
-            "analytics.track no-op (POSTHOG_API_KEY unset): event=%s distinct_id=%s",
-            event,
-            distinct_id,
-        )
-        return
-
-    try:
-        posthog.capture(event=event, distinct_id=distinct_id, properties=props)
-        logger.debug("analytics.track: event=%s distinct_id=%s", event, distinct_id)
-    except Exception:  # noqa: BLE001 — analytics must never break requests
-        logger.exception(
-            "analytics.track failed: event=%s distinct_id=%s",
-            event,
-            distinct_id,
-        )
-
-
-def alias(distinct_id: str, alias_id: str) -> None:
-    """Link two distinct identifiers in PostHog.
-
-    Called once at ``subscription_confirmed`` to join the pre-auth anonymous
-    UUID (stored in the session) to the authenticated subscriber's PK so
-    that the pre-confirmation ``subscription_started`` event and all
-    subsequent authenticated events appear under a single user profile.
-
-    No-op when ``settings.POSTHOG_API_KEY`` is unset or empty.  Exceptions
-    are caught and logged at ERROR.
-
-    Args:
-        distinct_id: The canonical, permanent identifier (``str(subscriber.pk)``).
-        alias_id: The temporary alias to merge (anonymous session UUID).
-
-    """
-    from django.conf import settings
-
-    api_key: str = (getattr(settings, "POSTHOG_API_KEY", "") or "").strip()
-    if not api_key:
-        logger.debug(
-            "analytics.alias no-op (POSTHOG_API_KEY unset): distinct_id=%s alias_id=%s",
-            distinct_id,
-            alias_id,
-        )
-        return
-
-    try:
-        # PostHog alias: previous_id is the alias we want to merge; distinct_id
-        # is the canonical identity to merge it into.
-        posthog.alias(previous_id=alias_id, distinct_id=distinct_id)
-        logger.debug(
-            "analytics.alias: distinct_id=%s alias_id=%s", distinct_id, alias_id
-        )
-    except Exception:  # noqa: BLE001 — analytics must never break requests
-        logger.exception(
-            "analytics.alias failed: distinct_id=%s alias_id=%s",
-            distinct_id,
-            alias_id,
-        )
+    logger.debug("analytics.track: event=%s distinct_id=%s", event, distinct_id)

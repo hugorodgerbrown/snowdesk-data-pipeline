@@ -6,9 +6,9 @@ encrypts and POSTs the payload to the push service URL stored on a
 PushSubscription. Returns a small status dict; never raises — callers
 iterate over many rows and want per-row outcomes, not a halt on the first
 410 Gone. ``client_version`` is threaded through onto the server-side
-``pwa.push.sent`` / ``pwa.push.gone_410`` telemetry signals so PostHog's
-version-distribution and push-health dashboards can filter by client build
-(SNOW-384); the value comes from the ``X-Client-Version`` request header
+``pwa.push.sent`` / ``pwa.push.gone_410`` telemetry signals so their log
+lines can be filtered by client build (SNOW-384; logs since SNOW-1182);
+the value comes from the ``X-Client-Version`` request header
 in the caller's context.
 
 404 vs 410 (SNOW-380, spec §8): a 404 means the endpoint URL itself is

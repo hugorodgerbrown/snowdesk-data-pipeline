@@ -71,8 +71,8 @@ domain and a `*.` wildcard** — because a wildcard does not cover its own
 apex and the apex does not cover its subdomains. Two assumptions:
 
 - **A `*.` wildcard is taken to match one label.** Where the host we need
-  sits two labels down (`eu.i.posthog.com`), the wildcard is written at
-  its parent (`*.i.posthog.com`) so it works under either reading. If the
+  sits two labels down, the wildcard is written at its parent so it works
+  under either reading. If the
   policy's wildcard turns out to match any depth, those collapse into
   their registrable domain.
 - **Very large platforms get exact hosts, not a wildcard.** `*.google.com`
@@ -123,7 +123,6 @@ cannot run an ALBINA or Météo-France ingest end to end.
 | `w3w.co`, `*.w3w.co` | `WHAT3WORDS_MAP_BASE_URL`, the share-link host | blocked |
 | `maxmind.com`, `*.maxmind.com` | GeoLite2 database download (`download.maxmind.com`, `bin/fetch-geoip-data`) | blocked |
 | `mm-prod-geoip-databases.a2649acb697e2c09b632799562c076f2.r2.cloudflarestorage.com` (exact host) | Where `download.maxmind.com` 302s the archive to, per MaxMind's own [updating-databases](https://dev.maxmind.com/geoip/updating-databases/) docs; `fetch-geoip-data` follows it with `curl --location`. Exact host only: `*.r2.cloudflarestorage.com` would open every Cloudflare R2 bucket | open, and in the policy since 2026-09-29 (before that it was reachable only through a platform default) |
-| `i.posthog.com`, `*.i.posthog.com` | `eu.i.posthog.com` (`POSTHOG_HOST`), `eu-assets.i.posthog.com` | `eu.` open (re-probed 2026-09-30: the tunnel is established and the host answers) |
 
 ### Basemaps and map overlays
 
@@ -214,8 +213,6 @@ w3w.co
 maxmind.com
 *.maxmind.com
 mm-prod-geoip-databases.a2649acb697e2c09b632799562c076f2.r2.cloudflarestorage.com
-i.posthog.com
-*.i.posthog.com
 geo.admin.ch
 *.geo.admin.ch
 openfreemap.org
@@ -317,8 +314,6 @@ w3w.co
 *.w3w.co
 maxmind.com
 *.maxmind.com
-i.posthog.com
-*.i.posthog.com
 geo.admin.ch
 openfreemap.org
 geopf.fr

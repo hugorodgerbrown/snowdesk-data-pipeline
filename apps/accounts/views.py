@@ -1065,8 +1065,7 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
     logger.info("Account pk=%s verified via account-access link", account.pk)
 
     if created or not was_verified:
-        # Emit subscription_confirmed and join the anonymous session identity
-        # to the now-authenticated account identity — only on the transition
+        # Emit subscription_confirmed — only on the transition
         # into verified, matching today's "only when transitioning out of
         # PENDING" idempotency. SNOW-549: the identity is Account.uuid, never
         # the sequential auth.User PK.
@@ -1081,12 +1080,6 @@ def account_view(request: HttpRequest, token: str) -> HttpResponse:
             {"hours_since_started": hours_since},
             page=analytics.page_of(request),
         )
-        anon_id: str | None = request.session.get("analytics_anon_id")
-        if anon_id:
-            analytics.alias(
-                distinct_id=distinct_id,
-                alias_id=anon_id,
-            )
     login(request, user, backend=_TOKEN_BACKEND)
     response = redirect(next_url or _VERIFIED_LANDING_URL)
     # Tokens appear in this view's URL path — suppress Referer leakage.

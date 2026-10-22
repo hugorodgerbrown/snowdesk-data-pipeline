@@ -399,7 +399,7 @@ const OFFLINE_PROBE_BACKOFF_MS = [30000, 60000, 300000];
 
 // The same-origin endpoint the unlatch probe hits. ``/livez``
 // (apps/core/views.py) does no work at all: it never reads request.user, never
-// touches the database, and is exempt from PosthogContextMiddleware — so it
+// touches the database, and nothing in the middleware stack reads it — so it
 // measures the route and nothing else. A worker's own fetches do not re-enter
 // its ``fetch`` handler, so this can never be intercepted, cached, or counted
 // as one of the timeouts that trips the latch.

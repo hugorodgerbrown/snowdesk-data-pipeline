@@ -191,8 +191,8 @@ The previous cycle cannot have anticipated the last week. Look for:
   performance finding
 - New overlays — do they register with `window.pwaMapOverlays`, and do they
   have an owner in the overlay-to-layer tables?
-- New endpoints in `apps/public/api.py` — cached like their siblings? in
-  `_POSTHOG_EXEMPT_PATHS` if publicly cacheable?
+- New endpoints in `apps/public/api.py` — cached like their siblings? free of
+  `Vary: Cookie` (nothing reads `request.user`) if publicly cacheable?
 - New `docs/decisions/` entries that supersede something the explainer says
 
 ## Step 5 — Draw the consequences

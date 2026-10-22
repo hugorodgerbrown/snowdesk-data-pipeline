@@ -36,19 +36,18 @@ def test_livez_issues_no_queries(django_assert_num_queries: Any) -> None:
 
 
 @pytest.mark.django_db
-@override_settings(POSTHOG_API_KEY="phc_test")
 def test_livez_issues_no_queries_for_a_request_carrying_a_session(
     django_assert_num_queries: Any,
 ) -> None:
-    """SNOW-565: the ``_POSTHOG_EXEMPT_PATHS`` entry keeps ``/livez`` query-free.
+    """SNOW-565: ``/livez`` stays query-free for a signed-in visitor.
 
     The anonymous case above cannot catch a regression here: with no session
     cookie, ``request.user`` resolves to AnonymousUser without touching the
     database, so the probe reads zero queries whether or not the exemption
     exists. Sending a real session cookie is what gives the assertion teeth
-    — with analytics enabled, PosthogContextMiddleware reads ``request.user``
-    to tag identities, and that access loads the session and the user row.
-    Remove ``/livez`` from ``_POSTHOG_EXEMPT_PATHS`` and this test fails.
+    — any middleware that reads ``request.user`` loads the session and the
+    user row, and this test fails. (Until SNOW-1182 PostHog's middleware
+    did, behind an exemption list.)
     """
     client = Client()
     client.force_login(AccountFactory.create().user)
@@ -131,9 +130,9 @@ def test_health_checks_resolve_without_a_trailing_slash(path: str) -> None:
 def test_every_declared_health_check_path_is_routed() -> None:
     """``settings.HEALTH_CHECK_PATHS`` and the URLconf cannot drift apart.
 
-    The constant drives the PostHog exemption and the production
-    SSL-redirect exemption, so a path listed there but not routed would
-    silently configure exemptions for a URL that 404s.
+    The constant drives the production SSL-redirect exemption, so a path
+    listed there but not routed would silently configure an exemption for a
+    URL that 404s.
     """
     assert settings.HEALTH_CHECK_PATHS, "no health-check paths declared"
     for path in settings.HEALTH_CHECK_PATHS:

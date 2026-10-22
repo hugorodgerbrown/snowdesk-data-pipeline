@@ -31,8 +31,8 @@
  * Spec §16.3. The whole point is a first-party pipeline that survives
  * every failure mode client-side. posthog-js is ~40 KB and would still
  * need our own fallback path for critical events. This file is ~350
- * lines including copy-pasted comments and produces byte-for-byte
- * identical PostHog events on the server side of the pipeline.
+ * lines including copy-pasted comments. (PostHog itself was removed by
+ * SNOW-1182; the receiver now routes events to fivebar, Sentry and logs.)
  */
 
 (function () {

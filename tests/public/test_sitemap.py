@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime, timedelta
-from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -295,7 +294,6 @@ class TestSitemapContents:
 
 
 @pytest.mark.django_db
-@override_settings(POSTHOG_API_KEY="phc_test")
 @pytest.mark.parametrize(
     ("name", "max_age"),
     [(None, 86400), ("main", 21600), ("regions", 3600), ("resorts", 86400)],
@@ -305,9 +303,9 @@ def test_sitemaps_are_public_cacheable_surfaces(
 ) -> None:
     """SNOW-1178 (closing SNOW-340): every sitemap is shared-cacheable.
 
-    The bodies are rendered without the request and the paths are exempt
-    from PostHog, so nothing reads ``request.user`` and no ``Vary: Cookie``
-    splits the edge cache per visitor. Each file has its own lifetime.
+    The bodies are rendered without the request and no middleware reads
+    ``request.user``, so no ``Vary: Cookie`` splits the edge cache per
+    visitor. Each file has its own lifetime.
     """
     path = reverse("sitemap") if name is None else _file_url(name)
 
@@ -315,17 +313,6 @@ def test_sitemaps_are_public_cacheable_surfaces(
     assert response["Cache-Control"] == f"public, max-age={max_age}"
     assert "Cookie" not in response.get("Vary", "")
     assert response["X-Robots-Tag"] == "noindex, noodp, noarchive"
-
-
-@override_settings(POSTHOG_API_KEY="phc_test")
-def test_every_sitemap_path_is_posthog_exempt() -> None:
-    """``_POSTHOG_EXEMPT_PATHS`` spells the paths out; a new file must join it."""
-    from config.settings.base import _posthog_request_filter
-
-    paths = [reverse("sitemap"), *(_file_url(name) for name in SITEMAP_FILES)]
-
-    for path in paths:
-        assert _posthog_request_filter(SimpleNamespace(path=path)) is False, path
 
 
 @pytest.mark.django_db

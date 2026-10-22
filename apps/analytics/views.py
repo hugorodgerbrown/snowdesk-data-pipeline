@@ -6,11 +6,13 @@ Currently exposes one endpoint:
 * ``POST /api/telemetry`` — first-party telemetry receiver (spec §16,
   SNOW-381). Accepts a batched or single-event envelope from the
   client-side buffer / ``navigator.sendBeacon``, validates the shape,
-  strips server-side IP, and forwards each event to PostHog via
-  ``analytics.track()``.
+  strips server-side IP, and routes each event (SNOW-1182): fivebar goal
+  events to fivebar via ``analytics.track()``, ``js.error`` to Sentry, and
+  every other event to a structured log line, at WARNING for the failure
+  events in ``FAILURE_EVENTS`` and INFO otherwise.
 
 The endpoint is deliberately fire-and-forget: any failure downstream of
-validation is logged and swallowed so a PostHog outage never causes the
+validation is logged and swallowed so a downstream outage never causes the
 client's ``sendBeacon`` retry timer to spin. Success is always
 ``204 No Content``; the client does not need a body, and returning one
 would waste bytes on every batch flush.
@@ -31,14 +33,32 @@ from django_ratelimit.decorators import ratelimit
 from apps import analytics
 from apps.accounts.identity import request_identity
 from apps.analytics.exceptions import AnalyticsPIIError
+from apps.analytics.fivebar import GOAL_EVENTS
 from apps.analytics.schema import (
     MAX_PAYLOAD_BYTES,
     TelemetrySchemaError,
     parse_payload,
 )
+from apps.analytics.signals import format_properties
 from apps.core import sentry
 
 logger = logging.getLogger(__name__)
+
+# Client events that report something going wrong. Logged at WARNING so a
+# Render log search for ``level=warning telemetry.client`` finds them; every
+# other non-goal event logs at INFO.
+FAILURE_EVENTS: frozenset[str] = frozenset(
+    {
+        "pwa.sw.activation_failed",
+        "pwa.sw.fetch_undefined",
+        "pwa.kill_switch.activated",
+        "pwa.mutation.failed_permanent",
+        "pwa.push.subscription_lost",
+        "pwa.freshness.unsafe",
+        "pwa.storage.evicted_probable",
+        "map.basemap.record_write_failed",
+    }
+)
 
 
 def _error(status: int, code: str) -> JsonResponse:
@@ -67,33 +87,10 @@ def _telemetry_enabled() -> bool:
     The operator-level master switch for the whole PWA telemetry pipeline
     (docs/telemetry-pipeline.md). Read at call time (not import time) so
     ``@override_settings`` in tests takes effect immediately — matches the
-    pattern used by ``_posthog_configured`` and
-    ``apps.analytics.signals.emit_server_signal``. Defaults to True when unset
-    so an environment that never configured the flag keeps ingesting.
+    pattern used by ``apps.analytics.signals.emit_server_signal``. Defaults
+    to True when unset so an environment that never configured the flag keeps ingesting.
     """
     return bool(getattr(settings, "PWA_TELEMETRY_ENABLED", True))
-
-
-def _posthog_configured() -> bool:
-    """Return True when ``settings.POSTHOG_API_KEY`` is a non-empty string.
-
-    Read at call time (not module import time) so ``@override_settings``
-    in tests takes effect immediately — matches the pattern used by
-    ``config.settings.base._posthog_request_filter`` and
-    ``apps.analytics.signals.emit_server_signal``.
-    """
-    return bool((getattr(settings, "POSTHOG_API_KEY", "") or "").strip())
-
-
-def _fivebar_configured() -> bool:
-    """Return True when ``settings.FIVEBAR_TOKEN`` is a non-empty string.
-
-    SNOW-1180: the receiver forwards the ``map.*`` goal events to fivebar
-    through ``analytics.track()``, so a deploy with fivebar but no PostHog
-    key must not drop the batch. Read at call time, like
-    ``_posthog_configured``.
-    """
-    return bool((getattr(settings, "FIVEBAR_TOKEN", "") or "").strip())
 
 
 def _page_for(event_name: str) -> str:
@@ -156,10 +153,10 @@ def _parse_events(
     return None, events
 
 
-# The receiver has no side effect beyond forwarding to PostHog and
+# The receiver has no side effect beyond forwarding and logging, and
 # ``navigator.sendBeacon`` — the client-side critical-event fast path —
 # cannot attach a CSRF token. The abuse surface is limited to inflating
-# the PostHog event count and is mitigated by the per-IP rate limit
+# the fivebar goal counts and the logs, and is mitigated by the per-IP rate limit
 # below. It no longer extends to *whose* event count: since SNOW-550 the
 # distinct_id is derived from ``request.user``, so an unauthenticated
 # caller cannot attribute events to somebody else's identity — see
@@ -170,7 +167,7 @@ def _parse_events(
 @require_POST
 @ratelimit(key="ip", rate="60/m", block=False)
 def telemetry_receive(request: HttpRequest) -> HttpResponse:
-    """Ingest one or more client-side telemetry events and forward to PostHog.
+    """Ingest one or more client-side telemetry events and route each one.
 
     Contract:
 
@@ -184,24 +181,24 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
       payloads get 413 without parsing.
     * Rate-limited per source IP to 60 requests / minute. Excess
       requests are silently dropped with 204 so the client's
-      buffer-drain loop does not spiral into retry storms; PostHog will
-      not receive those events (log-only).
+      buffer-drain loop does not spiral into retry storms; those events
+      go nowhere (log-only).
     * CSRF-exempt because ``sendBeacon`` cannot attach CSRF headers and
-      the endpoint has no side effect beyond forwarding to PostHog. An
+      the endpoint has no side effect beyond forwarding and logging. An
       attacker replaying valid envelopes at rate can only inflate the
-      PostHog event count — mitigated by the rate limit.
-    * Server-side IP address is never captured into an event property;
-      PostHog's own IP-derived GeoIP enrichment continues to run.
-    * Any exception raised by PostHog during forwarding is caught by
-      ``analytics.track()`` — the receiver's response is still 204.
+      fivebar goal counts and the logs — mitigated by the rate limit.
+    * Server-side IP address is never captured into an event property,
+      and fivebar is sent no IP at all (``apps/analytics/fivebar.py``).
+    * The fivebar send runs in the background and logs its own failures
+      — the receiver's response is still 204.
 
     Args:
         request: The incoming POST request.
 
     Returns:
         204 No Content on success, when rate-limited, when telemetry is
-        disabled via ``settings.PWA_TELEMETRY_ENABLED``, or when the
-        PostHog API key is unset. 400 / 413 / 415 on malformed input.
+        disabled via ``settings.PWA_TELEMETRY_ENABLED``. 400 / 413 / 415
+        on malformed input.
         The rate-limit short-circuit runs *before* input validation, so
         a rate-limited request with a bad content-type still gets 204
         (less information leaked to an abuser).
@@ -232,29 +229,14 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
     # the batch — error reporting does not depend on an analytics key.
     _forward_js_errors(events)
 
-    # SNOW-384: no PostHog key configured (dev/test, or an unconfigured
-    # deploy) — the client still gets its 204 so ``queue:events`` drains
-    # normally client-side (telemetry.js's local buffering is a purely
-    # client-side concern, unaffected either way); there is simply
-    # nothing to forward server-side. Schema validation above already
-    # ran; the per-event PII check normally performed inside
-    # ``analytics.track()`` is skipped along with the capture call it
-    # would have guarded — there is no PostHog send for it to protect
-    # once the key is absent. SNOW-1180: fivebar is a second destination
-    # for the goal events, so the batch is dropped only when neither is set.
-    if not _posthog_configured() and not _fivebar_configured():
-        logger.debug(
-            "telemetry dropped (POSTHOG_API_KEY and FIVEBAR_TOKEN unset): events=%d",
-            len(events),
-        )
-        return HttpResponse(status=204)
-
     forwarded = 0
     for event in events:
         distinct_id = _resolve_distinct_id(request, event)
         properties = _build_properties(event)
+        name = str(event["event"])
         try:
-            name = str(event["event"])
+            # Runs the PII guard for every event, goal or not; sends only
+            # the goals (fivebar.GOAL_EVENTS) and only when fivebar is set.
             analytics.track(name, distinct_id, properties, page=_page_for(name))
         except AnalyticsPIIError as exc:
             # Client attempted to send a PII-tainted property. Reject the
@@ -262,10 +244,30 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
             # partial acceptance would silently drop data.
             logger.warning("telemetry pii_property: %s", exc)
             return _error(400, "pii_property")
+        if name not in GOAL_EVENTS and name != "js.error":
+            _log_event(name, properties)
         forwarded += 1
 
-    logger.debug("telemetry forwarded events=%d", forwarded)
+    logger.debug("telemetry handled events=%d", forwarded)
     return HttpResponse(status=204)
+
+
+def _log_event(name: str, properties: dict[str, object]) -> None:
+    """Write one non-goal client event as a structured log line (SNOW-1182).
+
+    ``telemetry.client event=<name> k=v …`` at WARNING for
+    ``FAILURE_EVENTS``, INFO otherwise, so the PWA's operational signals
+    stay searchable in Render's logs now that PostHog is gone. No identity
+    is logged; ``client_timestamp`` is dropped as noise.
+
+    Args:
+        name: The validated event name.
+        properties: The merged properties from ``_build_properties``.
+
+    """
+    fields = {k: v for k, v in properties.items() if k != "client_timestamp"}
+    level = logging.WARNING if name in FAILURE_EVENTS else logging.INFO
+    logger.log(level, "telemetry.client event=%s %s", name, format_properties(fields))
 
 
 def _forward_js_errors(events: list[dict[str, object]]) -> None:
@@ -288,7 +290,7 @@ def _forward_js_errors(events: list[dict[str, object]]) -> None:
 
 
 def _resolve_distinct_id(request: HttpRequest, event: dict[str, object]) -> str:
-    """Return the PostHog distinct_id for one event.
+    """Return the distinct_id (fivebar's ``id``) for one event.
 
     Resolution order:
 
@@ -304,8 +306,8 @@ def _resolve_distinct_id(request: HttpRequest, event: dict[str, object]) -> str:
     endpoint is deliberately CSRF-exempt and unauthenticated — see the
     rationale on ``telemetry_receive`` — so taking the client's word for
     who it is meant any POST with ``{"user_id": "…"}`` and an allowed
-    event name could attribute events to somebody else's PostHog
-    identity, corrupting their history and funnels. The 60/minute rate
+    event name could attribute events to somebody else's
+    identity. The 60/minute rate
     limit bounds request rate, not identity. Spec §16.6 describes
     ``user_id`` winning over ``session_id``; that preference is
     superseded here because the server can derive the same value
@@ -314,8 +316,8 @@ def _resolve_distinct_id(request: HttpRequest, event: dict[str, object]) -> str:
     An anonymous request never resolves to a client-asserted identity,
     even when the envelope carries a ``user_id``.
 
-    A stable string is required — PostHog rejects captures with an
-    empty ``distinct_id``.
+    A stable string is required — fivebar refuses an event with neither
+    an ``id`` nor an ``ip``, and no ``ip`` is ever sent.
 
     Args:
         request: The incoming request, for the server-derived identity.
@@ -335,20 +337,18 @@ def _resolve_distinct_id(request: HttpRequest, event: dict[str, object]) -> str:
 
 
 def _build_properties(event: dict[str, object]) -> dict[str, object]:
-    """Assemble the PostHog ``properties`` dict from one envelope.
+    """Assemble the ``properties`` dict for one envelope.
 
     Lifts the envelope-level context fields (``client_version``,
     ``platform``, ``install_state``, ``sw_state``, ``connection``,
     ``timestamp``) into the properties dict alongside the caller-
-    supplied ``properties`` so they are queryable in PostHog. Server
-    never inserts the source IP; PostHog's GeoIP path derives country
-    and city from the request context without seeing the raw value.
+    supplied ``properties``. The server never inserts the source IP.
 
     Args:
         event: A validated event dict.
 
     Returns:
-        The merged properties dict for ``posthog.capture``.
+        The merged properties dict for ``analytics.track`` and the log line.
 
     """
     # ``parse_payload`` already enforces ``properties`` is a dict; cast
@@ -366,10 +366,8 @@ def _build_properties(event: dict[str, object]) -> dict[str, object]:
         value = event.get(key)
         if value is not None:
             base[key] = value
-    # Preserve the client-supplied timestamp as an explicit property.
-    # PostHog derives its own event time from the ``$time`` key when set,
-    # but we store the original string too for cross-checking clock
-    # skew.
+    # Preserve the client-supplied timestamp as an explicit property for
+    # cross-checking clock skew. (fivebar and the log line both drop it.)
     base["client_timestamp"] = event["timestamp"]
     return base
 

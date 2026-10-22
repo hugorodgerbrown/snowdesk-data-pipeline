@@ -1,18 +1,13 @@
 """
 tests/conftest.py — shared pytest fixtures.
 
-The ``_disable_posthog`` autouse fixture (SNOW-548) pins the analytics
-kill switches off for every test regardless of how the process was
-launched. ``tox.ini`` already sets ``POSTHOG_API_KEY=`` for
-``[testenv:test]``, but that guard lives entirely in the tox environment:
-a bare ``pytest`` invocation — against convention, but routine during
-iterative debugging — picks up whatever is in the developer's ``.env``
-and ``config.settings.development`` forwards it straight through to
-``AnalyticsConfig.ready()``, producing live uploads to PostHog from a
-test run. The fixture closes that hole from the other direction, and
-along the way makes the suite deterministic: a developer with
-``PWA_TELEMETRY_ENABLED=False`` in ``.env`` was previously watching 28
-analytics tests fail locally that pass in CI.
+The ``_pin_telemetry`` autouse fixture (SNOW-548) pins the telemetry
+master switch to its shipped default for every test regardless of how the
+process was launched: a developer with ``PWA_TELEMETRY_ENABLED=False`` in
+``.env`` was previously watching 28 analytics tests fail locally that pass
+in CI. (Until SNOW-1182 it also pinned PostHog's key empty; the
+``_no_live_fivebar`` fixture and the Sentry re-init in ``pytest_configure``
+now cover the hosts a test run could reach.)
 
 The ``_no_live_terrain_origin`` autouse fixture (SNOW-910) is its sibling
 for the other host a test run can reach on its own: since terrain sampling
@@ -37,7 +32,6 @@ hasher is configured. Tests asserting on a specific algorithm must set
 
 from __future__ import annotations
 
-import posthog
 import pytest
 import sentry_sdk
 from pytest_django.fixtures import Settings
@@ -69,40 +63,21 @@ def pytest_configure() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _disable_posthog(settings: Settings) -> None:
-    """Guarantee no test run reaches PostHog over the network (SNOW-548).
+def _pin_telemetry(settings: Settings) -> None:
+    """Pin ``PWA_TELEMETRY_ENABLED`` to its shipped default (SNOW-548).
 
-    Pins both halves of the analytics configuration rather than trusting
-    the launcher:
-
-    * ``POSTHOG_API_KEY = ""`` — the condition ``analytics.track()`` and
-      ``apps.analytics.signals.emit_server_signal()`` short-circuit on. Also
-      set on the ``posthog`` module globals, because
-      ``AnalyticsConfig.ready()`` copies the setting onto them once at
-      startup and a settings override alone would leave a live client
-      behind.
-    * ``PWA_TELEMETRY_ENABLED = True`` — the operator master switch. It
-      is forced *on* deliberately: it gates the telemetry pipeline's
-      behaviour, not its network access, so tests must see the shipped
-      default rather than whatever a developer happens to have in
-      ``.env``. With the API key empty, nothing leaves the process
-      either way.
-
-    Tests that exercise the enabled path re-override these via
-    ``@override_settings`` and patch ``posthog.capture`` explicitly, so
-    they assert against a mock rather than ambient global state.
+    It gates the telemetry pipeline's behaviour, not its network access, so
+    tests must see the shipped default rather than whatever a developer
+    happens to have in ``.env``.
     """
-    settings.POSTHOG_API_KEY = ""
     settings.PWA_TELEMETRY_ENABLED = True
-    posthog.api_key = ""
-    posthog.disabled = True
 
 
 @pytest.fixture(autouse=True)
 def _no_live_fivebar(settings: Settings) -> None:
     """Guarantee no test run sends to fivebar or renders its tag (SNOW-1180).
 
-    The sibling of ``_disable_posthog``: ``apps/analytics/fivebar.py`` sends
+    The sibling of ``_pin_telemetry``: ``apps/analytics/fivebar.py`` sends
     whenever ``FIVEBAR_TOKEN`` is set, and a bare ``pytest`` run would
     otherwise pick it up from a developer's ``.env``. ``FIVEBAR_DOMAIN`` is
     pinned empty too, so pages render as a deploy without fivebar does.
@@ -116,7 +91,7 @@ def _no_live_fivebar(settings: Settings) -> None:
 def _no_live_terrain_origin(settings: Settings) -> None:
     """Guarantee no test run reaches the terrain tile origin (SNOW-910).
 
-    The sibling of ``_disable_posthog``, and it exists for the same
+    The sibling of ``_pin_telemetry``, and it exists for the same
     reason: an unguarded default sends real requests to a real host from
     a test run. Since SNOW-910 an ordinary ``create_route`` enqueues
     terrain sampling, and the task backend in tests is ``ImmediateBackend``

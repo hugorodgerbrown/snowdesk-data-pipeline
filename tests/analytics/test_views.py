@@ -2,20 +2,22 @@
 
 Covers the first-party telemetry pipeline server-side (SNOW-381, spec
 §16). The endpoint validates the eight-field envelope, forwards each
-event to ``analytics.track()`` (which is patched here to avoid a real
-PostHog call), and returns 204 on success. Failure modes 400 / 405 /
+event to ``analytics.track()`` (patched here, so nothing is sent to
+fivebar), and returns 204 on success. SNOW-1182: non-goal events are
+logged as structured lines instead of going to PostHog. Failure modes 400 / 405 /
 413 / 415 are exercised so a broken client doesn't discover them in
 production.
 
 SNOW-550: the ``distinct_id`` tests here also pin that the envelope's
 ``user_id`` is never trusted. The endpoint is CSRF-exempt and needs no
 authentication, so a client-asserted identity would let any POST
-attribute events to someone else's PostHog history.
+attribute events to someone else's identity.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -25,18 +27,16 @@ from apps.analytics.schema import MAX_PAYLOAD_BYTES
 from tests.factories import AccountFactory
 
 # Every test in this module hits the Django test client, which triggers
-# the IdempotencyMiddleware / PosthogContextMiddleware DB access even
+# the IdempotencyMiddleware DB access even
 # when the endpoint itself is read-only. Marking module-wide is cleaner
 # than annotating every method.
 pytestmark = pytest.mark.django_db
 
-# All tests here override the PostHog key so the ``analytics.track()``
-# wrapper actually reaches its inner ``posthog.capture`` call — which we
-# patch out per-test. Without the key the wrapper short-circuits and the
-# patched capture is never invoked, hiding regressions.
-_POSTHOG = override_settings(
-    POSTHOG_API_KEY="test-key", POSTHOG_HOST="https://eu.posthog.com"
-)
+# The receiver calls ``analytics.track()`` for every event (it runs the PII
+# guard, and sends the fivebar goals). Patching it here observes what the
+# receiver forwards without a fivebar send. Call args are
+# ``(event, distinct_id, properties)`` plus ``page=``.
+_TRACK = "apps.analytics.track"
 
 
 def _valid_event(
@@ -60,12 +60,11 @@ def _valid_event(
 
 
 class TestReceiverAcceptsValidPayload:
-    """The receiver forwards well-formed envelopes to ``posthog.capture``."""
+    """The receiver forwards well-formed envelopes to ``analytics.track``."""
 
-    @_POSTHOG
     def test_single_envelope_returns_204(self) -> None:
         """A single envelope (sendBeacon fast path) is accepted."""
-        with patch("posthog.capture") as mock_capture:
+        with patch(_TRACK) as mock_capture:
             response = Client().post(
                 "/api/telemetry",
                 data=json.dumps(_valid_event()),
@@ -74,7 +73,6 @@ class TestReceiverAcceptsValidPayload:
         assert response.status_code == 204
         assert mock_capture.call_count == 1
 
-    @_POSTHOG
     def test_batched_envelope_forwards_each_event(self) -> None:
         """``{"events": [e1, e2, e3]}`` fires three captures."""
         batch = {
@@ -84,7 +82,7 @@ class TestReceiverAcceptsValidPayload:
                 _valid_event("pwa.freshness.stale"),
             ]
         }
-        with patch("posthog.capture") as mock_capture:
+        with patch(_TRACK) as mock_capture:
             response = Client().post(
                 "/api/telemetry",
                 data=json.dumps(batch),
@@ -92,19 +90,16 @@ class TestReceiverAcceptsValidPayload:
             )
         assert response.status_code == 204
         assert mock_capture.call_count == 3
-        forwarded_events = [
-            call.kwargs["event"] for call in mock_capture.call_args_list
-        ]
+        forwarded_events = [call.args[0] for call in mock_capture.call_args_list]
         assert forwarded_events == [
             "pwa.sw.installed",
             "pwa.install.prompted",
             "pwa.freshness.stale",
         ]
 
-    @_POSTHOG
     def test_json_subtype_content_type_accepted(self) -> None:
         """``application/vnd.api+json`` and similar +json subtypes pass through."""
-        with patch("posthog.capture") as mock_capture:
+        with patch(_TRACK) as mock_capture:
             response = Client().post(
                 "/api/telemetry",
                 data=json.dumps(_valid_event()),
@@ -113,10 +108,9 @@ class TestReceiverAcceptsValidPayload:
         assert response.status_code == 204
         assert mock_capture.call_count == 1
 
-    @_POSTHOG
     def test_envelope_context_lifted_into_properties(self) -> None:
-        """Envelope-level context (platform, sw_state, …) is queryable in PostHog."""
-        with patch("posthog.capture") as mock_capture:
+        """Envelope-level context (platform, sw_state, …) rides with the event."""
+        with patch(_TRACK) as mock_capture:
             Client().post(
                 "/api/telemetry",
                 data=json.dumps(
@@ -130,14 +124,13 @@ class TestReceiverAcceptsValidPayload:
                 ),
                 content_type="application/json",
             )
-        props = mock_capture.call_args.kwargs["properties"]
+        props = mock_capture.call_args.args[2]
         assert props["platform"] == "ios"
         assert props["sw_state"] == "activated"
         assert props["connection"] == "cellular"
         assert props["registration_ms"] == 42
         assert props["client_timestamp"] == "2026-07-16T10:00:00+00:00"
 
-    @_POSTHOG
     def test_authenticated_request_uses_the_server_derived_identity(self) -> None:
         """SNOW-550: the signed-in user's own identity wins, not the envelope.
 
@@ -149,16 +142,15 @@ class TestReceiverAcceptsValidPayload:
         client = Client()
         client.force_login(account.user)
 
-        with patch("posthog.capture") as mock_capture:
+        with patch(_TRACK) as mock_capture:
             client.post(
                 "/api/telemetry",
                 data=json.dumps(_valid_event(user_id="U", session_id="S")),
                 content_type="application/json",
             )
 
-        assert mock_capture.call_args.kwargs["distinct_id"] == str(account.uuid)
+        assert mock_capture.call_args.args[1] == str(account.uuid)
 
-    @_POSTHOG
     def test_authenticated_request_ignores_a_spoofed_user_id(self) -> None:
         """A spoofed user_id cannot redirect events onto another identity."""
         account = AccountFactory.create()
@@ -166,29 +158,28 @@ class TestReceiverAcceptsValidPayload:
         client = Client()
         client.force_login(account.user)
 
-        with patch("posthog.capture") as mock_capture:
+        with patch(_TRACK) as mock_capture:
             client.post(
                 "/api/telemetry",
                 data=json.dumps(_valid_event(user_id=str(victim.uuid))),
                 content_type="application/json",
             )
 
-        distinct_id = mock_capture.call_args.kwargs["distinct_id"]
+        distinct_id = mock_capture.call_args.args[1]
         assert distinct_id == str(account.uuid)
         assert distinct_id != str(victim.uuid)
 
-    @_POSTHOG
     def test_anonymous_request_never_uses_a_spoofed_user_id(self) -> None:
         """SNOW-550: an unauthenticated POST cannot claim someone's identity.
 
         The endpoint is deliberately CSRF-exempt and needs no auth, so
         this is the whole attack: any POST with an allowed event name and
-        a guessed ``user_id`` used to corrupt that user's PostHog history.
+        a guessed ``user_id`` used to corrupt that user's analytics history.
         It must fall through to ``session_id`` instead.
         """
         victim = AccountFactory.create()
 
-        with patch("posthog.capture") as mock_capture:
+        with patch(_TRACK) as mock_capture:
             Client().post(
                 "/api/telemetry",
                 data=json.dumps(
@@ -197,46 +188,70 @@ class TestReceiverAcceptsValidPayload:
                 content_type="application/json",
             )
 
-        distinct_id = mock_capture.call_args.kwargs["distinct_id"]
+        distinct_id = mock_capture.call_args.args[1]
         assert distinct_id == "S-only"
         assert distinct_id != str(victim.uuid)
 
-    @_POSTHOG
     def test_session_id_used_when_anonymous(self) -> None:
         """An anonymous request resolves to its session_id."""
-        with patch("posthog.capture") as mock_capture:
+        with patch(_TRACK) as mock_capture:
             Client().post(
                 "/api/telemetry",
                 data=json.dumps(_valid_event(user_id=None, session_id="S-only")),
                 content_type="application/json",
             )
-        assert mock_capture.call_args.kwargs["distinct_id"] == "S-only"
+        assert mock_capture.call_args.args[1] == "S-only"
 
-    @_POSTHOG
     def test_anon_sentinel_when_both_ids_stripped(self) -> None:
         """distinct_id falls back to ``_anon`` when both IDs are None (opt-out).
 
         Unchanged by SNOW-550 — an anonymous request with no session id
         still lands on the sentinel rather than an asserted identity.
         """
-        with patch("posthog.capture") as mock_capture:
+        with patch(_TRACK) as mock_capture:
             Client().post(
                 "/api/telemetry",
                 data=json.dumps(_valid_event(user_id=None, session_id=None)),
                 content_type="application/json",
             )
-        assert mock_capture.call_args.kwargs["distinct_id"] == "_anon"
+        assert mock_capture.call_args.args[1] == "_anon"
 
-    @_POSTHOG
-    def test_posthog_failure_is_swallowed(self) -> None:
-        """A PostHog exception is caught by analytics.track — 204 still returned."""
-        with patch("posthog.capture", side_effect=RuntimeError("PostHog is down")):
-            response = Client().post(
+    def test_non_goal_event_is_logged_at_info(self) -> None:
+        """SNOW-1182: a PWA lifecycle event becomes a structured INFO line."""
+        with patch("apps.analytics.views.logger") as logger:
+            Client().post(
                 "/api/telemetry",
-                data=json.dumps(_valid_event()),
+                data=json.dumps(_valid_event("pwa.sw.installed", platform="ios")),
                 content_type="application/json",
             )
-        assert response.status_code == 204
+        call = logger.log.call_args
+        assert call.args[0] == logging.INFO
+        assert call.args[2] == "pwa.sw.installed"
+        assert "platform=ios" in call.args[3]
+        assert "client_timestamp" not in call.args[3]
+
+    def test_failure_event_is_logged_at_warning(self) -> None:
+        """A failure-shaped event logs at WARNING."""
+        with patch("apps.analytics.views.logger") as logger:
+            Client().post(
+                "/api/telemetry",
+                data=json.dumps(_valid_event("pwa.sw.activation_failed")),
+                content_type="application/json",
+            )
+        assert logger.log.call_args.args[0] == logging.WARNING
+
+    def test_goal_and_error_events_are_not_logged(self) -> None:
+        """Goals go to fivebar and js.error to Sentry, not to the log."""
+        batch = {
+            "events": [_valid_event("map.route.created"), _valid_event("js.error")]
+        }
+        with patch("apps.analytics.views.logger") as logger:
+            Client().post(
+                "/api/telemetry",
+                data=json.dumps(batch),
+                content_type="application/json",
+            )
+        logger.log.assert_not_called()
 
 
 class TestReceiverRejectsMalformedInput:
@@ -302,7 +317,7 @@ class TestReceiverRejectsMalformedInput:
         assert response.status_code == 400
 
     def test_unknown_top_level_key_returns_400(self) -> None:
-        """A typo like ``even`` for ``event`` doesn't disappear into PostHog silently."""
+        """A typo like ``even`` for ``event`` doesn't disappear downstream silently."""
         bad = _valid_event()
         bad["typo_key"] = "oops"
         response = Client().post(
@@ -330,7 +345,6 @@ class TestReceiverRejectsMalformedInput:
         )
         assert response.status_code == 400
 
-    @_POSTHOG
     def test_pii_property_returns_400(self) -> None:
         """A client-supplied PII key (email, ip, token, credential_id) is rejected."""
         bad = _valid_event(properties={"email": "x@example.com"})
@@ -346,7 +360,6 @@ class TestReceiverRejectsMalformedInput:
 class TestReceiverRateLimit:
     """The rate-limiter drops excess requests silently with 204."""
 
-    @_POSTHOG
     def test_limited_request_drops_without_forwarding(self) -> None:
         """When ``request.limited`` is True the receiver drops with 204.
 
@@ -367,7 +380,7 @@ class TestReceiverRateLimit:
         )
         request.limited = True  # type: ignore[attr-defined]
 
-        with patch("posthog.capture") as mock_capture:
+        with patch(_TRACK) as mock_capture:
             # The @ratelimit decorator sets request.limited; when a caller
             # (or, here, the test) has already set it, the decorated view
             # sees the same True value on entry.
@@ -377,64 +390,13 @@ class TestReceiverRateLimit:
         mock_capture.assert_not_called()
 
 
-class TestReceiverNoPostHogKey:
-    """With no key configured the endpoint still 204s but sends nothing."""
-
-    @override_settings(POSTHOG_API_KEY="")
-    def test_no_op_when_key_empty(self) -> None:
-        """No key → analytics.track short-circuits → posthog.capture not called."""
-        with patch("posthog.capture") as mock_capture:
-            response = Client().post(
-                "/api/telemetry",
-                data=json.dumps(_valid_event()),
-                content_type="application/json",
-            )
-        assert response.status_code == 204
-        mock_capture.assert_not_called()
-
-    @override_settings(POSTHOG_API_KEY="")
-    def test_analytics_track_never_called_when_key_empty(self) -> None:
-        """SNOW-384: the receiver's own gate short-circuits before the
-        per-event forward loop — ``analytics.track`` is never called at
-        all, not merely no-opping internally.
-        """
-        with patch("apps.analytics.views.analytics.track") as mock_track:
-            response = Client().post(
-                "/api/telemetry",
-                data=json.dumps({"events": [_valid_event(), _valid_event()]}),
-                content_type="application/json",
-            )
-        assert response.status_code == 204
-        mock_track.assert_not_called()
-
-
-class TestReceiverKeyGatePositive:
-    """SNOW-384: with a key configured, the forward loop still runs."""
-
-    @_POSTHOG
-    def test_analytics_track_called_when_key_set(self) -> None:
-        """SNOW-384: with a key configured, the forward loop still runs."""
-        with patch("apps.analytics.views.analytics.track") as mock_track:
-            response = Client().post(
-                "/api/telemetry",
-                data=json.dumps(_valid_event()),
-                content_type="application/json",
-            )
-        assert response.status_code == 204
-        mock_track.assert_called_once()
-
-
 class TestReceiverMasterSwitch:
     """PWA_TELEMETRY_ENABLED=False accepts-and-drops before parsing."""
 
-    @override_settings(POSTHOG_API_KEY="test-key", PWA_TELEMETRY_ENABLED=False)
+    @override_settings(PWA_TELEMETRY_ENABLED=False)
     def test_disabled_returns_204_without_forwarding(self) -> None:
-        """Master switch off → 204, ``analytics.track`` never called.
-
-        The key is populated to prove the master switch wins over the
-        key gate — with telemetry disabled, nothing forwards regardless.
-        """
-        with patch("apps.analytics.views.analytics.track") as mock_track:
+        """Master switch off → 204, ``analytics.track`` never called."""
+        with patch("apps.analytics.track") as mock_track:
             response = Client().post(
                 "/api/telemetry",
                 data=json.dumps(_valid_event()),
@@ -443,7 +405,7 @@ class TestReceiverMasterSwitch:
         assert response.status_code == 204
         mock_track.assert_not_called()
 
-    @override_settings(POSTHOG_API_KEY="test-key", PWA_TELEMETRY_ENABLED=False)
+    @override_settings(PWA_TELEMETRY_ENABLED=False)
     def test_disabled_drops_before_validation(self) -> None:
         """The switch short-circuits ahead of schema validation.
 
@@ -462,10 +424,9 @@ class TestReceiverMasterSwitch:
 class TestReceiverCsrfExempt:
     """The endpoint is CSRF-exempt so sendBeacon can post without a token."""
 
-    @_POSTHOG
     def test_no_csrf_token_still_accepted(self) -> None:
         """Enforced-CSRF client posts without a token — endpoint accepts anyway."""
-        with patch("posthog.capture"):
+        with patch(_TRACK):
             response = Client(enforce_csrf_checks=True).post(
                 "/api/telemetry",
                 data=json.dumps(_valid_event()),
@@ -477,9 +438,9 @@ class TestReceiverCsrfExempt:
 class TestReceiverForwardsGoalsToFivebar:
     """SNOW-1180: map.* goal events reach fivebar, attributed to ``/map/``."""
 
-    @override_settings(POSTHOG_API_KEY="", FIVEBAR_TOKEN="fb-token")
-    def test_fivebar_alone_is_enough_to_forward(self) -> None:
-        """With fivebar configured and no PostHog key the batch is not dropped."""
+    @override_settings(FIVEBAR_TOKEN="fb-token")
+    def test_goal_event_reaches_fivebar(self) -> None:
+        """A goal event is handed to ``fivebar.send`` with page ``/map/``."""
         with patch("apps.analytics.fivebar.send") as send:
             response = Client().post(
                 "/api/telemetry",
@@ -491,7 +452,7 @@ class TestReceiverForwardsGoalsToFivebar:
         assert send.call_args.args[0] == "map.route.created"
         assert send.call_args.args[3] == "/map/"
 
-    @override_settings(POSTHOG_API_KEY="", FIVEBAR_TOKEN="fb-token")
+    @override_settings(FIVEBAR_TOKEN="fb-token")
     def test_non_map_event_is_attributed_to_root(self) -> None:
         """Anything outside ``map.*`` gets ``/`` (and is filtered by GOAL_EVENTS)."""
         with patch("apps.analytics.fivebar.send") as send:

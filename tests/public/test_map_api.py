@@ -40,7 +40,7 @@ import pytest
 from django.core.cache import cache
 from django.db import connection
 from django.test import Client
-from django.test.utils import CaptureQueriesContext, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
@@ -287,15 +287,13 @@ def test_ratings_vary_accept_encoding_not_cookie() -> None:
 
 
 @pytest.mark.django_db
-@override_settings(POSTHOG_API_KEY="phc_test")
 def test_ratings_vary_no_cookie_with_analytics_enabled() -> None:
-    """SNOW-299 regression: Vary: Cookie absent on ratings even when PostHog is active.
+    """SNOW-299 regression: Vary: Cookie absent on ratings even (SNOW-1182: no analytics middleware).
 
-    When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
-    read request.user to tag identities, causing SessionMiddleware to append
-    Vary: Cookie and defeat Cache-Control: public CDN caching.
-    The _POSTHOG_EXEMPT_PATHS exemption in config/settings/base.py prevents
-    that access for this endpoint.
+    Nothing on this path may read request.user: that would make
+    SessionMiddleware append Vary: Cookie and defeat Cache-Control: public
+    CDN caching. (Until SNOW-1182 PostHog's middleware did, behind an
+    exemption list; the test now guards the property itself.)
     """
     response = Client().get(reverse("api:ratings"))
     assert response.status_code == 200
@@ -305,19 +303,16 @@ def test_ratings_vary_no_cookie_with_analytics_enabled() -> None:
 
 
 @pytest.mark.django_db
-@override_settings(POSTHOG_API_KEY="phc_test")
 @pytest.mark.parametrize(
     "url_name",
     ["api:regions_geojson", "api:major_regions_geojson", "api:sub_regions_geojson"],
 )
 def test_geojson_no_cookie_vary_with_analytics_enabled(url_name: str) -> None:
-    """SNOW-299 regression: Vary: Cookie absent on GeoJSON endpoints when PostHog is active.
+    """SNOW-299 regression: Vary: Cookie absent on GeoJSON endpoints (SNOW-1182: no analytics middleware).
 
-    When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
-    read request.user to tag identities, causing SessionMiddleware to append
-    Vary: Cookie and defeat Cache-Control: public CDN caching.
-    The _POSTHOG_EXEMPT_PATHS exemption in config/settings/base.py prevents
-    that access for these endpoints.
+    Nothing on these paths may read request.user: that would make
+    SessionMiddleware append Vary: Cookie and defeat Cache-Control: public
+    CDN caching.
     """
     url = reverse(url_name) + "?country=ch"
     response = Client().get(url)
@@ -326,13 +321,10 @@ def test_geojson_no_cookie_vary_with_analytics_enabled(url_name: str) -> None:
     assert "Accept-Encoding" in vary, (
         f"Expected Accept-Encoding in Vary with analytics enabled; got: {vary!r}"
     )
-    assert "Cookie" not in vary, (
-        f"Vary: Cookie must not be set even with analytics enabled; got: {vary!r}"
-    )
+    assert "Cookie" not in vary, f"Vary: Cookie must not be set ; got: {vary!r}"
 
 
 @pytest.mark.django_db
-@override_settings(POSTHOG_API_KEY="phc_test")
 @pytest.mark.parametrize(
     "url",
     [
@@ -347,11 +339,10 @@ def test_remaining_cacheable_endpoints_no_cookie_vary_with_analytics_enabled(
 ) -> None:
     """SNOW-299 regression: the remaining exempt cacheable endpoints stay Cookie-free.
 
-    Completes the key-on coverage of _POSTHOG_EXEMPT_PATHS — the three
-    paths not exercised by the ratings/GeoJSON regression tests above. With
-    POSTHOG_API_KEY set, PosthogContextMiddleware would otherwise read
-    request.user and let SessionMiddleware append Vary: Cookie, defeating the
-    Cache-Control: public CDN caching these endpoints set.
+    Covers the three paths not exercised by the ratings/GeoJSON regression
+    tests above. A read of request.user would let SessionMiddleware append
+    Vary: Cookie, defeating the Cache-Control: public CDN caching these
+    endpoints set.
     """
     name, _, query = url.partition("?")
     target = reverse(name) + (f"?{query}" if query else "")
@@ -361,9 +352,7 @@ def test_remaining_cacheable_endpoints_no_cookie_vary_with_analytics_enabled(
     assert "Accept-Encoding" in vary, (
         f"Expected Accept-Encoding in Vary with analytics enabled; got: {vary!r}"
     )
-    assert "Cookie" not in vary, (
-        f"Vary: Cookie must not be set even with analytics enabled; got: {vary!r}"
-    )
+    assert "Cookie" not in vary, f"Vary: Cookie must not be set ; got: {vary!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -2433,14 +2422,13 @@ class TestCommunityReportsGeojson:
         assert "public" not in cache_control
 
     def test_not_shared_cacheable_with_analytics_enabled(self) -> None:
-        """SNOW-459: no-store holds even when PostHog would add Vary: Cookie.
+        """SNOW-459: no-store holds whatever Vary a middleware might add.
 
         Unlike the SNOW-299 public endpoints, this one must never be
         shared-cached regardless of Vary — so the bypass is closed by
         no-store, not by suppressing Vary: Cookie.
         """
-        with override_settings(POSTHOG_API_KEY="phc_test"):
-            response = Client().get(reverse("api:community_reports_geojson"))
+        response = Client().get(reverse("api:community_reports_geojson"))
         assert response.status_code == 200
         assert "no-store" in response.get("Cache-Control", "")
 
@@ -2813,7 +2801,6 @@ def test_geojson_empty_payload_is_not_memoised_for_a_day() -> None:
 
 
 @pytest.mark.django_db
-@override_settings(POSTHOG_API_KEY="phc_test")
 def test_geojson_304_still_suppresses_cookie_vary() -> None:
     """SNOW-299's Vary contract holds on the revalidation path too."""
     _ch_region_with_boundary()

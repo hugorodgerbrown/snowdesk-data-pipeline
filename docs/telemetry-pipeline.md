@@ -2,7 +2,7 @@
 name: telemetry-pipeline
 description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon, PWA_TELEMETRY_ENABLED off switch, pwa.*/map.* event names
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-22
 ---
 
 # Telemetry pipeline
@@ -11,7 +11,8 @@ First-party client observability for the Snowdesk PWA — spec §16
 (non-negotiable §12.11). Broken service worker, corrupt IndexedDB,
 evicted cache, or dead push subscription must not leave a user unable
 to phone home, so the pipeline is deliberately owned end-to-end
-(no third-party `posthog-js`).
+(no third-party analytics script). Since SNOW-1182 nothing goes to
+PostHog: see [Where events go](#where-events-go-snow-1182).
 
 The umbrella ticket is
 [SNOW-368](https://linear.app/hugorodgerbrown/issue/SNOW-368); the
@@ -27,7 +28,8 @@ follow-up blocked on SNOW-375's IndexedDB scaffolding.
 | Envelope schema + allowlist | `apps/analytics/schema.py` |
 | Server-side signal helper | `apps/analytics/signals.py::emit_server_signal` |
 | URL routing (namespace `analytics:`) | `apps/analytics/urls.py` mounted at `/api/telemetry` in `config/urls.py` |
-| PostHog client (shared with `analytics.track`) | `apps/analytics/apps.py::AnalyticsConfig.ready` |
+| fivebar goals client (shared with `analytics.track`) | `apps/analytics/fivebar.py` |
+| Browser-error forwarding to Sentry | `apps/core/sentry.py::capture_js_error` |
 
 ## Receiver contract — `POST /api/telemetry`
 
@@ -46,9 +48,9 @@ The eight-field envelope per spec §16.1:
 | Key | Required | Type | Notes |
 |-----|----------|------|-------|
 | `event` | yes | string | Must appear in `apps.analytics.schema.ALLOWED_EVENTS`. |
-| `timestamp` | yes | string | ISO-8601. Preserved verbatim as `client_timestamp` on the PostHog event. |
+| `timestamp` | yes | string | ISO-8601. Preserved verbatim as `client_timestamp` in the event's properties. |
 | `client_version` | yes | string | Non-empty. Lifted into `properties`. |
-| `session_id` | no | string / null | Used as PostHog `distinct_id` for anonymous requests. |
+| `session_id` | no | string / null | Used as the `distinct_id` for anonymous requests. |
 | `user_id` | no | string / null | **Ignored** (SNOW-550) — see below. Accepted by the schema for backwards compatibility with clients still sending it. |
 | `platform` | no | string | e.g. `web`, `ios`, `android`. Lifted into `properties`. |
 | `install_state` | no | string | e.g. `installed`, `browser`. Lifted into `properties`. |
@@ -81,8 +83,8 @@ there is no reason to accept the client's claim.
 
 The public-facing identifier for a signed-in user is `Account.uuid`,
 resolved through [`apps/accounts/identity.py`](../apps/accounts/identity.py)
-(`user_identity` / `request_identity`). It is what every PostHog
-`distinct_id` carries, and what `base.html` renders into the
+(`user_identity` / `request_identity`). It is what every analytics
+`distinct_id` carries (fivebar's `id`), and what `base.html` renders into the
 `pwa-user-id` meta tag that the PWA mutation queue reads as its
 principal.
 
@@ -99,11 +101,10 @@ backfill. A stored identifier was chosen over a derived
 
 **Two consequences of the cutover, both deliberate:**
 
-* **PostHog history does not join across it.** Events emitted before
-  2026-07-29 key on the integer PK; events after it key on the uuid.
-  There is no alias migration — pre-launch volume made the
-  discontinuity cheap. Read any funnel or retention query spanning that
-  date with the break in mind.
+* **PostHog history did not join across it.** Events emitted before
+  2026-07-29 keyed on the integer PK; events after it on the uuid.
+  There was no alias migration — pre-launch volume made the
+  discontinuity cheap. (Moot since SNOW-1182 removed PostHog.)
 * **Queued PWA mutations were flushed once.** Every existing user's
   principal changed on their first load after deploy, so
   `mutation_queue.js`'s principal-mismatch check discarded whatever they
@@ -114,7 +115,7 @@ backfill. A stored identifier was chosen over a derived
 Response codes:
 
 - `204 No Content` on success, on empty ratelimit-dropped requests, and
-  on PostHog client exceptions (analytics failure must never break the
+  when forwarding fails (analytics failure must never break the
   request cycle).
 - `400 invalid_json` / `invalid_envelope` / `pii_property` — the caller
   is broken and should stop retrying.
@@ -126,12 +127,11 @@ Response codes:
 Rate limit: 60 requests / minute per source IP via `@ratelimit`;
 excess is dropped silently (204, no forwarding) so a client back-off
 timer does not spiral. CSRF-exempt because `sendBeacon` cannot attach
-CSRF tokens — the endpoint has no side effect beyond forwarding to
-PostHog, so the CSRF risk surface is empty.
+CSRF tokens — the endpoint has no side effect beyond logging and
+forwarding, so the CSRF risk surface is empty.
 
-Server-side IP address is never captured into an event property.
-PostHog's own IP-derived GeoIP enrichment continues to run (see
-`apps/analytics/apps.py`).
+Server-side IP address is never captured into an event property, and
+never sent to fivebar or Sentry.
 
 ## Event catalogue
 
@@ -214,8 +214,8 @@ change the frozenset + document the property shape here.
 ### Server-emitted (via `emit_server_signal`)
 
 Emitted directly from the Python code path — bypasses the receiver so
-they cannot be silenced by a broken client. All fire under the
-synthetic PostHog distinct_id `_server`.
+they cannot be silenced by a broken client. Each is one INFO log line,
+`telemetry.signal event=<name> k=v …` (SNOW-1182).
 
 | Signal | Call site | Fires when |
 |--------|-----------|------------|
@@ -274,12 +274,29 @@ pageview on fivebar.
   `fivebar_status`; the context-free `errors/_standalone.html` from
   `page.status`, with `FIVEBAR_DOMAIN` in its plain context dict.
 
+## Where events go (SNOW-1182)
+
+PostHog was removed in SNOW-1182. Every event the receiver accepts still
+runs the PII guard in `analytics.track()`, then goes to exactly one place:
+
+| Event | Destination |
+|-------|-------------|
+| `GOAL_EVENTS` (product events, `map.*` feature use) | fivebar goal (above) |
+| `js.error` | Sentry, via `apps/core/sentry.py::capture_js_error` (SNOW-1181) |
+| every other client event (`pwa.*`, `map.basemap.record_write_failed`) | one log line, `telemetry.client event=<name> k=v …` — WARNING for `FAILURE_EVENTS` in `apps/analytics/views.py`, INFO otherwise |
+| server signals (`emit_server_signal`) | one INFO log line, `telemetry.signal event=<name> k=v …` |
+
+The log lines are searchable in Render's log stream; a WARNING on a
+failure event is what to alert on. Server exceptions and `logger.error`
+calls reach Sentry through its Django and logging integrations when
+`SENTRY_DSN` is set.
+
 ## Rollout / off-switch
 
 ### Master switch — `PWA_TELEMETRY_ENABLED` (default `True`)
 
 A single operator-level env var silences the **whole** pipeline, not just
-PostHog forwarding. Set `PWA_TELEMETRY_ENABLED=False` (via `.env` /
+forwarding. Set `PWA_TELEMETRY_ENABLED=False` (via `.env` /
 python-decouple; `config/settings/base.py`) and:
 
 - **Client** — `static/js/telemetry.js` becomes an inert no-op. The
@@ -295,28 +312,20 @@ python-decouple; `config/settings/base.py`) and:
 - **Server signals** — `emit_server_signal` no-ops.
 
 This is the switch to reach for when running locally. It is **distinct**
-from the two gates below (which only stop *forwarding* to PostHog) and
+from the destination gates below (which only stop *forwarding*) and
 from the per-user opt-in (spec §16.6): the master switch silences the
 operational-safety "critical" events too, because the operator has
 turned the pipeline off entirely rather than a user declining
 identification.
 
-### PostHog key gate (forwarding only)
+### Destination gates (forwarding only)
 
-- `emit_server_signal` (`apps/analytics/signals.py`) checks
-  `settings.POSTHOG_API_KEY` itself before calling `analytics.track()`
-  — logged at DEBUG, no-op when unset. The `/api/telemetry` receiver
-  (`apps/analytics/views.py::_posthog_configured`) does the same immediately
-  after schema validation: dev / test environments still accept
-  `POST /api/telemetry` and 204 without contacting PostHog, but the
-  per-event forward loop (and the PII check normally performed inside
-  `analytics.track()`) is skipped entirely rather than relying solely on
-  `analytics.track()`'s own internal no-op — see SNOW-384.
-- To halt event forwarding in production without a deploy, unset
-  `POSTHOG_API_KEY` in the Render environment; the receiver continues
-  to accept and 204 (client sees no error), but nothing reaches PostHog.
-- The five server-side signal emitters follow the same rule — no key,
-  no forwarding.
+- fivebar goals go out only when both `FIVEBAR_TOKEN` and
+  `FIVEBAR_DOMAIN` are set; Sentry only when `SENTRY_DSN` is. Dev and
+  test leave all three empty, so nothing leaves the machine.
+- To stop forwarding in production without a deploy, unset the variable
+  on Render; the receiver keeps accepting and returning 204, and the log
+  lines keep flowing.
 - Neither gate affects the client's ability to write to `queue:events`
   locally — that buffering is entirely client-side
   (`static/js/telemetry.js`), independent of whether the server
@@ -553,4 +562,5 @@ specific events.
 - [`push-notifications.md`](push-notifications.md) — Web Push mechanics
   (the source of the two server-side `pwa.push.*` signals).
 - [SNOW-384](https://linear.app/hugorodgerbrown/issue/SNOW-384) —
-  PostHog dashboards + alerts backed by this pipeline.
+  the PostHog dashboards + alerts this pipeline once fed (gone with
+  SNOW-1182).
