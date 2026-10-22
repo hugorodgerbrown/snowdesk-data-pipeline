@@ -94,6 +94,9 @@
     // SNOW-1109: the terrain filter's row is a checkbox now, not an action
     // row, so it toggles through its bridge like the four above.
     terrain: () => window.pwaTerrainFilter,
+    // SNOW-1185: "Show unsupported regions" — a re-filter of the micro
+    // regions that only map.js's applyCountryFilters can compose.
+    unsupported: () => window.pwaUnsupportedRegions,
   };
 
   // The two rows that need an account, and the sentence each hands off

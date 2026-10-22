@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-10-22
 ---
 
 # Map page — functional specification
@@ -160,6 +160,7 @@ layer menu; each remembers its state per-device in `localStorage`.
 | **Bulletin fill** | derived | The bulletin data painted onto those regions: **the choropleth** — the coloured fill carrying the danger rating — plus the dissolved outer boundary of every micro-region that shares one bulletin on the selected day. Shows how the warning service actually grouped terrain that day: two regions inside one outline are covered by one text. An outline appears only where a provider aggregates — a bulletin covering ONE region gets none, since dissolving one polygon would just redraw its own border ([why](decisions/a-grouping-outline-asserts-an-aggregation.md)). Météo-France is 1:1 across its whole archive, so it draws no outlines at all; SLF and ALBINA both aggregate today, and SLF will stop once SNOW-998 lands. Not an on/off row: its layers-menu row is a five-step "Bulletin opacity" control (below). | **50%** |
 | **Minor regions** | L2 | Sub-region grouping of micro-regions (e.g. `CH-41`, Lower Valais). Outline only. | Off |
 | **Major regions** | L1 | Top-level area (e.g. `CH-4`, Valais). Outline only. | Off |
+| **Show unsupported regions** | L4 | The micro regions no provider has ever rated (`covered: false` on `/api/regions.geojson` — about a third of the estate: Carinthia, Valle d'Aosta, Lombardy, the Swiss lowlands…). Off, they are filtered out of the fill, border and label entirely; on, they come back as an outline with a transparent fill, so they stay tappable without reading as ground the map covers (SNOW-1185). Regions start "supported" on their first rating, with no fixture change. | Off |
 
 The **micro-region choropleth is the map's core**: each L4 region is
 filled with the colour of its peak danger rating for the selected date.

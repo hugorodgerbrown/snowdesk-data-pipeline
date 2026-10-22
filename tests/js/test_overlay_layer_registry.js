@@ -77,6 +77,9 @@ describe('the overlay layer registry', () => {
       // The downloads panel's "Display on the map" switch drives the
       // cached-tiles layers through window.pwaDownloadedOverlay.
       'downloads',
+      // SNOW-1185: "Show unsupported regions" re-filters the micro-region
+      // layers through window.pwaUnsupportedRegions; it hides no layer.
+      'unsupported',
     ]);
     const switchable = Object.keys(overlayStorageKey);
     // Guard against a vacuous pass: an empty table would satisfy the loop
