@@ -1,0 +1,30 @@
+{% comment %}
+templates/includes/_fivebar_tag.html — the fivebar analytics tag (SNOW-1180).
+
+Included in the <head> of public/base.html and errors/_standalone.html.
+Renders nothing unless ``domain`` is set (FIVEBAR_DOMAIN), which also admits
+https://fiveb.ar to the CSP. The nonce lets it load under the policy's
+nonce-source as well as its host-source.
+
+Parameters:
+    domain : FIVEBAR_DOMAIN — the site as fivebar names it.
+    status : optional HTTP status of an error page. Chrome, Edge and Firefox
+             report it to fivebar themselves; Safari does not, so error
+             pages pass it as ``data-status`` and fivebar counts the page on
+             its Errors page rather than among the top pages
+             (https://fiveb.ar/docs/error-pages). Ordinary pages omit it.
+    path   : optional FIVEBAR_PATH — the page's path with its token replaced
+             (``/account/access/:token/``), sent as ``data-path`` so the
+             token never reaches fivebar
+             (https://fiveb.ar/docs/script-attributes#data-path).
+{% endcomment %}
+{% if domain %}
+    <script
+        async
+        nonce="{{ request.csp_nonce }}"
+        data-domain="{{ domain }}"
+        {% if status %}data-status="{{ status }}"{% endif %}
+        {% if path %}data-path="{{ path }}"{% endif %}
+        src="https://fiveb.ar/js/tally.js"
+    ></script>
+{% endif %}

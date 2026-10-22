@@ -212,3 +212,34 @@ class TestPreview:
         response = client.get("/_errors/418/")
         assert response.status_code == 404
         assert "Page not found" in response.content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.urls(ERROR_URLS)
+class TestFivebarStatus:
+    """SNOW-1180: error pages give the fivebar tag a data-status for Safari."""
+
+    def test_full_site_404_carries_its_status(
+        self, client: Client, settings: Any
+    ) -> None:
+        settings.FIVEBAR_DOMAIN = "snowdesk.info"
+        body = client.get("/no-such-page/at-all/").content.decode()
+        assert 'data-domain="snowdesk.info"' in body
+        assert 'data-status="404"' in body
+
+    def test_standalone_500_carries_its_status(self, settings: Any) -> None:
+        settings.FIVEBAR_DOMAIN = "snowdesk.info"
+        client = Client(raise_request_exception=False)
+        body = client.get("/_test/boom/").content.decode()
+        assert 'data-domain="snowdesk.info"' in body
+        assert 'data-status="500"' in body
+
+    def test_ordinary_page_has_no_status(self, client: Client, settings: Any) -> None:
+        settings.FIVEBAR_DOMAIN = "snowdesk.info"
+        body = client.get("/").content.decode()
+        assert 'data-domain="snowdesk.info"' in body
+        assert "data-status=" not in body
+
+    def test_no_tag_without_a_domain(self) -> None:
+        client = Client(raise_request_exception=False)
+        assert "fiveb.ar" not in client.get("/_test/boom/").content.decode()

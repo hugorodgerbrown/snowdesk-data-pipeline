@@ -472,3 +472,32 @@ class TestReceiverCsrfExempt:
                 content_type="application/json",
             )
         assert response.status_code == 204
+
+
+class TestReceiverForwardsGoalsToFivebar:
+    """SNOW-1180: map.* goal events reach fivebar, attributed to ``/map/``."""
+
+    @override_settings(POSTHOG_API_KEY="", FIVEBAR_TOKEN="fb-token")
+    def test_fivebar_alone_is_enough_to_forward(self) -> None:
+        """With fivebar configured and no PostHog key the batch is not dropped."""
+        with patch("apps.analytics.fivebar.send") as send:
+            response = Client().post(
+                "/api/telemetry",
+                data=json.dumps(_valid_event("map.route.created")),
+                content_type="application/json",
+            )
+        assert response.status_code == 204
+        send.assert_called_once()
+        assert send.call_args.args[0] == "map.route.created"
+        assert send.call_args.args[3] == "/map/"
+
+    @override_settings(POSTHOG_API_KEY="", FIVEBAR_TOKEN="fb-token")
+    def test_non_map_event_is_attributed_to_root(self) -> None:
+        """Anything outside ``map.*`` gets ``/`` (and is filtered by GOAL_EVENTS)."""
+        with patch("apps.analytics.fivebar.send") as send:
+            Client().post(
+                "/api/telemetry",
+                data=json.dumps(_valid_event("pwa.sw.installed")),
+                content_type="application/json",
+            )
+        assert send.call_args.args[3] == "/"

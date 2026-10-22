@@ -88,6 +88,11 @@ class TestColophonPage:
         response = client.get(reverse("public:colophon"))
         assert b"metno/weathericons" in response.content
 
+    def test_fivebar_link_present(self, client: Client) -> None:
+        """SNOW-1180: the analytics section credits fivebar."""
+        response = client.get(reverse("public:colophon"))
+        assert b'href="https://fiveb.ar/"' in response.content
+
     def test_mit_licence_present(self, client: Client) -> None:
         response = client.get(reverse("public:colophon"))
         assert b"MIT" in response.content

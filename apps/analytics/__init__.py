@@ -3,10 +3,12 @@ apps/analytics/__init__.py — Public surface for server-side event capture.
 
 Provides two callables consumed throughout the codebase:
 
-  track(event, distinct_id, properties)
-      Capture a single named event to PostHog.  No-op when
-      ``settings.POSTHOG_API_KEY`` is empty (local development, test
-      runs, any environment without explicit opt-in).
+  track(event, distinct_id, properties, page=...)
+      Capture a single named event to PostHog, and — for the events that
+      are fivebar goals — to fivebar (``apps/analytics/fivebar.py``,
+      SNOW-1180).  Each destination is a no-op when its own key is empty
+      (local development, test runs, any environment without explicit
+      opt-in).
 
   alias(distinct_id, alias_id)
       Link two distinct identifiers in PostHog so that pre-auth anonymous
@@ -34,9 +36,14 @@ from typing import Any
 
 import posthog
 
+from apps.analytics import fivebar
 from apps.analytics.exceptions import AnalyticsPIIError
 
 logger = logging.getLogger(__name__)
+
+# Re-exported so call sites name the page with ``analytics.page_of(request)``
+# without importing the fivebar module themselves.
+page_of = fivebar.page_of
 
 # Keys that must never appear in event properties — contain personally
 # identifiable information or credentials.
@@ -70,12 +77,16 @@ def track(
     event: str,
     distinct_id: str,
     properties: dict[str, object] | None = None,
+    *,
+    page: str = "/",
 ) -> None:
-    """Capture one named event to PostHog.
+    """Capture one named event to PostHog and, if it is a goal, to fivebar.
 
-    No-op when ``settings.POSTHOG_API_KEY`` is unset or empty.  Any
-    exception raised by the PostHog client is caught and logged at ERROR
-    so analytics failures never break user-facing requests.
+    The PostHog capture is a no-op when ``settings.POSTHOG_API_KEY`` is
+    unset or empty; the fivebar send is a no-op unless the event is in
+    ``fivebar.GOAL_EVENTS`` and fivebar is configured.  Any exception
+    raised by the PostHog client is caught and logged at ERROR so
+    analytics failures never break user-facing requests.
 
     Args:
         event: The event name (e.g. ``"subscription_started"``).
@@ -85,6 +96,8 @@ def track(
         properties: Optional dict of event properties.  Must not contain any
             of the PII keys ``email``, ``ip``, ``token``, or
             ``credential_id``.
+        page: The route pattern the event happened on, from
+            ``fivebar.page_of(request)``. Used only by fivebar.
 
     Raises:
         AnalyticsPIIError: Immediately (before any network call) if
@@ -93,6 +106,8 @@ def track(
     """
     props: dict[str, Any] = properties or {}
     _assert_no_pii(props)
+
+    fivebar.send(event, distinct_id, props, page)
 
     from django.conf import settings
 

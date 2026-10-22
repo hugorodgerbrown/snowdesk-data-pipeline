@@ -426,3 +426,19 @@ def test_home_template_renders_nonce_on_inline_script() -> None:
     script_nonce = body.split('<script nonce="', 1)[1].split('"', 1)[0]
     assert script_nonce
     assert f"'nonce-{script_nonce}'" in _csp(response)
+
+
+def test_csp_defaults_admit_the_analytics_origin_to_script_and_connect_src() -> None:
+    """SNOW-1180: the fivebar origin loads the tag's script and takes its sends."""
+    origin = "https://fiveb.ar"
+    policy = csp_defaults("https://tiles.example.test", analytics_origin=origin)
+    assert origin in policy["script-src"]
+    assert origin in policy["connect-src"]
+    assert origin not in policy["img-src"]
+
+
+def test_csp_defaults_omit_the_analytics_origin_when_unset() -> None:
+    """No FIVEBAR_DOMAIN means fivebar is in no directive."""
+    policy = csp_defaults("https://tiles.example.test")
+    assert policy["script-src"] == ["'self'", "{nonce}"]
+    assert all("fiveb.ar" not in src for src in policy["connect-src"])

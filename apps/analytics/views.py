@@ -84,6 +84,34 @@ def _posthog_configured() -> bool:
     return bool((getattr(settings, "POSTHOG_API_KEY", "") or "").strip())
 
 
+def _fivebar_configured() -> bool:
+    """Return True when ``settings.FIVEBAR_TOKEN`` is a non-empty string.
+
+    SNOW-1180: the receiver forwards the ``map.*`` goal events to fivebar
+    through ``analytics.track()``, so a deploy with fivebar but no PostHog
+    key must not drop the batch. Read at call time, like
+    ``_posthog_configured``.
+    """
+    return bool((getattr(settings, "FIVEBAR_TOKEN", "") or "").strip())
+
+
+def _page_for(event_name: str) -> str:
+    """Return the fivebar page name for a client telemetry event.
+
+    The receiver sees ``/api/telemetry``, not the page the event happened
+    on; every goal event the client sends is a ``map.*`` interaction, so
+    those are attributed to ``/map/`` and anything else to ``/``.
+
+    Args:
+        event_name: The validated envelope event name.
+
+    Returns:
+        The fivebar page name.
+
+    """
+    return "/map/" if event_name.startswith("map.") else "/"
+
+
 def _parse_events(
     request: HttpRequest,
 ) -> tuple[JsonResponse, None] | tuple[None, list[dict[str, object]]]:
@@ -207,10 +235,12 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
     # ran; the per-event PII check normally performed inside
     # ``analytics.track()`` is skipped along with the capture call it
     # would have guarded — there is no PostHog send for it to protect
-    # once the key is absent.
-    if not _posthog_configured():
+    # once the key is absent. SNOW-1180: fivebar is a second destination
+    # for the goal events, so the batch is dropped only when neither is set.
+    if not _posthog_configured() and not _fivebar_configured():
         logger.debug(
-            "telemetry dropped (POSTHOG_API_KEY unset): events=%d", len(events)
+            "telemetry dropped (POSTHOG_API_KEY and FIVEBAR_TOKEN unset): events=%d",
+            len(events),
         )
         return HttpResponse(status=204)
 
@@ -219,7 +249,8 @@ def telemetry_receive(request: HttpRequest) -> HttpResponse:
         distinct_id = _resolve_distinct_id(request, event)
         properties = _build_properties(event)
         try:
-            analytics.track(str(event["event"]), distinct_id, properties)
+            name = str(event["event"])
+            analytics.track(name, distinct_id, properties, page=_page_for(name))
         except AnalyticsPIIError as exc:
             # Client attempted to send a PII-tainted property. Reject the
             # whole batch so the caller notices and stops shipping it —

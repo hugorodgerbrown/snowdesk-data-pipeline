@@ -11,8 +11,10 @@ It also backs up 403 and 404 if their full-site page fails to render.
 Context (a plain dict, nothing else is available):
     page          : ``apps.public.errors.ErrorPage``.
     LANGUAGE_CODE : the active language, for ``<html lang>``.
-    request       : passed ONLY so ``theme_head.html`` can read
-                    ``request.csp_nonce``. Read nothing else off it.
+    request       : passed ONLY so ``theme_head.html`` (and the fivebar
+                    tag) can read ``request.csp_nonce``. Read nothing
+                    else off it.
+    FIVEBAR_DOMAIN: the fivebar site, a plain settings string (SNOW-1180).
 
 Assets: ``css/output.css`` and nothing more, by ``{% static %}``. No inline
 ``<style>``, which production's CSP blocks. If the static manifest is
@@ -34,6 +36,8 @@ context-processor values and includes the nav, whose account menu reads
         <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
         {% include "includes/theme_head.html" %}
         <link rel="stylesheet" href="{% static 'css/output.css' %}">
+        {# SNOW-1180: FIVEBAR_DOMAIN is passed in the plain context dict. #}
+        {% include "includes/_fivebar_tag.html" with domain=FIVEBAR_DOMAIN status=page.status path=FIVEBAR_PATH %}
     </head>
     <body class="bg-bg text-text-1 font-sans min-h-screen flex flex-col">
         <nav class="border-b border-border">

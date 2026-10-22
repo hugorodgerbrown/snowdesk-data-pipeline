@@ -242,6 +242,38 @@ property when `kill=true`, sourced from `settings.SW_KILL` (the only
 kill trigger today — a fixed string `"env_kill_switch"`; a future
 second trigger should add its own reason string).
 
+## fivebar goals (SNOW-1180)
+
+fivebar (https://fiveb.ar) is the site's page analytics: a cookieless tag
+in `public/base.html`'s `<head>`, rendered only when `FIVEBAR_DOMAIN` is
+set, which also admits `https://fiveb.ar` to the CSP's `script-src` and
+`connect-src` (`csp_defaults(analytics_origin=…)`).
+
+`analytics.track()` also hands every event to
+`apps/analytics/fivebar.py::send`, which posts the ones in `GOAL_EVENTS` to
+fivebar's server events API with `FIVEBAR_TOKEN` (a send-only token). Each
+event name becomes a fivebar goal the first time it is sent; nothing is
+configured on the fivebar side. The goals are the seven server-side product
+events and the client's `map.*` feature events, less
+`map.basemap.record_write_failed`. `pwa.*` and the server signals are never
+sent: they are operational and high-volume, and every event is a billable
+pageview on fivebar.
+
+* `id` is the distinct_id the caller computed; `ip` is never sent.
+* `name` (fivebar's page) is the route PATTERN from `analytics.page_of`,
+  never the path, because account and share URLs carry tokens. The
+  receiver attributes `map.*` events to `/map/`.
+* `props` are cut to fivebar's rules (≤8 lowercase names, scalar values,
+  ≤255 characters); `client_timestamp` is dropped.
+* The POST runs on a two-thread pool, so a request never waits on fivebar;
+  failures log at WARNING.
+* Error pages pass their status to the tag as `data-status`
+  (`templates/includes/_fivebar_tag.html`), because Safari does not report
+  it and a 404 would otherwise count as an ordinary page
+  (https://fiveb.ar/docs/error-pages). `errors/page.html` gets it as
+  `fivebar_status`; the context-free `errors/_standalone.html` from
+  `page.status`, with `FIVEBAR_DOMAIN` in its plain context dict.
+
 ## Rollout / off-switch
 
 ### Master switch — `PWA_TELEMETRY_ENABLED` (default `True`)

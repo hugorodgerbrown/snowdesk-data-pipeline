@@ -9,6 +9,7 @@ version against the server's declared min-version verdict.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 import waffle
@@ -122,6 +123,42 @@ def pwa_telemetry(request: HttpRequest) -> dict[str, Any]:
     """
     return {
         "PWA_TELEMETRY_ENABLED": bool(getattr(settings, "PWA_TELEMETRY_ENABLED", True)),
+    }
+
+
+# A route argument, ``<str:token>`` or ``<token>``; group 1 is its name.
+_ROUTE_ARGUMENT = re.compile(r"<(?:\w+:)?(\w+)>")
+
+
+def fivebar(request: HttpRequest) -> dict[str, Any]:
+    """
+    Inject the fivebar site domain and page path into every template context.
+
+    Exposes ``FIVEBAR_DOMAIN`` (from ``settings``, default empty) so
+    ``base.html`` renders the fivebar tag only where it is configured (SNOW-1180).
+    An empty value — dev, test, any unconfigured deploy — renders no tag.
+
+    Also exposes ``FIVEBAR_PATH``: on a route with a ``token`` argument
+    (account access, verify, reset and change-email confirm, share links)
+    it is the route pattern with each argument as ``:name`` —
+    ``/account/access/:token/`` — and the tag passes it as ``data-path``, so
+    fivebar counts the page without the token in it. A token is a
+    capability. Empty everywhere else, where the real path is counted.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        ``{"FIVEBAR_DOMAIN": str, "FIVEBAR_PATH": str}``.
+
+    """
+    path = ""
+    match = getattr(request, "resolver_match", None)
+    if match is not None and any("token" in name for name in match.kwargs):
+        path = "/" + _ROUTE_ARGUMENT.sub(r":\1", match.route.lstrip("/"))
+    return {
+        "FIVEBAR_DOMAIN": (getattr(settings, "FIVEBAR_DOMAIN", "") or "").strip(),
+        "FIVEBAR_PATH": path,
     }
 
 

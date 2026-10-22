@@ -91,6 +91,20 @@ def _disable_posthog(settings: Settings) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_live_fivebar(settings: Settings) -> None:
+    """Guarantee no test run sends to fivebar or renders its tag (SNOW-1180).
+
+    The sibling of ``_disable_posthog``: ``apps/analytics/fivebar.py`` sends
+    whenever ``FIVEBAR_TOKEN`` is set, and a bare ``pytest`` run would
+    otherwise pick it up from a developer's ``.env``. ``FIVEBAR_DOMAIN`` is
+    pinned empty too, so pages render as a deploy without fivebar does.
+    Tests of the enabled path re-override both and mock the send.
+    """
+    settings.FIVEBAR_TOKEN = ""
+    settings.FIVEBAR_DOMAIN = ""
+
+
+@pytest.fixture(autouse=True)
 def _no_live_terrain_origin(settings: Settings) -> None:
     """Guarantee no test run reaches the terrain tile origin (SNOW-910).
 
