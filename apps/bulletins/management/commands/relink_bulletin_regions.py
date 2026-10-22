@@ -14,20 +14,24 @@ the way ``upsert_bulletin`` would build them on ingest, without fetching
 anything.
 
 For each bulletin whose linked region set differs from the one its payload
-resolves to:
+resolves to, in ONE transaction:
 
 * the (region, day) pairs it covered BEFORE the relink are captured, so the
   wrongly-rated regions are recomputed (to no rating) rather than left
   holding a rating sourced from a bulletin that no longer covers them;
-* the links are replaced in one transaction;
+* the links are replaced;
+* every touched (region, day) pair, before and after, is refreshed;
 * the dissolved grouping outline is recomputed.
 
-Every touched (region, day) pair — before and after — is then refreshed once
-at the end. A pair the refresh leaves with no bulletin at all is a region the
-bulletin never covered, and ``recompute_region_day`` writes it a sourceless
-``no_rating`` row; those rows are deleted, because any ``RegionDayRating`` row
-counts as coverage (``covered_region_ids``) and a region ALBINA never
-published for must go back to reading as unsupported (SNOW-1185).
+A failed rating or grouping rolls the whole bulletin back, links included, so
+the next run still sees it as mislinked and retries it: derived state can
+never be left behind by a run that dies part-way. A refreshed pair that no
+bulletin is linked to at all is a region the bulletin never covered, and
+``recompute_region_day`` writes it a sourceless ``no_rating`` row; those rows
+are deleted, because any ``RegionDayRating`` row counts as coverage
+(``covered_region_ids``) and a region ALBINA never published for must go back
+to reading as unsupported (SNOW-1185). A sourceless row on a region some
+bulletin IS linked to (an unrated or stale-render-model bulletin) is kept.
 
 Bulletins already linked exactly as their payload says are skipped, so the
 command is idempotent and safe to re-run. A bulletin none of
@@ -36,7 +40,7 @@ with nothing would erase coverage rather than correct it (the SNOW-547 rule
 ``upsert_bulletin`` enforces).
 
 Streams the queryset newest-id-first via ``apps.core.command_iteration
-.iterate_rows`` (SNOW-602), accumulating the touched pairs into a bounded set.
+.iterate_rows`` (SNOW-602).
 
 Typical use::
 
@@ -77,6 +81,7 @@ _PREFETCH_CHUNK_SIZE = 500
 _RELINKED = "relinked"
 _CURRENT = "current"
 _UNRESOLVED = "unresolved"
+_FAILED = "failed"
 
 
 def _raw_regions(bulletin: Bulletin) -> list[dict[str, str]]:
@@ -102,16 +107,17 @@ def _raw_regions(bulletin: Bulletin) -> list[dict[str, str]]:
 
 
 def _clear_placeholders(pairs: set[tuple[MicroRegion, date]]) -> int:
-    """Delete the sourceless ``no_rating`` rows among ``pairs``.
+    """Delete the sourceless ``no_rating`` rows left on unlinked pairs.
 
-    After the refresh, a pair whose row has no ``source_bulletin`` and reads
-    ``no_rating`` is one no bulletin covers — the residue of a wrong link, not
-    a day the provider published nothing for a region it covers (a covered
-    region's off day has no row unless something asked for it). Deleting it
-    is what lets ``covered_region_ids`` stop counting the region.
+    Only a pair that NO bulletin is linked to for that day is cleared — the
+    residue of a wrong link. A sourceless ``no_rating`` row is also what
+    ``recompute_region_day`` writes for a linked bulletin with no valid
+    traits or a stale render model, and that region is covered; its row
+    stays. Deleting the residue is what lets ``covered_region_ids`` stop
+    counting the region.
 
     Args:
-        pairs: The (region, day) pairs the run refreshed.
+        pairs: The (region, day) pairs just refreshed.
 
     Returns:
         The number of rows deleted.
@@ -123,14 +129,24 @@ def _clear_placeholders(pairs: set[tuple[MicroRegion, date]]) -> int:
     for region, day in pairs:
         by_day.setdefault(day, set()).add(region.pk)
     for day, region_pks in by_day.items():
+        linked = set(
+            RegionBulletin.objects.filter(
+                region_id__in=region_pks,
+                bulletin__in=Bulletin.objects.for_target_date(day),
+            ).values_list("region_id", flat=True)
+        )
         count, _ = RegionDayRating.objects.filter(
             date=day,
-            region_id__in=region_pks,
+            region_id__in=region_pks - linked,
             source_bulletin__isnull=True,
             max_rating=no_rating,
         ).delete()
         deleted += count
     return deleted
+
+
+class _DerivedStateError(Exception):
+    """A relinked bulletin's ratings or grouping failed; roll it back."""
 
 
 class Command(BaseCommand):
@@ -204,9 +220,7 @@ class Command(BaseCommand):
                 )
         return qs.prefetch_related(slim_regions_prefetch())
 
-    def _relink(
-        self, bulletin: Bulletin, *, commit: bool
-    ) -> tuple[str, set[tuple[MicroRegion, date]]]:
+    def _relink(self, bulletin: Bulletin, *, commit: bool) -> tuple[str, int]:
         """Bring one bulletin's links into line with its payload.
 
         Args:
@@ -214,9 +228,9 @@ class Command(BaseCommand):
             commit: Whether to write.
 
         Returns:
-            ``(outcome, pairs)``. ``pairs`` holds the (region, day) pairs
-            touched before and after the relink, and is empty unless the
-            bulletin was relinked under ``commit``.
+            ``(outcome, cleared)``: ``cleared`` counts the placeholder
+            ratings deleted, and is 0 unless the bulletin was relinked under
+            ``commit``.
 
         """
         raw_regions = _raw_regions(bulletin)
@@ -228,12 +242,12 @@ class Command(BaseCommand):
                 len(raw_regions),
                 ", ".join(sorted(skipped)),
             )
-            return _UNRESOLVED, set()
+            return _UNRESOLVED, 0
 
         wanted = {region.pk for region, _name in resolved}
         linked = {region.pk for region in bulletin.regions.all()}
         if wanted == linked:
-            return _CURRENT, set()
+            return _CURRENT, 0
 
         if not commit:
             logger.info(
@@ -242,60 +256,62 @@ class Command(BaseCommand):
                 len(linked),
                 len(wanted),
             )
-            return _RELINKED, set()
+            return _RELINKED, 0
 
+        try:
+            with transaction.atomic():
+                cleared = self._apply(bulletin, resolved)
+        except _DerivedStateError:
+            logger.exception(
+                "Bulletin %s: derived state failed — relink rolled back",
+                bulletin.bulletin_id,
+            )
+            return _FAILED, 0
+        logger.info("Relinked %s", bulletin.bulletin_id)
+        return _RELINKED, cleared
+
+    def _apply(
+        self, bulletin: Bulletin, resolved: list[tuple[MicroRegion, str]]
+    ) -> int:
+        """Replace one bulletin's links and rebuild what derives from them.
+
+        Runs inside the caller's transaction; any failure raises so the links
+        roll back with everything else.
+
+        Args:
+            bulletin: The bulletin, its OLD links prefetched.
+            resolved: The (region, raw name) pairs its payload resolves to.
+
+        Returns:
+            The number of placeholder ratings cleared.
+
+        Raises:
+            _DerivedStateError: A day rating or the grouping failed.
+
+        """
         # The pairs the WRONG links covered, captured before they go: they are
         # what has to be recomputed down to no rating.
         pairs = day_rating_pairs([bulletin])
-        with transaction.atomic():
-            RegionBulletin.objects.filter(bulletin=bulletin).delete()
-            RegionBulletin.objects.bulk_create(
-                RegionBulletin(
-                    bulletin=bulletin,
-                    region=region,
-                    region_name_at_time=name,
-                )
-                for region, name in resolved
-            )
+        RegionBulletin.objects.filter(bulletin=bulletin).delete()
+        RegionBulletin.objects.bulk_create(
+            RegionBulletin(bulletin=bulletin, region=region, region_name_at_time=name)
+            for region, name in resolved
+        )
         # The prefetch cache still holds the old links; drop it so the
         # after-pairs and the grouping read the new ones.
         bulletin = Bulletin.objects.prefetch_related(slim_regions_prefetch()).get(
             pk=bulletin.pk
         )
         pairs |= day_rating_pairs([bulletin])
+        if refresh_day_ratings(pairs):
+            raise _DerivedStateError(bulletin.bulletin_id)
         try:
-            compute_bulletin_grouping_boundary(bulletin)
-        except Exception:
-            logger.exception(
-                "compute_bulletin_grouping_boundary failed for bulletin %s",
-                bulletin.bulletin_id,
-            )
-        logger.info("Relinked %s", bulletin.bulletin_id)
-        return _RELINKED, pairs
-
-    def _refresh(self, pairs: set[tuple[MicroRegion, date]], verbosity: int) -> int:
-        """Refresh every touched pair, then clear the placeholders it leaves.
-
-        Args:
-            pairs: The (region, day) pairs touched by the relinked bulletins.
-            verbosity: Django's ``--verbosity``; ``0`` suppresses output.
-
-        Returns:
-            The number of pairs that failed to recompute.
-
-        """
-        if verbosity:
-            self.stdout.write(
-                f"Refreshing day ratings for {len(pairs)} (region, day) pair(s)."
-            )
-        failures = refresh_day_ratings(pairs)
-        cleared = _clear_placeholders(pairs)
-        if verbosity:
-            self.stdout.write(
-                f"Cleared {cleared} placeholder rating(s) left on regions "
-                "no bulletin covers."
-            )
-        return failures
+            # Unprefetched: the grouping select_related()s the region's
+            # parent, which the slim prefetch defers.
+            compute_bulletin_grouping_boundary(Bulletin.objects.get(pk=bulletin.pk))
+        except Exception as exc:
+            raise _DerivedStateError(bulletin.bulletin_id) from exc
+        return _clear_placeholders(pairs)
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Execute the relink.
@@ -305,8 +321,8 @@ class Command(BaseCommand):
             **options: Parsed command-line options.
 
         Raises:
-            CommandError: A day rating failed to recompute, so cron and CI
-                see a non-zero exit.
+            CommandError: A bulletin's derived state failed and it was rolled
+                back, so cron and CI see a non-zero exit.
 
         """
         # Upper-cased here as well as by the parser: ``call_command`` hands
@@ -322,8 +338,8 @@ class Command(BaseCommand):
             mode = "commit" if commit else "read-only"
             self.stdout.write(f"Inspecting {qs.count()} {source} bulletin(s) [{mode}].")
 
-        counts = {_RELINKED: 0, _CURRENT: 0, _UNRESOLVED: 0}
-        pairs: set[tuple[MicroRegion, date]] = set()
+        counts = {_RELINKED: 0, _CURRENT: 0, _UNRESOLVED: 0, _FAILED: 0}
+        cleared = 0
         for bulletin in iterate_rows(
             self,
             qs,
@@ -331,24 +347,28 @@ class Command(BaseCommand):
             chunk_size=options["batch_size"],
             describe=Bulletin.row_label,
         ):
-            outcome, touched = self._relink(bulletin, commit=commit)
+            outcome, bulletin_cleared = self._relink(bulletin, commit=commit)
             counts[outcome] += 1
-            pairs |= touched
-
-        failures = self._refresh(pairs, verbosity) if pairs else 0
+            cleared += bulletin_cleared
 
         if verbosity:
             prefix = "Relinked" if commit else "Would relink"
             self.stdout.write(
                 f"{prefix} {counts[_RELINKED]}, already current {counts[_CURRENT]}, "
-                f"unresolvable {counts[_UNRESOLVED]}."
+                f"unresolvable {counts[_UNRESOLVED]}, failed {counts[_FAILED]}."
             )
-            if not commit and counts[_RELINKED]:
+            if commit:
+                self.stdout.write(
+                    f"Cleared {cleared} placeholder rating(s) left on regions "
+                    "no bulletin covers."
+                )
+            elif counts[_RELINKED]:
                 self.stdout.write(
                     self.style.WARNING("Read-only run — pass --commit to persist.")
                 )
 
-        if failures:
+        if counts[_FAILED]:
             raise CommandError(
-                f"{failures} day rating(s) failed to recompute — see the log."
+                f"{counts[_FAILED]} bulletin(s) failed and were rolled back — "
+                "see the log, then re-run to retry them."
             )

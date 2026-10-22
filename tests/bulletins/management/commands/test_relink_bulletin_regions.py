@@ -13,12 +13,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
 from django.core.management import CommandError, call_command
 
-from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
+from apps.bulletins.models import (
+    Bulletin,
+    BulletinGrouping,
+    RegionBulletin,
+    RegionDayRating,
+)
 from apps.bulletins.services.coverage import covered_region_ids
 from apps.bulletins.services.day_rating import refresh_day_ratings
 from apps.bulletins.services.slf_fetcher import upsert_bulletin
@@ -139,6 +145,23 @@ class TestRelink:
         assert "AT-07-14-01" in covered
         assert not covered & set(_WRONG_IDS)
 
+    def test_outline_follows(self, mislinked: Bulletin) -> None:
+        """The dissolved outline is rebuilt over the payload's regions."""
+        expected = sorted(entry["regionID"] for entry in _sample()["regions"])
+        for i, region_id in enumerate(expected):
+            square = [[i, 0], [i + 1, 0], [i + 1, 1], [i, 1], [i, 0]]
+            MicroRegion.objects.filter(region_id=region_id).update(
+                boundary={"type": "Polygon", "coordinates": [square]}
+            )
+
+        assert not BulletinGrouping.objects.filter(bulletin=mislinked).exists()
+
+        call_command(
+            "relink_bulletin_regions", source="albina", commit=True, verbosity=0
+        )
+
+        assert BulletinGrouping.objects.filter(bulletin=mislinked).exists()
+
     def test_idempotent(
         self, mislinked: Bulletin, capsys: pytest.CaptureFixture
     ) -> None:
@@ -151,6 +174,26 @@ class TestRelink:
         call_command("relink_bulletin_regions", source="albina", commit=True)
 
         assert "Relinked 0, already current 1" in capsys.readouterr().out
+
+    def test_linked_region_keeps_a_sourceless_row(self, mislinked: Bulletin) -> None:
+        """A region the bulletin IS linked to keeps its row, even unrated.
+
+        A stale render model leaves ``recompute_region_day`` no candidate, so
+        it writes a sourceless ``no_rating`` row — but the region is linked,
+        so it is covered and the row stays; only the wrong regions' go.
+        """
+        Bulletin.objects.filter(pk=mislinked.pk).update(render_model_version=0)
+
+        call_command(
+            "relink_bulletin_regions", source="albina", commit=True, verbosity=0
+        )
+
+        right = RegionDayRating.objects.get(region__region_id="AT-07-14-01")
+        assert right.source_bulletin_id is None
+        assert "AT-07-14-01" in covered_region_ids()
+        assert not RegionDayRating.objects.filter(
+            region__region_id__in=_WRONG_IDS
+        ).exists()
 
 
 @pytest.mark.django_db
@@ -186,6 +229,36 @@ class TestSafety:
         )
 
         assert _linked_ids(mislinked) == set(_WRONG_IDS)
+
+    def test_failed_grouping_rolls_back_and_retries(self, mislinked: Bulletin) -> None:
+        """A failure after the links change rolls them back, so a re-run retries.
+
+        Were the links kept, the retry would see the bulletin as current and
+        never rebuild its ratings or outline.
+        """
+        target = (
+            "apps.bulletins.management.commands.relink_bulletin_regions"
+            ".compute_bulletin_grouping_boundary"
+        )
+        with (
+            patch(target, side_effect=RuntimeError("dissolve failed")),
+            pytest.raises(CommandError, match="1 bulletin"),
+        ):
+            call_command(
+                "relink_bulletin_regions", source="albina", commit=True, verbosity=0
+            )
+
+        assert _linked_ids(mislinked) == set(_WRONG_IDS)
+        assert RegionDayRating.objects.filter(region__region_id__in=_WRONG_IDS).exists()
+
+        call_command(
+            "relink_bulletin_regions", source="albina", commit=True, verbosity=0
+        )
+
+        assert "AT-07-14-01" in _linked_ids(mislinked)
+        assert not RegionDayRating.objects.filter(
+            region__region_id__in=_WRONG_IDS
+        ).exists()
 
     def test_unknown_bulletin_id_errors(self, mislinked: Bulletin) -> None:
         """Naming a bulletin the provider does not have is a usage error."""

@@ -1104,11 +1104,13 @@ incident that invalidates derived state:
   micro regions — `region_name_at_time` was right, the `MicroRegion` pks had
   moved under it — so Tyrol's danger painted onto South Tyrol and regions
   ALBINA never publishes read as covered. Skips bulletins already linked as
-  their payload says (idempotent), leaves alone any whose payload resolves to
-  no region at all, recomputes the grouping outline and refreshes every
-  (region, day) pair on both sides of the relink, then deletes the sourceless
-  `no_rating` rows that leaves on regions no bulletin covers, so coverage
-  follows. No network. Read-only by default.
+  their payload says (idempotent) and leaves alone any whose payload resolves
+  to no region at all. Each relinked bulletin is one transaction: the links,
+  a refresh of every (region, day) pair on both sides of the relink, the
+  grouping outline, and the deletion of the sourceless `no_rating` rows left
+  on regions no bulletin is linked to, so coverage follows. A failure rolls
+  that bulletin back (so a re-run retries it) and the command exits non-zero.
+  No network. Read-only by default.
 
   ```bash
   uv run python manage.py relink_bulletin_regions --source albina
