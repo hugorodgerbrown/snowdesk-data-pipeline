@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import pytest
 from django.test import Client
+from sentry_sdk.integrations.logging import LoggingIntegration
 
 from apps.core import sentry
 
@@ -49,6 +50,10 @@ class TestInitSentry:
         assert kwargs["max_request_body_size"] == "never"
         assert kwargs["traces_sample_rate"] == 0.0
         assert kwargs["before_send"] is sentry._before_send
+        logging_integration = next(
+            i for i in kwargs["integrations"] if isinstance(i, LoggingIntegration)
+        )
+        assert logging_integration._breadcrumb_handler is None
 
 
 class TestBeforeSend:
@@ -123,6 +128,50 @@ class TestCaptureJsError:
         assert event["message"] == "JavaScript unhandledrejection on /map/"
         assert event["tags"]["platform"] == ""
         assert event["extra"] == {}
+
+
+class TestTokenPathsNeverLeave:
+    """A token in the page path is replaced by the route pattern (Codex P1)."""
+
+    def test_opted_out_report_on_a_token_route(self) -> None:
+        """The pathname tag, message and fingerprint carry the pattern."""
+        with patch("sentry_sdk.capture_event") as capture:
+            sentry.capture_js_error(
+                {"kind": "error", "pathname": "/account/access/s3cret/"},
+                client_version="v1",
+                platform=None,
+            )
+        event = capture.call_args.args[0]
+        assert "s3cret" not in repr(event)
+        assert event["tags"]["pathname"] == "/account/access/<str:token>/"
+
+    def test_inline_script_frames_on_a_token_route(self) -> None:
+        """An inline script's filename and stack are the document URL."""
+        props = {
+            "kind": "error",
+            "pathname": "/account/access/s3cret/",
+            "message": "ReferenceError: y",
+            "filename": "https://snowdesk.info/account/access/s3cret/",
+            "lineno": 1,
+            "stack": "at https://snowdesk.info/account/access/s3cret/:1:1",
+        }
+        with patch("sentry_sdk.capture_event") as capture:
+            sentry.capture_js_error(props, client_version="v1", platform="web")
+        event = capture.call_args.args[0]
+        assert "s3cret" not in repr(event)
+        assert event["extra"]["filename"] == (
+            "https://snowdesk.info/account/access/<str:token>/"
+        )
+
+    def test_unresolvable_path_is_replaced(self) -> None:
+        """A path the URLconf does not know could carry anything."""
+        with patch("sentry_sdk.capture_event") as capture:
+            sentry.capture_js_error(
+                {"kind": "error", "pathname": "/nope/abc/"},
+                client_version="v1",
+                platform=None,
+            )
+        assert capture.call_args.args[0]["tags"]["pathname"] == "?"
 
 
 def _js_error_envelope(**properties: object) -> dict[str, object]:
