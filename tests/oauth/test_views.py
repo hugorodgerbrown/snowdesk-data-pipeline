@@ -3,7 +3,8 @@ tests/oauth/test_views.py — Snowdesk's views around mcp-auth (SNOW-1193).
 
 Covers the verify-first gate in front of the consent page, Snowdesk's
 consent and returning templates (the overrides of mcp-auth's), the
-protected-resource document keeping the URL's trailing slash, and the
+protected-resource document keeping the URL's trailing slash (mcp-auth's
+since v0.1.7, kept here because Claude needs it of /api/mcp/), and the
 settings page's HTMX disconnect endpoint. The OAuth flow itself is
 mcp-auth's, and its connector contract runs in tests/mcp_server/test_views.py.
 """
