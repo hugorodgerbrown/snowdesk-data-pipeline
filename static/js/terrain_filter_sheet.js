@@ -74,6 +74,7 @@
     'compass-5': 'SW',
     'compass-6': 'W',
     'compass-7': 'NW',
+    bulletin: "By each region's bulletin",
   });
 
   /** The bridge, read lazily: map.js publishes it from inside its IIFE. */
@@ -97,7 +98,7 @@
 
   /**
    * Show each mode's key (and the legend's heading for it) only while that
-   * mode is set.
+   * mode is set, and the sheet's own controls only for the modes they set.
    *
    * @param {ParentNode} root Where to look.
    * @param {string} mode The filter's mode.
@@ -105,7 +106,17 @@
    */
   const syncModeKeys = (root, mode) => {
     for (const el of root.querySelectorAll('[data-terrain-filter-key]')) {
-      el.hidden = el.dataset.terrainFilterKey !== mode;
+      // A wrapper can name several modes, space-separated.
+      el.hidden = !(el.dataset.terrainFilterKey || '').split(' ').includes(mode);
+    }
+    // SNOW-1194: in the "By bulletin" colour the bulletins set slope,
+    // aspect and height, so the reader's own controls step aside for the
+    // colour's key and note.
+    for (const el of root.querySelectorAll('[data-terrain-filter-manual]')) {
+      el.hidden = mode === 'bulletin';
+    }
+    for (const el of root.querySelectorAll('[data-terrain-filter-bulletin]')) {
+      el.hidden = mode !== 'bulletin';
     }
   };
 

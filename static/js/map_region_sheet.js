@@ -107,10 +107,6 @@
   const markRoot = () => {
     const open = !sheet.hasAttribute('hidden');
     document.documentElement.toggleAttribute('data-region-sheet', open);
-    // SNOW-979: the problem-terrain layer paints the region whose sheet is
-    // open, and only while it is — its switch lives here, so a layer left
-    // behind by a closed sheet would have no way to be turned off.
-    if (!open && window.pwaBulletinTerrain) window.pwaBulletinTerrain.clearRegion();
   };
   if (typeof MutationObserver === 'function') {
     new MutationObserver(markRoot).observe(sheet, {
@@ -259,22 +255,22 @@
   const paintBody = (html) => {
     sheet.innerHTML = html;
     mirrorAll();
-    paintTerrain();
+    syncTerrainControls();
   };
 
   // SNOW-979: THE PROBLEM-TERRAIN SWITCH. A body for a region inside the
-  // terrain tiles, on a day whose bulletin describes some ground, carries
-  // the "Show problem terrain on the map" strip and its rules as a
-  // json_script (public/partials/_region_sheet_terrain.html). Every body
-  // painted hands those rules to map.js's window.pwaBulletinTerrain — or
-  // clears it, for a body without them — so the map paints the region and
-  // the day the sheet shows, whether the reader switched it on just now or
-  // in an earlier session. map.js owns the layer and the remembered on/off;
-  // this owns the switch, the key under it and the zoom line.
+  // terrain tiles, on a day with a bulletin, carries the "Show problem
+  // terrain on the map" strip (public/partials/_region_sheet_terrain.html).
+  // Since SNOW-1194 the switch is a shortcut to the terrain filter's
+  // "By bulletin" colour, which paints every region at once from
+  // map.js — so it is on exactly when the filter is on in that colour, and
+  // closing the sheet or moving to another region changes nothing on the
+  // map. This owns the switch, the key under it and the zoom line; map.js's
+  // window.pwaBulletinTerrain owns the state.
   const TERRAIN_TOGGLE_ID = 'region-sheet-terrain-toggle';
 
   /**
-   * Bring the switch, its key and the zoom line in line with the layer.
+   * Bring the switch, its key and the zoom line in line with the filter.
    * A cloned or cached body's checkbox starts unchecked, so this runs after
    * every paint as well as on every announcement.
    *
@@ -294,36 +290,15 @@
     if (zoom) zoom.hidden = !(on && where === 'zoom-in');
   };
 
-  /**
-   * Hand the painted body's rules to the map, or clear it.
-   *
-   * @returns {void}
-   */
-  const paintTerrain = () => {
-    const bridge = window.pwaBulletinTerrain;
-    if (!bridge) return;
-    const script = sheet.querySelector('#region-sheet-terrain-rules');
-    if (!script || !regionId) {
-      bridge.clearRegion();
-      return;
-    }
-    let rules = [];
-    try {
-      rules = JSON.parse(script.textContent || '[]');
-    } catch {
-      rules = [];
-    }
-    bridge.showRegion(regionId, rules);
-    syncTerrainControls();
-  };
-
   sheet.addEventListener('change', (ev) => {
     const target = /** @type {HTMLInputElement} */ (ev.target);
     if (!target || target.id !== TERRAIN_TOGGLE_ID || !window.pwaBulletinTerrain) return;
-    window.pwaBulletinTerrain.setEnabled(target.checked);
+    window.pwaBulletinTerrain.setEnabled(target.checked, regionId || undefined);
   });
 
-  document.addEventListener('snowdesk:bulletin-terrain-changed', (ev) => {
+  // The filter's sheet can switch the same state, and the camera moves the
+  // zoom line, so follow the filter's own announcement.
+  document.addEventListener('snowdesk:terrain-filter-changed', (ev) => {
     syncTerrainControls(ev.detail?.availability);
   });
 
@@ -424,9 +399,6 @@
       paintBody(kept);
       return Promise.resolve();
     }
-    // The map must not go on painting the last region's or day's rules
-    // under a sheet that now names another while this body loads.
-    if (window.pwaBulletinTerrain) window.pwaBulletinTerrain.clearRegion();
     const peeked = paintPeek();
     if (!peeked) paintLine(STRINGS.loading);
     return fetch(url, { headers: { 'HX-Request': 'true' } })

@@ -2,7 +2,7 @@
 {% comment %}
 templates/includes/_terrain_filter_key.html — the terrain filter's colour key (SNOW-978).
 
-One key per mode, plus the row both share. The match mode paints matching
+One key per mode, plus the row the reader's two modes share. The match mode paints matching
 ground in one tint; the slope mode (SNOW-1073) paints it by slope class on
 the 30/35/40/45/50+ ramp — the map's slope layer. Both hatch ground the
 tiles carry no data for. Rendered in the map legend. The filter's own
@@ -13,14 +13,20 @@ Each mode's rows sit in a `display: contents` wrapper carrying
 data-terrain-filter-key="<mode>", so the wrapper adds no box and the rows
 keep the caller's layout. static/js/terrain_filter_sheet.js hides the
 wrapper for the mode that is not set; the server renders the match mode,
-the default.
+the default. A wrapper may name several modes, space-separated.
+
+SNOW-1194's "By bulletin" colour has its own key,
+includes/_bulletin_terrain_key.html, at the whole scale — every region is
+painted by its own bulletin — and that key carries its own no-data row.
 
 The swatches are .map-legend-swatch--terrain-* and --slope-*
 (static/css/map.css), painted from --color-terrain-* and --color-slope-* in
 src/css/main.css — the same values static/js/terrain_filter_core.js and
 static/js/slope_classes_core.js paint the map with.
 
-No parameters.
+Parameters:
+  bulletin_terrain_key — the whole-scale key, from the map's context
+        (apps.public.views._terrain_filter_context).
 {% endcomment %}
 <div class="contents" data-terrain-filter-key="match">
     <div class="map-legend-row">
@@ -62,6 +68,14 @@ No parameters.
         ></span>{% trans "Over 50°" %}
     </div>
 </div>
-<div class="map-legend-row">
-    <span class="map-legend-swatch map-legend-swatch--terrain-nodata" aria-hidden="true"></span>{% trans "No data" %}
+<div class="contents" data-terrain-filter-key="match slope">
+    <div class="map-legend-row">
+        <span
+            class="map-legend-swatch map-legend-swatch--terrain-nodata"
+            aria-hidden="true"
+        ></span>{% trans "No data" %}
+    </div>
+</div>
+<div class="contents" data-terrain-filter-key="bulletin" hidden>
+    {% include "includes/_bulletin_terrain_key.html" with key=bulletin_terrain_key %}
 </div>

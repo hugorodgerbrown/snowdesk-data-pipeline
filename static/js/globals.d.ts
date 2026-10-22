@@ -116,7 +116,7 @@ interface Window {
   pwaSlopeClassesCore: any;
   /** static/js/terrain_filter_core.js — class-tile decode and filter paint. */
   pwaTerrainFilterCore: any;
-  /** static/js/bulletin_terrain_core.js — the problem-terrain layer's rules, states and clipping (SNOW-979). */
+  /** static/js/bulletin_terrain_core.js — the problem-terrain layer's rules, states and clipping (SNOW-979, SNOW-1194). */
   pwaBulletinTerrainCore: any;
   /** static/js/map_weather_core.js — WMO code to icon, cluster collapse. */
   pwaWeatherCore: any;
@@ -176,7 +176,7 @@ interface Window {
   pwaRouteCursorMap: any;
   /** static/js/map.js — the terrain filter's state: show/hide, get/setFilter. */
   pwaTerrainFilter: any;
-  /** static/js/map.js — the problem-terrain layer (SNOW-979): setEnabled, showRegion, clearRegion. */
+  /** static/js/map.js — the region sheet's problem-terrain switch (SNOW-979, SNOW-1194): isEnabled, setEnabled(on, regionId?), availability. */
   pwaBulletinTerrain: any;
   /** static/js/terrain_filter_sheet.js — opens the terrain filter sheet. */
   pwaTerrainFilterSheet: any;

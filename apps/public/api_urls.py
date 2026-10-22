@@ -9,7 +9,7 @@ don't share a namespace — ``{% url "api:ratings" %}`` vs
 
 from django.urls import include, path
 
-from . import api
+from . import api, problem_terrain
 
 app_name = "api"
 
@@ -43,6 +43,9 @@ urlpatterns = [
     # SNOW-239: unified ratings endpoint. Replaces today-summaries + season-ratings.
     # Accepts optional ?d=YYYY-MM-DD and ?country=ch|fr|at|it filters.
     path("ratings/", api.ratings, name="ratings"),
+    # SNOW-1194: every region's problem-terrain rules for a day — the
+    # terrain filter's "By bulletin" colour paints the whole map from it.
+    path("problem-terrain/", problem_terrain.problem_terrain, name="problem_terrain"),
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
     path("resorts.geojson", api.resorts_geojson, name="resorts_geojson"),
     path("regions.geojson", api.regions_geojson, name="regions_geojson"),

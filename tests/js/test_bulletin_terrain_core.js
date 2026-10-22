@@ -1,6 +1,6 @@
 /*
  * tests/js/test_bulletin_terrain_core.js — the problem-terrain layer's
- * rules, states and clipping (SNOW-979).
+ * rules, states and clipping (SNOW-979, SNOW-1194).
  *
  * The layer paints a region's steep ground by the day's bulletin. A wrong
  * state paints the wrong slopes with no error anywhere, so each precedence
@@ -107,13 +107,59 @@ describe('createClassifier', () => {
   });
 });
 
-describe('maskClassifier', () => {
-  it('paints nothing outside the mask', () => {
-    const mask = new Uint8Array(4);
-    mask[3] = 1;
-    const clipped = core.maskClassifier(() => 7, mask);
-    expect(clipped(cell(N, 8), 0, 0)).toBe(core.STATE.NONE);
-    expect(clipped(cell(N, 8), 1, 1)).toBe(7);
+describe('normaliseDay', () => {
+  it('reads bulletins and regions, dropping a region whose bulletin is missing', () => {
+    const day = core.normaliseDay({
+      date: '2026-04-27',
+      bulletins: { a: [WIND_SLAB], b: [] },
+      regions: { 'CH-4115': 'a', 'CH-4116': 'b', 'CH-4117': 'zzz', 'CH-4118': 3 },
+    });
+    expect(day.date).toBe('2026-04-27');
+    expect(day.bulletins.get('a')).toHaveLength(1);
+    expect(day.bulletins.get('b')).toEqual([]);
+    expect([...day.regions.keys()]).toEqual(['CH-4115', 'CH-4116']);
+  });
+
+  it('reads anything else as an empty day', () => {
+    for (const raw of [null, 'x', {}, { bulletins: 3, regions: [] }]) {
+      const day = core.normaliseDay(raw);
+      expect(day.bulletins.size).toBe(0);
+      expect(day.regions.size).toBe(0);
+    }
+  });
+});
+
+describe('bounding boxes', () => {
+  it('bounds a region and a tile, and tests overlap with edges included', () => {
+    expect(core.ringsBBox([[[7, 46], [8, 46.5], [7.5, 47]]])).toEqual([7, 46, 8, 47]);
+    expect(core.ringsBBox([])).toBeNull();
+    const [w, s, e, n] = core.tileBBox({ z: 1, x: 0, y: 0 });
+    expect(w).toBe(-180);
+    expect(e).toBe(0);
+    expect(s).toBeCloseTo(0);
+    expect(n).toBeCloseTo(85.0511, 3);
+    expect(core.bboxesOverlap([0, 0, 1, 1], [1, 1, 2, 2])).toBe(true);
+    expect(core.bboxesOverlap([0, 0, 1, 1], [1.1, 0, 2, 1])).toBe(false);
+  });
+});
+
+describe('regionIndex and indexClassifier', () => {
+  it('sends each pixel to its own region and paints no region as nothing', () => {
+    const a = new Uint8Array(4);
+    a[0] = 1;
+    const b = new Uint8Array(4);
+    b[3] = 1;
+    const index = core.regionIndex([a, null, b]);
+    expect([...index]).toEqual([1, 0, 0, 3]);
+    const classify = core.indexClassifier([() => 4, () => 5, () => 6], index);
+    expect(classify(cell(N, 8), 0, 0)).toBe(4);
+    expect(classify(cell(N, 8), 1, 0)).toBe(core.STATE.NONE);
+    expect(classify(cell(N, 8), 1, 1)).toBe(6);
+  });
+
+  it('is null when no region reaches the tile', () => {
+    expect(core.regionIndex([null, null])).toBeNull();
+    expect(core.regionIndex([])).toBeNull();
   });
 });
 
@@ -164,11 +210,15 @@ describe('regionMask', () => {
 });
 
 describe('the tile URL', () => {
-  it('changes with the region and with the rules, and round-trips', () => {
-    const rules = core.normaliseRules([WIND_SLAB]);
-    const a = core.rulesHash('CH-4115', rules);
-    expect(core.rulesHash('CH-4116', rules)).not.toBe(a);
-    expect(core.rulesHash('CH-4115', core.normaliseRules([PWL]))).not.toBe(a);
+  const day = (raw) => core.normaliseDay({ date: '2026-04-27', ...raw });
+  const base = { bulletins: { a: [WIND_SLAB] }, regions: { 'CH-4115': 'a' } };
+
+  it('changes with the date, the rules and the regions, and round-trips', () => {
+    const a = core.dayHash(day(base));
+    expect(core.dayHash(day(base))).toBe(a);
+    expect(core.dayHash(core.normaliseDay({ ...base, date: '2026-04-28' }))).not.toBe(a);
+    expect(core.dayHash(day({ ...base, bulletins: { a: [PWL] } }))).not.toBe(a);
+    expect(core.dayHash(day({ ...base, regions: { 'CH-4116': 'a' } }))).not.toBe(a);
     const url = core.protocolTileUrl(a).replace('{z}', '13').replace('{x}', '4262').replace('{y}', '2905');
     expect(core.parseProtocolUrl(url)).toEqual({ z: 13, x: 4262, y: 2905 });
     expect(core.parseProtocolUrl('terrainfilter://13/1/1')).toBeNull();

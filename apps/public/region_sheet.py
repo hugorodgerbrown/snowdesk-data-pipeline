@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from typing import Any
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -43,14 +42,17 @@ from django.utils.cache import patch_cache_control
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.bulletins.services.coverage import covered_region_ids
-from apps.bulletins.services.problem_terrain import TerrainRule, terrain_rules
+from apps.bulletins.services.problem_terrain import TerrainRule
 from apps.core.decorators import require_htmx
 from apps.public.api import _PROVIDER_BY_COUNTRY, COUNTRY_NAMES
 from apps.public.decorators import lowercase_region_id
+from apps.public.problem_terrain import (
+    TERRAIN_COUNTRIES,
+    bulletin_terrain_rules,
+    problem_terrain_key,
+)
 from apps.public.views import (
     _DANGER_PANEL_META,
-    _get_properties,
-    _get_render_model,
     _issues_for_date,
     _resolve_selected_issue,
     build_bulletin_body,
@@ -67,72 +69,37 @@ logger = logging.getLogger(__name__)
 PAST_DAY_MAX_AGE_S = 24 * 60 * 60
 CURRENT_DAY_MAX_AGE_S = 10 * 60
 
-# The countries the terrain-class tiles cover (swissALTI3D). Every other
-# region's sheet carries no problem-terrain switch until SNOW-693 builds an
-# Alps-wide model — a switch that could paint nothing would be a promise.
-TERRAIN_COUNTRIES = frozenset({"CH"})
-
 
 def _problem_terrain_rules(
     country: str, selected: Bulletin | None
-) -> list[TerrainRule]:
-    """Return the rules the sheet's problem-terrain switch paints (SNOW-979).
+) -> list[TerrainRule] | None:
+    """Return the rules behind the sheet's problem-terrain key (SNOW-979).
 
-    Empty — so the sheet draws no switch — unless the terrain-class tiles
-    are configured (the terrain filter's own gate), the region is inside
-    their coverage, and the day's bulletin describes some ground.
+    Since SNOW-1194 the switch turns on the terrain filter's "By bulletin"
+    colour, which paints every region from ``/api/problem-terrain/``; the
+    sheet keeps the switch, and these rules only decide its key — the
+    levels this region's bulletin paints today.
+
+    ``None`` — so the sheet draws no switch — unless the terrain-class
+    tiles are configured (the terrain filter's own gate), the region is
+    inside their coverage, and the day has a bulletin. A bulletin that
+    describes no ground still gets the switch: its steep ground paints as
+    undescribed, never blank.
 
     Args:
         country: The region's ISO-2 country code.
         selected: The bulletin the body under the switch describes, chosen
-            by the page's own rule, so the map and the text cannot describe
-            different issues; ``None`` on a day with none.
+            by the page's own rule; ``None`` on a day with none.
 
     Returns:
-        The bulletin's problems as terrain rules, possibly empty.
+        The bulletin's problems as terrain rules (possibly empty), or None.
 
     """
     if selected is None:
-        return []
+        return None
     if not settings.TERRAIN_CLASS_TILE_URL or country not in TERRAIN_COUNTRIES:
-        return []
-    # The RAW render model, as the panel reads it before enriching — the
-    # enriched copy has swapped each problem's elevation for a display object.
-    return terrain_rules(_get_render_model(selected, _get_properties(selected)))
-
-
-# Rule rating → the EAWS level key the legend swatch and label read.
-_LEVEL_BY_RATING = {
-    1: "low",
-    2: "moderate",
-    3: "considerable",
-    4: "high",
-    5: "very_high",
-}
-
-
-def _problem_terrain_key(rules: list[TerrainRule]) -> dict[str, Any]:
-    """Return what the switch's colour key lists: only what the day can paint.
-
-    Args:
-        rules: From ``_problem_terrain_rules``.
-
-    Returns:
-        ``levels`` — one ``{"level", "label"}`` per decided rating, highest
-        first; ``undecided`` — whether any rule paints the undecided grey.
-
-    """
-    ratings = sorted({r["rating"] for r in rules if r["decided"]}, reverse=True)
-    return {
-        "levels": [
-            {
-                "level": _LEVEL_BY_RATING[rating],
-                "label": _DANGER_PANEL_META[_LEVEL_BY_RATING[rating]]["label"],
-            }
-            for rating in ratings
-        ],
-        "undecided": any(not r["decided"] for r in rules),
-    }
+        return None
+    return bulletin_terrain_rules(selected)
 
 
 @lowercase_region_id
@@ -194,9 +161,10 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         "covered": region.region_id in covered_region_ids(),
         "provider_name": _PROVIDER_BY_COUNTRY.get(country, ""),
         "resorts": list(Resort.objects.resorts().filter(region=region)),
-        # SNOW-979: the "Show problem terrain on the map" switch and its rules.
-        "terrain_rules": terrain,
-        "terrain_key": _problem_terrain_key(terrain),
+        # SNOW-979: the "Show problem terrain on the map" switch and its key;
+        # SNOW-1194 moved the rules themselves to /api/problem-terrain/.
+        "terrain_switch": terrain is not None,
+        "terrain_key": problem_terrain_key(terrain or []),
     }
     response = render(request, "public/partials/_region_sheet_body.html", context)
     settled = target_date < timezone.localdate()

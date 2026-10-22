@@ -2157,17 +2157,26 @@ def test_terrain_filter_sheet_renders_the_compact_controls() -> None:
     sheet = content[content.index('id="map-terrain-filter-template"') :]
     sheet = sheet[: sheet.index("</template>")]
 
-    assert sheet.count('name="terrain-filter-mode"') == 2
+    assert sheet.count('name="terrain-filter-mode"') == 3
     match = sheet[sheet.index('value="match"') :][:120]
     slope = sheet[sheet.index('value="slope"') :][:120]
+    bulletin = sheet[sheet.index('value="bulletin"') :][:120]
     assert "checked" in match
     assert "checked" not in slope
+    assert "checked" not in bulletin
     assert "One tint" in sheet
     assert "By slope" in sheet
+    assert "By bulletin" in sheet
     assert "segmented" not in sheet
     assert 'id="map-terrain-filter-enabled"' not in sheet
     assert "data-terrain-filter-availability" not in sheet
     assert "data-terrain-filter-key=" not in sheet
+    # SNOW-1194: "By bulletin" swaps the reader's controls for its key and
+    # note, so both render, the key's box hidden until that mode is set.
+    assert "data-terrain-filter-manual" in sheet
+    assert re.search(r"data-terrain-filter-bulletin\s+hidden", sheet)
+    assert "map-legend-swatch--terrain-very_high" in sheet
+    assert "#help-topic-bulletin-terrain" in sheet
     # The ramp: five toggle tiles, one per slope class.
     assert "data-terrain-filter-ramp" in sheet
     for index in range(5):
@@ -2189,6 +2198,8 @@ def test_terrain_filter_sheet_renders_the_compact_controls() -> None:
     assert 'data-terrain-filter-key="slope" hidden' in legend
     assert "#help-topic-slope" in legend
     assert "#help-topic-terrain-filter" in legend
+    assert 'data-terrain-filter-key="bulletin" hidden' in legend
+    assert "#help-topic-bulletin-terrain" in legend
 
 
 @pytest.mark.django_db

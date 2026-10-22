@@ -2065,15 +2065,25 @@ def _terrain_filter_context() -> dict[str, Any]:
     menu row nor the tile template: a template in the DOM would be an
     invitation to install a layer the environment has withdrawn.
 
+    SNOW-1194 added the filter's "By bulletin" colour, whose key — in the
+    filter's sheet and the map legend — lists the whole problem-terrain
+    scale, because every region is painted at once.
+
     Returns:
-        Dict with ``terrain_filter_eligible`` and ``terrain_class_tile_url``
-        (empty string while ineligible).
+        Dict with ``terrain_filter_eligible``, ``terrain_class_tile_url``
+        (empty string while ineligible) and ``bulletin_terrain_key``.
 
     """
+    # Function-local import to break a apps.public.views ↔
+    # apps.public.problem_terrain circular (that module reads the render
+    # model helpers from this one).
+    from apps.public.problem_terrain import problem_terrain_key  # noqa: PLC0415
+
     eligible = bool(settings.TERRAIN_CLASS_TILE_URL)
     return {
         "terrain_filter_eligible": eligible,
         "terrain_class_tile_url": settings.TERRAIN_CLASS_TILE_URL if eligible else "",
+        "bulletin_terrain_key": problem_terrain_key(None),
     }
 
 
