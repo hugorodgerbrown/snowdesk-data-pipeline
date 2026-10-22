@@ -123,8 +123,11 @@ class Command(RegisteredCommand):
         )
 
         if commit:
+            # The sweep time stands in for the unknown moment the process
+            # died, so the row reads as closed and has a duration.
+            now = timezone.now()
             interrupted = stale.update(
-                status=CommandRun.STATUS.INTERRUPTED, updated_at=timezone.now()
+                status=CommandRun.STATUS.INTERRUPTED, finished_at=now, updated_at=now
             )
             deleted, _ = expired.delete()
         else:

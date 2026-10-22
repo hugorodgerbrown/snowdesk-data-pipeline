@@ -69,6 +69,8 @@ def test_stale_running_rows_are_interrupted() -> None:
     _prune("--commit")
     assert _status(stale) == CommandRun.STATUS.INTERRUPTED
     assert _status(fresh) == CommandRun.STATUS.RUNNING
+    assert stale.finished_at is not None
+    assert stale.duration is not None
 
 
 def test_old_scheduled_runs_are_deleted_and_everything_else_kept() -> None:
