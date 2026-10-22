@@ -150,6 +150,10 @@ What a command author does:
   before; the row is written around the command, never inside it.
 - **Opt out only for a reason.** `record_runs = False` with a comment saying
   why; today only `run_scheduler`, which never finishes.
+- **Keep credentials out.** A command whose output is a credential sets
+  `capture_output = False`: the run is still recorded, its output is not.
+  Today `mint_mcp_token`, `mint_vapid_keypair` and `dev_magic_link`; the
+  guard test pins the list.
 
 What an operator does: set `SNOWDESK_OPERATOR=<your name>` in the shell
 before running a command against a deployed environment. A Render shell runs

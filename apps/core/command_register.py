@@ -87,6 +87,9 @@ _PLUMBING_OPTIONS = frozenset(
 _SECRET_NAME = re.compile(r"key|token|secret|password", re.IGNORECASE)
 REDACTED = "[redacted]"
 
+# What ``output_tail`` holds for a command that opts out of capture.
+OUTPUT_NOT_CAPTURED = "[output not captured: this command prints a credential]"
+
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 # The run currently executing in this context, so a command started from
@@ -230,9 +233,15 @@ class RegisteredCommand(BaseCommand):
     each record a run changes (or, in a dry run, would change). Set
     ``record_runs = False``, with a comment saying why, only for a command
     that never finishes (``run_scheduler``) or must not touch the database.
+    Set ``capture_output = False`` for a command that prints a credential.
     """
 
     record_runs: ClassVar[bool] = True
+    # False for a command whose output IS a credential (a bearer token, a
+    # private key, a sign-in link): its row then records no output at all,
+    # because a register readable in the admin and over MCP must never hold
+    # one. Everything else about the run is still recorded.
+    capture_output: ClassVar[bool] = True
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialise the command with an empty tally."""
@@ -290,10 +299,13 @@ class RegisteredCommand(BaseCommand):
         tail = _Tail(OUTPUT_TAIL_CHARS)
         # ``OutputWrapper._out`` is the stream BaseCommand was built with;
         # django-stubs types it loosely because the wrapper proxies getattr.
-        stdout = cast(TextIO, options.get("stdout") or self.stdout._out)
-        stderr = cast(TextIO, options.get("stderr") or self.stderr._out)
-        options["stdout"] = _Tee(stdout, tail)
-        options["stderr"] = _Tee(stderr, tail)
+        if self.capture_output:
+            stdout = cast(TextIO, options.get("stdout") or self.stdout._out)
+            stderr = cast(TextIO, options.get("stderr") or self.stderr._out)
+            options["stdout"] = _Tee(stdout, tail)
+            options["stderr"] = _Tee(stderr, tail)
+        else:
+            tail.add(OUTPUT_NOT_CAPTURED)
 
         run = self._open_run(args, options)
         self._run = run

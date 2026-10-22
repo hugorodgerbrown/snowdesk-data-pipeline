@@ -154,3 +154,9 @@ class CommandRunAdmin(admin.ModelAdmin):
     ) -> bool:
         """Refuse: a recorded run is never edited."""
         return False
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: CommandRun | None = None
+    ) -> bool:
+        """Refuse: the register is an audit trail; only prune_command_runs trims it."""
+        return False

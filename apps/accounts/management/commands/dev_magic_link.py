@@ -36,6 +36,11 @@ class Command(RegisteredCommand):
     SNOW-602 exempt: no queryset loop — operates on a single named account.
     """
 
+    # The run is registered but its output is not (SNOW-1189):
+    # it prints a working sign-in link, and the register is readable in the admin
+    # and over MCP.
+    capture_output = False
+
     help = "Print a dev magic-link URL for local passkey / subscription testing."
 
     def add_arguments(self, parser: ArgumentParser) -> None:

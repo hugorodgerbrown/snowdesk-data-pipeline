@@ -52,3 +52,17 @@ def test_only_run_scheduler_opts_out() -> None:
         if not getattr(load_command_class(app, name), "record_runs", True)
     )
     assert opted_out == ["run_scheduler"]
+
+
+def test_only_credential_printers_skip_output_capture() -> None:
+    """A command whose output is a credential keeps it out of the register.
+
+    Pinned so adding one is a deliberate edit here, and so a command that
+    prints a token, key or sign-in link is a reviewer's prompt to add it.
+    """
+    uncaptured = sorted(
+        name
+        for name, app in _project_commands().items()
+        if not getattr(load_command_class(app, name), "capture_output", True)
+    )
+    assert uncaptured == ["dev_magic_link", "mint_mcp_token", "mint_vapid_keypair"]

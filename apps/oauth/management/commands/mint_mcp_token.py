@@ -54,6 +54,11 @@ LOCAL_CLIENT_NAME = "Local token (mint_mcp_token)"
 class Command(RegisteredCommand):
     """Mint an MCP access token for one account."""
 
+    # The run is registered but its output is not (SNOW-1189):
+    # it prints a live bearer access token, and the register is readable in the admin
+    # and over MCP.
+    capture_output = False
+
     help = (
         "Mints a one-hour MCP access token for the account with --email. "
         "Read-only without --commit."

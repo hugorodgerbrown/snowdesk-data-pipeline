@@ -50,6 +50,11 @@ guard makes it as complete as a hook.
 - The CalVer tag is not stored — `release.yml` creates it after the deploy
   starts — and Render's deploy id is not in the environment. SHA plus
   release number identifies the build; GitHub maps the SHA to a tag.
+- The register is readable in the admin and over MCP, so it must never
+  hold a credential: arguments named like a secret are redacted, and a
+  command whose OUTPUT is a credential (`mint_mcp_token`,
+  `mint_vapid_keypair`, `dev_magic_link`) sets `capture_output = False`.
+  The admin allows no add, edit or delete.
 - Who ran it relies on `SNOWDESK_OPERATOR`, because a Render shell runs
   every operator as one OS user.
 - Scheduled runs (48 a day of `fetch_bulletins`) are deleted after 90 days by

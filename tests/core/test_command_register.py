@@ -28,6 +28,7 @@ from django.db import transaction
 from django.test import override_settings
 
 from apps.core.command_register import (
+    OUTPUT_NOT_CAPTURED,
     OUTPUT_TAIL_CHARS,
     REDACTED,
     RegisteredCommand,
@@ -64,6 +65,16 @@ class _ReadOnly(RegisteredCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         """Do nothing."""
+
+
+class _Secret(RegisteredCommand):
+    """A command that prints a credential and opts out of capture."""
+
+    capture_output = False
+
+    def handle(self, *args: Any, **options: Any) -> None:
+        """Print a pretend token."""
+        self.stdout.write("token-abc123")
 
 
 class _Unrecorded(_ReadOnly):
@@ -446,3 +457,27 @@ def test_a_command_line_secret_is_redacted() -> None:
         f"--token={REDACTED}",
         "x",
     ]
+
+
+def test_a_credential_printing_command_keeps_its_output_out() -> None:
+    """``capture_output = False`` records the run but never what it printed."""
+    out = StringIO()
+    call_command(_Secret(), stdout=out)
+    run = _only_run()
+    assert "token-abc123" in out.getvalue()
+    assert run.output_tail == OUTPUT_NOT_CAPTURED
+    assert run.status == CommandRun.STATUS.SUCCEEDED
+
+
+def test_the_admin_is_read_only(rf: Any) -> None:
+    """No add, edit or delete — and so no bulk delete action — in the admin."""
+    from django.contrib.admin.sites import site
+
+    from apps.core.admin import CommandRunAdmin
+
+    admin = CommandRunAdmin(CommandRun, site)
+    request = rf.get("/admin/")
+    run = CommandRunFactory.create()
+    assert not admin.has_add_permission(request)
+    assert not admin.has_change_permission(request, run)
+    assert not admin.has_delete_permission(request, run)
