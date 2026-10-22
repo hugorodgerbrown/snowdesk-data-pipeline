@@ -120,6 +120,8 @@
    * @property {string} [token] The `@theme` token the legend paints with.
    * @property {string} [hex] That token's value, for a drift test.
    * @property {boolean} [hatch] Paint only on the hatch's stroke pixels.
+   * @property {boolean} [hatchBack] Run those strokes the other way (135°),
+   *   for a second hatch that must not read as the no-data one (SNOW-979).
    */
 
   /** @typedef {(cell: Cell, px: number, py: number, tile: TileCoord) => number} Classifier */
@@ -507,9 +509,11 @@
    *
    * @param {number} px Column within the tile.
    * @param {number} py Row within the tile.
+   * @param {boolean} [back] The 135° hatch rather than the 45° one.
    * @returns {boolean}
    */
-  function onHatch(px, py) {
+  function onHatch(px, py, back) {
+    if (back) return (((px - py) % HATCH_PERIOD) + HATCH_PERIOD) % HATCH_PERIOD < HATCH_WIDTH;
     return (px + py) % HATCH_PERIOD < HATCH_WIDTH;
   }
 
@@ -518,7 +522,8 @@
    *
    * @param {Uint8ClampedArray} src The class tile's RGBA pixels.
    * @param {Uint8ClampedArray} out Where to write; same length as `src`.
-   * @param {Classifier} classify From createFilterClassifier (or SNOW-979's).
+   * @param {Classifier} classify From createFilterClassifier, or
+   *   bulletin_terrain_core.js's maskClassifier (SNOW-979).
    * @param {ReadonlyArray<PaletteEntry>} palette Index → colour.
    * @param {TileCoord} tile The tile being painted.
    * @returns {Uint8ClampedArray} `out`.
@@ -532,7 +537,7 @@
         const i = (py * size + px) * 4;
         decodeCell(src[i], src[i + 1], src[i + 2], cell);
         const entry = palette[classify(cell, px, py, tile)] || palette[0];
-        const rgba = entry.hatch && !onHatch(px, py) ? palette[0].rgba : entry.rgba;
+        const rgba = entry.hatch && !onHatch(px, py, entry.hatchBack) ? palette[0].rgba : entry.rgba;
         out[i] = rgba[0];
         out[i + 1] = rgba[1];
         out[i + 2] = rgba[2];

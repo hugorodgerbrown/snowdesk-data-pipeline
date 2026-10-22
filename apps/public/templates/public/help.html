@@ -134,6 +134,13 @@ Routes and Offline downloads came to have neither.
             {% translate "Terrain filter" as t_terrain_filter %}
             {% include "includes/_collapsible_panel.html" with title=t_terrain_filter data_testid="help-topic-terrain-filter" body_template="public/help/_topic_terrain_filter.html" %}
         </div>
+        {# SNOW-979: the problem-terrain layer's caveats. The region sheet's  #}
+        {# switch links to #help-topic-bulletin-terrain; the wrapper keeps    #}
+        {# the shared bottom margin for the reason the slope one does.         #}
+        <div id="help-topic-bulletin-terrain" class="mb-2 last:mb-0">
+            {% translate "Problem terrain" as t_bulletin_terrain %}
+            {% include "includes/_collapsible_panel.html" with title=t_bulletin_terrain data_testid="help-topic-bulletin-terrain" body_template="public/help/_topic_bulletin_terrain.html" %}
+        </div>
 
         {# SNOW-744: these four topics illustrate themselves with the SAME    #}
         {# component (includes/_ugc_panel.html), each passing its own entry   #}

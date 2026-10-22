@@ -586,6 +586,38 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         ),
     ),
     FoundationCategory(
+        slug="problem-terrain",
+        label="Problem terrain",
+        description=(
+            "The region sheet's problem-terrain layer (SNOW-979): the "
+            "selected region's ground of 30° and over, painted by the day's "
+            "bulletin. Ground a problem describes takes that problem's EAWS "
+            "colour (the danger tokens — the colour is the rating); these "
+            "two paint the rest of the steep ground, so none of it is left "
+            "blank. Undescribed is a 135° hatch, the other way from the "
+            "terrain filter's no-data hatch; undecided (a treeline band or "
+            "a prose-only problem) a flat grey. Theme-invariant. Painted on "
+            "the device by static/js/bulletin_terrain_core.js, which "
+            "carries these as literals; a Vitest test holds them equal."
+        ),
+        kind="swatches",
+        swatch_columns=5,
+        tokens=(
+            Token(
+                "--color-bulletin-terrain-undescribed",
+                "Steep, not described (hatch)",
+                "#57534e",
+                None,
+            ),
+            Token(
+                "--color-bulletin-terrain-undecided",
+                "Described, can't be placed",
+                "#78716c",
+                None,
+            ),
+        ),
+    ),
+    FoundationCategory(
         slug="map-marks",
         label="Map marks",
         description=(

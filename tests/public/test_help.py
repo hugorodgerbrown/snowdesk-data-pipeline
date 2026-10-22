@@ -716,3 +716,29 @@ class TestTerrainFilterHelpTopic:
         """Every layers-menu row has its paragraph in the layers topic."""
         content = client.get(reverse("public:help")).content
         assert b'data-testid="help-layers-terrain-filter"' in content
+
+
+@pytest.mark.django_db
+class TestBulletinTerrainHelpTopic:
+    """SNOW-979: the problem-terrain layer's caveats live on /help/."""
+
+    def test_topic_is_an_anchor_target(self, client: Client) -> None:
+        """The region sheet's switch links to this fragment."""
+        content = client.get(reverse("public:help")).content.decode()
+        assert 'id="help-topic-bulletin-terrain"' in content
+        wrapper = content[content.index('id="help-topic-bulletin-terrain"') :][:120]
+        assert 'class="mb-2 last:mb-0"' in wrapper, wrapper
+
+    def test_topic_states_each_limit(self, client: Client) -> None:
+        """Grey is not safe, undecided ground, no runout, not a verdict,
+        Switzerland only — each a distinct thing to get wrong.
+        """
+        content = client.get(reverse("public:help")).content
+        for testid in (
+            b"help-bulletin-terrain-undescribed",
+            b"help-bulletin-terrain-undecided",
+            b"help-bulletin-terrain-runout",
+            b"help-bulletin-terrain-not-a-verdict",
+            b"help-bulletin-terrain-coverage",
+        ):
+            assert testid in content, testid

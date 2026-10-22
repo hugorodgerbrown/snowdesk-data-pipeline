@@ -1188,6 +1188,13 @@
     ['boolean', ['feature-state', 'previewing'], false],
   ];
 
+  // SNOW-979: a region whose ground the problem-terrain layer is painting
+  // drops its choropleth fill. The layer paints each problem's ground in
+  // the problem's own EAWS colour, and the region's flat danger tint under
+  // it would mix into every one of them — a moderate problem's yellow
+  // reading orange through a considerable region's fill. The outline stays.
+  const REGION_TERRAIN_PAINTED = ['boolean', ['feature-state', 'terrain'], false];
+
   /**
    * ``fill-opacity`` for the choropleth at a given resting opacity: that
    * value, stepped up for a selected or previewed region.
@@ -1201,7 +1208,7 @@
    */
   const regionFillOpacity = (resting) => (
     resting > 0
-      ? ['case', REGION_EMPHASISED, emphasisOpacity(resting), resting]
+      ? ['case', REGION_TERRAIN_PAINTED, 0, REGION_EMPHASISED, emphasisOpacity(resting), resting]
       : 0
   );
 
@@ -4624,6 +4631,278 @@
     });
   }
 
+  // SNOW-979: problem terrain — the selected region's steep ground painted
+  // by what the day's bulletin says about it.
+  //
+  // The terrain filter above, with its settings taken from the bulletin
+  // rather than the reader: the same class tiles (and the same 64-tile LRU
+  // of decoded pixels, so a tile the filter fetched costs this nothing),
+  // the same terrain_filter_core.paintTile, a classifier and palette from
+  // static/js/bulletin_terrain_core.js, and a mask clipping it to the
+  // region's boundary:
+  //
+  //   bulletinterrain://{z}/{x}/{y}?v=<region + rules hash>
+  //     → rasterise the region's rings into the tile (null: tile outside —
+  //       paint nothing and fetch nothing)
+  //     → the class tile, from the LRU or the network
+  //     → paint the four states inside the mask.
+  //
+  // The region sheet owns the switch and brings the rules: its body carries
+  // them as a json_script, so the layer and the bulletin under the switch
+  // come from the one issue. map_region_sheet.js calls showRegion when a
+  // body paints and clearRegion when the sheet closes, so the layer shows
+  // only while a region's sheet is open (Hugo, 22 Oct — the selected region
+  // only, for now). The reader's on/off is remembered across sessions.
+  // docs/decisions/the-bulletin-terrain-layer-paints-what-it-cannot-decide.md
+  const BULLETIN_TERRAIN_CORE = self.pwaBulletinTerrainCore;
+  const BULLETIN_TERRAIN_SOURCE_ID = 'bulletin-terrain';
+  const BULLETIN_TERRAIN_LAYER_ID = 'bulletin-terrain-raster';
+  const BULLETIN_TERRAIN_STORAGE_KEY = 'snowdesk.map.bulletin_terrain';
+  const BULLETIN_TERRAIN_ELIGIBLE = TERRAIN_FILTER_ELIGIBLE && !!TERRAIN_CORE && !!BULLETIN_TERRAIN_CORE;
+
+  let bulletinTerrainOn = readStorage(BULLETIN_TERRAIN_STORAGE_KEY) === 'true';
+  /**
+   * The region being painted, or null.
+   *
+   * @type {?{regionId: string, featureId: number, rings: Array, classify: Function, hash: string}}
+   */
+  let bulletinTerrain = null;
+  let bulletinTerrainProtocolRegistered = false;
+  // Masks by region and tile: the rasterisation is the dear part of a
+  // repaint, and a pan revisits the same tiles.
+  const bulletinTerrainMasks = BULLETIN_TERRAIN_ELIGIBLE
+    ? TERRAIN_CORE.createTileCache(TERRAIN_CLASS_CACHE_TILES)
+    : null;
+
+  /**
+   * MapLibre's handler for `bulletinterrain://`. Like the terrain filter's,
+   * it always resolves with an image — "nothing here" is transparent.
+   *
+   * @param {{url: string}} params
+   * @param {AbortController} abortController
+   * @returns {Promise<{data: ImageBitmap}>}
+   */
+  const bulletinTerrainProtocol = async (params, abortController) => {
+    const tile = BULLETIN_TERRAIN_CORE.parseProtocolUrl(params.url);
+    if (!tile) throw new Error(`problem terrain: not a tile url: ${params.url}`);
+    const size = TERRAIN_CORE.TILE_SIZE;
+    const out = new Uint8ClampedArray(size * size * 4);
+    const state = bulletinTerrain;
+    if (state) {
+      const key = `${state.regionId}/${tile.z}/${tile.x}/${tile.y}`;
+      let mask = bulletinTerrainMasks.get(key);
+      if (mask === undefined) {
+        mask = BULLETIN_TERRAIN_CORE.regionMask(state.rings, tile, size);
+        bulletinTerrainMasks.set(key, mask);
+      }
+      if (mask) {
+        const pixels = await loadTerrainClassTile(tile, abortController.signal);
+        if (pixels) {
+          TERRAIN_CORE.paintTile(
+            pixels, out,
+            BULLETIN_TERRAIN_CORE.maskClassifier(state.classify, mask),
+            BULLETIN_TERRAIN_CORE.PALETTE, tile,
+          );
+        }
+      }
+    }
+    return { data: await createImageBitmap(new ImageData(out, size, size)) };
+  };
+
+  /**
+   * Whether the layer should be drawn: switched on, with a region to paint.
+   *
+   * @returns {boolean}
+   */
+  const bulletinTerrainShown = () => bulletinTerrainOn && !!bulletinTerrain;
+
+  /**
+   * Where the layer can show anything, for the sheet's zoom hint. The
+   * camera, not the region: the tiles exist from z12 only.
+   *
+   * @returns {'ok'|'zoom-in'|'out-of-coverage'}
+   */
+  const bulletinTerrainAvailability = () => {
+    const centre = map.getCenter();
+    return TERRAIN_CORE.availability({ zoom: map.getZoom(), lng: centre.lng, lat: centre.lat });
+  };
+
+  /**
+   * Tell the sheet's switch, legend and zoom hint the layer's state moved.
+   *
+   * @returns {void}
+   */
+  const announceBulletinTerrain = () => {
+    document.dispatchEvent(new CustomEvent('snowdesk:bulletin-terrain-changed', {
+      detail: {
+        enabled: bulletinTerrainOn,
+        regionId: bulletinTerrain ? bulletinTerrain.regionId : null,
+        availability: bulletinTerrainAvailability(),
+      },
+    }));
+  };
+
+  /**
+   * Install the layer's raster source and layer, hidden unless it is shown.
+   * Idempotent, for the boot and styledata paths, as the terrain filter's.
+   *
+   * @returns {void}
+   */
+  const installBulletinTerrainLayer = () => {
+    if (!BULLETIN_TERRAIN_ELIGIBLE) return;
+    if (map.getSource(BULLETIN_TERRAIN_SOURCE_ID)) return;
+    if (typeof maplibregl === 'undefined' || typeof maplibregl.addProtocol !== 'function') return;
+    if (!bulletinTerrainProtocolRegistered) {
+      maplibregl.addProtocol(BULLETIN_TERRAIN_CORE.PROTOCOL, bulletinTerrainProtocol);
+      bulletinTerrainProtocolRegistered = true;
+    }
+    map.addSource(BULLETIN_TERRAIN_SOURCE_ID, {
+      type: 'raster',
+      tiles: [BULLETIN_TERRAIN_CORE.protocolTileUrl(bulletinTerrain ? bulletinTerrain.hash : 'none')],
+      tileSize: TERRAIN_CORE.TILE_SIZE,
+      minzoom: TERRAIN_CORE.MIN_ZOOM,
+      maxzoom: TERRAIN_CORE.MAX_ZOOM,
+      bounds: TERRAIN_CORE.COVERAGE_BOUNDS,
+      // The same dataset credit as the terrain filter, word for word, so
+      // updateMapAttribution's exact-string union shows it once.
+      attribution:
+        '<a href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener">'
+        + 'swisstopo — swissALTI3D</a>',
+    });
+    // ABOVE the choropleth, unlike the terrain filter: this layer IS the
+    // danger for the region it paints (whose own fill drops out, see
+    // REGION_TERRAIN_PAINTED), and the region outlines stay on top of it.
+    const beforeId = map.getLayer('regions-line') ? 'regions-line' : undefined;
+    map.addLayer(
+      {
+        id: BULLETIN_TERRAIN_LAYER_ID,
+        type: 'raster',
+        source: BULLETIN_TERRAIN_SOURCE_ID,
+        layout: { visibility: bulletinTerrainShown() ? 'visible' : 'none' },
+        paint: {
+          'raster-opacity': 1,
+          // Categorical pixels, as the terrain filter's: never interpolate.
+          'raster-resampling': 'nearest',
+          'raster-fade-duration': 0,
+        },
+      },
+      beforeId,
+    );
+    raiseMarkerLayers();
+    attributionSourceIds = null;
+    updateMapAttribution();
+  };
+
+  /**
+   * Bring the layer, the region's fill and the tiles in line with state.
+   *
+   * @param {?{featureId: number}} previous The region painted before, whose
+   *   fill comes back.
+   * @returns {void}
+   */
+  const syncBulletinTerrain = (previous) => {
+    installBulletinTerrainLayer();
+    if (previous && map.getSource('regions')) {
+      map.setFeatureState({ source: 'regions', id: previous.featureId }, { terrain: false });
+    }
+    const shown = bulletinTerrainShown();
+    // Written both ways: switching off with the region still in hand has
+    // to bring its fill back.
+    if (bulletinTerrain && map.getSource('regions')) {
+      map.setFeatureState({ source: 'regions', id: bulletinTerrain.featureId }, { terrain: shown });
+    }
+    const source = map.getSource(BULLETIN_TERRAIN_SOURCE_ID);
+    if (source && bulletinTerrain && typeof source.setTiles === 'function') {
+      source.setTiles([BULLETIN_TERRAIN_CORE.protocolTileUrl(bulletinTerrain.hash)]);
+    }
+    if (map.getLayer(BULLETIN_TERRAIN_LAYER_ID)) {
+      map.setLayoutProperty(BULLETIN_TERRAIN_LAYER_ID, 'visibility', shown ? 'visible' : 'none');
+    }
+    map.triggerRepaint();
+    announceBulletinTerrain();
+  };
+
+  /**
+   * Switching on below the tiles' zoom would draw nothing, so take the
+   * camera to the region's middle at the first zoom that has tiles. Only on
+   * the reader's own press — never on a body repaint.
+   *
+   * @returns {void}
+   */
+  const zoomToBulletinTerrain = () => {
+    if (!bulletinTerrain || map.getZoom() >= TERRAIN_CORE.MIN_ZOOM) return;
+    let west = Infinity;
+    let south = Infinity;
+    let east = -Infinity;
+    let north = -Infinity;
+    for (const ring of bulletinTerrain.rings) {
+      for (const [lng, lat] of ring) {
+        west = Math.min(west, lng);
+        east = Math.max(east, lng);
+        south = Math.min(south, lat);
+        north = Math.max(north, lat);
+      }
+    }
+    if (!Number.isFinite(west)) return;
+    map.easeTo({ center: [(west + east) / 2, (south + north) / 2], zoom: TERRAIN_CORE.MIN_ZOOM });
+  };
+
+  if (BULLETIN_TERRAIN_ELIGIBLE) {
+    // The sheet's zoom hint follows the camera.
+    map.on('moveend', () => {
+      if (bulletinTerrain) announceBulletinTerrain();
+    });
+
+    // The layer's one owner of state. map_region_sheet.js holds the switch
+    // and the rules and knows nothing about MapLibre.
+    window.pwaBulletinTerrain = Object.freeze({
+      isEnabled: () => bulletinTerrainOn,
+      /**
+       * Switch the layer on or off, and remember it.
+       *
+       * @param {boolean} on
+       */
+      setEnabled(on) {
+        bulletinTerrainOn = !!on;
+        writeStorage(BULLETIN_TERRAIN_STORAGE_KEY, String(bulletinTerrainOn));
+        syncBulletinTerrain(null);
+        if (bulletinTerrainOn) zoomToBulletinTerrain();
+      },
+      /**
+       * Paint this region by these rules (while switched on).
+       *
+       * @param {string} regionId e.g. "CH-4115".
+       * @param {*} rawRules The sheet's json_script, parsed.
+       */
+      showRegion(regionId, rawRules) {
+        const feature = FEATURE_BY_REGION_ID[regionId];
+        const previous = bulletinTerrain;
+        if (!feature) {
+          bulletinTerrain = null;
+          syncBulletinTerrain(previous);
+          return;
+        }
+        const rules = BULLETIN_TERRAIN_CORE.normaliseRules(rawRules);
+        bulletinTerrain = {
+          regionId,
+          featureId: feature.id,
+          rings: BULLETIN_TERRAIN_CORE.ringsOf(feature.geometry),
+          classify: BULLETIN_TERRAIN_CORE.createClassifier(rules),
+          hash: BULLETIN_TERRAIN_CORE.rulesHash(regionId, rules),
+        };
+        syncBulletinTerrain(previous && previous.featureId !== feature.id ? previous : null);
+      },
+      /** Stop painting any region. */
+      clearRegion() {
+        if (!bulletinTerrain) return;
+        const previous = bulletinTerrain;
+        bulletinTerrain = null;
+        syncBulletinTerrain(previous);
+      },
+      availability: bulletinTerrainAvailability,
+    });
+  }
+
   // SNOW-323: Install the bulletin-groupings source and line layer.
   // Idempotent — early-returns when the source already exists (called on
   // basemap swap via the styledata handler and on first l3 toggle).
@@ -7795,6 +8074,8 @@
     // round.
     installTerrainFilterLayer();
     installRegionsLayers(geojson);
+    // SNOW-979: after the regions — it sits above the choropleth.
+    installBulletinTerrainLayer();
     // The downloaded-areas overlay is a persisted preference now, so a
     // reload with it switched on has to arrive with the squares ON the map.
     // installRegionsLayers has just created the two layers VISIBLE (it reads
@@ -10271,6 +10552,11 @@
       // own `beforeId` against 'regions-fill', so it slots underneath either
       // way and neither call site has to know the other's order.
       installTerrainFilterLayer();
+      // SNOW-979: the problem-terrain layer now; the painted region's
+      // feature state went with the regions source, and a state written
+      // before the new source has loaded is dropped, so that waits for idle.
+      installBulletinTerrainLayer();
+      if (BULLETIN_TERRAIN_ELIGIBLE && bulletinTerrain) map.once('idle', () => syncBulletinTerrain(null));
       // SNOW-59: overlays got wiped with the rest of the style. Re-add
       // them and let the install function re-apply the persisted
       // visibility from overlayState.

@@ -2,7 +2,7 @@
 name: terrain-filter-is-class-tiles-filtered-on-device
 description: Terrain filter — class tiles painted on device via terrainfilter://, match and slope modes; TERRAIN_CLASS_TILE_URL
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-22
 ---
 
 # The terrain filter is class tiles, filtered on the device
@@ -54,7 +54,9 @@ the colour is made in the browser:
 - The palette-index seam is for SNOW-979, which needs a four-state palette
   and per-region clipping; a boolean predicate would have to be replaced to
   get there. SNOW-1073's slope palette was the first second palette to use
-  it.
+  it; SNOW-979 then used it as planned, through its own `bulletinterrain://`
+  protocol over the same tiles and LRU
+  ([the-bulletin-terrain-layer-paints-what-it-cannot-decide.md](the-bulletin-terrain-layer-paints-what-it-cannot-decide.md)).
 - Hatching no-data rather than leaving it blank keeps the rule the slope
   layer learned the hard way: blank must never be readable as "does not
   match" where it means "not surveyed".

@@ -105,7 +105,12 @@
   // the ×, a drag below peek, another overlay opening), so the root's mark
   // follows the sheet's own `hidden` rather than this module's calls.
   const markRoot = () => {
-    document.documentElement.toggleAttribute('data-region-sheet', !sheet.hasAttribute('hidden'));
+    const open = !sheet.hasAttribute('hidden');
+    document.documentElement.toggleAttribute('data-region-sheet', open);
+    // SNOW-979: the problem-terrain layer paints the region whose sheet is
+    // open, and only while it is — its switch lives here, so a layer left
+    // behind by a closed sheet would have no way to be turned off.
+    if (!open && window.pwaBulletinTerrain) window.pwaBulletinTerrain.clearRegion();
   };
   if (typeof MutationObserver === 'function') {
     new MutationObserver(markRoot).observe(sheet, {
@@ -254,7 +259,73 @@
   const paintBody = (html) => {
     sheet.innerHTML = html;
     mirrorAll();
+    paintTerrain();
   };
+
+  // SNOW-979: THE PROBLEM-TERRAIN SWITCH. A body for a region inside the
+  // terrain tiles, on a day whose bulletin describes some ground, carries
+  // the "Show problem terrain on the map" strip and its rules as a
+  // json_script (public/partials/_region_sheet_terrain.html). Every body
+  // painted hands those rules to map.js's window.pwaBulletinTerrain — or
+  // clears it, for a body without them — so the map paints the region and
+  // the day the sheet shows, whether the reader switched it on just now or
+  // in an earlier session. map.js owns the layer and the remembered on/off;
+  // this owns the switch, the key under it and the zoom line.
+  const TERRAIN_TOGGLE_ID = 'region-sheet-terrain-toggle';
+
+  /**
+   * Bring the switch, its key and the zoom line in line with the layer.
+   * A cloned or cached body's checkbox starts unchecked, so this runs after
+   * every paint as well as on every announcement.
+   *
+   * @param {string} [availability] From the announcement, when there is one.
+   * @returns {void}
+   */
+  const syncTerrainControls = (availability) => {
+    const input = /** @type {HTMLInputElement|null} */ (sheet.querySelector('#' + TERRAIN_TOGGLE_ID));
+    if (!input) return;
+    const bridge = window.pwaBulletinTerrain;
+    const on = !!(bridge && bridge.isEnabled());
+    input.checked = on;
+    const key = sheet.querySelector('[data-region-sheet-terrain-key]');
+    if (key) key.hidden = !on;
+    const zoom = sheet.querySelector('[data-region-sheet-terrain-zoom]');
+    const where = availability || (bridge ? bridge.availability() : 'ok');
+    if (zoom) zoom.hidden = !(on && where === 'zoom-in');
+  };
+
+  /**
+   * Hand the painted body's rules to the map, or clear it.
+   *
+   * @returns {void}
+   */
+  const paintTerrain = () => {
+    const bridge = window.pwaBulletinTerrain;
+    if (!bridge) return;
+    const script = sheet.querySelector('#region-sheet-terrain-rules');
+    if (!script || !regionId) {
+      bridge.clearRegion();
+      return;
+    }
+    let rules = [];
+    try {
+      rules = JSON.parse(script.textContent || '[]');
+    } catch {
+      rules = [];
+    }
+    bridge.showRegion(regionId, rules);
+    syncTerrainControls();
+  };
+
+  sheet.addEventListener('change', (ev) => {
+    const target = /** @type {HTMLInputElement} */ (ev.target);
+    if (!target || target.id !== TERRAIN_TOGGLE_ID || !window.pwaBulletinTerrain) return;
+    window.pwaBulletinTerrain.setEnabled(target.checked);
+  });
+
+  document.addEventListener('snowdesk:bulletin-terrain-changed', (ev) => {
+    syncTerrainControls(ev.detail?.availability);
+  });
 
   /**
    * Copy one roundel's state onto its proxy in the sheet.
@@ -367,6 +438,9 @@
       })
       .catch(() => {
         if (mine !== seq || !controller.isOpen()) return;
+        // The map must not go on painting the last region's rules under a
+        // sheet that now names another one.
+        if (window.pwaBulletinTerrain) window.pwaBulletinTerrain.clearRegion();
         // The peek the page painted is still true: keep it, and say below
         // it that the rest could not be fetched.
         if (!peeked) {
