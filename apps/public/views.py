@@ -1597,7 +1597,7 @@ def _base_map_context(
         ``map_default_opacity_step`` (SNOW-872's configurable opening view),
         ``season_start``, ``season_end``, ``today``, ``today_pct``,
         ``content_past_days`` (SNOW-953),
-        ``scrubber_in_season``, and ``data_end`` (the latest
+        ``scrubber_in_season``, ``display_date``, and ``data_end`` (the latest
         ``RegionDayRating.date`` in the window, or ``None`` when the season
         has not started or the DB is empty).
 
@@ -1644,6 +1644,13 @@ def _base_map_context(
         # payload it already holds (SNOW-927).
         "content_past_days": settings.OFFLINE_CONTENT_PAST_DAYS,
         "scrubber_in_season": scrubber_in_season,
+        # The day map.js's boot leg fetches ratings for — ``readDisplayDate()``,
+        # the ``?d=`` the visitor asked for or else today. map.html preloads
+        # that exact URL so the fetch is answered from the preload rather than
+        # queued behind map.js. It used to prefetch ``season_end``, a day
+        # SNOW-660/793 stopped booting on: off season that was a wasted
+        # request for a date nothing paints, plus the real one after it.
+        "display_date": effective_date,
         "data_end": data_end,
         # SNOW-792: the scrubber's calendar popup builds its month grid in
         # JavaScript, so every word in it has to be handed over from here —
