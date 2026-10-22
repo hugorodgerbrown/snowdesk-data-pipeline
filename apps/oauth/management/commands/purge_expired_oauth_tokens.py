@@ -10,7 +10,9 @@ the toolkit's own ``clear_expired()`` — the rule that decides which rows are
 dead lives with the models that define them. This command adds what the
 toolkit's ``cleartokens`` lacks under Snowdesk's command contract: it is
 read-only without ``--commit``, and a run records how many rows of each
-kind went in the command run register.
+kind went — or, in a dry run, would go — in the command run register. The
+dry run gets its counts by running ``clear_expired()`` inside a transaction
+it rolls back, so the rule is the toolkit's in both modes.
 
 A rotated refresh token is revoked rather than deleted when it is spent;
 presenting it again is how reuse is detected, so ``clear_expired()`` keeps
@@ -28,6 +30,7 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
+from django.db import transaction
 from oauth2_provider.models import (
     clear_expired,
     get_access_token_model,
@@ -89,22 +92,26 @@ class Command(RegisteredCommand):
 
         """
         commit: bool = options["commit"]
-        before = _row_counts()
-        if not commit:
-            self.stdout.write(
-                "Read-only run — pass --commit to clear expired tokens. Rows now: "
-                + ", ".join(f"{name}={count}" for name, count in before.items())
-            )
-            return
-        clear_expired()
-        after = _row_counts()
+        with transaction.atomic():
+            before = _row_counts()
+            clear_expired()
+            after = _row_counts()
+            if not commit:
+                transaction.set_rollback(True)
         deleted = {name: before[name] - after[name] for name in before}
         for name, count in deleted.items():
             self.tally(f"{name}_deleted", count)
+        summary = ", ".join(f"{count} {name}" for name, count in deleted.items())
         if options["verbosity"] >= 1:
-            self.stdout.write(
-                "Deleted "
-                + ", ".join(f"{count} {name}" for name, count in deleted.items())
-                + "."
-            )
-        logger.info("purge_expired_oauth_tokens: deleted %s", deleted)
+            if commit:
+                self.stdout.write(f"Deleted {summary}.")
+            else:
+                self.stdout.write(
+                    f"Read-only run — would delete {summary}. "
+                    "Pass --commit to clear them."
+                )
+        logger.info(
+            "purge_expired_oauth_tokens: %s %s",
+            "deleted" if commit else "would delete",
+            deleted,
+        )

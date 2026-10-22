@@ -255,7 +255,8 @@ codes — so the rule for which rows are dead stays with the models that
 define them (SNOW-1193, [`docs/oauth.md`](oauth.md)). What it adds is the
 command contract: read-only without `--commit`, and the counts deleted
 (`access_tokens_deleted`, `refresh_tokens_deleted`, `codes_deleted`) land in
-the register. Exempt from row streaming: the toolkit deletes in batches of
+the register — in a dry run too, counted by running `clear_expired()` in a
+transaction that is rolled back. Exempt from row streaming: the toolkit deletes in batches of
 its own, with no per-row work to count down.
 
 ```bash

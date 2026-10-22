@@ -7,7 +7,9 @@ django-oauth-toolkit), mounted from ``config/urls.py``. Snowdesk adds:
 * :func:`authorize` — sits in front of mcp-auth's consent view at the same
   path. A signed-in account that has not verified its address gets the
   "verify your email first" page instead of the bare 403 the connect rule
-  would otherwise produce; everyone else goes straight through.
+  would otherwise produce; everyone else goes straight through. When the
+  request is for the staff ops server, the consent page is told so
+  (``ops_access``) and says what that grants.
 * :class:`ProtectedResourceMetadataView` — answers the path form of
   ``/.well-known/oauth-protected-resource/…`` ahead of mcp-auth's route, so
   the ``resource`` keeps the trailing slash of the URL called. Claude
@@ -21,9 +23,12 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBase
 from django.shortcuts import render
+from django.template.response import TemplateResponse
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 from mcp_auth.connected import connected_apps, disconnect as revoke_app
 from mcp_auth.ratelimit import limit_by_ip
@@ -40,6 +45,21 @@ logger = logging.getLogger(__name__)
 _consent = limit_by_ip("authorize", "AUTHORIZE_RATE_PER_MINUTE")(ConsentView.as_view())
 
 
+def _asks_for_ops(request: HttpRequest) -> bool:
+    """Return whether the authorize request names the ops server as its resource.
+
+    Args:
+        request: The GET or POST to ``/oauth/authorize/``.
+
+    Returns:
+        True when ``resource`` is ``/api/ops/mcp/``, with or without the slash.
+
+    """
+    resource = request.POST.get("resource") or request.GET.get("resource", "")
+    ops_path = reverse("api:mcp:ops").rstrip("/")
+    return urlsplit(resource).path.rstrip("/") == ops_path
+
+
 def authorize(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
     """Hand the consent request to mcp-auth, unless the account is unverified.
 
@@ -50,13 +70,16 @@ def authorize(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBa
 
     Returns:
         The "verify your email first" page (403) for an active, signed-in,
-        unverified account; otherwise mcp-auth's answer.
+        unverified account; otherwise mcp-auth's answer, with ``ops_access``
+        added to the consent page's context.
 
     """
     user = request.user
     if user.is_authenticated and user.is_active and not user_is_verified(user):
         return render(request, "oauth/verify_first.html", status=403)
     response: HttpResponseBase = _consent(request, *args, **kwargs)
+    if isinstance(response, TemplateResponse) and response.context_data is not None:
+        response.context_data["ops_access"] = _asks_for_ops(request)
     return response
 
 

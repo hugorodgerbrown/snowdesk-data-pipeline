@@ -20,6 +20,12 @@ POST re-runs every check. The answer is mcp_auth/returning.html, not a 302,
 because the site CSP's ``form-action 'self'`` would block the redirect
 (``MCP_AUTH["CONSENT_RETURN"] = "page"``).
 
+``ops_access`` (set by apps.oauth.views.authorize) means the request is for
+the staff ops server at /api/ops/mcp/, and the body says what that opens:
+the command run register, with its output and errors, and the estate's
+build, ingest and health details — not the avalanche data the public
+endpoint serves.
+
 ``error`` set means the request itself was bad (an unknown client, a
 callback it did not register); there is no form to show.
 
@@ -50,6 +56,12 @@ answers with oauth/verify_first.html first.
 {% block status_body %}
     {% if error %}
         {{ error.description|default:error.error }}
+    {% elif ops_access %}
+        {% blocktrans trimmed with name=application.name|default:_("The app") account=account_name %}
+            {{ name }} will be able to read Snowdesk's operational data as {{ account }}: the record of every management
+            command run, with its output and errors, and build, release, ingest and data-health details. It cannot
+            change anything.
+        {% endblocktrans %}
     {% else %}
         {% blocktrans trimmed with name=application.name|default:_("The app") account=account_name %}
             {{ name }} will be able to read avalanche bulletins, danger ratings and resort information as

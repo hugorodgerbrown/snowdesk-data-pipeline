@@ -86,6 +86,28 @@ def test_a_verified_account_sees_snowdesks_consent_page(client: Client) -> None:
     assert 'data-testid="oauth-loopback-warning"' not in html
 
 
+def test_the_ops_server_consent_says_what_it_opens(client: Client) -> None:
+    """A request for /api/ops/mcp/ names operational data, not avalanche data."""
+    client.force_login(AccountFactory.create(user__is_staff=True).user)
+    params = _params(OAuthApplicationFactory.create())
+    params["resource"] = "http://testserver/api/ops/mcp/"
+    response = client.get("/oauth/authorize/", params)
+    html = " ".join(response.content.decode().split())
+    assert response.context["ops_access"] is True
+    assert "operational data" in html
+    assert "avalanche bulletins" not in html
+
+
+def test_the_public_consent_is_not_ops(client: Client) -> None:
+    """The public endpoint's consent keeps the avalanche-data copy."""
+    client.force_login(AccountFactory.create().user)
+    response = client.get(
+        "/oauth/authorize/", _params(OAuthApplicationFactory.create())
+    )
+    assert response.context["ops_access"] is False
+    assert b"operational data" not in response.content
+
+
 def test_a_loopback_callback_carries_the_warning(client: Client) -> None:
     """A code bound for this computer says so."""
     loopback = "http://localhost:33418/callback"

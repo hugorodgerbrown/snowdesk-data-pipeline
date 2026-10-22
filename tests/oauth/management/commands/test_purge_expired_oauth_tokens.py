@@ -1,7 +1,7 @@
 """
 tests/oauth/management/commands/test_purge_expired_oauth_tokens.py (SNOW-1193).
 
-Covers the read-only default, the committed purge through django-oauth-
+Covers the read-only default (which tallies what it would delete), the committed purge through django-oauth-
 toolkit's ``clear_expired()`` (expired access tokens go, live ones stay)
 and the tallies the run leaves in the command run register.
 """
@@ -28,14 +28,15 @@ def _expired_and_live() -> tuple[AccessToken, AccessToken]:
     return expired, OAuthAccessTokenFactory.create()
 
 
-def test_dry_run_deletes_nothing() -> None:
-    """Without --commit it reports the row counts and writes nothing."""
+def test_dry_run_deletes_nothing_and_tallies_what_it_would() -> None:
+    """Without --commit it reports and records what would go, and writes nothing."""
     _expired_and_live()
     out = StringIO()
     call_command("purge_expired_oauth_tokens", stdout=out)
-    assert "Read-only run" in out.getvalue()
-    assert "access_tokens=2" in out.getvalue()
+    assert "Read-only run — would delete 1 access_tokens" in out.getvalue()
     assert AccessToken.objects.count() == 2
+    run = CommandRun.objects.get(command="purge_expired_oauth_tokens")
+    assert run.counts["access_tokens_deleted"] == 1
 
 
 def test_commit_deletes_expired_tokens_and_keeps_live_ones() -> None:

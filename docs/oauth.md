@@ -51,7 +51,9 @@ override the package's. It has no models of its own any more; migration
    gets `oauth/verify_first.html` (403). Otherwise mcp-auth's consent view
    renders Snowdesk's `mcp_auth/authorize.html`: the app, the host the code
    goes to (with a warning for a loopback callback), the account it will act
-   as, and "Use another account".
+   as, and "Use another account". A request whose `resource` is the ops
+   server says it opens operational data, not avalanche data
+   (`ops_access`).
 5. Allow or Cancel posts back. The answer is `mcp_auth/returning.html`, a
    page that moves on with a meta refresh, not a 302 — see below.
 6. Claude exchanges the code at `/oauth/token/` with its PKCE verifier for a
@@ -114,7 +116,8 @@ own credential inside the view, after the middleware has run.
 - **`purge_expired_oauth_tokens`** — django-oauth-toolkit's
   `clear_expired()` under Snowdesk's command contract: read-only without
   `--commit`, tallies `access_tokens_deleted`, `refresh_tokens_deleted` and
-  `codes_deleted`. Scheduled daily at 03:45 UTC (`schedule.py`).
+  `codes_deleted` (a dry run tallies what it would delete, by running the
+  purge in a transaction it rolls back). Scheduled daily at 03:45 UTC (`schedule.py`).
 
 ## Testing
 
