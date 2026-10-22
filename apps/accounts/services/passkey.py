@@ -298,8 +298,8 @@ def verify_authentication_response(
         )
     except Exception as exc:
         logger.exception(
-            "Passkey authentication verification failed for credential %s: %s",
-            raw_id,
+            "Passkey authentication verification failed for passkey %s: %s",
+            passkey.pk,
             exc,
         )
         raise PasskeyError("Authentication verification failed.") from exc

@@ -26,7 +26,11 @@ Privacy, by configuration rather than by convention:
 * ``_before_send`` drops the request URL, query string and ``Referer``.
   Account-access and share URLs carry tokens, and a token is a capability;
   the event's transaction is the route pattern, which says where it
-  happened without them.
+  happened without them. A browser report's ``pathname`` is reduced to its
+  route pattern the same way (``_route_of``).
+* Log records become events at ERROR and above, but never breadcrumbs:
+  some INFO lines name a share token, and a breadcrumb would carry it into
+  the next error's event.
 
 Any Sentry-compatible host (GlitchTip, Better Stack) works by changing
 ``SENTRY_DSN`` alone.
@@ -38,7 +42,9 @@ import logging
 from typing import TYPE_CHECKING
 
 import sentry_sdk
+from django.urls import Resolver404, resolve
 from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
 
 if TYPE_CHECKING:
     from sentry_sdk.types import Event, Hint
@@ -88,7 +94,10 @@ def init_sentry(dsn: str, environment: str, release: str) -> bool:
         dsn=dsn,
         environment=environment,
         release=release,
-        integrations=[DjangoIntegration(transaction_style="url")],
+        integrations=[
+            DjangoIntegration(transaction_style="url"),
+            LoggingIntegration(level=None, event_level=logging.ERROR),
+        ],
         send_default_pii=False,
         include_local_variables=False,
         max_request_body_size="never",
@@ -96,6 +105,29 @@ def init_sentry(dsn: str, environment: str, release: str) -> bool:
         before_send=_before_send,
     )
     return True
+
+
+def _route_of(pathname: str) -> str:
+    """Return the route pattern ``pathname`` resolves to, or ``"?"``.
+
+    ``/account/access/abc123/`` becomes ``/account/access/<str:token>/``,
+    so the token never leaves the server. A path that does not resolve is
+    replaced outright: it could carry anything.
+
+    Args:
+        pathname: The browser's ``location.pathname``.
+
+    Returns:
+        The route pattern with a leading slash, or ``"?"``.
+
+    """
+    if not pathname:
+        return ""
+    try:
+        match = resolve(pathname)
+    except Resolver404:
+        return "?"
+    return "/" + match.route.lstrip("/")
 
 
 def capture_js_error(
@@ -110,8 +142,11 @@ def capture_js_error(
     ``colno`` and ``stack``; an opted-out one only ``kind`` and
     ``pathname`` (SNOW-894). Issues group on message + filename when there
     is a message, and on pathname + kind otherwise, so an opted-out crash
-    still counts against the page it happened on. A no-op when the SDK is
-    not initialised.
+    still counts against the page it happened on. The page is its route
+    pattern, never the path, and the path is replaced by the pattern
+    wherever else it appears — an inline script's ``filename`` and stack
+    frames are the document's own URL. A no-op when the SDK is not
+    initialised.
 
     Args:
         properties: The envelope's ``properties``, already redacted
@@ -120,9 +155,16 @@ def capture_js_error(
         platform: The envelope's platform, when present.
 
     """
-    message = str(properties.get("message") or "")
-    filename = str(properties.get("filename") or "")
-    pathname = str(properties.get("pathname") or "")
+    raw_path = str(properties.get("pathname") or "")
+    pathname = _route_of(raw_path)
+
+    def scrub(value: object) -> object:
+        if isinstance(value, str) and raw_path and raw_path != "/":
+            return value.replace(raw_path, pathname)
+        return value
+
+    message = str(scrub(properties.get("message") or ""))
+    filename = str(scrub(properties.get("filename") or ""))
     kind = str(properties.get("kind") or "")
     if message:
         fingerprint = ["js.error", message, filename]
@@ -141,7 +183,7 @@ def capture_js_error(
             "platform": platform or "",
         },
         "extra": {
-            key: properties[key]
+            key: scrub(properties[key])
             for key in ("filename", "lineno", "colno", "stack")
             if key in properties
         },
