@@ -76,8 +76,8 @@ parameters never reaches this template — views.home 301s it to /map/.
             </h1>
             <p class="text-base leading-prose text-text-2 mb-6">
                 {% blocktrans trimmed %}
-                    Today’s avalanche bulletin and weather forecast for where you’re going. Upload your route for an
-                    analysis against the bulletin, and share it as a trip.
+                    Official avalanche bulletins, mountain weather and route analysis for the European Alps. Explore the
+                    conditions, examine your terrain, and plan your trip.
                 {% endblocktrans %}
             </p>
             <div class="flex flex-wrap items-center justify-center gap-3">
@@ -89,94 +89,152 @@ parameters never reaches this template — views.home 301s it to /map/.
             </div>
         </section>
 
-        <a
-            href="{{ map_url }}"
-            class="block rounded-card overflow-hidden border border-border bg-card mb-12"
-            data-testid="home-map-image"
-        >
-            {# A still of the map, not the map: this page loads no map JavaScript. #}
-            <img
-                src="{% static 'img/home/map.jpg' %}"
-                width="2000"
-                height="1125"
-                class="block w-full h-auto"
-                alt="{% trans 'The Snowdesk map on 11 January 2026: Swiss avalanche warning regions coloured by danger level, with Martigny–Verbier selected and the season timeline along the bottom.' %}"
+        {# ---------------------------------------------------------------- #}
+        {# Three features, each a real screenshot beside a short account.   #}
+        {# Screenshot and text alternate sides on desktop and stack on a    #}
+        {# phone; the route section is the differentiator, so it sits on a  #}
+        {# card and takes the wider column.                                  #}
+        {# ---------------------------------------------------------------- #}
+        <div class="grid gap-10 md:gap-12 mb-12" data-testid="home-features">
+            {# A. Avalanche conditions #}
+            <section
+                class="grid gap-6 md:grid-cols-2 md:gap-10 items-center"
+                aria-labelledby="home-conditions-heading"
+                data-testid="home-feature-conditions"
             >
-        </a>
+                <div class="md:order-2">
+                    <a
+                        href="{{ map_url }}"
+                        class="block rounded-card overflow-hidden border border-border bg-card"
+                    >
+                        <img
+                            src="{% static 'img/home/avalanche-conditions.jpg' %}"
+                            width="1440"
+                            height="900"
+                            loading="lazy"
+                            class="block w-full h-auto"
+                            alt="{% trans 'The Snowdesk map on 11 January 2026: Swiss warning regions coloured by danger level, with Martigny–Verbier open at level 4 and its avalanche problem, aspects and elevation listed.' %}"
+                        >
+                    </a>
+                </div>
+                <div class="md:order-1">
+                    {% trans "Avalanche conditions" as conditions_eyebrow %}
+                    {% include "includes/_eyebrow.html" with text=conditions_eyebrow tag="p" class_extra="mb-2" %}
+                    <h2 id="home-conditions-heading" class="text-xl font-semibold text-text-1 mb-3">
+                        {% trans "The official bulletin, on one map" %}
+                    </h2>
+                    <p class="text-sm leading-prose text-text-2">
+                        {% blocktrans trimmed %}
+                            Every warning region, coloured by the day’s danger level. Open one to read the bulletin as
+                            the warning service issued it: the avalanche problems, the aspects and elevations they
+                            affect, and the forecaster’s own words. Step back through the season to see how the
+                            snowpack got here.
+                        {% endblocktrans %}
+                    </p>
+                </div>
+            </section>
+
+            {# B. Your route, analysed — the differentiator #}
+            <section
+                class="grid gap-6 md:grid-cols-[3fr_2fr] md:gap-10 items-center rounded-card border border-border bg-card p-4 md:p-8"
+                aria-labelledby="home-route-heading"
+                data-testid="home-feature-route"
+            >
+                <div>
+                    <a
+                        href="{{ map_url }}?panel=routes"
+                        class="block rounded-card overflow-hidden border border-border"
+                    >
+                        <img
+                            src="{% static 'img/home/route-analysis.jpg' %}"
+                            width="1440"
+                            height="900"
+                            loading="lazy"
+                            class="block w-full h-auto"
+                            alt="{% trans 'A ski tour off the back of Mont Fort analysed in Snowdesk: the line coloured by slope angle, its elevation profile, and a point card reading a fall-line descent of 15–25° on steep 30–35° ground.' %}"
+                        >
+                    </a>
+                </div>
+                <div>
+                    {% trans "Your route, analysed" as route_eyebrow %}
+                    {% include "includes/_eyebrow.html" with text=route_eyebrow tag="p" class_extra="mb-2" %}
+                    <h2 id="home-route-heading" class="text-2xl font-semibold tracking-tight text-text-1 mb-3">
+                        {% trans "See the ground your line crosses" %}
+                    </h2>
+                    <p class="text-sm leading-prose text-text-2 mb-3">
+                        {% blocktrans trimmed %}
+                            Upload a GPX and Snowdesk reads the terrain under and around it: the slope angle at every
+                            point, steep ground above that could release onto you, and the climbs and descents on the
+                            elevation profile. Pick a day to see which stretches sit on the aspects and elevations that
+                            day’s avalanche problems name.
+                        {% endblocktrans %}
+                    </p>
+                    <p class="text-sm leading-prose text-text-3">
+                        {% blocktrans trimmed %}
+                            No score and no verdict: the judgement stays with you. Full terrain analysis covers
+                            Switzerland today.
+                        {% endblocktrans %}
+                    </p>
+                </div>
+            </section>
+
+            {# C. Mountain weather #}
+            <section
+                class="grid gap-6 md:grid-cols-2 md:gap-10 items-center"
+                aria-labelledby="home-weather-heading"
+                data-testid="home-feature-weather"
+            >
+                <div class="md:order-2">
+                    <a
+                        href="{% url 'public:resorts' %}"
+                        class="block rounded-card overflow-hidden border border-border bg-card"
+                    >
+                        <img
+                            src="{% static 'img/home/mountain-weather.jpg' %}"
+                            width="1062"
+                            height="806"
+                            loading="lazy"
+                            class="block w-full h-auto"
+                            alt="{% trans 'The Snowdesk forecast for Verbier village at 1,494 m on 22 October: today hour by hour, with temperature, freezing level and snowfall.' %}"
+                        >
+                    </a>
+                </div>
+                <div class="md:order-1">
+                    {% trans "Mountain weather" as weather_eyebrow %}
+                    {% include "includes/_eyebrow.html" with text=weather_eyebrow tag="p" class_extra="mb-2" %}
+                    <h2 id="home-weather-heading" class="text-xl font-semibold text-text-1 mb-3">
+                        {% trans "Forecasts at the heights you’ll pass through" %}
+                    </h2>
+                    <p class="text-sm leading-prose text-text-2">
+                        {% blocktrans trimmed %}
+                            Snowfall, wind and freezing level for the valley, the lift and the summit, seven days
+                            ahead, with today and tomorrow hour by hour.
+                        {% endblocktrans %}
+                    </p>
+                </div>
+            </section>
+        </div>
 
         {# ---------------------------------------------------------------- #}
-        {# What a reader gets, in the order a tour is prepared              #}
+        {# Supporting features: compact, no screenshots                     #}
         {# ---------------------------------------------------------------- #}
-        <div class="grid gap-4 md:grid-cols-2 mb-12" data-testid="home-sections">
-            {% card %}
-            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">
-                {% trans "The bulletin, and the season behind it" %}
-            </h2>
-            <p class="text-sm leading-prose text-text-2">
-                {% blocktrans trimmed %}
-                    Today’s danger level, avalanche problems, aspects and elevations — the whole bulletin, as the
-                    warning service issued it. Scroll back through the season to see how the snowpack got here.
-                {% endblocktrans %}
-            </p>
-            {% endcard %}
-
-            {% card %}
-            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">
-                {% trans "Weather forecast for the valley, the lift and the summit" %}
-            </h2>
-            <p class="text-sm leading-prose text-text-2">
-                {% blocktrans trimmed %}
-                    Seven days of snowfall, wind and freezing level at the heights you’ll pass through, with today and
-                    tomorrow hour by hour.
-                {% endblocktrans %}
-            </p>
-            {% endcard %}
-
-            {% card %}
-            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">{% trans "Route analysis" %}</h2>
-            <p class="text-sm leading-prose text-text-2">
-                {% blocktrans trimmed %}
-                    Upload a route (GPX) to see the slope angle under your line, where steep ground above could release
-                    onto you, and where a fall would not stop. Full terrain analysis covers Switzerland today.
-                {% endblocktrans %}
-            </p>
-            {% endcard %}
-
-            {% card %}
-            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">
-                {% trans "Your route against the day’s bulletin" %}
-            </h2>
-            <p class="text-sm leading-prose text-text-2">
-                {% blocktrans trimmed %}
-                    Pick a day and see which stretches of your line sit on the aspects and elevations each avalanche
-                    problem names. No score — the judgement stays with you.
-                {% endblocktrans %}
-            </p>
-            {% endcard %}
-
-            {% card %}
-            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">
-                {% trans "Trips: one link for the group" %}
-            </h2>
-            <p class="text-sm leading-prose text-text-2">
-                {% blocktrans trimmed %}
-                    Give your route a date and meeting point and share with friends as a trip, with the weather forecast
-                    and bulletin information included.
-                {% endblocktrans %}
-            </p>
-            {% endcard %}
-
-            {% card %}
-            <h2 class="text-sheet-subhead font-semibold text-text-1 mb-2">
-                {% trans "It still opens without signal" %}
-            </h2>
-            <p class="text-sm leading-prose text-text-2">
-                {% blocktrans trimmed %}
-                    Download an area before you leave: the map, the bulletins and the weather forecast for it stay on
-                    your phone. Field reports you file up there are sent when you’re back in range.
-                {% endblocktrans %}
-            </p>
-            {% endcard %}
+        <div class="grid gap-6 sm:grid-cols-2 max-w-wide mx-auto mb-12" data-testid="home-sections">
+            <div>
+                <h2 class="text-sheet-subhead font-semibold text-text-1 mb-1">{% trans "Trips: one link for the group" %}</h2>
+                <p class="text-sm leading-prose text-text-2">
+                    {% blocktrans trimmed %}
+                        The route, the date and meeting point, with the day’s weather and bulletin, in one link.
+                    {% endblocktrans %}
+                </p>
+            </div>
+            <div>
+                <h2 class="text-sheet-subhead font-semibold text-text-1 mb-1">{% trans "It still opens without signal" %}</h2>
+                <p class="text-sm leading-prose text-text-2">
+                    {% blocktrans trimmed %}
+                        Download the maps, bulletins and forecasts for an area before you leave mobile coverage.
+                    {% endblocktrans %}
+                </p>
+            </div>
         </div>
 
         {# ---------------------------------------------------------------- #}
