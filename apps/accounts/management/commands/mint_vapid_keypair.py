@@ -53,7 +53,9 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from decouple import config
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
+
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +117,7 @@ def _private_key_pem(private_key: ec.EllipticCurvePrivateKey) -> str:
     return pem_bytes.decode("ascii")
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Generate a VAPID keypair for Web Push.
 
     Dry-run by default; pass --commit to write the raw private scalar to
@@ -123,6 +125,11 @@ class Command(BaseCommand):
 
     SNOW-602 exempt: no queryset loop — a one-shot keypair generation.
     """
+
+    # The run is registered but its output is not (SNOW-1189):
+    # it prints the VAPID private key, and the register is readable in the admin
+    # and over MCP.
+    capture_output = False
 
     help = (
         "Generate a VAPID P-256 keypair for Web Push. "

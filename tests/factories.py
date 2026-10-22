@@ -32,7 +32,7 @@ from apps.bulletins.services.day_rating import (
     DAY_RATING_VERSION,
     target_day_for_valid_from,
 )
-from apps.core.models import RequestLog
+from apps.core.models import CommandRun, RequestLog
 from apps.downloads.models import DownloadArea
 from apps.favourites.models import Favourite
 from apps.locations.models import Location, ResortLocation
@@ -365,6 +365,31 @@ class ResortLocationFactory(factory.django.DjangoModelFactory[ResortLocation]):
     location = factory.SubFactory(LocationFactory)
     role = ResortLocation.ROLE.TOP
     is_primary = False
+
+
+class CommandRunFactory(factory.django.DjangoModelFactory[CommandRun]):
+    """Factory for CommandRun instances — a finished, successful shell run."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = CommandRun
+
+    command = "relink_bulletin_regions"
+    app_label = "bulletins"
+    arguments = factory.LazyFunction(lambda: {"commit": True, "source": "ALBINA"})
+    argv = "relink_bulletin_regions --source albina --commit"
+    mode = CommandRun.MODE.COMMIT
+    status = CommandRun.STATUS.SUCCEEDED
+    exit_code = 0
+    started_at = factory.LazyFunction(django_timezone.now)
+    finished_at = factory.LazyAttribute(lambda o: o.started_at)
+    counts = factory.LazyFunction(lambda: {"relinked": 0})
+    invoked_via = CommandRun.INVOKED_VIA.SHELL
+    operator = "hugo"
+    environment = "test"
+    git_sha = "dev"
+    release = "45"
 
 
 class RequestLogFactory(factory.django.DjangoModelFactory[RequestLog]):

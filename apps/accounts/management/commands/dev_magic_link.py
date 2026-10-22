@@ -20,20 +20,26 @@ from argparse import ArgumentParser
 from typing import Any
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.utils import timezone
 
 from apps.accounts.models import Account
 from apps.accounts.services.token import SALT_ACCOUNT_ACCESS, generate_token
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Print a magic-link URL for an account, creating it if needed.
 
     SNOW-602 exempt: no queryset loop — operates on a single named account.
     """
+
+    # The run is registered but its output is not (SNOW-1189):
+    # it prints a working sign-in link, and the register is readable in the admin
+    # and over MCP.
+    capture_output = False
 
     help = "Print a dev magic-link URL for local passkey / subscription testing."
 

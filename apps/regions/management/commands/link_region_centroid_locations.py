@@ -69,13 +69,14 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import transaction
 
 from apps.core.command_iteration import (
     announce_link_run,
     iterate_rows,
 )
+from apps.core.command_register import RegisteredCommand
 from apps.locations.services.anchor import anchor_location
 from apps.regions.fixture_utils import centre_from_bbox
 from apps.regions.models import MicroRegion
@@ -118,7 +119,7 @@ def _centre_of(region: MicroRegion) -> tuple[float, float] | None:
     return float(centre["lat"]), float(centre["lon"])
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Give every MicroRegion with a boundary a centroid Location.
 
     Read-only by default; pass --commit to persist. Regions already linked,
@@ -304,6 +305,10 @@ class Command(BaseCommand):
                         "No data written. Pass --commit to persist."
                     )
                 )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("linked", counts["linked"])
+        self.tally("skipped", counts["skipped"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "link_region_centroid_locations finished: linked=%d skipped=%d "
             "failed=%d commit=%s",

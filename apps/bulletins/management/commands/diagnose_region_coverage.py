@@ -34,16 +34,15 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand
-
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Diagnose RegionDayRating coverage gaps across the Swiss region fixture."""
 
     help = (

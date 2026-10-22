@@ -42,16 +42,17 @@ from argparse import ArgumentParser
 from datetime import date
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 
 from apps.core.command_iteration import iterate_rows, non_negative_float
+from apps.core.command_register import RegisteredCommand
 from apps.locations.models import Location
 from apps.weather.services import backfill
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Backfill the missing Weather days for every active location.
 
     Read-only by default; pass --commit to persist. Per-location failures
@@ -198,6 +199,13 @@ class Command(BaseCommand):
                         "Pass --commit to persist."
                     )
                 )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("locations", counts["locations"])
+        self.tally("filled", counts["filled"])
+        self.tally("already_present", counts["already_present"])
+        self.tally("unresolved", counts["unresolved"])
+        self.tally("requests", counts["requests"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "backfill_weather finished: locations=%d filled=%d already_present=%d "
             "unresolved=%d requests=%d failed=%d commit=%s",

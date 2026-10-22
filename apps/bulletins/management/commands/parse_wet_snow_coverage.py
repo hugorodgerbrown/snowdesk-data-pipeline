@@ -30,13 +30,12 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand
-
 import apps.bulletins.services.prose.en  # noqa: F401 — registers the "en" parser
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.prose import parse_for
 from apps.bulletins.services.render_model import WET_PROBLEM_TYPES
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ class _Stats:
 # ---------------------------------------------------------------------------
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Report wet-snow prose parser hit rate over the local bulletin archive."""
 
     help = (

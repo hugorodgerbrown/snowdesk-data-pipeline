@@ -49,6 +49,7 @@ from apps.bulletins.services.meteofrance_fetcher import (
 from apps.bulletins.services.render_model import RenderModelBuildError, detect_source
 from apps.bulletins.services.slf_fetcher import _slf_pdf_url
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ def _albina_cdn_region(micro_region_id: str) -> str:
     return "EUREGIO"
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Back-fill Bulletin.pdf_url for all rows where it is currently empty."""
 
     help = (
@@ -126,6 +127,10 @@ class Command(BaseCommand):
 
         counts, batch = _process_queryset(self, qs, commit, verbosity=verbosity)
         _log_summary(self, verbosity, commit, counts, len(batch) if not commit else 0)
+        # Counts for the command run register (SNOW-1190). An unresolvable
+        # bulletin is recorded as ``failed`` so the run reads as PARTIAL.
+        for key, n in counts.items():
+            self.tally("failed" if key == "error" else str(key).lower(), n)
         logger.info("backfill_pdf_urls finished: %s commit=%s", counts, commit)
 
         if counts["error"] > 0:

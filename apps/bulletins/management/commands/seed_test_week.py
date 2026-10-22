@@ -38,7 +38,7 @@ import logging
 from typing import Any
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 
 from apps.bulletins.services.golden_week import (
     GOLDEN_WEEK_START,
@@ -48,11 +48,12 @@ from apps.bulletins.services.golden_week import (
     golden_week_dates,
     load_golden_week,
 )
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Seed the golden week of real bulletins; read-only unless --commit.
 
     SNOW-602 exempt: a fixed-size seed spec (seven days, three providers),

@@ -38,17 +38,18 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.utils import timezone
 
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.locations.models import Location
 from apps.weather.services.fetch import fetch_all_locations
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Fetch today's Open-Meteo forecast for every active location.
 
     Read-only by default; pass --commit to persist. Forecast endpoint only.
@@ -150,6 +151,10 @@ class Command(BaseCommand):
                         "to persist."
                     )
                 )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("created", counts["created"])
+        self.tally("updated", counts["updated"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "fetch_weather finished: created=%d updated=%d failed=%d commit=%s",
             counts["created"],

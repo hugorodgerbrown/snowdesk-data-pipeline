@@ -57,10 +57,11 @@ import time
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db.models import Q
 
 from apps.core.command_iteration import iterate_rows, non_negative_float
+from apps.core.command_register import RegisteredCommand
 from apps.routes.models import Route
 from apps.routes.services.slope_segments import build_slope_samples
 
@@ -73,7 +74,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_DELAY_S = 1.0
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Sample the terrain under every Route that has never been sampled.
 
     Read-only by default; pass --commit to persist. Exits non-zero if any
@@ -264,6 +265,10 @@ class Command(BaseCommand):
                         "data written. Pass --commit to sample."
                     )
                 )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("sampled", counts["sampled"])
+        self.tally("unanswered", counts["unanswered"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "backfill_route_slope_samples finished: sampled=%d unanswered=%d "
             "failed=%d commit=%s",

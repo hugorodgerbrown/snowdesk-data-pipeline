@@ -52,8 +52,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from django.core.management.base import BaseCommand
-
+from apps.core.command_register import RegisteredCommand
 from apps.regions.fixture_utils import load_fixture, write_fixture
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_region_blob
 
@@ -67,7 +66,7 @@ _LABEL_SUB = "regions.subregion"
 _LABEL_MICRO = "regions.microregion"
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Recompute L1/L2 centre + bbox from L4 unions. Read-only unless --commit.
 
     SNOW-602 exempt: operates on the parsed on-disk fixture JSON in memory,
@@ -116,6 +115,10 @@ class Command(BaseCommand):
         # this command already rewrites centre/bbox/boundary in place on
         # this same file.
         region_changes = _update_basemap_download_inplace(regions)
+        # Counts for the command run register (SNOW-1190).
+        self.tally("major_changes", major_changes)
+        self.tally("sub_changes", sub_changes)
+        self.tally("region_changes", region_changes)
 
         if verbosity >= 1:
             self.stdout.write(

@@ -114,7 +114,7 @@ class TestPruneOrphanLocations:
         """Every PROTECT relation onto Location is covered by ``REFERRERS``.
 
         SNOW-1171 was a PROTECT foreign key (``Trip.meeting_point``) added
-        without a matching exclusion in ``_orphans()``, which made every
+        without a matching exclusion in the orphan rule, which made every
         ``--commit`` raise. This reads the relations off the model so the
         next one fails here, naming the accessor, instead of in production.
 
@@ -123,7 +123,7 @@ class TestPruneOrphanLocations:
         """
         # get_accessor_name() is typed str | None; str() satisfies mypy. A
         # related_name="+" relation is hidden, so _meta.related_objects never
-        # lists it and this guard cannot see it -- nor could _orphans() filter
+        # lists it and this guard cannot see it -- nor could orphaned() filter
         # on it, since it has no reverse accessor.
         protected = {
             str(rel.get_accessor_name())
@@ -136,7 +136,7 @@ class TestPruneOrphanLocations:
         assert not missing, (
             f"PROTECT relation(s) {sorted(missing)} onto Location are not "
             "excluded: add each accessor as `<accessor>__isnull=True` in "
-            "prune_orphan_locations._orphans() and as a branch in REFERRERS "
+            "LocationQuerySet.orphaned() and as a branch in REFERRERS "
             "and test_a_referenced_location_survives."
         )
         stale = covered - protected

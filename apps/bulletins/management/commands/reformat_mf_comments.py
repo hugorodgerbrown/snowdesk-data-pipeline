@@ -46,7 +46,7 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.day_rating import (
@@ -61,6 +61,7 @@ from apps.bulletins.services.render_model import (
     build_render_model,
 )
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -134,7 +135,7 @@ def _upgrade_raw_data(raw_data: dict) -> tuple[dict, int]:
     return new_raw_data, fields_upgraded
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Reformat plain-text FR bulletin comments to HTML using format_comment_as_html."""
 
     help = (

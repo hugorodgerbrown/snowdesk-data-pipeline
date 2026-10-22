@@ -37,16 +37,17 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.utils.text import slugify
 
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import Resort
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Mint a slug for every Resort that has none.
 
     Read-only by default; pass --commit to persist. Exits non-zero if any
@@ -169,6 +170,9 @@ class Command(BaseCommand):
                         "persist."
                     )
                 )
+        # Counts for the command run register (SNOW-1190).
+        self.tally("minted", counts["minted"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "backfill_resort_slugs finished: minted=%d failed=%d commit=%s",
             counts["minted"],

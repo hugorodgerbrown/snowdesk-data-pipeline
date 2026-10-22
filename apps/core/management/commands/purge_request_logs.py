@@ -53,9 +53,10 @@ from argparse import ArgumentParser
 from datetime import timedelta
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.utils import timezone
 
+from apps.core.command_register import RegisteredCommand
 from apps.core.models import RequestLog
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,7 @@ logger = logging.getLogger(__name__)
 RETENTION_DAYS: int = 365
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Delete RequestLog rows past the retention window."""
 
     help = (
@@ -145,6 +146,8 @@ class Command(BaseCommand):
             return
 
         if not commit:
+            # Counts for the command run register (SNOW-1190).
+            self.tally("deleted", expired_count)
             if verbosity >= 1:
                 self.stdout.write(
                     self.style.WARNING(
@@ -173,6 +176,7 @@ class Command(BaseCommand):
         # dict and anything cascaded is reported as what it is.
         _, by_model = RequestLog.objects.filter(created_at__lt=cutoff).delete()
         deleted = by_model.get(RequestLog._meta.label, 0)  # noqa: SLF001
+        self.tally("deleted", deleted)
         cascaded = sum(
             count
             for label, count in by_model.items()

@@ -19,6 +19,8 @@ DO_NOT_ADD/
 .envrc
 # A worktree's throwaway SECRET_KEY, written by bin/init-worktree (SNOW-1028).
 /settings.ini
+# The build timestamp bin/build.sh writes for APP_RELEASED_AT (SNOW-1191).
+/BUILT_AT
 .claude/worktrees/
 .venv
 .venv/

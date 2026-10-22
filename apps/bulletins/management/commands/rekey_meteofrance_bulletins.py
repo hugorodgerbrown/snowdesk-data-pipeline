@@ -59,7 +59,7 @@ from argparse import ArgumentParser
 from datetime import date
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import IntegrityError, transaction
 
 from apps.bulletins.models import Bulletin
@@ -73,6 +73,7 @@ from apps.bulletins.services.meteofrance_identity import (
     build_bulletin_id,
 )
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -173,7 +174,7 @@ def _region_code(bulletin: Bulletin) -> str | None:
     return f"{parts[0]}-{parts[1]}"
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Re-key Météo-France bulletins onto the publication-stamped identifier."""
 
     help = (
@@ -426,6 +427,11 @@ class Command(BaseCommand):
 
         if commit and pairs and not skip_day_ratings:
             failed += self._refresh_day_ratings(pairs, verbosity)
+
+        # Counts for the command run register (SNOW-1190).
+        self.tally("rekeyed", changed)
+        self.tally("current", skipped)
+        self.tally("failed", failed)
 
         if verbosity:
             prefix = "Re-keyed" if commit else "Would re-key"

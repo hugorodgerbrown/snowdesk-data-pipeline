@@ -2,7 +2,7 @@
 name: deployment
 description: Path-to-live: main→staging, release→production, release PR via bin/cut-release, Deploy-Step trailer, release-sync fast-forward, CalVer tags
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-22
 ---
 
 # Deployment / path-to-live
@@ -311,6 +311,22 @@ commit body, so a trailer written on the feature branch reaches the range the
 script reads. A release with no steps gets no section — an always-present
 heading would invite the operator to hunt for something that is not there,
 which is how a real one stops being noticed.
+
+**Shipping the list.** The same steps go into a tracked `DEPLOY_STEPS`
+file beside `VERSION`, written into the bump commit by `cut-release` and
+rewritten on every release (header only when a release has none), so the
+deployed build carries its own list. The ops MCP tool `deploy_steps_status`
+(SNOW-1192, [mcp-server.md](mcp-server.md#the-ops-server-staff-only))
+compares it with the command run register: a step is `DONE` once a
+successful run (a `COMMIT` run, if the step passes `--commit`) is stamped
+with the release now deployed. Runs on an earlier build do not count.
+
+**Recording that a step ran.** Every run of a project command lands in the
+command run register (`CommandRun`, SNOW-1189) with the git SHA and release
+number it ran on, dry runs included. Before running a step in a Render
+shell, `export SNOWDESK_OPERATOR=<your name>` so the row says who ran it —
+every shell runs as the same OS user. See
+[management-commands.md](management-commands.md#the-command-run-register).
 
 **Backstop.** Because that still depends on somebody remembering, the script
 also looks for files added in the range matching

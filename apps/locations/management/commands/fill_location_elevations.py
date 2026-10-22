@@ -45,9 +45,8 @@ import time
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand
-
 from apps.core.command_iteration import iterate_rows, non_negative_float
+from apps.core.command_register import RegisteredCommand
 from apps.locations.management.commands.dump_locations_sheets import notes_from
 from apps.locations.management.commands.import_locations import DEFAULT_SHEET_PATH
 from apps.locations.models import Location
@@ -73,7 +72,7 @@ ELEVATION_DISAGREEMENT_M = 60.0
 _CLAIMED_RE = re.compile(r"ele=(\d+(?:\.\d+)?)\s*m")
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Resolve the elevation of every Location that has none."""
 
     help = "Resolve Location.elevation_m from each location's coordinate."
@@ -141,6 +140,9 @@ class Command(BaseCommand):
                 location, counts, commit=commit, delay=delay, verbosity=verbosity
             )
 
+        # Counts for the command run register (SNOW-1190).
+        self.tally("resolved", counts["resolved"])
+        self.tally("failed", counts["failed"])
         self.stdout.write(f"{counts['resolved']} resolved, {counts['failed']} failed.")
         if not commit:
             self.stdout.write("Dry-run (no --commit) — nothing written.")

@@ -7,7 +7,8 @@
 # commit is byte-identical to the one already verified on staging.
 #
 # This script does NOT touch `release`. It opens a **release PR** against
-# `main` carrying one commit — the `VERSION` bump — and a description
+# `main` carrying one commit — the `VERSION` bump, plus the release's
+# `DEPLOY_STEPS` list (SNOW-1192) — and a description
 # summarising every ticket the release will ship. Merging that PR is the
 # release: `release-sync.yml` sees `VERSION` change on `main`, waits for that
 # commit's required checks, fast-forwards `release`, and hands off to
@@ -190,6 +191,19 @@ if [[ -n "$DEPLOY_STEPS" ]]; then
     done <<<"$DEPLOY_STEPS"
 fi
 
+# SNOW-1192: the same steps, shipped in the tree. The bump commit writes them
+# to DEPLOY_STEPS beside VERSION, so the deployed build carries its own list
+# and the ops MCP's deploy_steps_status can compare it with the command run
+# register: "which of release N's steps have not run here?" becomes a query.
+# Rewritten on every release, so the file only ever names the release that
+# carries it; a release with no steps ships the header alone.
+DEPLOY_STEPS_FILE="# Deploy steps for release v${NEXT}: run each once after production deploys.
+# Written by bin/cut-release from the Deploy-Step: trailers in the release.
+# Read by the ops MCP tool deploy_steps_status (SNOW-1192)."
+if [[ -n "$DEPLOY_STEPS" ]]; then
+    DEPLOY_STEPS_FILE+=$'\n'"${DEPLOY_STEPS}"
+fi
+
 # Backstop for the trailer nobody remembered to write. A new one-shot data
 # command in the range that no trailer mentions is *probably* a missed step —
 # but only probably, since such a command can legitimately ship without
@@ -267,6 +281,10 @@ echo
 echo "${PR_BODY}"
 echo "─────────────────────────────────────────────────────────────"
 echo
+echo "── DEPLOY_STEPS ─────────────────────────────────────────────"
+echo "${DEPLOY_STEPS_FILE}"
+echo "─────────────────────────────────────────────────────────────"
+echo
 
 # SNOW-818: printed AFTER the body so it is the last thing on screen before
 # the dry-run notice, and to stderr so it survives a redirect of the body.
@@ -302,6 +320,8 @@ BLOB="$(printf '%s\n' "$NEXT" | git hash-object -w --stdin)"
 export GIT_INDEX_FILE="${TMP_DIR}/index"
 git read-tree "$MAIN_SHA"
 git update-index --cacheinfo "100644,${BLOB},VERSION"
+STEPS_BLOB="$(printf '%s\n' "$DEPLOY_STEPS_FILE" | git hash-object -w --stdin)"
+git update-index --add --cacheinfo "100644,${STEPS_BLOB},DEPLOY_STEPS"
 TREE="$(git write-tree)"
 unset GIT_INDEX_FILE
 

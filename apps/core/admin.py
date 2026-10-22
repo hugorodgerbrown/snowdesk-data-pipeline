@@ -9,13 +9,17 @@ Also registers ``IdempotencyRecord`` — the cache table used by
 ``apps.core.idempotency.IdempotencyMiddleware`` to deduplicate PWA mutation
 retries. Operators occasionally need to inspect (or manually purge) a
 stuck key; the admin surface makes that possible without shell access.
+
+And ``CommandRun`` — the management command run register (SNOW-1189). Read
+only: a row is a record of what happened, written by the command itself.
 """
 
 import logging
 
 from django.contrib import admin
+from django.http import HttpRequest
 
-from .models import IdempotencyRecord, RequestLog
+from .models import CommandRun, IdempotencyRecord, RequestLog
 
 logger = logging.getLogger(__name__)
 
@@ -91,3 +95,68 @@ class IdempotencyRecordAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     ]
+
+
+@admin.register(CommandRun)
+class CommandRunAdmin(admin.ModelAdmin):
+    """Admin view for CommandRun — the read-only command run register."""
+
+    list_display = [
+        "id",
+        "command",
+        "mode",
+        "status",
+        "invoked_via",
+        "operator",
+        "environment",
+        "release",
+        "started_at",
+        "finished_at",
+    ]
+    list_filter = ["status", "mode", "invoked_via", "environment", "release", "command"]
+    search_fields = ["command", "argv", "operator", "git_sha"]
+    date_hierarchy = "started_at"
+    ordering = ["-started_at"]
+    list_select_related = ["parent"]
+    readonly_fields = [
+        "uuid",
+        "command",
+        "app_label",
+        "arguments",
+        "argv",
+        "mode",
+        "status",
+        "exit_code",
+        "started_at",
+        "finished_at",
+        "counts",
+        "output_tail",
+        "error",
+        "invoked_via",
+        "operator",
+        "host",
+        "service",
+        "instance",
+        "environment",
+        "git_sha",
+        "release",
+        "parent",
+        "created_at",
+        "updated_at",
+    ]
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Refuse: a run is recorded by the command, never typed in."""
+        return False
+
+    def has_change_permission(
+        self, request: HttpRequest, obj: CommandRun | None = None
+    ) -> bool:
+        """Refuse: a recorded run is never edited."""
+        return False
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: CommandRun | None = None
+    ) -> bool:
+        """Refuse: the register is an audit trail; only prune_command_runs trims it."""
+        return False

@@ -89,7 +89,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import IntegrityError, transaction
 from django.utils import timezone as django_timezone
 
@@ -98,6 +98,7 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     build_render_model,
 )
+from apps.core.command_register import RegisteredCommand
 from apps.weather.services.fetch import HOURLY_DAYS
 
 if TYPE_CHECKING:
@@ -768,7 +769,7 @@ class _Rollback(Exception):
     """Raised inside ``transaction.atomic()`` to force a dry-run rollback."""
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Seed a database with the navigable test dataset via factories.
 
     Read-only by default; ``--commit`` persists. Exactly one of ``--all``,

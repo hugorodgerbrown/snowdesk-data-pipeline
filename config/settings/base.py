@@ -67,9 +67,10 @@ RELEASE_VERSION = config(
 #                              expressible on either side of the wire — see
 #                              docs/decisions/blocked-builds-not-a-version-floor.md.
 #   ``APP_RELEASED_AT``      — ISO-8601 timestamp of when the current build was
-#                              released. Defaults to process boot time on Render
-#                              (matching deploy time within seconds); an explicit
-#                              env var can override for deterministic tests.
+#                              released: the ``BUILT_AT`` file ``bin/build.sh``
+#                              writes, else process boot time (a local run); an
+#                              explicit env var can override for deterministic
+#                              tests.
 #   ``SW_URL``               — path the client registers as its service worker.
 #                              Flipping to ``/sw-kill.js`` swaps every client
 #                              onto the kill-switch SW without a deploy
@@ -148,9 +149,32 @@ APP_BLOCKED_VERSIONS: frozenset[str] = config(
     default="",
     cast=comma_separated_frozenset,
 )
+
+
+def _built_at_from_file() -> str:
+    """Read the build timestamp ``bin/build.sh`` writes to ``BUILT_AT``.
+
+    Boot time is a poor stand-in for a release time: every dyno restart and
+    every one-off shell moves it. The build writes the moment it ran
+    (SNOW-1191), which is the moment this code went live on the host.
+
+    Returns:
+        The stripped ISO-8601 timestamp, or ``""`` when no build wrote one
+        (a local checkout, a test run).
+
+    """
+    try:
+        return (BASE_DIR / "BUILT_AT").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+# When this process started. Kept apart from APP_RELEASED_AT so the ops MCP's
+# build_info can report both: a recent boot on an old build is a restart.
+APP_BOOTED_AT: str = datetime.now(UTC).isoformat(timespec="seconds")
 APP_RELEASED_AT: str = config(
     "APP_RELEASED_AT",
-    default=datetime.now(UTC).isoformat(timespec="seconds"),
+    default=_built_at_from_file() or APP_BOOTED_AT,
 )
 SW_URL: str = config("SW_URL", default="/sw.js")
 SW_KILL: bool = config("SW_KILL", default=False, cast=bool)

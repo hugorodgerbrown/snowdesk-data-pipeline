@@ -19,12 +19,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.core.management.base import BaseCommand
-
+from apps.core.command_register import RegisteredCommand
 from apps.core.settings_spec import iter_settings_report
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Print every environment-derived setting, with secrets redacted."""
 
     help = "Print a redacted dump of every environment-derived setting."

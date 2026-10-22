@@ -88,10 +88,11 @@ from pathlib import Path
 from typing import Any
 
 from django.core.exceptions import ValidationError
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion, Pass, Resort
 from apps.regions.services.resort_pin import set_resort_pin
 
@@ -149,7 +150,7 @@ PROVENANCE_COLUMNS = ("geocode_source", "geocode_confidence", "needs_review")
 REQUIRED_COLUMNS = ("uuid", "name", "status")
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Reconcile the Resort table against apps/regions/data/resorts.tsv."""
 
     help = (
@@ -209,6 +210,14 @@ class Command(BaseCommand):
         rows = _read_sheet(options["file"], modes)
         pass_rows = _read_passes_sheet(options["passes_file"])
         plan = _build_plan(rows, modes, pass_rows)
+        # Counts for the command run register (SNOW-1190). The plan is
+        # applied whole or not at all, so these are both what a dry run
+        # would change and what a commit run did.
+        self.tally("added", len(plan.additions))
+        self.tally("updated", len(plan.updates))
+        self.tally("deleted", len(plan.deletions))
+        self.tally("passes_added", len(plan.pass_additions))
+        self.tally("invalid_rows", len(plan.errors))
 
         self._report_plan(plan, modes, verbosity)
 

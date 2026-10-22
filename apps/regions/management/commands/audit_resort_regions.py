@@ -40,8 +40,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Any
 
-from django.core.management.base import BaseCommand
-
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion, Resort
 
 logger = logging.getLogger(__name__)
@@ -50,7 +49,7 @@ logger = logging.getLogger(__name__)
 _SHEET_PATH = Path(__file__).resolve().parent.parent / "data" / "resorts.tsv"
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Detect Resort→MicroRegion FK mismatches using polygon containment."""
 
     help = (

@@ -43,13 +43,14 @@ from django.core.management.base import BaseCommand, CommandError
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.day_rating import target_day_for_valid_from
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
 _BATCH_SIZE = 500
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Back-fill Bulletin.target_date for rows where it is currently NULL."""
 
     help = (
@@ -114,6 +115,9 @@ class Command(BaseCommand):
                 f"{failed} would fail. Pass --commit to persist."
             )
 
+        # Counts for the command run register (SNOW-1190).
+        self.tally("processed", processed)
+        self.tally("failed", failed)
         logger.info(
             "backfill_bulletin_target_dates finished: processed=%d failed=%d commit=%s",
             processed,

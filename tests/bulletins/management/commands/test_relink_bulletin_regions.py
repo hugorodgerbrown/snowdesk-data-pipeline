@@ -28,6 +28,7 @@ from apps.bulletins.models import (
 from apps.bulletins.services.coverage import covered_region_ids
 from apps.bulletins.services.day_rating import refresh_day_ratings
 from apps.bulletins.services.slf_fetcher import upsert_bulletin
+from apps.core.models import CommandRun
 from apps.regions.models import MicroRegion, SubRegion
 from tests.factories import MicroRegionFactory, PipelineRunFactory, SubRegionFactory
 
@@ -269,3 +270,48 @@ class TestSafety:
                 bulletin_id="nope",
                 verbosity=0,
             )
+
+
+@pytest.mark.django_db
+class TestRunRegister:
+    """Each run lands in the command run register with its counts (SNOW-1189)."""
+
+    def test_dry_run_and_commit_run_count_the_same(self, mislinked: Bulletin) -> None:
+        """The dry run's "would relink" matches the commit run's "relinked"."""
+        call_command("relink_bulletin_regions", source="albina", verbosity=0)
+        call_command(
+            "relink_bulletin_regions", source="albina", commit=True, verbosity=0
+        )
+
+        runs = CommandRun.objects.for_command("relink_bulletin_regions")
+        dry = runs.dry_runs().get()
+        committed = runs.committed().get()
+        assert dry.counts["relinked"] == committed.counts["relinked"] == 1
+        assert set(dry.counts) == {
+            "relinked",
+            "current",
+            "unresolved",
+            "failed",
+            "cleared",
+        }
+        assert committed.status == CommandRun.STATUS.SUCCEEDED
+        assert committed.arguments["source"] == "albina"
+
+    def test_a_failed_bulletin_makes_the_run_partial(self, mislinked: Bulletin) -> None:
+        """A rolled-back bulletin is counted, and the run reads PARTIAL."""
+        target = (
+            "apps.bulletins.management.commands.relink_bulletin_regions"
+            ".compute_bulletin_grouping_boundary"
+        )
+        with (
+            patch(target, side_effect=RuntimeError("dissolve failed")),
+            pytest.raises(CommandError),
+        ):
+            call_command(
+                "relink_bulletin_regions", source="albina", commit=True, verbosity=0
+            )
+
+        run = CommandRun.objects.for_command("relink_bulletin_regions").get()
+        assert run.status == CommandRun.STATUS.PARTIAL
+        assert run.counts["failed"] == 1
+        assert run.exit_code == 1

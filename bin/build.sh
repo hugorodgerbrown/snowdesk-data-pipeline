@@ -6,6 +6,11 @@
 
 set -o errexit
 
+# Stamp the build time. settings.APP_RELEASED_AT reads it, so /api/version and
+# the ops MCP's build_info report when this code went live rather than when
+# the process last booted (SNOW-1191). Gitignored; the checkout is ephemeral.
+date -u +%Y-%m-%dT%H:%M:%S+00:00 > BUILT_AT
+
 # Python dependencies. Keep the environment in the project so this works in
 # both Render and cloud development environments; the latter does not provide
 # an active virtualenv. `--no-dev` mirrors the old `--only main`; `--frozen`
@@ -67,4 +72,6 @@ uv run --no-sync python manage.py migrate
 # only, never edit-in-place, so an operator's live admin-tuned targeting on
 # an existing flag survives every deploy. Idempotent (a no-op once the DB
 # matches the manifest) — see docs/management-commands.md.
-uv run --no-sync python manage.py sync_waffle_flags --commit
+# SNOWDESK_INVOKED_VIA records the run in the command register as a BUILD
+# run rather than a shell one (SNOW-1189).
+SNOWDESK_INVOKED_VIA=BUILD uv run --no-sync python manage.py sync_waffle_flags --commit

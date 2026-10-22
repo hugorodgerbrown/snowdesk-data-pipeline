@@ -69,9 +69,10 @@ from pathlib import Path
 from typing import Any
 
 from django.core.exceptions import ValidationError
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import transaction
 
+from apps.core.command_register import RegisteredCommand
 from apps.core.coordinates import InvalidCoordinatesError, validate_coordinates
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import Resort
@@ -106,7 +107,7 @@ REQUIRED_LOCATION_COLUMNS = ("uuid", "name", "latitude", "longitude")
 REQUIRED_LINK_COLUMNS = ("resort_uuid", "location_uuid", "role")
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Reconcile Location and ResortLocation against the curated sheets."""
 
     help = (
@@ -172,6 +173,16 @@ class Command(BaseCommand):
         )
 
         plan = _build_plan(rows, link_rows, modes)
+        # Counts for the command run register (SNOW-1190). The plan is
+        # applied whole or not at all, so these are both what a dry run
+        # would change and what a commit run did.
+        self.tally("added", len(plan.additions))
+        self.tally("updated", len(plan.updates))
+        self.tally("deleted", len(plan.deletions))
+        self.tally("links_added", len(plan.link_additions))
+        self.tally("links_updated", len(plan.link_updates))
+        self.tally("links_deleted", len(plan.link_deletions))
+        self.tally("invalid_rows", len(plan.errors))
         self._report_plan(plan, modes, verbosity)
 
         if plan.errors:

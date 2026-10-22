@@ -43,9 +43,9 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Any
 
-from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 
+from apps.core.command_register import RegisteredCommand
 from apps.regions.fixture_utils import (
     bbox_from_children,
     boundary_from_children,
@@ -84,7 +84,7 @@ _MOUNTAIN_PREFIXES: dict[str, tuple[str, str]] = {
 _MOUNTAIN_ORDER = ["Alpes du Nord", "Alpes du Sud", "Pyrenees", "Corse"]
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Build apps/regions/fixtures/eaws_FR.json from EAWS + MF source files.
 
     Read-only by default; pass ``--commit`` to write the fixture.

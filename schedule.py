@@ -147,6 +147,16 @@ def _run_purge_expired_oauth_tokens() -> None:
     call_command("purge_expired_oauth_tokens", "--commit")
 
 
+def _run_prune_command_runs() -> None:
+    """Invoke ``prune_command_runs`` to keep the run register small (SNOW-1189)."""
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing prune_command_runs")
+    call_command("prune_command_runs", "--commit")
+
+
 def build_scheduler() -> BlockingScheduler:
     """Build and return a configured :class:`BlockingScheduler`.
 
@@ -156,7 +166,7 @@ def build_scheduler() -> BlockingScheduler:
     Returns
     -------
     BlockingScheduler
-        A scheduler with six jobs pre-registered:
+        A scheduler with seven jobs pre-registered:
 
         ``fetch_bulletins``
             Cron: ``minute=0,5`` (every hour at :00 and :05 UTC).
@@ -170,6 +180,8 @@ def build_scheduler() -> BlockingScheduler:
             Cron: ``hour=5`` (once a day; read-only detector, SNOW-885).
         ``purge_expired_oauth_tokens``
             Cron: ``hour=3, minute=45`` (once a day, SNOW-1035).
+        ``prune_command_runs``
+            Cron: ``hour=3, minute=50`` (once a day, SNOW-1189).
 
     """
     scheduler = BlockingScheduler(timezone="UTC")
@@ -222,6 +234,16 @@ def build_scheduler() -> BlockingScheduler:
         _run_purge_expired_oauth_tokens,
         trigger=CronTrigger(hour=3, minute=45, timezone="UTC"),
         id="purge_expired_oauth_tokens",
+        **_common,
+    )
+
+    # SNOW-1189: closes run-register rows a killed process left RUNNING and
+    # deletes scheduled runs past their retention. One small UPDATE and one
+    # DELETE, on the quiet stretch with the other two purges.
+    scheduler.add_job(
+        _run_prune_command_runs,
+        trigger=CronTrigger(hour=3, minute=50, timezone="UTC"),
+        id="prune_command_runs",
         **_common,
     )
 

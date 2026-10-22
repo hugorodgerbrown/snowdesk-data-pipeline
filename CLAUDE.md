@@ -22,8 +22,10 @@ config/          Django project settings (base + development/staging/
 apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
-  core/          Shared abstractions (BaseModel; abstract, no concrete tables),
-                 plus HTTP-layer middleware and the monitor_query_counts command
+  core/          Shared abstractions (BaseModel), HTTP-layer middleware, the
+                 monitor_query_counts command, and the command run register —
+                 ``CommandRun`` plus ``RegisteredCommand``, the base class
+                 every project command inherits (SNOW-1189)
   locations/     Location — the domain primitive every place reaches (SNOW-700):
                  a resort's village, mid-station and peak, a favourite, an
                  observation, a region centroid. A curated place is simply a
@@ -110,7 +112,8 @@ apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
                  not contradict the no-signals-for-side-effects rule below
   mcp_server/    JSON-RPC MCP tools at POST /api/mcp/ (docs/mcp-server.md);
                  no models of its own — it reads the bulletins/regions tables.
-                 Every call needs a bearer token from oauth/ (SNOW-1035)
+                 Every call needs a bearer token from oauth/ (SNOW-1035).
+                 ops_tools.py is the staff ops catalogue (SNOW-1191)
   oauth/         Snowdesk's own OAuth 2.1 authorization server for the MCP
                  endpoint (SNOW-1035, docs/oauth.md) — ``OAuthClient``,
                  ``OAuthGrant`` (a "connected app", listed and disconnected
@@ -343,6 +346,11 @@ These rules apply to **every** new or refactored management command
    (derived non-row units of work; stdout carrying a data artefact) need
    an inline reason, not silence. Full rationale and the two exemptions:
    [`docs/management-commands.md`](docs/management-commands.md).
+6. **Inherits `RegisteredCommand`, not `BaseCommand`** — every run lands
+   in the `CommandRun` register with the build it ran on; call
+   `self.tally(name, n)` for what it changes (or would change in a dry
+   run), zeros included. A test fails a command that skips it
+   ([why](docs/decisions/every-command-run-is-registered.md)).
 
 Full contract plus the command catalogue and flag reference:
 [`docs/management-commands.md`](docs/management-commands.md).
@@ -732,6 +740,7 @@ Read these when working in the relevant area:
 | Why /help/ illustrations are live partials rendered from apps/public/component_previews.py, not screenshots (inert wrappers, the test_help.py id assertion) | [`docs/decisions/help-illustrations-are-live-mocks.md`](docs/decisions/help-illustrations-are-live-mocks.md) |
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
 | Weekly churn chart (bin/render-churn, report-churn skill, what is excluded from churn) | [`docs/churn-report.md`](docs/churn-report.md) |
+| Why every management command run is recorded (CommandRun, RegisteredCommand, tally, SNOWDESK_OPERATOR, SNOWDESK_INVOKED_VIA, prune_command_runs; why not django-command-log) | [`docs/decisions/every-command-run-is-registered.md`](docs/decisions/every-command-run-is-registered.md) |
 | Management commands (design rules, catalogue, scheduled jobs) | [`docs/management-commands.md`](docs/management-commands.md) |
 | Météo-France DPBRA → CAAML field mapping | [`docs/meteofrance-mapping.md`](docs/meteofrance-mapping.md) |
 | Météo-France bulletin identity (publication-stamped bulletin_id) | [`docs/decisions/meteofrance-bulletin-identity.md`](docs/decisions/meteofrance-bulletin-identity.md) |
@@ -756,7 +765,7 @@ Read these when working in the relevant area:
 | Async operations (background threads, failure modes) | [`docs/async-operations.md`](docs/async-operations.md) |
 | Web Push (VAPID keypair, Render wiring, smoke test) | [`docs/push-notifications.md`](docs/push-notifications.md) |
 | Telemetry pipeline (/api/telemetry receiver, event allowlist, pwa.* signals) | [`docs/telemetry-pipeline.md`](docs/telemetry-pipeline.md) |
-| MCP server (POST /api/mcp/ JSON-RPC tools, season cost caps, fuzzy region search) | [`docs/mcp-server.md`](docs/mcp-server.md) |
+| MCP server (POST /api/mcp/ JSON-RPC tools, season cost caps, fuzzy region search; the staff ops catalogue ops_tools — CommandRun register, build_info, ingest and estate health) | [`docs/mcp-server.md`](docs/mcp-server.md) |
 | OAuth for the MCP server (/.well-known/oauth-protected-resource, /oauth/authorize, token, register, revoke; OAuthGrant = connected app; CIMD SSRF guard; mint_mcp_token; Claude connector requirements) | [`docs/oauth.md`](docs/oauth.md) |
 | Why Snowdesk is its own hand-written OAuth server (no library, no anonymous MCP tier, public clients + PKCE) | [`docs/decisions/snowdesk-is-its-own-oauth-server.md`](docs/decisions/snowdesk-is-its-own-oauth-server.md) |
 | IndexedDB scaffolding (window.pwaDb, queue:events, meta:app, Reset Required) | [`docs/indexeddb-scaffolding.md`](docs/indexeddb-scaffolding.md) |

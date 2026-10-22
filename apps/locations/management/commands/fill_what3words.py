@@ -66,7 +66,7 @@ from argparse import ArgumentParser
 from typing import Any
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.utils import timezone
 
 from apps.core.command_iteration import (
@@ -74,13 +74,14 @@ from apps.core.command_iteration import (
     iterate_rows,
     non_negative_float,
 )
+from apps.core.command_register import RegisteredCommand
 from apps.locations.models import Location
 from apps.locations.services.what3words import convert_to_3wa
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Fill Location.what3words for every location that lacks one.
 
     Read-only by default; pass --commit to persist. One ``convert-to-3wa``
@@ -246,6 +247,9 @@ class Command(BaseCommand):
             verbosity: Django's ``--verbosity`` level.
 
         """
+        # Counts for the command run register (SNOW-1190).
+        self.tally("filled", counts["filled"])
+        self.tally("failed", counts["failed"])
         logger.info(
             "fill_what3words finished: filled=%d failed=%d commit=%s",
             counts["filled"],

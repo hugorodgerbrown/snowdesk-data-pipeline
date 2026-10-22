@@ -77,9 +77,10 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 
 from apps.core.command_output import diff_line_counts, display_path
+from apps.core.command_register import RegisteredCommand
 from apps.locations.management.commands.import_locations import (
     DEFAULT_LINKS_PATH,
     DEFAULT_SHEET_PATH,
@@ -115,7 +116,7 @@ COORD_DECIMALS = 5
 PRIMARY_TRUE = "yes"
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Re-emit the curated location sheets from the current DB rows."""
 
     help = (

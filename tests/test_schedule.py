@@ -3,7 +3,7 @@ tests/test_schedule.py — Unit tests for schedule.py.
 
 Covers:
   - ``build_scheduler()`` returns a :class:`BlockingScheduler` with exactly
-    six jobs.
+    seven jobs.
   - The jobs have the expected IDs, one per wrapped command in
     ``schedule.py``.
   - Their ``CronTrigger``s have the correct non-default field expressions.
@@ -48,9 +48,9 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_six_jobs(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly six registered jobs."""
-    assert len(scheduler.get_jobs()) == 6
+def test_scheduler_has_exactly_seven_jobs(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly seven registered jobs."""
+    assert len(scheduler.get_jobs()) == 7
 
 
 def test_job_ids(jobs: dict) -> None:
@@ -62,6 +62,7 @@ def test_job_ids(jobs: dict) -> None:
         "fill_what3words",
         "check_resort_locations",
         "purge_expired_oauth_tokens",
+        "prune_command_runs",
     }
 
 
@@ -70,6 +71,20 @@ def test_purge_expired_oauth_tokens_runs_daily_off_the_fetch_hours(jobs: dict) -
     trigger = jobs["purge_expired_oauth_tokens"].trigger
     assert str(_get_field(trigger, "hour")) == "3"
     assert str(_get_field(trigger, "minute")) == "45"
+
+
+def test_prune_command_runs_runs_daily_after_the_purges(jobs: dict) -> None:
+    """03:50 UTC — once a day, after the other retention sweeps (SNOW-1189)."""
+    trigger = jobs["prune_command_runs"].trigger
+    assert str(_get_field(trigger, "hour")) == "3"
+    assert str(_get_field(trigger, "minute")) == "50"
+
+
+def test_prune_command_runs_commits() -> None:
+    """The scheduled run passes --commit; a dry run would change nothing."""
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        schedule_module._run_prune_command_runs()
+    mock_cc.assert_called_once_with("prune_command_runs", "--commit")
 
 
 def test_purge_expired_oauth_tokens_commits() -> None:

@@ -41,12 +41,13 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db.models import Count, Q, QuerySet
 
 from apps.bulletins.models import MIN_GROUPED_REGIONS, Bulletin
 from apps.bulletins.services.grouping import compute_bulletin_grouping_boundary
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ def candidate_bulletins() -> QuerySet[Bulletin]:
     )
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Backfill BulletinGrouping rows for bulletins that lack one."""
 
     help = (
@@ -210,6 +211,10 @@ class Command(BaseCommand):
             )
         )
 
+        # Counts for the command run register (SNOW-1190).
+        self.tally("processed", processed)
+        self.tally("skipped", skipped)
+        self.tally("failed", failed)
         logger.info(
             "backfill_bulletin_groupings finished: "
             "processed=%d skipped=%d failed=%d commit=%s",

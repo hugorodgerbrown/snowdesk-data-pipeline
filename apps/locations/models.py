@@ -265,6 +265,35 @@ class LocationQuerySet(models.QuerySet["Location"]):
         """
         return self.filter(models.Q(what3words__isnull=True) | models.Q(what3words=""))
 
+    def orphaned(self) -> "LocationQuerySet":
+        """Return the anonymous locations nothing references.
+
+        The set ``prune_orphan_locations`` deletes and the ops MCP's
+        ``location_estate_health`` counts (SNOW-1191). Every reverse
+        relation that can hold a location must be excluded here: the PROTECT
+        ones (a resort's pin, a trip's meeting point) would otherwise raise
+        mid-sweep, and the rest would lose a live row's coordinate. The
+        guard in ``tests/locations/management/commands/
+        test_prune_orphan_locations.py`` fails a new accessor left out.
+
+        Returns:
+            Filtered queryset of orphaned anonymous locations.
+
+        """
+        return self.anonymous().filter(
+            resort_locations__isnull=True,
+            micro_regions__isnull=True,
+            # SNOW-1144: a resort's pin. Its FK is PROTECT, so leaving this
+            # out would not delete a pin — it would raise mid-sweep.
+            pinned_resorts__isnull=True,
+            favourites__isnull=True,
+            field_observations__isnull=True,
+            # SNOW-1171: a trip's meeting point. Trip.meeting_point is
+            # PROTECT too, so a live trip's pin counted as an orphan raised
+            # ProtectedError and rolled the whole sweep back.
+            trips__isnull=True,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Location

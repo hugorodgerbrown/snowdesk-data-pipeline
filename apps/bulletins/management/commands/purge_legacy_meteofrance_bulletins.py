@@ -69,7 +69,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 
 from apps.bulletins.models import (
     Bulletin,
@@ -85,6 +85,7 @@ from apps.bulletins.services.day_rating import (
 )
 from apps.bulletins.services.meteofrance_identity import BULLETIN_ID_RE
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -141,7 +142,7 @@ def _massif_code(bulletin_id: str) -> str:
     return f"{parts[0]}-{parts[1]}"
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Delete old-grammar FR bulletins that already have a new-grammar replacement."""
 
     help = (
@@ -468,6 +469,10 @@ class Command(BaseCommand):
         # Unconditional in both modes: an incomplete archive load should fail
         # a dry-run just as loudly as a real run.
         self._check_unreplaced_gate(report)
+
+        # Counts for the command run register (SNOW-1190). In a
+        # read-only run the count is what WOULD be deleted.
+        self.tally("deleted", len(report.replaceable_pks))
 
         if not report.replaceable_pks:
             if verbosity:

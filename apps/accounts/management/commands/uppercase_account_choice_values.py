@@ -33,15 +33,14 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand
-
 from apps.accounts.models import PushSubscription
+from apps.core.command_register import RegisteredCommand
 from apps.core.uppercase_choices import uppercase_field_values
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Uppercase legacy lower-case PushSubscription choice values."""
 
     help = (
@@ -106,6 +105,8 @@ class Command(BaseCommand):
                 "Pass --commit to persist."
             )
 
+        # Counts for the command run register (SNOW-1190).
+        self.tally("converted", total)
         logger.info(
             "uppercase_account_choice_values finished: converted=%d commit=%s",
             total,
