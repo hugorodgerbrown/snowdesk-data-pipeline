@@ -1369,8 +1369,8 @@ wheels = [
 
 [[package]]
 name = "mcp-auth"
-version = "0.1.6"
-source = { git = "https://github.com/hugorodgerbrown/mcp-auth?rev=a5cb3126725d37062c418f880fc4bbfbe12f8665#a5cb3126725d37062c418f880fc4bbfbe12f8665" }
+version = "0.1.7"
+source = { git = "https://github.com/hugorodgerbrown/mcp-auth?tag=v0.1.7#cb89b35736eb25e69f3921082c10b29d8586c6fe" }
 dependencies = [
     { name = "django" },
     { name = "django-oauth-toolkit" },
@@ -2942,7 +2942,7 @@ requires-dist = [
     { name = "django-waffle", specifier = ">=5.0.0,<6" },
     { name = "geoip2", specifier = ">=5.2.0,<6" },
     { name = "gunicorn", specifier = ">=26.0.0,<27" },
-    { name = "mcp-auth", git = "https://github.com/hugorodgerbrown/mcp-auth?rev=a5cb3126725d37062c418f880fc4bbfbe12f8665" },
+    { name = "mcp-auth", git = "https://github.com/hugorodgerbrown/mcp-auth?tag=v0.1.7" },
     { name = "pdfplumber", specifier = ">=0.11.9,<0.12" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4,<4" },
     { name = "python-decouple", specifier = ">=3.8,<4" },

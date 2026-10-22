@@ -15,7 +15,7 @@ and CIMD services, the views and `mint_mcp_token` — was deleted, and its
 tables dropped. Snowdesk keeps what is genuinely its own: the connect rule
 (`apps.oauth.policy.verified_account`), the verify-first page, the consent
 and returning templates in its look, the connected-apps list on the settings
-page, a `resource` that keeps `/api/mcp/`'s trailing slash, and the purge
+page, and the purge
 command under the command contract. Unlike other Titan projects, which hash
 and discard an address once it is verified, Snowdesk keeps the account's
 email — it is the username and the address bulletins go to.

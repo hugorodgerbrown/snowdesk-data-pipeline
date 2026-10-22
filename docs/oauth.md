@@ -26,7 +26,6 @@ of SNOW-1035: [`docs/decisions/mcp-auth-replaces-the-hand-written-oauth-server.m
 | Settings preset (`OAUTH2_PROVIDER = oauth2_settings(...)`) and `MCP_AUTH` | Snowdesk config | `config/settings/base.py` |
 | Who may connect: `verified_account` | Snowdesk | `apps/oauth/policy.py` |
 | The verify-first gate in front of the consent page | Snowdesk | `apps/oauth/views.py::authorize` |
-| `resource` keeping `/api/mcp/`'s trailing slash | Snowdesk | `apps/oauth/views.py::ProtectedResourceMetadataView` |
 | Consent and returning pages in the site's look | Snowdesk | `apps/oauth/templates/mcp_auth/` |
 | Connected apps on `/account/settings/` and their Disconnect | Snowdesk | `apps/accounts/views.py::settings_view`, `apps/oauth/views.py::disconnect` |
 | Daily purge, under the command contract | Snowdesk | `purge_expired_oauth_tokens` |
@@ -41,8 +40,8 @@ override the package's. It has no models of its own any more; migration
    `WWW-Authenticate: Bearer … resource_metadata="<origin>/.well-known/oauth-protected-resource<path>"`.
 2. It fetches that document. `resource` is the origin plus the path called,
    trailing slash kept — Claude requires it to equal the URL the user typed.
-   django-oauth-toolkit's view strips the slash, so Snowdesk registers its
-   own subclass for the path form ahead of mcp-auth's route.
+   django-oauth-toolkit's view strips the slash; mcp-auth's puts it back
+   (since v0.1.7).
 3. It fetches `/.well-known/oauth-authorization-server`, identifies itself
    by its Client ID Metadata Document (or registers at `/oauth/register/`).
 4. It opens `/oauth/authorize/?…&resource=<the URL>` in the browser. A
@@ -80,7 +79,7 @@ not govern, plus a link for a browser that ignores the refresh.
 | URL | Name | Purpose |
 |-----|------|---------|
 | `/.well-known/oauth-protected-resource` | `oauth2_provider:oauth-resource-metadata` | RFC 9728, `resource` = the origin |
-| `/.well-known/oauth-protected-resource/<path>` | `oauth_protected_resource_path` (Snowdesk's) | Same, `resource` = origin + path verbatim |
+| `/.well-known/oauth-protected-resource/<path>` | `oauth2_provider:oauth-resource-metadata-path` | Same, `resource` = origin + path verbatim |
 | `/.well-known/oauth-authorization-server` | `oauth2_provider:oauth-server-metadata` | RFC 8414 |
 | `/oauth/authorize/` | `oauth_authorize` (Snowdesk's gate) → mcp-auth's consent view | Consent page and its POST; 30/min per IP |
 | `/oauth/switch-account/` | `oauth2_provider:switch-account` | Signs out and returns through sign-in |
@@ -137,5 +136,3 @@ you to reconnect.
 
 - **Every connection made before SNOW-1193 reconnects once.** The tokens
   lived in the dropped tables.
-- **mcp-auth is pinned to a commit** until `v0.1.6` is tagged; switch the
-  `[tool.uv.sources]` pin to the tag then.

@@ -46,7 +46,7 @@ from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
 from apps.core.views import healthz, livez
-from apps.oauth.views import ProtectedResourceMetadataView, authorize as oauth_authorize
+from apps.oauth.views import authorize as oauth_authorize
 from apps.public.views import (
     serve_favicon,
     serve_llms_full_txt,
@@ -114,15 +114,7 @@ urlpatterns = [
     # authorize/token/register/revoke under /oauth/. Snowdesk's consent gate
     # (verify your email first) is registered at mcp-auth's authorize path
     # FIRST, so it answers that path and hands on to mcp-auth's own view.
-    # The path form of the protected-resource document is Snowdesk's too,
-    # for the same reason, so ``resource`` keeps /api/mcp/'s trailing slash
-    # (Claude requires it to equal the URL the user typed).
     path("oauth/authorize/", oauth_authorize, name="oauth_authorize"),
-    path(
-        ".well-known/oauth-protected-resource/<path:resource_path>",
-        ProtectedResourceMetadataView.as_view(),
-        name="oauth_protected_resource_path",
-    ),
     path("", include("mcp_auth.urls")),
     path("oauth/", include("apps.oauth.urls")),
 ]

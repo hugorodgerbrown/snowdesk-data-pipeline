@@ -10,11 +10,6 @@ django-oauth-toolkit), mounted from ``config/urls.py``. Snowdesk adds:
   would otherwise produce; everyone else goes straight through. When the
   request is for the staff ops server, the consent page is told so
   (``ops_access``) and says what that grants.
-* :class:`ProtectedResourceMetadataView` — answers the path form of
-  ``/.well-known/oauth-protected-resource/…`` ahead of mcp-auth's route, so
-  the ``resource`` keeps the trailing slash of the URL called. Claude
-  requires it to equal the URL the user typed, and Snowdesk's documented
-  URL is ``/api/mcp/``; django-oauth-toolkit's own view strips the slash.
 * :func:`disconnect` — the HTMX Disconnect button on ``/account/settings/``,
   which revokes every token a user holds for one app and removes its row.
 """
@@ -33,7 +28,6 @@ from django.views.decorators.http import require_POST
 from mcp_auth.connected import connected_apps, disconnect as revoke_app
 from mcp_auth.ratelimit import limit_by_ip
 from mcp_auth.views import ConsentView
-from oauth2_provider.views import OAuthProtectedResourceMetadataView
 
 from apps.accounts.models import user_is_verified
 from apps.core.decorators import require_htmx
@@ -81,26 +75,6 @@ def authorize(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBa
     if isinstance(response, TemplateResponse) and response.context_data is not None:
         response.context_data["ops_access"] = _asks_for_ops(request)
     return response
-
-
-class ProtectedResourceMetadataView(OAuthProtectedResourceMetadataView):
-    """RFC 9728 metadata whose ``resource`` is the path called, slash and all."""
-
-    def get_resource(self, request: HttpRequest) -> str:
-        """Return the origin plus the path after the well-known prefix, verbatim.
-
-        Args:
-            request: The GET of ``/.well-known/oauth-protected-resource/<path>``.
-
-        Returns:
-            ``https://host/api/mcp/`` for ``…/oauth-protected-resource/api/mcp/``
-            and ``https://host/api/mcp`` for the slash-less spelling.
-
-        """
-        resource: str = super().get_resource(request)
-        if request.path.endswith("/") and not resource.endswith("/"):
-            return f"{resource}/"
-        return resource
 
 
 @require_htmx

@@ -137,7 +137,7 @@ package = false
 default-groups = ["dev"]
 
 [tool.uv.sources]
-mcp-auth = { git = "https://github.com/hugorodgerbrown/mcp-auth", rev = "a5cb3126725d37062c418f880fc4bbfbe12f8665" }
+mcp-auth = { git = "https://github.com/hugorodgerbrown/mcp-auth", tag = "v0.1.7" }
 
 [tool.mypy]
 plugins = ["mypy_django_plugin.main"]
