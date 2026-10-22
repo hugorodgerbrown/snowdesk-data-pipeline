@@ -179,6 +179,13 @@ the reasoning in the module: `/examples/…` (serves a random bulletin per
 request), redirects (`/observations/` is one now), staff-only routes, and
 anything `Disallow`ed in robots.txt.
 
+`/sitemap.xml` is served by `serve_sitemap`, not Django's `sitemap` view: the
+rendered document is cached for an hour and sent with
+`Cache-Control: public, max-age=3600`, so a crawler's fetch is one cache read
+(SNOW-1178). Each section's query selects only the columns its URL and
+`lastmod` read — the bulletin section aggregates over every bulletin ever
+issued, and when it also selected the region polygons the sitemap took ~3 s.
+
 ## Page metadata
 
 Every template extending `public/base.html` must override

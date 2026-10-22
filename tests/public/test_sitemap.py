@@ -12,6 +12,9 @@ Covers:
   - Empty-but-valid XML when no bulletin exists at all.
   - Sitemap entries are evergreen form-2 URLs, not dated form-3 URLs
     (SNOW-395).
+  - The rendered sitemap is cached and served public-cacheable, without
+    ``Vary: Cookie``, and its section queries select no boundary polygon
+    (SNOW-1178).
 """
 
 from __future__ import annotations
@@ -23,13 +26,17 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import pytest
+from django.core.cache import cache
+from django.db import connection
 from django.test import Client, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.public.sitemaps import (
     BulletinSitemap,
     LocationWeatherSitemap,
+    ResortSitemap,
     StaticViewSitemap,
 )
 from apps.regions.models import MicroRegion, Resort
@@ -45,6 +52,12 @@ from tests.factories import (
 )
 
 _ZURICH_TZ = ZoneInfo("Europe/Zurich")
+
+
+@pytest.fixture(autouse=True)
+def _clear_sitemap_cache() -> None:
+    """Start every test with no cached sitemap (SNOW-1178)."""
+    cache.clear()
 
 
 def _zurich_today() -> date:
@@ -251,45 +264,84 @@ class TestSitemapContents:
 
 @pytest.mark.django_db
 @override_settings(POSTHOG_API_KEY="phc_test")
-def test_sitemap_path_is_not_posthog_exempt(client: Client) -> None:
-    """SNOW-338: /sitemap.xml is deliberately NOT in _POSTHOG_EXEMPT_PATHS.
+def test_sitemap_is_a_public_cacheable_surface(client: Client) -> None:
+    """SNOW-1178 (closing SNOW-340): the sitemap is shared-cacheable.
 
-    Unlike robots.txt / llms.txt / manifest / favicon, the sitemap is not a
-    valid target for the PostHog-exemption mechanism:
-
-    * it sets no ``Cache-Control: public`` header, so it is not a
-      shared-cacheable surface in the first place; and
-    * its ``Vary: Cookie`` header is added by the sitemap-view middleware
-      path, not by PosthogContextMiddleware — it persists even with
-      POSTHOG_API_KEY unset.
-
-    Exempting it from PostHog would therefore be dead config: it would
-    neither remove ``Vary: Cookie`` nor make the response cacheable.  Making
-    the sitemap a genuine public-cacheable surface is tracked in SNOW-340.
-
-    This test guards the decision: the request filter must return True for
-    /sitemap.xml when a key is set (i.e. the path is NOT short-circuited),
-    and the response still carries Vary: Cookie with no public Cache-Control.
+    The body is rendered without the request and the path is exempt from
+    PostHog, so nothing reads ``request.user`` and no ``Vary: Cookie``
+    splits the edge cache per visitor.
     """
     from config.settings.base import _posthog_request_filter
 
     class _FakeRequest:
         path = "/sitemap.xml"
 
-    assert _posthog_request_filter(_FakeRequest()) is True, (
-        "/sitemap.xml must NOT be exempt from PosthogContextMiddleware — "
-        "exempting it is dead config (see SNOW-340)"
-    )
+    assert _posthog_request_filter(_FakeRequest()) is False
 
     response = client.get(reverse("sitemap"))
-    assert "public" not in response.get("Cache-Control", ""), (
-        "sitemap currently sets no public Cache-Control; if this changes, "
-        "revisit SNOW-340 and the exemption decision"
-    )
-    assert "Cookie" in response.get("Vary", ""), (
-        "sitemap Vary: Cookie originates outside PostHog; if this changes, "
-        "revisit SNOW-340"
-    )
+    assert response["Cache-Control"] == "public, max-age=3600"
+    assert "Cookie" not in response.get("Vary", "")
+    assert response["X-Robots-Tag"] == "noindex, noodp, noarchive"
+
+
+@pytest.mark.django_db
+class TestSitemapCache:
+    """The rendered sitemap is cached; a hit never reaches the sections (SNOW-1178)."""
+
+    def test_a_cache_hit_runs_no_query(
+        self, client: Client, django_assert_num_queries: Any
+    ) -> None:
+        """The second fetch is served from the cache, byte for byte."""
+        _make_bulletin_for_region(MicroRegionFactory.create(), _zurich_today())
+        ResortFactory.create()
+        first = client.get(reverse("sitemap")).content
+
+        with django_assert_num_queries(0):
+            second = client.get(reverse("sitemap")).content
+
+        assert second == first
+
+    def test_a_new_region_appears_once_the_cache_expires(self, client: Client) -> None:
+        """Until the entry is dropped the cached body stands; then it rebuilds."""
+        client.get(reverse("sitemap"))
+        region = MicroRegionFactory.create(region_id="CH-7001", slug="ch-7001")
+        _make_bulletin_for_region(region, _zurich_today())
+        path = region.get_absolute_url()
+
+        assert path not in client.get(reverse("sitemap")).content.decode()
+        cache.clear()
+        assert path in client.get(reverse("sitemap")).content.decode()
+
+    def test_the_cache_is_keyed_on_the_origin(self, client: Client) -> None:
+        """A body rendered for one SITE_BASE_URL is never served for another."""
+        with override_settings(SITE_BASE_URL="https://snowdesk.info"):
+            client.get(reverse("sitemap"))
+        with override_settings(SITE_BASE_URL="https://staging.snowdesk.info"):
+            locs = _locs(client)
+
+        assert all(loc.startswith("https://staging.snowdesk.info/") for loc in locs)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("section", "query_count"), [(BulletinSitemap, 1), (ResortSitemap, 2)]
+)
+def test_section_query_reads_no_boundary_polygon(
+    section: Any, query_count: int
+) -> None:
+    """SNOW-1178: the region polygons are what made the bulletin query take 1.8 s."""
+    region = MicroRegionFactory.create()
+    _make_bulletin_for_region(region, _zurich_today())
+    ResortFactory.create(region=region)
+
+    with CaptureQueriesContext(connection) as queries:
+        urls = section().get_urls()
+
+    # The bulletin section is a list, so the paginator counts it with len();
+    # the resort section's COUNT(*) is a cheap scan of one table.
+    assert urls
+    assert len(queries) == query_count
+    assert not any("boundary" in query["sql"] for query in queries)
 
 
 # ---------------------------------------------------------------------------

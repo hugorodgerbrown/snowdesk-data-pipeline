@@ -42,7 +42,6 @@ HTML per request; see ``docs/error-pages.md``.
 
 from django.conf import settings
 from django.contrib import admin
-from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
@@ -51,13 +50,13 @@ from apps.oauth.views import (
     authorization_server_metadata,
     protected_resource_metadata,
 )
-from apps.public.sitemaps import SITEMAPS
 from apps.public.views import (
     serve_favicon,
     serve_llms_full_txt,
     serve_llms_txt,
     serve_manifest,
     serve_robots,
+    serve_sitemap,
     serve_sw,
     serve_sw_kill,
 )
@@ -157,8 +156,7 @@ if settings.DEBUG:
 urlpatterns.append(
     path(
         "sitemap.xml",
-        sitemap,
-        {"sitemaps": SITEMAPS},
+        serve_sitemap,
         name="sitemap",
     )
 )

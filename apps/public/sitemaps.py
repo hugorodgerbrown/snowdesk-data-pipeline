@@ -1,7 +1,7 @@
 """
 apps/public/sitemaps.py — XML sitemaps for the public bulletin site.
 
-Four sections, registered together in config/urls.py:
+Four sections, collected in ``SITEMAPS`` at the foot of this module:
 
     bulletins  BulletinSitemap        — every region that has ever had a
                                         bulletin (SNOW-1121)
@@ -22,7 +22,7 @@ regions with a bulletin valid today.
 
 Wire-up in config/urls.py:
 
-    path("sitemap.xml", sitemap, {"sitemaps": SITEMAPS}, name="sitemap")
+    path("sitemap.xml", serve_sitemap, name="sitemap")
 
 Every section inherits from ``OriginSitemap``, which takes the scheme and
 host of each ``<loc>`` from ``settings.SITE_BASE_URL`` — the same origin
@@ -32,6 +32,20 @@ the ``django_site`` row instead (``SITE_ID = 1``), and that row is the
 live sitemap advertised was on a domain Snowdesk does not own.
 django.contrib.sites stays installed only because the sitemap view imports
 it.
+
+Serving (SNOW-1178). ``/sitemap.xml`` is ``apps.public.views.serve_sitemap``,
+not Django's ``sitemap`` view: it renders the sections with
+``render_sitemap`` below and keeps the bytes in the cache for
+``SITEMAP_CACHE_SECONDS``, so a crawler's repeat fetch never reaches the
+database. Rendering outside the request also keeps the template context
+processors — which read ``request.user`` and so add ``Vary: Cookie`` — off
+the response, which is what lets it carry ``Cache-Control: public``.
+
+SNOW-1121 made the bulletin section aggregate over every bulletin ever
+issued (59,130 region links at the time). Before SNOW-1178 that aggregate
+also selected — and so grouped and de-duplicated by — both regions'
+boundary polygons, and the whole sitemap took ~3 s. Keep each section's
+``items()`` to the columns its URL and ``lastmod`` read.
 """
 
 from __future__ import annotations
@@ -43,6 +57,7 @@ from urllib.parse import urlsplit
 from django.conf import settings
 from django.contrib.sitemaps import Sitemap
 from django.db.models import Max
+from django.template.loader import render_to_string
 from django.urls import reverse
 
 from apps.locations.models import Location
@@ -122,21 +137,32 @@ class BulletinSitemap(OriginSitemap):
         """
         Return every MicroRegion with at least one bulletin, of any date.
 
-        Re-evaluated on every request — do not cache at module level.
+        Re-evaluated on every render — do not cache at module level.
         Uses ``Max("bulletins__updated_at")`` annotation so ``lastmod()``
         can retrieve the value without an extra query per region; the
         aggregate groups by region, so each appears once.
 
+        ``only()`` the two columns ``get_absolute_url`` reads (SNOW-1178).
+        The aggregate joins every region-bulletin link, and Postgres groups
+        by every selected column: selecting the whole row — and, before
+        SNOW-1178, the subregion's through ``select_related`` — made it
+        group and de-duplicate 59,130 rows by two boundary polygons, 1.8 s
+        of the sitemap's 3 s. With the pk alone in ``GROUP BY`` no
+        ``distinct()`` is needed either.
+
+        Evaluated to a list so the sitemap's paginator takes ``len()`` of it
+        rather than running the same 59,130-row join a second time as a
+        ``COUNT``.
+
         Returns:
-            A queryset of ``MicroRegion`` instances annotated with
+            A list of ``MicroRegion`` instances annotated with
             ``latest_bulletin_updated_at``.
 
         """
-        return (
+        return list(
             MicroRegion.objects.filter(bulletins__isnull=False)
+            .only("region_id", "name")
             .annotate(latest_bulletin_updated_at=Max("bulletins__updated_at"))
-            .distinct()
-            .select_related("subregion")
             .order_by("region_id")
         )
 
@@ -203,14 +229,16 @@ class ResortSitemap(OriginSitemap):
 
         No ``region__isnull=False`` filter: ``Resort.region`` is a
         non-nullable FK, so the filter would be dead code and the
-        "resort without a region" case cannot arise. ``select_related``
-        because ``get_absolute_url`` is cheap but the ordering is not free.
+        "resort without a region" case cannot arise. ``only()`` the slug
+        and ``updated_at`` — all ``location`` and ``lastmod`` read. Until
+        SNOW-1178 a ``select_related("region")`` also fetched each resort's
+        region, boundary polygon included, for nothing.
 
         Returns:
             A queryset of ``Resort`` instances.
 
         """
-        return Resort.objects.select_related("region").order_by("id")
+        return Resort.objects.only("slug", "updated_at").order_by("id")
 
     def location(self, item: Resort) -> str:
         """
@@ -441,11 +469,50 @@ class StaticViewSitemap(OriginSitemap):
         return self.ROUTES[item][1]
 
 
-# The full set, registered as one dict so config/urls.py has nothing to
-# decide and adding a section is a one-line change here.
+# The full set, as one dict so adding a section is a one-line change here.
 SITEMAPS: dict[str, type[Sitemap]] = {
     "bulletins": BulletinSitemap,
     "resorts": ResortSitemap,
     "locations": LocationWeatherSitemap,
     "static": StaticViewSitemap,
 }
+
+# How long a rendered sitemap is served before it is rebuilt (SNOW-1178).
+# An hour: bulletins land once or twice a day, and a crawler reads the
+# sitemap far less often than that.
+SITEMAP_CACHE_SECONDS = 60 * 60
+
+
+def sitemap_cache_key() -> str:
+    """
+    Return the cache key for the rendered sitemap.
+
+    Keyed on ``SITE_BASE_URL`` because every ``<loc>`` is built from it: a
+    body rendered for one origin must not be served for another.
+
+    Returns:
+        The cache key.
+
+    """
+    return f"public:sitemap.xml:{settings.SITE_BASE_URL}"
+
+
+def render_sitemap() -> bytes:
+    """
+    Render every section of ``SITEMAPS`` into one ``<urlset>`` document.
+
+    What Django's ``sitemap`` view does for a single page, without the
+    request: the sections take their origin from ``SITE_BASE_URL`` (see
+    ``OriginSitemap``), so the request has nothing to contribute, and
+    rendering without it keeps ``request.user`` — and ``Vary: Cookie`` —
+    out of the response. A single page holds 50,000 URLs, a hundred times
+    the current estate.
+
+    Returns:
+        The XML document as UTF-8 bytes.
+
+    """
+    urls: list[dict[str, Any]] = []
+    for section in SITEMAPS.values():
+        urls.extend(section().get_urls())
+    return render_to_string("sitemap.xml", {"urlset": urls}).encode()

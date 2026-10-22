@@ -145,6 +145,7 @@ from .season_calendar import (
     summarise_season,
 )
 from .site_environment import PWAEnvironmentIdentity
+from .sitemaps import SITEMAP_CACHE_SECONDS, render_sitemap, sitemap_cache_key
 from .templatetags.snowdesk_time import (
     danger_level_digit,
     danger_level_label,
@@ -2484,6 +2485,42 @@ def serve_robots(request: HttpRequest) -> HttpResponse:
     ]
     response = HttpResponse("\n".join(lines), content_type="text/plain; charset=utf-8")
     response["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+def serve_sitemap(request: HttpRequest) -> HttpResponse:
+    """
+    Serve ``/sitemap.xml`` from the cache, rendering it on a miss (SNOW-1178).
+
+    Django's ``sitemap`` view re-ran every section's query on every fetch,
+    and SNOW-1121's bulletin section aggregates over every bulletin ever
+    issued: the live sitemap took ~3 s, slow enough for Search Console to
+    report it as not fetched. ``render_sitemap`` builds the document once
+    per ``SITEMAP_CACHE_SECONDS`` and a hit is a single cache read.
+
+    The response carries ``Cache-Control: public`` so the edge can hold it
+    too — possible only because the body is rendered without the request
+    (see ``render_sitemap``) and the path is exempt from PostHog, the two
+    things that read ``request.user`` and so added ``Vary: Cookie``.
+    ``X-Robots-Tag`` is the header Django's view set: the sitemap is for
+    crawlers to read, not a page to list in results.
+
+    Args:
+        request: The incoming HTTP request (unused — the body is origin-keyed
+            via ``SITE_BASE_URL``, not per-request).
+
+    Returns:
+        An ``HttpResponse`` with the ``application/xml`` sitemap body.
+
+    """
+    cache_key = sitemap_cache_key()
+    body: bytes | None = cache.get(cache_key)
+    if body is None:
+        body = render_sitemap()
+        cache.set(cache_key, body, SITEMAP_CACHE_SECONDS)
+    response = HttpResponse(body, content_type="application/xml")
+    response["Cache-Control"] = f"public, max-age={SITEMAP_CACHE_SECONDS}"
+    response["X-Robots-Tag"] = "noindex, noodp, noarchive"
     return response
 
 
