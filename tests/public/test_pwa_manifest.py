@@ -313,21 +313,17 @@ def test_manifest_empty_setting_falls_back_to_staging() -> None:
 
 
 @pytest.mark.django_db
-@override_settings(POSTHOG_API_KEY="phc_test")
 def test_manifest_no_cookie_vary_with_analytics_enabled() -> None:
-    """SNOW-338 regression: Vary: Cookie absent on /manifest.webmanifest when PostHog is active.
+    """SNOW-338 regression: Vary: Cookie absent on /manifest.webmanifest (SNOW-1182: no analytics middleware).
 
-    When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
-    read request.user to tag identities, causing SessionMiddleware to append
-    Vary: Cookie and defeat Cache-Control: public CDN caching.
-    The _POSTHOG_EXEMPT_PATHS exemption in config/settings/base.py prevents
-    that access for this endpoint.
+    Nothing on this path may read request.user: that would make
+    SessionMiddleware append Vary: Cookie and defeat Cache-Control: public
+    CDN caching. (Until SNOW-1182 PostHog's middleware did, behind an
+    exemption list; the test now guards the property itself.)
     """
     response = Client().get("/manifest.webmanifest")
     assert "public" in response.get("Cache-Control", ""), (
         f"Expected public in Cache-Control; got: {response.get('Cache-Control', '')!r}"
     )
     vary = response.get("Vary", "")
-    assert "Cookie" not in vary, (
-        f"Vary: Cookie must not be set even with analytics enabled; got: {vary!r}"
-    )
+    assert "Cookie" not in vary, f"Vary: Cookie must not be set ; got: {vary!r}"

@@ -744,7 +744,7 @@
    * wiring the rest of the lifecycle.
    *
    * The ``pwa.mutation.discarded`` ``reason`` distinguishes two mismatch
-   * causes so a PostHog query can tell them apart: ``'account_change'``
+   * causes so the logs can tell them apart: ``'account_change'``
    * when a ``mutations.principal`` row already existed and genuinely
    * differs from the current principal, versus
    * ``'principal_uninitialised'`` when no such row existed yet (first

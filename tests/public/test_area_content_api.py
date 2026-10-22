@@ -24,7 +24,7 @@ from typing import Any, cast
 import pytest
 from django.core.cache import cache
 from django.core.management import call_command
-from django.test import Client, override_settings
+from django.test import Client
 from django.urls import reverse
 from pytest_django import DjangoDbBlocker
 
@@ -342,13 +342,11 @@ def test_a_client_holding_the_answer_is_told_it_is_unchanged() -> None:
 
 
 @pytest.mark.django_db
-@override_settings(POSTHOG_API_KEY="phc_test")
 def test_no_cookie_vary_with_analytics_enabled() -> None:
     """SNOW-299's rule: ``Vary: Cookie`` would defeat the shared caching.
 
-    The exemption is in ``_POSTHOG_EXEMPT_PATHS``; without it,
-    ``PosthogContextMiddleware`` reads ``request.user`` and
-    ``SessionMiddleware`` appends the header.
+    Anything that read ``request.user`` here would make
+    ``SessionMiddleware`` append the header.
     """
     response = Client().get(_url("7.0,46.0,8.0,47.0"))
 

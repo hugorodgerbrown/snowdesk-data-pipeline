@@ -187,9 +187,10 @@ class TestColophonPage:
         }
         assert set(settings.BASEMAP_STYLES) == covered
 
-    def test_posthog_credited_with_privacy_link(self, client: Client) -> None:
+    def test_sentry_credited_with_privacy_link(self, client: Client) -> None:
         response = client.get(reverse("public:colophon"))
-        assert b"PostHog" in response.content
+        assert b"Sentry" in response.content
+        assert b"PostHog" not in response.content
         assert reverse("public:privacy").encode() in response.content
 
     def test_url_reverses_correctly(self) -> None:

@@ -2,8 +2,8 @@
 apps/accounts/identity.py — The public-facing identifier for a signed-in user.
 
 Every surface that exposes "who is this user?" outside the server —
-PostHog's ``distinct_id``, the ``pwa-user-id`` meta tag that the PWA
-mutation queue uses as its principal — resolves through this module
+the analytics ``distinct_id`` (fivebar's ``id``), the ``pwa-user-id`` meta tag
+that the PWA mutation queue uses as its principal — resolves through this module
 (SNOW-549).
 
 The identifier is ``Account.uuid``. It replaces ``str(request.user.pk)``,
@@ -16,7 +16,7 @@ exercise.
 ``editable=False`` ``uuid`` field — so this needed no new field, no
 migration, and no backfill. A stored identifier was chosen over a derived
 ``HMAC-SHA256(pk, SECRET_KEY)`` because it stays reversible in the admin
-(support can map a PostHog ``distinct_id`` back to a user) and survives a
+(support can map a ``distinct_id`` back to a user) and survives a
 ``SECRET_KEY`` rotation.
 
 The house style here follows ``apps.core.idempotency._principal``: small

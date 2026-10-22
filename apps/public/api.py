@@ -516,10 +516,9 @@ def ratings(request: HttpRequest) -> JsonResponse:
     hits to one per cache window. The HTTP ``Cache-Control: public,
     max-age=300`` header is applied by the ``@cache_control`` decorator.
 
-    The ``@vary_on_headers("Accept-Encoding")`` decorator is necessary but
-    not sufficient on its own — ``Vary: Cookie`` is only reliably absent
-    because this path is exempt from ``PosthogContextMiddleware`` via
-    ``_POSTHOG_EXEMPT_PATHS`` in ``config/settings/base.py`` (SNOW-299).
+    ``Vary: Cookie`` stays absent because nothing on this path reads
+    ``request.user`` or the session. (Until SNOW-1182 that also took an
+    exemption from PostHog's middleware, SNOW-299.)
 
     Errors:
         400 — unknown country code.
@@ -775,12 +774,9 @@ def weather_geojson(request: HttpRequest) -> JsonResponse:
     location we do not know about.
 
     Server-side ``cache.get_or_set`` bounds DB hits to one per cache
-    window. The ``@vary_on_headers("Accept-Encoding")`` decorator is
-    necessary but not sufficient — this path must also be listed in
-    ``_POSTHOG_EXEMPT_PATHS`` (``config/settings/base.py``) or
-    ``PosthogContextMiddleware`` reading ``request.user`` causes
-    ``SessionMiddleware`` to append ``Vary: Cookie`` and defeat the public
-    caching.
+    window. Nothing on this path may read ``request.user`` or the session:
+    that would make ``SessionMiddleware`` append ``Vary: Cookie`` and
+    defeat the public caching.
 
     ``generated_at`` (for the freshness headers) is the OLDEST ``fetched_at``
     across the payload's rows, following ``_card_freshness``'s rule that a
@@ -909,11 +905,8 @@ def regions_geojson(request: HttpRequest) -> HttpResponse:
     ``stale-while-revalidate``, and neither the stale window nor the day-long
     server-side memo on an empty answer. ``@vary_on_headers`` stays, and is
     what prevents Django's ``SessionMiddleware`` from appending
-    ``Vary: Cookie`` on the response.  ``Vary: Cookie``
-    is also suppressed by exempting this path from ``PosthogContextMiddleware``
-    via ``_POSTHOG_EXEMPT_PATHS`` in ``config/settings/base.py``
-    (SNOW-299) — without that exemption the middleware would read
-    ``request.user`` and cause ``SessionMiddleware`` to append the header.
+    ``Vary: Cookie`` on the response, as long as nothing on the path reads
+    ``request.user`` or the session.
 
     Args:
         request: The incoming HTTP request.
@@ -1177,7 +1170,7 @@ def region_basemap_tiles(request: HttpRequest) -> HttpResponse:
 
     Region geometry — and therefore this blob — is static reference
     data, so it takes the same ``_geojson_response`` policy (SNOW-902) and the
-    same ``@vary_on_headers`` + ``_POSTHOG_EXEMPT_PATHS`` treatment as the
+    same ``@vary_on_headers`` treatment as the
     geojson endpoints. It never reaches that helper's empty branch: a region
     with no computed blob 404s above rather than returning a blank one. See
     ``regions_geojson`` for the full ``Vary: Cookie`` rationale.
@@ -1247,7 +1240,7 @@ def area_content(request: HttpRequest) -> HttpResponse:
     ``_cached_area_content_index``. The response takes ``_geojson_response``'s
     ETag and revalidatable policy — it is not GeoJSON, but it is exactly
     the static-reference kind of answer that helper was written for — and
-    the same ``@vary_on_headers`` + ``_POSTHOG_EXEMPT_PATHS`` treatment
+    the same ``@vary_on_headers`` treatment
     the geojson endpoints get, or ``Vary: Cookie`` defeats the caching.
     See ``regions_geojson`` for the full rationale.
 

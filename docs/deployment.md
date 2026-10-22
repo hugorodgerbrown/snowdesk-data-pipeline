@@ -205,17 +205,14 @@ Neither worker declares a health check. Render background workers cannot take an
 HTTP probe; scheduler and `db_worker` liveness needs a heartbeat mechanism and is
 not built.
 
-Two settings exist only to keep the probes answerable, both derived from
-`settings.HEALTH_CHECK_PATHS` so they cannot drift from the URLconf:
+One setting exists only to keep the probes answerable, derived from
+`settings.HEALTH_CHECK_PATHS` so it cannot drift from the URLconf (a second,
+PostHog's middleware exemption, went with SNOW-1182):
 
 - `SECURE_REDIRECT_EXEMPT` ([`production.py`](../config/settings/production.py))
   — the prober reaches the instance behind the TLS-terminating proxy, so it
   sends no `X-Forwarded-Proto` and `SECURE_SSL_REDIRECT` would answer it with a
   301 that Render scores as a failure.
-- `_POSTHOG_EXEMPT_PATHS` ([`base.py`](../config/settings/base.py)) — unlike
-  every other entry in that set, this one is not about `Vary: Cookie`. It stops
-  `PosthogContextMiddleware` reading `request.user`, whose session lookup would
-  put a database query on every probe of the endpoint designed not to need one.
 
 **Verify on staging before the first release.** `ALLOWED_HOSTS` is read from an
 env var, so if Render's prober sends a `Host` that isn't listed, Django answers

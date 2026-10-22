@@ -179,7 +179,7 @@ With `settings.ini` there is nothing secret in a worktree to allow, and
 `uv run tox`, `uv run python manage.py …` and the pre-commit hooks all run
 inside the sandbox.
 
-What a worktree therefore runs without: the PostHog, Météo-France,
+What a worktree therefore runs without: the fivebar, Sentry, Météo-France,
 Open-Meteo, MaxMind and what3words keys and the mail password. Pages render
 from the seeded database; a feature that calls one of those services does
 not reach it. Two ways to bring a value in:

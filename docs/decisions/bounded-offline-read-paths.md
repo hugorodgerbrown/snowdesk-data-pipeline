@@ -85,7 +85,7 @@ of them should be removed as "noise" without replacing it:
 
 1. A bounded 2s probe to `/livez` on a 30s → 60s → 300s backoff. `/livez`
    (`apps/core/views.py`) does no work, never reads `request.user`, never
-   touches the database, and is exempt from `PosthogContextMiddleware`, so it
+   touches the database, and no middleware reads the session for it, so it
    measures the route and nothing else. The last backoff step repeats rather
    than growing, so a device left latched overnight still notices signal within
    five minutes.

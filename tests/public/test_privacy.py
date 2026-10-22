@@ -9,8 +9,7 @@ Covers:
     "no analytics ... cookies of any kind" — those claims were true before
     the SNOW-381/385 telemetry pipeline shipped but are misleading now.
     The page instead describes the anonymous ``pwa.*`` event stream,
-    names PostHog as the downstream processor, and links to the
-    manage-page toggle.
+    says where the events go, and links to the manage-page toggle.
 
 No factories or database fixtures are required — the page is entirely
 static and carries no model queries.
@@ -60,15 +59,16 @@ class TestPrivacyTelemetryCopy:
         response = client.get(reverse("public:privacy"))
         assert b"cookies of any kind" not in response.content
 
-    def test_sharing_section_names_posthog(self, client: Client) -> None:
-        """Section 5 names PostHog as the anonymous-event processor."""
+    def test_posthog_no_longer_named(self, client: Client) -> None:
+        """SNOW-1182: PostHog is no longer a processor."""
         response = client.get(reverse("public:privacy"))
-        assert b"PostHog" in response.content
+        assert b"PostHog" not in response.content
 
     def test_sharing_section_names_fivebar(self, client: Client) -> None:
         """SNOW-1180: section 5 names fivebar, which the browser contacts directly."""
         response = client.get(reverse("public:privacy"))
         assert b"<strong>fivebar</strong> (fiveb.ar)" in response.content
+
     def test_sharing_section_names_sentry(self, client: Client) -> None:
         """SNOW-1181: section 5 names Sentry as the error-report processor."""
         response = client.get(reverse("public:privacy"))

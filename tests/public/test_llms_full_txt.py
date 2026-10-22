@@ -161,22 +161,18 @@ def test_llms_full_is_cacheable() -> None:
     assert "max-age=3600" in cache_control
 
 
-@override_settings(POSTHOG_API_KEY="phc_test")
 @pytest.mark.django_db
 def test_llms_full_no_cookie_vary_with_analytics_enabled() -> None:
-    """SNOW-338 regression pattern: Vary: Cookie must be absent even with PostHog active.
+    """SNOW-338 regression pattern: Vary: Cookie must be absent (SNOW-1182: no analytics middleware).
 
-    ``/llms-full.txt`` is a public-good cacheable document. Without the
-    ``_POSTHOG_EXEMPT_PATHS`` exemption, ``PosthogContextMiddleware``
-    would touch ``request.user`` and cause ``SessionMiddleware`` to
-    append ``Vary: Cookie``, defeating shared caches.
+    ``/llms-full.txt`` is a public-good cacheable document. Anything that
+    touched ``request.user`` here would make ``SessionMiddleware`` append
+    ``Vary: Cookie``, defeating shared caches.
     """
     response = Client().get("/llms-full.txt")
     assert "public" in response.get("Cache-Control", "")
     vary = response.get("Vary", "")
-    assert "Cookie" not in vary, (
-        f"Vary: Cookie must not be set even with analytics enabled; got: {vary!r}"
-    )
+    assert "Cookie" not in vary, f"Vary: Cookie must not be set ; got: {vary!r}"
 
 
 @pytest.mark.django_db

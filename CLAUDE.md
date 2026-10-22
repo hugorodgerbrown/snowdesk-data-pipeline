@@ -104,7 +104,7 @@ apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
                  The DEFINITION of an area only: the tiles stay in each
                  device's own pinned Cache Storage bucket and are never
                  uploaded, so a row carries no byte count and no tile indices
-  analytics/     PostHog wiring and the /api/telemetry receiver (see
+  analytics/     fivebar goals and the /api/telemetry receiver (see
                  docs/telemetry-pipeline.md). NOTE: signals.py here means
                  *telemetry* signals, not django.db.models.signals — it does
                  not contradict the no-signals-for-side-effects rule below

@@ -20,8 +20,8 @@ default: `METEOFRANCE_API_KEY` (the DPBRA bulletin API),
 `WHAT3WORDS_API_KEY`, `MAXMIND_LICENSE_KEY` (the GeoLite2 download in
 `bin/fetch-geoip-data`), and `OPEN_METEO_API_KEY` (the paid tier; the free
 tier the code uses by default is unauthenticated and stays available).
-`POSTHOG_API_KEY` is a client-side project key rather than a secret, and
-every test env blanks it anyway.
+`FIVEBAR_TOKEN` and `SENTRY_DSN` are not needed either: every test env
+blanks them, so nothing is sent from a session.
 
 **Why.** Decided 2026-09-30, when a stress test of a cloud session found
 that a dry-run `fetch_bulletins --source meteofrance` fails for every

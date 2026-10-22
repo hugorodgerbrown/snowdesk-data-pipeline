@@ -82,15 +82,13 @@ def test_favicon_ico_has_cache_control_header() -> None:
     assert response["Cache-Control"] == "public, max-age=86400"
 
 
-@override_settings(POSTHOG_API_KEY="phc_test")
 def test_favicon_ico_no_cookie_vary_with_analytics_enabled() -> None:
-    """SNOW-338 regression: Vary: Cookie absent on /favicon.ico when PostHog is active.
+    """SNOW-338 regression: Vary: Cookie absent on /favicon.ico (SNOW-1182: no analytics middleware).
 
-    When POSTHOG_API_KEY is non-empty, PosthogContextMiddleware would normally
-    read request.user to tag identities, causing SessionMiddleware to append
-    Vary: Cookie and defeat Cache-Control: public CDN caching.
-    The _POSTHOG_EXEMPT_PATHS exemption in config/settings/base.py prevents
-    that access for this endpoint.
+    Nothing on this path may read request.user: that would make
+    SessionMiddleware append Vary: Cookie and defeat Cache-Control: public
+    CDN caching. (Until SNOW-1182 PostHog's middleware did, behind an
+    exemption list; the test now guards the property itself.)
     """
     for path in ("/favicon.ico", "/favicon.ico/"):
         response = Client().get(path, follow=False)
@@ -100,6 +98,5 @@ def test_favicon_ico_no_cookie_vary_with_analytics_enabled() -> None:
         )
         vary = response.get("Vary", "")
         assert "Cookie" not in vary, (
-            f"{path}: Vary: Cookie must not be set even with analytics enabled; "
-            f"got: {vary!r}"
+            f"{path}: Vary: Cookie must not be set ; got: {vary!r}"
         )

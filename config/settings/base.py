@@ -252,11 +252,6 @@ MIDDLEWARE = [
     # because we don't expose a wafflejs endpoint (no JS-side flag checks
     # yet). See ``docs/feature-flags.md``.
     "waffle.middleware.WaffleMiddleware",
-    # PostHog request context middleware. Placed immediately after
-    # WaffleMiddleware so request.user is available for identity tagging.
-    # Short-circuits via POSTHOG_MW_REQUEST_FILTER when POSTHOG_API_KEY is
-    # empty so it is a guaranteed no-op in development and test runs.
-    "posthog.integrations.django.PosthogContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
@@ -406,20 +401,6 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 # ---------------------------------------------------------------------------
-# Analytics (PostHog)
-# ---------------------------------------------------------------------------
-# Server-side event capture via the posthog-python client and the official
-# PosthogContextMiddleware. The global posthog module-level client is
-# initialised in ``apps/analytics/apps.py`` ``AppConfig.ready()``. The wrappers
-# in ``apps/analytics/__init__.py`` are no-ops when POSTHOG_API_KEY is empty so
-# no events are sent during local development or test runs unless the key is
-# explicitly populated. Set to the EU project key in production via the
-# environment.
-
-POSTHOG_API_KEY = config("POSTHOG_API_KEY", default="")
-POSTHOG_HOST = config("POSTHOG_HOST", default="https://eu.i.posthog.com")
-
-# ---------------------------------------------------------------------------
 # Analytics (fivebar) — SNOW-1180
 # ---------------------------------------------------------------------------
 # FIVEBAR_DOMAIN is the site as fivebar names it (``snowdesk.info``). Set, it
@@ -446,158 +427,20 @@ FIVEBAR_ORIGIN = "https://fiveb.ar"
 #     stale shell drains its local queue cleanly).
 #   * The server-emitted §16.2 signals (``emit_server_signal``) no-op.
 #
-# This is distinct from ``POSTHOG_API_KEY`` (which only stops *forwarding*
-# to PostHog) and from the per-user opt-in (spec §16.6): this switch is an
+# This is distinct from ``FIVEBAR_TOKEN`` (which only stops *forwarding*
+# goal events to fivebar) and from the per-user opt-in (spec §16.6): this switch is an
 # operator/deploy-level off switch that silences the whole pipeline,
 # including the operational-safety "critical" events. Default True; set
 # ``PWA_TELEMETRY_ENABLED=False`` in ``.env`` to silence telemetry when
 # running locally.
 PWA_TELEMETRY_ENABLED: bool = config("PWA_TELEMETRY_ENABLED", default=True, cast=bool)
 
-# Capture unhandled view exceptions as PostHog events (default True). Set to
-# False to disable exception capture without removing the middleware.
-POSTHOG_MW_CAPTURE_EXCEPTIONS = config(
-    "POSTHOG_MW_CAPTURE_EXCEPTIONS", default=True, cast=bool
-)
-
-# Capture local-variable values from each frame of captured exception
-# tracebacks (default False — opt-in). Stack traces only by default; set the
-# env var to True after reviewing the privacy implications, since enabling this
-# ships frame-local variable values to PostHog. PostHog applies built-in
-# mask/ignore patterns to redact common credential names, but frame-locals may
-# still contain PII — review before enabling in any environment.
-POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES = config(
-    "POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES", default=False, cast=bool
-)
-
-
-# Paths of cacheable public endpoints that must be exempt from
-# PosthogContextMiddleware. The middleware reads ``request.user`` to tag
-# identities whenever an API key is set; that access marks the session as
-# accessed, causing ``SessionMiddleware.process_response`` to append
-# ``Vary: Cookie`` to the response — which defeats the
-# ``Cache-Control: public`` CDN caching these anonymous, high-volume
-# endpoints are designed for.  Returning False from the filter
-# short-circuits the middleware before ``request.user`` is touched.
-#
-# DESIGN DECISION — request-phase path filter vs. response-phase predicate:
-# The session is accessed at *request* time (when PosthogContextMiddleware
-# reads ``request.user``), so the ``Vary: Cookie`` header is already baked
-# into the response before any response-phase middleware can inspect
-# ``Cache-Control: public``.  A response-phase predicate keyed on
-# ``Cache-Control: public`` therefore cannot prevent the corruption — it
-# would see the header too late.  Stripping ``Vary: Cookie`` in a
-# post-hoc middleware would be fragile (it could mask legitimate variation
-# on other public pages).  The only correct fix is a *request-phase* path
-# filter, which is what ``_posthog_request_filter`` below implements.
-#
-# SNOW-299: keep this set in sync with the ``@cache_control(public=True)``
-# GET endpoints declared in ``apps/public/api_urls.py``.
-# SNOW-338: also keep in sync with the ``Cache-Control: public`` static
-# routes declared in ``config/urls.py``.
-# Health-check probe paths (SNOW-565), named once because four places have
-# to agree on them: the URLconf, ``_POSTHOG_EXEMPT_PATHS`` below,
-# ``SECURE_REDIRECT_EXEMPT`` in production.py, and ``healthCheckPath`` in
-# render.yaml. The first three derive from this tuple; render.yaml is
-# outside Python and is covered by a test instead.
+# Health-check probe paths (SNOW-565), named once because three places have
+# to agree on them: the URLconf, ``SECURE_REDIRECT_EXEMPT`` in production.py,
+# and ``healthCheckPath`` in render.yaml. The first two derive from this
+# tuple; render.yaml is outside Python and is covered by a test instead.
+# (SNOW-1182 removed the fourth, PostHog's middleware exemption list.)
 HEALTH_CHECK_PATHS: tuple[str, ...] = ("/livez", "/healthz")
-
-_POSTHOG_EXEMPT_PATHS: frozenset[str] = frozenset(
-    {
-        # Map-data JSON/GeoJSON API endpoints (apps/public/api_urls.py) — SNOW-299.
-        "/api/ratings/",
-        "/api/resorts-by-region/",
-        "/api/resorts.geojson",
-        "/api/regions.geojson",
-        # SNOW-761: the map's Weather overlay feed. Public and shared-cached
-        # for the same reason as the geojson endpoints above, so it needs the
-        # same exemption or Vary: Cookie defeats it.
-        "/api/weather.geojson",
-        "/api/major-regions.geojson",
-        "/api/sub-regions.geojson",
-        "/api/bulletin-groupings.geojson",
-        # SNOW-521: full basemap_download blob for one region (id-keyed,
-        # not country-filtered) — same static-reference-data caching
-        # rationale as the geojson endpoints above.
-        "/api/region-basemap-tiles/",
-        # SNOW-953: what one rectangle contains, for an offline download's
-        # content plan. Bbox-keyed, date-free and public, so the same
-        # caching rationale applies — and without this exemption
-        # ``Vary: Cookie`` would defeat it.
-        "/api/area-content/",
-        # SNOW-419's community-reports overlay is deliberately NOT listed.
-        # SNOW-459 made it private/no-store (its waffle-flag gate is per-user,
-        # so the response can't be shared-cached), so there is no
-        # Cache-Control: public for Vary: Cookie to defeat — exempting it here
-        # would be dead config. It returns to this set only if the gate
-        # becomes global and public caching is restored (SNOW-469).
-        # Health checks (config/urls.py) — SNOW-565, spliced in from
-        # HEALTH_CHECK_PATHS above. These are exempt for a DIFFERENT reason
-        # from every other entry in this set: the rest are here so
-        # ``Vary: Cookie`` cannot defeat CDN caching, and the health checks
-        # are ``no-store``, so that rationale does not apply to them. They
-        # are listed because PosthogContextMiddleware reads ``request.user``
-        # for identity tagging, and that access triggers a session lookup —
-        # a database query on every probe. On ``/livez`` that would silently
-        # reintroduce the database dependency the endpoint exists to avoid;
-        # on both it is per-probe work and per-probe analytics noise from an
-        # unattended prober.
-        *HEALTH_CHECK_PATHS,
-        # Static public-good documents (config/urls.py) — SNOW-338.
-        "/robots.txt",
-        "/llms.txt",
-        "/llms-full.txt",
-        "/manifest.webmanifest",
-        # Favicon has two routes: bare path and trailing-slash variant.
-        "/favicon.ico",
-        "/favicon.ico/",
-        # SNOW-1178: the sitemaps are served ``Cache-Control: public``;
-        # reading ``request.user`` here would add ``Vary: Cookie`` and
-        # defeat the edge cache, as for the files above.
-        "/sitemap.xml",
-        "/sitemap-main.xml",
-        "/sitemap-regions.xml",
-        "/sitemap-resorts.xml",
-    }
-)
-
-
-# Skip the middleware entirely when no API key is configured — avoids
-# per-request context and tag work in dev/test with no key.
-# The function is called at request time — importing django.conf.settings
-# inside it is safe and reads the live value so @override_settings works.
-def _posthog_request_filter(request: object) -> bool:
-    """Return True only when POSTHOG_API_KEY is non-empty and the path is not exempt.
-
-    Short-circuits on two conditions (returning False skips the middleware):
-
-    1. ``POSTHOG_API_KEY`` is empty — no analytics in dev/test.
-    2. The request path is in ``_POSTHOG_EXEMPT_PATHS`` — SNOW-299/SNOW-338:
-       these cacheable public endpoints must not trigger a ``request.user``
-       access, which would cause ``SessionMiddleware`` to append
-       ``Vary: Cookie`` and defeat ``Cache-Control: public`` CDN caching.
-
-    Reads ``django.conf.settings`` at call time so that ``@override_settings``
-    in tests takes effect without capturing a stale module-level binding.
-    """
-    from django.conf import settings as _s  # noqa: PLC0415 — intentional late import
-
-    if not (getattr(_s, "POSTHOG_API_KEY", "") or "").strip():
-        return False
-    return getattr(request, "path", "") not in _POSTHOG_EXEMPT_PATHS
-
-
-POSTHOG_MW_REQUEST_FILTER = _posthog_request_filter
-
-
-# Strip ``email`` from the user-tag dict before PostHog sees it to honour
-# the PII invariant (email is never transmitted in event properties).
-def _posthog_tag_map(tags: dict[str, object]) -> dict[str, object]:
-    """Return ``tags`` with the ``email`` key removed."""
-    return {k: v for k, v in tags.items() if k != "email"}
-
-
-POSTHOG_MW_TAG_MAP = _posthog_tag_map
 
 # ---------------------------------------------------------------------------
 # Logging

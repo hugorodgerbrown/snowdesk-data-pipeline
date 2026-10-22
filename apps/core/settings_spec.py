@@ -316,8 +316,6 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         note="local UX work only — invent an address instead of calling the API",
     ),
     # --- Third-party services ---------------------------------------------
-    SettingSpec("POSTHOG_HOST", validator=absolute_url, note="PostHog ingest host"),
-    SettingSpec("POSTHOG_API_KEY", secret=True, note="PostHog project key"),
     # SNOW-1180: fivebar. The domain is a bare host (``snowdesk.info``),
     # not a URL, so ``absolute_url`` would reject a correct value.
     SettingSpec("FIVEBAR_DOMAIN", note="fivebar site domain (renders the tag)"),
@@ -415,11 +413,6 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     SettingSpec("QUERY_COUNT_HEADER_ENABLED", note="X-Query-Count debug header"),
     SettingSpec("CSP_ENABLED", note="Content-Security-Policy on/off"),
     SettingSpec("CSP_REPORT_ONLY", note="CSP in report-only mode"),
-    SettingSpec("POSTHOG_MW_CAPTURE_EXCEPTIONS", note="Middleware exception capture"),
-    SettingSpec(
-        "POSTHOG_CAPTURE_EXCEPTION_CODE_VARIABLES",
-        note="Include local variables in captured exceptions",
-    ),
     SettingSpec("BASEMAP", note="Basemap provider key"),
     # SNOW-872: the map's opening view. All three are validated at import in
     # config/settings/base.py against their own catalogues — an unknown

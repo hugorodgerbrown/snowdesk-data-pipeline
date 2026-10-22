@@ -46,9 +46,8 @@ def livez(request: HttpRequest) -> HttpResponse:
     Deliberately does no work. In particular it must never read
     ``request.user``: that access triggers a session lookup, which would
     silently make the liveness probe depend on the database and defeat the
-    whole point of the split from ``healthz``. ``/livez`` is exempt from
-    ``PosthogContextMiddleware`` for the same reason — see
-    ``_POSTHOG_EXEMPT_PATHS`` in ``config/settings/base.py``.
+    whole point of the split from ``healthz``. (Until SNOW-1182 that also
+    took an exemption from PostHog's middleware, which read it.)
 
     Args:
         request: The incoming HTTP request (unused — the response is fixed).

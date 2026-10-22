@@ -331,10 +331,7 @@ class TestAccountViewInactiveUser:
         account = self._inactive_account()
         token = _valid_account_token("disabled@example.com")
         client = Client()
-        with (
-            patch("apps.accounts.views.analytics.track") as mock_track,
-            patch("apps.accounts.views.analytics.alias") as mock_alias,
-        ):
+        with patch("apps.accounts.views.analytics.track") as mock_track:
             response = client.post(reverse("accounts:account", kwargs={"token": token}))
         assert response.status_code == 400
         assert "accounts/link_expired.html" in [t.name for t in response.templates]
@@ -343,7 +340,6 @@ class TestAccountViewInactiveUser:
         assert account.is_verified is False
         assert account.verified_at is None
         mock_track.assert_not_called()
-        mock_alias.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

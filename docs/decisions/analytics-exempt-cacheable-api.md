@@ -1,11 +1,17 @@
 ---
 name: analytics-exempt-cacheable-api
 description: Cacheable public endpoints are exempt from PosthogContextMiddleware to prevent Vary: Cookie from defeating CDN caching
-status: current
+status: historical
 last-reviewed: 2026-10-22
 ---
 
 # Cacheable public endpoints exempt from PosthogContextMiddleware
+
+> **Historical (SNOW-1182, 2026-10-22).** PostHog and its middleware were
+> removed, and the exemption list with them. Nothing in the request cycle
+> reads `request.user` on these paths any more, so the property this
+> decision protected holds without a list; the `Vary: Cookie` regression
+> tests named below still guard it.
 
 **Decision.** A frozenset of public, anonymous endpoints is declared in
 `_POSTHOG_EXEMPT_PATHS` in `config/settings/base.py`.

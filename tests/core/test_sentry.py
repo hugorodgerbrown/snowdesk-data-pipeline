@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
-from django.test import Client, override_settings
+from django.test import Client
 
 from apps.core import sentry
 
@@ -140,9 +140,8 @@ def _js_error_envelope(**properties: object) -> dict[str, object]:
 class TestReceiverForwardsJsErrors:
     """``/api/telemetry`` hands ``js.error`` to Sentry, and nothing else."""
 
-    @override_settings(POSTHOG_API_KEY="")
-    def test_js_error_is_forwarded_without_an_analytics_key(self) -> None:
-        """Error reporting does not depend on PostHog being configured."""
+    def test_js_error_is_forwarded(self) -> None:
+        """A ``js.error`` envelope reaches Sentry's capture helper."""
         with patch("apps.core.sentry.capture_js_error") as capture:
             response = Client().post(
                 "/api/telemetry",

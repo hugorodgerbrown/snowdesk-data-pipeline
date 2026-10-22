@@ -50,7 +50,7 @@ apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
                  relevance scoring, and the /favourites/ HTMX partials
   observations/  Community field reports — FieldObservation and the
                  /partials/report/ submission endpoints
-  analytics/     PostHog wiring and the /api/telemetry receiver. No models.
+  analytics/     fivebar goals and the /api/telemetry receiver. No models.
                  (signals.py here is *telemetry* signals, not
                  django.db.models.signals — it does not contradict
                  docs/decisions/no-signals-for-side-effects.md)

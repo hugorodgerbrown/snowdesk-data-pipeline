@@ -4,16 +4,16 @@ apps/analytics/schema.py — Envelope validation for /api/telemetry payloads.
 Spec §16 (offline-first PWA compliance) defines the eight-field event
 envelope that the client-side telemetry buffer POSTs to
 ``/api/telemetry`` — batched or single. This module validates that shape
-before the receiver forwards to PostHog.
+before the receiver routes it.
 
 The validator is deliberately strict: unknown top-level keys are rejected
-so a mistyped field never silently disappears into a PostHog property
+so a mistyped field never silently disappears into an analytics property
 where it becomes an operational puzzle three weeks later. Unknown
 ``properties`` sub-keys pass through — the caller controls its own
 event-specific payload shape.
 
 Allowed event names are declared here as a frozenset so the receiver can
-reject typos at the boundary without shipping garbage to PostHog. Add a
+reject typos at the boundary without shipping garbage downstream. Add a
 new event name here and in ``docs/telemetry-pipeline.md`` when
 extending the catalogue.
 """
@@ -263,7 +263,7 @@ def parse_payload(payload: object) -> list[dict[str, object]]:
         payload: The JSON-decoded request body.
 
     Returns:
-        A list of validated event dicts, ready to forward to PostHog.
+        A list of validated event dicts, ready to route.
 
     Raises:
         TelemetrySchemaError: On any structural or per-event violation.

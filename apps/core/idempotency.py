@@ -263,8 +263,8 @@ class IdempotencyMiddleware:
             _redact_key(key),
             reservation.response_status,
         )
-        # SNOW-381 (spec §16.2): observability dashboards need a
-        # PostHog-visible counter for cache-served replays so we can
+        # SNOW-381 (spec §16.2): a logged counter (SNOW-1182) for
+        # cache-served replays so we can
         # measure how often the queue drain retries the same key.
         # Deferred import — apps.analytics.signals pulls in the analytics
         # app which shouldn't load at middleware-import time.

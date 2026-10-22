@@ -31,7 +31,6 @@ dependencies = [
     "django-tasks>=0.12.0,<0.13",
     "django-tasks-db>=0.12.0,<0.14",
     "apscheduler>=3.10,<4",
-    "posthog>=7.30.1,<8",
     "cryptography>=50.0.0,<51",
     "shapely>=2.1.2,<3",
     "rapidfuzz>=3.14.5,<4",

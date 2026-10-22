@@ -4,7 +4,7 @@ apps/analytics/exceptions.py — Custom exception types for the analytics app.
 Defines ``AnalyticsPIIError``, raised by ``analytics.track()`` when the
 caller passes event properties that contain a blocked PII key (``email``,
 ``ip``, ``token``, or ``credential_id``).  The exception fires before any
-network call so no PII can leak to PostHog even in degraded conditions.
+network call so no PII can leak to fivebar even in degraded conditions.
 """
 
 

@@ -2529,9 +2529,8 @@ def serve_sitemap(request: HttpRequest, name: str) -> HttpResponse:
     lifetime — the body's age is cached with it — so the edge can hold it
     too without stacking a second full lifetime on the first. Possible only
     because the body is rendered
-    without the request (see ``render_sitemap``) and the paths are exempt
-    from PostHog, the two things that read ``request.user`` and so added
-    ``Vary: Cookie``.
+    without the request (see ``render_sitemap``), so nothing reads
+    ``request.user`` and no ``Vary: Cookie`` is added.
 
     Args:
         request: The incoming HTTP request (unused).
@@ -5619,7 +5618,7 @@ def _resort_forecast_points(
 
 
 def _record_share_click(request: HttpRequest, share: BulletinShare) -> None:
-    """Record one real share-link click: RequestLog, click row, PostHog event.
+    """Record one real share-link click: RequestLog, click row, fivebar goal.
 
     Split out of ``share_redirect`` (SNOW-551) so the speculative-request
     branch can skip every write in one place while still redirecting.
@@ -5706,7 +5705,7 @@ def share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     tracking on re-visits.
 
     Abuse bounds (SNOW-551). This endpoint writes three things on arrival —
-    a ``RequestLog``, a ``BulletinShareClick``, and a PostHog event — for
+    a ``RequestLog``, a ``BulletinShareClick``, and a fivebar goal event — for
     anyone who knows a public share URL:
 
     * Only GET and HEAD are accepted; no legitimate POST/PUT/DELETE caller

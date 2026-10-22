@@ -311,7 +311,7 @@ describe('telemetry names the caller (SNOW-618)', () => {
 
     // db.js's Reset Required overlay passes forced=true. The two events
     // are what separate "the app broke and had to wipe itself" from "the
-    // user chose to" in PostHog — collapsing them would make the health
+    // user chose to" in the telemetry logs — collapsing them would make the health
     // signal unreadable.
     expect(window.pwaTelemetry.emit).toHaveBeenCalledWith(
       'pwa.reset.forced',

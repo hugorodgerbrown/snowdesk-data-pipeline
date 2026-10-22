@@ -39,7 +39,7 @@ Two rules for editing this file:
         {% trans "Privacy Policy" as page_heading %}
         {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="privacy-heading" %}
         <p class="text-xs text-text-3 mb-6">
-            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 26 September 2026 &middot; Version 1.3" %}
+            {% trans "Snowdesk &middot; snowdesk.info &middot; Effective 22 October 2026 &middot; Version 1.4" %}
         </p>
 
         <div class="mb-6 p-4 bg-surface-2 rounded text-sm text-text-2 leading-relaxed">
@@ -274,17 +274,10 @@ Two rules for editing this file:
                 </li>
                 <li>
                     {% blocktrans trimmed %}
-                        <strong>PostHog</strong> (posthog.com) — processes the anonymous app-usage events described
-                        below, if you have telemetry switched on. We never send bulletin content, your email address, or
-                        your IP address as part of these events.
-                    {% endblocktrans %}
-                </li>
-                <li>
-                    {% blocktrans trimmed %}
                         <strong>Sentry</strong> (sentry.io, hosted in the EU) — receives error reports from our server
                         so we can fix what breaks, including errors your browser reports to us. A report says what
-                        failed and where in our code; it never includes your email address, your IP address, or
-                        anything you typed.
+                        failed and where in our code; it never includes your email address, your IP address, or anything
+                        you typed.
                     {% endblocktrans %}
                 </li>
                 {% comment %}
@@ -298,11 +291,11 @@ Two rules for editing this file:
                 <li>
                     {% blocktrans trimmed %}
                         <strong>fivebar</strong> (fiveb.ar) — cookieless page analytics. Your browser loads its script
-                        and reports the page you are on, so fivebar receives your IP address, which it uses only to
-                        work out your country and to tell visits apart for a day; it keeps neither the address nor
-                        anything that identifies you. Our server also sends it a few anonymous product events (for
-                        example, that a bulletin was viewed or a region pinned), identified by a random account or
-                        session code, never your email address or IP address.
+                        and reports the page you are on, so fivebar receives your IP address, which it uses only to work
+                        out your country and to tell visits apart for a day; it keeps neither the address nor anything
+                        that identifies you. Our server also sends it a few anonymous product events (for example, that
+                        a bulletin was viewed or a region pinned), identified by a random account or session code, never
+                        your email address or IP address.
                     {% endblocktrans %}
                 </li>
                 <li>
@@ -355,9 +348,11 @@ Two rules for editing this file:
                 {% blocktrans trimmed %}
                     We collect a small stream of anonymous app-usage events — for example
                     <code>pwa.sw.installed</code> or <code>pwa.push.received</code> — so we can keep Snowdesk working
-                    reliably across browsers and devices. These events never include bulletin content, your email
-                    address, or your IP address. This is switched off by default for browsers set to a European
-                    language, and on by default otherwise; you can change this at any time from the toggle in your
+                    reliably across browsers and devices. They are written to our own server logs, and the few that
+                    record a feature you used — saving a route, say — are also counted by fivebar. These events
+                    never include bulletin content, your email address, or your IP address. This is switched off by
+                    default for browsers set to a European language, and on by default otherwise; you can change this at
+                    any time from the toggle in your
                     <a class="underline" href="{{ manage_url }}">account settings</a>.
                 {% endblocktrans %}
             </p>
