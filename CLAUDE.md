@@ -22,8 +22,10 @@ config/          Django project settings (base + development/staging/
 apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
-  core/          Shared abstractions (BaseModel; abstract, no concrete tables),
-                 plus HTTP-layer middleware and the monitor_query_counts command
+  core/          Shared abstractions (BaseModel), HTTP-layer middleware, the
+                 monitor_query_counts command, and the command run register —
+                 ``CommandRun`` plus ``RegisteredCommand``, the base class
+                 every project command inherits (SNOW-1189)
   locations/     Location — the domain primitive every place reaches (SNOW-700):
                  a resort's village, mid-station and peak, a favourite, an
                  observation, a region centroid. A curated place is simply a
@@ -343,6 +345,11 @@ These rules apply to **every** new or refactored management command
    (derived non-row units of work; stdout carrying a data artefact) need
    an inline reason, not silence. Full rationale and the two exemptions:
    [`docs/management-commands.md`](docs/management-commands.md).
+6. **Inherits `RegisteredCommand`, not `BaseCommand`** — every run lands
+   in the `CommandRun` register with the build it ran on; call
+   `self.tally(name, n)` for what it changes (or would change in a dry
+   run), zeros included. A test fails a command that skips it
+   ([why](docs/decisions/every-command-run-is-registered.md)).
 
 Full contract plus the command catalogue and flag reference:
 [`docs/management-commands.md`](docs/management-commands.md).
@@ -732,6 +739,7 @@ Read these when working in the relevant area:
 | Why /help/ illustrations are live partials rendered from apps/public/component_previews.py, not screenshots (inert wrappers, the test_help.py id assertion) | [`docs/decisions/help-illustrations-are-live-mocks.md`](docs/decisions/help-illustrations-are-live-mocks.md) |
 | Query-count monitoring (SNOW-13) | [`docs/query-counts.md`](docs/query-counts.md) |
 | Weekly churn chart (bin/render-churn, report-churn skill, what is excluded from churn) | [`docs/churn-report.md`](docs/churn-report.md) |
+| Why every management command run is recorded (CommandRun, RegisteredCommand, tally, SNOWDESK_OPERATOR, SNOWDESK_INVOKED_VIA, prune_command_runs; why not django-command-log) | [`docs/decisions/every-command-run-is-registered.md`](docs/decisions/every-command-run-is-registered.md) |
 | Management commands (design rules, catalogue, scheduled jobs) | [`docs/management-commands.md`](docs/management-commands.md) |
 | Météo-France DPBRA → CAAML field mapping | [`docs/meteofrance-mapping.md`](docs/meteofrance-mapping.md) |
 | Météo-France bulletin identity (publication-stamped bulletin_id) | [`docs/decisions/meteofrance-bulletin-identity.md`](docs/decisions/meteofrance-bulletin-identity.md) |

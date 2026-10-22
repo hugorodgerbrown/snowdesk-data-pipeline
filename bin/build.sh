@@ -67,4 +67,6 @@ uv run --no-sync python manage.py migrate
 # only, never edit-in-place, so an operator's live admin-tuned targeting on
 # an existing flag survives every deploy. Idempotent (a no-op once the DB
 # matches the manifest) — see docs/management-commands.md.
-uv run --no-sync python manage.py sync_waffle_flags --commit
+# SNOWDESK_INVOKED_VIA records the run in the command register as a BUILD
+# run rather than a shell one (SNOW-1189).
+SNOWDESK_INVOKED_VIA=BUILD uv run --no-sync python manage.py sync_waffle_flags --commit

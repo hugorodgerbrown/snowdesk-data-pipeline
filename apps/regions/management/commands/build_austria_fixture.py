@@ -49,9 +49,9 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Any
 
-from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 
+from apps.core.command_register import RegisteredCommand
 from apps.regions.fixture_utils import (
     build_entries_from_eaws_dir,
     carry_forward_preserved_fields,
@@ -76,7 +76,7 @@ _AUSTRIA_FIXTURE = _REPO_ROOT / "apps" / "regions" / "fixtures" / "eaws_AT.json"
 _FIXTURE_TIMESTAMP = "2026-05-14T00:00:00Z"
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Build apps/regions/fixtures/eaws_AT.json from EAWS micro-region source files.
 
     Read-only by default; pass ``--commit`` to write the fixture.

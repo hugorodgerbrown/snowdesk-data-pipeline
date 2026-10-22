@@ -36,10 +36,12 @@ from typing import Any
 
 from django.conf import settings
 from django.core.cache import cache
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import connection
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
+
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +112,7 @@ def _display_path(path: Path) -> str:
         return str(path)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Measure per-URL query counts; compare to or overwrite the baseline.
 
     SNOW-602 exempt: no queryset loop — walks a fixed list of monitored URLs.

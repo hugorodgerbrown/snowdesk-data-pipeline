@@ -58,7 +58,7 @@ from argparse import ArgumentParser
 from datetime import date
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import transaction
 from django.db.models import QuerySet
 
@@ -71,6 +71,7 @@ from apps.bulletins.services.day_rating import (
 from apps.bulletins.services.grouping import compute_bulletin_grouping_boundary
 from apps.bulletins.services.slf_fetcher import _resolve_bulletin_regions
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -149,7 +150,7 @@ class _DerivedStateError(Exception):
     """A relinked bulletin's ratings or grouping failed; roll it back."""
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Rebuild bulletins' region links from their stored raw payloads."""
 
     help = (
@@ -350,6 +351,15 @@ class Command(BaseCommand):
             outcome, bulletin_cleared = self._relink(bulletin, commit=commit)
             counts[outcome] += 1
             cleared += bulletin_cleared
+
+        # Every outcome lands in the run register (SNOW-1189), zeros
+        # included, so a dry run's row and a commit run's row compare key
+        # for key. A ``failed`` count above zero reads as a PARTIAL run.
+        self.tally(_RELINKED, counts[_RELINKED])
+        self.tally(_CURRENT, counts[_CURRENT])
+        self.tally(_UNRESOLVED, counts[_UNRESOLVED])
+        self.tally(_FAILED, counts[_FAILED])
+        self.tally("cleared", cleared)
 
         if verbosity:
             prefix = "Relinked" if commit else "Would relink"

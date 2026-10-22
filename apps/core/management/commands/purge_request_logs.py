@@ -53,9 +53,10 @@ from argparse import ArgumentParser
 from datetime import timedelta
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.utils import timezone
 
+from apps.core.command_register import RegisteredCommand
 from apps.core.models import RequestLog
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,7 @@ logger = logging.getLogger(__name__)
 RETENTION_DAYS: int = 365
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Delete RequestLog rows past the retention window."""
 
     help = (

@@ -36,13 +36,12 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Any
 
-from django.core.management.base import BaseCommand
-
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.render_model import (
     DayCharacter,
     compute_day_character,
 )
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +69,7 @@ CSV_HEADERS: tuple[str, ...] = (
 )
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Export a CSV of day-character labels and the inputs that fed them."""
 
     help = (

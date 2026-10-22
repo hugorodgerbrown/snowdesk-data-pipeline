@@ -22,14 +22,15 @@ Background Worker (see ``render.yaml``).
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
-from django.core.management.base import BaseCommand
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Start the APScheduler blocking scheduler.
 
     Blocks until interrupted (SIGINT/SIGTERM). Suitable as a long-running
@@ -37,6 +38,11 @@ class Command(BaseCommand):
 
     SNOW-602 exempt: no queryset loop — dispatches cron-scheduled jobs.
     """
+
+    # Not recorded itself (SNOW-1189): it blocks for the life of the worker,
+    # so its row would read RUNNING until the next deploy killed it. The
+    # commands it dispatches ARE recorded, as SCHEDULER runs.
+    record_runs = False
 
     help = (
         "Start the APScheduler job runner. Blocks until interrupted. "
@@ -49,6 +55,10 @@ class Command(BaseCommand):
         # Alias avoids a name collision if the PyPI ``schedule`` package is ever
         # pulled in transitively alongside the repo-root ``schedule`` module.
         import schedule as schedule_module
+
+        # Every command this process starts through call_command is a
+        # scheduled run; the register reads this to say so (SNOW-1189).
+        os.environ.setdefault("SNOWDESK_INVOKED_VIA", "SCHEDULER")
 
         scheduler = schedule_module.build_scheduler()
         job_ids = [job.id for job in scheduler.get_jobs()]

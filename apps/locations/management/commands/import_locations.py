@@ -69,9 +69,10 @@ from pathlib import Path
 from typing import Any
 
 from django.core.exceptions import ValidationError
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import transaction
 
+from apps.core.command_register import RegisteredCommand
 from apps.core.coordinates import InvalidCoordinatesError, validate_coordinates
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import Resort
@@ -106,7 +107,7 @@ REQUIRED_LOCATION_COLUMNS = ("uuid", "name", "latitude", "longitude")
 REQUIRED_LINK_COLUMNS = ("resort_uuid", "location_uuid", "role")
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Reconcile Location and ResortLocation against the curated sheets."""
 
     help = (

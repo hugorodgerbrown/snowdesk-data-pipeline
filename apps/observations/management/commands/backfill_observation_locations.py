@@ -42,17 +42,18 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import transaction
 
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.locations.models import Location
 from apps.observations.models import FieldObservation
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Mint a Location per FieldObservation that has none, and point the FK.
 
     Read-only by default; pass --commit to persist. Exits non-zero if any

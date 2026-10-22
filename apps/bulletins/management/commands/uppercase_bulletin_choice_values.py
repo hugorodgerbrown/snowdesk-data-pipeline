@@ -49,6 +49,7 @@ from django.core.management.base import BaseCommand
 
 from apps.bulletins.models import Bulletin, PipelineRun, RegionDayRating
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.core.uppercase_choices import uppercase_field_values
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,7 @@ logger = logging.getLogger(__name__)
 _BATCH_SIZE = 500
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Uppercase legacy lower-case bulletins choice values, including the JSON key."""
 
     help = (

@@ -88,10 +88,11 @@ from pathlib import Path
 from typing import Any
 
 from django.core.exceptions import ValidationError
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion, Pass, Resort
 from apps.regions.services.resort_pin import set_resort_pin
 
@@ -149,7 +150,7 @@ PROVENANCE_COLUMNS = ("geocode_source", "geocode_confidence", "needs_review")
 REQUIRED_COLUMNS = ("uuid", "name", "status")
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Reconcile the Resort table against apps/regions/data/resorts.tsv."""
 
     help = (

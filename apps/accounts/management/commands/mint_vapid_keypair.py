@@ -53,7 +53,9 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from decouple import config
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
+
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +117,7 @@ def _private_key_pem(private_key: ec.EllipticCurvePrivateKey) -> str:
     return pem_bytes.decode("ascii")
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Generate a VAPID keypair for Web Push.
 
     Dry-run by default; pass --commit to write the raw private scalar to

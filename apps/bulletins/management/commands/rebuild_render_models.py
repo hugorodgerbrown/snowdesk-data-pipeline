@@ -46,7 +46,7 @@ from argparse import ArgumentParser
 from datetime import date
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.day_rating import (
@@ -60,6 +60,7 @@ from apps.bulletins.services.render_model import (
     build_render_model,
 )
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ logger = logging.getLogger(__name__)
 _PREFETCH_CHUNK_SIZE = 500
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Rebuild the render_model field on stale or specified Bulletin rows."""
 
     help = (

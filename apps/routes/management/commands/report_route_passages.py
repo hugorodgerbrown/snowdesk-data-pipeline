@@ -57,9 +57,8 @@ from argparse import ArgumentParser
 from dataclasses import dataclass, field
 from typing import Any
 
-from django.core.management.base import BaseCommand
-
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.routes.models import Route
 from apps.routes.services.passages import (
     CLIMBING,
@@ -195,7 +194,7 @@ class _SweepStats:
         return sum(self.buckets) + self.unmeasured
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Report what the no-fall passage gates would mark, at each setting.
 
     Read-only by construction — no ``--commit``, no writes, and no

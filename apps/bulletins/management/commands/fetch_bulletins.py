@@ -68,7 +68,7 @@ from datetime import date
 from typing import Any
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.utils import timezone
 
 from apps.bulletins.models import PipelineRun
@@ -78,6 +78,7 @@ from apps.bulletins.services.slf_fetcher import (
     get_sources,
 )
 from apps.core.command_iteration import non_negative_float
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ _START_SOURCE_LATEST_BULLETIN = "latest_bulletin"
 _START_SOURCE_SEASON_BACKSTOP = "season_backstop"
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Fetch bulletins from one or more providers; read-only unless --commit.
 
     SNOW-602 exempt: iterates provider API results (a fetched page/response),

@@ -33,12 +33,13 @@ from argparse import ArgumentParser
 from datetime import timedelta
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import DatabaseError
 from django.db.models import Model, QuerySet
 from django.utils import timezone
 
 from apps.core.command_iteration import iterate_rows, positive_int
+from apps.core.command_register import RegisteredCommand
 from apps.oauth.models import AuthorizationCode, OAuthToken
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ logger = logging.getLogger(__name__)
 GRACE_DAYS: int = 7
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Delete long-dead OAuth tokens and authorization codes."""
 
     help = (

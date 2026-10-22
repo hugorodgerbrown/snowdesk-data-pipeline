@@ -29,15 +29,14 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand
-
+from apps.core.command_register import RegisteredCommand
 from apps.core.uppercase_choices import uppercase_field_values
 from apps.regions.models import Resort
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Uppercase legacy lower-case Resort.geocode_source values."""
 
     help = (

@@ -60,17 +60,18 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 
 from apps.bulletins.models import BulletinGrouping
 from apps.core.command_iteration import iterate_rows, positive_int
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BATCH_SIZE = 500
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Delete BulletinGrouping rows whose bulletin covers fewer than two regions."""
 
     help = (

@@ -36,10 +36,11 @@ from typing import Any
 
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import transaction
 from django.urls import reverse
 
+from apps.core.command_register import RegisteredCommand
 from apps.oauth.models import OAuthClient, OAuthGrant
 from apps.oauth.services.resource import canonical_resource
 from apps.oauth.services.tokens import DEFAULT_SCOPE, issue_token_pair
@@ -50,7 +51,7 @@ LOCAL_CLIENT_ID = "sd_local_mint_mcp_token"
 LOCAL_CLIENT_NAME = "Local token (mint_mcp_token)"
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Mint an MCP access token for one account."""
 
     help = (

@@ -49,6 +49,7 @@ from apps.bulletins.services.meteofrance_fetcher import (
 from apps.bulletins.services.render_model import RenderModelBuildError, detect_source
 from apps.bulletins.services.slf_fetcher import _slf_pdf_url
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ def _albina_cdn_region(micro_region_id: str) -> str:
     return "EUREGIO"
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Back-fill Bulletin.pdf_url for all rows where it is currently empty."""
 
     help = (

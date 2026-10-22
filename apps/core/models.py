@@ -18,6 +18,10 @@ Also provides:
   original response so a replay within the 24h retention window
   returns the same result without re-invoking the view. The row is
   written *before* the view runs (SNOW-545) — see ``reserve()``.
+* ``CommandRun`` — the management command run register (SNOW-1189). One
+  row per invocation of a project command, dry run or ``--commit``,
+  written by ``apps.core.command_register.RegisteredCommand`` and stamped
+  with the build it ran on.
 """
 
 from __future__ import annotations
@@ -687,3 +691,215 @@ class IdempotencyRecord(BaseModel):
             content_type=self.response_content_type or None,
         )
         return response
+
+
+# ---------------------------------------------------------------------------
+# CommandRun
+# ---------------------------------------------------------------------------
+
+
+class CommandRunQuerySet(models.QuerySet["CommandRun"]):
+    """Custom queryset for CommandRun."""
+
+    def for_command(self, name: str) -> CommandRunQuerySet:
+        """Return the runs of one command, by its name."""
+        return self.filter(command=name)
+
+    def committed(self) -> CommandRunQuerySet:
+        """Return only the runs made with ``--commit``."""
+        return self.filter(mode=CommandRun.MODE.COMMIT)
+
+    def dry_runs(self) -> CommandRunQuerySet:
+        """Return only the runs of a ``--commit`` command made without it."""
+        return self.filter(mode=CommandRun.MODE.DRY_RUN)
+
+    def running(self) -> CommandRunQuerySet:
+        """Return the runs that have started and not yet been closed."""
+        return self.filter(status=CommandRun.STATUS.RUNNING)
+
+    def stale(self, *, older_than: timedelta) -> CommandRunQuerySet:
+        """Return ``RUNNING`` rows started longer ago than ``older_than``.
+
+        A process killed by a deploy restart, a ``SIGKILL`` or the OOM killer
+        never reaches the code that closes its row, so the row stays
+        ``RUNNING`` for ever unless something sweeps it.
+        """
+        return self.running().filter(started_at__lt=timezone.now() - older_than)
+
+
+class CommandRun(BaseModel):
+    """One invocation of a project management command (SNOW-1189).
+
+    Opened as ``RUNNING`` before the command's ``handle()`` runs and closed
+    after it returns or raises, by ``RegisteredCommand.execute``. A dry run
+    is recorded as well as a ``--commit`` run: comparing the counts of the
+    two is half of what the register is for.
+
+    The row identifies the build by ``git_sha`` and ``release`` (the
+    ``VERSION`` ordinal). The CalVer tag is not stored because it does not
+    exist yet when a deploy's commands run — ``release.yml`` creates it
+    after the deploy starts — and a SHA maps to its tag through GitHub.
+    """
+
+    class MODE(models.TextChoices):
+        """Whether the run could write."""
+
+        COMMIT = "COMMIT", "Commit"
+        DRY_RUN = "DRY_RUN", "Dry run"
+        READ_ONLY = "READ_ONLY", "Read only"
+
+    class STATUS(models.TextChoices):
+        """Lifecycle and outcome of a run."""
+
+        RUNNING = "RUNNING", "Running"
+        SUCCEEDED = "SUCCEEDED", "Succeeded"
+        PARTIAL = "PARTIAL", "Partial"
+        FAILED = "FAILED", "Failed"
+        INTERRUPTED = "INTERRUPTED", "Interrupted"
+
+    class INVOKED_VIA(models.TextChoices):
+        """What started the run."""
+
+        SHELL = "SHELL", "Shell"
+        SCHEDULER = "SCHEDULER", "Scheduler"
+        BUILD = "BUILD", "Build"
+        CALL_COMMAND = "CALL_COMMAND", "call_command"
+
+    command = models.CharField(
+        max_length=100,
+        db_index=True,
+        help_text="The command's name, e.g. relink_bulletin_regions.",
+    )
+    app_label = models.CharField(
+        max_length=100,
+        help_text="The label of the app the command belongs to.",
+    )
+    arguments = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "The parsed options and positional arguments, minus Django's own "
+            "plumbing options, with secret-looking values redacted."
+        ),
+    )
+    argv = models.TextField(
+        blank=True,
+        default="",
+        help_text="The command line as typed, when run from manage.py.",
+    )
+    mode = models.CharField(
+        max_length=16,
+        choices=MODE.choices,
+        db_index=True,
+        help_text=(
+            "COMMIT or DRY_RUN for a command with a --commit flag, READ_ONLY "
+            "for one without."
+        ),
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=STATUS.choices,
+        default=STATUS.RUNNING,
+        db_index=True,
+    )
+    exit_code = models.SmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="The process exit code the run produced; NULL while running.",
+    )
+    started_at = models.DateTimeField(default=timezone.now, db_index=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    counts = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "Named record counts the command tallied, e.g. {'relinked': 412}. "
+            "In a dry run they are what WOULD have changed."
+        ),
+    )
+    output_tail = models.TextField(
+        blank=True,
+        default="",
+        help_text="The last part of the run's stdout and stderr.",
+    )
+    error = models.TextField(
+        blank=True,
+        default="",
+        help_text="The exception and traceback of a failed run.",
+    )
+    invoked_via = models.CharField(
+        max_length=16,
+        choices=INVOKED_VIA.choices,
+        db_index=True,
+    )
+    operator = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        help_text="SNOWDESK_OPERATOR when set, else the OS user.",
+    )
+    host = models.CharField(max_length=255, blank=True, default="")
+    service = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="RENDER_SERVICE_NAME, e.g. snowdesk-website.",
+    )
+    instance = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="RENDER_INSTANCE_ID.",
+    )
+    environment = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="The settings overlay, e.g. production or staging.",
+    )
+    git_sha = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="settings.RELEASE_VERSION — RENDER_GIT_COMMIT, or 'dev'.",
+    )
+    release = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="settings.APP_RELEASE — the VERSION file's ordinal.",
+    )
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="children",
+        help_text="The run that started this one through call_command, if any.",
+    )
+
+    objects = CommandRunQuerySet.as_manager()
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+
+    def to_string(self) -> str:
+        """Return the command, its mode, status and start time."""
+        started = self.started_at.strftime("%Y-%m-%d %H:%M") if self.started_at else ""
+        return f"{self.command} [{self.mode}] {self.status} {started}".strip()
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
+
+    @property
+    def duration(self) -> timedelta | None:
+        """Return how long the run took, or None while it is still open."""
+        if self.finished_at is None:
+            return None
+        return self.finished_at - self.started_at

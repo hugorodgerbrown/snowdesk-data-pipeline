@@ -49,10 +49,11 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import transaction
 
 from apps.core.command_iteration import announce_link_run, iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import Resort
 from apps.regions.services.resort_pin import locked_resort, set_resort_pin
 
@@ -78,7 +79,7 @@ def _pin_is_current(resort: Resort) -> bool:
     )
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Set ``Resort.location`` for every resort with a coordinate.
 
     Read-only by default; pass --commit to persist. Offline and idempotent:

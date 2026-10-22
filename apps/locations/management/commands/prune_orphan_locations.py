@@ -36,17 +36,17 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.locations.models import Location
 from apps.weather.models import Weather
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Delete anonymous Locations that nothing references.
 
     Read-only by default; pass --commit to delete. Named locations are

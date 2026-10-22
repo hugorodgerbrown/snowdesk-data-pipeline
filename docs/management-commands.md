@@ -1,6 +1,6 @@
 ---
 name: management-commands
-description: Commands — fetch_bulletins, fetch_weather, purge_request_logs, purge_expired_oauth_tokens, mint_mcp_token, backfill_*
+description: Commands — RegisteredCommand / CommandRun register, fetch_bulletins, fetch_weather, purge_*, prune_command_runs, backfill_*
 status: current
 last-reviewed: 2026-10-22
 ---
@@ -123,18 +123,53 @@ summarised in CLAUDE.md; this is the full contract. Rationale:
    exempt outright — mark the exemption inline, don't just leave the loop
    as `for x in qs:` unexplained.
 
+## The command run register
+
+Every project command inherits `apps.core.command_register.RegisteredCommand`
+rather than `BaseCommand` (SNOW-1189), and every run — dry run or `--commit`,
+from a shell, the scheduler, the build or `call_command` — becomes one
+`CommandRun` row: the arguments (secrets redacted), the mode, start and end
+time, status, exit code, named record counts, the last 16 KB of output, the
+traceback of a failure, who ran it and where, and the git SHA and release
+number of the build. Read it in the admin under **Core → Command runs**.
+Why it is a base class and not the django-command-log package:
+[decisions/every-command-run-is-registered.md](decisions/every-command-run-is-registered.md).
+
+What a command author does:
+
+- **Inherit it.** `class Command(RegisteredCommand):` — the import is
+  `from apps.core.command_register import RegisteredCommand`.
+  `tests/core/test_command_register_guard.py` fails a project command that
+  subclasses `BaseCommand` directly.
+- **Count what changed.** Call `self.tally("relinked")` (or
+  `self.tally("relinked", n)`) as records change — in a dry run, as they
+  WOULD change. Tally every outcome, zeros included, so a dry run's row and
+  a commit run's row compare key for key. A `failed` count above zero makes
+  the run `PARTIAL`, whether it then returns or raises `CommandError`.
+- **Change nothing else.** Exit codes, output and transactions are as
+  before; the row is written around the command, never inside it.
+- **Opt out only for a reason.** `record_runs = False` with a comment saying
+  why; today only `run_scheduler`, which never finishes.
+
+What an operator does: set `SNOWDESK_OPERATOR=<your name>` in the shell
+before running a command against a deployed environment. A Render shell runs
+everyone as the same OS user, so without it the row cannot say who ran it.
+`SNOWDESK_INVOKED_VIA` is set by `run_scheduler` (`SCHEDULER`) and
+`bin/build.sh` (`BUILD`); a run with neither is `SHELL` from `manage.py`, or
+`CALL_COMMAND` from code.
+
 ## Operational requirements
 
-Six scheduled jobs run on the worker: two keep the public site in sync
-with upstream data, two delete rows past their useful life, one fills a
-derived column, and one is a read-only detector. All six
+Seven scheduled jobs run on the worker: two keep the public site in sync
+with upstream data, three delete or close rows past their useful life, one
+fills a derived column, and one is a read-only detector. All seven
 are driven by the `snowdesk-scheduler` Render Background Worker, which
 runs `python manage.py run_scheduler` and uses APScheduler (SNOW-238) to
 fire the jobs on their cron schedules via `django.core.management.call_command`.
 The schedule is declared in [`schedule.py`](../schedule.py) at the repo root
-and documented in [`render.yaml`](../render.yaml). The five writing jobs run
-with `--commit` so they actually persist; the sixth runs `--check` and writes
-nothing. All six exit non-zero on failure so a missed run is visible in the
+and documented in [`render.yaml`](../render.yaml). The six writing jobs run
+with `--commit` so they actually persist; the seventh runs `--check` and writes
+nothing. All seven exit non-zero on failure so a missed run is visible in the
 worker logs.
 
 | Job | Command | Cadence | Purpose |
@@ -143,6 +178,7 @@ worker logs.
 | Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every active location. Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
 | OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes MCP OAuth tokens and authorization codes dead for more than a week (SNOW-1035). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
+| Run-register prune | `prune_command_runs --commit` | `50 3 * * *` (daily, 03:50 UTC) | Marks `CommandRun` rows a killed process left `RUNNING` for over six hours as `INTERRUPTED`, and deletes `SCHEDULER` runs older than 90 days (SNOW-1189). Every other run is kept for good. |
 | what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
 | Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports resorts with a coordinate but no pin `Location` (`Resort.location`, SNOW-1144) — each one a resort whose weather is not fetched, still on the map only through the transitional fallback to its mirrored coordinates (removed by SNOW-1147), with nothing else saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. Since SNOW-1144 every pin writer goes through `set_resort_pin`, so after the one-time backfill this should never fire; if it does, an operator runs `link_resort_locations --commit` by hand. |
 
@@ -185,6 +221,22 @@ aborted the whole nightly run on the first aged click.
 Reported counts distinguish request rows from cascaded rows — `delete()`
 returns a total that includes both, and reporting that total would overstate
 the purge in the one log line an auditor would read.
+
+### `prune_command_runs` — keep the run register honest and small
+
+```bash
+python manage.py prune_command_runs            # read-only: what would change
+python manage.py prune_command_runs --commit   # persist
+```
+
+Two jobs over `CommandRun` (SNOW-1189). A row left `RUNNING` longer than
+`--stale-hours` (default 6) belonged to a process that died without
+unwinding — a deploy restart, `SIGKILL`, the OOM killer — and is marked
+`INTERRUPTED`; a run that really did take longer overwrites the mark with
+its real outcome when it finishes. Rows of `SCHEDULER` runs older than
+`--days` (default 90) are deleted: `fetch_bulletins` alone writes 48 a day.
+Shell, build and `call_command` runs are never deleted — "did this ever run
+here?" is the question the register exists to answer. Scheduled daily.
 
 ### `purge_expired_oauth_tokens` — delete dead OAuth tokens and codes
 

@@ -52,9 +52,10 @@ from pathlib import Path
 from typing import Any
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 
 from apps.core.command_iteration import non_negative_float
+from apps.core.command_register import RegisteredCommand
 from apps.locations.services.elevation import fetch_elevation
 from apps.regions.fixture_utils import centre_from_bbox, load_fixture, write_fixture
 
@@ -65,7 +66,7 @@ FIXTURE_NAMES = ["eaws_CH.json", "eaws_FR.json", "eaws_AT.json", "eaws_IT.json"]
 MICRO_REGION_MODEL = "regions.microregion"
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Resolve and store each micro-region's centroid elevation in the fixtures.
 
     Read-only by default; pass --commit to rewrite the fixture files. One

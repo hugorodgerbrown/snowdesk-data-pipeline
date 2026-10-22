@@ -49,9 +49,9 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any
 
-from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 
+from apps.core.command_register import RegisteredCommand
 from apps.regions.fixture_utils import (
     bbox_from_children,
     boundary_from_children,
@@ -89,7 +89,7 @@ _FIXTURE_TIMESTAMP = "2026-01-01T00:00:00Z"
 _NEIGHBOUR_EPS_DEGREES = 1e-4
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Build apps/regions/fixtures/eaws_CH.json from EAWS micro-region source files.
 
     Read-only by default; pass ``--commit`` to write the fixture.

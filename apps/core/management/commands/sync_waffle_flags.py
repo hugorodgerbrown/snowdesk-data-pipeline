@@ -25,10 +25,11 @@ from pathlib import Path
 from typing import Any, cast
 
 from django.contrib.auth.models import Group
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 from django.db import transaction
 from waffle.models import Flag
 
+from apps.core.command_register import RegisteredCommand
 from apps.core.services.waffle_sync import compute_flag_diff, load_manifest
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ DEFAULT_MANIFEST_PATH = (
 )
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Reconcile waffle.Flag rows to apps/core/fixtures/waffle_flags.json.
 
     Read-only by default; ``--commit`` persists the create/delete diff.

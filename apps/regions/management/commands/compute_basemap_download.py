@@ -48,6 +48,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion
 from apps.regions.services.basemap_tiles import (
     MICRO_BAND,
@@ -58,7 +59,7 @@ from apps.regions.services.basemap_tiles import (
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Recompute basemap_download on every MicroRegion. Read-only unless --commit."""
 
     help = (

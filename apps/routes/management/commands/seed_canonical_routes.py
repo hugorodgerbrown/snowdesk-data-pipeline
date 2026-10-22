@@ -53,9 +53,10 @@ from argparse import ArgumentParser
 from typing import TYPE_CHECKING, Any
 
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 
 from apps.bulletins.management.commands.seed_test_data import NORMAL_USER_EMAIL
+from apps.core.command_register import RegisteredCommand
 from apps.routes.models import Route
 from apps.routes.services.canonical import canonical_documents
 from apps.routes.services.routes import create_route
@@ -71,7 +72,7 @@ logger = logging.getLogger(__name__)
 UP_TO_DATE = "Canonical routes up to date."
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Create and sample the dev user's canonical routes where missing.
 
     Read-only by default; pass --commit to persist. Exits non-zero if any

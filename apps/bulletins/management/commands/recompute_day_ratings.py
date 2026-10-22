@@ -37,17 +37,18 @@ from collections.abc import Iterator
 from datetime import date
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 
 from apps.bulletins.models import RegionDayRating
 from apps.bulletins.services.day_rating import recompute_region_day
 from apps.core.command_iteration import countdown
+from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Re-derive RegionDayRating rows under the current day-rating policy."""
 
     help = (

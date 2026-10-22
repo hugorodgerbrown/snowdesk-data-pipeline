@@ -33,9 +33,10 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
 
 from apps.core.command_iteration import iterate_rows
+from apps.core.command_register import RegisteredCommand
 from apps.locations.models import Location, generate_short_id
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 _MINT_ATTEMPTS = 5
 
 
-class Command(BaseCommand):
+class Command(RegisteredCommand):
     """Mint a short id for every Location that has none.
 
     Read-only by default; pass --commit to persist. Exits non-zero if any
