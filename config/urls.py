@@ -42,7 +42,6 @@ HTML per request; see ``docs/error-pages.md``.
 
 from django.conf import settings
 from django.contrib import admin
-from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
@@ -51,13 +50,14 @@ from apps.oauth.views import (
     authorization_server_metadata,
     protected_resource_metadata,
 )
-from apps.public.sitemaps import SITEMAPS
 from apps.public.views import (
     serve_favicon,
     serve_llms_full_txt,
     serve_llms_txt,
     serve_manifest,
     serve_robots,
+    serve_sitemap,
+    serve_sitemap_index,
     serve_sw,
     serve_sw_kill,
 )
@@ -154,14 +154,12 @@ if settings.DEBUG:
         ]
     )
 
-urlpatterns.append(
-    path(
-        "sitemap.xml",
-        sitemap,
-        {"sitemaps": SITEMAPS},
-        name="sitemap",
-    )
-)
+# SNOW-1178: an index and one file per content type, each cached for its
+# own lifetime (``apps.public.sitemaps.SITEMAP_FILES``).
+urlpatterns += [
+    path("sitemap.xml", serve_sitemap_index, name="sitemap"),
+    path("sitemap-<slug:name>.xml", serve_sitemap, name="sitemap_file"),
+]
 # observations/ partials must be registered BEFORE ``apps.public.urls`` because
 # the generic ``<region_id:region_id>/`` catch-all in apps.public.urls would otherwise
 # swallow ``partials/report/…`` and resolve "partials" as a region_id.

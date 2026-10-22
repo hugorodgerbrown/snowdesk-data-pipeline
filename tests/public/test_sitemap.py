@@ -12,24 +12,35 @@ Covers:
   - Empty-but-valid XML when no bulletin exists at all.
   - Sitemap entries are evergreen form-2 URLs, not dated form-3 URLs
     (SNOW-395).
+  - /sitemap.xml is an index of three files — main, regions, resorts — each
+    cached and served public-cacheable for its own lifetime, without
+    ``Vary: Cookie``; the section queries select no boundary polygon
+    (SNOW-1178).
 """
 
 from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import pytest
+from django.core.cache import cache
+from django.db import connection
 from django.test import Client, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from freezegun import freeze_time
 
 from apps.public.sitemaps import (
+    SITEMAP_FILES,
     BulletinSitemap,
     LocationWeatherSitemap,
+    ResortSitemap,
     StaticViewSitemap,
 )
 from apps.regions.models import MicroRegion, Resort
@@ -45,6 +56,12 @@ from tests.factories import (
 )
 
 _ZURICH_TZ = ZoneInfo("Europe/Zurich")
+
+
+@pytest.fixture(autouse=True)
+def _clear_sitemap_cache() -> None:
+    """Start every test with no cached sitemap (SNOW-1178)."""
+    cache.clear()
 
 
 def _zurich_today() -> date:
@@ -64,28 +81,63 @@ def _make_bulletin_for_region(region: MicroRegion, day: date) -> None:
     RegionBulletinFactory.create(bulletin=bulletin, region=region)
 
 
+def _file_url(name: str) -> str:
+    """Return the path of one sitemap file, e.g. ``/sitemap-regions.xml``."""
+    return reverse("sitemap_file", kwargs={"name": name})
+
+
+def _sitemap(client: Client) -> str:
+    """Return every sitemap file's body, concatenated, as a crawler reads them."""
+    return "".join(
+        client.get(_file_url(name)).content.decode() for name in SITEMAP_FILES
+    )
+
+
 @pytest.mark.django_db
 class TestSitemapResponse:
-    """The /sitemap.xml endpoint returns valid XML with a 200 status."""
+    """/sitemap.xml is an index of three sitemap files (SNOW-1178)."""
 
-    def test_returns_200_ok(self, client: Client) -> None:
-        """Bare request with no bulletins returns 200."""
-        url = reverse("sitemap")
-        response = client.get(url)
+    def test_index_lists_the_three_files(self, client: Client) -> None:
+        """The index names main, regions and resorts on SITE_BASE_URL."""
+        with override_settings(SITE_BASE_URL="https://snowdesk.info"):
+            response = client.get(reverse("sitemap"))
+
         assert response.status_code == 200
-
-    def test_content_type_is_xml(self, client: Client) -> None:
-        """Content-Type includes application/xml."""
-        url = reverse("sitemap")
-        response = client.get(url)
         assert "xml" in response["Content-Type"]
+        assert re.findall(r"<loc>([^<]+)</loc>", response.content.decode()) == [
+            "https://snowdesk.info/sitemap-main.xml",
+            "https://snowdesk.info/sitemap-regions.xml",
+            "https://snowdesk.info/sitemap-resorts.xml",
+        ]
 
-    def test_empty_sitemap_is_valid_xml(self, client: Client) -> None:
-        """With no bulletins at all the response is still well-formed XML."""
-        url = reverse("sitemap")
-        response = client.get(url)
-        content = response.content.decode()
-        assert "<urlset" in content
+    @pytest.mark.parametrize("name", list(SITEMAP_FILES))
+    def test_each_file_is_a_valid_urlset_when_empty(
+        self, client: Client, name: str
+    ) -> None:
+        """With no data at all every file is still a well-formed <urlset>."""
+        response = client.get(_file_url(name))
+
+        assert response.status_code == 200
+        assert "xml" in response["Content-Type"]
+        assert "<urlset" in response.content.decode()
+
+    def test_an_unknown_file_is_a_404(self, client: Client) -> None:
+        """Only the files in SITEMAP_FILES exist."""
+        assert client.get(_file_url("bulletins")).status_code == 404
+
+    def test_sections_are_split_by_file(self, client: Client) -> None:
+        """Regions, resorts and the rest each land in their own file."""
+        region = MicroRegionFactory.create(region_id="CH-4115", slug="ch-4115")
+        _make_bulletin_for_region(region, _zurich_today())
+        resort = ResortFactory.create(region=region)
+
+        def body(name: str) -> str:
+            return client.get(_file_url(name)).content.decode()
+
+        assert region.get_absolute_url() in body("regions")
+        assert resort.get_absolute_url() in body("resorts")
+        assert reverse("public:home") in body("main")
+        assert region.get_absolute_url() not in body("main") + body("resorts")
 
 
 @pytest.mark.django_db
@@ -100,9 +152,7 @@ class TestSitemapContents:
         today = _zurich_today()
         _make_bulletin_for_region(region, today)
 
-        url = reverse("sitemap")
-        response = client.get(url)
-        content = response.content.decode()
+        content = _sitemap(client)
         assert "ch-4115" in content
 
     def test_out_of_season_region_is_listed_with_its_lastmod(
@@ -120,7 +170,7 @@ class TestSitemapContents:
         _make_bulletin_for_region(region, _zurich_today() - timedelta(days=150))
         bulletin = region.bulletins.get()
 
-        content = client.get(reverse("sitemap")).content.decode()
+        content = _sitemap(client)
 
         entry = re.search(
             r"/ch-4200/graubunden/</loc>\s*<lastmod>([^<]+)</lastmod>", content
@@ -151,7 +201,7 @@ class TestSitemapContents:
             _make_bulletin_for_region(region, today - timedelta(days=days_ago))
         newest = max(b.updated_at for b in region.bulletins.all())
 
-        content = client.get(reverse("sitemap")).content.decode()
+        content = _sitemap(client)
 
         assert content.count("/ch-5000/many/</loc>") == 1
         lastmods = re.findall(
@@ -191,9 +241,7 @@ class TestSitemapContents:
         """A region with no bulletin at all does not appear in the sitemap."""
         MicroRegionFactory.create(region_id="AT-9999", name="No Data", slug="at-9999")
 
-        url = reverse("sitemap")
-        response = client.get(url)
-        content = response.content.decode()
+        content = _sitemap(client)
         assert "at-9999" not in content
 
     def test_multiple_countries_appear(self, client: Client) -> None:
@@ -211,9 +259,7 @@ class TestSitemapContents:
         for region in (region_ch, region_at, region_it):
             _make_bulletin_for_region(region, today)
 
-        url = reverse("sitemap")
-        response = client.get(url)
-        content = response.content.decode()
+        content = _sitemap(client)
         assert "ch-1111" in content
         assert "at-1111" in content
         assert "it-1111" in content
@@ -230,8 +276,7 @@ class TestSitemapContents:
         )
         _make_bulletin_for_region(region, _zurich_today())
 
-        response = client.get(reverse("sitemap"))
-        content = response.content.decode()
+        content = _sitemap(client)
 
         locs = re.findall(r"<loc>([^<]+)</loc>", content)
         assert locs, "expected at least one <loc> entry"
@@ -251,45 +296,106 @@ class TestSitemapContents:
 
 @pytest.mark.django_db
 @override_settings(POSTHOG_API_KEY="phc_test")
-def test_sitemap_path_is_not_posthog_exempt(client: Client) -> None:
-    """SNOW-338: /sitemap.xml is deliberately NOT in _POSTHOG_EXEMPT_PATHS.
+@pytest.mark.parametrize(
+    ("name", "max_age"),
+    [(None, 86400), ("main", 21600), ("regions", 3600), ("resorts", 86400)],
+)
+def test_sitemaps_are_public_cacheable_surfaces(
+    client: Client, name: str | None, max_age: int
+) -> None:
+    """SNOW-1178 (closing SNOW-340): every sitemap is shared-cacheable.
 
-    Unlike robots.txt / llms.txt / manifest / favicon, the sitemap is not a
-    valid target for the PostHog-exemption mechanism:
-
-    * it sets no ``Cache-Control: public`` header, so it is not a
-      shared-cacheable surface in the first place; and
-    * its ``Vary: Cookie`` header is added by the sitemap-view middleware
-      path, not by PosthogContextMiddleware — it persists even with
-      POSTHOG_API_KEY unset.
-
-    Exempting it from PostHog would therefore be dead config: it would
-    neither remove ``Vary: Cookie`` nor make the response cacheable.  Making
-    the sitemap a genuine public-cacheable surface is tracked in SNOW-340.
-
-    This test guards the decision: the request filter must return True for
-    /sitemap.xml when a key is set (i.e. the path is NOT short-circuited),
-    and the response still carries Vary: Cookie with no public Cache-Control.
+    The bodies are rendered without the request and the paths are exempt
+    from PostHog, so nothing reads ``request.user`` and no ``Vary: Cookie``
+    splits the edge cache per visitor. Each file has its own lifetime.
     """
+    path = reverse("sitemap") if name is None else _file_url(name)
+
+    response = client.get(path)
+    assert response["Cache-Control"] == f"public, max-age={max_age}"
+    assert "Cookie" not in response.get("Vary", "")
+    assert response["X-Robots-Tag"] == "noindex, noodp, noarchive"
+
+
+@override_settings(POSTHOG_API_KEY="phc_test")
+def test_every_sitemap_path_is_posthog_exempt() -> None:
+    """``_POSTHOG_EXEMPT_PATHS`` spells the paths out; a new file must join it."""
     from config.settings.base import _posthog_request_filter
 
-    class _FakeRequest:
-        path = "/sitemap.xml"
+    paths = [reverse("sitemap"), *(_file_url(name) for name in SITEMAP_FILES)]
 
-    assert _posthog_request_filter(_FakeRequest()) is True, (
-        "/sitemap.xml must NOT be exempt from PosthogContextMiddleware — "
-        "exempting it is dead config (see SNOW-340)"
-    )
+    for path in paths:
+        assert _posthog_request_filter(SimpleNamespace(path=path)) is False, path
 
-    response = client.get(reverse("sitemap"))
-    assert "public" not in response.get("Cache-Control", ""), (
-        "sitemap currently sets no public Cache-Control; if this changes, "
-        "revisit SNOW-340 and the exemption decision"
-    )
-    assert "Cookie" in response.get("Vary", ""), (
-        "sitemap Vary: Cookie originates outside PostHog; if this changes, "
-        "revisit SNOW-340"
-    )
+
+@pytest.mark.django_db
+class TestSitemapCache:
+    """The rendered sitemap is cached; a hit never reaches the sections (SNOW-1178)."""
+
+    def test_a_cache_hit_runs_no_query(
+        self, client: Client, django_assert_num_queries: Any
+    ) -> None:
+        """The second read of every file is served from the cache, byte for byte."""
+        _make_bulletin_for_region(MicroRegionFactory.create(), _zurich_today())
+        ResortFactory.create()
+        first = _sitemap(client)
+
+        with django_assert_num_queries(0):
+            second = _sitemap(client)
+
+        assert second == first
+
+    def test_a_new_region_appears_once_the_cache_expires(self, client: Client) -> None:
+        """Until the entry is dropped the cached body stands; then it rebuilds."""
+        _sitemap(client)
+        region = MicroRegionFactory.create(region_id="CH-7001", slug="ch-7001")
+        _make_bulletin_for_region(region, _zurich_today())
+        path = region.get_absolute_url()
+
+        assert path not in _sitemap(client)
+        cache.clear()
+        assert path in _sitemap(client)
+
+    def test_the_edge_gets_only_the_remaining_lifetime(self, client: Client) -> None:
+        """A body cached 50 minutes ago is offered to the edge for 10 more."""
+        url = _file_url("regions")
+        with freeze_time("2026-10-22 08:00:00"):
+            client.get(url)
+        with freeze_time("2026-10-22 08:50:00"):
+            response = client.get(url)
+
+        assert response["Cache-Control"] == "public, max-age=600"
+
+    def test_the_cache_is_keyed_on_the_origin(self, client: Client) -> None:
+        """A body rendered for one SITE_BASE_URL is never served for another."""
+        with override_settings(SITE_BASE_URL="https://snowdesk.info"):
+            _sitemap(client)
+        with override_settings(SITE_BASE_URL="https://staging.snowdesk.info"):
+            locs = _locs(client)
+
+        assert all(loc.startswith("https://staging.snowdesk.info/") for loc in locs)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("section", "query_count"), [(BulletinSitemap, 1), (ResortSitemap, 2)]
+)
+def test_section_query_reads_no_boundary_polygon(
+    section: Any, query_count: int
+) -> None:
+    """SNOW-1178: the region polygons are what made the bulletin query take 1.8 s."""
+    region = MicroRegionFactory.create()
+    _make_bulletin_for_region(region, _zurich_today())
+    ResortFactory.create(region=region)
+
+    with CaptureQueriesContext(connection) as queries:
+        urls = section().get_urls()
+
+    # The bulletin section is a list, so the paginator counts it with len();
+    # the resort section's COUNT(*) is a cheap scan of one table.
+    assert urls
+    assert len(queries) == query_count
+    assert not any("boundary" in query["sql"] for query in queries)
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +411,7 @@ class TestResortSitemap:
         """Each resort is listed at its canonical URL, with no duplicates."""
         resorts = [ResortFactory.create() for _ in range(3)]
 
-        body = client.get(reverse("sitemap")).content.decode()
+        body = _sitemap(client)
 
         for resort in resorts:
             url = resort.get_absolute_url()
@@ -320,7 +426,7 @@ class TestResortSitemap:
         """
         touring = ResortFactory.create(kind=Resort.Kind.TOURING_TERRAIN)
 
-        body = client.get(reverse("sitemap")).content.decode()
+        body = _sitemap(client)
 
         assert touring.get_absolute_url() in body
 
@@ -339,7 +445,7 @@ class TestStaticViewSitemap:
 
     def test_every_static_route_is_listed(self, client: Client) -> None:
         """Each route in the registry appears in the sitemap."""
-        body = client.get(reverse("sitemap")).content.decode()
+        body = _sitemap(client)
 
         for route in StaticViewSitemap.ROUTES:
             assert f"{reverse(route)}</loc>" in body, (
@@ -374,7 +480,7 @@ class TestStaticViewSitemap:
         ``/examples/`` serves a *random* bulletin per request, which would
         collide with the real bulletin pages it samples.
         """
-        body = client.get(reverse("sitemap")).content.decode()
+        body = _sitemap(client)
 
         assert excluded not in body
 
@@ -390,7 +496,7 @@ def test_sitemap_is_not_empty_out_of_season(client: Client) -> None:
     """
     ResortFactory.create()
 
-    body = client.get(reverse("sitemap")).content.decode()
+    body = _sitemap(client)
 
     assert "<url>" in body
     assert reverse("public:home") in body
@@ -404,9 +510,8 @@ def test_sitemap_is_not_empty_out_of_season(client: Client) -> None:
 
 
 def _locs(client: Client) -> list[str]:
-    """Return every <loc> in the sitemap."""
-    content = client.get(reverse("sitemap")).content.decode()
-    return re.findall(r"<loc>([^<]+)</loc>", content)
+    """Return every <loc> across the sitemap files."""
+    return re.findall(r"<loc>([^<]+)</loc>", _sitemap(client))
 
 
 @pytest.mark.django_db
@@ -450,9 +555,6 @@ class TestLocationWeatherSitemap:
         unaddressable = LocationFactory.create(name="Bec des Rosses", short_id=None)
         ResortLocationFactory.create(location=unaddressable)
 
-        response = client.get(reverse("sitemap"))
-
-        assert response.status_code == 200
         locs = _locs(client)
         assert any(loc.endswith(listed.get_absolute_url()) for loc in locs)
         # The excluded row has no id to search the rendered output for, so
@@ -485,7 +587,7 @@ class TestLocationWeatherSitemap:
         row = WeatherFactory.create(location=peak, observed_on=_zurich_today())
 
         assert client.get(peak.get_absolute_url()).status_code == 200
-        content = client.get(reverse("sitemap")).content.decode()
+        content = _sitemap(client)
         assert row.fetched_at.date().isoformat() in content
 
 

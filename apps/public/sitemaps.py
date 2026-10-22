@@ -1,14 +1,18 @@
 """
 apps/public/sitemaps.py — XML sitemaps for the public bulletin site.
 
-Four sections, registered together in config/urls.py:
+Four sections, published as three sitemap files behind one index
+(``SITEMAP_FILES`` at the foot of this module, SNOW-1178):
 
-    bulletins  BulletinSitemap        — every region that has ever had a
-                                        bulletin (SNOW-1121)
-    resorts    ResortSitemap          — every resort's detail page
-    locations  LocationWeatherSitemap — every named public location's
-                                        weather page (SNOW-799)
-    static     StaticViewSitemap      — the homepage, the map, the guides, legal
+    /sitemap.xml          the index — lists the three files below
+    /sitemap-main.xml     StaticViewSitemap      — the homepage, the map, the
+                                                   guides, legal
+                          LocationWeatherSitemap — every named public
+                                                   location's weather page
+                                                   (SNOW-799)
+    /sitemap-regions.xml  BulletinSitemap        — every region that has ever
+                                                   had a bulletin (SNOW-1121)
+    /sitemap-resorts.xml  ResortSitemap          — every resort's detail page
 
 Until SNOW-676 the sitemap was the bulletin section alone, which had two
 consequences. The resort pages SNOW-504 built specifically as indexable,
@@ -22,7 +26,8 @@ regions with a bulletin valid today.
 
 Wire-up in config/urls.py:
 
-    path("sitemap.xml", sitemap, {"sitemaps": SITEMAPS}, name="sitemap")
+    path("sitemap.xml", serve_sitemap_index, name="sitemap")
+    path("sitemap-<slug:name>.xml", serve_sitemap, name="sitemap_file")
 
 Every section inherits from ``OriginSitemap``, which takes the scheme and
 host of each ``<loc>`` from ``settings.SITE_BASE_URL`` — the same origin
@@ -32,17 +37,34 @@ the ``django_site`` row instead (``SITE_ID = 1``), and that row is the
 live sitemap advertised was on a domain Snowdesk does not own.
 django.contrib.sites stays installed only because the sitemap view imports
 it.
+
+Serving (SNOW-1178). The files are ``apps.public.views.serve_sitemap``, not
+Django's ``sitemap`` view: it renders a file's sections with
+``render_sitemap`` below and keeps the bytes in the cache for that file's
+``cache_seconds``, so a crawler's repeat fetch never reaches the database.
+Each file has its own lifetime because each changes at its own pace — the
+regions with every bulletin, the resorts with a hand edit. Rendering outside
+the request also keeps the template context processors — which read
+``request.user`` and so add ``Vary: Cookie`` — off the response, which is
+what lets it carry ``Cache-Control: public``.
+
+SNOW-1121 made the bulletin section aggregate over every bulletin ever
+issued (59,130 region links at the time). Before SNOW-1178 that aggregate
+also selected — and so grouped and de-duplicated by — both regions'
+boundary polygons, and the whole sitemap took ~3 s. Keep each section's
+``items()`` to the columns its URL and ``lastmod`` read.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.contrib.sitemaps import Sitemap
 from django.db.models import Max
+from django.template.loader import render_to_string
 from django.urls import reverse
 
 from apps.locations.models import Location
@@ -122,21 +144,32 @@ class BulletinSitemap(OriginSitemap):
         """
         Return every MicroRegion with at least one bulletin, of any date.
 
-        Re-evaluated on every request — do not cache at module level.
+        Re-evaluated on every render — do not cache at module level.
         Uses ``Max("bulletins__updated_at")`` annotation so ``lastmod()``
         can retrieve the value without an extra query per region; the
         aggregate groups by region, so each appears once.
 
+        ``only()`` the two columns ``get_absolute_url`` reads (SNOW-1178).
+        The aggregate joins every region-bulletin link, and Postgres groups
+        by every selected column: selecting the whole row — and, before
+        SNOW-1178, the subregion's through ``select_related`` — made it
+        group and de-duplicate 59,130 rows by two boundary polygons, 1.8 s
+        of the sitemap's 3 s. With the pk alone in ``GROUP BY`` no
+        ``distinct()`` is needed either.
+
+        Evaluated to a list so the sitemap's paginator takes ``len()`` of it
+        rather than running the same 59,130-row join a second time as a
+        ``COUNT``.
+
         Returns:
-            A queryset of ``MicroRegion`` instances annotated with
+            A list of ``MicroRegion`` instances annotated with
             ``latest_bulletin_updated_at``.
 
         """
-        return (
+        return list(
             MicroRegion.objects.filter(bulletins__isnull=False)
+            .only("region_id", "name")
             .annotate(latest_bulletin_updated_at=Max("bulletins__updated_at"))
-            .distinct()
-            .select_related("subregion")
             .order_by("region_id")
         )
 
@@ -203,14 +236,16 @@ class ResortSitemap(OriginSitemap):
 
         No ``region__isnull=False`` filter: ``Resort.region`` is a
         non-nullable FK, so the filter would be dead code and the
-        "resort without a region" case cannot arise. ``select_related``
-        because ``get_absolute_url`` is cheap but the ordering is not free.
+        "resort without a region" case cannot arise. ``only()`` the slug
+        and ``updated_at`` — all ``location`` and ``lastmod`` read. Until
+        SNOW-1178 a ``select_related("region")`` also fetched each resort's
+        region, boundary polygon included, for nothing.
 
         Returns:
             A queryset of ``Resort`` instances.
 
         """
-        return Resort.objects.select_related("region").order_by("id")
+        return Resort.objects.only("slug", "updated_at").order_by("id")
 
     def location(self, item: Resort) -> str:
         """
@@ -441,11 +476,88 @@ class StaticViewSitemap(OriginSitemap):
         return self.ROUTES[item][1]
 
 
-# The full set, registered as one dict so config/urls.py has nothing to
-# decide and adding a section is a one-line change here.
-SITEMAPS: dict[str, type[Sitemap]] = {
-    "bulletins": BulletinSitemap,
-    "resorts": ResortSitemap,
-    "locations": LocationWeatherSitemap,
-    "static": StaticViewSitemap,
+class SitemapFile(NamedTuple):
+    """One sitemap file the index lists: its sections and its cache lifetime."""
+
+    sections: tuple[type[Sitemap], ...]
+    cache_seconds: int
+
+
+# The published files, by the name in their URL (``/sitemap-<name>.xml``),
+# in index order. Adding a section is a one-line change here.
+SITEMAP_FILES: dict[str, SitemapFile] = {
+    # Six hours: the reference pages barely change, and a weather page's
+    # lastmod moves with each of the four daily forecast fetches.
+    "main": SitemapFile((StaticViewSitemap, LocationWeatherSitemap), 6 * 60 * 60),
+    # An hour: a region's lastmod moves whenever a bulletin lands, and the
+    # providers publish more than once a day in season.
+    "regions": SitemapFile((BulletinSitemap,), 60 * 60),
+    # A day: a resort's lastmod is a hand edit to its curated row.
+    "resorts": SitemapFile((ResortSitemap,), 24 * 60 * 60),
 }
+
+# The index lists the files above and nothing else, so it only changes when
+# that dict does — on a deploy. A day at the edge is harmless.
+SITEMAP_INDEX_CACHE_SECONDS = 24 * 60 * 60
+
+
+def sitemap_cache_key(name: str) -> str:
+    """
+    Return the cache key for one rendered sitemap file.
+
+    Keyed on ``SITE_BASE_URL`` because every ``<loc>`` is built from it: a
+    body rendered for one origin must not be served for another.
+
+    Args:
+        name: A key of ``SITEMAP_FILES``.
+
+    Returns:
+        The cache key.
+
+    """
+    return f"public:sitemap-{name}.xml:{settings.SITE_BASE_URL}"
+
+
+def render_sitemap(name: str) -> bytes:
+    """
+    Render one sitemap file's sections into a single ``<urlset>`` document.
+
+    What Django's ``sitemap`` view does for a single page, without the
+    request: the sections take their origin from ``SITE_BASE_URL`` (see
+    ``OriginSitemap``), so the request has nothing to contribute, and
+    rendering without it keeps ``request.user`` — and ``Vary: Cookie`` —
+    out of the response. A single page holds 50,000 URLs, a hundred times
+    the current estate.
+
+    Args:
+        name: A key of ``SITEMAP_FILES``.
+
+    Returns:
+        The XML document as UTF-8 bytes.
+
+    """
+    urls: list[dict[str, Any]] = []
+    for section in SITEMAP_FILES[name].sections:
+        urls.extend(section().get_urls())
+    return render_to_string("sitemap.xml", {"urlset": urls}).encode()
+
+
+def render_sitemap_index() -> bytes:
+    """
+    Render the ``<sitemapindex>`` listing every file in ``SITEMAP_FILES``.
+
+    No ``<lastmod>`` per file: working one out means running that file's
+    queries, which is the cost the index exists to keep off a crawler's
+    first request. A crawler fetches each file and reads the per-URL
+    ``lastmod`` there.
+
+    Returns:
+        The XML document as UTF-8 bytes.
+
+    """
+    base = str(settings.SITE_BASE_URL).rstrip("/")
+    sitemaps = [
+        {"location": base + reverse("sitemap_file", kwargs={"name": name})}
+        for name in SITEMAP_FILES
+    ]
+    return render_to_string("sitemap_index.xml", {"sitemaps": sitemaps}).encode()

@@ -162,9 +162,11 @@ map's; `/api/version` and `/api/sw-config` in [`docs/offline-map.md`](offline-ma
 also mounts the SLF and ALBINA replay mirrors at `/dev/slf-mirror/` and
 `/dev/albina-mirror/`.
 
-`/sitemap.xml` has four sections, defined in
-[`apps/public/sitemaps.py`](../apps/public/sitemaps.py) and registered together
-as `SITEMAPS`: `bulletins` (every region that has ever had a bulletin, at its evergreen
+`/sitemap.xml` is a sitemap index of three files (SNOW-1178), defined in
+[`apps/public/sitemaps.py`](../apps/public/sitemaps.py) as `SITEMAP_FILES`:
+`/sitemap-main.xml` (the `static` and `locations` sections),
+`/sitemap-regions.xml` (`bulletins`) and `/sitemap-resorts.xml` (`resorts`).
+The four sections: `bulletins` (every region that has ever had a bulletin, at its evergreen
 URL, year-round; SNOW-1121), `resorts`
 (every resort page), `locations` (every *named* public location's weather
 page — never a centroid, never a favourite's pin; SNOW-799) and `static`
@@ -178,6 +180,15 @@ regions. Deliberately absent, with
 the reasoning in the module: `/examples/…` (serves a random bulletin per
 request), redirects (`/observations/` is one now), staff-only routes, and
 anything `Disallow`ed in robots.txt.
+
+Each file is served by `serve_sitemap`, not Django's `sitemap` view: the
+rendered document is cached for its own lifetime and sent with a matching
+`Cache-Control: public, max-age=…` — regions an hour (they move with every
+bulletin), main six hours, resorts a day; the index, which runs no query, a
+day at the edge. A crawler's fetch is one cache read. Each section's query
+selects only the columns its URL and `lastmod` read — the bulletin section
+aggregates over every bulletin ever issued, and when it also selected the
+region polygons the single sitemap took ~3 s.
 
 ## Page metadata
 

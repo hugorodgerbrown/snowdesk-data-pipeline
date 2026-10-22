@@ -145,6 +145,13 @@ from .season_calendar import (
     summarise_season,
 )
 from .site_environment import PWAEnvironmentIdentity
+from .sitemaps import (
+    SITEMAP_FILES,
+    SITEMAP_INDEX_CACHE_SECONDS,
+    render_sitemap,
+    render_sitemap_index,
+    sitemap_cache_key,
+)
 from .templatetags.snowdesk_time import (
     danger_level_digit,
     danger_level_label,
@@ -2484,6 +2491,93 @@ def serve_robots(request: HttpRequest) -> HttpResponse:
     ]
     response = HttpResponse("\n".join(lines), content_type="text/plain; charset=utf-8")
     response["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+def serve_sitemap_index(request: HttpRequest) -> HttpResponse:
+    """
+    Serve ``/sitemap.xml`` — the index of the three sitemap files (SNOW-1178).
+
+    The index names ``/sitemap-main.xml``, ``/sitemap-regions.xml`` and
+    ``/sitemap-resorts.xml`` (``SITEMAP_FILES``), so each can be cached for
+    as long as its own content holds still and a crawler re-reads only the
+    file that changed. It runs no query, so it needs no server cache; the
+    edge holds it for ``SITEMAP_INDEX_CACHE_SECONDS``.
+
+    Args:
+        request: The incoming HTTP request (unused — the body is origin-keyed
+            via ``SITE_BASE_URL``, not per-request).
+
+    Returns:
+        An ``HttpResponse`` with the ``application/xml`` sitemap index.
+
+    """
+    return _sitemap_response(render_sitemap_index(), SITEMAP_INDEX_CACHE_SECONDS)
+
+
+def serve_sitemap(request: HttpRequest, name: str) -> HttpResponse:
+    """
+    Serve ``/sitemap-<name>.xml`` from the cache, rendering it on a miss (SNOW-1178).
+
+    Django's ``sitemap`` view re-ran every section's query on every fetch,
+    and SNOW-1121's bulletin section aggregates over every bulletin ever
+    issued: the single live sitemap took ~3 s, slow enough for Search
+    Console to report it as not fetched. ``render_sitemap`` builds a file
+    once per its ``cache_seconds`` and a hit is a single cache read.
+
+    The response carries ``Cache-Control: public`` for what remains of that
+    lifetime — the body's age is cached with it — so the edge can hold it
+    too without stacking a second full lifetime on the first. Possible only
+    because the body is rendered
+    without the request (see ``render_sitemap``) and the paths are exempt
+    from PostHog, the two things that read ``request.user`` and so added
+    ``Vary: Cookie``.
+
+    Args:
+        request: The incoming HTTP request (unused).
+        name: The file's name in the URL — a key of ``SITEMAP_FILES``.
+
+    Returns:
+        An ``HttpResponse`` with the ``application/xml`` sitemap body.
+
+    Raises:
+        Http404: When ``name`` is not a published sitemap file.
+
+    """
+    sitemap_file = SITEMAP_FILES.get(name)
+    if sitemap_file is None:
+        raise Http404("No such sitemap.")
+    cache_key = sitemap_cache_key(name)
+    now = timezone.now().timestamp()
+    cached: tuple[float, bytes] | None = cache.get(cache_key)
+    if cached is None:
+        cached = (now, render_sitemap(name))
+        cache.set(cache_key, cached, sitemap_file.cache_seconds)
+    rendered_at, body = cached
+    # The edge may hold the body only for what is left of the server entry's
+    # lifetime, or the two caches stack and a change takes twice as long.
+    max_age = max(0, sitemap_file.cache_seconds - int(now - rendered_at))
+    return _sitemap_response(body, max_age)
+
+
+def _sitemap_response(body: bytes, max_age: int) -> HttpResponse:
+    """
+    Wrap a rendered sitemap document in its public-cacheable response.
+
+    ``X-Robots-Tag`` is the header Django's sitemap views set: a sitemap is
+    for crawlers to read, not a page to list in results.
+
+    Args:
+        body: The rendered XML.
+        max_age: How long the edge may serve it, in seconds.
+
+    Returns:
+        The ``application/xml`` response.
+
+    """
+    response = HttpResponse(body, content_type="application/xml")
+    response["Cache-Control"] = f"public, max-age={max_age}"
+    response["X-Robots-Tag"] = "noindex, noodp, noarchive"
     return response
 
 
