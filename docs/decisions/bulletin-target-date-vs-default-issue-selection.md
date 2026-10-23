@@ -1,11 +1,19 @@
 ---
 name: bulletin-target-date-vs-default-issue-selection
-description: Why Bulletin.target_date's 12:00 rule and select_default_issue's 10:00 pivot stay separate mechanisms, not one stored column
-status: current
-last-reviewed: 2026-10-01
+description: HISTORICAL — target_date vs select_default_issue's 10:00 pivot (SNOW-1207 superseded); why provider day fields were rejected
+status: historical
+last-reviewed: 2026-10-23
 ---
 
 # `Bulletin.target_date` and `select_default_issue` answer different questions
+
+> **Superseded by SNOW-1207** —
+> [a-bulletin-belongs-to-the-day-it-forecasts.md](a-bulletin-belongs-to-the-day-it-forecasts.md).
+> `select_default_issue` no longer pivots on 10:00 UTC or on *now*: it reads
+> only the issues whose `target_date` is the day, and picks the latest. The
+> "in force now" branch for today showed tomorrow's issue on today every
+> evening after 17:00, over a map painted with today's. The section on
+> provider-supplied day fields below still holds.
 
 **Decision.** `Bulletin.target_date` (SNOW-560) and the 10:00 UTC pivot inside
 `apps/bulletins/services/selection.py::select_default_issue` (imported into

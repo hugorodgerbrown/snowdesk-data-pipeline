@@ -123,7 +123,7 @@ def problem_terrain_key(rules: list[TerrainRule] | None) -> dict[str, Any]:
 def build_problem_terrain_payload(target_date: date) -> dict[str, Any]:
     """Return every covered region's rules for one day, grouped by bulletin.
 
-    Two queries: the region↔bulletin links overlapping the day, then the
+    Two queries: the region↔bulletin links forecasting the day, then the
     bulletins they name. Each region's issue is chosen by the shared rule,
     so it is the one that region's page shows.
 
@@ -144,8 +144,7 @@ def build_problem_terrain_payload(target_date: date) -> dict[str, Any]:
 
     links = RegionBulletin.objects.filter(
         region__subregion__major__country__in=TERRAIN_COUNTRIES,
-        bulletin__valid_from__date__lte=target_date,
-        bulletin__valid_to__date__gte=target_date,
+        bulletin__target_date=target_date,
     ).values_list("region__region_id", "bulletin_id")
     by_region: dict[str, list[int]] = defaultdict(list)
     for region_id, bulletin_pk in links:
