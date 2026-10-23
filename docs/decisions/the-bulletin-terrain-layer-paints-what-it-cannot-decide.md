@@ -8,7 +8,7 @@ last-reviewed: 2026-10-23
 # The problem-terrain layer paints what it cannot decide
 
 **Decision.** The layers menu has a "Highlight problem terrain" row under
-Conditions, and the region sheet a switch of the same name above the
+Conditions, and the region sheet a switch of the same name below the
 bulletin that writes the same state (Hugo, 23 Oct 2026; until then it was
 the terrain filter's third colour, "By bulletin", SNOW-1194). Switched on, every region's ground of 30° and over is painted on the device
 from the terrain filter's class tiles, by rules read from that region's

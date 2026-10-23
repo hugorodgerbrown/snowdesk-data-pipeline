@@ -73,12 +73,6 @@ Context:
         {{ region.subregion.name_en|default:region.subregion.name_native }}
     </p>
 
-    {# SNOW-979: above the bulletin it paints — only when the day has a  #}
-    {# bulletin and the region is inside the terrain tiles.            #}
-    {% if terrain_switch %}
-        {% include "public/partials/_region_sheet_terrain.html" %}
-    {% endif %}
-
     {% if bulletin or covered %}
         {# One child, so the wrapper's space-y does not respace the body's own blocks. #}
         <div data-testid="region-sheet-bulletin">
@@ -89,6 +83,13 @@ Context:
             {% blocktrans with p=provider_name trimmed %}Avalanche data is not published by {{ p }} for this
                 area{% endblocktrans %}
         </p>
+    {% endif %}
+
+    {# SNOW-979: under the bulletin it paints (Hugo, 23 Oct: the bulletin  #}
+    {# comes first) — only when the day has a bulletin and the region is #}
+    {# inside the terrain tiles.                                          #}
+    {% if terrain_switch %}
+        {% include "public/partials/_region_sheet_terrain.html" %}
     {% endif %}
 
     {% if resorts %}

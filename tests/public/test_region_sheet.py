@@ -380,7 +380,7 @@ _TILES = "https://tiles.example/terrain-class/v1/{z}/{x}/{y}.png"
 
 @pytest.mark.django_db
 class TestProblemTerrainSwitch:
-    """SNOW-979: the "Highlight problem terrain" switch above the bulletin."""
+    """SNOW-979: the "Highlight problem terrain" switch below the bulletin."""
 
     def test_rated_swiss_region_carries_the_switch_and_its_key(
         self, client: Client, settings: Any
@@ -404,15 +404,15 @@ class TestProblemTerrainSwitch:
         # No undecided rule, so no undecided swatch.
         assert "map-legend-swatch--terrain-undecided" not in key
 
-    def test_switch_sits_above_the_bulletin(
+    def test_switch_sits_below_the_bulletin(
         self, client: Client, settings: Any
     ) -> None:
-        """Hugo, 22 Oct: above the bulletin it paints."""
+        """Hugo, 23 Oct: the bulletin comes first, the switch after it."""
         settings.TERRAIN_CLASS_TILE_URL = _TILES
         region = MicroRegionFactory.create()
         _rated_today(region)
         content = _get(client, _url(region.region_id.lower())).content.decode()
-        assert content.index('data-testid="region-sheet-terrain"') < content.index(
+        assert content.index('data-testid="region-sheet-terrain"') > content.index(
             'data-testid="region-sheet-bulletin"'
         )
 
