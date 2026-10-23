@@ -339,3 +339,27 @@ describe('canQueueMutations', () => {
     expect(window.MapSheet.canQueueMutations()).toBe(true);
   });
 });
+
+// SNOW-1195: the calendar spares object sheets (the ones that declare
+// detents), so attach() has to say which kind each sheet is.
+describe('attach — registration', () => {
+  afterEach(() => {
+    delete window.pwaMapOverlays;
+  });
+
+  it.each([
+    [true, 'data-detents="peek half full"'],
+    [false, ''],
+  ])('registers objectSheet %s for a sheet with %j', (expected, attrs) => {
+    const register = vi.fn();
+    window.pwaMapOverlays = { register };
+    document.body.innerHTML = `<div id="object-sheet" ${attrs} hidden tabindex="-1"></div>`;
+
+    window.MapSheet.attach(document.getElementById('object-sheet'), {});
+
+    expect(register).toHaveBeenCalledWith(
+      'object-sheet',
+      expect.objectContaining({ objectSheet: expected }),
+    );
+  });
+});

@@ -297,7 +297,12 @@
     render();
     // Announced before the popup is revealed, so whatever it replaces is
     // gone by the time this is on screen.
-    window.pwaMapOverlays?.opening(OVERLAY_NAME);
+    //
+    // SNOW-1195: except the object sheet. A day picked here reloads the
+    // region, place or weather sheet in place (each listens for
+    // snowdesk:date-changed), which is the whole point of picking a day
+    // while one is open.
+    window.pwaMapOverlays?.opening(OVERLAY_NAME, { spareObjectSheets: true });
     setOpen(true);
     // SNOW-794: no positionSheet call any more. That module places a FIXED
     // sheet by measuring the floor the scrubber and the roundel column
@@ -472,11 +477,20 @@
   // it, so the two stay one pill. Put back in reverse: each element's
   // remembered next sibling may be the one after it in this list, which has
   // to be home first.
+  //
+  // SNOW-1195: so do the day steps either side of it, and the empty-day
+  // notice, which map.css hangs under the row as it does this card.
   const cluster = document.getElementById('map-utility-cluster');
   if (cluster && typeof window.matchMedia === 'function') {
     const phone = window.matchMedia('(max-width: 639.98px)');
-    const today = document.getElementById('map-today-control');
-    const moved = today ? [toggle, today, root] : [toggle, root];
+    const moved = [
+      document.getElementById('map-day-prev'),
+      toggle,
+      document.getElementById('map-day-next'),
+      document.getElementById('map-today-control'),
+      document.getElementById('map-day-empty'),
+      root,
+    ].filter(Boolean);
     const homes = moved.map((el) => ({ el, parent: el.parentNode, next: el.nextSibling }));
     const place = () => {
       if (phone.matches) {

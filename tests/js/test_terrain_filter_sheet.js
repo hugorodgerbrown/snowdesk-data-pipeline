@@ -23,6 +23,7 @@ function stubBridge() {
     enabled: false,
     filter: { aspects: [0, 1, 2, 3, 4, 5, 6, 7], minSlope: 30, maxSlope: null, minElevation: null, maxElevation: null },
     availability: 'ok',
+    dayEmpty: false,
   };
   const announce = () => document.dispatchEvent(new CustomEvent('snowdesk:terrain-filter-changed'));
   const bridge = {
@@ -36,6 +37,7 @@ function stubBridge() {
       announce();
     }),
     availability: () => state.availability,
+    bulletinDayEmpty: () => state.dayEmpty,
   };
   window.pwaTerrainFilter = bridge;
   return bridge;
@@ -87,6 +89,7 @@ function buildFixture() {
     <template id="map-terrain-filter-strings-template">
       <span data-string="availability-zoom-in">Näher heranzoomen.</span>
       <span data-string="availability-out-of-coverage">Keine Daten hier.</span>
+      <span data-string="availability-no-bulletin">Kein Bulletin für diesen Tag.</span>
       <span data-string="aspects-all">Alle Expositionen</span>
       <span data-string="aspects-count">%(count)s Expositionen</span>
       <span data-string="slope-min">ab %(min)s°</span>
@@ -328,6 +331,13 @@ describe('the menu row and legend', () => {
     bridge.state.availability = 'out-of-coverage';
     bridge.show();
     expect(summary().textContent).toBe('Keine Daten hier.');
+  });
+
+  // SNOW-1195: "By bulletin" on a day with no bulletin paints nothing.
+  it('says when the day has no bulletin to colour by', () => {
+    bridge.state.dayEmpty = true;
+    bridge.show();
+    expect(summary().textContent).toBe('Kein Bulletin für diesen Tag.');
   });
 
   it('hides the line and the legend while the filter is off', () => {

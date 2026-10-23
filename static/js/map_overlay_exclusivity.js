@@ -34,10 +34,12 @@
  *                               test, or a surface re-attached after a
  *                               swap) rather than leaving a stale
  *                               controller listening.
- *   opening(name)               close every OTHER registered overlay.
+ *   opening(name, options)      close every OTHER registered overlay.
  *                               Called by the opening surface before it
  *                               reveals itself, so the two are never on
  *                               screen together for a frame.
+ *                               ``options.spareObjectSheets`` leaves the
+ *                               object sheets open (SNOW-1195, below).
  *   closeAll()                  close every registered overlay.
  *   openNames()                 the names of the overlays open now —
  *                               how a surface that appears by itself
@@ -64,6 +66,15 @@
  * surface's identical handler ever saw them open, and a surface opened
  * programmatically rather than by a document click never reached theirs.
  *
+ * OBJECT SHEETS (SNOW-1195). A controller registered with
+ * ``objectSheet: true`` is a sheet opened by a tap on the map — the region,
+ * place and weather sheets, the ones that declare detents (map_sheet.js).
+ * The calendar opens with ``spareObjectSheets`` so that picking a day
+ * reloads the sheet the visitor is reading instead of shutting it: until
+ * then every change of day on a phone, where the calendar is the only date
+ * control, cost a fresh tap on the region. A surface that does not pass the
+ * option closes object sheets exactly as before.
+ *
  * ``close()`` is only called on a surface that reports itself open, so a
  * controller's close path never runs for a surface already closed — the
  * sheets' own teardown (map_sheet.js) empties the sheet body, which is
@@ -81,7 +92,7 @@
   /**
    * The registered overlays, by name.
    *
-   * @type {Map<string, { isOpen: function(): boolean, close: function(): void }>}
+   * @type {Map<string, { isOpen: function(): boolean, close: function(): void, objectSheet?: boolean }>}
    */
   var overlays = new Map();
 
@@ -90,8 +101,9 @@
    *
    * @param {string} name Stable identifier — the element's own DOM id
    *   wherever it has one, so a failure names something greppable.
-   * @param {{ isOpen: function(): boolean, close: function(): void }} controller
-   *   How to ask whether this overlay is open, and how to close it.
+   * @param {{ isOpen: function(): boolean, close: function(): void, objectSheet?: boolean }} controller
+   *   How to ask whether this overlay is open, and how to close it;
+   *   ``objectSheet`` marks a sheet a tap on the map opened.
    * @returns {void}
    */
   function register(name, controller) {
@@ -108,11 +120,15 @@
    * closed by anyone else.
    *
    * @param {string} name The overlay doing the opening.
+   * @param {{ spareObjectSheets?: boolean }} [options]
+   *   ``spareObjectSheets`` — leave every object sheet open.
    * @returns {void}
    */
-  function opening(name) {
+  function opening(name, options) {
+    var spare = !!(options && options.spareObjectSheets);
     overlays.forEach(function (controller, registered) {
       if (registered === name) return;
+      if (spare && controller.objectSheet) return;
       if (!controller.isOpen()) return;
       controller.close();
     });

@@ -60,6 +60,12 @@
   // followed by a correction is the normal case, not an edge one.
   var requestToken = 0;
 
+  // SNOW-1195: the location the open sheet is showing, so a change of day
+  // can reload it. The calendar no longer closes this sheet on its way in
+  // (it is an object sheet), so without this the map would move to the new
+  // day under a sheet still showing the old one.
+  var shownShortId = null;
+
   /**
    * Fill the sheet with a plain message, styled like the body it replaces.
    *
@@ -97,12 +103,23 @@
   async function open(shortId, dateKey) {
     if (shortId == null || !URL_TEMPLATE) return false;
 
-    var token = ++requestToken;
+    shownShortId = shortId;
     // Paint first: the sheet measures its peek as it opens, so the loading
     // line must already be there or it opens at the fallback height.
     showMessage(strings.loading);
     sheet.open();
+    return load(shortId, dateKey);
+  }
 
+  /**
+   * Fetch one location's day into the sheet, keeping only the latest ask.
+   *
+   * @param {string} shortId Location short id.
+   * @param {string} [dateKey] ISO date; omitted, the server answers for today.
+   * @returns {Promise<boolean>} Whether the body was rendered.
+   */
+  async function load(shortId, dateKey) {
+    var token = ++requestToken;
     var url = URL_TEMPLATE.replace('__SHORTID__', encodeURIComponent(String(shortId)));
     if (dateKey) url += '?date=' + encodeURIComponent(dateKey);
 
@@ -122,6 +139,15 @@
       return false;
     }
   }
+
+  // SNOW-1195: reload the open sheet for the new day, as the region and
+  // place sheets do. No loading line: the old day stays readable until the
+  // new one lands, and a fast run of days keeps only the last response.
+  document.addEventListener('snowdesk:date-changed', function (ev) {
+    if (shownShortId == null || !sheet.isOpen()) return;
+    var dateKey = ev.detail && ev.detail.date;
+    load(shownShortId, dateKey || undefined);
+  });
 
   window.pwaWeatherDetail = Object.freeze({
     open: open,

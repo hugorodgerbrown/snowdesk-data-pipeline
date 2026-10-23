@@ -52,6 +52,7 @@
   const STRINGS = self.pwaStrings.read('map-terrain-filter-strings-template', {
     'availability-zoom-in': 'Zoom in further to see the filter.',
     'availability-out-of-coverage': 'No terrain data here — the filter covers Switzerland only.',
+    'availability-no-bulletin': 'No bulletin for this day, so nothing to colour by.',
     'aspects-all': 'All aspects',
     'aspects-none': 'No aspects',
     'aspects-one': '1 aspect',
@@ -375,6 +376,9 @@
     const state = b.availability();
     if (state === 'zoom-in') return STRINGS['availability-zoom-in'];
     if (state === 'out-of-coverage') return STRINGS['availability-out-of-coverage'];
+    if (typeof b.bulletinDayEmpty === 'function' && b.bulletinDayEmpty()) {
+      return STRINGS['availability-no-bulletin'];
+    }
     return core.summarise(filter, STRINGS, { short: true, formatNumber: formatNumber });
   };
 

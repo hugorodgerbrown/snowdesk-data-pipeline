@@ -831,7 +831,15 @@
     // here rather than by each caller — both sheets reach the map through
     // this controller, so this is the one place that knows they are map
     // overlays at all.
-    window.pwaMapOverlays?.register(el.id, { isOpen: isOpen, close: close });
+    //
+    // SNOW-1195: a sheet that declares detents is an object sheet — the
+    // region, place and weather sheets. The calendar spares those, so a
+    // change of day reloads the sheet rather than closing it.
+    window.pwaMapOverlays?.register(el.id, {
+      isOpen: isOpen,
+      close: close,
+      objectSheet: el.hasAttribute('data-detents'),
+    });
 
     return { open: open, close: close, isOpen: isOpen, element: el };
   }

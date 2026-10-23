@@ -73,3 +73,28 @@ describe('opening', () => {
     expect(peek?.textContent).toContain("That weather couldn't be loaded.");
   });
 });
+
+// SNOW-1195: the calendar spares this sheet now, so a new day reloads it.
+describe('a change of day', () => {
+  /** Announce a committed day, as map_scrubber.js does. */
+  const commit = (date) =>
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date } }));
+
+  it('reloads the open sheet for the same location on the new day', async () => {
+    fetchMock.mockImplementation((url) =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ html: `<p>${url}</p>` }) }),
+    );
+    window.pwaWeatherDetail.open('abc', '2026-04-27');
+    await settle();
+    commit('2026-04-28');
+    await settle();
+    expect(fetchMock.mock.calls.at(-1)[0]).toBe('/api/weather/abc/detail/?date=2026-04-28');
+    expect(sheet.textContent).toContain('?date=2026-04-28');
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('fetches nothing while the sheet is closed', () => {
+    commit('2026-04-28');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
