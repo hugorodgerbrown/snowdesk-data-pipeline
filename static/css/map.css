@@ -2470,14 +2470,22 @@ html:has(> body.map-fullscreen) > body {
 /* SNOW-978: the terrain filter's key — in the legend and in the filter
    sheet's own key. The match swatch carries the map's 45% so the key shows
    the tint as it reads over ground; the no-data swatch is the hatch, drawn
-   as a gradient for the same reason the downloaded-areas swatch is. */
+   as a gradient for the same reason the downloaded-areas swatch is.
+
+   A gradient's stripes run at right angles to its angle, and the map draws
+   y downwards: the map's no-data strokes, where (px + py) is constant, run
+   bottom-left to top-right ("/"), which is a 135deg gradient — not 45deg,
+   which drew the key's stripes the other way and so matched the problem-
+   terrain layer's "steep, not described" hatch instead (SNOW-1194 follow-
+   up, Hugo's Arolla screenshot, 23 Oct). tests/js/test_bulletin_terrain_core.js
+   pins both angles to the painter. */
 .map-legend-swatch--terrain-match {
     background: color-mix(in srgb, var(--color-terrain-match) 45%, transparent);
     border-color: var(--color-terrain-match);
 }
 .map-legend-swatch--terrain-nodata {
     background: repeating-linear-gradient(
-        45deg,
+        135deg,
         var(--color-terrain-nodata) 0,
         var(--color-terrain-nodata) 1.5px,
         transparent 1.5px,
@@ -2499,8 +2507,9 @@ html:has(> body.map-fullscreen) > body {
     background: color-mix(in srgb, var(--color-bulletin-terrain-undecided) 43%, transparent);
 }
 .map-legend-swatch--terrain-undescribed {
+    /* The map's strokes where (px - py) is constant: "\", a 45deg gradient. */
     background: repeating-linear-gradient(
-        135deg,
+        45deg,
         var(--color-bulletin-terrain-undescribed) 0,
         var(--color-bulletin-terrain-undescribed) 1.5px,
         transparent 1.5px,
