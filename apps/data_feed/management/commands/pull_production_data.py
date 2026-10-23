@@ -225,14 +225,28 @@ def walk(
     return total, results()
 
 
+def _readable(feed: str, item: dict[str, Any], planned: set[str]) -> bool:
+    """Return whether ``item``'s own lookups can be read without raising."""
+    try:
+        lookups_for(feed, [item], planned=planned)
+    except Exception:
+        # Broad on purpose: this only sorts a failed page's items into
+        # those that can share lookups and those that fail on their own.
+        return False
+    return True
+
+
 def with_lookups(
     feed: str, pages: Iterator[list[dict[str, Any]]], *, planned: set[str]
 ) -> Iterator[tuple[dict[str, Any], PageLookups | None]]:
     """Yield each item with its page's lookups, read once a page (SNOW-1199).
 
-    A page whose lookups cannot be read is not allowed to stop the run: its
-    items are yielded with None, and each reads its own lookups inside
-    ``Command._apply``, where a failure is counted against that item alone.
+    A page whose lookups cannot be read is not allowed to stop the run.
+    Its items that read cleanly on their own still share one set of
+    lookups, so a dry run's simulated changes carry from item to item as
+    a commit's would; an item that cannot is yielded with None, and reads
+    its own inside ``Command._apply``, where the failure counts against it
+    alone.
 
     Args:
         feed: The feed's name.
@@ -240,22 +254,40 @@ def with_lookups(
         planned: The run's locations a dry run would create (SNOW-1198).
 
     Yields:
-        ``(item, lookups)``, lookups None when the page's could not be read.
+        ``(item, lookups)``, lookups None for an item whose own lookups
+        cannot be read.
 
     """
     for page in pages:
-        lookups: PageLookups | None
         try:
-            lookups = lookups_for(feed, page, planned=planned)
+            shared = lookups_for(feed, page, planned=planned)
         except Exception:
             # Broad on purpose, as in _apply: a malformed item must cost
-            # only itself, so the page falls back to per-item lookups.
+            # only itself.
             logger.exception(
-                "%s: %s page lookups failed; reading per item", COMMAND_NAME, feed
+                "%s: %s page lookups failed; isolating the bad item(s)",
+                COMMAND_NAME,
+                feed,
             )
-            lookups = None
+            good = [item for item in page if _readable(feed, item, planned)]
+            good_ids = {id(item) for item in good}
+            recovered: PageLookups | None
+            try:
+                recovered = lookups_for(feed, good, planned=planned)
+            except Exception:
+                # Each item reads cleanly alone but not together: last
+                # resort, every item reads its own.
+                logger.exception(
+                    "%s: %s page lookups failed again; reading per item",
+                    COMMAND_NAME,
+                    feed,
+                )
+                recovered = None
+            for item in page:
+                yield item, recovered if id(item) in good_ids else None
+            continue
         for item in page:
-            yield item, lookups
+            yield item, shared
 
 
 class Command(RegisteredCommand):

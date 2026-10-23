@@ -486,3 +486,17 @@ class TestPageLookupsAreBounded:
         assert apply_weather(good, commit=False, lookups=lookups) is Outcome.UNCHANGED
         with pytest.raises(ApplyError, match="pull locations first"):
             apply_weather(bad, commit=False, lookups=lookups)
+
+
+@pytest.mark.django_db
+def test_an_invalid_location_uuid_is_refused_before_it_is_planned() -> None:
+    """A dry run fails it as a commit would, and plans nothing (Codex review)."""
+    item = _location_item() | {"uuid": "not-a-uuid"}
+    planned: set[str] = set()
+    with pytest.raises(ApplyError, match="not a uuid"):
+        apply_location(
+            item,
+            commit=False,
+            lookups=lookups_for("locations", [item], planned=planned),
+        )
+    assert planned == set()

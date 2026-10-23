@@ -305,6 +305,10 @@ def apply_location(
         The outcome.
 
     """
+    if not _is_uuid(item.get("uuid")):
+        # Refused before a dry run can plan it: the commit would fail on
+        # writing the uuid column, so the dry run must say so too.
+        raise ApplyError(f"uuid {item.get('uuid')!r} is not a uuid")
     lookups = lookups or lookups_for("locations", [item])
     fields = contract.load_fields(Location, contract.LOCATION_FIELDS, item["fields"])
     location = lookups.locations.get(item["uuid"])

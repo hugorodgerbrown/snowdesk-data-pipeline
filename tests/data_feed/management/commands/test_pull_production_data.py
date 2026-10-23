@@ -368,6 +368,43 @@ def test_a_page_whose_lookups_fail_is_applied_item_by_item(
 
 @pytest.mark.django_db
 @override_settings(**FEED_SETTINGS)
+def test_a_failed_page_keeps_its_good_items_lookups_shared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dry run's changes still carry across a page with a bad item (Codex review).
+
+    B claims A's region, then A is read. With shared lookups A sees the
+    claim and is unchanged, exactly as a commit would leave it.
+    """
+    a, b = LocationFactory.create(), LocationFactory.create()
+    region = MicroRegionFactory.create(centroid_location=a)
+    item_b = feeds.serialise_location(b) | {"centroid_of": [region.region_id]}
+    item_a = feeds.serialise_location(a) | {"centroid_of": []}
+    no_uuid = {k: v for k, v in item_a.items() if k != "uuid"}
+    capture: dict[tuple[str, str | None], dict] = {
+        (f"/api/data/v1/{feed}/", None): {"results": [], "next_cursor": None}
+        for feed in ("resorts",)
+    } | {
+        ("/api/data/v1/locations/", None): {
+            "results": [item_b, no_uuid, item_a],
+            "next_cursor": None,
+            "count": 3,
+        }
+    }
+    monkeypatch.setattr(
+        "apps.data_feed.client.requests.Session", lambda: _ReplaySession(capture)
+    )
+    with pytest.raises(CommandError, match="1 failed item"):
+        _run("--type", "resorts")
+    counts = _counts()
+    assert counts["locations_updated"] == 1
+    assert counts["locations_unchanged"] == 1
+    region.refresh_from_db()
+    assert region.centroid_location == a  # a dry run
+
+
+@pytest.mark.django_db
+@override_settings(**FEED_SETTINGS)
 def test_an_unreadable_feed_fails_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """A refused token is a CommandError naming the feed."""
 
