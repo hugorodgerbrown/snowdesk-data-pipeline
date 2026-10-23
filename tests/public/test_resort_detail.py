@@ -854,13 +854,18 @@ def _role_link(resort: Resort, role: str, **location_fields: Any) -> Any:
 
 
 @pytest.mark.django_db
+@freeze_time(MIDDAY)
 class TestResortForecastPoints:
-    """SNOW-1157: Base / Mid / Summit, from the roles, the pin standing in for Base."""
+    """SNOW-1157: Base / Mid / Summit, from the roles, the pin standing in for Base.
+
+    Each test gives one point today's row: with none anywhere the card gives
+    way to one line (SNOW-1205).
+    """
 
     def test_one_chip_per_role_in_base_mid_summit_order(self) -> None:
         """Each role's location is a chip, in that order, with its elevation."""
         resort = ResortFactory.create(name="Verbier")
-        _role_link(resort, "TOP", name="Mont Fort", elevation_m=3329.6)
+        _todays_weather(_role_link(resort, "TOP", name="Mont Fort", elevation_m=3329.6))
         _role_link(resort, "BASE", name="Verbier village", elevation_m=1494.0)
         _role_link(resort, "MID", name="Les Ruinettes", elevation_m=2200.0)
 
@@ -881,7 +886,7 @@ class TestResortForecastPoints:
     ) -> None:
         """Hidden radios share a name; the first point is checked; no script."""
         resort = ResortFactory.create()
-        _role_link(resort, "BASE", elevation_m=1500.0)
+        _todays_weather(_role_link(resort, "BASE", elevation_m=1500.0))
         _role_link(resort, "TOP", elevation_m=3000.0)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
@@ -901,7 +906,7 @@ class TestResortForecastPoints:
         """No BASE link: the resort's own pin is the Base point."""
         resort = ResortFactory.create(name="Ovronnaz", geocoded=True)
         assert resort.location is not None
-        _role_link(resort, "TOP", elevation_m=2500.0)
+        _todays_weather(_role_link(resort, "TOP", elevation_m=2500.0))
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
@@ -915,6 +920,7 @@ class TestResortForecastPoints:
         resort = ResortFactory.create(geocoded=True)
         assert resort.location is not None
         village = _role_link(resort, "BASE", elevation_m=1500.0)
+        _todays_weather(village)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
@@ -930,6 +936,7 @@ class TestResortForecastPoints:
         ResortLocationFactory.create(
             resort=resort, location=primary, role="TOP", is_primary=True
         )
+        _todays_weather(primary)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
@@ -940,6 +947,7 @@ class TestResortForecastPoints:
     def test_a_single_point_is_still_one_chip(self) -> None:
         """A resort with only a pin shows a Base chip over its strip."""
         resort = ResortFactory.create(geocoded=True)
+        _todays_weather(resort.location)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
@@ -951,7 +959,7 @@ class TestResortForecastPoints:
     def test_unknown_elevation_omits_the_elevation(self) -> None:
         """A chip reads just its role when the elevation is not resolved."""
         resort = ResortFactory.create()
-        _role_link(resort, "MID", elevation_m=None)
+        _todays_weather(_role_link(resort, "MID", elevation_m=None))
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
@@ -997,6 +1005,7 @@ class TestResortForecastStrip:
     def test_eyebrow_names_the_forecast_and_today(self) -> None:
         """The h2 reads "Forecast • Thursday 15 January"."""
         resort = ResortFactory.create(geocoded=True)
+        _todays_weather(resort.location)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
@@ -1198,18 +1207,37 @@ class TestResortForecastStrip:
 
     @freeze_time(MIDDAY)
     def test_a_point_with_no_row_today_says_so_and_keeps_its_link(self) -> None:
-        """Yesterday's row is not today's: "No forecast yet." and the link."""
+        """Beside a point with a row today, a stale one says No forecast yet."""
+        resort = ResortFactory.create()
+        base = _role_link(resort, "BASE")
+        _todays_weather(base, observed_on=datetime.date(2026, 1, 14))
+        _todays_weather(_role_link(resort, "TOP"))
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        assert "resort-forecast-none" not in content
+        pane = _section(content, "resort-forecast-pane-base")
+        assert "No forecast yet." in pane
+        assert "resort-forecast-today" not in pane
+        assert "Open-Meteo" not in pane
+        assert f'href="{base.get_absolute_url()}"' in pane
+
+    @freeze_time(MIDDAY)
+    def test_no_forecast_at_any_point_is_one_line(self) -> None:
+        """SNOW-1205: no row anywhere draws one line, no card, chip or link."""
         resort = ResortFactory.create()
         location = _role_link(resort, "BASE")
         _todays_weather(location, observed_on=datetime.date(2026, 1, 14))
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        pane = _section(content, "resort-forecast-pane-base")
-        assert "No forecast yet." in pane
-        assert "resort-forecast-today" not in pane
-        assert "Open-Meteo" not in pane
-        assert f'href="{location.get_absolute_url()}"' in pane
+        section = _section(content, "resort-forecast")
+        line = _section(section, "resort-forecast-none")
+        assert "No forecast available for 15 January 2026" in line
+        assert "resort-forecast-chips" not in section
+        assert "No forecast yet." not in section
+        assert "Read the full 7-day forecast" not in section
+        assert location.get_absolute_url() not in section
 
     @freeze_time(MIDDAY)
     def test_the_query_count_does_not_grow_with_the_points(

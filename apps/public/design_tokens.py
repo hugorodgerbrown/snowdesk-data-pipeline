@@ -1560,7 +1560,9 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "tile is a role=group with a spoken summary. Each pane closes "
             "with the weather provenance line and 'Read the full 7-day "
             "forecast →' to its own point; a point with no row today says "
-            "'No forecast yet.' and keeps the link."
+            "'No forecast yet.' and keeps the link. With no row at any "
+            "point the card goes and one line reads 'No forecast available "
+            "for 18 May 2026'."
         ),
         kind="components",
         partial="public/partials/_resort_forecast.html",
