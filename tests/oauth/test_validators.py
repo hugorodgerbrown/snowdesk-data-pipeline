@@ -3,9 +3,9 @@ tests/oauth/test_validators.py — Tests for apps.oauth.validators (SNOW-1197).
 
 The client-credentials grant is issued only to a service client: a
 confidential client-credentials application a member of staff created by
-hand. These run the real token endpoint, because the point is what
-``/oauth/token/`` actually issues — in particular that an openly registered
-client asking for ``client_credentials`` gets nothing.
+hand. mcp-auth enforces that at registration and at the token endpoint
+(v0.1.8, covered for every adopter by its MCPAuthContract); these run the
+real endpoints to pin the two cases Snowdesk's data feed depends on.
 """
 
 from __future__ import annotations
@@ -76,12 +76,13 @@ class TestTokenEndpoint:
         assert token.user is None
         assert token.resource == [FEED]
 
-    def test_openly_registered_client_is_refused(self, client: Client) -> None:
-        """A DCR registration asking for client_credentials gets no token.
+    def test_open_registration_for_client_credentials_is_refused(
+        self, client: Client
+    ) -> None:
+        """A DCR registration asking for client_credentials is refused outright.
 
-        Registration is open to any allowlisted callback, and the toolkit
-        turns this request into a confidential client-credentials app with a
-        secret — the rule under test is what stops it being a way in.
+        Registration is open to any allowlisted callback, so it must never
+        create a client that can mint a userless token for the feed.
         """
         response = client.post(
             "/oauth/register/",
@@ -95,17 +96,9 @@ class TestTokenEndpoint:
             ),
             content_type="application/json",
         )
-        assert response.status_code == 201
-        registered = json.loads(response.content)
-        # Registration itself issues a registration access token (RFC 7592),
-        # so what must not change is the count from here.
-        tokens_before = AccessToken.objects.count()
-        body = _token_request(
-            client, registered["client_id"], registered["client_secret"]
-        )
-        assert body["_status"] == 400
-        assert body["error"] == "unauthorized_client"
-        assert AccessToken.objects.count() == tokens_before
+        assert response.status_code == 400
+        assert json.loads(response.content)["error"] == "invalid_client_metadata"
+        assert not Application.objects.exists()
 
 
 @pytest.mark.django_db

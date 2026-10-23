@@ -90,12 +90,12 @@ admitted only when its bearer token:
    (`registration_source = manual`), as defined by
    `apps.oauth.validators.is_service_client`.
 
-Rule 3 is also enforced where tokens are issued. `apps.oauth.validators.Validator`
-refuses the client-credentials grant to any other application. That
-matters because registration is open: Dynamic Client Registration
-turns `grant_types: ["client_credentials"]` into a confidential
-client-credentials app with a secret. Before SNOW-1197 such a client
-could get a userless token from `/oauth/token/`.
+Rule 3 is also enforced where tokens are issued, by mcp-auth (v0.1.8):
+registration refuses any grant but the authorization code, and the token
+endpoint refuses client credentials to any client not made by hand. That
+matters because registration is open. Before SNOW-1197 a client that
+registered for `client_credentials` could get a userless token from
+`/oauth/token/`.
 
 A person's MCP token is never a service client's, even with the `data`
 scope. A service client's token is never an MCP reader's, because the

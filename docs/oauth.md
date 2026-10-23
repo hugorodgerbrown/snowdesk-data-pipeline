@@ -84,16 +84,14 @@ client-credentials application created by hand in the admin
 `apps.oauth.validators.is_service_client`. Its tokens carry the `data`
 scope and no user.
 
-`OAUTH2_PROVIDER["OAUTH2_VALIDATOR_CLASS"]` is
-`apps.oauth.validators.Validator`: mcp-auth's validator with one rule
-added. The client-credentials grant is refused to anything but a service
-client. Without that rule, open Dynamic Client Registration
-turns `grant_types: ["client_credentials"]` into a confidential
-client-credentials app with a secret, and `/oauth/token/` issues it a
-userless token. Before SNOW-1197 it did. Such a token opened nothing,
-because mcp-auth's `can_connect` refuses a token with no user before
-`verified_account` is asked, but it would have opened any endpoint that
-accepts userless tokens, which the feed is.
+Only a service client gets a client-credentials token, and mcp-auth
+enforces that on its own since v0.1.8. Registration (DCR and CIMD alike)
+refuses any grant but the authorization code, and its validator refuses
+those grants at `/oauth/token/` to any client not made by hand. Before
+SNOW-1197, open Dynamic Client Registration turned
+`grant_types: ["client_credentials"]` into a confidential app with a
+secret, and the token endpoint issued it a userless token; SNOW-1197 closed
+that with a validator of Snowdesk's own, which the v0.1.8 upgrade removed.
 
 ## Endpoints
 
