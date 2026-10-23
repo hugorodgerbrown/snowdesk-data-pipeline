@@ -179,7 +179,10 @@ class TestAnswer:
         """A parameter the feed cannot use is a 400 naming it."""
         response = _get(client, feed_token, **params)
         assert response.status_code == 400
-        assert "error" in json.loads(response.content)
+        error = json.loads(response.content)["error"]
+        assert error.startswith(next(iter(params)))
+        # A fixed message: the client's own input is never echoed back.
+        assert next(iter(params.values())) not in error
 
     def test_post_is_a_405(self, client: Client, feed_token: str) -> None:
         """The feed is read-only."""

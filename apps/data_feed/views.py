@@ -10,7 +10,8 @@ read it. Query parameters, all optional:
 * ``cursor`` — the previous page's ``next_cursor``.
 * ``limit`` — page size, default 100, at most 500.
 
-A bad parameter is a 400 with a JSON ``error``. Every response is
+A bad parameter is a 400 with a JSON ``error``: a fixed message per
+parameter, never the exception's text. Every response is
 ``no-store``: it is a per-client read of live data, not a page to cache.
 """
 
@@ -25,6 +26,7 @@ from django_ratelimit.decorators import ratelimit
 from apps.data_feed.auth import require_feed_token
 from apps.data_feed.feeds import (
     FEEDS,
+    PARAMETER_ERRORS,
     FeedQueryError,
     page,
     parse_limit,
@@ -56,7 +58,11 @@ def feed(request: HttpRequest, name: str) -> HttpResponse:
             limit=parse_limit(request.GET.get("limit")),
         )
     except FeedQueryError as exc:
-        response: HttpResponse = JsonResponse({"error": str(exc)}, status=400)
+        logger.info("data feed: bad %s parameter: %s", exc.param, exc)
+        response: HttpResponse = JsonResponse(
+            {"error": PARAMETER_ERRORS.get(exc.param, "invalid parameter")},
+            status=400,
+        )
     else:
         logger.info(
             "data feed: client=%s feed=%s items=%d",

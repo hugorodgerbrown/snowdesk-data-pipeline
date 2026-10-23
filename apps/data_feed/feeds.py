@@ -47,7 +47,28 @@ from apps.weather.models import Weather
 
 
 class FeedQueryError(ValueError):
-    """A ``since``, ``cursor`` or ``limit`` parameter the feed cannot use."""
+    """A ``since``, ``cursor`` or ``limit`` parameter the feed cannot use.
+
+    Attributes:
+        param: Which parameter — the view answers with that parameter's
+            fixed message (``PARAMETER_ERRORS``), never with this
+            exception's own text, so nothing raised reaches a response.
+
+    """
+
+    def __init__(self, param: str, message: str) -> None:
+        """Record the parameter alongside the message for the log."""
+        super().__init__(message)
+        self.param = param
+
+
+# What a client is told about each bad parameter. Fixed strings, so the
+# response never echoes an exception (or the client's input) back.
+PARAMETER_ERRORS: dict[str, str] = {
+    "since": "since must be an ISO 8601 datetime with a UTC offset",
+    "cursor": "cursor is not one this feed issued",
+    "limit": "limit must be a positive integer",
+}
 
 
 @dataclass(frozen=True)
@@ -254,7 +275,7 @@ def decode_cursor(cursor: str) -> tuple[dt.datetime, int]:
             raise ValueError(stamp)
         return updated_at, int(pk)
     except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
-        raise FeedQueryError(f"cursor {cursor!r} is not valid") from exc
+        raise FeedQueryError("cursor", f"cursor {cursor!r} is not valid") from exc
 
 
 def parse_since(raw: str | None) -> dt.datetime | None:
@@ -275,7 +296,7 @@ def parse_since(raw: str | None) -> dt.datetime | None:
     parsed = parse_datetime(raw)
     if parsed is None or parsed.tzinfo is None:
         raise FeedQueryError(
-            f"since {raw!r} must be an ISO 8601 datetime with a UTC offset"
+            "since", f"since {raw!r} must be an ISO 8601 datetime with a UTC offset"
         )
     return parsed
 
@@ -298,9 +319,9 @@ def parse_limit(raw: str | None) -> int:
     try:
         limit = int(raw)
     except ValueError as exc:
-        raise FeedQueryError(f"limit {raw!r} is not an integer") from exc
+        raise FeedQueryError("limit", f"limit {raw!r} is not an integer") from exc
     if limit < 1:
-        raise FeedQueryError("limit must be at least 1")
+        raise FeedQueryError("limit", "limit must be at least 1")
     return min(limit, contract.MAX_LIMIT)
 
 
