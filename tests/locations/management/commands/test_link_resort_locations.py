@@ -186,6 +186,8 @@ class TestAPinnedResortGetsWeather:
         """
         resort = _legacy_resort(name="Verbier", base_elevation_m=1494)
         call_command(COMMAND, "--commit", stdout=StringIO())
+        resort.refresh_from_db()
+        WeatherFactory.create(location=resort.location)
 
         body = client.get(resort.get_absolute_url()).content.decode()
 

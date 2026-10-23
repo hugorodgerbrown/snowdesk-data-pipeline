@@ -5287,6 +5287,15 @@ def build_resort_body(
             day_windows = _build_day_windows(selected, render_model=raw_render_model)
 
     problem_cards: list[dict[str, Any]] = list(panel["problem_cards"]) if panel else []
+    # SNOW-1157: the forecast strip's Base / Mid / Summit points. A forward
+    # day has no row of its own — today's row carries it in its forecast —
+    # so it reads today's.
+    forecast_points = _resort_forecast_points(
+        resort,
+        min(target_date, today),
+        timezone.now(),
+        link_date=None if target_date == today else target_date,
+    )
 
     return {
         "resort": resort,
@@ -5306,15 +5315,10 @@ def build_resort_body(
         # of the public blank state for staff, exactly as the popup's
         # metadata rows already do.
         "is_staff": request.user.is_staff,
-        # SNOW-1157: the forecast strip's Base / Mid / Summit points. A
-        # forward day has no row of its own — today's row carries it in its
-        # forecast — so it reads today's.
-        "forecast_points": _resort_forecast_points(
-            resort,
-            min(target_date, today),
-            timezone.now(),
-            link_date=None if target_date == today else target_date,
-        ),
+        "forecast_points": forecast_points,
+        # SNOW-1205: no point with a forecast for the day draws one line in
+        # place of the card (Hugo, 23 Oct).
+        "forecast_available": any(point["panel"] for point in forecast_points),
         # The calendar is the season's, its grid stopping at today, and
         # rings the day the page shows: today, or the dated URL's day
         # (SNOW-1163).
