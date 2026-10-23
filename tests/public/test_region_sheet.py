@@ -10,7 +10,7 @@ Covers:
     controls and the ×, inside the ``data-sheet-peek`` header.
   - The detents the body allows: all three on a rated day, peek and half
     otherwise (``data-sheet-detents``, read by static/js/map_sheet.js).
-  - SNOW-979: the "Show problem terrain on the map" switch above the
+  - SNOW-979: the "Highlight problem terrain" switch above the
     bulletin and its key — only for a region inside the terrain tiles,
     with the tiles configured, on a day with a bulletin. Since SNOW-1194
     the rules come from /api/problem-terrain/ (tests/public/
@@ -380,7 +380,7 @@ _TILES = "https://tiles.example/terrain-class/v1/{z}/{x}/{y}.png"
 
 @pytest.mark.django_db
 class TestProblemTerrainSwitch:
-    """SNOW-979: the "Show problem terrain on the map" switch above the bulletin."""
+    """SNOW-979: the "Highlight problem terrain" switch below the bulletin."""
 
     def test_rated_swiss_region_carries_the_switch_and_its_key(
         self, client: Client, settings: Any
@@ -392,25 +392,27 @@ class TestProblemTerrainSwitch:
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-terrain"' in content
         assert 'id="region-sheet-terrain-toggle"' in content
+        # The layers menu's row's name: one state, one name.
+        assert "Highlight problem terrain" in content
         # SNOW-1194: the map paints every region from /api/problem-terrain/,
         # so the body no longer carries its own region's rules.
         assert "region-sheet-terrain-rules" not in content
         key = content[content.index("data-region-sheet-terrain-key") :]
         assert "map-legend-swatch--terrain-considerable" in key
         assert "Considerable problem" in _text(key)
-        assert "Steep, not described" in _text(key)
+        assert "Additional steep terrain (>30°)" in _text(key)
         # No undecided rule, so no undecided swatch.
         assert "map-legend-swatch--terrain-undecided" not in key
 
-    def test_switch_sits_above_the_bulletin(
+    def test_switch_sits_below_the_bulletin(
         self, client: Client, settings: Any
     ) -> None:
-        """Hugo, 22 Oct: above the bulletin it paints."""
+        """Hugo, 23 Oct: the bulletin comes first, the switch after it."""
         settings.TERRAIN_CLASS_TILE_URL = _TILES
         region = MicroRegionFactory.create()
         _rated_today(region)
         content = _get(client, _url(region.region_id.lower())).content.decode()
-        assert content.index('data-testid="region-sheet-terrain"') < content.index(
+        assert content.index('data-testid="region-sheet-terrain"') > content.index(
             'data-testid="region-sheet-bulletin"'
         )
 
@@ -423,7 +425,33 @@ class TestProblemTerrainSwitch:
         _rated_today(region)
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert re.search(r"data-region-sheet-terrain-key\s+hidden", content)
-        assert re.search(r"data-region-sheet-terrain-zoom\s+hidden", content)
+        # The zoom hint is the switch's own second line, under its label.
+        strip = content[content.index('data-testid="region-sheet-terrain"') :]
+        toggle = strip[: strip.index("data-region-sheet-terrain-key")]
+        assert re.search(r"data-panel-overlay-toggle-detail\s+hidden", toggle)
+        assert "Zoom in on the map to see it" in toggle
+
+    def test_key_and_explainer_start_closed(
+        self, client: Client, settings: Any
+    ) -> None:
+        """Hugo, 23 Oct: read once, so folded behind one question."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        details = re.search(
+            r"<details[^>]*data-region-sheet-terrain-key[^>]*>", content
+        )
+        assert details is not None
+        assert " open" not in details.group(0)
+        body = content[details.end() :]
+        summary = body[: body.index("</summary>")]
+        assert "What is problem terrain?" in _text(summary)
+        assert "Zoom in" not in summary
+        inside = body[body.index("</summary>") : body.index("</details>")]
+        assert "map-legend-swatch--terrain-considerable" in inside
+        assert "Highlighted terrain is over 30°" in _text(inside)
+        assert "How to read it" in inside
 
     def test_no_switch_while_the_terrain_tiles_are_unconfigured(
         self, client: Client, settings: Any
@@ -462,7 +490,7 @@ class TestProblemTerrainSwitch:
         assert 'data-testid="region-sheet-terrain"' in content
         key = content[content.index("data-region-sheet-terrain-key") :]
         assert "map-legend-swatch--terrain-considerable" not in key
-        assert "Steep, not described" in _text(key)
+        assert "Additional steep terrain (>30°)" in _text(key)
 
     def test_no_switch_on_a_day_without_a_bulletin(
         self, client: Client, settings: Any

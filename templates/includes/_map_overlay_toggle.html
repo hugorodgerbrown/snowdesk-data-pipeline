@@ -36,6 +36,10 @@ Parameters (passed via {% include … with … %}):
         Required. An illustration (the component library, the /help/
         mocks) passes a namespaced id, so the module never finds it.
   label (string) — the visible, translated label text. Required.
+  detail (string, optional) — one small line under the label. It renders
+        ``hidden`` with ``data-panel-overlay-toggle-detail``, so the owning
+        module decides when it shows (the region sheet's problem-terrain
+        switch: "Zoom in on the map to see it", only while zoomed out).
 {% endcomment %}
 {# `data-panel-overlay-toggle` marks the strip itself, so a test or an    #}
 {# owning module can address the whole control rather than reaching for  #}
@@ -47,6 +51,13 @@ Parameters (passed via {% include … with … %}):
     {# SNOW-645 review: 14px/500/text-1 (not text-sm/text-2, i.e. 400   #}
     {# weight) — reconciled against the design, which reads this label  #}
     {# with more weight than a purely descriptive one.                  #}
-    <label for="{{ id }}" class="text-sm font-medium text-text-1">{{ label }}</label>
+    {% if detail %}
+        <div class="min-w-0">
+            <label for="{{ id }}" class="block text-sm font-medium text-text-1">{{ label }}</label>
+            <span class="block text-xs text-text-3" data-panel-overlay-toggle-detail hidden>{{ detail }}</span>
+        </div>
+    {% else %}
+        <label for="{{ id }}" class="text-sm font-medium text-text-1">{{ label }}</label>
+    {% endif %}
     {% include "includes/_switch.html" with id=id %}
 </div>

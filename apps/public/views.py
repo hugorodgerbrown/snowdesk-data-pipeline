@@ -2065,9 +2065,9 @@ def _terrain_filter_context() -> dict[str, Any]:
     menu row nor the tile template: a template in the DOM would be an
     invitation to install a layer the environment has withdrawn.
 
-    SNOW-1194 added the filter's "By bulletin" colour, whose key — in the
-    filter's sheet and the map legend — lists the whole problem-terrain
-    scale, because every region is painted at once.
+    SNOW-1194's problem-terrain layer shares the filter's gate and tiles;
+    its key in the map legend lists the whole scale, because every region
+    is painted at once.
 
     Returns:
         Dict with ``terrain_filter_eligible``, ``terrain_class_tile_url``
@@ -7404,8 +7404,16 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "problem_cards": problem_cards,
     }
     panel["day_character"] = _resolve_day_lead(raw_render_model)
+    panel["show_day_character"] = SHOW_DAY_CHARACTER
     panel["tendency_outlook"] = _resolve_tendency_outlook(raw_render_model)
     return panel
+
+
+# The day-character callout ("Hard-to-read day. …") is hidden for now: the
+# copy is not good enough and it distracts from the bulletin itself. The
+# label and explainer are still computed and kept on the panel context, so
+# turning this back on is this one line.
+SHOW_DAY_CHARACTER: bool = False
 
 
 def _resolve_day_lead(raw_render_model: dict[str, Any]) -> DayCharacter:

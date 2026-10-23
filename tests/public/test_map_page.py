@@ -2261,26 +2261,22 @@ def test_terrain_filter_sheet_renders_the_compact_controls() -> None:
     sheet = content[content.index('id="map-terrain-filter-template"') :]
     sheet = sheet[: sheet.index("</template>")]
 
-    assert sheet.count('name="terrain-filter-mode"') == 3
+    assert sheet.count('name="terrain-filter-mode"') == 2
     match = sheet[sheet.index('value="match"') :][:120]
     slope = sheet[sheet.index('value="slope"') :][:120]
-    bulletin = sheet[sheet.index('value="bulletin"') :][:120]
     assert "checked" in match
     assert "checked" not in slope
-    assert "checked" not in bulletin
     assert "One tint" in sheet
     assert "By slope" in sheet
-    assert "By bulletin" in sheet
+    # 2026-10-23: "By bulletin" left for its own layers-menu row.
+    assert "By bulletin" not in sheet
+    assert 'value="bulletin"' not in sheet
     assert "segmented" not in sheet
     assert 'id="map-terrain-filter-enabled"' not in sheet
     assert "data-terrain-filter-availability" not in sheet
     assert "data-terrain-filter-key=" not in sheet
-    # SNOW-1194: "By bulletin" swaps the reader's controls for its key and
-    # note, so both render, the key's box hidden until that mode is set.
-    assert "data-terrain-filter-manual" in sheet
-    assert re.search(r"data-terrain-filter-bulletin\s+hidden", sheet)
-    assert "map-legend-swatch--terrain-very_high" in sheet
-    assert "#help-topic-bulletin-terrain" in sheet
+    assert "data-terrain-filter-bulletin" not in sheet
+    assert "map-legend-swatch--terrain-very_high" not in sheet
     # The ramp: five toggle tiles, one per slope class.
     assert "data-terrain-filter-ramp" in sheet
     for index in range(5):
@@ -2302,8 +2298,49 @@ def test_terrain_filter_sheet_renders_the_compact_controls() -> None:
     assert 'data-terrain-filter-key="slope" hidden' in legend
     assert "#help-topic-slope" in legend
     assert "#help-topic-terrain-filter" in legend
-    assert 'data-terrain-filter-key="bulletin" hidden' in legend
+    assert 'data-terrain-filter-key="bulletin"' not in legend
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_highlight_problem_terrain_is_a_row_under_conditions() -> None:
+    """Hugo, 23 Oct: its own row, next to the bulletins it comes from.
+
+    A checkbox like the overlay rows round it, off as rendered (map.js
+    seeds it from storage), after the bulletin opacity steps and before the
+    weather row, with a second line saying what it does. Its key is its own
+    legend section, at the whole scale, hidden until the layer is on.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    conditions = content[content.index('id="basemap-menu-group-conditions"') :]
+    conditions = conditions[: conditions.index("</ul>")]
+    row = conditions[conditions.index('data-overlay-key="problem_terrain"') - 250 :]
+    row = row[: row.index("</button>")]
+    assert 'role="menuitemcheckbox"' in row
+    assert 'aria-checked="false"' in row
+    assert ">Highlight problem terrain<" in row
+    assert "Replaces the region colour from zoom 12" in row
+    assert (
+        conditions.index('id="map-bulletin-opacity"')
+        < conditions.index('data-overlay-key="problem_terrain"')
+        < conditions.index('data-overlay-key="weather"')
+    )
+
+    legend = content[content.index('data-testid="map-legend-problem-terrain"') :]
+    legend = legend[: legend.index("</section>")]
+    assert re.search(r"data-problem-terrain-legend\s+hidden", legend)
     assert "#help-topic-bulletin-terrain" in legend
+    assert "map-legend-swatch--terrain-very_high" in legend
+    assert "map-legend-swatch--terrain-undescribed" in legend
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL="")
+def test_no_problem_terrain_row_without_the_terrain_tiles() -> None:
+    """It paints from the terrain filter's tiles, so it shares their gate."""
+    content = Client().get(reverse("public:map")).content.decode()
+    assert 'data-overlay-key="problem_terrain"' not in content
+    assert "data-problem-terrain-legend" not in content
 
 
 @pytest.mark.django_db

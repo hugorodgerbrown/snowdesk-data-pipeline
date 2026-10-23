@@ -2,8 +2,8 @@
  * static/js/bulletin_terrain_core.js — the pure half of the map's
  * problem-terrain layer (SNOW-979, SNOW-1194).
  *
- * The terrain filter's "By bulletin" colour — and the region sheet's "Show
- * problem terrain on the map" switch, its shortcut — paints every region's
+ * "Highlight problem terrain" — the layers menu's row under Conditions, and
+ * the region sheet's switch of the same name — paints every region's
  * steep ground by what that region's bulletin says about it. It is the
  * terrain filter (SNOW-978) with its settings taken from the bulletins
  * rather than from the reader: the same terrain-class tiles, the same

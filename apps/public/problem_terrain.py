@@ -3,9 +3,9 @@ apps/public/problem_terrain.py — every region's problem-terrain rules (SNOW-11
 
 SNOW-979 painted one region's steep ground by its bulletin, with the rules
 carried in that region's sheet. Clicking from region to region repainted
-one at a time, and Hugo found it choppy (22 Oct), so the terrain filter's
-"By bulletin" colour paints every region at once, and this feed is where
-the map gets every region's rules from:
+one at a time, and Hugo found it choppy (22 Oct), so the layer — the
+layers menu's "Highlight problem terrain" row — paints every region at
+once, and this feed is where the map gets every region's rules from:
 
     GET /api/problem-terrain/?d=2026-04-27
 
@@ -91,8 +91,8 @@ def problem_terrain_key(rules: list[TerrainRule] | None) -> dict[str, Any]:
     """Return what a problem-terrain colour key lists.
 
     The region sheet's key lists only what its bulletin can paint today;
-    the map legend and the terrain filter's "By bulletin" key cover every
-    region, so they list everything (``rules=None``).
+    the map legend's key covers every region, so it lists everything
+    (``rules=None``).
 
     Args:
         rules: One bulletin's rules, or None for the whole scale.

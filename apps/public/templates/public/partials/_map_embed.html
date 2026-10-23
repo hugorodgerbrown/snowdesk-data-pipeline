@@ -841,6 +841,38 @@ Optional context:
                                 </button>
                             </div>
                         </li>
+                        {% comment %}
+                        "Highlight problem terrain" (2026-10-23): every region's
+                        steep ground painted by its own bulletin, from z12, where
+                        it replaces that region's danger colour. SNOW-1194 made it
+                        the terrain filter's third colour, "By bulletin"; Hugo
+                        found it hidden there, and it is the bulletin drawn another
+                        way rather than a filter, so it sits with the bulletins.
+                        It toggles through window.pwaBulletinTerrain
+                        (map_basemap_picker.js's OVERLAY_BRIDGES); the region
+                        sheet's switch and the map chip's × write the same state.
+                        map_terrain_chip.js swaps the second line for "No bulletin
+                        for this day" when there is nothing to paint.
+                        {% endcomment %}
+                        {% if terrain_filter_eligible %}
+                            <li role="none">
+                                <button
+                                    type="button"
+                                    role="menuitemcheckbox"
+                                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                                    data-overlay-key="problem_terrain"
+                                    aria-checked="false"
+                                >
+                                    <span class="basemap-menu-item-text">
+                                        <span data-row-label>{% trans "Highlight problem terrain" %}</span>
+                                        <span
+                                            class="basemap-menu-item-detail"
+                                            data-problem-terrain-detail
+                                        >{% trans "Replaces the region colour from zoom 12" %}</span>
+                                    </span>
+                                </button>
+                            </li>
+                        {% endif %}
                         <li role="separator" class="basemap-menu-separator"></li>
                         {# SNOW-761: one symbol per public Location — a region   #}
                         {# centroid is a Location like any other now, so there   #}
@@ -1263,13 +1295,6 @@ Optional context:
                             href="{% url 'public:help' %}#help-topic-slope"
                         >{% trans "Slope angle" %}</a>
                     </div>
-                    {# SNOW-1194: "By bulletin" — every region by its own bulletin. #}
-                    <div class="map-legend-title" data-terrain-filter-key="bulletin" hidden>
-                        <a
-                            class="map-legend-attribution-link"
-                            href="{% url 'public:help' %}#help-topic-bulletin-terrain"
-                        >{% trans "Problem terrain" %}</a>
-                    </div>
                     {% include "includes/_terrain_filter_key.html" %}
                     {# What the filter is set to, in words — "N, NE, NW · 35°+ ·   #}
                     {# above 2,400 m" — written by terrain_filter_sheet.js. It    #}
@@ -1277,6 +1302,23 @@ Optional context:
                     {# tinted map still says what it is tinted for, in the place  #}
                     {# every other layer explains itself.                         #}
                     <p class="map-legend-attribution" data-terrain-filter-legend-summary></p>
+                </section>
+                {# Problem terrain's key, at the whole scale: every region is   #}
+                {# painted by its own bulletin. Hidden until the layer is on    #}
+                {# (map_terrain_chip.js, whose Key button scrolls here).        #}
+                <section
+                    class="map-legend-section"
+                    data-testid="map-legend-problem-terrain"
+                    data-problem-terrain-legend
+                    hidden
+                >
+                    <div class="map-legend-title">
+                        <a
+                            class="map-legend-attribution-link"
+                            href="{% url 'public:help' %}#help-topic-bulletin-terrain"
+                        >{% trans "Problem terrain" %}</a>
+                    </div>
+                    {% include "includes/_bulletin_terrain_key.html" with key=bulletin_terrain_key %}
                 </section>
             {% endif %}
             {% comment %}
@@ -1739,6 +1781,9 @@ Optional context:
                 </div>
                 <template id="map-terrain-chip-strings-template">
                     <span data-string="label">{% blocktrans %}Problem terrain · %(day)s{% endblocktrans %}</span>
+                    {# The menu row's second line, and (SNOW-1195) what it says on a day no bulletin covers. #}
+                    <span data-string="detail">{% trans "Replaces the region colour from zoom 12" %}</span>
+                    <span data-string="no-bulletin">{% trans "No bulletin for this day" %}</span>
                 </template>
             {% endif %}
             <template id="map-weather-window-strings-template">

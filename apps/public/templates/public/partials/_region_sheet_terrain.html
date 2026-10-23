@@ -1,18 +1,20 @@
 {% load i18n %}
 {% comment %}
-public/partials/_region_sheet_terrain.html — the region sheet's "Show problem
-terrain on the map" switch and its colour key (SNOW-979, SNOW-1194).
+public/partials/_region_sheet_terrain.html — the region sheet's "Highlight
+problem terrain" switch and its colour key (SNOW-979, SNOW-1194).
 
-Above the bulletin, under the region's name and date (Hugo, 22 Oct: mockup
-option A). The strip is the panels' own "Show on the map" switch,
+Under the bulletin, before the region's resorts (Hugo, 23 Oct: the
+bulletin is the most important thing in the sheet; it sat above it from
+22 Oct). The strip is the panels' own "Show on the map" switch,
 ``includes/_map_overlay_toggle.html``, inside a box of the same ``bg-tag``
 that also holds the key, so the two read as one control.
 
-Since SNOW-1194 the switch is a shortcut to the terrain filter's "By
-bulletin" colour, which paints EVERY region by its own bulletin from
-``/api/problem-terrain/`` (Hugo, 22 Oct: region by region was choppy). It
-is on exactly when the filter is on in that colour; turning it on sets
-both, turning it off turns the filter off. The key stays this region's:
+Since SNOW-1194 the layer paints EVERY region by its own bulletin from
+``/api/problem-terrain/`` (Hugo, 22 Oct: region by region was choppy). This
+switch writes the same state as the layers menu's "Highlight problem
+terrain" row under Conditions (2026-10-23; it was the terrain filter's "By
+bulletin" colour until then), so it carries the row's name. The key stays
+this region's:
 one swatch per level its bulletin paints today, the undecided grey when a
 problem cannot be placed, then the hatch for steep ground no problem
 describes and the no-data hatch, which every day can show. The line under
@@ -20,33 +22,47 @@ it says what the shading claims and what it does not — where the bulletin
 describes its problems, not a hazard map.
 
 ``static/js/map_region_sheet.js`` binds the switch to
-``window.pwaBulletinTerrain`` (map.js), shows the key while it is on, and
-shows the zoom line while the map is too far out for the tiles. The key and
+``window.pwaBulletinTerrain`` (map.js), shows the strip under it while it
+is on, and shows the zoom hint under the switch's label while the map is too far out
+for the tiles.
+
+The strip under the switch is a native ``<details>``, CLOSED on every
+render (Hugo, 23 Oct): a reader needs the key once, not on every bulletin.
+Its summary asks "What is problem terrain?". The zoom hint is not in it:
+it is the switch's own small second line (the toggle's ``detail``), shown
+only while the map is too far out and gone once zoomed in. Inside, one
+key row per line, then one sentence on what the highlight claims. The key and
 the zoom line render ``hidden`` so a body painted from the cache does not
 flash them before the script has read the switch's state.
 
-The rows are ``includes/_bulletin_terrain_key.html``, the same key the
-terrain filter's sheet and the map legend show for the whole scale.
+The rows are ``includes/_bulletin_terrain_key.html``, the same key the map
+legend shows for the whole scale.
 
 Context (from apps.public.region_sheet.region_sheet_partial):
   terrain_key — ``levels`` [{level, label}] and ``undecided``.
 {% endcomment %}
 <div class="rounded-tag bg-tag" data-testid="region-sheet-terrain">
-    {% translate "Show problem terrain on the map" as terrain_label %}
-    {% include "includes/_map_overlay_toggle.html" with id="region-sheet-terrain-toggle" label=terrain_label %}
-    <div class="space-y-2 border-t border-border mx-3 pb-3 pt-2" data-region-sheet-terrain-key hidden>
-        <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-2">
-            {% include "includes/_bulletin_terrain_key.html" with key=terrain_key %}
+    {% translate "Highlight problem terrain" as terrain_label %}
+    {% translate "Zoom in on the map to see it" as zoom_hint %}
+    {% include "includes/_map_overlay_toggle.html" with id="region-sheet-terrain-toggle" label=terrain_label detail=zoom_hint %}
+    <details class="group border-t border-border mx-3 py-2" data-region-sheet-terrain-key hidden>
+        <summary class="flex cursor-pointer select-none list-none items-center [&::-webkit-details-marker]:hidden gap-1 text-xs font-medium text-text-1">
+            {% translate "What is problem terrain?" %}
+            <span class="ml-auto" aria-hidden="true">
+                {% include "includes/_icon_chevron.html" with size=16 svg_class="transition-transform group-open:rotate-180" only %}
+            </span>
+        </summary>
+        <div class="mt-2 space-y-2">
+            <div class="flex flex-col gap-1 text-xs text-text-2">
+                {% include "includes/_bulletin_terrain_key.html" with key=terrain_key %}
+            </div>
+            <p class="text-xs text-text-3">
+                {% translate "Highlighted terrain is over 30° and matching the aspect and elevations described in the region's bulletin." %}
+                <a
+                    href="{% url 'public:help' %}#help-topic-bulletin-terrain"
+                    class="underline"
+                >{% translate "How to read it" %}</a>
+            </p>
         </div>
-        <p class="text-xs text-text-3">
-            {% translate "Every region is painted by its own bulletin; the key is this one's. Ground of 30° and over inside a problem's aspects and heights: where the bulletin describes its problems, not every slope that can slide." %}
-            <a
-                href="{% url 'public:help' %}#help-topic-bulletin-terrain"
-                class="underline"
-            >{% translate "How to read it" %}</a>
-        </p>
-        <p class="text-xs font-medium text-text-1" data-region-sheet-terrain-zoom hidden>
-            {% translate "Zoom in on the map to see it." %}
-        </p>
-    </div>
+    </details>
 </div>

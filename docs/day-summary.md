@@ -2,7 +2,7 @@
 name: day-summary
 description: day_summary.py, summary_for, classify_movement, classify_readability — the 80-cell copy matrix behind the day-character callout
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-23
 ---
 
 # The day summary
@@ -17,6 +17,10 @@ Copy and classification live in
 [`render_model.py`](../apps/bulletins/services/render_model.py) derives the
 key and calls `summary_for`; the partial is
 `templates/includes/day_character_callout.html`.
+
+The callout is **hidden for now** (2026-10-23): `SHOW_DAY_CHARACTER` in
+`apps/public/views.py` is `False`, so nothing here reaches a page until the
+copy is reworked and that constant is flipped back.
 
 ## What it replaced
 

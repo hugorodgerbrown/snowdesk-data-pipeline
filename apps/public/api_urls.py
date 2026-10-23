@@ -44,7 +44,7 @@ urlpatterns = [
     # Accepts optional ?d=YYYY-MM-DD and ?country=ch|fr|at|it filters.
     path("ratings/", api.ratings, name="ratings"),
     # SNOW-1194: every region's problem-terrain rules for a day — the
-    # terrain filter's "By bulletin" colour paints the whole map from it.
+    # "Highlight problem terrain" layer paints the whole map from it.
     path("problem-terrain/", problem_terrain.problem_terrain, name="problem_terrain"),
     path("resorts-by-region/", api.resorts_by_region, name="resorts_by_region"),
     path("resorts.geojson", api.resorts_geojson, name="resorts_geojson"),

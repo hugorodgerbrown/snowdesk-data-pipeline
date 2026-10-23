@@ -78,11 +78,12 @@ Context:
             {% comment %}
                    Day-character callout banner — editorial commentary
                    produced by compute_day_character() in the render-model
-                   service. Suppressed when no day_character is available
-                   (defensive — should always be present when the panel
-                   renders).
+                   service. Hidden while views.SHOW_DAY_CHARACTER is
+                   False (the copy is being reworked); also suppressed when
+                   no day_character is available (defensive — should always
+                   be present when the panel renders).
             {% endcomment %}
-            {% if panel.day_character %}
+            {% if panel.show_day_character and panel.day_character %}
                 <div class="mb-4">
                     {% include "includes/day_character_callout.html" with day_character=panel.day_character only %}
                 </div>
