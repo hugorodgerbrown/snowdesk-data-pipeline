@@ -1511,6 +1511,15 @@ a.season-day:focus-visible {
   margin-bottom: 1rem;
 }
 
+/* Inside another card (the resort bulletin card, SNOW-1203): that card owns
+   the border and the radius; a rule separates the rows from what follows. */
+.dw-panel--flush {
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  margin-bottom: 0;
+}
+
 .dw-row {
   display: flex;
   align-items: center;
