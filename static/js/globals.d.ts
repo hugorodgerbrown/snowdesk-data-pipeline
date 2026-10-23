@@ -40,7 +40,7 @@ interface Window {
   pwaChoroplethCore: any;
   /** static/js/calendar_core.js — the date picker's month grid maths. */
   pwaCalendarCore: any;
-  /** static/js/day_nav_core.js — the date row's day steps and empty-day lookup (SNOW-1195). */
+  /** static/js/day_nav_core.js — the date row's day steps (SNOW-1195). */
   pwaDayNavCore: any;
   pwaStaleDayCore: any;
   /** static/js/today_core.js — whether the map's "Today" control has anywhere to go (SNOW-1165). */

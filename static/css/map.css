@@ -1945,7 +1945,7 @@ html:has(> body.map-fullscreen) > body {
     #map-date-row > #map-calendar-toggle,
     #map-date-row > #map-today-control,
     #map-date-row > .map-day-step,
-    #map-date-row > .map-day-empty {
+    #map-date-row > .map-date-notice {
         display: none;
     }
 }
@@ -2081,15 +2081,23 @@ html:has(> body.map-fullscreen) > body {
     border-bottom-right-radius: 0;
 }
 
-/* SNOW-1195: the empty-day notice — the day has no bulletin for any
-   country that is on, and a press to the nearest one that has. The
-   stale-day notice's glass pill, beside the date control on a desktop; on
-   a phone it hangs under the top row (below). */
-.map-day-empty {
+/* The date row's notices — the problem-terrain chip (SNOW-1196) and the
+   weather notice. The stale-day notice's glass pill, beside the date
+   control on a desktop; on a phone they hang under the top row (below).
+   SNOW-1195's empty-day notice wore this pill first; SNOW-1206 removed it.
+
+   SNOW-1206: they may shrink, and their label gives way first, with an
+   ellipsis. The row is a no-wrap line that stops short of the
+   bottom-right roundel, and a `flex: none` notice could not: on an iPad
+   in portrait the problem-terrain chip ran under the ^ roundel, its Key
+   and × out of reach. The buttons inside stay at their own size, so a
+   squeezed notice keeps its presses. */
+.map-date-notice {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
     height: var(--map-control-sm);
     padding: 0 4px 0 12px;
     background: var(--color-glass);
@@ -2104,15 +2112,30 @@ html:has(> body.map-fullscreen) > body {
     white-space: nowrap;
 }
 
-.map-day-empty[hidden],
-.map-day-empty-jump[hidden] {
+.map-date-notice[hidden],
+.map-date-notice-action[hidden] {
     display: none;
+}
+
+/* The words give way, the presses do not (SNOW-1206, above). */
+.map-date-notice-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The weather notice gives way before the problem-terrain chip: it goes by
+   itself after 8 s and the layers menu's Weather row keeps saying it, while
+   the chip is the only thing on screen naming the colours on the map. */
+#map-weather-window {
+    flex-shrink: 4;
 }
 
 /* SNOW-1196: the weather notice wears the empty-day notice's pill (it
    carries that class) with a bare × for its press. */
 .map-weather-window-close {
     display: inline-flex;
+    flex: none;
     align-items: center;
     justify-content: center;
     width: calc(var(--map-control-sm) - 8px);
@@ -2140,8 +2163,9 @@ html:has(> body.map-fullscreen) > body {
     );
 }
 
-.map-day-empty-jump {
+.map-date-notice-action {
     display: inline-flex;
+    flex: none;
     align-items: center;
     gap: 2px;
     height: calc(var(--map-control-sm) - 8px);
@@ -2881,6 +2905,10 @@ html:has(> body.map-fullscreen) > body {
     position: relative;
     flex: 1 1 auto;
     min-width: 0;
+    /* SNOW-1206: and clipped to that box. With a notice or two beside it on
+       a tablet the pill can shrink below its transport buttons, which then
+       painted past its end and under the bottom-right roundel. */
+    overflow: hidden;
 }
 
 /* On the component-library page, the demo pill flows in normal document
@@ -5726,27 +5754,22 @@ body.map-framing #map-legend {
         width: 34px;
     }
 
-    /* SNOW-1195: the empty-day notice hangs under the row, where the
-       calendar card drops, so a peeking sheet never covers it. */
-    .map-utility-cluster > .map-day-empty {
+    /* SNOW-1195: the date row's notices hang under the row, where the
+       calendar card drops, so a peeking sheet never covers them. */
+    .map-utility-cluster > .map-date-notice {
         position: absolute;
         top: calc(var(--map-control-lg) + 8px);
         left: 0;
         height: var(--map-control-lg);
     }
 
-    .map-utility-cluster > .map-day-empty > .map-day-empty-jump {
+    .map-utility-cluster > .map-date-notice > .map-date-notice-action {
         height: calc(var(--map-control-lg) - 10px);
     }
 
-    /* SNOW-1196: the weather notice hangs under the empty-day one when
-       both are up — a past day off season is usually both. */
-    .map-utility-cluster > .map-day-empty:not([hidden]) ~ .map-day-empty {
+    /* SNOW-1196: the second notice up hangs under the first. */
+    .map-utility-cluster > .map-date-notice:not([hidden]) ~ .map-date-notice {
         top: calc(2 * (var(--map-control-lg) + 8px));
-    }
-
-    .map-utility-cluster > .map-day-empty:not([hidden]) ~ .map-day-empty:not([hidden]) ~ .map-day-empty {
-        top: calc(3 * (var(--map-control-lg) + 8px));
     }
 
     .search-results {
