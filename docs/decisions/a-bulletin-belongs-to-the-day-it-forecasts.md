@@ -32,7 +32,7 @@ issue labelled with today's date, while the map and calendar kept today's.
 On 23 Oct 2026, the season's first issue (out at 17:00, forecasting 24 Oct)
 showed in the panel on the 23rd over a grey map.
 
-The "in force now" rule was considered and declined. It would change
+The "in force now" rule, which is how SLF's own site works, was declined (Hugo, 23 Oct 2026). It would change
 today's colour every evening at 17:00, and the calendar could not follow it
 without special-casing today. SNOW-1204 had already settled that the
 afternoon issue is tomorrow's.
