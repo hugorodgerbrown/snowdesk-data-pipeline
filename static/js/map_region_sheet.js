@@ -284,7 +284,7 @@
     input.checked = on;
     const key = sheet.querySelector('[data-region-sheet-terrain-key]');
     if (key) key.hidden = !on;
-    const zoom = sheet.querySelector('[data-region-sheet-terrain-zoom]');
+    const zoom = sheet.querySelector('[data-testid="region-sheet-terrain"] [data-panel-overlay-toggle-detail]');
     const where = availability || (bridge ? bridge.availability() : 'ok');
     if (zoom) zoom.hidden = !(on && where === 'zoom-in');
   };

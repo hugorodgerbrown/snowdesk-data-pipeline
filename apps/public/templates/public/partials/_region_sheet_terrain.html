@@ -23,12 +23,14 @@ describes its problems, not a hazard map.
 
 ``static/js/map_region_sheet.js`` binds the switch to
 ``window.pwaBulletinTerrain`` (map.js), shows the strip under it while it
-is on, and shows the zoom line while the map is too far out for the tiles.
+is on, and shows the zoom hint under the switch's label while the map is too far out
+for the tiles.
 
 The strip under the switch is a native ``<details>``, CLOSED on every
 render (Hugo, 23 Oct): a reader needs the key once, not on every bulletin.
-Its summary IS the zoom line, so it adds no words of its own; zoomed in,
-the line's text is hidden and the summary is a bare chevron. Inside, one
+Its summary asks "What is problem terrain?". The zoom hint is not in it:
+it is the switch's own small second line (the toggle's ``detail``), shown
+only while the map is too far out and gone once zoomed in. Inside, one
 key row per line, then one sentence on what the highlight claims. The key and
 the zoom line render ``hidden`` so a body painted from the cache does not
 flash them before the script has read the switch's state.
@@ -41,11 +43,11 @@ Context (from apps.public.region_sheet.region_sheet_partial):
 {% endcomment %}
 <div class="rounded-tag bg-tag" data-testid="region-sheet-terrain">
     {% translate "Highlight problem terrain" as terrain_label %}
-    {% include "includes/_map_overlay_toggle.html" with id="region-sheet-terrain-toggle" label=terrain_label %}
+    {% translate "Zoom in on the map to see it" as zoom_hint %}
+    {% include "includes/_map_overlay_toggle.html" with id="region-sheet-terrain-toggle" label=terrain_label detail=zoom_hint %}
     <details class="group border-t border-border mx-3 py-2" data-region-sheet-terrain-key hidden>
         <summary class="flex cursor-pointer select-none list-none items-center [&::-webkit-details-marker]:hidden gap-1 text-xs font-medium text-text-1">
-            <span data-region-sheet-terrain-zoom hidden>{% translate "Zoom in to see it" %}</span>
-            <span class="sr-only">{% translate "Key" %}</span>
+            {% translate "What is problem terrain?" %}
             <span class="ml-auto" aria-hidden="true">
                 {% include "includes/_icon_chevron.html" with size=16 svg_class="transition-transform group-open:rotate-180" only %}
             </span>

@@ -76,8 +76,8 @@ orange; below z12 nothing paints and the choropleth shows as ever.
   `minzoom: 12` too.
 - **The region sheet's key is folded away.** The strip under the switch is
   a `<details>` that renders closed on every bulletin (Hugo, 23 Oct: a
-  reader needs the key once). Its summary is the zoom line, so it adds no
-  label of its own, and zoomed in it is a bare chevron. Inside are one key
+  reader needs the key once). Its summary asks "What is problem terrain?". The zoom hint is the switch's
+  own small second line, which shows only while the map is too far out. Inside are one key
   row per line, the steep hatch named "Additional steep terrain (>30°)",
   and one sentence on what the highlight claims. The map legend's
   "Problem terrain" section is unchanged, because the reader opens it on

@@ -425,12 +425,16 @@ class TestProblemTerrainSwitch:
         _rated_today(region)
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert re.search(r"data-region-sheet-terrain-key\s+hidden", content)
-        assert re.search(r"data-region-sheet-terrain-zoom\s+hidden", content)
+        # The zoom hint is the switch's own second line, under its label.
+        strip = content[content.index('data-testid="region-sheet-terrain"') :]
+        toggle = strip[: strip.index("data-region-sheet-terrain-key")]
+        assert re.search(r"data-panel-overlay-toggle-detail\s+hidden", toggle)
+        assert "Zoom in on the map to see it" in toggle
 
     def test_key_and_explainer_start_closed(
         self, client: Client, settings: Any
     ) -> None:
-        """Hugo, 23 Oct: read once, so folded away; the zoom line opens it."""
+        """Hugo, 23 Oct: read once, so folded behind one question."""
         settings.TERRAIN_CLASS_TILE_URL = _TILES
         region = MicroRegionFactory.create()
         _rated_today(region)
@@ -442,9 +446,8 @@ class TestProblemTerrainSwitch:
         assert " open" not in details.group(0)
         body = content[details.end() :]
         summary = body[: body.index("</summary>")]
-        # The summary is the zoom line, with no label of its own.
-        assert "data-region-sheet-terrain-zoom" in summary
-        assert "What the colours mean" not in content
+        assert "What is problem terrain?" in _text(summary)
+        assert "Zoom in" not in summary
         inside = body[body.index("</summary>") : body.index("</details>")]
         assert "map-legend-swatch--terrain-considerable" in inside
         assert "Highlighted terrain is over 30°" in _text(inside)
