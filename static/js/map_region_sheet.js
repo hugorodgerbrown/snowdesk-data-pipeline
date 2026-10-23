@@ -295,7 +295,7 @@
     window.pwaBulletinTerrain.setEnabled(target.checked, regionId || undefined);
   });
 
-  // The menu row and the map chip switch the same state.
+  // The menu row switches the same state.
   document.addEventListener('snowdesk:problem-terrain-changed', () => {
     syncTerrainControls();
   });

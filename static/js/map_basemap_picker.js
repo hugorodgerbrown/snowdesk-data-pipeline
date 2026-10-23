@@ -452,8 +452,7 @@
     syncRowsFromBridges,
   );
   // The problem-terrain row follows its own announcement for the same
-  // reasons, and because the region sheet's switch and the map chip's ×
-  // write it too.
+  // reasons, and because the region sheet's switch writes it too.
   document.addEventListener(
     'snowdesk:problem-terrain-changed',
     syncRowsFromBridges,

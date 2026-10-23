@@ -4738,7 +4738,7 @@
   // for the whole map, refetched when the day changes. SNOW-979 painted the
   // selected region alone, from rules in its sheet, and clicking from
   // region to region repainted one at a time (Hugo, 22 Oct: choppy). The
-  // menu row, the region sheet's switch and the map chip all write one
+  // menu row and the region sheet's switch both write one
   // state, overlayState.problem_terrain, so they cannot disagree. It is
   // independent of the terrain filter: the filter draws under the
   // choropleth, this above it, and both can be on.
@@ -4795,8 +4795,8 @@
   const bulletinTerrainShown = () => !!overlayState.problem_terrain;
 
   /**
-   * Tell the menu row, the region sheet's switch and the map chip that the
-   * layer's state or its day moved.
+   * Tell the menu row, the region sheet's switch and the legend key that
+   * the layer's state or its day moved.
    *
    * @returns {void}
    */
@@ -5093,9 +5093,9 @@
       announceProblemTerrain();
     };
 
-    // The layer's one owner of state. Three controls write it — the layers
-    // menu's "Highlight problem terrain" row (map_basemap_picker.js), the
-    // region sheet's switch and the map chip's × — and each reads it back
+    // The layer's one owner of state. Two controls write it — the layers
+    // menu's "Highlight problem terrain" row (map_basemap_picker.js) and the
+    // region sheet's switch — and each reads it back
     // from snowdesk:problem-terrain-changed, so they cannot disagree.
     window.pwaBulletinTerrain = Object.freeze({
       isEnabled: bulletinTerrainShown,

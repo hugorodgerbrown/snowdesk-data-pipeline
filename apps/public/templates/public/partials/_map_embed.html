@@ -850,9 +850,9 @@ Optional context:
                         way rather than a filter, so it sits with the bulletins.
                         It toggles through window.pwaBulletinTerrain
                         (map_basemap_picker.js's OVERLAY_BRIDGES); the region
-                        sheet's switch and the map chip's × write the same state.
-                        map_terrain_chip.js swaps the second line for "No bulletin
-                        for this day" when there is nothing to paint.
+                        sheet's switch writes the same state.
+                        map_problem_terrain_key.js swaps the second line for "No
+                        bulletin for this day" when there is nothing to paint.
                         {% endcomment %}
                         {% if terrain_filter_eligible %}
                             <li role="none">
@@ -1305,7 +1305,7 @@ Optional context:
                 </section>
                 {# Problem terrain's key, at the whole scale: every region is   #}
                 {# painted by its own bulletin. Hidden until the layer is on    #}
-                {# (map_terrain_chip.js, whose Key button scrolls here).        #}
+                {# (map_problem_terrain_key.js).                                #}
                 <section
                     class="map-legend-section"
                     data-testid="map-legend-problem-terrain"
@@ -1715,45 +1715,11 @@ Optional context:
                     </svg>
                 </button>
             </div>
-            {% comment %}
-            SNOW-1196: the problem-terrain layer names itself on the map while
-            it paints. Its key used to live only in the region sheet that
-            switched it on and in the legend card, so once the sheet closed
-            the map was coloured by a layer nothing on screen named. "Key"
-            opens the legend at the layer's section; × switches it off.
-            Shown by static/js/map_terrain_chip.js.
-            {% endcomment %}
             {% if terrain_filter_eligible %}
-                <div id="map-terrain-chip" class="map-date-notice" role="status" hidden>
-                    <span class="map-terrain-chip-swatch" aria-hidden="true"></span>
-                    <span class="map-date-notice-label" data-terrain-chip-label></span>
-                    <button type="button" class="map-date-notice-action hover-affordance" data-terrain-chip-key>
-                        {% trans "Key" %}
-                    </button>
-                    <button
-                        type="button"
-                        class="map-weather-window-close hover-affordance"
-                        data-terrain-chip-off
-                        aria-label='{% trans "Turn off problem terrain" %}'
-                    >
-                        <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                        >
-                            <path d="M18 6 6 18" />
-                            <path d="m6 6 12 12" />
-                        </svg>
-                    </button>
-                </div>
-                <template id="map-terrain-chip-strings-template">
-                    <span data-string="label">{% blocktrans %}Problem terrain · %(day)s{% endblocktrans %}</span>
+                {# map_problem_terrain_key.js's strings: the layers-menu row's #}
+                {# second line. SNOW-1206 removed the date-row chip they      #}
+                {# shared a template with.                                     #}
+                <template id="map-problem-terrain-strings-template">
                     {# The menu row's second line, and (SNOW-1195) what it says on a day no bulletin covers. #}
                     <span data-string="detail">{% trans "Replaces the region colour from zoom 12" %}</span>
                     <span data-string="no-bulletin">{% trans "No bulletin for this day" %}</span>

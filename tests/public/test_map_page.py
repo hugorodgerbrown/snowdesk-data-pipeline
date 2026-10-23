@@ -557,7 +557,7 @@ def test_the_date_row_notices_can_give_way() -> None:
     roundel; the label is the part that shrinks, so the presses stay.
     """
     content = Client().get(reverse("public:map")).content.decode()
-    for attr in ("data-weather-window-label", "data-terrain-chip-label"):
+    for attr in ("data-weather-window-label",):
         at = content.index(attr)
         tag = content[content.rindex("<span", 0, at) : content.index(">", at)]
         assert 'class="map-date-notice-label"' in tag
@@ -590,26 +590,19 @@ def test_the_weather_row_and_notice_ship_hidden_with_their_strings() -> None:
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_the_problem_terrain_chip_ships_hidden_with_key_and_off() -> None:
-    """SNOW-1196: the chip names the layer while it paints; hidden until then."""
-    content = Client().get(reverse("public:map")).content.decode()
-    start = content.index('id="map-terrain-chip"')
-    tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
-    assert "hidden" in tag
-    assert "data-terrain-chip-key" in content
-    assert "data-terrain-chip-off" in content
-    assert '<template id="map-terrain-chip-strings-template">' in content
-    assert content.index("/static/js/map.js") < content.index(
-        "/static/js/map_terrain_chip.js"
-    )
+def test_the_problem_terrain_layer_has_no_date_row_chip() -> None:
+    """SNOW-1206: the layer is named by the layers menu and the legend, not the date row.
 
-
-@pytest.mark.django_db
-@override_settings(TERRAIN_CLASS_TILE_URL="")
-def test_no_problem_terrain_chip_without_the_terrain_filter() -> None:
-    """SNOW-1196: no class tiles, no layer, so nothing for a chip to name."""
+    The module that keeps those two in step loads after map.js, which
+    publishes the bridge it reads.
+    """
     content = Client().get(reverse("public:map")).content.decode()
     assert 'id="map-terrain-chip"' not in content
+    assert "data-terrain-chip" not in content
+    assert '<template id="map-problem-terrain-strings-template">' in content
+    assert content.index("/static/js/map.js") < content.index(
+        "/static/js/map_problem_terrain_key.js"
+    )
 
 
 @pytest.mark.django_db

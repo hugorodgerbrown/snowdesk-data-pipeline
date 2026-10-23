@@ -2148,21 +2148,6 @@ html:has(> body.map-fullscreen) > body {
     cursor: pointer;
 }
 
-/* SNOW-1196: the problem-terrain chip's swatch — the layer's own ramp in
-   one square, so the chip reads as that layer before its words do. */
-.map-terrain-chip-swatch {
-    flex: none;
-    width: 12px;
-    height: 12px;
-    border-radius: 3px;
-    background: linear-gradient(
-        135deg,
-        var(--color-eaws-moderate) 0 33%,
-        var(--color-eaws-considerable) 33% 66%,
-        var(--color-eaws-high) 66% 100%
-    );
-}
-
 .map-date-notice-action {
     display: inline-flex;
     flex: none;

@@ -490,7 +490,6 @@
       document.getElementById('map-today-control'),
       // SNOW-1196: and the date row's notices, which hang under it.
       document.getElementById('map-weather-window'),
-      document.getElementById('map-terrain-chip'),
       root,
     ].filter(Boolean);
     const homes = moved.map((el) => ({ el, parent: el.parentNode, next: el.nextSibling }));
