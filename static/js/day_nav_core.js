@@ -20,10 +20,10 @@
  *   dayHasBulletin(frame, countryState)
  *     Whether one day of the ratings cache carries a rating for any region
  *     of a country the visitor has on.
- *   nearestIssued(dateKey, ratingsCache, countryState)
- *     For a day with no bulletin: the next day when it has one
- *     (``direction: 'following'`` — an evening issue for tomorrow, out on
- *     the empty day itself, SNOW-1204), else the latest earlier day that
+ *   nearestIssued(dateKey, ratingsCache, countryState, todayKey)
+ *     For a day with no bulletin: on today, tomorrow when it has one
+ *     (``direction: 'following'`` — an evening issue for tomorrow, out
+ *     today, SNOW-1204), else the latest earlier day that
  *     has one (``direction: 'last'``), else the earliest later one
  *     (``direction: 'next'``), or ``null``. The empty-day chip offers it.
  *
@@ -133,16 +133,17 @@
   }
 
   /**
-   * The nearest day with a bulletin: the next day if it has one, else
-   * looking back first.
+   * The nearest day with a bulletin: on today, tomorrow if it has one;
+   * otherwise looking back first.
    *
-   * The next day first (SNOW-1204) because the ratings cache files a
-   * bulletin under the day it forecasts, and an evening issue forecasts
-   * tomorrow. A day with no rating whose next day has one is a day whose
-   * latest bulletin came out that evening, and the region sheet shows that
-   * bulletin as the one in force. Naming an older day as the "last issued"
-   * there was false: the chip said 21 Oct while the sheet showed a 23 Oct
-   * 15:00 reissue.
+   * Tomorrow first, on today only (SNOW-1204), because the ratings cache
+   * files a bulletin under the day it forecasts, and an evening issue
+   * forecasts tomorrow. While tomorrow has not begun, a rating for it can
+   * only have come from an issue already out today, which the region sheet
+   * shows as the one in force; naming an older day as the "last issued"
+   * there was false (the chip said 21 Oct while the sheet showed a 23 Oct
+   * 15:00 reissue). On a past day the next day's rating may be that day's
+   * own morning issue, so the inference does not hold and is not made.
    *
    * Otherwise back first, because the question an empty day raises is
    * almost always "what did the last one say?" — off season, a gap in a
@@ -152,12 +153,13 @@
    * @param {string} dateKey The empty day.
    * @param {?Object<string, Object<string, *>>} ratingsCache
    * @param {Object<string, boolean>} countryState
+   * @param {string} [todayKey] Today's key; without it, no 'following'.
    * @returns {?{ date: string, direction: 'following' | 'last' | 'next' }}
    */
-  function nearestIssued(dateKey, ratingsCache, countryState) {
+  function nearestIssued(dateKey, ratingsCache, countryState, todayKey) {
     if (!ratingsCache || typeof ratingsCache !== 'object') return null;
     var following = shiftDay(dateKey, 1);
-    if (dayHasBulletin(ratingsCache[following], countryState)) {
+    if (todayKey && dateKey === todayKey && dayHasBulletin(ratingsCache[following], countryState)) {
       return { date: following, direction: 'following' };
     }
     var last = '';

@@ -17,8 +17,8 @@
  *     aria-valuenow is a percentage of the season and reads as one.
  *   - THE EMPTY-DAY NOTICE. #map-day-empty says when the day on the map has
  *     no bulletin for any country the visitor has on, and offers the
- *     nearest day that does — the next day when tonight's issue is already
- *     filed under it (SNOW-1204), else the last one issued, or the next
+ *     nearest day that does — on today, tomorrow when tonight's issue is
+ *     already filed under it (SNOW-1204), else the last one issued, or the next
  *     when nothing came before. Without it an empty day read as a map that had failed to
  *     load.
  *
@@ -134,9 +134,9 @@
       jumpTarget = '';
       return;
     }
-    const nearest = core.nearestIssued(day, ratingsCache, COUNTRY_STATE);
-    // SNOW-1204: an evening issue for tomorrow is out, and in force, on this
-    // day, so the chip names it rather than saying this day has none.
+    const nearest = core.nearestIssued(day, ratingsCache, COUNTRY_STATE, todayKey);
+    // SNOW-1204: today, an evening issue for tomorrow is out and in force,
+    // so the chip names it rather than saying today has none.
     const following = !!nearest && nearest.direction === 'following';
     emptyLabel.textContent = following
       ? self.pwaStrings.interpolate(STRINGS['day-issued-for'], {

@@ -13,7 +13,7 @@
  *     buttons say so by disabling;
  *   - the notice shows only on a day no visible country has a bulletin
  *     for, names the nearest one that does, and goes there on a press;
- *     when that is the next day it names tomorrow's issue rather than
+ *     on today, when tomorrow has one, it names tomorrow's issue rather than
  *     calling the day empty (SNOW-1204).
  */
 
@@ -184,8 +184,9 @@ describe('the empty-day notice', () => {
     expect($('map-day-empty').textContent).toContain('Next issued day 2026-02-12');
   });
 
-  it("names tomorrow's bulletin when it is already out (SNOW-1204)", async () => {
-    // The 14th has no rating; the 15th's issue came out on the 14th's evening.
+  it("names tomorrow's bulletin on today when it is already out (SNOW-1204)", async () => {
+    // Today is the 14th, which has no rating; the 15th's issue is out.
+    $('season-scrubber').dataset.today = '2026-02-14';
     history.replaceState(null, '', '/map/?d=2026-02-14');
     await load();
     expect($('map-day-empty').textContent).toContain('Bulletin issued for day 2026-02-15');
@@ -193,6 +194,13 @@ describe('the empty-day notice', () => {
     expect($('map-day-empty').textContent).not.toContain('Last issued');
     document.querySelector('[data-day-empty-jump]').click();
     expect(day()).toBe('2026-02-15');
+  });
+
+  it('keeps "Last issued" on a past day whose next day is rated', async () => {
+    history.replaceState(null, '', '/map/?d=2026-02-14');
+    await load();
+    expect($('map-day-empty').textContent).toContain('No bulletins for day 2026-02-14');
+    expect($('map-day-empty').textContent).toContain('Last issued day 2026-02-13');
   });
 
   it('follows the countries that are on', async () => {
