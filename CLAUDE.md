@@ -763,7 +763,7 @@ Read these when working in the relevant area:
 | Nav partial implementation spec | [`docs/nav_implementation_spec.md`](docs/nav_implementation_spec.md) |
 | Why UI icons are `_icon_*.html` stroke partials (24×24, stroke-2, currentColor; the three Font Awesome filled glyphs are the named exception) | [`docs/decisions/ui-icons-are-house-stroke-partials.md`](docs/decisions/ui-icons-are-house-stroke-partials.md) |
 | Account-area navigation (no sub-nav; menu is the navigation) | [`docs/decisions/account-area-navigation-lives-in-the-nav-menu.md`](docs/decisions/account-area-navigation-lives-in-the-nav-menu.md) |
-| Feature flags (django-waffle) | [`docs/feature-flags.md`](docs/feature-flags.md) |
+| Feature flags and switches (django-waffle; waffle_flags.json, waffle_switches.json, the scheduled jobs' schedule_<job id> switches) | [`docs/feature-flags.md`](docs/feature-flags.md) |
 | Which test layer to use; the e2e cap; Playwright + Vitest harnesses | [`docs/client-side-tests.md`](docs/client-side-tests.md) |
 | Weekly offline-maps assurance (tests/offline/, `tox -e offline`, the recording proxy, the fuzz seed) | [`docs/offline-assurance.md`](docs/offline-assurance.md) |
 | Manual testing scenarios | [`docs/testing-scenarios.md`](docs/testing-scenarios.md) |

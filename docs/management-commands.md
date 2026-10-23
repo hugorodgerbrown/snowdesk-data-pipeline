@@ -191,6 +191,15 @@ worker logs.
 | what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
 | Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports resorts with a coordinate but no pin `Location` (`Resort.location`, SNOW-1144) — each one a resort whose weather is not fetched, still on the map only through the transitional fallback to its mirrored coordinates (removed by SNOW-1147), with nothing else saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. Since SNOW-1144 every pin writer goes through `set_resort_pin`, so after the one-time backfill this should never fire; if it does, an operator runs `link_resort_locations --commit` by hand. |
 
+Each job checks a waffle switch, `schedule_<job id>` (for example
+`schedule_fetch_bulletins`), when it fires and skips that run while the
+switch is off, so a job can be paused from `/admin/waffle/switch/` without a
+deploy (SNOW-1201). The switches are declared in
+`apps/core/fixtures/waffle_switches.json` and created by
+`sync_waffle_switches --commit` on every deploy; a new job needs its entry
+there, or `tests/test_schedule.py` fails. A job whose switch is missing
+runs and logs a warning.
+
 ### `purge_request_logs` — enforce the RequestLog retention window
 
 `RequestLog` is written at sign-up, sign-in, subscribe, add-region and
@@ -1037,6 +1046,21 @@ uv run python manage.py backfill_trip_slope_samples --commit         # apply
 uv run python manage.py backfill_trip_slope_samples --commit --limit 20
 ```
 
+### `sync_waffle_switches` — reconcile waffle.Switch rows to the manifest
+
+SNOW-1201. The switch counterpart of `sync_waffle_flags` below: reconciles
+the DB's `waffle.Switch` rows to `apps/core/fixtures/waffle_switches.json`
+by **create + delete only**. A missing switch is created in the manifest's
+`active` state, a switch the manifest no longer names is deleted, and an
+existing switch is never edited, so an operator's off survives every
+deploy. Run by `build.sh` after `sync_waffle_flags`. Tallies `created` and
+`deleted`. The first switches are the scheduled jobs' `schedule_<job id>`.
+
+```bash
+uv run python manage.py sync_waffle_switches            # preview the diff
+uv run python manage.py sync_waffle_switches --commit   # apply it
+```
+
 ### `sync_waffle_flags` — reconcile waffle.Flag rows to the manifest
 
 Reconciles the DB's `waffle.Flag` rows to the declarative manifest at
@@ -1089,6 +1113,12 @@ failed item exits non-zero. It refuses to run without `DATA_FEED_URL`,
 `DATA_FEED_CLIENT_ID` and `DATA_FEED_CLIENT_SECRET`, against a plain-HTTP
 remote URL, or against its own site. It never deletes; a wholesale reset
 is still `bin/sync-staging-data` below.
+
+A dry run counts a location it would create as present for the weather and
+resorts after it, so its report matches what `--commit` would do
+(SNOW-1198). Each feed page's lookups are read in one query per kind of
+row (SNOW-1199). On staging it runs daily at 07:20 UTC as the
+`snowdesk-staging-data-pull` Render cron job (SNOW-1200).
 
 ### `bin/sync-staging-data` — refresh staging's data from production
 

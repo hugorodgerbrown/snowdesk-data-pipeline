@@ -21,17 +21,32 @@ around it:
 * locations and resorts are curated reference data with no ingest service,
   so they are written field by field — the same columns production holds.
 
+**Reads are batched per page** (SNOW-1199). ``lookups_for`` reads every
+row a page of items refers to in one query per kind, and each apply
+function reads from that ``PageLookups`` rather than querying per item.
+Writes stay per item. A write that changes a looked-up row (a region's
+centroid) updates the cached row too, so later items on the page see it.
+
+**A dry run reports what a commit would do** (SNOW-1198). A location a dry
+run counts as created goes into ``PageLookups.planned``, a set the command
+shares across the run's feeds, and the weather and resort items after it
+treat that location as present instead of failing.
+
 Nothing is deleted. A resort or location removed on production stays here
 until ``bin/sync-staging-data`` resets the estate.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import enum
 import logging
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
@@ -66,41 +81,206 @@ class ApplyError(ValueError):
 
 
 # ---------------------------------------------------------------------------
+# Page lookups
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PageLookups:
+    """The rows a page of feed items refers to, read once for the whole page.
+
+    Attributes:
+        locations: Locations here, by uuid string.
+        regions: Micro-regions by ``region_id``: those a page names, and,
+            for the locations feed, those centred on the page's locations.
+        resorts: Resorts here by slug, with region, pin, passes and links
+            loaded.
+        bulletins: Bulletins here by ``bulletin_id`` (pk, CAAML and PDF
+            link only).
+        weather: Weather rows here by ``(location pk, observed_on)``.
+        planned: Location uuids a dry run has counted as created. The
+            command shares one set across a run's feeds.
+
+    """
+
+    locations: dict[str, Location] = field(default_factory=dict)
+    regions: dict[str, MicroRegion] = field(default_factory=dict)
+    resorts: dict[str, Resort] = field(default_factory=dict)
+    bulletins: dict[str, Bulletin] = field(default_factory=dict)
+    weather: dict[tuple[int, dt.date], Weather] = field(default_factory=dict)
+    planned: set[str] = field(default_factory=set)
+
+
+def _locations(uuids: Iterable[str]) -> dict[str, Location]:
+    """Return the locations here among ``uuids``, by uuid string."""
+    return {
+        str(location.uuid): location
+        for location in Location.objects.filter(uuid__in=set(uuids))
+    }
+
+
+def _regions(query: Q) -> dict[str, MicroRegion]:
+    """Return the micro-regions matching ``query``, by ``region_id``.
+
+    Only the columns the apply functions read, so a centroid is compared by
+    its id and never loaded.
+    """
+    return {
+        region.region_id: region
+        for region in MicroRegion.objects.filter(query).only(
+            "pk", "region_id", "centroid_location_id"
+        )
+    }
+
+
+def lookups_for(
+    feed: str, items: list[dict[str, Any]], *, planned: set[str] | None = None
+) -> PageLookups:
+    """Read every row ``items`` refers to, in one query per kind of row.
+
+    Args:
+        feed: The feed the items came from.
+        items: One page of that feed's items.
+        planned: The run's set of locations a dry run would create; a new
+            set when not given.
+
+    Returns:
+        The page's lookups.
+
+    """
+    lookups = PageLookups(planned=set() if planned is None else planned)
+    if feed == "locations":
+        lookups.locations = _locations(item["uuid"] for item in items)
+        named = {rid for item in items for rid in item.get("centroid_of", [])}
+        lookups.regions = _regions(
+            Q(region_id__in=named)
+            | Q(centroid_location__in=list(lookups.locations.values()))
+        )
+    elif feed == "resorts":
+        lookups.locations = _locations(
+            uuid
+            for item in items
+            for uuid in ([item["location"]] if item.get("location") else [])
+            + [link["location"] for link in item.get("locations", [])]
+        )
+        lookups.regions = _regions(Q(region_id__in={item["region"] for item in items}))
+        lookups.resorts = {
+            str(resort.slug): resort
+            for resort in Resort.objects.filter(
+                slug__in={item["slug"] for item in items}
+            )
+            .select_related("region", "location")
+            .prefetch_related(
+                "passes",
+                Prefetch(
+                    "resort_locations",
+                    queryset=ResortLocation.objects.select_related("location"),
+                ),
+            )
+        }
+    elif feed == "bulletins":
+        lookups.bulletins = {
+            bulletin.bulletin_id: bulletin
+            for bulletin in Bulletin.objects.filter(
+                bulletin_id__in={item["bulletin_id"] for item in items}
+            ).only("pk", "bulletin_id", "raw_data", "pdf_url")
+        }
+    elif feed == "weather":
+        lookups.locations = _locations(item["location"] for item in items)
+        days = {
+            day
+            for item in items
+            if (day := parse_date(item["observed_on"])) is not None
+        }
+        lookups.weather = {
+            (row.location_id, row.observed_on): row
+            for row in Weather.objects.filter(
+                location__in=list(lookups.locations.values()), observed_on__in=days
+            )
+        }
+    return lookups
+
+
+# ---------------------------------------------------------------------------
 # Locations
 # ---------------------------------------------------------------------------
 
 
-def apply_location(item: dict[str, Any], *, commit: bool) -> Outcome:
+def _recentre(regions: list[MicroRegion], location_pk: int | None) -> None:
+    """Point the cached ``regions`` at ``location_pk``, as a commit leaves them.
+
+    Keeps a page's lookups true after a write (or a dry run's decision), so
+    a later item on the page does not drop a region this one has just
+    claimed.
+    """
+    for region in regions:
+        region.centroid_location_id = location_pk
+
+
+def _create_location(
+    item: dict[str, Any],
+    fields: dict[str, Any],
+    claimed: list[MicroRegion],
+    *,
+    commit: bool,
+    lookups: PageLookups,
+) -> None:
+    """Create a location new here, or record that a dry run would (SNOW-1198).
+
+    Args:
+        item: The ``locations`` feed item.
+        fields: Its columns, already loaded.
+        claimed: The regions here it is the centroid of.
+        commit: Write; otherwise only plan.
+        lookups: The page's lookups, updated to match.
+
+    """
+    if not commit:
+        lookups.planned.add(item["uuid"])
+        return
+    with transaction.atomic():
+        location = Location.objects.create(uuid=item["uuid"], **fields)
+        MicroRegion.objects.filter(pk__in=[r.pk for r in claimed]).update(
+            centroid_location=location
+        )
+    lookups.locations[item["uuid"]] = location
+    _recentre(claimed, location.pk)
+
+
+def apply_location(
+    item: dict[str, Any], *, commit: bool, lookups: PageLookups | None = None
+) -> Outcome:
     """Create or update a curated location by uuid, and its region centroids.
 
     Args:
         item: A ``locations`` feed item.
         commit: Write; otherwise only decide.
+        lookups: The page's lookups; read for this one item when not given.
 
     Returns:
         The outcome.
 
     """
+    lookups = lookups or lookups_for("locations", [item])
     fields = contract.load_fields(Location, contract.LOCATION_FIELDS, item["fields"])
-    location = Location.objects.filter(uuid=item["uuid"]).first()
-    centroid_of = item.get("centroid_of", [])
-    regions = MicroRegion.objects.filter(region_id__in=centroid_of)
+    location = lookups.locations.get(item["uuid"])
+    centroid_of = set(item.get("centroid_of", []))
+    claimed = [r for rid, r in lookups.regions.items() if rid in centroid_of]
 
     if location is None:
-        if commit:
-            with transaction.atomic():
-                location = Location.objects.create(uuid=item["uuid"], **fields)
-                regions.update(centroid_location=location)
+        _create_location(item, fields, claimed, commit=commit, lookups=lookups)
         return Outcome.CREATED
 
-    stale_regions = regions.exclude(centroid_location=location)
+    stale = [r for r in claimed if r.centroid_location_id != location.pk]
     # centroid_of is the whole list on production, so a region here that
     # still points at this location but is missing from it was unlinked there.
-    dropped_regions = MicroRegion.objects.filter(centroid_location=location).exclude(
-        region_id__in=centroid_of
-    )
+    dropped = [
+        r
+        for rid, r in lookups.regions.items()
+        if r.centroid_location_id == location.pk and rid not in centroid_of
+    ]
     changed = {k: v for k, v in fields.items() if getattr(location, k) != v}
-    if not changed and not stale_regions.exists() and not dropped_regions.exists():
+    if not changed and not stale and not dropped:
         return Outcome.UNCHANGED
     if commit:
         with transaction.atomic():
@@ -108,8 +288,14 @@ def apply_location(item: dict[str, Any], *, commit: bool) -> Outcome:
                 setattr(location, name, value)
             if changed:
                 location.save()
-            dropped_regions.update(centroid_location=None)
-            stale_regions.update(centroid_location=location)
+            MicroRegion.objects.filter(pk__in=[r.pk for r in dropped]).update(
+                centroid_location=None
+            )
+            MicroRegion.objects.filter(pk__in=[r.pk for r in stale]).update(
+                centroid_location=location
+            )
+    _recentre(dropped, None)
+    _recentre(stale, location.pk)
     return Outcome.UPDATED
 
 
@@ -121,8 +307,10 @@ def apply_location(item: dict[str, Any], *, commit: bool) -> Outcome:
 def _resort_state(resort: Resort) -> dict[str, Any]:
     """Return the relations of ``resort`` in the feed's natural-key shape.
 
+    Reads the relations ``lookups_for`` loaded, so it costs no queries.
+
     Args:
-        resort: A saved resort.
+        resort: A saved resort, with region, pin, passes and links loaded.
 
     Returns:
         ``region``, ``location``, ``passes`` and ``locations``, comparable
@@ -132,12 +320,10 @@ def _resort_state(resort: Resort) -> dict[str, Any]:
     return {
         "region": resort.region.region_id,
         "location": str(resort.location.uuid) if resort.location else None,
-        "passes": sorted(resort.passes.values_list("slug", "name", "website")),
+        "passes": sorted((p.slug, p.name, p.website) for p in resort.passes.all()),
         "locations": sorted(
-            (str(uuid), role, primary)
-            for uuid, role, primary in resort.resort_locations.values_list(
-                "location__uuid", "role", "is_primary"
-            )
+            (str(link.location.uuid), link.role, link.is_primary)
+            for link in resort.resort_locations.all()
         ),
     }
 
@@ -165,39 +351,19 @@ def _wanted_state(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _locations_by_uuid(uuids: set[str]) -> dict[str, Location]:
-    """Return the locations named by ``uuids``, or raise naming any missing.
-
-    Args:
-        uuids: Location uuids an item references.
-
-    Returns:
-        ``{uuid: Location}``.
-
-    Raises:
-        ApplyError: A uuid has no location here — the ``locations`` feed
-            has not been applied yet.
-
-    """
-    found = {str(loc.uuid): loc for loc in Location.objects.filter(uuid__in=uuids)}
-    missing = uuids - found.keys()
-    if missing:
-        raise ApplyError(
-            f"unknown location(s) {sorted(missing)} — pull locations first"
-        )
-    return found
-
-
 def _resolve_resort(
-    item: dict[str, Any],
+    item: dict[str, Any], lookups: PageLookups
 ) -> tuple[MicroRegion, dict[str, Location]]:
     """Return the region and locations a resort item names, or raise.
 
     Run before deciding an outcome, so a dry run reports an item that would
-    fail rather than counting it as a create.
+    fail rather than counting it as a create. A location the dry run has
+    planned counts as present; it is not in the returned map, which only a
+    commit reads, and on a commit nothing is planned.
 
     Args:
         item: A ``resorts`` feed item.
+        lookups: The page's lookups.
 
     Returns:
         The region, and ``{uuid: Location}`` for the pin and every link.
@@ -207,13 +373,18 @@ def _resolve_resort(
             does not have.
 
     """
-    region = MicroRegion.objects.filter(region_id=item["region"]).only("pk").first()
+    region = lookups.regions.get(item["region"])
     if region is None:
         raise ApplyError(f"unknown region {item['region']!r}")
     wanted = {link["location"] for link in item.get("locations", [])}
     if item.get("location"):
         wanted.add(item["location"])
-    return region, _locations_by_uuid(wanted)
+    missing = wanted - lookups.locations.keys() - lookups.planned
+    if missing:
+        raise ApplyError(
+            f"unknown location(s) {sorted(missing)} — pull locations first"
+        )
+    return region, {u: lookups.locations[u] for u in wanted if u in lookups.locations}
 
 
 def _write_resort(
@@ -266,12 +437,15 @@ def _write_resort(
     )
 
 
-def apply_resort(item: dict[str, Any], *, commit: bool) -> Outcome:
+def apply_resort(
+    item: dict[str, Any], *, commit: bool, lookups: PageLookups | None = None
+) -> Outcome:
     """Create or update a resort by slug, with its pin, passes and links.
 
     Args:
         item: A ``resorts`` feed item.
         commit: Write; otherwise only decide.
+        lookups: The page's lookups; read for this one item when not given.
 
     Returns:
         The outcome.
@@ -281,9 +455,10 @@ def apply_resort(item: dict[str, Any], *, commit: bool) -> Outcome:
             not have.
 
     """
+    lookups = lookups or lookups_for("resorts", [item])
     fields = contract.load_fields(Resort, contract.RESORT_FIELDS, item["fields"])
-    region, by_uuid = _resolve_resort(item)
-    resort = Resort.objects.filter(slug=item["slug"]).first()
+    region, by_uuid = _resolve_resort(item, lookups)
+    resort = lookups.resorts.get(item["slug"])
     if resort is None:
         if commit:
             with transaction.atomic():
@@ -305,7 +480,11 @@ def apply_resort(item: dict[str, Any], *, commit: bool) -> Outcome:
 
 
 def apply_bulletin(
-    item: dict[str, Any], *, commit: bool, run: PipelineRun | None
+    item: dict[str, Any],
+    *,
+    commit: bool,
+    run: PipelineRun | None,
+    lookups: PageLookups | None = None,
 ) -> Outcome:
     """Replay a bulletin's CAAML through this database's ``upsert_bulletin``.
 
@@ -318,6 +497,7 @@ def apply_bulletin(
         commit: Write; otherwise only decide.
         run: The ``PipelineRun`` to attribute a written bulletin to;
             required when ``commit``.
+        lookups: The page's lookups; read for this one item when not given.
 
     Returns:
         The outcome.
@@ -330,11 +510,8 @@ def apply_bulletin(
     if not isinstance(caaml, dict):
         raise ApplyError(f"bulletin {item.get('bulletin_id')!r} carries no CAAML")
     pdf_url = item.get("pdf_url") or ""
-    existing = (
-        Bulletin.objects.filter(bulletin_id=item["bulletin_id"])
-        .only("pk", "raw_data", "pdf_url")
-        .first()
-    )
+    lookups = lookups or lookups_for("bulletins", [item])
+    existing = lookups.bulletins.get(item["bulletin_id"])
     if existing is not None:
         stored = (existing.raw_data or {}).get("properties")
         if stored == caaml and existing.pdf_url == pdf_url:
@@ -351,16 +528,20 @@ def apply_bulletin(
 # ---------------------------------------------------------------------------
 
 
-def apply_weather(item: dict[str, Any], *, commit: bool) -> Outcome:
+def apply_weather(
+    item: dict[str, Any], *, commit: bool, lookups: PageLookups | None = None
+) -> Outcome:
     """Record one location-day of weather through ``upsert_weather``.
 
     A past day already recorded here is ``KEPT`` when it differs — the
     model's rule is that a day's account stands once the day is over, and a
-    copy is no exception — and ``UNCHANGED`` when it does not.
+    copy is no exception — and ``UNCHANGED`` when it does not. A location a
+    dry run has planned has no weather here yet, so its day is ``CREATED``.
 
     Args:
         item: A ``weather`` feed item.
         commit: Write; otherwise only decide.
+        lookups: The page's lookups; read for this one item when not given.
 
     Returns:
         The outcome.
@@ -370,8 +551,9 @@ def apply_weather(item: dict[str, Any], *, commit: bool) -> Outcome:
             day does not parse.
 
     """
-    location = Location.objects.filter(uuid=item["location"]).first()
-    if location is None:
+    lookups = lookups or lookups_for("weather", [item])
+    location = lookups.locations.get(item["location"])
+    if location is None and item["location"] not in lookups.planned:
         raise ApplyError(
             f"unknown location {item['location']!r} — pull locations first"
         )
@@ -379,10 +561,10 @@ def apply_weather(item: dict[str, Any], *, commit: bool) -> Outcome:
     if observed_on is None:
         raise ApplyError(f"observed_on {item['observed_on']!r} is not a date")
     fields = contract.load_fields(Weather, contract.WEATHER_FIELDS, item["fields"])
+    if location is None:
+        return Outcome.CREATED
 
-    existing = Weather.objects.filter(
-        location=location, observed_on=observed_on
-    ).first()
+    existing = lookups.weather.get((location.pk, observed_on))
     if existing is not None:
         if all(getattr(existing, k) == v for k, v in fields.items()):
             return Outcome.UNCHANGED

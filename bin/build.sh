@@ -75,3 +75,8 @@ uv run --no-sync python manage.py migrate
 # SNOWDESK_INVOKED_VIA records the run in the command register as a BUILD
 # run rather than a shell one (SNOW-1189).
 SNOWDESK_INVOKED_VIA=BUILD uv run --no-sync python manage.py sync_waffle_flags --commit
+
+# Sync waffle.Switch rows to apps/core/fixtures/waffle_switches.json (SNOW-1201),
+# the same way: create + delete only, so a switch an operator turned off (a
+# scheduled job's schedule_<job id>, for one) stays off through the deploy.
+SNOWDESK_INVOKED_VIA=BUILD uv run --no-sync python manage.py sync_waffle_switches --commit

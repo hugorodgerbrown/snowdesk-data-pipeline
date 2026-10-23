@@ -13,6 +13,12 @@ re-run.
 acts on. Neither function imports the ORM, so both are unit-testable without
 a database.
 
+SNOW-1201 added the switch manifest, ``waffle_switches.json``, read by
+``load_switch_manifest`` into ``SwitchSpec`` for ``sync_waffle_switches``.
+Same rules: create + delete only, an existing switch never edited, so an
+operator's off survives every deploy. ``compute_flag_diff`` is plain set
+difference and serves both.
+
 SNOW-812 added ``groups`` to the manifest vocabulary — group NAMES a flag is
 scoped to. It is the one manifest key that is not a scalar create-default:
 ``Flag.groups`` is a ManyToMany, so the command applies it after the row
@@ -244,3 +250,70 @@ def compute_flag_diff(
     to_create = manifest_names - db_names
     to_delete = db_names - manifest_names
     return to_create, to_delete
+
+
+@dataclass(frozen=True, slots=True)
+class SwitchSpec:
+    """One switch manifest entry: a switch name, its note, and its first state.
+
+    ``active`` is the state the switch is created in. It is never applied
+    to a switch that already exists.
+    """
+
+    name: str
+    note: str
+    active: bool
+
+
+def load_switch_manifest(path: Path) -> list[SwitchSpec]:
+    """Parse and validate the waffle switch manifest at ``path`` (SNOW-1201).
+
+    Args:
+        path: Path to the manifest JSON file, shaped ``{"switches": [...]}``,
+            each entry ``{"name": str, "note": str, "active": bool}``.
+
+    Returns:
+        One ``SwitchSpec`` per entry, in file order.
+
+    Raises:
+        ValueError: If the file is missing or malformed, an entry carries
+            a key other than ``name``/``note``/``active`` or lacks one,
+            ``active`` is not a boolean, or a ``name`` repeats.
+
+    """
+    if not path.exists():
+        raise ValueError(f"Waffle switch manifest not found: {path}")
+    try:
+        raw = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Malformed JSON in waffle switch manifest {path}: {exc}"
+        ) from exc
+    if not isinstance(raw, dict) or not isinstance(raw.get("switches"), list):
+        raise ValueError(
+            f"Waffle switch manifest {path} must be a JSON object shaped "
+            '{"switches": [...]}.'
+        )
+
+    keys = {"name", "note", "active"}
+    specs: list[SwitchSpec] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(raw["switches"]):
+        if not isinstance(entry, dict) or set(entry) != keys:
+            raise ValueError(
+                f"Waffle switch manifest {path}: entry {index} must have "
+                "exactly the keys active, name, note."
+            )
+        if not isinstance(entry["active"], bool):
+            raise ValueError(
+                f"Waffle switch manifest {path}: entry {index} active must be "
+                "true or false."
+            )
+        if entry["name"] in seen:
+            raise ValueError(
+                f"Waffle switch manifest {path}: duplicate switch name "
+                f"{entry['name']!r}."
+            )
+        seen.add(entry["name"])
+        specs.append(SwitchSpec(entry["name"], entry["note"], entry["active"]))
+    return specs

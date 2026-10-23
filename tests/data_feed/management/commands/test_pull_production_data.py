@@ -8,8 +8,8 @@ client and server share one database — every item must come back
 UNCHANGED, which is the idempotency promise checked against the live path.
 The second captures the feed, empties the tables, and replays the capture
 into the empty database: every row comes back, and a second run changes
-nothing. The rest cover --type, the watermark, the refusals and the exit
-code.
+nothing. A dry run of that replay must fail nothing either (SNOW-1198).
+The rest cover --type, the watermark, the refusals and the exit code.
 """
 
 from __future__ import annotations
@@ -237,6 +237,16 @@ def test_replay_into_an_empty_database_restores_everything(
     monkeypatch.setattr(
         "apps.data_feed.client.requests.Session", lambda: _ReplaySession(capture)
     )
+    # SNOW-1198: the dry run first. Its locations are only planned, yet the
+    # weather and the resort that hang off them must not fail.
+    _run("--since", "2026-01-01")
+    counts = _counts()
+    assert counts["failed"] == 0
+    assert counts["locations_created"] == 3
+    assert counts["resorts_created"] == 1
+    assert counts["weather_created"] == 2
+    assert not Location.objects.exists()
+
     _run("--commit", "--since", "2026-01-01")
     counts = _counts()
     assert counts["locations_created"] == 3  # the pin, the link, the centroid

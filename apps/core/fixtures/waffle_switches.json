@@ -1,0 +1,39 @@
+{
+  "switches": [
+    {
+      "name": "schedule_fetch_bulletins",
+      "note": "SNOW-1201: the scheduled job fetch_bulletins, hourly at :00 and :05 (schedule.py). Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    },
+    {
+      "name": "schedule_fetch_weather",
+      "note": "SNOW-1201: the scheduled job fetch_weather, at 00:00, 06:00, 12:00 and 18:00 UTC (schedule.py). Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    },
+    {
+      "name": "schedule_purge_request_logs",
+      "note": "SNOW-1201: the scheduled job purge_request_logs, daily at 03:30 UTC (schedule.py). Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    },
+    {
+      "name": "schedule_purge_expired_oauth_tokens",
+      "note": "SNOW-1201: the scheduled job purge_expired_oauth_tokens, daily at 03:45 UTC (schedule.py). Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    },
+    {
+      "name": "schedule_prune_command_runs",
+      "note": "SNOW-1201: the scheduled job prune_command_runs, daily at 03:50 UTC (schedule.py). Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    },
+    {
+      "name": "schedule_fill_what3words",
+      "note": "SNOW-1201: the scheduled job fill_what3words, daily at 04:00 UTC (schedule.py). Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    },
+    {
+      "name": "schedule_check_resort_locations",
+      "note": "SNOW-1201: the scheduled job link_resort_locations --check, daily at 05:00 UTC (schedule.py). Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    }
+  ]
+}

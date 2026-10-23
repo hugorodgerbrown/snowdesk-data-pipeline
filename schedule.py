@@ -39,6 +39,17 @@ Every job carries guard settings (``coalesce=True``, ``max_instances=1``,
 ``misfire_grace_time=300``) so a slow run does not stack up duplicate
 executions.
 
+Switches (SNOW-1201)
+--------------------
+Each job checks a waffle switch, ``schedule_<job id>`` (for example
+``schedule_fetch_bulletins``), when it fires, and skips that run when the
+switch is off, so an operator can pause a job from ``/admin/waffle/switch/``
+without a deploy. Each switch is declared in
+``apps/core/fixtures/waffle_switches.json`` (``tests/test_schedule.py``
+fails a job without one) and created by ``sync_waffle_switches --commit``
+on every deploy. A job whose switch row is missing runs and logs a
+warning: a deploy that races the sync must never silently stop ingest.
+
 Entry point
 -----------
 The scheduler is started by the ``run_scheduler`` management command::
@@ -66,12 +77,60 @@ extra package is needed.
 
 from __future__ import annotations
 
+import functools
 import logging
+from collections.abc import Callable
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 logger = logging.getLogger(__name__)
+
+# The prefix of every job's waffle switch (SNOW-1201).
+SWITCH_PREFIX = "schedule_"
+
+
+def switch_name(job_id: str) -> str:
+    """Return the waffle switch that turns job ``job_id`` on and off."""
+    return f"{SWITCH_PREFIX}{job_id}"
+
+
+def switched(job_id: str, func: Callable[[], None]) -> Callable[[], None]:
+    """Wrap ``func`` so it runs only while its job's switch is on (SNOW-1201).
+
+    The switch is read when the job fires, so a change in the admin applies
+    from the next run without restarting the worker.
+
+    Args:
+        job_id: The job's APScheduler id.
+        func: The job function.
+
+    Returns:
+        The wrapped job function.
+
+    """
+
+    @functools.wraps(func)
+    def run() -> None:
+        """Run the job unless its switch is off; run it if the switch is missing."""
+        from waffle.models import (  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+            Switch,
+        )
+
+        name = switch_name(job_id)
+        switch = Switch.objects.filter(name=name).only("active").first()
+        if switch is None:
+            logger.warning(
+                "schedule: switch %s is missing; running %s (sync_waffle_switches)",
+                name,
+                job_id,
+            )
+        elif not switch.active:
+            logger.info("schedule: skipping %s, switch %s is off", job_id, name)
+            return
+        func()
+
+    return run
 
 
 def _run_fetch_bulletins() -> None:
@@ -194,14 +253,14 @@ def build_scheduler() -> BlockingScheduler:
     }
 
     scheduler.add_job(
-        _run_fetch_bulletins,
+        switched("fetch_bulletins", _run_fetch_bulletins),
         trigger=CronTrigger(minute="0,5", timezone="UTC"),
         id="fetch_bulletins",
         **_common,
     )
 
     scheduler.add_job(
-        _run_fetch_weather,
+        switched("fetch_weather", _run_fetch_weather),
         trigger=CronTrigger(hour="0,6,12,18", minute=0, timezone="UTC"),
         id="fetch_weather",
         **_common,
@@ -211,7 +270,7 @@ def build_scheduler() -> BlockingScheduler:
     # holds a delete transaction over a table the request path writes to, so
     # overlapping it with an ingest run would contend for no reason.
     scheduler.add_job(
-        _run_purge_request_logs,
+        switched("purge_request_logs", _run_purge_request_logs),
         trigger=CronTrigger(hour=3, minute=30, timezone="UTC"),
         id="purge_request_logs",
         **_common,
@@ -221,7 +280,7 @@ def build_scheduler() -> BlockingScheduler:
     # renders a three word address on a timetable, so the only thing this
     # competes for is the outbound connection pool.
     scheduler.add_job(
-        _run_fill_what3words,
+        switched("fill_what3words", _run_fill_what3words),
         trigger=CronTrigger(hour=4, minute=0, timezone="UTC"),
         id="fill_what3words",
         **_common,
@@ -232,7 +291,7 @@ def build_scheduler() -> BlockingScheduler:
     # `link_resort_locations` is what an operator runs in response and there
     # is no reason for the answer to be fresher than daily.
     scheduler.add_job(
-        _run_purge_expired_oauth_tokens,
+        switched("purge_expired_oauth_tokens", _run_purge_expired_oauth_tokens),
         trigger=CronTrigger(hour=3, minute=45, timezone="UTC"),
         id="purge_expired_oauth_tokens",
         **_common,
@@ -242,14 +301,14 @@ def build_scheduler() -> BlockingScheduler:
     # deletes scheduled runs past their retention. One small UPDATE and one
     # DELETE, on the quiet stretch with the other two purges.
     scheduler.add_job(
-        _run_prune_command_runs,
+        switched("prune_command_runs", _run_prune_command_runs),
         trigger=CronTrigger(hour=3, minute=50, timezone="UTC"),
         id="prune_command_runs",
         **_common,
     )
 
     scheduler.add_job(
-        _run_check_resort_locations,
+        switched("check_resort_locations", _run_check_resort_locations),
         trigger=CronTrigger(hour=5, minute=0, timezone="UTC"),
         id="check_resort_locations",
         **_common,
