@@ -41,6 +41,7 @@ from __future__ import annotations
 import datetime as dt
 import enum
 import logging
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
@@ -111,11 +112,28 @@ class PageLookups:
     planned: set[str] = field(default_factory=set)
 
 
-def _locations(uuids: Iterable[str]) -> dict[str, Location]:
-    """Return the locations here among ``uuids``, by uuid string."""
+def _is_uuid(value: object) -> bool:
+    """Return whether ``value`` is a string a uuid column can be queried with."""
+    if not isinstance(value, str):
+        return False
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _locations(uuids: Iterable[object]) -> dict[str, Location]:
+    """Return the locations here among ``uuids``, by uuid string.
+
+    A value that is not a uuid is left out rather than queried, which would
+    raise for the whole page: its item then fails on its own, as an
+    unknown location.
+    """
+    wanted = {str(value) for value in uuids if _is_uuid(value)}
     return {
         str(location.uuid): location
-        for location in Location.objects.filter(uuid__in=set(uuids))
+        for location in Location.objects.filter(uuid__in=wanted)
     }
 
 
@@ -186,19 +204,45 @@ def lookups_for(
             ).only("pk", "bulletin_id", "raw_data", "pdf_url")
         }
     elif feed == "weather":
-        lookups.locations = _locations(item["location"] for item in items)
-        days = {
-            day
-            for item in items
-            if (day := parse_date(item["observed_on"])) is not None
-        }
-        lookups.weather = {
-            (row.location_id, row.observed_on): row
-            for row in Weather.objects.filter(
-                location__in=list(lookups.locations.values()), observed_on__in=days
-            )
-        }
+        lookups.locations = _locations(item.get("location") for item in items)
+        lookups.weather = _weather_days(items, lookups.locations)
     return lookups
+
+
+def _parse_day(value: object) -> dt.date | None:
+    """Return ``value`` as a date, or None when it is not an ISO date string."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return parse_date(value)
+    except ValueError:
+        return None
+
+
+def _weather_days(
+    items: list[dict[str, Any]], locations: dict[str, Location]
+) -> dict[tuple[int, dt.date], Weather]:
+    """Return the weather rows here for exactly the page's (location, day) pairs.
+
+    One clause per location with that location's own days, so a sparse
+    page never loads the cross product of every location and every day.
+    An item whose location or day does not resolve is left out; it fails
+    on its own when applied.
+    """
+    days_by_location: dict[int, set[dt.date]] = {}
+    for item in items:
+        location = locations.get(str(item.get("location")))
+        day = _parse_day(item.get("observed_on"))
+        if location is not None and day is not None:
+            days_by_location.setdefault(location.pk, set()).add(day)
+    if not days_by_location:
+        return {}
+    query = Q()
+    for location_pk, days in days_by_location.items():
+        query |= Q(location_id=location_pk, observed_on__in=days)
+    return {
+        (row.location_id, row.observed_on): row for row in Weather.objects.filter(query)
+    }
 
 
 # ---------------------------------------------------------------------------

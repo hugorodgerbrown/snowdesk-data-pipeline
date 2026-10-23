@@ -227,8 +227,12 @@ def walk(
 
 def with_lookups(
     feed: str, pages: Iterator[list[dict[str, Any]]], *, planned: set[str]
-) -> Iterator[tuple[dict[str, Any], PageLookups]]:
+) -> Iterator[tuple[dict[str, Any], PageLookups | None]]:
     """Yield each item with its page's lookups, read once a page (SNOW-1199).
+
+    A page whose lookups cannot be read is not allowed to stop the run: its
+    items are yielded with None, and each reads its own lookups inside
+    ``Command._apply``, where a failure is counted against that item alone.
 
     Args:
         feed: The feed's name.
@@ -236,11 +240,20 @@ def with_lookups(
         planned: The run's locations a dry run would create (SNOW-1198).
 
     Yields:
-        ``(item, lookups)``.
+        ``(item, lookups)``, lookups None when the page's could not be read.
 
     """
     for page in pages:
-        lookups = lookups_for(feed, page, planned=planned)
+        lookups: PageLookups | None
+        try:
+            lookups = lookups_for(feed, page, planned=planned)
+        except Exception:
+            # Broad on purpose, as in _apply: a malformed item must cost
+            # only itself, so the page falls back to per-item lookups.
+            logger.exception(
+                "%s: %s page lookups failed; reading per item", COMMAND_NAME, feed
+            )
+            lookups = None
         for item in page:
             yield item, lookups
 
@@ -437,7 +450,12 @@ class Command(RegisteredCommand):
                 describe=lambda pair: describe(pair[0]),
             ):
                 outcome = self._apply(
-                    feed, item, commit=commit, run=run, lookups=lookups
+                    feed,
+                    item,
+                    commit=commit,
+                    run=run,
+                    lookups=lookups,
+                    planned=planned,
                 )
                 counts[outcome] += 1
         except FeedError as exc:
@@ -471,7 +489,8 @@ class Command(RegisteredCommand):
         *,
         commit: bool,
         run: PipelineRun | None,
-        lookups: PageLookups,
+        lookups: PageLookups | None,
+        planned: set[str],
     ) -> Outcome:
         """Apply one item, turning any failure into ``Outcome.FAILED``.
 
@@ -484,13 +503,15 @@ class Command(RegisteredCommand):
             item: The item.
             commit: Write; otherwise only decide.
             run: The bulletins ``PipelineRun``, when committing bulletins.
-            lookups: The item's page's lookups.
+            lookups: The item's page's lookups; None to read the item's own.
+            planned: The run's locations a dry run would create.
 
         Returns:
             The outcome.
 
         """
         try:
+            lookups = lookups or lookups_for(feed, [item], planned=planned)
             if feed == "locations":
                 return apply_location(item, commit=commit, lookups=lookups)
             if feed == "resorts":

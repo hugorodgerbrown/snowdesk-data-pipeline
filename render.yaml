@@ -152,7 +152,7 @@ projects:
           # pull shows as a failed run in Render. 07:20 UTC, after production's
           # 06:00 fetch_weather and the morning bulletin issue (schedule.py).
           # The DATA_FEED_* values are the web service's, set in the dashboard.
-          - type: cronjob
+          - type: cron
             name: snowdesk-staging-data-pull
             runtime: python
             repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
@@ -218,7 +218,7 @@ projects:
           # 07:20 UTC: after production's 06:00 fetch_weather pass and the
           # hourly fetch_bulletins run that picks up the morning issue
           # (schedule.py), so staging opens the working day already current.
-          # - type: cronjob
+          # - type: cron
           #   name: snowdesk-staging-data-sync
           #   runtime: python
           #   repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
