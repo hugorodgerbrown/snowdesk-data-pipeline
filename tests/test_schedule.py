@@ -9,6 +9,8 @@ Covers:
   - Their ``CronTrigger``s have the correct non-default field expressions.
   - Firing each job's callable invokes ``call_command`` with the expected
     arguments.
+  - Each job runs only while its ``schedule_<job id>`` switch is on, and
+    runs when the switch is missing (SNOW-1201).
 """
 
 from __future__ import annotations
@@ -259,3 +261,62 @@ def test_purge_runs_clear_of_the_fetch_hours(jobs: dict) -> None:
 
     assert {str(e) for e in _get_field(trigger, "hour").expressions} == {"3"}
     assert {str(e) for e in _get_field(trigger, "minute").expressions} == {"30"}
+
+
+# ---------------------------------------------------------------------------
+# Switches (SNOW-1201)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "job_id",
+    [
+        "fetch_bulletins",
+        "fetch_weather",
+        "purge_request_logs",
+        "fill_what3words",
+        "check_resort_locations",
+        "purge_expired_oauth_tokens",
+        "prune_command_runs",
+    ],
+)
+def test_each_job_obeys_its_own_switch(jobs: dict, job_id: str) -> None:
+    """Off skips the job; on runs it. The switch named is the job's own."""
+    from waffle.models import Switch
+
+    switch = Switch.objects.create(name=f"schedule_{job_id}", active=False)
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        jobs[job_id].func()
+    mock_cc.assert_not_called()
+
+    switch.active = True
+    switch.save()
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        jobs[job_id].func()
+    mock_cc.assert_called_once()
+
+
+def test_every_job_has_a_switch_in_the_manifest(jobs: dict) -> None:
+    """A new job needs its schedule_<job id> entry in waffle_switches.json."""
+    from pathlib import Path
+
+    from apps.core.services.waffle_sync import load_switch_manifest
+
+    manifest = Path(schedule_module.__file__).parent / (
+        "apps/core/fixtures/waffle_switches.json"
+    )
+    declared = {spec.name for spec in load_switch_manifest(manifest)}
+    wanted = {schedule_module.switch_name(job_id) for job_id in jobs}
+    assert wanted <= declared, f"missing from the manifest: {wanted - declared}"
+
+
+@pytest.mark.django_db
+def test_a_missing_switch_runs_the_job_and_warns(
+    jobs: dict, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A deploy that races the sync must never stop ingest."""
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        jobs["fetch_bulletins"].func()
+    mock_cc.assert_called_once()
+    assert "schedule_fetch_bulletins is missing" in caplog.text

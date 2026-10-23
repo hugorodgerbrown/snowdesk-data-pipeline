@@ -1,8 +1,8 @@
 ---
 name: feature-flags
-description: django-waffle operator guide — Flag/Switch/Sample, flag inventory, waffle_flags.json manifest, sync_waffle_flags command
+description: django-waffle guide — Flag/Switch/Sample, flag inventory, waffle_flags.json, waffle_switches.json, schedule_<job> switches
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-23
 ---
 
 # Feature flags (django-waffle)
@@ -220,6 +220,26 @@ row exists. Two consequences worth knowing:
   than a dark feature and no error.
 * `"groups": "GRP_DEBUG"` — a bare string rather than a list — is rejected
   outright. Iterating it would create ten single-letter groups.
+
+---
+
+## Switches and their manifest
+
+Switches are declared in `apps/core/fixtures/waffle_switches.json`, the
+counterpart of the flag manifest: `{"switches": [{"name", "note",
+"active"}]}`. `sync_waffle_switches --commit` runs in `build.sh` after
+`sync_waffle_flags` and reconciles the same way, create + delete only. A
+missing switch is created in its manifest `active` state, one the manifest
+drops is deleted, and an existing one is never edited, so an operator's
+change survives deploys (SNOW-1201).
+
+The first switches belong to the scheduled jobs: every job in
+[`schedule.py`](../schedule.py) checks `schedule_<job id>` (for example
+`schedule_fetch_bulletins`) when it fires. Turn it off at
+`/admin/waffle/switch/` to skip that job's runs from the next firing; turn
+it back on to resume. No deploy and no worker restart. A new job needs its
+entry in the manifest, or `tests/test_schedule.py` fails. A job whose switch
+row is missing runs and logs a warning.
 
 ---
 
