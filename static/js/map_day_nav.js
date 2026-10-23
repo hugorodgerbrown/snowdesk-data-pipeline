@@ -17,8 +17,9 @@
  *     aria-valuenow is a percentage of the season and reads as one.
  *   - THE EMPTY-DAY NOTICE. #map-day-empty says when the day on the map has
  *     no bulletin for any country the visitor has on, and offers the
- *     nearest day that does — the last one issued, or the next when nothing
- *     came before. Without it an empty day read as a map that had failed to
+ *     nearest day that does — the next day when tonight's issue is already
+ *     filed under it (SNOW-1204), else the last one issued, or the next
+ *     when nothing came before. Without it an empty day read as a map that had failed to
  *     load.
  *
  * Decisions, and why:
@@ -63,6 +64,8 @@
     'day-empty': 'No bulletins for %(day)s',
     'day-last-issued': 'Last issued %(day)s',
     'day-next-issued': 'Next issued %(day)s',
+    'day-issued-for': 'Bulletin issued for %(day)s',
+    'day-show': 'Show',
   });
 
   const todayKey = scrubber.dataset.today || '';
@@ -131,12 +134,23 @@
       jumpTarget = '';
       return;
     }
-    emptyLabel.textContent = self.pwaStrings.interpolate(STRINGS['day-empty'], {
-      day: formatDatePopup(day),
-    });
     const nearest = core.nearestIssued(day, ratingsCache, COUNTRY_STATE);
+    // SNOW-1204: an evening issue for tomorrow is out, and in force, on this
+    // day, so the chip names it rather than saying this day has none.
+    const following = !!nearest && nearest.direction === 'following';
+    emptyLabel.textContent = following
+      ? self.pwaStrings.interpolate(STRINGS['day-issued-for'], {
+          day: formatDatePopup(nearest.date),
+        })
+      : self.pwaStrings.interpolate(STRINGS['day-empty'], {
+          day: formatDatePopup(day),
+        });
     if (nearest) {
-      const key = nearest.direction === 'last' ? 'day-last-issued' : 'day-next-issued';
+      const key = following
+        ? 'day-show'
+        : nearest.direction === 'last'
+          ? 'day-last-issued'
+          : 'day-next-issued';
       emptyJumpLabel.textContent = self.pwaStrings.interpolate(STRINGS[key], {
         day: formatDatePopup(nearest.date),
       });

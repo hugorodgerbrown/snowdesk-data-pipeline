@@ -110,6 +110,17 @@ describe('nearestIssued', () => {
     });
   });
 
+  it('names the next day first when it has one (SNOW-1204)', () => {
+    // An evening issue on the 19th is filed under the 20th, the day it forecasts.
+    expect(core.nearestIssued('2026-02-19', CACHE, ON)).toEqual({ date: '2026-02-20', direction: 'following' });
+    // Ahead of the last earlier day too: the 15th is older than tonight's issue.
+    expect(core.nearestIssued('2026-02-13', CACHE, ON)).toEqual({ date: '2026-02-14', direction: 'following' });
+  });
+
+  it('ignores a next day only a hidden country covers', () => {
+    expect(core.nearestIssued('2026-02-15', CACHE, ON)).toEqual({ date: '2026-02-14', direction: 'last' });
+  });
+
   it('looks forward when nothing came before', () => {
     expect(core.nearestIssued('2026-02-01', CACHE, ON)).toEqual({ date: '2026-02-14', direction: 'next' });
   });

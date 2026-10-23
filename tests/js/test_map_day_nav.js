@@ -12,7 +12,9 @@
  *   - the steps and Home / End stop at the calendar's range, and the
  *     buttons say so by disabling;
  *   - the notice shows only on a day no visible country has a bulletin
- *     for, names the nearest one that does, and goes there on a press.
+ *     for, names the nearest one that does, and goes there on a press;
+ *     when that is the next day it names tomorrow's issue rather than
+ *     calling the day empty (SNOW-1204).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -176,9 +178,21 @@ describe('the empty-day notice', () => {
   });
 
   it('offers the next day when nothing came before', async () => {
-    history.replaceState(null, '', '/map/?d=2026-02-11');
+    history.replaceState(null, '', '/map/?d=2026-02-10');
     await load();
+    expect($('map-day-empty').textContent).toContain('No bulletins for day 2026-02-10');
     expect($('map-day-empty').textContent).toContain('Next issued day 2026-02-12');
+  });
+
+  it("names tomorrow's bulletin when it is already out (SNOW-1204)", async () => {
+    // The 14th has no rating; the 15th's issue came out on the 14th's evening.
+    history.replaceState(null, '', '/map/?d=2026-02-14');
+    await load();
+    expect($('map-day-empty').textContent).toContain('Bulletin issued for day 2026-02-15');
+    expect($('map-day-empty').textContent).not.toContain('No bulletins');
+    expect($('map-day-empty').textContent).not.toContain('Last issued');
+    document.querySelector('[data-day-empty-jump]').click();
+    expect(day()).toBe('2026-02-15');
   });
 
   it('follows the countries that are on', async () => {
