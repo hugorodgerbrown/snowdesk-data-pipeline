@@ -107,7 +107,7 @@ parameters never reaches this template — views.home 301s it to /map/.
                         src="{% static 'img/home/hero-mobile.jpg' %}"
                         width="780"
                         height="1220"
-                        class="block w-full h-auto"
+                        class="block w-full h-auto aspect-[4/5] md:aspect-video object-cover object-bottom md:object-left-top"
                         alt="{% trans 'The Snowdesk map on 11 January 2026: Swiss warning regions coloured by danger level, with the Martigny–Verbier bulletin open at level 4.' %}"
                     >
                 </picture>
@@ -131,28 +131,30 @@ parameters never reaches this template — views.home 301s it to /map/.
         </section>
 
         {# ---------------------------------------------------------------- #}
-        {# Two closer looks, side by side on desktop: the route (the        #}
-        {# differentiator — on a card, in the wider column) and the         #}
-        {# weather. On a phone each phone-sized capture sits above its text. #}
+        {# Two closer looks, each on its own panel: the visual takes 2/3 of #}
+        {# the width on desktop and the text 1/3, alternating sides. On a   #}
+        {# phone the phone-sized capture sits above its text. The image     #}
+        {# boxes hold fixed ratios (3:4 phone, 16:10 desktop) so a new      #}
+        {# screenshot drops in without touching the layout.                 #}
         {# ---------------------------------------------------------------- #}
-        <div class="grid gap-10 md:grid-cols-12 md:gap-8 items-start mb-12" data-testid="home-features">
+        <div class="grid gap-8 mb-12" data-testid="home-features">
             <section
-                class="grid gap-5 md:col-span-7 rounded-card border border-border bg-card p-4 md:p-6"
+                class="grid gap-6 md:grid-cols-3 md:gap-8 items-center rounded-card border border-border bg-card p-4 md:p-6"
                 aria-labelledby="home-route-heading"
                 data-testid="home-feature-route"
             >
                 <a
                     href="{{ map_url }}?panel=routes"
-                    class="block rounded-card overflow-hidden border border-border max-w-64 md:max-w-none mx-auto w-full"
+                    class="block md:col-span-2 rounded-card overflow-hidden border border-border max-w-72 md:max-w-none mx-auto w-full"
                 >
                     <picture>
-                        <source media="(min-width: 768px)" srcset="{% static 'img/home/route-desktop.jpg' %}" width="1040" height="800">
+                        <source media="(min-width: 768px)" srcset="{% static 'img/home/route-desktop.jpg' %}">
                         <img
                             src="{% static 'img/home/route-mobile.jpg' %}"
                             width="780"
-                            height="1130"
+                            height="1040"
                             loading="lazy"
-                            class="block w-full h-auto"
+                            class="block w-full h-auto aspect-[3/4] md:aspect-[16/10] object-cover object-top"
                             alt="{% trans 'A ski tour off the back of Mont Fort analysed in Snowdesk: the line coloured by slope angle, its elevation profile, and a point card reading a fall-line descent of 15–25° on steep 30–35° ground.' %}"
                         >
                     </picture>
@@ -181,27 +183,27 @@ parameters never reaches this template — views.home 301s it to /map/.
             </section>
 
             <section
-                class="grid gap-5 md:col-span-5 md:pt-6"
+                class="grid gap-6 md:grid-cols-3 md:gap-8 items-center rounded-card border border-border bg-card p-4 md:p-6"
                 aria-labelledby="home-weather-heading"
                 data-testid="home-feature-weather"
             >
                 <a
                     href="{% url 'public:resorts' %}"
-                    class="block rounded-card overflow-hidden border border-border bg-card max-w-64 md:max-w-none mx-auto w-full"
+                    class="block md:col-span-2 md:order-2 rounded-card overflow-hidden border border-border max-w-72 md:max-w-none mx-auto w-full"
                 >
                     <picture>
-                        <source media="(min-width: 768px)" srcset="{% static 'img/home/weather-desktop.jpg' %}" width="1062" height="806">
+                        <source media="(min-width: 768px)" srcset="{% static 'img/home/weather-desktop.jpg' %}">
                         <img
                             src="{% static 'img/home/weather-mobile.jpg' %}"
                             width="780"
-                            height="1220"
+                            height="1040"
                             loading="lazy"
-                            class="block w-full h-auto"
+                            class="block w-full h-auto aspect-[3/4] md:aspect-[16/10] object-cover object-top"
                             alt="{% trans 'The Snowdesk forecast for Verbier village at 1,494 m: the week ahead, and today hour by hour with temperature, freezing level and snowfall.' %}"
                         >
                     </picture>
                 </a>
-                <div>
+                <div class="md:order-1">
                     {% trans "Mountain weather" as weather_eyebrow %}
                     {% include "includes/_eyebrow.html" with text=weather_eyebrow tag="p" class_extra="mb-2" %}
                     <h2 id="home-weather-heading" class="text-xl font-semibold text-text-1 mb-3">
