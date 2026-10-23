@@ -68,10 +68,12 @@ from apps.core.models import CommandRun
 from apps.data_feed.client import FeedClient, FeedError
 from apps.data_feed.services.apply import (
     Outcome,
+    PageLookups,
     apply_bulletin,
     apply_location,
     apply_resort,
     apply_weather,
+    lookups_for,
 )
 
 logger = logging.getLogger(__name__)
@@ -189,12 +191,13 @@ def describe_item(feed: str) -> Callable[[dict[str, Any]], str]:
 
 def walk(
     client: FeedClient, feed: str, *, since: dt.datetime | None
-) -> tuple[int, Iterator[dict[str, Any]]]:
-    """Start walking ``feed``: return its total and an iterator over its items.
+) -> tuple[int, Iterator[list[dict[str, Any]]]]:
+    """Start walking ``feed``: return its total and an iterator over its pages.
 
     The first page is fetched here, for the total it reports; the rest are
     fetched as the iterator reaches them, so a pull of thousands of items
-    holds one page at a time.
+    holds one page at a time. Pages, not items, so the command can read
+    what each page refers to in one go (SNOW-1199).
 
     Args:
         client: The feed client.
@@ -202,7 +205,7 @@ def walk(
         since: Rows updated at or after this; None for the whole feed.
 
     Returns:
-        ``(total, items)``.
+        ``(total, pages)``, each page a list of items.
 
     Raises:
         FeedError: The first page could not be read (later pages raise it
@@ -212,14 +215,34 @@ def walk(
     pages = client.pages(feed, since=since.isoformat() if since else None)
     first = next(pages)
 
-    def items() -> Iterator[dict[str, Any]]:
-        """Yield every item, the first page's then the rest, as they arrive."""
-        yield from first.results
+    def results() -> Iterator[list[dict[str, Any]]]:
+        """Yield every page's items, the first page's then the rest's."""
+        yield first.results
         for later in pages:
-            yield from later.results
+            yield later.results
 
     total = first.count if first.count is not None else len(first.results)
-    return total, items()
+    return total, results()
+
+
+def with_lookups(
+    feed: str, pages: Iterator[list[dict[str, Any]]], *, planned: set[str]
+) -> Iterator[tuple[dict[str, Any], PageLookups]]:
+    """Yield each item with its page's lookups, read once a page (SNOW-1199).
+
+    Args:
+        feed: The feed's name.
+        pages: The feed's pages, from ``walk``.
+        planned: The run's locations a dry run would create (SNOW-1198).
+
+    Yields:
+        ``(item, lookups)``.
+
+    """
+    for page in pages:
+        lookups = lookups_for(feed, page, planned=planned)
+        for item in page:
+            yield item, lookups
 
 
 class Command(RegisteredCommand):
@@ -279,6 +302,9 @@ class Command(RegisteredCommand):
         )
 
         failed = 0
+        # Locations a dry run would create, shared across this run's feeds
+        # so the weather and resorts after them do not fail (SNOW-1198).
+        planned: set[str] = set()
         for type_name in TYPES:
             if type_name not in types:
                 continue
@@ -295,6 +321,7 @@ class Command(RegisteredCommand):
                     reason=reason,
                     commit=commit,
                     verbosity=verbosity,
+                    planned=planned,
                 )
 
         if failed:
@@ -361,6 +388,7 @@ class Command(RegisteredCommand):
         reason: str,
         commit: bool,
         verbosity: int,
+        planned: set[str],
     ) -> int:
         """Walk one feed and apply each item, tallying every outcome.
 
@@ -371,6 +399,7 @@ class Command(RegisteredCommand):
             reason: Where ``since`` came from, for the operator.
             commit: Write; otherwise only decide.
             verbosity: Django's ``--verbosity``.
+            planned: The run's locations a dry run would create.
 
         Returns:
             How many items failed.
@@ -394,19 +423,23 @@ class Command(RegisteredCommand):
         if run is not None:
             run.mark_running()
         try:
-            total, items = walk(client, feed, since=since)
+            total, pages = walk(client, feed, since=since)
+            describe = describe_item(feed)
             # SNOW-602 exempt: the unit of work is a feed item fetched over
             # HTTPS, not a row of a local queryset; countdown counts down
             # the total the feed's first page reports.
-            for item in countdown(
+            for item, lookups in countdown(
                 self,
-                items,
+                with_lookups(feed, pages, planned=planned),
                 total=total,
                 verbosity=verbosity,
                 label=f"{feed} item(s)",
-                describe=describe_item(feed),
+                describe=lambda pair: describe(pair[0]),
             ):
-                counts[self._apply(feed, item, commit=commit, run=run)] += 1
+                outcome = self._apply(
+                    feed, item, commit=commit, run=run, lookups=lookups
+                )
+                counts[outcome] += 1
         except FeedError as exc:
             if run is not None:
                 run.mark_failed(exc)
@@ -438,6 +471,7 @@ class Command(RegisteredCommand):
         *,
         commit: bool,
         run: PipelineRun | None,
+        lookups: PageLookups,
     ) -> Outcome:
         """Apply one item, turning any failure into ``Outcome.FAILED``.
 
@@ -450,6 +484,7 @@ class Command(RegisteredCommand):
             item: The item.
             commit: Write; otherwise only decide.
             run: The bulletins ``PipelineRun``, when committing bulletins.
+            lookups: The item's page's lookups.
 
         Returns:
             The outcome.
@@ -457,12 +492,12 @@ class Command(RegisteredCommand):
         """
         try:
             if feed == "locations":
-                return apply_location(item, commit=commit)
+                return apply_location(item, commit=commit, lookups=lookups)
             if feed == "resorts":
-                return apply_resort(item, commit=commit)
+                return apply_resort(item, commit=commit, lookups=lookups)
             if feed == "bulletins":
-                return apply_bulletin(item, commit=commit, run=run)
-            return apply_weather(item, commit=commit)
+                return apply_bulletin(item, commit=commit, run=run, lookups=lookups)
+            return apply_weather(item, commit=commit, lookups=lookups)
         except Exception:
             # Broad on purpose: a failure is any exception the owning write
             # path raises (upsert_bulletin's region checks, a constraint, a

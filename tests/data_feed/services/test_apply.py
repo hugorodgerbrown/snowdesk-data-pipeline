@@ -5,6 +5,10 @@ Each feed's apply function across its outcomes — created, updated,
 unchanged, and weather's kept — in both modes. The dry run must decide the
 same outcome and write nothing; the second application of the same item
 must be UNCHANGED, which is the idempotency the command promises.
+
+SNOW-1198: a location a dry run would create counts as present for the
+weather and resorts after it. SNOW-1199: a page's reads cost the same
+number of queries whatever its size.
 """
 
 from __future__ import annotations
@@ -14,6 +18,8 @@ import uuid
 from typing import Any
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.bulletins.models import Bulletin, RegionBulletin
@@ -25,6 +31,7 @@ from apps.data_feed.services.apply import (
     apply_location,
     apply_resort,
     apply_weather,
+    lookups_for,
 )
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import MicroRegion, Pass, Resort
@@ -336,3 +343,114 @@ class TestApplyWeather:
         item["observed_on"] = "yesterday"
         with pytest.raises(ApplyError, match="yesterday"):
             apply_weather(item, commit=True)
+
+
+@pytest.mark.django_db
+class TestPlannedLocations:
+    """SNOW-1198: a dry run treats a location it would create as present."""
+
+    def test_weather_for_a_planned_location_would_be_created(self) -> None:
+        """The location is new, so its day is too."""
+        item = _location_item()
+        planned: set[str] = set()
+        assert (
+            apply_location(
+                item,
+                commit=False,
+                lookups=lookups_for("locations", [item], planned=planned),
+            )
+            is Outcome.CREATED
+        )
+        assert planned == {item["uuid"]}
+        day = {
+            "location": item["uuid"],
+            "observed_on": "2026-10-01",
+            "fields": {"weather_code": 3},
+        }
+        lookups = lookups_for("weather", [day], planned=planned)
+        assert apply_weather(day, commit=False, lookups=lookups) is Outcome.CREATED
+        assert not Location.objects.exists()
+
+    def test_a_resort_linking_a_planned_location_would_be_created(self) -> None:
+        """A resort whose links are all planned resolves instead of failing."""
+        resort = ResortFactory.create(geocoded=True)
+        ResortLocationFactory.create(resort=resort)
+        item = _resort_item(resort)
+        planned = {item["location"]} | {link["location"] for link in item["locations"]}
+        resort.delete()
+        Location.objects.all().delete()
+        lookups = lookups_for("resorts", [item], planned=planned)
+        assert apply_resort(item, commit=False, lookups=lookups) is Outcome.CREATED
+
+    def test_an_unplanned_location_still_fails(self) -> None:
+        """A location neither here nor planned fails, as a commit would."""
+        day = {
+            "location": str(uuid.uuid4()),
+            "observed_on": "2026-10-01",
+            "fields": {},
+        }
+        lookups = lookups_for("weather", [day], planned={str(uuid.uuid4())})
+        with pytest.raises(ApplyError, match="pull locations first"):
+            apply_weather(day, commit=False, lookups=lookups)
+
+
+@pytest.mark.django_db
+class TestPageLookups:
+    """SNOW-1199: one page's reads are a fixed number of queries."""
+
+    @staticmethod
+    def _page_queries(feed: str, items: list[dict[str, Any]]) -> int:
+        """Count the queries a dry run of one page costs, lookups included."""
+        apply = {
+            "locations": apply_location,
+            "resorts": apply_resort,
+            "weather": apply_weather,
+        }[feed]
+        with CaptureQueriesContext(connection) as ctx:
+            lookups = lookups_for(feed, items)
+            for item in items:
+                apply(item, commit=False, lookups=lookups)
+        return len(ctx.captured_queries)
+
+    def test_locations(self) -> None:
+        """Existing locations with centroids: as cheap for 12 as for 2."""
+        items = []
+        for _ in range(12):
+            location = LocationFactory.create()
+            MicroRegionFactory.create(centroid_location=location)
+            items.append(feeds.serialise_location(location))
+        assert self._page_queries("locations", items[:2]) == self._page_queries(
+            "locations", items
+        )
+
+    def test_resorts(self) -> None:
+        """Existing resorts with links and passes: as cheap for 12 as for 2."""
+        items = []
+        for _ in range(12):
+            resort = ResortFactory.create(geocoded=True)
+            ResortLocationFactory.create(resort=resort)
+            resort.passes.add(PassFactory.create())
+            items.append(_resort_item(resort))
+        assert self._page_queries("resorts", items[:2]) == self._page_queries(
+            "resorts", items
+        )
+
+    def test_weather(self) -> None:
+        """Existing days at many locations: as cheap for 12 as for 2."""
+        rows = [WeatherFactory.create() for _ in range(12)]
+        items = [feeds.serialise_weather(row) for row in rows]
+        assert self._page_queries("weather", items[:2]) == self._page_queries(
+            "weather", items
+        )
+
+    def test_a_region_moved_between_two_items_on_one_page(self) -> None:
+        """B claims A's region before A is read: A must not then drop it."""
+        a, b = LocationFactory.create(), LocationFactory.create()
+        region = MicroRegionFactory.create(centroid_location=a)
+        item_a = feeds.serialise_location(a) | {"centroid_of": []}
+        item_b = feeds.serialise_location(b) | {"centroid_of": [region.region_id]}
+        lookups = lookups_for("locations", [item_b, item_a])
+        assert apply_location(item_b, commit=True, lookups=lookups) is Outcome.UPDATED
+        assert apply_location(item_a, commit=True, lookups=lookups) is Outcome.UNCHANGED
+        region.refresh_from_db()
+        assert region.centroid_location == b
