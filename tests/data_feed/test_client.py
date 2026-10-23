@@ -27,8 +27,12 @@ class _Response:
         self._body = body
         self.text = str(body)
 
+    url = "https://prod.example/stub"
+
     def json(self) -> Any:
-        """Return the body."""
+        """Return the body, or raise as requests does for a non-JSON one."""
+        if isinstance(self._body, ValueError):
+            raise self._body
         return self._body
 
 
@@ -147,6 +151,19 @@ class TestWalk:
         """A 200 that carries no access_token is malformed."""
         session = _Session([_Response(200, {})], [])
         with pytest.raises(FeedError, match="no access_token"):
+            list(_client(session).pages("weather"))
+
+    @pytest.mark.parametrize("body", [ValueError("not json"), ["a list"]])
+    def test_a_token_body_that_is_not_an_object_raises(self, body: Any) -> None:
+        """A 200 whose body is not a JSON object is a FeedError, not a traceback."""
+        session = _Session([_Response(200, body)], [])
+        with pytest.raises(FeedError):
+            list(_client(session).pages("weather"))
+
+    def test_a_page_that_is_not_json_raises(self) -> None:
+        """A 200 page whose body does not decode is a FeedError."""
+        session = _Session([_token()], [_Response(200, ValueError("html"))])
+        with pytest.raises(FeedError, match="did not answer with JSON"):
             list(_client(session).pages("weather"))
 
     def test_a_page_that_is_not_a_page_raises(self) -> None:

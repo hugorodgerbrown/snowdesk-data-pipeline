@@ -204,7 +204,12 @@ def _weather() -> QuerySet[Weather]:
 def _locations() -> QuerySet[Location]:
     """Return the curated estate, with the regions each is the centroid of."""
     return Location.objects.public().prefetch_related(
-        Prefetch("micro_regions", queryset=MicroRegion.objects.only("pk", "region_id"))
+        # The FK must be loaded: a prefetch matches each region back to its
+        # location through it, and a deferred one is fetched row by row.
+        Prefetch(
+            "micro_regions",
+            queryset=MicroRegion.objects.only("pk", "region_id", "centroid_location"),
+        )
     )
 
 

@@ -55,6 +55,18 @@ filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and
 and is still reached. Every response is `Cache-Control: no-store`. A bad
 parameter is a `400` with an `error`.
 
+**Cost of a page.** A page is a fixed number of queries, whatever its
+size: one for bulletins and weather, two for locations and five for resorts
+(their relations are prefetched). `tests/data_feed/test_feeds.py` fails if a
+page of 12 rows costs more queries than a page of 2. Bulletins and weather
+have an `(updated_at, id)` index (`bulletin_feed_keyset`,
+`weather_feed_keyset`), so each page reads the index from the cursor
+rather than scanning and sorting the table. `count` costs one extra query,
+on the first page only. Locations and resorts have no such index because
+they are a few thousand rows, read whole. On the client,
+`FeedClient.pages` is a generator and the command applies items as they
+arrive, so a pull holds only one page (at most 500 items) in memory.
+
 **What is never served.** The four querysets are the only reads, and no
 user-owned table is among them. A favourite's pin is fetched for weather
 (`Location.objects.active()`), but it is one person's saved place, so its

@@ -130,6 +130,22 @@ class TestApplyLocation:
         assert region.centroid_location is not None
         assert str(region.centroid_location.uuid) == item["uuid"]
 
+    def test_a_centroid_dropped_on_production_is_cleared(self) -> None:
+        """A region here that production no longer lists is unlinked."""
+        item = _location_item()
+        item["centroid_of"] = ["CH-9102"]
+        region = MicroRegionFactory.create(region_id="CH-9102")
+        apply_location(item, commit=True)
+        item["centroid_of"] = []
+        assert apply_location(item, commit=False) is Outcome.UPDATED
+        assert MicroRegion.objects.filter(
+            pk=region.pk, centroid_location__isnull=False
+        ).exists()
+        assert apply_location(item, commit=True) is Outcome.UPDATED
+        region.refresh_from_db()
+        assert region.centroid_location is None
+        assert apply_location(item, commit=True) is Outcome.UNCHANGED
+
 
 def _resort_item(resort: Resort) -> dict[str, Any]:
     """Return the feed's own item for ``resort``."""
@@ -184,6 +200,19 @@ class TestApplyResort:
         assert resort.num_lifts == 40
         assert not resort.resort_locations.exists()
         assert list(resort.passes.values_list("slug", flat=True)) == ["4v"]
+
+    def test_a_renamed_pass_is_updated(self) -> None:
+        """A pass whose name or website changed on production is rewritten."""
+        resort = ResortFactory.create()
+        resort.passes.add(PassFactory.create(slug="magic-pass", name="Magic"))
+        item = _resort_item(resort)
+        item["passes"] = [
+            {"slug": "magic-pass", "name": "Magic Pass", "website": "https://m.ch/"}
+        ]
+        assert apply_resort(item, commit=True) is Outcome.UPDATED
+        renamed = Pass.objects.get(slug="magic-pass")
+        assert (renamed.name, renamed.website) == ("Magic Pass", "https://m.ch/")
+        assert apply_resort(item, commit=True) is Outcome.UNCHANGED
 
     def test_unknown_region_fails_even_in_a_dry_run(self) -> None:
         """A region this database lacks is an error, not a create."""

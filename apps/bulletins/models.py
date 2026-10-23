@@ -365,6 +365,12 @@ class Bulletin(BaseModel):
         """Model metadata."""
 
         ordering = ["-issued_at"]
+        indexes = [
+            # The data feed's keyset (SNOW-1197): every page is a range on
+            # (updated_at, id) in that order, so a page is an index walk
+            # rather than a scan and sort of every bulletin's CAAML.
+            models.Index(fields=["updated_at", "id"], name="bulletin_feed_keyset"),
+        ]
 
     def to_string(self) -> str:
         """Return a concise human-readable description of this bulletin.

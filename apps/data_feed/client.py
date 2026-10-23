@@ -62,6 +62,26 @@ class FeedPage:
     count: int | None
 
 
+def _json(response: requests.Response) -> Any:
+    """Return ``response``'s decoded JSON body, or raise ``FeedError``.
+
+    Args:
+        response: A response whose status has already been checked.
+
+    Returns:
+        The decoded body, of whatever JSON type it is.
+
+    Raises:
+        FeedError: The body is not JSON, so the caller's FeedError handling
+            (and the run's failed status) applies rather than a traceback.
+
+    """
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise FeedError(f"{response.url} did not answer with JSON") from exc
+
+
 def check_feed_url(url: str) -> str:
     """Return ``url`` normalised to end in a slash, or raise if it is unusable.
 
@@ -143,7 +163,8 @@ class FeedClient:
             raise FeedError(
                 f"token request refused ({response.status_code}): {response.text[:200]}"
             )
-        token = response.json().get("access_token")
+        body = _json(response)
+        token = body.get("access_token") if isinstance(body, dict) else None
         if not isinstance(token, str) or not token:
             raise FeedError("token response carried no access_token")
         logger.debug("data feed: token issued by %s", self.token_url)
@@ -183,7 +204,7 @@ class FeedClient:
                 raise FeedError(
                     f"GET {url} answered {response.status_code}: {response.text[:200]}"
                 )
-            body = response.json()
+            body = _json(response)
             if not isinstance(body, dict) or not isinstance(body.get("results"), list):
                 raise FeedError(f"GET {url} did not answer with a feed page")
             return body

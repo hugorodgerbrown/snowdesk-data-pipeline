@@ -83,7 +83,8 @@ def apply_location(item: dict[str, Any], *, commit: bool) -> Outcome:
     """
     fields = contract.load_fields(Location, contract.LOCATION_FIELDS, item["fields"])
     location = Location.objects.filter(uuid=item["uuid"]).first()
-    regions = MicroRegion.objects.filter(region_id__in=item.get("centroid_of", []))
+    centroid_of = item.get("centroid_of", [])
+    regions = MicroRegion.objects.filter(region_id__in=centroid_of)
 
     if location is None:
         if commit:
@@ -93,8 +94,13 @@ def apply_location(item: dict[str, Any], *, commit: bool) -> Outcome:
         return Outcome.CREATED
 
     stale_regions = regions.exclude(centroid_location=location)
+    # centroid_of is the whole list on production, so a region here that
+    # still points at this location but is missing from it was unlinked there.
+    dropped_regions = MicroRegion.objects.filter(centroid_location=location).exclude(
+        region_id__in=centroid_of
+    )
     changed = {k: v for k, v in fields.items() if getattr(location, k) != v}
-    if not changed and not stale_regions.exists():
+    if not changed and not stale_regions.exists() and not dropped_regions.exists():
         return Outcome.UNCHANGED
     if commit:
         with transaction.atomic():
@@ -102,6 +108,7 @@ def apply_location(item: dict[str, Any], *, commit: bool) -> Outcome:
                 setattr(location, name, value)
             if changed:
                 location.save()
+            dropped_regions.update(centroid_location=None)
             stale_regions.update(centroid_location=location)
     return Outcome.UPDATED
 
@@ -125,7 +132,7 @@ def _resort_state(resort: Resort) -> dict[str, Any]:
     return {
         "region": resort.region.region_id,
         "location": str(resort.location.uuid) if resort.location else None,
-        "passes": sorted(resort.passes.values_list("slug", flat=True)),
+        "passes": sorted(resort.passes.values_list("slug", "name", "website")),
         "locations": sorted(
             (str(uuid), role, primary)
             for uuid, role, primary in resort.resort_locations.values_list(
@@ -148,7 +155,9 @@ def _wanted_state(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "region": item["region"],
         "location": item.get("location"),
-        "passes": sorted(p["slug"] for p in item.get("passes", [])),
+        "passes": sorted(
+            (p["slug"], p["name"], p.get("website", "")) for p in item.get("passes", [])
+        ),
         "locations": sorted(
             (link["location"], link["role"], link["is_primary"])
             for link in item.get("locations", [])
@@ -236,7 +245,9 @@ def _write_resort(
 
     passes = []
     for entry in item.get("passes", []):
-        pass_, _ = Pass.objects.get_or_create(
+        # update_or_create, so a renamed pass or a corrected website on
+        # production reaches every resort here that holds the pass.
+        pass_, _ = Pass.objects.update_or_create(
             slug=entry["slug"],
             defaults={"name": entry["name"], "website": entry.get("website", "")},
         )

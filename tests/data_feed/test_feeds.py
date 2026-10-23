@@ -12,6 +12,8 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.data_feed import feeds
@@ -208,3 +210,37 @@ def test_weather_queryset_is_not_a_favourites_query() -> None:
     sql = str(FEEDS["weather"].queryset().query)
     assert "favourites_favourite" not in sql
     assert Weather._meta.db_table in sql
+
+
+def _build(name: str, n: int) -> None:
+    """Make ``n`` rows that feed ``name`` serves, each with every relation."""
+    for _ in range(n):
+        if name == "bulletins":
+            BulletinFactory.create()
+        elif name == "weather":
+            WeatherFactory.create(location=ResortLocationFactory.create().location)
+        elif name == "locations":
+            MicroRegionFactory.create(centroid_location=LocationFactory.create())
+        else:
+            resort = ResortFactory.create(geocoded=True)
+            resort.passes.add(PassFactory.create())
+            ResortLocationFactory.create(resort=resort)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("name", list(FEEDS))
+def test_a_page_costs_the_same_queries_at_any_size(name: str) -> None:
+    """No N+1: a page of 12 rows reads the database as often as a page of 2."""
+    _build(name, 13)
+    first = feeds.page(FEEDS[name], since=None, cursor=None, limit=1)
+
+    def queries(limit: int) -> int:
+        """Count the queries for one cursor page of ``limit`` rows."""
+        with CaptureQueriesContext(connection) as ctx:
+            body = feeds.page(
+                FEEDS[name], since=None, cursor=first["next_cursor"], limit=limit
+            )
+        assert len(body["results"]) == limit
+        return len(ctx.captured_queries)
+
+    assert queries(2) == queries(12)
