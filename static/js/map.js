@@ -6291,6 +6291,9 @@
       if (key === 'weather' && stillEnabled && wasLoaded) {
         refreshWeatherSourceData();
       }
+      // SNOW-1196: a re-enable installs nothing, so the weather-window-loaded
+      // announcement does not fire; map_weather_window.js hears this instead.
+      if (key === 'weather') announceOverlayVisibility();
       // The resort-pin half of snowdesk:resorts-hidden: a re-enable installs
       // nothing, so installResortsLayer's own refresh does not run.
       if (key === 'resorts') refreshWeatherSourceData();

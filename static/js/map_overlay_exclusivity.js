@@ -94,9 +94,12 @@
 (function mapOverlayExclusivityInit() {
   'use strict';
 
-  // SNOW-1196: the breakpoint at which an object sheet docks in the left
-  // column (map.css), matching map_calendar.js's phone query from the far side.
-  var WIDE_QUERY = '(min-width: 640px)';
+  // SNOW-1196: the width at which a right-hand flyout fits BESIDE a
+  // left-column object sheet. The sheet docks from 640px (map.css) but is
+  // 25rem wide, and the legend card steps aside past it to a right edge of
+  // about 720px; the layers menu needs about as much from the right. Below
+  // this the two would overlap or clip, so the flyout closes the sheet.
+  var WIDE_QUERY = '(min-width: 768px)';
 
   /**
    * The registered overlays, by name.

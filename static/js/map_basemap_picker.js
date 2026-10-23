@@ -628,6 +628,12 @@
             if (overlayKey === 'resorts') {
               document.dispatchEvent(new CustomEvent('snowdesk:resorts-hidden'));
             }
+            // SNOW-1196: map_weather_window.js drops its "Forecast only" line
+            // when the layer goes off. Enabling announces from map.js's
+            // overlay-load listener instead.
+            if (overlayKey === 'weather') {
+              document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+            }
           }
           // SNOW-499's snowdesk:favourites-visibility-changed dispatch stood
           // here, recomputing the resort layer's favourited-resort exclusion

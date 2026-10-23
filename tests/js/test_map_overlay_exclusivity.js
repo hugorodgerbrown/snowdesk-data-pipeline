@@ -138,7 +138,7 @@ describe('window.pwaMapOverlays', () => {
   it("spareObjectSheets 'wide' spares the sheet only at desktop width", () => {
     const wide = { value: true };
     vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
-      matches: query === '(min-width: 640px)' && wide.value,
+      matches: query === '(min-width: 768px)' && wide.value,
     }));
     const region = fakeOverlay('map-region-sheet', true, true);
 
