@@ -40,7 +40,7 @@ interface Window {
   pwaChoroplethCore: any;
   /** static/js/calendar_core.js — the date picker's month grid maths. */
   pwaCalendarCore: any;
-  /** static/js/day_nav_core.js — the date row's day steps (SNOW-1195). */
+  /** static/js/day_nav_core.js — the date row's day steps and empty-day lookup (SNOW-1195). */
   pwaDayNavCore: any;
   pwaStaleDayCore: any;
   /** static/js/today_core.js — whether the map's "Today" control has anywhere to go (SNOW-1165). */
@@ -124,6 +124,18 @@ interface Window {
   pwaWeatherCore: any;
   /** map.js — the weather payload's forecast window, for map_weather_window.js (SNOW-1196). */
   pwaWeatherWindow: any;
+  /** static/js/map_day_notes.js — the notes about the day on the map, behind the date row's bell (SNOW-1206). */
+  pwaDayNotes: {
+    set(
+      id: string,
+      note: {
+        title: string;
+        detail: string;
+        action?: { label: string; run: () => void };
+        rank: number;
+      } | null
+    ): void;
+  };
   /** static/js/elevation_profile_core.js — route elevation profile maths. */
   pwaElevationProfileCore: any;
   /** static/js/route_markers_core.js — start/end marker placement. */

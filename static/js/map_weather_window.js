@@ -11,14 +11,15 @@
  *   - THE LAYERS MENU'S WEATHER ROW. Its detail line reads "Forecast only:
  *     {first}–{last}" for as long as the layer is on and the day is outside
  *     the window. That is where someone looking for the layer looks.
- *   - THE MAP, ONCE. #map-weather-window, beside the date control (under the
- *     top row on a phone), the first time it applies on this page — then it
- *     goes by itself after a few seconds, or on its ×. A line that came back
- *     on every day stepped through would be noise; the row keeps it.
+ *   - THE DAY'S NOTES. A note in map_day_notes.js's list, for as long as it
+ *     holds. SNOW-1196 drew it once on the map, as a pill beside the date
+ *     control that went by itself after 8 s; SNOW-1206 moved it behind the
+ *     notes bell, whose dot is what says something new is there.
  *
  * Reads ``window.pwaWeatherWindow`` (map.js) for whether the layer is on and
  * which days it covers, ``readUrlDateParam`` / ``formatDatePopup``
- * (map_shared.js) for the day. Strings from
+ * (map_shared.js) for the day, and writes ``window.pwaDayNotes``
+ * (map_day_notes.js, loaded first). Strings from
  * ``map-weather-window-strings-template``.
  */
 (function mapWeatherWindowInit() {
@@ -29,22 +30,19 @@
   if (!bridge || !scrubber) return;
 
   const summary = document.querySelector('[data-weather-window-summary]');
-  const notice = document.getElementById('map-weather-window');
-  const noticeLabel = notice ? notice.querySelector('[data-weather-window-label]') : null;
-  const noticeClose = notice ? notice.querySelector('[data-weather-window-close]') : null;
 
   const STRINGS = self.pwaStrings.read('map-weather-window-strings-template', {
     'forecast-only': 'Forecast only: %(first)s–%(last)s',
-    'weather-on-map': 'Weather is forecast only: %(first)s–%(last)s',
+    'note-title': 'Weather is a forecast',
+    'note-detail': 'It covers %(first)s–%(last)s, so this day has none.',
   });
 
-  // How long the map's line stays up before it goes by itself.
-  const NOTICE_MS = 8000;
+  // The note's id in window.pwaDayNotes, and its place: after the bulletin.
+  const NOTE_ID = 'weather';
+  const NOTE_RANK = 2;
 
   const todayKey = scrubber.dataset.today || '';
   let shownKey = '';
-  let noticeSpent = false;
-  let noticeTimer = 0;
 
   /** @returns {string} The day the map is showing. */
   function currentKey() {
@@ -65,33 +63,26 @@
     return { first: formatDatePopup(dates[0]), last: formatDatePopup(dates[dates.length - 1]) };
   }
 
-  /** Hide the map's line for good. */
-  function dismiss() {
-    if (noticeTimer) clearTimeout(noticeTimer);
-    noticeTimer = 0;
-    if (notice) notice.hidden = true;
-  }
-
-  /** Bring the row and the map's line into line with the day. */
+  /** Bring the row and the day's note into line with the day. */
   function apply() {
     const window_ = outsideWindow();
     if (summary) {
       summary.hidden = !window_;
       summary.textContent = window_ ? self.pwaStrings.interpolate(STRINGS['forecast-only'], window_) : '';
     }
-    if (!notice || !noticeLabel) return;
-    if (!window_) {
-      dismiss();
-      return;
-    }
-    if (noticeSpent) return;
-    noticeSpent = true;
-    noticeLabel.textContent = self.pwaStrings.interpolate(STRINGS['weather-on-map'], window_);
-    notice.hidden = false;
-    noticeTimer = setTimeout(dismiss, NOTICE_MS);
+    const notes = window.pwaDayNotes;
+    if (!notes) return;
+    notes.set(
+      NOTE_ID,
+      window_
+        ? {
+            title: STRINGS['note-title'],
+            detail: self.pwaStrings.interpolate(STRINGS['note-detail'], window_),
+            rank: NOTE_RANK,
+          }
+        : null
+    );
   }
-
-  if (noticeClose) noticeClose.addEventListener('click', dismiss);
 
   document.addEventListener('snowdesk:date-changed', (e) => {
     shownKey = (e.detail && e.detail.date) || '';

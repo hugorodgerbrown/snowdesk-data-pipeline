@@ -536,52 +536,60 @@ def test_the_date_control_has_day_steps_either_side() -> None:
 
 
 @pytest.mark.django_db
-def test_the_date_row_has_no_empty_day_notice() -> None:
-    """SNOW-1206: "No bulletins for {day} / Last issued {day}" is gone.
+def test_the_day_notes_bell_ships_hidden_with_its_card() -> None:
+    """SNOW-1206: the day's notes sit behind one bell, hidden until there is one.
 
-    What it meant was not clear, and on a tablet it pushed the
-    problem-terrain chip under the bottom-right roundel.
+    The bell follows "Today" in the date row; its card is a closed dialog
+    the bell controls. map_day_notes.js publishes the notes channel, so it
+    loads before the two modules that write to it.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    start = content.index('id="map-day-notes"')
+    tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
+    assert "hidden" in tag
+    assert content.index('id="map-today-control"') < start
+    assert 'aria-controls="map-day-notes-card"' in content
+    assert "aria-label='Notes about this day'" in content
+    card = content.index('id="map-day-notes-card"')
+    tag = content[content.rindex("<div", 0, card) : content.index(">", card)]
+    assert "hidden" in tag
+    assert 'role="dialog"' in tag
+    assert '<template id="map-day-notes-strings-template">' in content
+    notes = content.index("/static/js/map_day_notes.js")
+    assert notes < content.index("/static/js/map_day_nav.js")
+    assert notes < content.index("/static/js/map_weather_window.js")
+
+
+@pytest.mark.django_db
+def test_the_date_row_has_no_standing_pills() -> None:
+    """SNOW-1206: no empty-day, weather or problem-terrain pill in the row.
+
+    Each said one thing about the day, read as standing chrome, and on a
+    tablet pushed the row under the bottom-right roundel.
     """
     content = Client().get(reverse("public:map")).content.decode()
     assert 'id="map-day-empty"' not in content
-    assert "map-day-nav-strings-template" not in content
-    assert "No bulletins for" not in content
+    assert 'id="map-weather-window"' not in content
+    assert "map-date-notice" not in content
+    assert '<template id="map-day-nav-strings-template">' in content
+    for key in ("day-empty", "day-last-issued", "day-next-issued", "day-show"):
+        assert f'data-string="{key}"' in content
 
 
 @pytest.mark.django_db
-@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_the_date_row_notices_can_give_way() -> None:
-    """SNOW-1206: each notice's label carries the class that lets it truncate.
-
-    The row is one no-wrap line that stops short of the bottom-right
-    roundel; the label is the part that shrinks, so the presses stay.
-    """
-    content = Client().get(reverse("public:map")).content.decode()
-    for attr in ("data-weather-window-label",):
-        at = content.index(attr)
-        tag = content[content.rindex("<span", 0, at) : content.index(">", at)]
-        assert 'class="map-date-notice-label"' in tag
-
-
-@pytest.mark.django_db
-def test_the_weather_row_and_notice_ship_hidden_with_their_strings() -> None:
+def test_the_weather_row_ships_hidden_with_its_strings() -> None:
     """SNOW-1196: "Forecast only" waits for map_weather_window.js to judge the day.
 
-    The row's detail line sits inside the weather row; the map's one-time
-    line sits in the date row and has a dismiss. The module loads
-    after map.js, which publishes the window it reads.
+    The row's detail line sits inside the weather row; the same fact goes
+    to the day's notes (SNOW-1206). The module loads after map.js, which
+    publishes the window it reads.
     """
     content = Client().get(reverse("public:map")).content.decode()
     summary = content.index("data-weather-window-summary")
     tag = content[content.rindex("<span", 0, summary) : content.index(">", summary)]
     assert "hidden" in tag
-    start = content.index('id="map-weather-window"')
-    tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
-    assert "hidden" in tag
-    assert 'role="status"' in tag
-    assert "data-weather-window-close" in content
     assert '<template id="map-weather-window-strings-template">' in content
-    for key in ("forecast-only", "weather-on-map"):
+    for key in ("forecast-only", "note-title", "note-detail"):
         assert f'data-string="{key}"' in content
     assert content.index("/static/js/map.js") < content.index(
         "/static/js/map_weather_window.js"
