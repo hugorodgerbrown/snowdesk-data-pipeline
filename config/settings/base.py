@@ -250,6 +250,7 @@ INSTALLED_APPS = [
     "apps.trips",
     "apps.downloads",
     "apps.mcp_server",
+    "apps.data_feed",
     # SNOW-1193: OAuth 2.1 for the MCP endpoints is mcp-auth, on
     # django-oauth-toolkit. apps.oauth is Snowdesk's glue — the connect
     # rule, the consent page's look, the settings-page disconnect — and sits
@@ -1196,6 +1197,15 @@ SENTRY_ENABLED = init_sentry(SENTRY_DSN, SITE_ENVIRONMENT, RELEASE_VERSION)
 # `manage.py dump_settings`.
 PRODUCTION_DATABASE_URL = config("PRODUCTION_DATABASE_URL", default="")
 
+# The production data feed, read by `pull_production_data` (SNOW-1197).
+# A CLIENT's settings: the feed's base URL on the serving environment (e.g.
+# https://snowdesk.app/api/data/v1/) and the client-credentials pair of the
+# service client created for this environment in that environment's admin.
+# Empty on production, which serves the feed and never pulls from it.
+DATA_FEED_URL = config("DATA_FEED_URL", default="")
+DATA_FEED_CLIENT_ID = config("DATA_FEED_CLIENT_ID", default="")
+DATA_FEED_CLIENT_SECRET = config("DATA_FEED_CLIENT_SECRET", default="")
+
 # django.contrib.sites — required by django.contrib.sitemaps (SNOW-218).
 # 1 is the "example.com" row the sites migration creates, and nothing
 # public reads its domain: the sitemap and the feeds build absolute URLs
@@ -1584,7 +1594,17 @@ logging.captureWarnings(True)
 OAUTH2_PROVIDER = oauth2_settings(
     resource_name="Snowdesk",
     scope_description="Read avalanche bulletins, danger ratings and resorts as you",
+    # Snowdesk's validator is mcp-auth's plus one rule: the client-credentials
+    # grant goes only to a service client a member of staff created in the
+    # admin, never to an openly registered one (SNOW-1197, apps/oauth/validators.py).
+    OAUTH2_VALIDATOR_CLASS="apps.oauth.validators.Validator",
 )
+# The data feed's scope (SNOW-1197). Held only by the client-credentials
+# tokens of service clients — apps.data_feed.auth refuses it on any other
+# token — so it never appears on a person's consent page in practice.
+OAUTH2_PROVIDER["SCOPES"] = OAUTH2_PROVIDER["SCOPES"] | {
+    "data": "Read the production data feed (service clients only)",
+}
 MCP_AUTH = {
     # A verified account, checked at consent and on every MCP call.
     "CAN_CONNECT": "apps.oauth.policy.verified_account",

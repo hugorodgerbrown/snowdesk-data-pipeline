@@ -23,7 +23,7 @@ is probably wrong — fix it rather than relaxing the rule.
 ```
 config/          Django project: split settings (base + development/staging/
                  production/perf overlays), urls, wsgi
-apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
+apps/            Parent package for the sixteen Django apps (SNOW-557 — moved
                  here without changing any app label). The per-app summary
                  lives in CLAUDE.md's "Architecture" block; the apps below
                  are the ones this document's examples draw on
@@ -56,7 +56,7 @@ apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
                  docs/decisions/no-signals-for-side-effects.md)
   mcp_server/    JSON-RPC MCP tools at POST /api/mcp/. No models — reads the
                  bulletins/regions tables
-  locations/, weather/, routes/, trips/, downloads/, oauth/
+  locations/, weather/, routes/, trips/, downloads/, oauth/, data_feed/
                  See CLAUDE.md for each
   public/        Public-facing bulletin site (HTMX-driven). Owns the JSON API
                  used by the map page (api.py / api_urls.py)

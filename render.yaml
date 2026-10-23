@@ -131,6 +131,17 @@ projects:
               # not dependent on a manual dashboard edit to the env group.
               - key: DJANGO_SETTINGS_MODULE
                 value: config.settings.staging
+              # The production data feed client (SNOW-1197): staging pulls
+              # bulletins, weather and resorts with `pull_production_data`.
+              # The URL is production's https://…/api/data/v1/; the id and
+              # secret are the service client created in production's admin
+              # (docs/data-feed.md). Dashboard-set, never committed.
+              - key: DATA_FEED_URL
+                sync: false
+              - key: DATA_FEED_CLIENT_ID
+                sync: false
+              - key: DATA_FEED_CLIENT_SECRET
+                sync: false
               - fromGroup: Staging
 
           # DISABLED 2026-08-27 — the refresh is run by hand for now. The service

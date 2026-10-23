@@ -19,7 +19,7 @@ oddly after a dependency change, rebuild them with `uv run tox --recreate`.
 ```
 config/          Django project settings (base + development/staging/
                  production/perf overlays — see "Conventions → Code")
-apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
+apps/            Parent package for the sixteen Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
   core/          Shared abstractions (BaseModel), HTTP-layer middleware, the
@@ -125,6 +125,13 @@ apps/            Parent package for the fifteen Django apps (SNOW-557 — moved
                  purge. No models — read
                  docs/decisions/mcp-auth-replaces-the-hand-written-oauth-server.md
                  before changing the flow
+  data_feed/     Production's read-only data feed for other services
+                 (SNOW-1197) — GET /api/data/v1/{bulletins,weather,
+                 locations,resorts}/, OAuth client credentials issued only
+                 to a hand-made service client — and its client,
+                 pull_production_data (--type, --since, --commit), which
+                 replays bulletins through upsert_bulletin. No models; never
+                 reads a user-owned table (docs/data-feed.md)
   public/        Public-facing bulletin site (route map: docs/site-structure.md)
     api.py       Plain JsonResponse endpoints — the map's feeds, plus
                  share-create, /api/version + sw-config, the bulletin
@@ -778,6 +785,8 @@ Read these when working in the relevant area:
 | Rebuild the Météo-France archive NDJSON from the local BRA PDFs | [`docs/runbooks/rebuild-meteofrance-archive.md`](docs/runbooks/rebuild-meteofrance-archive.md) |
 | Backfill an environment onto the Location model (the --commit commands, Open-Meteo elevation cost, progress log) | [`docs/runbooks/location-migration-backfill.md`](docs/runbooks/location-migration-backfill.md) |
 | Region centroid Locations — not re-linked on deploy; an operator runs `link_region_centroid_locations --commit` and `link_resort_locations --commit` ([`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md)) | [`docs/runbooks/region-centroid-backfill.md`](docs/runbooks/region-centroid-backfill.md) |
+| Production data feed for other services (GET /api/data/v1/ bulletins, weather, locations, resorts; OAuth client credentials, is_service_client, the data scope; pull_production_data --type --since --commit; DATA_FEED_URL, DATA_FEED_CLIENT_ID, DATA_FEED_CLIENT_SECRET) | [`docs/data-feed.md`](docs/data-feed.md) |
+| Why production's data reaches staging through an HTTPS feed rather than a database credential (replay through upsert_bulletin, idempotent pulls, client credentials over an API key; sync-staging-data kept as the reset) | [`docs/decisions/data-reaches-other-environments-through-a-feed.md`](docs/decisions/data-reaches-other-environments-through-a-feed.md) |
 | Refresh staging's bulletins from production (bin/sync-staging-data, run by hand since the cron was disabled 2026-08-27, the read-only role) | [`docs/runbooks/refresh-staging-from-production.md`](docs/runbooks/refresh-staging-from-production.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |
 | Rename subscriptions app to accounts on an existing DB (table rename, InconsistentMigrationHistory) | [`docs/runbooks/rename-subscriptions-to-accounts.md`](docs/runbooks/rename-subscriptions-to-accounts.md) |

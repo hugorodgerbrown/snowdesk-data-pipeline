@@ -1,0 +1,182 @@
+---
+name: data-feed
+description: Data feed GET /api/data/v1/ (bulletins, weather, locations, resorts), service clients, pull_production_data, DATA_FEED_URL
+status: current
+last-reviewed: 2026-10-23
+---
+
+# The production data feed
+
+Production ingests bulletins from three providers and weather from
+Open-Meteo on a schedule, and holds the curated resort estate edited in its
+admin and map editor. Staging has no scheduler, so it never gets any of
+that on its own. The data feed (SNOW-1197) makes production's data
+available to other services over HTTPS. Staging is the first client, and
+the same feed serves any later one.
+
+Why a feed and not a database copy:
+[`decisions/data-reaches-other-environments-through-a-feed.md`](decisions/data-reaches-other-environments-through-a-feed.md).
+
+## The two halves
+
+| Half | Where | What |
+|------|-------|------|
+| Server | `apps/data_feed/feeds.py`, `views.py`, `auth.py` | `GET /api/data/v1/<feed>/`, read-only, service clients only |
+| Client | `apps/data_feed/client.py`, `services/apply.py`, `pull_production_data` | Gets a token, walks a feed, applies each item idempotently |
+| Contract | `apps/data_feed/contract.py` | The field allowlists both halves read and write |
+
+## Endpoints
+
+All four are `GET`, take the same parameters and answer the same shape.
+
+| URL | Item key | What is served |
+|-----|----------|----------------|
+| `/api/data/v1/bulletins/` | `bulletin_id` | Every bulletin's CAAML as stored, plus `pdf_url` |
+| `/api/data/v1/weather/` | location `uuid` + `observed_on` | `Weather` rows for `Location.objects.public()` only |
+| `/api/data/v1/locations/` | `uuid` | `Location.objects.public()`, with `centroid_of` region codes |
+| `/api/data/v1/resorts/` | `slug` | Every resort with a slug: region code, pin uuid, passes, location links |
+
+Parameters, all optional: `since` (ISO 8601 datetime **with an offset**,
+filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and
+`limit` (default 100, at most 500).
+
+```json
+{
+  "feed": "bulletins",
+  "version": 1,
+  "count": 412,
+  "results": [{"bulletin_id": "…", "updated_at": "…", "pdf_url": "…", "caaml": {…}}],
+  "next_cursor": "MjAyNi0xMC0yM1QwNjo…"
+}
+```
+
+`count` is on the first page only. Paging is a keyset on
+`(updated_at, id)` ascending, so a row updated mid-walk moves to the end
+and is still reached. Every response is `Cache-Control: no-store`. A bad
+parameter is a `400` with an `error`.
+
+**What is never served.** The four querysets are the only reads, and no
+user-owned table is among them. A favourite's pin is fetched for weather
+(`Location.objects.active()`), but it is one person's saved place, so its
+location and its weather never leave production. The column lists in
+`contract.py` are allowlists too: a new column is not published until
+someone adds it, and `tests/data_feed/test_contract.py` fails until they
+decide.
+
+## Authentication: OAuth 2 client credentials
+
+The feed uses the same OAuth server as the MCP endpoints
+([`oauth.md`](oauth.md)), with the client-credentials grant. A request is
+admitted only when its bearer token:
+
+1. carries the `data` scope;
+2. is bound (RFC 8707 `resource`) to a URL prefix of the path called.
+   django-oauth-toolkit checks the prefix, and an unbound token is refused
+   because the toolkit would otherwise treat it as good everywhere;
+3. belongs to a **service client**. That means a confidential
+   client-credentials application created by hand in the admin
+   (`registration_source = manual`), as defined by
+   `apps.oauth.validators.is_service_client`.
+
+Rule 3 is also enforced where tokens are issued. `apps.oauth.validators.Validator`
+refuses the client-credentials grant to any other application. That
+matters because registration is open: Dynamic Client Registration
+turns `grant_types: ["client_credentials"]` into a confidential
+client-credentials app with a secret. Before SNOW-1197 such a client
+could get a userless token from `/oauth/token/`.
+
+A person's MCP token is never a service client's, even with the `data`
+scope. A service client's token is never an MCP reader's, because the
+connect rule refuses a token with no user (`verified_account(None)`).
+
+## Setting up a client (staging)
+
+**1. On production, create the service client.** In Django admin go to
+**Django OAuth Toolkit → Applications → Add**:
+
+| Field | Value |
+|-------|-------|
+| Name | `Staging data feed` |
+| Client type | Confidential |
+| Authorization grant type | Client credentials |
+| Redirect URIs | *(empty)* |
+| Hash client secret | ticked |
+| User | *(empty — a service client acts as no one)* |
+
+Copy the **client secret before saving**. It is hashed on save and cannot
+be read back. If it is lost, set a new one on the same application.
+
+**2. On staging, set three env vars.** Render → snowdesk-staging →
+Environment (they are declared `sync: false` in `render.yaml`):
+
+```
+DATA_FEED_URL=https://<production host>/api/data/v1/
+DATA_FEED_CLIENT_ID=<client id from step 1>
+DATA_FEED_CLIENT_SECRET=<client secret from step 1>
+```
+
+**3. Dry run from the staging shell.** This reads the feed and writes
+nothing:
+
+```bash
+uv run python manage.py pull_production_data
+```
+
+**Revoking a client** is deleting its application on production. Its
+tokens go with it, so the next request is a 401.
+
+## `pull_production_data`
+
+```bash
+uv run python manage.py pull_production_data                      # preview everything
+uv run python manage.py pull_production_data --commit             # apply everything
+uv run python manage.py pull_production_data --type resorts --commit
+uv run python manage.py pull_production_data --type bulletins --since 2026-10-01 --commit
+```
+
+- **`--type resorts|bulletins|weather`** can be repeated; the default is all
+  three. `resorts` pulls the curated locations first, then the resorts.
+  Weather hangs off locations, so with no `--type` the order is resorts,
+  bulletins, weather.
+- **`--since`** takes a date (midnight UTC) or an ISO datetime with an
+  offset, and applies to bulletins and weather. Without it, each type
+  resumes from the start of the last successful `--commit` run that pulled
+  it, less an hour of overlap (read from the `CommandRun` register). The
+  first pull of a type goes back seven days.
+- **Locations and resorts are always pulled whole.** There are a few
+  thousand rows, and a pass or a location link can change without the
+  resort's `updated_at` moving.
+
+Every item is matched on its natural key and compared with the row already
+there. Identical rows are tallied `unchanged` and not written, so
+re-running is free. Each feed is written through the code that owns the
+table:
+
+- **Bulletins** are replayed through `upsert_bulletin`, so region links,
+  day ratings, grouping outlines and render models are rebuilt by
+  *staging's* code. Staging therefore tests its own code against real
+  input rather than showing production's output.
+- **Weather** goes through `upsert_weather`. A past day already recorded is
+  `kept` and never rewritten.
+- **Locations and resorts** are written field by field. A resort's pin is
+  copied as the location production points at; it is not re-placed
+  through `set_resort_pin`.
+
+Tallies are recorded per feed and outcome (`bulletins_created`,
+`weather_kept`, …). A failed item is logged with its traceback, counted, and
+does not stop the pull. Any failure exits non-zero, and the run is
+recorded `PARTIAL`. A feed that cannot be read at all exits immediately.
+
+The command refuses to run when a setting is missing, when the URL is plain
+HTTP to a host other than localhost or 127.0.0.1, or when the URL points at
+its own `SITE_BASE_URL`.
+
+## What it does not do
+
+- **Delete.** A resort, location or bulletin removed on production stays on
+  the client. `bin/sync-staging-data`
+  ([runbook](runbooks/refresh-staging-from-production.md)) is still the way
+  to reset staging wholesale.
+- **Copy anything derived.** Region links, day ratings and groupings are
+  rebuilt on the client, never sent.
+- **Run on a schedule.** It is run by hand. Staging has no scheduler.

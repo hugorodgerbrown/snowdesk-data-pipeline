@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — RegisteredCommand / CommandRun register, fetch_bulletins, fetch_weather, purge_*, prune_command_runs, backfill_*
 status: current
-last-reviewed: 2026-10-22
+last-reviewed: 2026-10-23
 ---
 
 # Management commands
@@ -1063,6 +1063,33 @@ the default manifest path (`apps/core/fixtures/waffle_flags.json`). Respects
 `name`/`note`, a duplicate `name`, or an unrecognised key all raise a
 `CommandError` (non-zero exit).
 
+### `pull_production_data` — pull bulletins, weather and resorts from production's feed
+
+The client of production's data feed (SNOW-1197, [`data-feed.md`](data-feed.md)).
+Reads `GET /api/data/v1/` over HTTPS with an OAuth client-credentials token
+and applies each item idempotently. A bulletin is replayed through this
+database's own `upsert_bulletin`, weather goes through `upsert_weather`
+(a recorded past day is kept), and locations and resorts are matched on
+uuid and slug. An identical row is tallied `unchanged` and not written.
+
+```bash
+uv run python manage.py pull_production_data                      # preview everything
+uv run python manage.py pull_production_data --commit             # apply everything
+uv run python manage.py pull_production_data --type weather --commit
+uv run python manage.py pull_production_data --type bulletins --since 2026-10-01 --commit
+```
+
+`--type resorts|bulletins|weather` can be repeated (default all three;
+`resorts` brings the curated locations first). `--since` applies to
+bulletins and weather. Without it, each type resumes from the start of its
+last successful `--commit` run, less an hour, or goes back seven days on
+the first pull. Locations and resorts are always pulled whole. Tallies are
+`<feed>_<created|updated|unchanged|kept|failed>`, zeros included. Any
+failed item exits non-zero. It refuses to run without `DATA_FEED_URL`,
+`DATA_FEED_CLIENT_ID` and `DATA_FEED_CLIENT_SECRET`, against a plain-HTTP
+remote URL, or against its own site. It never deletes; a wholesale reset
+is still `bin/sync-staging-data` below.
+
 ### `bin/sync-staging-data` — refresh staging's data from production
 
 **Not a management command.** SNOW-729 shipped this as `sync_from_production`,
@@ -1071,8 +1098,9 @@ through Django for `bulletins_regionbulletin` alone and put the staging
 database into crash recovery. SNOW-736 replaced it with
 [`bin/sync-staging-data`](../bin/sync-staging-data), a `pg_dump`/`psql`
 script that moves the same rows with one `COPY` per table. The command is
-gone; the script is the only supported route, and it is listed here because
-this is where an operator looks for it.
+gone. For incremental top-ups, `pull_production_data` above (SNOW-1197) is
+the routine route; this script remains the wholesale reset, and it is
+listed here because this is where an operator looks for it.
 
 Staging has no scheduler and no task worker, so it never ingests a bulletin
 of its own; this is how it gets data.
