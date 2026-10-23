@@ -87,7 +87,7 @@ could get a userless token from `/oauth/token/`.
 
 A person's MCP token is never a service client's, even with the `data`
 scope. A service client's token is never an MCP reader's, because the
-connect rule refuses a token with no user (`verified_account(None)`).
+connect rule refuses a token with no user (mcp-auth's `can_connect`).
 
 ## Setting up a client (staging)
 

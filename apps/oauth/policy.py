@@ -22,18 +22,11 @@ def verified_account(user: Any) -> bool:
     confirmed. A staff user with no ``Account`` row is refused like anyone
     else — a token is a reader's credential, not an admin's.
 
-    A token with no user — a client-credentials token, which only a data
-    feed service client can hold (SNOW-1197) — is refused here rather than
-    crashing on ``None.is_active``: a machine token is never an MCP reader.
-
     Args:
-        user: The signed-in user, the user a token belongs to, or None for
-            a client-credentials token.
+        user: The signed-in user, or the user a token belongs to.
 
     Returns:
         Whether the user may connect.
 
     """
-    if user is None:
-        return False
     return bool(user.is_active and user_is_verified(user))

@@ -90,9 +90,10 @@ added. The client-credentials grant is refused to anything but a service
 client. Without that rule, open Dynamic Client Registration
 turns `grant_types: ["client_credentials"]` into a confidential
 client-credentials app with a secret, and `/oauth/token/` issues it a
-userless token. Before SNOW-1197 it did, and such a token sent to
-`/api/mcp/` crashed the connect rule on `None.is_active`.
-`verified_account` now refuses a userless token instead.
+userless token. Before SNOW-1197 it did. Such a token opened nothing,
+because mcp-auth's `can_connect` refuses a token with no user before
+`verified_account` is asked, but it would have opened any endpoint that
+accepts userless tokens, which the feed is.
 
 ## Endpoints
 

@@ -47,8 +47,8 @@ idempotent and replays each bulletin through its own `upsert_bulletin`.
 
 - A client-credentials token has no user. The token endpoint issues one
   only to a service client (`apps.oauth.validators`), because open DCR
-  would otherwise hand one to anyone. The MCP connect rule refuses a
-  userless token instead of crashing on it.
+  would otherwise hand one to anyone. The MCP endpoints already refused a
+  userless token (mcp-auth's `can_connect`), so they are unaffected.
 - The feed never deletes anything on the client. Removals reach staging
   only through a reset.
 - A ~230-statement bulk ORM upsert put staging's database into crash

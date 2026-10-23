@@ -115,10 +115,10 @@ class TestRefusals:
         )
         assert response.status_code in (401, 403)
 
-    def test_userless_mcp_token_is_a_401_not_a_500(
+    def test_userless_mcp_token_is_refused_by_the_mcp_endpoint(
         self, client: Client, service_client: Application
     ) -> None:
-        """The connect rule refuses a token with no user instead of crashing."""
+        """mcp-auth's connect rule refuses a token with no user, even one for /api/mcp/."""
         token = OAuthAccessTokenFactory.create(
             user=None,
             application=service_client,

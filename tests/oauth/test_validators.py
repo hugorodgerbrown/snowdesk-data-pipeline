@@ -17,7 +17,6 @@ from django.core.cache import cache
 from django.test import Client
 from oauth2_provider.models import AccessToken, Application
 
-from apps.oauth.policy import verified_account
 from apps.oauth.validators import is_service_client
 from tests.factories import OAuthApplicationFactory
 
@@ -138,8 +137,3 @@ class TestIsServiceClient:
     def test_authorization_code_app_is_not(self) -> None:
         """A person's MCP connection is not a service client."""
         assert not is_service_client(OAuthApplicationFactory.create())
-
-
-def test_verified_account_refuses_a_token_with_no_user() -> None:
-    """A client-credentials token has no user, and is never an MCP reader."""
-    assert verified_account(None) is False
