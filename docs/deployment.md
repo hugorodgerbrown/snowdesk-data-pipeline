@@ -2,7 +2,7 @@
 name: deployment
 description: Path-to-live: main→staging, release→production, release PR via bin/cut-release, Deploy-Step trailer, release-sync fast-forward, CalVer tags
 status: current
-last-reviewed: 2026-10-22
+last-reviewed: 2026-10-23
 ---
 
 # Deployment / path-to-live
@@ -114,8 +114,11 @@ data whatsoever. It is run by hand: the `snowdesk-staging-data-sync` cron job
 that ran it nightly at 07:20 UTC was disabled on 2026-08-27 and its
 `render.yaml` block is commented out. Setup, the first full load, and skipped-row triage:
 [`runbooks/refresh-staging-from-production.md`](runbooks/refresh-staging-from-production.md).
-A manual `fetch_bulletins` run against staging still works, but is no longer
-the way staging gets its data. Because there is no `db_worker` to consume the
+For a routine top-up, `pull_production_data --commit` pulls what changed
+from production's HTTPS data feed instead, idempotently and without
+clearing anything ([`data-feed.md`](data-feed.md), SNOW-1197); the script
+stays as the wholesale reset. A manual `fetch_bulletins` run against
+staging still works, but is no longer the way staging gets its data. Because there is no `db_worker` to consume the
 django-tasks-db queue, staging runs `config.settings.staging`
 (`DJANGO_SETTINGS_MODULE` pinned in [`render.yaml`](../render.yaml)), which
 inherits production's hardening but overrides the task backend to

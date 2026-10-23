@@ -1,0 +1,378 @@
+"""
+apps/data_feed/feeds.py — What each data feed serves, and how it is paged.
+
+One ``Feed`` per endpoint under ``/api/data/v1/``: the queryset it reads
+and how one row becomes one item. ``page()`` is the paging rule all four
+share.
+
+**What is served is an allowlist, not the database.** The four querysets
+below are the only reads, and none of them touches a user-owned table:
+
+* ``bulletins`` — every ``Bulletin``: the provider's CAAML exactly as
+  stored, plus its PDF link. Nothing derived (region links, day ratings,
+  groupings, the render model) is sent; a client rebuilds those with its
+  own ``upsert_bulletin``, so they are always its own code's output.
+* ``weather`` — ``Weather`` rows for ``Location.objects.public()`` only.
+  A favourite's pin is an active location too (it is fetched), but it is
+  one person's saved place, so its weather never leaves production.
+* ``locations`` — ``Location.objects.public()``: the curated estate a
+  resort, a resort pin or a region centroid reaches. Never an anonymous
+  point minted from a favourite or a field report.
+* ``resorts`` — every ``Resort`` with a slug, with its region, pin, passes
+  and location links as natural keys.
+
+**Paging is a keyset on (updated_at, id), ascending.** The cursor is the
+last row's pair, so a row written while a client pages moves to the end of
+the order and is still reached, and no page is a re-run OFFSET of the one
+before. ``?since=`` filters on ``updated_at`` for an incremental pull.
+"""
+
+from __future__ import annotations
+
+import base64
+import binascii
+import datetime as dt
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from django.db.models import Prefetch, Q, QuerySet
+from django.utils.dateparse import parse_datetime
+
+from apps.bulletins.models import Bulletin
+from apps.data_feed import contract
+from apps.locations.models import Location, ResortLocation
+from apps.regions.models import MicroRegion, Pass, Resort
+from apps.weather.models import Weather
+
+
+class FeedQueryError(ValueError):
+    """A ``since``, ``cursor`` or ``limit`` parameter the feed cannot use.
+
+    Attributes:
+        param: Which parameter — the view answers with that parameter's
+            fixed message (``PARAMETER_ERRORS``), never with this
+            exception's own text, so nothing raised reaches a response.
+
+    """
+
+    def __init__(self, param: str, message: str) -> None:
+        """Record the parameter alongside the message for the log."""
+        super().__init__(message)
+        self.param = param
+
+
+# What a client is told about each bad parameter. Fixed strings, so the
+# response never echoes an exception (or the client's input) back.
+PARAMETER_ERRORS: dict[str, str] = {
+    "since": "since must be an ISO 8601 datetime with a UTC offset",
+    "cursor": "cursor is not one this feed issued",
+    "limit": "limit must be a positive integer",
+}
+
+
+@dataclass(frozen=True)
+class Feed:
+    """One endpoint: the rows it may read and how each becomes an item.
+
+    Attributes:
+        name: The URL segment, e.g. ``bulletins``.
+        queryset: Returns the base queryset, already restricted to what may
+            be served and slimmed to what ``serialise`` reads.
+        serialise: Turns one row into one wire item.
+
+    """
+
+    name: str
+    queryset: Callable[[], QuerySet[Any]]
+    serialise: Callable[[Any], dict[str, Any]]
+
+
+# ---------------------------------------------------------------------------
+# Serialisers — one row, one item
+# ---------------------------------------------------------------------------
+
+
+def serialise_bulletin(bulletin: Bulletin) -> dict[str, Any]:
+    """Return a bulletin as the provider's CAAML plus its PDF link.
+
+    Args:
+        bulletin: A row loaded with ``bulletin_id``, ``pdf_url``,
+            ``raw_data`` and ``updated_at``.
+
+    Returns:
+        The wire item.
+
+    """
+    return {
+        "bulletin_id": bulletin.bulletin_id,
+        "updated_at": contract.to_wire(bulletin.updated_at),
+        "pdf_url": bulletin.pdf_url,
+        # upsert_bulletin wraps the provider's CAAML in a Feature envelope;
+        # the CAAML itself is what a client hands back to upsert_bulletin.
+        "caaml": (bulletin.raw_data or {}).get("properties"),
+    }
+
+
+def serialise_weather(weather: Weather) -> dict[str, Any]:
+    """Return one location-day of weather, keyed by location uuid and day.
+
+    Args:
+        weather: A row with its ``location`` selected.
+
+    Returns:
+        The wire item.
+
+    """
+    return {
+        "location": str(weather.location.uuid),
+        "observed_on": contract.to_wire(weather.observed_on),
+        "updated_at": contract.to_wire(weather.updated_at),
+        "fields": contract.dump_fields(weather, contract.WEATHER_FIELDS),
+    }
+
+
+def serialise_location(location: Location) -> dict[str, Any]:
+    """Return a curated location, with the regions whose centroid it is.
+
+    Args:
+        location: A row with ``micro_regions`` prefetched (slim).
+
+    Returns:
+        The wire item.
+
+    """
+    return {
+        "uuid": str(location.uuid),
+        "updated_at": contract.to_wire(location.updated_at),
+        "fields": contract.dump_fields(location, contract.LOCATION_FIELDS),
+        "centroid_of": sorted(r.region_id for r in location.micro_regions.all()),
+    }
+
+
+def serialise_resort(resort: Resort) -> dict[str, Any]:
+    """Return a resort with its relations as natural keys.
+
+    Args:
+        resort: A row with ``region`` and ``location`` selected and
+            ``passes`` and ``resort_locations`` prefetched.
+
+    Returns:
+        The wire item.
+
+    """
+    return {
+        "slug": resort.slug,
+        "updated_at": contract.to_wire(resort.updated_at),
+        "fields": contract.dump_fields(resort, contract.RESORT_FIELDS),
+        "region": resort.region.region_id,
+        "location": str(resort.location.uuid) if resort.location else None,
+        "passes": [
+            {"slug": p.slug, "name": p.name, "website": p.website}
+            for p in resort.passes.all()
+        ],
+        "locations": [
+            {
+                "location": str(link.location.uuid),
+                "role": link.role,
+                "is_primary": link.is_primary,
+            }
+            for link in resort.resort_locations.all()
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Querysets — the allowlist
+# ---------------------------------------------------------------------------
+
+
+def _bulletins() -> QuerySet[Bulletin]:
+    """Return every bulletin, loading only what the item carries."""
+    return Bulletin.objects.only(
+        "id", "bulletin_id", "updated_at", "pdf_url", "raw_data"
+    )
+
+
+def _weather() -> QuerySet[Weather]:
+    """Return weather for the public (curated) locations only — never a favourite's."""
+    return Weather.objects.filter(
+        location__in=Location.objects.public().values("pk")
+    ).select_related("location")
+
+
+def _locations() -> QuerySet[Location]:
+    """Return the curated estate, with the regions each is the centroid of."""
+    return Location.objects.public().prefetch_related(
+        # The FK must be loaded: a prefetch matches each region back to its
+        # location through it, and a deferred one is fetched row by row.
+        Prefetch(
+            "micro_regions",
+            queryset=MicroRegion.objects.only("pk", "region_id", "centroid_location"),
+        )
+    )
+
+
+def _resorts() -> QuerySet[Resort]:
+    """Return every resort with a slug — a slug is the resort's key on the wire."""
+    # The region and pin are prefetched slim rather than joined: a
+    # MicroRegion row carries its boundary polygon, and the item needs only
+    # the region's code.
+    return Resort.objects.exclude(slug__isnull=True).prefetch_related(
+        Prefetch("region", queryset=MicroRegion.objects.only("pk", "region_id")),
+        Prefetch("location", queryset=Location.objects.only("pk", "uuid")),
+        Prefetch("passes", queryset=Pass.objects.only("pk", "slug", "name", "website")),
+        Prefetch(
+            "resort_locations",
+            queryset=ResortLocation.objects.select_related("location").only(
+                "pk", "resort_id", "role", "is_primary", "location__uuid"
+            ),
+        ),
+    )
+
+
+FEEDS: dict[str, Feed] = {
+    "bulletins": Feed("bulletins", _bulletins, serialise_bulletin),
+    "weather": Feed("weather", _weather, serialise_weather),
+    "locations": Feed("locations", _locations, serialise_location),
+    "resorts": Feed("resorts", _resorts, serialise_resort),
+}
+
+
+# ---------------------------------------------------------------------------
+# Paging
+# ---------------------------------------------------------------------------
+
+
+def encode_cursor(updated_at: dt.datetime, pk: int) -> str:
+    """Return the opaque cursor that resumes after the row ``(updated_at, pk)``.
+
+    Args:
+        updated_at: The last row's ``updated_at``.
+        pk: The last row's primary key.
+
+    Returns:
+        A URL-safe token.
+
+    """
+    raw = f"{updated_at.isoformat()}|{pk}".encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def decode_cursor(cursor: str) -> tuple[dt.datetime, int]:
+    """Return the ``(updated_at, pk)`` pair a cursor resumes after.
+
+    Args:
+        cursor: A token from ``encode_cursor``.
+
+    Returns:
+        The pair.
+
+    Raises:
+        FeedQueryError: The token is not one this server issued.
+
+    """
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        stamp, _, pk = base64.urlsafe_b64decode(padded).decode().partition("|")
+        updated_at = parse_datetime(stamp)
+        if updated_at is None:
+            raise ValueError(stamp)
+        return updated_at, int(pk)
+    except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+        raise FeedQueryError("cursor", f"cursor {cursor!r} is not valid") from exc
+
+
+def parse_since(raw: str | None) -> dt.datetime | None:
+    """Return ``?since=`` as an aware datetime, or None when absent.
+
+    Args:
+        raw: The parameter, an ISO 8601 datetime with an offset.
+
+    Returns:
+        The datetime, or None.
+
+    Raises:
+        FeedQueryError: It does not parse or carries no offset.
+
+    """
+    if not raw:
+        return None
+    parsed = parse_datetime(raw)
+    if parsed is None or parsed.tzinfo is None:
+        raise FeedQueryError(
+            "since", f"since {raw!r} must be an ISO 8601 datetime with a UTC offset"
+        )
+    return parsed
+
+
+def parse_limit(raw: str | None) -> int:
+    """Return ``?limit=``, defaulted and held to ``contract.MAX_LIMIT``.
+
+    Args:
+        raw: The parameter.
+
+    Returns:
+        The page size.
+
+    Raises:
+        FeedQueryError: It is not a positive integer.
+
+    """
+    if not raw:
+        return contract.DEFAULT_LIMIT
+    try:
+        limit = int(raw)
+    except ValueError as exc:
+        raise FeedQueryError("limit", f"limit {raw!r} is not an integer") from exc
+    if limit < 1:
+        raise FeedQueryError("limit", "limit must be at least 1")
+    return min(limit, contract.MAX_LIMIT)
+
+
+def page(
+    feed: Feed,
+    *,
+    since: dt.datetime | None,
+    cursor: str | None,
+    limit: int,
+) -> dict[str, Any]:
+    """Return one page of ``feed``: its items, and the cursor to the next.
+
+    ``count`` — how many rows the whole pull will return — is sent on the
+    first page only, where it is one extra query rather than one per page.
+
+    Args:
+        feed: The feed to read.
+        since: Only rows updated at or after this, when given.
+        cursor: Resume after this cursor, when given.
+        limit: The page size.
+
+    Returns:
+        The response body: ``feed``, ``version``, ``results``,
+        ``next_cursor`` (None on the last page) and, on the first page,
+        ``count``.
+
+    Raises:
+        FeedQueryError: ``cursor`` does not decode.
+
+    """
+    queryset = feed.queryset()
+    if since is not None:
+        queryset = queryset.filter(updated_at__gte=since)
+    body: dict[str, Any] = {"feed": feed.name, "version": contract.VERSION}
+    if cursor is None:
+        body["count"] = queryset.count()
+    else:
+        after_at, after_pk = decode_cursor(cursor)
+        queryset = queryset.filter(
+            Q(updated_at__gt=after_at) | Q(updated_at=after_at, pk__gt=after_pk)
+        )
+    rows = list(queryset.order_by("updated_at", "pk")[: limit + 1])
+    more = len(rows) > limit
+    rows = rows[:limit]
+    body["results"] = [feed.serialise(row) for row in rows]
+    body["next_cursor"] = (
+        encode_cursor(rows[-1].updated_at, rows[-1].pk) if more else None
+    )
+    return body

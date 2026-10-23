@@ -269,6 +269,10 @@ class Weather(BaseModel):
 
         ordering = ["-observed_on"]
         unique_together = [("location", "observed_on")]
+        indexes = [
+            # The data feed's keyset (SNOW-1197) — see Bulletin.Meta.
+            models.Index(fields=["updated_at", "id"], name="weather_feed_keyset"),
+        ]
         verbose_name_plural = "weather"
 
     def to_string(self) -> str:

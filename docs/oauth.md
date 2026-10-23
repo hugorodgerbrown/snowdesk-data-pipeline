@@ -1,8 +1,8 @@
 ---
 name: oauth
-description: MCP OAuth via mcp-auth — /.well-known, /oauth/authorize|token|register, verified_account, oauth:disconnect, mint_mcp_token
+description: mcp-auth OAuth — /oauth/authorize|token|register, verified_account, disconnect, mint_mcp_token, service-client credentials
 status: current
-last-reviewed: 2026-10-22
+last-reviewed: 2026-10-23
 ---
 
 # OAuth for the MCP server
@@ -73,6 +73,27 @@ form post. django-csp-plus builds the header in middleware with no
 per-response hook, so `MCP_AUTH["CONSENT_RETURN"] = "page"` makes mcp-auth
 render the returning page instead: a navigation, which `form-action` does
 not govern, plus a link for a browser that ignores the refresh.
+
+## Service clients and the client-credentials grant
+
+The data feed at `/api/data/v1/` (SNOW-1197, [`data-feed.md`](data-feed.md))
+is read by services, not people. It uses the client-credentials grant on
+this same server. A **service client** is a confidential
+client-credentials application created by hand in the admin
+(`registration_source = manual`), as defined by
+`apps.oauth.validators.is_service_client`. Its tokens carry the `data`
+scope and no user.
+
+`OAUTH2_PROVIDER["OAUTH2_VALIDATOR_CLASS"]` is
+`apps.oauth.validators.Validator`: mcp-auth's validator with one rule
+added. The client-credentials grant is refused to anything but a service
+client. Without that rule, open Dynamic Client Registration
+turns `grant_types: ["client_credentials"]` into a confidential
+client-credentials app with a secret, and `/oauth/token/` issues it a
+userless token. Before SNOW-1197 it did. Such a token opened nothing,
+because mcp-auth's `can_connect` refuses a token with no user before
+`verified_account` is asked, but it would have opened any endpoint that
+accepts userless tokens, which the feed is.
 
 ## Endpoints
 

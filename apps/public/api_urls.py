@@ -182,4 +182,9 @@ urlpatterns = [
     # owns the "mcp" path segment and can register both spellings — see the
     # module docstring there for why the slash-less alias exists.
     path("", include(("apps.mcp_server.urls", "mcp"), namespace="mcp")),
+    # SNOW-1197: production's read-only data feed for service clients —
+    # GET /api/data/v1/<feed>/ (api:data_feed:<feed>). Mounted at "" so
+    # apps.data_feed.urls owns the versioned "data/v1/" prefix a client's
+    # token is bound to.
+    path("", include(("apps.data_feed.urls", "data_feed"), namespace="data_feed")),
 ]

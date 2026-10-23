@@ -44,3 +44,9 @@ TASKS = {
 # guard it. Both existed to let the ORM read production; nothing in Django
 # connects there now, so the safest configuration is no configuration —
 # there is no connection for a stray `migrate --database=…` to find.
+#
+# The routine top-up is `pull_production_data` (SNOW-1197), which reads
+# production's HTTPS data feed with DATA_FEED_URL / DATA_FEED_CLIENT_ID /
+# DATA_FEED_CLIENT_SECRET (declared in base.py, set on the staging service in
+# render.yaml). It needs no wiring here either: the settings are read by the
+# command, and the feed is an HTTP client, not a database connection.

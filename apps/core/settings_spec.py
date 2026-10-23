@@ -224,6 +224,23 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         secret=True,
         note="read-only production DSN for bin/sync-staging-data (staging only)",
     ),
+    # The data feed client (SNOW-1197). Empty on production, which serves
+    # the feed rather than pulling from it; `pull_production_data` refuses
+    # to run until all three are set.
+    SettingSpec(
+        "DATA_FEED_URL",
+        validator=absolute_url,
+        note="production data feed base URL for pull_production_data",
+    ),
+    SettingSpec(
+        "DATA_FEED_CLIENT_ID",
+        note="data feed service client id (client credentials)",
+    ),
+    SettingSpec(
+        "DATA_FEED_CLIENT_SECRET",
+        secret=True,
+        note="data feed service client secret (client credentials)",
+    ),
     # The note used to read "CalVer tag of the running release", which this
     # has never been: it resolves to RENDER_GIT_COMMIT, a git SHA. The CalVer
     # tag is created by release.yml AFTER the deploy starts and never reaches

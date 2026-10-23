@@ -1,11 +1,18 @@
 ---
 name: refresh-staging-from-production
-description: bin/sync-staging-data — production bulletins + weather to staging; run by hand, the snowdesk-staging-data-sync cron is disabled
+description: bin/sync-staging-data — wholesale pg COPY reset of staging from production; run by hand; pull_production_data tops up
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-23
 ---
 
 # Runbook — refresh staging's data from production
+
+> **For a routine top-up, use the data feed instead.**
+> `uv run python manage.py pull_production_data --commit` pulls what
+> changed since the last pull over HTTPS and keeps staging's own favourites,
+> observations and trips ([`data-feed.md`](../data-feed.md), SNOW-1197).
+> This script is the wholesale reset: it replaces every copied table and
+> clears staging's own rows that point into them.
 
 Staging runs one web dyno with no scheduler and no task worker
 ([`render.yaml`](../../render.yaml)), so its database never ingests a
