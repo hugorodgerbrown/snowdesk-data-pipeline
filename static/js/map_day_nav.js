@@ -73,10 +73,14 @@
   let maxKey = todayKey;
   let ratingsCache = null;
   let jumpTarget = '';
+  // The day the last ``snowdesk:date-changed`` announced. A timelapse
+  // announces every frame but writes ``?d=`` only when it stops, so the URL
+  // alone would describe the day playback started on.
+  let shownKey = '';
 
   /** @returns {string} The day the map is showing. */
   function currentKey() {
-    return readUrlDateParam() || todayKey;
+    return shownKey || readUrlDateParam() || todayKey;
   }
 
   /** Re-read the range from the ratings cache. */
@@ -166,7 +170,10 @@
     }
   });
 
-  document.addEventListener('snowdesk:date-changed', apply);
+  document.addEventListener('snowdesk:date-changed', (e) => {
+    shownKey = (e.detail && e.detail.date) || '';
+    apply();
+  });
   // Another country's ratings merge into the same cache object and can add
   // later days; turning a country on or off changes which days are empty.
   document.addEventListener('snowdesk:country-ratings-loaded', () => {

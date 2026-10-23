@@ -143,6 +143,21 @@ describe("the scrubber's keys", () => {
   });
 });
 
+describe('a timelapse', () => {
+  it('follows the announced day, not the URL it leaves behind', async () => {
+    history.replaceState(null, '', '/map/?d=2026-02-10');
+    await load();
+    expect($('map-day-prev').disabled).toBe(true);
+    // Playback announces each frame without writing ?d=.
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-02-17', source: 'timelapse' } })
+    );
+    expect($('map-day-prev').disabled).toBe(false);
+    expect($('season-scrubber').getAttribute('aria-valuetext')).toBe('day 2026-02-17');
+    expect($('map-day-empty').hidden).toBe(false);
+  });
+});
+
 describe('the empty-day notice', () => {
   it('is hidden on a day with a bulletin', async () => {
     await load();
