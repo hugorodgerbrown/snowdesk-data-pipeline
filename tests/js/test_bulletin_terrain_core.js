@@ -225,6 +225,40 @@ describe('the tile URL', () => {
   });
 });
 
+describe('the key swatches', () => {
+  // A CSS gradient's stripes run at right angles to its angle, with y down:
+  // 45deg stripes keep (x - y) constant ("\\"), 135deg keep (x + y) ("/").
+  const swatchAngle = (name) => {
+    const css = readFileSync('static/css/map.css', 'utf8');
+    const block = new RegExp(`\\.map-legend-swatch--${name}\\s*\\{[^}]*?repeating-linear-gradient\\(\\s*(\\d+)deg`).exec(css);
+    expect(block, name).not.toBeNull();
+    return Number(block[1]);
+  };
+  /** Which diagonal the painter strokes for a state: 'sum' or 'difference'. */
+  const painted = (state, cellAt) => {
+    const size = 256;
+    const src = new Uint8ClampedArray(size * size * 4);
+    for (let i = 0; i < src.length; i += 4) [src[i], src[i + 1], src[i + 2], src[i + 3]] = cellAt;
+    const out = new Uint8ClampedArray(src.length);
+    terrain.paintTile(src, out, () => state, core.PALETTE, { z: 13, x: 0, y: 0 });
+    const on = (px, py) => out[(py * size + px) * 4 + 3] > 0;
+    // (1, 0) and (0, 1) share x + y but not x - y; (1, 0) and (2, 1) the reverse.
+    if (on(1, 0) && on(0, 1) && !on(2, 1)) return 'sum';
+    if (on(1, 0) && on(2, 1) && !on(0, 1)) return 'difference';
+    return 'neither';
+  };
+  const stripes = (angle) => ({ 45: 'difference', 135: 'sum' })[angle];
+
+  it('draws no data and steep-not-described the way the map strokes them', () => {
+    // Hugo, 23 Oct: the key's two hatches were swapped against the map.
+    const steep = [2500 >> 8, 2500 & 255, (4 << 5) | 8, 255];
+    const nodata = [0, 0, 255, 255];
+    expect(stripes(swatchAngle('terrain-nodata'))).toBe(painted(core.STATE.NODATA, nodata));
+    expect(stripes(swatchAngle('terrain-undescribed'))).toBe(painted(core.STATE.UNDESCRIBED, steep));
+    expect(swatchAngle('terrain-nodata')).not.toBe(swatchAngle('terrain-undescribed'));
+  });
+});
+
 describe('palette', () => {
   it('matches the tokens src/css/main.css declares', () => {
     const css = readFileSync('src/css/main.css', 'utf8');
