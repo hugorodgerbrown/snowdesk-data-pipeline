@@ -605,7 +605,7 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         tokens=(
             Token(
                 "--color-bulletin-terrain-undescribed",
-                "Steep, not described (hatch)",
+                "Additional steep terrain, >30° (hatch)",
                 "#57534e",
                 None,
             ),

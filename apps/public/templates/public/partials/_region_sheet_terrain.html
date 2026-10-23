@@ -24,10 +24,11 @@ describes its problems, not a hazard map.
 ``window.pwaBulletinTerrain`` (map.js), shows the strip under it while it
 is on, and shows the zoom line while the map is too far out for the tiles.
 
-The key and its explainer sit in a native ``<details>``, CLOSED on every
-render (Hugo, 23 Oct): a reader needs them once, not on every bulletin, so
-they no longer push the bulletin down the sheet. The zoom line stays
-outside it because it is an instruction, not reference. The key and
+The strip under the switch is a native ``<details>``, CLOSED on every
+render (Hugo, 23 Oct): a reader needs the key once, not on every bulletin.
+Its summary IS the zoom line, so it adds no words of its own; zoomed in,
+the line's text is hidden and the summary is a bare chevron. Inside, one
+key row per line, then one sentence on what the highlight claims. The key and
 the zoom line render ``hidden`` so a body painted from the cache does not
 flash them before the script has read the switch's state.
 
@@ -40,27 +41,25 @@ Context (from apps.public.region_sheet.region_sheet_partial):
 <div class="rounded-tag bg-tag" data-testid="region-sheet-terrain">
     {% translate "Highlight problem terrain" as terrain_label %}
     {% include "includes/_map_overlay_toggle.html" with id="region-sheet-terrain-toggle" label=terrain_label %}
-    <div class="space-y-2 border-t border-border mx-3 pb-3 pt-2" data-region-sheet-terrain-key hidden>
-        <p class="text-xs font-medium text-text-1" data-region-sheet-terrain-zoom hidden>
-            {% translate "Zoom in on the map to see it." %}
-        </p>
-        <details class="group" data-testid="region-sheet-terrain-key-details">
-            <summary class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-text-2 hover:text-text-1">
-                {% translate "What the colours mean" %}
-                {% include "includes/_icon_chevron.html" with size=14 svg_class="transition-transform group-open:rotate-180" only %}
-            </summary>
-            <div class="mt-2 space-y-2">
-                <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-2">
-                    {% include "includes/_bulletin_terrain_key.html" with key=terrain_key %}
-                </div>
-                <p class="text-xs text-text-3">
-                    {% translate "Every region is painted by its own bulletin; the key is this one's. Ground of 30° and over inside a problem's aspects and heights: where the bulletin describes its problems, not every slope that can slide." %}
-                    <a
-                        href="{% url 'public:help' %}#help-topic-bulletin-terrain"
-                        class="underline"
-                    >{% translate "How to read it" %}</a>
-                </p>
+    <details class="group border-t border-border mx-3 py-2" data-region-sheet-terrain-key hidden>
+        <summary class="flex cursor-pointer select-none list-none items-center [&::-webkit-details-marker]:hidden gap-1 text-xs font-medium text-text-1">
+            <span data-region-sheet-terrain-zoom hidden>{% translate "Zoom in to see it" %}</span>
+            <span class="sr-only">{% translate "Key" %}</span>
+            <span class="ml-auto" aria-hidden="true">
+                {% include "includes/_icon_chevron.html" with size=16 svg_class="transition-transform group-open:rotate-180" only %}
+            </span>
+        </summary>
+        <div class="mt-2 space-y-2">
+            <div class="flex flex-col gap-1 text-xs text-text-2">
+                {% include "includes/_bulletin_terrain_key.html" with key=terrain_key %}
             </div>
-        </details>
-    </div>
+            <p class="text-xs text-text-3">
+                {% translate "Highlighted terrain is over 30° and matching the aspect and elevations described in the region's bulletin." %}
+                <a
+                    href="{% url 'public:help' %}#help-topic-bulletin-terrain"
+                    class="underline"
+                >{% translate "How to read it" %}</a>
+            </p>
+        </div>
+    </details>
 </div>

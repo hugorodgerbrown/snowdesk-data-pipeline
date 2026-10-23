@@ -400,7 +400,7 @@ class TestProblemTerrainSwitch:
         key = content[content.index("data-region-sheet-terrain-key") :]
         assert "map-legend-swatch--terrain-considerable" in key
         assert "Considerable problem" in _text(key)
-        assert "Steep, not described" in _text(key)
+        assert "Additional steep terrain (>30°)" in _text(key)
         # No undecided rule, so no undecided swatch.
         assert "map-legend-swatch--terrain-undecided" not in key
 
@@ -430,25 +430,25 @@ class TestProblemTerrainSwitch:
     def test_key_and_explainer_start_closed(
         self, client: Client, settings: Any
     ) -> None:
-        """Hugo, 23 Oct: read once, so folded away on every bulletin."""
+        """Hugo, 23 Oct: read once, so folded away; the zoom line opens it."""
         settings.TERRAIN_CLASS_TILE_URL = _TILES
         region = MicroRegionFactory.create()
         _rated_today(region)
         content = _get(client, _url(region.region_id.lower())).content.decode()
         details = re.search(
-            r'<details[^>]*data-testid="region-sheet-terrain-key-details"[^>]*>',
-            content,
+            r"<details[^>]*data-region-sheet-terrain-key[^>]*>", content
         )
         assert details is not None
         assert " open" not in details.group(0)
         body = content[details.end() :]
-        assert "What the colours mean" in body[: body.index("</summary>")]
-        # The swatches and the explainer are inside the fold; the zoom
-        # line, an instruction, is outside it.
-        inside = body[: body.index("</details>")]
+        summary = body[: body.index("</summary>")]
+        # The summary is the zoom line, with no label of its own.
+        assert "data-region-sheet-terrain-zoom" in summary
+        assert "What the colours mean" not in content
+        inside = body[body.index("</summary>") : body.index("</details>")]
         assert "map-legend-swatch--terrain-considerable" in inside
+        assert "Highlighted terrain is over 30°" in _text(inside)
         assert "How to read it" in inside
-        assert "data-region-sheet-terrain-zoom" not in inside
 
     def test_no_switch_while_the_terrain_tiles_are_unconfigured(
         self, client: Client, settings: Any
@@ -487,7 +487,7 @@ class TestProblemTerrainSwitch:
         assert 'data-testid="region-sheet-terrain"' in content
         key = content[content.index("data-region-sheet-terrain-key") :]
         assert "map-legend-swatch--terrain-considerable" not in key
-        assert "Steep, not described" in _text(key)
+        assert "Additional steep terrain (>30°)" in _text(key)
 
     def test_no_switch_on_a_day_without_a_bulletin(
         self, client: Client, settings: Any
