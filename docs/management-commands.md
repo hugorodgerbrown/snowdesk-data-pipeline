@@ -1090,6 +1090,12 @@ failed item exits non-zero. It refuses to run without `DATA_FEED_URL`,
 remote URL, or against its own site. It never deletes; a wholesale reset
 is still `bin/sync-staging-data` below.
 
+A dry run counts a location it would create as present for the weather and
+resorts after it, so its report matches what `--commit` would do
+(SNOW-1198). Each feed page's lookups are read in one query per kind of
+row (SNOW-1199). On staging it runs daily at 07:20 UTC as the
+`snowdesk-staging-data-pull` Render cron job (SNOW-1200).
+
 ### `bin/sync-staging-data` — refresh staging's data from production
 
 **Not a management command.** SNOW-729 shipped this as `sync_from_production`,

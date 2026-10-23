@@ -114,8 +114,9 @@ data whatsoever. It is run by hand: the `snowdesk-staging-data-sync` cron job
 that ran it nightly at 07:20 UTC was disabled on 2026-08-27 and its
 `render.yaml` block is commented out. Setup, the first full load, and skipped-row triage:
 [`runbooks/refresh-staging-from-production.md`](runbooks/refresh-staging-from-production.md).
-For a routine top-up, `pull_production_data --commit` pulls what changed
-from production's HTTPS data feed instead, idempotently and without
+Day to day, the `snowdesk-staging-data-pull` cron job runs
+`pull_production_data --commit` at 07:20 UTC (SNOW-1200), pulling what
+changed from production's HTTPS data feed, idempotently and without
 clearing anything ([`data-feed.md`](data-feed.md), SNOW-1197); the script
 stays as the wholesale reset. A manual `fetch_bulletins` run against
 staging still works, but is no longer the way staging gets its data. Because there is no `db_worker` to consume the

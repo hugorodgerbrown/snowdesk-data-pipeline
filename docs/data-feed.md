@@ -183,6 +183,23 @@ The command refuses to run when a setting is missing, when the URL is plain
 HTTP to a host other than localhost or 127.0.0.1, or when the URL points at
 its own `SITE_BASE_URL`.
 
+## Running daily (SNOW-1200)
+
+Staging has no scheduler, so the pull runs as its own Render cron job,
+`snowdesk-staging-data-pull` in [`render.yaml`](../render.yaml):
+`pull_production_data --commit` at 07:20 UTC, after production's 06:00
+`fetch_weather` and the morning bulletin issue. Each type resumes from its
+last successful `--commit` run, so a missed day is caught up by the next.
+The job reads the same three `DATA_FEED_*` variables as the web service,
+set on the job in the dashboard. Any failed item makes it exit non-zero,
+which Render shows as a failed run; the item and its error are in the log,
+and the run's counts are in the `CommandRun` register.
+
+A first dry run on an empty client reports what a commit would do: a
+location it would create counts as present for the weather and resorts
+after it (SNOW-1198). Each feed page's lookups are read in one query per
+kind of row, not one per item (SNOW-1199).
+
 ## What it does not do
 
 - **Delete.** A resort, location or bulletin removed on production stays on
@@ -191,4 +208,3 @@ its own `SITE_BASE_URL`.
   to reset staging wholesale.
 - **Copy anything derived.** Region links, day ratings and groupings are
   rebuilt on the client, never sent.
-- **Run on a schedule.** It is run by hand. Staging has no scheduler.

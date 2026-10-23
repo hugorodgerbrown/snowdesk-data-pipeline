@@ -144,6 +144,37 @@ projects:
                 sync: false
               - fromGroup: Staging
 
+          # Daily pull from production's data feed (SNOW-1200). Staging has no
+          # scheduler, so this cron job is what keeps its bulletins, weather and
+          # resort estate current. It is incremental and idempotent: each type
+          # resumes from its last successful --commit run, and an unchanged row
+          # is not written. It exits non-zero when any item fails, so a broken
+          # pull shows as a failed run in Render. 07:20 UTC, after production's
+          # 06:00 fetch_weather and the morning bulletin issue (schedule.py).
+          # The DATA_FEED_* values are the web service's, set in the dashboard.
+          - type: cronjob
+            name: snowdesk-staging-data-pull
+            runtime: python
+            repo: https://github.com/hugorodgerbrown/snowdesk-data-pipeline
+            plan: starter
+            region: frankfurt
+            branch: main
+            schedule: "20 7 * * *"
+            buildCommand: ./bin/build_headless.sh
+            startCommand: uv run --no-sync python manage.py pull_production_data --commit
+            envVars:
+              - key: DJANGO_SETTINGS_MODULE
+                value: config.settings.staging
+              - key: SNOWDESK_INVOKED_VIA
+                value: SCHEDULER
+              - key: DATA_FEED_URL
+                sync: false
+              - key: DATA_FEED_CLIENT_ID
+                sync: false
+              - key: DATA_FEED_CLIENT_SECRET
+                sync: false
+              - fromGroup: Staging
+
           # DISABLED 2026-08-27 — the refresh is run by hand for now. The service
           # definition is commented out rather than deleted; the rationale below it
           # still holds and is worth keeping for whenever it goes back on a
