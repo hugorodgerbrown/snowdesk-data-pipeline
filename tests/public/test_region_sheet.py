@@ -28,6 +28,7 @@ import re
 from typing import Any
 
 import pytest
+from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -207,6 +208,25 @@ class TestPeek:
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-rating"' not in content
         assert 'data-level="no_rating"' in content
+
+    def test_a_region_no_provider_rates_says_not_forecast(self, client: Client) -> None:
+        """SNOW-1196: its "–" must not read as a day without a bulletin."""
+        cache.clear()  # covered_region_ids() is cached across tests.
+        region = MicroRegionFactory.create()
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-not-forecast"' in content
+        assert "Not forecast" in content
+
+    def test_a_covered_region_on_an_unrated_day_does_not(self, client: Client) -> None:
+        cache.clear()
+        region = MicroRegionFactory.create()
+        RegionDayRatingFactory.create(
+            region=region,
+            date=timezone.localdate() - datetime.timedelta(days=3),
+            max_rating="low",
+        )
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="region-sheet-not-forecast"' not in content
 
 
 @pytest.mark.django_db

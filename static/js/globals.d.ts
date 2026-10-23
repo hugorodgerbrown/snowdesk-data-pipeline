@@ -122,6 +122,8 @@ interface Window {
   pwaBulletinTerrainCore: any;
   /** static/js/map_weather_core.js — WMO code to icon, cluster collapse. */
   pwaWeatherCore: any;
+  /** map.js — the weather payload's forecast window, for map_weather_window.js (SNOW-1196). */
+  pwaWeatherWindow: any;
   /** static/js/elevation_profile_core.js — route elevation profile maths. */
   pwaElevationProfileCore: any;
   /** static/js/route_markers_core.js — start/end marker placement. */

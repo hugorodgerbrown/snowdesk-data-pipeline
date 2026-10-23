@@ -421,6 +421,13 @@ describe('regions no provider has ever rated (SNOW-1185)', () => {
       && filter.some((term) => JSON.stringify(term) === JSON.stringify(SUPPORTED_ONLY));
   };
 
+  /** SNOW-1196: whether the dashed ring draws uncovered regions at all. */
+  const dashedRingShown = (mapStub) => {
+    const filter = JSON.stringify(mapStub.getFilter('regions-line-unsupported'));
+    return filter.includes(JSON.stringify(['==', ['get', 'covered'], false]))
+      && !filter.includes(JSON.stringify(['==', ['literal', 1], ['literal', 0]]));
+  };
+
   it('leaves them off the micro-region layers by default', async () => {
     const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
 
@@ -429,6 +436,7 @@ describe('regions no provider has ever rated (SNOW-1185)', () => {
     }
     // Nor does a region selected by search or hash keep its ring.
     expect(ringDropsUnsupported(mapStub)).toBe(true);
+    expect(dashedRingShown(mapStub)).toBe(false);
     // The coarser tiers are unions of micro regions, so they are left alone.
     expect(dropsUnsupported(mapStub, 'sub-regions-line')).toBe(false);
     // And the country filter is still the last term, where it always was.
@@ -440,9 +448,13 @@ describe('regions no provider has ever rated (SNOW-1185)', () => {
     const mapStub = await boot({ providers: 'country.ch', countries: 'ch fr at it' });
 
     window.pwaUnsupportedRegions.show();
-    for (const layerId of MICRO_LAYERS) {
+    // SNOW-1196: the solid ring stays covered-only; the dashed ring below
+    // draws the unsupported regions instead.
+    for (const layerId of ['regions-fill', 'regions-label']) {
       expect(dropsUnsupported(mapStub, layerId)).toBe(false);
     }
+    expect(dropsUnsupported(mapStub, 'regions-line')).toBe(true);
+    expect(dashedRingShown(mapStub)).toBe(true);
     expect(localStorage.getItem('snowdesk.map.overlay.unsupported')).toBe('true');
     expect(window.pwaUnsupportedRegions.isEnabled()).toBe(true);
     expect(mapStub.getFilter('regions-line-selected')).toBe(null);
@@ -451,6 +463,7 @@ describe('regions no provider has ever rated (SNOW-1185)', () => {
     for (const layerId of MICRO_LAYERS) {
       expect(dropsUnsupported(mapStub, layerId)).toBe(true);
     }
+    expect(dashedRingShown(mapStub)).toBe(false);
     expect(ringDropsUnsupported(mapStub)).toBe(true);
     expect(localStorage.getItem('snowdesk.map.overlay.unsupported')).toBe('false');
   });

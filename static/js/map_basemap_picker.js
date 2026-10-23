@@ -373,7 +373,9 @@
     // SNOW-658: only one overlay is open over the map at a time. Announced
     // before the menu is unhidden, so whatever it replaces is gone by the
     // time this is on screen.
-    if (open) window.pwaMapOverlays?.opening(MENU_OVERLAY_NAME);
+    // SNOW-1196: on a desktop the menu opens at the right, clear of the
+    // left-column sheet, so it leaves that sheet open there.
+    if (open) window.pwaMapOverlays?.opening(MENU_OVERLAY_NAME, { spareObjectSheets: 'wide' });
     pill.dataset.state = open ? 'expanded' : 'collapsed';
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     menu.hidden = !open;
@@ -625,6 +627,12 @@
             // overlay-load above, which does the same on its way out.
             if (overlayKey === 'resorts') {
               document.dispatchEvent(new CustomEvent('snowdesk:resorts-hidden'));
+            }
+            // SNOW-1196: map_weather_window.js drops its "Forecast only" line
+            // when the layer goes off. Enabling announces from map.js's
+            // overlay-load listener instead.
+            if (overlayKey === 'weather') {
+              document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
             }
           }
           // SNOW-499's snowdesk:favourites-visibility-changed dispatch stood

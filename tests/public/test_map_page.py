@@ -549,6 +549,55 @@ def test_the_empty_day_notice_ships_hidden_with_its_strings() -> None:
 
 
 @pytest.mark.django_db
+def test_the_weather_row_and_notice_ship_hidden_with_their_strings() -> None:
+    """SNOW-1196: "Forecast only" waits for map_weather_window.js to judge the day.
+
+    The row's detail line sits inside the weather row; the map's one-time
+    line sits with the empty-day notice and has a dismiss. The module loads
+    after map.js, which publishes the window it reads.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    summary = content.index("data-weather-window-summary")
+    tag = content[content.rindex("<span", 0, summary) : content.index(">", summary)]
+    assert "hidden" in tag
+    start = content.index('id="map-weather-window"')
+    tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
+    assert "hidden" in tag
+    assert 'role="status"' in tag
+    assert "data-weather-window-close" in content
+    assert '<template id="map-weather-window-strings-template">' in content
+    for key in ("forecast-only", "weather-on-map"):
+        assert f'data-string="{key}"' in content
+    assert content.index("/static/js/map.js") < content.index(
+        "/static/js/map_weather_window.js"
+    )
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_the_problem_terrain_chip_ships_hidden_with_key_and_off() -> None:
+    """SNOW-1196: the chip names the layer while it paints; hidden until then."""
+    content = Client().get(reverse("public:map")).content.decode()
+    start = content.index('id="map-terrain-chip"')
+    tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
+    assert "hidden" in tag
+    assert "data-terrain-chip-key" in content
+    assert "data-terrain-chip-off" in content
+    assert '<template id="map-terrain-chip-strings-template">' in content
+    assert content.index("/static/js/map.js") < content.index(
+        "/static/js/map_terrain_chip.js"
+    )
+
+
+@pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL="")
+def test_no_problem_terrain_chip_without_the_terrain_filter() -> None:
+    """SNOW-1196: no class tiles, no layer, so nothing for a chip to name."""
+    content = Client().get(reverse("public:map")).content.decode()
+    assert 'id="map-terrain-chip"' not in content
+
+
+@pytest.mark.django_db
 def test_the_season_scrubber_takes_keyboard_focus() -> None:
     """SNOW-1195: role="slider" needs a tab stop for its keys to reach it."""
     content = Client().get(reverse("public:map")).content.decode()

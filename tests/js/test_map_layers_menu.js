@@ -560,3 +560,22 @@ describe('the bulletin opacity row', () => {
     expect(document.getElementById('basemap-menu').hidden).toBe(false);
   });
 });
+
+// SNOW-1196: map_weather_window.js keeps "Forecast only" on the weather row
+// while the layer is on. The off path hides the layers directly, with no
+// bridge to announce it, so the picker has to.
+describe('the weather row', () => {
+  it('announces the layer going off', async () => {
+    globalThis.MAP = { getLayer: () => null, setLayoutProperty: vi.fn() };
+    globalThis.OVERLAY_LAYERS = { weather: ['weather-symbols'] };
+    const announced = vi.fn();
+    document.addEventListener('snowdesk:overlay-visibility-changed', announced);
+    await loadPicker();
+
+    rowFor('weather').click();
+    expect(announced).not.toHaveBeenCalled();
+    rowFor('weather').click();
+    expect(announced).toHaveBeenCalledTimes(1);
+    document.removeEventListener('snowdesk:overlay-visibility-changed', announced);
+  });
+});

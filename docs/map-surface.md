@@ -148,6 +148,10 @@ one.
   `snowdesk:date-changed`, where it used to shut it and cost a re-tap.
   The date row's ‹ › steps and the scrubber's keys (`map_day_nav.js`) open
   nothing, so they never closed a sheet.
+  The legend card and the layers menu pass `spareObjectSheets: 'wide'`
+  (SNOW-1196): from 768 px they open on the right, beside the left-column
+  sheet, so they leave it open; below that the 25rem sheet and the flyout
+  would overlap, so they close it as before.
 - **One object sheet at a time** (`static/js/map_sheet.js`,
   `closeOtherSheets`). On a phone every detent sheet docks to the same foot
   of the screen, and on a desktop all four dock in the left column under
