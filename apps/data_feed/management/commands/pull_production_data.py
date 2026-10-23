@@ -225,10 +225,28 @@ def walk(
     return total, results()
 
 
+def _readable(feed: str, item: dict[str, Any], planned: set[str]) -> bool:
+    """Return whether ``item``'s own lookups can be read without raising."""
+    try:
+        lookups_for(feed, [item], planned=planned)
+    except Exception:
+        # Broad on purpose: this only sorts a failed page's items into
+        # those that can share lookups and those that fail on their own.
+        return False
+    return True
+
+
 def with_lookups(
     feed: str, pages: Iterator[list[dict[str, Any]]], *, planned: set[str]
-) -> Iterator[tuple[dict[str, Any], PageLookups]]:
+) -> Iterator[tuple[dict[str, Any], PageLookups | None]]:
     """Yield each item with its page's lookups, read once a page (SNOW-1199).
+
+    A page whose lookups cannot be read is not allowed to stop the run.
+    Its items that read cleanly on their own still share one set of
+    lookups, so a dry run's simulated changes carry from item to item as
+    a commit's would; an item that cannot is yielded with None, and reads
+    its own inside ``Command._apply``, where the failure counts against it
+    alone.
 
     Args:
         feed: The feed's name.
@@ -236,13 +254,40 @@ def with_lookups(
         planned: The run's locations a dry run would create (SNOW-1198).
 
     Yields:
-        ``(item, lookups)``.
+        ``(item, lookups)``, lookups None for an item whose own lookups
+        cannot be read.
 
     """
     for page in pages:
-        lookups = lookups_for(feed, page, planned=planned)
+        try:
+            shared = lookups_for(feed, page, planned=planned)
+        except Exception:
+            # Broad on purpose, as in _apply: a malformed item must cost
+            # only itself.
+            logger.exception(
+                "%s: %s page lookups failed; isolating the bad item(s)",
+                COMMAND_NAME,
+                feed,
+            )
+            good = [item for item in page if _readable(feed, item, planned)]
+            good_ids = {id(item) for item in good}
+            recovered: PageLookups | None
+            try:
+                recovered = lookups_for(feed, good, planned=planned)
+            except Exception:
+                # Each item reads cleanly alone but not together: last
+                # resort, every item reads its own.
+                logger.exception(
+                    "%s: %s page lookups failed again; reading per item",
+                    COMMAND_NAME,
+                    feed,
+                )
+                recovered = None
+            for item in page:
+                yield item, recovered if id(item) in good_ids else None
+            continue
         for item in page:
-            yield item, lookups
+            yield item, shared
 
 
 class Command(RegisteredCommand):
@@ -437,7 +482,12 @@ class Command(RegisteredCommand):
                 describe=lambda pair: describe(pair[0]),
             ):
                 outcome = self._apply(
-                    feed, item, commit=commit, run=run, lookups=lookups
+                    feed,
+                    item,
+                    commit=commit,
+                    run=run,
+                    lookups=lookups,
+                    planned=planned,
                 )
                 counts[outcome] += 1
         except FeedError as exc:
@@ -471,7 +521,8 @@ class Command(RegisteredCommand):
         *,
         commit: bool,
         run: PipelineRun | None,
-        lookups: PageLookups,
+        lookups: PageLookups | None,
+        planned: set[str],
     ) -> Outcome:
         """Apply one item, turning any failure into ``Outcome.FAILED``.
 
@@ -484,13 +535,15 @@ class Command(RegisteredCommand):
             item: The item.
             commit: Write; otherwise only decide.
             run: The bulletins ``PipelineRun``, when committing bulletins.
-            lookups: The item's page's lookups.
+            lookups: The item's page's lookups; None to read the item's own.
+            planned: The run's locations a dry run would create.
 
         Returns:
             The outcome.
 
         """
         try:
+            lookups = lookups or lookups_for(feed, [item], planned=planned)
             if feed == "locations":
                 return apply_location(item, commit=commit, lookups=lookups)
             if feed == "resorts":

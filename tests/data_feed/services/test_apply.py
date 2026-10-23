@@ -454,3 +454,49 @@ class TestPageLookups:
         assert apply_location(item_a, commit=True, lookups=lookups) is Outcome.UNCHANGED
         region.refresh_from_db()
         assert region.centroid_location == b
+
+
+@pytest.mark.django_db
+class TestPageLookupsAreBounded:
+    """Codex review on SNOW-1199: what a page's lookups may and may not load."""
+
+    def test_weather_loads_only_the_pages_own_pairs(self) -> None:
+        """Two locations by two days: a page asking for two pairs gets two rows."""
+        a, b = LocationFactory.create(), LocationFactory.create()
+        one, two = dt.date(2026, 10, 1), dt.date(2026, 10, 2)
+        rows = {
+            (loc, day): WeatherFactory.create(location=loc, observed_on=day)
+            for loc in (a, b)
+            for day in (one, two)
+        }
+        page = [
+            feeds.serialise_weather(rows[(a, one)]),
+            feeds.serialise_weather(rows[(b, two)]),
+        ]
+        assert set(lookups_for("weather", page).weather) == {
+            (a.pk, one),
+            (b.pk, two),
+        }
+
+    def test_a_malformed_uuid_fails_only_its_own_item(self) -> None:
+        """Reading the page does not raise; the bad item fails when applied."""
+        good = feeds.serialise_weather(WeatherFactory.create())
+        bad = good | {"location": "not-a-uuid"}
+        lookups = lookups_for("weather", [bad, good])
+        assert apply_weather(good, commit=False, lookups=lookups) is Outcome.UNCHANGED
+        with pytest.raises(ApplyError, match="pull locations first"):
+            apply_weather(bad, commit=False, lookups=lookups)
+
+
+@pytest.mark.django_db
+def test_an_invalid_location_uuid_is_refused_before_it_is_planned() -> None:
+    """A dry run fails it as a commit would, and plans nothing (Codex review)."""
+    item = _location_item() | {"uuid": "not-a-uuid"}
+    planned: set[str] = set()
+    with pytest.raises(ApplyError, match="not a uuid"):
+        apply_location(
+            item,
+            commit=False,
+            lookups=lookups_for("locations", [item], planned=planned),
+        )
+    assert planned == set()

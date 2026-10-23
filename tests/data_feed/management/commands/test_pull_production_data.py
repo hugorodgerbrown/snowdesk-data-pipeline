@@ -32,6 +32,7 @@ from oauth2_provider.models import Application
 from apps.bulletins.models import Bulletin, RegionBulletin
 from apps.bulletins.services.slf_fetcher import upsert_bulletin
 from apps.core.models import CommandRun
+from apps.data_feed import feeds
 from apps.data_feed.management.commands import pull_production_data as command
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import MicroRegion, Pass, Resort
@@ -328,6 +329,78 @@ def test_a_failed_item_fails_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
     run = CommandRun.objects.for_command("pull_production_data").get()
     assert run.status == CommandRun.STATUS.PARTIAL
     assert run.counts["weather_failed"] == 1
+
+
+@pytest.mark.django_db
+@override_settings(**FEED_SETTINGS)
+def test_a_page_whose_lookups_fail_is_applied_item_by_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A page lookup that raises costs nothing but the bad item (Codex review)."""
+    location = LocationFactory.create()
+    good = feeds.serialise_weather(
+        WeatherFactory.build(location=location, observed_on=dt.date(2026, 10, 1))
+    )
+    capture: dict[tuple[str, str | None], dict] = {
+        ("/api/data/v1/weather/", None): {
+            "results": [good | {"location": "not-a-uuid"}, good],
+            "next_cursor": None,
+            "count": 2,
+        }
+    }
+    monkeypatch.setattr(
+        "apps.data_feed.client.requests.Session", lambda: _ReplaySession(capture)
+    )
+    real = command.lookups_for
+
+    def fail_on_pages(feed: str, items: list, **kwargs: Any) -> Any:
+        """Refuse a page of more than one item; serve single items."""
+        if len(items) > 1:
+            raise RuntimeError("page lookups broke")
+        return real(feed, items, **kwargs)
+
+    monkeypatch.setattr(command, "lookups_for", fail_on_pages)
+    with pytest.raises(CommandError, match="1 failed item"):
+        _run("--type", "weather", "--commit")
+    assert _counts()["weather_created"] == 1
+    assert Weather.objects.filter(location=location).exists()
+
+
+@pytest.mark.django_db
+@override_settings(**FEED_SETTINGS)
+def test_a_failed_page_keeps_its_good_items_lookups_shared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dry run's changes still carry across a page with a bad item (Codex review).
+
+    B claims A's region, then A is read. With shared lookups A sees the
+    claim and is unchanged, exactly as a commit would leave it.
+    """
+    a, b = LocationFactory.create(), LocationFactory.create()
+    region = MicroRegionFactory.create(centroid_location=a)
+    item_b = feeds.serialise_location(b) | {"centroid_of": [region.region_id]}
+    item_a = feeds.serialise_location(a) | {"centroid_of": []}
+    no_uuid = {k: v for k, v in item_a.items() if k != "uuid"}
+    capture: dict[tuple[str, str | None], dict] = {
+        (f"/api/data/v1/{feed}/", None): {"results": [], "next_cursor": None}
+        for feed in ("resorts",)
+    } | {
+        ("/api/data/v1/locations/", None): {
+            "results": [item_b, no_uuid, item_a],
+            "next_cursor": None,
+            "count": 3,
+        }
+    }
+    monkeypatch.setattr(
+        "apps.data_feed.client.requests.Session", lambda: _ReplaySession(capture)
+    )
+    with pytest.raises(CommandError, match="1 failed item"):
+        _run("--type", "resorts")
+    counts = _counts()
+    assert counts["locations_updated"] == 1
+    assert counts["locations_unchanged"] == 1
+    region.refresh_from_db()
+    assert region.centroid_location == a  # a dry run
 
 
 @pytest.mark.django_db
