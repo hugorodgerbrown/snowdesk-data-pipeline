@@ -46,7 +46,8 @@ idempotent and replays each bulletin through its own `upsert_bulletin`.
 **Consequences.**
 
 - A client-credentials token has no user. The token endpoint issues one
-  only to a service client (`apps.oauth.validators`), because open DCR
+  only to a service client (mcp-auth since v0.1.8; Snowdesk's own validator
+  until then), because open DCR
   would otherwise hand one to anyone. The MCP endpoints already refused a
   userless token (mcp-auth's `can_connect`), so they are unaffected.
 - The feed never deletes anything on the client. Removals reach staging

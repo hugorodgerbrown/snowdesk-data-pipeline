@@ -1594,10 +1594,6 @@ logging.captureWarnings(True)
 OAUTH2_PROVIDER = oauth2_settings(
     resource_name="Snowdesk",
     scope_description="Read avalanche bulletins, danger ratings and resorts as you",
-    # Snowdesk's validator is mcp-auth's plus one rule: the client-credentials
-    # grant goes only to a service client a member of staff created in the
-    # admin, never to an openly registered one (SNOW-1197, apps/oauth/validators.py).
-    OAUTH2_VALIDATOR_CLASS="apps.oauth.validators.Validator",
 )
 # The data feed's scope (SNOW-1197). Held only by the client-credentials
 # tokens of service clients — apps.data_feed.auth refuses it on any other
