@@ -427,6 +427,29 @@ class TestProblemTerrainSwitch:
         assert re.search(r"data-region-sheet-terrain-key\s+hidden", content)
         assert re.search(r"data-region-sheet-terrain-zoom\s+hidden", content)
 
+    def test_key_and_explainer_start_closed(
+        self, client: Client, settings: Any
+    ) -> None:
+        """Hugo, 23 Oct: read once, so folded away on every bulletin."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        details = re.search(
+            r'<details[^>]*data-testid="region-sheet-terrain-key-details"[^>]*>',
+            content,
+        )
+        assert details is not None
+        assert " open" not in details.group(0)
+        body = content[details.end() :]
+        assert "What the colours mean" in body[: body.index("</summary>")]
+        # The swatches and the explainer are inside the fold; the zoom
+        # line, an instruction, is outside it.
+        inside = body[: body.index("</details>")]
+        assert "map-legend-swatch--terrain-considerable" in inside
+        assert "How to read it" in inside
+        assert "data-region-sheet-terrain-zoom" not in inside
+
     def test_no_switch_while_the_terrain_tiles_are_unconfigured(
         self, client: Client, settings: Any
     ) -> None:

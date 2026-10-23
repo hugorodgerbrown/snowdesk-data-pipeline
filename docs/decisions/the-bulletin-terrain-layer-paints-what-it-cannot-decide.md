@@ -74,6 +74,12 @@ orange; below z12 nothing paints and the choropleth shows as ever.
   alone let the layer draw there, over a choropleth that only drops out
   from z12 (Hugo, 23 Oct: both showed at z11). The layer carries
   `minzoom: 12` too.
+- **The region sheet's key is folded away.** Under the switch, the key and
+  its explainer sit in a `<details>` ("What the colours mean") that renders
+  closed on every bulletin (Hugo, 23 Oct: a reader needs them once). The
+  zoom line stays outside the fold, because it tells the reader what to do.
+  The map legend's "Problem terrain" section is unchanged, because the
+  reader opens it on purpose.
 - Clipping is a pure even-odd scanline fill in Web Mercator
   (`regionMask`), not a canvas `Path2D`, so it is tested in jsdom. A tile
   can straddle several regions with different bulletins, so
