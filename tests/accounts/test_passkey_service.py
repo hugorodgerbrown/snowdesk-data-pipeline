@@ -204,10 +204,8 @@ class TestVerifyAndSaveRegistration:
             "apps.accounts.services.passkey.webauthn.verify_registration_response",
             side_effect=ValueError("bad"),
         ):
-            try:
+            with pytest.raises(PasskeyError):
                 verify_and_save_registration("{}", session, user)
-            except PasskeyError:
-                pass
         assert "webauthn_reg_challenge" not in session
 
     def test_duplicate_credential_raises(self) -> None:
@@ -393,10 +391,8 @@ class TestVerifyAuthenticationResponse:
             "apps.accounts.services.passkey.webauthn.verify_authentication_response",
             side_effect=ValueError("bad"),
         ):
-            try:
+            with pytest.raises(PasskeyError):
                 verify_authentication_response(credential_json, session)
-            except PasskeyError:
-                pass
         assert "webauthn_auth_challenge" not in session
 
 

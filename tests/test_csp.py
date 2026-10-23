@@ -247,7 +247,10 @@ def test_csp_defaults_take_no_slope_origin() -> None:
     there, so it must fail loudly rather than be ignored.
     """
     with pytest.raises(TypeError):
-        csp_defaults("https://tiles.example.test", slope_origin="https://x.test")  # type: ignore[call-arg]
+        # Passed as a mapping so the stale keyword reaches the call at run
+        # time without the call site itself reading as a mistake.
+        stale: dict[str, str] = {"slope_origin": "https://x.test"}
+        csp_defaults("https://tiles.example.test", **stale)
 
 
 @pytest.mark.django_db

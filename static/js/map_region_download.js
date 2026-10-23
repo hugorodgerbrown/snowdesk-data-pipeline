@@ -108,8 +108,6 @@
   const btn = document.getElementById('map-download-control');
   if (!btn) return;
 
-  const ribbonEl = document.getElementById('season-ribbon');
-
   // SNOW-749: the sign-in gate's configuration, read off
   // #map-custom-download-control — the downloads roundel in the
   // bottom-right stack, NOT this control's own button. The two controls

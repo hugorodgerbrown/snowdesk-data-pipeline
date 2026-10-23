@@ -1573,7 +1573,7 @@ def _aria_label(
         try:
             parts.append(datetime.date.fromisoformat(date[:10]).strftime("%A %-d %B"))
         except ValueError:
-            pass
+            pass  # An unparseable date leaves the day out of the label.
     parts.append(f"{min(temps):.0f} to {max(temps):.0f} degrees")
     if wet["present"]:
         total = sum(v for v in snow if v)

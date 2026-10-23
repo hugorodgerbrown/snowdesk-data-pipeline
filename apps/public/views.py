@@ -257,18 +257,6 @@ BULLETIN_SOURCE_LINKS: dict[str, tuple[str, str]] = {
     ),
 }
 
-# Mapping from SLF danger codes to EAWS icons
-_DANGER_PROBLEM_TYPE_ICONS = {
-    "no_distinct_avalanche_problem": "Icon-Avalanche-Problem-No-Distinct"
-    "-Avalanche-Problem-EAWS",
-    "new_snow": "Icon-Avalanche-Problem-New-Snow-Grey-EAWS",
-    "persistent_weak_layers": "Icon-Avalanche-Problem-Persistent-Weak-Layer-Grey-EAWS",
-    "wind_slab": "Icon-Avalanche-Problem-Wind-Slab-Grey-EAWS",
-    "wet_snow": "Icon-Avalanche-Problem-Wet-Snow-Grey-EAWS",
-    "gliding_snow": "Icon-Avalanche-Problem-Gliding-Snow-Grey-EAWS",
-    "cornices": "Icon-Avalanche-Problem-Cornices.svg",
-}
-
 
 def _get_properties(bulletin: Bulletin) -> dict[str, Any]:
     """
@@ -3113,12 +3101,6 @@ def _bulletin_page_etag(
         f'-{settings.RELEASE_VERSION}"'
     )
 
-
-# Order in which day-window rows appear on the masthead's day-windows
-# panel. CAAML's ``validTimePeriod`` doesn't impose an ordering; the design
-# handoff fixes this as chronological-with-all-day-in-the-middle so rare
-# three-window days (earlier + all_day + later) read top-to-bottom.
-_DAY_WINDOW_ORDER: tuple[str, ...] = ("earlier", "all_day", "later")
 
 # Pill copy for each window type — see design_handoff_day_windows/README.md.
 # Wrapped in ``gettext_lazy`` so the strings stay translatable for any
@@ -5968,24 +5950,6 @@ _DANGER_ORDER: tuple[str, ...] = (
     "very_high",
 )
 
-# Kind derivation for grouping avalanche problems into rating-block cards.
-_KIND_MAP: dict[str, str] = {
-    "new_snow": "dry",
-    "wind_slab": "dry",
-    "persistent_weak_layers": "dry",
-    "cornices": "dry",
-    "no_distinct_avalanche_problem": "dry",
-    "favourable_situation": "dry",
-    "wet_snow": "wet",
-    "gliding_snow": "gliding",
-}
-_KIND_ORDER: dict[str, int] = {"dry": 0, "wet": 1, "gliding": 2}
-_KIND_TITLES: dict[str, Any] = {
-    "dry": _("Dry avalanches"),
-    "wet": _("Wet-snow avalanches"),
-    "gliding": _("Gliding avalanches"),
-}
-_KIND_CATEGORY: dict[str, str] = {"dry": "dry", "wet": "wet", "gliding": "wet"}
 _DANGER_RATING_INT: dict[str, int] = {
     "low": 1,
     "moderate": 2,

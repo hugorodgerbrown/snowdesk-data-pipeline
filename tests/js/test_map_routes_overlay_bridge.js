@@ -77,27 +77,6 @@ const ROUTES_GEOJSON = {
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
-/*
- * The same route once the slope sampler has reached it: one angle per pair
- * of consecutive points, which is what `segmentFeatures` needs to emit a
- * slope-class segment.
- */
-const SAMPLED_ROUTES_GEOJSON = {
-  type: 'FeatureCollection',
-  features: [
-    {
-      ...ROUTES_GEOJSON.features[0],
-      properties: {
-        ...ROUTES_GEOJSON.features[0].properties,
-        slope: {
-          points: [[7.5, 46.1], [7.52, 46.12], [7.54, 46.14]],
-          angles: [31, 36],
-        },
-      },
-    },
-  ],
-};
-
 // What the stubbed fetch answers for the routes feed. A test that swaps it
 // restores it before it ends.
 let routesBody = ROUTES_GEOJSON;

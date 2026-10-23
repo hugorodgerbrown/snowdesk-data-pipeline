@@ -1059,23 +1059,6 @@
     return urls;
   }
 
-  /**
-   * How many shell-cache entries of each kind are held.
-   *
-   * @param {AuditReadings} r
-   * @returns {Record<string, number>}
-   */
-  function fileCounts(r) {
-    var counts = { script: 0, style: 0, font: 0, image: 0, feed: 0, other: 0 };
-    (Array.isArray(r.shellEntries) ? r.shellEntries : []).forEach(function (entry) {
-      if (!entry || entry.isPage) return;
-      var kind = classifyEntry(entry.url);
-      if (kind === 'page') return;
-      counts[kind] = (counts[kind] || 0) + 1;
-    });
-    return counts;
-  }
-
   // SNOW-914: the two feeds the map's COLD OPEN asks for, exactly as
   // map.js builds them:
   //

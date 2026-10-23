@@ -857,7 +857,7 @@ class Command(RegisteredCommand):
                 if not commit:
                     raise _Rollback()
         except _Rollback:
-            pass
+            pass  # The dry run's deliberate rollback; counts are still reported.
         except IntegrityError as exc:
             raise CommandError(
                 "Seeding hit a uniqueness constraint. seed_test_data expects an "

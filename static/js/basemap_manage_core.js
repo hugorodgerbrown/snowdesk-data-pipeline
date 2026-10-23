@@ -415,7 +415,7 @@
         // the download control, so the affordance is withheld rather than
         // rendered dead.
         redownloadable:
-          !isBase && !onDevice && (isCustom ? Array.isArray(area.bbox) : !!area.regionId),
+          !onDevice && (isCustom ? Array.isArray(area.bbox) : !!area.regionId),
         bbox: Array.isArray(area.bbox) ? area.bbox : null,
         regionId: area.regionId || '',
         // SNOW-844: the render dependencies this area recorded, carried

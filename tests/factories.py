@@ -217,7 +217,7 @@ class ResortFactory(factory.django.DjangoModelFactory[Resort]):
     notes = ""
     latitude = None
     longitude = None
-    location = factory.LazyAttribute(lambda resort: _resort_pin_location(resort))
+    location = factory.LazyAttribute(_resort_pin_location)
     geocode_source = ""
     geocode_confidence = None
     geocoded_at = None
