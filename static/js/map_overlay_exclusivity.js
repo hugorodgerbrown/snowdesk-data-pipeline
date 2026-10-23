@@ -75,6 +75,11 @@
  * control, cost a fresh tap on the region. A surface that does not pass the
  * option closes object sheets exactly as before.
  *
+ * ``spareObjectSheets: 'wide'`` (SNOW-1196) spares them only at the ``sm``
+ * breakpoint and up, where an object sheet docks in the left column and the
+ * layers menu and legend card open beside it rather than over it. On a phone
+ * both would cover the sheet, so there they still close it.
+ *
  * ``close()`` is only called on a surface that reports itself open, so a
  * controller's close path never runs for a surface already closed — the
  * sheets' own teardown (map_sheet.js) empties the sheet body, which is
@@ -88,6 +93,10 @@
 
 (function mapOverlayExclusivityInit() {
   'use strict';
+
+  // SNOW-1196: the breakpoint at which an object sheet docks in the left
+  // column (map.css), matching map_calendar.js's phone query from the far side.
+  var WIDE_QUERY = '(min-width: 640px)';
 
   /**
    * The registered overlays, by name.
@@ -120,12 +129,27 @@
    * closed by anyone else.
    *
    * @param {string} name The overlay doing the opening.
-   * @param {{ spareObjectSheets?: boolean }} [options]
-   *   ``spareObjectSheets`` — leave every object sheet open.
+   * @param {{ spareObjectSheets?: boolean | 'wide' }} [options]
+   *   ``spareObjectSheets`` — leave every object sheet open; ``'wide'``
+   *   only at the ``sm`` breakpoint and up.
    * @returns {void}
    */
+  /**
+   * Whether an ``opening`` call leaves the object sheets open.
+   *
+   * @param {{ spareObjectSheets?: boolean | 'wide' }} [options]
+   * @returns {boolean}
+   */
+  function sparesObjectSheets(options) {
+    var spare = options && options.spareObjectSheets;
+    if (spare === 'wide') {
+      return typeof window.matchMedia === 'function' && window.matchMedia(WIDE_QUERY).matches;
+    }
+    return !!spare;
+  }
+
   function opening(name, options) {
-    var spare = !!(options && options.spareObjectSheets);
+    var spare = sparesObjectSheets(options);
     overlays.forEach(function (controller, registered) {
       if (registered === name) return;
       if (spare && controller.objectSheet) return;

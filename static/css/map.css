@@ -1727,8 +1727,9 @@ html:has(> body.map-fullscreen) > body {
    `:has()` rather than a flag a script keeps: the sheet's own `hidden` is
    the one thing that knows it is open, so nothing can fall out of step.
    The legend card and the calendar open over the map from this stack, and
-   each closes the sheet as it opens (map_overlay_exclusivity.js), so
-   neither is ever beside an open one. */
+   since SNOW-1195/1196 both leave the sheet open, so each opens beside it:
+   the legend card rides the step aside below, and the calendar hangs from
+   the date row, right of the column. */
 @media (min-width: 640px) {
     .map-legend > :not(#map-date-row) {
         transition: transform 150ms ease;
@@ -2106,6 +2107,37 @@ html:has(> body.map-fullscreen) > body {
 .map-day-empty[hidden],
 .map-day-empty-jump[hidden] {
     display: none;
+}
+
+/* SNOW-1196: the weather notice wears the empty-day notice's pill (it
+   carries that class) with a bare × for its press. */
+.map-weather-window-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(var(--map-control-sm) - 8px);
+    height: calc(var(--map-control-sm) - 8px);
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-text-2);
+    cursor: pointer;
+}
+
+/* SNOW-1196: the problem-terrain chip's swatch — the layer's own ramp in
+   one square, so the chip reads as that layer before its words do. */
+.map-terrain-chip-swatch {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: linear-gradient(
+        135deg,
+        var(--color-eaws-moderate) 0 33%,
+        var(--color-eaws-considerable) 33% 66%,
+        var(--color-eaws-high) 66% 100%
+    );
 }
 
 .map-day-empty-jump {
@@ -5705,6 +5737,16 @@ body.map-framing #map-legend {
 
     .map-utility-cluster > .map-day-empty > .map-day-empty-jump {
         height: calc(var(--map-control-lg) - 10px);
+    }
+
+    /* SNOW-1196: the weather notice hangs under the empty-day one when
+       both are up — a past day off season is usually both. */
+    .map-utility-cluster > .map-day-empty:not([hidden]) ~ .map-day-empty {
+        top: calc(2 * (var(--map-control-lg) + 8px));
+    }
+
+    .map-utility-cluster > .map-day-empty:not([hidden]) ~ .map-day-empty:not([hidden]) ~ .map-day-empty {
+        top: calc(3 * (var(--map-control-lg) + 8px));
     }
 
     .search-results {

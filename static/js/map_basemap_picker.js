@@ -373,7 +373,9 @@
     // SNOW-658: only one overlay is open over the map at a time. Announced
     // before the menu is unhidden, so whatever it replaces is gone by the
     // time this is on screen.
-    if (open) window.pwaMapOverlays?.opening(MENU_OVERLAY_NAME);
+    // SNOW-1196: on a desktop the menu opens at the right, clear of the
+    // left-column sheet, so it leaves that sheet open there.
+    if (open) window.pwaMapOverlays?.opening(MENU_OVERLAY_NAME, { spareObjectSheets: 'wide' });
     pill.dataset.state = open ? 'expanded' : 'collapsed';
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     menu.hidden = !open;

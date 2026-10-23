@@ -27,6 +27,7 @@ Context:
   day_rating   — RegionDayRating for the day, or None.
   target_date  — The day the map is showing (absent when blank).
   another_day  — Whether that day is not today.
+  covered      — Whether any provider ever rates this region (SNOW-1196).
   blank        — True for the template copy.
 {% endcomment %}
 <div data-sheet-peek data-sheet-drag>
@@ -51,6 +52,13 @@ Context:
             >
                 {{ region.name }}
             </h2>
+            {# SNOW-1196: a region no provider rates says so in the peek, so its #}
+            {# "–" does not read as a day without a bulletin.                   #}
+            {% if not blank and covered is False %}
+                <p class="text-sm text-text-3" data-testid="region-sheet-not-forecast">
+                    {% trans "Not forecast" %}
+                </p>
+            {% endif %}
         </div>
         <button
             type="button"

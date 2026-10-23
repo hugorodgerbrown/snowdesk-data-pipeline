@@ -858,7 +858,16 @@ Optional context:
                                 aria-checked="false"
                             >
                                 <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                                {% trans "Weather" %}
+                                {# SNOW-1196: the detail line names the forecast window #}
+                                {# on a day outside it (map_weather_window.js).         #}
+                                <span class="basemap-menu-item-text">
+                                    <span data-row-label>{% trans "Weather" %}</span>
+                                    <span
+                                        class="basemap-menu-item-detail"
+                                        data-weather-window-summary
+                                        hidden
+                                    ></span>
+                                </span>
                             </button>
                         </li>
                         {# Community reports are PUBLIC data — #map's            #}
@@ -1660,6 +1669,86 @@ Optional context:
                     </svg>
                 </button>
             </div>
+            {% comment %}
+            SNOW-1196: shown once, by static/js/map_weather_window.js, the first
+            time the weather layer is on over a day its forecast does not cover
+            — every past day. The layers menu's Weather row keeps saying it for
+            as long as it holds; this is the one line on the map, and it goes
+            by itself.
+            {% endcomment %}
+            <div id="map-weather-window" class="map-day-empty" role="status" hidden>
+                <span data-weather-window-label></span>
+                <button
+                    type="button"
+                    class="map-weather-window-close hover-affordance"
+                    data-weather-window-close
+                    aria-label='{% trans "Dismiss" %}'
+                >
+                    <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                    </svg>
+                </button>
+            </div>
+            {% comment %}
+            SNOW-1196: the problem-terrain layer names itself on the map while
+            it paints. Its key used to live only in the region sheet that
+            switched it on and in the legend card, so once the sheet closed
+            the map was coloured by a layer nothing on screen named. "Key"
+            opens the legend at the layer's section; × switches it off.
+            Shown by static/js/map_terrain_chip.js.
+            {% endcomment %}
+            {% if terrain_filter_eligible %}
+                <div id="map-terrain-chip" class="map-day-empty" role="status" hidden>
+                    <span class="map-terrain-chip-swatch" aria-hidden="true"></span>
+                    <span data-terrain-chip-label></span>
+                    <button type="button" class="map-day-empty-jump hover-affordance" data-terrain-chip-key>
+                        {% trans "Key" %}
+                    </button>
+                    <button
+                        type="button"
+                        class="map-weather-window-close hover-affordance"
+                        data-terrain-chip-off
+                        aria-label='{% trans "Turn off problem terrain" %}'
+                    >
+                        <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path d="M18 6 6 18" />
+                            <path d="m6 6 12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <template id="map-terrain-chip-strings-template">
+                    <span data-string="label">{% blocktrans %}Problem terrain · %(day)s{% endblocktrans %}</span>
+                </template>
+            {% endif %}
+            <template id="map-weather-window-strings-template">
+                <span
+                    data-string="forecast-only"
+                >{% blocktrans %}Forecast only: %(first)s–%(last)s{% endblocktrans %}</span>
+                <span
+                    data-string="weather-on-map"
+                >{% blocktrans %}Weather is forecast only: %(first)s–%(last)s{% endblocktrans %}</span>
+            </template>
             {# SNOW-1195: map_day_nav.js's strings. Its own template: each id #}
             {# maps to the one module that reads it.                          #}
             <template id="map-day-nav-strings-template">

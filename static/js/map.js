@@ -1418,7 +1418,7 @@
     if (map.getLayer('regions-fill')) return;
     if (map.getSource('regions')) {
       for (const id of [
-        'regions-fill', 'regions-line', 'regions-line-selected',
+        'regions-fill', 'regions-line', 'regions-line-unsupported', 'regions-line-selected',
         // SNOW-570/SNOW-587: the cached-tiles overlay is installed below,
         // so it has to come off here — a re-install over a surviving
         // layer throws.
@@ -1530,6 +1530,37 @@
       },
     });
     BASE_LAYER_FILTERS['regions-line'] = map.getFilter('regions-line') ?? null;
+
+    // SNOW-1196: the outline of a region no provider has ever rated, drawn
+    // DASHED so "never forecast" reads differently from "no bulletin
+    // today" — both had been the same thin solid ring round a fill that is
+    // grey on an unrated day and clear on an unsupported region, which at
+    // half strength over a basemap is not a difference anyone sees. Its own
+    // layer because MapLibre 4 cannot drive ``line-dasharray`` from data;
+    // regions-line now draws covered regions only. Hidden with the rest of
+    // the uncovered estate until "Show unsupported regions" is on
+    // (applyCountryFilters), and with the micro-region boundaries (l4).
+    map.addLayer({
+      id: 'regions-line-unsupported',
+      type: 'line',
+      source: 'regions',
+      filter: ['==', ['get', 'covered'], false],
+      layout: {
+        visibility: overlayState.l4 ? 'visible' : 'none',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': 'rgba(0,0,0,0.45)',
+        'line-width': [
+          'interpolate', ['linear'], ['zoom'],
+          5,  1.2,
+          9,  0.8,
+          22, 0.8,
+        ],
+        'line-dasharray': [3, 2],
+      },
+    });
+    BASE_LAYER_FILTERS['regions-line-unsupported'] = map.getFilter('regions-line-unsupported') ?? null;
 
     // SNOW-174: dedicated selection-emphasis layer. A separate layer beats
     // a case expression inside interpolate because MapLibre's style spec
@@ -4134,6 +4165,15 @@
     });
   };
 
+  // SNOW-1196: the days the weather payload covers, for map_weather_window.js
+  // to say so when the map is on a day outside them. The payload is the
+  // forecast window, today onward — a past day has no symbol to draw, and
+  // the layer used to go quiet without a word.
+  window.pwaWeatherWindow = Object.freeze({
+    isOn: () => readBoolStorage(OVERLAY_STORAGE_KEY.weather, overlayState.weather),
+    dates: () => (weatherGeojsonCache ? window.pwaWeatherCore.forecastWindowDates(weatherGeojsonCache) : []),
+  });
+
   // Install the Weather overlay. Idempotent, like installFavouritesLayer /
   // installCommunityReportsLayer — early-returns if the source already
   // exists, so the styledata re-install handler can call it safely on every
@@ -4141,6 +4181,8 @@
   const installWeatherLayer = (geojson) => {
     if (!geojson || map.getSource('weather')) return;
     weatherGeojsonCache = geojson;
+    // SNOW-1196: the window is known now; map_weather_window.js re-reads it.
+    document.dispatchEvent(new CustomEvent('snowdesk:weather-window-loaded'));
     const projected = weatherDataForCurrentView();
     map.addSource('weather', { type: 'geojson', data: projected });
     // Before the layer: an unregistered image in a `format` expression
@@ -5263,7 +5305,7 @@
   // they filtered, and this is that narrowing.
   const BULLETIN_DATA_LAYER_IDS = ['regions-fill'];
   const BOUNDARY_LAYER_IDS = [
-    'regions-line', 'regions-label',
+    'regions-line', 'regions-line-unsupported', 'regions-label',
     'sub-regions-line', 'sub-regions-label',
     'major-regions-line', 'major-regions-label',
   ];
@@ -5292,8 +5334,20 @@
   // is the install-time snapshot every other composer starts from. The
   // country filter stays the LAST term, which is where readers of the
   // composition (tests/js/test_map_boundaries_follow_basemap.js) look for it.
-  const UNSUPPORTED_REGION_LAYER_IDS = new Set(['regions-fill', 'regions-line', 'regions-label']);
+  //
+  // SNOW-1196: regions-line takes the covered-only term ALWAYS, since the
+  // uncovered ring is the dashed 'regions-line-unsupported', which takes
+  // NOTHING_FILTER while the row is off.
+  const UNSUPPORTED_REGION_LAYER_IDS = new Set(['regions-fill', 'regions-label']);
   const SUPPORTED_ONLY_FILTER = ['!=', ['get', 'covered'], false];
+  const NOTHING_FILTER = ['==', ['literal', 1], ['literal', 0]];
+  const unsupportedTerm = (layerId) => {
+    if (layerId === 'regions-line') return SUPPORTED_ONLY_FILTER;
+    if (layerId === 'regions-line-unsupported') return overlayState.unsupported ? null : NOTHING_FILTER;
+    return UNSUPPORTED_REGION_LAYER_IDS.has(layerId) && !overlayState.unsupported
+      ? SUPPORTED_ONLY_FILTER
+      : null;
+  };
   const applyCountryFilters = () => {
     const enabled = COUNTRY_KEYS.filter(code => countryState[code]);
     const providerFilter = countryMatchFilter(enabled);
@@ -5302,9 +5356,7 @@
       if (!map.getLayer(layerId)) return;
       const terms = [
         BASE_LAYER_FILTERS[layerId],
-        UNSUPPORTED_REGION_LAYER_IDS.has(layerId) && !overlayState.unsupported
-          ? SUPPORTED_ONLY_FILTER
-          : null,
+        unsupportedTerm(layerId),
       ].filter(Boolean);
       const composed = terms.length ? ['all', ...terms, countryFilter] : countryFilter;
       map.setFilter(layerId, composed);

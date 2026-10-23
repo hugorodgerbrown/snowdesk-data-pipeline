@@ -489,6 +489,9 @@
       document.getElementById('map-day-next'),
       document.getElementById('map-today-control'),
       document.getElementById('map-day-empty'),
+      // SNOW-1196: and the weather notice, which hangs under it.
+      document.getElementById('map-weather-window'),
+      document.getElementById('map-terrain-chip'),
       root,
     ].filter(Boolean);
     const homes = moved.map((el) => ({ el, parent: el.parentNode, next: el.nextSibling }));

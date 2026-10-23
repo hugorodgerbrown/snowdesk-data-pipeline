@@ -206,7 +206,8 @@ const OVERLAY_LAYERS = Object.freeze({
   l3: ['bulletin-groupings-line'],
   // The micro-region GEOGRAPHY: the boundary and its label, and NOT the
   // choropleth painted onto it (SNOW-656). Driven by the picker's row.
-  l4: ['regions-line', 'regions-label'],
+  // SNOW-1196: plus the dashed ring of the regions no provider rates.
+  l4: ['regions-line', 'regions-label', 'regions-line-unsupported'],
   resorts: ['resorts-pin', 'resorts-label'],
   favourites: ['favourites-pin', 'favourites-label'],
   community_reports: [

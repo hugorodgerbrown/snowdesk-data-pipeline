@@ -133,6 +133,24 @@ describe('window.pwaMapOverlays', () => {
     expect(menu.open).toBe(false);
   });
 
+  // SNOW-1196: the legend card and the layers menu open this way — beside
+  // the left-column sheet on a desktop, over it on a phone.
+  it("spareObjectSheets 'wide' spares the sheet only at desktop width", () => {
+    const wide = { value: true };
+    vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+      matches: query === '(min-width: 640px)' && wide.value,
+    }));
+    const region = fakeOverlay('map-region-sheet', true, true);
+
+    window.pwaMapOverlays.opening('map-legend-card', { spareObjectSheets: 'wide' });
+    expect(region.open).toBe(true);
+
+    wide.value = false;
+    window.pwaMapOverlays.opening('map-legend-card', { spareObjectSheets: 'wide' });
+    expect(region.open).toBe(false);
+    vi.restoreAllMocks();
+  });
+
   it('closes object sheets as before without the option', () => {
     const region = fakeOverlay('map-region-sheet', true, true);
 

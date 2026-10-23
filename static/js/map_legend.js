@@ -75,7 +75,11 @@
     // SNOW-658: only one overlay is open over the map at a time. Announced
     // before the card is revealed, so whatever it replaces is gone by the
     // time this is on screen.
-    if (next === 'expanded') window.pwaMapOverlays?.opening(OVERLAY_NAME);
+    // SNOW-1196: on a desktop the card opens beside the left-column sheet,
+    // so it leaves that sheet open there.
+    if (next === 'expanded') {
+      window.pwaMapOverlays?.opening(OVERLAY_NAME, { spareObjectSheets: 'wide' });
+    }
     setState(next);
   });
 
