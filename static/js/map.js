@@ -4867,6 +4867,11 @@
         id: BULLETIN_TERRAIN_LAYER_ID,
         type: 'raster',
         source: BULLETIN_TERRAIN_SOURCE_ID,
+        // The source's minzoom does not stop it drawing at z11: its tiles
+        // are 256 px, so MapLibre asks for z12 tiles one map zoom early. The
+        // regions' fills drop out only from z12 (syncBulletinTerrainFill),
+        // so without this the danger fill and the terrain both drew at z11.
+        minzoom: TERRAIN_CORE.MIN_ZOOM,
         layout: { visibility: bulletinTerrainShown() ? 'visible' : 'none' },
         paint: {
           'raster-opacity': 1,
