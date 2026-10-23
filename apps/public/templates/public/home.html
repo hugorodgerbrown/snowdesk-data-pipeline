@@ -65,28 +65,15 @@ parameters never reaches this template — views.home 301s it to /map/.
         {# Hero                                                             #}
         {# ---------------------------------------------------------------- #}
         <section
-            class="max-w-wide mx-auto text-center pt-4 pb-10"
+            class="max-w-wide mx-auto text-center pt-4 pb-8"
             aria-labelledby="home-heading"
             data-testid="home-hero"
         >
             {% trans "Stay avi-savvy" as eyebrow_text %}
             {% include "includes/_eyebrow.html" with text=eyebrow_text tag="p" class_extra="mb-3" %}
-            <h1 id="home-heading" class="text-3xl md:text-4xl font-semibold tracking-tight text-text-1 mb-4">
+            <h1 id="home-heading" class="text-3xl md:text-4xl font-semibold tracking-tight text-text-1">
                 {% trans "Know your line before you leave." %}
             </h1>
-            <p class="text-base leading-prose text-text-2 mb-6">
-                {% blocktrans trimmed %}
-                    Official avalanche bulletins, mountain weather and route analysis for the European Alps. Explore the
-                    conditions, examine your terrain, and plan your trip.
-                {% endblocktrans %}
-            </p>
-            <div class="flex flex-wrap items-center justify-center gap-3">
-                {% trans "Open the map" as open_label %}
-                {% include "includes/_button.html" with label=open_label href=map_url variant="primary" button_id="home-open-map" %}
-                {% url 'public:help' as help_url %}
-                {% trans "How it works" as help_label %}
-                {% include "includes/_button.html" with label=help_label href=help_url variant="secondary" %}
-            </div>
         </section>
 
         {# ---------------------------------------------------------------- #}
@@ -300,7 +287,8 @@ parameters never reaches this template — views.home 301s it to /map/.
         </section>
 
         <div class="text-center">
-            {% include "includes/_button.html" with label=open_label href=map_url variant="primary" %}
+            {% trans "Open the map" as open_label %}
+            {% include "includes/_button.html" with label=open_label href=map_url variant="primary" button_id="home-open-map" %}
         </div>
     </main>
 {% endblock content %}
