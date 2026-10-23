@@ -92,7 +92,7 @@ def load_existing_dates(output_path: Path) -> set[str]:
             record = json.loads(line)
             existing.add(record["date"])
         except json.JSONDecodeError, KeyError:
-            pass
+            pass  # A malformed index line is ignored; its date is re-fetched.
     return existing
 
 

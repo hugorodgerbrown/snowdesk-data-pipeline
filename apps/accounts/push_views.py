@@ -77,7 +77,7 @@ def push_register(request: HttpRequest) -> HttpResponse:
     try:
         account = request.user.account  # type: ignore[union-attr]  # staff_member_required guarantees authentication
     except Account.DoesNotExist:
-        pass
+        pass  # Staff with no Account profile: account stays None.
     obj, created = PushSubscription.objects.update_or_create(
         endpoint=endpoint,
         defaults={

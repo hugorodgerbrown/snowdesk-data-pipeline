@@ -58,12 +58,6 @@ logger = logging.getLogger(__name__)
 # Session backend used for magic-link / passkey logins (apps/accounts/backends.py).
 _TOKEN_BACKEND = "apps.accounts.backends.TokenBackend"
 
-# The PWA IndexedDB, deleted in teardown so one test's downloads cannot be
-# mistaken for the next one's. Duplicated from tests/e2e/conftest.py rather
-# than imported, for the same reason that file gives: neither conftest
-# should depend on the other's internals.
-_PWA_DB_NAME = "snowdesk-pwa-v1"
-
 # How long the SW gets to install, activate and claim the page. Generous
 # compared with tests/e2e (5s): every request in this suite crosses the
 # proxy, and on a cold CI runner the first load also pulls a real basemap

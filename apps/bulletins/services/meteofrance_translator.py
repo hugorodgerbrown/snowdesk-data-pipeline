@@ -955,7 +955,7 @@ def _parse_custom_data_mf(
                     }
                 )
             except ValueError, KeyError:
-                pass
+                pass  # A malformed level element is skipped, not fatal.
         snow_cover = {
             "date": enneigement_date,
             "snowLineNorthM": int(limite_nord) if limite_nord.isdigit() else None,
@@ -977,7 +977,7 @@ def _parse_custom_data_mf(
                 "comment": _elem_text(commentaire_j2_el),
             }
         except ValueError:
-            pass
+            pass  # An unparseable J+2 date means no J+2 outlook is rendered.
 
     return {
         "mfInternalId": massif_id,

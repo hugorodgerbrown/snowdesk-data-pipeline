@@ -35,8 +35,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_BACKEND_PATH = "apps.accounts.backends.TokenBackend"
-
 
 class TokenBackend(BaseBackend):
     """

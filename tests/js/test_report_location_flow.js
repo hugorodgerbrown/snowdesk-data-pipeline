@@ -83,7 +83,6 @@ globalThis.htmx = {
 
 await import('../../static/js/report.js');
 
-const btn = document.getElementById('report-btn');
 const sheet = document.getElementById('report-sheet');
 
 /** The parsed query of the most recent htmx.ajax GET. */

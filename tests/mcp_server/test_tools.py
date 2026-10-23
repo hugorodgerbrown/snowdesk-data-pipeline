@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 from datetime import UTC
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 from django.core.cache import cache
@@ -685,7 +686,8 @@ class TestGetBulletinMetadata:
         )
 
         assert result["source_provider"] == "METEOFRANCE"
-        assert "meteofrance.com" in result["source_url"]
+        host = urlsplit(result["source_url"]).hostname or ""
+        assert host == "meteofrance.com" or host.endswith(".meteofrance.com")
 
     def test_no_bulletin_for_date_is_a_structured_empty_result(
         self, region: MicroRegion

@@ -434,13 +434,13 @@ class _ConnectionHandler:
                         break
                     dst.sendall(chunk)
             except OSError:
-                pass
+                pass  # Either side closing ends the relay.
             finally:
                 for sock in (src, dst):
                     try:
                         sock.shutdown(socket.SHUT_RDWR)
                     except OSError:
-                        pass
+                        pass  # Already shut down by the other pump.
 
         forward = threading.Thread(target=pump, args=(left, right), daemon=True)
         forward.start()
@@ -449,7 +449,7 @@ class _ConnectionHandler:
         try:
             right.close()
         except OSError:
-            pass
+            pass  # Already closed by the peer.
 
 
 class RecordingProxy:

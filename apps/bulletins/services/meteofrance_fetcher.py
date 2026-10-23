@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -56,7 +56,6 @@ from apps.bulletins.services.slf_fetcher import UnknownRegionError, upsert_bulle
 logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 30  # seconds
-_ONE_DAY = timedelta(days=1)
 
 _MF_ARCHIVE_BASE = "https://donneespubliques.meteofrance.fr/donnees_libres/Pdf/BRA"
 _MF_USER_AGENT = "snowdesk/1.0 (contact@snowdesk.app)"

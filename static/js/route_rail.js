@@ -193,7 +193,6 @@
   var PLAN_TRIP_URL = rail.dataset.routePlanTripUrl || '';
 
   var nameEl = rail.querySelector('[data-route-rail-name]');
-  var closeEl = rail.querySelector('[data-route-rail-close]');
   var metaEl = rail.querySelector('[data-route-rail-meta]');
   var lane = rail.querySelector('[data-route-rail-lane]');
   var ticksEl = rail.querySelector('[data-route-rail-ticks]');

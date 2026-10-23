@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from typing import Any
 
@@ -222,10 +223,7 @@ def _clean_bbox(raw: str) -> list[float] | None:
         west, south, east, north = (float(value) for value in parsed)
     except TypeError, ValueError:
         return None
-    if not all(
-        value == value and abs(value) != float("inf")
-        for value in (west, south, east, north)
-    ):
+    if not all(math.isfinite(value) for value in (west, south, east, north)):
         return None
     if not (-180.0 <= west < east <= 180.0):
         return None

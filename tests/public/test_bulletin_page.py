@@ -3412,13 +3412,6 @@ class TestStructuredData:
         assert "<\\/script>" in content
 
 
-# ---------------------------------------------------------------------------
-# SNOW-222: subscribe panel states
-# ---------------------------------------------------------------------------
-
-_TOKEN_BACKEND = "apps.accounts.backends.TokenBackend"
-
-
 # ── _best_rating_from_rm_entries unit tests ───────────────────────────────────
 
 

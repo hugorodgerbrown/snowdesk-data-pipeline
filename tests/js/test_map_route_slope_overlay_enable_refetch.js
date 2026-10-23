@@ -27,11 +27,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import '../../static/js/i18n_strings.js';
 import {
-  ROUTES_SAMPLED,
-  ROUTES_UNSAMPLED,
   announce,
   boot,
-  harness,
   resetHarnessState,
   routesFetchCount,
   teardown,
