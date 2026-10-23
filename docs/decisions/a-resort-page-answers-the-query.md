@@ -1,8 +1,8 @@
 ---
 name: a-resort-page-answers-the-query
-description: resort_detail is a landing page: the day's danger in one card, the day's problem cards; /resorts/<slug>/<date>/
+description: resort_detail: forecast first, then the day's danger card (day_windows rows), then the problem cards; /resorts/<slug>/<date>/
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-10-23
 ---
 
 # A resort page answers the query
@@ -12,7 +12,9 @@ pages only (SNOW-1124). Narrowed by SNOW-1156: the page is a **landing
 page** that answers the query in one card and leads into the bulletin.
 Amended by SNOW-1164 ([`the-sheet-is-the-page`](the-sheet-is-the-page.md)):
 the page's body is also the map's resort sheet, so it takes a day, and
-it shows the day's problems again — see the last section.
+it shows the day's problems again. Amended by SNOW-1203: the forecast
+leads in every season and the card states the level with the region
+panel's Day Risk Profile rows — see the last two sections.
 
 ## Decision
 
@@ -121,3 +123,26 @@ resort. It reverses the first half of SNOW-1156's retirement; the
 lift-range line stays retired, and the card itself is
 unchanged and still holds exactly one link.
 
+
+## Weather first, and the region panel's level row (SNOW-1203)
+
+Hugo, 23 Oct 2026, from a board comparing the resort and region sheets
+for the same day:
+
+- **The forecast leads, in every season.** It is the resort's own data;
+  the bulletin is the region's. The body is forecast → "{region} avalanche bulletin"
+  card → problem cards → season calendar, and "the season decides the
+  order" above no longer holds.
+- **The card states the level as the region panel does.** It renders
+  `includes/day_windows.html` (flush inside the card) from the same
+  `_build_day_windows` the bulletin body calls, so a split day shows its
+  windows on both surfaces. The card's own EAWS band went, and with it the
+  row that copied the *first* problem's aspects and elevation: the problem
+  cards directly below already state each problem's scope, so the row said
+  it twice, and on a two-problem day it named only one of them.
+- **No headline.** The region panel no longer shows it, and on most days
+  it was a generic sentence ("Danger level 2 moderate. Read the bulletin
+  carefully."). `_build_bulletin_headline` stays the bulletin page's.
+
+The card still holds exactly one link, and the no-bulletin card is
+unchanged.

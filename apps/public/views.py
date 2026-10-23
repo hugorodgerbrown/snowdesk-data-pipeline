@@ -4162,8 +4162,8 @@ def _build_bulletin_headline(
     Projects the five inputs of the variant matrix — source, partition
     type, peak rating, direction and problem family — from the render
     model and its period transition, then looks the copy up with
-    :func:`apps.public.headlines.headline_for`. Shared by the bulletin page
-    and the resort page (SNOW-1124) so the two cannot drift.
+    :func:`apps.public.headlines.headline_for`. The resort page read it too
+    (SNOW-1124) until SNOW-1203 gave its card the Day Risk Profile rows.
 
     Args:
         raw_render_model: The panel's render model (``panel["render_model"]``).
@@ -4308,8 +4308,7 @@ def build_bulletin_body(
         set(problem_types_for(rm_traits, {"later"})),
     )
 
-    # Bulletin headline (SNOW-249) — one helper shared with the resort page
-    # (SNOW-1124), so the two cannot word the same day differently.
+    # Bulletin headline (SNOW-249).
     headline: str = _build_bulletin_headline(raw_render_model, period_transition)
 
     return {
@@ -5294,16 +5293,16 @@ def build_resort_body(
         _issues_for_date(region, target_date), target_date, requested_id=None
     )
     panel: dict[str, Any] | None = None
-    headline = ""
+    day_windows: list[dict[str, Any]] = []
     if selected is not None:
         panel = _build_panel_context(selected)
         raw_render_model: dict[str, Any] = panel.get("render_model") or {}
         if raw_render_model.get("version") == 0:
             panel = None
         else:
-            headline = _build_bulletin_headline(
-                raw_render_model, compute_period_transition(raw_render_model)
-            )
+            # SNOW-1203: the region panel's Day Risk Profile rows, built by
+            # the same helper, so the two panels state the level alike.
+            day_windows = _build_day_windows(selected, render_model=raw_render_model)
 
     problem_cards: list[dict[str, Any]] = list(panel["problem_cards"]) if panel else []
 
@@ -5311,10 +5310,10 @@ def build_resort_body(
         "resort": resort,
         "region": region,
         "region_id": region.region_id,
-        # SNOW-1124: the bulletin page's panel and headline for the day, or
-        # None / "" when no bulletin covers it.
+        # SNOW-1124: the bulletin page's panel for the day, or None when no
+        # bulletin covers it.
         "panel": panel,
-        "headline": headline,
+        "day_windows": day_windows,
         "problem_cards": problem_cards,
         # SNOW-1156: the card's "SLF · updated 17:00" line.
         **_resort_bulletin_attribution(panel),

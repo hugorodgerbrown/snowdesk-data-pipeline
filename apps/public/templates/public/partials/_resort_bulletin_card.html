@@ -1,8 +1,8 @@
 {% load i18n card_tags snowdesk_time %}
 {% comment %}
-public/partials/_resort_bulletin_card.html — the resort page's "Regional
-avalanche bulletin" section (SNOW-1156): an eyebrow and ONE compact card
-summarising today's danger, which leads into the region's full bulletin.
+public/partials/_resort_bulletin_card.html — the resort page's "{region}
+avalanche bulletin" section (SNOW-1156, SNOW-1203): an eyebrow and ONE compact card
+summarising the day's danger, which leads into the region's full bulletin.
 
 The resort page is a landing page (docs/decisions/a-resort-page-answers-the-
 query.md): it answers "what is the danger today" in one card and defers
@@ -11,17 +11,17 @@ bulletin. Drawn to Hugo's approved board (BulletinInSeason /
 BulletinOffSeason). Two states, driven by ``panel``:
 
   * Rated (``panel`` set):
-      1. A band in the level's EAWS tint and text tokens (``.danger-band``)
-         holding the level's ``.danger-tile`` (number + subdivision, outlined
-         so the low and moderate fills keep an edge on their tint), the level
-         word and "{region} region".
-      2. One row with the first (dominant) problem card's aspect rose and
-         elevation pictogram — the filters ``_rating_block.html`` draws them
-         with. Omitted when there is no problem, or it has neither value.
-      3. The bulletin headline (``public/_bulletin_headline.html``, empty
-         ``headline`` renders nothing), then the mono attribution line
-         "{provider} · updated HH:MM" (the time omitted when unknown, the
-         whole line when both are), then "Read the full {region} bulletin →".
+      1. The day's level as the region panel gives it: the Day Risk
+         Profile rows (``includes/day_windows.html``, drawn flush inside
+         this card), one per window, with SLF's subdivision in words
+         (SNOW-1203). Until then the card drew its own level band and
+         copied the FIRST problem's aspects and elevation into it, which
+         the problem cards below said again and which misstated a day
+         with two problems.
+      2. The mono attribution line "{provider} · updated HH:MM" (the time
+         omitted when unknown, the whole line when both are), then "Read
+         the full {region} bulletin →". The headline went in SNOW-1203:
+         the region panel no longer shows it either.
   * No bulletin (``panel`` None): a neutral band with the outlined "–" tile
     (``includes/_danger_tile_empty.html``),
     "No bulletin today" and the region; the season note naming the resort's
@@ -34,11 +34,10 @@ Nothing inside may carry a link of its own, which is why the problem prose
 (whose markup can) is not drawn here.
 
 Context:
-  panel                 — dict from views._build_panel_context (danger_key,
-                          danger_number, danger_subdivision, danger_label,
-                          problem_cards), or None.
-  headline              — str: the bulletin page's headline; "" without a
-                          panel.
+  panel                 — dict from views._build_panel_context, or None.
+                          Only its truth is read here.
+  day_windows           — list[dict] from views._build_day_windows, the
+                          region panel's rows; [] without a panel.
   region                — MicroRegion (or anything with ``name``).
   resort                — Resort (or anything with typical_season_open /
                           typical_season_close, "MM-DD" strings).
@@ -61,80 +60,26 @@ Context:
 >
     {# In the map the sheet's date row names the day once, for every section #}
     {# (Hugo, 21 Oct), so the eyebrow does not repeat it.                  #}
+    {# SNOW-1203: it names the region, since the panel above it is the    #}
+    {# resort's own weather and this is not.                              #}
     {% if in_map %}
-        {% trans "Regional avalanche bulletin" as bulletin_eyebrow %}
+        {% blocktrans with region=region.name trimmed asvar bulletin_eyebrow %}
+            {{ region }} avalanche bulletin
+        {% endblocktrans %}
     {% else %}
-        {% blocktrans with day=target_date|date:"l j F" trimmed asvar bulletin_eyebrow %}
-            Regional avalanche bulletin • {{ day }}
+        {% blocktrans with region=region.name day=target_date|date:"l j F" trimmed asvar bulletin_eyebrow %}
+            {{ region }} avalanche bulletin • {{ day }}
         {% endblocktrans %}
     {% endif %}
     {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-bulletin-heading" text=bulletin_eyebrow class_extra="mb-3" only %}
     <div class="overflow-hidden rounded-card border border-border bg-card" data-testid="resort-danger">
         {% if panel %}
-            <div
-                class="danger-band border-b border-border px-4 py-3"
-                data-level="{{ panel.danger_key }}"
-                data-testid="resort-bulletin-band"
-            >
-                <div class="flex items-center gap-3">
-                    {% blocktrans with level=panel.danger_label trimmed asvar tile_aria %}
-                        Danger level {{ level }}
-                    {% endblocktrans %}
-                    <span
-                        class="danger-tile danger-tile--outlined text-label"
-                        data-level="{{ panel.danger_key }}"
-                        data-testid="resort-danger-chip"
-                        role="img"
-                        aria-label="{{ tile_aria }}"
-                    >{{ panel.danger_number }}{{ panel.danger_subdivision }}</span>
-                    <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span
-                            class="text-label font-semibold leading-tight"
-                            data-testid="resort-danger-label"
-                        >{{ panel.danger_label }}</span>
-                        <span class="text-xs">
-                            {% blocktrans with region=region.name trimmed %}
-                                {{ region }} region
-                            {% endblocktrans %}
-                        </span>
-                    </div>
-                </div>
-            </div>
-            {% with problem=panel.problem_cards.0 %}
-                {% if problem.aspects or problem.elevation %}
-                    <div
-                        class="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5"
-                        data-testid="resort-bulletin-scope"
-                        {% if problem.core_zone_text %}role="group" aria-label="{{ problem.core_zone_text }}"{% endif %}
-                    >
-                        {% if problem.aspects %}
-                            <div class="flex shrink-0 items-center gap-1.5">
-                                {# aspect_rose returns a fixed SVG built from numeric values; safe to render unescaped. #}
-                                <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
-                                {{ problem.aspects|aspect_rose:32|safe }}
-                                <span class="text-xs text-text-2">
-                                    {% if problem.aspects|length == 8 %}
-                                        {% trans "All aspects" %}
-                                    {% else %}
-                                        {{ problem.aspects|join:", " }}
-                                    {% endif %}
-                                </span>
-                            </div>
-                        {% endif %}
-                        {% if problem.elevation %}
-                            <div class="flex shrink-0 items-center gap-1.5">
-                                {# elevation_icon returns a fixed SVG built from numeric values; safe to render unescaped. #}
-                                <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
-                                {{ problem.elevation|elevation_icon:20|safe }}
-                                <span class="text-xs text-text-2">{{ problem.elevation.display }}</span>
-                            </div>
-                        {% endif %}
-                    </div>
-                {% endif %}
-            {% endwith %}
-            <div class="p-4">
-                {# Its own bottom margin spaces it from the lines below. #}
-                {% include "public/_bulletin_headline.html" %}
+            {# SNOW-1203: the region panel's own Day Risk Profile rows, so the #}
+            {# two panels state the day's level the same way. The aspects and  #}
+            {# elevations are left to the problem cards below, the one place   #}
+            {# each problem's scope is given.                                  #}
+            {% include "includes/day_windows.html" with day_windows=day_windows flush=True only %}
+            <div class="px-4 py-3">
                 {% if bulletin_provider or bulletin_updated_time %}
                     <p class="mb-3 font-mono text-xs text-text-3" data-testid="resort-bulletin-attribution">
                         {% if bulletin_provider and bulletin_updated_time %}

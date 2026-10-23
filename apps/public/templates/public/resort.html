@@ -67,8 +67,9 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    danger_number, danger_subdivision,
                                    danger_label, problem_cards, …), or None
                                    when no bulletin covers today.
-  headline                      — str: the bulletin page's headline for the
-                                   same render model; "" without a panel.
+  day_windows                   — list[dict]: the region panel's Day Risk
+                                   Profile rows (views._build_day_windows);
+                                   [] without a panel.
   bulletin_provider             — str: "SLF" / "ALBINA" / "Météo-France", or
                                    "" (views._resort_bulletin_attribution).
   bulletin_updated_time         — str: the bulletin's publication time,
