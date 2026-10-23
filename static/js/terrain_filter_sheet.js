@@ -52,7 +52,6 @@
   const STRINGS = self.pwaStrings.read('map-terrain-filter-strings-template', {
     'availability-zoom-in': 'Zoom in further to see the filter.',
     'availability-out-of-coverage': 'No terrain data here — the filter covers Switzerland only.',
-    'availability-no-bulletin': 'No bulletin for this day, so nothing to colour by.',
     'aspects-all': 'All aspects',
     'aspects-none': 'No aspects',
     'aspects-one': '1 aspect',
@@ -75,7 +74,6 @@
     'compass-5': 'SW',
     'compass-6': 'W',
     'compass-7': 'NW',
-    bulletin: "By each region's bulletin",
   });
 
   /** The bridge, read lazily: map.js publishes it from inside its IIFE. */
@@ -99,7 +97,7 @@
 
   /**
    * Show each mode's key (and the legend's heading for it) only while that
-   * mode is set, and the sheet's own controls only for the modes they set.
+   * mode is set.
    *
    * @param {ParentNode} root Where to look.
    * @param {string} mode The filter's mode.
@@ -109,15 +107,6 @@
     for (const el of root.querySelectorAll('[data-terrain-filter-key]')) {
       // A wrapper can name several modes, space-separated.
       el.hidden = !(el.dataset.terrainFilterKey || '').split(' ').includes(mode);
-    }
-    // SNOW-1194: in the "By bulletin" colour the bulletins set slope,
-    // aspect and height, so the reader's own controls step aside for the
-    // colour's key and note.
-    for (const el of root.querySelectorAll('[data-terrain-filter-manual]')) {
-      el.hidden = mode === 'bulletin';
-    }
-    for (const el of root.querySelectorAll('[data-terrain-filter-bulletin]')) {
-      el.hidden = mode !== 'bulletin';
     }
   };
 
@@ -227,8 +216,7 @@
       radio.checked = radio.value === filter.mode;
     }
     // A sheet cloned on open starts in the template's mode, which the last
-    // announcement never saw (the region sheet's switch can set "By
-    // bulletin" while this sheet is shut).
+    // announcement never saw.
     syncModeKeys(sheetEl, filter.mode);
     for (const wedge of sheetEl.querySelectorAll('[data-octant]')) {
       const on = filter.aspects.includes(Number(wedge.dataset.octant));
@@ -376,9 +364,6 @@
     const state = b.availability();
     if (state === 'zoom-in') return STRINGS['availability-zoom-in'];
     if (state === 'out-of-coverage') return STRINGS['availability-out-of-coverage'];
-    if (typeof b.bulletinDayEmpty === 'function' && b.bulletinDayEmpty()) {
-      return STRINGS['availability-no-bulletin'];
-    }
     return core.summarise(filter, STRINGS, { short: true, formatNumber: formatNumber });
   };
 

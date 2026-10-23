@@ -10,7 +10,7 @@ Covers:
     controls and the ×, inside the ``data-sheet-peek`` header.
   - The detents the body allows: all three on a rated day, peek and half
     otherwise (``data-sheet-detents``, read by static/js/map_sheet.js).
-  - SNOW-979: the "Show problem terrain on the map" switch above the
+  - SNOW-979: the "Highlight problem terrain" switch above the
     bulletin and its key — only for a region inside the terrain tiles,
     with the tiles configured, on a day with a bulletin. Since SNOW-1194
     the rules come from /api/problem-terrain/ (tests/public/
@@ -380,7 +380,7 @@ _TILES = "https://tiles.example/terrain-class/v1/{z}/{x}/{y}.png"
 
 @pytest.mark.django_db
 class TestProblemTerrainSwitch:
-    """SNOW-979: the "Show problem terrain on the map" switch above the bulletin."""
+    """SNOW-979: the "Highlight problem terrain" switch above the bulletin."""
 
     def test_rated_swiss_region_carries_the_switch_and_its_key(
         self, client: Client, settings: Any
@@ -392,6 +392,8 @@ class TestProblemTerrainSwitch:
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-terrain"' in content
         assert 'id="region-sheet-terrain-toggle"' in content
+        # The layers menu's row's name: one state, one name.
+        assert "Highlight problem terrain" in content
         # SNOW-1194: the map paints every region from /api/problem-terrain/,
         # so the body no longer carries its own region's rules.
         assert "region-sheet-terrain-rules" not in content

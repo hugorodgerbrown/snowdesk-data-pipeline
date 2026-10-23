@@ -259,18 +259,17 @@
   };
 
   // SNOW-979: THE PROBLEM-TERRAIN SWITCH. A body for a region inside the
-  // terrain tiles, on a day with a bulletin, carries the "Show problem
-  // terrain on the map" strip (public/partials/_region_sheet_terrain.html).
-  // Since SNOW-1194 the switch is a shortcut to the terrain filter's
-  // "By bulletin" colour, which paints every region at once from
-  // map.js — so it is on exactly when the filter is on in that colour, and
-  // closing the sheet or moving to another region changes nothing on the
-  // map. This owns the switch, the key under it and the zoom line; map.js's
+  // terrain tiles, on a day with a bulletin, carries the "Highlight
+  // problem terrain" strip (public/partials/_region_sheet_terrain.html).
+  // Since SNOW-1194 the layer paints every region at once from map.js, and
+  // this switch writes the same state as the layers menu's row of the same
+  // name — so closing the sheet or moving to another region changes nothing
+  // on the map. This owns the switch, the key under it and the zoom line; map.js's
   // window.pwaBulletinTerrain owns the state.
   const TERRAIN_TOGGLE_ID = 'region-sheet-terrain-toggle';
 
   /**
-   * Bring the switch, its key and the zoom line in line with the filter.
+   * Bring the switch, its key and the zoom line in line with the layer.
    * A cloned or cached body's checkbox starts unchecked, so this runs after
    * every paint as well as on every announcement.
    *
@@ -296,8 +295,12 @@
     window.pwaBulletinTerrain.setEnabled(target.checked, regionId || undefined);
   });
 
-  // The filter's sheet can switch the same state, and the camera moves the
-  // zoom line, so follow the filter's own announcement.
+  // The menu row and the map chip switch the same state.
+  document.addEventListener('snowdesk:problem-terrain-changed', () => {
+    syncTerrainControls();
+  });
+  // The camera moves the zoom line; the terrain filter announces where the
+  // tiles can draw, which is where this layer can too.
   document.addEventListener('snowdesk:terrain-filter-changed', (ev) => {
     syncTerrainControls(ev.detail?.availability);
   });

@@ -147,6 +147,13 @@ const OVERLAY_STORAGE_KEY = {
   // is a separate JSON blob under TERRAIN_FILTER_STORAGE_KEY below; this key
   // is only the switch.
   terrain_filter: 'snowdesk.map.overlay.terrain_filter',
+  // The Conditions section's "Highlight problem terrain" row: every
+  // region's steep ground painted by its own bulletin, from z12. Gated as
+  // the terrain filter is (the same class tiles). Defaults OFF for the
+  // same reason. Until 2026-10-23 this was the terrain filter's third
+  // colour, "By bulletin"; map.js carries a stored filter in that mode
+  // over to this key once (see migrateBulletinMode there).
+  problem_terrain: 'snowdesk.map.overlay.problem_terrain',
 };
 
 // No ``l3`` entry above: the bulletin-boundary layer has no toggle and no
@@ -256,6 +263,9 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-978: one raster layer, painted on the device from class tiles —
   // in either mode, so SNOW-1073's slope layer is this entry too.
   terrain_filter: ['terrain-filter-raster'],
+  // The problem-terrain layer, above the choropleth. Its row goes to
+  // window.pwaBulletinTerrain, which shows and hides it.
+  problem_terrain: ['bulletin-terrain-raster'],
 });
 
 // SNOW-658: the layers menu lists BULLETIN PROVIDERS, not countries — SLF

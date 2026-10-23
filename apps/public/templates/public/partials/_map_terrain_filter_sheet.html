@@ -16,15 +16,13 @@ SNOW-1109 compacted the body so it fits a phone without scrolling past the
 map. Each control carries its own key, so the sheet no longer includes
 includes/_terrain_filter_key.html (the map legend still does):
 
-  - COLOUR: three equal tiles over three real radios named
-    terrain-filter-mode — "One tint" (value match), "By slope" (value
-    slope, the map's slope layer since SNOW-1073) and "By bulletin" (value
-    bulletin, SNOW-1194: every region painted by its own bulletin). Each
-    tile shows its own swatch. "By bulletin" sets slope, aspect and height
-    from the bulletins, so while it is chosen the reader's controls below
-    ([data-terrain-filter-manual]) step aside for its key and note
-    ([data-terrain-filter-bulletin]). The region sheet's "Show problem
-    terrain on the map" switch is a shortcut to it.
+  - COLOUR: two equal tiles over two real radios named
+    terrain-filter-mode — "One tint" (value match) and "By slope" (value
+    slope, the map's slope layer since SNOW-1073). Each tile shows its own
+    swatch. SNOW-1194's third tile, "By bulletin", left on 2026-10-23 for a
+    layers-menu row of its own under Conditions, "Highlight problem
+    terrain": it is the bulletin drawn another way, not a filter the reader
+    sets (Hugo).
   - SLOPE ANGLE: a ramp of five toggle buttons, one per slope class
     (labelled 30–35 … 50+; the heading carries the degrees), [data-slope-class] 0–4. In slope mode a selected class
     is filled with its slope colour and an unselected one carries a strip
@@ -61,11 +59,11 @@ Included by public/map.html only for an eligible page
     {# at the same -mt-1.5 / px-2 / text-summary the UGC panels use.       #}
     {% include "includes/_sheet_header.html" with title=terrain_filter_title icon_template="includes/_icon_layers.html" close_action="dismiss" title_class="text-lg font-semibold" %}
     <p class="-mt-1.5 px-2 text-summary text-text-3">{% trans "The map changes as you change these." %}</p>
-    {# SNOW-1194: three tiles fit a phone only with the swatch above the word. #}
+    {# SNOW-1194: the swatch sits above the word, which three tiles needed. #}
     {% with mode_tile="flex min-h-11 cursor-pointer flex-col items-center justify-center gap-1 rounded-sm border border-border bg-card px-2 py-2 text-center text-sm text-text-2 has-checked:border-accent has-checked:bg-accent-tint has-checked:text-accent has-focus-visible:outline-2 has-focus-visible:outline-accent" %}
         <fieldset class="mt-4">
             <legend class="text-sm font-semibold text-text-1">{% trans "Colour" %}</legend>
-            <div class="mt-2 grid grid-cols-3 gap-2">
+            <div class="mt-2 grid grid-cols-2 gap-2">
                 <label class="{{ mode_tile }}">
                     <input class="sr-only" type="radio" name="terrain-filter-mode" value="match" checked>
                     <span class="size-4 shrink-0 rounded-sm bg-accent" aria-hidden="true"></span>
@@ -82,44 +80,10 @@ Included by public/map.html only for an eligible page
                     </span>
                     {% trans "By slope" %}
                 </label>
-                <label class="{{ mode_tile }}">
-                    <input class="sr-only" type="radio" name="terrain-filter-mode" value="bulletin">
-                    <span class="flex h-4 w-8 shrink-0 overflow-hidden rounded-sm" aria-hidden="true">
-                        <span class="flex-1 bg-eaws-low"></span>
-                        <span class="flex-1 bg-eaws-moderate"></span>
-                        <span class="flex-1 bg-eaws-considerable"></span>
-                        <span class="flex-1 bg-eaws-high"></span>
-                    </span>
-                    {% trans "By bulletin" %}
-                </label>
             </div>
         </fieldset>
     {% endwith %}
-    {# SNOW-1194: what "By bulletin" paints, in place of the controls it sets. #}
-    <section
-        class="mt-4 space-y-2"
-        aria-labelledby="map-terrain-filter-bulletin-heading"
-        data-terrain-filter-bulletin
-        hidden
-    >
-        <h3 id="map-terrain-filter-bulletin-heading" class="text-sm font-semibold text-text-1">
-            {% trans "Problem terrain" %}
-        </h3>
-        <p class="text-sm text-text-2">
-            {% trans "Every region is painted by its own bulletin: ground of 30° and over inside each avalanche problem's aspects and heights, in its danger level's colour." %}
-        </p>
-        <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-sm text-text-2">
-            {% include "includes/_bulletin_terrain_key.html" with key=bulletin_terrain_key %}
-        </div>
-        <p class="text-meta text-text-3">
-            {% trans "Where the bulletin describes its problems, not every slope that can slide, and not runout zones. Switzerland only." %}
-            <a
-                class="underline"
-                href="{% url 'public:help' %}#help-topic-bulletin-terrain"
-            >{% trans "How to read it" %}</a>
-        </p>
-    </section>
-    <div data-terrain-filter-manual>
+    <div>
         <section class="mt-4" aria-labelledby="map-terrain-filter-slope-heading">
             <div class="flex items-baseline justify-between gap-3">
                 <h3 id="map-terrain-filter-slope-heading" class="text-sm font-semibold text-text-1">
@@ -363,8 +327,6 @@ Included by public/map.html only for an eligible page
     <span
         data-string="availability-out-of-coverage"
     >{% trans "No terrain data here — the filter covers Switzerland only." %}</span>
-    {# SNOW-1195: "By bulletin" on a day with no bulletin paints nothing. #}
-    <span data-string="availability-no-bulletin">{% trans "No bulletin for this day, so nothing to colour by." %}</span>
     <span data-string="aspects-all">{% trans "All aspects" %}</span>
     <span data-string="aspects-none">{% trans "No aspects" %}</span>
     <span data-string="aspects-one">{% trans "1 aspect" %}</span>
@@ -379,7 +341,6 @@ Included by public/map.html only for an eligible page
     <span data-string="elevation-line-below">{% blocktrans %}Below %(max)s m{% endblocktrans %}</span>
     <span data-string="elevation-any">{% trans "Any" context "elevation" %}</span>
     <span data-string="elevation-option">{% blocktrans %}%(value)s m{% endblocktrans %}</span>
-    <span data-string="bulletin">{% trans "By each region's bulletin" %}</span>
     <span data-string="compass-0">{% trans "N" context "compass point" %}</span>
     <span data-string="compass-1">{% trans "NE" context "compass point" %}</span>
     <span data-string="compass-2">{% trans "E" context "compass point" %}</span>

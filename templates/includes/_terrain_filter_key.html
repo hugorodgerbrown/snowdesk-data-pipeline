@@ -15,18 +15,13 @@ keep the caller's layout. static/js/terrain_filter_sheet.js hides the
 wrapper for the mode that is not set; the server renders the match mode,
 the default. A wrapper may name several modes, space-separated.
 
-SNOW-1194's "By bulletin" colour has its own key,
-includes/_bulletin_terrain_key.html, at the whole scale — every region is
-painted by its own bulletin — and that key carries its own no-data row.
+Problem terrain (SNOW-1194; its own layer since 2026-10-23) has its own
+key, includes/_bulletin_terrain_key.html, in its own legend section.
 
 The swatches are .map-legend-swatch--terrain-* and --slope-*
 (static/css/map.css), painted from --color-terrain-* and --color-slope-* in
 src/css/main.css — the same values static/js/terrain_filter_core.js and
 static/js/slope_classes_core.js paint the map with.
-
-Parameters:
-  bulletin_terrain_key — the whole-scale key, from the map's context
-        (apps.public.views._terrain_filter_context).
 {% endcomment %}
 <div class="contents" data-terrain-filter-key="match">
     <div class="map-legend-row">
@@ -75,7 +70,4 @@ Parameters:
             aria-hidden="true"
         ></span>{% trans "No data" %}
     </div>
-</div>
-<div class="contents" data-terrain-filter-key="bulletin" hidden>
-    {% include "includes/_bulletin_terrain_key.html" with key=bulletin_terrain_key %}
 </div>

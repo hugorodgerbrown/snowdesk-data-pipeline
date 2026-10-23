@@ -356,7 +356,7 @@ describe('the problem-terrain switch', () => {
     delete window.pwaBulletinTerrain;
   });
 
-  it('starts at the filter\'s state, key shown and zoom line when the map is too far out', async () => {
+  it('starts at the layer\'s state, key shown and zoom line when the map is too far out', async () => {
     bridge(true, 'zoom-in');
     fetchMock.mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve(TERRAIN_BODY) }));
     select('CH-4115', 'tap');
@@ -367,7 +367,7 @@ describe('the problem-terrain switch', () => {
     expect(sheet.querySelector('[data-region-sheet-terrain-zoom]').hidden).toBe(false);
   });
 
-  it('turns the filter on with the region, and follows it back off', async () => {
+  it('turns the layer on with the region, and follows it back off', async () => {
     const state = bridge(false);
     fetchMock.mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve(TERRAIN_BODY) }));
     select('CH-4115', 'tap');
@@ -377,13 +377,27 @@ describe('the problem-terrain switch', () => {
     input.checked = true;
     input.dispatchEvent(new Event('change', { bubbles: true }));
     expect(window.pwaBulletinTerrain.setEnabled).toHaveBeenCalledWith(true, 'CH-4115');
-    // The filter's own sheet switches it off: the switch here follows.
+    // The layers menu's row switches it off: the switch here follows.
     state.on = false;
-    document.dispatchEvent(new CustomEvent('snowdesk:terrain-filter-changed', {
-      detail: { enabled: false, availability: 'ok' },
+    document.dispatchEvent(new CustomEvent('snowdesk:problem-terrain-changed', {
+      detail: { enabled: false },
     }));
     expect(input.checked).toBe(false);
     expect(sheet.querySelector('[data-region-sheet-terrain-key]').hidden).toBe(true);
+  });
+
+  it('moves the zoom line with the camera, which the terrain filter announces', async () => {
+    const state = bridge(true, 'ok');
+    fetchMock.mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve(TERRAIN_BODY) }));
+    select('CH-4115', 'tap');
+    await settle();
+    const zoom = sheet.querySelector('[data-region-sheet-terrain-zoom]');
+    expect(zoom.hidden).toBe(true);
+    state.where = 'zoom-in';
+    document.dispatchEvent(new CustomEvent('snowdesk:terrain-filter-changed', {
+      detail: { enabled: false, availability: 'zoom-in' },
+    }));
+    expect(zoom.hidden).toBe(false);
   });
 });
 

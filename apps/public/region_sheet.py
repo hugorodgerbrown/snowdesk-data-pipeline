@@ -75,10 +75,11 @@ def _problem_terrain_rules(
 ) -> list[TerrainRule] | None:
     """Return the rules behind the sheet's problem-terrain key (SNOW-979).
 
-    Since SNOW-1194 the switch turns on the terrain filter's "By bulletin"
-    colour, which paints every region from ``/api/problem-terrain/``; the
-    sheet keeps the switch, and these rules only decide its key — the
-    levels this region's bulletin paints today.
+    Since SNOW-1194 the switch turns on the problem-terrain layer (the
+    layers menu's "Highlight problem terrain" row), which paints every
+    region from ``/api/problem-terrain/``; the sheet keeps the switch, and
+    these rules only decide its key — the levels this region's bulletin
+    paints today.
 
     ``None`` — so the sheet draws no switch — unless the terrain-class
     tiles are configured (the terrain filter's own gate), the region is
@@ -161,7 +162,7 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         "covered": region.region_id in covered_region_ids(),
         "provider_name": _PROVIDER_BY_COUNTRY.get(country, ""),
         "resorts": list(Resort.objects.resorts().filter(region=region)),
-        # SNOW-979: the "Show problem terrain on the map" switch and its key;
+        # SNOW-979: the "Highlight problem terrain" switch and its key;
         # SNOW-1194 moved the rules themselves to /api/problem-terrain/.
         "terrain_switch": terrain is not None,
         "terrain_key": problem_terrain_key(terrain or []),

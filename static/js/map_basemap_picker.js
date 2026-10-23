@@ -94,6 +94,9 @@
     // SNOW-1109: the terrain filter's row is a checkbox now, not an action
     // row, so it toggles through its bridge like the four above.
     terrain: () => window.pwaTerrainFilter,
+    // "Highlight problem terrain" (2026-10-23): the bulletins' own terrain,
+    // its own row under Conditions rather than a colour of the filter.
+    problem_terrain: () => window.pwaBulletinTerrain,
     // SNOW-1185: "Show unsupported regions" — a re-filter of the micro
     // regions that only map.js's applyCountryFilters can compose.
     unsupported: () => window.pwaUnsupportedRegions,
@@ -446,6 +449,13 @@
   // when the sheet's adjust button turns the filter on.
   document.addEventListener(
     'snowdesk:terrain-filter-changed',
+    syncRowsFromBridges,
+  );
+  // The problem-terrain row follows its own announcement for the same
+  // reasons, and because the region sheet's switch and the map chip's ×
+  // write it too.
+  document.addEventListener(
+    'snowdesk:problem-terrain-changed',
     syncRowsFromBridges,
   );
 

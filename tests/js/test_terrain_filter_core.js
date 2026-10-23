@@ -299,13 +299,14 @@ describe('filter state', () => {
     expect(core.parseFilter(core.serialiseFilter({ mode: 'slope' })).mode).toBe('slope');
   });
 
-  it('keeps the bulletin mode and the reader\'s settings under it (SNOW-1194)', () => {
-    const stored = core.serialiseFilter({ mode: 'bulletin', aspects: [0, 1], minSlope: 35 });
-    const back = core.parseFilter(stored);
-    expect(back.mode).toBe('bulletin');
+  it('reads a stored "By bulletin" back as one tint, settings intact', () => {
+    // SNOW-1194's third colour became its own layer on 2026-10-23; a device
+    // that stored it keeps the reader's own settings under the default mode.
+    const back = core.parseFilter(JSON.stringify({ mode: 'bulletin', aspects: [0, 1], minSlope: 35 }));
+    expect(back.mode).toBe('match');
     expect(back.aspects).toEqual([0, 1]);
     expect(back.minSlope).toBe(35);
-    expect(core.filterHash({ mode: 'bulletin' })).toBe('ff-30----b');
+    expect(core.MODES).toEqual(['match', 'slope']);
   });
 });
 
@@ -344,13 +345,6 @@ describe('summarise', () => {
       .toBe('2 aspects · 30°+ · below 3,600 m');
   });
 
-  it('says "by bulletin" alone in the bulletin mode, which sets the rest', () => {
-    const withBulletin = { ...strings, bulletin: 'By each region\'s bulletin' };
-    expect(core.summarise({ mode: 'bulletin', aspects: [0], minSlope: 40 }, withBulletin))
-      .toBe('By each region\'s bulletin');
-    expect(core.summarise({ mode: 'bulletin' }, withBulletin, { short: true }))
-      .toBe('By each region\'s bulletin');
-  });
 });
 
 describe('urls and the tile cache', () => {

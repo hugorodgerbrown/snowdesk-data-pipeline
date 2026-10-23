@@ -3,8 +3,8 @@ apps/public/templates/public/help/_topic_bulletin_terrain.html — "Problem terr
 
 Content partial for the help page (SNOW-979, SNOW-1194); included via the
 body_template parameter of includes/_collapsible_panel.html, and the target
-of the #help-topic-bulletin-terrain links in the region sheet, the terrain
-filter's "By bulletin" key and the map legend. Like the terrain
+of the #help-topic-bulletin-terrain links in the region sheet and the map
+legend. Like the terrain
 filter's topic, this is where the layer's limits live: the sheet carries the
 switch, the key and one line, and links here for the rest. The most
 important paragraph is the one on undescribed ground — the layer paints it
@@ -14,13 +14,14 @@ precisely so that it is not read as safe.
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0" data-testid="help-bulletin-terrain-what">
         {% blocktrans trimmed %}
-            The terrain filter&rsquo;s &ldquo;By bulletin&rdquo; colour paints every region&rsquo;s ground of 30 degrees
-            and steeper by what that region&rsquo;s own bulletin says about it that day: where a problem&rsquo;s aspects
-            and heights take in a slope, the slope is painted in the colour of that problem&rsquo;s danger level. Where
-            two problems overlap, the higher level wins, and a day with a morning and an afternoon bulletin shows the
-            worse of the two. Where it paints, a region&rsquo;s own danger colour steps aside. The &ldquo;Show problem
-            terrain on the map&rdquo; switch above a region&rsquo;s bulletin is a shortcut to it: switching it on there
-            turns on the filter in that colour, for the whole map, and it stays on as you move from region to region.
+            &ldquo;Highlight problem terrain&rdquo;, under Conditions in the layers menu, paints every region&rsquo;s
+            ground of 30 degrees and steeper by what that region&rsquo;s own bulletin says about it that day: where a
+            problem&rsquo;s aspects and heights take in a slope, the slope is painted in the colour of that
+            problem&rsquo;s danger level. Where two problems overlap, the higher level wins, and a day with a morning
+            and an afternoon bulletin shows the worse of the two. It paints from zoom 12, and where it paints, a
+            region&rsquo;s own danger colour steps aside. The switch of the same name above a region&rsquo;s bulletin is
+            the same setting: switching it on there turns it on for the whole map, and it stays on as you move from
+            region to region.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-bulletin-terrain-undescribed">

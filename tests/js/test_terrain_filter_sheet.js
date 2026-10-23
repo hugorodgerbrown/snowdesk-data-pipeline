@@ -23,7 +23,6 @@ function stubBridge() {
     enabled: false,
     filter: { aspects: [0, 1, 2, 3, 4, 5, 6, 7], minSlope: 30, maxSlope: null, minElevation: null, maxElevation: null },
     availability: 'ok',
-    dayEmpty: false,
   };
   const announce = () => document.dispatchEvent(new CustomEvent('snowdesk:terrain-filter-changed'));
   const bridge = {
@@ -37,7 +36,6 @@ function stubBridge() {
       announce();
     }),
     availability: () => state.availability,
-    bulletinDayEmpty: () => state.dayEmpty,
   };
   window.pwaTerrainFilter = bridge;
   return bridge;
@@ -65,9 +63,6 @@ function buildFixture() {
       <h2>Terrain filter</h2>
       <input type="radio" name="terrain-filter-mode" value="match" checked>
       <input type="radio" name="terrain-filter-mode" value="slope">
-      <input type="radio" name="terrain-filter-mode" value="bulletin">
-      <section data-terrain-filter-bulletin hidden>Problem terrain</section>
-      <div data-terrain-filter-manual></div>
       <span data-terrain-filter-slope-line></span>
       <div data-terrain-filter-ramp data-mode="match">
         ${ramp.map((label, i) => `<button type="button" data-slope-class="${i}" aria-pressed="false">${label}</button>`).join('')}
@@ -89,7 +84,6 @@ function buildFixture() {
     <template id="map-terrain-filter-strings-template">
       <span data-string="availability-zoom-in">Näher heranzoomen.</span>
       <span data-string="availability-out-of-coverage">Keine Daten hier.</span>
-      <span data-string="availability-no-bulletin">Kein Bulletin für diesen Tag.</span>
       <span data-string="aspects-all">Alle Expositionen</span>
       <span data-string="aspects-count">%(count)s Expositionen</span>
       <span data-string="slope-min">ab %(min)s°</span>
@@ -291,15 +285,10 @@ describe('the mode (SNOW-1073)', () => {
     expect(lastFilter()).toMatchObject({ mode: 'match' });
   });
 
-  it('opens on "By bulletin" with its key in place of the controls (SNOW-1194)', () => {
-    // Set while the sheet was shut (the region sheet's switch), so no
-    // announcement reached a sheet that did not exist yet.
-    bridge.state.filter = { mode: 'bulletin', minSlope: 30 };
-    bridge.state.enabled = true;
+  it('offers two colours: "By bulletin" is its own layer now', () => {
     window.pwaTerrainFilterSheet.open();
-    expect(radio('bulletin').checked).toBe(true);
-    expect(q('[data-terrain-filter-bulletin]').hidden).toBe(false);
-    expect(q('[data-terrain-filter-manual]').hidden).toBe(true);
+    const modes = [...sheetEl().querySelectorAll('input[name="terrain-filter-mode"]')].map((r) => r.value);
+    expect(modes).toEqual(['match', 'slope']);
   });
 
   it('summarises the filter in the legend without naming the mode, and shows its key', () => {
@@ -331,13 +320,6 @@ describe('the menu row and legend', () => {
     bridge.state.availability = 'out-of-coverage';
     bridge.show();
     expect(summary().textContent).toBe('Keine Daten hier.');
-  });
-
-  // SNOW-1195: "By bulletin" on a day with no bulletin paints nothing.
-  it('says when the day has no bulletin to colour by', () => {
-    bridge.state.dayEmpty = true;
-    bridge.show();
-    expect(summary().textContent).toBe('Kein Bulletin für diesen Tag.');
   });
 
   it('hides the line and the legend while the filter is off', () => {

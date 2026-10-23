@@ -438,6 +438,9 @@
     // map with it on would greet a visitor who came to read the ratings
     // with terrain. window.pwaTerrainFilter is its one writer.
     terrain_filter: false,
+    // "Highlight problem terrain": off by default, for the terrain filter's
+    // reason. window.pwaBulletinTerrain is its one writer.
+    problem_terrain: false,
     // SNOW-1185: regions no provider has ever rated stay off the map unless
     // asked for — see applyCountryFilters.
     unsupported: false,
@@ -544,8 +547,30 @@
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'unsupported']) {
+  for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
+  }
+  // 2026-10-23: "By bulletin" left the terrain filter for a row of its own,
+  // "Highlight problem terrain". A device that left the filter switched on
+  // in that colour comes back with problem terrain on and the filter off,
+  // and the stored filter's mode becomes 'match' so this runs once. Before
+  // the menu rows are seeded below, so they open on the carried-over state.
+  if (TERRAIN_FILTER_ELIGIBLE) {
+    let storedFilter = null;
+    try {
+      storedFilter = JSON.parse(readStorage(TERRAIN_FILTER_STORAGE_KEY) || 'null');
+    } catch (_err) {
+      storedFilter = null;
+    }
+    if (storedFilter && storedFilter.mode === 'bulletin') {
+      if (overlayState.terrain_filter) {
+        overlayState.terrain_filter = false;
+        overlayState.problem_terrain = true;
+        writeStorage(OVERLAY_STORAGE_KEY.terrain_filter, 'false');
+        writeStorage(OVERLAY_STORAGE_KEY.problem_terrain, 'true');
+      }
+      writeStorage(TERRAIN_FILTER_STORAGE_KEY, JSON.stringify({ ...storedFilter, mode: 'match' }));
+    }
   }
   // The three EAWS boundary tiers. At most one is configured on, so each asks
   // the same question of the same value rather than carrying a literal.
@@ -4375,20 +4400,11 @@
   let terrainAvailability = null;
 
   /**
-   * Whether the filter's colour is "By bulletin" (SNOW-1194). The filter's
-   * own raster then stands aside for the problem-terrain layer below, which
-   * shares its switch, its tiles and its LRU.
+   * Whether the filter's own raster draws: switched on.
    *
    * @returns {boolean}
    */
-  const terrainBulletinMode = () => !!terrainFilter && terrainFilter.mode === 'bulletin';
-
-  /**
-   * Whether the filter's own raster draws: switched on, in a reader's mode.
-   *
-   * @returns {boolean}
-   */
-  const terrainFilterRasterShown = () => !!overlayState.terrain_filter && !terrainBulletinMode();
+  const terrainFilterRasterShown = () => !!overlayState.terrain_filter;
 
   /**
    * A 2D canvas of one tile's size — an OffscreenCanvas where the browser
@@ -4656,8 +4672,7 @@
   };
 
   /**
-   * Show the filter's own raster or the problem-terrain layer, whichever
-   * the switch and the colour say — never both.
+   * Show or hide the filter's raster, as its switch says.
    *
    * @returns {void}
    */
@@ -4666,7 +4681,6 @@
     for (const layerId of OVERLAY_LAYERS.terrain_filter) {
       if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', visibility);
     }
-    syncBulletinTerrain();
   };
 
   if (TERRAIN_FILTER_ELIGIBLE && TERRAIN_CORE) {
@@ -4697,19 +4711,17 @@
         announceTerrainFilter();
       },
       availability: () => terrainAvailability || currentTerrainAvailability(),
-      // SNOW-1195: "By bulletin" on a day no bulletin covers paints
-      // nothing, and used to say nothing; the sheet's row now names it.
-      // Only once the day has loaded — an unfetched day is not empty.
-      bulletinDayEmpty: () =>
-        bulletinTerrainShown() && !!bulletinTerrainDay && bulletinTerrainDay.issued === 0,
     });
   }
 
   // SNOW-979, SNOW-1194: problem terrain — every region's steep ground
   // painted by what its own bulletin says about it.
   //
-  // The terrain filter's third colour, "By bulletin": the filter above with
-  // its settings taken from the bulletins rather than the reader. The same
+  // Its own layers-menu row, "Highlight problem terrain", under Conditions
+  // (2026-10-23; SNOW-1194 had made it the terrain filter's third colour,
+  // "By bulletin", and Hugo found it hidden there: it is the bulletin drawn
+  // another way, not a filter the reader sets). It is still the filter's
+  // machinery with the settings taken from the bulletins. The same
   // class tiles (and the same 64-tile LRU of decoded pixels, so a tile the
   // filter fetched costs this nothing), the same terrain_filter_core
   // .paintTile, a classifier and palette per bulletin from
@@ -4726,8 +4738,10 @@
   // for the whole map, refetched when the day changes. SNOW-979 painted the
   // selected region alone, from rules in its sheet, and clicking from
   // region to region repainted one at a time (Hugo, 22 Oct: choppy). The
-  // region sheet's switch is now a shortcut to this colour and the filter's
-  // switch; the two cannot disagree because there is one state.
+  // menu row, the region sheet's switch and the map chip all write one
+  // state, overlayState.problem_terrain, so they cannot disagree. It is
+  // independent of the terrain filter: the filter draws under the
+  // choropleth, this above it, and both can be on.
   //
   // The tiles exist from z12, so below it nothing paints and the choropleth
   // shows as ever. From z12 each painted region's danger fill drops out
@@ -4774,11 +4788,27 @@
     : null;
 
   /**
-   * Whether the layer should be drawn: the filter on, coloured by bulletin.
+   * Whether the layer should be drawn: its row switched on.
    *
    * @returns {boolean}
    */
-  const bulletinTerrainShown = () => !!overlayState.terrain_filter && terrainBulletinMode();
+  const bulletinTerrainShown = () => !!overlayState.problem_terrain;
+
+  /**
+   * Tell the menu row, the region sheet's switch and the map chip that the
+   * layer's state or its day moved.
+   *
+   * @returns {void}
+   */
+  const announceProblemTerrain = () => {
+    document.dispatchEvent(new CustomEvent('snowdesk:problem-terrain-changed', {
+      detail: {
+        enabled: bulletinTerrainShown(),
+        // Only once the day has loaded: an unfetched day is not empty.
+        dayEmpty: bulletinTerrainShown() && !!bulletinTerrainDay && bulletinTerrainDay.issued === 0,
+      },
+    }));
+  };
 
   /**
    * MapLibre's handler for `bulletinterrain://`. Like the terrain filter's,
@@ -4991,14 +5021,13 @@
     }
     syncBulletinTerrainFill();
     map.triggerRepaint();
-    // SNOW-1195: the terrain filter's row says when the day has no
-    // bulletin to colour by, so it has to hear that the day moved.
-    announceTerrainFilter();
+    // SNOW-1195: the row says when the day has no bulletin to paint by, so
+    // it has to hear that the day moved.
+    announceProblemTerrain();
   };
 
   /**
-   * Bring the layer, the fills and the day in line with the filter's state.
-   * Called by the terrain filter on every switch and every colour change.
+   * Bring the layer, the fills and the day in line with the row's state.
    *
    * @returns {void}
    */
@@ -5050,30 +5079,44 @@
       bulletinTerrainDayTimer = setTimeout(refreshBulletinTerrainDay, BULLETIN_TERRAIN_DAY_DELAY_MS);
     });
 
-    // The region sheet's switch: a shortcut to the terrain filter's
-    // "By bulletin" colour and its switch, so there is one state. The
-    // sheet reads it back from snowdesk:terrain-filter-changed.
+    /**
+     * Switch the layer on or off, and remember it.
+     *
+     * @param {boolean} on
+     * @returns {void}
+     */
+    const setProblemTerrainEnabled = (on) => {
+      overlayState.problem_terrain = on;
+      writeStorage(OVERLAY_STORAGE_KEY.problem_terrain, String(on));
+      syncBulletinTerrain();
+      document.dispatchEvent(new CustomEvent('snowdesk:overlay-visibility-changed'));
+      announceProblemTerrain();
+    };
+
+    // The layer's one owner of state. Three controls write it — the layers
+    // menu's "Highlight problem terrain" row (map_basemap_picker.js), the
+    // region sheet's switch and the map chip's × — and each reads it back
+    // from snowdesk:problem-terrain-changed, so they cannot disagree.
     window.pwaBulletinTerrain = Object.freeze({
       isEnabled: bulletinTerrainShown,
+      show: () => setProblemTerrainEnabled(true),
+      hide: () => setProblemTerrainEnabled(false),
       /**
-       * Colour the filter by bulletin and switch it on, or switch it off.
+       * Switch the layer on or off; on, from a region's sheet, also take
+       * the camera to where it paints.
        *
        * @param {boolean} on
        * @param {string} [regionId] The sheet's region, to zoom to when the
        *   camera is above the tiles.
        */
       setEnabled(on, regionId) {
-        const filter = window.pwaTerrainFilter;
-        if (!filter) return;
-        if (!on) {
-          filter.hide();
-          return;
-        }
-        const current = filter.getFilter();
-        if (current.mode !== 'bulletin') filter.setFilter({ ...current, mode: 'bulletin' });
-        filter.show();
-        if (regionId) zoomToBulletinTerrain(regionId);
+        setProblemTerrainEnabled(on);
+        if (on && regionId) zoomToBulletinTerrain(regionId);
       },
+      // SNOW-1195: on a day no bulletin covers the layer paints nothing,
+      // and the menu row says so.
+      dayEmpty: () =>
+        bulletinTerrainShown() && !!bulletinTerrainDay && bulletinTerrainDay.issued === 0,
       availability: () => terrainAvailability || currentTerrainAvailability(),
     });
   }
@@ -8262,8 +8305,8 @@
     // round.
     installTerrainFilterLayer();
     installRegionsLayers(geojson);
-    // SNOW-979: after the regions — it sits above the choropleth. SNOW-1194:
-    // a reader who left the filter on "By bulletin" gets the day now.
+    // SNOW-979: after the regions — it sits above the choropleth. A reader
+    // who left "Highlight problem terrain" on gets the day now.
     installBulletinTerrainLayer();
     if (BULLETIN_TERRAIN_ELIGIBLE) syncBulletinTerrain();
     // The downloaded-areas overlay is a persisted preference now, so a
@@ -10692,7 +10735,7 @@
       // downloadedOverlayVisible instead, which this handler must not touch
       // — a basemap swap must not silently close the downloads overlay out
       // from under an open "Manage downloads" sheet.
-      for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'unsupported']) {
+      for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
       // l1, l2, l4 and bulletins are re-seeded before any install fn runs: the

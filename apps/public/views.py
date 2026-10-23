@@ -2065,9 +2065,9 @@ def _terrain_filter_context() -> dict[str, Any]:
     menu row nor the tile template: a template in the DOM would be an
     invitation to install a layer the environment has withdrawn.
 
-    SNOW-1194 added the filter's "By bulletin" colour, whose key — in the
-    filter's sheet and the map legend — lists the whole problem-terrain
-    scale, because every region is painted at once.
+    SNOW-1194's problem-terrain layer shares the filter's gate and tiles;
+    its key in the map legend lists the whole scale, because every region
+    is painted at once.
 
     Returns:
         Dict with ``terrain_filter_eligible``, ``terrain_class_tile_url``
