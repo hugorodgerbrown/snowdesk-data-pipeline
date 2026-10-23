@@ -1942,7 +1942,9 @@ html:has(> body.map-fullscreen) > body {
    map_calendar.js's `phone` query. */
 @media (max-width: 639.98px) {
     #map-date-row > #map-calendar-toggle,
-    #map-date-row > #map-today-control {
+    #map-date-row > #map-today-control,
+    #map-date-row > .map-day-step,
+    #map-date-row > .map-day-empty {
         display: none;
     }
 }
@@ -2020,6 +2022,104 @@ html:has(> body.map-fullscreen) > body {
 
 .map-today-control:disabled > * {
     opacity: 0.45;
+}
+
+/* SNOW-1195: a day back and a day forward, joined to the date control as
+   "Today" is — the left end of the pill and a square segment after the
+   date. The date control squares whichever ends they meet, and each takes
+   the row's 8px gap back. Disabled at an end of the reachable range, dimmed
+   as "Today" is, so the pill keeps its shape. */
+.map-day-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 30px;
+    height: var(--map-control-sm);
+    padding: 0;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    cursor: pointer;
+}
+
+.map-day-step--prev {
+    margin-right: -8px;
+    padding-left: 4px;
+    border-radius: 999px 0 0 999px;
+}
+
+.map-day-step--next {
+    margin-left: -8px;
+    border-radius: 0;
+}
+
+.map-day-step--next:not(:has(+ .map-today-control)) {
+    padding-right: 4px;
+    border-radius: 0 999px 999px 0;
+}
+
+.map-day-step:disabled {
+    cursor: default;
+}
+
+.map-day-step:disabled > * {
+    opacity: 0.35;
+}
+
+.map-day-step--prev + .map-date-control {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+.map-date-control:has(+ .map-day-step--next) {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+/* SNOW-1195: the empty-day notice — the day has no bulletin for any
+   country that is on, and a press to the nearest one that has. The
+   stale-day notice's glass pill, beside the date control on a desktop; on
+   a phone it hangs under the top row (below). */
+.map-day-empty {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+    height: var(--map-control-sm);
+    padding: 0 4px 0 12px;
+    background: var(--color-glass);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.map-day-empty[hidden],
+.map-day-empty-jump[hidden] {
+    display: none;
+}
+
+.map-day-empty-jump {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: calc(var(--map-control-sm) - 8px);
+    padding: 0 6px 0 10px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--color-text-1);
+    color: var(--color-card);
+    font: inherit;
+    cursor: pointer;
 }
 
 /* SNOW-794: the date control — one pill that both SAYS the day and OPENS
@@ -2426,6 +2526,7 @@ html:has(> body.map-fullscreen) > body {
 .map-legend-swatch--moderate     { background: var(--color-eaws-moderate); }
 .map-legend-swatch--considerable { background: var(--color-eaws-considerable); }
 .map-legend-swatch--high         { background: var(--color-eaws-high); }
+.map-legend-swatch--very-high    { background: var(--color-eaws-very-high); }
 
 /* SNOW-691: the swisstopo slope-angle raster's five painted classes, in the
    same swatch shape as the danger scale above. The tokens are in
@@ -5575,8 +5676,26 @@ body.map-framing #map-legend {
     }
 
     .map-utility-cluster > .map-date-control,
-    .map-utility-cluster > .map-today-control {
+    .map-utility-cluster > .map-today-control,
+    .map-utility-cluster > .map-day-step {
         height: var(--map-control-lg);
+    }
+
+    .map-utility-cluster > .map-day-step {
+        width: 34px;
+    }
+
+    /* SNOW-1195: the empty-day notice hangs under the row, where the
+       calendar card drops, so a peeking sheet never covers it. */
+    .map-utility-cluster > .map-day-empty {
+        position: absolute;
+        top: calc(var(--map-control-lg) + 8px);
+        left: 0;
+        height: var(--map-control-lg);
+    }
+
+    .map-utility-cluster > .map-day-empty > .map-day-empty-jump {
+        height: calc(var(--map-control-lg) - 10px);
     }
 
     .search-results {

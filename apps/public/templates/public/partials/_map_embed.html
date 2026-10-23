@@ -1185,6 +1185,15 @@ Optional context:
                         aria-hidden="true"
                     ></span>{% trans "High (4)" %}
                 </div>
+                {# SNOW-1195: the fifth level. The map has always painted it   #}
+                {# (golden week Thu/Fri, most French massifs on 12 Feb 2026),  #}
+                {# and the problem-terrain key below lists it; this one didn't. #}
+                <div class="map-legend-row">
+                    <span
+                        class="map-legend-swatch map-legend-swatch--very-high"
+                        aria-hidden="true"
+                    ></span>{% trans "Very high (5)" %}
+                </div>
             </section>
             <section class="map-legend-section">
                 <div class="map-legend-title">{% trans "Map pins" %}</div>
@@ -1519,6 +1528,34 @@ Optional context:
             date beside it once there is one. The button is always pressable —
             it is how you choose the day in the first place.
             {% endcomment %}
+            {% comment %}
+            SNOW-1195: a day back and a day forward, either side of the date
+            control and joined to it, so the day before is one press rather
+            than a calendar open. static/js/map_day_nav.js binds both and
+            disables each at its end of the reachable range — the calendar's
+            range. On a phone map_calendar.js moves them up with the date
+            control, where the calendar used to be the only way to change day.
+            {% endcomment %}
+            <button
+                id="map-day-prev"
+                type="button"
+                class="map-day-step map-day-step--prev hover-affordance"
+                aria-label='{% trans "Previous day" %}'
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="m15 18-6-6 6-6" />
+                </svg>
+            </button>
             <button
                 id="map-calendar-toggle"
                 type="button"
@@ -1544,6 +1581,26 @@ Optional context:
                     <path d="M16 3v4" />
                 </svg>
                 <span id="map-date-ribbon" class="map-date-ribbon" aria-live="polite" hidden></span>
+            </button>
+            <button
+                id="map-day-next"
+                type="button"
+                class="map-day-step map-day-step--next hover-affordance"
+                aria-label='{% trans "Next day" %}'
+            >
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                >
+                    <path d="m9 18 6-6-6-6" />
+                </svg>
             </button>
             {% comment %}
             SNOW-1165: "Today", joined to the date control's right-hand end.
@@ -1576,6 +1633,40 @@ Optional context:
                 </svg>
                 <span>{% trans "Today" %}</span>
             </button>
+            {% comment %}
+            SNOW-1195: shown by static/js/map_day_nav.js when the day on the
+            map has no bulletin for any country that is on. An empty map used
+            to read as one that had failed to load, and the problem-terrain
+            layer painted nothing without a word. Names the day and offers the
+            nearest one that has a bulletin — the last issued, or the next
+            when nothing came before.
+            {% endcomment %}
+            <div id="map-day-empty" class="map-day-empty" role="status" hidden>
+                <span data-day-empty-label></span>
+                <button type="button" class="map-day-empty-jump hover-affordance" data-day-empty-jump>
+                    <span data-day-empty-jump-label></span>
+                    <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="m9 18 6-6-6-6" />
+                    </svg>
+                </button>
+            </div>
+            {# SNOW-1195: map_day_nav.js's strings. Its own template: each id #}
+            {# maps to the one module that reads it.                          #}
+            <template id="map-day-nav-strings-template">
+                <span data-string="day-empty">{% blocktrans %}No bulletins for %(day)s{% endblocktrans %}</span>
+                <span data-string="day-last-issued">{% blocktrans %}Last issued %(day)s{% endblocktrans %}</span>
+                <span data-string="day-next-issued">{% blocktrans %}Next issued %(day)s{% endblocktrans %}</span>
+            </template>
             {% comment %}
             SNOW-920: shown by static/js/stale_day.js when this page is a cached
             copy rendered on an earlier day than the server's. It names the day
@@ -1626,6 +1717,8 @@ Optional context:
                 id="season-scrubber"
                 class="season-scrubber"
                 role="slider"
+                {# SNOW-1195: focusable, so the keys map_day_nav.js binds reach it. #}
+                tabindex="0"
                 aria-label='{% trans "Season scrubber" %}'
                 aria-valuemin="0"
                 aria-valuemax="100"

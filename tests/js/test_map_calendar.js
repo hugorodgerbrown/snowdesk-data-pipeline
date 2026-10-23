@@ -223,7 +223,9 @@ describe('opening and closing', () => {
 
     openPopup();
 
-    expect(window.pwaMapOverlays.opening).toHaveBeenCalledWith('map-calendar');
+    expect(window.pwaMapOverlays.opening).toHaveBeenCalledWith('map-calendar', {
+      spareObjectSheets: true,
+    });
   });
 });
 

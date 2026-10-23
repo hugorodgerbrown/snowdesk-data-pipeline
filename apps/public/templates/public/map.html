@@ -314,6 +314,10 @@ in addition to the shared map assets.
     {# you — and tests/public/test_map_script_order.py does not cover this   #}
     {# pair, its regex matching only map*.js filenames.                      #}
     <script defer src="{% static 'js/calendar_core.js' %}"></script>
+    {# SNOW-1195: pure day-stepping maths for the date row                   #}
+    {# (window.pwaDayNavCore), unit-tested in tests/js/test_day_nav_core.js. #}
+    {# Must load before map_day_nav.js.                                      #}
+    <script defer src="{% static 'js/day_nav_core.js' %}"></script>
     {# SNOW-505: layers-popover sync-status dots (window.pwaLayerSyncStatus). #}
     {# Loads before map.js, whose basemapPickerInit calls refresh() from     #}
     {# setMenuOpen on every popover open.                                    #}
@@ -509,6 +513,11 @@ in addition to the shared map assets.
     {# bundle module reads it), which is what                                #}
     {# tests/public/test_map_script_order.py asks of a tag placed here.      #}
     <script defer src="{% static 'js/map_roundel_overlay_state.js' %}"></script>
+    {# SNOW-1195: the date row's day steps, the scrubber's keys and the     #}
+    {# empty-day notice. Dispatches into map_scrubber.js's scrub-to and     #}
+    {# reads getSeasonRatings / COUNTRY_STATE, so after the bundle; outside #}
+    {# its contiguous run because no bundle module reads it.                #}
+    <script defer src="{% static 'js/map_day_nav.js' %}"></script>
     {# Each panel's "Show on the map" switch, bound to its layers-menu row.  #}
     {# Reads the bridges and the rows lazily, so it only has to run before   #}
     {# the first panel opens; outside the bundle for the same reason as the  #}

@@ -515,6 +515,61 @@ def test_the_date_control_has_a_today_half() -> None:
 
 
 @pytest.mark.django_db
+def test_the_date_control_has_day_steps_either_side() -> None:
+    """SNOW-1195: ‹ before the date control and › after it, before "Today".
+
+    map_day_nav.js binds both; its core loads before it.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    prev = content.index('id="map-day-prev"')
+    toggle = content.index('id="map-calendar-toggle"')
+    nxt = content.index('id="map-day-next"')
+    today = content.index('id="map-today-control"')
+    assert prev < toggle < nxt < today
+    assert "aria-label='Previous day'" in content
+    assert "aria-label='Next day'" in content
+    core = content.index("/static/js/day_nav_core.js")
+    assert core < content.index("/static/js/map_day_nav.js")
+    assert content.index("/static/js/map_scrubber.js") < content.index(
+        "/static/js/map_day_nav.js"
+    )
+
+
+@pytest.mark.django_db
+def test_the_empty_day_notice_ships_hidden_with_its_strings() -> None:
+    """SNOW-1195: the notice is hidden until map_day_nav.js finds an empty day."""
+    content = Client().get(reverse("public:map")).content.decode()
+    start = content.index('id="map-day-empty"')
+    tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
+    assert "hidden" in tag
+    assert 'role="status"' in tag
+    assert '<template id="map-day-nav-strings-template">' in content
+    for key in ("day-empty", "day-last-issued", "day-next-issued"):
+        assert f'data-string="{key}"' in content
+
+
+@pytest.mark.django_db
+def test_the_season_scrubber_takes_keyboard_focus() -> None:
+    """SNOW-1195: role="slider" needs a tab stop for its keys to reach it."""
+    content = Client().get(reverse("public:map")).content.decode()
+    start = content.index('id="season-scrubber"')
+    tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
+    assert 'role="slider"' in tag
+    assert 'tabindex="0"' in tag
+
+
+@pytest.mark.django_db
+def test_the_danger_legend_lists_all_five_levels() -> None:
+    """SNOW-1195: Very high (5) was painted on the map but missing here."""
+    content = Client().get(reverse("public:map")).content.decode()
+    for level in ("low", "moderate", "considerable", "high", "very-high"):
+        assert f"map-legend-swatch--{level}" in content
+    assert "Very high (5)" in content
+    css = (Path(__file__).resolve().parents[2] / "static/css/map.css").read_text()
+    assert ".map-legend-swatch--very-high" in css
+
+
+@pytest.mark.django_db
 @override_settings(BASEMAP="swisstopo_winter")
 def test_map_page_injects_default_basemap_key() -> None:
     """

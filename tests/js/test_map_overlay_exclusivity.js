@@ -40,7 +40,7 @@ async function loadRegistry() {
  * @param {boolean} open Whether it starts open.
  * @returns {{ name: string, open: boolean, closes: number }}
  */
-function fakeOverlay(name, open = false) {
+function fakeOverlay(name, open = false, objectSheet = false) {
   const overlay = { name: name, open: open, closes: 0 };
   window.pwaMapOverlays.register(name, {
     isOpen: () => overlay.open,
@@ -48,6 +48,7 @@ function fakeOverlay(name, open = false) {
       overlay.open = false;
       overlay.closes += 1;
     },
+    objectSheet: objectSheet,
   });
   return overlay;
 }
@@ -117,6 +118,27 @@ describe('window.pwaMapOverlays', () => {
     fakeOverlay('downloads');
 
     expect(window.pwaMapOverlays.names()).toEqual(['downloads', 'menu']);
+  });
+
+  // SNOW-1195: the calendar opens this way, so a new day reloads the sheet
+  // being read instead of shutting it.
+  it('spareObjectSheets leaves object sheets open and closes the rest', () => {
+    const region = fakeOverlay('map-region-sheet', true, true);
+    const menu = fakeOverlay('menu', true);
+
+    window.pwaMapOverlays.opening('map-calendar', { spareObjectSheets: true });
+
+    expect(region.open).toBe(true);
+    expect(region.closes).toBe(0);
+    expect(menu.open).toBe(false);
+  });
+
+  it('closes object sheets as before without the option', () => {
+    const region = fakeOverlay('map-region-sheet', true, true);
+
+    window.pwaMapOverlays.opening('menu');
+
+    expect(region.open).toBe(false);
   });
 
   it('tolerates a name nothing registered under', () => {

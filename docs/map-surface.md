@@ -2,7 +2,7 @@
 name: map-surface
 description: Map zoom bands (REGION_SELECT_MAXZOOM), tap priority, overlay kinds, pwaMapOverlays, one bottom sheet, camera padding owner
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-10-23
 ---
 
 # The map surface: zoom, taps and overlays
@@ -139,7 +139,15 @@ one.
 - **`window.pwaMapOverlays`** (`static/js/map_overlay_exclusivity.js`): one
   registered overlay at a time. Every sheet made with `MapSheet.attach` joins
   automatically under its DOM id; flyouts and cards register by hand.
-  Opening any of them closes every other registered one.
+  Opening any of them closes every other registered one — except that a
+  surface may open with `opening(name, { spareObjectSheets: true })`, which
+  leaves the object sheets (registered with `objectSheet: true` by
+  `MapSheet.attach` for any sheet that declares `data-detents`) open. The
+  calendar is the one caller (SNOW-1195): a day picked there reloads the
+  region, place or weather sheet in place, each listening for
+  `snowdesk:date-changed`, where it used to shut it and cost a re-tap.
+  The date row's ‹ › steps and the scrubber's keys (`map_day_nav.js`) open
+  nothing, so they never closed a sheet.
 - **One object sheet at a time** (`static/js/map_sheet.js`,
   `closeOtherSheets`). On a phone every detent sheet docks to the same foot
   of the screen, and on a desktop all four dock in the left column under

@@ -4655,6 +4655,11 @@
         announceTerrainFilter();
       },
       availability: () => terrainAvailability || currentTerrainAvailability(),
+      // SNOW-1195: "By bulletin" on a day no bulletin covers paints
+      // nothing, and used to say nothing; the sheet's row now names it.
+      // Only once the day has loaded — an unfetched day is not empty.
+      bulletinDayEmpty: () =>
+        bulletinTerrainShown() && !!bulletinTerrainDay && bulletinTerrainDay.issued === 0,
     });
   }
 
@@ -4875,7 +4880,12 @@
       classifiers.set(id, BULLETIN_TERRAIN_CORE.createClassifier(rules));
     }
     const regions = [];
+    // SNOW-1195: how many regions the day's bulletins cover at all, before
+    // the ones without a loaded outline drop out below. Zero is a day with
+    // no bulletin, which the terrain filter's row says in words.
+    let issued = 0;
     for (const [regionId, bulletinId] of day.regions) {
+      issued += 1;
       const feature = FEATURE_BY_REGION_ID[regionId];
       if (!feature || feature.id == null) continue;
       const rings = BULLETIN_TERRAIN_CORE.ringsOf(feature.geometry);
@@ -4883,7 +4893,7 @@
       if (!bbox) continue;
       regions.push({ regionId, featureId: feature.id, rings, bbox, classify: classifiers.get(bulletinId) });
     }
-    return { date: day.date, hash: BULLETIN_TERRAIN_CORE.dayHash(day), regions };
+    return { date: day.date, hash: BULLETIN_TERRAIN_CORE.dayHash(day), regions, issued };
   };
 
   /**
@@ -4934,6 +4944,9 @@
     }
     syncBulletinTerrainFill();
     map.triggerRepaint();
+    // SNOW-1195: the terrain filter's row says when the day has no
+    // bulletin to colour by, so it has to hear that the day moved.
+    announceTerrainFilter();
   };
 
   /**
