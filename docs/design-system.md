@@ -418,6 +418,10 @@ Each is one paragraph, paraphrased from the SLF Avalanche Bulletin Interpretatio
 
 ## The day-character model
 
+> **Hidden for now (2026-10-23).** The callout is off on every bulletin page
+> and map sheet: the copy was not good enough and it distracted from the
+> bulletin. The label and summary are still computed onto the panel context;
+> `SHOW_DAY_CHARACTER` in `apps/public/views.py` turns the callout back on.
 
 The interpretation layer Snowdesk adds on top of the provider's bulletin. It's documented in the README but worth restating here because the design implications are specific.
 

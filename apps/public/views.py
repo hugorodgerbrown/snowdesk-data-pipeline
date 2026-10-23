@@ -7404,8 +7404,16 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
         "problem_cards": problem_cards,
     }
     panel["day_character"] = _resolve_day_lead(raw_render_model)
+    panel["show_day_character"] = SHOW_DAY_CHARACTER
     panel["tendency_outlook"] = _resolve_tendency_outlook(raw_render_model)
     return panel
+
+
+# The day-character callout ("Hard-to-read day. …") is hidden for now: the
+# copy is not good enough and it distracts from the bulletin itself. The
+# label and explainer are still computed and kept on the panel context, so
+# turning this back on is this one line.
+SHOW_DAY_CHARACTER: bool = False
 
 
 def _resolve_day_lead(raw_render_model: dict[str, Any]) -> DayCharacter:

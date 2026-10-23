@@ -2784,7 +2784,27 @@ class TestDayCharacterEyebrow:
     as a leading icon. It is suppressed in the error state
     (``render_model.version == 0``) where the bulletin body is replaced by
     a warning panel.
+
+    The callout is hidden by default (``SHOW_DAY_CHARACTER = False``), so
+    every test here except the default-off one switches it back on.
     """
+
+    @pytest.fixture(autouse=True)
+    def _show_day_character(
+        self, request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Turn the callout on, except for the test that pins the default."""
+        if request.node.name != "test_hidden_by_default":
+            monkeypatch.setattr("apps.public.views.SHOW_DAY_CHARACTER", True)
+
+    def test_hidden_by_default(
+        self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
+    ) -> None:
+        """With the switch at its shipped value the page renders no callout."""
+        url = _url("ch-4115", "valais", "2026-03-15")
+        content = client.get(url).content.decode()
+        assert 'data-testid="day-character"' not in content
+        assert "Manageable day" not in content
 
     def test_renders_label_and_explainer(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
@@ -5473,6 +5493,11 @@ class TestDayCharacterNoLeadingPeriod:
     Tests that the day-character callout does not emit a leading '.' when
     the DayCharacter label is empty (ALBINA tendency-lead path).
     """
+
+    @pytest.fixture(autouse=True)
+    def _show_day_character(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Turn the callout on; it is hidden by default."""
+        monkeypatch.setattr("apps.public.views.SHOW_DAY_CHARACTER", True)
 
     @pytest.fixture
     def region(self) -> MicroRegion:
