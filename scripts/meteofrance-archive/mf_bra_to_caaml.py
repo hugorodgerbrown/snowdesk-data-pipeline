@@ -79,26 +79,6 @@ DANGER_LEVELS: dict[str, int] = {
     "tres fort": 5,
 }
 
-# French month abbreviations → month number.
-FRENCH_MONTHS: dict[str, int] = {
-    "jan": 1,
-    "fév": 2,
-    "fev": 2,
-    "mar": 3,
-    "avr": 4,
-    "mai": 5,
-    "jun": 6,
-    "jui": 6,
-    "jul": 7,
-    "aoû": 8,
-    "aou": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "déc": 12,
-    "dec": 12,
-}
-
 # Longest-prefix month lookup, used by ``french_month``.  Ordered so that the
 # longer of any two overlapping prefixes is tested first: ``"juillet"`` must be
 # matched before ``"jui"``, which would otherwise resolve July to June.
@@ -323,7 +303,7 @@ def _is_headline_line(stripped: str) -> bool:
     if all(re.match(r"^\d$", t) for t in tokens):
         return False
     # All-caps line (French accented capitals included).
-    if re.match(r"^[A-ZÀÂÄÉÈÊËÎÏÔÙÛÜÇ\s''\-,À-ÖÀ-ÖØ-Þ]+$", stripped):
+    if re.match(r"^[A-ZÀ-ÖØ-Þ\s'\-,]+$", stripped):
         return True
     # Sentence-case headline ending with a period.
     return bool(stripped.endswith(".") and stripped[0].isupper())
@@ -801,7 +781,7 @@ def _parse_cm_value_pairs(
                 label_cx = (float(prev["x0"]) + float(w["x1"])) / 2.0
                 result.append((val, label_cx))
             except ValueError:
-                pass
+                pass  # Not a numeric altitude label; keep scanning.
     return result
 
 
