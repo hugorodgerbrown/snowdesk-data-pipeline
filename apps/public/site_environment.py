@@ -31,8 +31,8 @@ and the page ``<head>`` cannot drift out of sync per environment.
 The identity is keyed on ``settings.SITE_ENVIRONMENT`` (``"production"``
 by default; anything else is treated as a staging-style non-production
 install). The production values are the canonical Snowdesk brand
-constants; the staging values reuse the same mountain glyph on an amber
-tile, raised over the word "Staging", drawn by ``bin/build-pwa-icons`` — a
+constants; the staging values reuse the same peaks glyph on an amber
+tile, drawn by ``bin/build-pwa-icons`` — a
 launcher tile that reads as unambiguously non-production from three feet
 away.
 

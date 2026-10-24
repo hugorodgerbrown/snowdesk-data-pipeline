@@ -2,7 +2,7 @@
 name: pwa-launch
 description: PWA launch — PWAEnvironmentIdentity colours, icon_url, serve_manifest, the OS splash, maskable icon fit, new environments
 status: current
-last-reviewed: 2026-10-18
+last-reviewed: 2026-10-24
 ---
 
 # The PWA launch: splash to first paint
@@ -49,9 +49,9 @@ splash shows the whole icon as a circle 240dp across. The home-screen
 launcher is tighter: it draws an adaptive icon, showing the middle two
 thirds of the canvas, with a safe zone of 66dp of 108dp. So
 `bin/build-pwa-icons` shrinks the tile until its furthest mark (the
-mountain's base corners, or the ends of the "Staging" label) sits at 30%
-of the canvas from the centre, and it centres the marks themselves rather
-than the tile, whose mountain sits low in its square. The marks can't be
+peaks' base corners) sits at 30% of the canvas from the centre, and it
+centres the marks themselves rather than the tile, whose peaks sit low
+in its square. The marks can't be
 made larger without the launcher cropping them.
 `tests/public/test_pwa_icons.py` fails if a mark reaches the edge of that
 circle, or sits off centre.

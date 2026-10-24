@@ -25,6 +25,9 @@ the bytes off disk and assert the properties that have actually broken:
    an edge-to-edge opaque PNG becomes a solid white block in the status
    bar — precisely what passing ``icon-192.png`` as the badge did
    (SNOW-874). The badge is the one file here that must *keep* its alpha.
+4. **One mark everywhere.** The launcher artwork (``static/icons/app-icon.svg``)
+   and every favicon draw the same two peaks, and both peaks are
+   symmetrical at one apex angle.
 
 Pixel colours are read with Pillow rather than decoded by hand; the alpha
 assertion reads the PNG IHDR byte directly, which needs no decoder at all.
@@ -33,6 +36,7 @@ assertion reads the PNG IHDR byte directly, which needs no decoder at all.
 from __future__ import annotations
 
 import math
+import re
 from pathlib import Path
 
 import pytest
@@ -224,15 +228,63 @@ def test_flattened_icons_have_no_alpha_channel(icon_set: str, name: str) -> None
 def test_production_tile_colour_matches_the_favicon_rect_fill() -> None:
     """The production tile colour is the brand green in ``static/favicon.svg``.
 
-    Both icon sets are rendered from that one SVG, so the colour the
+    Both icon sets are rendered from the launcher artwork, whose tile is
+    the favicon's, so the colour the
     flattened PNGs are backed with has to be the colour the artwork's own
     rounded rect is filled with. Asserting it here means a brand-colour
     change that misses ``bin/build-pwa-icons`` fails a test rather than
     reintroducing the border this module exists to prevent.
     """
-    svg = (Path(settings.BASE_DIR) / "static" / "favicon.svg").read_text()
     red, green, blue = TILE_COLOURS["pwa"]
-    assert f'fill="#{red:02x}{green:02x}{blue:02x}"' in svg
+    for name in ("favicon.svg", "icons/app-icon.svg"):
+        svg = (Path(settings.BASE_DIR) / "static" / name).read_text()
+        assert f'fill="#{red:02x}{green:02x}{blue:02x}"' in svg, name
+
+
+def _peak_path(svg_path: Path) -> str:
+    """Return the ``d`` attribute of the first ``<path>`` in an SVG — the peaks."""
+    match = re.search(r'<path d="([^"]+)"', svg_path.read_text())
+    assert match is not None, f"no <path> in {svg_path}"
+    return match.group(1)
+
+
+def test_every_artwork_draws_the_same_peaks() -> None:
+    """The launcher artwork and every favicon share one peak path.
+
+    The PWA icons are rendered from ``static/icons/app-icon.svg`` (with a
+    snowline) while the tab favicon, the danger-level favicons and the
+    notification badge use the plain path in ``static/favicon.svg``. A
+    redraw that reaches one file and not the rest would show two different
+    logos depending on where the user looks.
+    """
+    static = Path(settings.BASE_DIR) / "static"
+    expected = _peak_path(static / "favicon.svg")
+    artworks = [static / "icons" / "app-icon.svg", *sorted(static.glob("favicon*.svg"))]
+    for artwork in artworks:
+        assert _peak_path(artwork) == expected, artwork.name
+
+
+def test_peaks_are_symmetrical_at_one_apex_angle() -> None:
+    """Both peaks are isosceles and share an apex angle.
+
+    The path is the union of two triangles on one base line: left foot,
+    big apex, the valley where the flanks cross, small apex, right foot.
+    Each of its four flanks must therefore run at the same gradient, which
+    is what makes each peak symmetrical and the two alike.
+    """
+    path = _peak_path(Path(settings.BASE_DIR) / "static" / "favicon.svg")
+    numbers = [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", path)]
+    foot_l, apex_big, valley, apex_small, foot_r = (
+        tuple(numbers[i : i + 2]) for i in range(0, 10, 2)
+    )
+    flanks = [
+        (foot_l, apex_big),
+        (apex_big, valley),
+        (valley, apex_small),
+        (apex_small, foot_r),
+    ]
+    gradients = [abs((b[0] - a[0]) / (b[1] - a[1])) for a, b in flanks]
+    assert max(gradients) - min(gradients) < 0.01, gradients
 
 
 def test_notification_badge_is_an_alpha_silhouette() -> None:

@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-24
 ---
 
 # PWA shell
@@ -3507,8 +3507,14 @@ midpoint of each edge of the maskable icon, and iOS's squircle leaves
 slivers at the corners of the apple-touch icon. `tests/public/test_pwa_icons.py`
 samples those exact pixels on both sets (SNOW-151).
 
+The mark is two symmetrical peaks, big and small, at the same 60° apex
+angle. `static/favicon.svg` draws them plain for small sizes (tab, badge);
+`static/icons/app-icon.svg` adds a zigzag snowline cut across each in the
+tile colour, and every PWA icon (96px and up) is rendered from it. The
+build fails if the two files' peak paths differ.
+
 The PNGs are checked in. There's no Render-side regen step — when
-`favicon.svg` changes, run `npm run build:icons`, then
+either SVG changes, run `npm run build:icons`, then
 `npm run build:splash` so the iOS startup images follow, and commit the
 new PNGs alongside the edit.
 
@@ -3516,13 +3522,12 @@ new PNGs alongside the edit.
 
 `bin/build-pwa-icons` also emits a second set into
 `static/icons/pwa-staging/` — same four filenames, an amber tile colour
-(`#b45309`) replacing the brand green, and the mountain raised to make
-room for the word "Staging" in a band beneath it, in the same brand cream.
-The word spans about two thirds of the tile, clear of the rounded corners
-and iOS's squircle crop; on the maskable variant the whole tile is shrunk
-until the word sits inside the circle Android shows. (Both sets carried
-the season, "25/26", in that band until the SNOW-1112 follow-up, and
-staging an asterisk instead of the word.)
+(`#b45309`) replacing the brand green in the tile and the snowline cut,
+and the mark otherwise unchanged. The amber tile is the tell; the
+launcher label already reads "Snowdesk Staging" from the manifest. (Until
+the symmetrical-peaks redraw the staging mountain was raised over the
+word "Staging"; before the SNOW-1112 follow-up both sets carried the
+season, "25/26", and staging an asterisk.)
 
 The manifest view (`apps.public.views.serve_manifest`) and `base.html` both
 read `apps.public.site_environment.PWAEnvironmentIdentity.from_settings()`,
