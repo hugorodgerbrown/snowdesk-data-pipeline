@@ -117,6 +117,11 @@ class TestBlocks:
         assert block["precip"] == ""
         assert block["precip_summary"] == "Dry"
 
+    def test_a_block_with_no_precipitation_reading_is_not_dry(self) -> None:
+        block = build_day_strips(_flat_day(precipitation=None))["blocks"][0]  # type: ignore[index]
+        assert block["precip"] == ""
+        assert block["precip_summary"] == "–"
+
     def test_wind_is_the_strongest_speed_and_gust(self, storm: dict[str, Any]) -> None:
         block = build_day_strips(storm)["blocks"][0]  # type: ignore[index]
         assert (block["wind"], block["gust"]) == ("16", "38")

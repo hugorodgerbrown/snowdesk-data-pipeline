@@ -328,7 +328,10 @@ def _block(
     water = sum(waters)
     snow_cm = sum(snows)
     is_snow = water > 0 and snow_cm / SNOW_CM_PER_MM >= water / 2
-    if water < 0.05:
+    if not waters:
+        # No reading is not a dry forecast: say nothing, as the other rows do.
+        precip_text, summary = "", dash
+    elif water < 0.05:
         precip_text, summary = "", _("Dry")
     elif is_snow:
         precip_text = f"{snow_cm:.1f}"

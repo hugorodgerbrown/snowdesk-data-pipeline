@@ -108,8 +108,8 @@ and a day past the hourly window opens
 [`includes/_day_figures.html`](../templates/includes/_day_figures.html).
 `_location_forecast_context(..., strips=True)` builds `day_strips` and
 `day_figures` in place of `hourly_charts`, and the sheet's day line is
-`brief` (date and condition only), because the strips and figures state
-the freezing level and daylight. Designed with Hugo on 24 Oct 2026, mobile
+`brief` (it drops the freezing level, which the strips and figures
+state; daylight stays on the line). Designed with Hugo on 24 Oct 2026, mobile
 first; the page keeps the meteogram until the hourly follow-up.
 
 - **Four strips on one time axis**: temperature; freezing level, split out
@@ -131,7 +131,7 @@ first; the page keeps the meteogram until the hourly follow-up.
   one visible reading in each header. Every reading is server-rendered,
   so the script writes no text.
 - **A later day keeps the rows**: temperature, freezing level (the day's
-  highest), snow, wind and daylight, one figure each, and "Hour by hour
+  highest), snow and wind, one figure each, and "Hour by hour
   from {weekday}" — the day it becomes tomorrow, `HOURLY_DAYS - 1` before.
 
 **The picker fits its container.** A cell needs about 42px, so the picker

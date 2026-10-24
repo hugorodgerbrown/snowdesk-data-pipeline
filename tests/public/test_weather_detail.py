@@ -535,10 +535,13 @@ class TestCardDayStrips:
     def test_the_sheets_day_line_is_brief(
         self, client: Client, resort_location: Location
     ) -> None:
-        """The strips and figures state the freezing level and daylight."""
+        """The strips and figures state the freezing level; daylight stays."""
         html = self._html(client, resort_location)
 
-        assert 'data-testid="weather-detail-day-line-detail"' not in html
+        line = html[html.index('data-testid="weather-detail-day-line-detail"') :]
+        line = line[: line.index("</p>")]
+        assert "daylight" in line
+        assert "Freezing" not in line
 
     def test_the_surface_loads_the_strips_scripts(self) -> None:
         """The selector needs its two modules, core first."""

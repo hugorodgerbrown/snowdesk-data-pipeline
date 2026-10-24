@@ -6,8 +6,7 @@ the day strips' rows with one figure each (SNOW-1219).
 The map's weather sheet draws _day_strips.html for the days that carry an
 hourly series (HOURLY_DAYS, today and tomorrow) and this for the rest of
 the week, so a later day keeps the same rows in the same order —
-temperature, freezing level, snow, wind — plus its daylight, and says when
-its hours arrive rather than leaving a gap where the strips would be.
+temperature, freezing level, snow, wind — and says when its hours arrive rather than leaving a gap where the strips would be.
 
 Context:
     day           — ForecastPanelDay.
@@ -87,12 +86,6 @@ Context:
                 &ndash;
             {% endif %}
         </dd>
-    </div>
-    <div class="grid grid-cols-[8.5rem_1fr] border-b border-border py-2.5">
-        <dt class="pt-1 font-mono text-xs font-medium tracking-[0.1em] uppercase text-text-1">
-            {% translate "Daylight" %}
-        </dt>
-        <dd class="text-label font-semibold text-text-1">{{ day.sunrise_local }}&ndash;{{ day.sunset_local }}</dd>
     </div>
 </dl>
 <p class="mt-2.5 text-xs text-text-3" data-testid="{{ prefix }}-hourly-from">
