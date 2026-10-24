@@ -164,6 +164,29 @@ class TestMeetingPointWeather:
         assert day["snowfall_sum"] == 8.0
         assert "meeting point" in str(weather)
 
+    def test_the_meeting_time_is_read_on_the_meeting_points_clock(self) -> None:
+        """06:30 at a UTC+2 point is before a 07:40 sunrise: a night icon.
+
+        Read in the site's zone (UTC) it would be 08:30 local, after
+        sunrise, and the clear sky would wrongly draw the sun.
+        """
+        day = TODAY + datetime.timedelta(days=1)
+        early = TripFactory.create(date=day, start_time=datetime.time(6, 30))
+        late = TripFactory.create(date=day, start_time=datetime.time(9, 0))
+        for trip in (early, late):
+            WeatherFactory.create(
+                location=trip.meeting_point,
+                observed_on=TODAY,
+                forecast=forecast_days(TODAY, [0]),
+            )
+
+        before = meeting_point_weather(early, TODAY)
+        after = meeting_point_weather(late, TODAY)
+
+        assert before is not None and after is not None
+        assert before.days[day]["icon_filename"] == "clear-night.svg"
+        assert after.days[day]["icon_filename"] == "clear-day.svg"
+
     def test_a_past_trip_reads_the_row_of_its_own_day(self) -> None:
         """What the forecast said that morning, never rewritten."""
         day = TODAY - datetime.timedelta(days=3)

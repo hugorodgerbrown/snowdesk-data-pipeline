@@ -25,7 +25,7 @@ the icon, the high, the low and the new snow the forecast page shows.
 **The icon is the daytime one.** ``build_point_forecast_panel`` chooses a
 day or night icon by projecting a wall-clock time onto each day. A plan is
 for a day out, so the Plan page projects noon, and the trip page projects
-the meeting time.
+the meeting time — both on the forecast point's own clock.
 """
 
 from __future__ import annotations
@@ -96,9 +96,28 @@ class TripWeather:
         return self.to_string()
 
 
-def _noon(day: datetime.date) -> datetime.datetime:
-    """Return midday on ``day`` in the site's timezone."""
-    return timezone.make_aware(datetime.datetime.combine(day, datetime.time(12)))
+def _at_the_point(
+    row: Weather, day: datetime.date, at: datetime.time
+) -> datetime.datetime:
+    """Return ``at`` on ``day`` as a wall-clock time AT the forecast point.
+
+    A meeting time is the time on the meeting point's clock, and the
+    day/night decision compares it with sunrise there. The forecast days
+    keep the provider's sunrise strings with the point's own offset
+    (``timezone=auto``), so the reference instant is built in that offset;
+    the site's zone, UTC, would put a 06:00 Alpine meeting at 08:00 local.
+    Falls back to the site's zone when no forecast day carries an offset.
+    """
+    zone: datetime.tzinfo = timezone.get_current_timezone()
+    for entry in row.forecast or []:
+        try:
+            offset = datetime.datetime.fromisoformat(entry["sunrise"]).tzinfo
+        except KeyError, TypeError, ValueError:
+            continue
+        if offset is not None:
+            zone = offset
+            break
+    return datetime.datetime.combine(day, at, tzinfo=zone)
 
 
 def _days(
@@ -175,7 +194,7 @@ def nearest_weather(
         location=row.location,
         label=_label(row.location),
         distance_km=distance,
-        days=_days(row, _noon(today)),
+        days=_days(row, _at_the_point(row, today, datetime.time(12))),
     )
 
 
@@ -203,7 +222,7 @@ def meeting_point_weather(trip: Trip, today: datetime.date) -> TripWeather | Non
     )
     if row is None:
         return None
-    meeting = timezone.make_aware(datetime.datetime.combine(trip.date, trip.start_time))
+    meeting = _at_the_point(row, trip.date, trip.start_time)
     return TripWeather(
         location=trip.meeting_point,
         label="",
