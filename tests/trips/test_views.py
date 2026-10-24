@@ -50,8 +50,10 @@ from freezegun import freeze_time
 from pytest_django.fixtures import Settings
 from waffle.testutils import override_flag
 
+from apps.bulletins.models import RegionDayRating
 from apps.locations.models import Location
 from apps.trips.models import Trip
+from apps.trips.services.shares import mint_trip_share
 from tests.factories import (
     DRIFTING_TRACK,
     LocationFactory,
@@ -399,6 +401,9 @@ class TestTripDetailPage:
             r'name="date"\s+value="2026-09-12"[^>]*data-day-other\s+checked', html
         )
         assert 'value="12/09/2026"' not in html
+        # The picker's floor lets a past trip keep its day: a browser will
+        # not submit a date input whose value sits under its ``min``.
+        assert re.search(r'data-day-other-input[^>]*min="2026-09-12"', html)
 
     @override_settings(LANGUAGE_CODE="en-gb")
     def test_the_edit_form_prefills_the_meeting_time(self, client: Client) -> None:
@@ -871,7 +876,9 @@ class TestTripSummaryFigures:
         safety-relevant lie about terrain somebody is planning to ski, so
         the figures are dropped rather than zeroed.
         """
-        trip = TripFactory.create(distance_m=12400.0, ascent_m=None, descent_m=None)
+        trip = TripFactory.create(
+            distance_m=12400.0, ascent_m=None, descent_m=None, duration=None
+        )
         client.force_login(trip.created_by)
 
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
@@ -883,11 +890,12 @@ class TestTripSummaryFigures:
     def test_the_model_figures_are_shown_when_heights_exist(
         self, client: Client
     ) -> None:
-        """SNOW-1043: the figures line and the stats row quote the model.
+        """SNOW-1043: the figures line quotes the model.
 
         The drifting track records 200 m of climb and the terrain model
-        40 m; the page's map payload sends 40, so both text surfaces on
-        the page must say 40 as well.
+        40 m; the page's map payload sends 40, so the figures line must
+        say 40 as well. (The stats row that said it a second time went in
+        SNOW-1216.)
         """
         trip = TripFactory.create(
             points=DRIFTING_TRACK,
@@ -899,11 +907,8 @@ class TestTripSummaryFigures:
         client.force_login(trip.created_by)
 
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
-        stat = re.search(r'data-testid="trip-stat-ascent"[^>]*>(.*?)</p>', html, re.S)
 
         assert "0.1km · 40m ↑ · 0m ↓" in html
-        assert stat is not None
-        assert stat.group(1).strip() == "40m"
         assert "200m" not in html
 
     def test_a_zero_ascent_is_still_stated(self, client: Client) -> None:
@@ -931,8 +936,130 @@ class TestTripSummaryFigures:
 
         summary = html.index('data-testid="trip-summary"')
         figures = html.index('data-testid="trip-figures"')
-        profile = html.index("data-trip-profile")
+        profile = html.index('data-testid="trip-profile"')
         assert summary < figures < profile
+
+
+@pytest.mark.django_db
+class TestTripPageRouteCard:
+    """SNOW-1216: the trip page's route card — name, figures, the map's profile."""
+
+    def _html(self, client: Client, **fields: object) -> str:
+        """Render a trip's page for its organiser."""
+        trip = TripFactory.create(**fields)
+        client.force_login(trip.created_by)
+        return client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+    def test_the_route_is_named_over_its_figures(self, client: Client) -> None:
+        """The heading is the trip's; the card names the route."""
+        html = self._html(client, name="Dawn patrol", route_name="Mont Fort")
+
+        name = re.search(r'data-testid="trip-route-name"[^>]*>(.*?)</h2>', html, re.S)
+        assert name is not None
+        assert name.group(1).strip() == "Mont Fort"
+        assert html.index('data-testid="trip-route-name"') < html.index(
+            'data-testid="trip-figures"'
+        )
+
+    def test_the_duration_joins_the_figures_line(self, client: Client) -> None:
+        """With the stats row gone, the time is on the meta line."""
+        html = self._html(
+            client,
+            distance_m=12400.0,
+            ascent_m=850.0,
+            descent_m=1100.0,
+            duration=datetime.timedelta(hours=4, minutes=5),
+        )
+
+        assert "12.4km · 850m ↑ · 1100m ↓ · 4h05m" in html
+
+    def test_the_profile_is_the_maps_and_scrubs(self, client: Client) -> None:
+        """The shared lane, marked to scrub, read from the map's payload."""
+        html = self._html(client)
+
+        profile = re.search(r"<div[^>]*data-trip-route-profile[^>]*>", html, re.S)
+        assert profile is not None
+        assert "data-trip-route-scrub" in profile.group(0)
+        assert 'data-payload="trip-map-payload"' in profile.group(0)
+        assert "data-route-rail-lane" in html
+        assert 'id="route-profile-strings-template"' in html
+        assert "data-trip-profile-range" not in html
+
+    def test_the_profile_scripts_load_before_the_map(self, client: Client) -> None:
+        """trip_map.js reads the cursor core at its top level."""
+        html = self._html(client)
+
+        order = [
+            html.index(f"js/{name}.js")
+            for name in (
+                "route_rail_core",
+                "route_profile",
+                "trip_route_profile",
+                "route_cursor_map_core",
+                "trip_map",
+            )
+        ]
+        assert order == sorted(order)
+
+    def test_the_details_card_has_no_figures_row(self, client: Client) -> None:
+        """The figures belong to the route card now."""
+        html = self._html(client, duration=datetime.timedelta(hours=1))
+
+        assert 'data-testid="trip-stat-distance"' not in html
+        assert 'data-testid="trip-stat-duration"' not in html
+
+
+# A square region (7.0–7.5 E, 46.0–46.5 N), and a track starting inside it.
+_DANGER_SQUARE = {
+    "type": "Polygon",
+    "coordinates": [[[7.0, 46.0], [7.5, 46.0], [7.5, 46.5], [7.0, 46.5], [7.0, 46.0]]],
+}
+_DANGER_TRACK = [[7.2, 46.1, 1500.0], [7.3, 46.2, 2400.0]]
+
+
+@pytest.mark.django_db
+class TestTripPageDanger:
+    """SNOW-1216: the plan card's danger line, only on a rated day."""
+
+    def _trip(self, rating: str | None) -> Trip:
+        """A trip on Sunday 25 Oct starting in a region, rated or not."""
+        region = MicroRegionFactory.create(
+            name="Martigny-Verbier",
+            boundary=_DANGER_SQUARE,
+            centre={"lon": 7.25, "lat": 46.25},
+        )
+        day = datetime.date(2026, 10, 25)
+        if rating:
+            RegionDayRatingFactory.create(region=region, date=day, max_rating=rating)
+        trip = TripFactory.create(date=day, points=_DANGER_TRACK)
+        mint_trip_share(trip.created_by, trip.uuid)
+        trip.refresh_from_db()
+        return trip
+
+    def test_a_rated_day_names_the_level_region_and_day(self, client: Client) -> None:
+        """'Considerable (3) in Martigny-Verbier for Sunday', linked."""
+        trip = self._trip(RegionDayRating.Rating.CONSIDERABLE)
+
+        html = client.get(
+            reverse("trips:share_page", args=[trip.share_token])
+        ).content.decode()
+
+        line = re.search(r'data-testid="trip-danger".*?</div>', html, re.S)
+        assert line is not None
+        text = " ".join(re.sub(r"<[^>]+>", " ", line.group(0)).split())
+        assert "Considerable (3) in Martigny-Verbier for Sunday" in text
+        assert 'data-level="considerable"' in line.group(0)
+        assert "/2026-10-25/" in line.group(0)
+
+    def test_an_unrated_day_has_no_line(self, client: Client) -> None:
+        """Most days: no strip at all, never a placeholder."""
+        trip = self._trip(None)
+
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'data-testid="trip-danger"' not in html
 
 
 @pytest.mark.django_db

@@ -6,9 +6,10 @@
  * below z14, slope classes from z14 — `route_drawing_core.js`, SNOW-1212), a
  * marker where the group meets, and the viewport fitted to the snapshot's
  * own bbox, with +/− and cooperative gestures so the page still scrolls
- * past it. Beneath
- * it, the same elevation profile a route popup draws on the map page — the
- * picture the distance and vertical figures summarise.
+ * past it. Beneath it, in the same card, the map's own route profile
+ * (route_profile.js, drawn by trip_route_profile.js — SNOW-1216); a press
+ * or a drag on the profile places a point there, and this module draws
+ * the same point on the line.
  *
  * ## What this module owns, and what it deliberately does not
  *
@@ -19,18 +20,22 @@
  * the map page's shared state belongs to the map page, and a trip page is a
  * document with a picture in it rather than a second map application.
  *
- * The profile and the meeting marker are `self.pwaElevationProfileCore` and
- * `self.pwaRouteMarkersCore`, reused UNCHANGED. Both already publish frozen
- * globals and own no map state; the profile a trip draws is the same picture
- * of the same geometry, and re-deriving it here would be a second, slightly
- * different set of curves for the same track.
+ * The meeting marker is `self.pwaRouteMarkersCore`, reused UNCHANGED.
  *
- * ## The two rules a trip's figures inherit from Route
+ * ## The profile's point, on the map (SNOW-1216)
  *
- * `createProfileSvg` returns `null` for a track with no elevation anywhere,
- * and the caller then draws NOTHING. A flat line at zero would be a picture
- * of terrain the source file never recorded — the drawn form of the
- * "0 m ascent for an unknown" lie `Trip.ascent_m`'s null exists to refuse.
+ * The profile owns no map and this module owns no profile. The profile
+ * announces the sample index a press placed as a `trip:route-cursor`
+ * event on the document (`{index}`, null to clear), and this module turns
+ * the index into a place with route_cursor_map_core.js — the map page's
+ * own conversion, from the slope record's boundary points on a sampled
+ * route, by equal shares of the line on one never sampled — and draws a
+ * dot there, panning only when the dot would land off the canvas. The
+ * index, never a distance, crosses the boundary, for the reason that
+ * module's header gives: the profile's distances and the sampler's do not
+ * agree.
+ *
+ * ## The rule a trip's figures inherit from Route
  *
  * `bounds` is stored FLAT (`[w, s, e, n]`, a GeoJSON bbox) and `fitBounds`
  * wants it nested (`[[w, s], [e, n]]`). The reshape happens once, here.
@@ -66,8 +71,8 @@
  *   routeSourceData(payload)      → the LineString FeatureCollection
  *   meetingSourceData(payload)    → the Point FeatureCollection
  *   installLayers(map, payload)   → adds the sources and layers (its test)
- *   profileFor(payload)           → the profile data, or null
- *   drawProfileRange(profile, doc) → writes the profile's scale caption
+ *   cursorFeature(payload, index) → the profile's point as a Point
+ *                                   Feature, or null
  *   readBasemaps(doc)             → the {key: url} catalogue, or null
  *   resolveBasemapFor(el, doc)    → {key, url} for this reader, or null
  *
@@ -95,18 +100,29 @@
   /** The image ids the meeting marker is registered under. */
   var MEETING_ICON = 'trip-meeting-point';
 
+  /** The source, and the one layer, the profile's point is drawn from. */
+  var CURSOR_SOURCE = 'trip-route-cursor';
+
+  /** The route line's colour, the dot's fill where no class colours it. */
+  var ROUTE_LINE_COLOUR = (self.pwaRouteDrawingCore && self.pwaRouteDrawingCore.ROUTE_LINE_COLOUR) || '#c026d3';
+
+  /** The ring round the dot, so it reads over the line it sits on. */
+  var CURSOR_HALO = '#ffffff';
+
+  /**
+   * The profile's last index, kept so a style swapped in later reinstalls
+   * the dot where it was.
+   *
+   * @type {?number}
+   */
+  var cursorIndex = null;
+
   // The English fallbacks are the only copy of these strings a reader of
   // this file can see, so they double as documentation of what each key
   // means. `i18n_strings.js` is loaded first by `_trip_map.html`, in
   // document order, so `self.pwaStrings` is here.
   var STRINGS = self.pwaStrings.read('trip-strings-template', {
     'meeting-point': 'Meeting point',
-    'elevation-profile': 'Elevation profile of the route',
-    // The profile's y-axis is fitted to this track's own lowest and
-    // highest point, so the curve says nothing without the pair that
-    // bounds it. The map page's route popup carried the same string until
-    // SNOW-1018 moved its profile to rail one, which captions none.
-    'elevation-range': '%(low)s–%(high)s m',
     'map-failed':
       "The map couldn't be loaded. The route details above are unaffected.",
   });
@@ -195,91 +211,59 @@
     return { type: 'FeatureCollection', features: usable ? [feature] : [] };
   }
 
+  /** An unsampled route's share midpoints, worked out once per feature. */
+  var MIDPOINTS = new WeakMap();
+
   /**
-   * Derive the elevation profile from the payload's route geometry.
+   * The profile's point as a place on the route, or null.
    *
-   * The elevation series is already the third ordinate of every stored
-   * coordinate — `Trip.points` snapshots `Route.points`, which stores
-   * `[lon, lat, ele]` — so this is a pure derivation of what the page
-   * already holds, exactly as the map page's route popup is.
+   * The sample index is converted as the map page converts it
+   * (route_cursor_map_core.js): on a sampled route, the middle of the
+   * index's segment of the slope record, carrying the segment's class
+   * colour; on a route never sampled, the middle of the index's equal
+   * share of the line, out of the count the profile used — the last leg's
+   * `to` plus one (route_profile.js `sampleCountOf`).
    *
    * @param {?Object} payload
-   * @returns {?Object} The profile, or null when there is nothing to draw.
+   * @param {?number} index The profile's sample index; null for none.
+   * @returns {?Object} A Point Feature, or null.
    */
-  function profileFor(payload) {
-    if (!self.pwaElevationProfileCore) return null;
+  function cursorFeature(payload, index) {
+    var core = self.pwaRouteCursorMapCore;
     var feature = payload && payload.route;
-    var coordinates =
-      feature && feature.geometry && feature.geometry.coordinates;
-    if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
-    return self.pwaElevationProfileCore.readProfile(coordinates);
-  }
-
-  /**
-   * Draw the elevation profile into its container, or leave it empty.
-   *
-   * A track with no elevation anywhere yields no paths, `createProfileSvg`
-   * returns null, and nothing is drawn — see the header for why a flat
-   * line at zero is not an acceptable substitute.
-   *
-   * @param {?Object} payload
-   * @param {Document} doc
-   * @returns {void}
-   */
-  function drawProfile(payload, doc) {
-    var host = doc.querySelector('[data-trip-profile]');
-    if (!host) return;
-    var profile = profileFor(payload);
-    if (!profile) return;
-    var svg = self.pwaElevationProfileCore.createProfileSvg(profile, {
-      doc: doc,
-      label: STRINGS['elevation-profile'],
-      // SNOW-962: the same record the line above is coloured from, so the
-      // two pictures of one track agree. Undefined for a trip nothing has
-      // sampled, which draws the plain curve it always did.
-      slope: (payload && payload.route && payload.route.properties || {}).slope,
-    });
-    if (!svg) return;
-    host.appendChild(svg);
-    drawProfileRange(profile, doc);
-  }
-
-  /**
-   * Caption the drawn profile with the elevation range it is scaled to.
-   *
-   * SNOW-840. The chart's y-axis is fitted to THIS track's highest and
-   * lowest point, so an unlabelled curve's height carries no quantity: two
-   * routes 200 m and 2000 m apart top to bottom draw the same picture. The
-   * map page's route popup has always captioned it for that reason, and
-   * this is that caption on the trip page's own card.
-   *
-   * Only called once a chart has actually been drawn — a track with no
-   * elevation anywhere draws nothing, and a range under nothing would be
-   * a scale for a picture that is not there.
-   *
-   * NO DURATION SEGMENT, unlike the popup's caption. The popup reads
-   * ``duration_s`` off the route feature; a Trip's snapshot does not copy
-   * it (see Trip's docstring for what the snapshot carries), so there is
-   * no elapsed time on this page to state and inventing one from distance
-   * and ascent would be a guess dressed as a measurement.
-   *
-   * @param {Object} profile The drawn profile, from `readProfile`.
-   * @param {Document} doc The document to write into.
-   * @returns {void}
-   */
-  function drawProfileRange(profile, doc) {
-    var host = doc.querySelector('[data-trip-profile-range]');
-    if (!host) return;
-    if (typeof profile.minEle !== 'number' || typeof profile.maxEle !== 'number') {
-      return;
+    if (!core || !feature || index === null || index === undefined) return null;
+    var props = feature.properties || {};
+    var coordinates = (feature.geometry && feature.geometry.coordinates) || [];
+    if (core.sampleCount(props.slope)) {
+      return core.cursorPoint(props.slope, index, coordinates);
     }
-    // UNGROUPED, and deliberately: the design draws "1,680–3,020 m", the
-    // spelling the map page's route popup used for the same measurement
-    // until SNOW-1018 retired it.
-    host.textContent = self.pwaStrings.interpolate(STRINGS['elevation-range'], {
-      low: String(Math.round(profile.minEle)),
-      high: String(Math.round(profile.maxEle)),
-    });
+    var legs = Array.isArray(props.legs) ? props.legs : [];
+    var last = legs.length ? legs[legs.length - 1] : null;
+    if (!last || !Number.isInteger(last.to)) return null;
+    var midpoints = MIDPOINTS.get(feature);
+    if (!midpoints) {
+      // Every share's midpoint at once, as map.js's bindRouteCursor does:
+      // shareMidpoints walks the whole line, and a drag asks per move.
+      midpoints = core.shareMidpoints(coordinates, last.to + 1);
+      MIDPOINTS.set(feature, midpoints);
+    }
+    var middle = midpoints[index];
+    if (!middle) return null;
+    return {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: middle },
+      properties: { index: index },
+    };
+  }
+
+  /**
+   * The cursor source's data for a feature, or the empty collection.
+   *
+   * @param {?Object} point
+   * @returns {Object}
+   */
+  function cursorSourceData(point) {
+    return { type: 'FeatureCollection', features: point ? [point] : [] };
   }
 
   /**
@@ -341,6 +325,26 @@
       type: 'geojson',
       data: meetingSourceData(payload),
     });
+    // SNOW-1216: the profile's point. Under the meeting marker, which is
+    // the plan and must never be hidden by a reader scrubbing past it.
+    // Filled in the colour of the ground under it (the segment's class,
+    // as on the map page) inside a white ring, at every zoom: this map
+    // draws no cursor segment, so the dot never gives way to one.
+    map.addSource(CURSOR_SOURCE, {
+      type: 'geojson',
+      data: cursorSourceData(cursorFeature(payload, cursorIndex)),
+    });
+    map.addLayer({
+      id: CURSOR_SOURCE,
+      type: 'circle',
+      source: CURSOR_SOURCE,
+      paint: {
+        'circle-color': ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
+        'circle-radius': 6,
+        'circle-stroke-color': CURSOR_HALO,
+        'circle-stroke-width': 2,
+      },
+    });
     map.addLayer({
       id: 'trip-meeting-point',
       type: 'symbol',
@@ -374,7 +378,9 @@
   var OUR_SOURCE_IDS = (function () {
     var drawing = self.pwaRouteDrawingCore;
     var ids = drawing ? drawing.sourceIds(ROUTE_PREFIX) : { route: ROUTE_PREFIX };
-    return Object.keys(ids).map(function (key) { return ids[key]; }).concat(['trip-meeting']);
+    return Object.keys(ids)
+      .map(function (key) { return ids[key]; })
+      .concat(['trip-meeting', CURSOR_SOURCE]);
   })();
 
   /**
@@ -522,7 +528,6 @@
     if (!container) return;
 
     var payload = readPayload(doc);
-    drawProfile(payload, doc);
 
     if (typeof maplibregl === 'undefined') {
       container.textContent = STRINGS['map-failed'];
@@ -580,6 +585,19 @@
       installLayers(map, payload);
     });
 
+    // SNOW-1216: the profile's point, drawn on the line, and brought into
+    // view when it would land off the canvas.
+    doc.addEventListener('trip:route-cursor', function (event) {
+      var detail = /** @type {CustomEvent} */ (event).detail || {};
+      cursorIndex = typeof detail.index === 'number' ? detail.index : null;
+      var point = cursorFeature(payload, cursorIndex);
+      var source = map.getSource(CURSOR_SOURCE);
+      if (source) source.setData(cursorSourceData(point));
+      if (point && !map.getBounds().contains(point.geometry.coordinates)) {
+        map.panTo(point.geometry.coordinates);
+      }
+    });
+
     // SNOW-829: and notice if that basemap drew nothing here.
     watchForBlankBasemap(map, container, basemap, doc);
   }
@@ -589,12 +607,10 @@
     fitBoundsFor: fitBoundsFor,
     routeSourceData: routeSourceData,
     meetingSourceData: meetingSourceData,
-    profileFor: profileFor,
-    // SNOW-840. Writes into the DOM rather than returning a value, so it
-    // is exported to be exercised in jsdom: the caption is the only thing
-    // that gives the drawn curve a quantity, and a silently-empty one
-    // looks exactly like a track that carries no elevation.
-    drawProfileRange: drawProfileRange,
+    // SNOW-1216. The index-to-place conversion, exported for its test:
+    // a wrong answer is a dot on the wrong bit of the line, which nothing
+    // else would notice.
+    cursorFeature: cursorFeature,
     // Exported for its test rather than for a second caller. It is the one
     // function here that hands MapLibre a structure MapLibre validates at
     // runtime, and getting that structure wrong threw inside installLayers

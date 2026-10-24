@@ -1,0 +1,42 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_danger.html — the trip day's avalanche danger, in one
+line (SNOW-1216).
+
+"Considerable (3) in Martigny–Verbier for Sunday · Read the bulletin →".
+The level, in words with its digit, the region it is for, and the day; the
+compact danger tile the Plan page's day tiles carry in front of it, so the
+level the organiser saw while choosing the day reads the same here.
+
+RENDERED ONLY WHEN THERE IS A LEVEL. The caller tests ``trip_danger`` and
+leaves the strip out otherwise; this partial never says "no bulletin".
+
+The region is the route start's (apps.trips.services.plan_days), named in
+the line because a reader planning a tour has to know which bulletin the
+level is from before trusting it. The link opens THAT bulletin on THAT
+day, not the region's latest. On a phone it drops under the sentence:
+beside it, the sentence wrapped over three lines.
+
+Context:
+    trip   : Trip — for its day.
+    danger : TripDanger — the level (``danger.day``) and its region.
+{% endcomment %}
+<div class="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="trip-danger">
+    <p class="flex min-w-0 basis-full items-center gap-2 text-sm text-text-1 sm:basis-auto sm:flex-1">
+        <span
+            class="danger-tile danger-tile--compact flex-none"
+            data-level="{{ danger.day.rating }}"
+            aria-hidden="true"
+        >{{ danger.day.digit }}</span>
+        <span class="min-w-0">
+            {% blocktrans trimmed with level=danger.day.rating_label region=danger.region.name day=trip.date|date:"l" %}
+                <strong class="font-semibold">{{ level }}</strong> in {{ region }} for {{ day }}
+            {% endblocktrans %}
+        </span>
+    </p>
+    <a
+        href="{% url 'public:bulletin_date' region_id=danger.region.canonical_region_id slug=danger.region.name_slug date_str=trip.date|date:'Y-m-d' %}"
+        class="flex-none text-sm font-medium text-accent hover:text-accent-hover"
+        data-testid="trip-danger-bulletin"
+    >{% trans "Read the bulletin →" %}</a>
+</div>

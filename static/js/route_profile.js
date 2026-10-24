@@ -33,6 +33,10 @@
  *     view.cursor(index)
  *                  — draw the cursor line and readout at a sample index,
  *                    or clear them with null
+ *     view.indexAt(clientX)
+ *                  — the sample under a viewport x on the lane, clamped
+ *                    to the route; null before a draw with legs, or while
+ *                    the lane has no width
  *     view.lane    — the lane's <svg>, for the caller's pointer handlers
  *
  *   read(feature) → {profile, legs, slope, sampleCount, spanM}
@@ -132,7 +136,7 @@
    *
    * @param {ParentNode} root An element holding _route_profile.html.
    * @param {Object<string, string>} strings The partial's strings.
-   * @returns {?{draw: Function, cursor: Function, lane: Element}}
+   * @returns {?{draw: Function, cursor: Function, indexAt: function(number): ?number, lane: Element}}
    */
   function mount(root, strings) {
     var lane = root && root.querySelector('[data-route-rail-lane]');
@@ -316,7 +320,24 @@
       paintReadout(index);
     }
 
-    return Object.freeze({ draw: draw, cursor: cursor, lane: lane });
+    /**
+     * The sample under a viewport x on the lane, clamped to the route.
+     *
+     * The inverse of `cursor`'s placement: sample i owns the i-th of N
+     * equal shares of the lane's width.
+     *
+     * @param {number} clientX The pointer's x.
+     * @returns {?number} Null with no legs drawn or no lane width.
+     */
+    function indexAt(clientX) {
+      if (!(sampleCount > 0)) return null;
+      var rect = lane.getBoundingClientRect();
+      if (!(rect.width > 0)) return null;
+      var at = Math.floor(((clientX - rect.left) / rect.width) * sampleCount);
+      return Math.min(sampleCount - 1, Math.max(0, at));
+    }
+
+    return Object.freeze({ draw: draw, cursor: cursor, indexAt: indexAt, lane: lane });
   }
 
   self.pwaRouteProfile = Object.freeze({

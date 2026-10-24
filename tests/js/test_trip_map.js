@@ -5,9 +5,9 @@
  * `trip_map.js` builds one camera and two sources from an inline payload.
  * Everything worth asserting about that is a pure function of the payload
  * — the bbox reshape, what counts as a drawable line, what counts as a
- * placeable marker, and the rule that a track with no elevation gets NO
- * profile rather than a flat one. None of it needs a browser, so none of
- * it belongs in `tests/e2e/`.
+ * placeable marker, and where the profile's point lands on the line
+ * (SNOW-1216). None of it needs a browser, so none of it belongs in
+ * `tests/e2e/`.
  *
  * The two `_core` modules are imported first because `trip_map.js` reads
  * them off `self` at its own top level, exactly as the page loads them.
@@ -22,6 +22,7 @@ import '../../static/js/slope_classes_core.js';
 import '../../static/js/route_slope_core.js';
 import '../../static/js/route_legs_core.js';
 import '../../static/js/route_drawing_core.js';
+import '../../static/js/route_cursor_map_core.js';
 import '../../static/js/trip_map.js';
 
 const core = self.pwaTripMapCore;
@@ -137,89 +138,6 @@ describe('meetingSourceData', () => {
         })
       ).features
     ).toHaveLength(0);
-  });
-});
-
-describe('profileFor', () => {
-  it('reads the elevation series off the geometry itself', () => {
-    // `ele` is the third ordinate of every stored coordinate, so the
-    // profile is a derivation of the payload the page already holds.
-    const profile = core.profileFor(payload());
-
-    expect(profile.hasElevation).toBe(true);
-  });
-
-  it('reports no elevation for a track whose points carry none', () => {
-    // The rule Trip.ascent_m's null exists to enforce, at the drawing end:
-    // "we don't know" must not be drawn as a flat line at zero.
-    const profile = core.profileFor(
-      payload({
-        route: {
-          type: 'Feature',
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              [7.4, 46.1, null],
-              [7.41, 46.11, null],
-            ],
-          },
-          properties: {},
-        },
-      })
-    );
-
-    expect(profile.hasElevation).toBe(false);
-    expect(
-      self.pwaElevationProfileCore.createProfileSvg(profile, { doc: document })
-    ).toBeNull();
-  });
-
-  it('returns null for a payload with nothing to profile', () => {
-    expect(core.profileFor(null)).toBeNull();
-  });
-});
-
-describe('drawProfileRange — the caption that gives the curve a quantity', () => {
-  /** A document carrying the card's empty range paragraph. */
-  function docWithRange() {
-    const doc = document.implementation.createHTMLDocument('trip');
-    const p = doc.createElement('p');
-    p.setAttribute('data-trip-profile-range', '');
-    doc.body.appendChild(p);
-    return doc;
-  }
-
-  it('states the low and high the y-axis was fitted to', () => {
-    // The chart is scaled to THIS track's own range, so the same curve is
-    // drawn for a 200 m rolling traverse and a 2000 m climb. Without the
-    // pair the picture carries no quantity at all.
-    const doc = docWithRange();
-
-    core.drawProfileRange(core.profileFor(payload()), doc);
-
-    expect(doc.querySelector('[data-trip-profile-range]').textContent).toBe(
-      '1500–1600 m'
-    );
-  });
-
-  it('rounds to whole metres, as the map popup caption does', () => {
-    const doc = docWithRange();
-
-    core.drawProfileRange({ minEle: 1741.4, maxEle: 3663.8 }, doc);
-
-    expect(doc.querySelector('[data-trip-profile-range]').textContent).toBe(
-      '1741–3664 m'
-    );
-  });
-
-  it('writes nothing for a track that carries no elevation', () => {
-    // `hasElevation: false` leaves minEle/maxEle null, and "null–null m"
-    // would be a scale for a picture that was never drawn.
-    const doc = docWithRange();
-
-    core.drawProfileRange({ minEle: null, maxEle: null }, doc);
-
-    expect(doc.querySelector('[data-trip-profile-range]').textContent).toBe('');
   });
 });
 
@@ -367,6 +285,18 @@ describe('installLayers — the marks a trip map draws', () => {
     expect(slope.minzoom).toBe(self.pwaRouteDrawingCore.ROUTE_SLOPE_MINZOOM);
   });
 
+  it("draws the profile's point under the meeting marker", () => {
+    // SNOW-1216. The meeting point is the plan; a reader scrubbing past
+    // it must never hide it.
+    const map = recordingMap();
+
+    core.installLayers(map, sampled([12, 34]));
+
+    const ids = map.layers.map((layer) => layer.id);
+    expect(map.sources).toContain('trip-route-cursor');
+    expect(ids.indexOf('trip-route-cursor')).toBeLessThan(ids.indexOf('trip-meeting-point'));
+  });
+
   it('keeps the meeting marker on top of the route', () => {
     const map = recordingMap();
 
@@ -399,5 +329,74 @@ describe('installLayers — the marks a trip map draws', () => {
     const ids = [...map.sources, ...map.layers.map((layer) => layer.id)];
     expect(ids.filter((id) => /fall-line|passage/.test(id))).toEqual([]);
     expect(core).not.toHaveProperty('routeFallLineSourceData');
+  });
+});
+
+/*
+ * The profile's point, on the map (SNOW-1216).
+ *
+ * The profile announces a sample index; the map draws it where the map
+ * page would — the middle of the index's segment on a sampled route, the
+ * middle of its equal share on one never sampled.
+ */
+describe("cursorFeature — where the profile's point lands", () => {
+  it('is the middle of the index segment on a sampled route', () => {
+    const point = core.cursorFeature(sampled([12, 34]), 1);
+
+    expect(point.geometry.type).toBe('Point');
+    expect(point.geometry.coordinates[0]).toBeCloseTo(7.4015, 6);
+    expect(point.geometry.coordinates[1]).toBeCloseTo(46.1, 6);
+  });
+
+  it("carries the segment's slope class colour", () => {
+    const point = core.cursorFeature(sampled([12, 34]), 1);
+    const slope = self.pwaRouteSlopeCore;
+
+    expect(point.properties.colour).toBe(slope.CLASSES[slope.classify(34)].hex);
+  });
+
+  it('falls back to equal shares of the line on a route never sampled', () => {
+    const p = payload();
+    p.route.properties.legs = [
+      { i: 1, from: 0, to: 1, climbing: true, point_from: 0, point_to: 2 },
+    ];
+
+    const first = core.cursorFeature(p, 0);
+    const second = core.cursorFeature(p, 1);
+
+    expect(first.geometry.coordinates[0]).toBeLessThan(second.geometry.coordinates[0]);
+    expect(first.properties.colour).toBeUndefined();
+  });
+
+  it('works the shares out once per route, not once per move', () => {
+    const p = payload();
+    p.route.properties.legs = [
+      { i: 1, from: 0, to: 1, climbing: true, point_from: 0, point_to: 2 },
+    ];
+    // The core is frozen, so a counting stand-in takes its place.
+    const cursorCore = self.pwaRouteCursorMapCore;
+    let calls = 0;
+    self.pwaRouteCursorMapCore = {
+      ...cursorCore,
+      shareMidpoints: (...args) => {
+        calls += 1;
+        return cursorCore.shareMidpoints(...args);
+      },
+    };
+    try {
+      core.cursorFeature(p, 0);
+      core.cursorFeature(p, 1);
+      core.cursorFeature(p, 0);
+    } finally {
+      self.pwaRouteCursorMapCore = cursorCore;
+    }
+
+    expect(calls).toBe(1);
+  });
+
+  it('answers null with no point placed, or nothing to place it on', () => {
+    expect(core.cursorFeature(sampled([12, 34]), null)).toBeNull();
+    expect(core.cursorFeature(payload(), 0)).toBeNull();
+    expect(core.cursorFeature(null, 0)).toBeNull();
   });
 });

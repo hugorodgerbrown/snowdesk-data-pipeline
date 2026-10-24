@@ -113,7 +113,7 @@ from apps.trips.services.participants import (
     join_trip,
     leave_trip_by_uuid,
 )
-from apps.trips.services.plan_days import plan_week
+from apps.trips.services.plan_days import plan_week, trip_danger
 from apps.trips.services.routes import already_saved, save_trip_route
 from apps.trips.services.shares import (
     TripShareTokenCollision,
@@ -352,8 +352,12 @@ def _plan_context(form: TripForm, points: list[list[float]]) -> dict[str, Any]:
         points: The track the trip is planned from, for its region.
 
     Returns:
-        A dict with ``plan_week``, ``plan_date``, ``plan_other`` and
-        ``plan_other_date`` (that day as a date, for the tile to print).
+        A dict with ``plan_week``, ``plan_date``, ``plan_other``,
+        ``plan_other_date`` (that day as a date, for the tile to print) and
+        ``plan_min``, the picker's floor: the week's first day, or an
+        edited past trip's own day, which the edit view accepts — a
+        browser refuses to submit a date input whose value is under its
+        ``min``, even an unnamed one.
 
     """
     week = plan_week(timezone.localdate(), points)
@@ -374,6 +378,7 @@ def _plan_context(form: TripForm, points: list[list[float]]) -> dict[str, Any]:
         "plan_date": plan_date,
         "plan_other": other,
         "plan_other_date": other_date,
+        "plan_min": min(week.first, other_date) if other_date else week.first,
     }
 
 
@@ -734,6 +739,10 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # is an offer awaiting a decision with nowhere else to live.
         "map_url": _map_deep_link("trip", str(trip.uuid)),
         "map_payload": _trip_map_payload(trip),
+        # SNOW-1216. The day's danger level on the route's start, for the
+        # plan card's one line — None on every day no bulletin rated, which
+        # is most of them, and the card then simply has no line.
+        "trip_danger": trip_danger(trip.date, trip.points),
         # SNOW-829. The CATALOGUE, not one resolved URL, because the page
         # resolves the reader's own choice client-side: ``localStorage`` is
         # scoped per ORIGIN, so a trip page reads

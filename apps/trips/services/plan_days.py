@@ -1,5 +1,8 @@
 """
-apps/trips/services/plan_days.py — the Plan page's week of day tiles (SNOW-1215).
+apps/trips/services/plan_days.py — a route's danger level by day.
+
+Read by the Plan page's week of day tiles (SNOW-1215) and the trip page's
+plan card (SNOW-1216).
 
 "When" on the Plan page is five tiles, today and the four days after it, in
 the weather day picker's pattern, plus an "Other" tile for any later day.
@@ -21,6 +24,11 @@ every known region gives no region and no levels, never an error.
 The rating read is ``RegionDayRating``, the calendar's denormalised
 per-(region, day) row, so a tile agrees with the calendar and the map's
 choropleth about the same day: its ``max_rating``, the day's peak.
+
+**The trip page asks the same question about one day.** ``trip_danger``
+answers it with the same region rule and the same row, so the level the
+organiser saw on a tile is the level the group reads on the trip — and,
+like the tiles, it answers None on the many days no bulletin rated.
 """
 
 from __future__ import annotations
@@ -120,6 +128,79 @@ class PlanWeek:
         return self.to_string()
 
 
+def _rated_days(
+    region: MicroRegion, first: datetime.date, last: datetime.date
+) -> dict[datetime.date, PlanDay]:
+    """Return the rated days of a region between two days, inclusive.
+
+    One query. A "no rating" row is no level, exactly as no row is.
+
+    Args:
+        region: The region.
+        first: The first day.
+        last: The last day.
+
+    Returns:
+        A ``PlanDay`` per day a bulletin rated, keyed by day.
+
+    """
+    return {
+        row.date: PlanDay(row.date, row.max_rating, row.max_subdivision or "")
+        for row in RegionDayRating.objects.for_region_range(
+            region, first, last
+        ).exclude(max_rating=RegionDayRating.Rating.NO_RATING)
+    }
+
+
+def _start_region(points: list[list[float]]) -> MicroRegion | None:
+    """Return the region a track starts in, or None (see the module note)."""
+    return region_for_point(points[0][1], points[0][0]) if points else None
+
+
+@dataclass(frozen=True)
+class TripDanger:
+    """A trip day's danger level and the region it is for.
+
+    Attributes:
+        day: The rated day.
+        region: The route start's region.
+
+    """
+
+    day: PlanDay
+    region: MicroRegion
+
+    def to_string(self) -> str:
+        """Return the level and region, for logs and test failures."""
+        return f"{self.day.to_string()} {self.region.name}"
+
+    def __str__(self) -> str:
+        """Delegate to ``to_string``."""
+        return self.to_string()
+
+
+def trip_danger(day: datetime.date, points: list[list[float]]) -> TripDanger | None:
+    """Return the danger level on a route's start for one day, or None.
+
+    None is the ordinary answer: a start outside every region, or a day no
+    bulletin rated — every day but today and, after the evening issue,
+    tomorrow. Two queries at most.
+
+    Args:
+        day: The trip's day.
+        points: The route's track as ``[[lon, lat, …], …]``.
+
+    Returns:
+        The level and its region, or None.
+
+    """
+    region = _start_region(points)
+    if region is None:
+        return None
+    rated = _rated_days(region, day, day).get(day)
+    return TripDanger(rated, region) if rated else None
+
+
 def plan_week(today: datetime.date, points: list[list[float]]) -> PlanWeek:
     """Build the week of tiles for a route's Plan page.
 
@@ -136,19 +217,8 @@ def plan_week(today: datetime.date, points: list[list[float]]) -> PlanWeek:
 
     """
     dates = [today + datetime.timedelta(days=n) for n in range(PLAN_DAYS)]
-    region = region_for_point(points[0][1], points[0][0]) if points else None
+    region = _start_region(points)
     if region is None:
         return PlanWeek([PlanDay(day) for day in dates], None)
-    rated = {
-        row.date: row
-        for row in RegionDayRating.objects.for_region_range(
-            region, dates[0], dates[-1]
-        ).exclude(max_rating=RegionDayRating.Rating.NO_RATING)
-    }
-    days = [
-        PlanDay(day, rated[day].max_rating, rated[day].max_subdivision or "")
-        if day in rated
-        else PlanDay(day)
-        for day in dates
-    ]
-    return PlanWeek(days, region)
+    rated = _rated_days(region, dates[0], dates[-1])
+    return PlanWeek([rated.get(day, PlanDay(day)) for day in dates], region)

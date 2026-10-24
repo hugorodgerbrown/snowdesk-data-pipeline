@@ -1,6 +1,6 @@
 ---
 name: the-plan-page-reads-like-the-map
-description: route_profile.js, _route_profile.html, _route_meta_line.html, _trip_when.html, plan_week, trip_form.js; Plan page sections, day tiles
+description: route_profile.js, _route_profile.html, _trip_when.html, plan_week, trip_danger, trip_route_profile.js; Plan page tiles, trip page profile
 status: current
 last-reviewed: 2026-10-24
 ---
@@ -54,6 +54,27 @@ SNOW-1215 restructured the Plan page (`trips:new`) and the trip page's
 6. **The trip name's placeholder is the route's name.** It is no longer
    prefilled as the value, because a trip left unnamed is called after its
    route (`Trip.display_name`). The note's placeholder is an example.
+
+## The trip page (SNOW-1216)
+
+The trip page (`trips:detail`, and the share page, which renders the same
+context) follows the same rules.
+
+1. **The route card is the route.** It names the route (not the trip,
+   which is the page heading), carries the meta line with the duration
+   added, and draws the shared profile. The details card's Distance ·
+   Ascent · Descent · Time row went: it was a second spelling of the
+   same figures. `_trip_stats.html` stays for the trips list card.
+2. **The profile scrubs, and the map follows.** A press or a drag on the
+   lane places the point (`trip_route_profile.js`, `data-trip-route-scrub`),
+   and the index is announced as a `trip:route-cursor` event that
+   `trip_map.js` turns into a dot with `route_cursor_map_core.js`, the map
+   page's own conversion. There is no point card: the page is a plan to
+   read, and "View on the map" is where the terrain is read.
+3. **The danger line is the Plan tile's, for one day.** `trip_danger`
+   uses the same region rule and `RegionDayRating` row as the tiles. The
+   plan card shows "Considerable (3) in Martigny-Verbier for Sunday · Read
+   the bulletin →" only on a rated day, and has no strip otherwise.
 
 ## Why
 
