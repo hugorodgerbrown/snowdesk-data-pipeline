@@ -1,0 +1,232 @@
+# .github/workflows/dependency-audit.yml — Audit locked dependencies for
+# known advisories, daily and whenever a PR changes them (SNOW-1209).
+#
+# Moved out of security-audit.yml because an advisory is published against
+# a package, not against a PR: when one landed for zod and body-parser on
+# 2026-10-23, every open PR went red for a change none of them made. Here
+# the audit runs:
+#   * daily at 06:00 UTC, and on manual dispatch — the run that finds a NEW
+#     advisory in a lockfile nobody touched;
+#   * on a PR or push whose diff touches a dependency file — the run that
+#     audits a dependency change before it merges;
+#   * on a release (a diff touching VERSION), so production never ships on
+#     a skipped runtime gate.
+# Any other PR or push still runs the workflow, but its audit jobs skip. A
+# job-level skip reports a (skipped) check run, which satisfies the
+# rulesets' required `Security audit` context exactly as a docs-only skip
+# does (SNOW-481), so no ruleset edit was needed.
+#
+# Two dependency-audit jobs, deliberately separate (SNOW-576):
+#   * ``Security audit`` — the runtime gate, --no-dev, a required check.
+#     The job name IS the required context; do not rename it.
+#   * ``Dependency audit (dev + npm)`` — detection only, covers the dev
+#     groups and the npm tree, NOT a required check. Keeping them apart is
+#     what stops an advisory in a linter blocking a production release while
+#     still surfacing it.
+#
+# Notification: a failed scheduled or dispatched run opens one issue
+# labelled `dependency-audit` (or comments on the open one), and the next
+# green run closes it. A daily red run nobody reads is how the gitleaks cron
+# stayed red for four weeks (SNOW-599); an open issue is harder to miss.
+# SAST and the gitleaks secret scan stay per-PR in security-audit.yml —
+# those check the PR's own code, so a failure there IS the PR's.
+
+name: Dependency audit
+
+on:
+  push:
+    branches:
+      - main
+      - release
+
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+  schedule:
+    - cron: "0 6 * * *" # daily 06:00 UTC
+
+  workflow_dispatch:
+
+# The event is in the group so a scheduled run and a push run on `main`
+# never cancel each other: the push run reports the required check on the
+# main tip, and the scheduled one is the run that files the issue.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege default: every job gets a read-only token unless it
+# overrides this with a narrower/wider scope (SNOW-506).
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect dependency changes
+    runs-on: ubuntu-latest
+    # Listing a PR's files via the REST API needs pull-requests:read on top
+    # of the default contents:read.
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      # "true" when this run should audit: always for schedule and dispatch,
+      # and for a PR or push only when its diff touches a dependency file.
+      deps: ${{ steps.filter.outputs.deps }}
+    steps:
+      - name: Check out the repository
+        if: github.event_name == 'push'
+        uses: actions/checkout@v7
+        with:
+          # HEAD and its first parent: a squash merge and a merge commit
+          # both put the merged diff between the two.
+          fetch-depth: 2
+
+      - name: Check the diff for dependency files
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          case "$EVENT" in
+            schedule | workflow_dispatch)
+              echo "deps=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            pull_request)
+              # Fail open: an empty file list (API error) runs the audit.
+              files="$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')" || files=""
+              ;;
+            push)
+              files="$(git diff --name-only HEAD^ HEAD)" || files=""
+              ;;
+          esac
+          deps=false
+          [ -n "$files" ] || deps=true
+          while IFS= read -r f; do
+            case "$f" in
+              # The lockfiles and their manifests, tox.ini (it holds the
+              # audit commands and the --ignore-vuln list), this file, and
+              # VERSION — a release PR and its merge push audit the tree
+              # being shipped, so the release ruleset's `Security audit`
+              # gate still reads a fresh result, never a skip.
+              uv.lock | pyproject.toml | package.json | package-lock.json | tox.ini | VERSION | .github/workflows/dependency-audit.yml)
+                deps=true ;;
+            esac
+          done <<< "$files"
+          echo "dependency-file filter -> deps=$deps"
+          echo "deps=$deps" >> "$GITHUB_OUTPUT"
+
+  security-audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.deps == 'true'
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python (3.14)
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Export locked dependencies
+        run: >-
+          uv export
+          --frozen
+          --no-dev
+          --no-emit-project
+          --no-hashes
+          --format requirements-txt
+          --output-file /tmp/requirements-audit.txt
+
+      - name: Audit dependencies for known CVEs
+        run: pip-audit -r /tmp/requirements-audit.txt
+
+  dependency-audit-dev:
+    # Detection-only counterpart to `Security audit` above, covering what the
+    # runtime gate cannot see: the dev dependency groups and the npm tree —
+    # SNOW-576.
+    #
+    # This is deliberately NOT in either ruleset's required-check list. The
+    # runtime gate stays scoped to --no-dev so an advisory in a linter can
+    # never block a production release; this job makes the same advisory
+    # *visible* without giving it that power. Do not promote it to a required
+    # check, and do not fold it into the `Security audit` job.
+    name: Dependency audit (dev + npm)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.deps == 'true'
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python (3.14)
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      # npm is needed for the `npm audit` step of the tox env. No `npm ci`:
+      # the env audits with --package-lock-only, straight from the lockfile.
+      - name: Set up Node (22)
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Install tox
+        run: pip install tox tox-uv
+
+      - name: Audit dev groups and the npm tree
+        run: tox -e audit-dev
+
+  notify:
+    name: Open or close the audit issue
+    runs-on: ubuntu-latest
+    needs: [security-audit, dependency-audit-dev]
+    # Only the runs that audit an unchanged lockfile report through an
+    # issue. A PR's failure already shows on the PR; a push's on the commit.
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    permissions:
+      issues: write
+
+    steps:
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUNTIME: ${{ needs.security-audit.result }}
+          DEV: ${{ needs.dependency-audit-dev.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          label=dependency-audit
+          gh label create "$label" --color B60205 \
+            --description "The daily dependency audit is failing" --force
+          open="$(gh issue list --label "$label" --state open --json number --jq '.[0].number')"
+          if [ "$RUNTIME" = success ] && [ "$DEV" = success ]; then
+            if [ -n "$open" ]; then
+              gh issue close "$open" --comment "Green again: $RUN_URL"
+            fi
+            exit 0
+          fi
+          body="$(printf '%s\n\n%s\n%s\n\n%s\n' \
+            "The dependency audit failed on $(date -u +%Y-%m-%d): $RUN_URL" \
+            "- \`Security audit\` (runtime, release gate): $RUNTIME" \
+            "- \`Dependency audit (dev + npm)\` (detection only): $DEV" \
+            "A failed runtime audit blocks the next release. This issue closes itself on the next green run.")"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --label "$label" --assignee "${{ github.repository_owner }}" \
+              --title "Dependency audit failing" --body "$body"
+          fi

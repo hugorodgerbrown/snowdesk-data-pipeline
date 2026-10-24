@@ -373,6 +373,13 @@ exactly as it does for docs-only PRs today. A PR touching `VERSION` *and*
 anything else still runs the full suite — one non-ignored path in the diff is
 enough to set `code=true`.
 
+[`dependency-audit`](../.github/workflows/dependency-audit.yml) is the one
+inversion: it audits only when a diff touches a dependency file **or
+`VERSION`**, so a release PR and its merge push always produce a fresh
+`Security audit` result for the "Release branch" ruleset rather than a skip.
+Every other PR reports that check as skipped (SNOW-1209, see
+[the decision](decisions/dependency-audits-run-on-a-schedule-not-on-every-pr.md)).
+
 The other two runs both earn their place. `strict_required_status_checks_policy`
 is `false`, so a PR can merge without being current with `main`, which makes
 the push run the first test of the actually-merged state. And the push run on
