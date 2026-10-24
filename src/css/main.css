@@ -2224,6 +2224,86 @@ a.season-day:focus-visible {
   }
 }
 
+/* —————————————————————————————————————————
+   Day strips (SNOW-1219)
+
+   templates/includes/_day_strips.html. One
+   custom property, --block on the section,
+   places the time selector's capsule and the
+   band in every strip, so they cannot drift
+   apart; static/js/day_strips.js writes it.
+   Each block is 12.5% of the plot, which is
+   the column the figure grids use too.
+
+   data-selected marks the elements that read
+   the selected block — the two boundary labels
+   inside the capsule, the bold figure in each
+   row and the one visible header reading.
+   ————————————————————————————————————————— */
+
+.day-strips-capsule {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--block) * 12.5% - 0.625rem);
+  width: calc(12.5% + 1.25rem);
+  transition: left 120ms ease-out;
+}
+
+.day-strips-boundary {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--at) * 12.5%);
+  transform: translate(-50%, -50%);
+  color: var(--color-text-3);
+  pointer-events: none;
+}
+
+.day-strips-boundary[data-boundary="0"] {
+  transform: translate(0, -50%);
+}
+
+.day-strips-boundary[data-boundary="8"] {
+  transform: translate(-100%, -50%);
+}
+
+.day-strips-boundary[data-selected] {
+  color: var(--color-card);
+  font-weight: 500;
+}
+
+.day-strips-band {
+  position: absolute;
+  top: -4px;
+  bottom: 0;
+  left: calc(var(--block) * 12.5%);
+  width: 12.5%;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-accent-tint);
+  transition: left 120ms ease-out;
+}
+
+.day-strips-tick {
+  transform: translateY(-50%);
+}
+
+.day-strips-summary:not([data-selected]) {
+  display: none;
+}
+
+.day-strips-figure[data-selected] {
+  background-color: var(--color-accent-tint);
+  color: var(--color-text-1);
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .day-strips-capsule,
+  .day-strips-band {
+    transition: none;
+  }
+}
+
 /* The Plan form's day tiles (SNOW-1215) take the same second channel:
    trips/partials/_trip_when.html is this picker's pattern on another
    page, so the checked tile is marked the same two ways. */

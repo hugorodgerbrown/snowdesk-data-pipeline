@@ -100,6 +100,40 @@ grid the card carried (freezing level, snowfall, wind, precipitation
 chance) went with it: freezing level is in the day line, and the rest are
 in the meteogram for the days that have one.
 
+**The sheet draws a day as strips, not the meteogram (SNOW-1219).** One
+difference from the page: under the picker, a day with an hourly series
+opens [`includes/_day_strips.html`](../templates/includes/_day_strips.html)
+(built by [`apps/weather/services/day_strips.py`](../apps/weather/services/day_strips.py)),
+and a day past the hourly window opens
+[`includes/_day_figures.html`](../templates/includes/_day_figures.html).
+`_location_forecast_context(..., strips=True)` builds `day_strips` and
+`day_figures` in place of `hourly_charts`, and the sheet's day line is
+`brief` (date and condition only), because the strips and figures state
+the freezing level and daylight. Designed with Hugo on 24 Oct 2026, mobile
+first; the page keeps the meteogram until the hourly follow-up.
+
+- **Four strips on one time axis**: temperature; freezing level, split out
+  of the temperature chart, with the location's height as a dotted rule
+  labelled by its height alone; snow / rain as hourly bars coloured apart;
+  wind speed, gusts and one arrow per block, pointing at the source.
+- **A row of figures under each strip, one per three-hour block**:
+  temperature and freezing level as max over min (a mean is a reading
+  nobody experiences), snow / rain as the block total in cm when most of
+  it fell as snow and mm when not, wind as the strongest speed over the
+  strongest gust. Dashed dividers carry the blocks down every strip.
+- **One selector, one line**: the hour scale 00–24 in a pill track, the
+  selected block a dark capsule naming both its ends. Pressing a block,
+  or tapping or dragging across any strip, moves the selection
+  ([`static/js/day_strips.js`](../static/js/day_strips.js), arithmetic in
+  `day_strips_core.js`). Today opens on the current block, any other day
+  on 09–12. `--block` on the section places the capsule and every band;
+  `data-selected` marks the bold figures, the capsule's labels and the
+  one visible reading in each header. Every reading is server-rendered,
+  so the script writes no text.
+- **A later day keeps the rows**: temperature, freezing level (the day's
+  highest), snow, wind and daylight, one figure each, and "Hour by hour
+  from {weekday}" — the day it becomes tomorrow, `HOURLY_DAYS - 1` before.
+
 **The picker fits its container.** A cell needs about 42px, so the picker
 holds seven cells from 330px, six from 282px and five below that, dropping
 from the end of the week and never dropping the checked cell — measured on

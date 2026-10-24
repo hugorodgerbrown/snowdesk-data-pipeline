@@ -31,6 +31,7 @@ from apps.bulletins.services.day_summary import summary_for
 from apps.public.guidance import load_field_guidance
 from apps.public.templatetags.components import input_classes
 from apps.routes.models import Route
+from apps.weather.services.day_strips import build_day_strips
 from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import weather_icon_filename
 
@@ -4133,3 +4134,83 @@ def _build_hourly_chart_variants() -> tuple[dict[str, Any], ...]:
 
 
 HOURLY_CHART_VARIANTS: tuple[dict[str, Any], ...] = _build_hourly_chart_variants()
+
+
+def _build_day_strips_variants() -> tuple[dict[str, Any], ...]:
+    """
+    Build the day-strips variants (SNOW-1219) from the committed sample days.
+
+    The same three days as the meteogram, each opened at the clock its
+    caption names, so the selected block differs between them: the storm's
+    afternoon, the cold day's morning, the thaw's evening.
+
+    Returns:
+        The variant tuple.
+
+    """
+    variants: list[dict[str, Any]] = []
+    for filename, caption, (hour, minute) in _HOURLY_CHART_CAPTIONS:
+        day = _load_sample_day(filename)
+        location = day["location"]
+        at_location = datetime.timezone(
+            datetime.timedelta(seconds=location["utc_offset_seconds"])
+        )
+        strips = build_day_strips(
+            day,
+            elevation=location["elevation"],
+            now=datetime.datetime.fromisoformat(day["date"]).replace(
+                hour=hour, minute=minute, tzinfo=at_location
+            ),
+        )
+        variants.append(
+            {
+                "caption": caption,
+                "solo": True,
+                "context": {
+                    "strips": strips,
+                    "testid_prefix": f"component-library-strips-{day['slug']}",
+                },
+            }
+        )
+    return tuple(variants)
+
+
+DAY_STRIPS_VARIANTS: tuple[dict[str, Any], ...] = _build_day_strips_variants()
+
+
+DAY_FIGURES_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A day past the hourly window — one figure a row",
+        "context": {
+            "day": {
+                "temp_max": -1.0,
+                "temp_min": -8.0,
+                "freezing_level_height": 1900.0,
+                "snowfall_sum": 0.0,
+                "wind_speed_max": 18.0,
+                "wind_bearing": 315.0,
+                "sunrise_local": "07:38",
+                "sunset_local": "17:52",
+            },
+            "hourly_from": datetime.date(2026, 2, 18),
+            "testid_prefix": "component-library-day-figures",
+        },
+    },
+    {
+        "caption": "A snowy later day",
+        "context": {
+            "day": {
+                "temp_max": 0.0,
+                "temp_min": -6.0,
+                "freezing_level_height": 1400.0,
+                "snowfall_sum": 11.0,
+                "wind_speed_max": 34.0,
+                "wind_bearing": 260.0,
+                "sunrise_local": "07:41",
+                "sunset_local": "17:49",
+            },
+            "hourly_from": datetime.date(2026, 2, 20),
+            "testid_prefix": "component-library-day-figures-snow",
+        },
+    },
+)

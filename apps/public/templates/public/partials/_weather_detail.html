@@ -47,7 +47,8 @@ Context:
     issued_at  — datetime the row was last fetched, or None.
     target_date — datetime.date the sheet was opened for.
     another_day — bool: the target date is not today.
-    weather, panel, show_day_picker, selected_index, hourly_charts —
+    weather, panel, show_day_picker, selected_index, hourly_charts, day_strips,
+                 day_figures —
                  the page's own forecast context
                  (apps.public.views._location_forecast_context), passed
                  to the shared body.
@@ -56,7 +57,7 @@ Context:
     class="space-y-4"
     data-testid="weather-detail"
     data-location-short-id="{{ location.short_id }}"
-    data-sheet-detents="{% if show_day_picker or hourly_charts %}peek,half,full{% elif panel %}peek,half{% else %}peek{% endif %}"
+    data-sheet-detents="{% if show_day_picker or hourly_charts or day_strips %}peek,half,full{% elif panel %}peek,half{% else %}peek{% endif %}"
 >
     {# PEEK (SNOW-1101; Hugo, 21 Oct): the header row — the symbol, the   #}
     {# name with the location's height ("Belalp · 1934 m", which is what  #}
@@ -135,5 +136,5 @@ Context:
             {% endblocktrans %}
         </p>
     {% endif %}
-    {% include "public/partials/_weather_body.html" with weather=weather panel=panel show_day_picker=show_day_picker selected_index=selected_index hourly_charts=hourly_charts testid_prefix="weather-detail" selector_name="map-weather-day" in_map=True is_forecast=is_forecast only %}
+    {% include "public/partials/_weather_body.html" with weather=weather panel=panel show_day_picker=show_day_picker selected_index=selected_index hourly_charts=hourly_charts day_strips=day_strips day_figures=day_figures testid_prefix="weather-detail" selector_name="map-weather-day" in_map=True is_forecast=is_forecast only %}
 </div>

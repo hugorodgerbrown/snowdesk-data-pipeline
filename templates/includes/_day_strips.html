@@ -1,0 +1,445 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_day_strips.html — one day's weather as four linked
+strips with a row of figures under each (SNOW-1219).
+
+Built by apps/weather/services/day_strips.py (``build_day_strips``). The
+map's weather sheet shows it in place of ``_hourly_chart.html`` for each
+day that carries an hourly series; the location page keeps the meteogram.
+
+ONE TIME SELECTOR, ONE LINE: the hour scale 00–24 in a pill track, the
+selected three-hour block a dark capsule naming both its ends. Eight
+buttons cover the eight blocks. Pressing one — or tapping or dragging
+across any strip — moves the selection. static/js/day_strips.js does that;
+without it the server's choice (the current block today, 09–12 on another
+day) is drawn and stays.
+
+THE SELECTION IS TWO THINGS, kept apart on purpose:
+
+  ``--block`` on the section    places the capsule and the band in every
+                                strip. One custom property, so they cannot
+                                drift apart.
+  ``data-selected`` on each     marks the boundary labels inside the
+  block-indexed element         capsule, the bold figure in each row and
+                                the one visible summary in each header.
+
+The CSS for both is "Day strips" in src/css/main.css.
+
+GEOMETRY: every strip and every figure row is a two-column grid whose first
+column is the same gutter, so the plot and the eight figure cells share one
+x. The plots stretch horizontally only (``preserveAspectRatio="none"``,
+non-scaling strokes); labels and arrows are HTML, as in the meteogram.
+
+Context:
+    strips        — DayStrips.
+    testid_prefix — str, optional.
+{% endcomment %}
+{% if strips %}
+    {% firstof testid_prefix "day-strips" as prefix %}
+    <section
+        class="day-strips"
+        data-day-strips
+        data-testid="{{ prefix }}"
+        style="--block: {{ strips.selected }}"
+        aria-label="{% translate 'Hour by hour, in three-hour blocks' %}"
+    >
+        {# ── The time selector ─────────────────────────────────────── #}
+        <div class="grid grid-cols-[2.25rem_1fr]">
+            <span aria-hidden="true"></span>
+            <div class="relative h-7" data-day-strips-track>
+                {# The pill runs a little past the plot at both ends, so the #}
+                {# first and last boundary labels and an end capsule sit     #}
+                {# inside it; the labels keep the plot's own x.              #}
+                <span class="absolute inset-y-0 -inset-x-2.5 rounded-pill bg-tag" aria-hidden="true"></span>
+                <span class="day-strips-capsule rounded-pill bg-text-1" aria-hidden="true"></span>
+                {% for label in strips.boundaries %}
+                    <span
+                        class="day-strips-boundary font-mono text-xs"
+                        style="--at: {{ forloop.counter0 }}"
+                        data-boundary="{{ forloop.counter0 }}"
+                        {% if forloop.counter0 == strips.selected or forloop.counter0 == strips.selected|add:1 %}
+                            data-selected
+                        {% endif %}
+                        aria-hidden="true"
+                    >{{ label }}</span>
+                {% endfor %}
+                <div class="absolute inset-0 grid grid-cols-8">
+                    {% for block in strips.blocks %}
+                        <button
+                            type="button"
+                            class="cursor-pointer rounded-pill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-selected"
+                            data-block="{{ block.index }}"
+                            aria-pressed="{% if block.index == strips.selected %}true{% else %}false{% endif %}"
+                            aria-label="{% blocktrans with start=block.start end=block.end trimmed %}{{ start }}:00 to {{ end }}:00{% endblocktrans %}"
+                            data-testid="{{ prefix }}-block-button"
+                        >
+                        </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        {# ── Temperature ───────────────────────────────────────────── #}
+        {% include "includes/_day_strip_header.html" with title=_("Temperature") unit="°C" summaries=strips.summaries.temp selected=strips.selected testid=prefix|add:"-temp" only %}
+        <div class="grid grid-cols-[2.25rem_1fr]">
+            <div class="relative" aria-hidden="true">
+                {% for tick in strips.temp_ticks %}
+                    <span
+                        class="day-strips-tick absolute right-1.5 leading-none font-mono text-xs text-text-3"
+                        style="top: {{ tick.top }}px"
+                    >{{ tick.label }}</span>
+                {% endfor %}
+            </div>
+            <div
+                class="day-strips-plot relative cursor-pointer touch-pan-y"
+                style="height: {{ strips.temp_height }}px"
+                data-day-strips-plot
+            >
+                <span class="day-strips-band" aria-hidden="true"></span>
+                <svg
+                    viewBox="0 0 288 {{ strips.temp_height }}"
+                    preserveAspectRatio="none"
+                    class="absolute inset-0 h-full w-full overflow-visible"
+                    aria-hidden="true"
+                >
+                    {% for x in strips.dividers %}
+                        <line
+                            x1="{{ x }}"
+                            x2="{{ x }}"
+                            y1="0"
+                            y2="{{ strips.temp_height }}"
+                            class="stroke-border"
+                            stroke-dasharray="2 2"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endfor %}
+                    {% for tick in strips.temp_ticks %}
+                        <line
+                            x1="0"
+                            x2="288"
+                            y1="{{ tick.top }}"
+                            y2="{{ tick.top }}"
+                            class="stroke-border"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endfor %}
+                    {% if strips.temp_zero_y %}
+                        <line
+                            x1="0"
+                            x2="288"
+                            y1="{{ strips.temp_zero_y }}"
+                            y2="{{ strips.temp_zero_y }}"
+                            class="stroke-border-strong"
+                            stroke-dasharray="3 3"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endif %}
+                    {% for points in strips.temp_segments %}
+                        <polyline
+                            points="{{ points }}"
+                            fill="none"
+                            class="stroke-text-1"
+                            stroke-width="2"
+                            stroke-linejoin="round"
+                            stroke-linecap="round"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endfor %}
+                </svg>
+            </div>
+        </div>
+        <div class="grid grid-cols-[2.25rem_1fr]" data-testid="{{ prefix }}-temp-figures">
+            <span></span>
+            <div class="grid grid-cols-8">
+                {% for block in strips.blocks %}
+                    <span
+                        class="day-strips-figure rounded-b-sm py-0.5 text-center text-sm font-medium tabular-nums"
+                        data-block="{{ block.index }}"
+                        {% if block.index == strips.selected %}data-selected{% endif %}
+                    >
+                        {{ block.temp_max }}
+                        <span class="block text-xs text-text-3">{{ block.temp_min }}</span>
+                    </span>
+                {% endfor %}
+            </div>
+        </div>
+
+        {# ── Freezing level ────────────────────────────────────────── #}
+        {% include "includes/_day_strip_header.html" with title=_("Freezing level") unit="m" summaries=strips.summaries.freezing selected=strips.selected testid=prefix|add:"-freezing" only %}
+        <div class="grid grid-cols-[2.25rem_1fr]">
+            <div class="relative" aria-hidden="true">
+                {% for tick in strips.freezing_ticks %}
+                    <span
+                        class="day-strips-tick absolute right-1.5 leading-none font-mono text-xs text-accent"
+                        style="top: {{ tick.top }}px"
+                    >{{ tick.label }}</span>
+                {% endfor %}
+            </div>
+            <div
+                class="day-strips-plot relative cursor-pointer touch-pan-y"
+                style="height: {{ strips.freezing_height }}px"
+                data-day-strips-plot
+            >
+                <span class="day-strips-band" aria-hidden="true"></span>
+                <svg
+                    viewBox="0 0 288 {{ strips.freezing_height }}"
+                    preserveAspectRatio="none"
+                    class="absolute inset-0 h-full w-full overflow-visible"
+                    aria-hidden="true"
+                >
+                    {% for x in strips.dividers %}
+                        <line
+                            x1="{{ x }}"
+                            x2="{{ x }}"
+                            y1="0"
+                            y2="{{ strips.freezing_height }}"
+                            class="stroke-border"
+                            stroke-dasharray="2 2"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endfor %}
+                    {% for tick in strips.freezing_ticks %}
+                        <line
+                            x1="0"
+                            x2="288"
+                            y1="{{ tick.top }}"
+                            y2="{{ tick.top }}"
+                            class="stroke-border"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endfor %}
+                    {% for points in strips.freezing_area %}
+                        <polygon points="{{ points }}" class="fill-accent-tint" />
+                    {% endfor %}
+                    {% if strips.elevation_y %}
+                        <line
+                            x1="0"
+                            x2="288"
+                            y1="{{ strips.elevation_y }}"
+                            y2="{{ strips.elevation_y }}"
+                            class="stroke-accent"
+                            stroke-width="1.5"
+                            stroke-dasharray="1 3"
+                            stroke-linecap="round"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endif %}
+                    {% for points in strips.freezing_segments %}
+                        <polyline
+                            points="{{ points }}"
+                            fill="none"
+                            class="stroke-accent"
+                            stroke-width="2"
+                            stroke-dasharray="6 3"
+                            stroke-linejoin="round"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endfor %}
+                </svg>
+                {% if strips.elevation_y %}
+                    <span
+                        class="absolute right-0 -translate-y-full pb-0.5 font-mono text-xs text-accent"
+                        style="top: {{ strips.elevation_y }}px"
+                        data-testid="{{ prefix }}-elevation"
+                    >{{ strips.elevation_label }}</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="grid grid-cols-[2.25rem_1fr]" data-testid="{{ prefix }}-freezing-figures">
+            <span></span>
+            <div class="grid grid-cols-8 text-accent">
+                {% for block in strips.blocks %}
+                    <span
+                        class="day-strips-figure rounded-b-sm py-0.5 text-center text-sm font-medium tabular-nums"
+                        data-block="{{ block.index }}"
+                        {% if block.index == strips.selected %}data-selected{% endif %}
+                    >
+                        {{ block.freezing_max }}
+                        <span class="block text-xs opacity-75">{{ block.freezing_min }}</span>
+                    </span>
+                {% endfor %}
+            </div>
+        </div>
+
+        {# ── Snow / rain ───────────────────────────────────────────── #}
+        {% include "includes/_day_strip_header.html" with title=_("Snow / rain") unit=_("per 3 h") summaries=strips.summaries.precip selected=strips.selected testid=prefix|add:"-precip" only %}
+        <div class="grid grid-cols-[2.25rem_1fr]">
+            <div class="relative" aria-hidden="true">
+                <span
+                    class="day-strips-tick absolute right-1.5 leading-none font-mono text-xs text-text-3"
+                    style="top: 8px"
+                >{{ strips.precip_top_label }}</span>
+                <span
+                    class="day-strips-tick absolute right-1.5 leading-none font-mono text-xs text-text-3"
+                    style="top: {{ strips.precip_height|add:-8 }}px"
+                >0</span>
+            </div>
+            <div
+                class="day-strips-plot relative cursor-pointer touch-pan-y"
+                style="height: {{ strips.precip_height }}px"
+                data-day-strips-plot
+            >
+                <span class="day-strips-band" aria-hidden="true"></span>
+                <svg
+                    viewBox="0 0 288 {{ strips.precip_height }}"
+                    preserveAspectRatio="none"
+                    class="absolute inset-0 h-full w-full overflow-visible"
+                    aria-hidden="true"
+                >
+                    {% for x in strips.dividers %}
+                        <line
+                            x1="{{ x }}"
+                            x2="{{ x }}"
+                            y1="0"
+                            y2="{{ strips.precip_height }}"
+                            class="stroke-border"
+                            stroke-dasharray="2 2"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endfor %}
+                    <line
+                        x1="0"
+                        x2="288"
+                        y1="{{ strips.precip_height|add:-8 }}"
+                        y2="{{ strips.precip_height|add:-8 }}"
+                        class="stroke-border-strong"
+                        vector-effect="non-scaling-stroke"
+                    />
+                    {% for bar in strips.precip_bars %}
+                        <rect
+                            x="{{ bar.x }}"
+                            y="{{ bar.y }}"
+                            width="{{ bar.width }}"
+                            height="{{ bar.height }}"
+                            class="{% if bar.snow %}fill-chart-snow{% else %}fill-chart-precip{% endif %}"
+                        />
+                    {% endfor %}
+                </svg>
+            </div>
+        </div>
+        <div class="grid grid-cols-[2.25rem_1fr]" data-testid="{{ prefix }}-precip-figures">
+            <span></span>
+            <div class="grid grid-cols-8">
+                {% for block in strips.blocks %}
+                    <span
+                        class="day-strips-figure rounded-b-sm py-0.5 text-center text-sm font-medium tabular-nums {% if not block.precip %}text-text-3{% elif block.precip_is_snow %}text-accent{% else %}text-chart-precip{% endif %}"
+                        data-block="{{ block.index }}"
+                        {% if block.index == strips.selected %}data-selected{% endif %}
+                    >
+                        {% if block.precip %}{{ block.precip }}{% else %}&ndash;{% endif %}
+                    </span>
+                {% endfor %}
+            </div>
+        </div>
+
+        {# ── Wind ──────────────────────────────────────────────────── #}
+        {% include "includes/_day_strip_header.html" with title=_("Wind") unit="km/h" summaries=strips.summaries.wind selected=strips.selected testid=prefix|add:"-wind" only %}
+        <div class="grid grid-cols-[2.25rem_1fr]" aria-hidden="true">
+            <span></span>
+            <div class="grid grid-cols-8 py-1 text-text-1">
+                {% for block in strips.blocks %}
+                    <span class="flex justify-center">
+                        {% if block.bearing %}
+                            {# Points at the source, as the meteogram's arrows do. #}
+                            <svg
+                                width="14"
+                                height="14"
+                                viewBox="-7 -7 14 14"
+                                style="transform: rotate({{ block.bearing }}deg)"
+                            >
+                                <path
+                                    d="M0,-5.5 L0,5.5 M-3.5,-2 L0,-5.5 L3.5,-2"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    fill="none"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        {% endif %}
+                    </span>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="grid grid-cols-[2.25rem_1fr]">
+            <div class="relative" aria-hidden="true">
+                {% for tick in strips.wind_ticks %}
+                    <span
+                        class="day-strips-tick absolute right-1.5 leading-none font-mono text-xs text-text-3"
+                        style="top: {{ tick.top }}px"
+                    >{{ tick.label }}</span>
+                {% endfor %}
+            </div>
+            <div
+                class="day-strips-plot relative cursor-pointer touch-pan-y"
+                style="height: {{ strips.wind_height }}px"
+                data-day-strips-plot
+            >
+                <span class="day-strips-band" aria-hidden="true"></span>
+                <svg
+                    viewBox="0 0 288 {{ strips.wind_height }}"
+                    preserveAspectRatio="none"
+                    class="absolute inset-0 h-full w-full overflow-visible"
+                    aria-hidden="true"
+                >
+                    {% for x in strips.dividers %}
+                        <line
+                            x1="{{ x }}"
+                            x2="{{ x }}"
+                            y1="0"
+                            y2="{{ strips.wind_height }}"
+                            class="stroke-border"
+                            stroke-dasharray="2 2"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endfor %}
+                    {% for tick in strips.wind_ticks %}
+                        <line
+                            x1="0"
+                            x2="288"
+                            y1="{{ tick.top }}"
+                            y2="{{ tick.top }}"
+                            class="stroke-border"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endfor %}
+                    {% for points in strips.wind_gust_segments %}
+                        <polyline
+                            points="{{ points }}"
+                            fill="none"
+                            class="stroke-text-2"
+                            stroke-width="1.5"
+                            stroke-dasharray="3 2"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endfor %}
+                    {% for points in strips.wind_speed_segments %}
+                        <polyline
+                            points="{{ points }}"
+                            fill="none"
+                            class="stroke-chart-wind"
+                            stroke-width="2"
+                            stroke-linejoin="round"
+                            vector-effect="non-scaling-stroke"
+                        />
+                    {% endfor %}
+                </svg>
+            </div>
+        </div>
+        <div class="grid grid-cols-[2.25rem_1fr]" data-testid="{{ prefix }}-wind-figures">
+            <span></span>
+            <div class="grid grid-cols-8">
+                {% for block in strips.blocks %}
+                    <span
+                        class="day-strips-figure rounded-b-sm py-0.5 text-center text-sm font-medium tabular-nums"
+                        data-block="{{ block.index }}"
+                        {% if block.index == strips.selected %}data-selected{% endif %}
+                    >
+                        {{ block.wind }}
+                        <span class="block text-xs text-text-3">{{ block.gust }}</span>
+                    </span>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+{% endif %}

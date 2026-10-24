@@ -36,6 +36,10 @@ Context:
           it and the row is always visible.
     testid_prefix : str — data-testid namespace. Defaults to
           ``weather-day-line``.
+    brief : bool — optional. The date and condition alone, without the
+          freezing level and daylight: the map's weather sheet states both
+          under the line, in the day strips or the day's figures
+          (SNOW-1219).
 {% endcomment %}
 {% firstof testid_prefix "weather-day-line" as prefix %}
 <div
@@ -54,16 +58,18 @@ Context:
         <p class="text-lg font-medium tracking-tight text-text-1">
             {{ day.date|date:"l j F" }} &middot; {{ day.condition_label }}
         </p>
-        <p class="font-mono text-sm text-text-2" data-testid="{{ prefix }}-detail">
-            {% if day.freezing_level_height is not None %}
-                {% blocktrans with m=day.freezing_level_height|floatformat:0 trimmed %}
-                    Freezing {{ m }} m
+        {% if not brief %}
+            <p class="font-mono text-sm text-text-2" data-testid="{{ prefix }}-detail">
+                {% if day.freezing_level_height is not None %}
+                    {% blocktrans with m=day.freezing_level_height|floatformat:0 trimmed %}
+                        Freezing {{ m }} m
+                    {% endblocktrans %}
+                    &middot;
+                {% endif %}
+                {% blocktrans with sunrise=day.sunrise_local sunset=day.sunset_local trimmed %}
+                    daylight {{ sunrise }}&ndash;{{ sunset }}
                 {% endblocktrans %}
-                &middot;
-            {% endif %}
-            {% blocktrans with sunrise=day.sunrise_local sunset=day.sunset_local trimmed %}
-                daylight {{ sunrise }}&ndash;{{ sunset }}
-            {% endblocktrans %}
-        </p>
+            </p>
+        {% endif %}
     </div>
 </div>

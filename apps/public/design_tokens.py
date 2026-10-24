@@ -46,6 +46,8 @@ from apps.public._component_fixtures import (
     COLLAPSIBLE_PANEL_VARIANTS,
     DANGER_TILE_EMPTY_VARIANTS,
     DAY_CHARACTER_VARIANTS,
+    DAY_FIGURES_VARIANTS,
+    DAY_STRIPS_VARIANTS,
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
@@ -2110,6 +2112,40 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_hourly_chart.html",
         variants=HOURLY_CHART_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="day-strips",
+        label="Day strips",
+        description=(
+            "One day as four linked strips on one time axis (SNOW-1219) — "
+            "temperature, freezing level (with the location's height as a "
+            "dotted rule), snow / rain and wind — each with a row of "
+            "figures under it, one per three-hour block: max over min, the "
+            "block's total, the strongest wind over the strongest gust. "
+            "One selector on one line picks a block, and a band through "
+            "every strip, the bold figure in each row and the four headers "
+            "follow it (static/js/day_strips.js; here the server's choice "
+            "is drawn). The map's weather sheet draws this in place of the "
+            "hourly chart; the location page keeps the hourly chart."
+        ),
+        kind="components",
+        partial="includes/_day_strips.html",
+        variants=DAY_STRIPS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="day-figures",
+        label="Day figures",
+        description=(
+            "A day past the hourly window in the map's weather sheet "
+            "(SNOW-1219): the day strips' rows with one figure each — "
+            "temperature, freezing level, snow, wind — plus the daylight, "
+            "and a line saying when the hour-by-hour forecast arrives."
+        ),
+        kind="components",
+        partial="includes/_day_figures.html",
+        variants=DAY_FIGURES_VARIANTS,
         panel_layout="stack",
     ),
 )

@@ -1,0 +1,29 @@
+{% comment %}
+templates/includes/_day_strip_header.html — one strip's title row in
+_day_strips.html (SNOW-1219): the eyebrow, the selected block's reading and
+the unit.
+
+Every block's reading is rendered and all but the selected one are hidden
+by "Day strips" in src/css/main.css, so static/js/day_strips.js moves the
+selection by flipping one attribute rather than writing any text — every
+word on the page stays server-rendered and translated.
+
+Context:
+    title    — str, translated.
+    unit     — str.
+    summaries — list[str]: each block's reading, in block order.
+    selected — int.
+    testid   — str.
+{% endcomment %}
+<div class="mt-6 mb-2 flex items-baseline gap-2" data-testid="{{ testid }}-header">
+    <span class="font-mono text-xs font-medium tracking-[0.1em] uppercase text-text-1">{{ title }}</span>
+    {% for summary in summaries %}
+        <span
+            class="day-strips-summary text-summary text-text-2"
+            data-block="{{ forloop.counter0 }}"
+            {% if forloop.counter0 == selected %}data-selected{% endif %}
+            data-testid="{{ testid }}-summary"
+        >{{ summary }}</span>
+    {% endfor %}
+    <span class="ml-auto font-mono text-xs text-text-3">{{ unit }}</span>
+</div>
