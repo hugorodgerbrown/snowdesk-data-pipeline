@@ -423,26 +423,34 @@ class TestSharePageMeetingPoint:
         assert match is not None, "the page rendered no meeting point"
         return match.group(0)
 
-    def test_the_coordinates_render_with_the_flag_off(self, client: Client) -> None:
-        """Flag off is today's page, unchanged — and makes no call."""
+    def test_the_route_sentence_renders_with_the_flag_off(self, client: Client) -> None:
+        """Flag off: the route sentence and a maps link, never the numbers.
+
+        SNOW-1214. A meeting point never shows its latitude and longitude;
+        and the flag-off page makes no conversion call.
+        """
         trip = self._shared_trip()
 
         with patch("apps.locations.services.what3words.requests.get") as mock_get:
             rendered = self._meeting_point_element(client, trip)
 
-        assert "46.080012, 7.318197" in rendered
+        assert "6.7 km west of the route&#x27;s start" in rendered
+        assert "Open in maps" in rendered
+        assert "46.080012, 7.318197" not in rendered
         assert "///" not in rendered
         mock_get.assert_not_called()
 
     @override_flag("what3words", active=True)
     def test_the_address_renders_with_the_flag_on(self, client: Client) -> None:
-        """An anonymous link-holder gets the address, not the numbers."""
+        """An anonymous link-holder gets the address, and no coordinate even
+        in the title (SNOW-1214).
+        """
         trip = self._shared_trip(cached=True)
 
         rendered = self._meeting_point_element(client, trip)
 
         assert "///filled.count.soap" in rendered
-        assert 'title="46.080012, 7.318197"' in rendered
+        assert "46.080012" not in rendered
 
     @override_flag("what3words", active=True)
     @override_settings(WHAT3WORDS_MAP_BASE_URL="https://w3w.example")
@@ -464,18 +472,27 @@ class TestSharePageMeetingPoint:
         assert 'target="_blank"' in rendered
         assert 'rel="noopener noreferrer"' in rendered
 
-    def test_the_coordinate_fallback_carries_no_link(self, client: Client) -> None:
-        """No address on the public page means no anchor either."""
+    def test_the_fallback_links_to_a_maps_app(self, client: Client) -> None:
+        """No address means a maps link carrying the coordinate in its href.
+
+        The coordinate travels in the link, never in the text: it is how a
+        link-holder navigates to the spot (SNOW-1214).
+        """
         rendered = self._meeting_point_element(client, self._shared_trip())
 
-        assert "<a" not in rendered
-        assert "46.080012, 7.318197" in rendered
+        assert (
+            'href="https://www.google.com/maps/search/?api=1&amp;query=46.080012%2C7.318197"'
+            in rendered
+        )
+        assert 'rel="noopener noreferrer"' in rendered
 
     @override_flag("what3words", active=True)
-    def test_a_failing_conversion_falls_back_to_the_coordinates(
+    def test_a_failing_conversion_falls_back_to_the_route_sentence(
         self, client: Client, settings: Settings
     ) -> None:
-        """A what3words outage must not take the public page with it."""
+        """A what3words outage must not take the public page with it, and
+        must not put the coordinate on it (SNOW-1214).
+        """
         settings.WHAT3WORDS_API_KEY = "test-key"
         trip = self._shared_trip()
 
@@ -486,4 +503,6 @@ class TestSharePageMeetingPoint:
             response = client.get(reverse("trips:share_page", args=[trip.share_token]))
 
         assert response.status_code == 200
-        assert "46.080012, 7.318197" in response.content.decode()
+        html = response.content.decode()
+        assert "6.7 km west of the route&#x27;s start" in html
+        assert "46.080012, 7.318197" not in html

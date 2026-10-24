@@ -587,11 +587,12 @@ class TestTripListMeetingAddress:
         assert "///filled.count.soap" in html
 
     @override_flag("what3words", active=True)
-    def test_an_uncached_meeting_point_falls_back_to_the_coordinate(
+    def test_an_uncached_meeting_point_falls_back_to_the_route_sentence(
         self, client: Client
     ) -> None:
-        """There is never a blank where the meeting point was — and, the
-        point of the test, never a conversion either.
+        """There is never a blank where the meeting point was, never its
+        coordinate (SNOW-1214) — and, the point of the test, never a
+        conversion either.
         """
         trip = TripFactory.create()
         client.force_login(trip.created_by)
@@ -602,6 +603,12 @@ class TestTripListMeetingAddress:
         mock_get.assert_not_called()
         assert 'data-testid="trip-card-meeting-point"' in html
         assert "///" not in html
+        # The factory meets at the track's first point.
+        assert "At the route&#x27;s start" in html
+        assert "Open in maps" in html
+        assert "46.100000, 7.400000" not in html
+        # "Meet at" reads before an address, not before the sentence.
+        assert "Meet at" not in html
 
 
 @freeze_time(_TODAY)

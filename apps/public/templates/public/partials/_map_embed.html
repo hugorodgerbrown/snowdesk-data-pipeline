@@ -259,15 +259,7 @@ Optional context:
     {# place_picker.js while placing a favourite/observation; the map pans   #}
     {# underneath it and the coord is read from the map centre.              #}
     <div id="map-place-pin" class="map-place-pin text-status-info-text" hidden aria-hidden="true">
-        <svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-                d="M12 22s7-7.163 7-12A7 7 0 1 0 5 10c0 4.837 7 12 7 12Z"
-                fill="currentColor"
-                stroke="currentColor"
-                stroke-width="1"
-            />
-            <circle cx="12" cy="10" r="2.75" fill="var(--color-card)" />
-        </svg>
+        {% include "includes/_place_pin.html" %}
     </div>
     {# Bottom-right control stack — two capsules in one bottom-anchored       #}
     {# column, then the expand/collapse toggle (level with the bottom-left    #}

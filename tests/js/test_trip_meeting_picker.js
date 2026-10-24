@@ -1,18 +1,19 @@
 /*
  * tests/js/test_trip_meeting_picker.js — the meeting pin's arithmetic
- * (SNOW-820).
+ * (SNOW-820) and its live address (SNOW-1214).
  *
- * The picker's job is to keep a dragged marker and two number inputs
- * saying the same thing. Everything worth asserting about that is pure:
- * what a coordinate rounds to, what happens to a typed value outside the
- * WGS-84 range, and what the readout says. The map itself is WebGL and
- * belongs nowhere near jsdom.
+ * The picker writes the map's centre into two hidden inputs and asks for
+ * the spot's three word address each time the map settles. Everything
+ * worth asserting about that is pure: what a coordinate rounds to, what
+ * happens to a value outside the WGS-84 range, where the quick picks go,
+ * and which answer the debounced lookup lets through. The map itself is
+ * WebGL and belongs nowhere near jsdom.
  *
  * `trip_map.js` is imported first because the picker reads its frozen core
  * off `self` at its own top level, exactly as the page loads them.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../static/js/i18n_strings.js';
 import '../../static/js/elevation_profile_core.js';
@@ -67,19 +68,6 @@ describe('clampLatitude / clampLongitude', () => {
   });
 });
 
-describe('formatCoordinate', () => {
-  it('reads back at full stored precision', () => {
-    // Trailing zeros are kept: a readout that shortened 7.300000 to 7.3
-    // would not match the value in the field beneath it.
-    expect(core.formatCoordinate(46.08, 7.3)).toBe('46.080000, 7.300000');
-  });
-
-  it('is empty when either half is unusable', () => {
-    expect(core.formatCoordinate(46.08, 'x')).toBe('');
-    expect(core.formatCoordinate(undefined, 7.3)).toBe('');
-  });
-});
-
 describe('readPayload', () => {
   it('parses the inline payload', () => {
     const el = document.createElement('script');
@@ -108,5 +96,140 @@ describe('readPayload', () => {
     expect(core.readPayload(document)).toBeNull();
 
     document.body.removeChild(el);
+  });
+});
+
+describe('routeEnds', () => {
+  it('answers the first and last points as [lon, lat]', () => {
+    const payload = {
+      route: { geometry: { coordinates: [[7.0, 46.0, 1500], [7.1, 46.1, 2000], [7.2, 46.2, 1800]] } },
+    };
+
+    expect(core.routeEnds(payload)).toEqual({ start: [7.0, 46.0], end: [7.2, 46.2] });
+  });
+
+  it('answers null for a route with no points', () => {
+    expect(core.routeEnds({ route: { geometry: { coordinates: [] } } })).toBeNull();
+    expect(core.routeEnds(null)).toBeNull();
+  });
+});
+
+describe('boundsAroundPin', () => {
+  it('is centred on the pin and still holds the whole route', () => {
+    const route = [[7.0, 46.0], [7.2, 46.1]];
+
+    expect(core.boundsAroundPin(route, 46.0, 7.0)).toEqual([[6.8, 45.9], [7.2, 46.1]]);
+  });
+
+  it('answers null with no route box', () => {
+    expect(core.boundsAroundPin(null, 46.0, 7.0)).toBeNull();
+  });
+});
+
+describe('createAddressLookup', () => {
+  let states;
+
+  /** A fetch that answers `body` (or rejects with `error`) once called. */
+  function answering(body, { ok = true, error = null } = {}) {
+    return vi.fn(() => (error
+      ? Promise.reject(error)
+      : Promise.resolve({ ok, status: ok ? 200 : 429, json: () => Promise.resolve(body) })));
+  }
+
+  function lookup(fetchImpl) {
+    return core.createAddressLookup({
+      url: '/trips/what3words/',
+      fetch: fetchImpl,
+      delay: 400,
+      onState: (update) => states.push(update),
+    });
+  }
+
+  beforeEach(() => {
+    states = [];
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('drops a pending or in-flight answer once cancelled, as the map starts moving', async () => {
+    let resolve;
+    const fetchImpl = vi.fn(() => new Promise((done) => { resolve = done; }));
+    const subject = lookup(fetchImpl);
+
+    subject.request(46.08, 7.31);
+    await vi.advanceTimersByTimeAsync(400);
+    subject.cancel();
+    resolve({ ok: true, status: 200, json: () => Promise.resolve({ words: 'old.square.here' }) });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(states).toEqual([{ state: 'finding' }]);
+
+    subject.request(46.09, 7.32);
+    subject.cancel();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('says it is finding at once and asks only once the map has settled', async () => {
+    const fetchImpl = answering({ words: 'filled.count.soap', url: 'https://w3w.co/filled.count.soap' });
+    const subject = lookup(fetchImpl);
+
+    subject.request(46.08, 7.31);
+    subject.request(46.09, 7.32);
+
+    expect(states).toEqual([{ state: 'finding' }, { state: 'finding' }]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][0]).toBe('/trips/what3words/?lat=46.09&lon=7.32');
+    expect(states.at(-1)).toEqual({
+      state: 'found',
+      words: 'filled.count.soap',
+      url: 'https://w3w.co/filled.count.soap',
+    });
+  });
+
+  it('never lets an answer about an earlier spot through', async () => {
+    let release;
+    const slow = vi.fn(() => new Promise((resolve) => { release = resolve; }));
+    const subject = lookup(slow);
+
+    subject.request(46.08, 7.31);
+    await vi.advanceTimersByTimeAsync(400);
+    subject.request(46.09, 7.32);
+    release({ ok: true, json: () => Promise.resolve({ words: 'stale.old.words' }) });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(states.some((update) => update.words === 'stale.old.words')).toBe(false);
+  });
+
+  it('fails to the save-time line on an error, a bad status or no words', async () => {
+    for (const fetchImpl of [
+      answering(null, { error: new TypeError('offline') }),
+      answering({ error: 'rate_limit_exceeded' }, { ok: false }),
+      answering({ words: null, url: null }),
+    ]) {
+      states = [];
+      lookup(fetchImpl).request(46.08, 7.31);
+      await vi.advanceTimersByTimeAsync(400);
+
+      expect(states.at(-1)).toEqual({ state: 'failed' });
+    }
+  });
+
+  it('does not ask at all while the browser is offline', async () => {
+    const fetchImpl = answering({ words: 'filled.count.soap' });
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+
+    lookup(fetchImpl).request(46.08, 7.31);
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(states.at(-1)).toEqual({ state: 'failed' });
+    online.mockRestore();
   });
 });

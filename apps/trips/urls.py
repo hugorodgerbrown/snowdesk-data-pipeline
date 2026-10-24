@@ -17,6 +17,8 @@ URL structure:
   trips/partials/<uuid>/save-route/  POST — copy the route (SNOW-824)
   trips/partials/s/<token>/save-route/
                                      POST — the same, for a link-holder
+  trips/what3words/                  GET  — the address under the Plan
+                                           page's pin (SNOW-1214)
   trips/<uuid>/                      GET  — the trip's own page
   trips/<uuid>/route.geojson         GET  — the route, for the map (SNOW-828)
   trips/<uuid>/share/                POST — mint/rotate the link (SNOW-821)
@@ -118,6 +120,11 @@ urlpatterns = [
         "<uuid:uuid>/route.geojson",
         views.trip_route_geojson,
         name="route_geojson",
+    ),
+    path(
+        "what3words/",
+        views.meeting_point_address,
+        name="what3words",
     ),
     path(
         "<uuid:uuid>/",

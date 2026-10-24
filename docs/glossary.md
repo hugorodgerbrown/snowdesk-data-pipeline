@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-10-23
+last-reviewed: 2026-10-24
 ---
 
 # Glossary — domain terms to code symbols
@@ -122,6 +122,8 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | Organiser | The account that created a trip. Derived from `Trip.created_by`, never a second column on the roster row — they hold a `TripParticipant` row like everybody else, so "everyone on this trip" is one relation | `Trip.created_by`; `is_organiser` in `apps/trips/views.py` |
 | TripParticipant | One account that has SAVED one trip. `(trip, user)` is unique, and the organiser's row is written at creation. Written by "Save this trip" and removed by "Remove from my trips" (SNOW-848 relabelled SNOW-822's join/leave); no surface states how many rows a trip has, or whose ([why](decisions/a-trip-is-one-object-with-a-roster.md)) | `TripParticipant` in `apps/trips/models.py` |
 | Meeting point | Where a trip's group meets — an anonymous `Location` minted for that trip alone, defaulting to the route's first coordinate. `PROTECT`, so the orphan sweep can ask the database whether anything still references it | `Trip.meeting_point`; `_meeting_coordinates` in `apps/trips/services/trips.py` |
+| Meeting place sentence | The line that places a trip's meeting point against its route ("At the route's start", "On the route, 9 km in", "2 km north-east of the route's start"). Stands beside the three word address, and in its place with an Open in maps link when there is none; a meeting point never shows lat/lon (SNOW-1214) | `describe` / `sentence` / `maps_url` in `apps/trips/services/meeting_place.py`; `static/js/meeting_place_core.js`; `tests/fixtures/meeting_place_vectors.json` |
+| Place pin | The pin a place is chosen under. It stays still and the map moves beneath it; used by the map page's favourite and report placement and the Plan page's meeting point | `templates/includes/_place_pin.html`; `window.PlacePicker`; `static/js/trip_meeting_picker.js`; `trips:what3words` for the live address |
 | Upcoming vs past | The split `/trips/` reads by, against the trip's own `date` and the site's current day. A trip dated TODAY is upcoming — the day it exists for has not finished. Upcoming reads soonest-first, past most-recent-first | `TripQuerySet.upcoming()` / `.past()` in `apps/trips/models.py` |
 | Save route | Copying a trip's SNAPSHOT into the viewer's own routes (SNOW-824) — available to anyone who can see the trip, participant or not. Saving does not join and joining does not save, and nothing links the copy back afterwards; the "already saved" state is an exact geometry match ([why](decisions/a-trip-share-is-a-page-not-a-pending-claim.md)) | `save_trip_route` / `already_saved` in `apps/trips/services/routes.py`; the write is `write_route_copy` in `apps/routes/services/shares.py` |
 | Trip duration | How long a trip's day takes, copied from the source route's recording at creation (SNOW-995). A LENGTH, not a pair of timestamps — which is why a trip carries it while `started_at`/`finished_at` stay off the snapshot: the route was recorded on some other day, but a six-hour track describes a six-hour day whenever it is skied. Null when the source route was untimed, which is the common case | `Trip.duration` / `Trip.duration_hm`; `split_hours_minutes` in `apps/core/durations.py` |

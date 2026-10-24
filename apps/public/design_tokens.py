@@ -63,6 +63,7 @@ from apps.public._component_fixtures import (
     OVERLAY_SHEET_VARIANTS,
     PAGE_TITLE_VARIANTS,
     PERIOD_TRANSITION_VARIANTS,
+    PLACE_PIN_VARIANTS,
     POINT_CARD_VARIANTS,
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
@@ -1473,14 +1474,30 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         description=(
             "A location as a what3words address, linking to their map — the "
             "only place a 3m square can be seen. Used on trip cards, the "
-            "trip details grid and the favourite card. ALWAYS falls back to "
-            "the coordinate pair rather than rendering blank, so a surface "
-            "reads the same with the flag off, with no API key, or before "
-            "the address has been resolved."
+            "trip details grid and the favourite card. NEVER renders blank: "
+            "a favourite falls back to the coordinate pair, and a trip's "
+            "meeting point to the sentence placing it against the route "
+            "plus an Open in maps link — a meeting point never shows its "
+            "latitude and longitude (SNOW-1214)."
         ),
         kind="components",
         partial="includes/_three_word_address.html",
         variants=THREE_WORD_ADDRESS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="place-pin",
+        label="Place pin",
+        description=(
+            "The pin a place is chosen under. It stays still over the map's "
+            "centre and the map moves beneath it — the map page's favourite "
+            "and field-report placement and the Plan page's meeting point. "
+            "Only the glyph: the caller's wrapper positions it, lifts it and "
+            "sets its colour through currentColor."
+        ),
+        kind="components",
+        partial="includes/_place_pin.html",
+        variants=PLACE_PIN_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

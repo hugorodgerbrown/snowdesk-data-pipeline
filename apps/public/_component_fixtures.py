@@ -937,6 +937,26 @@ THREE_WORD_ADDRESS_VARIANTS: tuple[dict[str, Any], ...] = (
             "url": None,
         },
     },
+    {
+        # SNOW-1214. A trip's meeting point never shows its coordinate: it
+        # falls back to the sentence placing it against the route, and a
+        # link that opens the spot in a maps app.
+        "caption": "Meeting point, unresolved — the route sentence and a maps link",
+        "context": {
+            "location": SimpleNamespace(latitude=46.080012, longitude=7.318197),
+            "words": None,
+            "url": None,
+            "place": "On the route, 9 km in",
+            "maps_url": "https://www.google.com/maps/search/?api=1&query=46.080012%2C7.318197",
+        },
+    },
+)
+
+# The pin a place is chosen under (SNOW-1214) ------------------------------
+# The glyph only; the caller's wrapper sets its colour.
+PLACE_PIN_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Default (32px)", "context": {}},
+    {"caption": "Small (24px)", "context": {"size": 24}},
 )
 
 META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (

@@ -264,27 +264,26 @@ class TestTripNewPage:
         assert "Enter coordinates manually" not in html
         assert "trip-meeting-manual" not in html
 
-    def test_the_conversion_copy_is_absent_with_the_flag_off(
-        self, client: Client
-    ) -> None:
-        """With no conversion happening, the sentence would be a lie."""
+    def test_the_address_line_is_absent_with_the_flag_off(self, client: Client) -> None:
+        """With no conversion happening, there is no address to look up."""
         route = RouteFactory.create()
         client.force_login(route.user)
 
         html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
 
-        assert "three word address" not in html
+        assert "data-what3words-url" not in html
+        assert "data-meeting-address" not in html
 
     @override_flag("what3words", active=True)
-    def test_the_conversion_copy_appears_with_the_flag_on(self, client: Client) -> None:
-        """The organiser is told what becomes of the pin they just dropped."""
+    def test_the_address_line_appears_with_the_flag_on(self, client: Client) -> None:
+        """The picker is told where to look the pin's address up (SNOW-1214)."""
         route = RouteFactory.create()
         client.force_login(route.user)
 
         html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
 
-        assert 'data-testid="trip-meeting-conversion"' in html
-        assert "three word address" in html
+        assert 'data-what3words-url="/trips/what3words/"' in html
+        assert "data-meeting-address" in html
 
     def test_404_for_another_users_route(self, client: Client) -> None:
         """Never 403 — no existence oracle."""
@@ -411,13 +410,14 @@ class TestTripDetailPage:
 class TestTripMeetingPointAddress:
     """The meeting point as ///filled.count.soap (SNOW-840).
 
-    Three states, and the one that matters is the third: the coordinate
-    pair is the fallback for every failure, so there is never a blank
-    where the meeting point was.
+    Three states, and the one that matters is the third: the route
+    sentence and a maps link are the fallback for every failure, so there
+    is never a blank where the meeting point was — and, since SNOW-1214,
+    never its latitude and longitude either.
     """
 
-    def test_the_coordinates_render_with_the_flag_off(self, client: Client) -> None:
-        """Flag off is today's page, unchanged — and makes no call."""
+    def test_the_route_sentence_renders_with_the_flag_off(self, client: Client) -> None:
+        """Flag off: the route sentence, no coordinate, and no call."""
         trip = TripFactory.create(meeting_point=_meeting_point())
         client.force_login(trip.created_by)
 
@@ -426,8 +426,11 @@ class TestTripMeetingPointAddress:
                 reverse("trips:detail", args=[trip.uuid])
             ).content.decode()
 
-        assert "46.080012, 7.318197" in html
-        assert "///" not in _meeting_point_element(html)
+        dd = _meeting_point_element(html)
+        assert "6.7 km west of the route&#x27;s start" in dd
+        # Only in the maps link's href, as %2C-encoded query, never shown.
+        assert "46.080012, 7.318197" not in dd
+        assert "///" not in dd
         mock_get.assert_not_called()
 
     @override_flag("what3words", active=True)
@@ -441,17 +444,17 @@ class TestTripMeetingPointAddress:
         assert "///filled.count.soap" in _meeting_point_element(html)
 
     @override_flag("what3words", active=True)
-    def test_the_coordinates_stay_available_as_the_titles(self, client: Client) -> None:
-        """The paste-into-a-map-app affordance survives the swap."""
+    def test_the_coordinate_is_not_even_a_title(self, client: Client) -> None:
+        """A meeting point never shows its coordinate, hover included."""
         trip = TripFactory.create(meeting_point=_meeting_point(cached=True))
         client.force_login(trip.created_by)
 
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
 
-        assert 'title="46.080012, 7.318197"' in _meeting_point_element(html)
+        assert "46.080012" not in _meeting_point_element(html)
 
     @override_flag("what3words", active=True)
-    def test_the_edit_form_promises_the_conversion_too(self, client: Client) -> None:
+    def test_the_edit_form_looks_the_address_up_too(self, client: Client) -> None:
         """The organiser's edit picker is the fourth render path.
 
         ``_trip_context`` builds it, so the flag has to reach it from
@@ -464,7 +467,7 @@ class TestTripMeetingPointAddress:
 
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
 
-        assert 'data-testid="trip-meeting-conversion"' in html
+        assert 'data-what3words-url="/trips/what3words/"' in html
 
     @override_flag("what3words", active=True)
     @override_settings(WHAT3WORDS_MAP_BASE_URL="https://w3w.example")
@@ -500,12 +503,15 @@ class TestTripMeetingPointAddress:
         assert 'target="_blank"' in dd
         assert 'rel="noopener noreferrer"' in dd
 
-    def test_the_coordinate_fallback_carries_no_link(self, client: Client) -> None:
-        """No address means no anchor — never a link to nowhere.
+    def test_the_fallback_links_to_a_maps_app_not_to_what3words(
+        self, client: Client
+    ) -> None:
+        """No address means a maps link, and never a what3words link.
 
         ``meeting_point_w3w_url`` is None exactly when the address is, so
-        the coordinate pair renders as the bare text it always has. A
-        template that built the href itself would emit ``.../None`` here.
+        no what3words href is built — a template that built it itself would
+        emit ``.../None`` here. The coordinate travels in the maps link's
+        href, which is how the group navigates to the spot (SNOW-1214).
         """
         trip = TripFactory.create(meeting_point=_meeting_point())
         client.force_login(trip.created_by)
@@ -514,11 +520,13 @@ class TestTripMeetingPointAddress:
             client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
         )
 
-        assert "<a" not in dd
-        assert "46.080012, 7.318197" in dd
+        assert "what3words" not in dd
+        assert "None" not in dd
+        assert "query=46.080012%2C7.318197" in dd
+        assert "Open in maps" in dd
 
     @override_flag("what3words", active=True)
-    def test_a_failing_conversion_falls_back_to_the_coordinates(
+    def test_a_failing_conversion_falls_back_to_the_route_sentence(
         self, client: Client, settings: Settings
     ) -> None:
         """A what3words outage must not take the trip page with it."""
@@ -533,7 +541,10 @@ class TestTripMeetingPointAddress:
             response = client.get(reverse("trips:detail", args=[trip.uuid]))
 
         assert response.status_code == 200
-        assert "46.080012, 7.318197" in response.content.decode()
+        dd = _meeting_point_element(response.content.decode())
+        assert "6.7 km west of the route&#x27;s start" in dd
+        # Only in the maps link's href, as %2C-encoded query, never shown.
+        assert "46.080012, 7.318197" not in dd
 
 
 @pytest.mark.django_db
@@ -618,15 +629,15 @@ class TestTripCreate:
         assert Trip.objects.count() == 0
 
     @override_flag("what3words", active=True)
-    def test_the_re_rendered_form_still_carries_the_conversion_copy(
+    def test_the_re_rendered_form_still_looks_the_address_up(
         self, client: Client
     ) -> None:
         """The flag reaches the error re-render, not just the first paint.
 
         This is the render path a missing ``_what3words_context`` would
         silently lose: the form comes back whole after a validation error,
-        so an organiser who mistyped the date would watch the sentence
-        about their pin disappear.
+        so an organiser who mistyped the date would watch the address
+        line under their pin disappear.
         """
         route = RouteFactory.create()
         client.force_login(route.user)
@@ -636,7 +647,7 @@ class TestTripCreate:
         response = client.post(reverse("trips:create"), payload, **_HTMX)
 
         assert response.status_code == 400
-        assert 'data-testid="trip-meeting-conversion"' in response.content.decode()
+        assert 'data-what3words-url="/trips/what3words/"' in response.content.decode()
 
     @freeze_time("2026-10-24T09:00:00+00:00")
     def test_a_day_already_gone_is_refused(self, client: Client) -> None:
@@ -693,7 +704,7 @@ class TestTripEdit:
     """POST /trips/partials/<uuid>/edit/."""
 
     @override_flag("what3words", active=True)
-    def test_the_re_rendered_form_still_carries_the_conversion_copy(
+    def test_the_re_rendered_form_still_looks_the_address_up(
         self, client: Client
     ) -> None:
         """The edit path's error re-render is the fourth picker render."""
@@ -707,7 +718,7 @@ class TestTripEdit:
         )
 
         assert response.status_code == 400
-        assert 'data-testid="trip-meeting-conversion"' in response.content.decode()
+        assert 'data-what3words-url="/trips/what3words/"' in response.content.decode()
 
     def test_updates_and_redirects_back_to_the_trip(self, client: Client) -> None:
         """A whole-page repaint, because the page draws one context."""
@@ -912,3 +923,137 @@ class TestTripSummaryFigures:
         figures = html.index('data-testid="trip-figures"')
         profile = html.index("data-trip-profile")
         assert summary < figures < profile
+
+
+@pytest.mark.django_db
+class TestMeetingPointAddressLookup:
+    """The live address under the Plan page's pin (SNOW-1214)."""
+
+    url = "/trips/what3words/"
+
+    def test_the_url_is_where_the_picker_is_told_to_look(self) -> None:
+        """The picker reads this path from the page, so it must not drift."""
+        assert reverse("trips:what3words") == self.url
+
+    @override_flag("what3words", active=True)
+    @override_settings(WHAT3WORDS_MAP_BASE_URL="https://w3w.example")
+    def test_it_answers_the_words_and_their_link(self, client: Client) -> None:
+        """A settled pin gets its address, and nothing is stored."""
+        client.force_login(UserFactory.create())
+
+        with patch(
+            "apps.trips.views.convert_to_3wa", return_value="filled.count.soap"
+        ) as convert:
+            response = client.get(self.url, {"lat": "46.08", "lon": "7.31"})
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "words": "filled.count.soap",
+            "url": "https://w3w.example/filled.count.soap",
+        }
+        convert.assert_called_once_with(46.08, 7.31)
+        assert not Location.objects.filter(what3words="filled.count.soap").exists()
+
+    @override_flag("what3words", active=True)
+    def test_a_failed_conversion_answers_nulls(self, client: Client) -> None:
+        """The page says the address comes on save; it never shows numbers."""
+        client.force_login(UserFactory.create())
+
+        with patch("apps.trips.views.convert_to_3wa", return_value=None):
+            response = client.get(self.url, {"lat": "46.08", "lon": "7.31"})
+
+        assert response.status_code == 200
+        assert response.json() == {"words": None, "url": None}
+
+    @override_flag("what3words", active=True)
+    def test_anonymous_is_refused(self, client: Client) -> None:
+        """Only an organiser places a pin, and an organiser is signed in."""
+        response = client.get(self.url, {"lat": "46.08", "lon": "7.31"})
+
+        assert response.status_code == 403
+
+    def test_the_flag_off_is_a_404(self, client: Client) -> None:
+        """With the flag off the page asks nothing, so nothing answers."""
+        client.force_login(UserFactory.create())
+
+        with patch("apps.trips.views.convert_to_3wa") as convert:
+            response = client.get(self.url, {"lat": "46.08", "lon": "7.31"})
+
+        assert response.status_code == 404
+        convert.assert_not_called()
+
+    @override_flag("what3words", active=True)
+    @pytest.mark.parametrize(
+        "query",
+        [
+            {},
+            {"lat": "46.08"},
+            {"lat": "north", "lon": "7.31"},
+            {"lat": "nan", "lon": "7.31"},
+            {"lat": "inf", "lon": "7.31"},
+            {"lat": "91", "lon": "7.31"},
+            {"lat": "46.08", "lon": "-181"},
+        ],
+    )
+    def test_a_bad_coordinate_is_a_400(
+        self, client: Client, query: dict[str, str]
+    ) -> None:
+        """Junk never reaches the upstream."""
+        client.force_login(UserFactory.create())
+
+        with patch("apps.trips.views.convert_to_3wa") as convert:
+            response = client.get(self.url, query)
+
+        assert response.status_code == 400
+        convert.assert_not_called()
+
+    @override_flag("what3words", active=True)
+    def test_it_is_rate_limited(self, client: Client) -> None:
+        """A script cannot walk the endpoint as a free geocoder."""
+        client.force_login(UserFactory.create())
+
+        with (
+            patch("apps.trips.views.convert_to_3wa", return_value="a.b.c"),
+            patch("django_ratelimit.decorators.is_ratelimited", return_value=True),
+        ):
+            response = client.get(self.url, {"lat": "46.08", "lon": "7.31"})
+
+        assert response.status_code == 429
+
+
+@pytest.mark.django_db
+class TestMeetingPointPicker:
+    """The picker's markup: a fixed pin, two quick picks, no coordinate."""
+
+    def _html(self, client: Client) -> str:
+        """Render the Plan page for a fresh route's owner."""
+        route = RouteFactory.create()
+        client.force_login(route.user)
+        return client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+    def test_the_pin_is_fixed_over_the_map(self, client: Client) -> None:
+        """The pin is an element over the frame's centre, not a marker."""
+        html = self._html(client)
+
+        assert "data-meeting-pin" in html
+        assert 'id="trip-meeting-start"' in html
+        assert 'id="trip-meeting-end"' in html
+
+    def test_no_coordinate_readout_and_no_reset(self, client: Client) -> None:
+        """The readout and the reset link went with the draggable marker."""
+        html = self._html(client)
+
+        assert "data-meeting-readout" not in html
+        assert "data-meeting-reset" not in html
+        assert "Reset to the route" not in html
+
+    def test_the_place_sentences_reach_the_browser_translated(
+        self, client: Client
+    ) -> None:
+        """The browser words the sentence from {% trans %}, not literals."""
+        html = self._html(client)
+
+        assert 'data-string="on_route"' in html
+        assert ">On the route, {distance} in<" in html
+        assert 'data-string="octant-NE">north-east<' in html
+        assert "meeting_place_core.js" in html
