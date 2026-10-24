@@ -97,21 +97,25 @@ Context:
     {# The plan read back beside the buttons: the day, the time, the      #}
     {# address and the day's level, each as it is chosen                  #}
     {# (static/js/trip_form.js). Static, not sticky — see the note above. #}
-    {% card_classes padding="px-4 py-3" extra="flex items-center gap-3" as footer_classes %}
+    {# On a phone the read-back takes the full width above the buttons:   #}
+    {# beside them it had about 110px and truncated both lines.           #}
+    {% card_classes padding="px-4 py-3" extra="flex flex-col gap-3 sm:flex-row sm:items-center" as footer_classes %}
     <div class="{{ footer_classes }}" data-testid="trip-form-footer">
         <div class="min-w-0 flex-1 text-xs" aria-live="polite">
-            <p class="truncate font-medium text-text-1" data-trip-readback-when></p>
-            <p class="truncate text-text-3" data-trip-readback-where></p>
+            <p class="font-medium text-text-1 sm:truncate" data-trip-readback-when></p>
+            <p class="text-text-3 sm:truncate" data-trip-readback-where></p>
         </div>
-        {% if cancel_url %}
-            {% trans "Cancel" as trip_cancel_label %}
-            {% include "includes/_button.html" with label=trip_cancel_label href=cancel_url variant="ghost" %}
-        {% endif %}
-        {% if trip_uuid %}
-            {% trans "Save changes" as trip_submit_label %}
-        {% else %}
-            {% trans "Create trip" as trip_submit_label %}
-        {% endif %}
-        {% include "includes/_button.html" with label=trip_submit_label variant="primary" %}
+        <div class="flex flex-none justify-end gap-3">
+            {% if cancel_url %}
+                {% trans "Cancel" as trip_cancel_label %}
+                {% include "includes/_button.html" with label=trip_cancel_label href=cancel_url variant="ghost" %}
+            {% endif %}
+            {% if trip_uuid %}
+                {% trans "Save changes" as trip_submit_label %}
+            {% else %}
+                {% trans "Create trip" as trip_submit_label %}
+            {% endif %}
+            {% include "includes/_button.html" with label=trip_submit_label variant="primary" %}
+        </div>
     </div>
 </form>
