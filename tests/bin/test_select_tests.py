@@ -161,6 +161,71 @@ class TestSafeLines:
         assert 2 not in select.safe_lines(source)
 
 
+BUILDER = """
+def _helper():
+    return 1
+
+
+def _build():
+    return {"a": _helper()}
+
+
+TABLE = _build()
+
+
+def deco(func):
+    return func
+
+
+@deco
+def later():
+    return 2
+
+
+class Config:
+    def ready(self):
+        return 3
+"""
+
+
+class TestImportTimeFunctions:
+    """A function body that runs at import is not safe either."""
+
+    def test_a_builder_called_at_module_level_is_not_safe(self) -> None:
+        """``TABLE = _build()`` runs ``_build`` while the module imports."""
+        safe = select.safe_lines(BUILDER)
+        assert _line(BUILDER, 'return {"a": _helper()}') not in safe
+
+    def test_what_a_builder_calls_is_not_safe(self) -> None:
+        """Reach is followed through same-module calls."""
+        assert _line(BUILDER, "return 1") not in select.safe_lines(BUILDER)
+
+    def test_a_decorator_body_is_not_safe(self) -> None:
+        """A decorator runs when the function it decorates is defined."""
+        assert _line(BUILDER, "return func") not in select.safe_lines(BUILDER)
+
+    def test_an_import_time_hook_is_not_safe(self) -> None:
+        """Django calls ``AppConfig.ready`` while it builds the registry."""
+        assert _line(BUILDER, "return 3") not in select.safe_lines(BUILDER)
+
+    def test_a_function_only_tests_call_is_safe(self) -> None:
+        """Being decorated does not make a function's own body import-time."""
+        assert _line(BUILDER, "return 2") in select.safe_lines(BUILDER)
+
+    def test_a_name_another_module_calls_at_import_is_not_safe(self) -> None:
+        """``elsewhere`` carries the names other modules call at import."""
+        source = "def make():\n    return 1\n"
+        assert 2 in select.safe_lines(source)
+        assert 2 not in select.safe_lines(source, frozenset({"make"}))
+
+    def test_import_time_calls_skip_function_bodies(self) -> None:
+        """A call inside a body runs later; one in a default runs now."""
+        tree = select.ast.parse(
+            "def f(x=default()):\n    return body()\n\nclass C:\n    y = attr()\n"
+        )
+        assert select.import_time_calls(tree) == {"default", "attr"}
+
+
 class TestChangedLines:
     """Parsing ``git diff -U0`` hunk headers."""
 
@@ -178,6 +243,7 @@ class TestPathRules:
         ("path", "forced"),
         [
             ("docs/notes.md", False),
+            ("docs/research/meteofrance/massifs.json", True),
             ("README.md", False),
             (".claude/settings.json", False),
             ("tests/weather/test_models.py", False),
@@ -221,7 +287,7 @@ class TestDecide:
         base = _commit(repo, "apps/service.py", SERVICE.replace("size = 1", "size = 2"))
         decision = select.decide(base)
         assert decision.mode == "full"
-        assert "change outside a function body" in decision.reasons[0]
+        assert "runs at import, not inside a test" in decision.reasons[0]
 
     def test_a_deleted_module_level_line_is_full(self, repo: Path) -> None:
         """A removal is judged against the old file's structure."""
@@ -243,6 +309,18 @@ class TestDecide:
         decision = select.decide("0" * 40)
         assert decision.mode == "full"
         assert decision.reasons[0].startswith("cannot resolve")
+
+    def test_a_body_another_module_runs_at_import_is_full(self, repo: Path) -> None:
+        """Codex's case on #1206: a builder whose result a constant holds."""
+        _commit(
+            repo, "apps/consumer.py", "from apps.service import helper\nX = helper(1)\n"
+        )
+        base = _commit(
+            repo, "apps/service.py", SERVICE.replace("value * LIMIT", "value + 1")
+        )
+        decision = select.decide(base)
+        assert decision.mode == "full"
+        assert "runs at import, not inside a test" in decision.reasons[0]
 
     def test_an_unparseable_module_is_full(self, repo: Path) -> None:
         """A syntax error is a reason to run everything, not to crash."""

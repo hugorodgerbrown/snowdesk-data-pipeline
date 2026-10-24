@@ -27,17 +27,33 @@
 #      ``Weather`` selected 15 of the 205 weather tests.
 #
 # So the rule is: a change is "affected-safe" only when every changed line of
-# Python sits INSIDE A FUNCTION BODY (methods included), or is a docstring, an
-# import, a comment or a blank line. Imports are allowed because testmon
-# fingerprints the module-level block of every file a test executes, so an
-# edited import reruns every test that runs code in that file — and an import
-# is almost always the companion of a function-body change. Anything else —
+# Python sits INSIDE THE BODY OF A FUNCTION THAT RUNS DURING TESTS (methods
+# included), or is a docstring, an import, a comment or a blank line.
+# Imports are allowed because testmon fingerprints the module-level block of
+# every file a test executes, so an edited import reruns every test that runs
+# code in that file — and an import is almost always the companion of a
+# function-body change. Anything else —
 # a new or deleted module, a changed signature or decorator, a module- or
 # class-level statement, or any non-Python file — means the full suite. Test
 # modules (``test_*.py``) are the one exception: testmon fingerprints a
 # test's own file whole, so a change anywhere in one reruns the tests in it.
-# Docs paths (``*.md``, ``docs/``, ``.claude/``) are ignored here exactly as
-# ci.yml's docs-only gate ignores them.
+# Markdown and ``.claude/`` are ignored, as ci.yml's docs-only gate ignores
+# them; any other file under ``docs/`` (a JSON a module reads at import, say)
+# is data, and runs the full suite like any other non-Python file.
+#
+# A FUNCTION THAT RUNS AT IMPORT is not "inside a test" either.
+# ``SLUG_TO_CODE = _build_slug_to_code()`` runs its builder once, while the
+# module is imported, so no test records it. So a body is only safe when its
+# function is never reached from import-time code: the script scans every
+# Python file at ``--head`` for the names called, or used as decorators, at
+# module or class level (and in signatures), and treats any function of that
+# name — plus whatever it calls in the same module, transitively — as
+# import-time. ``AppConfig.ready`` and the class-creation hooks
+# (``__init_subclass__``, ``__set_name__``) are import-time by definition.
+# Matching is by bare name, so it over-matches (a method that shares a name
+# with an import-time call runs the full suite) and never under-matches
+# within one module; a chain that crosses modules below the first call is the
+# one gap, and main's full run is the backstop for it.
 #
 # WHAT THE DIFF IS TAKEN AGAINST. Not the PR's base, but the commit the
 # restored map was recorded on (``--since``). If main moved on after the map
@@ -73,8 +89,11 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from pathlib import PurePosixPath
 
-# Paths ci.yml's docs-only gate already treats as untestable.
-IGNORED = ("*.md", "docs/*", ".claude/*")
+# Paths that cannot affect a Python test: prose, and Claude's own config.
+IGNORED = ("*.md", ".claude/*")
+
+# Methods Python or Django call while a class or the app registry is built.
+IMPORT_TIME_HOOKS = frozenset({"ready", "__init_subclass__", "__set_name__"})
 
 # Python that runs before or around every test rather than inside one.
 FULL_SUITE_PYTHON = (
@@ -167,17 +186,102 @@ def _docstring(node: ast.AST) -> ast.Expr | None:
     return None
 
 
-def safe_lines(source: str) -> set[int]:
+def _called_name(node: ast.expr) -> str:
+    """Return the bare name a call or decorator refers to, or ``""``."""
+    while isinstance(node, ast.Call):
+        node = node.func
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def import_time_calls(tree: ast.AST) -> set[str]:
+    """
+    Return the names called or applied as decorators while a module imports.
+
+    Walks module and class bodies and every function's decorators, defaults
+    and annotations, which all run at import, and skips function and lambda
+    bodies, which run only when called.
+    """
+    names: set[str] = set()
+    pending: list[ast.AST] = [tree]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            names.update(_called_name(d) for d in node.decorator_list)
+            pending.extend(node.decorator_list)
+            pending.append(node.args)
+            if node.returns is not None:
+                pending.append(node.returns)
+            continue
+        if isinstance(node, ast.Lambda):
+            pending.append(node.args)
+            continue
+        if isinstance(node, ast.ClassDef):
+            names.update(_called_name(d) for d in node.decorator_list)
+        if isinstance(node, ast.Call):
+            names.add(_called_name(node))
+        pending.extend(ast.iter_child_nodes(node))
+    names.discard("")
+    return names
+
+
+def _functions(tree: ast.AST) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Return every function and method defined anywhere in ``tree``."""
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    ]
+
+
+def _import_time_functions(
+    tree: ast.AST, elsewhere: set[str]
+) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """
+    Return the functions in ``tree`` that can run while a module imports.
+
+    Roots are this module's own import-time calls, the names other modules
+    call at import (``elsewhere``) and the import-time hooks; the set then
+    grows through whatever those functions call by name in this module.
+    """
+    functions = _functions(tree)
+    calls = {
+        id(func): {
+            _called_name(node)
+            for statement in func.body
+            for node in ast.walk(statement)
+            if isinstance(node, ast.Call)
+        }
+        for func in functions
+    }
+    reached = import_time_calls(tree) | elsewhere | IMPORT_TIME_HOOKS
+    while True:
+        grown = reached.union(
+            *(calls[id(func)] for func in functions if func.name in reached)
+        )
+        if grown == reached:
+            break
+        reached = grown
+    return [func for func in functions if func.name in reached]
+
+
+def safe_lines(source: str, elsewhere: frozenset[str] = frozenset()) -> set[int]:
     """
     Return the 1-based line numbers of ``source`` testmon can attribute.
 
-    That is every line inside a function or method body, every line of a
-    docstring or an import statement, and every blank or comment-only line.
-    A ``def`` line, its decorators and its signature are NOT safe: they
-    execute at import. Raises ``SyntaxError`` for source that does not parse.
+    That is every line inside the body of a function that runs during tests,
+    every line of a docstring or an import statement, and every blank or
+    comment-only line. A ``def`` line, its decorators and its signature are
+    NOT safe: they execute at import. Nor is the body of a function that runs
+    at import (see ``_import_time_functions``). Raises ``SyntaxError`` for
+    source that does not parse.
     """
     tree = ast.parse(source)
-    safe = _quiet_lines(source)
+    quiet = _quiet_lines(source)
+    safe = set(quiet)
     for node in ast.walk(tree):
         if isinstance(node, ast.Import | ast.ImportFrom):
             safe.update(_span(node))
@@ -185,6 +289,8 @@ def safe_lines(source: str) -> set[int]:
             safe.update(_body_lines(node))
         if isinstance(node, ast.Module | ast.ClassDef) and _docstring(node):
             safe.update(_span(_docstring(node) or node))
+    for func in _import_time_functions(tree, set(elsewhere)):
+        safe.difference_update(set(_body_lines(func)) - quiet)
     return safe
 
 
@@ -208,21 +314,68 @@ def is_test_module(path: str) -> bool:
     return path.startswith("tests/") and name.startswith("test_")
 
 
-def classify_python(path: str, old_source: str, new_source: str, diff: str) -> str:
+def classify_python(
+    path: str,
+    old_source: str,
+    new_source: str,
+    diff: str,
+    elsewhere: frozenset[str] = frozenset(),
+) -> str:
     """Return why a modified .py file forces the full suite, or ``""``."""
     try:
-        old_safe = safe_lines(old_source)
-        new_safe = safe_lines(new_source)
+        old_safe = safe_lines(old_source, elsewhere)
+        new_safe = safe_lines(new_source, elsewhere)
     except SyntaxError:
         return f"{path}: does not parse"
     old, new = changed_lines(diff)
     outside = sorted(new - new_safe) or sorted(old - old_safe)
     if outside:
-        return f"{path}:{outside[0]}: change outside a function body"
+        return f"{path}:{outside[0]}: runs at import, not inside a test"
     return ""
 
 
-def path_reason(kind: str, path: str, since: str, head: str) -> str:
+def repo_import_time_calls(head: str) -> frozenset[str]:
+    """
+    Return every name any Python file at ``head`` calls while it imports.
+
+    Reads all the files through one ``git cat-file --batch``. A file that does
+    not parse contributes nothing here; if it is part of the diff, it forces
+    the full suite on its own.
+    """
+    paths = [
+        path
+        for path in _git("ls-tree", "-r", "--name-only", head).splitlines()
+        if path.endswith(".py")
+    ]
+    request = "".join(f"{head}:{path}\n" for path in paths).encode()
+    # S603/S607 — as _git: a fixed argv, no shell.
+    output = subprocess.run(  # noqa: S603
+        ["git", "cat-file", "--batch"],  # noqa: S607
+        input=request,
+        check=True,
+        capture_output=True,
+    ).stdout
+    names: set[str] = set()
+    offset = 0
+    for _ in paths:
+        header_end = output.index(b"\n", offset)
+        size = int(output[offset:header_end].split()[2])
+        blob = output[header_end + 1 : header_end + 1 + size]
+        offset = header_end + 1 + size + 1
+        try:
+            names |= import_time_calls(ast.parse(blob))
+        except SyntaxError, ValueError:
+            continue
+    return frozenset(names)
+
+
+def path_reason(
+    kind: str,
+    path: str,
+    since: str,
+    head: str,
+    elsewhere: frozenset[str] = frozenset(),
+) -> str:
     """Return why one changed path forces the full suite, or ``""``."""
     if any(fnmatch(path, pattern) for pattern in IGNORED):
         return ""
@@ -235,7 +388,7 @@ def path_reason(kind: str, path: str, since: str, head: str) -> str:
     if kind != "M":
         return f"{path}: module added or deleted"
     diff = _git("diff", "-U0", since, head, "--", path)
-    return classify_python(path, _show(since, path), _show(head, path), diff)
+    return classify_python(path, _show(since, path), _show(head, path), diff, elsewhere)
 
 
 def decide(since: str, head: str = "HEAD") -> Decision:
@@ -247,10 +400,19 @@ def decide(since: str, head: str = "HEAD") -> Decision:
         decision.reasons.append(f"cannot resolve {since}")
         return decision
 
-    status = _git("diff", "--name-status", "--no-renames", since, head)
-    for row in status.splitlines():
-        kind, path = row.split("\t", 1)
-        reason = path_reason(kind, path, since, head)
+    rows = [
+        row.split("\t", 1)
+        for row in _git("diff", "--name-status", "--no-renames", since, head).split(
+            "\n"
+        )
+        if row
+    ]
+    if any(path.endswith(".py") for _, path in rows):
+        elsewhere = repo_import_time_calls(head)
+    else:
+        elsewhere = frozenset()
+    for kind, path in rows:
+        reason = path_reason(kind, path, since, head, elsewhere)
         if reason:
             decision.reasons.append(reason)
     return decision

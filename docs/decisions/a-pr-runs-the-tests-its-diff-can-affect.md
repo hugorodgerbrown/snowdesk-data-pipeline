@@ -33,7 +33,8 @@ them.
 testmon only sees Python that runs *inside a test*, so `bin/select-tests`
 sends a diff to the full suite when it touches anything else:
 
-* any non-Python file: templates, fixtures, static, data, `pyproject.toml`,
+* any non-Python file, other than Markdown and `.claude/`: templates,
+  fixtures, static, data (including data under `docs/`), `pyproject.toml`,
   `uv.lock`, `tox.ini`, workflows;
 * `config/`, `manage.py`, any `conftest.py`, any migration;
 * a new or deleted module;
@@ -42,10 +43,15 @@ sends a diff to the full suite when it touches anything else:
   form and admin fields), decorators, signatures, URL patterns and module
   constants. Django runs all of these once, at import, so testmon credits
   them to whichever test imported the module first, or to no test at all.
+* a changed line inside a function that runs at import: one called, or used
+  as a decorator, at module or class level anywhere in the repository (say
+  `SLUG_TO_CODE = _build_slug_to_code()`), anything it calls by name in its
+  own module, and `AppConfig.ready`. Matching is by bare name, so it
+  over-matches. The one gap is a chain that crosses modules below the first
+  call, and main's full run is the backstop for it.
 
 Test modules (`test_*.py`) are safe anywhere, because testmon fingerprints a
-test's own file as a whole. Docs paths are ignored, as the docs-only gate
-already ignores them.
+test's own file as a whole.
 
 **A stale map is safe.** testmon compares the files it recorded with the
 files in the checkout. `bin/select-tests` diffs against the map's own
