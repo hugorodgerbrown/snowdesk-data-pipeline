@@ -154,6 +154,25 @@ describe('createAddressLookup', () => {
     vi.useRealTimers();
   });
 
+  it('drops a pending or in-flight answer once cancelled, as the map starts moving', async () => {
+    let resolve;
+    const fetchImpl = vi.fn(() => new Promise((done) => { resolve = done; }));
+    const subject = lookup(fetchImpl);
+
+    subject.request(46.08, 7.31);
+    await vi.advanceTimersByTimeAsync(400);
+    subject.cancel();
+    resolve({ ok: true, status: 200, json: () => Promise.resolve({ words: 'old.square.here' }) });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(states).toEqual([{ state: 'finding' }]);
+
+    subject.request(46.09, 7.32);
+    subject.cancel();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('says it is finding at once and asks only once the map has settled', async () => {
     const fetchImpl = answering({ words: 'filled.count.soap', url: 'https://w3w.co/filled.count.soap' });
     const subject = lookup(fetchImpl);

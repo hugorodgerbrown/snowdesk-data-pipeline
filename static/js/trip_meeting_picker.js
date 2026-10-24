@@ -516,7 +516,13 @@
     // gives way to "Finding the address…" at once, not when it settles.
     map.on('movestart', function () {
       if (pin) pin.setAttribute('data-moving', 'true');
-      if (lookup) showAddress(doc, { state: 'finding' });
+      if (lookup) {
+        // The last position's lookup is moot the moment the map moves: a
+        // pending or in-flight answer would otherwise name the square the
+        // pin has just left.
+        lookup.cancel();
+        showAddress(doc, { state: 'finding' });
+      }
     });
 
     // Whatever moved the map — a drag, a pinch, the arrow keys, a tap, a
