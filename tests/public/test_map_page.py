@@ -536,37 +536,60 @@ def test_the_date_control_has_day_steps_either_side() -> None:
 
 
 @pytest.mark.django_db
-def test_the_empty_day_notice_ships_hidden_with_its_strings() -> None:
-    """SNOW-1195: the notice is hidden until map_day_nav.js finds an empty day."""
+def test_the_day_notes_bell_ships_hidden_with_its_card() -> None:
+    """SNOW-1206: the day's notes sit behind one bell, hidden until there is one.
+
+    The bell follows "Today" in the date row; its card is a closed dialog
+    the bell controls. map_day_notes.js publishes the notes channel, so it
+    loads before the two modules that write to it.
+    """
     content = Client().get(reverse("public:map")).content.decode()
-    start = content.index('id="map-day-empty"')
+    start = content.index('id="map-day-notes"')
     tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
     assert "hidden" in tag
-    assert 'role="status"' in tag
+    assert content.index('id="map-today-control"') < start
+    assert 'aria-controls="map-day-notes-card"' in content
+    assert "aria-label='Notes about this day'" in content
+    card = content.index('id="map-day-notes-card"')
+    tag = content[content.rindex("<div", 0, card) : content.index(">", card)]
+    assert "hidden" in tag
+    assert 'role="dialog"' in tag
+    assert '<template id="map-day-notes-strings-template">' in content
+    notes = content.index("/static/js/map_day_notes.js")
+    assert notes < content.index("/static/js/map_day_nav.js")
+    assert notes < content.index("/static/js/map_weather_window.js")
+
+
+@pytest.mark.django_db
+def test_the_date_row_has_no_standing_pills() -> None:
+    """SNOW-1206: no empty-day, weather or problem-terrain pill in the row.
+
+    Each said one thing about the day, read as standing chrome, and on a
+    tablet pushed the row under the bottom-right roundel.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    assert 'id="map-day-empty"' not in content
+    assert 'id="map-weather-window"' not in content
+    assert "map-date-notice" not in content
     assert '<template id="map-day-nav-strings-template">' in content
-    for key in ("day-empty", "day-last-issued", "day-next-issued"):
+    for key in ("day-empty", "day-last-issued", "day-next-issued", "day-show"):
         assert f'data-string="{key}"' in content
 
 
 @pytest.mark.django_db
-def test_the_weather_row_and_notice_ship_hidden_with_their_strings() -> None:
+def test_the_weather_row_ships_hidden_with_its_strings() -> None:
     """SNOW-1196: "Forecast only" waits for map_weather_window.js to judge the day.
 
-    The row's detail line sits inside the weather row; the map's one-time
-    line sits with the empty-day notice and has a dismiss. The module loads
-    after map.js, which publishes the window it reads.
+    The row's detail line sits inside the weather row; the same fact goes
+    to the day's notes (SNOW-1206). The module loads after map.js, which
+    publishes the window it reads.
     """
     content = Client().get(reverse("public:map")).content.decode()
     summary = content.index("data-weather-window-summary")
     tag = content[content.rindex("<span", 0, summary) : content.index(">", summary)]
     assert "hidden" in tag
-    start = content.index('id="map-weather-window"')
-    tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
-    assert "hidden" in tag
-    assert 'role="status"' in tag
-    assert "data-weather-window-close" in content
     assert '<template id="map-weather-window-strings-template">' in content
-    for key in ("forecast-only", "weather-on-map"):
+    for key in ("forecast-only", "note-title", "note-detail"):
         assert f'data-string="{key}"' in content
     assert content.index("/static/js/map.js") < content.index(
         "/static/js/map_weather_window.js"
@@ -575,26 +598,19 @@ def test_the_weather_row_and_notice_ship_hidden_with_their_strings() -> None:
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_the_problem_terrain_chip_ships_hidden_with_key_and_off() -> None:
-    """SNOW-1196: the chip names the layer while it paints; hidden until then."""
-    content = Client().get(reverse("public:map")).content.decode()
-    start = content.index('id="map-terrain-chip"')
-    tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
-    assert "hidden" in tag
-    assert "data-terrain-chip-key" in content
-    assert "data-terrain-chip-off" in content
-    assert '<template id="map-terrain-chip-strings-template">' in content
-    assert content.index("/static/js/map.js") < content.index(
-        "/static/js/map_terrain_chip.js"
-    )
+def test_the_problem_terrain_layer_has_no_date_row_chip() -> None:
+    """SNOW-1206: the layer is named by the layers menu and the legend, not the date row.
 
-
-@pytest.mark.django_db
-@override_settings(TERRAIN_CLASS_TILE_URL="")
-def test_no_problem_terrain_chip_without_the_terrain_filter() -> None:
-    """SNOW-1196: no class tiles, no layer, so nothing for a chip to name."""
+    The module that keeps those two in step loads after map.js, which
+    publishes the bridge it reads.
+    """
     content = Client().get(reverse("public:map")).content.decode()
     assert 'id="map-terrain-chip"' not in content
+    assert "data-terrain-chip" not in content
+    assert '<template id="map-problem-terrain-strings-template">' in content
+    assert content.index("/static/js/map.js") < content.index(
+        "/static/js/map_problem_terrain_key.js"
+    )
 
 
 @pytest.mark.django_db

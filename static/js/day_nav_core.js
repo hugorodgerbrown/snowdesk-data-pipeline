@@ -25,7 +25,8 @@
  *     (``direction: 'following'`` — an evening issue for tomorrow, out
  *     today, SNOW-1204), else the latest earlier day that
  *     has one (``direction: 'last'``), else the earliest later one
- *     (``direction: 'next'``), or ``null``. The empty-day chip offers it.
+ *     (``direction: 'next'``), or ``null``. The day's notes offer it
+ *     (map_day_nav.js, SNOW-1206).
  *
  * Dependency-free: every export is a pure function of its arguments, so a
  * date key never reaches ``Date`` except through ``Date.UTC``.

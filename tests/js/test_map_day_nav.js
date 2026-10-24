@@ -1,6 +1,6 @@
 /*
  * tests/js/test_map_day_nav.js — the date row's day steps, the scrubber's
- * keys and the empty-day notice (SNOW-1195).
+ * keys and the empty-day note (SNOW-1195, SNOW-1206).
  *
  * static/js/map_day_nav.js against a reduced copy of the date row, with
  * the scrubber stood in for by a listener that does what ``commitDate``
@@ -11,10 +11,12 @@
  *     committing a day itself;
  *   - the steps and Home / End stop at the calendar's range, and the
  *     buttons say so by disabling;
- *   - the notice shows only on a day no visible country has a bulletin
- *     for, names the nearest one that does, and goes there on a press;
- *     on today, when tomorrow has one, it names tomorrow's issue rather than
- *     calling the day empty (SNOW-1204).
+ *   - the note is published only on a day no visible country has a
+ *     bulletin for, names the nearest one that does, and goes there on a
+ *     press; on today, when tomorrow has one, it names tomorrow's issue
+ *     rather than calling the day empty (SNOW-1204). SNOW-1206 moved it from
+ *     a pill in the date row into the day's notes (``window.pwaDayNotes``,
+ *     stubbed here).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,11 +29,7 @@ const ROW = `
   <div id="season-scrubber" role="slider" tabindex="0"
        data-today="2026-02-20" data-season-start="2026-02-10"></div>
   <button id="map-day-prev" type="button">prev</button>
-  <button id="map-day-next" type="button">next</button>
-  <div id="map-day-empty" hidden>
-    <span data-day-empty-label></span>
-    <button type="button" data-day-empty-jump><span data-day-empty-jump-label></span></button>
-  </div>`;
+  <button id="map-day-next" type="button">next</button>`;
 
 const CACHE = {
   '2026-02-12': { 'CH-4115': 3 },
@@ -42,6 +40,7 @@ const CACHE = {
 
 let scrubs = [];
 let added = [];
+let notes;
 let resolveRatings;
 
 /** Commit a day as map_scrubber.js does on ``snowdesk:scrub-to``. */
@@ -56,6 +55,8 @@ function onScrub(e) {
 /** The day the URL says the map is on. */
 const day = () => new URLSearchParams(location.search).get('d');
 const $ = (id) => document.getElementById(id);
+/** The empty-day note as published, or undefined. */
+const note = () => notes.get('no-bulletin');
 
 /** Load a fresh copy of the wiring and let the ratings arrive. */
 async function load() {
@@ -72,6 +73,10 @@ beforeEach(() => {
   scrubs = [];
   added = [];
   globalThis.COUNTRY_STATE = { ch: true, fr: false };
+  notes = new Map();
+  window.pwaDayNotes = {
+    set: (id, value) => (value ? notes.set(id, value) : notes.delete(id)),
+  };
   globalThis.readUrlDateParam = () => day();
   globalThis.formatDatePopup = (key) => `day ${key}`;
   const ratings = new Promise((resolve) => {
@@ -89,6 +94,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const [type, fn] of added) document.removeEventListener(type, fn);
   document.removeEventListener('snowdesk:scrub-to', onScrub);
+  delete window.pwaDayNotes;
   vi.restoreAllMocks();
 });
 
@@ -156,32 +162,32 @@ describe('a timelapse', () => {
     );
     expect($('map-day-prev').disabled).toBe(false);
     expect($('season-scrubber').getAttribute('aria-valuetext')).toBe('day 2026-02-17');
-    expect($('map-day-empty').hidden).toBe(false);
+    expect(note()).toBeDefined();
   });
 });
 
-describe('the empty-day notice', () => {
-  it('is hidden on a day with a bulletin', async () => {
+describe('the empty-day note', () => {
+  it('is not published on a day with a bulletin', async () => {
     await load();
-    expect($('map-day-empty').hidden).toBe(true);
+    expect(note()).toBeUndefined();
   });
 
   it('names an empty day and the last one issued, and goes there', async () => {
     history.replaceState(null, '', '/map/?d=2026-02-17');
     await load();
-    expect($('map-day-empty').hidden).toBe(false);
-    expect($('map-day-empty').textContent).toContain('No bulletins for day 2026-02-17');
-    expect($('map-day-empty').textContent).toContain('Last issued day 2026-02-15');
-    document.querySelector('[data-day-empty-jump]').click();
+    expect(note().title).toBe('No bulletin for day 2026-02-17');
+    expect(note().detail).toBe('The last one was for day 2026-02-15.');
+    expect(note().action.label).toBe('Show day 2026-02-15');
+    note().action.run();
     expect(day()).toBe('2026-02-15');
-    expect($('map-day-empty').hidden).toBe(true);
+    expect(note()).toBeUndefined();
   });
 
   it('offers the next day when nothing came before', async () => {
     history.replaceState(null, '', '/map/?d=2026-02-10');
     await load();
-    expect($('map-day-empty').textContent).toContain('No bulletins for day 2026-02-10');
-    expect($('map-day-empty').textContent).toContain('Next issued day 2026-02-12');
+    expect(note().title).toBe('No bulletin for day 2026-02-10');
+    expect(note().detail).toBe('The first one is for day 2026-02-12.');
   });
 
   it("names tomorrow's bulletin on today when it is already out (SNOW-1204)", async () => {
@@ -189,25 +195,24 @@ describe('the empty-day notice', () => {
     $('season-scrubber').dataset.today = '2026-02-14';
     history.replaceState(null, '', '/map/?d=2026-02-14');
     await load();
-    expect($('map-day-empty').textContent).toContain('Bulletin issued for day 2026-02-15');
-    expect($('map-day-empty').textContent).not.toContain('No bulletins');
-    expect($('map-day-empty').textContent).not.toContain('Last issued');
-    document.querySelector('[data-day-empty-jump]').click();
+    expect(note().title).toBe('Tomorrow’s bulletin is out');
+    expect(note().detail).toBe('It is already published, for day 2026-02-15.');
+    note().action.run();
     expect(day()).toBe('2026-02-15');
   });
 
-  it('keeps "Last issued" on a past day whose next day is rated', async () => {
+  it('keeps "the last one" on a past day whose next day is rated', async () => {
     history.replaceState(null, '', '/map/?d=2026-02-14');
     await load();
-    expect($('map-day-empty').textContent).toContain('No bulletins for day 2026-02-14');
-    expect($('map-day-empty').textContent).toContain('Last issued day 2026-02-13');
+    expect(note().title).toBe('No bulletin for day 2026-02-14');
+    expect(note().detail).toBe('The last one was for day 2026-02-13.');
   });
 
-  it('follows the countries that are on', async () => {
+  it('follows the countries that are on, with no press when none has a day', async () => {
     await load();
     globalThis.COUNTRY_STATE = { ch: false, fr: true };
     document.dispatchEvent(new CustomEvent('snowdesk:country-toggle'));
-    expect($('map-day-empty').hidden).toBe(false);
-    expect(document.querySelector('[data-day-empty-jump]').hidden).toBe(true);
+    expect(note().title).toBe('No bulletin for day 2026-02-12');
+    expect(note().action).toBeUndefined();
   });
 });

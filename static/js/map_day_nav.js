@@ -15,12 +15,14 @@
  *     Down a week, Home / End the ends of the reachable range — the
  *     WAI-ARIA slider pattern. aria-valuetext names the day, because
  *     aria-valuenow is a percentage of the season and reads as one.
- *   - THE EMPTY-DAY NOTICE. #map-day-empty says when the day on the map has
- *     no bulletin for any country the visitor has on, and offers the
- *     nearest day that does — on today, tomorrow when tonight's issue is
- *     already filed under it (SNOW-1204), else the last one issued, or the next
- *     when nothing came before. Without it an empty day read as a map that had failed to
- *     load.
+ *   - THE EMPTY-DAY NOTE. When the day on the map has no bulletin for any
+ *     country the visitor has on, the day's notes (map_day_notes.js) say so
+ *     and offer the nearest day that does — on today, tomorrow when
+ *     tonight's issue is already filed under it (SNOW-1204), else the last
+ *     one issued, or the next when nothing came before. Without it an empty
+ *     day read as a map that had failed to load. SNOW-1195 drew it as a
+ *     pill in the date row; SNOW-1206 put it behind the notes bell, because
+ *     a standing bar said too little to earn its room.
  *
  * Decisions, and why:
  *
@@ -34,15 +36,16 @@
  *     merge in, which can add later days.
  *   - EVERY DAY, NOT ONLY RATED ONES. A step lands on the next calendar day
  *     whether or not it has a bulletin, as the calendar does: the map
- *     carries weather too, and the empty-day notice is what explains a day
+ *     carries weather too, and the empty-day note is what explains a day
  *     without a bulletin.
- *   - NOTHING UNTIL THE RATINGS ARRIVE. The notice cannot judge a day it has
+ *   - NOTHING UNTIL THE RATINGS ARRIVE. The note cannot judge a day it has
  *     no data for, and a failed fetch is reported by the scrubber's own
  *     strip.
  *
  * Reads ``getSeasonRatings``, ``readUrlDateParam``, ``formatDatePopup``
  * (map_shared.js) and ``COUNTRY_STATE`` (map_state.js), and loads after
- * map_scrubber.js, which owns the ``snowdesk:scrub-to`` listener. Pure
+ * map_scrubber.js, which owns the ``snowdesk:scrub-to`` listener, and
+ * after map_day_notes.js, whose ``window.pwaDayNotes`` it writes. Pure
  * maths in day_nav_core.js; strings in ``map-day-nav-strings-template``.
  */
 (function mapDayNavInit() {
@@ -55,18 +58,20 @@
 
   const prev = document.getElementById('map-day-prev');
   const next = document.getElementById('map-day-next');
-  const empty = document.getElementById('map-day-empty');
-  const emptyLabel = empty ? empty.querySelector('[data-day-empty-label]') : null;
-  const emptyJump = empty ? empty.querySelector('[data-day-empty-jump]') : null;
-  const emptyJumpLabel = emptyJump ? emptyJump.querySelector('[data-day-empty-jump-label]') : null;
 
   const STRINGS = self.pwaStrings.read('map-day-nav-strings-template', {
-    'day-empty': 'No bulletins for %(day)s',
-    'day-last-issued': 'Last issued %(day)s',
-    'day-next-issued': 'Next issued %(day)s',
-    'day-issued-for': 'Bulletin issued for %(day)s',
-    'day-show': 'Show',
+    'day-empty': 'No bulletin for %(day)s',
+    'day-last-issued': 'The last one was for %(day)s.',
+    'day-next-issued': 'The first one is for %(day)s.',
+    'day-tomorrow-out': 'Tomorrow’s bulletin is out',
+    'day-issued-for': 'It is already published, for %(day)s.',
+    'day-show': 'Show %(day)s',
   });
+
+  // The note's id in window.pwaDayNotes, and its place in the list: about
+  // the bulletin first, the day's other notes after.
+  const NOTE_ID = 'no-bulletin';
+  const NOTE_RANK = 1;
 
   const todayKey = scrubber.dataset.today || '';
   const seasonStart = scrubber.dataset.seasonStart || '';
@@ -75,7 +80,6 @@
   let minKey = seasonStart;
   let maxKey = todayKey;
   let ratingsCache = null;
-  let jumpTarget = '';
   // The day the last ``snowdesk:date-changed`` announced. A timelapse
   // announces every frame but writes ``?d=`` only when it stops, so the URL
   // alone would describe the day playback started on.
@@ -125,42 +129,53 @@
     if (day) scrubber.setAttribute('aria-valuetext', formatDatePopup(day));
   }
 
-  /** Show or hide the empty-day notice for the day on the map. */
+  /**
+   * Publish or withdraw the empty-day note for the day on the map.
+   *
+   * @param {?{ title: string, detail: string, action?: { label: string, run: () => void }, rank: number }} note
+   */
+  function publish(note) {
+    const notes = window.pwaDayNotes;
+    if (notes) notes.set(NOTE_ID, note);
+  }
+
+  /** Say when the day on the map has no bulletin, and offer the nearest. */
   function applyEmpty() {
-    if (!empty || !emptyLabel || !emptyJump || !emptyJumpLabel) return;
     const day = currentKey();
     if (!ratingsCache || !day || core.dayHasBulletin(ratingsCache[day], COUNTRY_STATE)) {
-      empty.hidden = true;
-      jumpTarget = '';
+      publish(null);
       return;
     }
     const nearest = core.nearestIssued(day, ratingsCache, COUNTRY_STATE, todayKey);
-    // SNOW-1204: today, an evening issue for tomorrow is out and in force,
-    // so the chip names it rather than saying today has none.
-    const following = !!nearest && nearest.direction === 'following';
-    emptyLabel.textContent = following
-      ? self.pwaStrings.interpolate(STRINGS['day-issued-for'], {
-          day: formatDatePopup(nearest.date),
-        })
-      : self.pwaStrings.interpolate(STRINGS['day-empty'], {
-          day: formatDatePopup(day),
-        });
-    if (nearest) {
-      const key = following
-        ? 'day-show'
-        : nearest.direction === 'last'
-          ? 'day-last-issued'
-          : 'day-next-issued';
-      emptyJumpLabel.textContent = self.pwaStrings.interpolate(STRINGS[key], {
-        day: formatDatePopup(nearest.date),
+    if (!nearest) {
+      publish({
+        title: self.pwaStrings.interpolate(STRINGS['day-empty'], { day: formatDatePopup(day) }),
+        detail: '',
+        rank: NOTE_RANK,
       });
-      emptyJump.hidden = false;
-      jumpTarget = nearest.date;
-    } else {
-      emptyJump.hidden = true;
-      jumpTarget = '';
+      return;
     }
-    empty.hidden = false;
+    const target = nearest.date;
+    const nearestDay = { day: formatDatePopup(target) };
+    // SNOW-1204: today, an evening issue for tomorrow is out and in force,
+    // so the note names it rather than saying today has none.
+    const following = nearest.direction === 'following';
+    const detailKey = following
+      ? 'day-issued-for'
+      : nearest.direction === 'last'
+        ? 'day-last-issued'
+        : 'day-next-issued';
+    publish({
+      title: following
+        ? STRINGS['day-tomorrow-out']
+        : self.pwaStrings.interpolate(STRINGS['day-empty'], { day: formatDatePopup(day) }),
+      detail: self.pwaStrings.interpolate(STRINGS[detailKey], nearestDay),
+      action: {
+        label: self.pwaStrings.interpolate(STRINGS['day-show'], nearestDay),
+        run: () => goTo(target),
+      },
+      rank: NOTE_RANK,
+    });
   }
 
   /** Bring every control into line with the day and the data. */
@@ -171,7 +186,6 @@
 
   if (prev) prev.addEventListener('click', () => step(-1));
   if (next) next.addEventListener('click', () => step(1));
-  if (emptyJump) emptyJump.addEventListener('click', () => goTo(jumpTarget));
 
   scrubber.addEventListener('keydown', (e) => {
     const move = core.keyStep(e.key);
@@ -204,7 +218,7 @@
     })
     .catch(() => {
       // The steps still work over the boot range; the scrubber reports the
-      // failed fetch, and the notice has nothing to judge by.
+      // failed fetch, and the note has nothing to judge by.
     });
 
   applyControls();

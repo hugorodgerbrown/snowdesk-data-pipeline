@@ -65,8 +65,8 @@ orange; below z12 nothing paints and the choropleth shows as ever.
   the two can both be on: the filter draws under the choropleth, this
   above it. A device that left the filter on in "By bulletin" comes back
   with this on and the filter off (map.js, once, at boot).
-- **One state, three switches.** The menu row, the region sheet's switch
-  and the map chip's × all write `window.pwaBulletinTerrain`, and each
+- **One state, two switches.** The menu row and the region sheet's switch
+  both write `window.pwaBulletinTerrain`, and each
   reads it back from `snowdesk:problem-terrain-changed`. Two stored states
   would drift.
 - **Held to z12 by the layer, not only the source.** The tiles are 256 px,

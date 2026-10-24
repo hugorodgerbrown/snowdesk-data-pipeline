@@ -11,7 +11,7 @@
  *   - the scrubber's keys follow the WAI-ARIA slider pattern;
  *   - a day is "empty" only for the countries that are on, and a null
  *     rating is not a bulletin;
- *   - the empty-day notice looks back before it looks forward.
+ *   - the empty-day note looks back before it looks forward.
  */
 
 import { describe, expect, it } from 'vitest';

@@ -478,8 +478,9 @@
   // remembered next sibling may be the one after it in this list, which has
   // to be home first.
   //
-  // SNOW-1195: so do the day steps either side of it, and the empty-day
-  // notice, which map.css hangs under the row as it does this card.
+  // SNOW-1195: so do the day steps either side of it, and (SNOW-1206) the
+  // day's notes bell, whose card map.css hangs under the row as it does
+  // this one.
   const cluster = document.getElementById('map-utility-cluster');
   if (cluster && typeof window.matchMedia === 'function') {
     const phone = window.matchMedia('(max-width: 639.98px)');
@@ -488,10 +489,8 @@
       toggle,
       document.getElementById('map-day-next'),
       document.getElementById('map-today-control'),
-      document.getElementById('map-day-empty'),
-      // SNOW-1196: and the weather notice, which hangs under it.
-      document.getElementById('map-weather-window'),
-      document.getElementById('map-terrain-chip'),
+      // SNOW-1206: and the day's notes bell, whose card drops under the row.
+      document.getElementById('map-day-notes'),
       root,
     ].filter(Boolean);
     const homes = moved.map((el) => ({ el, parent: el.parentNode, next: el.nextSibling }));
