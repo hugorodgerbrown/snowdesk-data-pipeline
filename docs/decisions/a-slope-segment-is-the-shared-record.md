@@ -2,7 +2,7 @@
 name: a-slope-segment-is-the-shared-record
 description: Route.slope_samples, Trip.slope_samples, slope_segments.py, compact_slope — a 25 m stride sampled from the terrain, not the track
 status: current
-last-reviewed: 2026-10-02
+last-reviewed: 2026-10-24
 ---
 
 # A slope segment is the shared record, and it samples the ground
@@ -84,9 +84,9 @@ That presence is also load-bearing on the map: the home map's
 `routes-line` filtered on `['!', ['has', 'slope']]` so a sampled route was
 not painted flat underneath its own colours, and a present-but-null value
 would have answered that filter wrongly. (Since SNOW-1017 that layer tests
-the presence of `legs` instead, for the same reason; the trip map adds its
-flat `trip-route-line` only when `isSlopeColoured` finds no segments to
-paint.)
+the presence of `legs` instead, for the same reason, and since SNOW-1212
+the trip page and the meeting picker draw from the same shared layers,
+`route_drawing_core.js`.)
 
 ### The per-segment aspect is stored, and sent only as a sector
 
