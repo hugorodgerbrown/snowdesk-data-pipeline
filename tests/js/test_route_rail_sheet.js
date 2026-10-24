@@ -26,6 +26,7 @@ import '../../static/js/elevation_profile_core.js';
 import '../../static/js/slope_classes_core.js';
 import '../../static/js/route_slope_core.js';
 import '../../static/js/route_rail_core.js';
+import '../../static/js/route_profile.js';
 
 const UUID = '11111111-2222-3333-4444-555555555555';
 const NIL = '00000000-0000-0000-0000-000000000000';

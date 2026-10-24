@@ -959,6 +959,35 @@ PLACE_PIN_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Small (24px)", "context": {"size": 24}},
 )
 
+# Route profile and meta line (SNOW-1215) -----------------------------------
+# The profile is an empty lane that static/js/route_profile.js draws into, so
+# the library shows its shell at the two heights; the meta line is text, shown
+# with and without the figures that may be unknown.
+ROUTE_PROFILE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Default (h-20, the route panel's)", "context": {}},
+    {"caption": "Taller (h-28)", "context": {"height_class": "h-28"}},
+)
+
+ROUTE_META_LINE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "All figures, with the elapsed time",
+        "context": {
+            "distance_km": 12.9,
+            "ascent_m": 337,
+            "descent_m": 1906,
+            "duration_hm": {"hours": "2", "minutes": "51"},
+        },
+    },
+    {
+        "caption": "Ascent only, no time (a planned route)",
+        "context": {"distance_km": 8.4, "ascent_m": 645, "descent_m": None},
+    },
+    {
+        "caption": "Distance only",
+        "context": {"distance_km": 3.2, "ascent_m": None, "descent_m": None},
+    },
+)
+
 META_CELL_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "Issued", "context": {"text": "Issued"}},
     {"caption": "Valid until", "context": {"text": "Valid until"}},

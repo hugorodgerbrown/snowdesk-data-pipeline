@@ -27,8 +27,24 @@ hidden: the sentence that stood here said they were "now under the map
 rather than in front of it", and now they are behind it. See
 _trip_meeting_manual.html for the three cases that lost their control.
 
+THREE NUMBERED SECTIONS AND A FOOTER (SNOW-1215): 1 When (the day tiles
+and the time, _trip_when.html), 2 Where you meet (the picker), 3 Details
+(optional — the trip name, whose placeholder is the route's name, and the
+note, whose placeholder is an example). The footer reads the plan back as
+it is chosen, beside Cancel and Create, at the END of the form: it scrolls
+with the page like every other form's buttons. It floated (sticky) in the
+first build; nothing else in the product floats, and Hugo chose static
+(2026-10-24). The Plan page
+frames each section as a card; the trip page's "Edit this trip" is
+already inside one, so there the sections are divided by a rule instead.
+
 Context:
     form           : TripForm — bound or unbound.
+    framed         : bool, optional — each section its own card (the Plan
+                     page). Off inside the trip page's edit disclosure.
+    plan_week, plan_date, plan_other, plan_other_date
+                   : _trip_when.html's; see apps/trips/views.py
+                     ``_plan_context``.
     route_uuid     : str, optional — the source route. Set on the CREATE path.
     trip_uuid      : str, optional — the trip being edited. Set on the EDIT
                      path. Exactly one of the two is ever set.
@@ -40,45 +56,66 @@ Context:
     what3words_active : bool — likewise; SNOW-840. Whether the picker says
                      the pin will become a three word address on save.
 {% endcomment %}
+{% if framed %}
+    {% card_classes padding="p-4 sm:p-5" as section_classes %}
+{% else %}
+    {% firstof "border-t border-border pt-5" as section_classes %}
+{% endif %}
 <form
     id="trip-form"
     hx-post="{% if trip_uuid %}{% url 'trips:edit' trip_uuid %}{% else %}{% url 'trips:create' %}{% endif %}"
     hx-target="#trip-form"
     hx-swap="outerHTML"
-    class="flex flex-col"
+    class="flex flex-col gap-5"
+    data-trip-form
 >
     {% csrf_token %}
     {% if route_uuid %}<input type="hidden" name="route" value="{{ route_uuid }}">{% endif %}
     {% if form.non_field_errors %}
-        <ul class="mb-4 space-y-0.5" data-testid="trip-form-errors">
+        <ul class="space-y-0.5" data-testid="trip-form-errors">
             {% for error in form.non_field_errors %}<li class="text-xs text-form-error">{{ error }}</li>{% endfor %}
         </ul>
     {% endif %}
-    {# min-w-0 on each cell (SNOW-1211): a grid item defaults to          #}
-    {# min-width:auto, and Safari's native date and time inputs carry an   #}
-    {# intrinsic width wider than half an iPad card, so the time field     #}
-    {# overflowed it. src/css/main.css lets the inputs themselves shrink.  #}
-    <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
-        {% trans "Day" as date_label %}
-        {% include "includes/_form_field.html" with field=form.date label=date_label class_extra="mb-4 min-w-0" %}
-        {% trans "Meeting time" as start_time_label %}
-        {% include "includes/_form_field.html" with field=form.start_time label=start_time_label class_extra="mb-4 min-w-0" %}
-    </div>
-    {% trans "Trip name" as name_label %}
-    {% include "includes/_form_field.html" with field=form.name label=name_label optional=True %}
-    {% trans "Note for the group" as description_label %}
-    {% include "includes/_form_field.html" with field=form.description label=description_label optional=True %}
-    {% include "trips/partials/_trip_meeting_picker.html" %}
-    <div class="mt-2 flex items-center gap-3">
-        {% if trip_uuid %}
-            {% trans "Save changes" as trip_submit_label %}
-        {% else %}
-            {% trans "Create trip" as trip_submit_label %}
-        {% endif %}
-        {% include "includes/_button.html" with label=trip_submit_label variant="primary" %}
-        {% if cancel_url %}
-            {% trans "Cancel" as trip_cancel_label %}
-            {% include "includes/_button.html" with label=trip_cancel_label href=cancel_url variant="ghost" %}
-        {% endif %}
+    {% trans "When" as when_heading %}
+    <section class="{{ section_classes }}" aria-labelledby="trip-form-when" data-testid="trip-form-when">
+        {% include "trips/partials/_trip_form_heading.html" with number=1 text=when_heading heading_id="trip-form-when" %}
+        {% include "trips/partials/_trip_when.html" %}
+    </section>
+    {% trans "Where you meet" as where_heading %}
+    <section class="{{ section_classes }}" aria-labelledby="trip-form-where" data-testid="trip-form-where">
+        {% include "trips/partials/_trip_form_heading.html" with number=2 text=where_heading heading_id="trip-form-where" %}
+        {% include "trips/partials/_trip_meeting_picker.html" %}
+    </section>
+    {% trans "Details" as details_heading %}
+    <section class="{{ section_classes }}" aria-labelledby="trip-form-details" data-testid="trip-form-details">
+        {% include "trips/partials/_trip_form_heading.html" with number=3 text=details_heading heading_id="trip-form-details" optional=True %}
+        {% trans "Trip name" as name_label %}
+        {% include "includes/_form_field.html" with field=form.name label=name_label %}
+        {% trans "Note for the group" as description_label %}
+        {% include "includes/_form_field.html" with field=form.description label=description_label class_extra="mb-0" %}
+    </section>
+    {# The plan read back beside the buttons: the day, the time, the      #}
+    {# address and the day's level, each as it is chosen                  #}
+    {# (static/js/trip_form.js). Static, not sticky — see the note above. #}
+    {# On a phone the read-back takes the full width above the buttons:   #}
+    {# beside them it had about 110px and truncated both lines.           #}
+    {% card_classes padding="px-4 py-3" extra="flex flex-col gap-3 sm:flex-row sm:items-center" as footer_classes %}
+    <div class="{{ footer_classes }}" data-testid="trip-form-footer">
+        <div class="min-w-0 flex-1 text-xs" aria-live="polite">
+            <p class="font-medium text-text-1 sm:truncate" data-trip-readback-when></p>
+            <p class="text-text-3 sm:truncate" data-trip-readback-where></p>
+        </div>
+        <div class="flex flex-none justify-end gap-3">
+            {% if cancel_url %}
+                {% trans "Cancel" as trip_cancel_label %}
+                {% include "includes/_button.html" with label=trip_cancel_label href=cancel_url variant="ghost" %}
+            {% endif %}
+            {% if trip_uuid %}
+                {% trans "Save changes" as trip_submit_label %}
+            {% else %}
+                {% trans "Create trip" as trip_submit_label %}
+            {% endif %}
+            {% include "includes/_button.html" with label=trip_submit_label variant="primary" %}
+        </div>
     </div>
 </form>

@@ -183,33 +183,11 @@ Context:
     {# itself, so a hidden hint leaves PEEK at the profile's foot rather  #}
     {# than at no marker at all.                                          #}
     <div data-sheet-peek class="grid min-w-0 gap-y-2">
-        {# The lane. Filled per open by static/js/route_rail.js. A tap on  #}
-        {# its top line places the point, a sideways drag anywhere scrubs #}
-        {# it; the readout shows the point's figures.                     #}
-        <div class="min-w-0">
-            <div class="relative">
-                <svg
-                    data-route-rail-lane
-                    role="group"
-                    preserveAspectRatio="none"
-                    class="route-rail-lane block h-20 w-full text-route-line"
-                >
-                </svg>
-                <div
-                    data-route-rail-readout
-                    hidden
-                    class="route-rail-readout pointer-events-none absolute inset-0 font-mono text-meta text-text-1"
-                >
-                    <span
-                        data-route-rail-dot
-                        class="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-pill border-2 border-text-1 bg-route-line"
-                    ></span>
-                    <span data-route-rail-elevation class="absolute top-0 whitespace-nowrap leading-none"></span>
-                    <span data-route-rail-distance class="absolute bottom-0.5 whitespace-nowrap leading-none"></span>
-                </div>
-            </div>
-            <div data-route-rail-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3"></div>
-        </div>
+        {# The lane (SNOW-1215: the shared profile partial). Drawn per    #}
+        {# open by static/js/route_profile.js; a tap on its top line places #}
+        {# the point and a sideways drag anywhere scrubs it                 #}
+        {# (static/js/route_rail.js).                                       #}
+        {% include "includes/_route_profile.html" only %}
         {# The hint, under the profile it names, until a point is placed: #}
         {# then the point header says what it promised, and route_rail.js #}
         {# hides it (2026-10-19).                                         #}

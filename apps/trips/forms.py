@@ -128,7 +128,17 @@ class TripForm(forms.Form):
     )
     description = forms.CharField(
         required=False,
-        widget=forms.Textarea(attrs={"class": _INPUT_CLASSES, "rows": 4}),
+        # SNOW-1215: an example rather than an empty box, so the organiser
+        # sees what the note is for.
+        widget=forms.Textarea(
+            attrs={
+                "class": _INPUT_CLASSES,
+                "rows": 3,
+                "placeholder": _(
+                    "e.g. Bring skins and a transceiver. We'll take the 08:15 lift."
+                ),
+            }
+        ),
     )
     # HIDDEN, not number inputs — see the module docstring for what that
     # removed and what it costs. The ``data-meeting-*`` attribute is the
@@ -156,6 +166,7 @@ class TripForm(forms.Form):
         self,
         *args: Any,
         earliest_date: datetime.date | None = None,
+        route_name: str = "",
         **kwargs: Any,
     ) -> None:
         """Build the form, optionally refusing a day before ``earliest_date``.
@@ -173,11 +184,30 @@ class TripForm(forms.Form):
             *args: Passed to ``forms.Form``.
             earliest_date: The first day the form accepts, or None for no
                 floor.
+            route_name: The route's name, shown as the trip name's
+                PLACEHOLDER (SNOW-1215) — what a trip left unnamed is
+                called (``Trip.display_name``) — rather than prefilled as
+                its value, which an organiser had to delete to see the
+                field was optional.
             **kwargs: Passed to ``forms.Form``.
 
         """
         super().__init__(*args, **kwargs)
         self.earliest_date = earliest_date
+        self.name_after(route_name)
+
+    def name_after(self, route_name: str) -> None:
+        """Show a route's name as the trip name's placeholder.
+
+        Separate from ``__init__`` for the create view's error path, which
+        looks the route up only once the submission has failed.
+
+        Args:
+            route_name: The route's name; ``""`` leaves no placeholder.
+
+        """
+        if route_name:
+            self.fields["name"].widget.attrs["placeholder"] = route_name
 
     def clean_date(self) -> datetime.date:
         """Refuse a day before the caller's floor, when one is set."""

@@ -60,7 +60,8 @@ Context:
                      partial.
 {% endcomment %}
 {{ picker_payload|json_script:"trip-meeting-payload" }}
-<p class="mb-1.5 text-sm font-medium text-text-1">{% trans "Meeting point" %}</p>
+{# No label of its own since SNOW-1215: the form's "Where you meet" #}
+{# section heading names it.                                         #}
 {# The wrapper holds the map and the pin side by side: MapLibre owns its   #}
 {# container's children, so the pin is a sibling laid over it rather than  #}
 {# a child it might reorder.                                               #}

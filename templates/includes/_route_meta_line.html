@@ -1,0 +1,60 @@
+{% load i18n %}
+{% comment %}
+includes/_route_meta_line.html — a route's figures in the routes list's
+meta-line format: "12.9km · 337m ↑ · 1906m ↓ · 2h51m" (SNOW-1215).
+
+The SAME msgids as routes/partials/_route.html's row and the map panel's
+strings template (route_rail_core.js's formatMetaLine), so one route reads
+the same on the map, in the routes list, on the Plan page and on a trip:
+the distance always; the ascent and descent each only when known, never as
+zero; the elapsed time only when there is one. Kilometres to one decimal,
+whole metres, no thousands separator.
+
+Renders TEXT, not an element: the caller owns the line's tag and type.
+routes/partials/_route.html keeps its own copy because it needs the line
+as a variable to compose ("Shared with you · {{ meta }}"), which an include
+cannot hand back.
+
+Context:
+    distance_km : number — the length in kilometres.
+    ascent_m    : number or None — metres climbed; None when unknown.
+    descent_m   : number or None — metres descended; None when unknown.
+    duration_hm : dict or None — ``{"hours", "minutes"}`` from
+                  ``apps.core.durations.split_hours_minutes``; a trip has
+                  none.
+{% endcomment %}
+{% spaceless %}
+    {% with km=distance_km|floatformat:1 ascent=ascent_m|floatformat:0 descent=descent_m|floatformat:0 %}
+        {% if ascent_m is not None and descent_m is not None %}
+            {% blocktrans trimmed with km=km ascent=ascent descent=descent asvar meta_line %}
+                {{ km }}km · {{ ascent }}m ↑ · {{ descent }}m ↓
+            {% endblocktrans %}
+        {% elif ascent_m is not None %}
+            {% blocktrans trimmed with km=km ascent=ascent asvar meta_line %}
+                {{ km }}km · {{ ascent }}m ↑
+            {% endblocktrans %}
+        {% elif descent_m is not None %}
+            {% blocktrans trimmed with km=km descent=descent asvar meta_line %}
+                {{ km }}km · {{ descent }}m ↓
+            {% endblocktrans %}
+        {% else %}
+            {% blocktrans trimmed with km=km asvar meta_line %}{{ km }}km{% endblocktrans %}
+        {% endif %}
+        {% if duration_hm %}
+            {% if duration_hm.hours %}
+                {% blocktrans trimmed with hours=duration_hm.hours minutes=duration_hm.minutes asvar meta_duration %}
+                    {{ hours }}h{{ minutes }}m
+                {% endblocktrans %}
+            {% else %}
+                {% blocktrans trimmed with minutes=duration_hm.minutes asvar meta_duration %}
+                    {{ minutes }}m
+                {% endblocktrans %}
+            {% endif %}
+            {% blocktrans trimmed with figures=meta_line duration=meta_duration %}
+                {{ figures }} · {{ duration }}
+            {% endblocktrans %}
+        {% else %}
+            {{ meta_line }}
+        {% endif %}
+    {% endwith %}
+{% endspaceless %}

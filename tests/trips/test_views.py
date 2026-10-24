@@ -55,6 +55,8 @@ from apps.trips.models import Trip
 from tests.factories import (
     DRIFTING_TRACK,
     LocationFactory,
+    MicroRegionFactory,
+    RegionDayRatingFactory,
     RouteFactory,
     TripFactory,
     UserFactory,
@@ -201,12 +203,17 @@ class TestTripNewPage:
         assert 'value="2026-10-25"' in html
         assert 'value="08:00"' in html
 
-    def test_the_day_and_time_cells_can_shrink(self, client: Client) -> None:
-        """SNOW-1211: a grid cell at min-width:auto let the time field overflow."""
+    def test_the_time_field_is_sized_to_fit(self, client: Client) -> None:
+        """SNOW-1211 / SNOW-1215: the time field no longer spans the card.
+
+        The native time input overflowed half an iPad card in SNOW-1211;
+        since SNOW-1215 it sits alone under the day tiles, capped at the
+        width a time needs.
+        """
         route = RouteFactory.create()
         client.force_login(route.user)
         response = client.get(f"{reverse('trips:new')}?route={route.uuid}")
-        assert response.content.decode().count("class='mb-4 min-w-0'") == 2
+        assert "class='mt-4 max-w-44'" in response.content.decode()
 
     def test_the_meeting_point_is_a_map_with_the_route_on_it(
         self, client: Client
@@ -387,7 +394,10 @@ class TestTripDetailPage:
 
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
 
-        assert 'name="date" value="2026-09-12"' in html
+        # A day outside the week arrives on the "Other" tile (SNOW-1215).
+        assert re.search(
+            r'name="date"\s+value="2026-09-12"[^>]*data-day-other\s+checked', html
+        )
         assert 'value="12/09/2026"' not in html
 
     @override_settings(LANGUAGE_CODE="en-gb")
@@ -1057,3 +1067,125 @@ class TestMeetingPointPicker:
         assert ">On the route, {distance} in<" in html
         assert 'data-string="octant-NE">north-east<' in html
         assert "meeting_place_core.js" in html
+
+
+_REGION_SQUARE = {
+    "type": "Polygon",
+    "coordinates": [
+        [[7.0, 46.0], [7.5, 46.0], [7.5, 46.5], [7.0, 46.5], [7.0, 46.0]],
+    ],
+}
+
+
+@pytest.mark.django_db
+@freeze_time("2026-10-24 10:00:00")
+class TestPlanPage:
+    """SNOW-1215: the Plan page — route card, When, Where, Details, footer."""
+
+    def _page(self, client: Client, **route_kwargs: Any) -> str:
+        route = RouteFactory.create(**route_kwargs)
+        client.force_login(route.user)
+        return client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+    def test_the_route_card_comes_first_with_its_figures(self, client: Client) -> None:
+        """Name, meta line, the shared profile and Change, before the form."""
+        html = self._page(client, name="Mont Fort", ascent_m=305.0, descent_m=1873.0)
+
+        assert html.index('data-testid="trip-new-route"') < html.index('id="trip-form"')
+        meta = re.search(
+            r'data-testid="trip-new-route-meta">(.*?)</p>', html, re.DOTALL
+        )
+        assert meta is not None
+        assert " ".join(meta.group(1).split()) == "2.5km · 305m ↑ · 1873m ↓ · 2h00m"
+        assert "data-trip-route-profile" in html
+        assert "data-route-rail-lane" in html
+        assert f"{reverse('public:map')}?panel=routes" in html
+        assert "Using your route" not in html
+
+    def test_three_numbered_sections_in_order(self, client: Client) -> None:
+        """When, Where you meet, Details — then the footer."""
+        html = self._page(client)
+
+        order = [
+            html.index(f'data-testid="{testid}"')
+            for testid in (
+                "trip-form-when",
+                "trip-form-where",
+                "trip-form-details",
+                "trip-form-footer",
+            )
+        ]
+        assert order == sorted(order)
+        assert "data-trip-readback-when" in html
+
+    def test_five_day_tiles_and_other_with_tomorrow_checked(
+        self, client: Client
+    ) -> None:
+        """Each tile is a date radio; tomorrow is the default."""
+        html = self._page(client)
+
+        assert html.count('data-testid="trip-day"') == 5
+        assert 'data-testid="trip-day-other"' in html
+        assert re.search(r'name="date"\s+value="2026-10-25"\s+id="trip-day-1"', html)
+        checked = re.findall(r'<input[^>]*name="date"[^>]*checked', html, re.DOTALL)
+        assert len(checked) == 1
+        assert 'value="2026-10-25"' in checked[0]
+        # The native date field is the Other tile's picker, unnamed.
+        assert 'type="date"' in html
+        assert 'name="date" type="date"' not in html
+
+    def test_a_rated_day_shows_its_level_and_an_unrated_one_nothing(
+        self, client: Client
+    ) -> None:
+        """Only the days a bulletin rated carry a level; the caption names it."""
+        region = MicroRegionFactory.create(
+            name="Martigny-Verbier", boundary=_REGION_SQUARE
+        )
+        RegionDayRatingFactory.create(
+            region=region,
+            date=datetime.date(2026, 10, 25),
+            max_rating="considerable",
+        )
+
+        html = self._page(client)
+
+        assert html.count('data-testid="trip-day-rating"') == 1
+        assert 'data-level="considerable"' in html
+        assert 'data-rating="Considerable (3)"' in html
+        assert "Martigny-Verbier" in html
+
+    def test_the_trip_name_is_a_placeholder_not_a_value(self, client: Client) -> None:
+        """A trip left unnamed takes its route's name; the field says so."""
+        html = self._page(client, name="Mont Fort")
+
+        field = re.search(r'<input[^>]*name="name"[^>]*>', html, re.DOTALL)
+        assert field is not None
+        assert 'placeholder="Mont Fort"' in field.group(0)
+        assert "value=" not in field.group(0)
+        assert "e.g. Bring skins and a transceiver." in html
+
+    def test_an_invalid_submission_keeps_the_week_and_the_placeholder(
+        self, client: Client
+    ) -> None:
+        """The swapped-in form is the same form, tiles and all."""
+        route = RouteFactory.create(name="Mont Fort")
+        client.force_login(route.user)
+
+        response = client.post(
+            reverse("trips:create"),
+            {
+                "route": str(route.uuid),
+                "date": "2026-11-12",
+                "start_time": "",
+                "latitude": "46.1",
+                "longitude": "7.4",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+        html = response.content.decode()
+
+        assert response.status_code == 400
+        assert html.count('data-testid="trip-day"') == 5
+        assert re.search(r'value="2026-11-12"[^>]*data-day-other\s+checked', html)
+        assert "12 Nov" in html
+        assert 'placeholder="Mont Fort"' in html

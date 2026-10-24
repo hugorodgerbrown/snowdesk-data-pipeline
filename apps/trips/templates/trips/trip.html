@@ -147,5 +147,7 @@ its own metadata.
         {# the route. The picker reads it as it starts, so it loads first. #}
         <script defer src="{% static 'js/meeting_place_core.js' %}"></script>
         <script defer src="{% static 'js/trip_meeting_picker.js' %}"></script>
+        {# SNOW-1215: the edit form's day tiles and its read-back footer. #}
+        <script defer src="{% static 'js/trip_form.js' %}"></script>
     {% endif %}
 {% endblock extra_js %}

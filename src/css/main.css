@@ -1193,6 +1193,16 @@ input[type="time"]::-webkit-date-and-time-value {
    same component rather than a second style of chip. */
 .danger-tile--outlined { border: 1px solid var(--color-border); }
 
+/* Compact variant (SNOW-1215) — the level on a Plan page day tile, which is
+   a seventh of a phone's width and has no room for the 2.25rem square. The
+   same fills and the same digit, at chip size. */
+.danger-tile--compact {
+  min-width: 1.5rem;
+  height: 1.25rem;
+  padding: 0 0.25rem;
+  font-size: var(--text-meta);
+}
+
 /* —— A map sheet's date row (Hugo, 21 Oct) ——
    "Data from 21 Oct 2026", full width under the sheet's header
    (includes/_sheet_date_row.html). Quiet on today; on another day the info
@@ -1625,6 +1635,31 @@ a.season-day:focus-visible {
 .route-rail-leg { fill-opacity: 0.22; }
 .route-rail-leg[data-climbing="true"]  { fill: var(--color-route-rail-climb); }
 .route-rail-leg[data-climbing="false"] { fill: var(--color-route-rail-descent); }
+
+/* —— The route profile's lane and readout (moved from map.css, SNOW-1215)
+   The profile is one component on three pages (templates/includes/
+   _route_profile.html — the map's route panel, the Plan page, the trip
+   page), so its two rules live here rather than in the map's stylesheet.
+
+   A drag along the profile scrubs the point (SNOW-1065, restored
+   2026-10-19). A horizontal finger drag must reach the script rather than
+   scroll, while a vertical one still may: `pan-y` hands over the first and
+   keeps the second. */
+.route-rail-lane {
+  touch-action: pan-y;
+}
+
+/* The figures beside the profile's cursor line (2026-10-02) sit over the
+   profile's fill and outline, so each carries a halo in the card's own
+   colour to stay legible on both. A text-shadow stack takes a colour
+   token here; there is no utility for a multi-offset halo. */
+.route-rail-readout [data-route-rail-elevation],
+.route-rail-readout [data-route-rail-distance] {
+  text-shadow:
+    0 0 2px var(--color-card),
+    0 0 2px var(--color-card),
+    0 0 4px var(--color-card);
+}
 
 /* —— HTMX indicator —————————————————————————
    Any element with class="htmx-indicator" is hidden by default and
@@ -2152,6 +2187,13 @@ a.season-day:focus-visible {
    ————————————————————————————————————————— */
 
 .forecast-day-picker input:checked ~ label .weather-day-marker {
+  background-color: var(--color-accent);
+}
+
+/* The Plan form's day tiles (SNOW-1215) take the same second channel:
+   trips/partials/_trip_when.html is this picker's pattern on another
+   page, so the checked tile is marked the same two ways. */
+.trip-day-picker input:checked ~ label .weather-day-marker {
   background-color: var(--color-accent);
 }
 

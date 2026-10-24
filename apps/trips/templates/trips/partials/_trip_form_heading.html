@@ -1,0 +1,18 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_form_heading.html — one numbered section heading of
+the Plan form: "1 When", "2 Where you meet", "3 Details optional"
+(SNOW-1215). The number says the form is three steps and in which order;
+it is decorative to a screen reader, which reads the sections as headings.
+
+Context:
+    number     : int — the step.
+    text       : str — the heading, translated by the caller.
+    heading_id : str — the id the section's aria-labelledby names.
+    optional   : bool, optional — appends a quiet "optional".
+{% endcomment %}
+<h2 id="{{ heading_id }}" class="mb-3 flex items-baseline gap-2 text-base font-semibold text-text-1">
+    <span class="font-mono text-meta text-text-3" aria-hidden="true">{{ number }}</span>
+    {{ text }}
+    {% if optional %}<span class="text-sm font-normal text-text-3">{% trans "optional" %}</span>{% endif %}
+</h2>
