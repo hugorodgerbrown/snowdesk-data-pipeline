@@ -67,6 +67,15 @@ one. It is also behind auth, so no unfurler will ever reach it.
     {# because this page renders no _trip_map.html, which is where the    #}
     {# other two trip pages pick it up.                                   #}
     <script defer src="{% static 'js/basemap_style_core.js' %}"></script>
+    {# SNOW-1212: the route drawn as the map draws it — the end markers,  #}
+    {# the slope ramp and classes, the legs, and the layers that paint     #}
+    {# them, in dependency order. trip_map.js reads the drawing's source   #}
+    {# ids at its top level, so they come before it.                       #}
+    <script defer src="{% static 'js/route_markers_core.js' %}"></script>
+    <script defer src="{% static 'js/slope_classes_core.js' %}"></script>
+    <script defer src="{% static 'js/route_slope_core.js' %}"></script>
+    <script defer src="{% static 'js/route_legs_core.js' %}"></script>
+    <script defer src="{% static 'js/route_drawing_core.js' %}"></script>
     <script defer src="{% static 'js/trip_map.js' %}"></script>
     <script defer src="{% static 'js/trip_meeting_picker.js' %}"></script>
 {% endblock extra_js %}

@@ -2228,52 +2228,17 @@
   // highlighted stretch a rail selection used to draw, and its two inks.
   const ROUTE_CURSOR_HALO = '#ffffff';
 
-  /** Map image ids for the two route end markers. */
-  const ROUTE_START_ICON = 'route-start-dot';
-  const ROUTE_END_ICON = 'route-finish-flag';
   // SNOW-1019 took the fall-line arrows off the map (the bank ribbon that
   // replaced them went with rail two, SNOW-1065). The server still sends
   // `fall_lines` on the slope record; nothing here draws them.
 
-  /**
-   * Register the start dot and finish flag, unless the style already holds
-   * them.
-   *
-   * `setStyle` drops every registered image along with every layer, so this
-   * is called from installRoutesLayer rather than once at boot — the
-   * basemap-swap re-install goes through there too, and `hasImage` is what
-   * makes the repeat call free. Same shape as ensureHatchImage above.
-   *
-   * `addImage` must be given the core's own PIXEL_RATIO: the icon is sized
-   * in device pixels, and registering a 40px image at ratio 1 would draw a
-   * marker twice the intended size on every screen.
-   *
-   * @returns {void}
-   */
-  const ensureRouteMarkerImages = () => {
-    const core = self.pwaRouteMarkersCore;
-    if (!core) return;
-    const ratio = { pixelRatio: core.PIXEL_RATIO };
-    if (!map.hasImage(ROUTE_START_ICON)) {
-      map.addImage(
-        ROUTE_START_ICON,
-        core.startDotPixels(...cssColourChannels(ROUTE_LINE_COLOUR)),
-        ratio,
-      );
-    }
-    if (!map.hasImage(ROUTE_END_ICON)) {
-      map.addImage(
-        ROUTE_END_ICON,
-        core.finishFlagPixels(...cssColourChannels(ROUTE_CASING_COLOUR)),
-        ratio,
-      );
-    }
-  };
-
   // The zoom from which a route's core is painted in the slope classes
   // rather than its leg colours (legs-not-slope-classes-on-the-map.md,
-  // 2026-09-30). The leg lines stop here and the class lines start.
-  const ROUTE_SLOPE_MINZOOM = 14;
+  // 2026-09-30). The leg lines stop here and the class lines start. Owned
+  // by the shared route drawing since SNOW-1212, so the trip page and the
+  // meeting picker switch at the same zoom; read at parse time, which is
+  // why map.html loads that core ahead of the bundle.
+  const ROUTE_SLOPE_MINZOOM = self.pwaRouteDrawingCore.ROUTE_SLOPE_MINZOOM;
 
   // The deepest zoom at which a tap selects a region. The inverse of the
   // route slope classes (z14) and the terrain filter (z12), which only
@@ -2295,24 +2260,6 @@
    * @returns {boolean} True at REGION_SELECT_MAXZOOM or below.
    */
   const regionsSelectableAt = (zoom) => Math.floor(zoom) <= REGION_SELECT_MAXZOOM;
-
-  /**
-   * The opacity of a leg's core line: `base` below ROUTE_SLOPE_MINZOOM,
-   * and from there 0 for a leg of a sampled route, whose slope segments
-   * take its place, and still `base` for one whose route has none.
-   *
-   * An opacity rather than a `maxzoom` because the switch is per route: a
-   * layer's zoom range cannot vary by feature, and a `maxzoom` hid the
-   * core of every route the sampler had not reached yet, leaving only its
-   * casing.
-   *
-   * @param {number} base The opacity.
-   * @returns {Array<*>} A zoom `step` expression.
-   */
-  const legCoreOpacity = (base) => [
-    'step', ['zoom'], base,
-    ROUTE_SLOPE_MINZOOM, ['case', ['==', ['get', 'sampled'], true], 0, base],
-  ];
 
   /**
    * The slope-class segments for a routes payload, each tagged with its
@@ -2396,24 +2343,6 @@
     const core = self.pwaRouteLegsCore;
     if (!core) return { type: 'FeatureCollection', features: [] };
     return core.transitionCollection(geojson);
-  };
-
-  /**
-   * The two leg colours, read off the core with a literal fallback.
-   *
-   * The literals mirror `--color-route-rail-climb` and
-   * `--color-route-rail-descent` in src/css/main.css, as the core's own
-   * constants do; the fallback is only for a page where the core has not
-   * loaded, where no leg is drawn and nothing reads them.
-   *
-   * @returns {{climb: string, descent: string}}
-   */
-  const legColours = () => {
-    const core = self.pwaRouteLegsCore || {};
-    return {
-      climb: core.LEG_CLIMB_COLOUR || '#64748b',
-      descent: core.LEG_DESCENT_COLOUR || '#c026d3',
-    };
   };
 
   /**
@@ -3013,154 +2942,45 @@
     if (!geojson || map.getSource('routes')) return;
     routesGeojsonCache = geojson;
     map.addSource('routes', { type: 'geojson', data: routesSourceData(geojson) });
-    map.addLayer({
-      id: 'routes-line-casing',
-      type: 'line',
-      source: 'routes',
-      // SNOW-1017: a legged route leaves the casing as well as the line —
-      // see flatOwnedRouteFilter. The pending ones keep theirs.
-      filter: ['any', PENDING_ROUTE_FILTER, flatOwnedRouteFilter()],
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-      paint: {
-        // See ROUTE_CASING_COLOUR above for why the value is named here
-        // rather than referenced from the stylesheet.
-        'line-color': ROUTE_CASING_COLOUR,
-        'line-opacity': 0.55,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7, 16, 11],
-      },
-    });
-    map.addLayer({
-      id: 'routes-line',
-      type: 'line',
-      source: 'routes',
-      // SNOW-764: owned routes only. The pending ones get their own layer
-      // below so they can be painted differently; without the filter they
-      // would be drawn twice, once in each colour, with whichever layer
-      // sits on top winning.
-      // SNOW-1017 narrows it again to the routes that carry no legs — see
-      // flatOwnedRouteFilter for why a legged one must leave, and for why
-      // it stays when there is no core to paint it leg by leg.
-      filter: flatOwnedRouteFilter(),
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-      paint: {
-        'line-color': ROUTE_LINE_COLOUR,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
-      },
-    });
-    // SNOW-1017: the route as its legs. THREE layers over a source of
-    // their own (route_legs_core.js slices each leg out of the route's own
-    // coordinates), replacing SNOW-910's slope-coloured segments — see
-    // docs/decisions/legs-not-slope-classes-on-the-map.md for why the
-    // classes left the map.
+    // SNOW-1212: the line layers are the shared drawing's
+    // (route_drawing_core.js), which the trip page and the meeting picker
+    // draw a route with too: the flat casing and line, the legs' own
+    // casing, the climb and descent cores, and the slope classes from
+    // ROUTE_SLOPE_MINZOOM. The two flat filters are this page's — only
+    // the map has pending routes:
     //
-    // A casing of their own rather than the flat one, sized to the legs.
-    // Narrower than `routes-line-casing`'s 3/7/11 because the legs are
-    // narrower than the flat line: a leg is one of several on a route, and
-    // the dash on a climb needs gaps a reader can see at z12.
+    // SNOW-764: the flat line draws owned routes only. The pending ones
+    // get their own layer below so they can be painted differently;
+    // without the filter they would be drawn twice. SNOW-1017 narrows it
+    // again to the routes that carry no legs — see flatOwnedRouteFilter —
+    // and a legged route leaves the casing too, while the pending ones
+    // keep theirs.
     //
-    // TWO line layers because a climb is DASHED and a descent solid, and
-    // `line-dasharray` is not a data-driven property in MapLibre — the
-    // reason `routes-line-pending` is a layer of its own. The dash carries
-    // the direction for a reader who cannot tell the two colours apart;
-    // the colours are the rail's, so a leg on the map is the colour of the
-    // same leg below it.
-    const colours = legColours();
+    // The legs and their transitions are SNOW-1017's, replacing SNOW-910's
+    // slope-coloured segments; the classes came back from z14 on
+    // 2026-09-30. docs/decisions/legs-not-slope-classes-on-the-map.md has
+    // both.
+    const drawing = self.pwaRouteDrawingCore;
+    const drawingOptions = {
+      prefix: 'routes',
+      sources: {
+        route: 'routes',
+        legs: 'route-legs',
+        slopes: 'routes-slopes',
+        transitions: 'route-transitions',
+        endpoints: 'route-endpoints',
+      },
+      visible: overlayState.routes,
+      casingFilter: ['any', PENDING_ROUTE_FILTER, flatOwnedRouteFilter()],
+      lineFilter: flatOwnedRouteFilter(),
+      textFont: overlayTextFont,
+    };
     map.addSource('route-legs', {
       type: 'geojson',
       data: routeLegsFor(geojson),
     });
-    map.addLayer({
-      id: 'routes-leg-casing',
-      type: 'line',
-      source: 'route-legs',
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-      paint: {
-        'line-color': ROUTE_CASING_COLOUR,
-        'line-opacity': 0.55,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 5.5, 16, 9],
-      },
-    });
-    map.addLayer({
-      id: 'routes-leg-climb',
-      type: 'line',
-      source: 'route-legs',
-      filter: ['==', ['get', 'climbing'], true],
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        // Butt caps, the pending line's reason: round caps on a short
-        // dash close the gaps.
-        'line-cap': 'butt',
-        'line-join': 'round',
-      },
-      paint: {
-        'line-color': colours.climb,
-        'line-opacity': legCoreOpacity(1),
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 3.2, 16, 5.5],
-        // In line-widths, so the dash keeps its proportions as the line
-        // thickens with zoom — the pending line's own [2, 1.5].
-        'line-dasharray': [2, 1.5],
-      },
-    });
-    map.addLayer({
-      id: 'routes-leg-descent',
-      type: 'line',
-      source: 'route-legs',
-      filter: ['!=', ['get', 'climbing'], true],
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-      paint: {
-        'line-color': colours.descent,
-        'line-opacity': legCoreOpacity(1),
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 3.2, 16, 5.5],
-      },
-    });
-    // From z14 the route's core is painted in the slope classes — the six
-    // buckets of route_slope_core.js, the slope layer's palette — in
-    // place of the leg colours, which go transparent at the same zoom on
-    // a sampled route (legCoreOpacity) and stay on one with no segments. The leg
-    // casing and the numbered transitions stay at every zoom, so the legs
-    // are still countable where the colour has changed meaning. A segment the terrain had no answer for is its
-    // own layer in the unknown grey. The amendment of 2026-09-30 in
-    // docs/decisions/legs-not-slope-classes-on-the-map.md says why the
-    // classes came back at this zoom.
-    const slopeCore = self.pwaRouteSlopeCore;
     map.addSource('routes-slopes', { type: 'geojson', data: routeSlopesFor(geojson) });
-    for (const [id, unknown] of [['routes-slope-line', false], ['routes-slope-unknown', true]]) {
-      map.addLayer({
-        id,
-        type: 'line',
-        source: 'routes-slopes',
-        minzoom: ROUTE_SLOPE_MINZOOM,
-        filter: unknown ? ['==', ['get', 'unknown'], true] : ['!=', ['get', 'unknown'], true],
-        layout: {
-          visibility: overlayState.routes ? 'visible' : 'none',
-          'line-cap': 'butt',
-          'line-join': 'round',
-        },
-        paint: {
-          'line-color': unknown
-            ? ((slopeCore && slopeCore.UNKNOWN_COLOUR) || ROUTE_LINE_COLOUR)
-            : (slopeCore ? slopeCore.colourExpression() : ROUTE_LINE_COLOUR),
-          'line-opacity': 1,
-          'line-width': ['interpolate', ['linear'], ['zoom'], 12, 3.2, 16, 5.5],
-        },
-      });
-    }
+    for (const layer of drawing.lineLayers(drawingOptions)) map.addLayer(layer);
     // SNOW-764: the shared-with-you line. A THIRD layer rather than a
     // data-driven `line-color` on the one above, because the difference is
     // not only colour: this line is DASHED, and `line-dasharray` is not a
@@ -3302,95 +3122,25 @@
     // on the rail. Under the endpoint markers: a transition is where the
     // route changes activity, which the reader plans around less than
     // where it starts.
-    //
-    // minzoom 11: at a country scale the markers would pile onto one
-    // another and onto the start dot. The fits that frame a route — a
-    // share arrival (activateRoute) and a routes-panel row (pwaMapFocus)
-    // — have no cap, so the camera comes to rest far enough in for them.
-    // A tap frames nothing: the reader already chose the scale.
-    //
-    // The circle carries the position on its own; the number is a symbol
-    // and needs glyphs, which a style that fails to load them leaves out
-    // without taking the marker with it.
     map.addSource('route-transitions', {
       type: 'geojson',
       data: routeTransitionsFor(geojson),
     });
-    map.addLayer({
-      id: 'routes-transitions',
-      type: 'circle',
-      source: 'route-transitions',
-      minzoom: 11,
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-      },
-      paint: {
-        // The colour of the leg the transition OPENS, so the marker reads
-        // as the start of what follows it.
-        'circle-color': ['case', ['get', 'climbing'], colours.climb, colours.descent],
-        'circle-radius': 7,
-        'circle-stroke-color': '#ffffff',
-        'circle-stroke-width': 1.5,
-      },
-    });
-    map.addLayer({
-      id: 'routes-transition-labels',
-      type: 'symbol',
-      source: 'route-transitions',
-      minzoom: 11,
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'text-field': ['to-string', ['get', 'n']],
-        'text-font': overlayTextFont,
-        'text-size': 10,
-        // Every transition keeps its number: dropping one would renumber
-        // the route in the reader's head.
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
-      },
-      paint: {
-        'text-color': '#ffffff',
-      },
-    });
-
     // SNOW-687 follow-up: the start dot and finish flag. Their own point
     // source, derived from the same payload — MapLibre cannot symbolise
     // "the ends of a LineString" (`symbol-placement: 'line'` repeats a
     // symbol ALONG one, which is a different thing), so the endpoints are
     // computed once here and kept beside the lines.
-    //
-    // minzoom 10 matches the resort labels, and for their reason: it keeps
-    // the markers off-screen until the map is genuinely zoomed in, rather
-    // than littering a country-scale view with flags on tracks a few
-    // pixels long. It is also the zoom at which a route's two ends are far
-    // enough apart to read as two markers.
-    ensureRouteMarkerImages();
+    drawing.ensureMarkerImages(map);
     map.addSource('route-endpoints', {
       type: 'geojson',
       data: routeEndpointsFor(geojson),
     });
-    map.addLayer({
-      id: 'routes-endpoints',
-      type: 'symbol',
-      source: 'route-endpoints',
-      minzoom: 10,
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'icon-image': [
-          'case', ['==', ['get', 'role'], 'start'], ROUTE_START_ICON, ROUTE_END_ICON,
-        ],
-        // Both ends of a short track can sit close together, and the whole
-        // point of these markers is that BOTH are visible — MapLibre's
-        // default collision would silently drop one.
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-        // The dot is centred on its point; the flag hangs off a pole whose
-        // foot is the point, so it is anchored bottom-left.
-        'icon-anchor': [
-          'case', ['==', ['get', 'role'], 'start'], 'center', 'bottom-left',
-        ],
-      },
-    });
+    // The fits that frame a route — a share arrival (activateRoute) and a
+    // routes-panel row (pwaMapFocus) — have no cap, so the camera comes to
+    // rest far enough in for the transitions' minzoom. A tap frames
+    // nothing: the reader already chose the scale.
+    for (const layer of drawing.markLayers(drawingOptions)) map.addLayer(layer);
     // The lines were just added on top of everything, so lift the pin
     // layers back over them — a favourite star or a report flag sitting on
     // a route must stay visible and stay tappable (MARKER_EXCLUSION_LAYERS
@@ -3434,9 +3184,9 @@
    * The same recoloured start dot the trip page uses
    * (`static/js/trip_map.js`), from the same core and at the same size, so
    * the marker a reader saw on the trip page is the marker they find on the
-   * map. Registered under an id of its own rather than reusing
-   * ROUTE_START_ICON: that one is the START of a track, and a meeting point
-   * is not — they coincide often and mean different things.
+   * map. Registered under an id of its own rather than reusing the route
+   * drawing's start icon: that one is the START of a track, and a meeting
+   * point is not — they coincide often and mean different things.
    */
   const ensureTripMeetingImage = () => {
     const core = self.pwaRouteMarkersCore;

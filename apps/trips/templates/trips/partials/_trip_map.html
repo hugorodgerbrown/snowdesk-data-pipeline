@@ -212,7 +212,7 @@ Context:
         data-string="map-failed"
     >{% trans "The map couldn't be loaded. The route details above are unaffected." %}</span>
 </template>
-{# The renderer, then the three modules trip_map.js reads, then trip_map.js #}
+{# The renderer, then the modules trip_map.js reads, then trip_map.js #}
 {# itself. Deferred scripts run in DOCUMENT ORDER, so this listing IS the   #}
 {# dependency order and nothing here waits on a load event.                 #}
 {# The matching stylesheet is loaded from the including page's             #}
@@ -231,6 +231,12 @@ Context:
 {# classes come from slope_classes_core.js (SNOW-1073), read at parse time. #}
 <script defer src="{% static 'js/slope_classes_core.js' %}"></script>
 <script defer src="{% static 'js/route_slope_core.js' %}"></script>
+{# SNOW-1212: the route drawn as the map draws it — its legs              #}
+{# (route_legs_core.js) and the layers that paint them                    #}
+{# (route_drawing_core.js), after the slope core both read. trip_map.js     #}
+{# reads the drawing's source ids at its top level, so it comes after.     #}
+<script defer src="{% static 'js/route_legs_core.js' %}"></script>
+<script defer src="{% static 'js/route_drawing_core.js' %}"></script>
 {# SNOW-829: which basemap this reader gets, and whether it drew anything #}
 {# (window.pwaBasemapStyleCore). Read by trip_map.js at its top level, so #}
 {# document order is load-bearing here as it is for the three above.      #}

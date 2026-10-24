@@ -2,15 +2,18 @@
  * static/js/trip_map.js — the trip page's map and elevation profile
  * (SNOW-820).
  *
- * One MapLibre canvas: the trip's route drawn as a line, a marker where the
- * group meets, and the viewport fitted to the snapshot's own bbox. Beneath
+ * One MapLibre canvas: the trip's route drawn as the map draws it (its legs
+ * below z14, slope classes from z14 — `route_drawing_core.js`, SNOW-1212), a
+ * marker where the group meets, and the viewport fitted to the snapshot's
+ * own bbox, with +/− and cooperative gestures so the page still scrolls
+ * past it. Beneath
  * it, the same elevation profile a route popup draws on the map page — the
  * picture the distance and vertical figures summarise.
  *
  * ## What this module owns, and what it deliberately does not
  *
- * It owns ONE camera and ONE source, built from a payload the page already
- * holds (`#trip-map-payload`, written by `apps.trips.views._trip_map_payload`).
+ * It owns ONE camera and the route's and meeting point's sources, built
+ * from a payload the page already holds (`#trip-map-payload`, written by `apps.trips.views._trip_map_payload`).
  * It does not fetch anything, it registers no overlay with
  * `window.pwaMapOverlays`, and it never touches `window.snowdeskMapState` —
  * the map page's shared state belongs to the map page, and a trip page is a
@@ -34,11 +37,9 @@
  *
  * ## Colours
  *
- * Named constants mirroring `--color-route-line` and
- * `--color-route-line-casing` in `src/css/main.css`, kept in step with them
- * by hand — MapLibre paint properties cannot reference a CSS `@theme` token
- * at all, which is the same idiom and the same reason `map.js` states beside
- * its own copy of these two values.
+ * The route's are the shared drawing's, which names the tokens they mirror.
+ * The meeting dot is the route line's fuchsia, passed to the markers core
+ * as channels.
  *
  * ## The reader's own basemap (SNOW-829)
  *
@@ -63,8 +64,6 @@
  *   readPayload(doc)              → the parsed payload, or null
  *   fitBoundsFor(bounds)          → [[w, s], [e, n]], or null
  *   routeSourceData(payload)      → the LineString FeatureCollection
- *   routeSlopeSourceData(payload) → its per-segment slope collection
- *   isSlopeColoured(payload)      → whether the flat line is suppressed
  *   meetingSourceData(payload)    → the Point FeatureCollection
  *   installLayers(map, payload)   → adds the sources and layers (its test)
  *   profileFor(payload)           → the profile data, or null
@@ -85,11 +84,10 @@
   'use strict';
 
   /**
-   * The route line's two colours, named once. See the header for why they
-   * are literals here rather than reads of the stylesheet.
+   * The prefix the shared route drawing names this page's sources and
+   * layers with (`trip-route`, `trip-route-legs`, …).
    */
-  var ROUTE_LINE_COLOUR = '#c026d3';
-  var ROUTE_CASING_COLOUR = '#1a1916';
+  var ROUTE_PREFIX = 'trip-route';
 
   /** Padding, in pixels, around the fitted route. */
   var FIT_PADDING = 40;
@@ -177,63 +175,6 @@
       feature && feature.geometry && feature.geometry.coordinates;
     var usable = Array.isArray(coordinates) && coordinates.length > 1;
     return { type: 'FeatureCollection', features: usable ? [feature] : [] };
-  }
-
-  /**
-   * The MapLibre `step` expression painting a segment by its slope class
-   * — the core's own, shared with the map page (SNOW-962).
-   *
-   * @returns {Array<*>|string} The expression, or the flat route colour
-   *   when the core is unavailable and there is nothing to classify by.
-   */
-  function slopeColourExpression() {
-    var core = self.pwaRouteSlopeCore;
-    return core ? core.colourExpression() : ROUTE_LINE_COLOUR;
-  }
-
-  /**
-   * The trip's track as one LineString per sampled segment, following
-   * the track's own coordinates where the record carries `seams`
-   * (SNOW-1053).
-   *
-   * SNOW-962. The snapshot carries its own copy of the terrain record
-   * (`Trip.slope_samples`), and `route_slope_core.js` turns the wire form
-   * of it into the segments MapLibre paints — the same module, the same
-   * palette and the same three states the map page's routes layer uses,
-   * so one track reads identically on both surfaces.
-   *
-   * An empty collection whenever there is nothing to colour: no core
-   * loaded, or a trip nothing has sampled. Never null — `setData` throws
-   * on one.
-   *
-   * @param {?Object} payload
-   * @returns {Object} A FeatureCollection, possibly empty.
-   */
-  function routeSlopeSourceData(payload) {
-    var core = self.pwaRouteSlopeCore;
-    var feature = payload && payload.route;
-    if (!core || !feature) return { type: 'FeatureCollection', features: [] };
-    return { type: 'FeatureCollection', features: core.segmentFeatures(feature) };
-  }
-
-  /**
-   * Whether the trip's line is drawn segment by segment rather than flat.
-   *
-   * The flat line has to be SUPPRESSED when it is, or the two paint over
-   * each other and the route colour shows through at every butt-capped
-   * join — the same reason `map.js` filters its own flat layer on
-   * `['!', ['has', 'legs']]`.
-   *
-   * Asked of the produced segments rather than of the property, because
-   * the segments are what actually draw: with no core loaded the property
-   * is there and nothing is painted from it, and suppressing the flat
-   * line on that would leave the page with no track at all.
-   *
-   * @param {?Object} payload
-   * @returns {boolean} True when the slope layers will draw the track.
-   */
-  function isSlopeColoured(payload) {
-    return routeSlopeSourceData(payload).features.length > 0;
   }
 
   /**
@@ -356,7 +297,7 @@
   function ensureMeetingIcon(map) {
     if (!self.pwaRouteMarkersCore || map.hasImage(MEETING_ICON)) return;
     var core = self.pwaRouteMarkersCore;
-    // 0xc0, 0x26, 0xd3 — ROUTE_LINE_COLOUR's channels. The core owns the
+    // 0xc0, 0x26, 0xd3 — the route line's channels. The core owns the
     // pixels and takes the colour in, which is the split it documents.
     //
     // The core's return value is passed STRAIGHT to addImage, exactly as
@@ -371,96 +312,28 @@
   }
 
   /**
-   * Install the route line, its casing and the meeting marker.
+   * Install the route and the meeting marker.
    *
-   * Idempotent, guarded on the source, so a style reload cannot duplicate
-   * layers. The CASING IS ADDED FIRST so MapLibre paints it underneath: a
-   * single stroke is unreadable somewhere, and the dark under-stroke is
-   * what lets one line colour work over both a pale basemap and a dark
-   * one. The same install order and the same reasoning `map.js` states for
-   * its own routes layer.
+   * SNOW-1212: the route is the map page's own drawing
+   * (`route_drawing_core.js`): its legs below z14, slope classes from z14,
+   * the numbered transitions, the start dot and the finish flag. One track
+   * reads the same on the trip page as on the map. This page has nothing
+   * to put between the route's layers, so it hands the drawing the whole
+   * install.
+   *
+   * Idempotent, guarded on the route source, so a style reload cannot
+   * duplicate layers. The meeting marker goes on last, over the route it
+   * usually sits on.
    *
    * @param {Object} map A MapLibre map.
    * @param {?Object} payload
    * @returns {void}
    */
   function installLayers(map, payload) {
-    if (map.getSource('trip-route')) return;
-
-    map.addSource('trip-route', {
-      type: 'geojson',
-      data: routeSourceData(payload),
-    });
-    map.addLayer({
-      id: 'trip-route-casing',
-      type: 'line',
-      source: 'trip-route',
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': ROUTE_CASING_COLOUR,
-        'line-opacity': 0.55,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7, 16, 11],
-      },
-    });
-    // SNOW-962: the flat line is drawn only where the slope layers below
-    // will not. The casing above stays either way — it is what makes one
-    // stroke readable over both a pale basemap and a dark one, and that
-    // is as true of six colours as of one.
-    var coloured = isSlopeColoured(payload);
-    if (!coloured) {
-      map.addLayer({
-        id: 'trip-route-line',
-        type: 'line',
-        source: 'trip-route',
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color': ROUTE_LINE_COLOUR,
-          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
-        },
-      });
-    }
-
-    if (coloured) {
-      var slopeCore = self.pwaRouteSlopeCore;
-      map.addSource('trip-route-slopes', {
-        type: 'geojson',
-        data: routeSlopeSourceData(payload),
-      });
-      map.addLayer({
-        id: 'trip-route-slope-line',
-        type: 'line',
-        source: 'trip-route-slopes',
-        // `step` needs a number and an unknown segment has no class at
-        // all, so unknowns are excluded here rather than left to fall on
-        // the expression's first stop — which is the GENTLE colour, and
-        // painting unsurveyed ground as gentle is the one outcome this
-        // whole feature exists to prevent.
-        filter: ['!=', ['get', 'unknown'], true],
-        // Butt caps, not round: a round cap on a 25 m segment overlaps
-        // its neighbour and smears each colour a few metres into the next.
-        layout: { 'line-cap': 'butt', 'line-join': 'round' },
-        paint: {
-          'line-color': slopeColourExpression(),
-          // The same widths as the flat line: a sampled track and an
-          // unsampled one are the same object and must read as the same
-          // weight of thing.
-          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
-        },
-      });
-      map.addLayer({
-        id: 'trip-route-slope-unknown',
-        type: 'line',
-        source: 'trip-route-slopes',
-        filter: ['==', ['get', 'unknown'], true],
-        layout: { 'line-cap': 'butt', 'line-join': 'round' },
-        paint: {
-          'line-color': (slopeCore || {}).UNKNOWN_COLOUR || '#94a3b8',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
-          // In line-widths, so the dash keeps its proportions as the line
-          // thickens with zoom.
-          'line-dasharray': [2, 1.5],
-        },
-      });
+    if (map.getSource(ROUTE_PREFIX)) return;
+    var drawing = self.pwaRouteDrawingCore;
+    if (drawing) {
+      drawing.install(map, routeSourceData(payload), { prefix: ROUTE_PREFIX });
     }
 
     ensureMeetingIcon(map);
@@ -495,12 +368,14 @@
    * omission does not degrade the check — it disables it, and silently:
    * the blank-basemap notice and its switch-to-the-standard-map escape
    * hatch would simply stop appearing, on exactly the trips that have the
-   * omitted source. `trip-route-slopes` (SNOW-962) is installed only for
-   * a SAMPLED trip, which is the subset that would have lost the notice.
+   * omitted source. Since SNOW-1212 the route's five sources are the
+   * shared drawing's, so they are read off it rather than listed here.
    */
-  var OUR_SOURCE_IDS = [
-    'trip-route', 'trip-route-slopes', 'trip-meeting',
-  ];
+  var OUR_SOURCE_IDS = (function () {
+    var drawing = self.pwaRouteDrawingCore;
+    var ids = drawing ? drawing.sourceIds(ROUTE_PREFIX) : { route: ROUTE_PREFIX };
+    return Object.keys(ids).map(function (key) { return ids[key]; }).concat(['trip-meeting']);
+  })();
 
   /**
    * Read the {key: url} basemap catalogue the page emitted.
@@ -683,7 +558,17 @@
       bounds: camera || undefined,
       fitBoundsOptions: { padding: FIT_PADDING },
       attributionControl: { compact: true },
+      // SNOW-1212: a READING surface in a scrolling page. A one-finger
+      // drag (or a plain wheel) scrolls the page past the map, and two
+      // fingers (or ctrl + wheel) move it — MapLibre's cooperative
+      // gestures, which show the reader how. The meeting picker is the
+      // opposite case, a control, and stays fully interactive.
+      cooperativeGestures: true,
     });
+    // SNOW-1212: +/− for a reader who cannot pinch, or who would rather
+    // not learn the two-finger rule to zoom in on one stretch. No compass:
+    // the map never rotates, so there is nothing for it to reset.
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
     // Bound to the constructor's return rather than to a `load` handler:
     // `load` never fires when the basemap style fails to fetch, and a trip
@@ -703,12 +588,6 @@
     readPayload: readPayload,
     fitBoundsFor: fitBoundsFor,
     routeSourceData: routeSourceData,
-    // SNOW-962. Pure functions of the payload, and the pair that decides
-    // whether the flat line is drawn at all — a wrong answer there is
-    // either a track painted twice or no track at all, neither of which
-    // any server-side assertion can see.
-    routeSlopeSourceData: routeSlopeSourceData,
-    isSlopeColoured: isSlopeColoured,
     meetingSourceData: meetingSourceData,
     profileFor: profileFor,
     // SNOW-840. Writes into the DOM rather than returning a value, so it
@@ -722,8 +601,9 @@
     // and took the meeting marker out with it — a failure no assertion
     // about the payload arithmetic could ever have seen.
     ensureMeetingIcon: ensureMeetingIcon,
-    // SNOW-1019. Exported for its test: the one place that can show the
-    // fall-line arrows stay off this map.
+    // SNOW-1019 / SNOW-1212. Exported for its test: the one place that
+    // can show this map draws the route as the map does, and that the
+    // fall-line arrows stay off it.
     installLayers: installLayers,
     // SNOW-829. The catalogue read and the resolution built on it. The
     // arithmetic itself lives in `basemap_style_core.js` and is tested

@@ -144,6 +144,8 @@ interface Window {
   pwaRouteSlopeCore: any;
   /** static/js/route_legs_core.js — a saved route's leg lines and transitions. */
   pwaRouteLegsCore: any;
+  /** static/js/route_drawing_core.js — the route layers every map draws. */
+  pwaRouteDrawingCore: any;
   /** static/js/route_cursor_core.js — the cursor shared by the map and rails. */
   pwaRouteCursorCore: any;
   /** static/js/route_cursor_map_core.js — the route cursor placed on the map. */
