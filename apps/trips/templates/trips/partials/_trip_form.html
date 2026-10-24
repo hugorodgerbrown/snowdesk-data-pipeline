@@ -30,8 +30,11 @@ _trip_meeting_manual.html for the three cases that lost their control.
 THREE NUMBERED SECTIONS AND A FOOTER (SNOW-1215): 1 When (the day tiles
 and the time, _trip_when.html), 2 Where you meet (the picker), 3 Details
 (optional — the trip name, whose placeholder is the route's name, and the
-note, whose placeholder is an example). The footer stays in view and reads
-the plan back as it is chosen, beside Cancel and Create. The Plan page
+note, whose placeholder is an example). The footer reads the plan back as
+it is chosen, beside Cancel and Create, at the END of the form: it scrolls
+with the page like every other form's buttons. It floated (sticky) in the
+first build; nothing else in the product floats, and Hugo chose static
+(2026-10-24). The Plan page
 frames each section as a card; the trip page's "Edit this trip" is
 already inside one, so there the sections are divided by a rule instead.
 
@@ -91,10 +94,10 @@ Context:
         {% trans "Note for the group" as description_label %}
         {% include "includes/_form_field.html" with field=form.description label=description_label class_extra="mb-0" %}
     </section>
-    {# The plan read back beside the buttons, kept in view while the form #}
-    {# scrolls: the day, the time, the address and the day's level, each #}
-    {# as it is chosen (static/js/trip_form.js).                          #}
-    {% card_classes padding="px-4 py-3" extra="sticky bottom-3 z-10 flex items-center gap-3" as footer_classes %}
+    {# The plan read back beside the buttons: the day, the time, the      #}
+    {# address and the day's level, each as it is chosen                  #}
+    {# (static/js/trip_form.js). Static, not sticky — see the note above. #}
+    {% card_classes padding="px-4 py-3" extra="flex items-center gap-3" as footer_classes %}
     <div class="{{ footer_classes }}" data-testid="trip-form-footer">
         <div class="min-w-0 flex-1 text-xs" aria-live="polite">
             <p class="truncate font-medium text-text-1" data-trip-readback-when></p>

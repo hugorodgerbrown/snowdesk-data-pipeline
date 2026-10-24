@@ -29,8 +29,10 @@ SNOW-1215 restructured the Plan page (`trips:new`) and the trip page's
    its own copy because it needs the line as a variable to compose
    ("Shared with you · …"), which an include cannot hand back.
 3. **The form is three numbered sections and a footer:** 1 When, 2 Where
-   you meet, 3 Details (optional). The footer stays in view and reads the
-   plan back as it is chosen. The Plan page frames each section as a card.
+   you meet, 3 Details (optional). The footer reads the plan back as it
+   is chosen, beside Cancel and Create, at the end of the form. It is not
+   sticky: the first build floated it, nothing else in the product
+   floats, and Hugo chose a static footer (2026-10-24). The Plan page frames each section as a card.
    Inside the trip page's edit disclosure, which is already a card, a rule
    divides them instead (`framed`).
 4. **The day is chosen from tiles.** There are five tiles (today and the
