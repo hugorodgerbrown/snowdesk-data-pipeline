@@ -2,7 +2,7 @@
 name: map-surface
 description: Map zoom bands (REGION_SELECT_MAXZOOM), tap priority, overlay kinds, pwaMapOverlays, one bottom sheet, camera padding owner
 status: current
-last-reviewed: 2026-10-23
+last-reviewed: 2026-10-24
 ---
 
 # The map surface: zoom, taps and overlays
@@ -60,7 +60,12 @@ map click dispatcher"). It stops at the first rule that claims the tap:
 2. **On a marker** (favourite pin, report point or cluster, a route's line,
    legs or slope segments): the marker is activated. A route tap opens the
    route rail with the point placed where the line was hit; a tap on the
-   open route moves the point.
+   open route moves the point. The trip a `?trip=` / `?trip_share=`
+   arrival draws is a marker too, under the saved routes (SNOW-1213): it
+   opens the same rail on the trip's snapshot, read-only. The feature
+   carries no uuid, so the rail shows no "…" menu and fetches no terrain
+   rows, and the point is drawn on its own cursor layers
+   (`trip-route-cursor-*`), which no overlay switch hides.
 3. **On a weather symbol**: the weather sheet opens for that station.
 4. **A route is open**: the tap closes the route rail. On a resort pin it
    also opens that resort, as rule 5 would; anywhere else it does nothing

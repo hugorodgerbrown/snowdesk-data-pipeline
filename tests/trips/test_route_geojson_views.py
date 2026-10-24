@@ -324,6 +324,25 @@ class TestTheHeightsAreTheModels:
         assert ascent_m is not None and trip.ascent_m is not None
         assert ascent_m < trip.ascent_m
 
+    def test_the_map_endpoint_carries_the_route_drawing(self, client: Client) -> None:
+        """SNOW-1213: the map draws the trip's legs and opens its panel.
+
+        The slope record and the legs are the trip page's own, so the map
+        and the trip page draw one track the same way, and the legs index
+        the geometry sent beside them.
+        """
+        trip = _backside_trip()
+        client.force_login(trip.created_by)
+
+        response = client.get(reverse("trips:route_geojson", args=[trip.uuid]))
+
+        feature = _route_feature(response.json())
+        inline = _trip_map_payload(trip)["route"]["properties"]
+        assert feature["properties"]["legs"] == inline["legs"]
+        assert feature["properties"]["slope"] == inline["slope"]
+        last = feature["properties"]["legs"][-1]
+        assert last["point_to"] == len(feature["geometry"]["coordinates"]) - 1
+
     def test_the_inline_payload_serves_model_heights(self) -> None:
         """The trip page's own map reads the same series as the map's."""
         trip = _backside_trip()
