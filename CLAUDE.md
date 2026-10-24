@@ -771,6 +771,7 @@ Read these when working in the relevant area:
 | Manual testing scenarios | [`docs/testing-scenarios.md`](docs/testing-scenarios.md) |
 | Existing in-house packages to reuse | [`docs/useful-repos.md`](docs/useful-repos.md) |
 | Path to live (staging/production branch split, releases) | [`docs/deployment.md`](docs/deployment.md) |
+| Why pip-audit and npm audit run daily and on dependency changes, not on every PR (dependency-audit.yml, the required `Security audit` check as a skip, VERSION in the filter, the `dependency-audit` issue) | [`docs/decisions/dependency-audits-run-on-a-schedule-not-on-every-pr.md`](docs/decisions/dependency-audits-run-on-a-schedule-not-on-every-pr.md) |
 | Linear workflow (full lifecycle) | [`docs/linear-workflow.md`](docs/linear-workflow.md) |
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |
 | Page audits (what each public page says, does and promises) | [`docs/page-audits/README.md`](docs/page-audits/README.md) |

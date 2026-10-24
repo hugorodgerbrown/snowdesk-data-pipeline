@@ -387,9 +387,9 @@ test -f .env.example && cat .env.example
 
 Check:
 
-- **GitHub Actions workflows** (all ten: `ci.yml`, `lint-guards.yml`,
+- **GitHub Actions workflows** (all eleven: `ci.yml`, `lint-guards.yml`,
   `js.yml`, `e2e.yml`, `lighthouse.yml`, `offline-assurance.yml`,
-  `security-audit.yml`, `dependabot-auto-merge.yml`, `release.yml`,
+  `security-audit.yml`, `dependency-audit.yml`, `dependabot-auto-merge.yml`, `release.yml`,
   `release-sync.yml`): secrets via `${{ secrets.* }}` only, never
   literals; no `pull_request_target` with checkout of untrusted refs;
   third-party action versions pinned by SHA (or at least by exact
