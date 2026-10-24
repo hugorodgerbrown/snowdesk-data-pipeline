@@ -2332,6 +2332,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-testmon"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "coverage" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4d/1d/3e4230cc67cd6205bbe03c3527500c0ccaf7f0c78b436537eac71590ee4a/pytest_testmon-2.2.0.tar.gz", hash = "sha256:01f488e955ed0e0049777bee598bf1f647dd524e06f544c31a24e68f8d775a51", size = 23108, upload-time = "2025-12-01T07:30:24.76Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/61/55/ebb3c2f59fb089f08d00f764830d35780fc4e4c41dffcadafa3264682b65/pytest_testmon-2.2.0-py3-none-any.whl", hash = "sha256:2604ca44a54d61a2e830d9ce828b41a837075e4ebc1f81b148add8e90d34815b", size = 25199, upload-time = "2025-12-01T07:30:23.623Z" },
+]
+
+[[package]]
 name = "pytest-xdist"
 version = "3.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2856,6 +2869,7 @@ dev = [
     { name = "pytest-django" },
     { name = "pytest-playwright" },
     { name = "pytest-rerunfailures" },
+    { name = "pytest-testmon" },
     { name = "pytest-xdist" },
     { name = "ruff" },
     { name = "semgrep" },
@@ -2877,6 +2891,7 @@ e2e = [
     { name = "pytest-django" },
     { name = "pytest-playwright" },
     { name = "pytest-rerunfailures" },
+    { name = "pytest-testmon" },
     { name = "pytest-xdist" },
 ]
 lint = [
@@ -2894,6 +2909,7 @@ offline = [
     { name = "pytest-django" },
     { name = "pytest-playwright" },
     { name = "pytest-rerunfailures" },
+    { name = "pytest-testmon" },
     { name = "pytest-xdist" },
 ]
 sast = [
@@ -2907,6 +2923,7 @@ test = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-django" },
+    { name = "pytest-testmon" },
     { name = "pytest-xdist" },
 ]
 type = [
@@ -2919,6 +2936,7 @@ type = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-django" },
+    { name = "pytest-testmon" },
     { name = "pytest-xdist" },
     { name = "types-bleach" },
     { name = "types-defusedxml" },
@@ -2973,6 +2991,7 @@ dev = [
     { name = "pytest-django", specifier = ">=4.12.0,<5" },
     { name = "pytest-playwright", specifier = ">=0.7,<0.11" },
     { name = "pytest-rerunfailures", specifier = ">=16,<17" },
+    { name = "pytest-testmon", specifier = ">=2.2,<2.3" },
     { name = "pytest-xdist", specifier = ">=3.8.0,<4" },
     { name = "ruff", specifier = "==0.17.1" },
     { name = "semgrep", specifier = ">=1.171.0,<2" },
@@ -2994,6 +3013,7 @@ e2e = [
     { name = "pytest-django", specifier = ">=4.12.0,<5" },
     { name = "pytest-playwright", specifier = ">=0.7,<0.11" },
     { name = "pytest-rerunfailures", specifier = ">=16,<17" },
+    { name = "pytest-testmon", specifier = ">=2.2,<2.3" },
     { name = "pytest-xdist", specifier = ">=3.8.0,<4" },
 ]
 lint = [
@@ -3011,6 +3031,7 @@ offline = [
     { name = "pytest-django", specifier = ">=4.12.0,<5" },
     { name = "pytest-playwright", specifier = ">=0.7,<0.11" },
     { name = "pytest-rerunfailures", specifier = ">=16,<17" },
+    { name = "pytest-testmon", specifier = ">=2.2,<2.3" },
     { name = "pytest-xdist", specifier = ">=3.8.0,<4" },
 ]
 sast = [{ name = "semgrep", specifier = ">=1.171.0,<2" }]
@@ -3022,6 +3043,7 @@ test = [
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-cov", specifier = ">=7.1.0,<8" },
     { name = "pytest-django", specifier = ">=4.12.0,<5" },
+    { name = "pytest-testmon", specifier = ">=2.2,<2.3" },
     { name = "pytest-xdist", specifier = ">=3.8.0,<4" },
 ]
 type = [
@@ -3034,6 +3056,7 @@ type = [
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-cov", specifier = ">=7.1.0,<8" },
     { name = "pytest-django", specifier = ">=4.12.0,<5" },
+    { name = "pytest-testmon", specifier = ">=2.2,<2.3" },
     { name = "pytest-xdist", specifier = ">=3.8.0,<4" },
     { name = "types-bleach", specifier = ">=6.3.0.20260408,<7" },
     { name = "types-defusedxml", specifier = ">=0.7.0.20260504,<0.8" },

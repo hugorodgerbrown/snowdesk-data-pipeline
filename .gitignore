@@ -80,6 +80,9 @@ mediafiles/
 htmlcov/
 .coverage
 
+# pytest-testmon dependency map (SNOW-1221) — built by CI, never committed
+.testmondata*
+
 # Lighthouse CI
 .lighthouseci/
 
