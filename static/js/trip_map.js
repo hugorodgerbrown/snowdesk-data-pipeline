@@ -211,6 +211,9 @@
     return { type: 'FeatureCollection', features: usable ? [feature] : [] };
   }
 
+  /** An unsampled route's share midpoints, worked out once per feature. */
+  var MIDPOINTS = new WeakMap();
+
   /**
    * The profile's point as a place on the route, or null.
    *
@@ -237,7 +240,14 @@
     var legs = Array.isArray(props.legs) ? props.legs : [];
     var last = legs.length ? legs[legs.length - 1] : null;
     if (!last || !Number.isInteger(last.to)) return null;
-    var middle = core.shareMidpoints(coordinates, last.to + 1)[index];
+    var midpoints = MIDPOINTS.get(feature);
+    if (!midpoints) {
+      // Every share's midpoint at once, as map.js's bindRouteCursor does:
+      // shareMidpoints walks the whole line, and a drag asks per move.
+      midpoints = core.shareMidpoints(coordinates, last.to + 1);
+      MIDPOINTS.set(feature, midpoints);
+    }
+    var middle = midpoints[index];
     if (!middle) return null;
     return {
       type: 'Feature',

@@ -368,6 +368,32 @@ describe("cursorFeature — where the profile's point lands", () => {
     expect(first.properties.colour).toBeUndefined();
   });
 
+  it('works the shares out once per route, not once per move', () => {
+    const p = payload();
+    p.route.properties.legs = [
+      { i: 1, from: 0, to: 1, climbing: true, point_from: 0, point_to: 2 },
+    ];
+    // The core is frozen, so a counting stand-in takes its place.
+    const cursorCore = self.pwaRouteCursorMapCore;
+    let calls = 0;
+    self.pwaRouteCursorMapCore = {
+      ...cursorCore,
+      shareMidpoints: (...args) => {
+        calls += 1;
+        return cursorCore.shareMidpoints(...args);
+      },
+    };
+    try {
+      core.cursorFeature(p, 0);
+      core.cursorFeature(p, 1);
+      core.cursorFeature(p, 0);
+    } finally {
+      self.pwaRouteCursorMapCore = cursorCore;
+    }
+
+    expect(calls).toBe(1);
+  });
+
   it('answers null with no point placed, or nothing to place it on', () => {
     expect(core.cursorFeature(sampled([12, 34]), null)).toBeNull();
     expect(core.cursorFeature(payload(), 0)).toBeNull();
