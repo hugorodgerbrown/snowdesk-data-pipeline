@@ -73,6 +73,8 @@ from apps.public._component_fixtures import (
     RESORT_FORECAST_VARIANTS,
     RESORT_TILE_VARIANTS,
     RESORT_WHY_IT_MATTERS_VARIANTS,
+    ROUTE_META_LINE_VARIANTS,
+    ROUTE_PROFILE_VARIANTS,
     ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
@@ -1498,6 +1500,40 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_place_pin.html",
         variants=PLACE_PIN_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="route-profile",
+        label="Route profile",
+        description=(
+            "A route's elevation profile (SNOW-1215): one fill per leg, "
+            "climbing and descending in the route panel's two colours, "
+            "under one outline, with distance ticks along the foot — and, "
+            "where a point is placed, a cursor line with its elevation and "
+            "distance. One drawing on three surfaces: the map's route "
+            "panel, the Plan page's route card and the trip page. An "
+            "empty lane that static/js/route_profile.js draws into, so "
+            "this page shows the shell alone."
+        ),
+        kind="components",
+        partial="includes/_route_profile.html",
+        variants=ROUTE_PROFILE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="route-meta-line",
+        label="Route meta line",
+        description=(
+            "A route's figures in the routes list's format — '12.9km · "
+            "337m ↑ · 1906m ↓ · 2h51m' (SNOW-1215). The distance always; "
+            "ascent, descent and elapsed time each only when known, never "
+            "as zero. Text only: the caller owns the element. The Plan "
+            "page's route card and the trip page render it; the routes "
+            "row keeps its own copy because it composes the line."
+        ),
+        kind="components",
+        partial="includes/_route_meta_line.html",
+        variants=ROUTE_META_LINE_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

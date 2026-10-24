@@ -113,6 +113,7 @@ from apps.trips.services.participants import (
     join_trip,
     leave_trip_by_uuid,
 )
+from apps.trips.services.plan_days import plan_week
 from apps.trips.services.routes import already_saved, save_trip_route
 from apps.trips.services.shares import (
     TripShareTokenCollision,
@@ -333,6 +334,49 @@ def _basemap_context() -> dict[str, Any]:
     }
 
 
+def _plan_context(form: TripForm, points: list[list[float]]) -> dict[str, Any]:
+    """Return what the form's "When" section renders from (SNOW-1215).
+
+    The week of day tiles, with each day's danger level where a bulletin
+    rated it (``apps.trips.services.plan_days``), and the day the form
+    holds, as the tiles compare it. A day outside the week — a trip
+    planned further ahead, or an edited trip already past — is the "Other"
+    tile's, which then shows it.
+
+    Spread into the context at the form's four render sites, as
+    ``_what3words_context`` is, so none of them renders a week the others
+    do not.
+
+    Args:
+        form: The form being rendered, bound or unbound.
+        points: The track the trip is planned from, for its region.
+
+    Returns:
+        A dict with ``plan_week``, ``plan_date``, ``plan_other`` and
+        ``plan_other_date`` (that day as a date, for the tile to print).
+
+    """
+    week = plan_week(timezone.localdate(), points)
+    value = form["date"].value()
+    plan_date = (
+        value.isoformat() if isinstance(value, datetime.date) else str(value or "")
+    )
+    in_week = {day.date.isoformat() for day in week.days}
+    other = plan_date if plan_date and plan_date not in in_week else ""
+    try:
+        other_date = datetime.date.fromisoformat(other) if other else None
+    except ValueError:
+        # A bound form carrying a value that is not a day at all; the
+        # field's own error says so, and the tile shows nothing.
+        other_date = None
+    return {
+        "plan_week": week,
+        "plan_date": plan_date,
+        "plan_other": other,
+        "plan_other_date": other_date,
+    }
+
+
 def _what3words_context(request: HttpRequest) -> dict[str, Any]:
     """Return whether the ``what3words`` flag is active for this viewer.
 
@@ -491,6 +535,7 @@ def _picker_payload(
     latitude: float,
     longitude: float,
     slope_samples: dict[str, Any] | None = None,
+    distance_m: float | None = None,
 ) -> dict[str, Any]:
     """Build the payload ``static/js/trip_meeting_picker.js`` draws.
 
@@ -516,6 +561,8 @@ def _picker_payload(
         longitude: The pin's starting longitude.
         slope_samples: The track's slope record, so the picker draws the
             route's legs and slope classes as the map does (SNOW-1212).
+        distance_m: The route's length, which the Plan page's profile
+            scales its ticks to (SNOW-1215), as the map's panel does.
 
     Returns:
         A JSON-serialisable dict with ``route``, ``meeting`` and ``bounds``.
@@ -530,7 +577,10 @@ def _picker_payload(
         "route": {
             "type": "Feature",
             "geometry": {"type": "LineString", "coordinates": track},
-            "properties": drawing,
+            "properties": {
+                **drawing,
+                **({"distance_m": distance_m} if distance_m is not None else {}),
+            },
         },
         # Longitude first — GeoJSON axis order, as the marker's own
         # setLngLat takes it.
@@ -622,6 +672,24 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
     what3words_active = waffle.flag_is_active(request, "what3words")
     meeting_point_w3w = (
         fill_what3words(trip.meeting_point) if what3words_active else None
+    )
+    # The organiser's edit form, bound to nothing and prefilled from the
+    # trip. Built here rather than in the template because a form is
+    # Python; rendered only inside the ``is_organiser`` branch.
+    edit_form = (
+        TripForm(
+            initial={
+                "date": trip.date,
+                "start_time": trip.start_time,
+                "name": trip.name,
+                "description": trip.description,
+                "latitude": trip.meeting_point.latitude,
+                "longitude": trip.meeting_point.longitude,
+            },
+            route_name=trip.route_name,
+        )
+        if is_organiser
+        else None
     )
     return {
         "trip": trip,
@@ -727,25 +795,14 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
                 trip.meeting_point.latitude,
                 trip.meeting_point.longitude,
                 trip.slope_samples,
+                trip.distance_m,
             )
             if is_organiser
             else None
         ),
-        # The organiser's edit form, bound to nothing and prefilled from
-        # the trip. Built here rather than in the template because a form
-        # is Python; rendered only inside the ``is_organiser`` branch.
-        "edit_form": TripForm(
-            initial={
-                "date": trip.date,
-                "start_time": trip.start_time,
-                "name": trip.name,
-                "description": trip.description,
-                "latitude": trip.meeting_point.latitude,
-                "longitude": trip.meeting_point.longitude,
-            }
-        )
-        if is_organiser
-        else None,
+        "edit_form": edit_form,
+        # SNOW-1215: the edit form is the Plan page's form, week and all.
+        **(_plan_context(edit_form, trip.points) if edit_form is not None else {}),
         # Only the organiser's page wires the share controls, so only it
         # needs the templates. The public page gets empty strings rather
         # than a missing key, so a stray attribute renders as "" rather
@@ -809,12 +866,14 @@ def trip_new(request: HttpRequest) -> HttpResponse:
         initial={
             "date": timezone.localdate() + datetime.timedelta(days=1),
             "start_time": _DEFAULT_START_TIME,
-            "name": route.name,
             # Latitude first in the signature, longitude first in the
             # storage — see ``_trip_map_payload``.
             "latitude": first[1],
             "longitude": first[0],
-        }
+        },
+        # SNOW-1215: the route's name is the trip name's placeholder, not
+        # its value — a trip left unnamed is called after its route.
+        route_name=route.name or route.source_filename,
     )
     return render(
         request,
@@ -823,8 +882,14 @@ def trip_new(request: HttpRequest) -> HttpResponse:
             "form": form,
             "route": route,
             "picker_payload": _picker_payload(
-                route.points, route.bounds, first[1], first[0], route.slope_samples
+                route.points,
+                route.bounds,
+                first[1],
+                first[0],
+                route.slope_samples,
+                route.distance_m,
             ),
+            **_plan_context(form, route.points),
             **_basemap_context(),
             **_what3words_context(request),
         },
@@ -981,6 +1046,8 @@ def trip_create(request: HttpRequest) -> HttpResponse:
         # replace. Owner-scoped, and tolerant of a route that has since
         # gone: a missing payload costs the map, not the form.
         route = Route.objects.for_user(request.user).filter(uuid=route_uuid).first()
+        if route is not None:
+            form.name_after(route.name or route.source_filename)
         return render(
             request,
             "trips/partials/_trip_form.html",
@@ -993,6 +1060,7 @@ def trip_create(request: HttpRequest) -> HttpResponse:
                     route.bounds if route else [],
                     route.slope_samples if route else None,
                 ),
+                **_plan_context(form, route.points if route else []),
                 **_basemap_context(),
                 **_what3words_context(request),
             },
@@ -1083,6 +1151,8 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
         earliest_date=min(today, trip.date) if trip is not None else today,
     )
     if not form.is_valid():
+        if trip is not None:
+            form.name_after(trip.route_name)
         return render(
             request,
             "trips/partials/_trip_form.html",
@@ -1097,6 +1167,7 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
                     trip.bounds if trip else [],
                     trip.slope_samples if trip else None,
                 ),
+                **_plan_context(form, trip.points if trip else []),
                 **_basemap_context(),
                 **_what3words_context(request),
             },

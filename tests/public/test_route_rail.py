@@ -208,6 +208,7 @@ class TestTheRailShipsWithTheMap:
             for name in (
                 "route_cursor_core.js",
                 "route_rail_core.js",
+                "route_profile.js",
                 "route_point_card.js",
                 "route_rail.js",
                 "route_leader_core.js",
@@ -393,6 +394,7 @@ class TestTheActionsAreAMenu:
 # on desktop, locate, layers and routes on a phone (SNOW-1019 withdrew them
 # all, at every width).
 _MAP_CSS = Path(__file__).resolve().parents[2] / "static" / "css" / "map.css"
+_MAIN_CSS = Path(__file__).resolve().parents[2] / "src" / "css" / "main.css"
 _WITHDRAWN_ON_A_PHONE = (
     "season-ribbon",
     "map-utility-cluster",
@@ -579,9 +581,15 @@ class TestThePanelIsPinnedTopLeft:
         assert ".route-point-card" not in css
 
     def test_the_lane_hands_a_sideways_finger_to_the_scrub(self) -> None:
-        """2026-10-19: a sideways drag scrubs; an upward one still scrolls."""
-        css = _MAP_CSS.read_text(encoding="utf-8")
+        """2026-10-19: a sideways drag scrubs; an upward one still scrolls.
+
+        In the shared stylesheet since SNOW-1215, because the profile is
+        drawn on the Plan page and the trip page too, neither of which
+        loads map.css.
+        """
+        css = _MAIN_CSS.read_text(encoding="utf-8")
         assert "touch-action: pan-y" in dict(_rules(css))[".route-rail-lane"]
+        assert ".route-rail-lane" not in _MAP_CSS.read_text(encoding="utf-8")
 
 
 class TestTheComponentLibraryVariant:

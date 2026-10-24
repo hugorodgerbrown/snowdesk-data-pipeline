@@ -1,0 +1,47 @@
+{% load i18n components %}
+{% comment %}
+trips/partials/_trip_route_card.html — the Plan page's first card: the
+route the trip is planned from (SNOW-1215).
+
+Route first, because the route is the one thing the organiser has already
+chosen: its name, its figures in the routes list's meta-line format, and
+its profile drawn as the map's route panel draws it
+(includes/_route_profile.html). No point card and no menu — this page is
+for choosing a day and a place, not for reading terrain — and "Change"
+goes back to the routes panel on the map, where a route is chosen.
+
+The profile is drawn by static/js/trip_route_profile.js from the meeting
+picker's payload, which already carries the whole route; this card adds
+no second copy of the track to the page.
+
+Context:
+    route : Route — the source route.
+{% endcomment %}
+{% trans "Untitled route" as untitled_route %}
+{% firstof route.name route.source_filename untitled_route as route_label %}
+{% card padding="p-5" %}
+<div class="flex items-start justify-between gap-3">
+    <div class="min-w-0">
+        {% trans "Your route" as route_eyebrow %}
+        {% include "includes/_eyebrow.html" with text=route_eyebrow tag="h2" %}
+        <p class="mt-1 text-base font-semibold text-text-1 text-balance" data-testid="trip-new-route">
+            {{ route_label }}
+        </p>
+        {% with climb=route.climb %}
+            <p class="mt-1 font-mono text-meta text-text-2" data-testid="trip-new-route-meta">
+                {% include "includes/_route_meta_line.html" with distance_km=route.distance_km ascent_m=climb.ascent_m descent_m=climb.descent_m duration_hm=route.duration_hm only %}
+            </p>
+        {% endwith %}
+    </div>
+    {% url 'public:map' as map_url %}
+    <a
+        href="{{ map_url }}?panel=routes"
+        class="flex-none text-sm text-text-2 text-link"
+        data-testid="trip-new-change-route"
+    >{% trans "Change" %}</a>
+</div>
+<div class="mt-4" data-trip-route-profile data-payload="trip-meeting-payload" data-name="{{ route_label }}">
+    {% include "includes/_route_profile.html" only %}
+</div>
+{% endcard %}
+{% include "includes/_route_profile_strings.html" %}

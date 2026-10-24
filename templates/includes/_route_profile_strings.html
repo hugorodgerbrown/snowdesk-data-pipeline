@@ -1,0 +1,15 @@
+{% load i18n %}
+{% comment %}
+includes/_route_profile_strings.html — the copy static/js/route_profile.js
+writes, for a page that draws a route profile outside the map's route
+panel (SNOW-1215). The panel's own strings template carries the same three
+keys; the msgids are its, byte for byte, so they translate once.
+
+makemessages never scans static/js (see static/js/i18n_strings.js), so a
+literal there would ship as English to every locale.
+{% endcomment %}
+<template id="route-profile-strings-template">
+    <span data-string="unit-m">{% blocktrans %}%(value)s m{% endblocktrans %}</span>
+    <span data-string="unit-km">{% blocktrans %}%(value)s km{% endblocktrans %}</span>
+    <span data-string="lane-label">{% blocktrans %}Elevation profile of %(name)s{% endblocktrans %}</span>
+</template>

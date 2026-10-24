@@ -36,7 +36,11 @@
  * whose first caller this is); and the rail's menu. All the
  * arithmetic — tick step, meta line, where each leg's fill sits, the
  * point's figures — is
- * route_rail_core.js's, and all the copy is the partial's strings template.
+ * route_rail_core.js's, all the copy is the partial's strings template,
+ * and since SNOW-1215 the profile's drawing — the lane, its ticks, the
+ * cursor line and its readout — is route_profile.js's, the one drawing
+ * the Plan page and the trip page use too. What places the point stays
+ * here.
  *
  * ONE RAIL (SNOW-1065). The route's name as the title, its figures as the
  * subtitle in the routes list's meta-line format (`formatMetaLine`), then
@@ -145,9 +149,6 @@
   if (!rail) return;
   var mapEl = document.getElementById('map');
 
-  var SVG_NS = 'http://www.w3.org/2000/svg';
-  /** The space between the cursor line and its figures, px: clear of the dot. */
-  var READOUT_GAP_PX = 9;
   /** How far above or below the profile's top line a tap still counts, px. */
   var OUTLINE_TOLERANCE_PX = 20;
   /** How far a press must move sideways, px, before it scrubs. */
@@ -195,11 +196,12 @@
   var nameEl = rail.querySelector('[data-route-rail-name]');
   var metaEl = rail.querySelector('[data-route-rail-meta]');
   var lane = rail.querySelector('[data-route-rail-lane]');
-  var ticksEl = rail.querySelector('[data-route-rail-ticks]');
-  var readoutEl = rail.querySelector('[data-route-rail-readout]');
-  var dotEl = rail.querySelector('[data-route-rail-dot]');
-  var elevationEl = rail.querySelector('[data-route-rail-elevation]');
-  var distanceEl = rail.querySelector('[data-route-rail-distance]');
+  // SNOW-1215: the profile's drawing is route_profile.js's, shared with
+  // the Plan page and the trip page; the presses that place the point
+  // stay here.
+  var profileView = self.pwaRouteProfile
+    ? self.pwaRouteProfile.mount(rail, STRINGS)
+    : null;
   var actionsEl = rail.querySelector('[data-route-rail-actions]');
   var planTripEl = rail.querySelector('[data-route-rail-plan-trip]');
   var renameEl = rail.querySelector('[data-route-rename]');
@@ -242,26 +244,6 @@
   var current = { uuid: null, name: '' };
   /** The open route's own meta line. */
   var routeMeta = '';
-  /** The route's length a point's distance is a share of. */
-  var currentSpanM = 0;
-
-  /**
-   * Read a feature property that may arrive JSON-encoded.
-   *
-   * The routes cache holds real objects, but a feature MapLibre handed
-   * back stringifies nested properties, and a caller may pass either.
-   *
-   * @param {*} value
-   * @returns {*}
-   */
-  function readJson(value) {
-    if (typeof value !== 'string') return value;
-    try {
-      return JSON.parse(value);
-    } catch (_err) {
-      return null;
-    }
-  }
 
   /** @returns {string} The CSRF token the partial rendered. */
   function csrfToken() {
@@ -280,183 +262,12 @@
   }
 
   /**
-   * Create one SVG element with attributes.
-   *
-   * @param {string} tag
-   * @param {Object<string, string>} attrs
-   * @returns {SVGElement}
-   */
-  function svgEl(tag, attrs) {
-    var el = document.createElementNS(SVG_NS, tag);
-    Object.keys(attrs).forEach(function (key) {
-      el.setAttribute(key, attrs[key]);
-    });
-    return el;
-  }
-
-  /**
-   * Draw the lane: the leg fills, the outline, the tick marks, and the
-   * tick labels under it.
-   *
-   * @param {object} profile A readProfile result.
-   * @param {number} sampleCount N, the segments the legs index; 0 when
-   *   the route has no legs.
-   * @param {number} spanM The route's length for the tick labels.
-   */
-  function drawLane(profile, sampleCount, spanM) {
-    var core = self.pwaRouteRailCore;
-    var box = core.BOX;
-    lane.replaceChildren();
-    ticksEl.replaceChildren();
-    lane.setAttribute('viewBox', '0 0 ' + box.width + ' ' + box.height);
-    lane.setAttribute(
-      'aria-label',
-      interpolate(STRINGS['lane-label'], { name: current.name }),
-    );
-
-    var paths = core.legPaths(profile, legs, sampleCount, box);
-
-    paths.legs.forEach(function (fill) {
-      lane.appendChild(svgEl('path', {
-        d: fill.d,
-        class: 'route-rail-leg',
-        'data-climbing': fill.climbing ? 'true' : 'false',
-      }));
-    });
-
-    if (paths.outline) {
-      lane.appendChild(svgEl('path', {
-        d: paths.outline,
-        fill: 'none',
-        stroke: 'currentColor',
-        'stroke-width': '1.5',
-        'stroke-linejoin': 'round',
-        'vector-effect': 'non-scaling-stroke',
-        'pointer-events': 'none',
-      }));
-    }
-
-    if (!(spanM > 0)) return;
-    core.ticks(spanM, { m: STRINGS['unit-m'], km: STRINGS['unit-km'] }).forEach(
-      function (tick) {
-        var fraction = tick.d / spanM;
-        var x = (fraction * box.width).toFixed(2);
-        lane.appendChild(svgEl('line', {
-          x1: x,
-          x2: x,
-          y1: String(box.height - (tick.major ? 8 : 4)),
-          y2: String(box.height),
-          stroke: 'currentColor',
-          'stroke-opacity': tick.major ? '0.5' : '0.25',
-          'vector-effect': 'non-scaling-stroke',
-          'pointer-events': 'none',
-          class: 'text-text-3',
-        }));
-        if (!tick.label) return;
-        var label = document.createElement('span');
-        // The first label hangs right of its tick and the rest are centred
-        // on theirs, so "0 km" is not cut off at the rail's left edge. None
-        // wraps: an absolute box near the right edge shrinks to the space
-        // left, which broke "15 km" over two lines on a phone.
-        label.className = fraction === 0
-          ? 'absolute top-0 whitespace-nowrap'
-          : 'absolute top-0 -translate-x-1/2 whitespace-nowrap';
-        label.style.left = (fraction * 100).toFixed(3) + '%';
-        label.textContent = tick.label;
-        ticksEl.appendChild(label);
-      },
-    );
-  }
-
-  /**
-   * Draw the cursor index as a vertical line across the lane (SNOW-1019),
-   * with its dot and its figures (2026-10-02).
-   *
-   * Placed by share, the rule the leg fills follow: sample i owns the
-   * i-th of N shares, and the line sits at its middle. Hidden — removed —
-   * while the index is null.
+   * Draw the cursor index on the profile, or clear it.
    *
    * @param {?number} index The cursor index.
    */
   function drawCursorLine(index) {
-    var line = lane.querySelector('[data-route-rail-cursor]');
-    if (index === null || index === undefined || !(sampleCount > 0)) {
-      if (line) line.remove();
-      paintReadout(null);
-      return;
-    }
-    var box = self.pwaRouteRailCore.BOX;
-    if (!line) {
-      line = svgEl('line', {
-        'data-route-rail-cursor': '',
-        y1: '0',
-        y2: String(box.height),
-        stroke: 'currentColor',
-        'stroke-width': '1.5',
-        'vector-effect': 'non-scaling-stroke',
-        'pointer-events': 'none',
-        class: 'text-text-1',
-      });
-      lane.appendChild(line);
-    }
-    var x = (((index + 0.5) / sampleCount) * box.width).toFixed(2);
-    line.setAttribute('x1', x);
-    line.setAttribute('x2', x);
-    paintReadout(index);
-  }
-
-  /**
-   * Place the dot and the two figures for the cursor index, or hide them.
-   *
-   * The dot sits where the line crosses the outline (`profileY`); a point
-   * on a stretch with no elevation gets no dot and no elevation, and still
-   * its distance. The figures go right of the line, left-aligned, unless
-   * they would not fit before the lane's right edge (`readoutSide`).
-   *
-   * @param {?number} index The cursor index; null to hide.
-   */
-  function paintReadout(index) {
-    if (!readoutEl) return;
-    var core = self.pwaRouteRailCore;
-    if (index === null || !(sampleCount > 0) || !currentProfile) {
-      readoutEl.hidden = true;
-      return;
-    }
-    var units = { m: STRINGS['unit-m'], km: STRINGS['unit-km'] };
-    var fraction = (index + 0.5) / sampleCount;
-    var percent = fraction * 100;
-    var elevation = core.pointElevation(currentProfile, index, sampleCount, units);
-    var distance = core.pointDistance(index, sampleCount, currentSpanM, units);
-    var y = core.profileY(currentProfile, fraction * currentProfile.distanceM);
-
-    elevationEl.textContent = elevation || '';
-    elevationEl.hidden = !elevation;
-    distanceEl.textContent = distance || '';
-    distanceEl.hidden = !distance;
-    dotEl.hidden = y === null;
-    if (y !== null) {
-      dotEl.style.left = percent.toFixed(3) + '%';
-      dotEl.style.top = ((y / core.BOX.height) * 100).toFixed(3) + '%';
-    }
-    readoutEl.hidden = false;
-
-    // Measured once shown, so the widths are the rendered ones.
-    var laneWidth = lane.getBoundingClientRect().width;
-    var widest = Math.max(
-      elevationEl.getBoundingClientRect().width,
-      distanceEl.getBoundingClientRect().width,
-    );
-    var side = core.readoutSide(fraction * laneWidth, laneWidth, widest, READOUT_GAP_PX);
-    readoutEl.setAttribute('data-side', side);
-    [elevationEl, distanceEl].forEach(function (label) {
-      if (side === 'right') {
-        label.style.left = 'calc(' + percent.toFixed(3) + '% + ' + READOUT_GAP_PX + 'px)';
-        label.style.right = '';
-      } else {
-        label.style.right = 'calc(' + (100 - percent).toFixed(3) + '% + ' + READOUT_GAP_PX + 'px)';
-        label.style.left = '';
-      }
-    });
+    if (profileView) profileView.cursor(index);
   }
 
   /**
@@ -529,25 +340,6 @@
   }
 
   /**
-   * How many segments the open route's cursor runs over.
-   *
-   * `slope.angles` when the route has been sampled; otherwise the legs'
-   * own extent, since they tile the segments exactly (the last `to` is
-   * N − 1). Zero when there is neither.
-   *
-   * @param {?{angles?: Array}} slope The feature's parsed `slope`.
-   * @param {Array<{to: number}>} wireLegs The feature's parsed `legs`.
-   * @returns {number}
-   */
-  function sampleCountOf(slope, wireLegs) {
-    if (slope && Array.isArray(slope.angles) && slope.angles.length) {
-      return slope.angles.length;
-    }
-    var last = wireLegs.length ? wireLegs[wireLegs.length - 1] : null;
-    return last && Number.isInteger(last.to) ? last.to + 1 : 0;
-  }
-
-  /**
    * Seat a pending share's Save control, or empty the slot.
    *
    * @param {?Node} node The control map.js built, or null.
@@ -570,9 +362,8 @@
    * @returns {boolean} Whether the rail opened.
    */
   function open(feature, options) {
-    var profileCore = self.pwaElevationProfileCore;
     var railCore = self.pwaRouteRailCore;
-    if (!feature || !profileCore || !railCore) return false;
+    if (!feature || !self.pwaElevationProfileCore || !railCore || !profileView) return false;
     var props = feature.properties || {};
 
     if (unsubscribe) unsubscribe();
@@ -588,10 +379,10 @@
     // (the server builds both with one function), and the point card reads
     // its terrain from it — so it is read for both. The map's rule that a
     // pending line draws no slope is the map's alone.
-    var slope = readJson(props.slope);
-    var wireLegs = readJson(props.legs);
-    legs = Array.isArray(wireLegs) ? wireLegs : [];
-    sampleCount = sampleCountOf(slope, legs);
+    var read = self.pwaRouteProfile.read(feature);
+    var slope = read.slope;
+    legs = read.legs;
+    sampleCount = read.sampleCount;
     if (sampleCount > 0 && self.pwaRouteCursorCore) {
       cursor = self.pwaRouteCursorCore.createRouteCursor(sampleCount);
       unsubscribe = cursor.subscribe(paintState);
@@ -601,8 +392,7 @@
     }
 
     var coordinates = feature.geometry && feature.geometry.coordinates;
-    var profile = profileCore.readProfile(Array.isArray(coordinates) ? coordinates : []);
-    var spanM = typeof props.distance_m === 'number' ? props.distance_m : profile.distanceM;
+    var profile = read.profile;
 
     nameEl.textContent = current.name;
     routeMeta = railCore.formatMetaLine(
@@ -616,8 +406,7 @@
     );
     if (metaEl) metaEl.textContent = routeMeta;
     currentProfile = profile;
-    currentSpanM = spanM;
-    drawLane(profile, sampleCount, spanM);
+    profileView.draw(profile, legs, sampleCount, read.spanM, current.name);
     // SNOW-1064: the point header follows the rail's cursor.
     if (window.pwaRoutePointCard) {
       if (cursor) {
@@ -663,7 +452,6 @@
     legs = [];
     sampleCount = 0;
     currentProfile = null;
-    currentSpanM = 0;
     routeMeta = '';
     fillClaim(null);
     paintPointMode(null);

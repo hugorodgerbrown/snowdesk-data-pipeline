@@ -1,0 +1,161 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_when.html — the Plan form's "When": the day as seven
+tiles and an "Other", then the meeting time (SNOW-1215).
+
+THE WEATHER DAY PICKER'S PATTERN (includes/_weather_day_picker.html), so
+the two week strips in the product read alike: a white tile per day, and
+the checked one marked by an accent border AND a marker bar under it —
+two channels, neither of which moves the tile. Never a black fill, which
+is what the native date field this replaces looked like on an iPad once a
+day was picked. Each input/label pair has its own wrapper for the reason
+that partial gives: ``peer-checked:`` is the general sibling combinator,
+and the wrapper bounds it to one pair.
+
+THE RADIOS ARE THE FIELD. Every tile is a ``name="date"`` radio whose value
+is its day, so the form posts a day with no script at all. "Other" is a
+radio too; its value is whatever day static/js/trip_form.js last read off
+the native date input laid over the tile, which opens the system's own
+date picker. A day already outside the week — a trip planned further out,
+or an edited trip already past — arrives checked on "Other", which shows it.
+
+THE DANGER LEVEL, WHEN THERE IS ONE. A tile shows the route region's
+level for its day as a compact ``.danger-tile`` when a bulletin rated
+that day (apps/trips/services/plan_days.py), and an empty slot of the same
+height otherwise, so the tiles never change height. Most days have none —
+a bulletin covers today, and tomorrow once the evening issue is out —
+and that is the intended reading, not a gap.
+
+The line under the tiles names the checked day, and its region and level
+when there are any. One per tile is rendered; the script shows the checked
+tile's, and the server shows it first, so it reads without the script.
+
+Context:
+    form       : TripForm.
+    plan_week  : PlanWeek — the seven days and the region.
+    plan_date  : str — the form's day, ISO, or "".
+    plan_other : str — that day when it is outside the week, else "".
+    plan_other_date : date or None — the same day, to print.
+{% endcomment %}
+<fieldset class="trip-day-picker" data-trip-days>
+    <legend class="sr-only">{% trans "Day" %}</legend>
+    <div class="grid grid-cols-8 gap-1">
+        {% for day in plan_week.days %}
+            {% with iso=day.date|date:"Y-m-d" %}
+                <div data-day-cell="{{ forloop.counter0 }}">
+                    <input
+                        type="radio"
+                        name="date"
+                        value="{{ iso }}"
+                        id="trip-day-{{ forloop.counter0 }}"
+                        class="peer sr-only"
+                        {% if iso == plan_date %}checked{% endif %}
+                    >
+                    <label
+                        for="trip-day-{{ forloop.counter0 }}"
+                        class="flex cursor-pointer flex-col items-center gap-1 rounded-card border border-border bg-card px-0.5 py-2 peer-checked:border-accent peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
+                        data-testid="trip-day"
+                        data-date="{{ iso }}"
+                        {% if forloop.first %}aria-current="date"{% endif %}
+                    >
+                        <span class="font-mono text-meta uppercase tracking-normal text-text-3 sm:tracking-widest">
+                            {% if forloop.first %}
+                                {% trans "Today" %}
+                            {% else %}
+                                {{ day.date|date:"D" }}
+                            {% endif %}
+                        </span>
+                        <span class="text-base font-semibold text-text-1">{{ day.date|date:"j" }}</span>
+                        <span class="flex h-5 items-center">
+                            {% if day.rating %}
+                                <span
+                                    class="danger-tile danger-tile--compact"
+                                    data-level="{{ day.rating }}"
+                                    data-testid="trip-day-rating"
+                                    title="{{ day.rating_label }}"
+                                >{{ day.digit }}</span>
+                            {% endif %}
+                        </span>
+                        <span class="weather-day-marker h-1 w-5 rounded-pill bg-transparent" aria-hidden="true"></span>
+                    </label>
+                </div>
+            {% endwith %}
+        {% endfor %}
+        {# Other: any later day, from the system's own date picker. #}
+        <div data-day-cell="other" class="relative">
+            <input
+                type="radio"
+                name="date"
+                value="{{ plan_other }}"
+                id="trip-day-other"
+                class="peer sr-only"
+                data-day-other
+                {% if plan_other %}checked{% endif %}
+            >
+            <label
+                for="trip-day-other"
+                class="flex h-full cursor-pointer flex-col items-center gap-1 rounded-card border border-border bg-card px-0.5 py-2 peer-checked:border-accent peer-focus-visible:ring-2 peer-focus-visible:ring-ring-selected"
+                data-testid="trip-day-other"
+            >
+                <span
+                    class="font-mono text-meta uppercase tracking-normal text-text-3 sm:tracking-widest"
+                >{% trans "Other" %}</span>
+                <span class="flex h-6 items-center text-text-2" data-day-other-label>
+                    {% if plan_other %}
+                        <span
+                            class="text-sm font-semibold text-text-1"
+                        >{{ plan_other_date|date:"j M"|default:plan_other }}</span>
+                    {% else %}
+                        {% include "includes/_icon_calendar.html" with size=18 %}
+                    {% endif %}
+                </span>
+                <span class="h-5" aria-hidden="true"></span>
+                <span class="weather-day-marker h-1 w-5 rounded-pill bg-transparent" aria-hidden="true"></span>
+            </label>
+            <template data-day-other-blank>
+                {% include "includes/_icon_calendar.html" with size=18 %}
+            </template>
+            {# The system date picker, laid over the tile so a tap on it #}
+            {# opens the picker itself. Unnamed: the radio above is what #}
+            {# posts; trip_form.js copies a picked day into it.          #}
+            {% trans "Pick another day" as other_label %}
+            <input
+                type="date"
+                data-day-other-input
+                aria-label="{{ other_label }}"
+                value="{{ plan_other }}"
+                min="{{ plan_week.first|date:'Y-m-d' }}"
+                class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            >
+        </div>
+    </div>
+    {% for error in form.date.errors %}<p class="mt-1.5 text-xs text-form-error">{{ error }}</p>{% endfor %}
+    {# The checked day, in words. #}
+    <div class="mt-2 text-xs text-text-2" aria-live="polite">
+        {% for day in plan_week.days %}
+            {% with iso=day.date|date:"Y-m-d" %}
+                <p
+                    data-day-caption="{{ iso }}"
+                    data-short="{{ day.date|date:'D j M' }}"
+                    data-rating="{{ day.rating_label }}"
+                    {% if iso != plan_date %}hidden{% endif %}
+                >
+                    {% if day.rating %}
+                        {% blocktrans trimmed with weekday=day.date|date:"l" region=plan_week.region.name level=day.rating_label %}
+                            {{ weekday }} · {{ region }} · <strong
+                                class="font-semibold text-text-1"
+                            >{{ level }}</strong>
+                        {% endblocktrans %}
+                    {% else %}
+                        {{ day.date|date:"l j F" }}
+                    {% endif %}
+                </p>
+            {% endwith %}
+        {% endfor %}
+        <p data-day-caption="other" {% if not plan_other %}hidden{% endif %}>
+            {% if plan_other %}{{ plan_other_date|date:"l j F"|default:plan_other }}{% endif %}
+        </p>
+    </div>
+</fieldset>
+{% trans "Meeting time" as start_time_label %}
+{% include "includes/_form_field.html" with field=form.start_time label=start_time_label class_extra="mt-4 max-w-44" %}

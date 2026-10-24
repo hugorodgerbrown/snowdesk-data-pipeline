@@ -1,0 +1,53 @@
+{% comment %}
+includes/_route_profile.html — a route's elevation profile: the lane the
+map's route panel draws (SNOW-1215).
+
+ONE PROFILE, THREE PAGES. The map's route panel (_route_rail.html), the
+Plan page's route card and the trip page all render this markup, and
+static/js/route_profile.js draws into it: one fill per leg, climbing and
+descending in the rail's two colours, under one outline, with distance
+ticks along the foot. Before SNOW-1215 the trip pages drew a profile of
+their own, in one colour and with no ticks, so a route read differently
+while planning from how it read on the map.
+
+EMPTY UNTIL DRAWN. The lane is an <svg> the script fills; the tick labels,
+the cursor's dot and its two figures are HTML over and under it, because
+the lane is stretched with `preserveAspectRatio="none"`, which would squash
+a circle or a glyph. The readout is hidden until a point is placed — on
+the map only, for now; the Plan page draws no point.
+
+The `data-route-rail-*` hooks keep the names the panel gave them; the
+panel's own presses read the same lane.
+
+The strings the script reads (`unit-m`, `unit-km`, `lane-label`) are the
+including surface's to render — the panel's strings template carries
+them, and _route_profile_strings.html carries them for a page.
+
+Context:
+    height_class : str, optional — the lane's height. Defaults to "h-20",
+                   the panel's.
+{% endcomment %}
+<div class="min-w-0">
+    <div class="relative">
+        <svg
+            data-route-rail-lane
+            role="group"
+            preserveAspectRatio="none"
+            class="route-rail-lane block {{ height_class|default:'h-20' }} w-full text-route-line"
+        >
+        </svg>
+        <div
+            data-route-rail-readout
+            hidden
+            class="route-rail-readout pointer-events-none absolute inset-0 font-mono text-meta text-text-1"
+        >
+            <span
+                data-route-rail-dot
+                class="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-pill border-2 border-text-1 bg-route-line"
+            ></span>
+            <span data-route-rail-elevation class="absolute top-0 whitespace-nowrap leading-none"></span>
+            <span data-route-rail-distance class="absolute bottom-0.5 whitespace-nowrap leading-none"></span>
+        </div>
+    </div>
+    <div data-route-rail-ticks aria-hidden="true" class="relative h-4 font-mono text-meta text-text-3"></div>
+</div>

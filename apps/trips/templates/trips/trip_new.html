@@ -33,18 +33,15 @@ one. It is also behind auth, so no unfurler will ever reach it.
     {% include "trips/partials/_trip_basemaps.html" %}
     <main class="{% page_shell_classes %}">
         {% trans "Plan a trip" as page_heading %}
-        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" data_testid="trip-new-heading" %}
-        {% trans "Untitled route" as untitled_route %}
-        {% firstof route.name route.source_filename untitled_route as route_label %}
-        <p class="mb-6 text-text-2" data-testid="trip-new-route">
-            {% blocktrans trimmed with name=route_label %}
-                Using your route “{{ name }}”.
-            {% endblocktrans %}
-        </p>
-        {% card padding="p-6" %}
-        {% url 'public:map' as trip_cancel_url %}
-        {% include "trips/partials/_trip_form.html" with form=form route_uuid=route.uuid cancel_url=trip_cancel_url %}
-        {% endcard %}
+        {% include "includes/_page_title.html" with text=page_heading class_extra="mb-5" data_testid="trip-new-heading" %}
+        {# SNOW-1215: the route first, then the form in three numbered      #}
+        {# sections, each its own card, and a footer that reads the plan   #}
+        {# back. The route card replaces the "Using your route" line.      #}
+        <div class="flex flex-col gap-5">
+            {% include "trips/partials/_trip_route_card.html" with route=route %}
+            {% url 'public:map' as trip_cancel_url %}
+            {% include "trips/partials/_trip_form.html" with form=form route_uuid=route.uuid cancel_url=trip_cancel_url framed=True %}
+        </div>
     </main>
 {% endblock content %}
 
@@ -81,4 +78,13 @@ one. It is also behind auth, so no unfurler will ever reach it.
     {# the route. The picker reads it as it starts, so it loads first. #}
     <script defer src="{% static 'js/meeting_place_core.js' %}"></script>
     <script defer src="{% static 'js/trip_meeting_picker.js' %}"></script>
+    {# SNOW-1215: the route card's profile, drawn as the map's route       #}
+    {# panel draws it — the profile reader, the panel's pure half and the  #}
+    {# shared drawing, then the page's own caller — and the form's day     #}
+    {# tiles and the footer that reads the plan back.                      #}
+    <script defer src="{% static 'js/elevation_profile_core.js' %}"></script>
+    <script defer src="{% static 'js/route_rail_core.js' %}"></script>
+    <script defer src="{% static 'js/route_profile.js' %}"></script>
+    <script defer src="{% static 'js/trip_route_profile.js' %}"></script>
+    <script defer src="{% static 'js/trip_form.js' %}"></script>
 {% endblock extra_js %}
