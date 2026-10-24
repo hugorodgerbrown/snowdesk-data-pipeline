@@ -30,6 +30,7 @@ from tests.factories import (
     MicroRegionFactory,
     ResortFactory,
     ResortLocationFactory,
+    TripFactory,
     UserFactory,
 )
 
@@ -400,6 +401,29 @@ class TestLocationQuerySetActive:
         favourite = FavouriteFactory.create()
 
         assert list(Location.objects.active()) == [favourite.location]
+
+    def test_an_upcoming_trips_meeting_point_is_active(self) -> None:
+        """SNOW-1217: the trip page shows the forecast where the group meets.
+
+        Today counts as upcoming — the group reads it that morning.
+        """
+        today = timezone.localdate()
+        ahead = TripFactory.create(date=today + datetime.timedelta(days=3))
+        on_the_day = TripFactory.create(date=today)
+
+        active = set(Location.objects.active())
+
+        assert ahead.meeting_point in active
+        assert on_the_day.meeting_point in active
+        assert ahead.meeting_point not in set(Location.objects.public())
+
+    def test_a_past_trips_meeting_point_is_excluded(self) -> None:
+        """Once the day has passed there is nothing left to forecast."""
+        trip = TripFactory.create(
+            date=timezone.localdate() - datetime.timedelta(days=1)
+        )
+
+        assert trip.meeting_point not in set(Location.objects.active())
 
     def test_an_observation_only_location_is_excluded(self) -> None:
         """A field report must never mint a billable forecast.

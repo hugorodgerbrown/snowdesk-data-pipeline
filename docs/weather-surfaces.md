@@ -28,6 +28,8 @@ restoration.
 | Resort forecast strip ([`apps/public/templates/public/partials/_resort_forecast.html`](../apps/public/templates/public/partials/_resort_forecast.html)) | the resort's BASE / MID / TOP `ResortLocation`, the pin standing in for Base | today and the six days after it |
 | Location forecast page ([`apps/public/templates/public/location_weather.html`](../apps/public/templates/public/location_weather.html)) | one `Location` | `?date=` or today |
 | Map overlay ([`static/js/map.js`](../static/js/map.js)) | every `Location.objects.public()` | the scrubbed date |
+| Plan page day tiles ([`apps/trips/templates/trips/partials/_trip_when.html`](../apps/trips/templates/trips/partials/_trip_when.html)) | the nearest `public()` location with a row today, within 15 km of the route's start (`nearest_weather`) | each tile's day, today and the four after it |
+| Trip page forecast line ([`apps/trips/templates/trips/partials/_trip_weather.html`](../apps/trips/templates/trips/partials/_trip_weather.html)) | `Trip.meeting_point`, fetched while the trip is ahead (`meeting_point_weather`) | the trip's day |
 
 The first three are server-rendered; the map overlay is a GeoJSON feed and a
 MapLibre symbol layer, plus a tap sheet

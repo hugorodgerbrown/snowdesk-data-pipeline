@@ -52,8 +52,10 @@ Three rules follow, and they are the whole decision:
    `.order_by("-fetched_at").first()`.
 
 **The fetch is one walk over `Location.objects.active()`** — a location
-reachable from a `ResortLocation`, a `MicroRegion.centroid_location` or a
-`Favourite`, and explicitly *not* one reachable only from a
+reachable from a `ResortLocation`, a `MicroRegion.centroid_location`, a
+`Favourite` or an upcoming trip's meeting point (SNOW-1217, see
+[a-plan-borrows-a-forecast-a-trip-has-its-own](a-plan-borrows-a-forecast-a-trip-has-its-own.md)),
+and explicitly *not* one reachable only from a
 `FieldObservation`. One shared queryset method, because the map feed asks
 the same question and two implementations would drift until a private pin
 leaked into a public feed.

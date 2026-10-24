@@ -14,8 +14,22 @@ import datetime
 import pytest
 
 from apps.bulletins.models import RegionDayRating
-from apps.trips.services.plan_days import PLAN_DAYS, PlanDay, plan_week, trip_danger
-from tests.factories import MicroRegionFactory, RegionDayRatingFactory
+from apps.trips.services.plan_days import (
+    PLAN_DAYS,
+    PlanDay,
+    plan_week,
+    trip_danger,
+    with_weather,
+)
+from apps.trips.services.trip_weather import meeting_point_weather
+from tests.factories import (
+    LocationFactory,
+    MicroRegionFactory,
+    RegionDayRatingFactory,
+    TripFactory,
+    WeatherFactory,
+    forecast_days,
+)
 
 TODAY = datetime.date(2026, 10, 24)
 
@@ -133,6 +147,38 @@ class TestTripDanger:
 
         assert trip_danger(TODAY, [[9.9, 47.9, 0.0]]) is None
         assert trip_danger(TODAY, []) is None
+
+
+@pytest.mark.django_db
+class TestWithWeather:
+    """``with_weather`` — each tile's forecast (SNOW-1217)."""
+
+    def test_each_tile_in_the_window_takes_its_day(self) -> None:
+        """The forecast reaches two days here; the rest keep none."""
+        location = LocationFactory.create()
+        WeatherFactory.create(
+            location=location, observed_on=TODAY, forecast=forecast_days(TODAY, [73])
+        )
+        weather = meeting_point_weather(
+            TripFactory.create(date=TODAY, meeting_point=location), TODAY
+        )
+
+        week = with_weather(plan_week(TODAY, []), weather)
+
+        assert week.weather is weather
+        assert [day.weather is not None for day in week.days] == [
+            True,
+            True,
+            False,
+            False,
+            False,
+        ]
+
+    def test_no_forecast_point_leaves_the_week_alone(self) -> None:
+        """No point near enough: the same week back."""
+        week = plan_week(TODAY, [])
+
+        assert with_weather(week, None) is week
 
 
 class TestPlanDay:

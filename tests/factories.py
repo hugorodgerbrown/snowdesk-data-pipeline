@@ -1032,6 +1032,47 @@ class WeatherFactory(factory.django.DjangoModelFactory[Weather]):
     forecast = factory.LazyFunction(list)
 
 
+def forecast_days(
+    first: datetime.date, codes: list[int], snow: list[float] | None = None
+) -> list[dict[str, Any]]:
+    """Return ``forecast[]`` entries for the days after ``first`` (SNOW-1217).
+
+    One entry per code, in the shape ``fetch_weather_for_location`` writes:
+    day ``n`` is ``first + n`` (from 1), a high of ``4 - n``°, a low of
+    ``-5 - n``°, daylight 07:40–18:20 at UTC+2, and the given new snow
+    (none by default).
+
+    Args:
+        first: The row's own day; the entries start the day after.
+        codes: One WMO weather code per forward day.
+        snow: New snow per forward day, cm; zeros when omitted.
+
+    Returns:
+        The entries, ready for ``WeatherFactory.create(forecast=…)``.
+
+    """
+    offset = datetime.timezone(datetime.timedelta(hours=2))
+    entries = []
+    for n, code in enumerate(codes, start=1):
+        day = first + datetime.timedelta(days=n)
+        entries.append(
+            {
+                "date": day.isoformat(),
+                "sunrise": datetime.datetime.combine(
+                    day, datetime.time(7, 40), offset
+                ).isoformat(),
+                "sunset": datetime.datetime.combine(
+                    day, datetime.time(18, 20), offset
+                ).isoformat(),
+                "weather_code": code,
+                "temperature_2m_max": 4.0 - n,
+                "temperature_2m_min": -5.0 - n,
+                "snowfall_sum": (snow or [0.0] * len(codes))[n - 1],
+            }
+        )
+    return entries
+
+
 # SNOW-1043: a short track and a slope record whose model heights disagree
 # with it — the shape of a drifting altimeter, small enough to work by
 # hand. The track is 0.001° of meridian (about 111 m) recorded from 2100 m

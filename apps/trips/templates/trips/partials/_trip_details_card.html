@@ -24,6 +24,11 @@ for Saturday on a Tuesday has no level to show until Friday evening, and
 the card then has no strip rather than a "no bulletin yet" placeholder.
 _trip_danger.html says what the line holds.
 
+THE FORECAST LINE SITS ABOVE IT (SNOW-1217), on the same strip, and is
+the one a reader sees most: the forecast reaches a week ahead where a
+bulletin reaches a day. It is absent only until the meeting point's first
+fetch, or while the day is more than a week out.
+
 Why the route-sentence fallback (never the coordinate, SNOW-1214), the link
 and the "no place name" rule are the way they are:
 includes/_three_word_address.html says all three.
@@ -36,6 +41,8 @@ Context:
                             when there is no address (``_meeting_place``).
     trip_danger           : TripDanger|None — the day's level on the route's
                             start (apps.trips.services.plan_days).
+    trip_weather          : ForecastPanelDay|None — the day's forecast at
+                            the meeting point (SNOW-1217).
 {% endcomment %}
 {% card padding="p-0" extra="overflow-hidden" %}
 <dl class="grid grid-cols-2 gap-x-4.5 gap-y-4 p-4.5" data-testid="trip-summary">
@@ -57,9 +64,14 @@ Context:
         </dd>
     </div>
 </dl>
-{% if trip_danger %}
-    <div class="border-t border-border bg-card-subtle px-4.5 py-3">
-        {% include "trips/partials/_trip_danger.html" with trip=trip danger=trip_danger only %}
+{% if trip_weather or trip_danger %}
+    <div class="flex flex-col gap-2.5 border-t border-border bg-card-subtle px-4.5 py-3">
+        {% if trip_weather %}
+            {% include "trips/partials/_trip_weather.html" with day=trip_weather only %}
+        {% endif %}
+        {% if trip_danger %}
+            {% include "trips/partials/_trip_danger.html" with trip=trip danger=trip_danger only %}
+        {% endif %}
     </div>
 {% endif %}
 {% endcard %}
