@@ -27,10 +27,9 @@
  *
  * ## What stays with the caller
  *
- * `map.js` interleaves layers of its own between these — the pending
- * share's teal dash and the route cursor sit over the lines and under the
- * marks — and decides which features the flat line draws, since only the
- * map page has pending routes. So the definitions come back in two
+ * `map.js` interleaves layers of its own between these — the route
+ * cursor sits over the lines and under the marks. So the definitions
+ * come back in two
  * ordered groups, `lineLayers` and `markLayers`, and the caller adds them.
  * The two trip pages have nothing to interleave and call `install`, which
  * adds the sources and both groups in one go.

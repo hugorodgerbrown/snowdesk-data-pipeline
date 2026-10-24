@@ -2,7 +2,7 @@
 name: site-structure
 description: Public route map — two documents (bulletin, /weather/<short_id>/), the map, /resorts/ and /resorts/<slug>/; SNOW-795 redirects; partials
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-10-24
 ---
 
 # Snowdesk site structure
@@ -63,7 +63,7 @@ prefixes depend on this ordering — don't reorder
 | `/offline/` | `offline_page` | What this device holds offline — the content report, the reset control and the sync log. Public since SNOW-930 ([`decisions/what-this-device-holds-is-a-public-page.md`](decisions/what-this-device-holds-is-a-public-page.md)). |
 | `/favourites/<uuid>/` | redirect | Permanent 301 to the pin's weather page (SNOW-800); 404 for a pin with no location, and for a non-owner. |
 | `/observations/` | redirect | Permanent 301 to `/map/?panel=reports` — the map with the reports sheet open (SNOW-804). |
-| `/routes/s/<token>/` | `routes.views.share_redirect` | A route's share link: follows the token onto the map, where the route is drawn dashed until the recipient claims it ([`decisions/route-share-pending-claim-in-session.md`](decisions/route-share-pending-claim-in-session.md)). |
+| `/routes/s/<token>/` | `routes.views.share_redirect` | A route's share link: follows the token onto the map, where the route is drawn like any other until the recipient claims it from its panel ([`decisions/route-share-pending-claim-in-session.md`](decisions/route-share-pending-claim-in-session.md)). |
 | `/trips/` | `trips.views.trip_list` | **The reader's own trips**, upcoming and past (SNOW-823). Scoped by participation, split against the trip's own date, and a trip dated today counts as upcoming. A LIST PAGE, which is an exception to [two-documents-and-a-map](decisions/two-documents-and-a-map.md) and argued there: a route and a favourite are indexed spatially and the map is that index, a trip is indexed temporally and the map has no index for that. Upcoming trips are CARDS carrying the day and time, the note, the distance/ascent/descent trio and the meeting point; past ones are rows on the subtle surface (SNOW-848). The header's "New trip" points at `/map/?panel=routes`, because a trip is planned from a route and `/trips/new/` 404s without one. Unpaginated; behind auth. |
 | `/trips/new/` | `trips.views.trip_new` | The authoring form for a trip planned from one of your own routes, named by `?route=<uuid>` (SNOW-820). A page rather than a fragment in the map's routes panel, whose body is re-cloned on every open. Since SNOW-1215: the route card first (name, meta line, the route panel's profile, Change → `/map/?panel=routes`), then 1 When (five day tiles plus Other, each showing the route region's danger level when a bulletin rated that day), 2 Where you meet, 3 Details, and a footer reading the plan back ([the-plan-page-reads-like-the-map](decisions/the-plan-page-reads-like-the-map.md)). Anonymous visitors redirect to sign-in. |
 | `/trips/s/<token>/` | `trips.views.trip_share_page` | **The page behind a trip's share link** (SNOW-821). Public, rate-limited on the (token, IP) key, `Cache-Control: no-store`. Renders the same summary and map the object page does; unknown, revoked and expired tokens are one 404. Emits the full sharing set AND `noindex` — unfurling as a card is the point of the link, being findable in search would defeat the token, and `Disallow: /trips/` in robots.txt would block the unfurlers themselves. |

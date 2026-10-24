@@ -104,9 +104,9 @@ const ROUTES_FC = {
       },
       properties: {
         // No uuid: a non-owner is never handed one. `_route_feature` is
-        // shared between the owned and pending branches, though, so a
-        // share DOES arrive carrying a slope record and legs — which is
-        // what makes "a pending share draws no legs" a real assertion.
+        // shared between the owned and pending branches, so a share
+        // arrives carrying a slope record and legs, and since SNOW-1218
+        // it is drawn from them exactly as an owned route is.
         token: 'tok-pending',
         pending: true,
         name: 'Shared with me',
@@ -226,7 +226,15 @@ function stubMapLibre() {
     addLayer: (def) => { layers.set(def.id, def); },
     removeLayer: (id) => layers.delete(id),
     removeSource: (id) => sources.delete(id),
-    moveLayer: () => {},
+    // MapLibre's paint order is the Map's insertion order here, so a move
+    // to the top is a delete and a re-insert (SNOW-1218's raise).
+    moveLayer: (id) => {
+      const def = layers.get(id);
+      if (!def) return;
+      layers.delete(id);
+      layers.set(id, def);
+    },
+    getLayersOrder: () => [...layers.keys()],
     setLayoutProperty: (id, prop, value) => {
       const layer = layers.get(id);
       if (layer) (layer.layout ||= {})[prop] = value;
@@ -378,14 +386,15 @@ describe('the leg source', () => {
     expect(sources.has('route-legs')).toBe(true);
   });
 
-  it('holds one line per leg of the owned legged route only', () => {
-    // The flat route has no legs and the pending share is drawn as a
-    // share, so both contribute nothing.
+  it('holds one line per leg of every legged route, the pending share too', () => {
+    // The flat route has no legs and contributes nothing. The pending
+    // share is drawn as any route is (SNOW-1218), named by its token.
     const data = sources.get('route-legs').data;
 
     expect(data.features.map((f) => f.properties)).toEqual([
       { uuid: 'sampled-route', i: 1, climbing: true, sampled: true },
       { uuid: 'sampled-route', i: 2, climbing: false, sampled: true },
+      { token: 'tok-pending', i: 1, climbing: true, sampled: true },
     ]);
   });
 });
@@ -394,17 +403,16 @@ describe('routes-line and its casing', () => {
   it('drop a legged route, so it is not painted flat underneath', () => {
     // The double-painting guard. `has` and not a test on the value: the
     // server omits `legs` entirely for a route it finds no leg in.
-    const flat = ['all', ['!=', ['get', 'pending'], true], ['!', ['has', 'legs']]];
+    // No test on `pending` either (SNOW-1218): a share is a route.
+    const flat = ['!', ['has', 'legs']];
 
     expect(layers.get('routes-line').filter).toEqual(flat);
-    expect(layers.get('routes-line-casing').filter)
-      .toEqual(['any', ['==', ['get', 'pending'], true], flat]);
+    expect(layers.get('routes-line-casing').filter).toEqual(flat);
   });
 
   it('draw the routes the leg layers do not, and only those', () => {
     expect(drawnBy('routes-line')).toEqual(['flat-route', 'stale-route']);
-    expect(drawnBy('routes-line-casing'))
-      .toEqual(['flat-route', 'tok-pending', 'stale-route']);
+    expect(drawnBy('routes-line-casing')).toEqual(['flat-route', 'stale-route']);
   });
 
   it('keep a route whose cached legs cannot be sliced, rather than lose it', () => {
@@ -425,9 +433,8 @@ describe('routes-line and its casing', () => {
     ]);
   });
 
-  it('leave the pending line alone — its dash carries a different fact', () => {
-    expect(layers.get('routes-line-pending').filter)
-      .toEqual(['==', ['get', 'pending'], true]);
+  it('have no pending line beside them (SNOW-1218)', () => {
+    expect(layers.has('routes-line-pending')).toBe(false);
   });
 });
 
@@ -457,13 +464,6 @@ describe('the leg layers', () => {
     expect(layers.get('routes-leg-casing').source).toBe('route-legs');
     expect(ids.indexOf('routes-leg-casing')).toBeLessThan(ids.indexOf('routes-leg-climb'));
     expect(ids.indexOf('routes-leg-casing')).toBeLessThan(ids.indexOf('routes-leg-descent'));
-  });
-
-  it('sit under a pending share, which carries the action', () => {
-    const ids = [...layers.keys()];
-
-    expect(ids.indexOf('routes-line-pending'))
-      .toBeGreaterThan(ids.indexOf('routes-leg-descent'));
   });
 
   it('are reached by the routes overlay switch', () => {
@@ -497,11 +497,14 @@ describe('the slope classes from z14', () => {
     expect(layers.get('routes-leg-casing').maxzoom).toBeUndefined();
   });
 
-  it('hold every segment of the owned sampled route, tagged with its leg', () => {
+  it('hold every segment of each sampled route, tagged with its leg', () => {
     const data = sources.get('routes-slopes').data;
 
-    expect(data.features.map((f) => [f.properties.uuid, f.properties.i])).toEqual([
+    expect(data.features.map((f) => [
+      f.properties.uuid || f.properties.token, f.properties.i,
+    ])).toEqual([
       ['sampled-route', 1], ['sampled-route', 2], ['sampled-route', 2],
+      ['tok-pending', 1], ['tok-pending', 1], ['tok-pending', 1],
     ]);
   });
 
@@ -512,11 +515,10 @@ describe('the slope classes from z14', () => {
     expect(layers.get('routes-slope-unknown').paint['line-color']).toBe(core.UNKNOWN_COLOUR);
   });
 
-  it('sit over the leg casing and under a pending share', () => {
+  it('sit over the leg casing', () => {
     const ids = [...layers.keys()];
 
     expect(ids.indexOf('routes-slope-line')).toBeGreaterThan(ids.indexOf('routes-leg-casing'));
-    expect(ids.indexOf('routes-line-pending')).toBeGreaterThan(ids.indexOf('routes-slope-unknown'));
   });
 
   it('open the route a tapped segment belongs to', () => {
@@ -689,25 +691,49 @@ describe('no leg selection (2026-10-02)', () => {
   });
 });
 
-describe('a sampled route somebody shared', () => {
-  it('draws no legs and no markers', () => {
-    for (const id of ['route-legs', 'route-transitions']) {
-      expect(sources.get(id).data.features.every((f) => f.properties.uuid === 'sampled-route'))
-        .toBe(true);
+describe('the route layers sit above the choropleth (SNOW-1218)', () => {
+  it('are lifted over a choropleth installed after them, in their own order', () => {
+    const routeIds = () => [...layers.keys()].filter((id) => id.startsWith('routes-'));
+    const before = routeIds();
+    // A share arrival installs the routes before the regions have loaded;
+    // the reinstall path adds the regions after them the same way.
+    layers.delete('regions-fill');
+    document.dispatchEvent(new Event('snowdesk:regions-reinstall'));
+
+    const ids = [...layers.keys()];
+    expect(ids).toContain('regions-fill');
+    for (const id of before) {
+      expect(ids.indexOf(id)).toBeGreaterThan(ids.indexOf('regions-fill'));
+      expect(ids.indexOf(id)).toBeGreaterThan(ids.indexOf('regions-label'));
     }
+    expect(routeIds()).toEqual(before);
+  });
+});
+
+describe('a sampled route somebody shared (SNOW-1218)', () => {
+  it('is drawn as its legs, like a route you own', () => {
+    const legs = sources.get('route-legs').data.features
+      .filter((f) => f.properties.token === 'tok-pending');
+
+    expect(legs).toHaveLength(1);
+    expect(legs[0].properties).not.toHaveProperty('uuid');
   });
 
-  it('opens the rail with the cached pending share', () => {
-    tapLayer('routes-line-pending', {
-      token: 'tok-pending',
-      pending: true,
-      name: 'Shared with me',
-      bounds: JSON.stringify([9.0, 45.0, 9.0, 45.015]),
-    });
+  it('opens the rail with the cached pending share from a tapped leg', () => {
+    tapLayer('routes-leg-climb', { token: 'tok-pending', i: 1, climbing: true });
 
     const { feature } = rail.last();
     expect(feature.properties.token).toBe('tok-pending');
+    expect(feature.properties.name).toBe('Shared with me');
     expect(feature.geometry.coordinates.length).toBeGreaterThan(0);
+  });
+
+  it('opens it from a tapped slope segment too', () => {
+    rail.state.calls.length = 0;
+    tapLayer('routes-slope-line', { token: 'tok-pending', i: 1, slope_class: 3 });
+
+    expect(rail.state.calls).toHaveLength(1);
+    expect(rail.last().feature.properties.token).toBe('tok-pending');
   });
 });
 
@@ -725,7 +751,7 @@ describe('the first tap places the point on every kind of route (2026-10-02)', (
     const cursor = globalThis.pwaRouteCursorCore.createRouteCursor(3);
     rail.state.cursor = cursor;
 
-    tapLayer('routes-line-pending', { token: 'tok-pending', pending: true }, { x: 2, y: 70 });
+    tapLayer('routes-leg-climb', { token: 'tok-pending', i: 1, climbing: true }, { x: 2, y: 70 });
 
     expect(rail.last().feature.properties.token).toBe('tok-pending');
     expect(cursor.state().index).toBe(1);
@@ -790,7 +816,7 @@ describe('the route cursor on the map (SNOW-1019)', () => {
     const routeLayers = window.snowdeskMapState.overlayLayers.routes;
 
     const id = 'routes-cursor-point';
-    expect(ids.indexOf(id)).toBeGreaterThan(ids.indexOf('routes-line-pending'));
+    expect(ids.indexOf(id)).toBeGreaterThan(ids.indexOf('routes-slope-unknown'));
     expect(routeLayers).toContain(id);
     expect(layers.get(id).layout.visibility).toBe('visible');
     expect(layers.get(id).type).toBe('circle');

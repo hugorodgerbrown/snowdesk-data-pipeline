@@ -4,12 +4,10 @@
  * Three things the map has to get right about a route somebody sent you,
  * none of which needs a browser:
  *
- *   THE LINE LOOKS DIFFERENT. A pending route is drawn by its own layer,
- *   dashed and in a different hue, and the two line layers carry
- *   complementary filters so one route is never drawn twice. The filters
- *   are the part worth pinning: an owned feature omits `pending` entirely,
- *   so `['==', ..., false]` would match nothing and every owned route
- *   would vanish.
+ *   THE LINE LOOKS THE SAME (SNOW-1218). A pending route was drawn by its
+ *   own layer, dashed and in teal, until 2026-10-24. It is drawn by the
+ *   layers an owned route is, with no filter on `pending`, so the shared
+ *   route reads exactly as the sharer's does.
  *
  *   THE TAP OFFERS SAVE. The deep link lands on the map, so what a tap
  *   opens is where the recipient meets the action — the routes panel is a
@@ -88,7 +86,7 @@ const LINE_Y = 16;
 
 /** The pending route as a tapped (tile-clipped) feature. */
 const PENDING_FEATURE = {
-  layer: { id: 'routes-line-pending' },
+  layer: { id: 'routes-line' },
   geometry: { type: 'LineString', coordinates: [[7.2, 46.0], [7.2, 46.04]] },
   properties: {
     token: SHARE_TOKEN,
@@ -175,7 +173,7 @@ function stubMapLibre() {
     unproject: () => ({ lng: 7, lat: 46 }),
     queryRenderedFeatures: (geometry, options) => {
       const layers = (options && options.layers) || [];
-      if (!layers.includes('routes-line-pending')) return [];
+      if (!layers.includes('routes-line')) return [];
       if (Array.isArray(geometry)) {
         const [[, y1], [, y2]] = geometry;
         const covers = Math.min(y1, y2) <= LINE_Y && LINE_Y <= Math.max(y1, y2);
@@ -310,7 +308,7 @@ beforeAll(async () => {
   loadMapBundle();
   for (const handler of mapStub.handlers.load || []) await handler();
 
-  // Populates routesGeojsonCache and installs the three line layers.
+  // Populates routesGeojsonCache and installs the line layers.
   await window.pwaRoutesOverlay.show();
   // The share link waits for the routes source to load; the stub's source
   // loads silently, so say so the way MapLibre would.
@@ -351,49 +349,20 @@ describe('arriving on a share link frames the route', () => {
   });
 });
 
-describe('the pending route layer', () => {
-  it('is installed as a third line layer', () => {
-    expect(addedLayers['routes-line-pending']).toBeDefined();
-    expect(addedLayers['routes-line-pending'].source).toBe('routes');
+describe('the pending route is drawn like any other (SNOW-1218)', () => {
+  it('has no line layer of its own', () => {
+    expect(addedLayers['routes-line-pending']).toBeUndefined();
   });
 
-  it('draws it dashed, which is the colour-blind-safe half of the cue', () => {
-    expect(addedLayers['routes-line-pending'].paint['line-dasharray']).toBeDefined();
+  it('is not filtered off the flat line', () => {
+    // This suite boots without route_legs_core.js, so the flat line draws
+    // every route — the pending one included — with no filter at all.
+    expect(addedLayers['routes-line'].filter).toBeUndefined();
+    expect(addedLayers['routes-line-casing'].filter).toBeUndefined();
+  });
+
+  it('carries no dash, on any route line', () => {
     expect(addedLayers['routes-line'].paint['line-dasharray']).toBeUndefined();
-  });
-
-  it('draws it in a different colour from an owned route', () => {
-    expect(addedLayers['routes-line-pending'].paint['line-color']).not.toBe(
-      addedLayers['routes-line'].paint['line-color'],
-    );
-  });
-
-  it('gives the two layers complementary filters', () => {
-    // The bug this guards: an OWNED feature omits `pending` entirely, so
-    // ['==', ['get','pending'], false] matches nothing and every owned
-    // route disappears. The owned filter has to be a NOT-equal test.
-    //
-    // SNOW-910 wraps the owned side in an `all` with a second clause —
-    // sampled routes leave this layer for the slope ones — but ONLY when
-    // `route_slope_core.js` has loaded, since with no core there is
-    // nothing else to draw them. This suite boots without it, so the bare
-    // owned test is the whole filter here. The wrapped form is
-    // tests/js/test_map_route_slope_layers.js's subject and the
-    // conditionality is tests/js/test_map_route_slope_core_missing.js's;
-    // what is asserted here is still only the pending half.
-    expect(addedLayers['routes-line'].filter).toEqual([
-      '!=', ['get', 'pending'], true,
-    ]);
-    expect(addedLayers['routes-line-pending'].filter).toEqual([
-      '==', ['get', 'pending'], true,
-    ]);
-  });
-
-  it('adds it after the owned line, so a pending route draws on top', () => {
-    const ids = Object.keys(addedLayers);
-    expect(ids.indexOf('routes-line-pending')).toBeGreaterThan(
-      ids.indexOf('routes-line'),
-    );
   });
 });
 

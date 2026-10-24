@@ -2,7 +2,7 @@
 name: route-share-pending-claim-in-session
 description: An unclaimed RouteShare token lives in request.session, which is why route_list and routes_geojson answer an anonymous request
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-24
 ---
 
 # A pending route-share claim lives in the session (SNOW-764)
@@ -52,8 +52,9 @@ exactly what a signed-out recipient has not got.
 * **A pending feature carries the share token and no `uuid`.** The rename
   and delete endpoints are addressed by uuid and owner-scoped; handing a
   non-owner one would be giving out an identifier for somebody else's row.
-  `static/js/map.js` keys the pending line, its popup and its elevation
-  profile off `token` for that reason.
+  `static/js/map.js` keys the pending route's legs and slope segments, its
+  panel and its elevation profile off `token` for that reason. (Its own
+  dashed line went with SNOW-1218: it is drawn like any other route.)
 * **The pending list is per-browser, not per-account.** Two devices signed
   into one account do not share it. That is the correct scope — following a
   link is something a browser did — but it means a link opened on a phone

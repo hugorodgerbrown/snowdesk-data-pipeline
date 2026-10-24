@@ -227,10 +227,9 @@ const OVERLAY_LAYERS = Object.freeze({
   weather: ['weather-point'],
   // SNOW-687: the coloured line FIRST and the casing second — deliberately
   // the inverse of the order installRoutesLayer adds them in, where the
-  // casing has to be added first to paint underneath. SNOW-764's
-  // 'routes-line-pending' is NOT first either: a visitor holding only a
-  // pending share is the exception, not the case the roundel ring is
-  // painted from.
+  // casing has to be added first to paint underneath. (SNOW-764's
+  // 'routes-line-pending' went with SNOW-1218: a pending share is drawn by
+  // the same layers as an owned route.)
   // SNOW-910's two slope layers join on the same terms and after the flat
   // line: they are the same overlay, so the switch has to reach them, but
   // the roundel ring is still painted from the flat line's colour because
@@ -250,7 +249,7 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-964's two passage layers off the map, and out of this list: the
   // line carries no terrain marks.
   routes: [
-    'routes-line', 'routes-line-casing', 'routes-line-pending', 'routes-endpoints',
+    'routes-line', 'routes-line-casing', 'routes-endpoints',
     'routes-leg-casing', 'routes-leg-climb', 'routes-leg-descent',
     'routes-slope-line', 'routes-slope-unknown',
     'routes-transitions', 'routes-transition-labels',

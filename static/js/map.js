@@ -1148,7 +1148,35 @@
     'favourites-label',
     'favourites-pin',
   ];
+  // SNOW-1218: and a route's lines and marks sit above every polygon —
+  // the region choropleth, the problem-terrain fill, the bulletin
+  // groupings — and under the pins. A route is installed lazily too, and
+  // a share arrival installs it before the regions have loaded, which
+  // left the choropleth painted over the line. Lifted as one block in the
+  // order they are drawn, so the casing stays under its line and the
+  // cursor over both. Every layer either route drawing adds is named
+  // under one of these two prefixes (route_drawing_core.js's `prefix`).
+  const ROUTE_LAYER_PREFIXES = ['routes-', 'trip-route-'];
+  const raiseRouteLayers = () => {
+    // getLayersOrder is MapLibre's own paint order; a copy, so moving a
+    // layer while walking it is safe.
+    if (typeof map.getLayersOrder !== 'function') return;
+    const ids = map.getLayersOrder().filter(
+      (id) => ROUTE_LAYER_PREFIXES.some((prefix) => id.startsWith(prefix)),
+    );
+    for (const id of ids) map.moveLayer(id);
+  };
+  // The resort pins are lifted over the routes in turn: a pin is a mark
+  // the reader orients by, as the transitions and endpoints are, and a
+  // line drawn through it would hide it. They stay under the rest — see
+  // the note on MARKER_EXCLUSION_LAYERS for why a resort pin is not one
+  // of the markers that owns its tap.
+  const RESORT_PIN_LAYERS = ['resorts-pin', 'resorts-label'];
   const raiseMarkerLayers = () => {
+    raiseRouteLayers();
+    for (const id of RESORT_PIN_LAYERS) {
+      if (map.getLayer(id)) map.moveLayer(id);
+    }
     for (const id of ALWAYS_ON_TOP_MARKER_LAYERS) {
       if (map.getLayer(id)) map.moveLayer(id);
     }
@@ -2212,15 +2240,6 @@
   // would think to look for.
   const ROUTE_LINE_COLOUR = '#c026d3';
   const ROUTE_CASING_COLOUR = '#1a1916';
-  // SNOW-764: the pending (shared-with-you, not yet saved) line's own
-  // colour, mirroring --color-route-line-pending in src/css/main.css. A
-  // different HUE rather than a lighter fuchsia, because the distinction is
-  // categorical — "this one is not yours yet" — and a tint of the owned
-  // colour reads as the same thing seen through haze. Teal is far enough
-  // round the wheel to be unmistakable beside the fuchsia and is not in the
-  // EAWS danger palette, so a pending route can never be mistaken for a
-  // rating.
-  const ROUTE_PENDING_COLOUR = '#0d9488';
   // SNOW-1019: the route cursor's ink on the map. The cursor dot takes
   // the route line's own fuchsia with a white ring (mirroring
   // --color-card, the surface the rails are drawn on), so it reads over
@@ -2318,7 +2337,8 @@
    * `routeEndpointsFor` above: a load failure should cost the legs, not
    * the routes overlay. An empty collection is what the fallback has to
    * be — `setData` throws on a null — and it paints nothing, which leaves
-   * every route drawn by `routes-line` (see flatOwnedRouteFilter).
+   * every route drawn by `routes-line` (route_drawing_core.js's
+   * `flatFilter`).
    *
    * @param {?object} geojson The routes FeatureCollection.
    * @returns {{type: string, features: Array<object>}} A line
@@ -2346,8 +2366,7 @@
   };
 
   /**
-   * Whether any owned route in the current payload carries legs
-   * (SNOW-1017).
+   * Whether any route in the current payload carries legs (SNOW-1017).
    *
    * The legend's condition. Read off the payload rather than off the leg
    * source's feature count, on the reasoning SNOW-910's steepness key
@@ -2357,14 +2376,14 @@
    * A route whose legs the core cannot slice (an old cached payload) is
    * drawn flat, so it does not count.
    *
-   * @returns {boolean} True when at least one owned route has legs the
-   *   leg layers draw.
+   * @returns {boolean} True when at least one route has legs the leg
+   *   layers draw.
    */
   const anyRouteLegged = () => {
     const core = self.pwaRouteLegsCore;
     const features = (routesGeojsonCache && routesGeojsonCache.features) || [];
     return features.some(
-      (f) => f && f.properties && !f.properties.pending
+      (f) => f && f.properties
         && (core && core.hasDrawableLegs
           ? core.hasDrawableLegs(f)
           : Array.isArray(f.properties.legs) && f.properties.legs.length > 0),
@@ -2404,55 +2423,6 @@
     'snowdesk:overlay-visibility-changed', syncRouteLegLegend,
   );
 
-  // SNOW-764: which features each of the three route line layers draws.
-  //
-  // ``pending`` is present and true only on a share this session has
-  // followed and not yet claimed (apps/routes/views.py's routes_geojson).
-  // ``['!=', ['get', 'pending'], true]`` rather than ``['==', …, false]``
-  // because an OWNED feature omits the property entirely — ``get`` answers
-  // null for it, which is not equal to false either.
-  const OWNED_ROUTE_FILTER = ['!=', ['get', 'pending'], true];
-  const PENDING_ROUTE_FILTER = ['==', ['get', 'pending'], true];
-
-  // SNOW-1017: and which of the OWNED ones are drawn flat.
-  //
-  // A route that carries `legs` is painted leg by leg by `routes-leg-climb`
-  // and `routes-leg-descent` over the whole of its length, so it leaves
-  // BOTH flat layers. The line, because it would otherwise show through at
-  // every seam; the casing, because the legs carry a casing of their own
-  // that a selection dims (bindRouteCursor), and a per-route casing left
-  // underneath would keep a dimmed leg framed at full strength.
-  //
-  // ``['!', ['has', 'legs']]`` and not a test on the value: the server
-  // OMITS the property for a route it finds no leg in (a track with no
-  // elevation), so presence is exactly the question. SNOW-910 tested
-  // ``slope`` here; legs replaced the slope colours on the map, and a
-  // route has legs whether or not it has been sampled.
-  //
-  // The test runs against `routesSourceData`'s copy of the payload, not
-  // the server's: an overlay payload cached before SNOW-1017 carries
-  // `legs` without the point indices the core slices by, and the copy has
-  // `legs` removed from any route like that, so it stays on this layer
-  // rather than leaving it for leg layers that cannot draw it.
-  //
-  // `routes-line-pending` is deliberately NOT filtered, and the pending
-  // routes produce no legs at all (route_legs_core.js). A pending line's
-  // teal dash says "this one is not yours yet", which is the fact that
-  // matters about it and the only action it offers.
-  //
-  // A FUNCTION, called at layer-install time, and both halves of that
-  // matter. `routeLegsFor` falls back to an empty collection when
-  // `route_legs_core.js` failed to load, so with no core the leg layers
-  // draw NOTHING — and an unconditional exclusion here would then take
-  // every route off the flat layers as well. Excluding only when there is
-  // a core to do the painting means a route falls back to its ordinary
-  // fuchsia line, which is exactly what the guard promises.
-  //
-  // And it cannot be a module-level const testing the same thing, because
-  // the core is in home.html's DEFERRED call-site script group: at the
-  // moment this file is parsed it is not guaranteed to exist yet, so a
-  // const would bake in "no core" on a page where the core arrives a
-  // moment later.
   /**
    * The payload the `routes` source is given (SNOW-1017).
    *
@@ -2464,7 +2434,7 @@
    * in sample indices, which an old payload has.
    *
    * With no core the payload passes through as it is, and the filter is
-   * the owned-only one, so the flat line draws every owned route.
+   * null, so the flat line draws every route.
    *
    * @param {?object} geojson The routes FeatureCollection.
    * @returns {?object} The payload for the `routes` source.
@@ -2473,12 +2443,6 @@
     const core = self.pwaRouteLegsCore;
     return core && core.withDrawableLegs ? core.withDrawableLegs(geojson) : geojson;
   };
-
-  const flatOwnedRouteFilter = () => (
-    self.pwaRouteLegsCore
-      ? ['all', OWNED_ROUTE_FILTER, ['!', ['has', 'legs']]]
-      : OWNED_ROUTE_FILTER
-  );
 
   // Removes the map's subscription to the open route's cursor.
   let unsubscribeRouteCursor = null;
@@ -3069,8 +3033,7 @@
   };
 
   // SNOW-687: install the saved-routes layer — one GeoJSON source of
-  // LineStrings (routes:geojson), drawn as TWO ``line`` layers (three
-  // since SNOW-764 — see the pending one below).
+  // LineStrings (routes:geojson), drawn as TWO ``line`` layers.
   //
   // The casing is added FIRST so MapLibre paints it underneath: a wider,
   // translucent dark under-stroke, with the route colour over it. One
@@ -3091,15 +3054,14 @@
     // (route_drawing_core.js), which the trip page and the meeting picker
     // draw a route with too: the flat casing and line, the legs' own
     // casing, the climb and descent cores, and the slope classes from
-    // ROUTE_SLOPE_MINZOOM. The two flat filters are this page's — only
-    // the map has pending routes:
+    // ROUTE_SLOPE_MINZOOM.
     //
-    // SNOW-764: the flat line draws owned routes only. The pending ones
-    // get their own layer below so they can be painted differently;
-    // without the filter they would be drawn twice. SNOW-1017 narrows it
-    // again to the routes that carry no legs — see flatOwnedRouteFilter —
-    // and a legged route leaves the casing too, while the pending ones
-    // keep theirs.
+    // SNOW-1218: a pending share — followed, not yet saved — is drawn by
+    // the same layers as a route you own, in the same colours, so the
+    // flat filters are the drawing's own (`flatFilter`: a route that
+    // carries `legs` leaves the flat line and its casing). SNOW-764 drew
+    // it as a teal dash in a layer of its own; what says "this one is not
+    // yours yet" now is the panel's Save, not the line.
     //
     // The legs and their transitions are SNOW-1017's, replacing SNOW-910's
     // slope-coloured segments; the classes came back from z14 on
@@ -3116,8 +3078,6 @@
         endpoints: 'route-endpoints',
       },
       visible: overlayState.routes,
-      casingFilter: ['any', PENDING_ROUTE_FILTER, flatOwnedRouteFilter()],
-      lineFilter: flatOwnedRouteFilter(),
       textFont: overlayTextFont,
     };
     map.addSource('route-legs', {
@@ -3126,51 +3086,12 @@
     });
     map.addSource('routes-slopes', { type: 'geojson', data: routeSlopesFor(geojson) });
     for (const layer of drawing.lineLayers(drawingOptions)) map.addLayer(layer);
-    // SNOW-764: the shared-with-you line. A THIRD layer rather than a
-    // data-driven `line-color` on the one above, because the difference is
-    // not only colour: this line is DASHED, and `line-dasharray` is not a
-    // data-driven property in MapLibre — it cannot vary per feature, so a
-    // dashed subset needs a layer of its own.
-    //
-    // Dashed AND a different hue, deliberately both. The dash carries the
-    // meaning on its own for a colour-blind reader; the hue carries it at a
-    // zoom where a 1.5px dashed line and a 1.5px solid one are hard to tell
-    // apart. Neither is decoration: a route somebody sent you and a route
-    // you own support different actions, and the map has to say which is
-    // which before it is tapped.
-    //
-    // It is added AFTER the owned lines — the flat one and the legs — so a
-    // pending route drawn over one of your own is the one on top, which is
-    // right, because it is the one with an action attached.
-    map.addLayer({
-      id: 'routes-line-pending',
-      type: 'line',
-      source: 'routes',
-      filter: PENDING_ROUTE_FILTER,
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-        'line-cap': 'butt',
-        'line-join': 'round',
-      },
-      paint: {
-        'line-color': ROUTE_PENDING_COLOUR,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
-        // In line-widths, so the dash keeps its proportions as the line
-        // thickens with zoom. 'line-cap' is butt rather than round above
-        // for the same reason: round caps on a short dash close the gaps.
-        'line-dasharray': [2, 1.5],
-      },
-    });
     // SNOW-1019: the route cursor on the map — the cursor index as a dot
     // on the open route's line. Its own source, filled from module state
     // by paintRouteCursor, so a basemap re-install repaints the current
-    // index. Over every line layer, the pending one included; under the
-    // point marks installed after this, which the reader orients by.
-    // SNOW-1052 removed the highlighted stretch (`route-cursor-selection`)
-    // a rail selection drew here.
-    // SNOW-1019: the route cursor on the map, over every line layer, the
-    // pending one included, and under the point marks installed after
-    // this, which the reader orients by.
+    // index. Over every line layer; under the point marks installed after
+    // this, which the reader orients by. SNOW-1052 removed the highlighted
+    // stretch (`route-cursor-selection`) a rail selection drew here.
     installRouteCursorLayers(ROUTE_CURSOR_SOURCE, 'routes', overlayState.routes);
     syncRouteLegLegend();
 
@@ -8787,10 +8708,8 @@
     // and querying a second, wider layer as well would make that tolerance
     // whatever the casing's width happened to be.
     //
-    // SNOW-764: 'routes-line-pending' joins on the same terms and directly
-    // above the owned line, so a pending route drawn over one of your own
-    // takes the tap — it is the one carrying an action (Save) the user has
-    // not taken yet.
+    // SNOW-1218 took out SNOW-764's 'routes-line-pending': a pending
+    // share is drawn by these same layers now.
     //
     // SNOW-1017: and the two leg layers, alongside 'routes-line' rather
     // than instead of it (SNOW-910's slope layers held this place before
@@ -8810,7 +8729,6 @@
       'community-reports-clusters',
       'favourites-pin',
       'community-reports-point',
-      'routes-line-pending',
       'routes-leg-climb',
       'routes-leg-descent',
       'routes-slope-line',
@@ -8839,7 +8757,6 @@
     /** The exclusion layers that are lines rather than points (SNOW-764). */
     const ROUTE_LINE_LAYERS = [
       'routes-line',
-      'routes-line-pending',
       'routes-leg-climb',
       'routes-leg-descent',
       'routes-slope-line',
@@ -8889,12 +8806,10 @@
         [point.x + slop, point.y + slop],
       ];
       // Topmost first, which for overlapping routes is the one drawn last —
-      // the same one the user sees on top at the point they touched. Both
+      // the same one the user sees on top at the point they touched. The
       // line layers are queried in one call (SNOW-764) rather than in the
       // exclusion array's priority order, precisely so that "drawn last"
-      // decides: the pending layer is added above the owned one, so a
-      // pending route over one of your own wins without a second rule
-      // saying so.
+      // decides.
       return map.queryRenderedFeatures(box, { layers: lineLayers })[0] || null;
     };
 
@@ -9492,26 +9407,28 @@
      * The route feature one of its legs belongs to (SNOW-910, for the
      * slope segments that drew a route before SNOW-1017's legs).
      *
-     * A leg carries a uuid, its number and its direction and nothing else
+     * A leg carries its route's uuid — or, for a pending share, which a
+     * non-owner is never handed a uuid for, the share's token (SNOW-1218)
+     * — its number and its direction and nothing else
      * — the rail needs the name, the figures and the bbox, and copying
      * those onto every leg to save this lookup would be duplicated string
      * for a tap that happens once.
      *
      * Reads the same cache `activateRoute` hands the rail from, so a leg
-     * and the route it opens can never resolve to different routes. Owned
-     * routes only: a pending share produces no legs at all
-     * (route_legs_core.js), so there is no token branch here and no way
-     * for one to appear.
+     * and the route it opens can never resolve to different routes.
      *
-     * @param {?string} uuid The leg's route uuid.
+     * @param {?{uuid?: string, token?: string}} props The leg's properties.
      * @returns {?object} The route feature, or null if it is not in the
      *   cache — a deletion landing between the paint and the tap.
      */
-    const routeFeatureByUuid = (uuid) => {
-      if (!uuid || !routesGeojsonCache) return null;
+    const routeFeatureForLeg = (props) => {
+      const uuid = props && props.uuid;
+      const token = props && props.token;
+      if ((!uuid && !token) || !routesGeojsonCache) return null;
       const features = routesGeojsonCache.features || [];
       return features.find(
-        (f) => f && f.properties && f.properties.uuid === uuid,
+        (f) => f && f.properties
+          && (uuid ? f.properties.uuid === uuid : f.properties.token === token),
       ) || null;
     };
 
@@ -9557,8 +9474,7 @@
       });
       // SNOW-1019: follow the new cursor, so its index is drawn on the
       // line and a tap on the line moves it. A pending share has no uuid
-      // and is followed by its token (2026-10-02): it draws no legs, but
-      // its panel has a point like any other route's.
+      // and is followed by its token (2026-10-02).
       bindRouteCursor(props.pending
         ? { uuid: null, token: props.token || null }
         : { uuid: props.uuid || null, token: null });
@@ -9693,25 +9609,24 @@
           activateCommunityReport(feature);
           break;
         case 'routes-line':
-        case 'routes-line-pending':
           if (tapOpenRoute(feature, point)) break;
           activateRoute(feature);
           tapOpenRoute(feature, point);
           break;
         // SNOW-1017: a tap on a leg opens the route it belongs to (SNOW-910
-        // did the same for a slope segment). The leg carries the uuid and
-        // its number and nothing else — the rail needs the name, the
+        // did the same for a slope segment). The leg carries the uuid (a
+        // pending share's token, SNOW-1218) and its number and nothing else — the rail needs the name, the
         // figures and the bbox — so the route feature is looked up before
         // activation, and the point is placed once it is open. A miss is
         // silent: better no rail than a rail about the wrong route.
         case 'routes-leg-climb':
         case 'routes-leg-descent':
         // From z14 a sampled route is drawn by its slope segments, which
-        // carry the same uuid and resolve the same way.
+        // carry the same identity and resolve the same way.
         case 'routes-slope-line':
         case 'routes-slope-unknown': {
           if (tapOpenRoute(feature, point)) break;
-          const route = routeFeatureByUuid(feature.properties?.uuid);
+          const route = routeFeatureForLeg(feature.properties);
           if (!route) break;
           activateRoute(route);
           tapOpenRoute(feature, point);

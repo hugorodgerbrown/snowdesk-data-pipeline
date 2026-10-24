@@ -190,26 +190,28 @@ describe('segmentFeatures', () => {
     expect(features.every((f) => f.properties.uuid === 'abc')).toBe(true);
   });
 
-  it('produces nothing for a pending route, sampled or not', () => {
-    // A followed share's teal dash says "this one is not yours yet",
-    // which is the only action it offers. Recolouring it by steepness
-    // would spend the one line on a second message.
+  it('colours a pending route like any other, named by its token', () => {
+    // SNOW-1218: a shared route is drawn as the sharer's is. It has no
+    // uuid — a non-owner is never handed one — so its token is what a
+    // tap on a segment resolves it by.
     const features = core.segmentFeatures(
       sampled([31, 36], { token: 'tok123', pending: true }),
     );
 
-    expect(features).toEqual([]);
+    expect(features).toHaveLength(2);
+    for (const feature of features) {
+      expect(feature.properties.token).toBe('tok123');
+      expect(feature.properties).not.toHaveProperty('uuid');
+    }
   });
 
-  it('never puts a share token on a segment', () => {
-    // The corollary of the rule above: these layers hand their properties
-    // to a popup built for owners, so a non-owner's identifier must never
-    // reach one.
-    const features = core.segmentFeatures(sampled([31], { token: 'tok123' }));
+  it('names an owned route by its uuid alone, never a token too', () => {
+    const features = core.segmentFeatures(
+      sampled([31], { uuid: 'r1', token: 'tok123' }),
+    );
 
-    for (const feature of features) {
-      expect(feature.properties).not.toHaveProperty('token');
-    }
+    expect(features[0].properties.uuid).toBe('r1');
+    expect(features[0].properties).not.toHaveProperty('token');
   });
 
   it('tolerates a null feature', () => {
@@ -333,7 +335,7 @@ describe('segmentCollection', () => {
     expect(collection.features[0].properties.uuid).toBe('r2');
   });
 
-  it('skips the pending routes, which keep their own line', () => {
+  it('includes the pending routes, drawn like any other (SNOW-1218)', () => {
     const collection = core.segmentCollection({
       type: 'FeatureCollection',
       features: [
@@ -342,8 +344,9 @@ describe('segmentCollection', () => {
       ],
     });
 
-    expect(collection.features).toHaveLength(1);
-    expect(collection.features[0].properties.uuid).toBe('r2');
+    expect(collection.features).toHaveLength(2);
+    expect(collection.features[0].properties.token).toBe('tok');
+    expect(collection.features[1].properties.uuid).toBe('r2');
   });
 
   it('is a valid empty collection when nothing has been sampled', () => {

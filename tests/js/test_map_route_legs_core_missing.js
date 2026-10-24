@@ -231,18 +231,11 @@ afterAll(() => {
 
 describe('the routes layer with no legs core', () => {
   it('still draws a legged route, flat, over its casing', () => {
-    // Owned-only, and nothing about `legs`: with no core to paint the legs,
-    // the flat fuchsia line is the only thing that can draw this track.
-    expect(layers.get('routes-line').filter)
-      .toEqual(['!=', ['get', 'pending'], true]);
-    expect(layers.get('routes-line-casing').filter).toEqual([
-      'any', ['==', ['get', 'pending'], true], ['!=', ['get', 'pending'], true],
-    ]);
-  });
-
-  it('leaves the pending line alone, as it does with the core present', () => {
-    expect(layers.get('routes-line-pending').filter)
-      .toEqual(['==', ['get', 'pending'], true]);
+    // No filter at all: with no core to paint the legs, the flat fuchsia
+    // line is the only thing that can draw this track — and since
+    // SNOW-1218 a pending share is drawn by it too.
+    expect(layers.get('routes-line').filter).toBeUndefined();
+    expect(layers.get('routes-line-casing').filter).toBeUndefined();
   });
 
   it('paints empty leg and transition sources rather than throwing', () => {

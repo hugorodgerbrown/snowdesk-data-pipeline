@@ -642,7 +642,6 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
         tokens=(
             Token("--color-route-line", "Saved route", "#c026d3", None),
             Token("--color-route-line-casing", "Saved route (casing)", "#1a1916", None),
-            Token("--color-route-line-pending", "Shared, not saved", "#0d9488", None),
             Token("--color-marker-favourite", "Favourite star", "#1a73e8", None),
             Token("--color-marker-observation", "Community report", "#e8711a", None),
             # SNOW-1018: not drawn on the map but under the route's profile

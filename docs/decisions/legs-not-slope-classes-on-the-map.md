@@ -18,8 +18,9 @@ numbered marker sits at each transition from z11, legs − 1 of them.
 Opening a leg on the rail dims every other leg on the map. The six
 slope-class colours SNOW-910 painted per 25 m segment left the map; the
 no-fall passages, crux rings and fall-line arrows stayed, with the
-passage edge now in its leg's colour. A pending share is unchanged: the
-teal dashed line, with no legs and no markers. The trip page
+passage edge now in its leg's colour. A pending share was unchanged: the
+teal dashed line, with no legs and no markers (until SNOW-1218, below).
+The trip page
 (`trip_map.js`) still draws the slope-coloured line (until SNOW-1212,
 below).
 
@@ -182,16 +183,33 @@ three maps build their route layers from it: the legs below z14, the
 slope classes from z14, the numbered transitions, the start dot and the
 finish flag. `map.js` adds the two groups (`lineLayers`, `markLayers`)
 with its pending line and cursor between them and passes its own flat
-filters, since only the map page has pending routes. The trip page and
+filters, since only the map page has pending routes (both went with
+SNOW-1218, below). The trip page and
 the picker have nothing to interleave and call `install`. Their
 payloads (`_trip_map_payload`, `_picker_payload`) now carry `legs` as
 the routes feed does (`_route_drawing` in `apps/trips/views.py`). The
 trip page's map also gained +/− and cooperative gestures, so the page
 still scrolls past it; the picker stays fully interactive.
 
+**2026-10-24 (SNOW-1218): a shared route is drawn as a route.** A
+followed-but-unsaved share was a teal dashed line in its own layer,
+`routes-line-pending`, over a casing, with no legs, transitions or slope
+classes, while its panel, profile and cursor used the terrain colours
+like any other route's. One route read two ways in one view. The layer,
+its colour (`--color-route-line-pending`) and the owned/pending filters
+are gone: `route_legs_core.js` and `route_slope_core.js` cut a pending
+route like an owned one, and its features carry the share's `token` in
+place of the `uuid` a non-owner is never handed, so a tap on a leg
+resolves back to it. The panel's Save is what says "this one is not
+yours yet". The same ticket lifts every route layer above the
+choropleth and the other overlay polygons on each install
+(`raiseRouteLayers` in `map.js`), under the resort pins and the point
+markers: a share arrival installed the routes before the regions, which
+painted the choropleth over the line.
+
 ## Consequences
 
-- `routes-line` and `routes-line-casing` exclude any owned route that
+- `routes-line` and `routes-line-casing` exclude any route that
   carries `legs` while `route_legs_core.js` is loaded. The legs carry
   their own casing, so a dimmed leg is not framed at full strength.
 - An overlay payload cached before SNOW-1017 carries `legs` without

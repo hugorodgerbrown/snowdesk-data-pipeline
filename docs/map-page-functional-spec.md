@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-22
+last-reviewed: 2026-10-24
 ---
 
 # Map page — functional specification
@@ -409,7 +409,8 @@ drawn: the server still computes and sends both, but nothing draws them.
 Routes carry no crux: SNOW-1066 removed route-level
 cruxes, and where the dangerous ground is is the daily avalanche terrain
 layer's question (SNOW-979). A route shared
-with the reader and not yet saved stays a teal dashed line with no legs. The
+with the reader and not yet saved is drawn exactly like one they own
+(SNOW-1218), and every route sits above the choropleth. The
 slope-class colours SNOW-910 painted along the line left the map; they
 return along the line itself from z14. A route with no elevation has no legs
 and keeps the flat line
