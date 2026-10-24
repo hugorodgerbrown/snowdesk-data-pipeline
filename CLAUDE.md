@@ -264,6 +264,10 @@ point, so don't skip pieces for "simple" models:
   bare `pytest` (it runs whatever interpreter is on PATH; the PreToolUse
   hook refuses it). `uv run pytest <path>` is fine for a targeted run while
   iterating.
+- On a PR, CI runs only the tests the diff can affect (pytest-testmon,
+  gated by `bin/select-tests`); `main` and `release` run everything
+  ([why](docs/decisions/a-pr-runs-the-tests-its-diff-can-affect.md)). A
+  local `--testmon` run needs `COVERAGE_CORE=ctrace`.
 - All datetime objects must have `tzinfo`.
 - Always call factories with `.create()` (e.g. `RegionFactory.create(...)`) —
   never use direct instantiation (`RegionFactory(...)`). The `.create()`
@@ -770,6 +774,7 @@ Read these when working in the relevant area:
 | Account-area navigation (no sub-nav; menu is the navigation) | [`docs/decisions/account-area-navigation-lives-in-the-nav-menu.md`](docs/decisions/account-area-navigation-lives-in-the-nav-menu.md) |
 | Feature flags and switches (django-waffle; waffle_flags.json, waffle_switches.json, the scheduled jobs' schedule_<job id> switches) | [`docs/feature-flags.md`](docs/feature-flags.md) |
 | Which test layer to use; the e2e cap; Playwright + Vitest harnesses | [`docs/client-side-tests.md`](docs/client-side-tests.md) |
+| Why a PR runs only the tests its diff can affect (pytest-testmon, the `testmon-main-<sha>` map main caches, bin/select-tests and its full-suite fallbacks, why a stale map is safe, COVERAGE_CORE=ctrace, the e2e icon-only skip) | [`docs/decisions/a-pr-runs-the-tests-its-diff-can-affect.md`](docs/decisions/a-pr-runs-the-tests-its-diff-can-affect.md) |
 | Weekly offline-maps assurance (tests/offline/, `tox -e offline`, the recording proxy, the fuzz seed) | [`docs/offline-assurance.md`](docs/offline-assurance.md) |
 | Manual testing scenarios | [`docs/testing-scenarios.md`](docs/testing-scenarios.md) |
 | Existing in-house packages to reuse | [`docs/useful-repos.md`](docs/useful-repos.md) |

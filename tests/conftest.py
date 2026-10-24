@@ -28,9 +28,19 @@ changes no stored hash and no application code, and the hashing *contract*
 stays covered because ``check_password`` still round-trips against whatever
 hasher is configured. Tests asserting on a specific algorithm must set
 ``PASSWORD_HASHERS`` themselves via the ``settings`` fixture.
+
+``pytest_configure`` also prepares a ``--testmon`` run (SNOW-1221): it
+refuses to start unless ``COVERAGE_CORE=ctrace`` (see
+``_require_ctrace_under_testmon``), and it lets testmon read the
+extensionless ``bin/`` scripts that ``tests/bin/`` imports (see
+``_let_testmon_read_extensionless_scripts``).
 """
 
 from __future__ import annotations
+
+import os
+from pathlib import PurePosixPath
+from typing import Any, SupportsIndex
 
 import pytest
 import requests
@@ -44,7 +54,77 @@ from pytest_django.fixtures import Settings
 _FAST_PASSWORD_HASHER = "django.contrib.auth.hashers.MD5PasswordHasher"
 
 
-def pytest_configure() -> None:
+class _PythonFilename(str):
+    """A path whose extension reads as ``py`` — see the function below."""
+
+    __slots__ = ()
+
+    def rsplit(self, sep: str | None = None, maxsplit: SupportsIndex = -1) -> list[str]:
+        """Answer testmon's ``rsplit(".", 1)`` as if the file ended ``.py``."""
+        if sep == "." and int(maxsplit) == 1:
+            return [str(self), "py"]
+        return str(self).rsplit(sep, maxsplit)
+
+
+def _let_testmon_read_extensionless_scripts() -> None:
+    """
+    Stop pytest-testmon 2.2 crashing on an extensionless Python file.
+
+    ``tests/bin/`` imports scripts such as ``bin/migrations-lint`` and
+    ``bin/select-tests`` by path, so coverage records lines in files with no
+    extension. testmon's ``SourceTree.get_file`` derives the language from
+    ``filename.rsplit(".", 1)[1]`` and raises ``IndexError`` on such a file,
+    which ends the whole ``--testmon`` run with INTERNALERROR (exit 3). The
+    files are Python, so the shim hands testmon a filename that answers
+    that one call with ``py``; every other use of the name is unchanged.
+
+    A no-op when testmon is not installed. Remove it once testmon handles
+    extensionless files itself.
+    """
+    try:
+        from testmon.testmon_core import SourceTree
+    except ImportError:
+        return
+    original = SourceTree.get_file
+    if getattr(original, "snowdesk_shim", False):
+        return
+
+    def get_file(self: Any, filename: str) -> Any:
+        """Read an extensionless file as Python; defer to testmon otherwise."""
+        if "." not in PurePosixPath(filename).name:
+            filename = _PythonFilename(filename)
+        return original(self, filename)
+
+    get_file.snowdesk_shim = True  # type: ignore[attr-defined]
+    SourceTree.get_file = get_file
+
+
+TESTMON_OPTIONS = ("testmon", "testmon_noselect", "testmon_forceselect")
+
+
+def _require_ctrace_under_testmon(config: pytest.Config) -> None:
+    """
+    Refuse a ``--testmon`` run on coverage's default core.
+
+    On Python 3.12+ coverage measures with ``sys.monitoring``, which stops
+    reporting a line once it has fired. testmon switches coverage context
+    per test, so every test after the first to run a line is recorded as
+    not depending on it. Measured here: a change to ``upsert_weather``
+    selected 3 of the tests that call it on the default core and all 39 on
+    ``ctrace``. A map built that way silently skips tests, so it is an
+    error rather than a warning. CI and tox set ``COVERAGE_CORE=ctrace``.
+    """
+    if not any(config.getoption(name, default=False) for name in TESTMON_OPTIONS):
+        return
+    if os.environ.get("COVERAGE_CORE") != "ctrace":
+        raise pytest.UsageError(
+            "pytest-testmon needs COVERAGE_CORE=ctrace on this Python: the "
+            "default sys.monitoring core records each line for one test only, "
+            "so the selection would miss tests (SNOW-1221)."
+        )
+
+
+def pytest_configure(config: pytest.Config) -> None:
     """Install the cheap password hasher before any fixture builds a user.
 
     Set here rather than in an autouse fixture so that it also covers
@@ -54,6 +134,8 @@ def pytest_configure() -> None:
     from django.conf import settings as django_settings
 
     django_settings.PASSWORD_HASHERS = [_FAST_PASSWORD_HASHER]
+    _require_ctrace_under_testmon(config)
+    _let_testmon_read_extensionless_scripts()
 
     # SNOW-1181: settings initialise Sentry when SENTRY_DSN is set, and a
     # bare ``pytest`` run picks that up from a developer's ``.env``.

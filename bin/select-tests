@@ -1,0 +1,453 @@
+#!/usr/bin/env python3
+# bin/select-tests — decide whether a pull request can run only the tests its
+# diff affects, or must run the whole Python suite (SNOW-1221).
+#
+# A one-line docstring fix used to run all ~10,000 tests. On a pull request,
+# ci.yml now restores the pytest-testmon dependency map recorded by main's
+# last full run and asks testmon for the tests whose recorded dependencies
+# changed. This script is the gate in front of that: it answers "can testmon
+# be trusted with this diff?", and when the answer is no, the full suite runs.
+#
+# WHAT TESTMON CANNOT SEE. testmon records, per test, the lines of project
+# code that executed WHILE THAT TEST RAN. Two kinds of input never show up
+# there:
+#
+#   1. Anything that is not Python — templates, fixtures, static files,
+#      JSON/YAML/TSV data, pyproject.toml, uv.lock, tox.ini, workflows.
+#      A template edit changes rendered HTML without touching a line of
+#      Python, so testmon would select nothing.
+#
+#   2. Python that runs at IMPORT time rather than inside a test: module
+#      constants, class attributes (model fields, form fields, admin
+#      options), decorators (@admin.register, @register.filter, @task),
+#      URL patterns, settings, conftest fixtures, migrations. Django imports
+#      most of that once, at setup or on the first request, so it is either
+#      attributed to no test or to whichever test happened to trigger the
+#      import. Measured on this repo: a change to a class attribute on
+#      ``Weather`` selected 15 of the 205 weather tests.
+#
+# So the rule is: a change is "affected-safe" only when every changed line of
+# Python sits INSIDE THE BODY OF A FUNCTION THAT RUNS DURING TESTS (methods
+# included), or is a docstring, an import, a comment or a blank line.
+# Imports are allowed because testmon fingerprints the module-level block of
+# every file a test executes, so an edited import reruns every test that runs
+# code in that file — and an import is almost always the companion of a
+# function-body change. Anything else —
+# a new or deleted module, a changed signature or decorator, a module- or
+# class-level statement, or any non-Python file — means the full suite. Test
+# modules (``test_*.py``) are the one exception: testmon fingerprints a
+# test's own file whole, so a change anywhere in one reruns the tests in it.
+# Markdown and ``.claude/`` are ignored, as ci.yml's docs-only gate ignores
+# them; any other file under ``docs/`` (a JSON a module reads at import, say)
+# is data, and runs the full suite like any other non-Python file.
+#
+# A FUNCTION THAT RUNS AT IMPORT is not "inside a test" either.
+# ``SLUG_TO_CODE = _build_slug_to_code()`` runs its builder once, while the
+# module is imported, so no test records it. So a body is only safe when its
+# function is never reached from import-time code: the script scans every
+# Python file at ``--head`` for the names called, or used as decorators, at
+# module or class level (and in signatures), and treats any function of that
+# name — plus whatever it calls in the same module, transitively — as
+# import-time. ``AppConfig.ready`` and the class-creation hooks
+# (``__init_subclass__``, ``__set_name__``) are import-time by definition.
+# Matching is by bare name, so it over-matches (a method that shares a name
+# with an import-time call runs the full suite) and never under-matches
+# within one module; a chain that crosses modules below the first call is the
+# one gap, and main's full run is the backstop for it.
+#
+# WHAT THE DIFF IS TAKEN AGAINST. Not the PR's base, but the commit the
+# restored map was recorded on (``--since``). If main moved on after the map
+# was built, those commits are part of the diff too and pass the same rules,
+# so a stale map can only widen the selection, never hide a change. If the
+# commit cannot be resolved (shallow clone, a map from a rewritten history),
+# the answer is the full suite.
+#
+# Exit code: 0 with ``mode=full`` or ``mode=affected`` on stdout; the same
+# line is appended to ``$GITHUB_OUTPUT`` when ``--github-output`` is given.
+# The script never fails a build: any error it meets is a reason for "full".
+#
+# Usage:
+#   bin/select-tests                       # HEAD against origin/main
+#   bin/select-tests --since <sha>         # HEAD against the map's commit
+#   bin/select-tests --since <sha> --github-output
+"""Choose between the full Python suite and testmon's affected selection."""
+
+# ruff: noqa: T201
+# CLI script — print() is the intended output channel.
+
+from __future__ import annotations
+
+import argparse
+import ast
+import io
+import os
+import re
+import subprocess
+import sys
+import tokenize
+from dataclasses import dataclass, field
+from fnmatch import fnmatch
+from pathlib import PurePosixPath
+
+# Paths that cannot affect a Python test: prose, and Claude's own config.
+IGNORED = ("*.md", ".claude/*")
+
+# Methods Python or Django call while a class or the app registry is built.
+IMPORT_TIME_HOOKS = frozenset({"ready", "__init_subclass__", "__set_name__"})
+
+# Python that runs before or around every test rather than inside one.
+FULL_SUITE_PYTHON = (
+    "config/*",
+    "manage.py",
+    "*conftest.py",
+    "*/migrations/*",
+)
+
+HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
+@dataclass
+class Decision:
+    """The verdict, with every reason that forced the full suite."""
+
+    reasons: list[str] = field(default_factory=list)
+
+    @property
+    def mode(self) -> str:
+        """``full`` when anything forced it, otherwise ``affected``."""
+        return "full" if self.reasons else "affected"
+
+
+def _git(*args: str) -> str:
+    """Run git and return stdout, raising ``CalledProcessError`` on failure."""
+    # S603/S607 — a fixed ``git`` argv built from refs and repo paths, never a
+    # shell string; git is resolved from PATH like every other bin/ script.
+    return subprocess.run(  # noqa: S603
+        ["git", *args],  # noqa: S607
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+def _show(rev: str, path: str) -> str:
+    """Return the text of ``path`` at ``rev``."""
+    return _git("show", f"{rev}:{path}")
+
+
+def _quiet_lines(source: str) -> set[int]:
+    """Return the lines that hold no code at all: blank or comment-only."""
+    quiet = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT}
+    quiet |= {tokenize.DEDENT, tokenize.ENDMARKER, tokenize.ENCODING}
+    code: set[int] = set()
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type not in quiet:
+            code.update(range(token.start[0], token.end[0] + 1))
+    return set(range(1, len(source.splitlines()) + 1)) - code
+
+
+def _span(node: ast.AST, first: int | None = None) -> range:
+    """Return the lines ``node`` covers, optionally starting at ``first``."""
+    start = first if first is not None else getattr(node, "lineno", 0)
+    return range(start, (getattr(node, "end_lineno", None) or start) + 1)
+
+
+def _body_lines(node: ast.FunctionDef | ast.AsyncFunctionDef) -> range:
+    """
+    Return a function's body lines, never its ``def``, decorators or signature.
+
+    Default values and annotations run when the ``def`` executes, at import,
+    so a body that starts on the signature's last line (``def f(): ...``)
+    loses that line too.
+    """
+    signature = [node.lineno, *(d.end_lineno or 0 for d in node.decorator_list)]
+    signature += [
+        part.end_lineno or 0
+        for part in ast.walk(node.args)
+        if isinstance(part, ast.expr | ast.arg)
+    ]
+    if node.returns is not None:
+        signature.append(node.returns.end_lineno or 0)
+    return _span(node, max(node.body[0].lineno, max(signature) + 1))
+
+
+def _docstring(node: ast.AST) -> ast.Expr | None:
+    """Return the docstring statement of a module, class or function."""
+    body = getattr(node, "body", None)
+    if not isinstance(body, list) or not body:
+        return None
+    first = body[0]
+    if (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Constant)
+        and isinstance(first.value.value, str)
+    ):
+        return first
+    return None
+
+
+def _called_name(node: ast.expr) -> str:
+    """Return the bare name a call or decorator refers to, or ``""``."""
+    while isinstance(node, ast.Call):
+        node = node.func
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def import_time_calls(tree: ast.AST) -> set[str]:
+    """
+    Return the names called or applied as decorators while a module imports.
+
+    Walks module and class bodies and every function's decorators, defaults
+    and annotations, which all run at import, and skips function and lambda
+    bodies, which run only when called.
+    """
+    names: set[str] = set()
+    pending: list[ast.AST] = [tree]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            names.update(_called_name(d) for d in node.decorator_list)
+            pending.extend(node.decorator_list)
+            pending.append(node.args)
+            if node.returns is not None:
+                pending.append(node.returns)
+            continue
+        if isinstance(node, ast.Lambda):
+            pending.append(node.args)
+            continue
+        if isinstance(node, ast.ClassDef):
+            names.update(_called_name(d) for d in node.decorator_list)
+        if isinstance(node, ast.Call):
+            names.add(_called_name(node))
+        pending.extend(ast.iter_child_nodes(node))
+    names.discard("")
+    return names
+
+
+def _functions(tree: ast.AST) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Return every function and method defined anywhere in ``tree``."""
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    ]
+
+
+def _import_time_functions(
+    tree: ast.AST, elsewhere: set[str]
+) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    """
+    Return the functions in ``tree`` that can run while a module imports.
+
+    Roots are this module's own import-time calls, the names other modules
+    call at import (``elsewhere``) and the import-time hooks; the set then
+    grows through whatever those functions call by name in this module.
+    """
+    functions = _functions(tree)
+    calls = {
+        id(func): {
+            _called_name(node)
+            for statement in func.body
+            for node in ast.walk(statement)
+            if isinstance(node, ast.Call)
+        }
+        for func in functions
+    }
+    reached = import_time_calls(tree) | elsewhere | IMPORT_TIME_HOOKS
+    while True:
+        grown = reached.union(
+            *(calls[id(func)] for func in functions if func.name in reached)
+        )
+        if grown == reached:
+            break
+        reached = grown
+    return [func for func in functions if func.name in reached]
+
+
+def safe_lines(source: str, elsewhere: frozenset[str] = frozenset()) -> set[int]:
+    """
+    Return the 1-based line numbers of ``source`` testmon can attribute.
+
+    That is every line inside the body of a function that runs during tests,
+    every line of a docstring or an import statement, and every blank or
+    comment-only line. A ``def`` line, its decorators and its signature are
+    NOT safe: they execute at import. Nor is the body of a function that runs
+    at import (see ``_import_time_functions``). Raises ``SyntaxError`` for
+    source that does not parse.
+    """
+    tree = ast.parse(source)
+    quiet = _quiet_lines(source)
+    safe = set(quiet)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import | ast.ImportFrom):
+            safe.update(_span(node))
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            safe.update(_body_lines(node))
+        if isinstance(node, ast.Module | ast.ClassDef) and _docstring(node):
+            safe.update(_span(_docstring(node) or node))
+    for func in _import_time_functions(tree, set(elsewhere)):
+        safe.difference_update(set(_body_lines(func)) - quiet)
+    return safe
+
+
+def changed_lines(diff: str) -> tuple[set[int], set[int]]:
+    """Return (old-side, new-side) line numbers touched by a ``-U0`` diff."""
+    old: set[int] = set()
+    new: set[int] = set()
+    for line in diff.splitlines():
+        match = HUNK.match(line)
+        if not match:
+            continue
+        old_start, old_count, new_start, new_count = match.groups()
+        old.update(range(int(old_start), int(old_start) + int(old_count or 1)))
+        new.update(range(int(new_start), int(new_start) + int(new_count or 1)))
+    return old, new
+
+
+def is_test_module(path: str) -> bool:
+    """Say whether ``path`` is a pytest module, which testmon fingerprints whole."""
+    name = PurePosixPath(path).name
+    return path.startswith("tests/") and name.startswith("test_")
+
+
+def classify_python(
+    path: str,
+    old_source: str,
+    new_source: str,
+    diff: str,
+    elsewhere: frozenset[str] = frozenset(),
+) -> str:
+    """Return why a modified .py file forces the full suite, or ``""``."""
+    try:
+        old_safe = safe_lines(old_source, elsewhere)
+        new_safe = safe_lines(new_source, elsewhere)
+    except SyntaxError:
+        return f"{path}: does not parse"
+    old, new = changed_lines(diff)
+    outside = sorted(new - new_safe) or sorted(old - old_safe)
+    if outside:
+        return f"{path}:{outside[0]}: runs at import, not inside a test"
+    return ""
+
+
+def repo_import_time_calls(head: str) -> frozenset[str]:
+    """
+    Return every name any Python file at ``head`` calls while it imports.
+
+    Reads all the files through one ``git cat-file --batch``. A file that does
+    not parse contributes nothing here; if it is part of the diff, it forces
+    the full suite on its own.
+    """
+    paths = [
+        path
+        for path in _git("ls-tree", "-r", "--name-only", head).splitlines()
+        if path.endswith(".py")
+    ]
+    request = "".join(f"{head}:{path}\n" for path in paths).encode()
+    # S603/S607 — as _git: a fixed argv, no shell.
+    output = subprocess.run(  # noqa: S603
+        ["git", "cat-file", "--batch"],  # noqa: S607
+        input=request,
+        check=True,
+        capture_output=True,
+    ).stdout
+    names: set[str] = set()
+    offset = 0
+    for _ in paths:
+        header_end = output.index(b"\n", offset)
+        size = int(output[offset:header_end].split()[2])
+        blob = output[header_end + 1 : header_end + 1 + size]
+        offset = header_end + 1 + size + 1
+        try:
+            names |= import_time_calls(ast.parse(blob))
+        except SyntaxError, ValueError:
+            continue
+    return frozenset(names)
+
+
+def path_reason(
+    kind: str,
+    path: str,
+    since: str,
+    head: str,
+    elsewhere: frozenset[str] = frozenset(),
+) -> str:
+    """Return why one changed path forces the full suite, or ``""``."""
+    if any(fnmatch(path, pattern) for pattern in IGNORED):
+        return ""
+    if not path.endswith(".py"):
+        return f"{path}: not Python"
+    if any(fnmatch(path, pattern) for pattern in FULL_SUITE_PYTHON):
+        return f"{path}: runs outside any test"
+    if is_test_module(path):
+        return ""
+    if kind != "M":
+        return f"{path}: module added or deleted"
+    diff = _git("diff", "-U0", since, head, "--", path)
+    return classify_python(path, _show(since, path), _show(head, path), diff, elsewhere)
+
+
+def decide(since: str, head: str = "HEAD") -> Decision:
+    """Compare ``since`` with ``head`` and decide which suite to run."""
+    decision = Decision()
+    try:
+        _git("cat-file", "-e", f"{since}^{{commit}}")
+    except subprocess.CalledProcessError:
+        decision.reasons.append(f"cannot resolve {since}")
+        return decision
+
+    rows = [
+        row.split("\t", 1)
+        for row in _git("diff", "--name-status", "--no-renames", since, head).split(
+            "\n"
+        )
+        if row
+    ]
+    if any(path.endswith(".py") for _, path in rows):
+        elsewhere = repo_import_time_calls(head)
+    else:
+        elsewhere = frozenset()
+    for kind, path in rows:
+        reason = path_reason(kind, path, since, head, elsewhere)
+        if reason:
+            decision.reasons.append(reason)
+    return decision
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Print the decision; append it to $GITHUB_OUTPUT when asked."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--since",
+        default="origin/main",
+        help="commit the testmon map was recorded on (default: origin/main)",
+    )
+    parser.add_argument("--head", default="HEAD", help="tree under test")
+    parser.add_argument(
+        "--github-output",
+        action="store_true",
+        help="also append mode=… to $GITHUB_OUTPUT",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        decision = decide(args.since, args.head)
+    except Exception as error:  # any failure at all means "run everything"
+        decision = Decision(reasons=[f"selection failed: {error}"])
+
+    for reason in decision.reasons:
+        print(f"full suite: {reason}")
+    print(f"mode={decision.mode}")
+    output = os.environ.get("GITHUB_OUTPUT")
+    if args.github_output and output:
+        with open(output, "a", encoding="utf-8") as handle:
+            handle.write(f"mode={decision.mode}\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

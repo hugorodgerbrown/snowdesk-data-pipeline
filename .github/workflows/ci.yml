@@ -160,11 +160,110 @@ jobs:
           pip install tox tox-uv
           tox
 
+  # SNOW-1221: a PR runs only the tests its diff can affect; main and
+  # release run everything. pytest-testmon records, for every test, the
+  # Python that ran during it. The `test-map` job below records that map
+  # on every push to main and caches it (`testmon-main-<sha>`); a PR
+  # restores the newest one and runs `pytest --testmon`, which reruns a
+  # test only when something it executed has changed since the map was
+  # recorded.
+  #
+  # bin/select-tests is the gate in front of that, because testmon cannot
+  # see templates, fixtures, static files, settings, migrations, conftest,
+  # uv.lock — or any Python that runs at import rather than inside a test
+  # (class attributes, decorators, URL patterns). A diff touching any of
+  # those runs the full suite; its header comment has the whole rule.
+  #
+  # A STALE MAP is safe by construction. testmon compares the files it
+  # recorded with the files in this checkout, not with the PR's diff, and
+  # bin/select-tests diffs against the map's own commit (the sha in the
+  # restored cache key), not the PR's base. Whatever landed on main after
+  # the map was recorded is therefore inside both comparisons, so an old map
+  # only selects MORE tests. No map at all — first run, evicted cache, an
+  # unresolvable sha — means the full suite.
+  #
+  # What a selective PR run gives up is the coverage figure: it passes
+  # --no-cov, because a subset cannot meet the 90% floor. Every full run
+  # (main, release, and every PR the gate sends to the full suite) still
+  # enforces it. The job name is unchanged, so the required "Run tests"
+  # context reports exactly as before.
   test:
     name: Run tests
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true'
+    env:
+      TOXENV: test
+
+    steps:
+      # A PR needs history back to the map's commit to diff against it;
+      # pushes run everything and need none.
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+
+      - name: Set up Python (3.14)
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Create .env
+        run: |
+          echo "SECRET_KEY=ci-test-secret-key" > .env
+          echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
+
+      # The exact key never exists (test-map saves under main's sha); the
+      # prefix picks the newest map main has saved. PRs only ever restore,
+      # so a PR's own run can never become another PR's map.
+      - name: Restore the testmon map from main
+        id: map
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6
+        with:
+          path: .testmondata
+          key: testmon-main-${{ github.event.pull_request.head.sha }}
+          restore-keys: |
+            testmon-main-
+
+      - name: Choose the full suite or the affected tests
+        id: select
+        if: github.event_name == 'pull_request'
+        env:
+          MATCHED_KEY: ${{ steps.map.outputs.cache-matched-key }}
+        run: |
+          if [ -z "$MATCHED_KEY" ]; then
+            echo "full suite: no testmon map restored"
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python bin/select-tests --since "${MATCHED_KEY#testmon-main-}" --github-output
+
+      # A --testmon run must measure with coverage's ctrace core; the
+      # default sys.monitoring core records each line for one test only
+      # (tests/conftest.py refuses to start without it).
+      - name: Install and run tox
+        env:
+          MODE: ${{ steps.select.outputs.mode || 'full' }}
+        run: |
+          pip install tox tox-uv
+          if [ "$MODE" = affected ]; then
+            COVERAGE_CORE=ctrace tox -- --testmon --no-cov
+          else
+            tox
+          fi
+
+  # Records the map the `test` job's PR runs select from. Its own job, not
+  # a flag on main's `test` run, because testmon and pytest-cov in one
+  # process under-count coverage (32% where the plain run measures over
+  # 90%), which would fail main's coverage floor. So `test` stays exactly as
+  # it was, and this runs beside it with --no-cov. It is not a required
+  # check: if it fails or is cancelled by the next push, PRs use the
+  # previous map, which is safe (see above), or the full suite.
+  test-map:
+    name: Record the test map
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     env:
       TOXENV: test
 
@@ -182,7 +281,13 @@ jobs:
           echo "SECRET_KEY=ci-test-secret-key" > .env
           echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
 
-      - name: Install and run tox
+      - name: Install tox and record the map
         run: |
           pip install tox tox-uv
-          tox
+          COVERAGE_CORE=ctrace tox -- --testmon --no-cov
+
+      - name: Save the testmon map
+        uses: actions/cache/save@v6
+        with:
+          path: .testmondata
+          key: testmon-main-${{ github.sha }}
