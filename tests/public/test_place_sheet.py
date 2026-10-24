@@ -19,7 +19,9 @@ Covers both views, ``resort_sheet_partial`` and ``favourite_sheet_partial``:
   - A resort's body (SNOW-1164): the resort page's own body for the map's
     day — the same sections the page renders, in one column, without the
     page's frame and without the sheet's old links onward — led by its
-    "why it matters" line only when written.
+    "why it matters" line only when written. The forecast leads the
+    bulletin on every day, rated or not, including when it is the one
+    "No forecast available" line (SNOW-1203, SNOW-1205).
   - The map page carries the sheet, its script and the URL templates.
 """
 
@@ -46,6 +48,7 @@ from tests.factories import (
     UserFactory,
     WeatherFactory,
 )
+from tests.public.test_resort_detail import _todays_bulletin
 
 
 def _resort_url(slug: str | None, day: str | None = None) -> str:
@@ -474,6 +477,28 @@ class TestResortBody:
         content = _get(client, _resort_url(resort.slug)).content.decode()
         assert f'href="{resort.location.get_absolute_url()}"' in content
         assert "?date=" not in content
+
+    @pytest.mark.parametrize("rated", [True, False])
+    @pytest.mark.parametrize("has_forecast", [True, False])
+    def test_the_forecast_leads_the_bulletin_on_every_day(
+        self, client: Client, rated: bool, has_forecast: bool
+    ) -> None:
+        """Hugo, 24 Oct: the place's weather never moves below the region's.
+
+        A bulletin on the day used to put the card first (SNOW-1156); the
+        forecast — or its one "No forecast available" line — now leads
+        whatever the day holds.
+        """
+        resort = _resort()
+        if has_forecast:
+            WeatherFactory.create(location=_primary_location(resort))
+        if rated:
+            _todays_bulletin(resort.region)
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        forecast = content.index('data-testid="resort-forecast"')
+        assert forecast < content.index('data-testid="resort-bulletin"')
+        assert ('data-testid="resort-forecast-none"' in content) is not has_forecast
+        assert ('data-testid="resort-no-rating"' in content) is not rated
 
     def test_written_why_it_matters_shows(self, client: Client) -> None:
         resort = _resort(why_it_matters="Four lifts, national freeride reputation.")
