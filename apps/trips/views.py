@@ -296,28 +296,6 @@ def _route_drawing(
     }
 
 
-def _trip_heights(
-    trip: Trip,
-) -> tuple[list[list[float | None]], float | None, float | None]:
-    """Return the trip's track on model heights, with its climb totals.
-
-    SNOW-1043. The snapshot's third ordinate is the recording device's
-    altimeter, which drifts; ``terrain_points`` puts the terrain model's
-    height in its place wherever the snapshot's slope record has one. The
-    totals are ``Trip.climb`` — the rule the trip templates read too — so
-    the figures, the profile and the cards describe one series.
-
-    Args:
-        trip: The trip to describe.
-
-    Returns:
-        ``(points, ascent_m, descent_m)``.
-
-    """
-    ascent_m, descent_m = trip.climb
-    return terrain_points(trip.points, trip.slope_samples), ascent_m, descent_m
-
-
 def _basemap_context() -> dict[str, Any]:
     """Return the basemap catalogue every trip surface resolves from.
 
@@ -428,7 +406,11 @@ def _trip_route_collection(trip: Trip, page_url: str) -> dict[str, Any]:
 
     """
     meeting = trip.meeting_point
-    points, ascent_m, descent_m = _trip_heights(trip)
+    ascent_m, descent_m = trip.climb
+    # SNOW-1213: the slope record and the legs ride along, so the map draws
+    # the trip as it draws a route (legs, slope classes from z14) and a tap
+    # opens the route panel with its profile and point card.
+    points, drawing = _route_drawing(trip.points, trip.slope_samples)
     return {
         "type": "FeatureCollection",
         "features": [
@@ -448,6 +430,7 @@ def _trip_route_collection(trip: Trip, page_url: str) -> dict[str, Any]:
                     "distance_m": trip.distance_m,
                     "ascent_m": ascent_m,
                     "descent_m": descent_m,
+                    **drawing,
                 },
             },
             {

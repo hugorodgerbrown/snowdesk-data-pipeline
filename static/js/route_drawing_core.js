@@ -506,7 +506,9 @@
    *
    * @param {any} map A MapLibre map.
    * @param {?FeatureCollection} collection The routes to draw.
-   * @param {{prefix: string}} options
+   * @param {{prefix: string, textFont?: Array<string>}} options
+   *   `textFont` is the transition labels' font; the style's own when
+   *   omitted.
    * @returns {SourceIds}
    */
   function install(map, collection, options) {
@@ -520,7 +522,7 @@
     const layerOptions = {
       prefix: options.prefix,
       sources: sources,
-      textFont: styleTextFont(map.getStyle ? map.getStyle() : null),
+      textFont: options.textFont || styleTextFont(map.getStyle ? map.getStyle() : null),
     };
     for (const layer of lineLayers(layerOptions).concat(markLayers(layerOptions))) {
       map.addLayer(layer);

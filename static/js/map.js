@@ -2590,8 +2590,10 @@
     routeCursorPointData = point
       ? { type: 'FeatureCollection', features: segment ? [point, segment] : [point] }
       : EMPTY_ROUTE_CURSOR_FC;
-    const pointSource = map.getSource('route-cursor-point');
-    if (pointSource) pointSource.setData(routeCursorPointData);
+    for (const id of [ROUTE_CURSOR_SOURCE, TRIP_ROUTE_CURSOR_SOURCE]) {
+      const pointSource = map.getSource(id);
+      if (pointSource) pointSource.setData(routeCursorPointData);
+    }
   };
 
   /**
@@ -2636,10 +2638,15 @@
     unsubscribeRouteCursor = null;
     routeCursorTarget = null;
     const cursor = window.pwaRouteRail?.cursor ? window.pwaRouteRail.cursor() : null;
-    const uuid = identity.uuid || null;
-    const token = uuid ? null : identity.token || null;
-    if (cursor && (uuid || token)) {
-      const feature = ((routesGeojsonCache && routesGeojsonCache.features) || []).find(
+    const trip = identity.trip === true;
+    const uuid = trip ? null : identity.uuid || null;
+    const token = trip || uuid ? null : identity.token || null;
+    if (cursor && (trip || uuid || token)) {
+      // SNOW-1213: a trip's route is not in the routes overlay; it is the
+      // one feature a trip arrival drew.
+      const feature = trip ? tripRouteFeature() : (
+        (routesGeojsonCache && routesGeojsonCache.features) || []
+      ).find(
         (f) => f && f.properties
           && (uuid ? f.properties.uuid === uuid : f.properties.token === token),
       );
@@ -2665,6 +2672,7 @@
       routeCursorTarget = {
         uuid: uuid,
         token: token,
+        trip: trip,
         cursor: cursor,
         slope: slope,
         legs: legList,
@@ -2896,7 +2904,8 @@
    */
   const routeCursorLive = () => !!(
     routeCursorTarget
-    && overlayState.routes
+    // SNOW-1213: a trip's line has no overlay switch; it is always drawn.
+    && (routeCursorTarget.trip || overlayState.routes)
     && window.pwaRouteRail?.isOpen?.()
     && window.pwaRouteRail.cursor?.() === routeCursorTarget.cursor
   );
@@ -2921,6 +2930,120 @@
       return px ? { x: px.x, y: px.y } : null;
     });
     return core.nearestSample(projected, point, maxPx);
+  };
+
+  // The sources the route cursor is drawn from: the routes overlay's, and
+  // the trip arrival's (SNOW-1213), which has no overlay switch to share.
+  // paintRouteCursor writes the same index to both.
+  const ROUTE_CURSOR_SOURCE = 'route-cursor-point';
+  const TRIP_ROUTE_CURSOR_SOURCE = 'trip-route-cursor-point';
+
+  /**
+   * Add the route cursor's source and layers (SNOW-1019, SNOW-1145).
+   *
+   * Called by installRoutesLayer for the routes overlay, and by
+   * installTripRouteLayers for a trip arrival's route (SNOW-1213), so a
+   * point placed on a trip shows on the map as it does on a saved route.
+   * Idempotent on the source.
+   *
+   * @param {string} sourceId The cursor's source.
+   * @param {string} prefix The layer ids' prefix.
+   * @param {boolean} visible Whether the layers start visible.
+   * @returns {void}
+   */
+  const installRouteCursorLayers = (sourceId, prefix, visible) => {
+    if (map.getSource(sourceId)) return;
+    map.addSource(sourceId, {
+      type: 'geojson',
+      data: routeCursorPointData,
+    });
+    // SNOW-1145: from ROUTE_SLOPE_MINZOOM the cursor IS its segment — the
+    // 25 m the point card describes, drawn along its own path in its
+    // class colour inside a white band and a dark casing. Square ends
+    // ('butt'), so where the segment starts and stops is unambiguous, and
+    // two consecutive indices meet end to end at their shared boundary.
+    // The widths keep the class colour wider than the slope line under it
+    // and the white band clear of it at every zoom. Below the minzoom the
+    // line is drawn in legs and a segment is a few pixels: the dot stays.
+    const cursorSegmentLayers = [
+      [prefix + '-cursor-segment-casing', ROUTE_CASING_COLOUR, 13.2, 15.5],
+      [prefix + '-cursor-segment-halo', ROUTE_CURSOR_HALO, 10.2, 12.5],
+      [prefix + '-cursor-segment', null, 5.7, 8],
+    ];
+    for (const [id, colour, z12, z16] of cursorSegmentLayers) {
+      map.addLayer({
+        id,
+        type: 'line',
+        source: sourceId,
+        minzoom: ROUTE_SLOPE_MINZOOM,
+        filter: ['==', ['geometry-type'], 'LineString'],
+        layout: {
+          visibility: visible ? 'visible' : 'none',
+          'line-cap': 'butt',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': colour || ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 12, z12, 16, z16],
+        },
+      });
+    }
+    // SNOW-1064: the ring's white under-stroke from ROUTE_SLOPE_MINZOOM,
+    // so a ring in the 30–35° yellow still reads over the yellow line it
+    // sits on. Below the minzoom the filled dot carries its own halo.
+    map.addLayer({
+      id: prefix + '-cursor-point-halo',
+      type: 'circle',
+      source: sourceId,
+      minzoom: ROUTE_SLOPE_MINZOOM,
+      filter: ['==', ['geometry-type'], 'Point'],
+      layout: {
+        visibility: visible ? 'visible' : 'none',
+      },
+      paint: {
+        'circle-opacity': 0,
+        'circle-radius': 7,
+        'circle-stroke-color': ROUTE_CURSOR_HALO,
+        'circle-stroke-width': 5.5,
+        // SNOW-1145: no ring where the segment is drawn instead.
+        'circle-stroke-opacity': ['case', ['to-boolean', ['get', 'segment']], 0, 1],
+      },
+    });
+    map.addLayer({
+      id: prefix + '-cursor-point',
+      type: 'circle',
+      source: sourceId,
+      filter: ['==', ['geometry-type'], 'Point'],
+      layout: {
+        visibility: visible ? 'visible' : 'none',
+      },
+      // SNOW-1064: from ROUTE_SLOPE_MINZOOM the route is drawn per 25 m
+      // segment in slope classes, so a filled dot would cover the very
+      // segment the point header describes. There the dot becomes a RING
+      // in the segment's class colour with a clear centre, so the line's
+      // colour under it shows through. Below it the dot stays filled.
+      // SNOW-1145: on a sampled route the ring gives way to the segment
+      // itself (the layers above); only a route never sampled keeps it.
+      paint: {
+        // The slope class of the segment under the cursor (SNOW-1052), the
+        // colour the point header's outer ring lights; the route's own colour
+        // when the feature carries none.
+        'circle-color': ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
+        'circle-opacity': ['step', ['zoom'], 1, ROUTE_SLOPE_MINZOOM, 0],
+        'circle-radius': ['step', ['zoom'], 6, ROUTE_SLOPE_MINZOOM, 7],
+        'circle-stroke-color': [
+          'step', ['zoom'],
+          ROUTE_CURSOR_HALO,
+          ROUTE_SLOPE_MINZOOM, ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
+        ],
+        'circle-stroke-width': ['step', ['zoom'], 2, ROUTE_SLOPE_MINZOOM, 3],
+        'circle-stroke-opacity': [
+          'step', ['zoom'],
+          1,
+          ROUTE_SLOPE_MINZOOM, ['case', ['to-boolean', ['get', 'segment']], 0, 1],
+        ],
+      },
+    });
   };
 
   // SNOW-687: install the saved-routes layer — one GeoJSON source of
@@ -3023,97 +3146,10 @@
     // point marks installed after this, which the reader orients by.
     // SNOW-1052 removed the highlighted stretch (`route-cursor-selection`)
     // a rail selection drew here.
-    map.addSource('route-cursor-point', {
-      type: 'geojson',
-      data: routeCursorPointData,
-    });
-    // SNOW-1145: from ROUTE_SLOPE_MINZOOM the cursor IS its segment — the
-    // 25 m the point card describes, drawn along its own path in its
-    // class colour inside a white band and a dark casing. Square ends
-    // ('butt'), so where the segment starts and stops is unambiguous, and
-    // two consecutive indices meet end to end at their shared boundary.
-    // The widths keep the class colour wider than the slope line under it
-    // and the white band clear of it at every zoom. Below the minzoom the
-    // line is drawn in legs and a segment is a few pixels: the dot stays.
-    const cursorSegmentLayers = [
-      ['routes-cursor-segment-casing', ROUTE_CASING_COLOUR, 13.2, 15.5],
-      ['routes-cursor-segment-halo', ROUTE_CURSOR_HALO, 10.2, 12.5],
-      ['routes-cursor-segment', null, 5.7, 8],
-    ];
-    for (const [id, colour, z12, z16] of cursorSegmentLayers) {
-      map.addLayer({
-        id,
-        type: 'line',
-        source: 'route-cursor-point',
-        minzoom: ROUTE_SLOPE_MINZOOM,
-        filter: ['==', ['geometry-type'], 'LineString'],
-        layout: {
-          visibility: overlayState.routes ? 'visible' : 'none',
-          'line-cap': 'butt',
-          'line-join': 'round',
-        },
-        paint: {
-          'line-color': colour || ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
-          'line-width': ['interpolate', ['linear'], ['zoom'], 12, z12, 16, z16],
-        },
-      });
-    }
-    // SNOW-1064: the ring's white under-stroke from ROUTE_SLOPE_MINZOOM,
-    // so a ring in the 30–35° yellow still reads over the yellow line it
-    // sits on. Below the minzoom the filled dot carries its own halo.
-    map.addLayer({
-      id: 'routes-cursor-point-halo',
-      type: 'circle',
-      source: 'route-cursor-point',
-      minzoom: ROUTE_SLOPE_MINZOOM,
-      filter: ['==', ['geometry-type'], 'Point'],
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-      },
-      paint: {
-        'circle-opacity': 0,
-        'circle-radius': 7,
-        'circle-stroke-color': ROUTE_CURSOR_HALO,
-        'circle-stroke-width': 5.5,
-        // SNOW-1145: no ring where the segment is drawn instead.
-        'circle-stroke-opacity': ['case', ['to-boolean', ['get', 'segment']], 0, 1],
-      },
-    });
-    map.addLayer({
-      id: 'routes-cursor-point',
-      type: 'circle',
-      source: 'route-cursor-point',
-      filter: ['==', ['geometry-type'], 'Point'],
-      layout: {
-        visibility: overlayState.routes ? 'visible' : 'none',
-      },
-      // SNOW-1064: from ROUTE_SLOPE_MINZOOM the route is drawn per 25 m
-      // segment in slope classes, so a filled dot would cover the very
-      // segment the point header describes. There the dot becomes a RING
-      // in the segment's class colour with a clear centre, so the line's
-      // colour under it shows through. Below it the dot stays filled.
-      // SNOW-1145: on a sampled route the ring gives way to the segment
-      // itself (the layers above); only a route never sampled keeps it.
-      paint: {
-        // The slope class of the segment under the cursor (SNOW-1052), the
-        // colour the point header's outer ring lights; the route's own colour
-        // when the feature carries none.
-        'circle-color': ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
-        'circle-opacity': ['step', ['zoom'], 1, ROUTE_SLOPE_MINZOOM, 0],
-        'circle-radius': ['step', ['zoom'], 6, ROUTE_SLOPE_MINZOOM, 7],
-        'circle-stroke-color': [
-          'step', ['zoom'],
-          ROUTE_CURSOR_HALO,
-          ROUTE_SLOPE_MINZOOM, ['coalesce', ['get', 'colour'], ROUTE_LINE_COLOUR],
-        ],
-        'circle-stroke-width': ['step', ['zoom'], 2, ROUTE_SLOPE_MINZOOM, 3],
-        'circle-stroke-opacity': [
-          'step', ['zoom'],
-          1,
-          ROUTE_SLOPE_MINZOOM, ['case', ['to-boolean', ['get', 'segment']], 0, 1],
-        ],
-      },
-    });
+    // SNOW-1019: the route cursor on the map, over every line layer, the
+    // pending one included, and under the point marks installed after
+    // this, which the reader orients by.
+    installRouteCursorLayers(ROUTE_CURSOR_SOURCE, 'routes', overlayState.routes);
     syncRouteLegLegend();
 
     // SNOW-1017: the numbered transitions — a circle at each point where
@@ -3171,7 +3207,18 @@
   // make the map's palette say something it does not mean. What identifies
   // it is the arrival banner, which names the trip and links back to it.
   const TRIP_ROUTE_SOURCE = 'trip-route';
+  const TRIP_MEETING_SOURCE = 'trip-meeting';
   const TRIP_MEETING_ICON = 'trip-meeting-point';
+  // SNOW-1213: the trip line's layers a tap can land on — the shared
+  // drawing's line layers under the trip's prefix. A tap on any of them
+  // opens the route panel for the trip, read-only.
+  const TRIP_ROUTE_TAP_LAYERS = Object.freeze([
+    'trip-route-line',
+    'trip-route-leg-climb',
+    'trip-route-leg-descent',
+    'trip-route-slope-line',
+    'trip-route-slope-unknown',
+  ]);
 
   // The last-fetched trip collection, for the basemap-swap re-install. Null
   // for every visit that did not arrive on a trip link, which is almost all
@@ -3199,7 +3246,7 @@
   };
 
   /**
-   * Install the trip's line, its casing and its meeting marker.
+   * Install the trip's route and its meeting marker.
    *
    * Idempotent on the source, like every other install function here, so
    * the fetch path and the basemap-swap re-install can both call it.
@@ -3213,35 +3260,25 @@
     if (!geojson || map.getSource(TRIP_ROUTE_SOURCE)) return;
     tripRouteGeojsonCache = geojson;
     ensureTripMeetingImage();
-    map.addSource(TRIP_ROUTE_SOURCE, { type: 'geojson', data: geojson });
-    map.addLayer({
-      id: 'trip-route-line-casing',
-      type: 'line',
-      source: TRIP_ROUTE_SOURCE,
-      filter: ['==', ['get', 'kind'], 'route'],
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': ROUTE_CASING_COLOUR,
-        'line-opacity': 0.55,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7, 16, 11],
-      },
+    const features = geojson.features || [];
+    const ofKind = (kind) => ({
+      type: 'FeatureCollection',
+      features: features.filter((f) => f && f.properties && f.properties.kind === kind),
     });
-    map.addLayer({
-      id: 'trip-route-line',
-      type: 'line',
-      source: TRIP_ROUTE_SOURCE,
-      filter: ['==', ['get', 'kind'], 'route'],
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': ROUTE_LINE_COLOUR,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
-      },
+    // SNOW-1213: the route as the shared drawing draws every route — its
+    // legs, slope classes from z14, the transitions and the two ends —
+    // under the trip's own prefix, so none of it is in the routes overlay.
+    self.pwaRouteDrawingCore.install(map, ofKind('route'), {
+      prefix: TRIP_ROUTE_SOURCE,
+      textFont: overlayTextFont,
     });
+    // The cursor over the line, as on a saved route, and always visible.
+    installRouteCursorLayers(TRIP_ROUTE_CURSOR_SOURCE, 'trip-route', true);
+    map.addSource(TRIP_MEETING_SOURCE, { type: 'geojson', data: ofKind('meeting') });
     map.addLayer({
       id: 'trip-route-meeting',
       type: 'symbol',
-      source: TRIP_ROUTE_SOURCE,
-      filter: ['==', ['get', 'kind'], 'meeting'],
+      source: TRIP_MEETING_SOURCE,
       layout: {
         'icon-image': TRIP_MEETING_ICON,
         // No minzoom, unlike the route endpoints: there is exactly one of
@@ -3255,6 +3292,21 @@
     // for the reason installRoutesLayer states.
     raiseMarkerLayers();
   };
+
+  /**
+   * The trip's route feature, as the trips endpoint sent it, or null.
+   *
+   * What a tap on the trip's line opens the route panel with (SNOW-1213):
+   * the whole feature, with its name, figures, slope record and legs, not
+   * the tile's clipped copy MapLibre hands the tap.
+   *
+   * @returns {?Object}
+   */
+  const tripRouteFeature = () => (
+    ((tripRouteGeojsonCache && tripRouteGeojsonCache.features) || []).find(
+      (f) => f && f.properties && f.properties.kind === 'route',
+    ) || null
+  );
 
   /**
    * Honour a ``/?trip=<uuid>`` or ``/?trip_share=<token>`` arrival
@@ -8742,6 +8794,9 @@
       'routes-slope-line',
       'routes-slope-unknown',
       'routes-line',
+      // SNOW-1213: the trip an arrival drew, under the routes: a saved
+      // route over it is the one with actions.
+      ...TRIP_ROUTE_TAP_LAYERS,
     ];
 
     // The route line's tap tolerance, in pixels either side of the touch.
@@ -8767,6 +8822,7 @@
       'routes-leg-descent',
       'routes-slope-line',
       'routes-slope-unknown',
+      ...TRIP_ROUTE_TAP_LAYERS,
     ];
 
     // Return the highest-priority marker whose rendered glyph is under the tap
@@ -9529,6 +9585,27 @@
     };
 
     /**
+     * Open the route panel on the trip an arrival drew (SNOW-1213).
+     *
+     * The same panel a saved route opens — the profile, the cursor and the
+     * point card — and READ-ONLY by construction: the trip's feature
+     * carries no uuid, so the panel shows no "…" menu (every item in it is
+     * an owner action) and fetches no terrain rows (owner-scoped). That is
+     * the right answer twice over: the reader may not own the route, and a
+     * trip's track is a snapshot, which a rename or a delete of the source
+     * route would not reach anyway. No camera move: the reader tapped a
+     * line they can see, which the arrival already framed.
+     *
+     * @returns {void}
+     */
+    const activateTripRoute = () => {
+      const route = tripRouteFeature();
+      if (!route) return;
+      window.pwaRouteRail?.open(route, {});
+      bindRouteCursor({ trip: true });
+    };
+
+    /**
      * Place the point where a route was tapped (SNOW-1019, 2026-10-02).
      *
      * A tap on a route's line means "here": it places the point at the
@@ -9551,10 +9628,14 @@
     const tapOpenRoute = (feature, point) => {
       const props = feature.properties || {};
       if (!point || !routeCursorLive()) return false;
-      // A pending share is matched by its token: it has no uuid.
-      const same = routeCursorTarget.uuid
-        ? props.uuid === routeCursorTarget.uuid
-        : !!props.token && props.token === routeCursorTarget.token;
+      // A pending share is matched by its token: it has no uuid. A trip's
+      // line carries neither, and is matched by the layer it is drawn in
+      // (SNOW-1213).
+      const same = routeCursorTarget.trip
+        ? TRIP_ROUTE_TAP_LAYERS.includes(feature.layer && feature.layer.id)
+        : routeCursorTarget.uuid
+          ? props.uuid === routeCursorTarget.uuid
+          : !!props.token && props.token === routeCursorTarget.token;
       if (!same) return false;
       // The line was hit within the tap slop, so the nearest sample is on
       // it however long the segments are at this zoom: no distance cap.
@@ -9614,6 +9695,13 @@
           tapOpenRoute(feature, point);
           break;
         }
+        default:
+          // SNOW-1213: the trip an arrival drew opens the same panel, with
+          // the point placed where the tap landed.
+          if (!TRIP_ROUTE_TAP_LAYERS.includes(feature.layer.id)) break;
+          if (tapOpenRoute(feature, point)) break;
+          activateTripRoute();
+          tapOpenRoute(feature, point);
       }
     };
 
