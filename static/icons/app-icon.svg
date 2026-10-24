@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-label="Snowdesk">
+  <!-- The launcher artwork: static/favicon.svg's peaks plus a snowline cut
+       across each, in the tile colour. Large sizes only (96px and up);
+       bin/build-pwa-icons renders the PWA icons from this file, while the
+       favicon and the notification badge keep the plain peaks. The peak
+       path must stay identical to the favicon's (the build checks). -->
+  <defs>
+    <clipPath id="peaks">
+      <path d="M3.26 24.5 L12.5 8.5 L19.28 20.25 L22.75 14.25 L28.67 24.5 Z"/>
+    </clipPath>
+  </defs>
+  <rect width="32" height="32" rx="6" fill="#2d4a3e"/>
+  <path d="M3.26 24.5 L12.5 8.5 L19.28 20.25 L22.75 14.25 L28.67 24.5 Z" fill="#f2f0ec"/>
+  <g clip-path="url(#peaks)" fill="none" stroke-linejoin="miter">
+    <polyline points="16.6,13.94 15.64,13.94 14.07,15.70 12.5,13.94 10.93,15.70 9.36,13.94 8.4,13.94" stroke="#2d4a3e" stroke-width="0.77"/>
+    <polyline points="25.6,17.74 24.76,17.74 23.76,18.86 22.75,17.74 21.74,18.86 20.74,17.74 19.9,17.74" stroke="#2d4a3e" stroke-width="0.64"/>
+  </g>
+</svg>

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * bin/build-pwa-icons — Render PWA icon PNGs from static/favicon.svg.
+ * bin/build-pwa-icons — Render PWA icon PNGs from static/icons/app-icon.svg.
  *
  * Outputs two sets of four files.
  *
@@ -19,11 +19,11 @@
  *                              buildBadge below for why it cannot be one
  *                              of the tiles.)
  *
- * Staging set (static/icons/pwa-staging/, SNOW-399) — same four files but
- * on an amber tile, with the mountain raised and the word "Staging" set in
- * a band beneath it. On the maskable variant every mark sits inside the
- * circle the launcher shows (see MASKABLE_MARK_RADIUS), so neither the
- * glyph nor the word is cropped.
+ * Staging set (static/icons/pwa-staging/, SNOW-399) — the same four files
+ * with the tile, and the snowline cut drawn in the tile colour, recoloured
+ * amber. The mark itself does not change. On the maskable variant every
+ * mark sits inside the circle the launcher shows (see
+ * MASKABLE_MARK_RADIUS), so the peaks are never cropped.
  *
  * Snowdesk deploys the same codebase to staging (*.onrender.com) and
  * production (snowdesk.info). Once a tester has both installed as PWAs,
@@ -31,19 +31,26 @@
  * that reads as unambiguously non-production from three feet away, so
  * staging sessions can't be confused for production ones.
  *
- * STAGING LABEL
- * -------------
- * The production tile is the favicon artwork and nothing else. The
- * staging tile lifts the mountain by MOUNTAIN_LIFT units of the 32-unit
- * viewBox and sets STAGING_LABEL in the band it vacates, so an installed
- * staging app says what it is without launching it. (Until SNOW-1112's
- * follow-up both tiles carried the season, "25/26", in that band, and
- * staging an asterisk off the mountain's top right; both were dropped.)
+ * TWO ARTWORKS, ONE MARK
+ * ----------------------
+ * The mark is two symmetrical peaks, a big one and a small one at the same
+ * apex angle (60°). ``static/favicon.svg`` draws them plain: at 16–48px a
+ * snowline is noise. ``static/icons/app-icon.svg`` draws the same peaks
+ * with a zigzag snowline cut across each in the tile colour, and every
+ * PWA icon here is 96px or larger, so they are all rendered from it. The
+ * notification badge is the exception: an alpha mask in a status bar, so
+ * it takes the plain favicon path. main() checks the two files share the
+ * peak path exactly.
+ *
+ * The staging tile used to carry the word "Staging" under a lifted
+ * mountain (and before SNOW-1112's follow-up, the season and an asterisk).
+ * The amber tile alone is the tell now; the launcher label already reads
+ * "Snowdesk Staging" from the manifest's short_name.
  *
  * Run via ``npm run build:icons`` (see package.json). The PNGs are
- * checked in alongside ``static/favicon.svg`` — when the SVG changes,
- * regenerate and commit the new outputs, then run
- * ``npm run build:splash`` so the iOS launch images follow.
+ * checked in alongside the SVGs — when either changes, regenerate and
+ * commit the new outputs, then run ``npm run build:splash`` so the iOS
+ * launch images follow.
  *
  * OPAQUE VARIANTS AND THE TILE COLOUR
  * -----------------------------------
@@ -90,27 +97,24 @@ const path = require('node:path');
 const sharp = require('sharp');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const SRC_SVG = path.join(REPO_ROOT, 'static', 'favicon.svg');
+const SRC_SVG = path.join(REPO_ROOT, 'static', 'icons', 'app-icon.svg');
+const FAVICON_SVG = path.join(REPO_ROOT, 'static', 'favicon.svg');
 const OUT_DIR_PROD = path.join(REPO_ROOT, 'static', 'icons', 'pwa');
 const OUT_DIR_STAGING = path.join(REPO_ROOT, 'static', 'icons', 'pwa-staging');
 
-// Brand green — must match the rect fill in static/favicon.svg. Doubles
+// Brand green — must match the rect fill (and the snowline stroke) in
+// static/icons/app-icon.svg and the rect fill in static/favicon.svg. Doubles
 // as the opaque backdrop for the production maskable and apple-touch
 // PNGs, so a masked corner clips green-on-green (SNOW-151).
 const TILE_COLOUR_PRODUCTION = '#2d4a3e';
 
-// SNOW-399 — the staging tile colour, replacing the brand green in the
-// recoloured artwork and backing the same two flattened PNGs. Mirrored as
+// SNOW-399 — the staging tile colour, replacing every brand green in the
+// recoloured artwork (the tile and the snowline cut) and backing the same two flattened PNGs. Mirrored as
 // PWAEnvironmentIdentity.STAGING.tile_color in apps/public/site_environment.
 const TILE_COLOUR_STAGING = '#b45309';
 
-// Brand cream — must match the mountain fill in static/favicon.svg. The
-// staging label reuses it so every light mark on the tile is the same
-// white.
-const FOREGROUND_COLOUR = '#f2f0ec';
-
 // The radius, as a fraction of the maskable canvas, that every light mark
-// on the tile (the mountain, and on staging the label) must sit inside.
+// on the tile (the peaks) must sit inside.
 // The tightest crop the icon gets is the home-screen launcher: Android
 // draws a maskable icon as an adaptive icon, a 108dp layer of which a
 // 72dp circle shows (two thirds, radius 1/3) and a 66dp circle is the
@@ -125,49 +129,28 @@ const MASKABLE_MARK_RADIUS = 0.3;
 // cream foreground is #f2f0ec, both tile colours are far darker.
 const MARK_CHANNEL_MIN = 200;
 
-// Units of the 32-unit viewBox the staging mountain is raised by to clear
-// the label band at the foot of the tile.
-const MOUNTAIN_LIFT = 4;
-
-// The word in the staging band.
-const STAGING_LABEL = 'Staging';
-
 /**
- * Render the staging label as an SVG <text> element.
+ * Read the checked-in launcher artwork and, for the staging set, recolour
+ * every use of the brand green — the tile and the snowline cut — amber.
  *
- * Baseline y=29 of the 32-unit viewBox puts it in the band the lifted
- * mountain vacates. At font size 5.5 the word spans about two thirds of
- * the tile, leaving the rounded corners plenty of air. On the
- * maskable variant the word's ends are the furthest marks from the
- * centre, so they set how far the tile shrinks (see buildMaskable).
- */
-function labelBand(label) {
-  return (
-    `<text x="16" y="29" font-family="Arial, Helvetica, sans-serif"` +
-    ` font-size="5.5" font-weight="700" text-anchor="middle"` +
-    ` fill="${FOREGROUND_COLOUR}">${label}</text>`
-  );
-}
-
-/**
- * Read the checked-in production favicon SVG and, for the staging set,
- * recolour its tile, lift the mountain and set the label beneath it.
- *
- * The production tile is the favicon unchanged. The string replacements
- * target the exact production shape (see the check in main()); a future
- * SVG rewrite that changes it surfaces as a build-time mismatch, not a
- * silent no-op.
+ * The production tile is the artwork unchanged. The recolour targets the
+ * exact production colour (see the check in main()); a future SVG rewrite
+ * that moves it surfaces as a build-time error, not a silent no-op.
  */
 function loadSourceSvg(variant) {
   const svg = fs.readFileSync(SRC_SVG, 'utf8');
   if (variant === 'production') {
     return Buffer.from(svg, 'utf8');
   }
-  const staged = svg
-    .replace('<path ', `<path transform="translate(0 -${MOUNTAIN_LIFT})" `)
-    .replace(`fill="${TILE_COLOUR_PRODUCTION}"`, `fill="${TILE_COLOUR_STAGING}"`)
-    .replace('</svg>', `${labelBand(STAGING_LABEL)}</svg>`);
-  return Buffer.from(staged, 'utf8');
+  return Buffer.from(svg.replaceAll(TILE_COLOUR_PRODUCTION, TILE_COLOUR_STAGING), 'utf8');
+}
+
+/**
+ * Return the d attribute of the first <path> in an SVG string — the peaks.
+ */
+function peakPath(svg) {
+  const match = /<path d="([^"]+)"/.exec(svg);
+  return match ? match[1] : null;
 }
 
 async function buildAny(size, outName, outDir, srcSvg) {
@@ -182,9 +165,10 @@ async function buildAny(size, outName, outDir, srcSvg) {
  * the tile's width.
  *
  * Measured off a render rather than worked out from the SVG, because the
- * marks include text whose extent depends on the font. The centre is the
- * marks' own, not the tile's: the mountain sits below the middle of the
- * favicon's square, which reads as "too low" once a circle frames it.
+ * marks are easier to measure than to work out through a clip path. The
+ * centre is the marks' own, not the tile's: the peaks sit below the middle
+ * of the artwork's square, which reads as "too low" once a circle frames
+ * it.
  */
 async function markExtent(srcSvg) {
   const probe = 512;
@@ -226,10 +210,7 @@ async function buildMaskable(size, outName, outDir, srcSvg, tileColour) {
   // Scale the whole tile so its furthest mark lands on
   // MASKABLE_MARK_RADIUS, and place it so the marks, not the tile, are
   // centred on the canvas: the backdrop is the tile colour, so moving
-  // the tile is invisible except in where the marks land. The staging
-  // label reaches further out than the bare mountain, so the staging
-  // glyph comes out a little smaller; that is the price of the word
-  // surviving the crop.
+  // the tile is invisible except in where the marks land.
   const extent = await markExtent(srcSvg);
   const ratio = MASKABLE_MARK_RADIUS / extent.radius;
   const inner = Math.round(size * ratio);
@@ -297,25 +278,26 @@ async function buildAppleTouchIcon(size, outName, outDir, srcSvg, tileColour) {
  * convention only — Android never reads it, and the same file would
  * render identically if the mountain were magenta.
  *
- * The viewBox is a 26-unit square centred on the glyph's bounding box
- * (x 5..27, y 10..25 of the source's 32-unit canvas), which trims the
- * tile's padding: at 24dp in a status bar the glyph needs the whole
- * canvas to read as mountains rather than as a smudge.
+ * It reads the plain favicon, not the launcher artwork: a snowline cut is
+ * a few pixels of noise at 24dp. The viewBox is a 28-unit square centred
+ * on the glyph's bounding box (x 3.26..28.67, y 8.5..24.5 of the 32-unit
+ * canvas), which trims the tile's padding: at 24dp in a status bar the
+ * glyph needs the whole canvas to read as mountains rather than as a
+ * smudge.
  *
  * There is no staging variant. The badge is an alpha mask, so the amber
- * tile colour cannot survive into it and the label would be a few
- * illegible pixels — a staging badge would be byte-identical in every way
- * that reaches the screen.
+ * tile colour cannot survive into it — a staging badge would be
+ * byte-identical in every way that reaches the screen.
  */
 async function buildBadge(size, outName, outDir) {
   const outPath = path.join(outDir, outName);
-  const svg = fs.readFileSync(SRC_SVG, 'utf8');
+  const svg = fs.readFileSync(FAVICON_SVG, 'utf8');
   const glyph = /<path [^>]*\/>/.exec(svg);
   if (!glyph) {
     throw new Error('no <path> found in static/favicon.svg for the badge');
   }
   const badgeSvg = Buffer.from(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="3 4.5 26 26">' +
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="1.97 2.5 28 28">' +
       `${glyph[0].replace(/fill="[^"]*"/, 'fill="#ffffff"')}</svg>`,
     'utf8',
   );
@@ -339,22 +321,24 @@ async function main() {
     console.error(`source SVG not found: ${SRC_SVG}`);
     process.exit(1);
   }
-  // The staging recolour and the mountain lift depend on the exact
-  // production SVG shape. Guard here so a future SVG rewrite surfaces as
-  // a build error rather than a silent no-op that ships an amber-less
-  // staging tile or a mountain overlapping the staging label.
+  // The staging recolour depends on the exact production colour, and the
+  // two artworks must draw the same peaks. Guard here so a future SVG
+  // rewrite surfaces as a build error rather than a silent no-op that
+  // ships an amber-less staging tile, or a launcher icon that no longer
+  // matches the favicon.
   const svg = fs.readFileSync(SRC_SVG, 'utf8');
   if (!svg.includes(`fill="${TILE_COLOUR_PRODUCTION}"`)) {
     console.error(
-      `expected fill="${TILE_COLOUR_PRODUCTION}" in static/favicon.svg — update` +
-        ' TILE_COLOUR_PRODUCTION if the brand colour has moved',
+      `expected fill="${TILE_COLOUR_PRODUCTION}" in static/icons/app-icon.svg —` +
+        ' update TILE_COLOUR_PRODUCTION if the brand colour has moved',
     );
     process.exit(1);
   }
-  if (!svg.includes('<path ')) {
+  const favicon = fs.readFileSync(FAVICON_SVG, 'utf8');
+  if (!peakPath(svg) || peakPath(svg) !== peakPath(favicon)) {
     console.error(
-      'expected a single <path> (the mountain glyph) in static/favicon.svg —' +
-        ' update the staging lift in loadSourceSvg() if the artwork has changed',
+      'the peaks in static/icons/app-icon.svg and static/favicon.svg differ —' +
+        ' redraw them together',
     );
     process.exit(1);
   }
