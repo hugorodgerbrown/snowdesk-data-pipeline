@@ -340,6 +340,11 @@ in addition to the shared map assets.
     {# resolves the Bulletins preference through seedFromLegacy), so it must #}
     {# load before the bundle.                                              #}
     <script defer src="{% static 'js/layer_visibility_core.js' %}"></script>
+    {# SNOW-1212: how a saved route is drawn (window.pwaRouteDrawingCore) —  #}
+    {# the legs, the slope classes from z14 and the end markers, shared     #}
+    {# with the trip page and the meeting picker. Read by map.js at parse   #}
+    {# time (ROUTE_SLOPE_MINZOOM), so it must load before the bundle.        #}
+    <script defer src="{% static 'js/route_drawing_core.js' %}"></script>
     {# The diagonal-hatch pixels the downloaded-areas overlay is painted     #}
     {# with (window.pwaHatchCore) — the mark that lets the download squares  #}
     {# and the danger choropleth share the same polygons. Read by map.js at  #}

@@ -73,7 +73,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 import waffle
@@ -94,6 +94,7 @@ from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
 from apps.locations.services.what3words import fill_what3words, what3words_map_url
 from apps.routes.models import Route
+from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.slope_summary import summarise_record
 from apps.routes.services.slope_wire import compact_slope
@@ -206,7 +207,9 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
     there is no axis transform here. When the snapshot's slope record has
     model heights it is the terrain track instead — the snapshot merged
     with the record's boundary points, on the model's heights (SNOW-1043,
-    see ``_trip_heights``) — and the ascent and descent are summed over it.
+    see ``_route_drawing``) — and the ascent and descent are summed over it.
+    The route carries ``legs`` too, so it is drawn as the map draws it
+    (SNOW-1212).
 
     Args:
         trip: The trip to describe.
@@ -217,10 +220,8 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
 
     """
     meeting = trip.meeting_point
-    points, ascent_m, descent_m = _trip_heights(trip)
-    # SNOW-1053: ``seams`` index into the geometry sent below, so the
-    # class segments follow the track rather than chording across it.
-    slope = compact_slope(trip.slope_samples, coordinates=points)
+    ascent_m, descent_m = trip.climb
+    points, drawing = _route_drawing(trip.points, trip.slope_samples)
     return {
         "route": {
             "type": "Feature",
@@ -229,13 +230,7 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
                 "distance_m": trip.distance_m,
                 "ascent_m": ascent_m,
                 "descent_m": descent_m,
-                # SNOW-962: the same two keys the routes feed carries, on
-                # the snapshot's own record. OMITTED ENTIRELY rather than
-                # nulled when the trip has never been sampled — the map
-                # page's layers read the key's PRESENCE to decide whether
-                # a line is already coloured, and this page's line follows
-                # the same rule so one track reads alike on both.
-                **({"slope": slope} if slope is not None else {}),
+                **drawing,
                 **(
                     {"terrain": terrain}
                     if (terrain := summarise_record(trip.slope_samples)) is not None
@@ -255,6 +250,49 @@ def _trip_map_payload(trip: Trip) -> dict[str, Any]:
             "properties": {},
         },
         "bounds": trip.bounds,
+    }
+
+
+def _route_drawing(
+    raw_points: list[list[float | None]], slope_samples: dict[str, Any] | None
+) -> tuple[list[list[float | None]], dict[str, Any]]:
+    """Return a track and the properties the shared route drawing reads.
+
+    SNOW-1212. ``static/js/route_drawing_core.js`` draws a route as its
+    legs below z14 and in slope classes from z14, as the map does, and it
+    reads two keys off the route Feature to do it: ``slope`` (the classes)
+    and ``legs`` (the legs, with ``point_from``/``point_to`` into the
+    geometry). Both are built here exactly as the routes feed builds them
+    (``apps.routes.views._route_feature``), over the terrain track, so the
+    two indices and the geometry describe one series.
+
+    Each key is OMITTED rather than nulled when there is none, for the
+    reason the feed gives: the drawing reads a key's PRESENCE. A trip
+    with no legs is drawn flat, and one never sampled keeps its legs'
+    colours at every zoom.
+
+    Shared by the trip page's payload and the meeting picker's, so the
+    picker draws the route the trip page will.
+
+    Args:
+        raw_points: The stored track, ``[[lon, lat, ele], …]``.
+        slope_samples: The stored slope record, or None if never sampled.
+
+    Returns:
+        ``(points, properties)`` — the terrain track to send as the
+        geometry, and the ``slope`` and ``legs`` keys that apply.
+
+    """
+    points = terrain_points(raw_points, slope_samples)
+    # SNOW-1053: ``seams`` index into this geometry, so the class segments
+    # follow the track rather than chording across it.
+    slope = compact_slope(slope_samples, coordinates=points)
+    # The record is passed only when ``slope`` is sent, as the feed does:
+    # with no ``angles`` on the wire the legs must index the stride walk.
+    legs = wire_legs(points, slope_samples if slope is not None else None)
+    return points, {
+        **({"slope": slope} if slope is not None else {}),
+        **({"legs": legs} if legs else {}),
     }
 
 
@@ -458,6 +496,7 @@ def _picker_payload(
     bounds: list[float],
     latitude: float,
     longitude: float,
+    slope_samples: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the payload ``static/js/trip_meeting_picker.js`` draws.
 
@@ -481,16 +520,23 @@ def _picker_payload(
         bounds: The GeoJSON bbox ``[min_lon, min_lat, max_lon, max_lat]``.
         latitude: The pin's starting latitude.
         longitude: The pin's starting longitude.
+        slope_samples: The track's slope record, so the picker draws the
+            route's legs and slope classes as the map does (SNOW-1212).
 
     Returns:
         A JSON-serialisable dict with ``route``, ``meeting`` and ``bounds``.
 
     """
+    # A list of floats IS a list of optional floats to read; mypy's list
+    # invariance only guards writes, and _route_drawing writes nothing.
+    track, drawing = _route_drawing(
+        cast("list[list[float | None]]", points), slope_samples
+    )
     return {
         "route": {
             "type": "Feature",
-            "geometry": {"type": "LineString", "coordinates": points},
-            "properties": {},
+            "geometry": {"type": "LineString", "coordinates": track},
+            "properties": drawing,
         },
         # Longitude first — GeoJSON axis order, as the marker's own
         # setLngLat takes it.
@@ -503,6 +549,7 @@ def _submitted_picker_payload(
     request: HttpRequest,
     points: list[list[float]],
     bounds: list[float],
+    slope_samples: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the picker payload for a form that failed validation.
 
@@ -518,6 +565,7 @@ def _submitted_picker_payload(
         request: The POST request, read for the submitted coordinates.
         points: The source track, or empty when the route is unavailable.
         bounds: The source bbox, or empty on the same condition.
+        slope_samples: The source's slope record, for the route drawing.
 
     Returns:
         The picker payload.
@@ -529,7 +577,7 @@ def _submitted_picker_payload(
         longitude = float(request.POST.get("longitude", ""))
     except TypeError, ValueError:
         latitude, longitude = first[1], first[0]
-    return _picker_payload(points, bounds, latitude, longitude)
+    return _picker_payload(points, bounds, latitude, longitude, slope_samples)
 
 
 def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
@@ -657,6 +705,7 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
                 trip.bounds,
                 trip.meeting_point.latitude,
                 trip.meeting_point.longitude,
+                trip.slope_samples,
             )
             if is_organiser
             else None
@@ -753,7 +802,7 @@ def trip_new(request: HttpRequest) -> HttpResponse:
             "form": form,
             "route": route,
             "picker_payload": _picker_payload(
-                route.points, route.bounds, first[1], first[0]
+                route.points, route.bounds, first[1], first[0], route.slope_samples
             ),
             **_basemap_context(),
             **_what3words_context(request),
@@ -921,6 +970,7 @@ def trip_create(request: HttpRequest) -> HttpResponse:
                     request,
                     route.points if route else [],
                     route.bounds if route else [],
+                    route.slope_samples if route else None,
                 ),
                 **_basemap_context(),
                 **_what3words_context(request),
@@ -1021,7 +1071,10 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
                 # The snapshot, not the route FK — the same rule every
                 # other rendering path here follows.
                 "picker_payload": _submitted_picker_payload(
-                    request, trip.points if trip else [], trip.bounds if trip else []
+                    request,
+                    trip.points if trip else [],
+                    trip.bounds if trip else [],
+                    trip.slope_samples if trip else None,
                 ),
                 **_basemap_context(),
                 **_what3words_context(request),

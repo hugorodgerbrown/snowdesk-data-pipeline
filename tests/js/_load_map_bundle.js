@@ -100,6 +100,9 @@ const PARSE_TIME_CORES = [
   // options, so a bundle booted without it throws before any test has run —
   // the same reason `layer_visibility_core.js` is here.
   'map_viewport_core.js',
+  // SNOW-1212: `map.js` reads ROUTE_SLOPE_MINZOOM off the shared route
+  // drawing at parse time, and builds its route layers from it.
+  'route_drawing_core.js',
 ];
 
 /** home.html's script order for the map bundle. */

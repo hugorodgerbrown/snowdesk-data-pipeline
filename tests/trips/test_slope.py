@@ -40,7 +40,7 @@ from apps.trips.services.slope import (
     _worker_sample_trip_slopes,
     enqueue_trip_slope_sampling,
 )
-from apps.trips.views import _trip_map_payload
+from apps.trips.views import _picker_payload, _trip_map_payload
 from tests.factories import RouteFactory, TripFactory, UserFactory
 
 _GRID_FIXTURE = (
@@ -283,6 +283,39 @@ class TestTripMapPayload:
         assert "slope" not in properties
         assert "terrain" not in properties
 
+    def test_a_trip_carries_its_legs_for_the_shared_drawing(self) -> None:
+        """SNOW-1212: the trip map draws the route's legs, as the map does.
+
+        The legs index the geometry sent beside them, so each one slices a
+        real stretch of the track the page draws.
+        """
+        trip = TripFactory.create(points=MERIDIAN_TRACK, slope_samples=_record(41.0))
+
+        route = _trip_map_payload(trip)["route"]
+        legs = route["properties"]["legs"]
+
+        assert [leg["climbing"] for leg in legs] == [True]
+        assert legs[0]["point_from"] == 0
+        assert legs[-1]["point_to"] == len(route["geometry"]["coordinates"]) - 1
+
+    def test_an_unsampled_trip_still_has_legs(self) -> None:
+        """A leg is a fact about the geometry, not about the sampler."""
+        trip = TripFactory.create(points=MERIDIAN_TRACK, slope_samples=None)
+
+        properties = _trip_map_payload(trip)["route"]["properties"]
+
+        assert [leg["climbing"] for leg in properties["legs"]] == [True]
+
+    def test_a_track_with_no_heights_has_no_legs_key(self) -> None:
+        """Omitted, so the drawing draws the route flat."""
+        trip = TripFactory.create(
+            points=[[7.0, 46.0, None], [7.0, 46.01, None]], slope_samples=None
+        )
+
+        properties = _trip_map_payload(trip)["route"]["properties"]
+
+        assert "legs" not in properties
+
     def test_a_malformed_record_draws_nothing_rather_than_the_wrong_ground(
         self,
     ) -> None:
@@ -389,3 +422,31 @@ class TestTheTerrainHelpLink:
         # against and is invisible to every other test here.
         strip = body.split('data-testid="trip-view-on-map"')[1]
         assert "·" not in strip.split("</div>")[0]
+
+
+class TestPickerPayload:
+    """SNOW-1212: the meeting picker draws the route as the trip page will."""
+
+    def test_carries_the_slope_and_legs_the_drawing_reads(self) -> None:
+        payload = _picker_payload(
+            MERIDIAN_TRACK, [7.0, 46.0, 7.0, 46.01], 46.0, 7.0, _record(41.0)
+        )
+
+        properties = payload["route"]["properties"]
+
+        assert properties["slope"]["angles"] == [41.0]
+        assert [leg["climbing"] for leg in properties["legs"]] == [True]
+
+    def test_an_unsampled_route_carries_legs_alone(self) -> None:
+        payload = _picker_payload(MERIDIAN_TRACK, [7.0, 46.0, 7.0, 46.01], 46.0, 7.0)
+
+        properties = payload["route"]["properties"]
+
+        assert "slope" not in properties
+        assert "legs" in properties
+
+    def test_an_empty_track_draws_nothing(self) -> None:
+        """A route gone between the form and the submit costs the map only."""
+        payload = _picker_payload([], [], 46.0, 7.0)
+
+        assert payload["route"]["properties"] == {}

@@ -50,13 +50,10 @@
 (function () {
   'use strict';
 
-  // Mirrors --color-route-line and --color-route-line-casing in
-  // src/css/main.css, and the same two constants in trip_map.js. MapLibre
-  // paint properties cannot reference a CSS @theme token at all, so these
-  // are kept in step by hand — the idiom map.js documents at its own
-  // ROUTE_LINE_COLOUR.
+  // The pin's colour, mirroring --color-route-line in src/css/main.css.
+  // MapLibre cannot read a CSS @theme token, so it is kept in step by hand,
+  // as route_drawing_core.js keeps the route's own.
   var ROUTE_LINE_COLOUR = '#c026d3';
-  var ROUTE_CASING_COLOUR = '#1a1916';
 
   // Six decimal places is ~11 cm at the equator — far finer than anyone
   // can point at on a phone, and short enough to read in the coordinate
@@ -212,17 +209,6 @@
   }
 
   /**
-   * Draw the route beneath the pin.
-   *
-   * The same two-layer casing-under-line treatment trip_map.js uses, for
-   * the same reason: one stroke alone is unreadable over some part of any
-   * basemap. Guarded on the source so a style reload cannot double it.
-   *
-   * @param {Object} map A MapLibre map.
-   * @param {?Object} payload The picker payload.
-   * @returns {void}
-   */
-  /**
    * Resolve this reader's basemap, through `trip_map.js`'s own helper.
    *
    * SNOW-829. Delegated rather than reimplemented: `pwaTripMapCore` is
@@ -241,35 +227,24 @@
     return core.resolveBasemapFor(container, doc);
   }
 
+  /**
+   * Draw the route beneath the pin.
+   *
+   * SNOW-1212: the map's own drawing (`route_drawing_core.js`), as the
+   * trip page draws it — legs below z14, slope classes from z14 — so the
+   * organiser can see where the climbs start when choosing where to meet.
+   * Guarded on the source so a style reload cannot double it.
+   *
+   * @param {Object} map A MapLibre map.
+   * @param {?Object} payload The picker payload.
+   * @returns {void}
+   */
   function installRoute(map, payload) {
     if (!payload || map.getSource('picker-route')) return;
     var core = self.pwaTripMapCore;
-    if (!core) return;
-    var data = core.routeSourceData(payload);
-    if (!data) return;
-
-    map.addSource('picker-route', { type: 'geojson', data: data });
-    map.addLayer({
-      id: 'picker-route-casing',
-      type: 'line',
-      source: 'picker-route',
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': ROUTE_CASING_COLOUR,
-        'line-opacity': 0.55,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7, 16, 11],
-      },
-    });
-    map.addLayer({
-      id: 'picker-route-line',
-      type: 'line',
-      source: 'picker-route',
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': ROUTE_LINE_COLOUR,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
-      },
-    });
+    var drawing = self.pwaRouteDrawingCore;
+    if (!core || !drawing) return;
+    drawing.install(map, core.routeSourceData(payload), { prefix: 'picker-route' });
   }
 
   /**

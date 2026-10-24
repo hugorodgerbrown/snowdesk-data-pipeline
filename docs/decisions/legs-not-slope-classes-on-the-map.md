@@ -1,8 +1,8 @@
 ---
 name: legs-not-slope-classes-on-the-map
-description: route_legs_core.js, routes-leg-climb/-descent, routes-slope-line, ROUTE_SLOPE_MINZOOM — a route is its legs, in slope classes from z14
+description: route_drawing_core.js, route_legs_core.js, ROUTE_SLOPE_MINZOOM — a route is its legs, slope classes from z14, on the map and both trip maps
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-24
 ---
 
 # A saved route on the map is drawn as its legs, not in slope classes
@@ -20,7 +20,8 @@ slope-class colours SNOW-910 painted per 25 m segment left the map; the
 no-fall passages, crux rings and fall-line arrows stayed, with the
 passage edge now in its leg's colour. A pending share is unchanged: the
 teal dashed line, with no legs and no markers. The trip page
-(`trip_map.js`) still draws the slope-coloured line.
+(`trip_map.js`) still draws the slope-coloured line (until SNOW-1212,
+below).
 
 **2026-09-24 (SNOW-1019).** The crux rings and fall-line arrows are off
 the map now, and off the trip map too, with their legend rows. The crux
@@ -170,6 +171,23 @@ segment ([the-point-card-names-the-experience.md](the-point-card-names-the-exper
   every route has and which the flat line has always drawn. Adjacent legs
   share their seam point, so the lines meet with no gap; a leg folded
   away server-side hands its points to its neighbour.
+
+**2026-10-24 (SNOW-1212): the trip maps draw a route the same way.**
+The trip page painted the slope classes at every zoom, the SNOW-962
+drawing this decision retired on the map, and the plan page's meeting
+picker painted one flat line. One track read three ways on three maps.
+The layer definitions and `ROUTE_SLOPE_MINZOOM` moved out of `map.js`
+into `route_drawing_core.js` (`window.pwaRouteDrawingCore`), and all
+three maps build their route layers from it: the legs below z14, the
+slope classes from z14, the numbered transitions, the start dot and the
+finish flag. `map.js` adds the two groups (`lineLayers`, `markLayers`)
+with its pending line and cursor between them and passes its own flat
+filters, since only the map page has pending routes. The trip page and
+the picker have nothing to interleave and call `install`. Their
+payloads (`_trip_map_payload`, `_picker_payload`) now carry `legs` as
+the routes feed does (`_route_drawing` in `apps/trips/views.py`). The
+trip page's map also gained +/− and cooperative gestures, so the page
+still scrolls past it; the picker stays fully interactive.
 
 ## Consequences
 
