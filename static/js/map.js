@@ -2592,8 +2592,26 @@
       : EMPTY_ROUTE_CURSOR_FC;
     for (const id of [ROUTE_CURSOR_SOURCE, TRIP_ROUTE_CURSOR_SOURCE]) {
       const pointSource = map.getSource(id);
-      if (pointSource) pointSource.setData(routeCursorPointData);
+      if (pointSource) pointSource.setData(routeCursorDataFor(id));
     }
+  };
+
+  /**
+   * What one cursor source should hold: the point, if it belongs to the
+   * route this source draws, and nothing otherwise.
+   *
+   * The trip's cursor layers are always visible (it has no overlay switch),
+   * so a saved route's point written there too would stay on the map after
+   * the routes overlay is switched off.
+   *
+   * @param {string} sourceId ROUTE_CURSOR_SOURCE or TRIP_ROUTE_CURSOR_SOURCE.
+   * @returns {Object} A FeatureCollection.
+   */
+  const routeCursorDataFor = (sourceId) => {
+    const active = routeCursorTarget && routeCursorTarget.trip
+      ? TRIP_ROUTE_CURSOR_SOURCE
+      : ROUTE_CURSOR_SOURCE;
+    return sourceId === active ? routeCursorPointData : EMPTY_ROUTE_CURSOR_FC;
   };
 
   /**
@@ -2706,10 +2724,13 @@
    * subscription still gets the new place.
    *
    * @returns {?{x: number, y: number}} Viewport px, or null with no open
-   *   route, no index, the routes overlay off or no slope record.
+   *   route, no index, the routes overlay off (for a saved route; a trip
+   *   is drawn without it) or no slope record.
    */
   const routeCursorRawPoint = () => {
-    if (!map || !routeCursorTarget || !overlayState.routes) return null;
+    // A trip's route is drawn with the routes overlay off (SNOW-1213).
+    if (!map || !routeCursorTarget) return null;
+    if (!routeCursorTarget.trip && !overlayState.routes) return null;
     const point = routeCursorFeature(routeCursorTarget.cursor.state().index);
     if (!point) return null;
     const px = map.project(point.geometry.coordinates);
@@ -2934,7 +2955,8 @@
 
   // The sources the route cursor is drawn from: the routes overlay's, and
   // the trip arrival's (SNOW-1213), which has no overlay switch to share.
-  // paintRouteCursor writes the same index to both.
+  // paintRouteCursor writes the point to whichever the open route is drawn
+  // from and empties the other.
   const ROUTE_CURSOR_SOURCE = 'route-cursor-point';
   const TRIP_ROUTE_CURSOR_SOURCE = 'trip-route-cursor-point';
 
@@ -2955,7 +2977,7 @@
     if (map.getSource(sourceId)) return;
     map.addSource(sourceId, {
       type: 'geojson',
-      data: routeCursorPointData,
+      data: routeCursorDataFor(sourceId),
     });
     // SNOW-1145: from ROUTE_SLOPE_MINZOOM the cursor IS its segment — the
     // 25 m the point card describes, drawn along its own path in its
