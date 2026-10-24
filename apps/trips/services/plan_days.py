@@ -35,7 +35,8 @@ from __future__ import annotations
 
 import datetime
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from django.utils.translation import gettext as _
 
@@ -43,6 +44,10 @@ from apps.bulletins.models import RegionDayRating
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.regions.models import MicroRegion
 from apps.regions.services.point_match import region_for_point
+
+if TYPE_CHECKING:
+    from apps.trips.services.trip_weather import TripWeather
+    from apps.weather.services.weather_display import ForecastPanelDay
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +67,15 @@ class PlanDay:
         rating: The day's peak ``RegionDayRating.Rating`` key, or ``""``
             when no bulletin rated it.
         subdivision: The rating's ``+``/``-`` suffix, or ``""``.
+        weather: The day's forecast from the week's forecast point, or
+            None outside its window (SNOW-1217).
 
     """
 
     date: datetime.date
     rating: str = ""
     subdivision: str = ""
+    weather: ForecastPanelDay | None = None
 
     @property
     def digit(self) -> str:
@@ -102,11 +110,14 @@ class PlanWeek:
     Attributes:
         days: ``PLAN_DAYS`` tiles from today.
         region: The route start's region, or None outside coverage.
+        weather: The forecast point the tiles read, or None when none is
+            near enough (SNOW-1217).
 
     """
 
     days: list[PlanDay]
     region: MicroRegion | None
+    weather: TripWeather | None = None
 
     @property
     def first(self) -> datetime.date:
@@ -199,6 +210,26 @@ def trip_danger(day: datetime.date, points: list[list[float]]) -> TripDanger | N
         return None
     rated = _rated_days(region, day, day).get(day)
     return TripDanger(rated, region) if rated else None
+
+
+def with_weather(week: PlanWeek, weather: TripWeather | None) -> PlanWeek:
+    """Return the week with each tile's forecast from ``weather`` (SNOW-1217).
+
+    A tile outside the forecast's window keeps no forecast, as a tile no
+    bulletin rated keeps no level.
+
+    Args:
+        week: The week from ``plan_week``.
+        weather: The forecast point, or None.
+
+    Returns:
+        A new week; ``week`` itself is unchanged.
+
+    """
+    if weather is None:
+        return week
+    days = [replace(day, weather=weather.on(day.date)) for day in week.days]
+    return replace(week, days=days, weather=weather)
 
 
 def plan_week(today: datetime.date, points: list[list[float]]) -> PlanWeek:

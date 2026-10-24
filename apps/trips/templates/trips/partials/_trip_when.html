@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n weather_icons %}
 {% comment %}
 trips/partials/_trip_when.html — the Plan form's "When": the day as five
 tiles and an "Other", then the meeting time (SNOW-1215).
@@ -29,6 +29,14 @@ and that is the intended reading, not a gap.
 The line under the tiles names the checked day, and its region and level
 when there are any. One per tile is rendered; the script shows the checked
 tile's, and the server shows it first, so it reads without the script.
+
+THE FORECAST, WHEN THERE IS ONE (SNOW-1217). Each tile shows the day's
+weather icon and high from the forecast point nearest the route's start
+(apps/trips/services/trip_weather.py), with the danger chip under it on
+the days a bulletin rated. The line under the captions names the point
+and how far it is from the start, because it is not the start: a route
+has no forecast of its own. With no point near enough the tiles carry no
+weather slot at all, rather than seven empty ones.
 
 Context:
     form       : TripForm.
@@ -66,6 +74,23 @@ Context:
                             {% endif %}
                         </span>
                         <span class="text-base font-semibold text-text-1">{{ day.date|date:"j" }}</span>
+                        {% if plan_week.weather %}
+                            <span class="flex h-11 flex-col items-center justify-center" data-testid="trip-day-weather">
+                                {% if day.weather %}
+                                    <img
+                                        src="{% weather_icon_url day.weather.icon_filename %}"
+                                        class="{% weather_icon_class %} h-7 w-7"
+                                        alt=""
+                                        aria-hidden="true"
+                                    >
+                                    {% if day.weather.temp_max is not None %}
+                                        <span
+                                            class="text-xs text-text-2"
+                                        >{{ day.weather.temp_max|floatformat:0 }}°</span>
+                                    {% endif %}
+                                {% endif %}
+                            </span>
+                        {% endif %}
                         <span class="flex h-5 items-center">
                             {% if day.rating %}
                                 <span
@@ -109,6 +134,7 @@ Context:
                         {% include "includes/_icon_calendar.html" with size=18 %}
                     {% endif %}
                 </span>
+                {% if plan_week.weather %}<span class="h-11" aria-hidden="true"></span>{% endif %}
                 <span class="h-5" aria-hidden="true"></span>
                 <span class="weather-day-marker h-1 w-5 rounded-pill bg-transparent" aria-hidden="true"></span>
             </label>
@@ -140,14 +166,14 @@ Context:
                     data-rating="{{ day.rating_label }}"
                     {% if iso != plan_date %}hidden{% endif %}
                 >
+                    {{ day.date|date:"l j F" }}
+                    {% if day.weather %}
+                        · {% include "trips/partials/_trip_weather_words.html" with day=day.weather only %}
+                    {% endif %}
                     {% if day.rating %}
-                        {% blocktrans trimmed with weekday=day.date|date:"l" region=plan_week.region.name level=day.rating_label %}
-                            {{ weekday }} · {{ region }} · <strong
-                                class="font-semibold text-text-1"
-                            >{{ level }}</strong>
+                        {% blocktrans trimmed with region=plan_week.region.name level=day.rating_label %}
+                            · <strong class="font-semibold text-text-1">{{ level }}</strong> in {{ region }}
                         {% endblocktrans %}
-                    {% else %}
-                        {{ day.date|date:"l j F" }}
                     {% endif %}
                 </p>
             {% endwith %}
@@ -155,6 +181,21 @@ Context:
         <p data-day-caption="other" {% if not plan_other %}hidden{% endif %}>
             {% if plan_other %}{{ plan_other_date|date:"l j F"|default:plan_other }}{% endif %}
         </p>
+        {% if plan_week.weather %}
+            {% with source=plan_week.weather %}
+                <p class="mt-1 text-text-3" data-testid="trip-weather-source">
+                    {% if source.elevation_m is not None %}
+                        {% blocktrans trimmed with place=source.label height=source.elevation_m km=source.distance_km|floatformat:"-1" %}
+                            Forecast for {{ place }} ({{ height }} m), {{ km }} km from the route's start.
+                        {% endblocktrans %}
+                    {% else %}
+                        {% blocktrans trimmed with place=source.label km=source.distance_km|floatformat:"-1" %}
+                            Forecast for {{ place }}, {{ km }} km from the route's start.
+                        {% endblocktrans %}
+                    {% endif %}
+                </p>
+            {% endwith %}
+        {% endif %}
     </div>
 </fieldset>
 {% trans "Meeting time" as start_time_label %}

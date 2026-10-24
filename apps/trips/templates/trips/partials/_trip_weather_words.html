@@ -1,0 +1,27 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_weather_words.html — one forecast day in words
+(SNOW-1217).
+
+"Light snow · 2° / −4° · 5 cm new snow": the condition, the high and the
+low, and the new snow when there is any. The words the Plan page's day
+caption and the trip page's weather line both say, so a day reads the
+same while choosing it and on the page the group is sent. The
+temperatures are the weather pages' spelling (whole degrees, no unit
+letter); a missing figure is left out rather than dashed, and zero new
+snow is left out because "0 cm new snow" on a dry day is noise here.
+
+Context:
+    day : ForecastPanelDay — apps.weather.services.weather_display.
+{% endcomment %}
+{{ day.condition_label }}
+{% if day.temp_max is not None and day.temp_min is not None %}
+    {% blocktrans trimmed with high=day.temp_max|floatformat:0 low=day.temp_min|floatformat:0 %}
+        · {{ high }}° / {{ low }}°
+    {% endblocktrans %}
+{% endif %}
+{% if day.snowfall_sum and day.snowfall_sum >= 0.5 %}
+    {% blocktrans trimmed with snow=day.snowfall_sum|floatformat:0 %}
+        · {{ snow }} cm new snow
+    {% endblocktrans %}
+{% endif %}

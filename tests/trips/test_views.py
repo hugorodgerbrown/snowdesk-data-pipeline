@@ -59,10 +59,13 @@ from tests.factories import (
     LocationFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
+    ResortLocationFactory,
     RouteFactory,
     TripFactory,
     UserFactory,
+    WeatherFactory,
     drifting_track_record,
+    forecast_days,
 )
 
 # The element the meeting point renders into, tag and contents. Matched
@@ -1015,6 +1018,40 @@ _DANGER_TRACK = [[7.2, 46.1, 1500.0], [7.3, 46.2, 2400.0]]
 
 
 @pytest.mark.django_db
+class TestTripPageWeather:
+    """SNOW-1217: the plan card's forecast line, at the meeting point."""
+
+    @freeze_time("2026-10-24 10:00:00")
+    def test_the_days_forecast_is_shown_above_the_danger(self, client: Client) -> None:
+        """Icon and words, from the meeting point's own row."""
+        today = datetime.date(2026, 10, 24)
+        trip = TripFactory.create(date=datetime.date(2026, 10, 25))
+        WeatherFactory.create(
+            location=trip.meeting_point,
+            observed_on=today,
+            forecast=forecast_days(today, [71], snow=[2.0]),
+        )
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        line = re.search(r'data-testid="trip-weather".*?</p>', html, re.S)
+        assert line is not None
+        text = " ".join(re.sub(r"<[^>]+>", " ", line.group(0)).split())
+        assert "Light snow · 3° / -6° · 2 cm new snow at the meeting point" in text
+
+    @freeze_time("2026-10-24 10:00:00")
+    def test_no_forecast_yet_means_no_line(self, client: Client) -> None:
+        """Until the first fetch, the card has no strip at all."""
+        trip = TripFactory.create(date=datetime.date(2026, 10, 25))
+        client.force_login(trip.created_by)
+
+        html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
+
+        assert 'data-testid="trip-weather"' not in html
+
+
+@pytest.mark.django_db
 class TestTripPageDanger:
     """SNOW-1216: the plan card's danger line, only on a rated day."""
 
@@ -1277,6 +1314,47 @@ class TestPlanPage:
         assert 'data-level="considerable"' in html
         assert 'data-rating="Considerable (3)"' in html
         assert "Martigny-Verbier" in html
+
+    def test_tiles_carry_the_nearest_forecast_and_name_its_point(
+        self, client: Client
+    ) -> None:
+        """SNOW-1217: icon and high per tile, the point named under them."""
+        route = RouteFactory.create()
+        lon, lat = route.points[0][0], route.points[0][1]
+        location = LocationFactory.create(
+            name="Verbier", latitude=lat + 0.03, longitude=lon, elevation_m=1520.0
+        )
+        ResortLocationFactory.create(location=location)
+        today = datetime.date(2026, 10, 24)
+        WeatherFactory.create(
+            location=location,
+            observed_on=today,
+            forecast=forecast_days(today, [73], snow=[6.0]),
+        )
+        client.force_login(route.user)
+
+        html = client.get(f"{reverse('trips:new')}?route={route.uuid}").content.decode()
+
+        # Five weather slots; today and tomorrow have a forecast.
+        assert html.count('data-testid="trip-day-weather"') == 5
+        assert html.count("<img") >= 2
+        source = re.search(
+            r'data-testid="trip-weather-source">(.*?)</p>', html, re.DOTALL
+        )
+        assert source is not None
+        assert " ".join(source.group(1).split()) == (
+            "Forecast for Verbier (1520 m), 3.3 km from the route's start."
+        )
+        caption = re.search(r'data-day-caption="2026-10-25"[^>]*>(.*?)</p>', html, re.S)
+        assert caption is not None
+        assert "Snow · 3° / -6° · 6 cm new snow" in " ".join(caption.group(1).split())
+
+    def test_no_forecast_point_means_no_weather_slot(self, client: Client) -> None:
+        """Rather than five empty slots."""
+        html = self._page(client)
+
+        assert 'data-testid="trip-day-weather"' not in html
+        assert 'data-testid="trip-weather-source"' not in html
 
     def test_the_trip_name_is_a_placeholder_not_a_value(self, client: Client) -> None:
         """A trip left unnamed takes its route's name; the field says so."""

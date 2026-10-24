@@ -113,19 +113,21 @@ from apps.trips.services.participants import (
     join_trip,
     leave_trip_by_uuid,
 )
-from apps.trips.services.plan_days import plan_week, trip_danger
+from apps.trips.services.plan_days import plan_week, trip_danger, with_weather
 from apps.trips.services.routes import already_saved, save_trip_route
 from apps.trips.services.shares import (
     TripShareTokenCollision,
     mint_trip_share,
     revoke_trip_share,
 )
+from apps.trips.services.trip_weather import meeting_point_weather, nearest_weather
 from apps.trips.services.trips import (
     TripLimitReached,
     create_trip,
     delete_trip,
     update_trip,
 )
+from apps.weather.services.weather_display import ForecastPanelDay
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -334,11 +336,29 @@ def _basemap_context() -> dict[str, Any]:
     }
 
 
+def _trip_day_weather(trip: Trip) -> ForecastPanelDay | None:
+    """Return the meeting point's forecast for the trip's day, or None.
+
+    SNOW-1217. See ``apps.trips.services.trip_weather.meeting_point_weather``
+    for which row it reads; this picks the trip's day out of it.
+
+    Args:
+        trip: The trip, with ``meeting_point`` loaded.
+
+    Returns:
+        The day's forecast, or None.
+
+    """
+    weather = meeting_point_weather(trip, timezone.localdate())
+    return weather.on(trip.date) if weather else None
+
+
 def _plan_context(form: TripForm, points: list[list[float]]) -> dict[str, Any]:
     """Return what the form's "When" section renders from (SNOW-1215).
 
     The week of day tiles, with each day's danger level where a bulletin
-    rated it (``apps.trips.services.plan_days``), and the day the form
+    rated it (``apps.trips.services.plan_days``) and its forecast from the
+    nearest forecast point (``trip_weather``, SNOW-1217), and the day the form
     holds, as the tiles compare it. A day outside the week — a trip
     planned further ahead, or an edited trip already past — is the "Other"
     tile's, which then shows it.
@@ -356,7 +376,11 @@ def _plan_context(form: TripForm, points: list[list[float]]) -> dict[str, Any]:
         ``plan_other_date`` (that day as a date, for the tile to print).
 
     """
-    week = plan_week(timezone.localdate(), points)
+    today = timezone.localdate()
+    # SNOW-1217: each tile's forecast, from the forecast point nearest the
+    # route's start — a route has no forecast of its own.
+    weather = nearest_weather(points[0][1], points[0][0], today) if points else None
+    week = with_weather(plan_week(today, points), weather)
     value = form["date"].value()
     plan_date = (
         value.isoformat() if isinstance(value, datetime.date) else str(value or "")
@@ -738,6 +762,9 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # plan card's one line — None on every day no bulletin rated, which
         # is most of them, and the card then simply has no line.
         "trip_danger": trip_danger(trip.date, trip.points),
+        # SNOW-1217. The forecast for the trip's day at the meeting point
+        # itself, or None until it has been fetched or outside its window.
+        "trip_weather": _trip_day_weather(trip),
         # SNOW-829. The CATALOGUE, not one resolved URL, because the page
         # resolves the reader's own choice client-side: ``localStorage`` is
         # scoped per ORIGIN, so a trip page reads

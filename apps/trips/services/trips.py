@@ -41,6 +41,7 @@ from apps.locations.models import Location
 from apps.locations.services.orphans import delete_location_if_orphaned
 from apps.routes.models import Route
 from apps.trips.models import Trip, TripParticipant
+from apps.trips.services.meeting_weather import enqueue_meeting_weather
 from apps.trips.services.slope import enqueue_trip_slope_sampling
 
 if TYPE_CHECKING:
@@ -291,6 +292,9 @@ def create_trip(
     # enqueue in this codebase observes. A no-op unless the snapshot came
     # from a route nothing had sampled yet.
     enqueue_trip_slope_sampling(trip)
+    # SNOW-1217: the meeting point's forecast, for the trip page — after
+    # the block for the same reason.
+    enqueue_meeting_weather(trip)
 
     logger.info(
         "Trip created: user=%s uuid=%s route=%s",
@@ -349,6 +353,7 @@ def update_trip(
 
     """
     trip = Trip.objects.select_related("meeting_point").get(uuid=uuid, created_by=user)
+    moved = False
 
     with transaction.atomic():
         if latitude is not None and longitude is not None:
@@ -392,6 +397,11 @@ def update_trip(
         trip.save(
             update_fields=["date", "start_time", "name", "description", "updated_at"]
         )
+
+    # SNOW-1217: a moved point needs its forecast again, and a trip moved
+    # into the forecast window needs one at all. Outside the block, as in
+    # ``create_trip``.
+    enqueue_meeting_weather(trip, moved=moved)
 
     logger.info("Trip updated: user=%s uuid=%s", user.pk, uuid)
     return trip

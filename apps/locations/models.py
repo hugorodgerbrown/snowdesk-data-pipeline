@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING
 
 from django.db import models
 from django.urls import reverse
+from django.utils import timezone
 
 if TYPE_CHECKING:
     from django.contrib.auth.base_user import AbstractBaseUser
@@ -104,6 +105,19 @@ _CURATED = (
     | models.Q(pinned_resorts__isnull=False)
 )
 _FAVOURITED = models.Q(favourites__isnull=False)
+
+
+def _upcoming_meeting_point() -> models.Q:
+    """Return the predicate for a trip's meeting point, while the trip is ahead.
+
+    SNOW-1217. A function rather than a constant beside the two above,
+    because "upcoming" is relative to today and a module-level Q would
+    freeze the day the process started. The trip's own day counts: the
+    group reads the forecast that morning. Once the day has passed the
+    point drops out, and its last row stays as the record of what was
+    known (docs/decisions/weather-is-one-immutable-location-row.md).
+    """
+    return models.Q(trips__date__gte=timezone.localdate())
 
 
 class LocationQuerySet(models.QuerySet["Location"]):
@@ -171,7 +185,11 @@ class LocationQuerySet(models.QuerySet["Location"]):
     def active(self) -> "LocationQuerySet":
         """Return the locations worth spending an upstream call on.
 
-        Every ``public()`` location, plus the ones a ``Favourite`` reaches.
+        Every ``public()`` location, plus the ones a ``Favourite`` reaches,
+        plus the meeting point of every trip still ahead (SNOW-1217) — the
+        trip page shows the forecast for the trip's day where the group
+        meets, and nothing else would fetch it. A meeting point is private
+        in the same way a favourite is.
         This is the set ``fetch_weather`` walks, so it is also the set that
         costs money — one Open-Meteo call per row per run, four runs a day.
 
@@ -195,10 +213,12 @@ class LocationQuerySet(models.QuerySet["Location"]):
 
         Returns:
             Filtered queryset of locations reachable from a resort, a
-            region centroid or a favourite.
+            region centroid, a favourite or an upcoming trip.
 
         """
-        return self.filter(_CURATED | _FAVOURITED).distinct()
+        return self.filter(
+            _CURATED | _FAVOURITED | _upcoming_meeting_point()
+        ).distinct()
 
     def visible_to(
         self, user: "AbstractBaseUser | AnonymousUser"

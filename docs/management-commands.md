@@ -613,7 +613,8 @@ uv run python manage.py dump_locations_sheets --commit \
 
 Rebuilt by SNOW-759. One pass over one anchor: it walks
 `Location.objects.active()` — a location reachable from a `ResortLocation`,
-a `MicroRegion.centroid_location` or a `Favourite` — and writes one
+a `MicroRegion.centroid_location`, a `Favourite` or, since SNOW-1217, the
+meeting point of a trip dated today or later — and writes one
 `Weather` row per location, for today.
 
 **An observation-only location is excluded.** A field report must not mint a
