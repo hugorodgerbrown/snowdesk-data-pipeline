@@ -33,11 +33,15 @@ SNOW-1215 restructured the Plan page (`trips:new`) and the trip page's
    plan back as it is chosen. The Plan page frames each section as a card.
    Inside the trip page's edit disclosure, which is already a card, a rule
    divides them instead (`framed`).
-4. **The day is chosen from tiles.** There are seven tiles (today and the
-   six days after it) and an "Other" tile, in the weather day picker's
+4. **The day is chosen from tiles.** There are five tiles (today and the
+   four days after it) and an "Other" tile, in the weather day picker's
    pattern. The checked tile gets an accent border and a marker bar; it is
-   never filled black. Every tile is a `name="date"` radio, so the form
-   posts without a script. "Other" lays a native date input over itself.
+   never filled black. The first build had seven tiles, to match the
+   weather picker's seven columns; eight columns squashed every tile on a
+   phone, and Hugo cut the week to five (2026-10-24). A later day is one
+   tap away on "Other", and only the first two tiles ever carry a level.
+   Every tile is a `name="date"` radio, so the form posts without a
+   script. "Other" lays a native date input over itself.
    `trip_form.js` copies a picked day into the Other radio, or onto the
    day's own tile when the week has one.
 5. **A tile shows the danger level only when a bulletin rated that day.**

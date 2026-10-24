@@ -1,7 +1,7 @@
 """
 tests/trips/test_plan_days.py — the Plan page's week of day tiles (SNOW-1215).
 
-Covers ``apps.trips.services.plan_days``: seven days from today, the route
+Covers ``apps.trips.services.plan_days``: five days from today, the route
 start's region, and a level only on a day a bulletin rated — never on a
 day rated "no rating", never outside the week, and never for a start
 outside every region.
@@ -39,15 +39,15 @@ def region() -> object:
 
 @pytest.mark.django_db
 class TestPlanWeek:
-    """``plan_week`` — the seven tiles and their levels."""
+    """``plan_week`` — the five tiles and their levels."""
 
-    def test_seven_days_from_today(self) -> None:
-        """Today first, then the six days after it, with no route needed."""
+    def test_five_days_from_today(self) -> None:
+        """Today first, then the four days after it, with no route needed."""
         week = plan_week(TODAY, [])
 
-        assert len(week.days) == PLAN_DAYS == 7
+        assert len(week.days) == PLAN_DAYS == 5
         assert week.first == TODAY
-        assert week.last == TODAY + datetime.timedelta(days=6)
+        assert week.last == TODAY + datetime.timedelta(days=4)
         assert week.region is None
         assert all(not day.rating for day in week.days)
 
@@ -61,7 +61,7 @@ class TestPlanWeek:
         assert all(not day.rating for day in week.days)
 
     def test_a_rated_day_carries_its_peak_level(self, region: object) -> None:
-        """Today and tomorrow rated; the five days after carry nothing."""
+        """Today and tomorrow rated; the days after carry nothing."""
         RegionDayRatingFactory.create(
             region=region, date=TODAY, max_rating=RegionDayRating.Rating.MODERATE
         )
@@ -75,7 +75,7 @@ class TestPlanWeek:
         week = plan_week(TODAY, _TRACK)
 
         assert week.region == region
-        assert [day.digit for day in week.days] == ["2", "3+", "", "", "", "", ""]
+        assert [day.digit for day in week.days] == ["2", "3+", "", "", ""]
         assert week.days[1].rating_label == "Considerable (3+)"
         assert "Martigny-Verbier" in str(week)
 
@@ -90,7 +90,7 @@ class TestPlanWeek:
             max_rating=RegionDayRating.Rating.NO_RATING,
         )
         RegionDayRatingFactory.create(
-            region=region, date=TODAY + datetime.timedelta(days=7)
+            region=region, date=TODAY + datetime.timedelta(days=5)
         )
 
         week = plan_week(TODAY, _TRACK)

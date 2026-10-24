@@ -1,16 +1,16 @@
 """
 apps/trips/services/plan_days.py — the Plan page's week of day tiles (SNOW-1215).
 
-"When" on the Plan page is seven tiles, today and the six days after it, in
+"When" on the Plan page is five tiles, today and the four days after it, in
 the weather day picker's pattern, plus an "Other" tile for any later day.
 A tile shows the day's avalanche danger for the route's region when a
 bulletin has been rated for that day, and nothing otherwise.
 
 **Most tiles show no level, and that is the design.** A bulletin covers
-today, and tomorrow once the evening issue is out; the five days after
-that never have one. Hugo's call (2026-10-24): the level is shown when it
+today, and tomorrow once the evening issue is out; the days after that
+never have one. Hugo's call (2026-10-24): the level is shown when it
 is relevant and the page degrades gracefully when it is not — no "no
-bulletin" chip on five tiles out of seven, just the date.
+bulletin" chip on most of the tiles, just the date.
 
 **The region is the route's start.** A trip meets at or near where the
 route starts, and a route crossing a region boundary would otherwise need
@@ -38,9 +38,11 @@ from apps.regions.services.point_match import region_for_point
 
 logger = logging.getLogger(__name__)
 
-# Today and the six days after it: the weather picker's seven columns, so
-# the two week strips read alike.
-PLAN_DAYS = 7
+# Today and the four days after it. The weather picker's seven columns were
+# the first try, so the two week strips would read alike; eight columns
+# (seven and Other) squashed every tile on a phone, and Hugo cut it to five
+# (2026-10-24). A day further out is one tap away, on Other.
+PLAN_DAYS = 5
 
 
 @dataclass(frozen=True)

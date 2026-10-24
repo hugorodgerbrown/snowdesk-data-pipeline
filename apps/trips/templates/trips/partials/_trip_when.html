@@ -1,6 +1,6 @@
 {% load i18n %}
 {% comment %}
-trips/partials/_trip_when.html — the Plan form's "When": the day as seven
+trips/partials/_trip_when.html — the Plan form's "When": the day as five
 tiles and an "Other", then the meeting time (SNOW-1215).
 
 THE WEATHER DAY PICKER'S PATTERN (includes/_weather_day_picker.html), so
@@ -32,14 +32,14 @@ tile's, and the server shows it first, so it reads without the script.
 
 Context:
     form       : TripForm.
-    plan_week  : PlanWeek — the seven days and the region.
+    plan_week  : PlanWeek — the five days and the region.
     plan_date  : str — the form's day, ISO, or "".
     plan_other : str — that day when it is outside the week, else "".
     plan_other_date : date or None — the same day, to print.
 {% endcomment %}
 <fieldset class="trip-day-picker" data-trip-days>
     <legend class="sr-only">{% trans "Day" %}</legend>
-    <div class="grid grid-cols-8 gap-1">
+    <div class="grid grid-cols-6 gap-1">
         {% for day in plan_week.days %}
             {% with iso=day.date|date:"Y-m-d" %}
                 <div data-day-cell="{{ forloop.counter0 }}">

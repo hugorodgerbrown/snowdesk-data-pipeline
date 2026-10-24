@@ -1118,13 +1118,13 @@ class TestPlanPage:
         assert order == sorted(order)
         assert "data-trip-readback-when" in html
 
-    def test_seven_day_tiles_and_other_with_tomorrow_checked(
+    def test_five_day_tiles_and_other_with_tomorrow_checked(
         self, client: Client
     ) -> None:
         """Each tile is a date radio; tomorrow is the default."""
         html = self._page(client)
 
-        assert html.count('data-testid="trip-day"') == 7
+        assert html.count('data-testid="trip-day"') == 5
         assert 'data-testid="trip-day-other"' in html
         assert re.search(r'name="date"\s+value="2026-10-25"\s+id="trip-day-1"', html)
         checked = re.findall(r'<input[^>]*name="date"[^>]*checked', html, re.DOTALL)
@@ -1185,7 +1185,7 @@ class TestPlanPage:
         html = response.content.decode()
 
         assert response.status_code == 400
-        assert html.count('data-testid="trip-day"') == 7
+        assert html.count('data-testid="trip-day"') == 5
         assert re.search(r'value="2026-11-12"[^>]*data-day-other\s+checked', html)
         assert "12 Nov" in html
         assert 'placeholder="Mont Fort"' in html
