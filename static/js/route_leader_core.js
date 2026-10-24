@@ -15,9 +15,16 @@
  * meet the panel's edge at an angle; this arrives straight up, in line
  * with the profile's cursor line above it.
  *
+ * The map sheets' leader (sheet_leader.js, Hugo, 24 Oct 2026) runs
+ * SIDEWAYS on a desktop, from the symbol to the left-docked panel's right
+ * edge, so `axis` 'x' turns the same bend on its side: tangents
+ * HORIZONTAL at both ends, control points `(mid.x, a.y)` and `(mid.x, b.y)`.
+ *
  * Exports (frozen `self.pwaRouteLeaderCore`):
  *
- *   leaderPath(points) → an SVG path `d`, or '' for fewer than two points
+ *   leaderPath(points, axis?) → an SVG path `d`, or '' for fewer than two
+ *     points; `axis` 'y' (the default) or 'x', the direction the line
+ *     leaves and meets each stop
  */
 
 // @ts-check
@@ -40,9 +47,11 @@
    *
    * @param {Array<?{x: number, y: number}>} points The stops, in the order
    *   the line runs; a null or non-finite stop is skipped.
+   * @param {string} [axis] 'y' (default): leave and meet each stop
+   *   vertically; 'x': horizontally.
    * @returns {string} The path `d`; '' when fewer than two stops remain.
    */
-  function leaderPath(points) {
+  function leaderPath(points, axis) {
     /** @type {Array<{x: number, y: number}>} */
     const stops = [];
     (Array.isArray(points) ? points : []).forEach((p) => {
@@ -53,6 +62,15 @@
     for (let i = 1; i < stops.length; i += 1) {
       const a = stops[i - 1];
       const b = stops[i];
+      if (axis === 'x') {
+        const midX = (a.x + b.x) / 2;
+        parts.push(
+          'C' + num(midX) + ' ' + num(a.y)
+          + ', ' + num(midX) + ' ' + num(b.y)
+          + ', ' + num(b.x) + ' ' + num(b.y),
+        );
+        continue;
+      }
       const midY = (a.y + b.y) / 2;
       parts.push(
         'C' + num(a.x) + ' ' + num(midY)

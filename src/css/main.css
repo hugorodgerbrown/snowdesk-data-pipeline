@@ -2185,6 +2185,45 @@ a.season-day:focus-visible {
   background-color: var(--color-accent);
 }
 
+/* —————————————————————————————————————————
+   Forecast day picker width (Hugo, 24 Oct 2026)
+
+   The picker sits in two containers: the
+   location page and the map's weather sheet,
+   whose desktop panel is narrower than a phone.
+   A cell needs about 42px (a 28px icon, its
+   padding and border), so seven take 330px
+   with their gaps, six 282px. Below that the
+   picker drops to six cells, then five, from
+   the END of the week — by its OWN width, not
+   the viewport's (@container), because the
+   same markup is in both.
+
+   The grid flows into columns (grid-flow-col,
+   auto-cols-fr), so the cells that remain
+   share the row and nothing is left as a gap.
+
+   A checked cell is never dropped: a sheet
+   opened on the map's sixth day keeps that
+   day, and shows six cells rather than five.
+   ————————————————————————————————————————— */
+
+.forecast-day-picker {
+  container-type: inline-size;
+}
+
+@container (max-width: 329px) {
+  .forecast-day-picker [data-day-cell="6"]:not(:has(input:checked)) {
+    display: none;
+  }
+}
+
+@container (max-width: 281px) {
+  .forecast-day-picker [data-day-cell="5"]:not(:has(input:checked)) {
+    display: none;
+  }
+}
+
 /* The Plan form's day tiles (SNOW-1215) take the same second channel:
    trips/partials/_trip_when.html is this picker's pattern on another
    page, so the checked tile is marked the same two ways. */

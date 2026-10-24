@@ -3,8 +3,10 @@ tests/public/test_weather_detail.py — the weather card and the forecast page.
 
 Two surfaces, one estate rule (SNOW-761):
 
-  * ``/api/weather/<short_id>/detail/`` — the card the map opens when a
-    weather symbol is tapped. Today's conditions and a link out.
+  * ``/api/weather/<short_id>/detail/`` — the sheet the map opens when a
+    weather symbol is tapped. Since 24 Oct 2026 the sheet is the page:
+    under its peek row it renders the page's own body
+    (``_weather_body.html``), the week opened on the map's day.
   * ``/weather/<short_id>/`` — the full forecast that link opens: the
     day picker, the selected day's line, and the hourly detail
     (SNOW-789).
@@ -15,10 +17,9 @@ The load-bearing assertions are the **privacy** ones. Both filter on
 coordinates and elevation of a stranger's private pin. That is a test rather
 than a comment in the view for the same reason the feed's version is.
 
-The second theme is the **split of detail between the two**: the card was
-carrying the chart, the day strip and 72 hourly rows, which was 79% of its
-payload on a surface reached by a tap. Those assertions are what stop that
-detail drifting back onto it.
+The second theme is that **the sheet and the page share one body** (Hugo,
+24 Oct 2026, reversing SNOW-1101's day/week split): the sheet's assertions
+check it renders the page's picker, day lines and meteograms.
 
 The third, added by SNOW-789, is that **the page states each figure once**.
 It used to print the same high and low three times over — a "Today" panel,
@@ -290,7 +291,6 @@ class TestCard:
         assert "1450" in html  # elevation
         assert "1800" in html  # freezing level
         assert "22" in html  # wind
-        assert "60%" in html  # precipitation probability
 
     def test_header_names_the_height_and_the_day_row_follows(
         self, client: Client, resort_location: Location
@@ -330,46 +330,42 @@ class TestCard:
 
         assert "Chablais" in html
 
-    def test_carries_a_link_to_the_full_forecast_on_the_same_day(
+    def test_renders_the_pages_body(
         self, client: Client, resort_location: Location
     ) -> None:
-        """The card hands the detail off rather than holding it.
-
-        The date rides along so the page opens on the day the map was
-        showing rather than snapping to today.
-        """
+        """The sheet is the page: its picker, day lines and meteograms."""
         html = client.get(
             _card_url(resort_location), {"date": TODAY.isoformat()}
         ).json()["html"]
 
-        assert f"{_page_url(resort_location)}?date={TODAY.isoformat()}" in html
+        assert 'data-testid="weather-detail-forecast-picker"' in html
+        assert html.count('data-testid="weather-detail-forecast-day"') == 7
+        assert html.count('data-testid="weather-detail-day-line"') == 7
+        assert html.count('data-testid="weather-detail-hourly-panel"') == 2
+        assert 'data-testid="weather-detail-provenance"' in html
+        assert _checked_index(html) == 0
 
-    def test_does_not_carry_the_chart_the_strip_or_the_hourly_tables(
+    def test_its_radios_are_a_group_of_their_own(
         self, client: Client, resort_location: Location
     ) -> None:
-        """THE POINT OF THE CARD. All three belong to the page.
-
-        They were on it once, and the hourly rows alone were 79% of the
-        response — 72.7 kB for a surface opened by tapping a symbol. This
-        is what stops them drifting back. The one day's meteogram SNOW-1101
-        put on the FULL detent is not one of them: it is the map's day,
-        and the week stays the page's (``TestCardDetents``).
-        """
-        html = client.get(_card_url(resort_location)).json()["html"]
-
-        assert "forecast-chart" not in html
-        assert "-forecast-day" not in html
-        assert "-hourly-list" not in html
-
-    def test_links_out_to_the_week(
-        self, client: Client, resort_location: Location
-    ) -> None:
-        """The card is the map's day; the week is the page's (SNOW-1101)."""
+        """The map's picker never shares a radio group with a page's."""
         html = client.get(
             _card_url(resort_location), {"date": TODAY.isoformat()}
         ).json()["html"]
 
-        assert "This week →" in html
+        assert 'name="map-weather-day"' in html
+        assert 'name="location-weather-day"' not in html
+
+    def test_no_longer_links_out_to_the_week(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The week is in the sheet, so the way out to it is gone."""
+        html = client.get(
+            _card_url(resort_location), {"date": TODAY.isoformat()}
+        ).json()["html"]
+
+        assert "This week →" not in html
+        assert f"{_page_url(resort_location)}?date=" not in html
 
     def test_says_so_when_there_is_no_reading_for_the_day(
         self, client: Client, resort_location: Location
@@ -427,24 +423,25 @@ class TestCardDetents:
     def test_a_row_with_hours_rises_to_the_meteogram(
         self, client: Client, resort_location: Location
     ) -> None:
-        """FULL is the map's day as a chart, and HALF ends above it."""
+        """HALF ends under the week, FULL is the selected day below it."""
         html = client.get(
             _card_url(resort_location), {"date": TODAY.isoformat()}
         ).json()["html"]
 
         assert _detents(html) == "peek,half,full"
         assert 'data-testid="weather-detail-hourly"' in html
-        assert html.index("data-sheet-half") < html.index(
-            'data-testid="weather-detail-hourly"'
-        )
-        # One day's chart, never the week's.
-        assert html.count('role="group"') == 1
+        half = html.index("data-sheet-half")
+        assert html.index('data-testid="weather-detail-forecast-picker"') > half
+        assert half < html.index('data-testid="weather-detail-day-line"')
+        assert half < html.index('data-testid="weather-detail-hourly"')
 
-    def test_a_row_without_hours_stops_at_half(self, client: Client) -> None:
-        """No series, no chart, so no FULL to rise to."""
+    def test_a_one_day_row_without_hours_stops_at_half(self, client: Client) -> None:
+        """No picker and no series, so no FULL to rise to."""
         location = LocationFactory.create(anonymous=True, elevation_m=1450.0)
         MicroRegionFactory.create(name="Chablais", centroid_location=location)
-        WeatherFactory.create(location=location, observed_on=TODAY, hourly=None)
+        WeatherFactory.create(
+            location=location, observed_on=TODAY, hourly=None, forecast=None
+        )
 
         html = client.get(_card_url(location), {"date": TODAY.isoformat()}).json()[
             "html"
@@ -828,8 +825,8 @@ class TestCardForwardDay:
 
         assert "No weather recorded" not in html
         assert 'data-testid="weather-detail-empty"' not in html
-        assert "1700&nbsp;m" in html  # that day's freezing level, not today's
         assert "4&deg;" in html  # that day's high
+        assert _checked_index(html) == 2  # the week, opened on that day
 
     def test_is_marked_as_a_forecast_with_when_it_was_issued(
         self, client: Client, resort_location: Location
@@ -865,15 +862,16 @@ class TestCardForwardDay:
         assert _detents(html) == "peek,half,full"
         assert 'data-testid="weather-detail-hourly"' in html
 
-    def test_a_forward_day_without_hours_stops_at_half(
+    def test_a_forward_day_without_hours_still_rises_to_its_day(
         self, client: Client, resort_location: Location
     ) -> None:
-        """Past the hourly horizon there is no chart to rise to."""
+        """Past the hourly horizon FULL is the day's line, with no chart."""
         html = client.get(_card_url(resort_location), {"date": _forward(3)}).json()[
             "html"
         ]
 
-        assert _detents(html) == "peek,half"
+        assert _detents(html) == "peek,half,full"
+        assert _checked_index(html) == 3
 
     def test_a_day_past_the_window_says_the_forecast_does_not_reach_it(
         self, client: Client, resort_location: Location
@@ -886,16 +884,6 @@ class TestCardForwardDay:
         assert _detents(html) == "peek"
         assert "The forecast does not reach this day yet." in html
         assert "No weather recorded" not in html
-
-    def test_links_to_the_page_on_the_same_day(
-        self, client: Client, resort_location: Location
-    ) -> None:
-        """The page opens that day inside today's row (``TestPageForwardDay``)."""
-        html = client.get(_card_url(resort_location), {"date": _forward(2)}).json()[
-            "html"
-        ]
-
-        assert f"{_page_url(resort_location)}?date={_forward(2)}" in html
 
 
 def _checked_index(html: str) -> int:

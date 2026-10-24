@@ -2,7 +2,7 @@
 name: the-sheet-is-the-page
 description: Region and resort pages and map sheets share one body (_region_body.html, _resort_body.html, in_map); resort_date URL
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-10-24
 ---
 
 # The sheet is the page
@@ -21,6 +21,12 @@ map's right, for a region as for a resort (SNOW-1173).
 | Body | `public/partials/_region_body.html` | `public/partials/_resort_body.html` |
 | Page | `bulletin.html` (`bulletin_detail`) | `resort.html` (`resort_detail`) |
 | Sheet | `_region_sheet_body.html` (`region_sheet_partial`, every width since SNOW-1173) | `_place_sheet_body.html` (`resort_sheet_partial`, every width) |
+
+**A location's weather joined them (Hugo, 24 Oct 2026):** builder
+`views._location_forecast_context`, body
+`public/partials/_weather_body.html`, page `location_weather.html`, sheet
+`_weather_detail.html` (`api.weather_detail`). The sheet opens the week on
+the map's day; see [`weather-surfaces`](../weather-surfaces.md).
 
 The sheet passes `in_map=True`. The body then drops what only makes sense
 off the map — the region page's superuser debug block — and the resort body

@@ -2,7 +2,7 @@
 name: weather-surfaces
 description: Weather UI — _weather_detail, _weather_panel, _weather_day_picker, _weather_day_line, _resort_forecast, build_weather_display, geojson
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-24
 ---
 
 # Weather surfaces
@@ -84,19 +84,38 @@ in SNOW-1125; SNOW-1157 gave it the week again as a summary strip — no
 day line, no meteogram, no picker — that links to the location page for
 those.
 
-**The map's weather sheet is the one place the meteogram leaves the page
-(SNOW-1101), and the split is day versus week.** The sheet is the map's
-day: the scrubber picks it, and the sheet has no picker of its own. On a
-phone it rests at PEEK on the day's line (symbol, name, high/low, new
-snow, wind), rises to HALF for the rest of the card, and to FULL for that
-one day's `_hourly_chart.html`. The week, its picker and the shareable URL
-stay the page's, which is why the sheet's way out reads "This week →".
-The body narrows its detents to what it can fill: a row with no hourly
-series stops at half, a day with no row at peek. The chart is what the
-SNOW-761 trim removed, and it costs the card again: about 86 kB raw for a
-day with hours, 7 kB gzipped, against 2 kB without. One day's chart is the
-limit; `TestCardDetents` in `tests/public/test_weather_detail.py` fails on
-a second.
+**The map's weather sheet is the page (Hugo, 24 Oct 2026).** Under its
+peek row — symbol, name and height, the map's day, that day's high/low,
+new snow and wind — the sheet renders the location page's own body,
+[`public/partials/_weather_body.html`](../apps/public/templates/public/partials/_weather_body.html):
+the day picker opened on the map's day, the selected day's line, its
+meteogram and the provenance line, from the page's own
+`_location_forecast_context`. This reverses SNOW-1101's split, which kept
+the week on the page behind a "This week →" link, and is the move
+[`the-sheet-is-the-page`](decisions/the-sheet-is-the-page.md) made for the
+region and resort sheets. On a phone HALF ends under the week
+(`data-sheet-half` on the picker) and FULL is the selected day. The page's
+masthead, with its onward links, stays in the page's frame. The figures
+grid the card carried (freezing level, snowfall, wind, precipitation
+chance) went with it: freezing level is in the day line, and the rest are
+in the meteogram for the days that have one.
+
+**The picker fits its container.** A cell needs about 42px, so the picker
+holds seven cells from 330px, six from 282px and five below that, dropping
+from the end of the week and never dropping the checked cell — measured on
+its own width (`@container`), since the docked desktop panel is narrower
+than a phone ("Forecast day picker width" in
+[`src/css/main.css`](../src/css/main.css)).
+
+**A leader line ties the sheet to its symbol**
+([`static/js/sheet_leader.js`](../static/js/sheet_leader.js), shared with
+the place sheet, so a resort's panel points at its pin too): the
+route panel's dashed bend (`route_leader_core.js`, with an `axis`), from
+the tapped symbol sideways to a notch on the docked panel's right edge,
+level with the place's name, or up to the phone sheet's top edge. map.js
+hands the symbol's coordinate to `pwaWeatherDetail.open` (and a resort's
+to `pwaPlaceSheet.open`) and publishes
+`window.pwaMapProjection` to turn it into a screen point.
 
 **A forward day is a forecast, and the sheet says so (SNOW-1105).** The
 fetch writes no row ahead of today; the days after it live in today's row's

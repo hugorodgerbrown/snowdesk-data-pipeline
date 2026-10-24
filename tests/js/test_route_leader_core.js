@@ -24,6 +24,11 @@ describe('leaderPath', () => {
     expect(d).toBe('M10 0 C10 50, 50 50, 50 100 C50 120, 30 120, 30 140');
   });
 
+  it('turns the bend on its side for the x axis', () => {
+    expect(leaderPath([{ x: 0, y: 10 }, { x: 100, y: 50 }], 'x'))
+      .toBe('M0 10 C50 10, 50 50, 100 50');
+  });
+
   it('draws nothing for fewer than two stops', () => {
     expect(leaderPath([])).toBe('');
     expect(leaderPath([{ x: 1, y: 2 }])).toBe('');
