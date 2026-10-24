@@ -155,6 +155,26 @@ class TestPayload:
         payload = build_problem_terrain_payload(today)
         assert payload["regions"] == {region.region_id: str(expected.bulletin_id)}
 
+    def test_tonights_issue_belongs_to_tomorrow(self, settings: Any) -> None:
+        """An issue valid from 15:00 today forecasts tomorrow (SNOW-1207)."""
+        settings.TERRAIN_CLASS_TILE_URL = _TILES
+        today = timezone.localdate()
+        region = MicroRegionFactory.create()
+        start = datetime.datetime.combine(today, datetime.time(15), tzinfo=datetime.UTC)
+        evening = BulletinFactory.create(
+            issued_at=start,
+            valid_from=start,
+            valid_to=start + datetime.timedelta(days=1),
+            render_model=_render_model(),
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        RegionBulletinFactory.create(bulletin=evening, region=region)
+        tomorrow = today + datetime.timedelta(days=1)
+        assert build_problem_terrain_payload(today)["regions"] == {}
+        assert build_problem_terrain_payload(tomorrow)["regions"] == {
+            region.region_id: str(evening.bulletin_id)
+        }
+
     def test_empty_while_the_tiles_are_unconfigured(self, settings: Any) -> None:
         """The terrain filter's own gate."""
         settings.TERRAIN_CLASS_TILE_URL = ""

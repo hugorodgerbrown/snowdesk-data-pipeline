@@ -23,6 +23,8 @@ from django.test import Client, override_settings
 from django.urls import reverse
 
 from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.services.day_rating import recompute_region_day
+from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.bulletins.services.selection import select_bulletin_for_date
 from apps.public.views import (
     _get_nav_dates,
@@ -141,17 +143,17 @@ class TestSelectBulletinForDate:
         assert result is not None
         assert result.pk == am.pk
 
-    def test_today_before_am_returns_pm(self, region: MicroRegion) -> None:
-        """Before the AM bulletin starts the PM bulletin is still valid."""
+    def test_today_does_not_depend_on_the_hour(self, region: MicroRegion) -> None:
+        """The day's latest issue is picked at any hour, as the map picks it."""
         day = date(2026, 3, 15)
-        pm = _make_pm_bulletin(region, date(2026, 3, 14))  # valid until 15:00
-        _make_am_bulletin(region, day)  # starts at 06:00
+        _make_pm_bulletin(region, date(2026, 3, 14))
+        am = _make_am_bulletin(region, day)
 
         with _freeze("2026-03-15T04:00:00+00:00"):
             result = select_bulletin_for_date(region, day)
 
         assert result is not None
-        assert result.pk == pm.pk
+        assert result.pk == am.pk
 
     def test_no_bulletins_returns_none(self, region: MicroRegion) -> None:
         """When no bulletins exist for a date, None is returned."""
@@ -635,8 +637,10 @@ class TestBulletinDetailView:
 class TestIssuesForDate:
     """All three SLF-style issues covering a calendar day are returned."""
 
-    def test_returns_all_three_overlapping_issues(self, region: MicroRegion) -> None:
-        """Previous evening + morning + same-day evening all overlap day D."""
+    def test_returns_the_issues_that_forecast_the_day(
+        self, region: MicroRegion
+    ) -> None:
+        """Previous evening + morning forecast day D; D's evening forecasts D+1."""
         prev_evening = _make_pm_bulletin(region, date(2026, 3, 14))
         am = _make_am_bulletin(region, date(2026, 3, 15))
         same_evening = _make_pm_bulletin(region, date(2026, 3, 15))
@@ -644,10 +648,29 @@ class TestIssuesForDate:
         issues = _issues_for_date(region, date(2026, 3, 15))
 
         ids = [b.pk for b in issues]
-        assert ids == [prev_evening.pk, am.pk, same_evening.pk], (
-            "issues must be returned in chronological (valid_from) order "
-            f"for the tab strip; got {ids}"
+        assert ids == [prev_evening.pk, am.pk], (
+            "issues must be returned in chronological (valid_from) order, "
+            f"without the evening issue that forecasts tomorrow; got {ids}"
         )
+        assert [b.pk for b in _issues_for_date(region, date(2026, 3, 16))] == [
+            same_evening.pk
+        ]
+
+    def test_an_evening_issue_alone_belongs_to_tomorrow(
+        self, region: MicroRegion
+    ) -> None:
+        """
+        The first issue of a season, out at 17:00 on D, shows on D+1 only.
+
+        SNOW-1207: 23 Oct 2026's 15:00 UTC SLF issue appeared in the panel on
+        23 Oct while the map, which files it under 24 Oct, stayed grey.
+        """
+        first = _make_pm_bulletin(region, date(2026, 10, 23))
+
+        assert _issues_for_date(region, date(2026, 10, 23)) == []
+        assert [b.pk for b in _issues_for_date(region, date(2026, 10, 24))] == [
+            first.pk
+        ]
 
     def test_empty_when_no_bulletins_touch_day(self, region: MicroRegion) -> None:
         """Days with no valid bulletins return an empty list."""
@@ -657,7 +680,7 @@ class TestIssuesForDate:
 
 @pytest.mark.django_db
 class TestDefaultIssueSelection:
-    """The default issue honours the 10:00-rule for past days and *now* for today."""
+    """The default issue is the latest issue that forecasts the day."""
 
     def test_past_day_prefers_morning_update_over_previous_evening(
         self, region: MicroRegion
@@ -690,16 +713,52 @@ class TestDefaultIssueSelection:
 
         assert result is not None and result.pk == prev_evening.pk
 
-    def test_today_prefers_window_containing_now(self, region: MicroRegion) -> None:
-        """For today, the pivot is *now* — not the synthetic 10:00 value."""
-        _make_am_bulletin(region, date(2026, 3, 15))  # AM: 06:00–15:00
-        same_evening = _make_pm_bulletin(region, date(2026, 3, 15))  # 17:00+
+    def test_today_after_17_keeps_todays_issue(self, region: MicroRegion) -> None:
+        """
+        At 18:00 today's morning issue still shows, though tonight's is out.
 
-        # 18:00 is inside the same-day evening window and outside AM's.
+        Tonight's issue forecasts tomorrow, so it belongs to tomorrow; before
+        SNOW-1207 the panels switched to it while the map kept today's.
+        """
+        am = _make_am_bulletin(region, date(2026, 3, 15))
+        _make_pm_bulletin(region, date(2026, 3, 15))
+
         with _freeze("2026-03-15T18:00:00+00:00"):
             result = select_bulletin_for_date(region, date(2026, 3, 15))
 
-        assert result is not None and result.pk == same_evening.pk
+        assert result is not None and result.pk == am.pk
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            pytest.param(("prev",), id="previous-evening-only"),
+            pytest.param(("prev", "am"), id="evening-and-morning"),
+            pytest.param(("prev", "am", "pm"), id="all-three"),
+            pytest.param(("pm",), id="todays-evening-only"),
+        ],
+    )
+    def test_agrees_with_the_map(self, region: MicroRegion, make: tuple) -> None:
+        """The panels' pick is the bulletin the map's day rating was built from."""
+        builders = {
+            "prev": lambda: _make_pm_bulletin(
+                region, date(2026, 3, 14), render_model_version=RENDER_MODEL_VERSION
+            ),
+            "am": lambda: _make_am_bulletin(
+                region, date(2026, 3, 15), render_model_version=RENDER_MODEL_VERSION
+            ),
+            "pm": lambda: _make_pm_bulletin(
+                region, date(2026, 3, 15), render_model_version=RENDER_MODEL_VERSION
+            ),
+        }
+        for name in make:
+            builders[name]()
+        recompute_region_day(region, date(2026, 3, 15))
+        rating = RegionDayRating.objects.get(region=region, date=date(2026, 3, 15))
+
+        with _freeze("2026-03-15T18:00:00+00:00"):
+            result = select_bulletin_for_date(region, date(2026, 3, 15))
+
+        assert result == rating.source_bulletin
 
 
 @pytest.mark.django_db

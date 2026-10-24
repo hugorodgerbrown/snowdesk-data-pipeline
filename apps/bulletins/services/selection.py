@@ -15,15 +15,14 @@ move ``apps/routes/services/slope_wire.py`` made one ticket earlier, for
 the same reason: a second caller in another app is what promotes a
 private helper to a service.
 
-The functions are unchanged from the originals; only their home and the
-leading underscore are.
+SNOW-1207 made the rule the one the map already used: a bulletin belongs
+to the day it forecasts (``Bulletin.target_date``), and the day's latest
+such issue is the one shown, whatever the time of day.
 """
 
 from __future__ import annotations
 
 import datetime
-
-from django.utils import timezone
 
 from apps.bulletins.models import Bulletin
 from apps.regions.models import MicroRegion
@@ -34,20 +33,24 @@ def issues_for_date(
     target_date: datetime.date,
 ) -> list[Bulletin]:
     """
-    Return all bulletins whose validity window overlaps a calendar day.
+    Return the bulletins that forecast a calendar day.
 
-    Up to three SLF issues can touch a single day:
+    **A bulletin belongs to the day it forecasts** (SNOW-1207) — its
+    stored ``target_date``, set at ingest by ``target_day_for_valid_from``.
+    Up to two SLF issues forecast day D:
 
-    * the previous-day evening issue (valid ``D-1 17:00 → D 17:00``),
-    * the same-day morning update  (valid ``D 08:00  → D 17:00``),
-    * the same-day evening issue    (valid ``D 17:00 → D+1 17:00``).
+    * the previous evening's issue (valid ``D-1 17:00 → D 17:00``),
+    * the same-day morning update  (valid ``D 08:00  → D 17:00``).
 
-    The query captures all three by asking for windows that *intersect*
-    day D: ``valid_from.date() <= D AND valid_to.date() >= D``.
+    D's own evening issue (valid ``D 17:00 → D+1 17:00``) forecasts D+1
+    and belongs to D+1, although its window touches D. This is the rule
+    the map fill and the calendar already read (``recompute_region_day``
+    filters on the same column), so every surface agrees on the day.
+    Until SNOW-1207 this asked for any window that *touched* D, and after
+    17:00 on today the panels showed tomorrow's issue over a map still
+    painted with today's.
 
-    The result is sorted by ``valid_from`` ascending so that rendering
-    the list chronologically matches the mental model of earlier → later
-    issue times on the day.
+    The result is sorted by ``valid_from`` ascending, earlier issue first.
 
     Args:
         region: The MicroRegion to look up.
@@ -58,11 +61,9 @@ def issues_for_date(
 
     """
     return list(
-        Bulletin.objects.filter(
-            regions=region,
-            valid_from__date__lte=target_date,
-            valid_to__date__gte=target_date,
-        ).order_by("valid_from")
+        Bulletin.objects.for_target_date(target_date)
+        .filter(regions=region)
+        .order_by("valid_from")
     )
 
 
@@ -71,25 +72,20 @@ def select_default_issue(
     target_date: datetime.date,
 ) -> Bulletin | None:
     """
-    Pick the default bulletin from a day's issues.
+    Pick the default bulletin from a day's issues: the latest one.
 
-    * For **today**, prefer the issue whose window contains *now* — the
-      bulletin being live-published to the public right this moment.
-    * For any other day (past or future), prefer the issue whose window
-      contains **10:00 UTC** on that calendar day.  10:00 sits after the
-      08:00 morning update but before the 17:00 evening rollover, so it
-      picks the morning update when it exists and falls back to the
-      previous day's evening issue (which is also valid at 10:00) when
-      it doesn't — matching SLF's "what did the current day-time
-      forecast say?" convention.
-
-    Falls back to the last issue in the list (the latest by
-    ``valid_from``) when nothing spans the pivot moment.  Returns
-    ``None`` when ``issues`` is empty.
+    ``issues`` holds only the issues that forecast ``target_date`` (see
+    :func:`issues_for_date`), so the latest ``valid_from`` is the morning
+    update when there is one and the previous evening's issue otherwise —
+    the same pick ``recompute_region_day`` makes for the map. The choice
+    does not depend on the time of day, so a day's bulletin never changes
+    under the reader at 17:00 (SNOW-1207 retired the "in force now" pivot
+    for today and the 10:00 UTC pivot for other days).
 
     Args:
         issues: Day's issues, chronologically sorted.
-        target_date: Calendar date identifying the day being displayed.
+        target_date: Calendar date identifying the day being displayed;
+            kept for callers' signatures, the pick no longer reads it.
 
     Returns:
         The default Bulletin to render, or ``None`` when no issues exist.
@@ -97,26 +93,7 @@ def select_default_issue(
     """
     if not issues:
         return None
-
-    now = timezone.now()
-    today = now.date()
-    if target_date == today:
-        pivot = now
-    else:
-        pivot = datetime.datetime.combine(
-            target_date, datetime.time(10, 0), tzinfo=datetime.UTC
-        )
-
-    # Iterate newest-first so that when both the previous-day evening
-    # issue AND the current-day morning update span the pivot, the
-    # morning update wins — its later ``valid_from`` marks it as the
-    # authoritative refresh of the earlier forecast.
-    for b in reversed(issues):
-        if b.valid_from <= pivot <= b.valid_to:
-            return b
-
-    # No issue spans the pivot — fall back to the most recently-issued one.
-    return issues[-1]
+    return max(issues, key=lambda b: b.valid_from)
 
 
 def select_bulletin_for_date(

@@ -45,7 +45,7 @@ The guard that keeps it from becoming a third document:
 - **The same render model, read-only, never a copy.** `resort_detail`
   selects the issue exactly as the bulletin page does —
   `issues_for_date(region, today)`, then `_resolve_selected_issue` (the
-  10:00 rule), then `_build_panel_context` — and words the headline with
+  day's latest issue, SNOW-1207), then `_build_panel_context` — and words the headline with
   the bulletin page's own helper, `_build_bulletin_headline`. Nothing about
   the day is stored on the resort, and nothing is derived for it.
 - **No bulletin today means no danger.** Out of season, or before the day's

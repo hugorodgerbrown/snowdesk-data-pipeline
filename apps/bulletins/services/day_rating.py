@@ -176,9 +176,9 @@ def target_day_for_valid_from(valid_from: datetime.datetime) -> datetime.date:
     conservative choice: if ever a provider shifts an evening issue to
     exactly noon, we still attribute it to the *next* day.
 
-    This mirrors the morning-wins / prior-evening-fallback convention
-    implemented by ``_select_default_issue`` in ``apps/public/views.py``
-    (which uses 10:00 UTC as the pivot to prefer the morning update).
+    It is the one rule for which day a bulletin belongs to: the map fill
+    and the calendar read it here, and every panel and page reads it
+    through ``apps.bulletins.services.selection`` (SNOW-1207).
 
     Takes the timestamp rather than a ``Bulletin`` so the rule can also be
     applied to a raw CAAML payload before any row exists — the golden-week

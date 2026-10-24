@@ -515,7 +515,7 @@ def _resolve_selected_issue(
     to the default view rather than 404ing.
 
     Args:
-        issues: All bulletins overlapping ``target_date``.
+        issues: The bulletins forecasting ``target_date``.
         target_date: Calendar date identifying the day being displayed.
         requested_id: The ``?issue`` query param value, or ``None``.
 
@@ -2899,8 +2899,8 @@ def examples_category(request: HttpRequest, danger_level: str) -> HttpResponse:
     requested level, picks a region from that bulletin, and renders **the
     same view as the canonical bulletin route** with the matched bulletin
     pinned via ``requested_issue_id`` — guaranteeing the page actually
-    reflects the requested danger level (not whatever the 10:00-rule
-    default would land on for that date).
+    reflects the requested danger level (not whatever the day's default
+    issue would land on for that date).
 
     Decorated with ``@never_cache`` so refreshing surfaces a different
     matching bulletin each time. Returns 404 if the slug is unrecognised
@@ -3056,7 +3056,7 @@ def _bulletin_page_last_modified(
     date_str: str | None = None,
 ) -> datetime.datetime | None:
     """
-    Return the latest ``updated_at`` across bulletins covering this page.
+    Return the latest ``updated_at`` across bulletins forecasting this day.
 
     Keyed by (region, target_date). Drives the ``Last-Modified`` header
     and the ``@condition`` short-circuit. Returns ``None`` when no
@@ -3065,8 +3065,7 @@ def _bulletin_page_last_modified(
     target_date = _parse_target_date(date_str)
     result = Bulletin.objects.filter(
         regions__region_id__iexact=region_id,
-        valid_from__date__lte=target_date,
-        valid_to__date__gte=target_date,
+        target_date=target_date,
     ).aggregate(latest=Max("updated_at"))
     return cast("datetime.datetime | None", result["latest"])
 
@@ -4330,7 +4329,7 @@ def _bulletin_detail_response(
     The caller is responsible for resolving ``region`` (with
     ``select_related("subregion")`` and the ``neighbours`` prefetch — see
     ``_resolve_region_for_bulletin``) and parsing ``target_date``.
-    ``requested_issue_id`` overrides the default 10:00-rule issue
+    ``requested_issue_id`` overrides the default issue (the day's latest)
     selection — pass it from ``request.GET.get("issue")`` for the
     canonical route, or from a bulletin's ``bulletin_id`` to pin a
     specific issue for an example page.
@@ -4352,7 +4351,7 @@ def _bulletin_detail_response(
             ``neighbours`` prefetched.
         target_date: Calendar day the page represents.
         requested_issue_id: Optional bulletin id (UUID string) to pin
-            the active issue tab; falls back to the 10:00 default when
+            the active issue tab; falls back to the day's latest issue when
             ``None``.
         canonical_is_today: When ``True``, advertise the form-2
             "today" canonical URL; when ``False``, advertise the
@@ -4385,9 +4384,9 @@ def _bulletin_detail_response(
         None if canonical_is_today else target_date,
     )
 
-    # Collect every issue that touches the target day and pick the one
-    # the caller asked for; otherwise fall back to the 10:00-rule
-    # default. Multi-issue days render the requested (or default) issue
+    # Collect every issue that forecasts the target day and pick the one
+    # the caller asked for; otherwise fall back to the day's latest
+    # issue (SNOW-1207). Multi-issue days render the requested (or default) issue
     # as the page body.
     issues = _issues_for_date(region, target_date)
     selected = _resolve_selected_issue(issues, target_date, requested_issue_id)
@@ -5145,7 +5144,7 @@ def resort_detail(
     search "Verbier avalanche", not "CH-4115", so today's danger is shown
     here, read from the region's bulletin through the bulletin page's own
     selection — ``issues_for_date`` then ``_resolve_selected_issue`` (the
-    10:00 rule) then ``_build_panel_context`` — and its headline helper. It
+    day's latest issue) then ``_build_panel_context`` — and its headline helper. It
     is the same render model shown read-only, never a copy, and the
     bulletin stays the one full document: the danger card carries exactly
     one link to it. With no bulletin covering today the page says so; it
@@ -5248,8 +5247,8 @@ def build_resort_body(
     fact about a resort is added here and reaches both.
 
     The day's bulletin is chosen exactly as the bulletin page chooses it
-    (``_issues_for_date`` then ``_resolve_selected_issue``, the 10:00 rule,
-    then ``_build_panel_context``), so the two pages always show the same
+    (``_issues_for_date`` then ``_resolve_selected_issue``, the day's latest
+    issue, then ``_build_panel_context``), so the two pages always show the same
     issue (SNOW-1124). A render model that failed to build gives no panel:
     its danger key is only a "low" fallback, never a level to show.
 
