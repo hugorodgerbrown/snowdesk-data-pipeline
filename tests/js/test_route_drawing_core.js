@@ -6,7 +6,7 @@
  * layers from this module, so what is asserted here holds on all three:
  * the legs below ROUTE_SLOPE_MINZOOM and the slope classes from it, the
  * flat line only for a route with no drawable legs, and the markers. The
- * map page's wiring of it — its pending line and cursor between the two
+ * map page's wiring of it — its cursor between the two
  * groups — stays in tests/js/test_map_route_leg_layers.js.
  */
 

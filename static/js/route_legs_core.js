@@ -19,10 +19,12 @@
  * record and still has legs — a leg is a fact about the geometry. Adjacent
  * legs SHARE their seam point, so the lines meet with no gap.
  *
- * A PENDING ROUTE PRODUCES NOTHING, `route_slope_core.js`'s rule for its
- * reason: a followed share's one line is a teal dash saying "this one is
- * not yours yet", and cutting it into legs would spend that line on a
- * second message.
+ * A PENDING ROUTE IS CUT LIKE ANY OTHER (SNOW-1218). A followed share
+ * was drawn as one teal dash saying "this one is not yours yet" until
+ * 2026-10-24; now a shared route reads exactly as the sharer's does, and
+ * the panel's Save is what says it is not yours yet. A pending route has
+ * no `uuid` — a non-owner is never handed one — so its features carry
+ * the share's `token` instead, and a tap resolves back to it by that.
  *
  * A ROUTE WHOSE LEGS CANNOT ALL BE SLICED DRAWS FLAT. An overlay payload
  * cached before SNOW-1017 carries `legs` without point indices. map.js's
@@ -44,9 +46,10 @@
  *
  *   LEG_CLIMB_COLOUR          — a climbing leg's line
  *   LEG_DESCENT_COLOUR        — a descending leg's line
- *   legCollection(fc)         — one LineString per leg, `{uuid, i, climbing}`
+ *   legCollection(fc)         — one LineString per leg,
+ *                               `{uuid | token, i, climbing}`
  *   transitionCollection(fc)  — one Point per transition,
- *                               `{uuid, n, climbing}`
+ *                               `{uuid | token, n, climbing}`
  *   slopeSegmentCollection(fc) — every slope-class segment, tagged with
  *                               its leg's `i` and `climbing`
  *   hasDrawableLegs(f)        — whether every leg of a route can be sliced
@@ -161,12 +164,28 @@
   }
 
   /**
-   * The owned routes that carry legs, with the pieces each reader needs.
+   * What a route's drawn features carry to name it: its `uuid`, or a
+   * pending share's `token` — which has no uuid, because a non-owner is
+   * never handed one. Never both.
+   *
+   * @param {any} properties A route feature's properties.
+   * @returns {{uuid?: string, token?: string}}
+   */
+  function routeIdentity(properties) {
+    if (properties.uuid) return { uuid: String(properties.uuid) };
+    if (properties.token) return { token: String(properties.token) };
+    return {};
+  }
+
+  /**
+   * The routes that carry legs, with the pieces each reader needs.
    *
    * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
-   * @returns {Array<{uuid: ?string, coordinates: Array<Array<number>>,
-   *   legs: Array<WireLeg>, sampled: boolean}>} `sampled` is whether the
-   *   route has slope segments to draw.
+   * @returns {Array<{identity: {uuid?: string, token?: string},
+   *   coordinates: Array<Array<number>>, legs: Array<WireLeg>,
+   *   sampled: boolean}>} `identity` is the route's `uuid`, or a pending
+   *   share's `token`; `sampled` is whether the route has slope segments
+   *   to draw.
    */
   function leggedRoutes(geojson) {
     const features = (geojson && geojson.features) || [];
@@ -174,12 +193,11 @@
     for (let i = 0; i < features.length; i += 1) {
       const feature = features[i] || {};
       const properties = feature.properties || {};
-      if (properties.pending) continue;
       if (!hasDrawableLegs(feature)) continue;
       const coordinates = feature.geometry.coordinates;
       const slopeCore = self.pwaRouteSlopeCore;
       routes.push({
-        uuid: properties.uuid ? String(properties.uuid) : null,
+        identity: routeIdentity(properties),
         coordinates: coordinates,
         legs: properties.legs,
         sampled: !!(slopeCore && slopeCore.segmentFeatures
@@ -204,11 +222,12 @@
   }
 
   /**
-   * One LineString per leg of every owned route.
+   * One LineString per leg of every route.
    *
    * Sliced `coordinates[point_from..point_to]`, both ends inclusive, so a
    * leg's last coordinate is the next leg's first. Properties are the
-   * owning route's `uuid` — a tap on a leg resolves back to its route —
+   * owning route's `uuid`, or a pending share's `token` — a tap on a leg
+   * resolves back to its route —
    * the leg's number `i`, and `climbing`, which picks the layer. `sampled: true`
    * marks a leg whose route has slope segments to draw: from z14 the map
    * paints those instead of the leg's core, and a leg without the flag
@@ -237,7 +256,7 @@
           },
           properties: Object.assign(
             { i: leg.i, climbing: leg.climbing === true },
-            route.uuid ? { uuid: route.uuid } : {},
+            route.identity,
             route.sampled ? { sampled: true } : {},
           ),
         });
@@ -247,11 +266,12 @@
   }
 
   /**
-   * One numbered Point at each transition of every owned route.
+   * One numbered Point at each transition of every route.
    *
    * A transition is where leg 2 onwards starts, so a route with n legs has
    * n − 1 markers numbered 1 to n − 1 in track order, and a single-leg
-   * route has none. Each carries the owning route's `uuid` and the
+   * route has none. Each carries the owning route's `uuid` (or a pending
+   * share's `token`) and the
    * `climbing` flag of the leg it opens, which colours the marker.
    *
    * @param {?{features?: Array<any>}} geojson The routes FeatureCollection.
@@ -274,7 +294,7 @@
           geometry: { type: 'Point', coordinates: [point[0], point[1]] },
           properties: Object.assign(
             { n: n, climbing: leg.climbing === true },
-            route.uuid ? { uuid: route.uuid } : {},
+            route.identity,
           ),
         });
       }
@@ -283,7 +303,7 @@
   }
 
   /**
-   * The slope-class segments of every owned route, each tagged with the
+   * The slope-class segments of every route, each tagged with the
    * number (`i`) and `climbing` flag of the leg it lies in.
    *
    * What the map paints a route's core with from ROUTE_SLOPE_MINZOOM

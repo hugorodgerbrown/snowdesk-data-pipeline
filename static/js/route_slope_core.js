@@ -391,16 +391,13 @@
    * from the segment back to its route — `route_legs_core.js` builds the
    * home map's passage marks from these.
    *
-   * A PENDING ROUTE PRODUCES NOTHING. A followed share is drawn as a teal
-   * dashed line saying "this one is not yours yet", which is the fact that
-   * matters about it and the only action it offers; recolouring it by
-   * steepness would spend the one line on a second message and leave the
-   * first with nothing to carry it. Saving it makes it an owned route, and
-   * owned routes are coloured. That also means no segment here ever
-   * carries a `token`, so the layers cannot hand a non-owner's identifier
-   * to a popup built for owners.
+   * A PENDING ROUTE IS COLOURED LIKE ANY OTHER (SNOW-1218). A followed
+   * share was drawn as a teal dash until 2026-10-24; a shared route now
+   * reads as the sharer's does. It has no `uuid` — a non-owner is never
+   * handed one — so its segments carry the share's `token` instead, the
+   * identifier its feature already carries.
    *
-   * A route with no `slope` property produces NOTHING either — see the
+   * A route with no `slope` property produces NOTHING — see the
    * module comment's three states. So does a record whose halves do not
    * pair up, which would otherwise draw segments against the wrong ground.
    *
@@ -410,8 +407,6 @@
    */
   function segmentFeatures(feature) {
     const properties = (feature && feature.properties) || {};
-    if (properties.pending) return [];
-
     const slope = properties.slope;
     if (!slope) return [];
 
@@ -420,7 +415,9 @@
     if (!Array.isArray(points) || !Array.isArray(angles)) return [];
     if (points.length !== angles.length + 1) return [];
 
-    const identity = properties.uuid ? { uuid: properties.uuid } : {};
+    const identity = properties.uuid
+      ? { uuid: properties.uuid }
+      : properties.token ? { token: properties.token } : {};
     const marked = passageIndices(slope.passages);
     const geometry = feature && feature.geometry;
     const paths = segmentPaths(slope, geometry && geometry.coordinates);
@@ -517,11 +514,10 @@
    * under a millimetre, and the spherical form would be arithmetic
    * nobody could check by eye.
    *
-   * A PENDING ROUTE PRODUCES NOTHING — `segmentFeatures`' rule, for its
-   * reason: a followed share's one line says "this one is not yours
-   * yet", and hanging marks off it would spend that line on a second
-   * message. It also keeps a non-owner's feature carrying nothing but
-   * its token.
+   * A PENDING ROUTE PRODUCES NOTHING. No map draws these arrows since
+   * SNOW-1019, so SNOW-1218, which colours a pending route's segments
+   * like any other's, left this as it was: a non-owner's feature carries
+   * nothing but its token, and these carry only a `uuid`.
    *
    * Always a valid collection, even when nothing is marked — `setData`
    * throws on a null.

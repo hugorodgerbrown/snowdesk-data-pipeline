@@ -192,10 +192,11 @@ to choose between its two ends to do it. The midpoint is the one sample
 most representative of the ground the segment crosses, and it costs N
 samples rather than N + 1.
 
-**Colour pending shares too.** A followed-but-unclaimed share is drawn as a
-teal dashed line meaning "this one is not yours yet", which is the only
-action it offers. One line cannot carry two messages; saving it makes it an
-owned route, and owned routes are coloured.
+**Colour pending shares too.** Declined at first: a followed-but-unclaimed
+share was drawn as a teal dashed line meaning "this one is not yours yet".
+Reversed by SNOW-1218 (2026-10-24): a shared route is drawn exactly as the
+sharer's, its segments carrying the share's `token` in place of a `uuid`,
+and the panel's Save carries "not yours yet".
 
 **Store the compact form and derive the rest on demand.** Aspect cannot be
 derived from an angle, and re-sampling to recover it is the second pass

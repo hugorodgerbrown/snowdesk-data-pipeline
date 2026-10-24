@@ -4,7 +4,8 @@
  *
  * The facts worth holding here: each leg is sliced from the route's OWN
  * coordinates by its point indices, so an unsampled route still draws as
- * legs; a pending share draws nothing; a route of n legs has n − 1
+ * legs; a pending share draws like any other, named by its token
+ * (SNOW-1218); a route of n legs has n − 1
  * numbered markers in track order; a slope segment takes the number of the
  * leg it lies in; and the selection's opacity expression matches one leg
  * of one route, falling back to a plain number when nothing is open.
@@ -101,10 +102,13 @@ describe('legCollection', () => {
     expect(features.map((f) => f.properties.sampled)).toEqual([true, true]);
   });
 
-  it('draws nothing for a pending share', () => {
+  it('draws a pending share like any route, named by its token (SNOW-1218)', () => {
     const fc = routes({ pending: true, uuid: undefined, token: 'tok' });
+    const features = core.legCollection(fc).features;
 
-    expect(core.legCollection(fc).features).toEqual([]);
+    expect(features).toHaveLength(2);
+    expect(features.map((f) => f.properties.token)).toEqual(['tok', 'tok']);
+    expect(features.every((f) => !('uuid' in f.properties))).toBe(true);
   });
 
   it('skips a leg without point indices, as an older payload sends', () => {
@@ -158,10 +162,12 @@ describe('transitionCollection', () => {
     expect(core.transitionCollection(routes({ legs: one })).features).toEqual([]);
   });
 
-  it('marks nothing on a pending share', () => {
+  it('marks a pending share like any route, named by its token', () => {
     const fc = routes({ pending: true, uuid: undefined, token: 'tok' });
+    const features = core.transitionCollection(fc).features;
 
-    expect(core.transitionCollection(fc).features).toEqual([]);
+    expect(features).toHaveLength(1);
+    expect(features[0].properties).toEqual({ n: 1, climbing: false, token: 'tok' });
   });
 });
 
@@ -208,10 +214,12 @@ describe('slopeSegmentCollection', () => {
     expect(core.slopeSegmentCollection(routes()).features).toEqual([]);
   });
 
-  it('holds nothing for a pending share', () => {
+  it('holds a pending share\'s segments, named by its token', () => {
     const fc = routes({ slope: SLOPE, pending: true, uuid: undefined, token: 'tok' });
+    const features = core.slopeSegmentCollection(fc).features;
 
-    expect(core.slopeSegmentCollection(fc).features).toEqual([]);
+    expect(features).toHaveLength(4);
+    expect(features.every((f) => f.properties.token === 'tok')).toBe(true);
   });
 });
 
