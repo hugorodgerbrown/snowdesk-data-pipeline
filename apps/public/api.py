@@ -1769,7 +1769,9 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
     # opened on it.
     today = timezone.localdate()
     is_forecast = target_date > today
-    forecast = _location_forecast_context(location, target_date, timezone.now())
+    forecast = _location_forecast_context(
+        location, target_date, timezone.now(), strips=True
+    )
     weather = forecast["weather"]
     panel = forecast["panel"]
     day = (
@@ -1786,6 +1788,8 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
             "panel": None,
             "show_day_picker": False,
             "hourly_charts": [],
+            "day_strips": [],
+            "day_figures": [],
         }
 
     return JsonResponse(

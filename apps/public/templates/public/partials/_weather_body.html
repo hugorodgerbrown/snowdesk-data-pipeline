@@ -35,6 +35,11 @@ Context:
     show_day_picker — bool: the row carries more than one day.
     selected_index  — int: the picker cell checked on load.
     hourly_charts   — list of {"index", "chart"}, one per day with a series.
+    day_strips      — list of {"index", "strips"}, map only: the sheet's
+                      drawing of each day with a series (SNOW-1219), in
+                      place of ``hourly_charts``.
+    day_figures     — list of {"index", "day", "hourly_from"}, map only:
+                      each day past the hourly window, one figure a row.
     testid_prefix   — str: ``location-weather`` on the page,
                       ``weather-detail`` in the sheet.
     selector_name   — str: the radio group's name, distinct per container.
@@ -49,7 +54,25 @@ Context:
                 {% include "includes/_weather_day_picker.html" with panel=panel selected_index=selected_index testid_prefix=testid_prefix|add:"-forecast" selector_name=selector_name only %}
             </div>
             {% for day in panel.days %}
-                {% include "includes/_weather_day_line.html" with day=day reveal_index=forloop.counter0 testid_prefix=testid_prefix|add:"-day-line" only %}
+                {% include "includes/_weather_day_line.html" with day=day reveal_index=forloop.counter0 testid_prefix=testid_prefix|add:"-day-line" brief=in_map only %}
+            {% endfor %}
+            {% for entry in day_strips %}
+                <div
+                    class="forecast-hourly-panel"
+                    data-hourly-day="{{ entry.index }}"
+                    data-testid="{{ testid_prefix }}-hourly-panel"
+                >
+                    {% include "includes/_day_strips.html" with strips=entry.strips testid_prefix=testid_prefix|add:"-strips" only %}
+                </div>
+            {% endfor %}
+            {% for entry in day_figures %}
+                <div
+                    class="forecast-hourly-panel"
+                    data-hourly-day="{{ entry.index }}"
+                    data-testid="{{ testid_prefix }}-figures-panel"
+                >
+                    {% include "includes/_day_figures.html" with day=entry.day hourly_from=entry.hourly_from testid_prefix=testid_prefix|add:"-figures" only %}
+                </div>
             {% endfor %}
             {% for entry in hourly_charts %}
                 <div
@@ -69,6 +92,9 @@ Context:
                 {% include "includes/_weather_day_line.html" with day=day testid_prefix=testid_prefix|add:"-day-line" only %}
                 {% for entry in hourly_charts %}
                     {% include "includes/_hourly_chart.html" with chart=entry.chart testid_prefix=testid_prefix|add:"-hourly" only %}
+                {% endfor %}
+                {% for entry in day_strips %}
+                    {% include "includes/_day_strips.html" with strips=entry.strips testid_prefix=testid_prefix|add:"-strips" only %}
                 {% endfor %}
             </section>
         {% endwith %}

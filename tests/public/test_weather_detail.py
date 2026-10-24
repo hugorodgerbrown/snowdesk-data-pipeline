@@ -420,7 +420,7 @@ class TestCardDetents:
         assert "22&nbsp;km/h" in line
         assert "data-sheet-peek data-sheet-drag" in html
 
-    def test_a_row_with_hours_rises_to_the_meteogram(
+    def test_a_row_with_hours_rises_to_the_day_strips(
         self, client: Client, resort_location: Location
     ) -> None:
         """HALF ends under the week, FULL is the selected day below it."""
@@ -429,11 +429,11 @@ class TestCardDetents:
         ).json()["html"]
 
         assert _detents(html) == "peek,half,full"
-        assert 'data-testid="weather-detail-hourly"' in html
+        assert 'data-testid="weather-detail-strips"' in html
         half = html.index("data-sheet-half")
         assert html.index('data-testid="weather-detail-forecast-picker"') > half
         assert half < html.index('data-testid="weather-detail-day-line"')
-        assert half < html.index('data-testid="weather-detail-hourly"')
+        assert half < html.index('data-testid="weather-detail-strips"')
 
     def test_a_one_day_row_without_hours_stops_at_half(self, client: Client) -> None:
         """No picker and no series, so no FULL to rise to."""
@@ -448,7 +448,7 @@ class TestCardDetents:
         ]
 
         assert _detents(html) == "peek,half"
-        assert 'data-testid="weather-detail-hourly"' not in html
+        assert 'data-testid="weather-detail-strips"' not in html
 
     def test_a_day_with_no_row_stays_at_peek(
         self, client: Client, resort_location: Location
@@ -467,6 +467,97 @@ class TestCardDetents:
 
         assert 'data-detents="peek,half,full"' in html
         assert "js/hourly_chart_legend.js" in html
+
+
+@pytest.mark.django_db
+class TestCardDayStrips:
+    """The sheet draws each day as linked strips, not the meteogram (SNOW-1219)."""
+
+    def _html(self, client: Client, location: Location) -> str:
+        """Fetch the sheet on the fixtures' own day."""
+        html: str = client.get(_card_url(location), {"date": TODAY.isoformat()}).json()[
+            "html"
+        ]
+        return html
+
+    def test_days_with_hours_get_strips_and_the_rest_figures(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Two days carry a series; the other five open their daily figures."""
+        html = self._html(client, resort_location)
+
+        assert html.count('data-testid="weather-detail-strips"') == 2
+        assert html.count('data-testid="weather-detail-figures"') == 5
+        assert "weather-detail-hourly-legend-open" not in html
+
+    def test_one_selector_with_eight_blocks(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Eight block buttons per day, exactly one pressed."""
+        strips = self._html(client, resort_location).split(
+            'data-testid="weather-detail-strips"'
+        )[1]
+        first_day = strips.split('data-testid="weather-detail-strips"')[0]
+
+        assert first_day.count('data-testid="weather-detail-strips-block-button"') == 8
+        assert first_day.count('aria-pressed="true"') == 1
+        assert "--block: 3" in first_day
+
+    def test_four_strips_each_with_a_figure_row(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Temperature, freezing level, snow / rain and wind, figures under each."""
+        html = self._html(client, resort_location)
+
+        for strip in ("temp", "freezing", "precip", "wind"):
+            assert f'data-testid="weather-detail-strips-{strip}-header"' in html
+            assert f'data-testid="weather-detail-strips-{strip}-figures"' in html
+
+    def test_the_elevation_is_named_by_its_height_alone(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The rule on the freezing strip says "1,450 m", not "you"."""
+        html = self._html(client, resort_location)
+
+        assert 'data-testid="weather-detail-strips-elevation"' in html
+        assert "1,450 m" in html
+        assert ">you" not in html
+
+    def test_a_later_day_says_when_its_hours_arrive(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Day 3 gets its hours when it is tomorrow: the day after TODAY."""
+        html = self._html(client, resort_location)
+
+        tomorrow = (TODAY + datetime.timedelta(days=1)).strftime("%A")
+        assert f"Hour by hour from {tomorrow}." in html
+
+    def test_the_sheets_day_line_is_brief(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The strips and figures state the freezing level; daylight stays."""
+        html = self._html(client, resort_location)
+
+        line = html[html.index('data-testid="weather-detail-day-line-detail"') :]
+        line = line[: line.index("</p>")]
+        assert "daylight" in line
+        assert "Freezing" not in line
+
+    def test_the_surface_loads_the_strips_scripts(self) -> None:
+        """The selector needs its two modules, core first."""
+        html = render_to_string("public/partials/_weather_surface.html")
+
+        assert html.index("js/day_strips_core.js") < html.index("js/day_strips.js")
+
+    def test_the_page_keeps_the_meteogram(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Only the sheet changes; the location page is the follow-up."""
+        html = _page(client, resort_location)
+
+        assert 'data-testid="location-weather-hourly"' in html
+        assert "data-day-strips" not in html
+        assert 'data-testid="location-weather-day-line-detail"' in html
 
 
 def _page(client: Client, location: Location) -> str:
@@ -851,16 +942,16 @@ class TestCardForwardDay:
         assert "weather-detail-forecast-tag" not in html
         assert "weather-detail-forecast-note" not in html
 
-    def test_a_forward_day_with_hours_rises_to_its_meteogram(
+    def test_a_forward_day_with_hours_rises_to_its_strips(
         self, client: Client, resort_location: Location
     ) -> None:
-        """Tomorrow carries a series (HOURLY_DAYS is 2), so FULL is its chart."""
+        """Tomorrow carries a series (HOURLY_DAYS is 2), so FULL is its strips."""
         html = client.get(_card_url(resort_location), {"date": _forward(1)}).json()[
             "html"
         ]
 
         assert _detents(html) == "peek,half,full"
-        assert 'data-testid="weather-detail-hourly"' in html
+        assert 'data-testid="weather-detail-strips"' in html
 
     def test_a_forward_day_without_hours_still_rises_to_its_day(
         self, client: Client, resort_location: Location

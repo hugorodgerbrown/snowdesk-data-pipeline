@@ -158,6 +158,8 @@ interface Window {
   pwaRouteCursorCore: any;
   /** static/js/route_cursor_map_core.js — the route cursor placed on the map. */
   pwaRouteCursorMapCore: any;
+  /** static/js/day_strips_core.js — the block under a point on the day strips. */
+  pwaDayStripsCore: any;
   /** static/js/route_leader_core.js — the leader line's path. */
   pwaRouteLeaderCore: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */

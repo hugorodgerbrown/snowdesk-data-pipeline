@@ -126,7 +126,8 @@ from apps.regions.models import MicroRegion, Resort
 from apps.routes.models import Route
 from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
-from apps.weather.services.fetch import FORECAST_DAYS
+from apps.weather.services.day_strips import build_day_strips
+from apps.weather.services.fetch import FORECAST_DAYS, HOURLY_DAYS
 from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import build_point_forecast_panel
 
@@ -4624,7 +4625,11 @@ def _bulletin_detail_render(
 
 
 def _location_forecast_context(
-    location: Location, observed_on: datetime.date, now: datetime.datetime
+    location: Location,
+    observed_on: datetime.date,
+    now: datetime.datetime,
+    *,
+    strips: bool = False,
 ) -> dict[str, Any]:
     """Assemble the full forecast for one location on one day.
 
@@ -4651,6 +4656,13 @@ def _location_forecast_context(
     ``selected_index`` points the picker at the requested day. A day past
     the window falls back to the row's own day, the picker's default.
 
+    **The map's sheet draws day strips, not the meteogram** (SNOW-1219).
+    With ``strips`` set, each selectable day gets a ``build_day_strips``
+    drawing in ``day_strips`` and ``hourly_charts`` stays empty: the sheet
+    shows one or the other, and building both would double its weight.
+    The days past the hourly window get ``day_figures`` instead — the same
+    four readings, one figure each.
+
     ``show_day_picker`` is the page's shape discriminator, precomputed here
     rather than left to a ``|length`` test in the template (SNOW-789). A
     backfilled row carries ``forecast=None`` and therefore exactly one day,
@@ -4662,10 +4674,12 @@ def _location_forecast_context(
         observed_on: The calendar day asked for. Today or before, the row
             read; after today, the day selected inside today's row.
         now: The reference instant for each day/night icon decision.
+        strips: Build ``day_strips`` in place of ``hourly_charts``.
 
     Returns:
         A dict of ``weather``, ``panel``, ``show_day_picker``,
-        ``selected_index`` and ``hourly_charts``. The first two are
+        ``selected_index``, ``hourly_charts``, ``day_strips`` and
+        ``day_figures``. The first two are
         ``None`` when the location has no row for the day;
         ``hourly_charts`` is then empty and ``show_day_picker`` is
         ``False``.
@@ -4683,8 +4697,26 @@ def _location_forecast_context(
         0,
     )
     hourly_charts = []
+    day_strips = []
+    day_figures = []
     for index, day in enumerate(panel["days"] if panel else []):
         if not day["selectable"]:
+            if strips:
+                # A day past the hourly window: its daily figures, and the
+                # day its hours arrive — when it is HOURLY_DAYS - 1 away.
+                day_figures.append(
+                    {
+                        "index": index,
+                        "day": day,
+                        "hourly_from": day["date"]
+                        - datetime.timedelta(days=HOURLY_DAYS - 1),
+                    }
+                )
+            continue
+        if strips:
+            drawing = build_day_strips(day, elevation=location.elevation_m, now=now)
+            if drawing is not None:
+                day_strips.append({"index": index, "strips": drawing})
             continue
         chart = build_hourly_chart(
             day,
@@ -4700,6 +4732,8 @@ def _location_forecast_context(
         "show_day_picker": panel is not None and len(panel["days"]) > 1,
         "selected_index": selected_index,
         "hourly_charts": hourly_charts,
+        "day_strips": day_strips,
+        "day_figures": day_figures,
     }
 
 
