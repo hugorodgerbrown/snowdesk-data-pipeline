@@ -46,6 +46,7 @@ import requests
 from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from freezegun import freeze_time
 from pytest_django.fixtures import Settings
 from waffle.testutils import override_flag
 
@@ -120,6 +121,20 @@ def _meeting_point_element(html: str) -> str:
 _HTMX: dict[str, Any] = {"HTTP_HX_REQUEST": "true"}
 
 
+def _trip_day() -> datetime.date:
+    """Return the day the valid submission plans for.
+
+    Relative to today rather than a fixed date since SNOW-1211, which made
+    the create form refuse a day already gone: a literal date in this file
+    would start failing the day the calendar passed it.
+
+    Returns:
+        A date thirty days from today.
+
+    """
+    return timezone.localdate() + datetime.timedelta(days=30)
+
+
 def _valid_post(route_uuid: str = "") -> dict[str, str]:
     """Return a valid trip form submission.
 
@@ -132,7 +147,7 @@ def _valid_post(route_uuid: str = "") -> dict[str, str]:
 
     """
     payload = {
-        "date": "2026-03-14",
+        "date": _trip_day().isoformat(),
         "start_time": "07:30",
         "name": "Rosablanche",
         "description": "Bring skins.",
@@ -171,6 +186,27 @@ class TestTripNewPage:
         html = response.content.decode()
         assert 'value="46.1"' in html
         assert 'value="7.4"' in html
+
+    @freeze_time("2026-10-24T09:00:00+00:00")
+    def test_prefills_tomorrow_at_eight(self, client: Client) -> None:
+        """SNOW-1211: no empty day or time box for Safari to draw blank.
+
+        An iPad renders an empty native date or time input as a blank box
+        with no placeholder, so the form opened looking broken.
+        """
+        route = RouteFactory.create()
+        client.force_login(route.user)
+        response = client.get(f"{reverse('trips:new')}?route={route.uuid}")
+        html = response.content.decode()
+        assert 'value="2026-10-25"' in html
+        assert 'value="08:00"' in html
+
+    def test_the_day_and_time_cells_can_shrink(self, client: Client) -> None:
+        """SNOW-1211: a grid cell at min-width:auto let the time field overflow."""
+        route = RouteFactory.create()
+        client.force_login(route.user)
+        response = client.get(f"{reverse('trips:new')}?route={route.uuid}")
+        assert response.content.decode().count("class='mb-4 min-w-0'") == 2
 
     def test_the_meeting_point_is_a_map_with_the_route_on_it(
         self, client: Client
@@ -548,7 +584,7 @@ class TestTripCreate:
         trip = Trip.objects.get()
         assert response["HX-Redirect"] == f"{reverse('trips:list')}?created={trip.uuid}"
         assert trip.name == "Rosablanche"
-        assert trip.date == datetime.date(2026, 3, 14)
+        assert trip.date == _trip_day()
 
     def test_an_invalid_submission_comes_back_as_the_form(self, client: Client) -> None:
         """400 with the errors, swapped in place — the reason it is a fragment."""
@@ -601,6 +637,29 @@ class TestTripCreate:
 
         assert response.status_code == 400
         assert 'data-testid="trip-meeting-conversion"' in response.content.decode()
+
+    @freeze_time("2026-10-24T09:00:00+00:00")
+    def test_a_day_already_gone_is_refused(self, client: Client) -> None:
+        """SNOW-1211: a trip is planned for a day out, not for yesterday."""
+        route = RouteFactory.create()
+        client.force_login(route.user)
+        payload = _valid_post(str(route.uuid))
+        payload["date"] = "2026-10-23"
+        response = client.post(reverse("trips:create"), payload, **_HTMX)
+        assert response.status_code == 400
+        assert "Pick today or a day after it." in response.content.decode()
+        assert not Trip.objects.exists()
+
+    @freeze_time("2026-10-24T09:00:00+00:00")
+    def test_today_is_accepted(self, client: Client) -> None:
+        """The floor is today itself — a same-day plan is a real plan."""
+        route = RouteFactory.create()
+        client.force_login(route.user)
+        payload = _valid_post(str(route.uuid))
+        payload["date"] = "2026-10-24"
+        response = client.post(reverse("trips:create"), payload, **_HTMX)
+        assert response.status_code == 200
+        assert Trip.objects.get().date == datetime.date(2026, 10, 24)
 
     def test_a_missing_route_is_a_400(self, client: Client) -> None:
         """No route means nothing to plan from."""
@@ -663,6 +722,50 @@ class TestTripEdit:
         assert response["HX-Redirect"] == reverse("trips:detail", args=[trip.uuid])
         trip.refresh_from_db()
         assert trip.name == "Moved"
+
+    @freeze_time("2026-10-24T09:00:00+00:00")
+    def test_a_past_trip_keeps_its_own_day(self, client: Client) -> None:
+        """SNOW-1211: correcting the note on a trip already done is allowed.
+
+        The floor on an edit is the earlier of today and the trip's own
+        day, so a past trip is not forced into the future to save a change.
+        """
+        trip = TripFactory.create(date=datetime.date(2026, 10, 1))
+        client.force_login(trip.created_by)
+        payload = _valid_post()
+        payload["date"] = "2026-10-01"
+        payload["description"] = "It was great."
+        response = client.post(
+            reverse("trips:edit", args=[trip.uuid]), payload, **_HTMX
+        )
+        assert response.status_code == 200
+        trip.refresh_from_db()
+        assert trip.description == "It was great."
+
+    @freeze_time("2026-10-24T09:00:00+00:00")
+    def test_a_past_trip_cannot_move_earlier(self, client: Client) -> None:
+        """The floor is the trip's own day, not no floor at all."""
+        trip = TripFactory.create(date=datetime.date(2026, 10, 1))
+        client.force_login(trip.created_by)
+        payload = _valid_post()
+        payload["date"] = "2026-09-30"
+        response = client.post(
+            reverse("trips:edit", args=[trip.uuid]), payload, **_HTMX
+        )
+        assert response.status_code == 400
+        assert "Pick today or a day after it." in response.content.decode()
+
+    @freeze_time("2026-10-24T09:00:00+00:00")
+    def test_a_future_trip_cannot_move_into_the_past(self, client: Client) -> None:
+        """For a trip still ahead, the floor on an edit is today."""
+        trip = TripFactory.create(date=datetime.date(2026, 11, 1))
+        client.force_login(trip.created_by)
+        payload = _valid_post()
+        payload["date"] = "2026-10-23"
+        response = client.post(
+            reverse("trips:edit", args=[trip.uuid]), payload, **_HTMX
+        )
+        assert response.status_code == 400
 
     def test_404_for_a_non_organiser(self, client: Client) -> None:
         """Organiser-scoped through update_trip's own lookup."""

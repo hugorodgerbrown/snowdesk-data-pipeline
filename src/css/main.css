@@ -919,6 +919,46 @@
    ——————————————————————————————————————————— */
 
 
+/* —— Native date and time inputs (SNOW-1211) ——
+   Safari on iPad gives <input type="date|time"> an
+   intrinsic minimum width that a grid track at
+   min-width:auto cannot shrink, so the second of two
+   side-by-side fields spilled out of its card. It also
+   draws an EMPTY one with no placeholder and centres
+   its value, so the pair read as two blank boxes.
+   min-width:0 lets the field take its track's width;
+   the value is left-aligned like every other input;
+   and the min-height is a standard text input's
+   (line + py-2.5 + border), so an empty field never
+   collapses below its neighbours.
+
+   appearance:none is iOS-only (-webkit-touch-callout
+   exists nowhere else): on iOS it drops the native
+   chrome without losing the wheel picker, while on a
+   desktop it would also remove Chrome's calendar
+   button, which is the only affordance that field has.
+   ————————————————————————————————————————— */
+
+input[type="date"],
+input[type="time"] {
+  min-width: 0;
+  min-height: calc(1.5em + 1.25rem + 2px);
+}
+
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+@supports (-webkit-touch-callout: none) {
+  input[type="date"],
+  input[type="time"] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}
+
+
 /* —— EAWS danger band tints —————————————————
    Applied via data attribute on the band element
    so the background comes from tokens, not

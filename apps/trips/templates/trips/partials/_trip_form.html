@@ -54,11 +54,15 @@ Context:
             {% for error in form.non_field_errors %}<li class="text-xs text-form-error">{{ error }}</li>{% endfor %}
         </ul>
     {% endif %}
+    {# min-w-0 on each cell (SNOW-1211): a grid item defaults to          #}
+    {# min-width:auto, and Safari's native date and time inputs carry an   #}
+    {# intrinsic width wider than half an iPad card, so the time field     #}
+    {# overflowed it. src/css/main.css lets the inputs themselves shrink.  #}
     <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
         {% trans "Day" as date_label %}
-        {% include "includes/_form_field.html" with field=form.date label=date_label %}
+        {% include "includes/_form_field.html" with field=form.date label=date_label class_extra="mb-4 min-w-0" %}
         {% trans "Meeting time" as start_time_label %}
-        {% include "includes/_form_field.html" with field=form.start_time label=start_time_label %}
+        {% include "includes/_form_field.html" with field=form.start_time label=start_time_label class_extra="mb-4 min-w-0" %}
     </div>
     {% trans "Trip name" as name_label %}
     {% include "includes/_form_field.html" with field=form.name label=name_label optional=True %}
