@@ -293,4 +293,12 @@ describe('a tap on the trip\'s line', () => {
     expect(rail.state.calls).toHaveLength(1);
     expect(cursor.state().index).toBe(1);
   });
+
+  it('draws the point in the trip\'s own cursor source', () => {
+    expect(sources.get('trip-route-cursor-point').data.features.length).toBeGreaterThan(0);
+  });
+
+  it('gives the leader line a screen point with the routes overlay off', () => {
+    expect(window.pwaRouteCursorMap.point()).not.toBeNull();
+  });
 });
