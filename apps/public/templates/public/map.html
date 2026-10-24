@@ -453,6 +453,9 @@ in addition to the shared map assets.
     {# (window.pwaRouteLeader), which follows the rail's open/close events.  #}
     <script defer src="{% static 'js/route_leader_core.js' %}"></script>
     <script defer src="{% static 'js/route_leader.js' %}"></script>
+    {# The line from the weather and place sheets to the place they       #}
+    {# describe (Hugo, 24 Oct 2026), drawn with the route leader's path.   #}
+    <script defer src="{% static 'js/sheet_leader.js' %}"></script>
     {# SNOW-828: the ?trip= / ?trip_share= arrival's pure half              #}
     {# (window.pwaTripDeepLinkCore) — which parameter is present, where its #}
     {# geometry is fetched from, and what the address bar should say once   #}

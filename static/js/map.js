@@ -2893,6 +2893,40 @@
     map.setPaintProperty('regions-line-selected', 'line-opacity', paint['line-opacity']);
   });
 
+  // The map sheets' leader line (sheet_leader.js, Hugo, 24 Oct
+  // 2026): a coordinate's screen point, and a way to hear the camera move
+  // it. The sheet modules know nothing about MapLibre; this is their one
+  // way to ask where a place is on screen.
+  window.pwaMapProjection = Object.freeze({
+    /**
+     * Project a coordinate to viewport px.
+     *
+     * @param {Array<number>} lngLat [lng, lat].
+     * @returns {?{x: number, y: number}} Null before the map exists.
+     */
+    project: (lngLat) => {
+      if (!map || !Array.isArray(lngLat)) return null;
+      const px = map.project(lngLat);
+      const rect = map.getContainer().getBoundingClientRect();
+      return px ? { x: rect.left + px.x, y: rect.top + px.y } : null;
+    },
+    /**
+     * Call `fn` whenever the camera moves or the map resizes.
+     *
+     * @param {function(): void} fn
+     * @returns {function(): void} Removes the listeners.
+     */
+    onChange: (fn) => {
+      if (!map) return () => {};
+      map.on('move', fn);
+      map.on('resize', fn);
+      return () => {
+        map.off('move', fn);
+        map.off('resize', fn);
+      };
+    },
+  });
+
   // SNOW-1019: the leader line's bridge to the map — the cursor dot's
   // screen point, and a way to hear the camera move it.
   window.pwaRouteCursorMap = Object.freeze({
@@ -8487,9 +8521,12 @@
     // resort popup that answered a desktop click until SNOW-1161 described
     // the resort a third way (no danger, no weather, its own Save control);
     // docs/decisions/the-map-opens-a-resort-in-the-sheet.md.
-    const openResortSheet = (resortId, name) => {
+    // `lngLat` is the pin, for the sheet's leader line (sheet_leader.js).
+    const openResortSheet = (resortId, name, lngLat) => {
       if (resortId == null) return false;
-      if (!window.pwaPlaceSheet?.open({ kind: 'resort', id: String(resortId), name: name || '' })) {
+      if (!window.pwaPlaceSheet?.open({
+        kind: 'resort', id: String(resortId), name: name || '', lngLat: lngLat || null,
+      })) {
         return false;
       }
       closeDetailPopup();
@@ -8499,6 +8536,9 @@
       openResortSheet(
         resortFeature.properties && resortFeature.properties.id,
         resortFeature.properties && resortFeature.properties.name,
+        resortFeature.geometry && resortFeature.geometry.coordinates
+          ? resortFeature.geometry.coordinates.slice(0, 2)
+          : null,
       );
 
     /**
@@ -9827,10 +9867,15 @@
               id: weatherHit.properties.resort_id,
               name: weatherHit.properties.resort_name,
             },
+            // The symbol stands on the resort's pin: the leader's point.
+            geometry: weatherHit.geometry,
           };
         } else if (weatherHit && !resortUnder) {
+          // The coordinate rides along for the sheet's leader line
+          // (sheet_leader.js), which points from the sheet to it.
           window.pwaWeatherDetail?.open(
             weatherHit.properties.short_id, currentDisplayedDate,
+            weatherHit.geometry.coordinates.slice(0, 2),
           );
           return;
         }

@@ -61,7 +61,7 @@ Context:
 {% firstof selector_name "weather-day" as group_name %}
 <fieldset class="forecast-day-picker" data-testid="{{ prefix }}-picker">
     <legend class="sr-only">{% trans "Forecast days" %}</legend>
-    <div class="grid grid-cols-7 gap-1.5">
+    <div class="grid grid-flow-col auto-cols-fr gap-1.5">
         {% for day in panel.days %}
             {% with day_name=day.date|date:"l j F" condition=day.condition_label %}
                 {% if day.temp_max is not None and day.temp_min is not None %}

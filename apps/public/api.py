@@ -135,14 +135,11 @@ from apps.regions.services.area_content import (
 from apps.regions.services.basemap_tiles import blob_summary
 from apps.regions.services.resort_pin import set_resort_pin
 from apps.weather.models import Weather
-from apps.weather.services.hourly_chart import build_hourly_chart
-from apps.weather.services.weather_display import (
-    build_point_forecast_panel,
-    build_point_weather_days,
-)
+from apps.weather.services.weather_display import build_point_weather_days
 
 from .decorators import lowercase_region_id
 from .views import (
+    _location_forecast_context,
     _resolve_region_for_bulletin,
 )
 
@@ -1707,12 +1704,11 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
 
     Mirrors ``region_summary``'s contract — a server-rendered snippet the
     map injects — but the map puts this one in the weather SHEET rather than
-    an anchored popup. It is a CARD: today's conditions and a link out. The
-    week and the hourly detail it briefly carried belong to the full
-    forecast, not to a surface reached by tapping a symbol; the hourly rows
-    alone were 79% of this response. (What it shed was an outlook chart, a
-    seven-day strip and per-day hourly tables; SNOW-789 rebuilt the
-    destination around a day picker, so none of those three still exist.)
+    an anchored popup. **The sheet is the page** (Hugo, 24 Oct 2026): under
+    its peek row it renders the location forecast page's own body — the
+    week as a day picker opened on the map's day, the selected day's line,
+    its meteogram — from the page's own ``_location_forecast_context``. It
+    was a one-day card with a "This week →" link to that page until then.
 
     **Public, and only over the public estate.** ``Location.objects.public()``
     is the same filter :func:`weather_geojson` uses, and it is load-bearing
@@ -1767,33 +1763,30 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
         except ValueError:
             logger.debug("weather_detail: ignoring unparseable date %r", raw_date)
 
-    # Today or before, the day's own row; after today, today's row, whose
-    # ``forecast`` column carries the day (SNOW-1105).
+    # The page's own forecast context (the sheet is the page, Hugo, 24 Oct
+    # 2026): today or before, the day's own row; after today, today's row,
+    # whose ``forecast`` column carries the day (SNOW-1105), with the picker
+    # opened on it.
     today = timezone.localdate()
     is_forecast = target_date > today
-    weather = (
-        Weather.objects.for_location(location).on_date(min(target_date, today)).first()
-    )
-    now = timezone.now()
-    panel = build_point_forecast_panel(weather, now)
+    forecast = _location_forecast_context(location, target_date, timezone.now())
+    weather = forecast["weather"]
+    panel = forecast["panel"]
     day = (
         next((d for d in panel["days"] if d["date"] == target_date), None)
         if panel
         else None
     )
-
-    # The day's meteogram, for the phone sheet's FULL detent (SNOW-1101) —
-    # the same chart the forecast page draws for that day.
-    hourly_chart = (
-        build_hourly_chart(
-            day,
-            elevation=location.elevation_m,
-            location_label=location.name or "",
-            now=now,
-        )
-        if day is not None
-        else None
-    )
+    if day is None:
+        # A day past the forecast window, or one with no row: the sheet says
+        # so rather than opening some other day's week under a peek line
+        # that reads "No forecast for this day yet".
+        forecast = {
+            **forecast,
+            "panel": None,
+            "show_day_picker": False,
+            "hourly_charts": [],
+        }
 
     return JsonResponse(
         {
@@ -1814,40 +1807,13 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
                     "another_day": target_date != today,
                     # When the forecast was issued: the row's last fetch.
                     "issued_at": weather.fetched_at if weather else None,
-                    "hourly_chart": hourly_chart,
                     "target_date": target_date,
-                    "forecast_url": (
-                        f"{_weather_forecast_url(location)}"
-                        f"?date={target_date.isoformat()}"
-                    ),
+                    **forecast,
                 },
                 request=request,
             ),
         }
     )
-
-
-def _weather_forecast_url(location: Location) -> str:
-    """Build the URL of the page carrying this location's full forecast.
-
-    Always ``public:location_weather``, for every location alike. The resort
-    page also carries a full outlook, and pointing resort-linked locations
-    there was the first shape of this — but 461 of the estate's 540 public
-    locations are region centroids with no resort, so that version left the
-    card's only link missing on the large majority of taps. One destination
-    for every symbol is both the simpler rule and the one that holds.
-
-    The date rides along so the page opens on the day the map was showing
-    rather than snapping to today.
-
-    Args:
-        location: The location the card is describing.
-
-    Returns:
-        An absolute path.
-
-    """
-    return location.get_absolute_url()
 
 
 def _weather_detail_heading(location: Location) -> str:

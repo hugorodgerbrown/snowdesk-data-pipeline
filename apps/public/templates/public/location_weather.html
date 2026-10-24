@@ -16,6 +16,8 @@ centroids: before this page they had no destination at all, so the card's
 link would have been missing on the large majority of taps.
 
 **Built around one question: which day are you planning for** (SNOW-789).
+Regions 2–5 are ``public/partials/_weather_body.html``, which the map's
+weather sheet renders too — the sheet is the page (Hugo, 24 Oct 2026).
 Five hairline-separated regions, top to bottom:
 
   1. Masthead        includes/_weather_masthead.html — name, elevation,
@@ -90,49 +92,11 @@ Context:
         {# 1. Masthead. #}
         {% include "includes/_weather_masthead.html" with heading=heading location=location resort=resort region=region only %}
 
-        {% if panel %}
-            {% if show_day_picker %}
-                {# 2–4. The picker IS the selector for everything under it. #}
-                <section class="forecast-selector mt-5 space-y-4">
-                    {% include "includes/_weather_day_picker.html" with panel=panel selected_index=selected_index testid_prefix="location-weather-forecast" selector_name="location-weather-day" only %}
-                    {% for day in panel.days %}
-                        {% include "includes/_weather_day_line.html" with day=day reveal_index=forloop.counter0 testid_prefix="location-weather-day-line" only %}
-                    {% endfor %}
-                    {% for entry in hourly_charts %}
-                        <div
-                            class="forecast-hourly-panel"
-                            data-hourly-day="{{ entry.index }}"
-                            data-testid="location-weather-hourly-panel"
-                        >
-                            {% include "includes/_hourly_chart.html" with chart=entry.chart testid_prefix="location-weather-hourly" only %}
-                        </div>
-                    {% endfor %}
-                </section>
-            {% else %}
-                {# A backfilled row is one day. No picker, so no radio, so #}
-                {# no hiding class — the reveal rules could never match it. #}
-                {% with day=panel.days.0 %}
-                    <section class="mt-5 space-y-4">
-                        {% include "includes/_weather_day_line.html" with day=day testid_prefix="location-weather-day-line" only %}
-                        {% for entry in hourly_charts %}
-                            {% include "includes/_hourly_chart.html" with chart=entry.chart testid_prefix="location-weather-hourly" only %}
-                        {% endfor %}
-                    </section>
-                {% endwith %}
-            {% endif %}
-
-            {# 5. Provenance. #}
-            <div class="mt-4">
-                {% include "includes/_weather_provenance.html" with weather=weather testid_prefix="location-weather-provenance" only %}
-            </div>
-        {% else %}
-            {# No row for this day. Normal for a past date until the         #}
-            {# historical backfill lands — say so rather than rendering an   #}
-            {# empty page that reads as a failure.                           #}
-            <p class="mt-5 text-sm text-text-2" data-testid="location-weather-empty">
-                {% trans "No weather was recorded here for this day." %}
-            </p>
-        {% endif %}
+        {# 2–5. The body the map's weather sheet renders too (the sheet #}
+        {# is the page, Hugo, 24 Oct 2026).                             #}
+        <div class="mt-5">
+            {% include "public/partials/_weather_body.html" with weather=weather panel=panel show_day_picker=show_day_picker selected_index=selected_index hourly_charts=hourly_charts testid_prefix="location-weather" selector_name="location-weather-day" only %}
+        </div>
     </main>
 {% endblock content %}
 

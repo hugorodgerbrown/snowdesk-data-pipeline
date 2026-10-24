@@ -158,12 +158,17 @@
   /**
    * Open the sheet for one place.
    *
-   * @param {{kind: string, id: string, name?: string, createdAt?: string}} next
+   * `lngLat`, when map.js knows it, is the place's [lng, lat] for the leader
+   * line from the sheet to it (sheet_leader.js, Hugo, 24 Oct 2026).
+   *
+   * @param {{kind: string, id: string, name?: string, createdAt?: string,
+   *   lngLat?: Array<number>}} next
    * @returns {boolean} Whether the sheet took the tap.
    */
   const open = (next) => {
     if (!next || !next.id || !takes(next)) return false;
     place = next;
+    document.dispatchEvent(new CustomEvent('snowdesk:sheet-leader-point'));
     // Another place's body must not show under the new one's loading line.
     if (controller.isOpen()) sheet.replaceChildren();
     load();
@@ -281,6 +286,10 @@
   window.pwaPlaceSheet = Object.freeze({
     open: open,
     close: close,
+    /** @returns {?Array<number>} The open place's [lng, lat], or null. */
+    point: () => (controller.isOpen() && place && Array.isArray(place.lngLat)
+      ? place.lngLat
+      : null),
     isOpen: () => controller.isOpen(),
   });
 }());

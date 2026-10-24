@@ -66,6 +66,10 @@
   // day under a sheet still showing the old one.
   var shownShortId = null;
 
+  // The tapped symbol's [lng, lat], for the leader line (sheet_leader.js,
+  // Hugo, 24 Oct 2026). Kept across a change of day: it is the same place.
+  var shownLngLat = null;
+
   /**
    * Fill the sheet with a plain message, styled like the body it replaces.
    *
@@ -98,16 +102,20 @@
    *   property.
    * @param {string} [dateKey] ISO date the map is showing. Omitted, the
    *   server answers for today.
+   * @param {Array<number>} [lngLat] The symbol's [lng, lat], for the leader
+   *   line. Omitted, no line is drawn.
    * @returns {Promise<boolean>} Whether the body was rendered.
    */
-  async function open(shortId, dateKey) {
+  async function open(shortId, dateKey, lngLat) {
     if (shortId == null || !URL_TEMPLATE) return false;
 
     shownShortId = shortId;
+    shownLngLat = Array.isArray(lngLat) ? lngLat : null;
     // Paint first: the sheet measures its peek as it opens, so the loading
     // line must already be there or it opens at the fallback height.
     showMessage(strings.loading);
     sheet.open();
+    document.dispatchEvent(new CustomEvent('snowdesk:sheet-leader-point'));
     return load(shortId, dateKey);
   }
 
@@ -151,6 +159,8 @@
 
   window.pwaWeatherDetail = Object.freeze({
     open: open,
+    /** @returns {?Array<number>} The open sheet's [lng, lat], or null. */
+    point: function () { return sheet.isOpen() ? shownLngLat : null; },
     close: sheet.close,
     isOpen: sheet.isOpen,
   });

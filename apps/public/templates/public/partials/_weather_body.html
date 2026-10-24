@@ -1,0 +1,91 @@
+{% load i18n %}
+{% comment %}
+public/partials/_weather_body.html — one location's forecast, shared by
+the page and the map's weather sheet (the sheet is the page, Hugo, 24 Oct
+2026; docs/decisions/the-sheet-is-the-page.md).
+
+Everything under the page's masthead: the day picker, the selected day's
+line, its meteogram and the provenance line. The page wraps it in the
+site's frame under ``_weather_masthead.html``; the sheet wraps it under
+its peek row, which names the place and the map's day. A fact about a
+location's weather is added here, so both show it.
+
+Three shapes, discriminated by ``show_day_picker`` and NEVER by the date:
+
+  live row        the week; days 1–2 reveal a day line AND a meteogram,
+                  days 3–7 reveal a day line alone.
+  backfilled row  ``forecast=None`` is one day, so no picker: the day line
+                  and its meteogram render plainly, with no hiding class —
+                  with no radio the ``:has()`` reveal could never match.
+  no row at all   the "nothing recorded" message, or in the map on a day
+                  after today, "the forecast does not reach this day yet".
+
+The reveal is CSS-only — see the "Forecast day selector" block in
+src/css/main.css. The picker drops to six or five cells when its own width
+cannot hold seven (the same file, "Forecast day picker width").
+
+IN THE MAP (``in_map``) the picker carries ``data-sheet-half``: on a phone
+the sheet's HALF detent is the peek plus the week, and FULL is the selected
+day under it. A one-day row marks no half: the sheet's HALF fits what it
+has, up to half the screen.
+
+Context:
+    weather         — weather.Weather row, or None.
+    panel           — ForecastPanel, or None.
+    show_day_picker — bool: the row carries more than one day.
+    selected_index  — int: the picker cell checked on load.
+    hourly_charts   — list of {"index", "chart"}, one per day with a series.
+    testid_prefix   — str: ``location-weather`` on the page,
+                      ``weather-detail`` in the sheet.
+    selector_name   — str: the radio group's name, distinct per container.
+    in_map          — bool: rendered in the map's sheet.
+    is_forecast     — bool, map only: the map's day is after today.
+{% endcomment %}
+{% if panel %}
+    {% if show_day_picker %}
+        {# The picker IS the selector for everything under it. #}
+        <section class="forecast-selector space-y-4">
+            <div {% if in_map %}data-sheet-half{% endif %}>
+                {% include "includes/_weather_day_picker.html" with panel=panel selected_index=selected_index testid_prefix=testid_prefix|add:"-forecast" selector_name=selector_name only %}
+            </div>
+            {% for day in panel.days %}
+                {% include "includes/_weather_day_line.html" with day=day reveal_index=forloop.counter0 testid_prefix=testid_prefix|add:"-day-line" only %}
+            {% endfor %}
+            {% for entry in hourly_charts %}
+                <div
+                    class="forecast-hourly-panel"
+                    data-hourly-day="{{ entry.index }}"
+                    data-testid="{{ testid_prefix }}-hourly-panel"
+                >
+                    {% include "includes/_hourly_chart.html" with chart=entry.chart testid_prefix=testid_prefix|add:"-hourly" only %}
+                </div>
+            {% endfor %}
+        </section>
+    {% else %}
+        {# A backfilled row is one day. No picker, so no radio, so #}
+        {# no hiding class — the reveal rules could never match it. #}
+        {% with day=panel.days.0 %}
+            <section class="space-y-4">
+                {% include "includes/_weather_day_line.html" with day=day testid_prefix=testid_prefix|add:"-day-line" only %}
+                {% for entry in hourly_charts %}
+                    {% include "includes/_hourly_chart.html" with chart=entry.chart testid_prefix=testid_prefix|add:"-hourly" only %}
+                {% endfor %}
+            </section>
+        {% endwith %}
+    {% endif %}
+
+    <div class="mt-4">
+        {% include "includes/_weather_provenance.html" with weather=weather testid_prefix=testid_prefix|add:"-provenance" only %}
+    </div>
+{% else %}
+    {# No row for this day. Normal for a past date until the historical #}
+    {# backfill lands — say so rather than render an empty body that     #}
+    {# reads as a failure.                                               #}
+    <p class="text-sm text-text-2" data-testid="{{ testid_prefix }}-empty">
+        {% if is_forecast %}
+            {% trans "The forecast does not reach this day yet." %}
+        {% else %}
+            {% trans "No weather was recorded here for this day." %}
+        {% endif %}
+    </p>
+{% endif %}
