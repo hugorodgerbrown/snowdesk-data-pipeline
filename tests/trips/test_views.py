@@ -404,6 +404,9 @@ class TestTripDetailPage:
             r'name="date"\s+value="2026-09-12"[^>]*data-day-other\s+checked', html
         )
         assert 'value="12/09/2026"' not in html
+        # The picker's floor lets a past trip keep its day: a browser will
+        # not submit a date input whose value sits under its ``min``.
+        assert re.search(r'data-day-other-input[^>]*min="2026-09-12"', html)
 
     @override_settings(LANGUAGE_CODE="en-gb")
     def test_the_edit_form_prefills_the_meeting_time(self, client: Client) -> None:
