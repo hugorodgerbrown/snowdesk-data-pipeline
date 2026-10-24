@@ -77,5 +77,8 @@ one. It is also behind auth, so no unfurler will ever reach it.
     <script defer src="{% static 'js/route_legs_core.js' %}"></script>
     <script defer src="{% static 'js/route_drawing_core.js' %}"></script>
     <script defer src="{% static 'js/trip_map.js' %}"></script>
+    {# SNOW-1214: the sentence under the map placing the pin against    #}
+    {# the route. The picker reads it as it starts, so it loads first. #}
+    <script defer src="{% static 'js/meeting_place_core.js' %}"></script>
     <script defer src="{% static 'js/trip_meeting_picker.js' %}"></script>
 {% endblock extra_js %}

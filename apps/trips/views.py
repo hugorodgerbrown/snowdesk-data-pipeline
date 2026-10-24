@@ -92,7 +92,11 @@ from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
-from apps.locations.services.what3words import fill_what3words, what3words_map_url
+from apps.locations.services.what3words import (
+    convert_to_3wa,
+    fill_what3words,
+    what3words_map_url,
+)
 from apps.routes.models import Route
 from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.routes import RouteLimitReached
@@ -101,6 +105,7 @@ from apps.routes.services.slope_wire import compact_slope
 from apps.routes.services.terrain_heights import terrain_points
 from apps.trips.forms import TripForm
 from apps.trips.models import Trip
+from apps.trips.services import meeting_place
 from apps.trips.services.participants import (
     OrganiserCannotLeave,
     display_label_for,
@@ -190,6 +195,12 @@ _CREATED_PARAMETER = "created"
 # filling the tables between two cap checks. 20/m is far above anything a
 # person planning trips reaches and far below what a script needs to matter.
 _TRIP_WRITE_RATE = "20/m"
+
+# The live meeting-point address's budget (SNOW-1214). The Plan page asks
+# once each time the map settles, debounced to ~400 ms, so a person panning
+# steadily asks about twice a second at most. Sixty a minute leaves that
+# room and stops a script walking the endpoint as a free geocoder.
+_ADDRESS_LOOKUP_RATE = "60/m"
 
 
 def _trip_map_payload(trip: Trip) -> dict[str, Any]:
@@ -563,6 +574,30 @@ def _submitted_picker_payload(
     return _picker_payload(points, bounds, latitude, longitude, slope_samples)
 
 
+def _meeting_place(trip: Trip) -> dict[str, str]:
+    """Say where a trip's meeting point is without its coordinate.
+
+    SNOW-1214. A meeting point never shows its latitude and longitude. Its
+    three word address is the name; this is what stands beside it, and in
+    its place when there is none: one sentence placing the point against
+    the trip's own route, and a link that opens the spot in a maps app.
+
+    Args:
+        trip: The trip, read for its track snapshot and meeting point.
+
+    Returns:
+        ``place`` (the sentence) and ``maps_url`` (the link).
+
+    """
+    point = trip.meeting_point
+    return {
+        "place": meeting_place.sentence(
+            meeting_place.describe(trip.points, point.latitude, point.longitude)
+        ),
+        "maps_url": meeting_place.maps_url(point.latitude, point.longitude),
+    }
+
+
 def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
     """Build the context every trip surface renders from.
 
@@ -673,6 +708,9 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # address is, so the summary partial's one ``if`` covers both and
         # the coordinate fallback can never sprout a link to nowhere.
         "meeting_point_w3w_url": what3words_map_url(meeting_point_w3w),
+        # SNOW-1214. The sentence and maps link that stand in for the
+        # address when it cannot be had — never the coordinate.
+        "meeting_point_place": _meeting_place(trip),
         # The picker's conversion copy is gated on the same read — see
         # ``_what3words_context``, which is what the three render sites
         # that have no ``_trip_context`` use.
@@ -1248,6 +1286,66 @@ def trip_share_revoke(request: HttpRequest, uuid: UUID) -> JsonResponse:
     return JsonResponse({"revoked": True})
 
 
+@require_GET
+@ratelimit(key="user", rate=_ADDRESS_LOOKUP_RATE, block=False)
+def meeting_point_address(request: HttpRequest) -> JsonResponse:
+    """Return the three word address of the spot under the Plan page's pin.
+
+    SNOW-1214. The meeting point is named in three words as the organiser
+    places it, not only once the trip is saved, so the address is asked for
+    each time the map under the pin settles. Nothing is stored: the trip's
+    own ``Location`` is converted again on save (``_fill_meeting_address``),
+    which is what the trip page reads.
+
+    Request::
+
+        GET /trips/what3words/?lat=46.08&lon=7.31
+
+    Response (200)::
+
+        {"words": "filled.count.soap", "url": "https://what3words.com/…"}
+
+    ``words`` and ``url`` are both null when the conversion fails — no key,
+    a timeout, the upstream down. The page then says the address is added
+    when the trip is saved; it never shows the coordinate instead.
+
+    Errors:
+        400 — ``lat`` / ``lon`` missing, not numbers, or out of range.
+        403 — anonymous request; only an organiser places a pin.
+        404 — the ``what3words`` flag is off for this viewer, so the page
+              rendered no address line to fill.
+        429 — rate limit exceeded.
+
+    Args:
+        request: The incoming GET request.
+
+    Returns:
+        A JsonResponse carrying the address and its link.
+
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required"}, status=403)
+
+    if not waffle.flag_is_active(request, "what3words"):
+        return JsonResponse({"error": "not_found"}, status=404)
+
+    if getattr(request, "limited", False):
+        return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
+
+    try:
+        latitude = float(request.GET.get("lat", ""))
+        longitude = float(request.GET.get("lon", ""))
+    except ValueError:
+        return JsonResponse({"error": "invalid_coordinate"}, status=400)
+    # ``float`` accepts "nan" and "inf", neither of which is a place; the
+    # chained comparison is False for NaN, so one test refuses all three.
+    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+        return JsonResponse({"error": "invalid_coordinate"}, status=400)
+
+    words = convert_to_3wa(latitude, longitude)
+    return JsonResponse({"words": words, "url": what3words_map_url(words)})
+
+
 @require_http_methods(["GET", "HEAD"])
 @ratelimit(key=_share_page_rate_limit_key, rate=_SHARE_PAGE_RATE, block=False)
 def trip_share_page(request: HttpRequest, token: str) -> HttpResponse:
@@ -1797,9 +1895,10 @@ def _attach_meeting_addresses(request: HttpRequest, trips: list[Trip]) -> None:
     trip while the reader waited. ``Location.three_word_address`` is a
     plain property read.
 
-    A trip whose address is not stored yet shows its COORDINATE PAIR,
-    exactly as the trip's own page does when a conversion fails. There is
-    never a blank where the meeting point was.
+    A trip whose address is not stored yet shows the sentence placing its
+    meeting point against the route, and an "Open in maps" link, exactly as
+    the trip's own page does when a conversion fails (SNOW-1214). There is
+    never a blank where the meeting point was, and never a coordinate.
 
     Attributes on the instances rather than a parallel list: the card
     partial reads ``trip.meeting_point_w3w`` beside ``trip.date``, and a
@@ -1827,6 +1926,9 @@ def _attach_meeting_addresses(request: HttpRequest, trips: list[Trip]) -> None:
         trip.meeting_point_w3w_url = what3words_map_url(  # type: ignore[attr-defined]
             words
         )
+        # SNOW-1214: the card's fallback is the route sentence and a maps
+        # link, never the coordinate pair.
+        trip.meeting_point_place = _meeting_place(trip)  # type: ignore[attr-defined]
 
 
 def trip_list(request: HttpRequest) -> HttpResponse:

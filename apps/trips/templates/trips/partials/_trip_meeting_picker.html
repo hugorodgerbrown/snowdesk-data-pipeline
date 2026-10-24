@@ -1,11 +1,25 @@
 {% load i18n static %}
 {% comment %}
-trips/partials/_trip_meeting_picker.html — dropping the meeting pin.
+trips/partials/_trip_meeting_picker.html — placing the meeting point.
 
 THE MAP IS THE CONTROL. This replaced two bare number inputs, which asked
 the organiser to know that 46.080012, 7.318197 is the top car park. Nobody
 knows that. A group agrees to meet at a place they can see, so the route is
-drawn and the pin is dragged — or tapped — to where they mean.
+drawn and the map is moved under a pin.
+
+THE PIN STAYS IN THE MIDDLE; THE MAP MOVES (SNOW-1214). It replaced a
+draggable marker, which on an iPad did not always land where it was
+tapped, sat under the finger aiming it, and could not be moved from a
+keyboard. A pin fixed at the centre of the frame is always exactly where it
+looks, and the arrow keys already pan the map, which gave keyboard users
+back the placement SNOW-840 took away. A tap eases the map to that spot;
+"Route start" and "Route end" are the two quick picks.
+
+THE COORDINATE IS NEVER SHOWN (SNOW-1214). Under the map go the three word
+address, fetched live as the map settles (``trips:what3words``), and one
+sentence placing the pin against the route ("On the route, 9 km in"),
+written by static/js/meeting_place_core.js. The coordinate readout and the
+"Reset to the route's start" link went with the marker.
 
 The pin still WRITES to the form's own latitude/longitude fields rather
 than holding the value itself. Those fields arrive prefilled with the
@@ -38,69 +52,96 @@ Context:
     default_basemap_key : str — settings.BASEMAP, the fallback.
     form           : TripForm — passed through to the hidden coordinate
                      fields, which are what the marker writes into.
-    what3words_active : bool — SNOW-840. Whether the pin will actually be
-                     converted to a three word address on save, and so
-                     whether the sentence saying it will is true. Supplied
-                     by apps.trips.views._what3words_context at every one
-                     of the four render paths that reach this partial.
+    what3words_active : bool — SNOW-840. Whether the pin is converted to a
+                     three word address, and so whether the address line
+                     renders at all; with the flag off the sentence stands
+                     alone. Supplied by apps.trips.views._what3words_context
+                     at every one of the four render paths that reach this
+                     partial.
 {% endcomment %}
 {{ picker_payload|json_script:"trip-meeting-payload" }}
 <p class="mb-1.5 text-sm font-medium text-text-1">{% trans "Meeting point" %}</p>
-<p class="mb-2 text-xs text-text-3">
-    {% trans "Drag the pin, or tap the map, to say where the group meets. It starts at the route's own start." %}
-</p>
-<div
-    id="trip-meeting-picker"
-    data-trip-meeting-picker
-    data-default-basemap-key="{{ default_basemap_key }}"
-    {# h-80, the same height _trip_map.html gives the trip page's own map.  #}
-    {# The organiser places the pin on this canvas and then reads it back   #}
-    {# on that one, and the same track at two sizes reads as two routes.    #}
-    class="h-80 w-full overflow-hidden rounded-card border border-border bg-card"
->
-</div>
-<div class="mt-2 mb-3 flex flex-wrap items-center justify-between gap-2">
-    <p class="text-xs text-text-3">
-        {# Filled by the picker on load and on every move. Empty until then #}
-        {# rather than seeded server-side: one writer for this string means #}
-        {# it cannot show a coordinate the marker is not standing on.       #}
-        <span class="font-mono" data-meeting-readout></span>
-    </p>
-    <button
-        type="button"
-        data-meeting-reset
-        class="text-xs text-text-2 underline underline-offset-2 hover:text-text-1"
+{# The wrapper holds the map and the pin side by side: MapLibre owns its   #}
+{# container's children, so the pin is a sibling laid over it rather than  #}
+{# a child it might reorder.                                               #}
+<div class="relative">
+    <div
+        id="trip-meeting-picker"
+        data-trip-meeting-picker
+        data-default-basemap-key="{{ default_basemap_key }}"
+        {% if what3words_active %}data-what3words-url="{% url 'trips:what3words' %}"{% endif %}
+        {# h-80, the same height _trip_map.html gives the trip page's own map.  #}
+        {# The organiser places the pin on this canvas and then reads it back   #}
+        {# on that one, and the same track at two sizes reads as two routes.    #}
+        class="h-80 w-full overflow-hidden rounded-card border border-border bg-card"
     >
-        {% trans "Reset to the route's start" %}
-    </button>
+    </div>
+    {# The pin — the same glyph the map page places favourites and reports #}
+    {# under. Its tip is the map's centre: the box is anchored at 50%/50%  #}
+    {# and pulled up by its own height. It lifts while the map moves, so   #}
+    {# the eye can tell a settled pin from a travelling one.               #}
+    <div
+        data-meeting-pin
+        class="pointer-events-none absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-full text-route-line transition-transform duration-150 data-[moving=true]:-translate-y-[calc(100%+6px)]"
+        aria-hidden="true"
+    >
+        {% include "includes/_place_pin.html" %}
+    </div>
+</div>
+<div class="mt-2 mb-3" aria-live="polite">
+    {% if what3words_active %}
+        {# Written by the picker: "Finding the address…", the words, or the #}
+        {# offline line. Empty until the map first settles.                 #}
+        <p class="text-base font-medium text-text-1" data-meeting-address></p>
+    {% endif %}
+    <p
+        class="{% if what3words_active %}text-xs text-text-3{% else %}text-base font-medium text-text-1{% endif %}"
+        data-meeting-place
+    >
+    </p>
+    <p class="mt-1 text-xs text-text-3">{% trans "Move the map to put the pin where the group meets." %}</p>
+</div>
+<div class="mb-3 flex flex-wrap gap-2">
+    {% trans "Route start" as start_label %}
+    {% include "includes/_button.html" with label=start_label button_type="button" button_id="trip-meeting-start" variant="secondary" size="compact" %}
+    {% trans "Route end" as end_label %}
+    {% include "includes/_button.html" with label=end_label button_type="button" button_id="trip-meeting-end" variant="secondary" size="compact" %}
 </div>
 {# The two coordinate fields, HIDDEN since SNOW-840 — the form's transport #}
-{# and the picker's write target, not a control. The collapsed "Enter      #}
-{# coordinates manually" panel that used to wrap them is gone; see         #}
-{# _trip_meeting_manual.html for what that removed and what it costs.      #}
+{# and the picker's write target, not a control. See                       #}
+{# _trip_meeting_manual.html for what that removed.                        #}
 {% include "trips/partials/_trip_meeting_manual.html" %}
-{# What happens to the pin on save, and ONLY when it will happen. With the #}
-{# what3words flag off nothing is converted and this sentence would be a   #}
-{# lie, so it is not rendered at all — the "Drag the pin" line above       #}
-{# already explains the control on its own. The flag reaches every render  #}
-{# path through apps.trips.views._what3words_context.                      #}
-{% if what3words_active %}
-    <p class="mb-3 text-xs text-text-3" data-testid="trip-meeting-conversion">
-        {% trans "When you save, this pin becomes a three word address, so the group can find the exact spot." %}
-    </p>
-{% endif %}
 {# Every user-facing string trip_meeting_picker.js writes into the DOM.    #}
 {# makemessages never scans static/js, so a literal there ships as English #}
-{# to every locale — `tox -e i18n-lint` fails the build on one.           #}
+{# to every locale — `tox -e i18n-lint` fails the build on one. The place  #}
+{# sentences are apps/trips/services/meeting_place.py's, word for word.    #}
 <template id="trip-picker-strings-template">
     <span data-string="meeting-point">{% trans "Meeting point" %}</span>
-    {# A failure says what is still TRUE. This read "You can still type the #}
-    {# coordinates below" until SNOW-840 removed the fields it pointed at,  #}
-    {# which made it a message offering a control that is no longer there.  #}
-    {# What survives a dead map is the prefill: the hidden fields already   #}
-    {# hold the route's first coordinate, so the trip saves with its        #}
-    {# meeting point at the route's start rather than with none at all.     #}
+    {# A failure says what is still TRUE: the hidden fields already hold   #}
+    {# the route's first coordinate, so the trip saves with its meeting    #}
+    {# point at the route's start rather than with none at all.            #}
     <span
         data-string="map-failed"
     >{% trans "The map couldn't be loaded. The group will meet at the route's start." %}</span>
+    <span data-string="finding">{% trans "Finding the address…" %}</span>
+    <span data-string="address-later">{% trans "The address is added when you save" %}</span>
+    <span data-string="start">{% trans "At the route's start" %}</span>
+    <span data-string="end">{% trans "At the route's end" %}</span>
+    <span
+        data-string="on_route"
+    >{% blocktrans with distance="{distance}" %}On the route, {{ distance }} in{% endblocktrans %}</span>
+    <span
+        data-string="from_start"
+    >{% blocktrans with distance="{distance}" direction="{direction}" %}{{ distance }} {{ direction }} of the route's start{% endblocktrans %}</span>
+    <span
+        data-string="from_end"
+    >{% blocktrans with distance="{distance}" direction="{direction}" %}{{ distance }} {{ direction }} of the route's end{% endblocktrans %}</span>
+    <span data-string="octant-N">{% trans "north" %}</span>
+    <span data-string="octant-NE">{% trans "north-east" %}</span>
+    <span data-string="octant-E">{% trans "east" %}</span>
+    <span data-string="octant-SE">{% trans "south-east" %}</span>
+    <span data-string="octant-S">{% trans "south" %}</span>
+    <span data-string="octant-SW">{% trans "south-west" %}</span>
+    <span data-string="octant-W">{% trans "west" %}</span>
+    <span data-string="octant-NW">{% trans "north-west" %}</span>
 </template>

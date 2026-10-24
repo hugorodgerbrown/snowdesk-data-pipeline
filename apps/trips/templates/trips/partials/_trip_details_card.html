@@ -16,13 +16,16 @@ own decision rather than an oversight. This strip is the plan's scale
 stated in words; the route card's line is a caption on the drawing it sits
 under, which is why it uses arrows and this uses labels.
 
-Why the coordinate fallback, the link and the "no place name" rule are the
-way they are: includes/_three_word_address.html says all three.
+Why the route-sentence fallback (never the coordinate, SNOW-1214), the link
+and the "no place name" rule are the way they are:
+includes/_three_word_address.html says all three.
 
 Context:
     trip                  : Trip — the trip to describe.
     meeting_point_w3w     : str|None — the address WITHOUT its /// prefix.
     meeting_point_w3w_url : str|None — where that address links to.
+    meeting_point_place   : dict — ``place`` and ``maps_url``, the fallback
+                            when there is no address (``_meeting_place``).
 {% endcomment %}
 {% card padding="p-0" extra="overflow-hidden" %}
 <dl class="grid grid-cols-2 gap-x-4.5 gap-y-4 p-4.5" data-testid="trip-summary">
@@ -40,7 +43,7 @@ Context:
         {% trans "Meeting point" as meeting_point_label %}
         {% include "includes/_meta_cell.html" with text=meeting_point_label tag="dt" %}
         <dd>
-            {% include "includes/_three_word_address.html" with location=trip.meeting_point words=meeting_point_w3w url=meeting_point_w3w_url size_class="text-label" data_testid="trip-meeting-point" %}
+            {% include "includes/_three_word_address.html" with location=trip.meeting_point words=meeting_point_w3w url=meeting_point_w3w_url place=meeting_point_place.place maps_url=meeting_point_place.maps_url size_class="text-label" data_testid="trip-meeting-point" %}
         </dd>
     </div>
 </dl>

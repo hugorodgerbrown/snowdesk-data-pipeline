@@ -1,0 +1,32 @@
+{% comment %}
+templates/includes/_place_pin.html — the pin a place is chosen under.
+
+The map moves; the pin does not. Every surface that asks someone to choose
+a point on a map holds this pin still over the frame and reads the map's
+centre on ``moveend``: the map page's favourite and field-report flows
+(``#map-place-pin``, driven by static/js/place_picker.js, SNOW-475) and the
+Plan page's meeting point (static/js/trip_meeting_picker.js, SNOW-1214). A
+dragged marker sits under the finger placing it, and on an iPad did not
+always land where it was tapped.
+
+Only the glyph. The caller owns the wrapper that holds it over the map —
+its position, its lift and its ``hidden`` state differ between the two
+surfaces — and the wrapper anchors the glyph's bottom edge at the point.
+Filled in ``currentColor``, so the wrapper's text colour is the pin's; the
+hole is the card colour, so it reads on any basemap.
+
+Extracted from public/partials/_map_embed.html when the Plan page became
+the second caller.
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 32.
+{% endcomment %}
+<svg width="{{ size|default:32 }}" height="{{ size|default:32 }}" viewBox="0 0 24 24" aria-hidden="true">
+    <path
+        d="M12 22s7-7.163 7-12A7 7 0 1 0 5 10c0 4.837 7 12 7 12Z"
+        fill="currentColor"
+        stroke="currentColor"
+        stroke-width="1"
+    />
+    <circle cx="12" cy="10" r="2.75" fill="var(--color-card)" />
+</svg>

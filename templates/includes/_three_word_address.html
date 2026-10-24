@@ -7,11 +7,18 @@ was where this markup lived while a trip's meeting point was the only place
 that had an address. It now serves any location that has one, so it takes a
 LOCATION rather than a trip.
 
-THE COORDINATE IS THE FALLBACK, ALWAYS. Flag off, no key, the upstream down,
-the address not resolved yet — every one of those renders the coordinate
-pair. There is never a blank where the place was. When the address IS shown
-the coordinate moves to the element's title, so the paste-into-a-map-app
-affordance survives at no visual cost.
+THERE IS ALWAYS A FALLBACK. Flag off, no key, the upstream down, the address
+not resolved yet — there is never a blank where the place was. Which
+fallback depends on the caller:
+
+  - With ``place`` (a trip's meeting point, SNOW-1214), the sentence placing
+    the point against its route — "On the route, 9 km in" — and an "Open in
+    maps" link carrying the coordinate. A meeting point NEVER shows its
+    latitude and longitude, not even in a title: the group needs to know
+    where to stand, and the link is how they navigate there.
+  - Without it (a favourite), the coordinate pair, which moves to the
+    element's title when the address IS shown, so the paste-into-a-map-app
+    affordance survives at no visual cost.
 
 THE ADDRESS IS A LINK to what3words' own map, which is the only place the
 3m square can be SEEN. Three words are not self-evidently a place: somebody
@@ -28,7 +35,7 @@ anything. That is what makes this safe on a location minted for one trip
 or one dropped pin, which carries no name deliberately — naming a place is
 a curation act (see apps/trips/services/trips.py).
 
-THREE CALLERS at two sizes: the trip list card's footer strip (12px), the
+THREE CALLERS at three sizes: the trip list card's footer strip (12px), the
 trip view's details grid (15px), and the favourite card's locate link,
 which is why the size is a parameter rather than baked in.
 
@@ -41,6 +48,12 @@ Context:
                   link to nowhere.
     size_class  : str, optional — the type utility for both states.
                   Default ``"text-xs"``, the list card's size.
+    place       : str, optional — SNOW-1214. The sentence placing the
+                  location against a route, from
+                  ``apps.trips.services.meeting_place.sentence``. When set,
+                  no coordinate is ever rendered, title included.
+    maps_url    : str, optional — with ``place``, the "Open in maps" link
+                  (``meeting_place.maps_url``).
     data_testid : str, optional — set on the rendered element.
 {% endcomment %}
 {% with lat=location.latitude|floatformat:6 lon=location.longitude|floatformat:6 %}
@@ -49,10 +62,26 @@ Context:
             href="{{ url }}"
             target="_blank"
             rel="noopener noreferrer"
-            title="{{ lat }}, {{ lon }}"
+            {% if not place %}title="{{ lat }}, {{ lon }}"{% endif %}
             class='font-mono {{ size_class|default:"text-xs" }} font-medium text-accent hover:text-accent-hover'
             {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
         >///{{ words }}</a>
+    {% elif place %}
+        <span
+            class='{{ size_class|default:"text-xs" }} text-text-2'
+            {% if data_testid %}data-testid="{{ data_testid }}"{% endif %}
+        >
+            {{ place }}
+            {% if maps_url %}
+                ·
+                <a
+                    href="{{ maps_url }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="font-medium text-accent hover:text-accent-hover"
+                >{% trans "Open in maps" %}</a>
+            {% endif %}
+        </span>
     {% else %}
         <span
             class='font-mono {{ size_class|default:"text-xs" }} text-text-2'

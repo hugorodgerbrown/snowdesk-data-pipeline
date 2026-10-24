@@ -1,39 +1,47 @@
 /*
- * static/js/trip_meeting_picker.js — dropping the meeting pin (SNOW-820).
+ * static/js/trip_meeting_picker.js — placing the meeting point (SNOW-820,
+ * SNOW-1214).
  *
  * The meeting point began life as two number inputs prefilled with the
  * route's first coordinate. That works only for someone who already knows
  * what 46.080012, 7.318197 means, which is nobody: a group agrees to meet
  * at the top car park, not at a decimal degree. This module makes the map
- * the control — the route is drawn, a marker sits on it, and you drag it
- * or click where you mean.
+ * the control.
+ *
+ * ## The pin stays in the middle; the map moves (SNOW-1214)
+ *
+ * SNOW-820 drew a draggable marker. On an iPad it did not always land
+ * where it was tapped, the finger aiming it covered it, and SNOW-840 left
+ * no way to move it from a keyboard. The pin is now an element laid over
+ * the centre of the frame and the map moves under it: drag, pinch, the
+ * arrow keys, a tap (which eases the map to that spot) or the two quick
+ * picks, Route start and Route end. Whatever moved it, `moveend` writes
+ * the map's centre into the form.
+ *
+ * ## The coordinate is never shown
+ *
+ * Under the map: the spot's three word address, asked for each time the
+ * map settles (debounced, from `trips:what3words`), and one sentence
+ * placing the pin against the route from `meeting_place_core.js`. While
+ * the map moves the address line says "Finding the address…"; if the
+ * lookup fails it says the address is added on save, which is true —
+ * the server converts the saved point again.
  *
  * ## The inputs are still the source of truth
  *
- * The marker WRITES to the form's own `latitude` / `longitude` fields and
- * never holds the value itself. The form posts and validates exactly as it
- * did before this module existed, and a visitor with no JavaScript still
- * submits the prefilled route start rather than an empty required field.
- *
- * SNOW-840 HID THOSE FIELDS. This paragraph used to claim a third thing —
- * that "the manual-entry fields stay live for anyone who has a coordinate
- * from somewhere else and would rather type it" — and they are now
- * `HiddenInput`s, so nobody types into them and the marker is the only
- * writer. The field→marker half of the sync below is therefore waiting on
- * a `change` event a hidden input cannot raise; it is left in place
- * because it costs nothing, and because it is what a returning keyboard
- * affordance would bind to. See the templates for the regression this
- * accepts.
+ * The pin WRITES to the form's own hidden `latitude` / `longitude` fields
+ * and never holds the value itself, so the form posts and validates
+ * exactly as before. A visitor with no JavaScript submits the prefilled
+ * route start rather than an empty required field.
  *
  * ## It rebuilds itself after an HTMX swap
  *
  * An invalid submission comes back as a fresh copy of the whole form, so
  * the container this map was built in is GONE and a new one has taken its
- * place. `init` is therefore idempotent in the only way that works here:
- * it tears the previous map down and builds on whatever container is in
- * the document now. Re-binding to the old element would leave a live
- * MapLibre canvas attached to a detached node, drawing nothing and holding
- * a WebGL context open.
+ * place. `init` therefore tears the previous map down and builds on
+ * whatever container is in the document now. Re-binding to the old element
+ * would leave a live MapLibre canvas attached to a detached node, drawing
+ * nothing and holding a WebGL context open.
  *
  * ## Exports (frozen `self.pwaTripMeetingPicker`)
  *
@@ -41,24 +49,20 @@
  *   roundCoordinate(value)      → 6 dp, or null when not finite
  *   clampLatitude(value)        → value bounded to [-90, 90], or null
  *   clampLongitude(value)       → value bounded to [-180, 180], or null
- *   formatCoordinate(lat, lon)  → the readout string, or ""
+ *   routeEnds(payload)          → {start, end} as [lon, lat], or null
+ *   boundsAroundPin(box, lat, lon) → the route's box mirrored about the pin
+ *   createAddressLookup(opts)   → the debounced address fetcher
  *
- * Everything above is a pure function, unit-tested in
- * tests/js/test_trip_meeting_picker.js with no browser and no WebGL.
+ * All unit-tested in tests/js/test_trip_meeting_picker.js with no browser
+ * and no WebGL.
  */
 
 (function () {
   'use strict';
 
-  // The pin's colour, mirroring --color-route-line in src/css/main.css.
-  // MapLibre cannot read a CSS @theme token, so it is kept in step by hand,
-  // as route_drawing_core.js keeps the route's own.
-  var ROUTE_LINE_COLOUR = '#c026d3';
-
   // Six decimal places is ~11 cm at the equator — far finer than anyone
-  // can point at on a phone, and short enough to read in the coordinate
-  // readout under the map. Storing the raw drag float would put fifteen
-  // digits in the posted value for no gain.
+  // can point at on a phone. Posting the raw camera float would put
+  // fifteen digits in the value for no gain.
   var COORDINATE_DP = 6;
 
   var LATITUDE_MAX = 90;
@@ -81,13 +85,45 @@
   // recognise a car park, wide enough to see the road to it.
   var FALLBACK_ZOOM = 13;
 
+  // How long the map must sit still before its address is asked for. Long
+  // enough that a pan made of several drags asks once, short enough that
+  // the words arrive while the organiser is still looking at the pin.
+  var ADDRESS_DEBOUNCE_MS = 400;
+
+  // How far a quick pick or a tap travels, in ms. Short: the organiser
+  // asked to be somewhere and should see the map go there, not watch it.
+  var EASE_MS = 300;
+
+  // Every string this module writes, in English, as the fallback for the
+  // translated copies _trip_meeting_picker.html renders. Named rather than
+  // inline so tests/test_js_strings_are_translatable.py can read its keys.
+  var PICKER_STRINGS = {
+    'meeting-point': 'Meeting point',
+    'map-failed': "The map could not be loaded. The group will meet at the route's start.",
+    finding: 'Finding the address…',
+    'address-later': 'The address is added when you save',
+    start: "At the route's start",
+    end: "At the route's end",
+    on_route: 'On the route, {distance} in',
+    from_start: "{distance} {direction} of the route's start",
+    from_end: "{distance} {direction} of the route's end",
+    'octant-N': 'north',
+    'octant-NE': 'north-east',
+    'octant-E': 'east',
+    'octant-SE': 'south-east',
+    'octant-S': 'south',
+    'octant-SW': 'south-west',
+    'octant-W': 'west',
+    'octant-NW': 'north-west',
+  };
+
   var STRINGS = null;
 
   // The live map, so a rebuild after an HTMX swap can dispose of it. Module
   // scope rather than a property on the container precisely because the
   // container is what goes away.
   var currentMap = null;
-  var currentMarker = null;
+  var currentLookup = null;
 
   /**
    * Read the picker's inline payload.
@@ -133,9 +169,8 @@
    * Bound a longitude to the WGS-84 range.
    *
    * Clamped rather than wrapped: a longitude past the antimeridian here
-   * came from a typo in the manual field, not from a real place, and
-   * wrapping 200 to -160 would silently move the meeting point half a
-   * world away rather than pinning it at the edge where it is visible.
+   * came from a tampered field, not from a real place, and wrapping 200
+   * to -160 would silently move the meeting point half a world away.
    *
    * @param {*} value Any candidate value.
    * @returns {?number} The bounded longitude, or null when not a number.
@@ -147,38 +182,103 @@
   }
 
   /**
-   * The human readout under the map.
+   * The route's two ends, for the quick picks.
    *
-   * @param {*} lat Latitude.
-   * @param {*} lon Longitude.
-   * @returns {string} "lat, lon" at stored precision, or "" if either is unusable.
+   * @param {?Object} payload The picker payload.
+   * @returns {?{start: Array<number>, end: Array<number>}} `[lon, lat]` each.
    */
-  function formatCoordinate(lat, lon) {
-    var a = clampLatitude(lat);
-    var b = clampLongitude(lon);
-    if (a === null || b === null) return '';
-    return a.toFixed(COORDINATE_DP) + ', ' + b.toFixed(COORDINATE_DP);
+  function routeEnds(payload) {
+    var coords = payload && payload.route && payload.route.geometry
+      ? payload.route.geometry.coordinates
+      : null;
+    if (!coords || !coords.length) return null;
+    var first = coords[0];
+    var last = coords[coords.length - 1];
+    return { start: [first[0], first[1]], end: [last[0], last[1]] };
   }
 
   /**
-   * The form's two coordinate inputs, looked up fresh every time.
+   * Build the debounced address lookup.
    *
-   * Queried per call rather than cached: the form is replaced wholesale by
-   * an HTMX swap on a validation error, so a cached node would be writing
-   * into a form that is no longer on the page.
+   * Each `request(lat, lon)` cancels the one before it, waits `delay` ms
+   * and asks `url` for the spot's three word address. Only the LATEST
+   * request may report, so a slow answer about where the map was a second
+   * ago can never overwrite the address of where it is now.
    *
-   * @param {Document} doc The document to read from.
-   * @returns {?{latitude: HTMLInputElement, longitude: HTMLInputElement}}
+   * `onState` is called with one of:
+   *   {state: 'finding'}                 — at once, on every request
+   *   {state: 'found', words, url}       — the address arrived
+   *   {state: 'failed'}                  — offline, an error, or no words
+   *
+   * @param {{url: string, onState: function(Object): void,
+   *          fetch?: Function, delay?: number}} options
+   * @returns {{request: function(number, number): void, cancel: function(): void}}
    */
-  function coordinateInputs(doc) {
-    var lat = doc.querySelector('[data-meeting-latitude]');
-    var lon = doc.querySelector('[data-meeting-longitude]');
-    if (!lat || !lon) return null;
-    return { latitude: lat, longitude: lon };
+  function createAddressLookup(options) {
+    var fetcher = options.fetch || (typeof fetch === 'function' ? fetch : null);
+    var delay = typeof options.delay === 'number' ? options.delay : ADDRESS_DEBOUNCE_MS;
+    var timer = null;
+    var controller = null;
+    var serial = 0;
+
+    function cancel() {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      if (controller) controller.abort();
+      controller = null;
+      serial += 1;
+    }
+
+    function request(lat, lon) {
+      cancel();
+      var mine = serial;
+      options.onState({ state: 'finding' });
+      timer = setTimeout(function () {
+        timer = null;
+        // Offline is a known answer, not a reason to wait out a timeout.
+        if (!fetcher || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+          options.onState({ state: 'failed' });
+          return;
+        }
+        controller = typeof AbortController === 'function' ? new AbortController() : null;
+        var query = '?lat=' + encodeURIComponent(String(lat))
+          + '&lon=' + encodeURIComponent(String(lon));
+        Promise.resolve()
+          .then(function () {
+            return fetcher(options.url + query, {
+              credentials: 'same-origin',
+              headers: { Accept: 'application/json' },
+              signal: controller ? controller.signal : undefined,
+            });
+          })
+          .then(function (response) {
+            if (!response.ok) throw new Error('address lookup ' + response.status);
+            return response.json();
+          })
+          .then(function (body) {
+            if (mine !== serial) return;
+            if (body && typeof body.words === 'string' && body.words) {
+              options.onState({ state: 'found', words: body.words, url: body.url || '' });
+            } else {
+              options.onState({ state: 'failed' });
+            }
+          })
+          .catch(function () {
+            if (mine !== serial) return;
+            options.onState({ state: 'failed' });
+          });
+      }, delay);
+    }
+
+    return { request: request, cancel: cancel };
   }
 
   /**
-   * Write a coordinate into the form and the readout.
+   * Write a coordinate into the form's hidden fields.
+   *
+   * The inputs are queried per call rather than cached: the form is
+   * replaced wholesale by an HTMX swap on a validation error, so a cached
+   * node would be writing into a form that is no longer on the page.
    *
    * @param {Document} doc The document.
    * @param {number} lat Latitude.
@@ -186,36 +286,63 @@
    * @returns {void}
    */
   function publish(doc, lat, lon) {
-    var inputs = coordinateInputs(doc);
+    var latInput = doc.querySelector('[data-meeting-latitude]');
+    var lonInput = doc.querySelector('[data-meeting-longitude]');
     var a = clampLatitude(lat);
     var b = clampLongitude(lon);
-    if (!inputs || a === null || b === null) return;
-    inputs.latitude.value = String(a);
-    inputs.longitude.value = String(b);
-    var readout = doc.querySelector('[data-meeting-readout]');
-    if (readout) readout.textContent = formatCoordinate(a, b);
+    if (!latInput || !lonInput || a === null || b === null) return;
+    latInput.value = String(a);
+    lonInput.value = String(b);
   }
 
   /**
-   * Move the marker and recentre if it has been dragged off screen.
+   * Show the address line's state.
    *
+   * @param {Document} doc The document.
+   * @param {Object} update An `onState` value from the lookup.
+   * @returns {void}
+   */
+  function showAddress(doc, update) {
+    var line = doc.querySelector('[data-meeting-address]');
+    if (!line) return;
+    line.setAttribute('data-state', update.state);
+    if (update.state === 'found') {
+      // The words are what3words' own and reach the page as text, never
+      // markup; the slashes are presentation, added here as on the server.
+      line.textContent = '///' + update.words;
+    } else if (update.state === 'finding') {
+      line.textContent = STRINGS.finding;
+    } else {
+      line.textContent = STRINGS['address-later'];
+    }
+  }
+
+  /**
+   * Show the sentence placing the pin against the route.
+   *
+   * @param {Document} doc The document.
+   * @param {?Object} payload The picker payload.
    * @param {number} lat Latitude.
    * @param {number} lon Longitude.
    * @returns {void}
    */
-  function moveMarker(lat, lon) {
-    if (!currentMarker) return;
-    currentMarker.setLngLat([lon, lat]);
+  function showPlace(doc, payload, lat, lon) {
+    var line = doc.querySelector('[data-meeting-place]');
+    var place = self.pwaMeetingPlaceCore;
+    if (!line || !place) return;
+    var coords = payload && payload.route && payload.route.geometry
+      ? payload.route.geometry.coordinates
+      : null;
+    line.textContent = place.sentence(place.describe(coords, lat, lon), STRINGS);
   }
 
   /**
    * Resolve this reader's basemap, through `trip_map.js`'s own helper.
    *
    * SNOW-829. Delegated rather than reimplemented: `pwaTripMapCore` is
-   * already a dependency of this module (it loads first and this file
-   * reuses `routeSourceData` and `fitBoundsFor` from it), and two copies
-   * of this resolution are exactly how the picker and the trip page would
-   * come to disagree about which basemap the organiser is looking at.
+   * already a dependency of this module, and two copies of this
+   * resolution are exactly how the picker and the trip page would come to
+   * disagree about which basemap the organiser is looking at.
    *
    * @param {Element} container The picker container, carrying the default.
    * @param {Document} doc The document.
@@ -248,9 +375,56 @@
   }
 
   /**
+   * The route's box, mirrored about the pin so the pin is its centre.
+   *
+   * The pin is the map's centre, so the route cannot simply be fitted: a
+   * fit centres on the route's middle and would move the meeting point.
+   * Reflecting the route's box through the pin gives the smallest box
+   * that is centred on the pin and still holds the whole track.
+   *
+   * @param {?Array<Array<number>>} camera The route's `[[w, s], [e, n]]`.
+   * @param {number} lat The pin's latitude.
+   * @param {number} lon The pin's longitude.
+   * @returns {?Array<Array<number>>} The box, or null with no route box.
+   */
+  function boundsAroundPin(camera, lat, lon) {
+    if (!camera) return null;
+    var halfLon = Math.max(Math.abs(camera[0][0] - lon), Math.abs(camera[1][0] - lon));
+    var halfLat = Math.max(Math.abs(camera[0][1] - lat), Math.abs(camera[1][1] - lat));
+    return [
+      [lon - halfLon, lat - halfLat],
+      [lon + halfLon, lat + halfLat],
+    ];
+  }
+
+  /**
+   * Centre the map on the pin with the whole route in view.
+   *
+   * With no usable box, or a container of zero height (which has no zoom
+   * to fit), it falls back to a fixed close zoom on the pin.
+   *
+   * @param {Object} map A MapLibre map.
+   * @param {?Array<Array<number>>} camera The route's bounds, or null.
+   * @param {number} lat The pin's latitude.
+   * @param {number} lon The pin's longitude.
+   * @returns {void}
+   */
+  function frame(map, camera, lat, lon) {
+    var zoom = FALLBACK_ZOOM;
+    var box = boundsAroundPin(camera, lat, lon);
+    if (box && map.cameraForBounds) {
+      var fitted = map.cameraForBounds(box, { padding: FIT_PADDING });
+      if (fitted && typeof fitted.zoom === 'number' && isFinite(fitted.zoom)) {
+        zoom = fitted.zoom;
+      }
+    }
+    map.jumpTo({ center: [lon, lat], zoom: zoom });
+  }
+
+  /**
    * Build the picker, tearing down any previous one.
    *
-   * @returns {void}
+   * @returns {Promise<void>}
    */
   async function init() {
     var doc = document;
@@ -260,173 +434,143 @@
     // swap has just detached. Dispose of it before looking at the new one
     // — MapLibre holds a WebGL context and a resize observer per map, and
     // neither is released by the node going away.
+    if (currentLookup) {
+      currentLookup.cancel();
+      currentLookup = null;
+    }
     if (currentMap) {
       currentMap.remove();
       currentMap = null;
-      currentMarker = null;
     }
     if (!container) return;
 
-    // SNOW-840: the fallbacks say what is still true. They used to offer
-    // the coordinate fields under the map, which no longer exist as a
-    // control — the hidden inputs keep their route-start prefill, so a
-    // dead map means the meeting point stays where the route begins.
     STRINGS = self.pwaStrings
-      ? self.pwaStrings.read('trip-picker-strings-template', {
-          'meeting-point': 'Meeting point',
-          'map-failed':
-            "The map could not be loaded. The group will meet at the route's start.",
-        })
-      : {
-          'meeting-point': 'Meeting point',
-          'map-failed': 'The map could not be loaded.',
-        };
+      ? self.pwaStrings.read('trip-picker-strings-template', PICKER_STRINGS)
+      : PICKER_STRINGS;
 
     var payload = readPayload(doc);
-    if (typeof maplibregl === 'undefined') {
-      container.textContent = STRINGS['map-failed'];
-      return;
-    }
-
-    var inputs = coordinateInputs(doc);
-    var startLat = inputs ? clampLatitude(inputs.latitude.value) : null;
-    var startLon = inputs ? clampLongitude(inputs.longitude.value) : null;
+    var latInput = doc.querySelector('[data-meeting-latitude]');
+    var lonInput = doc.querySelector('[data-meeting-longitude]');
+    var startLat = latInput ? clampLatitude(latInput.value) : null;
+    var startLon = lonInput ? clampLongitude(lonInput.value) : null;
     if (startLat === null || startLon === null) {
       var fallback = payload && payload.meeting;
       startLat = fallback ? clampLatitude(fallback[1]) : 0;
       startLon = fallback ? clampLongitude(fallback[0]) : 0;
     }
+    showPlace(doc, payload, startLat, startLon);
+
+    if (typeof maplibregl === 'undefined') {
+      container.textContent = STRINGS['map-failed'];
+      return;
+    }
+
+    var addressUrl = container.getAttribute('data-what3words-url');
+    var lookup = addressUrl
+      ? createAddressLookup({
+          url: addressUrl,
+          onState: function (update) { showAddress(doc, update); },
+        })
+      : null;
+    currentLookup = lookup;
 
     var core = self.pwaTripMapCore;
     var camera = core && payload ? core.fitBoundsFor(payload.bounds) : null;
 
-    // The camera keys are ADDED CONDITIONALLY rather than set to undefined
-    // on the branch that does not want them. MapLibre spreads the caller's
-    // options over its own defaults, so an explicit `zoom: undefined`
-    // REPLACES the default zoom instead of falling back to it, and the
-    // transform it then builds is NaN — which surfaces as "failed to invert
-    // matrix" from the first render, with a canvas present and nothing on
-    // it. `bounds` and `center`/`zoom` are alternatives, and this is the
-    // shape that says so.
     // SNOW-829: the same resolution the trip page makes, through the same
-    // core, from the same catalogue. The organiser drops the pin on THIS
+    // core, from the same catalogue. The organiser places the pin on THIS
     // canvas and reads it back on that one, and the same track over two
     // different basemaps reads as two different places.
     //
     // No blank-canvas notice here, unlike the trip page. This map is a
-    // CONTROL: the organiser is dragging a pin onto terrain they chose the
-    // basemap for, and the notice's escape hatch — swapping the style —
-    // would move the ground under a pin mid-placement.
+    // CONTROL, and the notice's escape hatch — swapping the style — would
+    // move the ground under the pin mid-placement.
     var basemap = resolveBasemapFor(container, doc);
     var style = basemap ? basemap.url : '';
     if (basemap && self.pwaBasemapStyleCore) {
       try {
-        style = await self.pwaBasemapStyleCore.resolveStyle(
-          basemap.key,
-          basemap.url,
-        );
+        style = await self.pwaBasemapStyleCore.resolveStyle(basemap.key, basemap.url);
       } catch (err) {
         style = basemap.url;
       }
     }
 
-    var options = {
+    // Built on the pin, never on `bounds`: a fit would centre on the
+    // route's middle, and the centre IS the meeting point. `frame` then
+    // sets the zoom that shows the whole route around it.
+    var map = new maplibregl.Map({
       container: container,
       style: style,
+      center: [startLon, startLat],
+      zoom: FALLBACK_ZOOM,
       attributionControl: { compact: true },
-    };
-    if (camera) {
-      options.bounds = camera;
-      options.fitBoundsOptions = { padding: FIT_PADDING };
-    } else {
-      // No bounds means no route to frame; fall back to the pin itself so
-      // the map is never looking at open ocean.
-      options.center = [startLon, startLat];
-      options.zoom = FALLBACK_ZOOM;
-    }
-    var map = new maplibregl.Map(options);
+    });
     currentMap = map;
+    frame(map, camera, startLat, startLon);
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
-    var marker = new maplibregl.Marker({ draggable: true, color: ROUTE_LINE_COLOUR })
-      .setLngLat([startLon, startLat])
-      .addTo(map);
-    currentMarker = marker;
+    var pin = doc.querySelector('[data-meeting-pin]');
 
-    marker.on('dragend', function () {
-      var at = marker.getLngLat();
-      publish(doc, at.lat, at.lng);
+    // The address is of where the pin WAS the moment the map moves, so it
+    // gives way to "Finding the address…" at once, not when it settles.
+    map.on('movestart', function () {
+      if (pin) pin.setAttribute('data-moving', 'true');
+      if (lookup) showAddress(doc, { state: 'finding' });
     });
 
-    // Click-to-place as well as drag. Dragging a pin on a phone means
-    // finding it first; tapping where you mean is one gesture, and it is
-    // the one people reach for.
+    // Whatever moved the map — a drag, a pinch, the arrow keys, a tap, a
+    // quick pick — its centre is now the meeting point.
+    map.on('moveend', function () {
+      if (pin) pin.setAttribute('data-moving', 'false');
+      var at = map.getCenter();
+      var lat = clampLatitude(at.lat);
+      var lon = clampLongitude(at.lng);
+      if (lat === null || lon === null) return;
+      publish(doc, lat, lon);
+      showPlace(doc, payload, lat, lon);
+      if (lookup) lookup.request(lat, lon);
+    });
+
+    // A tap says "there": the map eases until that spot is under the pin.
     map.on('click', function (event) {
-      publish(doc, event.lngLat.lat, event.lngLat.lng);
-      moveMarker(event.lngLat.lat, event.lngLat.lng);
+      map.easeTo({ center: [event.lngLat.lng, event.lngLat.lat], duration: EASE_MS });
     });
 
     map.on('load', function () {
       installRoute(map, payload);
     });
 
+    var ends = routeEnds(payload);
+    [['trip-meeting-start', 'start'], ['trip-meeting-end', 'end']].forEach(function (pick) {
+      var button = doc.getElementById(pick[0]);
+      if (!button) return;
+      if (!ends) {
+        button.hidden = true;
+        return;
+      }
+      button.addEventListener('click', function () {
+        map.easeTo({ center: ends[pick[1]], duration: EASE_MS });
+      });
+    });
+
     // On the trip page the edit form lives inside a closed <details>, so
     // MapLibre measures a container of zero height on construction and
     // paints nothing — and it has no reason to measure again, because
-    // opening a <details> fires no resize. Ask for one on open, and re-fit,
-    // since a camera computed against a zero-height box framed nothing.
+    // opening a <details> fires no resize. Ask for one on open, and frame
+    // again, since a zoom computed against a zero-height box framed nothing.
     var panel = container.closest('details');
     if (panel) {
       panel.addEventListener('toggle', function () {
         if (!panel.open) return;
         map.resize();
-        if (camera) {
-          map.fitBounds(camera, { padding: FIT_PADDING });
-        }
-      });
-    }
-
-    // Typing in the coordinate fields moves the pin, so the two can never
-    // disagree about where the group is meeting. SNOW-840 hid the fields,
-    // so nothing raises `change` on them any more and this branch does not
-    // run in the shipped UI — kept because it is free and because it is
-    // the hook a keyboard-driven placement would attach to.
-    if (inputs) {
-      var syncFromInputs = function () {
-        var lat = clampLatitude(inputs.latitude.value);
-        var lon = clampLongitude(inputs.longitude.value);
-        if (lat === null || lon === null) return;
-        moveMarker(lat, lon);
-        map.easeTo({ center: [lon, lat], duration: 200 });
-        // Through `publish`, so the CLAMPED value goes back into the field
-        // the typo was typed into. Updating only the pin and the readout
-        // would leave a field reading 999 under a readout reading 180 and
-        // a pin standing at 180 — three answers to one question, and the
-        // one that posts is the one nothing on screen agrees with.
-        // Assigning .value fires no `change`, so this cannot recurse.
-        publish(doc, lat, lon);
-      };
-      inputs.latitude.addEventListener('change', syncFromInputs);
-      inputs.longitude.addEventListener('change', syncFromInputs);
-    }
-
-    // The reset returns the pin to where the route starts — the default
-    // the form arrived with, and the answer for someone who moved the pin
-    // to look at something and wants the original back.
-    var reset = doc.querySelector('[data-meeting-reset]');
-    if (reset && payload && payload.meeting) {
-      reset.addEventListener('click', function () {
-        var lat = clampLatitude(payload.meeting[1]);
-        var lon = clampLongitude(payload.meeting[0]);
-        if (lat === null || lon === null) return;
-        publish(doc, lat, lon);
-        moveMarker(lat, lon);
-        map.easeTo({ center: [lon, lat], duration: 200 });
+        var at = map.getCenter();
+        frame(map, camera, at.lat, at.lng);
       });
     }
 
     publish(doc, startLat, startLon);
+    if (lookup) lookup.request(startLat, startLon);
   }
 
   self.pwaTripMeetingPicker = Object.freeze({
@@ -434,7 +578,9 @@
     roundCoordinate: roundCoordinate,
     clampLatitude: clampLatitude,
     clampLongitude: clampLongitude,
-    formatCoordinate: formatCoordinate,
+    routeEnds: routeEnds,
+    boundsAroundPin: boundsAroundPin,
+    createAddressLookup: createAddressLookup,
   });
 
   if (typeof document !== 'undefined') {

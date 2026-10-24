@@ -1,0 +1,27 @@
+{
+  "_comment": "Shared by tests/trips/test_meeting_place.py and tests/js/test_meeting_place_core.js (SNOW-1214). The meeting-point sentence is computed in Python for the trip page and in the browser for the Plan page; both must give these answers. Tracks are [[lon, lat], ...]; expected is null or {kind, distance, octant}.",
+  "tracks": {
+    "north": [[7.0, 46.0], [7.0, 46.05], [7.0, 46.1]],
+    "loop": [[7.0, 46.0], [7.01, 46.0], [7.01, 46.01], [7.0, 46.0001]],
+    "single": [[7.0, 46.0]],
+    "empty": []
+  },
+  "vectors": [
+    {"name": "beside the first point", "track": "north", "pin": [7.0003, 46.0002], "expected": {"kind": "start", "distance": "", "octant": ""}},
+    {"name": "beside the last point", "track": "north", "pin": [7.0, 46.0995], "expected": {"kind": "end", "distance": "", "octant": ""}},
+    {"name": "on the route, nine kilometres in", "track": "north", "pin": [7.0005, 46.081], "expected": {"kind": "on_route", "distance": "9 km", "octant": ""}},
+    {"name": "on the route, under a kilometre in", "track": "north", "pin": [7.0, 46.004], "expected": {"kind": "on_route", "distance": "450 m", "octant": ""}},
+    {"name": "off the route, nearer the start", "track": "north", "pin": [7.02, 46.01], "expected": {"kind": "from_start", "distance": "1.9 km", "octant": "NE"}},
+    {"name": "off the route, nearer the end", "track": "north", "pin": [6.98, 46.1], "expected": {"kind": "from_end", "distance": "1.5 km", "octant": "W"}},
+    {"name": "just off the route by the start", "track": "north", "pin": [7.002, 46.0], "expected": {"kind": "from_start", "distance": "150 m", "octant": "E"}},
+    {"name": "a long way off", "track": "north", "pin": [7.0, 45.85], "expected": {"kind": "from_start", "distance": "17 km", "octant": "S"}},
+    {"name": "a loop names the start", "track": "loop", "pin": [7.0, 46.0], "expected": {"kind": "start", "distance": "", "octant": ""}},
+    {"name": "a one-point track still measures", "track": "single", "pin": [7.0, 46.02], "expected": {"kind": "from_start", "distance": "2.2 km", "octant": "N"}},
+    {"name": "no track, no sentence", "track": "empty", "pin": [7.0, 46.0], "expected": null}
+  ],
+  "labels": [
+    [10, "50 m"], [74, "50 m"], [76, "100 m"], [974, "950 m"], [975, "1 km"],
+    [1049, "1 km"], [1050, "1.1 km"], [2500, "2.5 km"], [9949, "9.9 km"],
+    [9950, "10 km"], [12499, "12 km"], [12500, "13 km"]
+  ]
+}

@@ -143,6 +143,9 @@ its own metadata.
         {# the picker reuses) are already loaded by _trip_map.html higher  #}
         {# up this same document, and a second <script> for either would   #}
         {# execute the library twice.                                      #}
+        {# SNOW-1214: the sentence under the map placing the pin against    #}
+        {# the route. The picker reads it as it starts, so it loads first. #}
+        <script defer src="{% static 'js/meeting_place_core.js' %}"></script>
         <script defer src="{% static 'js/trip_meeting_picker.js' %}"></script>
     {% endif %}
 {% endblock extra_js %}

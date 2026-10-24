@@ -41,9 +41,10 @@ the button's title.
 
 Context:
     trip         : Trip — the trip to render. ``trip_list`` selects
-                   ``meeting_point`` and hangs two extra attributes on each
-                   instance — ``meeting_point_w3w`` and
-                   ``meeting_point_w3w_url`` — because a three word address
+                   ``meeting_point`` and hangs three extra attributes on
+                   each instance — ``meeting_point_w3w``,
+                   ``meeting_point_w3w_url`` and ``meeting_point_place``
+                   (the route sentence and maps link, SNOW-1214) — because a three word address
                    is resolved per trip and a template must not be the
                    thing that decides whether an outbound HTTP call
                    happens. See ``trip_list`` for why the list reads the
@@ -118,8 +119,12 @@ Context:
     </div>
     <div class="flex items-center justify-between gap-3 border-t border-border bg-card-subtle px-4.5 py-2.75">
         <span class="min-w-0 text-xs text-text-3">
-            {% trans "Meet at" %}
-            {% include "includes/_three_word_address.html" with location=trip.meeting_point words=trip.meeting_point_w3w url=trip.meeting_point_w3w_url data_testid="trip-card-meeting-point" %}
+            {# "Meet at" reads before an address, not before the route    #}
+            {# sentence that stands in for one ("At the route's start").  #}
+            {% if trip.meeting_point_w3w %}
+                {% trans "Meet at" %}
+            {% endif %}
+            {% include "includes/_three_word_address.html" with location=trip.meeting_point words=trip.meeting_point_w3w url=trip.meeting_point_w3w_url place=trip.meeting_point_place.place maps_url=trip.meeting_point_place.maps_url data_testid="trip-card-meeting-point" %}
         </span>
         {% if trip.created_by_id == request.user.pk %}
             {% if trip.share_is_live %}
