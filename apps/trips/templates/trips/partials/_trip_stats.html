@@ -3,10 +3,10 @@
 trips/partials/_trip_stats.html — Distance / Ascent / Descent / Time, as a
 row of labelled figures (SNOW-848, SNOW-995).
 
-ONE PARTIAL, TWO SURFACES, and that is the reason it exists: the design
-draws the same three cells in the list card's body and again in the trip
-view's details footer, at the same label and value treatment. Two copies
-would drift on the first change to either.
+ONE SURFACE NOW: the trips list card's body. The trip view's details
+footer drew the same cells until SNOW-1216 took them off it — the route
+card's meta line carries the figures there — so this stays a partial only
+because the list card's template is long enough without it.
 
 THE ROW IS NOT ALWAYS FOUR. ``ascent_m`` and ``descent_m`` are nullable —
 a GPX track with no elevation carries neither — and so is ``duration``,

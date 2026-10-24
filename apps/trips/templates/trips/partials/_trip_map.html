@@ -3,20 +3,19 @@
 trips/partials/_trip_map.html — the trip's map canvas and its payload.
 
 One MapLibre canvas showing the route as a line with a marker where the
-group meets, and below it a CARD holding the route's figures, its
-elevation profile and the profile's own scale. Drawn by
+group meets, and below it, in the same card, the route's name, its figures
+and its elevation profile. Drawn by
 static/js/trip_map.js from an INLINE payload rather than a fetched one:
 the page already holds every byte of it, it is small, and a public share
 page that had to make a second request to draw its own map would show a
 recipient nothing at all while that request was in flight.
 
-THREE MODULES LOAD BEFORE trip_map.js AND THE ORDER IS LOAD-BEARING.
+THE MODULES LOAD BEFORE trip_map.js AND THE ORDER IS LOAD-BEARING.
 Deferred scripts run in document order, so `self.pwaElevationProfileCore`,
-`self.pwaRouteMarkersCore` and `self.pwaStrings` all exist by the time
-trip_map.js's top level runs. The first two are reused UNCHANGED from the
-map page — they already publish frozen globals, own no map state, and the
-elevation profile a trip draws is the same picture a route popup draws of
-the same geometry.
+`self.pwaRouteMarkersCore`, `self.pwaRouteCursorMapCore` and
+`self.pwaStrings` all exist by the time trip_map.js's top level runs. Each
+is reused UNCHANGED from the map page — they publish frozen globals and
+own no map state.
 
 The <div> has an explicit height rather than an aspect ratio: MapLibre
 measures its container on construction, and a container whose height is
@@ -40,9 +39,13 @@ bottom border; "View on the map" moves into a footer strip, as an accent
 link rather than an outlined button, because a footer strip is where this
 design puts a card's one secondary exit.
 
-There is no title line in this card, unlike the popup's. The popup is a
-free-floating object on a map and has to say which route it is about; this
-card is inside a page whose heading is already the trip's name.
+SNOW-1216 GAVE THE CARD A TITLE LINE AND THE MAP'S PROFILE. The card used
+to have no title ("the page's heading is already the trip's name"), but
+the heading names the TRIP and the card is the ROUTE, which has a name of
+its own; and the profile was trip_map.js's single-colour area, a different
+drawing of the same track from the one the map's route panel draws. It is
+now that drawing (includes/_route_profile.html), with a scrub cursor whose
+point trip_map.js draws on the canvas above.
 
 Context:
     trip        : Trip — the trip being drawn.
@@ -64,6 +67,7 @@ Context:
                   apps.trips.views._map_deep_link; both surfaces include
                   this partial, so the control ships to both from here.
 {% endcomment %}
+{% include "includes/_route_profile_strings.html" %}
 {# The payload. A <script type="application/json"> rather than an inline JS #}
 {# literal: the content is parsed, never executed, so the CSP needs no      #}
 {# script-src exception and no nonce, and json_script escapes the </script> #}
@@ -106,41 +110,45 @@ Context:
         {% trans "Switch to the standard map" %}
     </button>
 </div>
-{# SNOW-840: the route's figures and its profile, under the drawing they #}
-{# describe. The profile used to be a bare full-bleed SVG under the      #}
-{# button and the figures a line in the summary above the map, which put #}
-{# a drawing with no scale in one place and the numbers that scale it in #}
-{# another. The map page's route popup has always framed the two         #}
-{# together — a title, the figures, the drawing — and this is that shape #}
-{# on a page.                                                            #}
+{# SNOW-1216: the route, named, with its figures and the map's own      #}
+{# profile — the lane the map's route panel draws (_route_profile.html), #}
+{# leg fills, km ticks and a cursor. A press or a drag on it places the  #}
+{# point, and trip_map.js draws the same point on the canvas above, so   #}
+{# the drawing and the map are one route. No point card: the page is a   #}
+{# plan to read, and "View on the map" is where the terrain is read.     #}
 <div class="px-4.5 pt-3.5 pb-2.5">
     {% comment %}
         THE UNIT IS CLOSED UP AND THE THOUSANDS ARE NOT GROUPED, which is
         the map popup's and the routes panel's spelling of the same three
         numbers (SNOW-830 — `route-distance` / `route-ascent` /
-        `route-descent` in static/js/map_state.js) and which is why it
-        survived SNOW-848. A trip's figures ARE its route's figures, the
-        geometry being a snapshot of one, and a reader meeting them on
-        three surfaces should not meet three spellings.
+        `route-descent` in static/js/map_state.js). A trip's figures ARE
+        its route's figures, the geometry being a snapshot of one, and a
+        reader meeting them on three surfaces should not meet three
+        spellings. The duration joined the line in SNOW-1216, when the
+        details card's figures row it used to sit in went.
 
-        The design draws this line as "11.2 km · 1,340 m ↑", and the
-        labelled trio in the details card as "1,340 m". Neither was
-        adopted: adopting it here alone would break the rule above, and
-        adopting it everywhere is a change to the map's own strings and
-        is not this ticket's to make. _trip_stats.html carries the same
-        note from the other side.
+        THE NAME IS THE ROUTE'S, not the trip's: the page's heading is
+        already the trip's name, and a trip called "Dawn patrol" still
+        goes up a route with a name of its own.
     {% endcomment %}
     {% with climb=trip.climb %}
-        <p class="text-sm text-text-2" data-testid="trip-figures">
-            {% include "includes/_route_meta_line.html" with distance_km=trip.distance_km ascent_m=climb.ascent_m descent_m=climb.descent_m duration_hm=None only %}
+        <h2 class="text-base font-semibold text-text-1 text-balance" data-testid="trip-route-name">
+            {{ trip.route_name }}
+        </h2>
+        <p class="mt-1 font-mono text-meta text-text-2" data-testid="trip-figures">
+            {% include "includes/_route_meta_line.html" with distance_km=trip.distance_km ascent_m=climb.ascent_m descent_m=climb.descent_m duration_hm=trip.duration_hm only %}
         </p>
-        <div id="trip-profile" data-trip-profile class="mt-2 text-route-line"></div>
-        {# The profile's own scale, written by trip_map.js when it draws — the   #}
-        {# y-axis is fitted to THIS track's highest and lowest point, so the     #}
-        {# curve's shape means nothing without the pair that bounds it. Empty    #}
-        {# until then, and left empty for a track with no elevation at all.      #}
-        <p class="mt-2 font-mono text-meta text-text-3" data-trip-profile-range></p>
     {% endwith %}
+    <div
+        class="mt-3"
+        data-trip-route-profile
+        data-trip-route-scrub
+        data-payload="trip-map-payload"
+        data-name="{{ trip.route_name }}"
+        data-testid="trip-profile"
+    >
+        {% include "includes/_route_profile.html" with height_class="h-24" only %}
+    </div>
 </div>
 {# SNOW-828: the way out of this canvas, in the card's footer strip. A    #}
 {# plain link, not a fetch: the map page consumes the parameter, frames   #}
@@ -185,10 +193,6 @@ Context:
 {# fallback. See static/js/i18n_strings.js and docs/i18n.md.               #}
 <template id="trip-strings-template">
     <span data-string="meeting-point">{% trans "Meeting point" %}</span>
-    <span data-string="elevation-profile">{% trans "Elevation profile of the route" %}</span>
-    {# The profile's scale, in the spelling the map page's route popup     #}
-    {# used until SNOW-1018 moved its profile to rail one.                  #}
-    <span data-string="elevation-range">{% blocktrans %}%(low)s–%(high)s m{% endblocktrans %}</span>
     {# The map is a progressive enhancement over the figures above it, so   #}
     {# a failure says what is still true rather than apologising: the plan  #}
     {# is in the summary, and only the picture of it is missing.            #}
@@ -225,4 +229,13 @@ Context:
 {# (window.pwaBasemapStyleCore). Read by trip_map.js at its top level, so #}
 {# document order is load-bearing here as it is for the three above.      #}
 <script defer src="{% static 'js/basemap_style_core.js' %}"></script>
+{# SNOW-1216: the profile under the map — the map's own drawing          #}
+{# (route_rail_core.js's arithmetic, route_profile.js's lane) and the      #}
+{# page's caller of it, which turns a press on the lane into a sample      #}
+{# index. route_cursor_map_core.js turns that index back into a place for  #}
+{# trip_map.js's dot.                                                      #}
+<script defer src="{% static 'js/route_rail_core.js' %}"></script>
+<script defer src="{% static 'js/route_profile.js' %}"></script>
+<script defer src="{% static 'js/trip_route_profile.js' %}"></script>
+<script defer src="{% static 'js/route_cursor_map_core.js' %}"></script>
 <script defer src="{% static 'js/trip_map.js' %}"></script>

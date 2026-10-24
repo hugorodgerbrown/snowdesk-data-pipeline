@@ -314,10 +314,7 @@
    * @returns {?number} Null while the lane has no width.
    */
   function indexAt(clientX) {
-    var rect = lane.getBoundingClientRect();
-    if (!(rect.width > 0)) return null;
-    var at = Math.floor(((clientX - rect.left) / rect.width) * sampleCount);
-    return Math.min(sampleCount - 1, Math.max(0, at));
+    return profileView ? profileView.indexAt(clientX) : null;
   }
 
   /**

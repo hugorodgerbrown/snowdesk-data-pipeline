@@ -14,7 +14,7 @@ import datetime
 import pytest
 
 from apps.bulletins.models import RegionDayRating
-from apps.trips.services.plan_days import PLAN_DAYS, PlanDay, plan_week
+from apps.trips.services.plan_days import PLAN_DAYS, PlanDay, plan_week, trip_danger
 from tests.factories import MicroRegionFactory, RegionDayRatingFactory
 
 TODAY = datetime.date(2026, 10, 24)
@@ -96,6 +96,43 @@ class TestPlanWeek:
         week = plan_week(TODAY, _TRACK)
 
         assert all(not day.rating for day in week.days)
+
+
+@pytest.mark.django_db
+class TestTripDanger:
+    """``trip_danger`` — the trip page's one day (SNOW-1216)."""
+
+    def test_a_rated_day_carries_its_level_and_region(self, region: object) -> None:
+        """The same row and rule as the Plan page's tile."""
+        RegionDayRatingFactory.create(
+            region=region, date=TODAY, max_rating=RegionDayRating.Rating.CONSIDERABLE
+        )
+
+        danger = trip_danger(TODAY, _TRACK)
+
+        assert danger is not None
+        assert danger.region == region
+        assert danger.day.rating_label == "Considerable (3)"
+        assert str(danger) == "2026-10-24 3 Martigny-Verbier"
+
+    def test_an_unrated_day_is_none(self, region: object) -> None:
+        """No row, or a "no rating" row, is no level."""
+        RegionDayRatingFactory.create(
+            region=region,
+            date=TODAY,
+            min_rating=RegionDayRating.Rating.NO_RATING,
+            max_rating=RegionDayRating.Rating.NO_RATING,
+        )
+
+        assert trip_danger(TODAY, _TRACK) is None
+        assert trip_danger(TODAY + datetime.timedelta(days=1), _TRACK) is None
+
+    def test_a_start_outside_every_region_is_none(self, region: object) -> None:
+        """Coverage, not an error; and a trackless trip asks nothing."""
+        RegionDayRatingFactory.create(region=region, date=TODAY)
+
+        assert trip_danger(TODAY, [[9.9, 47.9, 0.0]]) is None
+        assert trip_danger(TODAY, []) is None
 
 
 class TestPlanDay:

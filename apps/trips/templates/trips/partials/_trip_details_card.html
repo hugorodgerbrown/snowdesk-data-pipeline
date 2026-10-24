@@ -4,17 +4,25 @@ trips/partials/_trip_details_card.html — the facts a trip page opens with
 (SNOW-848, replacing _trip_summary.html).
 
 The three things a person reads off a message before deciding whether they
-are going — the day, the time, and where the group meets — with the
-route's figures on a strip beneath them.
+are going — the day, the time, and where the group meets — and, on the
+days a bulletin rated, the day's avalanche danger on a strip beneath them
+(SNOW-1216).
 
 The meeting point spans BOTH COLUMNS. It is the only cell whose value can
 be long and must not wrap mid-address: ///skis.ridge.dawn broken over two
 lines is a phone number read out wrong.
 
-THE FIGURES ARE HERE AND AGAIN ON THE ROUTE CARD, and that is the design's
-own decision rather than an oversight. This strip is the plan's scale
-stated in words; the route card's line is a caption on the drawing it sits
-under, which is why it uses arrows and this uses labels.
+THE ROUTE'S FIGURES ARE NOT HERE. Until SNOW-1216 this card's strip
+repeated them as Distance · Ascent · Descent · Time, a second spelling of
+the line the route card already captions its profile with. The figures
+belong to the route, and the route card is where they are read; this card
+is the plan.
+
+THE DANGER STRIP IS USUALLY ABSENT, and that is the design. A bulletin
+covers today, and tomorrow once the evening issue is out; a trip planned
+for Saturday on a Tuesday has no level to show until Friday evening, and
+the card then has no strip rather than a "no bulletin yet" placeholder.
+_trip_danger.html says what the line holds.
 
 Why the route-sentence fallback (never the coordinate, SNOW-1214), the link
 and the "no place name" rule are the way they are:
@@ -26,6 +34,8 @@ Context:
     meeting_point_w3w_url : str|None — where that address links to.
     meeting_point_place   : dict — ``place`` and ``maps_url``, the fallback
                             when there is no address (``_meeting_place``).
+    trip_danger           : TripDanger|None — the day's level on the route's
+                            start (apps.trips.services.plan_days).
 {% endcomment %}
 {% card padding="p-0" extra="overflow-hidden" %}
 <dl class="grid grid-cols-2 gap-x-4.5 gap-y-4 p-4.5" data-testid="trip-summary">
@@ -47,7 +57,9 @@ Context:
         </dd>
     </div>
 </dl>
-<div class="border-t border-border bg-card-subtle px-4.5 py-3">
-    {% include "trips/partials/_trip_stats.html" with trip=trip %}
-</div>
+{% if trip_danger %}
+    <div class="border-t border-border bg-card-subtle px-4.5 py-3">
+        {% include "trips/partials/_trip_danger.html" with trip=trip danger=trip_danger only %}
+    </div>
+{% endif %}
 {% endcard %}

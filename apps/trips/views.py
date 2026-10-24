@@ -113,7 +113,7 @@ from apps.trips.services.participants import (
     join_trip,
     leave_trip_by_uuid,
 )
-from apps.trips.services.plan_days import plan_week
+from apps.trips.services.plan_days import plan_week, trip_danger
 from apps.trips.services.routes import already_saved, save_trip_route
 from apps.trips.services.shares import (
     TripShareTokenCollision,
@@ -734,6 +734,10 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # is an offer awaiting a decision with nowhere else to live.
         "map_url": _map_deep_link("trip", str(trip.uuid)),
         "map_payload": _trip_map_payload(trip),
+        # SNOW-1216. The day's danger level on the route's start, for the
+        # plan card's one line — None on every day no bulletin rated, which
+        # is most of them, and the card then simply has no line.
+        "trip_danger": trip_danger(trip.date, trip.points),
         # SNOW-829. The CATALOGUE, not one resolved URL, because the page
         # resolves the reader's own choice client-side: ``localStorage`` is
         # scoped per ORIGIN, so a trip page reads
