@@ -71,6 +71,7 @@ yours" from "doesn't exist".
 
 from __future__ import annotations
 
+import datetime
 import logging
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -127,6 +128,12 @@ logger = logging.getLogger(__name__)
 # Stand-in uuid for reversing a ``__UUID__``-templated share URL. Mirrors
 # ``apps.routes.views._DUMMY_UUID``.
 _DUMMY_UUID = UUID(int=0)
+
+# SNOW-1211: the meeting time a new trip's form opens on. Safari on iPad
+# draws an EMPTY time input as a blank box with no placeholder, so a form
+# that arrived unfilled read as broken. 08:00 is a plausible start for a
+# day out and one tap from whatever the organiser actually means.
+_DEFAULT_START_TIME = datetime.time(8, 0)
 
 
 def _share_url_templates() -> dict[str, str]:
@@ -725,8 +732,13 @@ def trip_new(request: HttpRequest) -> HttpResponse:
         raise Http404("No such route.") from exc
 
     first = route.points[0] if route.points else [0.0, 0.0]
+    # SNOW-1211: tomorrow at 08:00 rather than two empty boxes — see
+    # ``_DEFAULT_START_TIME``. Tomorrow because a trip is planned ahead,
+    # and today is one tap away in the picker.
     form = TripForm(
         initial={
+            "date": timezone.localdate() + datetime.timedelta(days=1),
+            "start_time": _DEFAULT_START_TIME,
             "name": route.name,
             # Latitude first in the signature, longitude first in the
             # storage — see ``_trip_map_payload``.
@@ -891,7 +903,7 @@ def trip_create(request: HttpRequest) -> HttpResponse:
     except ValueError:
         return HttpResponse("A route is required.", status=400)
 
-    form = TripForm(request.POST)
+    form = TripForm(request.POST, earliest_date=timezone.localdate())
     if not form.is_valid():
         # The re-rendered form carries the picker's payload too, or the map
         # would vanish on the first validation error and leave the
@@ -986,13 +998,20 @@ def trip_edit(request: HttpRequest, uuid: UUID) -> HttpResponse:
             status=429,
         )
 
-    form = TripForm(request.POST)
+    # Looked up before validating, for two things: the picker's route on an
+    # invalid submission, and the date floor (SNOW-1211) — an edit may keep
+    # the day the trip already has even once it is past, but may not move
+    # it EARLIER than that. Owner-scoped, so an invalid
+    # submission against someone else's trip still learns nothing. A
+    # missing trip costs the map, not the form — the 404 for that case is
+    # ``update_trip``'s to raise on a valid submission.
+    trip = Trip.objects.filter(created_by=request.user, uuid=uuid).first()
+    today = timezone.localdate()
+    form = TripForm(
+        request.POST,
+        earliest_date=min(today, trip.date) if trip is not None else today,
+    )
     if not form.is_valid():
-        # Looked up only to redraw the picker's route, and owner-scoped so
-        # an invalid submission against someone else's trip still learns
-        # nothing. A missing trip costs the map, not the form — the 404 for
-        # that case is ``update_trip``'s to raise on a valid submission.
-        trip = Trip.objects.filter(created_by=request.user, uuid=uuid).first()
         return render(
             request,
             "trips/partials/_trip_form.html",

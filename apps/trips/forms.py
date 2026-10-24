@@ -52,7 +52,11 @@ already have detached.
 
 from __future__ import annotations
 
+import datetime
+from typing import Any
+
 from django import forms
+from django.utils.translation import gettext_lazy as _
 
 from apps.public.templatetags.components import input_classes
 
@@ -147,6 +151,42 @@ class TripForm(forms.Form):
         max_value=_LONGITUDE_MAX,
         widget=forms.HiddenInput(attrs={"data-meeting-longitude": ""}),
     )
+
+    def __init__(
+        self,
+        *args: Any,
+        earliest_date: datetime.date | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Build the form, optionally refusing a day before ``earliest_date``.
+
+        SNOW-1211. A trip is planned for a day out, so creating one for a
+        day already gone is a typo rather than a plan — and with the day
+        field now prefilled, the likeliest way to reach the past is a
+        mis-tap in the date picker. The CALLER sets the floor because the
+        two paths differ: creating passes today, while editing passes the
+        earlier of today and the trip's own day, so an organiser
+        correcting the note on a trip that has already happened is not
+        told to move it into the future first.
+
+        Args:
+            *args: Passed to ``forms.Form``.
+            earliest_date: The first day the form accepts, or None for no
+                floor.
+            **kwargs: Passed to ``forms.Form``.
+
+        """
+        super().__init__(*args, **kwargs)
+        self.earliest_date = earliest_date
+
+    def clean_date(self) -> datetime.date:
+        """Refuse a day before the caller's floor, when one is set."""
+        date: datetime.date = self.cleaned_data["date"]
+        if self.earliest_date is not None and date < self.earliest_date:
+            raise forms.ValidationError(
+                _("Pick today or a day after it."), code="past_date"
+            )
+        return date
 
     def clean_name(self) -> str:
         """Strip surrounding whitespace from the optional label."""
