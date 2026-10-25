@@ -352,6 +352,17 @@
                                                       sunrise / after sunset */
   --color-chart-daylight: #f59e0b;                 /* amber-500: the lit day  */
 
+  /* The day strips' time selector — the night ground inside its pill,
+     before sunrise and after sunset, and the hour labels and dots that sit
+     on it. A quieter pair than the meteogram's: this ground sits under a
+     black capsule and grey labels rather than standing as a bar, so it is
+     a slate tint over --color-tag rather than slate itself. text-3 is
+     3.54:1 on it, so the labels on night take their own ink, 5.03:1. The
+     day line states sunrise and sunset in text, so the shading is a second
+     channel and the 1.35:1 between the two grounds is not load-bearing. */
+  --color-strip-night:      #d2d3d4;               /* 20% slate-600 over tag */
+  --color-strip-night-text: #57544e;
+
   /* Floating overlays — frosted glass surface used by the map utility
      cluster (SNOW-36) and any future overlay pinned above content. */
   --color-glass:          rgba(255, 255, 255, 0.85);
@@ -890,6 +901,12 @@
      2.0:1 and the two segments were hard to tell apart. */
   --color-chart-night:    #64748b;
   --color-chart-daylight: #fcd34d;
+
+  /* Day strips night ground — sinks below the dark tag (#302e2a) rather
+     than lifting off it, because night should read darker in both themes;
+     text-3 holds 5.96:1 on it, so the labels keep their usual ink. */
+  --color-strip-night:      #1a1917;
+  --color-strip-night-text: #9a968e;
 
   /* Legend note. A filled panel, so it cannot be left to inherit: light
      indigo-50 on the dark card read as a hole punched in it. Separated
@@ -2259,17 +2276,54 @@ a.season-day:focus-visible {
   pointer-events: none;
 }
 
-.day-strips-boundary[data-boundary="0"] {
-  transform: translate(0, -50%);
+/* 00 and 24 centre on their instant like every other label: the pill runs
+   past the plot far enough to hold half a label, and an end label pinned
+   to the edge would crowd the 01 and 23 dots. */
+
+.day-strips-dot {
+  position: absolute;
+  top: 50%;
+  left: var(--at);
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background-color: currentColor;
+  color: var(--color-text-3);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 
-.day-strips-boundary[data-boundary="8"] {
-  transform: translate(-100%, -50%);
+.day-strips-boundary[data-night],
+.day-strips-dot[data-night] {
+  color: var(--color-strip-night-text);
+}
+
+.day-strips-boundary[data-selected],
+.day-strips-dot[data-selected] {
+  color: var(--color-card);
 }
 
 .day-strips-boundary[data-selected] {
-  color: var(--color-card);
   font-weight: 500;
+}
+
+/* The night before sunrise and after sunset. Each run reaches past the
+   plot into the pill's overhang; the wrapper's rounded clip trims it. */
+.day-strips-night {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background-color: var(--color-strip-night);
+}
+
+.day-strips-night-before {
+  left: -0.625rem;
+  width: calc(var(--to) + 0.625rem);
+}
+
+.day-strips-night-after {
+  left: var(--from);
+  right: -0.625rem;
 }
 
 .day-strips-band {

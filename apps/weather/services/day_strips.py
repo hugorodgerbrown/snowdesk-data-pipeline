@@ -45,6 +45,16 @@ viewBox distort — the same rule ``hourly_chart.py`` follows. The figure
 rows are an eight-column grid with the plots' own left gutter, so a column
 of figures sits under its block exactly.
 
+The time selector
+-----------------
+The hour scale 00–24 carries two more things than its boundary labels: a
+dot for each hour between them, and the night (Hugo, 25 Oct 2026). The
+hours before sunrise and after sunset sit on a darker ground inside the
+pill, so the selected block reads against the light it falls in. The
+day line above states the same pair as text, so the shading is a second
+channel and never the only one. A day whose sunrise or sunset cannot be
+read loses the shading and keeps everything else.
+
 Every coordinate leaves as a formatted ``str``, for the localisation
 reason ``hourly_chart.py``'s header gives.
 """
@@ -67,8 +77,10 @@ from apps.weather.services.hourly_chart import (
     _block_of,
     _by_hour,
     _circular_mean,
+    _daylight,
     _domain,
     _num,
+    _pct,
     _projector,
     _ticks,
 )
@@ -115,6 +127,21 @@ class StripBar(TypedDict):
     snow: bool
 
 
+class Boundary(TypedDict):
+    """One block boundary's label on the time selector."""
+
+    label: str  # "00", "03", … "24"
+    night: bool  # the instant is before sunrise or after sunset
+
+
+class HourDot(TypedDict):
+    """One intermediate hour on the time selector."""
+
+    at: str  # CSS per-cent of the plot's width
+    block: int  # the block it belongs to, so the capsule can invert it
+    night: bool
+
+
 class Block(TypedDict):
     """One three-hour block's figures, already formatted."""
 
@@ -142,7 +169,10 @@ class DayStrips(TypedDict):
     blocks: list[Block]
     summaries: dict[str, list[str]]  # each strip's header reading, per block
     selected: int
-    boundaries: list[str]  # "00", "03", … "24"
+    boundaries: list[Boundary]
+    hour_dots: list[HourDot]
+    night_before: str | None  # per-cent of the plot up to sunrise
+    night_after: str | None  # per-cent of the plot from sunset
     temp_segments: list[str]
     temp_ticks: list[StripTick]
     temp_zero_y: str | None
@@ -384,6 +414,24 @@ def _block(
     )
 
 
+def _is_night(hour: float, daylight: tuple[float, float] | None) -> bool:
+    """
+    Say whether an instant on the time selector sits on the night ground.
+
+    Args:
+        hour: The instant, in hours past midnight.
+        daylight: Sunrise and sunset in hours, or ``None`` when unreadable —
+            then nothing is shaded, so nothing is on night.
+
+    Returns:
+        ``True`` before sunrise or after sunset.
+
+    """
+    if daylight is None:
+        return False
+    return hour < daylight[0] or hour > daylight[1]
+
+
 def build_day_strips(
     day: Mapping[str, Any],
     *,
@@ -488,6 +536,7 @@ def build_day_strips(
         wind_speed = _segments(wind, wind_at)
         wind_gust = _segments(gust, wind_at)
 
+    daylight = _daylight(day)
     blocks = [
         _block(b, temp, freezing, snow, precip, wind, gust, bearing)
         for b in range(BLOCK_COUNT)
@@ -501,7 +550,21 @@ def build_day_strips(
             "wind": [b["wind_summary"] for b in blocks],
         },
         selected=_selected_block(day, now),
-        boundaries=[f"{h:02d}" for h in range(0, DAY_HOURS + 1, BLOCK_HOURS)],
+        boundaries=[
+            Boundary(label=f"{hour:02d}", night=_is_night(hour, daylight))
+            for hour in range(0, DAY_HOURS + 1, BLOCK_HOURS)
+        ],
+        hour_dots=[
+            HourDot(
+                at=_pct(hour, DAY_HOURS),
+                block=hour // BLOCK_HOURS,
+                night=_is_night(hour, daylight),
+            )
+            for hour in range(1, DAY_HOURS)
+            if hour % BLOCK_HOURS
+        ],
+        night_before=_pct(daylight[0], DAY_HOURS) if daylight else None,
+        night_after=_pct(daylight[1], DAY_HOURS) if daylight else None,
         temp_segments=_segments(temp, temp_at),
         temp_ticks=temp_ticks,
         temp_zero_y=temp_zero,
