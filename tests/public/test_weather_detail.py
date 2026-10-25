@@ -608,6 +608,56 @@ class TestCardDayStrips:
             assert f'data-testid="weather-detail-strips-{strip}-header"' in html
             assert f'data-testid="weather-detail-strips-{strip}-figures"' in html
 
+    def test_each_strip_has_one_band_over_plot_and_figures(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """One band per strip, and it sits outside the plot, spanning both rows.
+
+        A band inside the plot plus a tinted figure cell was two shapes: a
+        seam where the rounded corners met, and two timings when it moved.
+        """
+        strips = self._html(client, resort_location).split(
+            'data-testid="weather-detail-strips"'
+        )[1]
+
+        assert strips.count('class="day-strips-band col-start-2 row-span-2') == 4
+        plot = strips[strips.index('class="day-strips-plot') :]
+        plot = plot[: plot.index("</svg>")]
+        assert "day-strips-band" not in plot
+
+    def test_the_snow_rain_title_is_its_own_colour_key(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Snow and Rain each carry a square in the fill their bars use."""
+        html = self._html(client, resort_location)
+
+        key = html[html.index('data-testid="weather-detail-strips-precip-key"') :]
+        key = key[: key.index("</span>\n", key.index("bg-chart-precip"))]
+        assert key.index("Snow") < key.index("bg-chart-snow")
+        assert key.index("bg-chart-snow") < key.index("Rain")
+        assert key.index("Rain") < key.index("bg-chart-precip")
+
+    def test_only_the_timeline_scrubs(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """A chart is not a control: a touch on one is a scroll, not a time."""
+        strips = self._html(client, resort_location).split(
+            'data-testid="weather-detail-strips"'
+        )[1]
+
+        assert "data-day-strips-track" in strips
+        assert "data-day-strips-plot" not in strips
+        assert "cursor-pointer touch-pan-y" not in strips
+
+    def test_the_wind_arrows_are_labelled_with_a_compass(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The arrow row's gutter carries the compass mark, as ticks label plots."""
+        html = self._html(client, resort_location)
+
+        gutter = html[html.index('data-testid="weather-detail-strips-wind-compass"') :]
+        assert "<circle" in gutter[: gutter.index("</span>")]
+
     def test_the_elevation_is_named_by_its_height_alone(
         self, client: Client, resort_location: Location
     ) -> None:

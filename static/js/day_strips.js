@@ -4,7 +4,7 @@
  *
  * templates/includes/_day_strips.html renders every block's figures and
  * readings, with the server's choice selected. This module moves the
- * selection when a block button is pressed or a plot is tapped or dragged:
+ * selection when a block button is pressed or the timeline is dragged:
  * it writes `--block` on the section (the capsule and the bands follow)
  * and flips `data-selected` / `aria-pressed` on the block-indexed
  * elements. It writes no text, so every word stays server-rendered.
@@ -45,15 +45,15 @@
   }
 
   /**
-   * Select the block under a pointer on a plot.
+   * Select the block under a pointer on the timeline.
    *
-   * @param {Element} plot A `[data-day-strips-plot]` element.
+   * @param {Element} track A `[data-day-strips-track]` element.
    * @param {number} clientX The pointer's x.
    */
-  function selectAt(plot, clientX) {
-    var rect = plot.getBoundingClientRect();
+  function selectAt(track, clientX) {
+    var rect = track.getBoundingClientRect();
     var index = core.blockAt(clientX, rect.left, rect.width);
-    var section = plot.closest('[data-day-strips]');
+    var section = track.closest('[data-day-strips]');
     if (index !== null && section) select(section, index);
   }
 
@@ -72,10 +72,13 @@
   document.addEventListener('pointerdown', function (event) {
     var target = event.target;
     if (!(target instanceof Element)) return;
-    var plot = target.closest('[data-day-strips-plot]');
-    if (!plot) return;
-    dragging = plot;
-    selectAt(plot, event.clientX);
+    // Only the timeline scrubs. A chart is not a control: on a touch
+    // screen a touch there is the start of a scroll, and the chart may
+    // be in view while the timeline naming the time is not.
+    var track = target.closest('[data-day-strips-track]');
+    if (!track) return;
+    dragging = track;
+    selectAt(track, event.clientX);
   });
 
   document.addEventListener('pointermove', function (event) {
