@@ -17,6 +17,11 @@ Two registrations plus one inline:
   its top without leaving the page. It lives here, beside the model it
   edits, and is imported there rather than the other way round.
 
+**Saving fills the height and forecast (SNOW-1226).** Saving a location
+here, or linking one to a resort through either inline, enqueues
+``enqueue_location_prime``: the height, then today's forecast, so a new
+point waits for neither a hand-run command nor the next scheduled fetch.
+
 **And the weather-coverage surface (SNOW-731).** ``LocationAdmin`` carries a
 coverage column, a "has gaps" filter, and the estate's first admin action —
 "Backfill missing weather". The three go together: an action that fills gaps
@@ -36,8 +41,10 @@ from typing import Any
 
 from django.contrib import admin, messages
 from django.db.models import Count, Q, QuerySet
+from django.forms import BaseInlineFormSet, ModelForm
 from django.http import HttpRequest
 
+from apps.locations.services.prime import enqueue_location_prime
 from apps.weather.services import backfill
 
 from .models import Location, ResortLocation
@@ -50,6 +57,49 @@ logger = logging.getLogger(__name__)
 WEATHER_DAYS = "weather_days"
 
 
+class ResortLocationFormSet(BaseInlineFormSet):
+    """Inline formset that fills a newly linked location's height and forecast.
+
+    SNOW-1226. A link is what puts a location in ``Location.objects.active()``,
+    so a location linked here may have neither yet. Hooked on the formset
+    rather than on each admin, because both inlines below share it.
+    """
+
+    def save_new(self, form: ModelForm, commit: bool = True) -> ResortLocation:
+        """Save a new link and enqueue its location's fill.
+
+        Args:
+            form: The bound inline form.
+            commit: Whether to save the row.
+
+        Returns:
+            The new link.
+
+        """
+        link: ResortLocation = super().save_new(form, commit=commit)
+        enqueue_location_prime(link.location)
+        return link
+
+    def save_existing(
+        self, form: ModelForm, obj: ResortLocation, commit: bool = True
+    ) -> ResortLocation:
+        """Save an edited link, enqueueing the fill when it points elsewhere.
+
+        Args:
+            form: The bound inline form.
+            obj: The link being edited.
+            commit: Whether to save the row.
+
+        Returns:
+            The saved link.
+
+        """
+        link: ResortLocation = super().save_existing(form, obj, commit=commit)
+        if "location" in form.changed_data:
+            enqueue_location_prime(link.location)
+        return link
+
+
 class ResortLocationInline(admin.TabularInline):
     """Inline for editing a resort's locations from the resort change form.
 
@@ -59,6 +109,7 @@ class ResortLocationInline(admin.TabularInline):
     """
 
     model = ResortLocation
+    formset = ResortLocationFormSet
     extra = 1
     fields = ["location", "role", "is_primary"]
     autocomplete_fields = ["location"]
@@ -156,13 +207,39 @@ class LocationAdmin(admin.ModelAdmin):
             {
                 "fields": ("elevation_m",),
                 "description": (
-                    "Filled by an out-of-band resolution pass, which needs "
-                    "an Open-Meteo elevation call and so cannot run on save."
+                    "Resolved from the coordinate in the background after "
+                    "a save that leaves it blank or moves the pin "
+                    "(SNOW-1226). Set it here only to override that."
                 ),
             },
         ),
         ("Metadata", {"fields": ("id", "uuid", "created_at", "updated_at")}),
     )
+
+    def save_model(
+        self, request: HttpRequest, obj: Location, form: ModelForm, change: bool
+    ) -> None:
+        """Save the row, then enqueue its height and today's forecast.
+
+        A moved pin loses its height first, unless the same save sets one by
+        hand: a height resolved at the old coordinate would make a
+        mis-pinned summit look plausible, which is the rule the in-map
+        editor's ``edit_location_save`` already follows. Then
+        ``enqueue_location_prime`` (SNOW-1226) fills what is missing, on
+        commit.
+
+        Args:
+            request: The admin request.
+            obj: The location being saved.
+            form: The bound change form.
+            change: Whether this is an edit rather than an add.
+
+        """
+        moved = change and bool({"latitude", "longitude"} & set(form.changed_data))
+        if moved and "elevation_m" not in form.changed_data:
+            obj.elevation_m = None
+        super().save_model(request, obj, form, change)
+        enqueue_location_prime(obj, moved=moved)
 
     def get_queryset(self, request: HttpRequest) -> QuerySet[Location]:
         """Annotate each row with its weather-day count over the backfill window.
@@ -276,3 +353,22 @@ class ResortLocationAdmin(admin.ModelAdmin):
     ordering = ["resort__name", "role"]
     autocomplete_fields = ["resort", "location"]
     readonly_fields = ["id", "uuid", "created_at", "updated_at"]
+
+    def save_model(
+        self, request: HttpRequest, obj: ResortLocation, form: ModelForm, change: bool
+    ) -> None:
+        """Save the link, enqueueing the fill when it reaches a new location.
+
+        The same rule as ``ResortLocationFormSet``, for a link added or
+        re-pointed on its own page rather than inline (SNOW-1226).
+
+        Args:
+            request: The admin request.
+            obj: The link being saved.
+            form: The bound change form.
+            change: Whether this is an edit rather than an add.
+
+        """
+        super().save_model(request, obj, form, change)
+        if not change or "location" in form.changed_data:
+            enqueue_location_prime(obj.location)

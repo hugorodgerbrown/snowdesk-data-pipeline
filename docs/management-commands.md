@@ -559,7 +559,9 @@ user data.
 
 **There is no elevation column.** Elevation is always derived
 ([`docs/locations.md`](locations.md)); `fill_location_elevations` (below)
-resolves it via `fetch_elevation`. That makes it a **check on the curation**: compare a resolved
+resolves it via `fetch_elevation`. An import does not trigger it; a save in
+the editor or the admin does (SNOW-1226), so after an import run the
+command by hand. That makes it a **check on the curation**: compare a resolved
 height against the resort sheet's `base_elevation_m` / `top_elevation_m`
 before committing, because a location whose height is nowhere near the
 expected figure has been mis-pinned.

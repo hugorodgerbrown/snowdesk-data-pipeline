@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import uuid
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from django.test import Client
@@ -1107,3 +1108,72 @@ class TestEditorIsShortIdKeyed:
             {"name": "X", "latitude": MONT_FORT_LAT, "longitude": MONT_FORT_LON},
         )
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1226: the height and forecast are enqueued on save
+# ---------------------------------------------------------------------------
+
+_PRIME = "apps.public.api.enqueue_location_prime"
+
+
+@pytest.mark.django_db
+class TestPrimeOnSave:
+    """Create, save and link each enqueue the height-then-forecast fill."""
+
+    def test_create_enqueues_the_new_location(self) -> None:
+        """A summit placed at 14:00 does not wait for the 18:00 run."""
+        resort = ResortFactory.create()
+        with patch(_PRIME) as prime:
+            resp = _post(
+                _superuser_client(),
+                _create_url(),
+                {
+                    "name": "Schilthorn",
+                    "kind": "PEAK",
+                    "latitude": MONT_FORT_LAT,
+                    "longitude": MONT_FORT_LON,
+                    "resort_id": resort.pk,
+                    "role": "TOP",
+                },
+            )
+
+        assert resp.status_code == 201
+        prime.assert_called_once()
+        assert prime.call_args.args[0] == Location.objects.get(name="Schilthorn")
+
+    @pytest.mark.parametrize(("latitude", "moved"), [(46.2, True), (46.1, False)])
+    def test_save_says_whether_the_pin_moved(
+        self, latitude: float, moved: bool
+    ) -> None:
+        """A move re-fetches today; a rename only fills what is missing."""
+        location = LocationFactory.create(name="Mont Fort")
+        with patch(_PRIME) as prime:
+            resp = _post(
+                _superuser_client(),
+                _save_url(location),
+                {
+                    "name": "Mont Fort",
+                    "kind": "PEAK",
+                    "latitude": latitude,
+                    "longitude": location.longitude,
+                },
+            )
+
+        assert resp.status_code == 200
+        prime.assert_called_once()
+        assert prime.call_args.kwargs == {"moved": moved}
+
+    def test_link_enqueues_the_location(self) -> None:
+        """A link can be what makes a location worth a forecast."""
+        location = LocationFactory.create(name="Mont Fort")
+        resort = ResortFactory.create()
+        with patch(_PRIME) as prime:
+            resp = _post(
+                _superuser_client(),
+                _link_url(location),
+                {"resort_id": resort.pk, "role": "TOP"},
+            )
+
+        assert resp.status_code == 201
+        prime.assert_called_once_with(location)

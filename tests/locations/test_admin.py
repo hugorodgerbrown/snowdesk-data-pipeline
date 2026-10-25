@@ -25,6 +25,7 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from django.forms.models import model_to_dict
 from django.test import Client
 from django.urls import reverse
 
@@ -296,3 +297,153 @@ class TestResortLocationAdmin:
         )
         assert response.status_code == 200
         assert "resort_locations" in response.content.decode()
+
+
+# SNOW-1226: every admin path that places or links a location enqueues its
+# height-then-forecast fill. The admin module's name is patched, so these
+# assert the call rather than the upstream round trips (test_prime.py has
+# those).
+_PRIME = "apps.locations.admin.enqueue_location_prime"
+
+
+def _inline_management(prefix: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return an inline formset's POST data for ``rows``, all of them new."""
+    data: dict[str, Any] = {
+        f"{prefix}-TOTAL_FORMS": str(len(rows)),
+        f"{prefix}-INITIAL_FORMS": "0",
+        f"{prefix}-MIN_NUM_FORMS": "0",
+        f"{prefix}-MAX_NUM_FORMS": "1000",
+    }
+    for index, row in enumerate(rows):
+        for key, value in row.items():
+            data[f"{prefix}-{index}-{key}"] = value
+    return data
+
+
+@pytest.mark.django_db
+class TestPrimeOnAdminSave:
+    """The admin enqueues the fill on every path that places or links."""
+
+    def _change_location(self, client: Client, location: Any, **fields: Any) -> Any:
+        """POST the location change form with ``fields`` over its values."""
+        data: dict[str, Any] = {
+            "name": location.name,
+            "kind": location.kind,
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+            "elevation_m": location.elevation_m or "",
+            **fields,
+            **_inline_management("resort_locations", []),
+        }
+        return client.post(
+            reverse("admin:locations_location_change", args=[location.pk]), data
+        )
+
+    def test_a_moved_location_loses_its_height_and_is_refetched(
+        self, staff_client: Client
+    ) -> None:
+        """A height from the old coordinate would make a bad pin look right."""
+        location = LocationFactory.create(resolved=True)
+        with mock.patch(_PRIME) as prime:
+            response = self._change_location(staff_client, location, latitude=46.3)
+
+        assert response.status_code == 302
+        location.refresh_from_db()
+        assert location.elevation_m is None
+        prime.assert_called_once()
+        assert prime.call_args.kwargs == {"moved": True}
+
+    def test_a_rename_keeps_the_height(self, staff_client: Client) -> None:
+        """Only a move invalidates the height."""
+        location = LocationFactory.create(resolved=True)
+        with mock.patch(_PRIME) as prime:
+            self._change_location(staff_client, location, name="Schilthorn")
+
+        location.refresh_from_db()
+        assert location.elevation_m == 1500.0
+        assert prime.call_args.kwargs == {"moved": False}
+
+    def test_a_height_set_by_hand_with_the_move_is_kept(
+        self, staff_client: Client
+    ) -> None:
+        """The curator's own figure is an override, not a stale value."""
+        location = LocationFactory.create(resolved=True)
+        with mock.patch(_PRIME):
+            self._change_location(
+                staff_client, location, latitude=46.3, elevation_m=2970
+            )
+
+        location.refresh_from_db()
+        assert location.elevation_m == 2970.0
+
+    def test_a_link_added_inline_on_the_resort_enqueues_its_location(
+        self, staff_client: Client
+    ) -> None:
+        """The Mürren case: a summit linked from the resort's own page."""
+        resort = ResortFactory.create()
+        location = LocationFactory.create()
+        data: dict[str, Any] = {
+            key: "" if value is None else value
+            for key, value in model_to_dict(resort).items()
+            if key != "passes"
+        }
+        data.update(
+            **_inline_management(
+                "resort_locations",
+                [{"location": location.pk, "role": "TOP"}],
+            )
+        )
+        with mock.patch(_PRIME) as prime:
+            response = staff_client.post(
+                reverse("admin:regions_resort_change", args=[resort.pk]), data
+            )
+
+        assert response.status_code == 302, response.content.decode()[:2000]
+        prime.assert_called_once_with(location)
+
+    def test_a_link_added_on_its_own_page_enqueues_its_location(
+        self, staff_client: Client
+    ) -> None:
+        """The standalone ResortLocation form follows the same rule."""
+        resort = ResortFactory.create()
+        location = LocationFactory.create()
+        with mock.patch(_PRIME) as prime:
+            response = staff_client.post(
+                reverse("admin:locations_resortlocation_add"),
+                {"resort": resort.pk, "location": location.pk, "role": "MID"},
+            )
+
+        assert response.status_code == 302
+        prime.assert_called_once_with(location)
+
+    def test_a_link_repointed_inline_enqueues_its_new_location(
+        self, staff_client: Client
+    ) -> None:
+        """An edited link only counts when it now reaches somewhere else."""
+        link = ResortLocationFactory.create()
+        moved_to = LocationFactory.create()
+        resort = link.resort
+        data: dict[str, Any] = {
+            key: "" if value is None else value
+            for key, value in model_to_dict(resort).items()
+            if key != "passes"
+        }
+        data.update(
+            {
+                "resort_locations-TOTAL_FORMS": "1",
+                "resort_locations-INITIAL_FORMS": "1",
+                "resort_locations-MIN_NUM_FORMS": "0",
+                "resort_locations-MAX_NUM_FORMS": "1000",
+                "resort_locations-0-id": link.pk,
+                "resort_locations-0-resort": resort.pk,
+                "resort_locations-0-location": moved_to.pk,
+                "resort_locations-0-role": link.role,
+            }
+        )
+        with mock.patch(_PRIME) as prime:
+            response = staff_client.post(
+                reverse("admin:regions_resort_change", args=[resort.pk]), data
+            )
+
+        assert response.status_code == 302
+        prime.assert_called_once_with(moved_to)

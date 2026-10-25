@@ -116,6 +116,7 @@ from apps.bulletins.services.settled import earliest_mutable_date
 from apps.core.freshness import apply_freshness_headers
 from apps.core.sw_shell import served_cache_version
 from apps.locations.models import Location, LocationQuerySet, ResortLocation
+from apps.locations.services.prime import enqueue_location_prime
 from apps.observations.models import FieldObservation
 from apps.regions.forms import RESORT_DETAIL_FIELDS, ResortDetailsForm
 from apps.regions.models import (
@@ -3120,6 +3121,10 @@ def edit_location_create(request: HttpRequest) -> JsonResponse:
             transaction.set_rollback(True)
             return link
 
+    # SNOW-1226: its height, then today's forecast, so the resort panel has
+    # both before the next scheduled run. After the block, on commit.
+    enqueue_location_prime(location)
+
     # By row id, not coordinates — see the note in edit_location_save.
     logger.info(
         "edit_location_create: created location id=%s (%s) for %s",
@@ -3148,8 +3153,9 @@ def edit_location_save(request: HttpRequest, short_id: str) -> JsonResponse:
     **Moving the pin** clears ``elevation_m``. It is resolved from the
     *old* coordinate, so leaving it would leave the location claiming a
     height from where it used to be — and it is a stale elevation that
-    makes a mis-pinned summit look plausible. The next resolution pass
-    fills it in again.
+    makes a mis-pinned summit look plausible. The save then enqueues
+    ``enqueue_location_prime`` (SNOW-1226), which resolves the new height
+    and re-fetches today's forecast for the new spot.
 
     **Not** moving it leaves all three columns exactly as they were, and
     that distinction is load-bearing rather than an optimisation: a
@@ -3226,6 +3232,9 @@ def edit_location_save(request: HttpRequest, short_id: str) -> JsonResponse:
             "what3words_fetched_at",
         ]
     location.save(update_fields=update_fields)
+    # SNOW-1226: a moved pin has just lost its height and holds a forecast
+    # for where it used to be; an unmoved one only fills what is missing.
+    enqueue_location_prime(location, moved=moved)
 
     # Logged by row id, never by raw coordinates (SNOW-718). A coordinate
     # is a precise location
@@ -3288,6 +3297,9 @@ def edit_location_link(request: HttpRequest, short_id: str) -> JsonResponse:
     link = _link_or_error(location, resort, role, is_primary)
     if isinstance(link, JsonResponse):
         return link
+    # SNOW-1226: a link can be what makes a location active, so it may
+    # have no forecast yet.
+    enqueue_location_prime(location)
 
     logger.info(
         "edit_location_link: linked %s to %s as %s",
