@@ -15,58 +15,37 @@ of the estate is neither. 461 of the 540 public locations are ``MicroRegion``
 centroids: before this page they had no destination at all, so the card's
 link would have been missing on the large majority of taps.
 
-**Built around one question: which day are you planning for** (SNOW-789).
-Regions 2–5 are ``public/partials/_weather_body.html``, which the map's
-weather sheet renders too — the sheet is the page (Hugo, 24 Oct 2026).
-Five hairline-separated regions, top to bottom:
+**THE PAGE IS THE MAP'S WEATHER SHEET** (Hugo, 25 Oct 2026: "it exists
+for deep link / SEO, but it should be the same content"). It renders the
+sheet's context (``views._weather_point_context``) through the sheet's own
+partials, top to bottom:
 
-  1. Masthead        includes/_weather_masthead.html — name, elevation,
-                     onward links.
-  2. Day picker      includes/_weather_day_picker.html — the week as
-                     NAVIGATION: seven cells carrying weekday, icon and
-                     high/low, nothing else.
-  3. Selected day    includes/_weather_day_line.html — date, condition,
-                     freezing level, daylight.
-  4. Meteogram       includes/_hourly_chart.html — that day's hours, when
-                     the day has an hourly series.
-  5. Provenance      includes/_weather_provenance.html — updated, source.
+  1. Masthead        includes/_weather_masthead.html — the day's symbol,
+                     "Weather point", the name as this page's <h1>, and
+                     the height.
+  2. Summary         includes/_weather_day_summary.html — high/low, new
+                     snow and wind of the day shown; "Forecast" on a day
+                     after today.
+  3. Body            public/partials/_weather_body.html — the forecast
+                     note, the week as a day picker, the selected day's
+                     line and its linked strips or figures, the provenance
+                     and the "Where this is" rows.
 
-Everything below region 2 describes the ONE day the picker has selected.
-The layout this replaces stated the same high and low three times — in a
-"Today" panel, in the day cells, and as the shape of an outlook chart —
-and named the location again in every sub-header. ``includes/_weather_panel.html``
-and ``includes/_forecast_chart.html`` are gone from this page for that
-reason; the panel keeps its other three consumers, the chart was deleted.
+What is the page's own is its FRAME: the meta tags and the canonical link,
+the <h1>, and — off today — the "Showing … · Back to today" strip under the
+nav, whose link is the bare URL (the sheet's equivalent is its date row,
+which moves the map's day instead). The sheet's peek row, date row and ×
+are the sheet's own.
 
-Three page shapes, discriminated by ``show_day_picker`` and NEVER by the
-date:
+Three shapes, discriminated by ``show_day_picker`` and NEVER by the date
+(see the body): a live row's week, a backfilled row's one day, no row.
 
-  live row        7 cells; days 1–2 reveal a day line AND a meteogram,
-                  days 3–7 reveal a day line alone.
-  backfilled row  ``forecast=None`` is one day, so no picker: the day line
-                  and its meteogram render plainly, with no hiding class —
-                  with no radio the ``:has()`` reveal could never match.
-  no row at all   the "nothing recorded" message.
-
-The reveal is CSS-only — see the "Forecast day selector" block in
-src/css/main.css and the note there about why the rules are written by
-hand rather than with Tailwind's ``peer-checked:``.
-
-Context:
-    location    — locations.Location.
-    heading     — str, resolved by the view.
-    resort      — regions.Resort the location belongs to, or None.
-    region      — regions.MicroRegion the location is the centroid of, or None.
-    observed_on — datetime.date being shown.
-    weather     — weather.Weather row, or None.
-    panel       — ForecastPanel, or None.
-    show_day_picker — bool, precomputed by the view: the row carries more
-                  than one day.
-    selected_index — int: the picker cell checked on load. 0, the row's own
-                  day, unless ``?date=`` named a forward day (SNOW-1105).
-    hourly_charts — list of {"index", "chart"}, one per day with a series.
-                  ``index`` is the day's position in panel.days, which is
-                  what ties a meteogram to the cell that selects it.
+Context: everything ``_weather_point_context`` returns (location, heading,
+day, is_forecast, another_day, issued_at, target_date, place_resort,
+place_region, place_region_url, weather, panel, show_day_picker,
+selected_index, hourly_charts, day_strips, day_figures), plus:
+    canonical_url — str, absolute: the bare URL for today, else ?date=.
+    today_url     — str: the bare page, which is today.
 {% endcomment %}
 
 {% block page_meta %}
@@ -84,39 +63,37 @@ Context:
 {% endblock extra_head %}
 
 {% block content %}
+    {# Another day says so, full width under the nav, and links to the #}
+    {# bare URL, which is today (SNOW-1165, as the resort page does).  #}
+    {% if another_day %}
+        {% include "includes/_another_day_strip.html" with day=target_date href=today_url only %}
+    {% endif %}
     <main
         class="{% page_shell_classes %}"
         data-testid="location-weather"
         data-location-short-id="{{ location.short_id }}"
     >
-        {# 1. Masthead. #}
-        {% include "includes/_weather_masthead.html" with heading=heading location=location resort=resort region=region only %}
-
-        {# 2–5. The body the map's weather sheet renders too (the sheet #}
-        {# is the page, Hugo, 24 Oct 2026).                             #}
-        <div class="mt-5">
-            {% include "public/partials/_weather_body.html" with weather=weather panel=panel show_day_picker=show_day_picker selected_index=selected_index hourly_charts=hourly_charts testid_prefix="location-weather" selector_name="location-weather-day" only %}
+        <div class="space-y-4">
+            {# 1–2. The sheet's peek, less its date row and its ×. #}
+            <div>
+                {% include "includes/_weather_masthead.html" with heading=heading location=location day=day only %}
+                {% include "includes/_weather_day_summary.html" with day=day is_forecast=is_forecast dated=True testid_prefix="location-weather" only %}
+            </div>
+            {# 3. The body the map's weather sheet renders too (the sheet #}
+            {# is the page, Hugo, 24 Oct 2026).                           #}
+            {% include "public/partials/_weather_body.html" with weather=weather panel=panel show_day_picker=show_day_picker selected_index=selected_index hourly_charts=hourly_charts day_strips=day_strips day_figures=day_figures testid_prefix="location-weather" selector_name="location-weather-day" day=day is_forecast=is_forecast issued_at=issued_at place_resort=place_resort place_region=place_region place_region_url=place_region_url only %}
         </div>
     </main>
 {% endblock content %}
 
 {% block extra_js %}
     {% comment %}
-    The meteogram's info button opens its legend, and that one panel is the
-    only thing in the component that needs JavaScript. The script was loaded
-    by /_components/ alone, so the button rendered on this page — the only
-    page that ships the chart — with nothing listening: it carried
-    ``aria-expanded="false"`` for its whole life and never changed it.
-
-    Not in base.html, because this is the only page that renders a chart.
-    The handler delegates from the document and scopes each open to the
-    chart's own ``role="group"`` root, so the two meteograms a live row
-    produces get one legend each rather than fighting over the first.
-
-    Everything else on this page — the day picker, the day-line reveal — is
-    CSS only and needs no script. The legend degrades the way its own module
-    says it should: the chart stays readable, and the key explaining its
-    marks is what is lost.
+    The day strips move their selected three-hour block when a time is
+    pressed or a strip tapped (SNOW-1219) — the same two scripts the map's
+    weather surface loads. Without them every figure still renders; what is
+    lost is the highlight following the reader's tap. The day picker and
+    the day-line reveal are CSS only.
     {% endcomment %}
-    <script src="{% static 'js/hourly_chart_legend.js' %}" defer></script>
+    <script src="{% static 'js/day_strips_core.js' %}" defer></script>
+    <script src="{% static 'js/day_strips.js' %}" defer></script>
 {% endblock extra_js %}

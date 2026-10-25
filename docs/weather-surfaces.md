@@ -2,7 +2,7 @@
 name: weather-surfaces
 description: Weather UI — _weather_detail, _weather_panel, _weather_day_picker, _weather_day_line, _resort_forecast, build_weather_display, geojson
 status: current
-last-reviewed: 2026-10-24
+last-reviewed: 2026-10-25
 ---
 
 # Weather surfaces
@@ -345,9 +345,18 @@ the palette in place.
 
 ## The location forecast page
 
-`/weather/<short_id>/` is five regions, and SNOW-789 rebuilt it around
-one question — *which day are you planning for*. The week is navigation;
-everything below it describes the one selected day.
+`/weather/<short_id>/` **is the map's weather sheet** (Hugo, 25 Oct 2026:
+"it exists for deep link / SEO, but it should be the same content"). Both
+render the context `views._weather_point_context` builds, through the same
+partials — the masthead, the day's summary line and
+`public/partials/_weather_body.html` (the forecast note, the week, each
+day's strips or figures, the provenance and the "Where this is" rows). The
+page keeps only its frame: the meta tags and canonical link, the name as
+its `<h1>`, and off today the "Showing … · Back to today" strip. A date
+past the forecast window says "The forecast does not reach this day yet",
+as the sheet does, rather than opening today's week. SNOW-789's question —
+*which day are you planning for* — still shapes it: the week is
+navigation, and everything below it describes the one selected day.
 
 It is **document two** of the two-documents IA (SNOW-795,
 [`two-documents-and-a-map`](decisions/two-documents-and-a-map.md)), keyed
@@ -364,11 +373,17 @@ rather than a different page — and the MCP server reaches it through
 
 | # | Region | Partial |
 |---|--------|---------|
-| 1 | Masthead — name, elevation, onward links | `_weather_masthead.html` |
-| 2 | Day picker — one cell per day | `_weather_day_picker.html` |
-| 3 | Selected day — date · condition, freezing · daylight | `_weather_day_line.html` |
-| 4 | Meteogram | `_hourly_chart.html` |
-| 5 | Provenance — updated · source | `_weather_provenance.html` |
+| 1 | Masthead — symbol, "Weather point", name, height | `_weather_masthead.html` |
+| 2 | Summary — high/low · new snow · wind | `_weather_day_summary.html` |
+| 3 | Day picker — one cell per day | `_weather_day_picker.html` |
+| 4 | Selected day — date · condition, daylight | `_weather_day_line.html` (`brief`) |
+| 5 | Day strips, or a day's figures past the hourly window | `_day_strips.html` / `_day_figures.html` |
+| 6 | Provenance — updated · source | `_weather_provenance.html` |
+| 7 | Where this is — the resort and the avalanche region | `_place_link_row.html` |
+
+The meteogram (`_hourly_chart.html`) is on no page since then; the body
+still draws it when a caller passes `hourly_charts`, and the component
+library shows it.
 
 The layout it replaces stated the same high and low three times — a
 "Today" `_weather_panel`, the day cells, and an outlook chart drawing them
@@ -387,18 +402,18 @@ a week-old one must render identically.
 
 | Row | Picker | Day 1–2 selected | Day 3–7 selected |
 |-----|--------|------------------|------------------|
-| Live (today) | 7 cells | day line + meteogram | day line only |
-| Backfilled (`forecast=None`) | none | day line + meteogram | n/a |
+| Live (today) | 7 cells | day line + strips | day line + figures |
+| Backfilled (`forecast=None`) | none | day line + strips | n/a |
 | No row at all | none | "No weather was recorded here for this day." | n/a |
 
 ### `includes/_weather_masthead.html`
 
-Name, elevation, and both onward links. The links live here rather than in
-a bottom nav because 461 of the 540 public locations are region centroids
-whose **only** way on is the bulletin — a masthead naming just the resort
-would strand most of this page's visitors. They are accent text links, not
-buttons: a button pair under the heading competes with the picker for the
-reader's first action, and the first action here is choosing a day.
+The header both containers share: the day's symbol, "Weather point" above
+the name, and the height beside it. On the page the name is the `<h1>`; in
+the sheet (`in_map`) an `<h2>` that truncates, followed by the sheet's ×.
+The "View resort →" / "View bulletin →" links it carried are the body's
+"Where this is" rows now — both stay, because 461 of the 540 public
+locations are region centroids whose only way on is the bulletin.
 
 ### `includes/_weather_day_picker.html`
 

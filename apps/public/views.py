@@ -4734,6 +4734,138 @@ def _location_forecast_context(
     }
 
 
+def _weather_point_places(
+    location: Location,
+) -> tuple[Resort | None, MicroRegion | None]:
+    """Return the resort a weather point stands for and the region it is in.
+
+    Resort first (SNOW-1144): a resort's pin, then a resort linking the
+    point. The region is that resort's, else the region the point is the
+    centroid of. A point that is neither — rare on the public estate —
+    gets no region rather than a full scan of every boundary on a tap.
+
+    Args:
+        location: The weather point.
+
+    Returns:
+        ``(resort, region)``, either of them None.
+
+    """
+    resort = Resort.objects.standing_at(location).select_related("region").first()
+    if resort is not None and resort.region_id is not None:
+        return resort, resort.region
+    return resort, location.micro_regions.first()
+
+
+def _weather_detail_heading(
+    location: Location, resort: Resort | None, region: MicroRegion | None
+) -> str:
+    """Name an unnamed location by what it stands for.
+
+    Most locations on the weather map carry no ``name``, and that is by
+    design rather than an omission: a named ``Location`` is part of the
+    curated estate ``import_locations`` owns, so region centroids and
+    resort pins are minted anonymous (see ``docs/locations.md``). The sheet
+    still needs a heading, and ``Location.to_string()`` would give it a
+    pair of raw coordinates.
+
+    Resort before region, because a location reaching both is standing at
+    the resort — the region is the area around it, and the more specific
+    answer is the one the tapper is looking at.
+
+    Args:
+        location: The location being described.
+        resort: The resort it stands for, from ``_weather_point_places``.
+        region: The region it is in, from ``_weather_point_places``.
+
+    Returns:
+        The resort's or region's name, else a generic label. Never the
+        coordinates.
+
+    """
+    if resort is not None:
+        return str(resort.name)
+    if region is not None:
+        return str(region.name)
+    return str(_("Weather station"))
+
+
+def _weather_point_context(
+    location: Location, target_date: datetime.date, now: datetime.datetime
+) -> dict[str, Any]:
+    """Assemble everything one location's weather says about one day.
+
+    THE SHEET IS THE PAGE (Hugo, 24 and 25 Oct 2026). The map's weather
+    sheet (``api.weather_detail``) and the forecast page
+    (``location_weather``) render the same content — the header, the
+    day's summary line, the week, the selected day's strips or figures,
+    the provenance and the "Where this is" rows — so they read it from
+    this one function. What differs is only the frame: the sheet's peek
+    row and date row, the page's ``<h1>``, meta tags and canonical link.
+
+    **A forward day is a forecast** (SNOW-1105): it reads today's row and
+    opens the picker on the matching entry. A day past the forecast
+    window, or one with no row, has no ``day``; the panel is then dropped
+    too, so neither container opens some other day's week under a line
+    that says there is no forecast.
+
+    Args:
+        location: The weather point.
+        target_date: The day asked for.
+        now: The reference instant for each day/night icon decision.
+
+    Returns:
+        The template context both containers render.
+
+    """
+    today = timezone.localdate()
+    forecast = _location_forecast_context(location, target_date, now, strips=True)
+    weather = forecast["weather"]
+    panel = forecast["panel"]
+    day = (
+        next((d for d in panel["days"] if d["date"] == target_date), None)
+        if panel
+        else None
+    )
+    if day is None:
+        forecast = {
+            **forecast,
+            "panel": None,
+            "show_day_picker": False,
+            "hourly_charts": [],
+            "day_strips": [],
+            "day_figures": [],
+        }
+    place_resort, place_region = _weather_point_places(location)
+    return {
+        "location": location,
+        # A curated location has a name; an anonymous one (a region
+        # centroid, which is most of the map) does not, and
+        # Location.to_string() would print its raw coordinates as a
+        # heading. Name what it stands for instead.
+        "heading": location.name
+        or _weather_detail_heading(location, place_resort, place_region),
+        # "Where this is" (Hugo, 25 Oct 2026): the resort the point stands
+        # for and the avalanche region it is in, each a row onward.
+        "place_resort": place_resort,
+        "place_region": place_region,
+        "place_region_url": (
+            ""
+            if place_region is None
+            else place_region.get_absolute_url()
+            if target_date == today
+            else place_region.get_absolute_url(target_date=target_date)
+        ),
+        "day": day,
+        "is_forecast": target_date > today,
+        "another_day": target_date != today,
+        # When the forecast was issued: the row's last fetch.
+        "issued_at": weather.fetched_at if weather else None,
+        "target_date": target_date,
+        **forecast,
+    }
+
+
 def _build_location_canonical_url(
     location: Location, observed_on: datetime.date
 ) -> str:
@@ -4803,11 +4935,19 @@ def location_weather(request: HttpRequest, short_id: str) -> HttpResponse:
     once in the "Today" panel, once in the day cells, once in the outlook
     chart's shape.
 
+    **The page is the map's weather sheet** (Hugo, 25 Oct 2026). It renders
+    the sheet's content from the sheet's own context
+    (:func:`_weather_point_context`): the header, the day's summary line,
+    the week, each day's linked strips (SNOW-1219) or figures, the
+    provenance and the "Where this is" rows. Only the frame is its own —
+    the ``<h1>``, the meta tags, the canonical link and, off today, the
+    "Showing … · Back to today" strip.
+
     Three page shapes, discriminated by ``show_day_picker`` and never by
     the date:
 
-      * a **live** row carries a full ``forecast[]``, so seven cells with a
-        meteogram behind the first two;
+      * a **live** row carries a full ``forecast[]``, so seven cells with
+        strips behind the first two;
       * a **backfilled** row (``forecast=None``) is one day: no picker, and
         its day line and meteogram render plainly;
       * **no row at all** is the "nothing recorded" message.
@@ -4863,24 +5003,13 @@ def location_weather(request: HttpRequest, short_id: str) -> HttpResponse:
         except ValueError:
             logger.debug("location_weather: ignoring unparseable date %r", raw_date)
 
-    # SNOW-1144: the resort this location stands for — the one it is the
-    # pin of first, else one that links it as a curated point. One query.
-    resort = Resort.objects.standing_at(location).first()
-    region = location.micro_regions.first()
+    # The sheet's own context (the sheet is the page, Hugo, 24 Oct 2026):
+    # the same header, summary line, week, strips and "Where this is" rows.
+    # The page adds only its frame — meta, canonical, the another-day strip.
     context: dict[str, Any] = {
-        "location": location,
+        **_weather_point_context(location, observed_on, timezone.now()),
         "canonical_url": _build_location_canonical_url(location, observed_on),
-        # Same precedence as the map card's heading: a curated point names
-        # itself, an anonymous one is named by what it stands for, and the
-        # coordinates are never a heading.
-        "heading": location.name
-        or (resort.name if resort else None)
-        or (region.name if region else None)
-        or str(_("Weather station")),
-        "resort": resort,
-        "region": region,
-        "observed_on": observed_on,
-        **_location_forecast_context(location, observed_on, timezone.now()),
+        "today_url": location.get_absolute_url(),
     }
     return render(request, "public/location_weather.html", context)
 
