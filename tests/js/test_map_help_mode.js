@@ -155,6 +155,30 @@ describe('the "?" roundel', () => {
     expect(helpModeOn()).toBe(false);
     expect($('map-help-mode').hidden).toBe(true);
   });
+
+  it('asks for the "?" menu instead when the page has one (SNOW-1230)', async () => {
+    await setUp();
+    const menu = document.createElement('div');
+    menu.id = 'map-help-menu';
+    menu.hidden = true;
+    document.body.appendChild(menu);
+    const requested = vi.fn();
+    document.addEventListener('snowdesk:map-help-menu-requested', requested);
+
+    $('map-help-toggle').click();
+
+    expect(requested).toHaveBeenCalledTimes(1);
+    expect(helpModeOn()).toBe(false);
+    document.removeEventListener('snowdesk:map-help-menu-requested', requested);
+  });
+
+  it('starts when the menu asks for it (SNOW-1230)', async () => {
+    await setUp();
+
+    document.dispatchEvent(new CustomEvent('snowdesk:map-help-mode-requested'));
+
+    expect(helpModeOn()).toBe(true);
+  });
 });
 
 describe('the controls', () => {

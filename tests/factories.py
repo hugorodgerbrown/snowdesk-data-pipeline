@@ -749,6 +749,17 @@ class RouteShareFactory(factory.django.DjangoModelFactory[RouteShare]):
         lambda: django_timezone.now() + datetime.timedelta(days=30)
     )
 
+    class Params:
+        """Traits."""
+
+        # SNOW-1230: the example route every visitor is offered —
+        # ``RouteShareFactory.create(example=True)``. Never expires and is
+        # never claimable, whatever ``expires_at`` says.
+        example = factory.Trait(
+            is_example=True,
+            example_date=datetime.date(2026, 4, 10),
+        )
+
 
 class TripFactory(factory.django.DjangoModelFactory[Trip]):
     """Factory for Trip instances (SNOW-819).

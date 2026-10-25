@@ -16,6 +16,11 @@ URL structure:
   routes/<uuid>/share/               POST — mint a share link (SNOW-764)
   routes/<uuid>/terrain.json         GET  — owner's terrain rows (SNOW-1146)
   routes/s/<token>/                  GET  — follow a share link (SNOW-764)
+  routes/s/<token>/terrain.json      GET  — a pending share's terrain rows
+                                            (SNOW-1230)
+  routes/s/<token>/dismiss/          POST — drop a pending share from the
+                                            session (SNOW-1230)
+  routes/example/                    GET  — open the example route (SNOW-1230)
 
 ``routes.geojson`` sits OUTSIDE the ``partials/`` prefix on purpose: that
 prefix marks the HTMX fragment endpoints (``@require_htmx``), and this one
@@ -86,5 +91,20 @@ urlpatterns = [
         "s/<str:token>/",
         views.route_share_redirect,
         name="share_redirect",
+    ),
+    path(
+        "s/<str:token>/terrain.json",
+        views.route_share_terrain,
+        name="share_terrain",
+    ),
+    path(
+        "s/<str:token>/dismiss/",
+        views.route_share_dismiss,
+        name="share_dismiss",
+    ),
+    path(
+        "example/",
+        views.route_example,
+        name="example",
     ),
 ]

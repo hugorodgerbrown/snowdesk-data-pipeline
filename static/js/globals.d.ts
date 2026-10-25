@@ -154,6 +154,10 @@ interface Window {
   pwaTripForm: any;
   /** static/js/trip_route_profile.js — the trip pages' profile and its scrub. */
   pwaTripRouteProfile: any;
+  /** static/js/example_guide_core.js — the example route walkthrough's steps and tests (SNOW-1230). */
+  pwaExampleGuideCore: any;
+  /** static/js/map.js — opens a pending share's route by its token (SNOW-1230). */
+  pwaRouteOpener: any;
   /** static/js/route_cursor_core.js — the cursor shared by the map and rails. */
   pwaRouteCursorCore: any;
   /** static/js/route_cursor_map_core.js — the route cursor placed on the map. */

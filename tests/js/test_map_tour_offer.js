@@ -1,6 +1,7 @@
 /*
  * tests/js/test_map_tour_offer.js — Vitest unit tests for
- * static/js/map_tour_offer.js (SNOW-1117).
+ * static/js/map_tour_offer.js (SNOW-1117; the "Explore Snowdesk" choices,
+ * SNOW-1230).
  *
  * The offer replaced home_intro.js and its welcome panel. These cases pin
  * what makes it an offer rather than an interruption: it is never on screen
@@ -25,11 +26,13 @@ function buildFixture() {
       <div id="map-tour-offer" hidden>
         <div class="map-tour-offer-card">
           <button id="map-tour-offer-close" type="button">×</button>
-          <button id="map-tour-offer-later" type="button">Not now</button>
-          <button id="map-tour-offer-start" type="button">Start the tour</button>
+          <button id="map-tour-offer-resort" type="button">Find a resort</button>
+          <a id="map-tour-offer-example" href="#example">Explore an example route</a>
+          <button id="map-tour-offer-later" type="button">Explore the map</button>
         </div>
       </div>
       <div id="map-help-overlay" hidden></div>
+      <button id="search-toggle" type="button">Search</button>
     </div>
   `;
 }
@@ -193,21 +196,56 @@ describe('answering it', () => {
     expect(isShown()).toBe(true);
   }
 
-  it('"Start the tour" records the answer and asks for the tour', async () => {
-    await showOffer();
-    const requested = vi.fn();
-    document.addEventListener('snowdesk:map-help-requested', requested);
+  afterEach(() => {
+    delete window.pwaTelemetry;
+  });
 
-    document.getElementById('map-tour-offer-start').click();
+  it('"Find a resort" records the answer and opens search', async () => {
+    await showOffer();
+    const searched = vi.fn();
+    document.getElementById('search-toggle').addEventListener('click', searched);
+
+    document.getElementById('map-tour-offer-resort').click();
 
     expect(isShown()).toBe(false);
     expect(localStorage.getItem(OFFER_KEY)).toBe('dismissed');
-    expect(requested).toHaveBeenCalledTimes(1);
-    document.removeEventListener('snowdesk:map-help-requested', requested);
+    expect(searched).toHaveBeenCalledTimes(1);
+  });
+
+  it('"Explore an example route" records the answer and lets the link go', async () => {
+    await showOffer();
+    const link = document.getElementById('map-tour-offer-example');
+    let prevented = null;
+    link.addEventListener('click', (e) => {
+      prevented = e.defaultPrevented;
+      e.preventDefault();
+    });
+
+    link.click();
+
+    expect(localStorage.getItem(OFFER_KEY)).toBe('dismissed');
+    expect(prevented).toBe(false);
+  });
+
+  it.each([
+    ['map-tour-offer-resort', 'resort'],
+    ['map-tour-offer-example', 'example'],
+    ['map-tour-offer-later', 'map'],
+    ['map-tour-offer-close', 'close'],
+  ])('#%s reports the choice %s', async (id, choice) => {
+    const emit = vi.fn();
+    window.pwaTelemetry = { emit };
+    await showOffer();
+    const el = document.getElementById(id);
+    el.addEventListener('click', (e) => e.preventDefault());
+
+    el.click();
+
+    expect(emit).toHaveBeenCalledWith('map.welcome.chosen', { choice });
   });
 
   it.each(['map-tour-offer-later', 'map-tour-offer-close'])(
-    '#%s records the answer without the tour',
+    '#%s records the answer and starts nothing',
     async (id) => {
       await showOffer();
       const requested = vi.fn();
@@ -221,6 +259,17 @@ describe('answering it', () => {
       document.removeEventListener('snowdesk:map-help-requested', requested);
     },
   );
+
+  it('comes back on request, whatever was recorded', async () => {
+    localStorage.setItem(OFFER_KEY, 'dismissed');
+    await loadModules();
+    vi.advanceTimersByTime(RATINGS_WAIT_MS + SETTLE_MS);
+    expect(isShown()).toBe(false);
+
+    document.dispatchEvent(new CustomEvent('snowdesk:map-welcome-requested'));
+
+    expect(isShown()).toBe(true);
+  });
 
   it('Escape records the answer', async () => {
     await showOffer();

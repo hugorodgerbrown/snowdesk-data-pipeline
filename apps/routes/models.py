@@ -379,7 +379,41 @@ class RouteShareQuerySet(models.QuerySet["RouteShare"]):
             Filtered queryset of claimable shares.
 
         """
-        return self.filter(route__isnull=False, expires_at__gt=timezone.now())
+        # The example share (SNOW-1230) never expires: it is the curated
+        # demonstration every visitor is offered, not a grant one user
+        # made over their own data, so the window that bounds an ordinary
+        # link has nothing to bound. Deleting its route still stops it.
+        return self.filter(route__isnull=False).filter(
+            models.Q(expires_at__gt=timezone.now()) | models.Q(is_example=True)
+        )
+
+    def example(self) -> "RouteShareQuerySet":
+        """Return the example share (SNOW-1230), if one is set and live.
+
+        At most one row is ever marked — a partial unique constraint holds
+        that — so this is a queryset of zero or one. Through ``active()``
+        so a deleted example route answers "no example" rather than a link
+        to nothing.
+
+        Returns:
+            The live example share, as a queryset of at most one.
+
+        """
+        return self.active().filter(is_example=True)
+
+    def claimable(self) -> "RouteShareQuerySet":
+        """Return the shares a recipient may copy onto their account.
+
+        ``active()`` less the example (SNOW-1230). The example is shown to
+        everyone and owned by no one who sent it: a visitor exploring it
+        is reading a demonstration, and a Save that wrote it onto their
+        account would put a route they never skied into their own list.
+
+        Returns:
+            Filtered queryset of claimable shares.
+
+        """
+        return self.active().filter(is_example=False)
 
 
 class RouteShare(BaseModel):
@@ -470,6 +504,21 @@ class RouteShare(BaseModel):
         blank=True,
         help_text="When the most recent copy was claimed. Null until the first.",
     )
+    is_example = models.BooleanField(
+        default=False,
+        help_text=(
+            "The example route every visitor is offered (SNOW-1230). Never "
+            "expires and can never be claimed. At most one share is marked."
+        ),
+    )
+    example_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The day the example opens the map on — a past day with a full "
+            "bulletin. Set only on the example share."
+        ),
+    )
 
     objects = RouteShareQuerySet.as_manager()
 
@@ -477,23 +526,41 @@ class RouteShare(BaseModel):
         """Model metadata."""
 
         ordering = ["-created_at"]
+        constraints = [
+            # One example, ever: every surface that offers "the example
+            # route" reads a single row, and two marked rows would make
+            # which one a visitor sees depend on query order.
+            models.UniqueConstraint(
+                fields=["is_example"],
+                condition=models.Q(is_example=True),
+                name="routes_routeshare_one_example",
+            ),
+        ]
 
     @property
-    def is_claimable(self) -> bool:
-        """Whether this share can be claimed right now.
+    def is_live(self) -> bool:
+        """Whether this share's link works right now.
 
         The row-level twin of ``RouteShareQuerySet.active()``, for a share
         already in hand — the redirect has one and would otherwise have to
-        re-query to ask the same question. The two conditions are stated
-        once each here and once each there because Django has no way to
-        share a predicate between Python and SQL; the pair is asserted
-        equivalent by ``tests/routes/test_models.py``.
+        re-query to ask the same question. The conditions are stated once
+        each here and once each there because Django has no way to share a
+        predicate between Python and SQL; the pair is asserted equivalent
+        by ``tests/routes/test_models.py``.
+
+        Named ``is_claimable`` until SNOW-1230: the example share is live
+        (its link works, forever) without being claimable, so the old name
+        stopped describing the predicate. Whether a share may be COPIED is
+        ``RouteShareQuerySet.claimable()``'s question.
 
         Returns:
-            True when the route still exists and the window is still open.
+            True when the route still exists and the window is still open
+            (or the share is the example, which has no window).
 
         """
-        return self.route_id is not None and self.expires_at > timezone.now()
+        return self.route_id is not None and (
+            self.is_example or self.expires_at > timezone.now()
+        )
 
     def to_string(self) -> str:
         """Return a concise human-readable description of this share.

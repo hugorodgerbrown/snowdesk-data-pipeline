@@ -575,6 +575,12 @@ in addition to the shared map assets.
     {% endif %}
     {# SNOW-1117: reveals #map-tour-offer once per device after the map settles. #}
     <script defer src="{% static 'js/map_tour_offer.js' %}"></script>
+    {# SNOW-1230: the example route walkthrough, its pure half first. Both #}
+    {# after map.js and route_rail.js, whose window.pwaRouteOpener and     #}
+    {# window.pwaRouteRail the guide calls; map.js reads the core only    #}
+    {# when a route opens, never at parse time.                           #}
+    <script defer src="{% static 'js/example_guide_core.js' %}"></script>
+    <script defer src="{% static 'js/map_example_guide.js' %}"></script>
     {# Collapsible bottom-right control group. Independent of map.js — it     #}
     {# only reads #map-controls-br's DOM — but must load before map_help.js   #}
     {# so it is listening for snowdesk:map-help-open by the time an           #}
@@ -591,6 +597,9 @@ in addition to the shared map assets.
     {# SNOW-1119: help mode on the "?" roundel. Its "Tour" button asks       #}
     {# map_help.js for the tour, so it loads after it.                        #}
     <script defer src="{% static 'js/map_help_mode.js' %}"></script>
+    {# SNOW-1230: the "?" roundel's menu. Help mode hands it the roundel's #}
+    {# press while help mode is off, so it loads after it.                #}
+    <script defer src="{% static 'js/map_help_menu.js' %}"></script>
     {# SNOW-920: "Showing 18 Oct · Reload" when a cache-served page's own  #}
     {# day is behind the server's. Needs pwa_version_check.js (base.html).  #}
     <script defer src="{% static 'js/stale_day_core.js' %}"></script>

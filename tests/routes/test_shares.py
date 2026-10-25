@@ -93,14 +93,14 @@ class TestCreateRouteShare:
         assert share.expires_at >= before + timedelta(days=7)
         assert share.expires_at <= timezone.now() + timedelta(days=7)
 
-    def test_a_new_share_is_claimable(self) -> None:
+    def test_a_new_share_is_live(self) -> None:
         """What create_route_share mints is what active() returns."""
         user = UserFactory.create()
         route = RouteFactory.create(user=user)
 
         share = create_route_share(user, route.uuid)
 
-        assert share.is_claimable
+        assert share.is_live
         assert list(RouteShare.objects.active()) == [share]
 
     def test_another_users_route_is_not_shareable(self) -> None:

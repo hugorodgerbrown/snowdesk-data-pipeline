@@ -155,6 +155,9 @@ Optional context:
     data-route-claim-url-template="{{ route_claim_url_template }}"
     data-routes-upload-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
     data-routes-signin-url="{{ routes_signin_url }}"
+    {# SNOW-1230: the example walkthrough's exit drops the example from the  #}
+    {# session (static/js/map_example_guide.js).                             #}
+    data-route-share-dismiss-url-template="{{ route_share_dismiss_url_template }}"
     {# SNOW-828: where map.js fetches a trip's route from when it arrives   #}
     {# on ?trip=<uuid> or ?trip_share=<token>. Unconditional, unlike the    #}
     {# routes URL above: both endpoints scope themselves, and the map has   #}
@@ -1631,6 +1634,15 @@ Optional context:
                     <path d="M16 3v4" />
                 </svg>
                 <span id="map-date-ribbon" class="map-date-ribbon" aria-live="polite" hidden></span>
+                {% if show_tour_offer %}
+                    {# SNOW-1230: while the example route is open on its own day, #}
+                    {# the date says so (static/js/map_example_guide.js). Inside  #}
+                    {# the control, so it moves with it on a phone.               #}
+                    <span id="map-example-day-badge" class="map-example-day-badge" hidden>
+                        <span class="map-example-day-badge-long">{% trans "Example day" %}</span>
+                        <span class="map-example-day-badge-short">{% trans "Example" %}</span>
+                    </span>
+                {% endif %}
             </button>
             <button
                 id="map-day-next"
@@ -2103,6 +2115,13 @@ Optional context:
         {# a deep link. Its strings live here so {% trans %} reaches them.     #}
         {# role="region" rather than dialog: it is not modal and the map stays #}
         {# usable around it, the same choice #home-intro made.                 #}
+        {#                                                                     #}
+        {# SNOW-1230 made it "Explore Snowdesk": instead of explaining the    #}
+        {# controls it asks the visitor to DO something — find a resort, or   #}
+        {# open the example route (only while one is set, example_route_url). #}
+        {# "Explore the map" is the dismiss. The coachmark tour it used to    #}
+        {# start is help mode's "Tour" now; the "?" menu reopens this card.   #}
+        {# The ids are SNOW-1117's, kept so nothing that reads them moves.    #}
         <div
             id="map-tour-offer"
             class="map-tour-offer"
@@ -2132,10 +2151,13 @@ Optional context:
                         <path d="m6 6 12 12" />
                     </svg>
                 </button>
-                <p class="map-tour-offer-eyebrow">{% trans "New to the map?" %}</p>
-                <h2 class="map-tour-offer-title" id="map-tour-offer-title">{% trans "Take the one-minute tour" %}</h2>
+                <h2 class="map-tour-offer-title" id="map-tour-offer-title">{% trans "Explore Snowdesk" %}</h2>
                 <p class="map-tour-offer-body">
-                    {% trans "How to read the colours, open a region's bulletin, and what each control does." %}
+                    {% if example_route_url %}
+                        {% trans "Find somewhere you ski, or try an example route to see what Snowdesk can tell you." %}
+                    {% else %}
+                        {% trans "Find somewhere you ski to see what Snowdesk can tell you." %}
+                    {% endif %}
                 </p>
                 {% if is_offseason %}
                     {# Off-season honesty (launch requirement): the data shown is #}
@@ -2148,20 +2170,56 @@ Optional context:
                         {% endblocktrans %}
                     </p>
                 {% endif %}
-                <div class="map-tour-offer-actions">
-                    <button id="map-tour-offer-later" type="button" class="map-tour-offer-btn">
-                        {% trans "Not now" %}
-                    </button>
-                    <button
-                        id="map-tour-offer-start"
-                        type="button"
-                        class="map-tour-offer-btn map-tour-offer-btn--primary"
-                    >
-                        {% trans "Start the tour" %}
-                    </button>
-                </div>
+                <ul class="map-tour-offer-options">
+                    <li>
+                        <button id="map-tour-offer-resort" type="button" class="map-tour-offer-option">
+                            <span
+                                class="map-tour-offer-option-icon"
+                                aria-hidden="true"
+                            >{% include "includes/_icon_resort.html" with size=20 %}</span>
+                            <span class="map-tour-offer-option-text">
+                                <span class="map-tour-offer-option-title">{% trans "Find a resort" %}</span>
+                                <span
+                                    class="map-tour-offer-option-sub"
+                                >{% trans "See its avalanche bulletin and weather." %}</span>
+                            </span>
+                        </button>
+                    </li>
+                    {% if example_route_url %}
+                        <li>
+                            <a id="map-tour-offer-example" href="{{ example_route_url }}" class="map-tour-offer-option">
+                                <span
+                                    class="map-tour-offer-option-icon"
+                                    aria-hidden="true"
+                                >{% include "includes/_icon_route.html" with size=20 %}</span>
+                                <span class="map-tour-offer-option-text">
+                                    <span
+                                        class="map-tour-offer-option-title"
+                                    >{% trans "Explore an example route" %}</span>
+                                    <span
+                                        class="map-tour-offer-option-sub"
+                                    >{% trans "See terrain and conditions along a ski tour." %}</span>
+                                </span>
+                            </a>
+                        </li>
+                    {% endif %}
+                    <li>
+                        <button id="map-tour-offer-later" type="button" class="map-tour-offer-option">
+                            <span
+                                class="map-tour-offer-option-icon"
+                                aria-hidden="true"
+                            >{% include "includes/_icon_map.html" with size=20 %}</span>
+                            <span class="map-tour-offer-option-text">
+                                <span class="map-tour-offer-option-title">{% trans "Explore the map" %}</span>
+                                <span class="map-tour-offer-option-sub">{% trans "Browse without guidance." %}</span>
+                            </span>
+                        </button>
+                    </li>
+                </ul>
             </div>
         </div>
+        {% include "public/partials/_map_example_guide.html" %}
+        {% include "public/partials/_map_help_menu.html" %}
     {% endif %}
     {# SNOW-522: framing overlay for "Download a custom area" — reached      #}
     {# (SNOW-634) via [data-panel-add] inside the downloads sheet            #}
@@ -2697,6 +2755,9 @@ Optional context:
     {# only "that couldn't be saved" will retry the identical action.        #}
     <span data-string="route-save">{% trans "Save route" %}</span>
     <span data-string="route-save-signin">{% trans "Sign in to save this route" %}</span>
+    <span
+        data-string="route-example-note"
+    >{% blocktrans %}Example route · conditions from %(date)s, not today{% endblocktrans %}</span>
     <span data-string="route-save-failed">{% trans "That couldn't be saved. Try again." %}</span>
     <span
         data-string="route-save-limit"

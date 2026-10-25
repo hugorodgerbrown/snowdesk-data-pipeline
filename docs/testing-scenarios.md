@@ -47,7 +47,7 @@ SNOW-314 until the marketing page took the root — see
 | 1 | Navigate to http://localhost:8000/ | A static page loads: the "Avalanche bulletins across the Alps, on one map." heading, an "Open the map" primary button and a "How it works" secondary button, a still image of the map, and short sections on bulletins, the season, weather, routes, offline use and field reports. No MapLibre canvas, no map JavaScript |
 | 2 | Look at the page chrome | A thin top nav bar with a "Snowdesk" wordmark (no back link) sits above the page |
 | 3 | Clear `localStorage` for the site, then click "Open the map" | http://localhost:8000/map/ loads: the full-frame map, with no card or panel over it |
-| 4 | Wait for the danger colours to paint, then a moment more | The tour offer (`#map-tour-offer`) slides in at the bottom left, above the zoom, help, key and date controls: "Take the one-minute tour", with "Not now", "Start the tour" and a "×" (Scenario MS7) |
+| 4 | Wait for the danger colours to paint, then a moment more | The welcome card (`#map-tour-offer`) slides in at the bottom left (full width at the bottom on a phone): "Explore Snowdesk", with three rows — "Find a resort", "Explore an example route" (only once `set_example_route --commit` has run) and "Explore the map" — and a "×" (Scenario MS7) |
 | 5 | Note the pre-selected region | CH-4115 (Martigny/Verbier) is already selected, so the readout chip and breadcrumb are populated on first paint (SNOW-342) |
 | 6 | Navigate to http://localhost:8000/?d=2026-04-08 | A 301 to `http://localhost:8000/map/?d=2026-04-08` — map state on `/` is forwarded with its query string |
 
@@ -303,28 +303,48 @@ follow the scrubbed date.
 | 1 | Click into the search input and clear any existing text | Dropdown is hidden |
 | 2 | Type `xyznonexistent` | Dropdown does not open (no results, no error message shown) |
 
-### Scenario MS7: The tour is offered once, after the map
+### Scenario MS7: The welcome is offered once, after the map
 
-**Goal**: Verify the map opens clean, that the tour is offered once the map
-has settled and only once per device, and that the offer stays away from a
-visit that came for something in particular (SNOW-1117 — it replaced the
-"Welcome to Snowdesk" panel, which flashed open on every load).
+**Goal**: Verify the map opens clean, that the "Explore Snowdesk" welcome is
+offered once the map has settled and only once per device, that each of its
+three tasks does what it says, and that it stays away from a visit that
+came for something in particular (SNOW-1117; made task-led by SNOW-1230).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Clear `localStorage`, navigate to http://localhost:8000/map/ | The map loads with nothing over it. A moment after the colours paint, the tour offer slides in at the bottom left |
-| 2 | Click "Start the tour" | The offer closes and the coachmark tour opens on step 1. **No navigation occurs** |
+| 1 | Clear `localStorage`, navigate to http://localhost:8000/map/ | The map loads with nothing over it. A moment after the colours paint, the welcome card slides in at the bottom left |
+| 2 | Click "Find a resort" | The card closes and search opens, ready to type |
 | 3 | Inspect `localStorage` | `snowdesk.map.tour-offer` is `dismissed` |
-| 4 | Close the tour and reload the page | The map loads and the offer does not come back |
-| 5 | Clear `localStorage`, reload, and click "Not now" (or the "×", or press Escape) when the offer appears | The offer closes and records the same answer — but the tour does **not** open |
-| 6 | Clear `localStorage` and open http://localhost:8000/map/?resort=verbier | The resort opens and the offer never appears: a deep link came for that |
-| 7 | Clear `localStorage`, reload, and tap a region before the offer appears | The region sheet opens and the offer does not appear over it this visit; `snowdesk.map.tour-offer` is still unset |
-| 8 | Click the "?" roundel in the bottom-left stack, then "Tour" on the bar it opens | The coachmark tour opens on step 1, whatever was recorded (Scenario MS9) |
+| 4 | Reload the page | The map loads and the card does not come back |
+| 5 | Clear `localStorage`, reload, and click "Explore the map" (or the "×", or press Escape) when the card appears | The card closes and records the same answer; nothing else opens |
+| 6 | Clear `localStorage` and open http://localhost:8000/map/?resort=verbier | The resort opens and the card never appears: a deep link came for that |
+| 7 | Clear `localStorage`, reload, and tap a region before the card appears | The region sheet opens and the card does not appear over it this visit; `snowdesk.map.tour-offer` is still unset |
+| 8 | Click the "?" roundel in the bottom-left stack | A small "Help" menu opens: "Show me around again", "What is everything on the map?", "Help pages" |
+| 9 | Click "Show me around again" | The welcome card opens again, whatever was recorded |
+| 10 | Click "?", then "What is everything on the map?", then "Tour" on the bar | Help mode names the controls; "Tour" opens the coachmark tour on step 1 (Scenarios MS8, MS9) |
 
-To see the offer again without clearing `localStorage`, load
-`http://localhost:8000/map/?tour-offer=1` — it shows the offer whatever was
+To see the card again without clearing `localStorage`, load
+`http://localhost:8000/map/?tour-offer=1` — it shows the card whatever was
 recorded, after the same wait, and is stripped from the address bar once the
-offer is answered. It is the handle to use in QA, screenshots and bug reports.
+card is answered. It is the handle to use in QA, screenshots and bug reports.
+
+### Scenario MS7a: Explore the example route
+
+**Goal**: Verify the example walkthrough (SNOW-1230): the date jump is
+said before anything else, each step moves on when the visitor has done it,
+nothing is locked, and leaving always puts the map back on today.
+Prerequisite: `uv run python manage.py set_example_route --commit`.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Open http://localhost:8000/map/?tour-offer=1 and click "Explore an example route" | The map reloads on 10 April 2026 with Mont Fort – Col de la Chaux open and framed. The date row carries an "Example day" badge ("Example" on a phone). A dark bar under the route panel (on top of the sheet on a phone) reads "Example route · 1 of 4" and says the map was moved to 10 April 2026 and nothing is today's conditions |
+| 2 | Click "Got it", then drag along the profile across about a fifth of it | Step 2 names the route and asks for the drag; the dot follows on the map, and after a beat the bar moves to step 3 |
+| 3 | Zoom in on the route | The bar's meter fills; at zoom 14 the line changes to slope colours and the bar moves to step 4, a swatch key from "<30°" to "45°+" |
+| 4 | Close the route panel, then click Resume on the pill | Closing folds the bar into a pill under search, "Example route · paused", with Resume and Exit. Resume reopens the route and the bar comes back on step 4, the camera kept |
+| 5 | Pick another day in the calendar, then click "Back to 10 Apr" on the pill | The pill reads "You've left the example day" and the badge comes off; the button returns the map to 10 April and the bar comes back |
+| 6 | Click "Finish" | The route closes, the map returns to today, a toast says "Back to today · <date>", and a card offers "Upload your own GPX" (or "Sign in to upload your own GPX"), "Find a resort" and "Done" |
+| 7 | Open the routes panel | The example is no longer listed. With no routes of your own, the empty state links "Explore an example route" |
+| 8 | Repeat from step 1 and click "Exit" on step 2 | The same return to today and toast, with no finish card |
 
 ### Scenario MS8: The tour reads the map in seven steps
 

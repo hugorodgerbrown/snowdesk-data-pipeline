@@ -451,6 +451,34 @@ had been a second, partially-overlapping description of the same rows.
 Rationale:
 [`resorts-are-editable-data`](decisions/resorts-are-editable-data.md).
 
+### `set_example_route` — choose the example route every visitor is offered
+
+SNOW-1230. The map's welcome card ("Explore Snowdesk") and the "?" menu
+offer one real tour to explore before a visitor uploads anything. This is
+the only writer of it. It takes a canonical track from
+`apps/routes/fixtures/canonical/`, makes sure the example owner account
+exists (`example-routes@snowdesk.invalid`, unusable password, so the tour
+sits in nobody's routes list), imports the track through `create_route`
+unless that account already holds it, and marks a share of it as the
+example opening on `--date` (`apps.routes.services.example.set_example`).
+Replacing an example unmarks the old share onto an ordinary expiry window,
+so a copied link keeps working for a while.
+
+Read-only by default: it says what the example is now and what `--commit`
+would change, and asks the terrain origin nothing. Prints `Example route up
+to date.` when nothing would change. Exits non-zero for a track that is not
+canonical or cannot be imported. Exempt from rule 5: one row, no queryset.
+Tallies `set` and `routes_created`.
+
+Run it once per environment after deploy; until it has run, the welcome
+card simply leaves the example option out.
+
+```bash
+uv run python manage.py set_example_route            # preview (Mont Fort – Col de la Chaux, 2026-04-10)
+uv run python manage.py set_example_route --commit   # apply
+uv run python manage.py set_example_route --track hidden-valley.gpx --date 2026-03-02 --commit
+```
+
 ### `compute_basemap_download` — precompute per-region offline tile coverage
 
 Populates `basemap_download` on every `MicroRegion` via

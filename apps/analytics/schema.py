@@ -150,6 +150,23 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         # into a third-party system.
         "map.route.shared",
         "map.route.claimed",
+        # SNOW-1230: first-run onboarding. `welcome.chosen` is the map's
+        # "Explore Snowdesk" card answered (static/js/map_tour_offer.js),
+        # with `choice` one of resort / example / map / close;
+        # `help_menu.chosen` is the "?" menu's item (map_help_menu.js),
+        # `choice` one of welcome / help-mode / pages. The `example.*` four
+        # are the example route walkthrough (map_example_guide.js): opened,
+        # each step done (`step`: intro / drag / zoom / colours), left by
+        # Exit (`step` it was on), and finished. None carries a token: the
+        # example's share token is in the session, never in an event.
+        # `map.route.created` above gains `after_example: true` on an
+        # upload made after a walkthrough on the same device.
+        "map.welcome.chosen",
+        "map.help_menu.chosen",
+        "map.example.opened",
+        "map.example.step_completed",
+        "map.example.exited",
+        "map.example.finished",
         # SNOW-894: an uncaught exception or unhandled rejection in the
         # browser, from static/js/error_reporting.js. The first client-side
         # error signal the pipeline has carried — before it, every uncaught
