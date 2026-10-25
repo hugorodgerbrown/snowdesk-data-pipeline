@@ -2,15 +2,15 @@
 name: competitors
 description: Competitor list — WhiteRisk, SnowSafe, Whympr, OpenSnow — with feature profiles and the feature ideas each one suggests for Snowdesk
 status: current
-last-reviewed: 2026-10-18
+last-reviewed: 2026-10-25
 ---
 
 # Competitor list
 
-**Last automated competitor scan: 2026-10-18.** News, product-update and
-new-entrant findings from that pass are marked inline as "2026-10-18 scan
-update"; the full source list is in the PR description for that change.
-Findings from the prior 2026-10-11, 2026-10-04, 2026-09-27, 2026-09-20, 2026-09-13, 2026-09-06, 2026-08-30,
+**Last automated competitor scan: 2026-10-25.** News, product-update and
+new-entrant findings from that pass are marked inline as "2026-10-25 scan";
+the full source list is in the PR description for that change.
+Findings from the prior 2026-10-18, 2026-10-11, 2026-10-04, 2026-09-27, 2026-09-20, 2026-09-13, 2026-09-06, 2026-08-30,
 2026-08-23 and 2026-08-19 passes remain marked as such below.
 
 Apps and sites that overlap Snowdesk's job — *"tell me what the avalanche
@@ -128,6 +128,11 @@ other app in this list is measured against, including ours.
   WhiteRisk itself, but worth revisiting if it ever surfaces as an
   EXPLORE/TOUR data layer. No funding, team or partnership news surfaced this
   pass.
+  **Re-scanned again 2026-10-25** (routine competitor scan) — web search
+  only: no October 2026 WhiteRisk news; the SLF "New to White Risk:
+  avalanche reporting made easy" item (reporting interface, French bulletins)
+  is the same redesign already recorded. The SLF news index fetch returned
+  404. No funding, team or partnership news.
 - **Shape:** a web portal plus a companion iOS/Android app, four
   languages, organised into four modules:
   - **EXPLORE** — the avalanche knowledge base: text, images and
@@ -239,6 +244,13 @@ other app in this list is measured against, including ours.
   (Val d'Aran, 3). The earlier "no Switzerland or France" finding no longer
   holds (the homepage changed since, or the earlier pass misread it); not re-verified against the
   stores. No newer version or business news.
+  **Re-scanned again 2026-10-25** (routine competitor scan) — direct fetch of
+  `snowsafe.at` reconfirms the 25-services / 12-countries / 529-regions
+  figures (Austria 133, Italy 119, Switzerland 149, France 36), headlines
+  "Neu: SnowSafe 6" with no changelog or dates, and states that new warning
+  services "can be added without an app update". An apkcombo listing shows
+  the Android build last updated 25 Jun 2026; no newer version, pricing
+  figure or business news. No material change.
 - **Overlap with Snowdesk:** the closest in scope of anything here. Same
   job, same editorial instinct, overlapping regions — its Austrian, South
   Tyrolean, Trentino and Veneto coverage is the same EAWS/ALBINA family
@@ -362,6 +374,13 @@ other app in this list is measured against, including ours.
   (a Norway hiking trip report, editorial, not a feature). No team or funding
   announcements; search again returned only the stale funding figures
   (€440K crowdfunding 2019–20; €2.2M seed Dec 2022 per Bouncewatch).
+  **Re-scanned again 2026-10-25** (routine competitor scan) — direct fetch of
+  `get.whympr.com/en/blog`: no post newer than 12 Oct, so 3.0 (9 Oct) remains
+  the latest product news; the earlier 15 Sep Italian-Alps bundle, 28/29 Sep
+  hunting-zone and Topo Pro posts and 21 Jul "100+ UK routes" post are
+  unchanged. No team or partnership news. Funding sources still disagree
+  (VCBacked $2.3M total, BounceWatch $2.64M, Caplight $6.02M incl. Bpifrance
+  debt; none dated 2026) — no new round found; treat totals as unreliable.
 - **Overlap with Snowdesk:** the avalanche bulletin is *one tab* of a
   planning app. Geolocated bulletins for FR, CH, IT, AT, AD, ES, US, CA
   and Scotland — broader country coverage than our three providers, but
@@ -464,6 +483,10 @@ other app in this list is measured against, including ours.
   model's "up to 50% more accurate in mountain terrain" claim, both already
   recorded below; beyond that, only routine fall-outlook editorial content.
   No product, funding or team news found this pass.
+  **Re-scanned again 2026-10-25** (routine competitor scan) — web search
+  only: nothing dated October; the latest items are the 13 Aug 2026-27 season
+  forecast and summer monsoon/outlook editorial. No product, funding or team
+  news.
 - **Overlap with Snowdesk:** adjacent rather than direct. Its avalanche
   forecasts cover the US and Canada only, so it does not compete in the
   Alps today — but its *shape* is the most commercially proven in this
@@ -622,6 +645,11 @@ competitor, not a watch item.
   **Re-scanned again 2026-10-11** (routine competitor scan) — search only: an
   app-store aggregator lists iOS v1.2.6 (first release 23 Mar 2026) and
   14 countries / 8 languages; no new release, pricing or funding news.
+  **Re-scanned again 2026-10-25** (routine competitor scan) — search only:
+  appshunter.io lists **v1.2.6 released 21 Jul 2026** ("support for French
+  bulletins without a reading guide; rendering fixes to the Swiss
+  bulletins"); no newer release, pricing, funding or team news. Still a
+  one-person, free, pass-through-outside-CH/FR product.
 - **Read:** the clearest evidence yet that cross-provider consolidation is
   a race, not a moat — a single guidebook author shipped a rough version
   of our core differentiator before we did. Our answer has to be depth (a
@@ -675,6 +703,14 @@ the way the four originally-profiled products were; three scans
   skitourenguru.com's licence footer by hand. Press/workshop figures for
   the route count vary (about 10,000 in Jan 2026, 12,000 in a June 2026 CAS
   workshop document vs. the 13,000 recorded here).
+  **Re-scanned again 2026-10-25** (routine competitor scan) — search only:
+  the CC BY-ND 4.0 flip is **still unconfirmed** (no source states a licence
+  change). New corroboration of credibility: a DAV (German Alpine Club)
+  field study, supported by the BFU, found Skitourenguru reliable for choosing
+  a safe tour while stressing on-site assessment still matters; the DAV names
+  the **SLABS** algorithm and says users can plan, upload or draw their own
+  routes and have them rated. SAC cooperates on Swiss route updates. A UIAA
+  "2026 Skitourenguru tutorials" PDF is also listed. No funding or team news.
 - **2026-08-19 finding:** Petzl Foundation funding made both **free to
   all users** (previously gated). The combined route database is now
   ~13,000 tours across the Alps (~4,600 in the French Alps alone), with
@@ -761,6 +797,10 @@ its own promotion.
   bulletin sources named. Search surfaced a store listing at **v2.1.16
   (29 Aug 2026)** — minor point release after v2.0 (8 May); nothing on the
   Folkeinvest round.
+  **Re-scanned again 2026-10-25** (routine competitor scan) — `www.skida.app`
+  fetched again: no dated news, Skida PRO still unpriced, no bulletin
+  sources named. PitchBook lists a seed round as "upcoming" with no amount or
+  date. No material change.
 - **Shape:** like [AvalancheClarity](#avalancheclarity), it **pulls
   together official bulletins from multiple national providers in one app
   without altering their content** — Varsom (Norway), WhiteRisk
@@ -829,6 +869,8 @@ Ordered by how much a profile would probably change our thinking.
 | **Granite** | Canada (Esteban Sanchez, Gabrielle Toupin, Daniel Leung) — new find, 2026-09-20 scan | Not an Alps competitor (BC/Alberta only, launched Oct 2025) and, on the evidence found so far, terrain-layer prior art rather than [Feature inspiration](#feature-inspiration) item 2 (route↔bulletin coupling) — nothing found ties it to a live Avalanche Canada forecast; what's confirmed is 3D satellite imagery, elevation contours, slope angles and static ATES terrain ratings on mapped routes, plus guide-vetted route descriptions and photo-first trip reports (100+ by Mar 2026, ~4,000 users). Notable for using local mountain guides (ACMG-certified, paid a share of user fees) to vet routes rather than a pure terrain algorithm — a trust mechanic neither Skitourenguru/Yéti nor PeakVisor uses, and relevant to item 4 (field observations/trip reports) as much as any terrain layer. Found via regional Canadian press coverage (Trail Times and syndicates, 1 Jun 2026); a comparison piece on `granitealpinelab.com` — an independent gear-review blog (unrelated in ownership to the Granite app, despite the name overlap), which tests Granite alongside ten other backcountry apps — returned `EGRESS_BLOCKED`. Not yet checked against Granite's own site, and whether it ingests a current bulletin at all is the open question a full profile would need to settle — first scan pass. **2026-09-27 scan:** no material change — the same 4,000-user, 100+-trip-report figures and Oct 2025 launch date are all that surfaced this pass; `granitealpinelab.com` remains `EGRESS_BLOCKED`. Second scan pass; the bulletin-ingestion question is still open. |
 | **Avy** | Northwest Avalanche Center (US), now 8 avalanche centres — new find, 2026-09-27 scan | Not an Alps competitor (US-only, launched Dec 2025) but a different consolidation shape worth logging: NWAC built one app — forecasts, weather-station data, offline caching, photo-first field-observation submission — and seven other US avalanche centres (including Crested Butte) have since joined it, splitting the running cost rather than each building their own. That's a provider-side shared-infrastructure model, distinct from AvalancheClarity's or Skida's consumer-side, single-team cross-provider consolidation, and closer in spirit to how our own three-provider ingest already works from the consuming end. Found via Gunnison Country Times coverage and the `us.nwac.forecast` App Store listing; not yet checked against the app's own site — first scan pass. |
 | **Global Avy** | Tim Zander (indie) — new find, 2026-10-18 scan | Not an Alps competitor (US via avalanche.org, Avalanche Canada, Varsom Norway; no EAWS Alps provider) and free with no ads or account. Interesting as the cleanest published model of a new-forecast push: per-location settings, alert ~15 min after publication carrying danger level + summary, no duplicate alerts for unchanged content, opt-in permission prompt, offline caching, coarse-grid location for delivery. v1.10.0 (22 May; renamed from an earlier name, region browser). Source: App Store listing (fetched directly); developer invites provider requests on GitHub. First scan pass; feeds [Feature inspiration](#feature-inspiration) item 1. |
+| **Avycast** | Independent developer — new find, 2026-10-25 scan | iPhone-only aggregator of official bulletins from **21 countries on four continents** (EAWS members, SAIS, Avalanche Canada, US centres, Japan, NZ, Argentina, Georgia), text translated into 11 languages. Free with in-app purchases; Premium unlocks unlimited region switching and saved favourite zones. Two points of interest: a **Slope Risk Evaluator** combining the danger rating with terrain exposure into a caution level, and a stated principle of being "faithful to the source — we never rewrite or improve danger ratings" (the same fidelity stance as ours). Tiny Product Hunt launch (4 upvotes). Found via search; Product Hunt, App Store listing and mergeek surfaced, `hunted.space` failed DNS (not a policy block); not primary-verified. Another cross-provider consolidator alongside AvalancheClarity and Skida, but breadth-first and pass-through. First scan pass. |
+| **AspectAvy** | Colorado (US) — new find, 2026-10-25 scan | US-only backcountry avalanche-avoidance app raising on Wefunder ($4M valuation cap; page undated, URL references 2025). No Alps coverage; logged only as a funding signal in the category. First scan pass; found via search snippet. |
 | **Trail Connect (Trace de Trail) / Visorando** | FR | New finds, 2026-10-11 scan. French route-planning apps that surface the Météo-France BERA, in two different presentations. **Trail Connect (map overlay):** Trace de Trail announced on 2 Feb 2026 an "Avalanche Risks – France" overlay (daily-updated bulletin per massif across Alps, Pyrenees and Corsica; tap an area for the smartphone-formatted bulletin, also as PDF; sits alongside slope-angle and IGN winter-route layers). **Visorando (route detail, not a map layer):** per its support page (as surfaced in search; the page itself did not fetch), the BERA is a Premium item in a French route's details. Pass-through of one provider, France only, no normalisation — another instance of [Feature inspiration](#feature-inspiration) item 2's "bulletin where the route is", and a sign the Météo-France bulletin is being embedded by French route apps generally. First scan pass; found via search (`tracedetrail.fr` fetch failed with a DNS error, not a policy block). |
 
 ---
