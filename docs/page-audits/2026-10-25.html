@@ -1,0 +1,478 @@
+<title>Snowdesk page audit — 25 October 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&amp;family=DM+Mono:wght@400;500&amp;display=swap">
+<style>
+:root {
+  --ground:      #F4F6F8;
+  --card:        #FFFFFF;
+  --card-sunk:   #EDF1F4;
+  --text-1:      #0F1519;
+  --text-2:      #48545E;
+  --text-3:      #7A8792;
+  --border:      #DDE3E8;
+  --border-soft: #E9EEF1;
+  --accent:      #0B6273;
+  --accent-soft: #E2F0F3;
+  --sev-broken:  #A32E27;
+  --sev-broken-bg: #F8EAE9;
+  --sev-orphan:  #8A6210;
+  --sev-orphan-bg: #F8F0DF;
+  --sev-thin:    #0B6273;
+  --sev-thin-bg: #E2F0F3;
+  --ok:          #2E6B4F;
+  --ok-bg:       #E4F0EA;
+  --new:         #5B4B9E;
+  --new-bg:      #ECE9F6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0C1013;
+    --card:        #141A1F;
+    --card-sunk:   #10161A;
+    --text-1:      #E7EDF1;
+    --text-2:      #A0ABB5;
+    --text-3:      #6B7781;
+    --border:      #222A31;
+    --border-soft: #1B2229;
+    --accent:      #4FC6DC;
+    --accent-soft: #0E2A31;
+    --sev-broken:  #EC7B72;
+    --sev-broken-bg: #2A1614;
+    --sev-orphan:  #DDA544;
+    --sev-orphan-bg: #271D0D;
+    --sev-thin:    #4FC6DC;
+    --sev-thin-bg: #0E2A31;
+    --ok:          #6FBF95;
+    --ok-bg:       #12241B;
+    --new:         #A99AE0;
+    --new-bg:      #1C1830;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0C1013;
+  --card:        #141A1F;
+  --card-sunk:   #10161A;
+  --text-1:      #E7EDF1;
+  --text-2:      #A0ABB5;
+  --text-3:      #6B7781;
+  --border:      #222A31;
+  --border-soft: #1B2229;
+  --accent:      #4FC6DC;
+  --accent-soft: #0E2A31;
+  --sev-broken:  #EC7B72;
+  --sev-broken-bg: #2A1614;
+  --sev-orphan:  #DDA544;
+  --sev-orphan-bg: #271D0D;
+  --sev-thin:    #4FC6DC;
+  --sev-thin-bg: #0E2A31;
+  --ok:          #6FBF95;
+  --ok-bg:       #12241B;
+  --new:         #A99AE0;
+  --new-bg:      #1C1830;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text-1);
+  font-family: 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 61rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+.col { max-width: 43rem; }
+
+.eyebrow {
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-3);
+  margin: 0;
+}
+
+.masthead { padding: 4.5rem 0 2.5rem; border-bottom: 1px solid var(--border); }
+.masthead h1 {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0.75rem 0 0;
+  max-width: 20ch;
+}
+.standfirst {
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 1.25rem 0 0;
+  max-width: 52ch;
+}
+.masthead-meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem; margin-top: 2rem; }
+.masthead-meta p { margin: 0; }
+
+section { padding-top: 3.5rem; }
+section > .eyebrow { margin-bottom: 0.6rem; }
+
+h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  text-wrap: balance;
+}
+h3 { font-size: 1.0625rem; line-height: 1.35; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0 0 1rem; }
+p:last-child { margin-bottom: 0; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+code, .mono { font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.875em; }
+code {
+  background: var(--card-sunk);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 0.08em 0.34em;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+strong { font-weight: 600; color: var(--text-1); }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 2rem 0 0;
+}
+.metric { background: var(--card); padding: 1.05rem 1.15rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.metric .figure {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 1.6rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.metric .label { font-size: 0.8125rem; line-height: 1.35; color: var(--text-3); }
+
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; min-width: 46rem; font-size: 0.875rem; }
+thead th {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody td { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; color: var(--text-2); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody td:first-child {
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+td.num { font-family: 'DM Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+.pill {
+  display: inline-block;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill-broken { background: var(--sev-broken-bg); color: var(--sev-broken); }
+.pill-orphan { background: var(--sev-orphan-bg); color: var(--sev-orphan); }
+.pill-thin   { background: var(--sev-thin-bg);   color: var(--sev-thin); }
+.pill-ok     { background: var(--ok-bg);         color: var(--ok); }
+.pill-gone   { background: var(--card-sunk);     color: var(--text-3); }
+.pill-new    { background: var(--new-bg);        color: var(--new); }
+
+.findings { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.finding {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--stripe, var(--text-3));
+  border-radius: 0 10px 10px 0;
+  padding: 1.25rem 1.4rem;
+}
+.finding.broken { --stripe: var(--sev-broken); }
+.finding.orphan { --stripe: var(--sev-orphan); }
+.finding.thin   { --stripe: var(--sev-thin); }
+.finding.done   { --stripe: var(--ok); }
+.finding.newwork { --stripe: var(--new); }
+
+.finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem; margin-bottom: 0.7rem; }
+.finding-head .ref { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.75rem; color: var(--text-3); letter-spacing: 0.02em; }
+.finding p { font-size: 0.9375rem; color: var(--text-2); }
+
+.evidence {
+  margin: 0.9rem 0 0;
+  padding: 0.75rem 0.95rem;
+  background: var(--card-sunk);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-2);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.evidence li { padding-left: 1.1rem; position: relative; }
+.evidence li::before { content: ''; position: absolute; left: 0; top: 0.6em; width: 5px; height: 1px; background: var(--text-3); }
+.evidence .k { font-family: 'DM Mono', ui-monospace, monospace; font-size: 0.9em; color: var(--text-1); }
+
+.statement {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  padding: 1.5rem 1.6rem;
+  margin-top: 1.75rem;
+}
+.statement p { font-size: 1.0625rem; line-height: 1.55; color: var(--text-1); }
+.statement p + p { color: var(--text-2); font-size: 0.9375rem; }
+
+.qgroups { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.75rem; }
+.qgroup { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.35rem 1.5rem; }
+.qgroup h3 { margin-bottom: 0.65rem; }
+.qgroup p { font-size: 0.9375rem; color: var(--text-2); }
+
+.note { border-left: 2px solid var(--border); padding-left: 1rem; color: var(--text-3); font-size: 0.875rem; margin-top: 1.5rem; }
+
+@media (prefers-reduced-motion: no-preference) { a { transition: color 120ms ease; } }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Page audit · 18 – 25 October · 25 October 2026</p>
+    <h1>The Trip page now draws routes like the map — and a new <code>/resorts/</code> index and first-run example route arrived, while the reading guide is still SLF-only</h1>
+    <p class="standfirst">
+      146 commits, 901 files since the 18 October audit. One tracked finding closed (the Trip page's
+      route drawing), two public surfaces are new (<code>/resorts/</code> in the footer and an example-route
+      onboarding), and everything else is unchanged.
+    </p>
+    <div class="masthead-meta">
+      <p class="eyebrow">Baseline <span class="mono">4ce4425</span> (18 Oct) → now <span class="mono">b09d298</span></p>
+      <p class="eyebrow">146 commits · 901 files</p>
+    </div>
+  </header>
+
+  <section>
+    <p class="eyebrow">The short version</p>
+    <h2>One closure, two new surfaces, and the same standing gaps.</h2>
+    <div class="col">
+      <p>
+        The Trip page and trip form now load <code>route_legs_core.js</code> and
+        <code>route_drawing_core.js</code> (SNOW-1212), so the same route is drawn the same way on the map and
+        on the Trip page. That closes last week's "two renderings" finding. The footer gained a fifth link,
+        <code>/resorts/</code> (SNOW-1150), and the map welcome card became "Explore Snowdesk" with a flagged
+        example route (SNOW-1230).
+      </p>
+      <p>
+        Nothing changed for the long-running gaps: <code>docs/bulletin-guide.md</code> still has 0 ALBINA and
+        0 Météo-France mentions (SNOW-679, Ready for dev since 9 September); the footer comment still says
+        nothing links to <code>/compare/</code> while <code>home.html:217</code> does; the homepage header still
+        calls its copy a DRAFT; the public explainers and the Claude connector still have no inbound link from a page.
+      </p>
+    </div>
+    <div class="metrics">
+      <div class="metric"><span class="figure">0</span><span class="label">ALBINA / Météo-France mentions in the bulletin guide</span></div>
+      <div class="metric"><span class="figure">0</span><span class="label">inbound links to the public explainers</span></div>
+      <div class="metric"><span class="figure">5</span><span class="label">footer links (ceiling reached)</span></div>
+      <div class="metric"><span class="figure">0</span><span class="label">alert models for SNOW-937</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Closed</p>
+    <h2>The Trip page draws the route the way the map does</h2>
+    <div class="findings">
+      <article class="finding done">
+        <div class="finding-head">
+          <span class="ref">T1</span>
+          <h3>Trip page vs map route rendering</h3>
+          <span class="pill pill-ok">SNOW-1212</span>
+        </div>
+        <p>Last week <code>_trip_map.html</code> loaded no legs module. It now does, and the trip form page matches.</p>
+        <ul class="evidence">
+          <li><span class="k">apps/trips/templates/trips/partials/_trip_map.html:226-227</span> loads <span class="k">route_legs_core.js</span> and <span class="k">route_drawing_core.js</span></li>
+          <li><span class="k">apps/trips/templates/trips/trip_new.html:73-75</span> loads the slope, legs and drawing cores</li>
+          <li><code>route_slope_core.js</code> is still loaded, but only as the shared slope source ahead of the legs modules, as the template comments describe. Visual output was not rendered in this run.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">New</p>
+    <h2>What the audit didn't anticipate</h2>
+    <div class="findings">
+      <article class="finding newwork">
+        <div class="finding-head">
+          <span class="ref">N5</span>
+          <h3>A resorts index at <code>/resorts/</code>, reachable only from the footer and resort pages</h3>
+          <span class="pill pill-new">SNOW-1150</span>
+        </div>
+        <p>
+          <code>public:resorts</code> is linked from <code>_site_footer.html:49</code> and
+          <code>resort.html:161</code>; the homepage does not link it. The footer is now at its self-declared
+          ceiling of five links, so the next page needs a link removed.
+        </p>
+      </article>
+      <article class="finding newwork">
+        <div class="finding-head">
+          <span class="ref">N6</span>
+          <h3>Resort panels no longer show avalanche danger; weather leads</h3>
+          <span class="pill pill-new">SNOW-1203 · SNOW-1223</span>
+        </div>
+        <p>
+          A resort page now leads with weather and carries no danger of its own, per
+          <code>docs/decisions/a-resort-has-no-avalanche-danger.md</code>. This sits oddly with a product
+          described as avalanche bulletins; this run read the decision, not the rendered pages.
+        </p>
+      </article>
+      <article class="finding newwork">
+        <div class="finding-head">
+          <span class="ref">N7</span>
+          <h3>First-run onboarding with a flagged example route</h3>
+          <span class="pill pill-new">SNOW-1230</span>
+        </div>
+        <p>
+          The welcome card offers an example route (<code>/routes/example/</code>) only once
+          <code>set_example_route</code> has been run in that environment. An environment where it has not been run
+          shows no example. Whether production has it set was not checkable from the code.
+        </p>
+      </article>
+      <article class="finding newwork">
+        <div class="finding-head">
+          <span class="ref">N8</span>
+          <h3>Analytics disclosure changed</h3>
+          <span class="pill pill-new">privacy v1.4</span>
+        </div>
+        <p>
+          The colophon swapped PostHog for fivebar ("cookieless page analytics") and Sentry, and the privacy
+          policy moved to version 1.4 (effective 22 October). Both pages agree with each other in the diff; the
+          running analytics were not checked here.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Unchanged</p>
+    <h2>Re-verified against <span class="mono">b09d298</span></h2>
+    <div class="table-scroll" style="margin-top:1.75rem">
+      <table>
+        <thead><tr><th>Finding</th><th>Re-verified state</th><th>Ticket</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>B3 · bulletin guide is SLF-only</td>
+            <td>ALBINA 0, Météo-France 0, SLF 5; <code>last-reviewed</code> 2026-10-01. Tenth audit running.</td>
+            <td>SNOW-679 <span class="pill pill-ok">Ready for dev</span> (Linear, untouched since 9 Sep)</td>
+          </tr>
+          <tr>
+            <td>Footer comment says nothing links to <code>/compare/</code></td>
+            <td>Still at <code>_site_footer.html:28-30</code>; <code>home.html:217</code> links it.</td>
+            <td><span class="pill pill-orphan">No ticket</span></td>
+          </tr>
+          <tr>
+            <td>Homepage header calls itself a DRAFT</td>
+            <td>Still at <code>home.html:18</code>.</td>
+            <td><span class="pill pill-orphan">No ticket</span></td>
+          </tr>
+          <tr>
+            <td>C2 · <code>/examples/</code> orphaned</td>
+            <td>Only reference in templates is a comment at <code>bulletin.html:91</code>.</td>
+            <td>SNOW-678 <span class="pill pill-broken">Canceled (not re-checked)</span></td>
+          </tr>
+          <tr>
+            <td>C3 · no regions index</td>
+            <td>No template links a regions index. (A resorts index now exists, N5.)</td>
+            <td>SNOW-674 <span class="pill pill-broken">Canceled (not re-checked)</span></td>
+          </tr>
+          <tr>
+            <td>Public explainers unreachable</td>
+            <td><code>grep explainers</code> over templates, apps and static/js finds no link; the only hit is a decision doc.</td>
+            <td>SNOW-977 (Duplicate)</td>
+          </tr>
+          <tr>
+            <td>OAuth/MCP not named on the site</td>
+            <td>Only <code>privacy.html</code> among public page templates; homepage and Help silent. Account settings and OAuth templates mention it.</td>
+            <td><span class="pill pill-orphan">No ticket</span></td>
+          </tr>
+          <tr>
+            <td>Alerting rebuild (SNOW-937)</td>
+            <td>No alert model in <code>apps/</code>; Linear In Progress, last updated 21 September (five weeks).</td>
+            <td>SNOW-937 <span class="pill pill-thin">In Progress</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Linear was checked this run for SNOW-679 and SNOW-937 only; SNOW-674/678/977 states are carried forward.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Consequences</p>
+    <h2>What this week changes</h2>
+    <div class="qgroups">
+      <div class="qgroup">
+        <h3>The footer ceiling now blocks the next link</h3>
+        <p>
+          With <code>/resorts/</code> the footer is full by its own rule. Any fix for the explainers or
+          <code>/compare/</code> reachability must go on the homepage or in Help, or displace a link.
+        </p>
+      </div>
+      <div class="qgroup">
+        <h3>A resort has no danger of its own, and the guide still teaches only SLF</h3>
+        <p>
+          The product's resort surface is now weather-led, while the guide to reading a bulletin covers one of
+          three providers. Both lean on SNOW-679 for the bulletin side.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Recommendation</p>
+    <h2>What I'd do next</h2>
+    <div class="col">
+      <p><strong>1. Do SNOW-679</strong> — ten audits running.</p>
+      <p><strong>2. Decide homepage links</strong> to the Claude connector and explainers, and drop the DRAFT comment if the copy is final.</p>
+      <p><strong>3. Correct the footer comment</strong> about <code>/compare/</code>.</p>
+      <p><strong>4. Confirm <code>set_example_route</code> has run in production</strong>, or the new welcome card has no example.</p>
+      <p><strong>5. Comment on SNOW-937</strong> whether the pause is deliberate.</p>
+    </div>
+    <p class="note">
+      Re-verified against <span class="mono">b09d298</span> on 25 October 2026. Nothing was changed and no
+      tickets were created or edited. Not read in full: the reworked weather sheets, Help topics and Plan page copy.
+    </p>
+  </section>
+
+</div>
