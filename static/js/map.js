@@ -8474,19 +8474,50 @@
      *
      * @param {(props: Object) => boolean} matches Picks the resort's
      *   feature by its properties.
+     * @param {boolean} [keepZoom] Another panel asked for it: keep the
+     *   zoom and pan only if the pin is out of view (``panIntoView``).
      * @returns {boolean} Whether a resort was found and opened.
      */
-    const focusResort = (matches) => {
+    const focusResort = (matches, keepZoom = false) => {
       const features = resortsGeojsonCache && resortsGeojsonCache.features;
       if (!Array.isArray(features)) return false;
       const feature = features.find((f) => f && f.properties && matches(f.properties));
       if (!feature) return false;
-      map.flyTo({
-        center: feature.geometry.coordinates,
-        zoom: Math.max(map.getZoom(), POINT_FOCUS_ZOOM),
-      });
+      if (keepZoom) {
+        panIntoView(feature.geometry.coordinates);
+      } else {
+        map.flyTo({
+          center: feature.geometry.coordinates,
+          zoom: Math.max(map.getZoom(), POINT_FOCUS_ZOOM),
+        });
+      }
       openResortFeature(feature);
       return true;
+    };
+
+    /**
+     * Pan a point into the part of the map no panel covers, at the zoom
+     * the reader chose — and leave the camera alone when it is already
+     * there.
+     *
+     * Moving between the map's panels (a region's resort, the back pill)
+     * is not a request to look closer (Hugo, 25 Oct 2026): the camera
+     * stays put unless the place would be off screen or under a panel.
+     * The camera padding is the panels' footprint (map_sheet.js writes
+     * it), so "visible" is the canvas less that padding.
+     *
+     * @param {[number, number]} lngLat The point.
+     * @returns {void}
+     */
+    const panIntoView = (lngLat) => {
+      const point = map.project(lngLat);
+      const pad = map.getPadding() || {};
+      const canvas = map.getCanvas();
+      const visible = point.x >= (pad.left || 0)
+        && point.x <= canvas.clientWidth - (pad.right || 0)
+        && point.y >= (pad.top || 0)
+        && point.y <= canvas.clientHeight - (pad.bottom || 0);
+      if (!visible) map.easeTo({ center: lngLat });
     };
 
     /**
@@ -8502,13 +8533,14 @@
      * @param {(props: Object) => boolean} matches As ``focusResort``.
      * @param {() => void} [onMissing] Called when the loaded feed has no
      *   such resort.
+     * @param {boolean} [keepZoom] As ``focusResort``.
      * @returns {void}
      */
-    const openResort = (matches, onMissing) => {
+    const openResort = (matches, onMissing, keepZoom = false) => {
       // Before the cached path too: a feed loaded earlier and then hidden
       // would otherwise open the sheet over an invisible pin.
       if (!overlayState.resorts) showPanelOverlay('resorts');
-      if (focusResort(matches)) return;
+      if (focusResort(matches, keepZoom)) return;
       if (resortsGeojsonCache) {
         onMissing?.();
         return;
@@ -8516,7 +8548,7 @@
       const onResortsSourceData = (e) => {
         if (e.sourceId !== 'resorts' || !map.isSourceLoaded('resorts')) return;
         map.off('sourcedata', onResortsSourceData);
-        if (!focusResort(matches)) onMissing?.();
+        if (!focusResort(matches, keepZoom)) onMissing?.();
       };
       map.on('sourcedata', onResortsSourceData);
     };
@@ -8529,9 +8561,10 @@
       const slug = ev.detail && ev.detail.slug;
       const href = ev.detail && ev.detail.href;
       if (!slug) return;
+      // Asked for from another panel, so the camera keeps its zoom.
       openResort((props) => props.id === slug, () => {
         if (href) window.location.assign(href);
-      });
+      }, true);
     });
 
 

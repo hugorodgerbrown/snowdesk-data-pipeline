@@ -234,6 +234,21 @@ describe('attach — click-outside', () => {
     clickOn('sheet-trigger');
     expect(sheet.hasAttribute('hidden')).toBe(false);
   });
+
+  it('stays open for a row that opened it from another panel', () => {
+    // The region sheet's resort row opens the resort sheet inside the
+    // click; the same click must not then read as one outside it.
+    const { sheet, controller } = attachSheet();
+    document.getElementById('outside').innerHTML = `
+      <a id="row" href="/resorts/nendaz/" data-panel-open="resort">Nendaz</a>
+      <button id="back" type="button" data-panel-back>Back</button>`;
+    controller.open();
+
+    clickOn('row');
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+    clickOn('back');
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+  });
 });
 
 describe('toast', () => {
