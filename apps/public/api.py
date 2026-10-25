@@ -98,7 +98,6 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.cache import patch_cache_control, patch_vary_headers
-from django.utils.translation import gettext_lazy as _
 from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
@@ -139,8 +138,8 @@ from apps.weather.services.weather_display import build_point_weather_days
 
 from .decorators import lowercase_region_id
 from .views import (
-    _location_forecast_context,
     _resolve_region_for_bulletin,
+    _weather_point_context,
 )
 
 # ISO 3166-1 alpha-2 → English country name mapping. Used by the region
@@ -1763,131 +1762,17 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
         except ValueError:
             logger.debug("weather_detail: ignoring unparseable date %r", raw_date)
 
-    # The page's own forecast context (the sheet is the page, Hugo, 24 Oct
-    # 2026): today or before, the day's own row; after today, today's row,
-    # whose ``forecast`` column carries the day (SNOW-1105), with the picker
-    # opened on it.
-    today = timezone.localdate()
-    is_forecast = target_date > today
-    forecast = _location_forecast_context(
-        location, target_date, timezone.now(), strips=True
-    )
-    weather = forecast["weather"]
-    panel = forecast["panel"]
-    day = (
-        next((d for d in panel["days"] if d["date"] == target_date), None)
-        if panel
-        else None
-    )
-    if day is None:
-        # A day past the forecast window, or one with no row: the sheet says
-        # so rather than opening some other day's week under a peek line
-        # that reads "No forecast for this day yet".
-        forecast = {
-            **forecast,
-            "panel": None,
-            "show_day_picker": False,
-            "hourly_charts": [],
-            "day_strips": [],
-            "day_figures": [],
-        }
-
-    place_resort, place_region = _weather_point_places(location)
+    # The page's own context (the sheet is the page, Hugo, 24 Oct 2026):
+    # the views module builds it once for both containers.
     return JsonResponse(
         {
             "html": render_to_string(
                 "public/partials/_weather_detail.html",
-                {
-                    "location": location,
-                    # A curated location has a name; an anonymous one (a
-                    # region centroid, which is most of the map) does not,
-                    # and Location.to_string() would print its raw
-                    # coordinates as a heading. Name the region it stands
-                    # for instead, and fall back to the generic only when
-                    # even that is missing.
-                    "heading": location.name
-                    or _weather_detail_heading(location, place_resort, place_region),
-                    # "Where this is" (Hugo, 25 Oct 2026): the resort the
-                    # point stands for and the avalanche region it is in,
-                    # each a row that opens that place's own panel.
-                    "place_resort": place_resort,
-                    "place_region": place_region,
-                    "place_region_url": (
-                        ""
-                        if place_region is None
-                        else place_region.get_absolute_url()
-                        if target_date == today
-                        else place_region.get_absolute_url(target_date=target_date)
-                    ),
-                    "day": day,
-                    "is_forecast": is_forecast,
-                    # The date row turns to "another day" off today (Hugo, 21 Oct).
-                    "another_day": target_date != today,
-                    # When the forecast was issued: the row's last fetch.
-                    "issued_at": weather.fetched_at if weather else None,
-                    "target_date": target_date,
-                    **forecast,
-                },
+                _weather_point_context(location, target_date, timezone.now()),
                 request=request,
             ),
         }
     )
-
-
-def _weather_point_places(
-    location: Location,
-) -> tuple[Resort | None, MicroRegion | None]:
-    """Return the resort a weather point stands for and the region it is in.
-
-    Resort first (SNOW-1144): a resort's pin, then a resort linking the
-    point. The region is that resort's, else the region the point is the
-    centroid of. A point that is neither — rare on the public estate —
-    gets no region rather than a full scan of every boundary on a tap.
-
-    Args:
-        location: The weather point.
-
-    Returns:
-        ``(resort, region)``, either of them None.
-
-    """
-    resort = Resort.objects.standing_at(location).select_related("region").first()
-    if resort is not None and resort.region_id is not None:
-        return resort, resort.region
-    return resort, location.micro_regions.first()
-
-
-def _weather_detail_heading(
-    location: Location, resort: Resort | None, region: MicroRegion | None
-) -> str:
-    """Name an unnamed location by what it stands for.
-
-    Most locations on the weather map carry no ``name``, and that is by
-    design rather than an omission: a named ``Location`` is part of the
-    curated estate ``import_locations`` owns, so region centroids and
-    resort pins are minted anonymous (see ``docs/locations.md``). The sheet
-    still needs a heading, and ``Location.to_string()`` would give it a
-    pair of raw coordinates.
-
-    Resort before region, because a location reaching both is standing at
-    the resort — the region is the area around it, and the more specific
-    answer is the one the tapper is looking at.
-
-    Args:
-        location: The location being described.
-        resort: The resort it stands for, from ``_weather_point_places``.
-        region: The region it is in, from ``_weather_point_places``.
-
-    Returns:
-        The resort's or region's name, else a generic label. Never the
-        coordinates.
-
-    """
-    if resort is not None:
-        return str(resort.name)
-    if region is not None:
-        return str(region.name)
-    return str(_("Weather station"))
 
 
 # ---------------------------------------------------------------------------

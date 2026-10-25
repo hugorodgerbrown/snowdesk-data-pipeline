@@ -824,6 +824,12 @@
       if (opts.triggerSelector && target.closest(opts.triggerSelector)) return;
       if (target.closest('#map')) return;
       if (target.closest('[data-place-picker]')) return;
+      // A row that opens another map panel, or the back pill, hands over
+      // to that panel (map_panel_trail.js). The region sheet's own resort
+      // handler opens the resort sheet DURING this click, so without this
+      // the newly open sheet read the tap as one outside it and closed
+      // straight away (Hugo, 25 Oct 2026).
+      if (target.closest('[data-panel-open], [data-panel-back]')) return;
       close();
     });
 

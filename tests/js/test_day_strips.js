@@ -5,7 +5,8 @@
  * A pressed block button and a tap or drag along the timeline both move one
  * selection: `--block` on the section, `data-selected` on every
  * block-indexed element and the two boundary labels, and `aria-pressed`
- * on the buttons. Delegated, so strips injected after load work too.
+ * on the buttons. The hour dots are block-indexed too, so the two inside
+ * the capsule invert with it. Delegated, so strips injected after load work too.
  */
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -17,7 +18,9 @@ function strips() {
     `<span class="fig" data-block="${i}" ${i === 3 ? 'data-selected' : ''}></span>`).join('');
   const bounds = Array.from({ length: 9 }, (_, i) =>
     `<span data-boundary="${i}" ${i === 3 || i === 4 ? 'data-selected' : ''}></span>`).join('');
-  return `<section data-day-strips style="--block: 3">${bounds}${buttons}
+  const dots = Array.from({ length: 16 }, (_, i) =>
+    `<span class="dot" data-block="${i >> 1}" ${i >> 1 === 3 ? 'data-selected' : ''}></span>`).join('');
+  return `<section data-day-strips style="--block: 3">${bounds}${dots}${buttons}
     <div data-day-strips-track></div><div class="plot"></div>${figures}</section>`;
 }
 
@@ -30,6 +33,8 @@ function selected(section) {
     bounds: Array.from(section.querySelectorAll('[data-boundary][data-selected]'))
       .map((el) => el.getAttribute('data-boundary')),
     pressed: Array.from(section.querySelectorAll('button[aria-pressed="true"]'))
+      .map((el) => el.getAttribute('data-block')),
+    dots: Array.from(section.querySelectorAll('.dot[data-selected]'))
       .map((el) => el.getAttribute('data-block')),
   };
 }
@@ -49,7 +54,7 @@ describe('day strips selection', () => {
     section.querySelector('button[data-block="6"]').click();
 
     expect(selected(section)).toEqual({
-      block: '6', figures: ['6'], bounds: ['6', '7'], pressed: ['6'],
+      block: '6', figures: ['6'], bounds: ['6', '7'], pressed: ['6'], dots: ['6', '6'],
     });
   });
 

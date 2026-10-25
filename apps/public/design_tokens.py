@@ -99,6 +99,7 @@ from apps.public._component_fixtures import (
     UGC_PANEL_VARIANTS,
     WEATHER_DAY_LINE_VARIANTS,
     WEATHER_DAY_PICKER_VARIANTS,
+    WEATHER_DAY_SUMMARY_VARIANTS,
     WEATHER_MASTHEAD_VARIANTS,
     WEATHER_PANEL_VARIANTS,
     WEATHER_PROVENANCE_VARIANTS,
@@ -721,6 +722,13 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-chart-night", "Axis bar · night", "#475569", "#64748b"),
             Token(
                 "--color-chart-daylight", "Axis bar · daylight", "#f59e0b", "#fcd34d"
+            ),
+            Token("--color-strip-night", "Time selector · night", "#d2d3d4", "#1a1917"),
+            Token(
+                "--color-strip-night-text",
+                "Time selector · ink on night",
+                "#57544e",
+                "#9a968e",
             ),
             Token("--color-chart-note-bg", "Legend note · fill", "#eef2ff", "#252a44"),
             Token("--color-chart-note-text", "Legend note · ink", "#2563eb", "#93c5fd"),
@@ -2001,22 +2009,34 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         slug="weather-masthead",
         label="Weather masthead",
         description=(
-            "Region 1 of the location forecast page (SNOW-789) — what the "
-            "place is called, how high it is, and where a reader goes "
-            "next. No weather at all: the day picker under it opens on "
-            "today, and every number belongs to whichever day is "
-            "selected. Both onward links live here rather than in a "
-            "bottom nav, because 461 of the estate's 540 public locations "
-            "are region centroids whose ONLY way on is the bulletin — a "
-            "masthead naming just the resort would strand the majority of "
-            "this page's visitors. They are accent text links, not "
-            "buttons: a button pair under the heading competes with the "
-            "picker for the reader's first action, and the first action "
-            "here is choosing a day."
+            "The header of one location's weather, on the forecast page "
+            "AND in the map's weather sheet — the page is the sheet (Hugo, "
+            "25 Oct 2026). The day's condition symbol, the kind of place "
+            '("Weather point", as every map panel names its kind) above '
+            "its name, and the height beside it, which is what makes a "
+            "reading mean anything. On the page the name is the <h1>; in "
+            "the sheet it is an <h2> that truncates, and the row ends in "
+            "the sheet's ×. The ways onward that used to sit here are the "
+            'body\'s "Where this is" rows.'
         ),
         kind="components",
         partial="includes/_weather_masthead.html",
         variants=WEATHER_MASTHEAD_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="weather-day-summary",
+        label="Weather day summary",
+        description=(
+            "The day's figures in one line under the weather masthead — "
+            "high and low, new snow, strongest wind — on the forecast page "
+            "and as the last line of the map sheet's peek. A day after "
+            'today opens with "Forecast" (SNOW-1105); a day with no '
+            "figures says why in a sentence instead."
+        ),
+        kind="components",
+        partial="includes/_weather_day_summary.html",
+        variants=WEATHER_DAY_SUMMARY_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

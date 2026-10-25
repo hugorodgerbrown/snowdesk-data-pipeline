@@ -44,6 +44,7 @@ from django.utils import timezone
 from freezegun import freeze_time
 
 from apps.locations.models import Location
+from apps.public.views import _location_forecast_context
 from tests.factories import (
     FavouriteFactory,
     LocationFactory,
@@ -357,13 +358,8 @@ class TestLocationForecastPage:
         assert len(checked) == 1
 
     @freeze_time(MIDDAY)
-    def test_a_day_past_the_horizon_renders_no_chart_region_at_all(self) -> None:
-        """An absent meteogram is absent markup, not an empty frame.
-
-        Selecting day 3 leaves the page with a day line and nothing under
-        it. A hidden-but-present panel would ship a chart's worth of SVG
-        for a day that has no hours to draw.
-        """
+    def test_a_day_past_the_horizon_renders_figures_not_strips(self) -> None:
+        """A day with no hours gets its figures, never an empty drawing."""
         location = LocationFactory.create()
         ResortLocationFactory.create(resort=ResortFactory.create(), location=location)
         WeatherFactory.create(
@@ -384,11 +380,12 @@ class TestLocationForecastPage:
         # Three cells, three controls, three day lines...
         assert html.count('name="location-weather-day"') == 3
         assert html.count('data-day-line="2"') == 1
-        # ...and one meteogram, for the only day carrying a series. The
-        # panel for day 2 is ABSENT, not present-and-empty.
+        # ...and one set of strips, for the only day carrying a series;
+        # the days past it get their figures instead (SNOW-1219). No
+        # meteogram on the page since it became the sheet (25 Oct 2026).
         assert html.count('data-testid="location-weather-hourly-panel"') == 1
-        assert 'data-hourly-day="0"' in html
-        assert 'data-hourly-day="2"' not in html
+        assert html.count('data-testid="location-weather-figures-panel"') == 2
+        assert 'data-testid="location-weather-hourly"' not in html
         # No disabled control anywhere: every cell is pressable now.
         assert not re.findall(r"<input\b[^>]*\bdisabled\b[^>]*>", html)
 
@@ -601,10 +598,14 @@ class TestMeteogramMarks:
     @freeze_time(MIDDAY)
     def _render(self) -> str:
         """
-        Render the location forecast page with one charted day.
+        Render the forecast body with one charted day, as a meteogram.
+
+        No page draws the meteogram since the forecast page became the
+        map's sheet (Hugo, 25 Oct 2026); the body still renders one when
+        handed ``hourly_charts``, and the component library shows it.
 
         Returns:
-            The page HTML.
+            The body HTML.
 
         """
         location = LocationFactory.create(name="Attelas", elevation_m=2200.0)
@@ -617,10 +618,10 @@ class TestMeteogramMarks:
             hourly=_hourly_series("2026-08-30"),
             forecast=[],
         )
-        return (
-            Client()
-            .get(reverse("public:location_weather", args=[location.short_id]))
-            .content.decode()
+        forecast = _location_forecast_context(location, PAGE_DATE, timezone.now())
+        return render_to_string(
+            "public/partials/_weather_body.html",
+            {**forecast, "testid_prefix": "location-weather", "selector_name": "d"},
         )
 
     def test_the_daylight_bar_is_on_the_temperature_axis_alone(self) -> None:

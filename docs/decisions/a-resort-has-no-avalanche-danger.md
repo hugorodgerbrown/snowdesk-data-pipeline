@@ -61,6 +61,17 @@ danger back on the resort.
   it, and once its panel has shown, another place painted into that panel
   or the panel closing ends it. A deeper stack would be a history the
   reader cannot see.
+- Moving between panels loads into the same open panel and never zooms
+  (Hugo's desktop review, 25 Oct): a resort asked for from another panel
+  keeps the reader's zoom and pans only when its pin is off screen or under
+  a panel (`panIntoView` in map.js); a region row still frames the region.
+  A panel showing a new place, or opening at all, starts at its top; a
+  repaint of the same place (a change of day) keeps the reader's place.
+- A panel row's click is not a click outside the panel it opens
+  (`map_sheet.js`): the region sheet opens a resort inside its own click
+  handler, and the new sheet used to read that same click as one outside
+  it and close at once. The trail is read in the capture phase for the
+  same reason — by the bubble phase the row has been repainted away.
 - A weather point that is neither a resort's point nor a region's centroid
   offers no "Where this is" rows rather than scanning every boundary on a
-  tap (`_weather_point_places`).
+  tap (`views._weather_point_places`).

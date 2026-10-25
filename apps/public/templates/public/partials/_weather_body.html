@@ -4,11 +4,15 @@ public/partials/_weather_body.html — one location's forecast, shared by
 the page and the map's weather sheet (the sheet is the page, Hugo, 24 Oct
 2026; docs/decisions/the-sheet-is-the-page.md).
 
-Everything under the page's masthead: the day picker, the selected day's
-line, its meteogram and the provenance line. The page wraps it in the
-site's frame under ``_weather_masthead.html``; the sheet wraps it under
-its peek row, which names the place and the map's day. A fact about a
-location's weather is added here, so both show it.
+Everything under the masthead and the day's summary line: the forecast
+note on a forward day, the day picker, the selected day's line, its linked
+strips (SNOW-1219) or figures, the provenance line and the "Where this is"
+rows. The page wraps it in the site's frame under
+``includes/_weather_masthead.html`` and ``includes/_weather_day_summary.html``;
+the sheet wraps it under its peek row, which holds those two and the map's
+day. A fact about a location's weather is added here, so both show it —
+since 25 Oct 2026 the page draws the sheet's strips too, where it used to
+draw the meteogram (Hugo: "it should be the same content").
 
 Three shapes, discriminated by ``show_day_picker`` and NEVER by the date:
 
@@ -23,6 +27,10 @@ Three shapes, discriminated by ``show_day_picker`` and NEVER by the date:
 The reveal is CSS-only — see the "Forecast day selector" block in
 src/css/main.css. The picker drops to six or five cells when its own width
 cannot hold seven (the same file, "Forecast day picker width").
+
+The day lines are BRIEF whenever there are strips or figures under them:
+those state the freezing level, so the line keeps only the date, the
+condition and the daylight.
 
 IN THE MAP (``in_map``) the picker carries ``data-sheet-half``: on a phone
 the sheet's HALF detent is the peek plus the week, and FULL is the selected
@@ -44,8 +52,25 @@ Context:
                       ``weather-detail`` in the sheet.
     selector_name   — str: the radio group's name, distinct per container.
     in_map          — bool: rendered in the map's sheet.
-    is_forecast     — bool, map only: the map's day is after today.
+    day             — ForecastPanelDay for the day shown, or None.
+    is_forecast     — bool: the day shown is after today.
+    issued_at       — datetime the row was last fetched, or None.
+    place_resort    — Resort the point stands for, or None.
+    place_region    — MicroRegion the point is in, or None.
+    place_region_url — str: that region's bulletin page for the day, or "".
+
+    ``day_strips`` and ``day_figures`` are built for both containers now;
+    ``hourly_charts`` (the meteogram) is still read when a caller passes it.
 {% endcomment %}
+{% if is_forecast and issued_at and day %}
+    {# SNOW-1105: a forward day is what this morning's run said about #}
+    {# it. State when, so it never reads as a record.                 #}
+    <p class="text-xs text-text-3" data-testid="{{ testid_prefix }}-forecast-note">
+        {% blocktrans with issued=issued_at|date:"D j M, H:i" trimmed %}
+            Forecast issued {{ issued }}. It may change before the day.
+        {% endblocktrans %}
+    </p>
+{% endif %}
 {% if panel %}
     {% if show_day_picker %}
         {# The picker IS the selector for everything under it. #}
@@ -54,7 +79,7 @@ Context:
                 {% include "includes/_weather_day_picker.html" with panel=panel selected_index=selected_index testid_prefix=testid_prefix|add:"-forecast" selector_name=selector_name only %}
             </div>
             {% for day in panel.days %}
-                {% include "includes/_weather_day_line.html" with day=day reveal_index=forloop.counter0 testid_prefix=testid_prefix|add:"-day-line" brief=in_map only %}
+                {% include "includes/_weather_day_line.html" with day=day reveal_index=forloop.counter0 testid_prefix=testid_prefix|add:"-day-line" brief=True only %}
             {% endfor %}
             {% for entry in day_strips %}
                 <div
@@ -89,7 +114,11 @@ Context:
         {# no hiding class — the reveal rules could never match it. #}
         {% with day=panel.days.0 %}
             <section class="space-y-4">
-                {% include "includes/_weather_day_line.html" with day=day testid_prefix=testid_prefix|add:"-day-line" only %}
+                {% if day_strips %}
+                    {% include "includes/_weather_day_line.html" with day=day testid_prefix=testid_prefix|add:"-day-line" brief=True only %}
+                {% else %}
+                    {% include "includes/_weather_day_line.html" with day=day testid_prefix=testid_prefix|add:"-day-line" only %}
+                {% endif %}
                 {% for entry in hourly_charts %}
                     {% include "includes/_hourly_chart.html" with chart=entry.chart testid_prefix=testid_prefix|add:"-hourly" only %}
                 {% endfor %}
@@ -114,4 +143,27 @@ Context:
             {% trans "No weather was recorded here for this day." %}
         {% endif %}
     </p>
+{% endif %}
+{# WHERE THIS IS (Hugo, 25 Oct 2026): the resort the point stands for  #}
+{# and the avalanche region it is in, each a row onward. In the map    #}
+{# the row opens that place's own panel; on the page it is a link.     #}
+{% if place_resort.slug or place_region %}
+    <section class="space-y-2" data-testid="{{ testid_prefix }}-places">
+        {% translate "Where this is" as places_eyebrow %}
+        {% include "includes/_eyebrow.html" with text=places_eyebrow tag="h3" only %}
+        <ul class="divide-y divide-border overflow-hidden rounded-card border border-border bg-card">
+            {% if place_resort.slug %}
+                <li>
+                    {% translate "Ski resort" as resort_subtitle %}
+                    {% include "includes/_place_link_row.html" with kind="resort" title=place_resort.name subtitle=resort_subtitle href=place_resort.get_absolute_url open_id=place_resort.slug testid=testid_prefix|add:"-resort-link" only %}
+                </li>
+            {% endif %}
+            {% if place_region %}
+                <li>
+                    {% translate "Avalanche region" as region_subtitle %}
+                    {% include "includes/_place_link_row.html" with kind="region" title=place_region.name subtitle=region_subtitle href=place_region_url open_id=place_region.region_id testid=testid_prefix|add:"-region-link" only %}
+                </li>
+            {% endif %}
+        </ul>
+    </section>
 {% endif %}
