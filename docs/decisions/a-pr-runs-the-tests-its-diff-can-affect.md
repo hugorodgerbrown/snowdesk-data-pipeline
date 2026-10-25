@@ -2,16 +2,16 @@
 name: a-pr-runs-the-tests-its-diff-can-affect
 description: Why a PR runs pytest-testmon's selection from main's cached map (bin/select-tests, COVERAGE_CORE=ctrace) or the full suite
 status: current
-last-reviewed: 2026-10-24
+last-reviewed: 2026-10-25
 ---
 
 # A PR runs the tests its diff can affect
 
 **Decision.** Pushes to `main` and `release` run the whole Python suite, with
-coverage, exactly as before (SNOW-1221). Beside it on every push to `main`,
-the `Record the test map` job runs the suite again with `--testmon`, which
-records for every test the project lines that ran during it, and saves
-that map (`.testmondata`) to the Actions cache as `testmon-main-<sha>`. A
+coverage, exactly as before (SNOW-1221). Once a night, `test-map.yml` runs
+the suite on `main` with `--testmon`, which records for every test the
+project lines that ran during it, and saves that map (`.testmondata`) to the
+Actions cache as `testmon-main-<sha>`. A
 pull request restores the newest map and asks `bin/select-tests` whether
 testmon can be trusted with the diff. If it can, the job runs
 `tox -e test -- --testmon --no-cov`, which reruns only the tests whose
@@ -78,9 +78,14 @@ another PR's map.
    handles extensionless files itself.
 3. testmon and pytest-cov in the same process under-count coverage: the
    full suite measured 32% that way against 96% on its own. That would fail
-   main's 90% floor, so the map is recorded by its own job with `--no-cov`,
-   and main's `Run tests` is left exactly as it was. The map job is not a
-   required check. If it fails or is cancelled, PRs use the previous map.
+   main's 90% floor, so the map is recorded by its own run with `--no-cov`,
+   and main's `Run tests` is left exactly as it was. That run was first a
+   job on every push to `main`, which ran all ~10,000 tests twice per merge;
+   SNOW-1225 moved it to a nightly schedule. A map up to a day old only
+   widens selection (see above), and a night with no merge finds its map
+   already saved and skips. Dispatch the workflow by hand to refresh the map
+   sooner. It is not a required check: if it fails, PRs use the previous
+   map.
 
 **Consequences.**
 

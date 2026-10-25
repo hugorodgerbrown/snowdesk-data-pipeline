@@ -1,0 +1,82 @@
+# .github/workflows/test-map.yml — Record the pytest-testmon map that a
+# PR's `Run tests` job selects from (SNOW-1221, SNOW-1225).
+#
+# The map is pytest-testmon's record of the Python each test ran. It is
+# saved to the Actions cache as `testmon-main-<sha>`; ci.yml's `test` job
+# restores the newest one on a PR and reruns only the tests the diff can
+# affect.
+#
+# Nightly, not on every push to main. Recording needs the whole suite
+# under --testmon, and it cannot share main's coverage run: testmon and
+# pytest-cov in one process under-count coverage, which would fail the 90%
+# floor. Recording per push therefore ran all ~10,000 tests twice on every
+# merge. A map up to a day old costs nothing in correctness: bin/select-tests
+# diffs against the map's own commit, so whatever landed since only widens
+# the selection (docs/decisions/a-pr-runs-the-tests-its-diff-can-affect.md).
+#
+# A night with no merge reuses the existing map: the lookup below finds
+# `testmon-main-<sha>` already saved and every later step skips. Run it by
+# hand (workflow_dispatch) after a merge that changes what most tests touch,
+# when you want PRs to select tightly before the next night.
+
+name: Record the test map
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: test-map
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test-map:
+    name: Record the test map
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    env:
+      TOXENV: test
+
+    steps:
+      - name: Look for a map of this commit
+        id: existing
+        uses: actions/cache/restore@v6
+        with:
+          path: .testmondata
+          key: testmon-main-${{ github.sha }}
+          lookup-only: true
+
+      - name: Check out the repository
+        if: steps.existing.outputs.cache-hit != 'true'
+        uses: actions/checkout@v7
+
+      - name: Set up Python (3.14)
+        if: steps.existing.outputs.cache-hit != 'true'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Create .env
+        if: steps.existing.outputs.cache-hit != 'true'
+        run: |
+          echo "SECRET_KEY=ci-test-secret-key" > .env
+          echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
+
+      # A --testmon run must measure with coverage's ctrace core
+      # (tests/conftest.py refuses to start without it).
+      - name: Install tox and record the map
+        if: steps.existing.outputs.cache-hit != 'true'
+        run: |
+          pip install tox tox-uv
+          COVERAGE_CORE=ctrace tox -- --testmon --no-cov
+
+      - name: Save the testmon map
+        if: steps.existing.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .testmondata
+          key: testmon-main-${{ github.sha }}
