@@ -2317,6 +2317,55 @@ def serve_sw_kill(request: HttpRequest) -> HttpResponse:
     return _sw_conditional(request, _serve_sw_file("js/sw-kill.js"))
 
 
+# The install-sheet screenshots: file stem, form factor, pixel size, label.
+# Chrome drops one whose size differs from the file, so these are the sizes
+# bin/capture-pwa-screenshots writes.
+PWA_SCREENSHOTS = (
+    (
+        "narrow-1-region",
+        "narrow",
+        "1170x2532",
+        "Every region, rated: today's danger level on one map of the Alps",
+    ),
+    (
+        "narrow-2-bulletin",
+        "narrow",
+        "1170x2532",
+        "The whole bulletin: problems, aspects and elevations, in full",
+    ),
+    (
+        "narrow-3-weather",
+        "narrow",
+        "1170x2532",
+        "Mountain weather: seven days for the place you're going",
+    ),
+    (
+        "narrow-4-map",
+        "narrow",
+        "1170x2532",
+        "Any day of the season: step back through the winter's bulletins",
+    ),
+    (
+        "wide-1-region",
+        "wide",
+        "2560x1440",
+        "Every region, rated: today's danger level on one map of the Alps",
+    ),
+    (
+        "wide-2-bulletin",
+        "wide",
+        "2560x1440",
+        "The whole bulletin: problems, aspects and elevations, in full",
+    ),
+    (
+        "wide-3-weather",
+        "wide",
+        "2560x1440",
+        "Mountain weather: seven days for the place you're going",
+    ),
+)
+
+
 def serve_manifest(request: HttpRequest) -> HttpResponse:
     """
     Serve the web app manifest at ``/manifest.webmanifest`` (SNOW-118).
@@ -2412,22 +2461,18 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
                 "purpose": "maskable",
             },
         ],
+        # Captured and captioned by bin/capture-pwa-screenshots (SNOW-1232),
+        # whose list of files this must match. Android shows only the narrow
+        # ones, desktop Chrome only the wide ones.
         "screenshots": [
             {
-                # Captured from the live map by bin/capture-pwa-screenshots.
-                "src": static("icons/pwa/screenshots/map-wide.png"),
-                "sizes": "1280x720",
-                "type": "image/png",
-                "form_factor": "wide",
-                "label": "Avalanche danger across the Alps, on the map",
-            },
-            {
-                "src": static("icons/pwa/screenshots/map-narrow.png"),
-                "sizes": "750x1334",
-                "type": "image/png",
-                "form_factor": "narrow",
-                "label": "One region's danger rating, on a phone",
-            },
+                "src": static(f"icons/pwa/screenshots/{name}.webp"),
+                "sizes": sizes,
+                "type": "image/webp",
+                "form_factor": form_factor,
+                "label": label,
+            }
+            for name, form_factor, sizes, label in PWA_SCREENSHOTS
         ],
     }
     response = HttpResponse(

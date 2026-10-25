@@ -15,7 +15,8 @@ can be rendered absolute against ``settings.SITE_BASE_URL``.
 
 Tests fetch the manifest over HTTP via the test ``Client`` so the
 assertions cover the live response shape, headers, and the templated
-URL substitution — not just the on-disk JSON.
+URL substitution — not just the on-disk JSON. SNOW-1232 checks each
+screenshot against the rules Chrome drops one for.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from pathlib import Path
 import pytest
 from django.conf import settings
 from django.test import Client, override_settings
+from PIL import Image
 
 
 def _load_manifest() -> dict:
@@ -187,6 +189,29 @@ def test_manifest_screenshot_files_exist_on_disk() -> None:
         relative = shot["src"][len("/static/") :]
         path = Path(settings.BASE_DIR) / "static" / relative
         assert path.exists(), f"manifest screenshot {shot['src']} missing on disk"
+
+
+def test_manifest_screenshots_meet_chromes_rules() -> None:
+    """Every screenshot passes the checks Chrome drops one for (SNOW-1232).
+
+    The declared ``sizes`` and ``type`` match the file, each side is within
+    320-3840 px, the long side is at most 2.3× the short one, and every
+    screenshot of one form factor shares one aspect ratio.
+    """
+    manifest = _load_manifest()
+    ratios: dict[str, set[float]] = {}
+    for shot in manifest["screenshots"]:
+        path = Path(settings.BASE_DIR) / "static" / shot["src"][len("/static/") :]
+        with Image.open(path) as image:
+            width, height = image.size
+            assert shot["type"] == f"image/{(image.format or '').lower()}", shot
+        assert shot["sizes"] == f"{width}x{height}", shot
+        assert 320 <= min(width, height) and max(width, height) <= 3840, shot
+        assert max(width, height) <= 2.3 * min(width, height), shot
+        assert (width > height) == (shot["form_factor"] == "wide"), shot
+        assert shot["label"], shot
+        ratios.setdefault(shot["form_factor"], set()).add(round(width / height, 3))
+    assert all(len(found) == 1 for found in ratios.values()), ratios
 
 
 def test_manifest_defaults_to_production_name_and_theme() -> None:
