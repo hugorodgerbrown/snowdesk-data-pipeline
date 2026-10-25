@@ -162,8 +162,8 @@ jobs:
 
   # SNOW-1221: a PR runs only the tests its diff can affect; main and
   # release run everything. pytest-testmon records, for every test, the
-  # Python that ran during it. The `test-map` job below records that map
-  # on every push to main and caches it (`testmon-main-<sha>`); a PR
+  # Python that ran during it. test-map.yml records that map nightly on
+  # main and caches it (`testmon-main-<sha>`); a PR
   # restores the newest one and runs `pytest --testmon`, which reruns a
   # test only when something it executed has changed since the map was
   # recorded.
@@ -213,7 +213,7 @@ jobs:
           echo "SECRET_KEY=ci-test-secret-key" > .env
           echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
 
-      # The exact key never exists (test-map saves under main's sha); the
+      # The exact key never exists (test-map.yml saves under main's sha); the
       # prefix picks the newest map main has saved. PRs only ever restore,
       # so a PR's own run can never become another PR's map.
       - name: Restore the testmon map from main
@@ -252,42 +252,3 @@ jobs:
           else
             tox
           fi
-
-  # Records the map the `test` job's PR runs select from. Its own job, not
-  # a flag on main's `test` run, because testmon and pytest-cov in one
-  # process under-count coverage (32% where the plain run measures over
-  # 90%), which would fail main's coverage floor. So `test` stays exactly as
-  # it was, and this runs beside it with --no-cov. It is not a required
-  # check: if it fails or is cancelled by the next push, PRs use the
-  # previous map, which is safe (see above), or the full suite.
-  test-map:
-    name: Record the test map
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    env:
-      TOXENV: test
-
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v7
-
-      - name: Set up Python (3.14)
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.14"
-
-      - name: Create .env
-        run: |
-          echo "SECRET_KEY=ci-test-secret-key" > .env
-          echo "DJANGO_SETTINGS_MODULE=config.settings.development" >> .env
-
-      - name: Install tox and record the map
-        run: |
-          pip install tox tox-uv
-          COVERAGE_CORE=ctrace tox -- --testmon --no-cov
-
-      - name: Save the testmon map
-        uses: actions/cache/save@v6
-        with:
-          path: .testmondata
-          key: testmon-main-${{ github.sha }}
