@@ -27,6 +27,12 @@
  *             link's default; this module then only records the trail;
  *   weather — `window.pwaWeatherDetail.open(shortId, dateKey)`.
  *
+ * A NEW PANEL OPENS AT THE HEIGHT THE OLD ONE HAD. On a phone a row or the
+ * back pill tells map_sheet.js (`MapSheet.handOff`) the detent the open
+ * sheet rests at, before anything closes it, and the next sheet opens at
+ * that detent rather than its peek: a reader at FULL stays at FULL (Hugo,
+ * 25 Oct 2026).
+ *
  * A NEW PANEL OPENS AT ITS TOP. A sheet element is kept between openings,
  * and so is its scroll: the region sheet reopened for another region, or
  * reached from a resort, used to open part-way down where the last region
@@ -212,6 +218,7 @@
       }
       : null;
     following = { key: to, href: /** @type {HTMLAnchorElement} */ (link).href };
+    window.MapSheet?.handOff?.();
   }, true);
 
   // BUBBLE: open the place, unless a sheet's own handler (the region
@@ -224,6 +231,7 @@
     if (back) {
       ev.preventDefault();
       if (!trail) return;
+      window.MapSheet?.handOff?.();
       var from = trail.from;
       trail = null;
       back.remove();

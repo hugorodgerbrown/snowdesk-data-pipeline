@@ -355,6 +355,48 @@
   }
 
   /**
+   * The detent a sheet opening next should rest at, when the reader got
+   * there from another panel (Hugo, 25 Oct 2026): a phone sheet read at
+   * FULL that hands over to the next place's panel — a row in it, or the
+   * back pill — opens that panel at FULL too, not at its peek. Recorded by
+   * ``handOff`` while the old sheet is still up (its close forgets its
+   * detent), and taken by the next sheet to open; a hand-off nothing opens
+   * for within a few seconds (a resort the map has no pin for, which goes
+   * to its page) is dropped rather than left to surprise a later tap.
+   *
+   * @type {{ detent: string, at: number }|null}
+   */
+  var handedOff = null;
+  var HAND_OFF_MS = 5000;
+
+  /**
+   * Remember the detent the open detent sheet rests at, for the panel the
+   * reader is about to open from it.
+   *
+   * @returns {void}
+   */
+  function handOff() {
+    prune(restingDetents);
+    var latest = null;
+    restingDetents.forEach(function (value) {
+      latest = value;
+    });
+    handedOff = latest ? { detent: latest, at: Date.now() } : null;
+  }
+
+  /**
+   * The handed-off detent, once: null when there is none or it went stale.
+   *
+   * @returns {string|null}
+   */
+  function takeHandOff() {
+    var taken = handedOff;
+    handedOff = null;
+    if (!taken || Date.now() - taken.at > HAND_OFF_MS) return null;
+    return taken.detent;
+  }
+
+  /**
    * ONE BOTTOM SHEET AT A TIME ON A PHONE (2026-10-19). Every detent sheet
    * docks to the same foot of the screen, so a second one opening lands on
    * top of the first — the region sheet's peek sat over the route sheet's.
@@ -550,7 +592,11 @@
       closeOtherSheets(el);
       restoreHandle();
       syncAllowed();
-      set(/** @type {string} */ (initial));
+      // From another panel, the height the reader had it at; the content
+      // arriving later can still bring it down (the observer below) when
+      // it does not allow that height.
+      var carried = takeHandOff();
+      set(carried && detents.indexOf(carried) !== -1 ? carried : /** @type {string} */ (initial));
     }
 
     function reset() {
@@ -853,6 +899,7 @@
   window.MapSheet = {
     attach: attach,
     bindDetents: bindDetents,
+    handOff: handOff,
     toast: toast,
     canQueueMutations: canQueueMutations,
   };

@@ -558,3 +558,73 @@ describe('fitting the content (SNOW-1099)', () => {
     expect(sheet.style.getPropertyValue('--sheet-full-height')).toBe('');
   });
 });
+
+describe('handing the height over to the next panel (Hugo, 25 Oct 2026)', () => {
+  /**
+   * Two sheets that open at PEEK, each with a handle that steps it up.
+   *
+   * @param {string} [detentsB] What the second sheet declares.
+   */
+  function twoPanels(detentsB = 'peek,half,full') {
+    const handle = '<button type="button" data-sheet-handle aria-label="Resize panel"></button>';
+    document.body.innerHTML = `
+      <div id="map"></div>
+      <div id="sheet-a" data-overlay hidden tabindex="-1" data-detents="peek,half,full" data-detent-initial="peek">${handle}</div>
+      <div id="sheet-b" data-overlay hidden tabindex="-1" data-detents="${detentsB}" data-detent-initial="peek">${handle}</div>
+    `;
+    const a = /** @type {HTMLElement} */ (document.getElementById('sheet-a'));
+    const b = /** @type {HTMLElement} */ (document.getElementById('sheet-b'));
+    stubHeight(a, 400);
+    stubHeight(b, 400);
+    const ca = window.MapSheet.attach(a);
+    const cb = window.MapSheet.attach(b);
+    ca.open();
+    // The handle steps PEEK → HALF → FULL.
+    a.querySelector('[data-sheet-handle]').click();
+    a.querySelector('[data-sheet-handle]').click();
+    return { a, b, cb };
+  }
+
+  it('opens the next panel at FULL when the reader was at FULL', () => {
+    const t = twoPanels();
+    expect(t.a.getAttribute('data-detent')).toBe('full');
+    window.MapSheet.handOff();
+    t.cb.open();
+    expect(t.b.getAttribute('data-detent')).toBe('full');
+  });
+
+  it('opens at the panel’s own initial detent without a hand-off', () => {
+    const t = twoPanels();
+    t.cb.open();
+    expect(t.b.getAttribute('data-detent')).toBe('peek');
+  });
+
+  it('takes a hand-off once', () => {
+    const t = twoPanels();
+    window.MapSheet.handOff();
+    t.cb.open();
+    t.cb.close();
+    t.cb.open();
+    expect(t.b.getAttribute('data-detent')).toBe('peek');
+  });
+
+  it('drops a hand-off nothing opened for in time', () => {
+    vi.useFakeTimers();
+    try {
+      const t = twoPanels();
+      window.MapSheet.handOff();
+      vi.advanceTimersByTime(6000);
+      t.cb.open();
+      expect(t.b.getAttribute('data-detent')).toBe('peek');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('falls back to the initial detent when the next panel has no such height', () => {
+    const t = twoPanels('peek,half');
+    window.MapSheet.handOff();
+    t.cb.open();
+    expect(t.b.getAttribute('data-detent')).toBe('peek');
+  });
+});

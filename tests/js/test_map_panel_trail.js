@@ -172,6 +172,24 @@ describe('a place row', () => {
   });
 });
 
+describe('the height the reader had', () => {
+  it('is handed to the next panel by a row and by the back pill', async () => {
+    const handOff = vi.fn();
+    window.MapSheet = { handOff };
+    try {
+      show(place, 'resort:veysonnaz', 'Veysonnaz', REGION_ROW);
+      click(place.querySelector('[data-panel-open]'));
+      expect(handOff).toHaveBeenCalledTimes(1);
+      show(region, 'region:CH-4115', 'Martigny-Verbier');
+      await settle();
+      click(region.querySelector('[data-panel-back]'));
+      expect(handOff).toHaveBeenCalledTimes(2);
+    } finally {
+      delete window.MapSheet;
+    }
+  });
+});
+
 describe('a panel opening', () => {
   it('starts at the top when the sheet shows a new place', async () => {
     show(region, 'region:CH-4115', 'Martigny-Verbier');

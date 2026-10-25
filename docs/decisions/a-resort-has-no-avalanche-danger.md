@@ -67,6 +67,12 @@ danger back on the resort.
   a panel (`panIntoView` in map.js); a region row still frames the region.
   A panel showing a new place, or opening at all, starts at its top; a
   repaint of the same place (a change of day) keeps the reader's place.
+- On a phone the next panel opens at the height the reader had: a row or
+  the back pill calls `MapSheet.handOff()` while the old sheet still
+  rests at its detent, and the next sheet to open takes it instead of its
+  initial PEEK (Hugo, 25 Oct: FULL → FULL). The hand-off is taken once
+  and lapses after five seconds, and a panel that does not declare that
+  detent opens at its own initial one.
 - A panel row's click is not a click outside the panel it opens
   (`map_sheet.js`): the region sheet opens a resort inside its own click
   handler, and the new sheet used to read that same click as one outside
