@@ -73,102 +73,15 @@ Context:
     {# full-width row, then the high/low, new snow and wind. The block    #}
     {# the reader drags by. Each figure renders only when given.          #}
     <div data-sheet-peek data-sheet-drag>
-        <div class="flex items-center gap-4">
-            {% if day %}
-                <img
-                    src="{% weather_icon_url day.icon_filename %}"
-                    class="h-9 w-9 flex-none"
-                    alt="{{ day.condition_label }}"
-                    data-testid="weather-detail-icon"
-                >
-            {% endif %}
-            <div class="min-w-0 flex-1">
-                {# The kind of place, above its name, on every map panel (Hugo, 25 Oct 2026). #}
-                {% translate "Weather point" as weather_kind %}
-                {% include "includes/_eyebrow.html" with tag="p" text=weather_kind data_testid="sheet-kind" only %}
-                <h2
-                    class="truncate text-lg font-semibold leading-tight text-text-1"
-                    title="{{ heading }}"
-                    data-testid="weather-detail-heading"
-                >
-                    {{ heading }}{% if location.elevation_m is not None %}
-                        <span class="font-normal text-text-2" data-testid="weather-detail-elevation"
-                        >&middot; {{ location.elevation_m|floatformat:0 }}&nbsp;m</span>
-                    {% endif %}
-                </h2>
-            </div>
-            {% trans "Close" as weather_sheet_close_label %}
-            <button
-                type="button"
-                data-action="dismiss"
-                aria-label="{{ weather_sheet_close_label }}"
-                class="{% icon_button_classes extra='-mr-3' %}"
-            >
-                {% include "includes/_icon_close.html" only %}
-            </button>
-        </div>
+        {% include "includes/_weather_masthead.html" with heading=heading location=location day=day in_map=True testid_prefix="weather-detail" only %}
         {% include "includes/_sheet_date_row.html" with day=target_date another_day=another_day only %}
-        <p class="mt-4 truncate text-sm text-text-2" data-testid="weather-detail-line">
-            {% if day %}
-                {% if is_forecast %}
-                    <span
-                        class="font-medium text-accent"
-                        data-testid="weather-detail-forecast-tag"
-                    >{% trans "Forecast" %}</span> &middot;
-                {% endif %}
-                {% if day.temp_max is not None %}
-                    {{ day.temp_max|floatformat:0 }}&deg;{% if day.temp_min is not None %}&thinsp;/&thinsp;{{ day.temp_min|floatformat:0 }}&deg;{% endif %}
-                {% endif %}
-                {% if day.snowfall_sum %}
-                    &middot; {% blocktrans with cm=day.snowfall_sum|floatformat:"-1" trimmed %}{{ cm }} cm
-                        new{% endblocktrans %}
-                {% endif %}
-                {% if day.wind_speed_max is not None %}
-                    &middot; {{ day.wind_speed_max|floatformat:0 }}&nbsp;km/h
-                {% endif %}
-            {% elif is_forecast %}
-                {% trans "No forecast for this day yet" %}
-            {% else %}
-                {% trans "No weather recorded" %}
-            {% endif %}
-        </p>
+        {% include "includes/_weather_day_summary.html" with day=day is_forecast=is_forecast testid_prefix="weather-detail" only %}
     </div>
 
     {# The rest is the forecast page's own body (the sheet is the page, #}
-    {# Hugo, 24 Oct 2026): the week, opened on the map's day, then the  #}
-    {# selected day's line, its meteogram and the provenance line. HALF  #}
-    {# ends under the week (``data-sheet-half`` on the picker).          #}
-    {% if is_forecast and issued_at and day %}
-        {# SNOW-1105: a forward day is what this morning's run said about #}
-        {# it. State when, so it never reads as a record.                 #}
-        <p class="text-xs text-text-3" data-testid="weather-detail-forecast-note">
-            {% blocktrans with issued=issued_at|date:"D j M, H:i" trimmed %}
-                Forecast issued {{ issued }}. It may change before the day.
-            {% endblocktrans %}
-        </p>
-    {% endif %}
-    {% include "public/partials/_weather_body.html" with weather=weather panel=panel show_day_picker=show_day_picker selected_index=selected_index hourly_charts=hourly_charts day_strips=day_strips day_figures=day_figures testid_prefix="weather-detail" selector_name="map-weather-day" in_map=True is_forecast=is_forecast only %}
-    {# WHERE THIS IS (Hugo, 25 Oct 2026): the resort the point stands for  #}
-    {# and the avalanche region it is in, each a row opening that place's #}
-    {# own panel — the weather point's way across to its neighbours.      #}
-    {% if place_resort.slug or place_region %}
-        <section class="space-y-2" data-testid="weather-detail-places">
-            {% translate "Where this is" as places_eyebrow %}
-            {% include "includes/_eyebrow.html" with text=places_eyebrow tag="h3" %}
-            <ul class="divide-y divide-border overflow-hidden rounded-card border border-border bg-card">
-                {% if place_resort.slug %}
-                    <li>
-                        {% translate "Ski resort" as resort_subtitle %}
-                        {% include "includes/_place_link_row.html" with kind="resort" title=place_resort.name subtitle=resort_subtitle href=place_resort.get_absolute_url open_id=place_resort.slug testid="weather-detail-resort-link" only %}
-                    </li>
-                {% endif %}
-                {% if place_region %}
-                    <li>
-                        {% translate "Avalanche region" as region_subtitle %}
-                        {% include "includes/_place_link_row.html" with kind="region" title=place_region.name subtitle=region_subtitle href=place_region_url open_id=place_region.region_id testid="weather-detail-region-link" only %}
-                    </li>
-                {% endif %}
-            </ul>
-        </section>
-    {% endif %}
+    {# Hugo, 24 Oct 2026): the forecast note on a forward day, the week, #}
+    {# opened on the map's day, the selected day's strips or figures, the #}
+    {# provenance line and the "Where this is" rows. HALF ends under the #}
+    {# week (``data-sheet-half`` on the picker).                          #}
+    {% include "public/partials/_weather_body.html" with weather=weather panel=panel show_day_picker=show_day_picker selected_index=selected_index hourly_charts=hourly_charts day_strips=day_strips day_figures=day_figures testid_prefix="weather-detail" selector_name="map-weather-day" in_map=True day=day is_forecast=is_forecast issued_at=issued_at place_resort=place_resort place_region=place_region place_region_url=place_region_url only %}
 </div>

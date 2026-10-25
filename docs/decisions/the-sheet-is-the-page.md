@@ -26,7 +26,12 @@ map's right, for a region as for a resort (SNOW-1173).
 `views._location_forecast_context`, body
 `public/partials/_weather_body.html`, page `location_weather.html`, sheet
 `_weather_detail.html` (`api.weather_detail`). The sheet opens the week on
-the map's day; see [`weather-surfaces`](../weather-surfaces.md).
+the map's day; see [`weather-surfaces`](../weather-surfaces.md). Since 25
+Oct 2026 both read one context, `views._weather_point_context`, and share
+the masthead (`includes/_weather_masthead.html`) and the summary line
+(`includes/_weather_day_summary.html`) as well as the body, which now holds
+the "Where this is" rows: the page draws the sheet's strips, not the
+meteogram it kept until then.
 
 The sheet passes `in_map=True`. The body then drops what only makes sense
 off the map — the region page's superuser debug block — and the resort body

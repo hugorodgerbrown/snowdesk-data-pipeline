@@ -35,6 +35,7 @@ import re
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
@@ -458,7 +459,7 @@ def _without_places(monkeypatch: pytest.MonkeyPatch) -> None:
     card's own narrowing without the "Where this is" rows lifting it to FULL.
     """
     monkeypatch.setattr(
-        "apps.public.api._weather_point_places", lambda location: (None, None)
+        "apps.public.views._weather_point_places", lambda location: (None, None)
     )
 
 
@@ -644,15 +645,15 @@ class TestCardDayStrips:
 
         assert html.index("js/day_strips_core.js") < html.index("js/day_strips.js")
 
-    def test_the_page_keeps_the_meteogram(
+    def test_the_page_draws_the_same_strips(
         self, client: Client, resort_location: Location
     ) -> None:
-        """Only the sheet changes; the location page is the follow-up."""
+        """The page is the sheet (Hugo, 25 Oct 2026): strips, no meteogram."""
         html = _page(client, resort_location)
 
-        assert 'data-testid="location-weather-hourly"' in html
-        assert "data-day-strips" not in html
-        assert 'data-testid="location-weather-day-line-detail"' in html
+        assert "data-day-strips" in html
+        assert 'data-testid="location-weather-hourly"' not in html
+        assert "js/day_strips.js" in html
 
 
 def _page(client: Client, location: Location) -> str:
@@ -725,24 +726,20 @@ class TestForecastPage:
             (TODAY + datetime.timedelta(days=offset)).isoformat() for offset in range(7)
         ]
 
-    def test_only_the_days_carrying_hours_get_a_meteogram(
+    def test_only_the_days_carrying_hours_get_strips(
         self, client: Client, resort_location: Location
     ) -> None:
         """``selectable`` still means something — just something narrower.
 
         It no longer decides which cells are controls (all of them are);
-        it decides which of them reveals an ``_hourly_chart``. HOURLY_DAYS
-        is 2, so five of the seven cells select a day line and nothing
-        else, and the markup for those five meteograms is ABSENT rather
-        than present and empty.
+        it decides which of them reveals day strips. HOURLY_DAYS is 2, so
+        five of the seven cells reveal the day's figures instead, as the
+        sheet does (SNOW-1219).
         """
         html = _main(_page(client, resort_location))
 
         assert html.count('data-testid="location-weather-hourly-panel"') == 2
-        assert 'data-hourly-day="0"' in html
-        assert 'data-hourly-day="1"' in html
-        for index in range(2, 7):
-            assert f'data-hourly-day="{index}"' not in html
+        assert html.count('data-testid="location-weather-figures-panel"') == 5
         # Every day still gets its own line, chart or no chart.
         for index in range(7):
             assert f'data-day-line="{index}"' in html
@@ -782,20 +779,20 @@ class TestForecastPage:
         # The icon says nothing a screen reader has to hear twice.
         assert 'alt=""' in html
 
-    def test_the_day_line_carries_freezing_and_daylight_but_not_hi_lo(
+    def test_the_day_line_carries_daylight_but_not_hi_lo(
         self, client: Client, resort_location: Location
     ) -> None:
         """The selected day is stated once, and it is not the cell again.
 
         High and low are in the cell the reader just pressed and in the
-        meteogram below; a third statement is the duplication the redesign
-        removed.
+        strips below; the freezing level is the strips' own row, so the
+        line is brief, as it is in the sheet (SNOW-1219).
         """
         html = _main(_page(client, resort_location))
 
         line = html[html.index('data-testid="location-weather-day-line-detail"') :]
         line = line[: line.index("</p>")]
-        assert "1800" in line  # freezing level, m
+        assert "Freezing" not in line
         assert "daylight" in line
         assert "high" not in line
         assert "low" not in line
@@ -803,17 +800,19 @@ class TestForecastPage:
     def test_the_location_is_named_once_in_the_body(
         self, client: Client, resort_location: Location
     ) -> None:
-        """The masthead names the place; nothing below repeats it.
+        """The masthead names the place; only the way onward repeats it.
 
-        The layout this replaces re-stated it in the "Today" panel and in
+        The layout this replaced re-stated it in the "Today" panel and in
         every section sub-header. The fixture is an anonymous location
-        named by its resort, which is the ordinary case — 461 of the 540
-        public locations are region centroids and the rest are mostly
-        unnamed resort pins.
+        named by its resort, which is the ordinary case, so the one other
+        mention is the "Where this is" row leading to that resort — the
+        sheet's row too.
         """
         html = _main(_page(client, resort_location))
 
-        assert html.count("Nendaz") == 1
+        assert html.count("Nendaz") == 2
+        places = html[html.index('data-testid="location-weather-places"') :]
+        assert "Nendaz" in places
 
     def test_a_backfilled_row_has_no_picker_but_still_has_its_day(
         self, client: Client, backfilled_location: Location
@@ -830,9 +829,8 @@ class TestForecastPage:
         masthead.
 
         The week is what the backfill costs, and only the week. The day
-        line and the meteogram are the whole value of recovering a
-        historical day, so they are asserted present rather than merely
-        assumed.
+        line and its strips are the whole value of recovering a historical
+        day, so they are asserted present rather than merely assumed.
         """
         response = client.get(
             _page_url(backfilled_location), {"date": TODAY.isoformat()}
@@ -844,9 +842,9 @@ class TestForecastPage:
         assert 'name="location-weather-day"' not in html
         assert "forecast-day-line" not in html
         assert "data-day-line=" not in html
-        # ...and the day and its meteogram are both there.
+        # ...and the day and its strips are both there.
         assert 'data-testid="location-weather-day-line"' in html
-        assert 'data-testid="location-weather-hourly"' in html
+        assert "data-day-strips" in html
 
     def test_every_cell_carries_the_selection_marker(
         self, client: Client, resort_location: Location
@@ -862,25 +860,21 @@ class TestForecastPage:
 
         assert html.count('data-testid="location-weather-forecast-marker"') == 7
 
-    def test_the_legend_script_reaches_the_page_that_ships_the_chart(
+    def test_the_strip_scripts_reach_the_page_that_ships_the_strips(
         self, client: Client, resort_location: Location
     ) -> None:
-        """The meteogram's info button needs a listener to do anything.
+        """The strips' selected block follows a tap only with their scripts.
 
-        ``hourly_chart_legend.js`` was loaded by ``/_components/`` alone,
-        so on the one page that actually ships the chart the button sat
-        there inert with ``aria-expanded="false"`` and nothing bound to
-        it. It is the only script this page needs; everything else here
-        is CSS.
-
-        Both halves matter: the tag alone would pass on a page with no
-        chart to bind to, and the button alone is what the bug already
-        looked like.
+        Both halves matter: the tags alone would pass on a page with no
+        strips to bind to, and the strips alone would be inert. The
+        meteogram's legend script went with the meteogram.
         """
         html = _page(client, resort_location)
 
-        assert "js/hourly_chart_legend.js" in html
-        assert "data-hourly-chart-legend-open" in html
+        assert "js/day_strips_core.js" in html
+        assert "js/day_strips.js" in html
+        assert "data-day-strips" in html
+        assert "js/hourly_chart_legend.js" not in html
 
     def test_the_page_states_when_it_was_fetched_and_who_from(
         self, client: Client, resort_location: Location
@@ -948,12 +942,12 @@ class TestForecastPage:
         assert "Ovronnaz" in card
 
     def test_links_on_to_the_resort_and_the_region(self, client: Client) -> None:
-        """A location reaching both offers both onward links.
+        """A location reaching both offers both ways onward.
 
-        They live in the masthead rather than a bottom nav (SNOW-789): 461
-        of the 540 public locations are centroids whose only way on is the
-        bulletin, so a masthead naming only the resort would strand most
-        of this page's visitors.
+        They are the sheet's "Where this is" rows (Hugo, 25 Oct 2026), which
+        replaced the masthead's "View resort →" / "View bulletin →": 461 of
+        the 540 public locations are centroids whose only way on is the
+        bulletin, so both must stay.
         """
         location = LocationFactory.create(anonymous=True, elevation_m=1450.0)
         resort = ResortFactory.create(name="Nendaz")
@@ -961,12 +955,12 @@ class TestForecastPage:
         MicroRegionFactory.create(name="Chablais", centroid_location=location)
         WeatherFactory.create(location=location, observed_on=TODAY)
 
-        masthead = _page(client, location)
-        masthead = masthead[masthead.index('data-testid="weather-masthead"') :]
-        masthead = masthead[: masthead.index("</header>")]
+        html = _page(client, location)
+        places = html[html.index('data-testid="location-weather-places"') :]
+        places = places[: places.index("</section>")]
 
-        assert resort.get_absolute_url() in masthead
-        assert "View bulletin" in masthead
+        assert resort.get_absolute_url() in places
+        assert 'data-testid="location-weather-region-link"' in places
 
     def test_says_so_when_there_is_no_reading_for_the_day(
         self, client: Client, resort_location: Location
@@ -1107,14 +1101,84 @@ class TestPageForwardDay:
 
         assert _checked_index(html) == 0
 
-    def test_a_day_past_the_window_opens_on_today(
+    def test_a_day_past_the_window_says_so(
         self, client: Client, resort_location: Location
     ) -> None:
-        """Nothing to select, so the row's own day — still today's week."""
+        """Nothing to show, and the page says so — as the sheet does.
+
+        Opening today's week under a day the forecast does not reach would
+        state some other day's figures as if they were that day's.
+        """
         html = _main(
             client.get(
                 _page_url(resort_location), {"date": _forward(10)}
             ).content.decode()
         )
 
-        assert _checked_index(html) == 0
+        assert 'name="location-weather-day"' not in html
+        assert "The forecast does not reach this day yet." in html
+
+
+@pytest.mark.django_db
+@_ON_TODAY
+class TestPageIsTheSheet:
+    """The forecast page renders the map sheet's content (Hugo, 25 Oct 2026).
+
+    It keeps its own frame — the ``<h1>``, the meta and canonical, the
+    another-day strip — and nothing else of its own.
+    """
+
+    def test_the_page_and_the_sheet_share_the_header_and_summary(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The kind, the name as the h1, and the day's figures line."""
+        html = _main(client.get(_page_url(resort_location)).content.decode())
+
+        assert 'data-testid="weather-masthead-kind"' in html
+        assert "<h1" in html
+        assert 'data-testid="location-weather-line"' in html
+        # The sheet's own × and date row stay in the sheet.
+        assert 'data-action="dismiss"' not in html
+
+    def test_a_forward_day_is_marked_as_a_forecast(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The summary line's tag and the issued note, as in the sheet."""
+        html = _main(
+            client.get(
+                _page_url(resort_location), {"date": _forward(2)}
+            ).content.decode()
+        )
+
+        assert 'data-testid="location-weather-forecast-tag"' in html
+        assert 'data-testid="location-weather-forecast-note"' in html
+
+    def test_another_day_says_so_and_links_back_to_today(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Off today the strip under the nav links to the bare URL."""
+        html = client.get(
+            _page_url(resort_location), {"date": _forward(2)}
+        ).content.decode()
+
+        strip = html[html.index('data-testid="another-day-strip"') :]
+        strip = strip[: strip.index("</div>")]
+        assert f'href="{resort_location.get_absolute_url()}"' in strip
+
+    def test_today_has_no_another_day_strip(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The bare page is today, and says nothing about it."""
+        html = client.get(_page_url(resort_location)).content.decode()
+
+        assert 'data-testid="another-day-strip"' not in html
+
+    def test_the_canonical_is_still_the_bare_url_for_today(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The deep-link and SEO role is unchanged."""
+        html = client.get(_page_url(resort_location)).content.decode()
+
+        base = settings.SITE_BASE_URL.rstrip("/")
+        canonical = f"{base}{resort_location.get_absolute_url()}"
+        assert f'<link rel="canonical" href="{canonical}">' in html

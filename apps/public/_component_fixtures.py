@@ -3568,50 +3568,120 @@ def _forecast_panel_day(
 def _build_weather_masthead_variants() -> tuple[dict[str, Any], ...]:
     """Build the weather-masthead variants.
 
-    Three, because the onward links are what the variants are FOR. A
-    curated point linked to a resort and standing as a region centroid
-    offers both links; a bare centroid offers only the bulletin, and that
-    is 461 of the estate's 540 public locations rather than an edge case;
-    an anonymous point with neither is named by nothing but itself.
+    One per container, because the containers are what the variants are
+    FOR since the page became the map's sheet (Hugo, 25 Oct 2026): the
+    page's ``<h1>``, the sheet's truncating ``<h2>`` with its ×, and a
+    point with no height and no row, which has no symbol to draw.
 
     Returns:
         The variant tuple.
 
     """
-    resort = {"get_absolute_url": "/resorts/12/verbier/"}
-    region = {"get_absolute_url": "/ch-4115/martigny-verbier/"}
+    day = _forecast_panel_day(
+        date=datetime.date(2026, 1, 12),
+        icon_bucket="moderate_snow",
+        condition_label="Snow",
+        temp_max=-1.0,
+        temp_min=-8.0,
+        snowfall_sum=22.0,
+        freezing_level_height=1200.0,
+        sunrise_local="08:14",
+        sunset_local="17:02",
+    )
     return (
         {
-            "caption": "A curated point reaching both a resort and a region",
+            "caption": "On the forecast page — the name is the page's heading",
             "solo": True,
             "context": {
                 "heading": "Mont Fort",
                 "location": {"elevation_m": 3328.0},
-                "resort": resort,
-                "region": region,
+                "day": day,
+                "testid_prefix": "component-library-masthead",
             },
         },
         {
-            "caption": "A region centroid — the bulletin is its only way on",
+            "caption": "In the map's weather sheet — truncates, ends in its ×",
             "solo": True,
             "context": {
-                "heading": "Val Ferret",
-                "location": {"elevation_m": 2410.0},
-                "resort": None,
-                "region": region,
+                "heading": "Martigny-Verbier",
+                "location": {"elevation_m": 2031.0},
+                "day": day,
+                "in_map": True,
+                "testid_prefix": "component-library-masthead-sheet",
             },
         },
         {
-            "caption": "No elevation, nowhere onward",
+            "caption": "No height, no row — no symbol",
             "solo": True,
             "context": {
                 "heading": "Weather station",
                 "location": {"elevation_m": None},
-                "resort": None,
-                "region": None,
+                "day": None,
+                "testid_prefix": "component-library-masthead-bare",
             },
         },
     )
+
+
+def _build_weather_day_summary_variants() -> tuple[dict[str, Any], ...]:
+    """Build the weather-day-summary variants.
+
+    A recorded day, a forward day (which opens with "Forecast"), and the
+    two sentences a day with no figures says instead.
+
+    Returns:
+        The variant tuple.
+
+    """
+    day = _forecast_panel_day(
+        date=datetime.date(2026, 1, 12),
+        icon_bucket="moderate_snow",
+        condition_label="Snow",
+        temp_max=-3.0,
+        temp_min=-10.0,
+        snowfall_sum=8.0,
+        freezing_level_height=1630.0,
+        sunrise_local="07:25",
+        sunset_local="18:40",
+    )
+    return (
+        {
+            "caption": "A day's high and low, new snow and wind",
+            "solo": True,
+            "context": {"day": day, "testid_prefix": "component-library-summary"},
+        },
+        {
+            "caption": "A day after today is a forecast",
+            "solo": True,
+            "context": {
+                "day": day,
+                "is_forecast": True,
+                "testid_prefix": "component-library-summary-forecast",
+            },
+        },
+        {
+            "caption": "A forward day the forecast does not reach",
+            "solo": True,
+            "context": {
+                "day": None,
+                "is_forecast": True,
+                "testid_prefix": "component-library-summary-none",
+            },
+        },
+        {
+            "caption": "A past day with no row",
+            "solo": True,
+            "context": {
+                "day": None,
+                "testid_prefix": "component-library-summary-empty",
+            },
+        },
+    )
+
+
+WEATHER_DAY_SUMMARY_VARIANTS: tuple[dict[str, Any], ...] = (
+    _build_weather_day_summary_variants()
+)
 
 
 WEATHER_MASTHEAD_VARIANTS: tuple[dict[str, Any], ...] = (
