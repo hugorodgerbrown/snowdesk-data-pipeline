@@ -77,7 +77,7 @@ selected_index, hourly_charts, day_strips, day_figures), plus:
             {# 1–2. The sheet's peek, less its date row and its ×. #}
             <div>
                 {% include "includes/_weather_masthead.html" with heading=heading location=location day=day only %}
-                {% include "includes/_weather_day_summary.html" with day=day is_forecast=is_forecast testid_prefix="location-weather" only %}
+                {% include "includes/_weather_day_summary.html" with day=day is_forecast=is_forecast dated=True testid_prefix="location-weather" only %}
             </div>
             {# 3. The body the map's weather sheet renders too (the sheet #}
             {# is the page, Hugo, 24 Oct 2026).                           #}

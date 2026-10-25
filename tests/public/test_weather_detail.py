@@ -1137,6 +1137,10 @@ class TestPageIsTheSheet:
         assert 'data-testid="weather-masthead-kind"' in html
         assert "<h1" in html
         assert 'data-testid="location-weather-line"' in html
+        # The page has no date row, so the line names its own day: picking
+        # another in the week must not leave these figures unattributed.
+        assert 'data-testid="location-weather-date"' in html
+        assert "Mon 12 Jan" in html
         # The sheet's own × and date row stay in the sheet.
         assert 'data-action="dismiss"' not in html
 

@@ -3651,6 +3651,15 @@ def _build_weather_day_summary_variants() -> tuple[dict[str, Any], ...]:
             "context": {"day": day, "testid_prefix": "component-library-summary"},
         },
         {
+            "caption": "Dated, on the page, which has no date row",
+            "solo": True,
+            "context": {
+                "day": day,
+                "dated": True,
+                "testid_prefix": "component-library-summary-dated",
+            },
+        },
+        {
             "caption": "A day after today is a forecast",
             "solo": True,
             "context": {

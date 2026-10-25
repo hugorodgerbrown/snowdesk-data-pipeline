@@ -13,8 +13,15 @@ A FORWARD DAY IS A FORECAST, AND SAYS SO (SNOW-1105): the line opens with
 "Forecast". With no day, it says why — there is no forecast for that day
 yet, or no weather was recorded.
 
+THE LINE IS ABOUT ONE DAY, AND PICKING ANOTHER IN THE WEEK DOES NOT
+CHANGE IT. The sheet names that day on its date row ("Data from …"); the
+page has no date row, so it passes ``dated`` and the line opens with the
+day's own date — otherwise selecting Monday would leave Sunday's snow and
+wind above Monday's strips with nothing to say whose they are.
+
 Context:
     day           : ForecastPanelDay for the day shown, or None.
+    dated         : bool — open the line with the day's date (the page).
     is_forecast   : bool — the day is after today.
     testid_prefix : str — data-testid namespace. Defaults to
                     ``weather-summary``; the sheet passes ``weather-detail``.
@@ -22,6 +29,10 @@ Context:
 {% firstof testid_prefix "weather-summary" as prefix %}
 <p class="mt-4 truncate text-sm text-text-2" data-testid="{{ prefix }}-line">
     {% if day %}
+        {% if dated %}
+            <span class="font-medium text-text-1" data-testid="{{ prefix }}-date">{{ day.date|date:"D j M" }}</span>
+            &middot;
+        {% endif %}
         {% if is_forecast %}
             <span
                 class="font-medium text-accent"
