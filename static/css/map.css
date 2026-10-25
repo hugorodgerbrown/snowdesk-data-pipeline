@@ -4117,44 +4117,75 @@ html:has(> body.map-fullscreen) > body {
     border-radius: 6px;
 }
 
-.map-tour-offer-actions {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 8px;
+/* SNOW-1230: the welcome's choices — a list of rows, each a whole-row
+   target with an icon tile, a title and a line under it. The "?" menu
+   (#map-help-menu) is built from the same rows. */
+.map-tour-offer-options {
+    list-style: none;
+    margin: 0;
+    padding: 0;
 }
 
-.map-tour-offer-btn {
-    display: inline-flex;
+.map-tour-offer-options > li + li {
+    border-top: 0.5px solid var(--color-border);
+}
+
+.map-tour-offer-option {
+    display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 8px 14px;
-    border-radius: 999px;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 0;
     border: none;
     background: transparent;
     color: var(--color-text-1);
     font-family: var(--sans);
-    font-size: 13px;
-    font-weight: 600;
+    text-align: left;
+    text-decoration: none;
     cursor: pointer;
-    transition: opacity 120ms ease, background 120ms ease;
 }
 
-.map-tour-offer-btn:hover {
-    background: rgba(0, 0, 0, 0.06);
+.map-tour-offer-option-icon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--color-tag);
+    color: var(--color-text-1);
+    transition: background 120ms ease;
 }
 
-.map-tour-offer-btn--primary {
-    background: var(--ink);
-    color: var(--on-ink);
+.map-tour-offer-option:hover .map-tour-offer-option-icon {
+    background: var(--color-card-hover);
 }
 
-.map-tour-offer-btn--primary:hover {
-    background: var(--ink);
-    opacity: 0.85;
+.map-tour-offer-option-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 
-.map-tour-offer-btn:focus-visible,
+.map-tour-offer-option-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.map-tour-offer-option-sub {
+    font-size: 13px;
+    line-height: 1.35;
+    color: var(--color-text-2);
+}
+
+.map-tour-offer-option:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
+    border-radius: 10px;
+}
+
 .map-tour-offer-close:focus-visible {
     outline: 2px solid var(--color-text-1);
     outline-offset: 2px;
@@ -4184,9 +4215,381 @@ html:has(> body.map-fullscreen) > body {
     background: rgba(0, 0, 0, 0.06);
 }
 
-.map-tour-offer--no-motion .map-tour-offer-btn,
+.map-tour-offer--no-motion .map-tour-offer-option-icon,
 .map-tour-offer--no-motion .map-tour-offer-close {
     transition: none;
+}
+
+/* The "×" sits over the title on the welcome card; clear it. */
+.map-tour-offer-title {
+    padding-right: 28px;
+}
+
+/* —————————————————————————————————————————————————————————
+   SNOW-1230 — The example route walkthrough
+   #map-example-guide is the bar (the steps), #map-example-pill the bar
+   folded away, #map-example-finish the end, and #map-example-day-badge
+   the mark on the date control while the map is on the example's day.
+   static/js/map_example_guide.js sets the bar's and pill's `top` (under
+   the route panel on a desktop, under the top controls on a phone).
+   Dark ink, so it reads as a guide rather than as one more sheet; the
+   example's own marks are the info blue (--color-status-info-*), as the
+   route panel's "conditions from…" note is.
+   ————————————————————————————————————————————————————————— */
+
+.map-example-guide,
+.map-example-pill {
+    position: absolute;
+    left: calc(env(safe-area-inset-left, 0px) + 12px);
+    right: calc(env(safe-area-inset-right, 0px) + 12px);
+    z-index: 6;
+    color: var(--on-ink);
+    background: var(--ink);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    font-family: var(--sans);
+}
+
+@media (min-width: 640px) {
+    .map-example-guide,
+    .map-example-pill {
+        left: var(--map-edge-inset-left);
+        right: auto;
+        width: var(--route-column-width);
+    }
+}
+
+.map-example-guide[hidden],
+.map-example-pill[hidden],
+.map-example-finish[hidden] {
+    display: none;
+}
+
+.map-example-guide {
+    border-radius: 14px;
+    padding: 12px 14px;
+    /* Over the route's sheet on a phone, not under it: the bar rides on the
+       sheet's top edge and, when there is no room above it, laps onto it
+       rather than vanish behind it. #map makes no stacking context, so this
+       compares with the sheet's --z-popup directly (as #map-help-overlay
+       does). Level with the desktop search pill, which it never meets. */
+    z-index: calc(var(--z-popup) + 1);
+}
+
+.map-example-guide-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.map-example-guide-eyebrow {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.map-example-guide-exit,
+.map-example-pill-btn {
+    margin-left: auto;
+    padding: 4px 2px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.map-example-guide-exit {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.map-example-guide-text {
+    margin: 6px 0 8px;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.map-example-guide-text strong {
+    font-weight: 650;
+}
+
+/* The drag and zoom steps name the gesture for the pointer in hand. */
+.map-example-pointer {
+    display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .map-example-pointer {
+        display: inline;
+    }
+
+    .map-example-touch {
+        display: none;
+    }
+}
+
+.map-example-guide-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 8px;
+    background: var(--on-ink);
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.map-example-guide-meter {
+    height: 6px;
+    margin: 2px 0 10px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.2);
+    overflow: hidden;
+}
+
+.map-example-guide-meter > span {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--on-ink);
+    transition: width 200ms ease-out;
+}
+
+.map-example-guide-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin: 0 0 10px;
+    padding: 0;
+    list-style: none;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.map-example-guide-swatches li {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.map-example-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 6px;
+    border-radius: 3px;
+}
+
+.map-example-swatch--gentle { background: var(--color-slope-gentle); }
+.map-example-swatch--30 { background: var(--color-slope-30); }
+.map-example-swatch--35 { background: var(--color-slope-35); }
+.map-example-swatch--40 { background: var(--color-slope-40); }
+.map-example-swatch--45 { background: var(--color-slope-45); }
+
+.map-example-guide-dots {
+    display: flex;
+    gap: 5px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.map-example-guide-dots li {
+    flex: 1;
+    height: 4px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.map-example-guide-dots li.is-on {
+    background: var(--on-ink);
+}
+
+.map-example-guide-exit:focus-visible,
+.map-example-pill-btn:focus-visible,
+.map-example-guide-btn:focus-visible {
+    outline: 2px solid var(--on-ink);
+    outline-offset: 2px;
+}
+
+.map-example-pill {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 14px;
+}
+
+.map-example-pill-text {
+    color: rgba(255, 255, 255, 0.75);
+    margin-right: auto;
+}
+
+.map-example-pill-btn {
+    margin-left: 0;
+    font-weight: 600;
+}
+
+.map-example-pill-btn[hidden],
+.map-example-pill-text[hidden] {
+    display: none;
+}
+
+/* The finish card: the welcome card's corner and surface. */
+.map-example-finish {
+    position: absolute;
+    bottom: calc(
+        var(--map-bottom-row-offset) + var(--map-bottom-left-stack) + 8px
+    );
+    left: calc(env(safe-area-inset-left, 0px) + 16px);
+    z-index: 6;
+    width: min(340px, calc(100vw - 96px));
+    padding: 18px;
+    border: 0.5px solid var(--color-border);
+    border-radius: 12px;
+    background: var(--color-card);
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-family: var(--sans);
+}
+
+.map-example-finish-title {
+    margin: 0 0 6px;
+    font-size: 17px;
+    font-weight: 650;
+    line-height: 1.3;
+}
+
+.map-example-finish-body {
+    margin: 0 0 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-2);
+}
+
+.map-example-finish-btn {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--ink);
+    border-radius: 10px;
+    background: var(--color-card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.map-example-finish-btn--primary {
+    background: var(--ink);
+    color: var(--on-ink);
+}
+
+.map-example-finish-btn--quiet {
+    border-color: transparent;
+    color: var(--color-text-2);
+    font-weight: 500;
+    text-decoration: underline;
+}
+
+.map-example-finish-btn:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: 2px;
+}
+
+/* SNOW-1230: on a phone the welcome card (and the "?" menu and the finish
+   card, which share its corner) is a card across the foot of the map, as
+   the bottom sheets are: three choices with a line each do not fit above
+   the bottom-left stack without running into the controls along the top.
+   It covers that stack while it is up; every choice closes it. */
+@media (max-width: 639px) {
+    .map-tour-offer,
+    .map-example-finish {
+        left: calc(env(safe-area-inset-left, 0px) + 12px);
+        right: calc(env(safe-area-inset-right, 0px) + 12px);
+        bottom: var(--map-bottom-row-offset);
+        z-index: 7;
+    }
+
+    .map-tour-offer-card,
+    .map-example-finish {
+        width: auto;
+    }
+
+    /* Opaque here: across the foot it lies over the roundels, and glass
+       would show them through it. */
+    .map-tour-offer-card {
+        background: var(--color-card);
+    }
+
+    /* The date row has no room for the badge and the word "Today" both;
+       the control keeps its arrow. */
+    #map-calendar-toggle:has(.map-example-day-badge:not([hidden])) ~ .map-today-control > span {
+        display: none;
+    }
+}
+
+/* On the date control while the map is on the example's day. */
+.map-example-day-badge {
+    margin-left: 6px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--color-status-info-text);
+    color: var(--color-card);
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.4;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.map-example-day-badge[hidden] {
+    display: none;
+}
+
+/* The date row is full on a phone: the badge says "Example" there. */
+.map-example-day-badge-short {
+    display: none;
+}
+
+@media (max-width: 639px) {
+    .map-example-day-badge {
+        margin-left: 4px;
+        padding: 2px 5px;
+    }
+
+    .map-example-day-badge-long {
+        display: none;
+    }
+
+    .map-example-day-badge-short {
+        display: inline;
+    }
+
+    .map-example-guide-text {
+        font-size: 13.5px;
+    }
+}
+
+/* The "?" menu is the welcome card's surface in the welcome card's corner;
+   only one of the two is ever open (window.pwaMapOverlays). */
+.map-help-menu .map-tour-offer-eyebrow {
+    margin-bottom: 2px;
 }
 
 /* —————————————————————————————————————————————————————————

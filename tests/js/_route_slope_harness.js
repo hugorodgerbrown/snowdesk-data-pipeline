@@ -202,6 +202,8 @@ export const harness = {
   offline: false,
   /** What the offline overlay cache hands back when a fetch rejects. */
   cached: null,
+  /** The HTTP status routes.geojson answers with (SNOW-1230's 403 case). */
+  status: 200,
 };
 
 /** Restore the defaults every test starts from. */
@@ -210,6 +212,7 @@ export function resetHarnessState() {
   harness.delays = [];
   harness.offline = false;
   harness.cached = null;
+  harness.status = 200;
 }
 
 /** How many times the routes feed has been asked for. */
@@ -259,8 +262,10 @@ export async function boot(options) {
       if (isRoutes && harness.offline) return Promise.reject(new Error('offline'));
       const body = isRoutes ? harness.payload : EMPTY_FC;
       const delay = harness.delays.shift() || 0;
+      const status = isRoutes ? harness.status : 200;
       return Promise.resolve({
-        ok: true,
+        ok: status < 400,
+        status,
         json: () => (delay
           ? new Promise((resolve) => setTimeout(() => resolve(body), delay))
           : Promise.resolve(body)),

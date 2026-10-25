@@ -1,0 +1,88 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_help_menu.html — the "?" roundel's menu (SNOW-1230).
+
+The "?" turned on help mode (SNOW-1119). It now opens this small menu, so
+the welcome is always one press away for a returning visitor who wants to
+run it again:
+
+  Show me around again          the "Explore Snowdesk" card
+                                ('snowdesk:map-welcome-requested',
+                                map_tour_offer.js)
+  What is everything on the map? help mode, as the "?" used to start it
+                                ('snowdesk:map-help-mode-requested',
+                                map_help_mode.js)
+  Help pages                    /help/
+
+While help mode is on the "?" still ends it, as before. Built from the
+welcome card's own pieces (.map-tour-offer, .map-tour-offer-option), in
+the same corner, because it is the same kind of surface: an offer, not a
+control. static/js/map_help_menu.js opens and closes it.
+
+Included from public/partials/_map_embed.html inside #map, on the map page
+only (show_tour_offer) — without the welcome card there is nothing for its
+first item to show, and the "?" keeps going straight to help mode.
+{% endcomment %}
+<div
+    id="map-help-menu"
+    class="map-tour-offer map-help-menu"
+    role="region"
+    aria-labelledby="map-help-menu-title"
+    hidden
+>
+    <div class="map-tour-offer-card">
+        <button
+            type="button"
+            class="map-tour-offer-close"
+            data-help-menu-close
+            aria-label='{% trans "Close" %}'
+        >
+            {% include "includes/_icon_close.html" with size=16 %}
+        </button>
+        <p class="map-tour-offer-eyebrow" id="map-help-menu-title">{% trans "Help" %}</p>
+        <ul class="map-tour-offer-options">
+            <li>
+                <button type="button" class="map-tour-offer-option" data-help-menu="welcome">
+                    <span
+                        class="map-tour-offer-option-icon"
+                        aria-hidden="true"
+                    >{% include "includes/_icon_refresh.html" with size=20 %}</span>
+                    <span class="map-tour-offer-option-text">
+                        <span class="map-tour-offer-option-title">{% trans "Show me around again" %}</span>
+                        <span
+                            class="map-tour-offer-option-sub"
+                        >{% trans "Find a resort, or explore the example route." %}</span>
+                    </span>
+                </button>
+            </li>
+            <li>
+                <button type="button" class="map-tour-offer-option" data-help-menu="help-mode">
+                    <span
+                        class="map-tour-offer-option-icon"
+                        aria-hidden="true"
+                    >{% include "includes/_icon_map.html" with size=20 %}</span>
+                    <span class="map-tour-offer-option-text">
+                        <span class="map-tour-offer-option-title">{% trans "What is everything on the map?" %}</span>
+                        <span
+                            class="map-tour-offer-option-sub"
+                        >{% trans "Name every control, then tap one to see what it does." %}</span>
+                    </span>
+                </button>
+            </li>
+            <li>
+                <a href="{% url 'public:help' %}" class="map-tour-offer-option" data-help-menu="pages">
+                    <span
+                        class="map-tour-offer-option-icon"
+                        aria-hidden="true"
+                    >{% include "includes/_icon_external_link.html" with size=20 %}</span>
+                    <span class="map-tour-offer-option-text">
+                        <span class="map-tour-offer-option-title">{% trans "Help pages" %}</span>
+                        <span
+                            class="map-tour-offer-option-sub"
+                        >{% trans "Reading a bulletin, routes, offline maps." %}</span>
+                    </span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</div>

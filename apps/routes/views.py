@@ -99,6 +99,7 @@ from apps.core.decorators import require_htmx
 from apps.core.freshness import apply_freshness_headers
 from apps.core.http import client_ip, is_top_level_navigation
 from apps.routes.models import Route, RouteShare
+from apps.routes.services.example import example_share
 from apps.routes.services.gpx import GPXParseError
 from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.routes import RouteLimitReached, create_route, delete_route
@@ -560,6 +561,12 @@ def route_list(request: HttpRequest) -> HttpResponse:
         {
             "routes": routes,
             "pending_shares": pending,
+            # SNOW-1230: the empty clause offers the example route. Only
+            # asked when the clause will render, so a list with rows pays
+            # no query for it.
+            "example_available": (
+                not routes and not pending and example_share() is not None
+            ),
             # SNOW-764: whether an owned row draws its Share control. It was
             # a per-surface condition while /account/routes/ rendered the
             # same row with no handler for it; the map panel is the only
@@ -686,7 +693,15 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
         shared = share.route
         if shared is None:
             continue
-        features.append(_route_feature(shared, {"token": share.token, "pending": True}))
+        identity: dict[str, Any] = {"token": share.token, "pending": True}
+        if share.is_example:
+            # SNOW-1230: the map reads these to mark the example's day and
+            # to offer no Save — the example is never claimed.
+            identity["example"] = True
+            identity["example_date"] = (
+                share.example_date.isoformat() if share.example_date else None
+            )
+        features.append(_route_feature(shared, identity))
 
     response = JsonResponse(
         {
@@ -735,6 +750,51 @@ def route_terrain(request: HttpRequest, uuid: UUID) -> JsonResponse:
     try:
         route = Route.objects.for_user(request.user).get(uuid=uuid)
     except Route.DoesNotExist:
+        return JsonResponse({"error": "not_found"}, status=404)
+
+    return JsonResponse(
+        {"rows": terrain_detail(route.slope_samples, route.points) or []}
+    )
+
+
+@require_GET
+# Per-session data, as routes.geojson's pending branch: never held by a
+# shared cache.
+@cache_control(private=True, no_store=True)
+def route_share_terrain(request: HttpRequest, token: str) -> JsonResponse:
+    """Return a pending share's terrain rows as JSON (SNOW-1230).
+
+    The pending-share twin of ``route_terrain``, so the terrain data behind
+    the point card opens for a route someone was SENT, signed in or not —
+    Hugo's call on SNOW-1230: "terrain data for any shared route". The
+    example route is one such share.
+
+    Gated exactly as the two widened endpoints are (this module's header):
+    on the SESSION's pending tokens, never on the URL alone. The token in
+    the path must already be in this browser's pending list — which only
+    ``route_share_redirect`` and ``route_example`` write — and must still
+    resolve to a live share. A token typed into the URL by anyone else
+    answers 404, so this is not a guessing oracle. The rows carry no
+    coordinate (``terrain_detail``), and the share already sends its
+    recipient the full slope record they summarise.
+
+    Args:
+        request: The incoming GET request.
+        token: The share token, from the URL.
+
+    Returns:
+        ``{"rows": [...]}``, or 404 for a token this session does not hold
+        or a share that is no longer live.
+
+    """
+    if token not in pending_tokens(request.session):
+        return JsonResponse({"error": "not_found"}, status=404)
+
+    share = (
+        RouteShare.objects.active().select_related("route").filter(token=token).first()
+    )
+    route = share.route if share is not None else None
+    if route is None:
         return JsonResponse({"error": "not_found"}, status=404)
 
     return JsonResponse(
@@ -869,7 +929,7 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
         # a random string is not a token.
         raise Http404("No such route share.") from exc
 
-    if not share.is_claimable:
+    if not share.is_live:
         gone = HttpResponseGone(_SHARE_GONE_BODY, content_type="text/html")
         gone["Cache-Control"] = "no-store"
         return gone
@@ -881,6 +941,86 @@ def route_share_redirect(request: HttpRequest, token: str) -> HttpResponse:
     redir = HttpResponseRedirect(destination)
     redir["Cache-Control"] = "no-store"
     return redir
+
+
+@require_http_methods(["GET", "HEAD"])
+def route_example(request: HttpRequest) -> HttpResponse:
+    """Open the example route on the map, on its own day (SNOW-1230).
+
+    The one address for "the example route": the map's welcome card, the
+    "?" menu, the routes panel's empty clause and any link on the site or
+    off it all point here, so the example can change (``set_example_route``)
+    without any of them changing. It is the share link's path with the
+    token looked up rather than typed: the token goes into the session as
+    a followed share's does — which is what lets the panel, the profile and
+    the terrain data read it — and the visitor lands on the map with the
+    route framed, the date set to the example's day, and ``example=1``,
+    which starts the walkthrough (static/js/map_example_guide.js).
+
+    A fresh browser works: nothing is needed but this request. And the
+    session write is as guarded as the share link's (a real navigation
+    only — see ``route_share_redirect``), though here it matters less:
+    the example is offered to everyone, so planting it grants nothing.
+
+    No rate limit: there is no token to guess, and the response is a
+    redirect computed from one indexed row.
+
+    Errors:
+        404 — no example route is set.
+
+    Args:
+        request: The incoming GET or HEAD request.
+
+    Returns:
+        A 302 to the map, or a 404.
+
+    """
+    share = example_share()
+    if share is None:
+        raise Http404("No example route is set.")
+
+    if is_top_level_navigation(request):
+        add_pending_token(request.session, share.token)
+
+    query = f"route_share={share.token}&example=1"
+    if share.example_date is not None:
+        query += f"&d={share.example_date.isoformat()}"
+    redir = HttpResponseRedirect(f"{reverse('public:map')}?{query}")
+    redir["Cache-Control"] = "no-store"
+    return redir
+
+
+@require_POST
+def route_share_dismiss(request: HttpRequest, token: str) -> HttpResponse:
+    """Drop a pending share from this browser's session (SNOW-1230).
+
+    Not ``@require_htmx``: a ``fetch()`` from the walkthrough, whose body is
+    read by nothing. CSRF-protected like every POST.
+
+    The example walkthrough calls this when it finishes or is exited, so
+    the example stops being drawn on the map and listed in the panel —
+    "dismissed", in the ticket's word — until it is opened again from the
+    welcome card, the "?" menu or the panel. Nothing is deleted: the share
+    is untouched and every other browser holding it keeps it.
+
+    Answers for any token, held or not, with the same 204: dropping a token
+    a session does not hold is a no-op (``drop_pending_token``), and a
+    different answer would tell a caller which tokens a session holds.
+
+    Args:
+        request: The incoming POST request.
+        token: The share token, from the URL.
+
+    Returns:
+        An empty 204.
+
+    """
+    # Only a held token is dropped: dropping one that is not held would
+    # still write the (empty) list back, and so create a session for a
+    # visitor who had none.
+    if token in pending_tokens(request.session):
+        drop_pending_token(request.session, token)
+    return HttpResponse(status=204)
 
 
 @require_htmx

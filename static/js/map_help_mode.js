@@ -2,7 +2,9 @@
 /**
  * static/js/map_help_mode.js — help mode on the map (SNOW-1119).
  *
- * The "?" roundel turns help mode on and off. While it is on:
+ * The "?" roundel turns help mode on and off — on the map page through its
+ * menu (map_help_menu.js, SNOW-1230), whose "What is everything on the
+ * map?" dispatches 'snowdesk:map-help-mode-requested'. While it is on:
  *
  *   - THE MAP SURFACE. Every control on screen has its name drawn beside it,
  *     and a bar at the top says "Tap anything to see what it does", with the
@@ -530,7 +532,11 @@
       event.preventDefault();
       event.stopImmediatePropagation();
       if (active) leave();
-      else enter();
+      // SNOW-1230: where the page renders the "?" menu, the roundel opens
+      // it and the menu's "What is everything on the map?" comes back here.
+      else if (document.getElementById('map-help-menu')) {
+        document.dispatchEvent(new CustomEvent('snowdesk:map-help-menu-requested'));
+      } else enter();
       return;
     }
     if (!active) return;
@@ -588,6 +594,9 @@
     else if (guided) putGuideAway();
     else leave();
   }, true);
+
+  // SNOW-1230: the "?" menu's "What is everything on the map?".
+  document.addEventListener('snowdesk:map-help-mode-requested', enter);
 
   // The tour opening (from anywhere) ends help mode: the two would talk
   // over each other about the same controls.

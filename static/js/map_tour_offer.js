@@ -1,9 +1,12 @@
 /**
- * static/js/map_tour_offer.js — the one-time offer of the map tour (SNOW-1117).
+ * static/js/map_tour_offer.js — the "Explore Snowdesk" welcome card
+ * (SNOW-1117, made task-led by SNOW-1230).
  *
- * Reveals #map-tour-offer, a small card that asks a first-time visitor
- * whether they would like the coachmark tour (static/js/map_help.js). It
- * replaced home_intro.js and the "Welcome to Snowdesk" panel, which opened
+ * Reveals #map-tour-offer, a small card that asks a first-time visitor to do
+ * one thing rather than read about the controls: find a resort, explore the
+ * example route, or just explore the map. Until SNOW-1230 it offered the
+ * coachmark tour (static/js/map_help.js), which is help mode's "Tour" now.
+ * It replaced home_intro.js and the "Welcome to Snowdesk" panel, which opened
  * over the map on load and said what Snowdesk is — the homepage says that
  * now — and which a returning visitor saw flash open before the script hid
  * it. This card is rendered `hidden`, so a first paint never shows it.
@@ -24,9 +27,16 @@
  *     surface it opens is already over the map. Nor while another surface
  *     is up when the moment comes (an object sheet, the route rail, the tour
  *     itself) — that visit simply goes without, and nothing is recorded.
- *   - "Start the tour" records the answer and dispatches
- *     'snowdesk:map-help-requested', which map_help.js answers by opening the
- *     tour. "Not now", the "×" and Escape record the answer and close.
+ *   - Every choice records the answer and emits 'map.welcome.chosen' with
+ *     the choice (resort, example, map, close):
+ *       "Find a resort"            closes the card and opens search;
+ *       "Explore an example route" is a link to routes:example, which opens
+ *                                  the example and its walkthrough
+ *                                  (map_example_guide.js); rendered only
+ *                                  while an example is set;
+ *       "Explore the map", the "×" and Escape close it.
+ *   - 'snowdesk:map-welcome-requested' shows it again whatever was stored —
+ *     the "?" menu's "Show me around again" (map_help_menu.js).
  *   - It is a map overlay, so it registers with window.pwaMapOverlays
  *     (static/js/map_overlay_exclusivity.js): opening any other overlay
  *     closes it, without recording an answer — being displaced is not the
@@ -43,7 +53,8 @@
   const offer = document.getElementById('map-tour-offer');
   if (!offer) return;
 
-  const startBtn = document.getElementById('map-tour-offer-start');
+  const resortBtn = document.getElementById('map-tour-offer-resort');
+  const exampleLink = document.getElementById('map-tour-offer-example');
   const laterBtn = document.getElementById('map-tour-offer-later');
   const closeBtn = document.getElementById('map-tour-offer-close');
 
@@ -143,8 +154,13 @@
     );
   };
 
-  /** Close the card and record that the offer was answered. */
-  const answer = () => {
+  /**
+   * Close the card and record that the offer was answered.
+   *
+   * @param {string} choice What was chosen, for 'map.welcome.chosen'.
+   */
+  const answer = (choice) => {
+    window.pwaTelemetry?.emit('map.welcome.chosen', { choice: choice });
     hide();
     try {
       localStorage.setItem(OFFER_KEY, OFFER_DISMISSED);
@@ -154,19 +170,27 @@
     stripForceParam();
   };
 
-  if (startBtn) {
-    startBtn.addEventListener('click', () => {
-      answer();
-      document.dispatchEvent(new CustomEvent('snowdesk:map-help-requested'));
+  if (resortBtn) {
+    resortBtn.addEventListener('click', () => {
+      answer('resort');
+      // Search finds a resort or a region, and its result opens the sheet
+      // with the bulletin and the weather — the thing this option promised.
+      document.getElementById('search-toggle')?.click();
     });
   }
-  if (laterBtn) laterBtn.addEventListener('click', answer);
-  if (closeBtn) closeBtn.addEventListener('click', answer);
+  // A link: the answer is recorded and the navigation goes ahead.
+  if (exampleLink) exampleLink.addEventListener('click', () => answer('example'));
+  if (laterBtn) laterBtn.addEventListener('click', () => answer('map'));
+  if (closeBtn) closeBtn.addEventListener('click', () => answer('close'));
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !isOpen()) return;
-    answer();
+    answer('close');
   });
+
+  // The "?" menu's "Show me around again": shown at once, whatever was
+  // recorded, and recorded again only when answered.
+  document.addEventListener('snowdesk:map-welcome-requested', show);
 
   window.pwaMapOverlays?.register(OVERLAY_NAME, {
     isOpen: isOpen,

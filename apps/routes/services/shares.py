@@ -260,15 +260,18 @@ def claim_route_share(user: "User", token: str) -> Route:
         The newly created Route owned by ``user``.
 
     Raises:
-        RouteShare.DoesNotExist: When the token matches no ACTIVE share —
-            unknown, expired, or its route deleted. The three are one
+        RouteShare.DoesNotExist: When the token matches no CLAIMABLE share
+            — unknown, expired, its route deleted, or the example (SNOW-1230).
+            The four are one
             exception on purpose: distinguishing them for the caller would
             tell a guesser which tokens exist.
         apps.routes.services.routes.RouteLimitReached: When the claimer is
             already at ``settings.ROUTES_MAX_PER_USER``.
 
     """
-    share = RouteShare.objects.active().select_related("route").get(token=token)
+    # ``claimable()``, not ``active()``: the example share (SNOW-1230) is
+    # live for everyone and copyable by no one.
+    share = RouteShare.objects.claimable().select_related("route").get(token=token)
     source = share.route
     if source is None:
         # Unreachable through ``active()``, which filters on

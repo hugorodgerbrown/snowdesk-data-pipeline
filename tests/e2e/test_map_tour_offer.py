@@ -1,7 +1,9 @@
-"""tests/e2e/test_map_tour_offer.py — A first-time visitor is offered the tour once the map settles, and takes it.
+"""tests/e2e/test_map_tour_offer.py — A first-time visitor is welcomed once the map settles, and finds the tour behind "?".
 
-The tour's second step selects a region on the real map (SNOW-1118), which
-only a browser running map.js can show, and lets it go on the step after.
+SNOW-1230 made the welcome card task-led ("Explore Snowdesk"); the coachmark
+tour moved behind the "?" menu's help mode. The tour's second step selects
+a region on the real map (SNOW-1118), which only a browser running map.js
+can show, and lets it go on the step after.
 
 Smoke test — one user journey, mirroring docs/testing-scenarios.md.
 Read docs/client-side-tests.md before adding anything here: the suite
@@ -20,12 +22,12 @@ from pytest_django.live_server_helper import LiveServer
 
 
 @pytest.mark.shows_tour_offer
-def test_offer_appears_after_the_map_and_starts_the_tour(
+def test_welcome_appears_after_the_map_and_the_tour_is_behind_help(
     live_server: LiveServer,
     page: Page,
     _load_test_data: None,
 ) -> None:
-    """The map opens clean; the offer follows it; the tour shows a real region."""
+    """The map opens clean; the welcome follows it; "?" reaches the tour."""
     page_errors: list[str] = []
     page.on("pageerror", lambda err: page_errors.append(str(err)))
     # No service worker: one cannot intercept the load or outlive the test.
@@ -38,9 +40,12 @@ def test_offer_appears_after_the_map_and_starts_the_tour(
     expect(offer).to_be_hidden()
 
     expect(offer).to_be_visible(timeout=15_000)
-    page.locator("#map-tour-offer-start").click()
-
+    page.locator("#map-tour-offer-later").click()
     expect(offer).to_be_hidden()
+
+    page.locator("#map-help-toggle").click()
+    page.locator('[data-help-menu="help-mode"]').click()
+    page.locator("#map-help-mode-tour").click()
     expect(page.locator("#map-help-overlay")).to_be_visible()
     expect(page.locator("#map-help-step-count")).to_contain_text(
         "Step 1 of", ignore_case=True

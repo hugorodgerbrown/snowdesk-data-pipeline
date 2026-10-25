@@ -216,6 +216,10 @@
   var terrainToggle = /** @type {HTMLButtonElement|null} */ (rail.querySelector('[data-route-terrain-toggle]'));
   var terrainLine = rail.querySelector('[data-route-point-card-slope]');
   var TERRAIN_URL_TEMPLATE = rail.dataset.routeTerrainUrlTemplate || '';
+  // SNOW-1230: the same rows for a pending share, addressed by its token —
+  // terrain data for any route someone was sent, the example route among
+  // them. routes:share_terrain answers only for a token this session holds.
+  var SHARE_TERRAIN_URL_TEMPLATE = rail.dataset.routeShareTerrainUrlTemplate || '';
   var NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
   // SNOW-1099: on a phone the rail is a bottom sheet with detents
@@ -225,7 +229,7 @@
   /** @type {?{open: function(): void, reset: function(): void, set: function(string): void, current: function(): (string|null)}} */
   var detents = null;
   var detentsBound = false;
-  /** The uuid whose terrain rows are loaded or loading, or null. */
+  /** The URL whose terrain rows are loaded or loading, or null. */
   var terrainFor = null;
   /** The open route's terrain rows, by segment index. */
   var terrainRows = [];
@@ -241,7 +245,7 @@
   /** The open route's readProfile result, for the cursor's point on it. */
   var currentProfile = null;
   /** @type {{uuid: ?string, name: string}} */
-  var current = { uuid: null, name: '' };
+  var current = { uuid: null, token: null, name: '' };
   /** The open route's own meta line. */
   var routeMeta = '';
 
@@ -370,6 +374,7 @@
     var opts = options || {};
     current = {
       uuid: props.uuid ? String(props.uuid) : null,
+      token: props.token ? String(props.token) : null,
       name: props.name || STRINGS.untitled,
     };
     // A pending share carries the same slope record as an owned route
@@ -529,12 +534,12 @@
   /**
    * Show or hide the terrain data. A phone sheet steps between FULL and
    * HALF, the detents either side of it; from sm up the card opens it in
-   * place. A route with no uuid (a pending share) has no rows to show.
+   * place. Only a route with a terrain endpoint has rows to show.
    *
    * @param {boolean} show
    */
   function showTerrain(show) {
-    if (!terrainEl || !current.uuid) return;
+    if (!terrainEl || !terrainUrl()) return;
     if (show) rail.setAttribute('data-route-terrain-open', '');
     else rail.removeAttribute('data-route-terrain-open');
     if (isSheet() && detents) detents.set(show ? 'full' : 'half');
@@ -547,7 +552,7 @@
    * and pressable only for a route with rows to fetch.
    */
   function fillTerrainToggle() {
-    var available = !!(terrainEl && current.uuid && TERRAIN_URL_TEMPLATE);
+    var available = !!(terrainEl && terrainUrl());
     if (available) rail.removeAttribute('data-route-terrain-unavailable');
     else rail.setAttribute('data-route-terrain-unavailable', '');
     if (terrainToggle) terrainToggle.disabled = !available;
@@ -573,26 +578,42 @@
   }
 
   /**
+   * Where the open route's terrain rows come from: routes:terrain for an
+   * owned route (by uuid), routes:share_terrain for a pending share (by
+   * token, SNOW-1230), or '' when neither applies.
+   *
+   * @returns {string}
+   */
+  function terrainUrl() {
+    if (current.uuid && TERRAIN_URL_TEMPLATE) {
+      return TERRAIN_URL_TEMPLATE.replace(NIL_UUID, encodeURIComponent(current.uuid));
+    }
+    if (current.token && SHARE_TERRAIN_URL_TEMPLATE) {
+      return SHARE_TERRAIN_URL_TEMPLATE.replace('__TOKEN__', encodeURIComponent(current.token));
+    }
+    return '';
+  }
+
+  /**
    * Fetch the open route's terrain rows, once per route, the first time
-   * they are shown. Owner-scoped (routes:terrain); a pending share has no
-   * uuid, and so no rows.
+   * they are shown.
    */
   function loadTerrain() {
-    if (!terrainEl || !TERRAIN_URL_TEMPLATE || !current.uuid) return;
-    if (terrainFor === current.uuid) return;
-    var uuid = current.uuid;
-    terrainFor = uuid;
-    fetch(TERRAIN_URL_TEMPLATE.replace(NIL_UUID, encodeURIComponent(uuid)), { credentials: 'same-origin' })
+    var url = terrainUrl();
+    if (!terrainEl || !url) return;
+    if (terrainFor === url) return;
+    terrainFor = url;
+    fetch(url, { credentials: 'same-origin' })
       .then(function (resp) { return resp.ok ? resp.json() : { rows: [] }; })
       .then(function (body) {
         // The route may have closed or changed while the rows loaded.
-        if (terrainFor !== uuid) return;
+        if (terrainFor !== url) return;
         terrainRows = body && Array.isArray(body.rows) ? body.rows : [];
         paintTerrain(cursor ? cursor.state().index : null);
       })
       .catch(function () {
         // The data reads "–" without the rows; the next reveal retries.
-        if (terrainFor === uuid) terrainFor = null;
+        if (terrainFor === url) terrainFor = null;
       });
   }
 
@@ -1016,6 +1037,11 @@
     close: close,
     isOpen: function () { return !rail.hidden; },
     cursor: function () { return cursor; },
+    // SNOW-1230: which route is open, for the example walkthrough — a
+    // pending share's token (null for an owned route) and how many
+    // segments its cursor runs over.
+    token: function () { return rail.hidden ? null : current.token; },
+    sampleCount: function () { return sampleCount; },
     cursorPoint: cursorPoint,
     isSheet: isSheet,
     element: rail,

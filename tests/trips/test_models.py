@@ -165,7 +165,7 @@ class TestShareIsLive:
     conditions are written twice — once in ``Trip.share_is_live`` and once
     in ``TripQuerySet.shared()``. This is the assertion that keeps them in
     step, and it is the same one ``tests/routes/test_models.py`` makes for
-    ``RouteShare.is_claimable`` / ``active()``.
+    ``RouteShare.is_live`` / ``active()``.
     """
 
     @pytest.mark.parametrize(

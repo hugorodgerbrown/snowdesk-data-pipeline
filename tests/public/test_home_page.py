@@ -60,6 +60,7 @@ from tests.factories import (
     MajorRegionFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
+    RouteShareFactory,
     SubRegionFactory,
     UserFactory,
 )
@@ -137,33 +138,44 @@ class TestHomePageBasic:
         # Google truncates around 155 characters; keep the tag readable whole.
         assert len(description) <= 160
 
-    def test_tour_offer_is_about_the_tour(self) -> None:
-        """The offer names the tour and offers it, and nothing else.
+    def test_welcome_card_asks_for_a_task(self) -> None:
+        """The welcome card offers things to do, not a tour (SNOW-1230).
 
         The welcome panel's provider paragraph and register pitch are the
-        homepage's job now.
+        homepage's job; the coachmark tour is help mode's "Tour". With no
+        example route set, the card offers a resort and the map and says
+        nothing about an example.
         """
         content = Client().get(reverse("public:map")).content.decode()
         offer = re.search(
-            r'<div\s+id="map-tour-offer".*?<div class="map-tour-offer-actions">(.*?)</div>',
+            r'<div\s+id="map-tour-offer".*?<ul class="map-tour-offer-options">(.*?)</ul>',
             content,
             re.DOTALL,
         )
         assert offer is not None
-        assert "Take the one-minute tour" in content
+        assert "Explore Snowdesk" in content
+        assert "Take the one-minute tour" not in content
         assert "sourced daily from SLF" not in content
         assert 'class="home-intro-inline-link"' not in content
-        actions = offer.group(1)
-        assert 'id="map-tour-offer-start"' in actions
-        assert 'id="map-tour-offer-later"' in actions
-        assert "<a " not in actions
+        options = offer.group(1)
+        assert 'id="map-tour-offer-resort"' in options
+        assert 'id="map-tour-offer-later"' in options
+        assert 'id="map-tour-offer-example"' not in options
+        assert "example route" not in offer.group(0)
         assert 'id="map-tour-offer-close"' in content
+
+    def test_welcome_card_offers_the_example_route_once_set(self) -> None:
+        """While an example route is set, the card links to routes:example."""
+        RouteShareFactory.create(example=True)
+        content = Client().get(reverse("public:map")).content.decode()
+        expected = f'id="map-tour-offer-example" href="{reverse("routes:example")}"'
+        assert expected in content
 
     def test_map_help_overlay_opts_out_of_autostart(self) -> None:
         """#map-help-overlay carries the no-autostart opt-out on /map/.
 
-        The tour opens there from the "?" roundel or the offer's "Start the
-        tour" (SNOW-1117), never by itself over a map not yet seen.
+        The tour opens there from help mode's "Tour", never by itself over a
+        map not yet seen.
         """
         client = Client()
         response = client.get(reverse("public:map"))
