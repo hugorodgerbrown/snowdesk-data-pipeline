@@ -53,7 +53,8 @@ Context:
                     ``build_resort_body``); False draws the one line.
   forecast_points — list[dict] from ``views._resort_forecast_points``:
                     role ("base"/"mid"/"top"), label, elevation_m (int or
-                    None), url, weather (Weather or None), panel
+                    None), url, short_id (the map opens the point's
+                    weather panel by it), weather (Weather or None), panel
                     (ForecastPanel or None). The caller renders nothing
                     when it is empty.
   target_date     — datetime.date: the day shown, named in the eyebrow.
@@ -277,7 +278,7 @@ Context:
                         {% endif %}
                         {% if point.url %}
                             {% translate "Read the full 7-day forecast →" as forecast_link_text %}
-                            {% include "includes/_weather_provenance.html" with weather=point.weather testid_prefix="resort-forecast-provenance-"|add:point.role link_url=point.url link_text=forecast_link_text only %}
+                            {% include "includes/_weather_provenance.html" with weather=point.weather testid_prefix="resort-forecast-provenance-"|add:point.role link_url=point.url link_text=forecast_link_text link_weather_id=point.short_id only %}
                         {% elif point.weather %}
                             {# No short_id yet (backfill window): no weather page to link, but the forecast shown still credits Open-Meteo. #}
                             {% include "includes/_weather_provenance.html" with weather=point.weather testid_prefix="resort-forecast-provenance-"|add:point.role only %}

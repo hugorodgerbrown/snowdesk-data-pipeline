@@ -194,6 +194,8 @@ interface Window {
   pwaDb: any;
   /** static/js/pwa_network_mode.js — reads and sets the network mode. */
   pwaNetworkMode: any;
+  /** static/js/map_weather_detail.js — the weather sheet; open/close/point. */
+  pwaWeatherDetail: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */
   pwaRouteRail: any;
   /** static/js/route_point_card.js — the point card on the map; attach/detach. */

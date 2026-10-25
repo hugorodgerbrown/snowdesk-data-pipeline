@@ -1,0 +1,58 @@
+{% comment %}
+templates/includes/_place_link_row.html — one row that names another kind
+of place and opens it: a resort's region, a region's resort, a weather
+point's region or resort (Hugo, 25 Oct 2026).
+
+THREE KINDS OF PLACE, ONE WAY ACROSS. The region, resort and weather sheets
+each answer one question — the region the avalanche danger, the resort the
+place and its weather, the weather point one spot at one height — and each
+ends with rows like this one that take the reader to its neighbours. The
+row leads with the tile of the kind it OPENS (the square for a region, the
+round cabin for a resort), so the reader can tell where a tap goes before
+making it. A region row carries no danger level: the level is the region's
+own panel's to state, and a resort has no danger of its own.
+
+STILL A REAL LINK. ``href`` is the place's page, so the row works with no
+JavaScript and a modified click opens the page in a new tab. On the map,
+``static/js/map_panel_trail.js`` reads ``data-panel-open`` and opens the
+place's sheet in place instead, with a back pill naming where the reader
+came from. A resort row also carries ``data-resort-slug``, the attribute
+the region sheet's own handler has opened resorts by since SNOW-1161.
+
+Context:
+  kind     — "region", "resort" or "weather": the kind of place it opens.
+  title    — the place's name.
+  subtitle — one short line under it, or "".
+  href     — the place's page.
+  open_id  — what the map opens it by: a region id ("CH-4115"), a resort
+             slug, or a location short id.
+  testid   — optional ``data-testid``.
+{% endcomment %}
+<a
+    href="{{ href }}"
+    data-panel-open="{{ kind }}"
+    data-panel-id="{{ open_id }}"
+    {% if kind == "resort" %}data-resort-slug="{{ open_id }}"{% endif %}
+    {% if testid %}data-testid="{{ testid }}"{% endif %}
+    class="flex min-w-0 items-center gap-3 px-4 py-3 hover:bg-card-hover"
+>
+    {% if kind == "resort" %}
+        {% include "includes/_resort_tile.html" with kind="resort" only %}
+    {% else %}
+        {# A region's square, without a level: the tile says "region", not "danger". #}
+        <span
+            class="inline-flex h-9 w-9 flex-none items-center justify-center rounded-tag border border-border-strong bg-card-hover text-text-2"
+            aria-hidden="true"
+            data-testid="place-link-region-tile"
+        >
+            {% include "includes/_icon_map.html" with size=16 only %}
+        </span>
+    {% endif %}
+    <span class="min-w-0 flex-1">
+        <span class="block truncate text-label font-semibold text-text-1">{{ title }}</span>
+        {% if subtitle %}<span class="block truncate text-sm text-text-3">{{ subtitle }}</span>{% endif %}
+    </span>
+    <span
+        class="flex-none text-text-3"
+    >{% include "includes/_icon_chevron.html" with svg_class="-rotate-90" only %}</span>
+</a>

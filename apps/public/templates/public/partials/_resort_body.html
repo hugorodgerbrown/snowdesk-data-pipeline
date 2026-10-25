@@ -10,78 +10,49 @@ one-row peek. On a phone the sheet at full height therefore IS the page,
 and the two cannot drift: a fact about a resort is added here, never to the
 sheet or the page alone. Context from ``apps.public.views.build_resort_body``.
 
-The sections, in one order whatever the season (SNOW-1203): the forecast —
-the resort's own data — then the region's bulletin card, the day's problem
-cards as the bulletin gives them, and the season calendar. Until SNOW-1203
-the bulletin led in season (SNOW-1156). Then the curated facts — a sidebar
-on a desktop page, the last section everywhere else.
+The sections, in one order whatever the season: the forecast — the
+resort's own data — then, in the map, the curated facts, then one row naming
+the avalanche region the resort sits in. On the page the facts are a
+sidebar on a desktop and the last section on a phone.
+
+A RESORT HAS NO AVALANCHE DANGER OF ITS OWN (Hugo, 25 Oct 2026). Until
+then this body carried the region's bulletin card, the day's problem cards
+and the season's danger calendar (SNOW-1156, SNOW-1164, SNOW-1126), so a
+resort's panel read as a second copy of its region's. They are the
+region's, and live on its panel and page; the resort keeps the one row
+(``includes/_place_link_row.html``) that opens it, with no level on it.
 
 ``in_map`` (set by the place sheet) keeps the body to one column whatever
 the viewport, since the desktop inset panel is a phone's width, and
 tightens the gap between sections to the sheet's.
 
 Context (beyond what each included partial documents):
-  panel, day_windows, bulletin_url, bulletin_provider, bulletin_updated_time
-                  — the bulletin card's (``_resort_bulletin_card.html``).
-  problem_cards   — the panel's problem cards. No "Above this location"
-                    verdict: a resort spans a range of heights.
+  region          — the resort's MicroRegion.
+  bulletin_url    — the region's bulletin page for the day shown.
   target_date     — the day shown; ``is_today`` — whether it is today.
   forecast_points — the forecast's (``_resort_forecast.html``).
-  season_months, season_summary — the season calendar's.
   in_map          — bool: rendered inside the map's place sheet.
 {% endcomment %}
 <div class="flex flex-col gap-8{% if not in_map %} lg:flex-row lg:items-start lg:gap-10{% endif %}">
-    {# SNOW-1156: one gap spaces the sections, whichever order they take. #}
     <div class="flex min-w-0 flex-col {% if in_map %}gap-8{% else %}gap-12 lg:flex-1{% endif %}">
-        {# SNOW-1203: the forecast leads in every season. It is the resort's #}
-        {# own data; the bulletin, and the problems it gives, are the        #}
-        {# region's (Hugo, 23 Oct). The card is rated or empty by panel.     #}
+        {# SNOW-1203: the forecast leads. It is the resort's own data. #}
         {% if forecast_points %}
             {% include "public/partials/_resort_forecast.html" %}
         {% endif %}
-
-        {% include "public/partials/_resort_bulletin_card.html" %}
-        {# SNOW-1164: the day's problems as the bulletin gives them — no    #}
-        {# one-height verdict, since a resort spans a range of heights.    #}
-        {% if panel and problem_cards %}
-            <section aria-labelledby="resort-problems-heading" data-testid="resort-problems">
-                {% translate "Avalanche problems" as problems_eyebrow %}
-                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-problems-heading" text=problems_eyebrow class_extra="mb-3" only %}
-                <div class="space-y-3">
-                    {% for card in problem_cards %}
-                        {% include "public/_rating_block.html" with card=card %}
-                    {% endfor %}
-                </div>
-            </section>
+        {# In the map the facts come before the way out to the region. #}
+        {% if in_map %}
+            {% include "public/partials/_resort_facts.html" %}
         {% endif %}
-
-        {% comment %}
-    SNOW-1126 / SNOW-1158 — the season calendar. The region's danger
-    day by day through the running 1 Nov – 30 Apr season (the one just
-    ended, from May to October), rendered server-side so a crawler
-    reads it. Context from views._resort_season_calendar_context:
-    season_months (SeasonMonths) and season_summary (SeasonSummary,
-    falsy when no day had a bulletin — the section is then omitted).
-    The calendar is the one shared partial (_season_calendar.html),
-    unlinked: one role="img" whose aria-label is the season summary,
-    then the short key, in a card. No cell links to its day — the
-    bulletin card is the page's one bulletin link.
-        {% endcomment %}
-        {% if season_summary %}
-            <section aria-labelledby="resort-season-heading" data-testid="resort-season">
-                {% blocktrans with region=region.name season=season_months.season_label trimmed asvar season_heading_label %}
-                    Avalanche danger • {{ region }} region • {{ season }}
-                {% endblocktrans %}
-                {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-season-heading" text=season_heading_label class_extra="mb-3" only %}
-                <div class="rounded-card border border-border bg-card p-5 sm:p-6">
-                    {% include "public/partials/_season_calendar.html" with linked=False %}
-                </div>
-            </section>
-        {% endif %}
+        <section aria-labelledby="resort-region-heading" data-testid="resort-region">
+            {% translate "Avalanche bulletin" as region_eyebrow %}
+            {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-region-heading" text=region_eyebrow class_extra="mb-3" only %}
+            <div class="overflow-hidden rounded-card border border-border bg-card">
+                {% translate "The avalanche region this resort is in" as region_subtitle %}
+                {% include "includes/_place_link_row.html" with kind="region" title=region.name subtitle=region_subtitle href=bulletin_url open_id=region.region_id testid="resort-region-link" only %}
+            </div>
+        </section>
     </div>
-    {% if in_map %}
-        {% include "public/partials/_resort_facts.html" %}
-    {% else %}
+    {% if not in_map %}
         {% include "public/partials/_resort_facts.html" with class_extra="lg:w-80 lg:shrink-0" %}
     {% endif %}
 </div>

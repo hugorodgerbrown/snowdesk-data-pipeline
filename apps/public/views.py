@@ -42,7 +42,6 @@ import logging
 import random
 import unicodedata
 import uuid
-import zoneinfo
 from typing import Any, cast
 
 import waffle
@@ -142,7 +141,6 @@ from .season_calendar import (
     build_season_months,
     build_season_ribbon,
     season_header,
-    season_window,
     summarise_season,
 )
 from .site_environment import PWAEnvironmentIdentity
@@ -156,7 +154,6 @@ from .sitemaps import (
 from .templatetags.snowdesk_time import (
     danger_level_digit,
     danger_level_label,
-    parse_iso,
 )
 
 logger = logging.getLogger(__name__)
@@ -5172,45 +5169,26 @@ def resort_detail(
     redirect to perform here: the URL either names a resort or it 404s.
     The pre-slug ``/resorts/<id>/<slug>/`` form is ``resort_legacy_redirect``.
 
-    The page answers the query it ranks for (SNOW-1124,
-    ``docs/decisions/a-resort-page-answers-the-query.md``, amending
-    ``docs/decisions/two-documents-and-a-map.md`` for resort pages). People
-    search "Verbier avalanche", not "CH-4115", so today's danger is shown
-    here, read from the region's bulletin through the bulletin page's own
-    selection — ``issues_for_date`` then ``_resolve_selected_issue`` (the
-    day's latest issue) then ``_build_panel_context`` — and its headline helper. It
-    is the same render model shown read-only, never a copy, and the
-    bulletin stays the one full document: the danger card carries exactly
-    one link to it. With no bulletin covering today the page says so; it
-    never shows a past bulletin as today's.
+    A resort has no avalanche danger of its own (Hugo, 25 Oct 2026,
+    ``docs/decisions/a-resort-has-no-avalanche-danger.md``, which supersedes
+    SNOW-1124's ``a-resort-page-answers-the-query.md``). The page is the
+    resort's information and its weather: the seven-day strip for each of
+    its Base, Mid and Summit points (SNOW-1157, ``_resort_forecast_points``),
+    the curated facts, and one row naming the avalanche region the resort
+    sits in, with no level, which links to that region's bulletin. The
+    bulletin card, the day's problem cards and the season's danger calendar
+    it carried until then are the region's, on the region's page.
 
-    SNOW-1156 made the page a landing page that leads into the bulletin:
-    today's danger is ONE compact card
-    (``public/partials/_resort_bulletin_card.html``) — the level, the region,
-    the first problem's aspects and elevation, the headline and a
-    "{provider} · updated HH:MM" line (``_resort_bulletin_attribution``) —
-    and the problem cards and SNOW-1143's band-vs-lift-range lines are
-    gone. In season (a panel today) the card leads the main column; out of
-    season the forecast leads and the card follows.
-
-    The forecast is a seven-day strip for each of the resort's Base, Mid
-    and Summit points, chosen by CSS-only chips (SNOW-1157,
-    ``_resort_forecast_points``), each pane linking to its point's weather
-    page; it replaced SNOW-1125's list of links with a one-day row each.
-    SNOW-1155 rebuilt the frame: a header with the eyebrow
+    SNOW-1155 built the frame: a header with the eyebrow
     (``_resort_eyebrow``), the name, the tagline and two actions — save the
-    resort, and see it on the map (``/map/?resort=<slug>``, which replaced
-    SNOW-807's "Reports near here" link) — then the sections in a main
-    column with the curated facts in a sidebar.
+    resort, and see it on the map (``/map/?resort=<slug>``) — then the
+    sections in a main column with the curated facts in a sidebar.
 
     Builds the same favourite context the place sheet does (``favourited`` /
     ``favourite_uuid`` / ``can_favourite`` / ``signin_url``).
-    The meta description's danger sentence reads the same ``panel`` as the
-    tile, so the two can never name different levels.
 
     SNOW-1164 split the page into a frame and a body: the body — the
-    bulletin card, the problems judged against the resort's height, the
-    forecast, the season calendar and the facts — is ``build_resort_body``
+    forecast, the facts and the region row — is ``build_resort_body``
     and ``public/partials/_resort_body.html``, which the map's place sheet
     renders too, so on a phone the sheet at full height IS this page. The
     page adds only the frame: the header with its eyebrow, title, tagline
@@ -5280,17 +5258,11 @@ def build_resort_body(
     place sheet (``apps.public.place_sheet.resort_sheet_partial``), so a
     fact about a resort is added here and reaches both.
 
-    The day's bulletin is chosen exactly as the bulletin page chooses it
-    (``_issues_for_date`` then ``_resolve_selected_issue``, the day's latest
-    issue, then ``_build_panel_context``), so the two pages always show the same
-    issue (SNOW-1124). A render model that failed to build gives no panel:
-    its danger key is only a "low" fallback, never a level to show.
-
-    The problems are the panel's own cards, shown as the bulletin gives
-    them. They carry no "Above / Below this location" verdict
-    (``annotate_problem_relevance``): a resort spans a range of heights, so
-    a verdict against one of them read as one about the whole resort (Hugo,
-    21 Oct 2026). Each card already states its own elevation band.
+    A resort has no avalanche danger of its own (Hugo, 25 Oct 2026,
+    ``docs/decisions/a-resort-has-no-avalanche-danger.md``): the body is the
+    resort's forecast and facts, and one row naming the region it sits in.
+    So nothing here selects a bulletin; the row links to the region's page
+    for the day, which states the danger.
 
     Args:
         request: The incoming request, read for ``is_staff``.
@@ -5304,22 +5276,6 @@ def build_resort_body(
     """
     region = resort.region
     today = timezone.localdate()
-    selected = _resolve_selected_issue(
-        _issues_for_date(region, target_date), target_date, requested_id=None
-    )
-    panel: dict[str, Any] | None = None
-    day_windows: list[dict[str, Any]] = []
-    if selected is not None:
-        panel = _build_panel_context(selected)
-        raw_render_model: dict[str, Any] = panel.get("render_model") or {}
-        if raw_render_model.get("version") == 0:
-            panel = None
-        else:
-            # SNOW-1203: the region panel's Day Risk Profile rows, built by
-            # the same helper, so the two panels state the level alike.
-            day_windows = _build_day_windows(selected, render_model=raw_render_model)
-
-    problem_cards: list[dict[str, Any]] = list(panel["problem_cards"]) if panel else []
     # SNOW-1157: the forecast strip's Base / Mid / Summit points. A forward
     # day has no row of its own — today's row carries it in its forecast —
     # so it reads today's.
@@ -5334,16 +5290,13 @@ def build_resort_body(
         "resort": resort,
         "region": region,
         "region_id": region.region_id,
-        # SNOW-1124: the bulletin page's panel for the day, or None when no
-        # bulletin covers it.
-        "panel": panel,
-        "day_windows": day_windows,
-        "problem_cards": problem_cards,
-        # SNOW-1156: the card's "SLF · updated 17:00" line.
-        **_resort_bulletin_attribution(panel),
         "target_date": target_date,
         "is_today": target_date == today,
-        "bulletin_url": _resort_bulletin_url(region, selected, target_date),
+        # The region row's href: its evergreen page today, the dated one
+        # on another day, so the page and the map's day agree.
+        "bulletin_url": region.get_absolute_url()
+        if target_date == today
+        else region.get_absolute_url(target_date=target_date),
         # SNOW-542: the why-it-matters partial shows a curation hint instead
         # of the public blank state for staff, exactly as the popup's
         # metadata rows already do.
@@ -5352,10 +5305,6 @@ def build_resort_body(
         # SNOW-1205: no point with a forecast for the day draws one line in
         # place of the card (Hugo, 23 Oct).
         "forecast_available": any(point["panel"] for point in forecast_points),
-        # The calendar is the season's, its grid stopping at today, and
-        # rings the day the page shows: today, or the dated URL's day
-        # (SNOW-1163).
-        **_resort_season_calendar_context(region, today, target_date),
     }
 
 
@@ -5411,144 +5360,6 @@ def _resort_eyebrow(resort: Resort) -> str:
         COUNTRY_NAMES.get(major.country.upper(), "") if major is not None else "",
     ]
     return " · ".join(part for part in parts if part)
-
-
-def _resort_season_calendar_context(
-    region: MicroRegion, today: datetime.date, page_date: datetime.date
-) -> dict[str, Any]:
-    """Build the resort page's season calendar and its summary (SNOW-1126).
-
-    Rendered server-side, not deferred the way the bulletin page's
-    ``#season-grid`` is: the calendar's aria-label summary is the page's
-    indexable account of the season, and a crawler never fires the client
-    trigger. The cost is one indexed
-    ``RegionDayRating.objects.for_region_range`` query.
-
-    The window is the running 1 Nov – 30 Apr season, or the one just ended
-    from May to October (``season_window``); the grid stops at ``today + 1``
-    within a running season, and SNOW-1158's month view draws the rest of
-    the season as "not yet". A bulletin after 30 April (read up to 31
-    October) extends the calendar to its month. The ring is the day the
-    page shows, ``page_date`` — today, or the dated URL's day — and is
-    absent when that day is not drawn (SNOW-1163 retired the off-season
-    "first High day" ring).
-
-    Args:
-        region: The resort's parent micro-region.
-        today: The current local date.
-        page_date: The day the resort page shows; the ringed day.
-
-    Returns:
-        ``season_months`` (a ``SeasonMonths``) and ``season_summary`` (a
-        ``SeasonSummary``, falsy — so the template hides the section — when
-        no day in the window had a bulletin).
-
-    """
-    window = season_window(today)
-    # SNOW-1158: read on past 30 April to the end of October, so a bulletin
-    # published after the season closed (a May bulletin) is drawn and counted;
-    # build_season_months adds only the months that hold one.
-    grid = build_season_grid(
-        region,
-        today,
-        window=window._replace(end=window.end.replace(month=10, day=31)),
-    )
-    return {
-        "season_months": build_season_months(
-            grid, today, window=window, ring_date=page_date
-        ),
-        "season_summary": summarise_season(grid),
-    }
-
-
-# The wall clock the resort page's bulletin card states its "updated" time
-# in (SNOW-1156). Every provider Snowdesk ingests — SLF, ALBINA (Tyrol,
-# South Tyrol, Trentino) and Météo-France — publishes for the Alps under
-# Central European Time, so one zone reads each provider's own clock: SLF's
-# evening bulletin says 17:00 here, as it does on slf.ch.
-_BULLETIN_LOCAL_TZ = zoneinfo.ZoneInfo("Europe/Zurich")
-
-
-def _resort_bulletin_url(
-    region: MicroRegion,
-    selected: Bulletin | None,
-    today: datetime.date,
-) -> str:
-    """
-    Return where the resort page's bulletin card links.
-
-    With a bulletin covering the day, that day's page — the evergreen URL
-    for today, the dated one otherwise (SNOW-1164) — which shows that same
-    issue. Without one, the page would only repeat "no bulletin", so the
-    "Latest {region} bulletin" link goes to the dated page of the region's
-    most recent bulletin before the day instead; the evergreen URL remains
-    the fallback when the region has none at all.
-
-    Args:
-        region: The resort's MicroRegion.
-        selected: The day's selected issue, or None.
-        today: The day the body shows.
-
-    Returns:
-        A bulletin page URL for the region.
-
-    """
-    if selected is not None:
-        if today == timezone.localdate():
-            return region.get_absolute_url()
-        return region.get_absolute_url(target_date=today)
-    latest = (
-        Bulletin.objects.filter(regions=region, valid_to__date__lt=today)
-        .order_by("-valid_to")
-        .only("valid_to")
-        .first()
-    )
-    if latest is None:
-        return region.get_absolute_url()
-    return region.get_absolute_url(
-        target_date=timezone.localtime(latest.valid_to).date()
-    )
-
-
-def _resort_bulletin_attribution(panel: dict[str, Any] | None) -> dict[str, str]:
-    """Name the provider and local publication time of today's bulletin.
-
-    SNOW-1156: the resort page's bulletin card ends with a mono line,
-    "SLF · updated 17:00". The provider is the short display name the
-    bulletin page's Source cell uses (``BULLETIN_SOURCE_LINKS``), read from
-    the panel's render model and falling back to ``Bulletin.source``. The
-    time is the render model's ``metadata.publication_time``, falling back
-    to ``Bulletin.issued_at``, as ``HH:MM`` in Central European time
-    (``_BULLETIN_LOCAL_TZ``). It is formatted here rather than in the
-    template because the ``date`` filter would convert an aware datetime
-    back to the site's UTC.
-
-    Args:
-        panel: Today's ``_build_panel_context`` dict, or ``None``.
-
-    Returns:
-        ``bulletin_provider`` and ``bulletin_updated_time``, each ``""``
-        when unknown (always both ``""`` without a panel).
-
-    """
-    if not panel:
-        return {"bulletin_provider": "", "bulletin_updated_time": ""}
-    bulletin: Bulletin | None = panel.get("bulletin")
-    render_model: dict[str, Any] = panel.get("render_model") or {}
-    source = render_model.get("source") or (bulletin.source if bulletin else "")
-    provider = BULLETIN_SOURCE_LINKS.get(source, ("", ""))[0]
-
-    published: datetime.datetime | None = parse_iso(
-        (render_model.get("metadata") or {}).get("publication_time")
-    )
-    if published is None and bulletin is not None:
-        published = bulletin.issued_at
-    updated = (
-        published.astimezone(_BULLETIN_LOCAL_TZ).strftime("%H:%M")
-        if published is not None
-        else ""
-    )
-    return {"bulletin_provider": provider, "bulletin_updated_time": updated}
 
 
 # SNOW-1157: the resort page's forecast points, in chip order. The role a
@@ -5640,6 +5451,9 @@ def _resort_forecast_points(
                     else None
                 ),
                 "url": _dated_weather_url(location, link_date),
+                # The map opens the point's weather panel by it (the
+                # pane's link, map_panel_trail.js).
+                "short_id": location.short_id or "",
                 "weather": weather,
                 "panel": panel,
             }

@@ -1792,6 +1792,7 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
             "day_figures": [],
         }
 
+    place_resort, place_region = _weather_point_places(location)
     return JsonResponse(
         {
             "html": render_to_string(
@@ -1804,7 +1805,20 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
                     # coordinates as a heading. Name the region it stands
                     # for instead, and fall back to the generic only when
                     # even that is missing.
-                    "heading": location.name or _weather_detail_heading(location),
+                    "heading": location.name
+                    or _weather_detail_heading(location, place_resort, place_region),
+                    # "Where this is" (Hugo, 25 Oct 2026): the resort the
+                    # point stands for and the avalanche region it is in,
+                    # each a row that opens that place's own panel.
+                    "place_resort": place_resort,
+                    "place_region": place_region,
+                    "place_region_url": (
+                        ""
+                        if place_region is None
+                        else place_region.get_absolute_url()
+                        if target_date == today
+                        else place_region.get_absolute_url(target_date=target_date)
+                    ),
                     "day": day,
                     "is_forecast": is_forecast,
                     # The date row turns to "another day" off today (Hugo, 21 Oct).
@@ -1820,7 +1834,32 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
     )
 
 
-def _weather_detail_heading(location: Location) -> str:
+def _weather_point_places(
+    location: Location,
+) -> tuple[Resort | None, MicroRegion | None]:
+    """Return the resort a weather point stands for and the region it is in.
+
+    Resort first (SNOW-1144): a resort's pin, then a resort linking the
+    point. The region is that resort's, else the region the point is the
+    centroid of. A point that is neither — rare on the public estate —
+    gets no region rather than a full scan of every boundary on a tap.
+
+    Args:
+        location: The weather point.
+
+    Returns:
+        ``(resort, region)``, either of them None.
+
+    """
+    resort = Resort.objects.standing_at(location).select_related("region").first()
+    if resort is not None and resort.region_id is not None:
+        return resort, resort.region
+    return resort, location.micro_regions.first()
+
+
+def _weather_detail_heading(
+    location: Location, resort: Resort | None, region: MicroRegion | None
+) -> str:
     """Name an unnamed location by what it stands for.
 
     Most locations on the weather map carry no ``name``, and that is by
@@ -1836,17 +1875,16 @@ def _weather_detail_heading(location: Location) -> str:
 
     Args:
         location: The location being described.
+        resort: The resort it stands for, from ``_weather_point_places``.
+        region: The region it is in, from ``_weather_point_places``.
 
     Returns:
         The resort's or region's name, else a generic label. Never the
         coordinates.
 
     """
-    # SNOW-1144: a resort's pin first, then a resort linking it.
-    resort = Resort.objects.standing_at(location).first()
     if resort is not None:
         return str(resort.name)
-    region = location.micro_regions.first()
     if region is not None:
         return str(region.name)
     return str(_("Weather station"))

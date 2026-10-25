@@ -414,7 +414,7 @@ class TestResortBody:
         sheet = _get(client, _resort_url(resort.slug)).content.decode()
         page = client.get(resort.get_absolute_url()).content.decode()
         assert 'data-testid="place-sheet-resort-body"' in sheet
-        for testid in ("resort-bulletin", "resort-danger", "resort-facts"):
+        for testid in ("resort-forecast", "resort-region", "resort-facts"):
             assert f'data-testid="{testid}"' in sheet
             assert f'data-testid="{testid}"' in page
         assert "Téléverbier" in sheet
@@ -447,9 +447,11 @@ class TestResortBody:
         assert "lg:w-80" not in content
 
     def test_the_body_shows_the_maps_day(self, client: Client) -> None:
+        """The region row opens the region's page for the map's day."""
         resort = _resort()
-        content = _get(client, _resort_url(resort.slug, "2026-02-03")).content
-        assert b"No bulletin this day" in content
+        day = datetime.date(2026, 2, 3)
+        content = _get(client, _resort_url(resort.slug, day.isoformat())).content
+        assert f'href="{resort.region.get_absolute_url(day)}"'.encode() in content
 
     def test_section_eyebrows_leave_the_day_to_the_date_row(
         self, client: Client
@@ -480,25 +482,62 @@ class TestResortBody:
 
     @pytest.mark.parametrize("rated", [True, False])
     @pytest.mark.parametrize("has_forecast", [True, False])
-    def test_the_forecast_leads_the_bulletin_on_every_day(
+    def test_forecast_then_facts_then_the_region_row(
         self, client: Client, rated: bool, has_forecast: bool
     ) -> None:
-        """Hugo, 24 Oct: the place's weather never moves below the region's.
+        """Hugo, 25 Oct 2026: the resort's own data first, the region last.
 
-        A bulletin on the day used to put the card first (SNOW-1156); the
-        forecast — or its one "No forecast available" line — now leads
-        whatever the day holds.
+        Whatever the day holds, the sheet shows no danger of the resort's
+        own: the forecast (or its one "No forecast available" line), the
+        facts, then the one neutral row naming the region.
         """
-        resort = _resort()
+        resort = _resort(num_lifts=34)
         if has_forecast:
             WeatherFactory.create(location=_primary_location(resort))
         if rated:
             _todays_bulletin(resort.region)
         content = _get(client, _resort_url(resort.slug)).content.decode()
         forecast = content.index('data-testid="resort-forecast"')
-        assert forecast < content.index('data-testid="resort-bulletin"')
+        facts = content.index('data-testid="resort-facts"')
+        assert forecast < facts < content.index('data-testid="resort-region"')
         assert ('data-testid="resort-forecast-none"' in content) is not has_forecast
-        assert ('data-testid="resort-no-rating"' in content) is not rated
+        for gone in ("resort-bulletin", "resort-problems", "resort-season"):
+            assert f'data-testid="{gone}"' not in content
+
+    def test_the_region_row_opens_the_region_panel(self, client: Client) -> None:
+        """One row, the region's square without a level, keyed for the map."""
+        resort = _resort()
+        _todays_bulletin(resort.region)
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        start = content.index('data-testid="resort-region-link"')
+        row = content[content.rindex("<a", 0, start) : content.index("</a>", start)]
+        assert 'data-panel-open="region"' in row
+        assert f'data-panel-id="{resort.region.region_id}"' in row
+        assert 'data-testid="place-link-region-tile"' in row
+        assert "danger-tile" not in row
+
+    def test_the_body_carries_its_panel_key(self, client: Client) -> None:
+        """The back pill names the panel a row was followed from."""
+        resort = _resort()
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert f'data-panel-key="resort:{resort.slug}"' in content
+        assert 'data-panel-label="Verbier"' in content
+
+    def test_the_kind_line_names_a_ski_resort(self, client: Client) -> None:
+        """Every map panel names its kind above its title (25 Oct 2026)."""
+        resort = _resort()
+        peek = _peek(_get(client, _resort_url(resort.slug)).content.decode())
+        assert 'data-testid="sheet-kind"' in peek
+        assert "Ski resort" in peek
+
+    def test_a_saved_pin_is_a_saved_place(self, client: Client) -> None:
+        """A saved pin is no resort and carries no panel key of its own."""
+        resort = _resort()
+        favourite = FavouriteFactory.create(region=resort.region)
+        client.force_login(favourite.user)
+        content = _get(client, _favourite_url(favourite.uuid)).content.decode()
+        assert "Saved place" in _peek(content)
+        assert "data-panel-key" not in content
 
     def test_written_why_it_matters_shows(self, client: Client) -> None:
         resort = _resort(why_it_matters="Four lifts, national freeride reputation.")
@@ -515,13 +554,6 @@ class TestResortBody:
             client.force_login(UserFactory.create(is_staff=is_staff))
         content = _get(client, _resort_url(resort.slug)).content.decode()
         assert "resort-why-it-matters" not in content
-
-    def test_unrated_covered_day_says_no_bulletin(self, client: Client) -> None:
-        """SNOW-1161: the bulletin card's empty tile, nothing in the header."""
-        resort = _resort()
-        content = _get(client, _resort_url(resort.slug)).content.decode()
-        assert 'data-testid="danger-tile-empty"' not in _peek(content)
-        assert "No bulletin today" in content
 
     def test_saved_resort_without_a_slug_has_no_resort_link(
         self, client: Client

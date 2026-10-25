@@ -163,6 +163,13 @@ class TestPeek:
         assert 'data-level="considerable"' in content
         assert "Considerable" in content
 
+    def test_the_kind_line_names_an_avalanche_region(self, client: Client) -> None:
+        """Every map panel names its kind above its title (25 Oct 2026)."""
+        region = MicroRegionFactory.create()
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        start = content.index('data-testid="sheet-kind"')
+        assert "Avalanche region" in content[start : content.index("</p>", start)]
+
     def test_another_day_highlights_the_date_row(self, client: Client) -> None:
         """Hugo, 21 Oct: the peek's date row took over SNOW-1165's strip."""
         region = MicroRegionFactory.create()
@@ -294,6 +301,28 @@ class TestHalf:
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-resorts"' in content
         assert f'href="{resort.get_absolute_url()}"' in content
+
+    def test_each_resort_is_a_row_that_opens_its_panel(self, client: Client) -> None:
+        """Hugo, 25 Oct 2026: a region lists its resorts as rows, round tiles."""
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(
+            region=region, name="Verbier", kind=Resort.Kind.RESORT, num_lifts=34
+        )
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        start = content.index('data-testid="region-sheet-resorts"')
+        section = content[start : content.index("</section>", start)]
+        assert 'data-panel-open="resort"' in section
+        assert f'data-panel-id="{resort.slug}"' in section
+        assert f'data-resort-slug="{resort.slug}"' in section
+        assert 'data-testid="resort-tile"' in section
+        assert "34 lifts" in section
+
+    def test_the_body_carries_its_panel_key(self, client: Client) -> None:
+        """The back pill names the panel a row was followed from."""
+        region = MicroRegionFactory.create(name="Martigny-Verbier")
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert f'data-panel-key="region:{region.region_id}"' in content
+        assert 'data-panel-label="Martigny-Verbier"' in content
 
     def test_breadcrumb_names_the_country(self, client: Client) -> None:
         region = MicroRegionFactory.create()

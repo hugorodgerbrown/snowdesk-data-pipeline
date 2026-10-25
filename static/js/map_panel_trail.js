@@ -1,0 +1,201 @@
+// @ts-check
+/**
+ * static/js/map_panel_trail.js — moving between the map's three kinds of
+ * place panel, and back (Hugo, 25 Oct 2026).
+ *
+ * The region, resort and weather sheets each answer one question, and each
+ * ends with rows naming its neighbours (`includes/_place_link_row.html`): a
+ * resort's avalanche region, a region's resorts, a weather point's resort
+ * and region. A row is a real link to the place's page; on the map this
+ * module opens the place's own panel instead, in place — the one-object-
+ * sheet rule closes the panel it came from — and puts a back pill at the
+ * top of the new panel naming where the reader came from.
+ *
+ * THE TRAIL IS ONE STEP DEEP. Following a row replaces it; the back pill
+ * spends it; once the panel it led to has shown, anything that takes that
+ * panel away — another place painted into it (a map tap, a search pick),
+ * or its × — drops it. A trail of more than one step would need a stack
+ * the reader cannot see; one step answers "take me back" and nothing more.
+ *
+ * HOW A PLACE OPENS. Each kind already has a door, and this module only
+ * knocks on it:
+ *   region  — `snowdesk:region-open` (map.js selects it as a search pick
+ *             does, and the region sheet opens for the selection);
+ *   resort  — `snowdesk:resort-open` (map.js flies to the pin and opens the
+ *             place sheet, SNOW-1161). A resort row in the region sheet is
+ *             already opened by map_region_sheet.js, which prevents the
+ *             link's default; this module then only records the trail;
+ *   weather — `window.pwaWeatherDetail.open(shortId, dateKey)`.
+ *
+ * WHERE A PANEL SAYS WHAT IT IS. Each sheet body's root carries
+ * `data-panel-key` ("region:CH-4115", "resort:verbier", "weather:ab12cd")
+ * and `data-panel-label` (its name), so the trail can tell which panel is
+ * showing without knowing any sheet's internals.
+ */
+(function () {
+  'use strict';
+
+  var SHEET_IDS = ['region-sheet', 'place-sheet', 'weather-sheet'];
+  var found = document.getElementById('panel-trail-back-template');
+  if (!(found instanceof HTMLTemplateElement)) return;
+  var template = found;
+
+  var FALLBACKS = {
+    back: 'Back to {name}',
+  };
+  var strings = window.pwaStrings
+    ? window.pwaStrings.read('panel-trail-strings-template', FALLBACKS)
+    : FALLBACKS;
+
+  /** @type {{from: {key: string, label: string}, to: string, shown: boolean}|null} */
+  var trail = null;
+  /** @type {string|null} */
+  var dateKey = null;
+
+  /**
+   * The sheets this module watches, as present in the page.
+   *
+   * @returns {HTMLElement[]}
+   */
+  function sheets() {
+    return SHEET_IDS
+      .map(function (id) { return document.getElementById(id); })
+      .filter(function (el) { return el !== null; });
+  }
+
+  /**
+   * The key a row opens: "<kind>:<id>".
+   *
+   * @param {Element} link A `[data-panel-open]` row.
+   * @returns {string}
+   */
+  function keyFor(link) {
+    return (link.getAttribute('data-panel-open') || '') + ':' + (link.getAttribute('data-panel-id') || '');
+  }
+
+  /**
+   * Open the panel for a key, through that kind's own door.
+   *
+   * @param {string} key "<kind>:<id>".
+   * @param {string} href The place's page, for a place the map cannot open.
+   * @returns {void}
+   */
+  function openKey(key, href) {
+    var cut = key.indexOf(':');
+    var kind = key.slice(0, cut);
+    var id = key.slice(cut + 1);
+    if (!id) return;
+    if (kind === 'region') {
+      document.dispatchEvent(new CustomEvent('snowdesk:region-open', {
+        detail: { region_id: id, href: href },
+      }));
+    } else if (kind === 'resort') {
+      document.dispatchEvent(new CustomEvent('snowdesk:resort-open', {
+        detail: { slug: id, href: href },
+      }));
+    } else if (kind === 'weather') {
+      if (window.pwaWeatherDetail) window.pwaWeatherDetail.open(id, dateKey || undefined);
+      else if (href) window.location.assign(href);
+    }
+  }
+
+  /**
+   * Build the back pill for the trail's origin.
+   *
+   * @param {{key: string, label: string}} from
+   * @returns {HTMLElement}
+   */
+  function buildPill(from) {
+    var fragment = /** @type {DocumentFragment} */ (template.content.cloneNode(true));
+    var pill = /** @type {HTMLElement} */ (fragment.querySelector('[data-panel-back]'));
+    var name = pill.querySelector('[data-panel-back-name]');
+    if (name) name.textContent = from.label;
+    pill.setAttribute('aria-label', strings.back.replace('{name}', from.label));
+    return pill;
+  }
+
+  /**
+   * Put the pill on the open panel the trail points at and take it off
+   * every other one. A trail whose panel has been shown and is no longer
+   * showing — another place painted into it, or it closed — is spent.
+   *
+   * @returns {void}
+   */
+  function sync() {
+    var showing = false;
+    sheets().forEach(function (sheet) {
+      var body = sheet.querySelector('[data-panel-key]');
+      var pill = sheet.querySelector('[data-panel-back]');
+      var match = trail !== null && body !== null && !sheet.hasAttribute('hidden') &&
+        body.getAttribute('data-panel-key') === trail.to;
+      if (match && trail && body) {
+        showing = true;
+        if (pill) return;
+        var host = body.querySelector('[data-sheet-peek]') || body;
+        host.insertBefore(buildPill(trail.from), host.firstChild);
+        return;
+      }
+      if (pill) pill.remove();
+    });
+    if (!trail) return;
+    if (showing) trail.shown = true;
+    else if (trail.shown) trail = null;
+  }
+
+  document.addEventListener('click', function (ev) {
+    var target = /** @type {Element|null} */ (ev.target instanceof Element ? ev.target : null);
+    if (!target) return;
+
+    var back = target.closest('[data-panel-back]');
+    if (back) {
+      ev.preventDefault();
+      if (!trail) return;
+      var from = trail.from;
+      trail = null;
+      back.remove();
+      openKey(from.key, '');
+      return;
+    }
+
+    var link = target.closest('a[data-panel-open]');
+    if (!link) return;
+    var inSheet = sheets().some(function (sheet) { return sheet.contains(link); });
+    if (!inSheet) return;
+    var mouse = /** @type {MouseEvent} */ (ev);
+    if (mouse.button !== 0 || mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.altKey) return;
+
+    var source = link.closest('[data-panel-key]');
+    var to = keyFor(link);
+    trail = source
+      ? {
+        from: {
+          key: source.getAttribute('data-panel-key') || '',
+          label: source.getAttribute('data-panel-label') || '',
+        },
+        to: to,
+        shown: false,
+      }
+      : null;
+    // A sheet's own handler (the region sheet's resort rows) got there
+    // first: the place is already opening, so only the trail is ours.
+    if (ev.defaultPrevented) return;
+    ev.preventDefault();
+    openKey(to, /** @type {HTMLAnchorElement} */ (link).href);
+  });
+
+  document.addEventListener('snowdesk:date-changed', function (ev) {
+    dateKey = /** @type {CustomEvent} */ (ev).detail?.date || null;
+  });
+
+  if (typeof MutationObserver === 'function') {
+    var observer = new MutationObserver(sync);
+    sheets().forEach(function (sheet) {
+      observer.observe(sheet, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['hidden'],
+      });
+    });
+  }
+}());

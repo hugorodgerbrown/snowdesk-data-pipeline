@@ -66,6 +66,7 @@ Context:
     class="space-y-4"
     data-testid="place-sheet-body"
     data-place-kind="{{ kind }}"
+    {% if kind == "resort" %}data-panel-key="resort:{{ resort.slug }}" data-panel-label="{{ label }}"{% endif %}
     data-sheet-detents="{% if kind == 'resort' or resort_url or day_rating %}peek,half,full{% else %}peek,half{% endif %}"
 >
     {# Another day says so in the peek's date row, as the region sheet's #}
@@ -80,6 +81,13 @@ Context:
             {# the square danger tile is a region's (Hugo, 21 Oct).           #}
             {% include "includes/_resort_tile.html" with kind=kind only %}
             <div class="min-w-0 flex-1">
+                {# The kind of place, above its name, on every map panel (Hugo, 25 Oct 2026). #}
+                {% if kind == "resort" %}
+                    {% translate "Ski resort" as place_kind %}
+                {% else %}
+                    {% translate "Saved place" as place_kind %}
+                {% endif %}
+                {% include "includes/_eyebrow.html" with tag="p" text=place_kind data_testid="sheet-kind" only %}
                 <h2
                     data-row-label
                     class="truncate text-lg font-semibold leading-tight text-text-1"

@@ -2,8 +2,13 @@
 tests/public/test_resort_detail.py — Tests for the resort detail page (SNOW-504).
 
 Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
-  - 200 + content: resort name, parent region name, today's danger chip,
-    and a link to the region's evergreen bulletin.
+  - 200 + content: resort name and parent region name.
+  - A resort has no avalanche danger of its own (Hugo, 25 Oct 2026): no
+    level, no problem cards, no season danger calendar, whatever the
+    region's bulletin says — one neutral row naming the region, which links
+    its bulletin page for the day; and the title and description make no
+    danger claim. This retired the SNOW-1124 / SNOW-1156 / SNOW-1203
+    bulletin card and the SNOW-1126 season strip the page carried.
   - SNOW-1155: the header frame — the mono eyebrow (alternative name ·
     canton · country, each part omitted when blank, the element omitted
     when all are), the "See on the map" link to ``/map/?resort=<slug>``,
@@ -15,9 +20,7 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
   - An unknown slug returns 404.
   - Favourite-star state: sign-in CTA for anonymous/ineligible visitors,
     the button (unfavourited or favourited) for eligible ones.
-  - SNOW-807: the danger area is one link to the bulletin; each curated
-    location is a link to its weather page. (SNOW-807's observations link
-    was replaced by the header's "See on the map" in SNOW-1155.)
+  - SNOW-807: each curated location is a link to its weather page.
   - SNOW-1125: each location row carries today's brief one-day weather
     (icon, condition, high/low, snowfall, wind — no freezing level, no sun
     times), read in one batched query; no row today means the link alone.
@@ -25,25 +28,7 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
     curated locations — it named a village, a mid-station and a summit for
     every resort, including those with no locations at all.
   - SNOW-1122: the title and description name the resort beside the terms
-    people search for, "weather" only when there are forecasts, and today's
-    danger in words only when rated.
-  - SNOW-1124: the page answers the query — today's level and the bulletin
-    headline from the bulletin page's own selection, with exactly one link
-    in the danger area; no bulletin today means the note, never an old
-    bulletin; and a query-count ceiling.
-  - SNOW-1156: today's danger is one compact card — the level band, the
-    region, the first problem's aspects and elevation, the headline, the
-    "{provider} · updated HH:MM" line (``_resort_bulletin_attribution``,
-    on Central European time) and "Read the full {region} bulletin →"; or
-    "No bulletin today" with the resort's typical season and "Latest
-    {region} bulletin →", which links the most recent bulletin's dated page
-    (``_resort_bulletin_url``). The section's eyebrow names today. In season the
-    card leads the main column, out of season the forecasts do. The problem
-    cards and SNOW-1143's band-vs-lift-range lines are gone.
-  - SNOW-1203: the card states the level with the region panel's Day Risk
-    Profile rows (``day_windows``, the bulletin page's own), not its own
-    band, aspects row and headline; the aspects are left to the problem
-    cards; the eyebrow names the region; the forecasts lead in every season.
+    people search for, and "weather" only when there are forecasts.
   - SNOW-1123: the schema.org SkiResort JSON-LD — core properties, optional
     ones omitted when unset, and a ``</script>`` that cannot break out.
   - Resort facts block (SNOW-695, a ``<dl>`` since SNOW-1155): the curated
@@ -51,10 +36,6 @@ Covers ``apps.public.views.resort_detail`` (``/resorts/<slug>/``, SNOW-796):
     when curated, an unset row is omitted, the whole block is omitted
     rather than rendered empty when nothing is curated at all, elevation
     carries a thousands separator, and notes is a full-width row.
-  - SNOW-1126: the season strip and its text summary render server-side in
-    the plain (non-HTMX) response with correct counts, are omitted when no
-    day had a bulletin, show last season from an October date, never link
-    a cell to its day, and cost a bounded number of queries.
 """
 
 from __future__ import annotations
@@ -75,12 +56,11 @@ from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
 
-from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.models import Bulletin
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     build_render_model,
 )
-from apps.public.views import _resort_bulletin_attribution
 from apps.regions.models import MicroRegion, Resort
 from tests.factories import (
     BulletinFactory,
@@ -89,7 +69,6 @@ from tests.factories import (
     MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
-    RegionDayRatingFactory,
     ResortFactory,
     ResortLocationFactory,
     SubRegionFactory,
@@ -170,471 +149,48 @@ class TestResortDetailContent:
 
         assert "4 Vallées" in response.content.decode()
 
-    def test_shows_todays_danger_when_a_bulletin_covers_today(self) -> None:
-        """Today's bulletin renders the Day Risk Profile rows (SNOW-1203)."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        _todays_bulletin(region)
+    def test_shows_no_danger_even_when_a_bulletin_covers_today(self) -> None:
+        """A resort has no avalanche danger of its own (Hugo, 25 Oct 2026).
 
-        client = Client()
-        response = client.get(resort.get_absolute_url())
-
-        content = response.content.decode()
-        assert 'data-testid="day-windows-panel"' in content
-
-    def test_shows_no_rating_note_when_no_bulletin(self) -> None:
-        """No bulletin covering today → the no-rating note renders, 200."""
-        resort = ResortFactory.create()
-
-        client = Client()
-        response = client.get(resort.get_absolute_url())
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="resort-no-rating"' in content
-        assert 'data-testid="day-windows-panel"' not in content
-        assert 'data-testid="resort-problems"' not in content
-
-    def test_includes_bulletin_link(self) -> None:
-        """A "Full bulletin" link points at the parent region's bulletin page."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-
-        client = Client()
-        response = client.get(resort.get_absolute_url())
-
-        assert region.get_absolute_url() in response.content.decode()
-
-    @pytest.mark.parametrize("rated", [True, False])
-    def test_the_danger_area_is_one_link_to_the_bulletin(self, rated: bool) -> None:
-        """SNOW-807: chip or note, the whole area is one tappable link.
-
-        tests/e2e/test_resort_page.py clicks ``[data-testid="resort-danger"] a``,
-        so the container must hold exactly one anchor whichever state it is in.
+        The region's level, its problems and its season calendar are the
+        region's, on the region's page: none of them render here.
         """
         region = MicroRegionFactory.create()
         resort = ResortFactory.create(region=region)
-        if rated:
-            _todays_bulletin(region)
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        area = _danger_area(content)
-        assert len(re.findall(r"<a\b", area)) == 1
-        assert f'href="{region.get_absolute_url()}"' in area
-        link_text = "Read the full" if rated else "Latest"
-        assert f"{link_text} {region.name} bulletin →" in html.unescape(area)
-
-
-class _ElementSource(HTMLParser):
-    """Collect the source of the first element carrying a given ``data-testid``.
-
-    Tracks nesting depth from that element's start tag to its matching end
-    tag, so nested ``</div>`` tags inside it do not end the capture early.
-    """
-
-    _VOID = frozenset({"br", "hr", "img", "input", "link", "meta", "source"})
-
-    def __init__(self, testid: str) -> None:
-        """Start looking for ``[data-testid=testid]``."""
-        super().__init__(convert_charrefs=False)
-        self.testid = testid
-        self.depth = 0
-        self.done = False
-        self.parts: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        """Open (or deepen) the capture."""
-        if self.done:
-            return
-        if self.depth == 0 and ("data-testid", self.testid) not in attrs:
-            return
-        self.parts.append(self.get_starttag_text() or "")
-        if tag not in self._VOID:
-            self.depth += 1
-
-    def handle_endtag(self, tag: str) -> None:
-        """Close one level; finish at the element's own end tag."""
-        if self.done or self.depth == 0:
-            return
-        self.parts.append(f"</{tag}>")
-        self.depth -= 1
-        if self.depth == 0:
-            self.done = True
-
-    def handle_data(self, data: str) -> None:
-        """Keep text inside the capture."""
-        if self.depth and not self.done:
-            self.parts.append(data)
-
-    def handle_entityref(self, name: str) -> None:
-        """Keep a named entity (``&deg;``) inside the capture, as written."""
-        self.handle_data(f"&{name};")
-
-    def handle_charref(self, name: str) -> None:
-        """Keep a numeric entity inside the capture, as written."""
-        self.handle_data(f"&#{name};")
-
-
-def _danger_area(content: str) -> str:
-    """Return the markup of ``[data-testid="resort-danger"]`` and its children."""
-    parser = _ElementSource("resort-danger")
-    parser.feed(content)
-    assert parser.done, "resort-danger block not found"
-    return "".join(parser.parts)
-
-
-# Queries for an anonymous resort page with today's bulletin: the resort,
-# the day rating, the day's issues, the curated locations and the rest of the
-# request. Measured at 7 (SNOW-1124); one of headroom, so a per-problem or
-# per-issue query trips it.
-QUERY_CEILING = 8
-
-
-@pytest.mark.django_db
-class TestResortTodaysDanger:
-    """SNOW-1124: the page shows today's bulletin danger, read-only."""
-
-    def test_the_card_shows_the_day_risk_profile_and_attribution(self) -> None:
-        """SNOW-1203: the region panel's level row, the source line, one link."""
-        region = MicroRegionFactory.create(name="Martigny–Verbier")
-        resort = ResortFactory.create(region=region)
-        _todays_bulletin(region)
-
-        response = Client().get(resort.get_absolute_url())
-
-        assert response.status_code == 200
-        area = _danger_area(response.content.decode())
-        text = html.unescape(area)
-        assert 'data-testid="day-windows-panel"' in area
-        assert "dw-panel--flush" in area
-        assert area.count('data-testid="day-window-row"') == 1
-        assert "lv-considerable" in area
-        assert "Considerable" in text
-        assert 'class="danger-band' not in area
-        assert 'data-testid="bulletin-headline"' not in area
-        assert 'data-testid="resort-bulletin-attribution"' in area
-        assert "SLF · updated" in text
-        assert len(re.findall(r"<a\b", area)) == 1
-
-    def test_the_card_leaves_the_aspects_to_the_problem_cards(self) -> None:
-        """SNOW-1203: the scope is stated once, in the problem card."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        _todays_bulletin(region)
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-        area = _danger_area(content)
-
-        assert "N, NE, E" not in area
-        assert "2200" not in area
-        assert 'data-testid="resort-bulletin-scope"' not in content
-        assert content.count('data-testid="aspect-elevation-row"') == 1
-
-    def test_the_rows_match_the_bulletin_page(self) -> None:
-        """The resort and the region state the day's windows identically."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        _todays_bulletin(region)
-
-        client = Client()
-        resort_rows = client.get(resort.get_absolute_url()).context["day_windows"]
-        bulletin_rows = client.get(region.get_absolute_url()).context["day_windows"]
-
-        assert resort_rows
-        assert resort_rows == bulletin_rows
-
-    def test_the_problems_follow_the_card_and_band_lines_stay_gone(self) -> None:
-        """SNOW-1164 put the problems back under the card; SNOW-1143's lines stay gone."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(
-            region=region, base_elevation_m=821, top_elevation_m=3330
-        )
         _todays_bulletin(region)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        assert 'data-testid="resort-problems"' in content
-        assert content.index('data-testid="resort-danger"') < content.index(
-            'data-testid="resort-problems"'
-        )
-        assert 'data-testid="rating-block"' in content
-        assert 'data-testid="resort-problem-band' not in content
-        assert "lift range" not in content
-        assert "Avalanche danger and mountain conditions" not in content
+        for gone in (
+            "day-windows-panel",
+            "resort-danger",
+            "resort-problems",
+            "resort-season",
+            "resort-no-rating",
+        ):
+            assert f'data-testid="{gone}"' not in content
+        assert "danger-tile" not in content
 
-    @freeze_time("2026-10-20 12:00:00+00:00")
-    def test_eyebrow_names_the_section_and_today(self) -> None:
-        """The section's h2 reads "{region} avalanche bulletin • Tuesday 20 October"."""
-        resort = ResortFactory.create(region=MicroRegionFactory.create(name="Nendaz"))
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        heading = re.search(
-            r'<h2[^>]*id="resort-bulletin-heading"[^>]*>(.*?)</h2>', content, re.S
-        )
-        assert heading is not None
-        assert html.unescape(heading.group(1)) == (
-            "Nendaz avalanche bulletin • Tuesday 20 October"
-        )
-
-    def test_no_bulletin_card_names_the_typical_season(self) -> None:
-        """No bulletin: the neutral card, the season note, the latest link."""
-        region = MicroRegionFactory.create(name="Martigny–Verbier")
-        resort = ResortFactory.create(
-            region=region, typical_season_open="12-01", typical_season_close="04-30"
-        )
-
-        area = _danger_area(Client().get(resort.get_absolute_url()).content.decode())
-        text = html.unescape(area)
-
-        assert "No bulletin today" in text
-        assert "Martigny–Verbier region" in text
-        assert 'class="danger-band' not in area
-        assert (
-            "Bulletins for this region are issued through the winter season, "
-            "which usually runs from 1 December to 30 April."
-        ) in " ".join(text.split())
-        assert "Latest Martigny–Verbier bulletin →" in text
-        assert 'data-testid="resort-bulletin-attribution"' not in area
-        assert len(re.findall(r"<a\b", area)) == 1
-
-    def test_latest_link_goes_to_the_last_dated_bulletin(self) -> None:
-        """No bulletin today: "Latest" links the most recent bulletin's day."""
-        region = MicroRegionFactory.create(name="Martigny–Verbier")
-        resort = ResortFactory.create(region=region)
-        today = timezone.localdate()
-        for days_ago in (40, 12):
-            start = timezone.make_aware(
-                datetime.datetime.combine(
-                    today - datetime.timedelta(days=days_ago), datetime.time(8)
-                )
-            )
-            bulletin = BulletinFactory.create(
-                valid_from=start, valid_to=start + datetime.timedelta(hours=9)
-            )
-            RegionBulletinFactory.create(bulletin=bulletin, region=region)
-
-        area = _danger_area(Client().get(resort.get_absolute_url()).content.decode())
-
-        expected = region.get_absolute_url(
-            target_date=today - datetime.timedelta(days=12)
-        )
-        assert f'href="{expected}"' in area
-
-    def test_latest_link_falls_back_to_the_evergreen_page(self) -> None:
-        """A region with no bulletin at all links its evergreen page."""
-        resort = ResortFactory.create()
-
-        area = _danger_area(Client().get(resort.get_absolute_url()).content.decode())
-
-        assert f'href="{resort.region.get_absolute_url()}"' in area
-
-    @pytest.mark.parametrize(
-        ("season_open", "season_close"), [("", ""), ("12-01", ""), ("", "04-30")]
-    )
-    def test_no_bulletin_card_without_a_season_reads_no_dates(
-        self, season_open: str, season_close: str
-    ) -> None:
-        """An unset (or half-set) typical season falls back to the dateless note."""
-        resort = ResortFactory.create(
-            typical_season_open=season_open, typical_season_close=season_close
-        )
-
-        area = _danger_area(Client().get(resort.get_absolute_url()).content.decode())
-        note = " ".join(html.unescape(area).split())
-
-        assert "Bulletins for this region are issued through the winter season." in note
-        assert "usually runs" not in note
-
-    def test_a_past_bulletin_is_never_shown_as_today(self) -> None:
-        """Yesterday's bulletin leaves today's note in place."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        _todays_bulletin(
-            region,
-            valid_from=timezone.now() - datetime.timedelta(days=3),
-        )
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert 'data-testid="resort-no-rating"' in content
-        assert 'data-testid="day-windows-panel"' not in content
-        assert "Fresh wind slabs" not in content
-
-    def test_an_unbuilt_render_model_shows_the_note(self) -> None:
-        """A failed render model (version 0) is not shown as a "low" day."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        today = timezone.now().date()
-        start = datetime.datetime(
-            today.year, today.month, today.day, tzinfo=datetime.UTC
-        )
-        bulletin = BulletinFactory.create(
-            raw_data={"properties": {"dangerRatings": "not-a-list"}},
-            issued_at=start,
-            valid_from=start,
-            valid_to=start + datetime.timedelta(hours=23),
-        )
-        RegionBulletinFactory.create(bulletin=bulletin, region=region)
-
-        response = Client().get(resort.get_absolute_url())
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'data-testid="resort-no-rating"' in content
-        assert 'data-testid="day-windows-panel"' not in content
-
-    def test_query_count_ceiling(self, django_assert_max_num_queries: Any) -> None:
-        """The danger area adds a bounded, constant number of queries."""
-        region = MicroRegionFactory.create()
+    def test_the_region_row_names_the_region_and_links_its_bulletin(self) -> None:
+        """One neutral row, no level, linking today's bulletin page."""
+        region = MicroRegionFactory.create(name="Martigny – Verbier")
         resort = ResortFactory.create(region=region)
         _todays_bulletin(region)
-        client = Client()
 
-        with django_assert_max_num_queries(QUERY_CEILING):
-            response = client.get(resort.get_absolute_url())
+        content = Client().get(resort.get_absolute_url()).content.decode()
 
-        assert response.status_code == 200
-
-
-def _main_column_order(content: str) -> list[str]:
-    """Return the main column's section testids in source order."""
-    found = [
-        (content.index(f'data-testid="{testid}"'), testid)
-        for testid in ("resort-bulletin", "resort-forecast", "resort-season")
-        if f'data-testid="{testid}"' in content
-    ]
-    return [testid for _, testid in sorted(found)]
+        start = content.index('data-testid="resort-region-link"')
+        row = content[content.rindex("<a", 0, start) : content.index("</a>", start)]
+        assert f'href="{region.get_absolute_url()}"' in row
+        assert 'data-panel-open="region"' in row
+        assert f'data-panel-id="{region.region_id}"' in row
+        assert "Martigny – Verbier" in html.unescape(row)
+        assert "The avalanche region this resort is in" in row
+        assert "danger-tile" not in row
 
 
 @pytest.mark.django_db
 @freeze_time("2026-02-20 12:00:00+00:00")
-class TestResortSectionOrder:
-    """SNOW-1203: the forecasts lead in every season; the bulletin follows."""
-
-    @pytest.fixture(autouse=True)
-    def _archive_start(self, settings: Any) -> None:
-        """Pin SEASON_START_DATE so the season window is not clamped."""
-        settings.SEASON_START_DATE = datetime.date(2024, 11, 1)
-
-    def _resort_with_everything(self) -> Resort:
-        """A resort with a pin (so forecasts render) and a season of bulletins."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region, geocoded=True)
-        RegionDayRatingFactory.create(
-            region=region,
-            date=datetime.date(2026, 1, 5),
-            min_rating="moderate",
-            max_rating="moderate",
-            source_bulletin=BulletinFactory.create(),
-        )
-        return resort
-
-    def test_in_season_the_forecasts_still_come_first(self) -> None:
-        """Today's bulletin: forecasts, then the bulletin, then the season strip."""
-        resort = self._resort_with_everything()
-        _todays_bulletin(resort.region)
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert _main_column_order(content) == [
-            "resort-forecast",
-            "resort-bulletin",
-            "resort-season",
-        ]
-
-    def test_out_of_season_the_forecasts_come_first(self) -> None:
-        """No bulletin today: forecasts, then the bulletin card, then the season."""
-        resort = self._resort_with_everything()
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert _main_column_order(content) == [
-            "resort-forecast",
-            "resort-bulletin",
-            "resort-season",
-        ]
-
-    @pytest.mark.parametrize("rated", [True, False])
-    def test_the_card_renders_once(self, rated: bool) -> None:
-        """Rated or not, the card is on the page exactly once."""
-        resort = self._resort_with_everything()
-        if rated:
-            _todays_bulletin(resort.region)
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert content.count('data-testid="resort-danger"') == 1
-        assert content.count('id="resort-bulletin-heading"') == 1
-
-
-@pytest.mark.django_db
-class TestResortBulletinAttribution:
-    """SNOW-1156: ``_resort_bulletin_attribution`` — "SLF · updated 17:00"."""
-
-    def test_no_panel_names_nothing(self) -> None:
-        """Without today's bulletin both parts are blank."""
-        assert _resort_bulletin_attribution(None) == {
-            "bulletin_provider": "",
-            "bulletin_updated_time": "",
-        }
-
-    @pytest.mark.parametrize(
-        ("published", "expected"),
-        [
-            # Winter: Central European Time, UTC+1.
-            ("2026-01-14T16:00:00+00:00", "17:00"),
-            # Summer time: UTC+2.
-            ("2026-04-27T06:00:00Z", "08:00"),
-        ],
-    )
-    def test_publication_time_reads_in_local_time(
-        self, published: str, expected: str
-    ) -> None:
-        """The render model's publication time, on the Alps' own clock."""
-        bulletin = BulletinFactory.create(source=Bulletin.Source.SLF)
-        panel = {
-            "bulletin": bulletin,
-            "render_model": {
-                "source": "SLF",
-                "metadata": {"publication_time": published},
-            },
-        }
-
-        assert _resort_bulletin_attribution(panel) == {
-            "bulletin_provider": "SLF",
-            "bulletin_updated_time": expected,
-        }
-
-    def test_falls_back_to_the_bulletin_source_and_issue_time(self) -> None:
-        """No source or publication time in the render model: the row's own."""
-        bulletin = BulletinFactory.create(
-            source=Bulletin.Source.METEOFRANCE,
-            issued_at=datetime.datetime(2026, 2, 3, 15, 30, tzinfo=datetime.UTC),
-        )
-
-        result = _resort_bulletin_attribution(
-            {"bulletin": bulletin, "render_model": {}}
-        )
-
-        assert result == {
-            "bulletin_provider": "Météo-France",
-            "bulletin_updated_time": "16:30",
-        }
-
-    def test_an_unknown_source_names_no_provider(self) -> None:
-        """A blank source leaves the provider out rather than guessing."""
-        bulletin = BulletinFactory.create(source="")
-
-        result = _resort_bulletin_attribution(
-            {"bulletin": bulletin, "render_model": {}}
-        )
-
-        assert result["bulletin_provider"] == ""
-        assert result["bulletin_updated_time"]
-
-
 @pytest.mark.django_db
 class TestResortLegacyRedirect:
     """The pre-SNOW-796 ``/resorts/<id>/<slug>/`` form 301s to ``/resorts/<slug>/``."""
@@ -836,6 +392,56 @@ def _todays_weather(location: Any, **overrides: Any) -> Any:
     }
     fields.update(overrides)
     return WeatherFactory.create(**fields)
+
+
+class _ElementSource(HTMLParser):
+    """Collect the source of the first element carrying a given ``data-testid``.
+
+    Tracks nesting depth from that element's start tag to its matching end
+    tag, so nested ``</div>`` tags inside it do not end the capture early.
+    """
+
+    _VOID = frozenset({"br", "hr", "img", "input", "link", "meta", "source"})
+
+    def __init__(self, testid: str) -> None:
+        """Start looking for ``[data-testid=testid]``."""
+        super().__init__(convert_charrefs=False)
+        self.testid = testid
+        self.depth = 0
+        self.done = False
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Open (or deepen) the capture."""
+        if self.done:
+            return
+        if self.depth == 0 and ("data-testid", self.testid) not in attrs:
+            return
+        self.parts.append(self.get_starttag_text() or "")
+        if tag not in self._VOID:
+            self.depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        """Close one level; finish at the element's own end tag."""
+        if self.done or self.depth == 0:
+            return
+        self.parts.append(f"</{tag}>")
+        self.depth -= 1
+        if self.depth == 0:
+            self.done = True
+
+    def handle_data(self, data: str) -> None:
+        """Keep text inside the capture."""
+        if self.depth and not self.done:
+            self.parts.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        """Keep a named entity (``&deg;``) inside the capture, as written."""
+        self.handle_data(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        """Keep a numeric entity inside the capture, as written."""
+        self.handle_data(f"&#{name};")
 
 
 def _section(content: str, testid: str) -> str:
@@ -1376,7 +982,7 @@ class TestResortSearchTerms:
 
         title = _page_title(content)
         assert title.startswith(
-            "Adelboden conditions — avalanche bulletin & weather · Snowdesk"
+            "Adelboden conditions — weather & avalanche bulletin · Snowdesk"
         )
 
     def test_title_without_locations_does_not_promise_weather(self) -> None:
@@ -1386,44 +992,22 @@ class TestResortSearchTerms:
         content = Client().get(resort.get_absolute_url()).content.decode()
 
         title = _page_title(content)
-        assert title.startswith("Adelboden avalanche conditions & bulletin · Snowdesk")
+        assert title.startswith("Adelboden resort & avalanche bulletin · Snowdesk")
         assert "weather" not in title
 
-    def test_description_names_todays_danger_when_rated(self) -> None:
-        """Today's bulletin puts its level in words into the description."""
+    def test_description_makes_no_danger_claim(self) -> None:
+        """A resort has no danger of its own, rated day or not (25 Oct 2026)."""
         resort = ResortFactory.create(name="Adelboden")
         _todays_bulletin(resort.region)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
         description = _meta_description(content)
-        assert description.startswith("Adelboden avalanche conditions")
-        assert "Danger today: 3 – Considerable." in description
-
-    def test_description_omits_danger_when_unrated(self) -> None:
-        """No rating today, no danger claim — and no stray double space."""
-        resort = ResortFactory.create(name="Adelboden")
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        description = _meta_description(content)
-        assert "Danger today" not in description
+        assert description.startswith("Adelboden")
+        assert "Danger" not in description
         assert "  " not in description
 
-    def test_description_omits_danger_for_a_no_rating_row(self) -> None:
-        """A "no_rating" row with no bulletin today makes no danger claim."""
-        resort = ResortFactory.create(name="Adelboden")
-        RegionDayRatingFactory.create(
-            region=resort.region, max_rating=RegionDayRating.Rating.NO_RATING
-        )
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        description = _meta_description(content)
-        assert "Danger today" not in description
-        assert "–" not in description
-
-    def test_rated_forecast_description_fits_a_search_snippet(self) -> None:
+    def test_forecast_description_fits_a_search_snippet(self) -> None:
         """The longest branch stays inside the ~155-character snippet budget."""
         region = MicroRegionFactory.create(name="Bernese Oberland")
         resort = ResortFactory.create(name="Adelboden", region=region)
@@ -1432,19 +1016,18 @@ class TestResortSearchTerms:
             location=LocationFactory.create(name="Adelboden", kind="VILLAGE"),
             role="BASE",
         )
-        _todays_bulletin(region)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
         description = html.unescape(_meta_description(content))
-        assert "Danger today: 3 – Considerable." in description
+        assert "Bernese Oberland avalanche bulletin" in description
         assert len(description) <= 155
 
     def test_body_carries_the_bulletin_heading(self) -> None:
         """The target terms appear in the visible page, not only the meta tags.
 
         SNOW-1156 retired the "Avalanche danger and mountain conditions"
-        heading; the bulletin section's own h2 now carries "avalanche".
+        heading; the region row's own h2 carries "avalanche" (25 Oct 2026).
         """
         resort = ResortFactory.create(
             name="Adelboden", region=MicroRegionFactory.create(name="Frutigen")
@@ -1453,9 +1036,10 @@ class TestResortSearchTerms:
         content = Client().get(resort.get_absolute_url()).content.decode()
 
         assert re.search(
-            r'<h2[^>]*id="resort-bulletin-heading"[^>]*>\s*Frutigen avalanche bulletin',
+            r'<h2[^>]*id="resort-region-heading"[^>]*>\s*Avalanche bulletin',
             content,
         )
+        assert "Frutigen" in content
 
 
 def _json_ld(content: str) -> dict[str, Any]:
@@ -1663,13 +1247,13 @@ class TestResortHeader:
         assert "Reports near here" not in content
 
     def test_actions_sit_in_the_header_before_the_sections(self) -> None:
-        """Save and the map link are in the header, above today's danger."""
+        """Save and the map link are in the header, above the sections."""
         resort = ResortFactory.create(geocoded=True)
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
         actions = content.index('data-testid="resort-actions"')
-        assert actions < content.index('data-testid="resort-danger"')
+        assert actions < content.index('data-testid="resort-region"')
         assert actions < content.index('data-testid="resort-favourite-signin"')
         assert actions < content.index('data-testid="resort-map-link"')
 
@@ -1680,7 +1264,7 @@ class TestResortHeader:
         content = Client().get(resort.get_absolute_url()).content.decode()
 
         assert content.index('data-testid="resort-facts"') > content.index(
-            'data-testid="resort-danger"'
+            'data-testid="resort-region"'
         )
         assert content.index('data-testid="resort-facts"') > content.index(
             'data-testid="resort-forecast"'
@@ -1913,239 +1497,6 @@ class TestResortFacts:
 
 
 @pytest.mark.django_db
-class TestResortSeasonStrip:
-    """SNOW-1126: the season calendar, server-rendered on the resort page.
-
-    SNOW-1158 redrew it as the shared month-shaped calendar.
-    """
-
-    @pytest.fixture(autouse=True)
-    def _archive_start(self, settings: Any) -> None:
-        """Pin SEASON_START_DATE so the window is not clamped."""
-        settings.SEASON_START_DATE = datetime.date(2024, 11, 1)
-
-    def _rate(self, region: Any, day: datetime.date, rating: str) -> None:
-        """Create one RegionDayRating row backed by a bulletin."""
-        RegionDayRatingFactory.create(
-            region=region,
-            date=day,
-            min_rating=rating,
-            max_rating=rating,
-            source_bulletin=BulletinFactory.create(),
-        )
-
-    def _strip(self, content: str) -> str:
-        """Return the strip section's markup."""
-        start = content.index('data-testid="resort-season"')
-        return content[start : content.index("</section>", start)]
-
-    def _cell(self, strip: str, iso: str) -> str:
-        """Return the opening tag of the calendar cell for ``iso``."""
-        head = strip.split(f'data-date="{iso}"')[0].rsplit("<span", 1)[1]
-        tail = strip.split(f'data-date="{iso}"')[1].split(">")[0]
-        return head + tail
-
-    @freeze_time("2026-02-20 12:00:00+00:00")
-    def test_calendar_and_summary_are_in_the_plain_response(self) -> None:
-        """No HX-Request: the summary aria-label and the cells are in the HTML."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        self._rate(region, datetime.date(2025, 12, 1), "low")
-        self._rate(region, datetime.date(2025, 12, 2), "moderate")
-        self._rate(region, datetime.date(2026, 1, 5), "high")
-        self._rate(region, datetime.date(2026, 1, 6), "considerable")
-        self._rate(region, datetime.date(2026, 1, 7), "high")
-
-        response = Client().get(resort.get_absolute_url())
-
-        assert response.status_code == 200
-        strip = html.unescape(self._strip(response.content.decode()))
-        # SNOW-1158: the summary is the calendar's one role="img" label, no
-        # longer visible text, and there is no per-level count list.
-        assert (
-            'role="img" aria-label="Season 2025/26: 5 days with a bulletin, '
-            '3 at Considerable or higher."'
-        ) in strip
-        assert "resort-season-summary" not in strip
-        assert "resort-season-levels" not in strip
-        assert 'data-testid="season-calendar"' in strip
-        assert 'title="5 Jan 2026 · High"' in strip
-        assert 'data-level="high"' in strip
-
-    @freeze_time("2026-02-20 12:00:00+00:00")
-    def test_eyebrow_names_the_region_and_the_season(self) -> None:
-        """SNOW-1158: "Avalanche danger • {region} region • 2025/26"."""
-        region = MicroRegionFactory.create(name="Martigny–Verbier")
-        resort = ResortFactory.create(region=region)
-        self._rate(region, datetime.date(2026, 1, 5), "high")
-
-        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
-        heading = strip.split('id="resort-season-heading"')[1].split("</h2>")[0]
-
-        assert "Avalanche danger • Martigny–Verbier region • 2025/26" in heading
-
-    @freeze_time("2026-02-20 12:00:00+00:00")
-    def test_the_key_names_five_states(self) -> None:
-        """The short key: No bulletin, Low, Moderate, Considerable, High."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        self._rate(region, datetime.date(2026, 1, 5), "high")
-
-        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
-        key = strip.split('data-testid="season-calendar-key"')[1].split("</ul>")[0]
-        words = [" ".join(item.split(">")[-1].split()) for item in key.split("</li>")]
-
-        assert [w for w in words if w] == [
-            "No bulletin",
-            "Low",
-            "Moderate",
-            "Considerable",
-            "High",
-        ]
-
-    @freeze_time("2026-02-20 12:00:00+00:00")
-    def test_in_season_rings_today_and_draws_the_rest_not_yet(self) -> None:
-        """A running season rings today; the days after it are "not yet"."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        self._rate(region, datetime.date(2026, 1, 5), "high")
-
-        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
-
-        assert "season-day-ring" in self._cell(strip, "2026-02-20")
-        assert strip.count("season-day season-day-ring") == 1
-        assert 'data-state="future"' in self._cell(strip, "2026-02-22")
-        assert 'data-state="future"' in self._cell(strip, "2026-04-30")
-        assert 'data-state="none"' in self._cell(strip, "2026-02-19")
-
-    @freeze_time("2026-10-19 12:00:00+00:00")
-    def test_a_finished_season_rings_today_never_its_first_high_day(self) -> None:
-        """SNOW-1163: off-season the ring is still today, not the first High day."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        self._rate(region, datetime.date(2026, 1, 3), "considerable")
-        self._rate(region, datetime.date(2026, 1, 9), "high")
-        self._rate(region, datetime.date(2026, 10, 19), "moderate")
-
-        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
-
-        assert "season-day-ring" in self._cell(strip, "2026-10-19")
-        assert "season-day-ring" not in self._cell(strip, "2026-01-09")
-        assert strip.count("season-day season-day-ring") == 1
-
-    @freeze_time("2026-10-19 12:00:00+00:00")
-    def test_no_ring_when_today_is_not_drawn(self) -> None:
-        """SNOW-1163: a finished season whose months stop before today rings nothing."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        self._rate(region, datetime.date(2026, 1, 9), "high")
-
-        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
-
-        assert "season-day-ring" not in strip
-        assert 'data-state="future"' not in strip
-
-    @freeze_time("2026-02-20 12:00:00+00:00")
-    def test_a_dated_page_rings_its_own_day(self) -> None:
-        """SNOW-1163: /resorts/<slug>/<date>/ rings that date, not today."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        self._rate(region, datetime.date(2026, 1, 5), "high")
-        self._rate(region, datetime.date(2026, 2, 3), "moderate")
-
-        url = reverse("public:resort_date", args=[resort.slug, "2026-02-03"])
-        strip = self._strip(Client().get(url).content.decode())
-
-        assert "season-day-ring" in self._cell(strip, "2026-02-03")
-        assert "season-day-ring" not in self._cell(strip, "2026-02-20")
-        assert strip.count("season-day season-day-ring") == 1
-
-    @freeze_time("2026-02-20 12:00:00+00:00")
-    def test_cells_do_not_link_to_their_days(self) -> None:
-        """The page's one bulletin link is the danger area; no cell is a link."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        self._rate(region, datetime.date(2026, 1, 5), "high")
-
-        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
-
-        assert "<a" not in strip
-        assert strip.count('role="img"') == 1
-        # The readout's date attributes belong to the linked variant only.
-        assert "data-day-long" not in strip
-
-    @freeze_time("2026-02-20 12:00:00+00:00")
-    def test_strip_is_omitted_without_bulletins(self) -> None:
-        """No day in the window had a bulletin → no section at all."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        # A row with no source bulletin is not a day with a bulletin.
-        RegionDayRatingFactory.create(region=region, date=datetime.date(2026, 1, 5))
-
-        content = Client().get(resort.get_absolute_url()).content.decode()
-
-        assert "resort-season" not in content
-        assert 'data-testid="resort-detail"' in content
-
-    @freeze_time("2026-10-19 12:00:00+00:00")
-    def test_an_october_date_shows_last_season(self) -> None:
-        """Off-season, the calendar is the season just ended: Nov–Apr only."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        self._rate(region, datetime.date(2026, 3, 10), "considerable")
-        self._rate(region, datetime.date(2026, 4, 30), "moderate")
-        # Before the 25/26 season.
-        self._rate(region, datetime.date(2025, 3, 10), "very_high")
-
-        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
-
-        assert (
-            'aria-label="Season 2025/26: 2 days with a bulletin, '
-            '1 at Considerable or higher."'
-        ) in strip
-        assert 'data-date="2025-11-01"' in strip
-        assert 'data-date="2026-04-30"' in strip
-        assert 'data-date="2026-05-01"' not in strip
-        assert strip.count('class="season-cal-month"') == 6
-
-    @freeze_time("2026-10-19 12:00:00+00:00")
-    def test_a_may_bulletin_extends_the_calendar_to_may(self) -> None:
-        """SNOW-1158: a bulletin after 30 April adds its month, and no more."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        self._rate(region, datetime.date(2026, 3, 10), "considerable")
-        self._rate(region, datetime.date(2026, 5, 3), "high")
-
-        strip = self._strip(Client().get(resort.get_absolute_url()).content.decode())
-
-        assert (
-            'aria-label="Season 2025/26: 2 days with a bulletin, '
-            '2 at Considerable or higher."'
-        ) in strip
-        assert 'data-month="2026-05"' in strip
-        assert 'data-date="2026-05-31"' in strip
-        assert 'data-month="2026-06"' not in strip
-
-    @freeze_time("2026-02-20 12:00:00+00:00")
-    def test_query_count_is_bounded(self, django_assert_max_num_queries: Any) -> None:
-        """The strip adds one range query, however many days are rated."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region)
-        for offset in range(30):
-            self._rate(
-                region, datetime.date(2025, 12, 1) + datetime.timedelta(offset), "low"
-            )
-        client = Client()
-        url = resort.get_absolute_url()
-
-        # The page took six queries before SNOW-1126; the strip adds one.
-        with django_assert_max_num_queries(7):
-            response = client.get(url)
-
-        assert response.status_code == 200
-
-
-@pytest.mark.django_db
 class TestResortDatedPage:
     """SNOW-1164: the page takes a day, as the bulletin page does."""
 
@@ -2175,18 +1526,13 @@ class TestResortDatedPage:
         resort = ResortFactory.create()
         assert Client().get(self._dated_url(resort, "not-a-day")).status_code == 404
 
-    def test_another_day_shows_that_days_bulletin(self) -> None:
+    def test_another_day_links_that_days_bulletin(self) -> None:
+        """The region row links the region's page for the day shown."""
         region = MicroRegionFactory.create()
         resort = ResortFactory.create(region=region)
-        _todays_bulletin(
-            region,
-            valid_from=datetime.datetime(2026, 2, 3, tzinfo=datetime.UTC),
-        )
         content = Client().get(self._dated_url(resort, self._DAY)).content.decode()
-        assert "Tuesday 3 February" in content
-        assert 'data-testid="day-windows-panel"' in content
         assert f'href="{region.get_absolute_url(self._DAY)}"' in content
-        assert "Danger on 3 February 2026: 3 – Considerable." in content
+        assert 'data-testid="day-windows-panel"' not in content
 
     def test_another_day_is_noindex_and_today_is_not(self) -> None:
         resort = ResortFactory.create()
@@ -2194,12 +1540,6 @@ class TestResortDatedPage:
         bare = Client().get(resort.get_absolute_url()).content.decode()
         assert 'name="robots" content="noindex' in dated
         assert 'name="robots"' not in bare
-
-    def test_an_empty_day_says_this_day_not_today(self) -> None:
-        resort = ResortFactory.create()
-        content = Client().get(self._dated_url(resort, self._DAY)).content.decode()
-        assert "No bulletin this day" in content
-        assert "No bulletin today" not in content
 
     def test_another_day_links_back_to_today(self) -> None:
         """SNOW-1165: the strip names the day and links to the bare URL."""
@@ -2218,21 +1558,3 @@ class TestResortDatedPage:
         resort = ResortFactory.create()
         content = Client().get(resort.get_absolute_url()).content.decode()
         assert 'data-testid="another-day-strip"' not in content
-
-
-@pytest.mark.django_db
-class TestResortProblems:
-    """SNOW-1164: the day's problems, with no one-height verdict."""
-
-    def test_the_problems_carry_no_location_verdict(self) -> None:
-        """A resort spans a range of heights, so "Above this location" misleads."""
-        region = MicroRegionFactory.create()
-        resort = ResortFactory.create(region=region, latitude=46.1, longitude=7.4)
-        assert resort.location is not None
-        resort.location.elevation_m = 1500.0
-        resort.location.save()
-        _todays_bulletin(region)  # wind slab above 2200 m
-        content = Client().get(resort.get_absolute_url()).content.decode()
-        assert 'data-testid="resort-problems"' in content
-        assert 'data-testid="altitude-relevance-chip"' not in content
-        assert "Above this location" not in content

@@ -6,15 +6,11 @@ Gives a Resort its own indexable URL (``/resorts/<slug>/``), rendered by
 ``apps.public.views.resort_detail``. Cross-linked from the map's resort-pin
 popup, whose CTA reads "View resort →".
 
-THE PAGE ANSWERS THE QUERY (SNOW-1124, docs/decisions/a-resort-page-
-answers-the-query.md, amending SNOW-807's docs/decisions/two-documents-and-
-a-map.md for resort pages). People search "Verbier avalanche", not
-"CH-4115", and a page that only links onward cannot rank for that — so
-today's danger is shown here. It is the bulletin page's own render model,
-selected the same way, read-only: the bulletin stays the one full document,
-and this page holds no copy. SNOW-1156 made it a LANDING page: today's
-danger is one compact card that leads into the bulletin, and the problem
-cards and SNOW-1143's band-vs-lift-range lines are gone.
+A RESORT HAS NO AVALANCHE DANGER OF ITS OWN (Hugo, 25 Oct 2026,
+docs/decisions/a-resort-has-no-avalanche-danger.md, superseding SNOW-1124's
+a-resort-page-answers-the-query.md). The page is the resort's information
+and its weather; the danger is its region's, and the page names that region
+in one row, with no level, that links to its bulletin.
 
 FRAME (SNOW-1155, to Hugo's approved design board). A header, then two
 columns on a desktop (``lg``): the sections below in a main column, and the
@@ -43,9 +39,8 @@ Header:
     SNOW-1161 — the one link from this page onto the map). SNOW-807's "Reports near here on the
     map" link is gone; this one replaces it.
 
-BODY (SNOW-1164). Everything under the header — the bulletin card, the
-day's problem cards, the forecast, the
-season calendar, and the curated facts in a ~320px sidebar on a desktop
+BODY (SNOW-1164). Everything under the header — the forecast, the region
+row, and the curated facts in a ~320px sidebar on a desktop
 (last on a phone) — is ``public/partials/_resort_body.html``, which
 documents each section. The map's place sheet renders the same partial, so
 on a phone the sheet at full height is this page; add a fact there, never
@@ -62,23 +57,9 @@ Context expected (built by ``apps.public.views.resort_detail``):
   region                        — regions.MicroRegion instance (resort.region,
                                    select_related region).
   region_id                     — str: region.region_id.
-  panel                         — dict from views._build_panel_context for
-                                   today's bulletin (danger_key,
-                                   danger_number, danger_subdivision,
-                                   danger_label, problem_cards, …), or None
-                                   when no bulletin covers today.
-  day_windows                   — list[dict]: the region panel's Day Risk
-                                   Profile rows (views._build_day_windows);
-                                   [] without a panel.
-  bulletin_provider             — str: "SLF" / "ALBINA" / "Météo-France", or
-                                   "" (views._resort_bulletin_attribution).
-  bulletin_updated_time         — str: the bulletin's publication time,
-                                   "HH:MM" Central European time, or "".
   target_date                   — datetime.date: the day shown.
   is_today                      — bool: target_date is today.
-  problem_cards                 — list[dict]: the day's problem cards
-                                   (views.build_resort_body).
-  bulletin_url                  — str: the region's evergreen bulletin URL.
+  bulletin_url                  — str: the region's bulletin page for the day.
   favourited                    — bool.
   favourite_uuid                — str: "" when not favourited.
   can_favourite                 — bool. Doubles as the "is signed in" signal
@@ -96,10 +77,6 @@ Context expected (built by ``apps.public.views.resort_detail``):
                                    part is blank (SNOW-1155).
   structured_data_json          — str: schema.org SkiResort JSON-LD, already
                                    escaped for a script tag (SNOW-1123).
-  season_months                 — SeasonMonths: the season calendar's months
-                                   × days and ring (SNOW-1158).
-  season_summary                — SeasonSummary: the calendar's aria-label
-                                   and key; falsy omits the section.
 {% endcomment %}
 {% load i18n static components snowdesk_time %}
 
@@ -131,41 +108,26 @@ Context expected (built by ``apps.public.views.resort_detail``):
 {# for every resort; most resorts have one point or none, so it names    #}
 {# no tiers.                                                             #}
 {# SNOW-1122: title and description name the resort beside the terms     #}
-{# people search for ("conditions", "avalanche", "bulletin", "weather"), #}
-{# and "weather" only when the page links to a forecast. The danger     #}
-{# sentence appears only when today's bulletin has a level. Kept under  #}
-{# ~155 characters, the snippet length _page_meta.html budgets for.     #}
+{# people search for ("conditions", "weather", "avalanche bulletin"), and #}
+{# "weather" only when the page has a forecast. No danger sentence since  #}
+{# a resort has no avalanche danger of its own (Hugo, 25 Oct 2026): the   #}
+{# page names its region's bulletin, which states the level. Kept under   #}
+{# ~155 characters, the snippet length _page_meta.html budgets for.       #}
 {% block page_meta %}
     {% if forecast_points %}
         {% blocktrans with name=resort.name trimmed asvar page_title %}
-            {{ name }} conditions — avalanche bulletin & weather · Snowdesk
+            {{ name }} conditions — weather & avalanche bulletin · Snowdesk
+        {% endblocktrans %}
+        {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
+            {{ name }} weather forecast for each of its locations, the resort's facts, and the {{ region }} avalanche
+            bulletin it sits under.
         {% endblocktrans %}
     {% else %}
         {% blocktrans with name=resort.name trimmed asvar page_title %}
-            {{ name }} avalanche conditions & bulletin · Snowdesk
+            {{ name }} resort & avalanche bulletin · Snowdesk
         {% endblocktrans %}
-    {% endif %}
-    {# Read from the same panel as the danger tile, so the description  #}
-    {# and the page can never name different levels (SNOW-1124).       #}
-    {% if panel and panel.danger_number %}
-        {% if is_today %}
-            {% blocktrans with level=panel.danger_number label=panel.danger_label trimmed asvar danger_line %}
-                Danger today: {{ level }} – {{ label }}.
-            {% endblocktrans %}
-        {% else %}
-            {% blocktrans with level=panel.danger_number label=panel.danger_label day=target_date|date:"j F Y" trimmed asvar danger_line %}
-                Danger on {{ day }}: {{ level }} – {{ label }}.
-            {% endblocktrans %}
-        {% endif %}
-    {% endif %}
-    {% if forecast_points %}
-        {% blocktrans with name=resort.name region=region.name danger=danger_line|default:"" trimmed asvar page_description %}
-            {{ name }} avalanche conditions. {{ danger }} The {{ region }} avalanche bulletin and a weather forecast for
-            each location.
-        {% endblocktrans %}
-    {% else %}
-        {% blocktrans with name=resort.name region=region.name danger=danger_line|default:"" trimmed asvar page_description %}
-            {{ name }} avalanche conditions. {{ danger }} The {{ region }} avalanche bulletin, issued daily.
+        {% blocktrans with name=resort.name region=region.name trimmed asvar page_description %}
+            {{ name }}: the resort's facts, and the {{ region }} avalanche bulletin it sits under, issued daily.
         {% endblocktrans %}
     {% endif %}
     {# SNOW-1164: another day's page is reached from the map, never from    #}

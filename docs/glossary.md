@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-10-24
+last-reviewed: 2026-10-25
 ---
 
 # Glossary — domain terms to code symbols
@@ -124,6 +124,9 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | Meeting point | Where a trip's group meets — an anonymous `Location` minted for that trip alone, defaulting to the route's first coordinate. `PROTECT`, so the orphan sweep can ask the database whether anything still references it | `Trip.meeting_point`; `_meeting_coordinates` in `apps/trips/services/trips.py` |
 | Meeting place sentence | The line that places a trip's meeting point against its route ("At the route's start", "On the route, 9 km in", "2 km north-east of the route's start"). Stands beside the three word address, and in its place with an Open in maps link when there is none; a meeting point never shows lat/lon (SNOW-1214) | `describe` / `sentence` / `maps_url` in `apps/trips/services/meeting_place.py`; `static/js/meeting_place_core.js`; `tests/fixtures/meeting_place_vectors.json` |
 | Place pin | The pin a place is chosen under. It stays still and the map moves beneath it; used by the map page's favourite and report placement and the Plan page's meeting point | `templates/includes/_place_pin.html`; `window.PlacePicker`; `static/js/trip_meeting_picker.js`; `trips:what3words` for the live address |
+| Kind line | The mono eyebrow above every map panel's title naming what kind of place it is: "Avalanche region", "Ski resort", "Saved place", "Weather point" | `data-testid="sheet-kind"` in `_region_sheet_peek.html`, `_place_sheet_body.html`, `_weather_detail.html` |
+| Place link row | The row a map panel ends with that names another kind of place and opens it — a resort's region (no level), a region's resorts, a weather point's resort and region | `templates/includes/_place_link_row.html` (`data-panel-open`, `data-panel-id`) |
+| Panel trail / back pill | The one-step "‹ Veysonnaz" pill a panel shows when it was opened from another panel's place link row; pressing it reopens that panel | `static/js/map_panel_trail.js`; `data-panel-key` / `data-panel-label` on each sheet body; `snowdesk:region-open` in `map.js` |
 | Plan week | The five day tiles (today and four) plus Other on the Plan form's "When"; a tile shows the route region's danger level only when a bulletin rated that day (SNOW-1215) | `plan_week` / `PlanDay` in `apps/trips/services/plan_days.py`; `trips/partials/_trip_when.html`; `static/js/trip_form.js` |
 | Route profile | A route's elevation profile, drawn once for the map's route panel, the Plan page and the trip page: leg fills, outline, distance ticks, cursor line and readout (SNOW-1215); on the trip page a press or drag scrubs it and the map draws the point (SNOW-1216) | `templates/includes/_route_profile.html`; `window.pwaRouteProfile` in `static/js/route_profile.js`; `static/js/trip_route_profile.js` (`data-trip-route-scrub`, the `trip:route-cursor` event) |
 | Trip weather | The forecast a plan reads (SNOW-1217): on the Plan page's tiles, the nearest public forecast point to the route's start, named with its distance; on the trip page, the meeting point's own forecast for the trip's day, fetched on save and while the trip is ahead | `nearest_weather` / `meeting_point_weather` / `TripWeather` in `apps/trips/services/trip_weather.py`; `enqueue_meeting_weather` in `apps/trips/services/meeting_weather.py`; `trips/partials/_trip_weather.html`, `_trip_weather_words.html` |
