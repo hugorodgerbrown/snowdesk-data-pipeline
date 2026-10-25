@@ -112,7 +112,9 @@ class _HashingStorage(StaticFilesStorage):
 
     def url(self, name: str | None) -> str:
         """Return the plain URL with a fake content hash before the extension."""
-        return super().url(name).replace(".png", ".0123abcd.png")
+        url = super().url(name)
+        stem, dot, extension = url.rpartition(".")
+        return f"{stem}.0123abcd{dot}{extension}"
 
 
 HASHED_STORAGES = {
@@ -133,7 +135,7 @@ def test_icon_urls_go_through_the_static_storage() -> None:
     for icon in manifest["icons"]:
         assert icon["src"].endswith(".0123abcd.png"), icon
     for shot in manifest["screenshots"]:
-        assert shot["src"].endswith(".0123abcd.png"), shot
+        assert shot["src"].endswith(".0123abcd.webp"), shot
     assert 'apple-touch-icon-180.0123abcd.png"' in body
 
 

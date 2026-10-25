@@ -1,30 +1,54 @@
 #!/usr/bin/env python3
 # bin/capture-pwa-screenshots — capture the install-sheet screenshots from the
-# real app.
+# real app and frame each one under a headline.
 #
-# SNOW-1112. Chrome's richer install sheet shows the manifest's
+# SNOW-1112, SNOW-1232. Chrome's richer install sheet shows the manifest's
 # ``description`` above its ``screenshots``, so the screenshots are the first
-# view of the app anyone sees before installing it. They used to be branded
-# placeholder cards drawn by bin/build-pwa-screenshots; this captures the map
-# itself instead.
+# view of the app anyone sees before installing it. Android shows them as a
+# carousel of thumbnails a few hundred pixels tall, where a bare screen is
+# unreadable, so each capture is framed: a headline and a subhead on the
+# page background (--color-bg), over the screen in a phone outline (narrow)
+# or bleeding off the right edge (wide).
 #
-# Two files, written to static/icons/pwa/screenshots/ and named in
-# serve_manifest (apps/public/views.py):
+# Eleven files, written to static/icons/pwa/screenshots/ and named in
+# serve_manifest (apps/public/views.py) — the two lists must agree. Chrome
+# drops a screenshot whose ``sizes`` differs from the file, whose long side
+# is over 2.3× its short side, or whose aspect ratio differs from the other
+# narrow ones; the sizes here keep all three rules:
 #
-#   map-wide.png    1280×720, form_factor wide — the map on a desktop window,
-#                   zoomed out one step so the whole of the Alps is in view.
-#   map-narrow.png  750×1334, form_factor narrow — the map on a phone
-#                   (375×667 at 2×) with one region's sheet open.
+#   narrow-1-region.webp    1170×2532  the region sheet over the map
+#   narrow-2-bulletin.webp  1170×2532  the region's full bulletin page
+#   narrow-3-route.webp     1170×2532  a saved route and its point card
+#   narrow-4-resort.webp    1170×2532  a resort page and its forecast
+#   narrow-5-weather.webp   1170×2532  a weather point's seven days
+#   narrow-6-map.webp       1170×2532  the map on a past day
+#   wide-1-region.webp      2560×1440  the region panel docked beside the map
+#   wide-2-bulletin.webp    2560×1440  the bulletin page on a desktop
+#   wide-3-route.webp       2560×1440  the route panel beside its track
+#   wide-4-resort.webp      2560×1440  the resort page on a desktop
+#   wide-5-weather.webp     2560×1440  the weather page on a desktop
 #
-# Both are captured on a fixed mid-season day, not today, so a re-run in the
-# summer still shows a full map. The welcome card and the map tour are
-# marked as already seen, so neither covers the map.
+# The map and bulletin are captured on a fixed mid-season day (--date,
+# default 12 Feb 2026, a level 4 day in Lower Valais), so a re-run in the
+# summer still shows a full map; the "Back to today" strip a past day shows
+# is hidden. The resort and weather pages are captured on the day the script
+# runs: a past day keeps no forecast to draw. The welcome card and the map
+# tour are marked as already seen, so neither covers the map.
 #
+# A route belongs to an account, so the route shots come from the local dev
+# server (--dev-url) signed in as the seeded dev user, who holds the four
+# canonical tracks (seed_canonical_routes). The script mints that session
+# itself through ``manage.py shell``, so the dev server must be running on
+# this checkout's database. ``--skip-routes`` keeps the route files already
+# on disk instead.
+#
+#     uv run python manage.py runserver        # in another terminal
 #     uv run python bin/capture-pwa-screenshots
-#     uv run python bin/capture-pwa-screenshots --base-url http://127.0.0.1:8000
+#     uv run python bin/capture-pwa-screenshots --skip-routes
 #
-# Defaults to production, whose data and basemap are what an installer will
-# see. Needs network access to that site and to its basemap tile hosts; a
+# Everything else defaults to production, whose data and basemap are what an
+# installer will see. Needs network access to that site and to its basemap
+# tile hosts; a
 # capture without the basemap is a map of outlines on a blank page, so the
 # script refuses to write one (see _assert_basemap_loaded). Needs Chromium
 # for Playwright: ``uv run playwright install chromium`` once, or point
@@ -39,22 +63,58 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import html
+import io
+import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
-from playwright.sync_api import Page, sync_playwright
+from PIL import Image
+from playwright.sync_api import Browser, Page, sync_playwright
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = REPO_ROOT / "static" / "icons" / "pwa" / "screenshots"
+FONTS_DIR = REPO_ROOT / "static" / "fonts"
 
 DEFAULT_BASE_URL = "https://snowdesk.info"
 
-# Inside the golden week (apps/bulletins/services/golden_week.py): a day all
-# three providers published, with every danger level from low to very high.
+# A day all three providers published, with Lower Valais at level 4.
 DEFAULT_DATE = "2026-02-12"
 
-# The region whose sheet the phone capture opens.
-DEFAULT_REGION = "CH-1111"
+# Martigny–Verbier: the region whose sheet and bulletin are captured.
+DEFAULT_REGION = "CH-4115"
+
+# Verbier village, the weather point whose page is captured. A short_id is
+# opaque and permanent (SNOW-797), so it is safe to pin.
+DEFAULT_WEATHER = "AqFdBtifzMQ"
+
+# The resort whose page is captured.
+DEFAULT_RESORT = "verbier"
+
+DEFAULT_DEV_URL = "http://127.0.0.1:8000"
+
+# One of the canonical tracks (apps/routes/fixtures/canonical/) the seeded
+# dev user holds, as its routes panel lists it.
+ROUTE_NAME = "Mont Fort - Backside"
+
+# Prints a signed-in session key for the seeded dev user (NORMAL_USER_EMAIL
+# in seed_test_data), as ``manage.py shell`` runs it.
+MINT_DEV_SESSION = """
+from importlib import import_module
+from django.conf import settings
+from django.contrib.auth import BACKEND_SESSION_KEY, HASH_SESSION_KEY, SESSION_KEY
+from django.contrib.auth import get_user_model
+from apps.bulletins.management.commands.seed_test_data import NORMAL_USER_EMAIL
+user = get_user_model().objects.get(email=NORMAL_USER_EMAIL)
+session = import_module(settings.SESSION_ENGINE).SessionStore()
+session[SESSION_KEY] = str(user.pk)
+session[BACKEND_SESSION_KEY] = "django.contrib.auth.backends.ModelBackend"
+session[HASH_SESSION_KEY] = user.get_session_auth_hash()
+session.create()
+print(settings.SESSION_COOKIE_NAME, session.session_key)
+"""
 
 # What static/js/map_tour_offer.js and static/js/map_help.js write when the
 # offer is answered and the tour finished. Set before any page script runs.
@@ -65,9 +125,166 @@ DISMISS_INTRO = (
     " } catch (e) {}"
 )
 
+# The strip a past day shows ("Showing Thu 12 Feb · Back to today") says
+# nothing to someone deciding whether to install. Hide its row: the nearest
+# ancestor of the link that is still a single line.
+HIDE_ANOTHER_DAY = """
+for (const link of document.querySelectorAll('a, button')) {
+  if (!/Back to today/.test(link.textContent)) continue;
+  let row = link;
+  while (row.parentElement && row.parentElement.getBoundingClientRect().height <= 70) {
+    row = row.parentElement;
+  }
+  row.style.display = 'none';
+}
+"""
+
 # Time for MapLibre to draw the choropleth and the basemap tiles after the
-# network goes quiet, and again after a zoom.
-SETTLE_MS = 3000
+# network goes quiet, and for a sheet to finish moving.
+SETTLE_MS = 4000
+
+# --color-bg / --color-text-1 / --color-text-2 in src/css/main.css.
+BG, TEXT_1, TEXT_2 = "#f2f0ec", "#1a1916", "#6b6860"
+
+PHONE = {"width": 390, "height": 844}
+DESKTOP = {"width": 1280, "height": 720}
+
+WEBP_QUALITY = 86
+
+
+@dataclass(frozen=True)
+class Shot:
+    """One screenshot: what to capture, and the words framed above it."""
+
+    name: str
+    form_factor: str
+    path: str
+    headline: str
+    subhead: str
+    # "sheet" raises the region sheet; "route" opens ROUTE_NAME's panel.
+    action: str = ""
+
+
+SHOTS = [
+    Shot(
+        "narrow-1-region",
+        "narrow",
+        "/map/?d={date}#{region}",
+        "Every region, rated",
+        "Today’s danger level on one map of the Alps",
+        action="sheet",
+    ),
+    Shot(
+        "narrow-2-bulletin",
+        "narrow",
+        "/{region_lower}/-/{date}/",
+        "The whole bulletin",
+        "Problems, aspects and elevations, in full",
+    ),
+    Shot(
+        "narrow-3-route",
+        "narrow",
+        "/map/?panel=routes",
+        "Your routes, read",
+        "Slope and aspect under every step of a GPX",
+        action="route",
+    ),
+    Shot(
+        "narrow-4-resort",
+        "narrow",
+        "/resorts/{resort}/",
+        "Every ski resort",
+        "Its forecast at base, mid and summit",
+    ),
+    Shot(
+        "narrow-5-weather",
+        "narrow",
+        "/weather/{weather}/",
+        "Mountain weather",
+        "Seven days for the place you’re going",
+    ),
+    Shot(
+        "narrow-6-map",
+        "narrow",
+        "/map/?d={date}",
+        "Any day of the season",
+        "Step back through the winter’s bulletins",
+    ),
+    Shot(
+        "wide-1-region",
+        "wide",
+        "/map/?d={date}#{region}",
+        "Every region, rated",
+        "Today’s danger level on one map of the Alps",
+    ),
+    Shot(
+        "wide-2-bulletin",
+        "wide",
+        "/{region_lower}/-/{date}/",
+        "The whole bulletin",
+        "Problems, aspects and elevations, in full",
+    ),
+    Shot(
+        "wide-3-route",
+        "wide",
+        "/map/?panel=routes",
+        "Your routes, read",
+        "Slope and aspect under every step of a GPX",
+        action="route",
+    ),
+    Shot(
+        "wide-4-resort",
+        "wide",
+        "/resorts/{resort}/",
+        "Every ski resort",
+        "Its forecast at base, mid and summit",
+    ),
+    Shot(
+        "wide-5-weather",
+        "wide",
+        "/weather/{weather}/",
+        "Mountain weather",
+        "Seven days for the place you’re going",
+    ),
+]
+
+# Inlined: a page built with set_content is about:blank, which may not load
+# a file:// font, and a missing font falls back silently to Arial.
+DM_SANS = base64.b64encode((FONTS_DIR / "dm-sans-latin.woff2").read_bytes()).decode()
+
+FONT_FACES = f"""
+@font-face {{ font-family: 'DM Sans'; font-weight: 100 1000;
+  src: url('data:font/woff2;base64,{DM_SANS}') format('woff2'); }}
+* {{ margin: 0; box-sizing: border-box; }}
+body {{ font-family: 'DM Sans', sans-serif; overflow: hidden; background: {BG}; }}
+h1 {{ font-weight: 700; color: {TEXT_1}; }}
+p {{ color: {TEXT_2}; }}
+"""
+
+NARROW_FRAME = """<!doctype html><html><head><style>{faces}
+body {{ width: 780px; height: 1688px; display: flex; flex-direction: column;
+  align-items: center; padding-top: 96px; }}
+h1 {{ font-size: 64px; letter-spacing: -1px; text-align: center; }}
+p {{ font-size: 32px; line-height: 1.3; height: 84px; margin-top: 16px;
+  padding: 0 60px; text-align: center; }}
+.phone {{ margin-top: 20px; width: 600px; height: 1300px; overflow: hidden;
+  border: 10px solid #111; border-radius: 44px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .25); }}
+.phone img {{ display: block; width: 100%; }}
+</style></head><body><h1>{headline}</h1><p>{subhead}</p>
+<div class="phone"><img src="{src}"></div></body></html>"""
+
+WIDE_FRAME = """<!doctype html><html><head><style>{faces}
+body {{ width: 1280px; height: 720px; display: flex; align-items: center;
+  gap: 48px; padding-left: 64px; }}
+.words {{ flex: none; width: 300px; }}
+h1 {{ font-size: 44px; line-height: 1.1; letter-spacing: -.5px; }}
+p {{ font-size: 22px; line-height: 1.35; margin-top: 16px; }}
+.screen {{ flex: 1; height: 600px; overflow: hidden;
+  border-radius: 16px 0 0 16px; box-shadow: 0 16px 40px rgba(0, 0, 0, .25); }}
+.screen img {{ display: block; height: 100%; }}
+</style></head><body><div class="words"><h1>{headline}</h1><p>{subhead}</p></div>
+<div class="screen"><img src="{src}"></div></body></html>"""
 
 
 def _assert_basemap_loaded(failed: list[str]) -> None:
@@ -85,60 +302,177 @@ def _assert_basemap_loaded(failed: list[str]) -> None:
         sys.exit(1)
 
 
-def _open(page: Page, url: str) -> None:
-    """Load ``url`` and wait for the map to settle.
+def _route_line_point(png: bytes, scale: float) -> tuple[float, float]:
+    """Find the drawn route nearest the middle of the screen.
+
+    The route is the only magenta on the map (static/js/route_drawing_core.js),
+    so the pixel nearest the centre is a point on it to tap.
+
+    Args:
+        png: A screenshot of the map with the route focused.
+        scale: The screenshot's device scale factor.
+
+    Returns:
+        The point to tap, in CSS pixels.
+
+    """
+    image = Image.open(io.BytesIO(png)).convert("RGB")
+    width, height = image.size
+    best: tuple[float, float, float] | None = None
+    for y in range(height // 8, height * 7 // 8, 3):
+        for x in range(width // 8, width * 7 // 8, 3):
+            red, green, blue = image.getpixel((x, y))  # type: ignore[misc]
+            if red > 150 and blue > 150 and green < 80:
+                distance = (x - width / 2) ** 2 + (y - height / 2) ** 2
+                if best is None or distance < best[0]:
+                    best = (distance, x / scale, y / scale)
+    if best is None:
+        print(f"{ROUTE_NAME} was not drawn on the map", file=sys.stderr)
+        sys.exit(1)
+    return best[1], best[2]
+
+
+def _capture_screen(page: Page, url: str, shot: Shot, scale: float) -> bytes:
+    """Load ``url``, let it settle, and return the bare screen as PNG bytes.
 
     Args:
         page: The Playwright page to drive.
         url: The page to load.
+        shot: The shot being captured, for what to open before the capture.
+        scale: The page's device scale factor.
+
+    Returns:
+        The viewport as PNG bytes.
 
     """
-    page.goto(url, wait_until="networkidle", timeout=60_000)
+    page.goto(url, wait_until="networkidle", timeout=90_000)
     page.wait_for_timeout(SETTLE_MS)
+    if shot.action == "sheet":
+        # A tap on the sheet's header steps it from peek up to half, so the
+        # danger level and the first problem show above the map.
+        page.locator("[data-sheet-drag]:visible").first.tap()
+        page.wait_for_timeout(1500)
+    elif shot.action == "route":
+        # The row's name focuses the map on the track; a tap on the line
+        # opens the route panel with the point card for that place.
+        page.get_by_text(ROUTE_NAME, exact=True).first.click()
+        page.wait_for_timeout(SETTLE_MS)
+        x, y = _route_line_point(page.screenshot(), scale)
+        if shot.form_factor == "narrow":
+            page.touchscreen.tap(x, y)
+        else:
+            page.mouse.click(x, y)
+        page.wait_for_timeout(SETTLE_MS)
+    page.evaluate(HIDE_ANOTHER_DAY)
+    return page.screenshot()
+
+
+def _frame(browser: Browser, shot: Shot, screen: bytes) -> bytes:
+    """Lay ``screen`` out under the shot's headline and return it as WebP.
+
+    Args:
+        browser: The browser to render the frame in.
+        shot: The shot, for its words and form factor.
+        screen: The bare screen capture, as PNG bytes.
+
+    Returns:
+        The framed screenshot as WebP bytes.
+
+    """
+    template, viewport, scale = (
+        (NARROW_FRAME, {"width": 780, "height": 1688}, 1.5)
+        if shot.form_factor == "narrow"
+        else (WIDE_FRAME, DESKTOP, 2)
+    )
+    src = "data:image/png;base64," + base64.b64encode(screen).decode()
+    page = browser.new_page(viewport=viewport, device_scale_factor=scale)
+    page.set_content(
+        template.format(
+            faces=FONT_FACES,
+            headline=html.escape(shot.headline),
+            subhead=html.escape(shot.subhead),
+            src=src,
+        )
+    )
+    page.evaluate("document.fonts.ready")
+    page.wait_for_timeout(300)
+    png = page.screenshot()
+    page.close()
+    out = io.BytesIO()
+    Image.open(io.BytesIO(png)).convert("RGB").save(
+        out, "WEBP", quality=WEBP_QUALITY, method=6
+    )
+    return out.getvalue()
+
+
+def _dev_session_cookie(dev_url: str) -> dict[str, str]:
+    """Sign the seeded dev user in on the local dev server.
+
+    Args:
+        dev_url: The dev server the session cookie is for.
+
+    Returns:
+        A Playwright cookie carrying the new session.
+
+    """
+    # S603/S607: a fixed argv naming uv from PATH, with no outside input.
+    result = subprocess.run(  # noqa: S603
+        ["uv", "run", "python", "manage.py", "shell", "-c", MINT_DEV_SESSION],  # noqa: S607
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    name, key = result.stdout.strip().splitlines()[-1].split()
+    return {"name": name, "value": key, "url": dev_url}
 
 
 def capture(
-    base_url: str, date: str, region: str, chromium: str | None
+    base_url: str,
+    dev_url: str | None,
+    params: dict[str, str],
+    chromium: str | None,
 ) -> dict[str, bytes]:
-    """Capture both screenshots and return them as PNG bytes, by file name.
+    """Capture and frame every shot, and return them as WebP bytes by file name.
 
     Args:
         base_url: The site to capture, without a trailing slash.
-        date: The bulletin day to show, as ``YYYY-MM-DD``.
-        region: The region id whose sheet the phone capture opens.
+        dev_url: The dev server the route shots come from, or None to skip
+            them.
+        params: The values ``Shot.path`` is formatted with.
         chromium: A Chromium executable to use instead of Playwright's own.
 
     Returns:
-        ``{"map-wide.png": …, "map-narrow.png": …}``.
+        ``{"narrow-1-region.webp": …, …}`` in ``SHOTS`` order.
 
     """
     shots: dict[str, bytes] = {}
     failed: list[str] = []
+    cookie = _dev_session_cookie(dev_url) if dev_url else None
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=chromium)
-
-        desktop = browser.new_context(viewport={"width": 1280, "height": 720})
-        desktop.add_init_script(DISMISS_INTRO)
-        page = desktop.new_page()
-        page.on("requestfailed", lambda request: failed.append(request.url))
-        _open(page, f"{base_url}/map/?d={date}")
-        page.mouse.move(640, 360)
-        page.mouse.wheel(0, 250)
-        page.wait_for_timeout(SETTLE_MS)
-        shots["map-wide.png"] = page.screenshot()
-
-        phone = browser.new_context(
-            viewport={"width": 375, "height": 667},
-            device_scale_factor=2,
-            is_mobile=True,
-            has_touch=True,
-        )
-        phone.add_init_script(DISMISS_INTRO)
-        page = phone.new_page()
-        page.on("requestfailed", lambda request: failed.append(request.url))
-        _open(page, f"{base_url}/map/?d={date}#{region}")
-        shots["map-narrow.png"] = page.screenshot()
-
+        pages: dict[tuple[str, bool], tuple[Page, float]] = {}
+        for form_factor, options, scale in (
+            ("narrow", {"viewport": PHONE, "is_mobile": True, "has_touch": True}, 3),
+            ("wide", {"viewport": DESKTOP}, 2),
+        ):
+            for signed_in in (False, True):
+                context = browser.new_context(device_scale_factor=scale, **options)
+                context.add_init_script(DISMISS_INTRO)
+                if signed_in and cookie:
+                    context.add_cookies([cookie])  # type: ignore[list-item]
+                page = context.new_page()
+                page.on("requestfailed", lambda request: failed.append(request.url))
+                pages[form_factor, signed_in] = page, scale
+        for shot in SHOTS:
+            route = shot.action == "route"
+            if route and not dev_url:
+                continue
+            url = (dev_url if route else base_url) + shot.path.format(**params)
+            print(f"capturing {shot.name} from {url}")
+            page, scale = pages[shot.form_factor, route]
+            screen = _capture_screen(page, url, shot, scale)
+            shots[f"{shot.name}.webp"] = _frame(browser, shot, screen)
         browser.close()
     _assert_basemap_loaded(failed)
     return shots
@@ -148,16 +482,33 @@ def main() -> None:
     """Parse arguments, capture, and write the screenshots."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--dev-url", default=DEFAULT_DEV_URL)
+    parser.add_argument("--skip-routes", action="store_true")
     parser.add_argument("--date", default=DEFAULT_DATE)
     parser.add_argument("--region", default=DEFAULT_REGION)
+    parser.add_argument("--resort", default=DEFAULT_RESORT)
+    parser.add_argument("--weather", default=DEFAULT_WEATHER)
     parser.add_argument("--chromium", default=None)
     args = parser.parse_args()
 
-    shots = capture(args.base_url.rstrip("/"), args.date, args.region, args.chromium)
+    params = {
+        "date": args.date,
+        "region": args.region,
+        "region_lower": args.region.lower(),
+        "resort": args.resort,
+        "weather": args.weather,
+    }
+    dev_url = None if args.skip_routes else args.dev_url.rstrip("/")
+    shots = capture(args.base_url.rstrip("/"), dev_url, params, args.chromium)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    for name, png in shots.items():
+    expected = {f"{shot.name}.webp" for shot in SHOTS}
+    for stale in OUT_DIR.glob("*"):
+        if stale.name not in expected:
+            stale.unlink()
+            print(f"removed {stale.relative_to(REPO_ROOT)}")
+    for name, webp in shots.items():
         path = OUT_DIR / name
-        path.write_bytes(png)
+        path.write_bytes(webp)
         print(f"wrote {path.relative_to(REPO_ROOT)}")
 
 
