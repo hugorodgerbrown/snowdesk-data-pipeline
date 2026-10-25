@@ -61,6 +61,26 @@ class TestWorker:
         assert forecast.call_args.kwargs == {"commit": True}
         assert seen == [2970.0]
 
+    def test_a_pin_moved_during_the_lookup_is_left_to_the_newer_task(
+        self,
+    ) -> None:
+        """The old coordinate's height must not land on the new spot."""
+        location = _linked()
+
+        def move_then_answer(latitude: float, longitude: float) -> float:
+            Location.objects.filter(pk=location.pk).update(latitude=46.3)
+            return 2970.0
+
+        with (
+            patch(_ELEVATION, side_effect=move_then_answer),
+            patch(_FETCH) as forecast,
+        ):
+            _worker_prime_location.call(location.pk)
+
+        location.refresh_from_db()
+        assert location.elevation_m is None
+        forecast.assert_not_called()
+
     def test_a_known_height_is_not_looked_up_again(self) -> None:
         """A rename must not spend an elevation call."""
         location = _linked(resolved=True)

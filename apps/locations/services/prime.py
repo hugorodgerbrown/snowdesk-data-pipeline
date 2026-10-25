@@ -52,25 +52,49 @@ from apps.weather.services.fetch import fetch_weather_for_location
 logger = logging.getLogger(__name__)
 
 
-def _resolve_elevation(location: Location) -> None:
+def _resolve_elevation(location: Location) -> bool:
     """Fill ``location.elevation_m`` from its coordinate, when it has none.
 
+    The write is conditional on the row still being where it was when the
+    lookup started, with its height still missing. In production the worker
+    runs beside the editor, so a curator can move the pin while this task
+    waits on Open-Meteo; an unconditional save would then stamp the old
+    coordinate's height on the new spot, and the task the move queued would
+    see a height and skip resolving the right one.
+
     Args:
-        location: The location, updated in place and saved on success.
+        location: The location, updated in place on success.
+
+    Returns:
+        False when the row moved or was given a height while the lookup ran
+        — this task is then stale, and the newer save has queued its own.
+        True otherwise, including when the lookup failed.
 
     """
     if location.elevation_m is not None:
-        return
+        return True
     try:
         elevation = fetch_elevation(location.latitude, location.longitude)
     except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
         logger.warning(
             "location elevation lookup failed: location=%s: %s", location.pk, exc
         )
-        return
+        return True
+    written = Location.objects.filter(
+        pk=location.pk,
+        latitude=location.latitude,
+        longitude=location.longitude,
+        elevation_m__isnull=True,
+    ).update(elevation_m=elevation, updated_at=timezone.now())
+    if not written:
+        logger.info(
+            "location changed during elevation lookup — stale, skipping: location=%s",
+            location.pk,
+        )
+        return False
     location.elevation_m = elevation
-    location.save(update_fields=["elevation_m", "updated_at"])
     logger.info("location elevation resolved: location=%s", location.pk)
+    return True
 
 
 def _fetch_today(location: Location, *, moved: bool) -> None:
@@ -117,8 +141,8 @@ def _worker_prime_location(location_pk: int, moved: bool = False) -> None:
             location_pk,
         )
         return
-    _resolve_elevation(location)
-    _fetch_today(location, moved=moved)
+    if _resolve_elevation(location):
+        _fetch_today(location, moved=moved)
 
 
 def enqueue_location_prime(location: Location, *, moved: bool = False) -> None:
