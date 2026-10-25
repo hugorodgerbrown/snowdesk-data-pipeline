@@ -27,6 +27,13 @@
  *             link's default; this module then only records the trail;
  *   weather — `window.pwaWeatherDetail.open(shortId, dateKey)`.
  *
+ * A NEW PANEL OPENS AT ITS TOP. A sheet element is kept between openings,
+ * and so is its scroll: the region sheet reopened for another region, or
+ * reached from a resort, used to open part-way down where the last region
+ * had been left (Hugo, 25 Oct 2026). Whenever an open sheet shows a place
+ * it was not showing, or opens at all, it is scrolled back to the top. A
+ * repaint of the same place — a change of day — keeps the reader's place.
+ *
  * WHERE A PANEL SAYS WHAT IT IS. Each sheet body's root carries
  * `data-panel-key` ("region:CH-4115", "resort:verbier", "weather:ab12cd")
  * and `data-panel-label` (its name), so the trail can tell which panel is
@@ -51,6 +58,13 @@
   var trail = null;
   /** @type {string|null} */
   var dateKey = null;
+  /**
+   * The place each open sheet last showed, by sheet id; a closed sheet has
+   * none, so the next opening counts as new.
+   *
+   * @type {Object<string, string|null>}
+   */
+  var shownKeys = {};
 
   /**
    * The sheets this module watches, as present in the page.
@@ -126,6 +140,7 @@
     sheets().forEach(function (sheet) {
       var body = sheet.querySelector('[data-panel-key]');
       var pill = sheet.querySelector('[data-panel-back]');
+      toTopOnNewPlace(sheet, body);
       var match = trail !== null && body !== null && !sheet.hasAttribute('hidden') &&
         body.getAttribute('data-panel-key') === trail.to;
       if (match && trail && body) {
@@ -142,21 +157,41 @@
     else if (trail.shown) trail = null;
   }
 
-  document.addEventListener('click', function (ev) {
-    var target = /** @type {Element|null} */ (ev.target instanceof Element ? ev.target : null);
-    if (!target) return;
-
-    var back = target.closest('[data-panel-back]');
-    if (back) {
-      ev.preventDefault();
-      if (!trail) return;
-      var from = trail.from;
-      trail = null;
-      back.remove();
-      openKey(from.key, '');
+  /**
+   * Scroll a sheet to its top when it opens, or when it starts showing a
+   * place it was not showing.
+   *
+   * @param {HTMLElement} sheet
+   * @param {Element|null} body The sheet's `[data-panel-key]` root, if painted.
+   * @returns {void}
+   */
+  function toTopOnNewPlace(sheet, body) {
+    if (sheet.hasAttribute('hidden')) {
+      shownKeys[sheet.id] = null;
       return;
     }
+    var key = body ? body.getAttribute('data-panel-key') : '';
+    if (shownKeys[sheet.id] === key) return;
+    shownKeys[sheet.id] = key;
+    sheet.scrollTop = 0;
+  }
 
+  /**
+   * The row a click is following, read before anything handles the click.
+   *
+   * @type {{key: string, href: string}|null}
+   */
+  var following = null;
+
+  // CAPTURE: read the row, and record the trail, before any sheet's own
+  // handler runs. The region sheet opens a resort in its own click handler,
+  // and the one-object-sheet rule closes the region sheet — repainting it —
+  // inside that same click; by the bubble phase the row is no longer in any
+  // sheet and names no panel to come back to (Hugo, 25 Oct 2026).
+  document.addEventListener('click', function (ev) {
+    following = null;
+    var target = /** @type {Element|null} */ (ev.target instanceof Element ? ev.target : null);
+    if (!target) return;
     var link = target.closest('a[data-panel-open]');
     if (!link) return;
     var inSheet = sheets().some(function (sheet) { return sheet.contains(link); });
@@ -176,11 +211,31 @@
         shown: false,
       }
       : null;
-    // A sheet's own handler (the region sheet's resort rows) got there
-    // first: the place is already opening, so only the trail is ours.
-    if (ev.defaultPrevented) return;
+    following = { key: to, href: /** @type {HTMLAnchorElement} */ (link).href };
+  }, true);
+
+  // BUBBLE: open the place, unless a sheet's own handler (the region
+  // sheet's resort rows) already has — then only the trail was ours.
+  document.addEventListener('click', function (ev) {
+    var target = /** @type {Element|null} */ (ev.target instanceof Element ? ev.target : null);
+    if (!target) return;
+
+    var back = target.closest('[data-panel-back]');
+    if (back) {
+      ev.preventDefault();
+      if (!trail) return;
+      var from = trail.from;
+      trail = null;
+      back.remove();
+      openKey(from.key, '');
+      return;
+    }
+
+    var row = following;
+    following = null;
+    if (!row || ev.defaultPrevented) return;
     ev.preventDefault();
-    openKey(to, /** @type {HTMLAnchorElement} */ (link).href);
+    openKey(row.key, row.href);
   });
 
   document.addEventListener('snowdesk:date-changed', function (ev) {

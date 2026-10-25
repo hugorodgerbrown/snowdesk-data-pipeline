@@ -151,6 +151,57 @@ describe('a place row', () => {
     await settle();
     expect(place.querySelector('[data-panel-back-name]').textContent).toBe('Martigny-Verbier');
   });
+  it("still records the trail when the sheet's own handler repaints the sheet", async () => {
+    // The real region sheet closes, and is repainted, inside its own click
+    // handler as the resort sheet opens: by the bubble phase the row is in
+    // no sheet. The trail is read before that, on the way down.
+    show(region, 'region:CH-4115', 'Martigny-Verbier', `<a href="/resorts/nendaz/"
+      data-panel-open="resort" data-panel-id="nendaz" data-resort-slug="nendaz">Nendaz</a>`);
+    const own = (ev) => {
+      ev.preventDefault();
+      region.innerHTML = '';
+      region.setAttribute('hidden', '');
+    };
+    region.addEventListener('click', own);
+    click(region.querySelector('[data-panel-open]'));
+    region.removeEventListener('click', own);
+
+    show(place, 'resort:nendaz', 'Nendaz');
+    await settle();
+    expect(place.querySelector('[data-panel-back-name]').textContent).toBe('Martigny-Verbier');
+  });
+});
+
+describe('a panel opening', () => {
+  it('starts at the top when the sheet shows a new place', async () => {
+    show(region, 'region:CH-4115', 'Martigny-Verbier');
+    await settle();
+    region.scrollTop = 300;
+    show(region, 'region:CH-4116', 'Conthey-Fully');
+    await settle();
+    expect(region.scrollTop).toBe(0);
+  });
+
+  it('starts at the top when the sheet opens again', async () => {
+    show(region, 'region:CH-4115', 'Martigny-Verbier');
+    await settle();
+    region.scrollTop = 300;
+    region.setAttribute('hidden', '');
+    await settle();
+    region.removeAttribute('hidden');
+    await settle();
+    expect(region.scrollTop).toBe(0);
+  });
+
+  it("keeps the reader's place when the same place repaints", async () => {
+    show(region, 'region:CH-4115', 'Martigny-Verbier');
+    await settle();
+    region.scrollTop = 300;
+    // A change of day repaints the body for the same region.
+    region.querySelector('[data-panel-key]').innerHTML = '<p>the next day</p>';
+    await settle();
+    expect(region.scrollTop).toBe(300);
+  });
 });
 
 describe('the back pill', () => {
