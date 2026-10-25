@@ -26,6 +26,9 @@ Split across the phone detents
   FULL — the selected day: its line, its meteogram when it has hours, and
          the provenance. A one-day (backfilled) row has no picker; it rises
          to FULL only when it has a meteogram. A day with no row is PEEK.
+  The "Where this is" rows sit under all three, so a panel that names a
+  resort or region always rises to FULL — otherwise a day with no row
+  would strand them below the peek, where nothing can scroll to them.
 
 A FORWARD DAY IS A FORECAST, AND SAYS SO (SNOW-1105). A day after today
 has no row of its own; the view reads today's row and opens its picker on
@@ -62,7 +65,7 @@ Context:
     data-location-short-id="{{ location.short_id }}"
     data-panel-key="weather:{{ location.short_id }}"
     data-panel-label="{{ heading }}"
-    data-sheet-detents="{% if show_day_picker or hourly_charts or day_strips %}peek,half,full{% elif panel %}peek,half{% else %}peek{% endif %}"
+    data-sheet-detents="{% if show_day_picker or hourly_charts or day_strips or place_resort.slug or place_region %}peek,half,full{% elif panel %}peek,half{% else %}peek{% endif %}"
 >
     {# PEEK (SNOW-1101; Hugo, 21 Oct): the header row — the symbol, the   #}
     {# name with the location's height ("Belalp · 1934 m", which is what  #}

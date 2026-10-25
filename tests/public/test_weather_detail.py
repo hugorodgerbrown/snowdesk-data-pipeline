@@ -450,6 +450,18 @@ class TestCard:
         assert response.status_code == 200
 
 
+def _without_places(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the card's point one that is in no resort and no region.
+
+    Every public point is a resort's or a region centroid, so the endpoint
+    never serves one with neither; this is how the detent tests read the
+    card's own narrowing without the "Where this is" rows lifting it to FULL.
+    """
+    monkeypatch.setattr(
+        "apps.public.api._weather_point_places", lambda location: (None, None)
+    )
+
+
 def _detents(html: str) -> str:
     """Read the detents the card body declares for the phone sheet."""
     match = re.search(r'data-sheet-detents="([^"]*)"', html)
@@ -500,8 +512,11 @@ class TestCardDetents:
         assert half < html.index('data-testid="weather-detail-day-line"')
         assert half < html.index('data-testid="weather-detail-strips"')
 
-    def test_a_one_day_row_without_hours_stops_at_half(self, client: Client) -> None:
+    def test_a_one_day_row_without_hours_stops_at_half(
+        self, client: Client, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """No picker and no series, so no FULL to rise to."""
+        _without_places(monkeypatch)
         location = LocationFactory.create(anonymous=True, elevation_m=1450.0)
         MicroRegionFactory.create(name="Chablais", centroid_location=location)
         WeatherFactory.create(
@@ -516,15 +531,30 @@ class TestCardDetents:
         assert 'data-testid="weather-detail-strips"' not in html
 
     def test_a_day_with_no_row_stays_at_peek(
-        self, client: Client, resort_location: Location
+        self,
+        client: Client,
+        resort_location: Location,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The line says so, and there is nothing above it."""
+        _without_places(monkeypatch)
         html = client.get(_card_url(resort_location), {"date": "2020-01-01"}).json()[
             "html"
         ]
 
         assert _detents(html) == "peek"
         assert "No weather recorded" in html
+
+    def test_a_day_with_no_row_still_rises_to_its_places(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The "Where this is" rows sit below the peek, so FULL must reach them."""
+        html = client.get(_card_url(resort_location), {"date": "2020-01-01"}).json()[
+            "html"
+        ]
+
+        assert 'data-testid="weather-detail-places"' in html
+        assert _detents(html) == "peek,half,full"
 
     def test_the_surface_declares_all_three_and_loads_the_legend(self) -> None:
         """The map's sheet offers FULL, and the chart's key has its handler."""
@@ -1037,7 +1067,9 @@ class TestCardForwardDay:
             "html"
         ]
 
-        assert _detents(html) == "peek"
+        # Nothing to show for the day, but the resort's place rows still
+        # sit below the peek.
+        assert _detents(html) == "peek,half,full"
         assert "The forecast does not reach this day yet." in html
         assert "No weather recorded" not in html
 
