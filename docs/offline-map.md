@@ -3587,7 +3587,7 @@ uv run python bin/capture-pwa-screenshots --skip-routes   # production only
 |------|--------|
 | `narrow-1-region.webp`, `wide-1-region.webp` | The map with Martigny–Verbier's sheet open |
 | `narrow-2-bulletin.webp`, `wide-2-bulletin.webp` | That region's bulletin page |
-| `narrow-3-route.webp`, `wide-3-route.webp` | "Mont Fort - Backside" open in the route panel, from the dev server |
+| `narrow-3-route.webp`, `wide-3-route.webp` | "Mont Fort - Backside" open in the route panel at z14 on swisstopo winter, from the dev server |
 | `narrow-4-resort.webp`, `wide-4-resort.webp` | Verbier's resort page |
 | `narrow-5-weather.webp`, `wide-5-weather.webp` | Verbier village's weather page |
 | `narrow-6-map.webp` | The map on its own |

@@ -37,10 +37,11 @@
 #
 # A route belongs to an account, so the route shots come from the local dev
 # server (--dev-url) signed in as the seeded dev user, who holds the four
-# canonical tracks (seed_canonical_routes). The script mints that session
-# itself through ``manage.py shell``, so the dev server must be running on
-# this checkout's database. ``--skip-routes`` keeps the route files already
-# on disk instead.
+# canonical tracks (seed_canonical_routes). The script opens one and zooms
+# in past ROUTE_SLOPE_MINZOOM, so the line is drawn in slope classes. It
+# mints the session itself through ``manage.py shell``, so the dev server
+# must be running on this checkout's database. ``--skip-routes`` keeps the
+# route files already on disk instead.
 #
 #     uv run python manage.py runserver        # in another terminal
 #     uv run python bin/capture-pwa-screenshots
@@ -68,6 +69,7 @@ import html
 import io
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -96,8 +98,23 @@ DEFAULT_RESORT = "verbier"
 DEFAULT_DEV_URL = "http://127.0.0.1:8000"
 
 # One of the canonical tracks (apps/routes/fixtures/canonical/) the seeded
-# dev user holds, as its routes panel lists it.
-ROUTE_NAME = "Mont Fort - Backside"
+# dev user holds, as its routes panel lists it. Its row only frames the map:
+# the tap then opens whichever route line sits nearest the centre, which on
+# this framing is its neighbour "Mont Fort - Backside" (the one pictured).
+ROUTE_NAME = "Mont Fort - Col de la Chaux"
+
+# The zoom the route shot is taken at: ROUTE_SLOPE_MINZOOM, where the
+# line is drawn in slope classes, read off the map's zoom control.
+ROUTE_ZOOM = 14
+
+
+# The route is drawn over swisstopo's winter map, as a reader in Switzerland
+# would pick in the layers menu: the dev server's default basemap has no
+# detail at the zoom the slope classes need.
+SWISSTOPO_BASEMAP = (
+    "try { localStorage.setItem('snowdesk.map.basemap', 'swisstopo_winter'); }"
+    " catch (e) {}"
+)
 
 # Prints a signed-in session key for the seeded dev user (NORMAL_USER_EMAIL
 # in seed_test_data), as ``manage.py shell`` runs it.
@@ -302,27 +319,36 @@ def _assert_basemap_loaded(failed: list[str]) -> None:
         sys.exit(1)
 
 
-def _route_line_point(png: bytes, scale: float) -> tuple[float, float]:
-    """Find the drawn route nearest the middle of the screen.
+def _is_route_line(red: int, green: int, blue: int) -> bool:
+    """Whether a pixel is the magenta a route is drawn in below z14."""
+    return red > 150 and blue > 150 and green < 80
 
-    The route is the only magenta on the map (static/js/route_drawing_core.js),
-    so the pixel nearest the centre is a point on it to tap.
+
+def _is_cursor(red: int, green: int, blue: int) -> bool:
+    """Whether a pixel is the sky blue of the point card's place on the line."""
+    return red < 100 and green > 150 and blue > 220
+
+
+def _find_pixel(
+    png: bytes, scale: float, match: Callable[[int, int, int], bool]
+) -> tuple[float, float]:
+    """Find the pixel nearest the middle of the screen that ``match`` accepts.
 
     Args:
-        png: A screenshot of the map with the route focused.
+        png: A screenshot of the map.
         scale: The screenshot's device scale factor.
+        match: Whether an (r, g, b) pixel is the one sought.
 
     Returns:
-        The point to tap, in CSS pixels.
+        The point, in CSS pixels.
 
     """
     image = Image.open(io.BytesIO(png)).convert("RGB")
     width, height = image.size
     best: tuple[float, float, float] | None = None
-    for y in range(height // 8, height * 7 // 8, 3):
-        for x in range(width // 8, width * 7 // 8, 3):
-            red, green, blue = image.getpixel((x, y))  # type: ignore[misc]
-            if red > 150 and blue > 150 and green < 80:
+    for y in range(height // 10, height * 9 // 10, 2):
+        for x in range(0, width, 2):
+            if match(*image.getpixel((x, y))):  # type: ignore[misc]
                 distance = (x - width / 2) ** 2 + (y - height / 2) ** 2
                 if best is None or distance < best[0]:
                     best = (distance, x / scale, y / scale)
@@ -353,15 +379,31 @@ def _capture_screen(page: Page, url: str, shot: Shot, scale: float) -> bytes:
         page.locator("[data-sheet-drag]:visible").first.tap()
         page.wait_for_timeout(1500)
     elif shot.action == "route":
-        # The row's name focuses the map on the track; a tap on the line
-        # opens the route panel with the point card for that place.
+        # The row's name focuses the map on the track, and a tap on the line
+        # opens the route panel with the point card for that place, fitting
+        # the map to the whole route again.
         page.get_by_text(ROUTE_NAME, exact=True).first.click()
         page.wait_for_timeout(SETTLE_MS)
-        x, y = _route_line_point(page.screenshot(), scale)
+        x, y = _find_pixel(page.screenshot(), scale, _is_route_line)
         if shot.form_factor == "narrow":
             page.touchscreen.tap(x, y)
         else:
             page.mouse.click(x, y)
+        page.wait_for_timeout(SETTLE_MS)
+        # Then zoom in around the card's place, past ROUTE_SLOPE_MINZOOM, so
+        # the line is drawn in slope classes over the detailed basemap. The
+        # place is on open map, clear of the panel; the wheel turns just
+        # beside it, because the place's own marker swallows wheel events.
+        x, y = _find_pixel(page.screenshot(), scale, _is_cursor)
+        page.mouse.move(x + 16, y)
+        for _ in range(60):
+            if (
+                int(page.locator("[data-zoom-face]").first.text_content() or 0)
+                >= ROUTE_ZOOM
+            ):
+                break
+            page.mouse.wheel(0, -300)
+            page.wait_for_timeout(300)
         page.wait_for_timeout(SETTLE_MS)
     page.evaluate(HIDE_ANOTHER_DAY)
     return page.screenshot()
@@ -461,6 +503,7 @@ def capture(
                 context.add_init_script(DISMISS_INTRO)
                 if signed_in and cookie:
                     context.add_cookies([cookie])  # type: ignore[list-item]
+                    context.add_init_script(SWISSTOPO_BASEMAP)
                 page = context.new_page()
                 page.on("requestfailed", lambda request: failed.append(request.url))
                 pages[form_factor, signed_in] = page, scale
