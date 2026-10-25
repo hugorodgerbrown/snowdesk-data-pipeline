@@ -1990,8 +1990,10 @@
     // order — so pins arriving after the symbols move them.
     refreshWeatherSourceData();
     // Re-apply in case favourites data (and therefore favouritedResortIds)
-    // was already known before this layer installed.
+    // was already known before this layer installed — and read it if not,
+    // since with the favourites overlay off nothing else will.
     applyFavouritedResortColour();
+    loadFavouritesFeed();
   };
 
   // Slugs of the resorts the current user has favourited — "pinned
@@ -2006,9 +2008,14 @@
   let favouritedResortIds = [];
   // The same favourites' feature properties, for search's "Pinned resorts"
   // (search_core.buildPinnedResortEntries). Null until a favourites feed
-  // has been read — by the layer, its refetch, or search itself
-  // (loadPinnedResorts) when the layer is off and never fetched one.
+  // has been read — by the layer, its refetch, or loadFavouritesFeed when
+  // the layer is off and never fetched one.
   let favouritesFeedProps = null;
+  // Resorts starred offline and not yet confirmed by a refetch. Merged into
+  // every resync, so re-installing the favourites layer from the older
+  // cached feed (a basemap swap does) keeps their dots blue; cleared by the
+  // authoritative refetch in the snowdesk:favourites-changed handler.
+  let pendingResortSlugs = [];
 
   /**
    * Broadcast that one of the three roundel-owned overlays has changed
@@ -2103,7 +2110,53 @@
         if (feature.properties) favouritesFeedProps.push(feature.properties);
       }
     }
+    for (const slug of pendingResortSlugs) {
+      if (!favouritedResortIds.includes(slug)) favouritedResortIds.push(slug);
+    }
     applyFavouritedResortColour();
+  };
+
+  let favouritesFeedLoading = null;
+  /**
+   * Read the favourites feed when the favourites layer has not (SNOW-1229).
+   *
+   * The layer is the usual reader, but it loads only while its overlay is
+   * on — and both things the feed now also serves do not depend on that
+   * switch: a pinned resort's blue dot (asked for when the resorts layer
+   * installs) and search's "Pinned resorts" (asked for on an empty focus).
+   * Network first, then the overlay cache the layer writes through to, so a
+   * device that has read the feed before still has its pinned resorts
+   * offline. Resolves at once when a feed has been read, or for a visitor;
+   * a miss on both resolves with nothing read and clears the slot so the
+   * next ask tries again.
+   *
+   * @returns {Promise<void>}
+   */
+  const loadFavouritesFeed = () => {
+    if (favouritesFeedProps !== null || !FAVOURITES_ELIGIBLE || !FAVOURITES_URL) {
+      return Promise.resolve();
+    }
+    if (!favouritesFeedLoading) {
+      favouritesFeedLoading = fetch(FAVOURITES_URL)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+        .then(async (fc) => {
+          if (fc) {
+            window.pwaMapOverlayCache?.putOverlay('favourites', fc);
+            return fc;
+          }
+          return (await window.pwaMapOverlayCache?.getOverlay('favourites')) || null;
+        })
+        .then((fc) => {
+          // The layer may have landed its own feed meanwhile; that one wins.
+          if (fc && favouritesFeedProps === null) syncFavouritedResortIds(fc);
+        })
+        .catch(() => {})
+        .finally(() => {
+          favouritesFeedLoading = null;
+        });
+    }
+    return favouritesFeedLoading;
   };
 
   // SNOW-478: the favourites pin is drawn as an SDF icon image, not a ``★``
@@ -7105,6 +7158,9 @@
       // lands (SNOW-479). Keep the cache in sync so a subsequent optimistic
       // append starts from current truth.
       favouritesGeojsonCache = fc;
+      // The server's word on every resort starred offline: confirmed ones
+      // are in ``fc``, and one whose mutation failed for good is not.
+      pendingResortSlugs = [];
       // SNOW-499: recompute before installFavouritesLayer's own call so a
       // resort favourited/unfavourited elsewhere (e.g. the resort popup
       // star) is reflected on the resorts layer as soon as this refetch
@@ -7137,6 +7193,9 @@
     // pending star — so it turns blue at once, offline too, and the refetch
     // once the queue drains confirms it.
     if (detail.resortSlug) {
+      if (!pendingResortSlugs.includes(detail.resortSlug)) {
+        pendingResortSlugs = pendingResortSlugs.concat([detail.resortSlug]);
+      }
       if (!favouritedResortIds.includes(detail.resortSlug)) {
         favouritedResortIds = favouritedResortIds.concat([detail.resortSlug]);
         applyFavouritedResortColour();
@@ -10177,8 +10236,8 @@
     // panel as a place on the map, and listed here as somewhere to go —
     // the same row a typed match draws, opening the same resort. Their rows
     // come from the favourites feed (favouritesFeedProps), which the layer
-    // loads at boot; with the layer switched off nothing has read it, so
-    // the first empty-field focus does (loadPinnedResorts), once.
+    // loads at boot; with the layer switched off the resorts layer or the
+    // first empty-field focus reads it (loadFavouritesFeed), once.
 
     const pinnedResults = () => {
       const ids = window.pwaPinnedRegions?.ids?.() || [];
@@ -10188,35 +10247,6 @@
     };
 
     const pinnedResortResults = () => searchCore.buildPinnedResortEntries(favouritesFeedProps || []);
-
-    let pinnedResortsLoading = null;
-    /**
-     * Read the favourites feed for search when the layer has not.
-     *
-     * Resolves at once when a feed has been read, or for a visitor (no
-     * feed to read). A failed fetch resolves too, listing no resorts, and
-     * clears the slot so the next focus tries again.
-     *
-     * @returns {Promise<void>}
-     */
-    const loadPinnedResorts = () => {
-      if (favouritesFeedProps !== null || !FAVOURITES_ELIGIBLE || !FAVOURITES_URL) {
-        return Promise.resolve();
-      }
-      if (!pinnedResortsLoading) {
-        pinnedResortsLoading = fetch(FAVOURITES_URL)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((fc) => {
-            // The layer may have landed its own feed meanwhile; that one wins.
-            if (fc && favouritesFeedProps === null) syncFavouritedResortIds(fc);
-          })
-          .catch(() => {})
-          .finally(() => {
-            pinnedResortsLoading = null;
-          });
-      }
-      return pinnedResortsLoading;
-    };
 
     /** The empty field's two headed groups, either possibly absent. */
     const pinnedGroups = () => [
@@ -10231,7 +10261,7 @@
       // boot; redraw once both have settled.
       Promise.all([
         window.pwaPinnedRegions?.ready?.() || Promise.resolve(),
-        loadPinnedResorts(),
+        loadFavouritesFeed(),
       ]).then(() => {
         if (!inputEl.value && document.activeElement === inputEl) {
           previewTop = false;

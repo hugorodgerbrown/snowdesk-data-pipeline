@@ -92,7 +92,6 @@ function stubMapLibre() {
     getLayer: (id) => (layouts.has(id) ? { id } : null),
     getFilter: (id) => filters.get(id) ?? null,
     getLayoutProperty: (id, prop) => (layouts.get(id) || {})[prop],
-    getPaintProperty: () => undefined,
     getFeatureState: () => ({}),
     isSourceLoaded: () => true,
     getSource: () => null,
