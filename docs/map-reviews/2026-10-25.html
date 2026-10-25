@@ -1,0 +1,944 @@
+<title>Inside the Snowdesk Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --paper:      #e9edf1;
+  --surface:    #ffffff;
+  --surface-2:  #f2f5f8;
+  --ink:        #0f1720;
+  --ink-2:      #47596b;
+  --ink-3:      #7d8fa0;
+  --rule:       #cdd6de;
+  --rule-soft:  #dfe6ec;
+  --accent:     #1a5f8f;
+  --accent-ink: #ffffff;
+  --accent-soft:#dbe8f1;
+
+  /* EAWS danger scale — mandated by the standard, reused here to rate findings. */
+  --eaws-1: #ccff66;
+  --eaws-2: #ffff00;
+  --eaws-3: #ff9900;
+  --eaws-4: #ff0000;
+  --eaws-5: #820100;
+  --eaws-1-ink: #1c2a05;
+  --eaws-2-ink: #2a2a00;
+  --eaws-3-ink: #331e00;
+  --eaws-4-ink: #ffffff;
+  --eaws-5-ink: #ffffff;
+
+  --measure: 66ch;
+  --shell: 1180px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:      #0e131a;
+    --surface:    #161d26;
+    --surface-2:  #1c2530;
+    --ink:        #e4ebf2;
+    --ink-2:      #a3b3c2;
+    --ink-3:      #74869a;
+    --rule:       #2c3946;
+    --rule-soft:  #232e3a;
+    --accent:     #6fb3e0;
+    --accent-ink: #08131c;
+    --accent-soft:#1b2c3a;
+  }
+}
+:root[data-theme="dark"] {
+  --paper:      #0e131a;
+  --surface:    #161d26;
+  --surface-2:  #1c2530;
+  --ink:        #e4ebf2;
+  --ink-2:      #a3b3c2;
+  --ink-3:      #74869a;
+  --rule:       #2c3946;
+  --rule-soft:  #232e3a;
+  --accent:     #6fb3e0;
+  --accent-ink: #08131c;
+  --accent-soft:#1b2c3a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, .display {
+  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.021em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+code, .mono, kbd {
+  font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.86em;
+  font-weight: 400;
+}
+code {
+  background: var(--surface-2);
+  border: 1px solid var(--rule-soft);
+  border-radius: 3px;
+  padding: 0.08em 0.34em;
+  white-space: nowrap;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* ---------- shell ---------- */
+
+.wrap { max-width: var(--shell); margin: 0 auto; padding: 0 28px; }
+
+/* ---------- top bar ---------- */
+
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(9px);
+  border-bottom: 1px solid var(--rule);
+}
+.topbar .wrap {
+  display: flex; align-items: center; gap: 22px;
+  height: 46px;
+}
+.topbar .brand {
+  font-family: Archivo, sans-serif; font-weight: 700; font-size: 13px;
+  letter-spacing: -0.01em; white-space: nowrap;
+}
+.topnav { display: flex; gap: 16px; overflow-x: auto; scrollbar-width: none; }
+.topnav::-webkit-scrollbar { display: none; }
+.topnav a {
+  font-family: "JetBrains Mono", monospace; font-size: 11px;
+  color: var(--ink-2); text-decoration: none; white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.topnav a:hover { color: var(--accent); }
+
+/* ---------- masthead ---------- */
+
+.masthead { padding: 76px 0 52px; border-bottom: 1px solid var(--rule); }
+.eyebrow {
+  font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3);
+}
+.masthead h1 {
+  font-size: clamp(40px, 7vw, 74px); line-height: 1.0; margin: 18px 0 0;
+  max-width: 15ch;
+}
+.masthead .standfirst {
+  margin: 22px 0 0; max-width: 60ch; font-size: 20px; color: var(--ink-2);
+}
+.byline {
+  margin-top: 26px; font-family: "JetBrains Mono", monospace; font-size: 11.5px;
+  color: var(--ink-3); letter-spacing: 0.02em;
+}
+
+/* ---------- figures strip ---------- */
+
+.figures {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 1px; background: var(--rule); border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.fig { background: var(--paper); padding: 20px 4px 20px 0; }
+.fig .n {
+  font-family: Archivo, sans-serif; font-weight: 600; font-size: 27px;
+  letter-spacing: -0.03em; font-variant-numeric: tabular-nums; display: block;
+}
+.fig .l {
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: var(--ink-3);
+  letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-top: 5px;
+  line-height: 1.4;
+}
+
+/* ---------- sections ---------- */
+
+section { padding: 62px 0; border-bottom: 1px solid var(--rule-soft); }
+section:last-of-type { border-bottom: 0; }
+
+.sec-head { display: grid; grid-template-columns: 62px 1fr; gap: 0; margin-bottom: 26px; }
+.sec-num {
+  font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--ink-3);
+  letter-spacing: 0.08em; padding-top: 9px;
+}
+.sec-head h2 { font-size: clamp(25px, 3.3vw, 34px); line-height: 1.14; max-width: 22ch; }
+.sec-head .kicker {
+  margin: 10px 0 0; color: var(--ink-2); max-width: var(--measure); font-size: 18px;
+}
+
+.body { display: grid; grid-template-columns: 62px minmax(0, 1fr); }
+.body > * { grid-column: 2; min-width: 0; }
+.body > .col { max-width: var(--measure); }
+.body > .col > p { margin: 0 0 1.05em; }
+.body > .col > p:last-child { margin-bottom: 0; }
+.body > .wide { max-width: none; }
+
+.lede { font-size: 19px; }
+
+/* ---------- callout ---------- */
+
+.note {
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  padding: 16px 20px; margin: 26px 0;
+  max-width: var(--measure);
+}
+.note .t {
+  font-family: Archivo, sans-serif; font-weight: 600; font-size: 13px;
+  letter-spacing: 0.01em; margin-bottom: 5px;
+}
+.note p { margin: 0; font-size: 16px; color: var(--ink-2); }
+
+/* ---------- figure blocks ---------- */
+
+figure { margin: 30px 0; }
+figure svg { display: block; width: 100%; height: auto; }
+.figframe {
+  background: var(--surface); border: 1px solid var(--rule); padding: 22px;
+  overflow-x: auto;
+}
+figcaption {
+  font-family: "JetBrains Mono", monospace; font-size: 11.5px; color: var(--ink-3);
+  margin-top: 10px; line-height: 1.6; max-width: 74ch;
+}
+
+/* ---------- file-order column ---------- */
+
+.order { display: grid; gap: 5px; margin: 26px 0; max-width: 640px; }
+.order .row {
+  display: grid; grid-template-columns: 24px 1fr auto; gap: 12px; align-items: baseline;
+  background: var(--surface); border: 1px solid var(--rule-soft);
+  padding: 8px 12px;
+}
+.order .row.mark { border-color: var(--accent); background: var(--accent-soft); }
+.order .i {
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.order .f { font-family: "JetBrains Mono", monospace; font-size: 12.5px; }
+.order .d { font-size: 14px; color: var(--ink-2); text-align: right; }
+.order .gap {
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: var(--ink-3);
+  padding: 2px 0 2px 36px;
+}
+
+/* ---------- tables ---------- */
+
+.tablewrap { overflow-x: auto; margin: 26px 0; border: 1px solid var(--rule); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 580px; }
+th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th {
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3);
+  background: var(--surface-2); border-bottom: 1px solid var(--rule);
+}
+td { font-size: 15.5px; }
+td.mono, td .path { font-family: "JetBrains Mono", monospace; font-size: 12.5px; }
+td.num { font-family: "JetBrains Mono", monospace; font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
+
+/* ---------- findings ---------- */
+
+.findings { display: grid; gap: 14px; margin-top: 8px; }
+.finding {
+  background: var(--surface); border: 1px solid var(--rule);
+  display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: stretch;
+}
+.dtile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; padding: 14px 0;
+}
+.dtile .lvl {
+  font-family: Archivo, sans-serif; font-weight: 700; font-size: 22px; line-height: 1;
+}
+.dtile .lab {
+  font-family: "JetBrains Mono", monospace; font-size: 8.5px; letter-spacing: 0.08em;
+  text-transform: uppercase; opacity: 0.82;
+}
+.d1 { background: var(--eaws-1); color: var(--eaws-1-ink); }
+.d2 { background: var(--eaws-2); color: var(--eaws-2-ink); }
+.d3 { background: var(--eaws-3); color: var(--eaws-3-ink); }
+.d4 { background: var(--eaws-4); color: var(--eaws-4-ink); }
+.d5 { background: var(--eaws-5); color: var(--eaws-5-ink); }
+
+.fbody { padding: 15px 20px 17px; min-width: 0; }
+.fbody h3 { font-size: 19px; line-height: 1.25; }
+.fbody .where {
+  font-family: "JetBrains Mono", monospace; font-size: 11.5px; color: var(--ink-3);
+  margin: 6px 0 9px; word-break: break-word;
+}
+.fbody p { margin: 0 0 0.75em; font-size: 16px; }
+.fbody p:last-child { margin-bottom: 0; }
+.fix {
+  margin-top: 11px; padding-top: 11px; border-top: 1px dashed var(--rule);
+  font-size: 15.5px; color: var(--ink-2);
+}
+.fix b {
+  font-family: Archivo, sans-serif; font-size: 11px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 3px;
+  font-weight: 600;
+}
+
+.disp {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  font-family: "JetBrains Mono", monospace; font-size: 11px;
+  border: 1px solid var(--rule); background: var(--surface-2);
+  padding: 3px 9px; margin: 0 0 9px;
+}
+.disp .k { color: var(--ink-3); letter-spacing: 0.06em; text-transform: uppercase; font-size: 9.5px; }
+.disp .v { color: var(--ink); }
+.disp.open { border-color: var(--accent); background: var(--accent-soft); }
+
+
+/* ---------- scale legend ---------- */
+
+.scale { display: flex; flex-wrap: wrap; gap: 0; margin: 22px 0 30px; border: 1px solid var(--rule); }
+.scale div {
+  flex: 1 1 90px; padding: 9px 11px;
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px; letter-spacing: 0.03em;
+}
+.scale div b { display: block; font-size: 14px; font-family: Archivo, sans-serif; }
+
+/* ---------- verdict list ---------- */
+
+.holds { display: grid; gap: 0; margin: 22px 0; border-top: 1px solid var(--rule); }
+.holds li {
+  list-style: none; display: grid; grid-template-columns: 30px minmax(0,1fr);
+  gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--rule-soft);
+}
+.holds { padding-left: 0; margin-left: 0; }
+.holds .tick {
+  font-family: Archivo, sans-serif; font-weight: 700; color: var(--accent); font-size: 16px;
+}
+.holds p { margin: 0; font-size: 16px; }
+.holds strong { font-family: Archivo, sans-serif; font-weight: 600; font-size: 16px; }
+
+/* ---------- ordered plan ---------- */
+
+.plan { counter-reset: step; display: grid; gap: 12px; margin: 24px 0 0; padding: 0; }
+.plan li {
+  list-style: none; counter-increment: step;
+  display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 14px;
+  background: var(--surface); border: 1px solid var(--rule); padding: 14px 18px;
+}
+.plan li::before {
+  content: counter(step);
+  font-family: Archivo, sans-serif; font-weight: 700; font-size: 17px; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.plan p { margin: 0; font-size: 16px; }
+.plan .h { font-family: Archivo, sans-serif; font-weight: 600; font-size: 17px; margin-bottom: 3px; }
+
+footer {
+  padding: 40px 0 64px; color: var(--ink-3);
+  font-family: "JetBrains Mono", monospace; font-size: 11.5px; line-height: 1.8;
+}
+
+@media (max-width: 700px) {
+  body { font-size: 16px; }
+  .sec-head, .body { grid-template-columns: 1fr; }
+  .sec-num { padding-top: 0; margin-bottom: 8px; }
+  .body > * { grid-column: 1; }
+  .wrap { padding: 0 18px; }
+  .masthead { padding: 46px 0 34px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="topbar">
+  <div class="wrap">
+    <span class="brand">Inside the Snowdesk Map</span>
+    <nav class="topnav">
+      <a href="#idea">the idea</a>
+      <a href="#stack">what's drawn</a>
+      <a href="#state">the fast trick</a>
+      <a href="#files">the code</a>
+      <a href="#talk">how it talks</a>
+      <a href="#server">the server</a>
+      <a href="#tests">tests</a>
+      <a href="#review">review</a>
+      <a href="#findings">findings</a>
+      <a href="#tickets">tickets</a>
+    </nav>
+  </div>
+</div>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="eyebrow">Map review · cycle 07 · 25 October 2026</p>
+    <h1>Inside the Snowdesk Map</h1>
+    <p class="standfirst">The largest diff this series has reviewed — 145 commits since cycle 06's baseline — and almost none of it is this subsystem's own. A resort-page rebuild (SNOW-1143–1178) and a Plan/trip-page rebuild (SNOW-1203–1230) account for the bulk of it; both are out of scope, and both were checked against that boundary rather than assumed out of it. What <em>is</em> in scope mostly extends patterns this series already approved rather than inventing new ones: a trip's route is now drawn on the main map by the same shared drawing code the map, the Plan page and the meeting picker all use (SNOW-1212/1213/1218), a cached <code>problem_terrain</code> endpoint joined its siblings (SNOW-1194/1196), and four new overlay-adjacent surfaces — a help menu, a one-time tour offer, help mode, and the first-run example-route guide (SNOW-1230) — each either registered with <code>window.pwaMapOverlays</code> the ordinary way or said in its own header, specifically, why not. That is a sharper contrast than it sounds: the series' one standing exception, the route rail (<code>SNOW-1040</code>), still has nothing but a comment where four newer surfaces now have either a registration call or a reasoned, written exception. <code>SNOW-1116</code> (closed last cycle, the morning after publication) is independently re-confirmed closed — this week's sheet-mechanics changes did not touch the fix. <code>SNOW-957</code> and <code>SNOW-1093</code> are both unchanged, now in their sixth and fourth cycles respectively. No new finding from this cycle clears the bar for a ticket, so this cycle raises none — the series' fourth clean cycle of seven, and the first since cycle 03 to follow a diff this large.</p>
+    <p class="byline">Baseline <span class="mono">20bd41e</span> → <span class="mono">b09d298</span> (145 commits) · Cycle ticket <span class="mono">SNOW-1233</span> — see §11 · Sections 01–07 explain the subsystem for engineers who don't write JavaScript, carried forward from cycle 06 and corrected against this week's diff; sections 08–11 are the review, rewritten fresh. Every number was re-measured against this checkout, not carried over.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="figures">
+    <div class="fig"><span class="n">119</span><span class="l">first-party script<br>files on the page</span></div>
+    <div class="fig"><span class="n">25,333</span><span class="l">lines of our<br>own JS</span></div>
+    <div class="fig"><span class="n">56</span><span class="l">map layers<br>26 data sources</span></div>
+    <div class="fig"><span class="n">7</span><span class="l">SQL queries<br>to render</span></div>
+    <div class="fig"><span class="n">~42 ms</span><span class="l">server render<br>time, warm</span></div>
+    <div class="fig"><span class="n">419.2 KiB</span><span class="l">JS over the<br>wire, gzipped</span></div>
+  </div>
+</div>
+
+<main class="wrap">
+
+<!-- 1 -->
+<section id="idea">
+  <div class="sec-head">
+    <div class="sec-num">01</div>
+    <div>
+      <h2>The one idea you need before reading any of the code</h2>
+      <p class="kicker">A web map is not a picture, and nothing in this codebase draws anything.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p class="lede">The library doing the drawing is MapLibre. Think of it as a small rendering engine with a declarative interface, closer to a scene graph than to a canvas API. You never issue a draw call. You hand it two things:</p>
+      <p><strong>Sources</strong> — where data comes from. A source is a URL plus a format: "fetch this GeoJSON", "fetch these image tiles". <strong>Layers</strong> — how to paint a source. A layer names its source, picks a shape (fill, line, symbol, raster), and gives paint rules for colour, width and opacity. MapLibre resolves that description into WebGL every frame.</p>
+      <p>Everything in <code>map.js</code> is therefore one of four verbs: add a source, add a layer, change a property on a layer, or attach state to a feature. There is no render loop of ours anywhere. When the map changes, it is because one of those four things changed and MapLibre redrew.</p>
+      <p>The second thing worth internalising: paint rules are not functions, they are <em>data</em>. A colour is written as a small JSON expression the engine evaluates per feature — a lookup table, not a callback. That is why colouring 149 polygons costs nothing: we are not calling our code 149 times, we are handing the GPU a table.</p>
+      <div class="note">
+        <div class="t">Why this matters for reading the code</div>
+        <p>If you go looking for the function that draws a region, you will not find it. Look instead for the function that <em>describes</em> the region layer — <code>installRegionsLayers</code> — and for the function that changes one number on it later.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section id="stack">
+  <div class="sec-head">
+    <div class="sec-num">02</div>
+    <div>
+      <h2>What is actually on screen</h2>
+      <p class="kicker">Three independent stacks, from three different owners, composited by z-order.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>The map looks like one image. It is three stacks that know nothing about each other, and almost every subtlety in the code comes from that separation.</p>
+    </div>
+    <div class="wide">
+      <figure>
+        <div class="figframe">
+          <svg viewBox="0 0 900 372" role="img" aria-label="Cross-section of the map's layer stack: basemap tiles at the bottom, then the slope raster, then our region polygons and their fill, then markers on top.">
+            <defs>
+              <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+              </marker>
+            </defs>
+            <g font-family="JetBrains Mono, monospace" font-size="11.5">
+
+              <!-- band 4: markers -->
+              <rect x="250" y="16" width="570" height="52" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <circle cx="300" cy="42" r="7" fill="#1a73e8"/>
+              <circle cx="336" cy="42" r="7" fill="#e8711a"/>
+              <path d="M372 35 l14 0 l0 14 l-14 0 z" fill="var(--accent)"/>
+              <text x="410" y="39" fill="var(--ink)" font-size="12.5">markers · favourites, observations, routes</text>
+              <text x="410" y="55" fill="var(--ink-3)">always re-lifted to the top after every install</text>
+
+              <!-- band 3: our data -->
+              <rect x="250" y="82" width="570" height="72" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <rect x="272" y="100" width="34" height="22" fill="#ff9900"/>
+              <rect x="308" y="100" width="34" height="22" fill="#ffff00"/>
+              <rect x="344" y="100" width="34" height="22" fill="#ff0000"/>
+              <rect x="380" y="100" width="34" height="22" fill="#ccff66"/>
+              <text x="430" y="106" fill="var(--ink)" font-size="12.5">regions-fill · the danger choropleth</text>
+              <text x="430" y="122" fill="var(--ink-3)">one colour per region, from feature-state</text>
+              <text x="272" y="143" fill="var(--ink-3)">regions-line/label · routes-leg-climb/descent · trip-route-* · route-cursor-*</text>
+
+              <!-- band 2: slope -->
+              <rect x="250" y="168" width="570" height="46" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <rect x="272" y="180" width="142" height="22" fill="var(--accent)" opacity="0.34"/>
+              <text x="430" y="188" fill="var(--ink)" font-size="12.5">slope-raster · our own terrain-class tiles</text>
+              <text x="430" y="204" fill="var(--ink-3)">painted on-device, see cycle 06</text>
+
+              <!-- band 1: basemap -->
+              <rect x="250" y="228" width="570" height="60" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <g opacity="0.5" stroke="var(--ink-3)" fill="none">
+                <path d="M272 268 q22 -22 44 0 t44 0"/>
+                <path d="M272 258 q22 -22 44 0 t44 0"/>
+                <path d="M272 248 q22 -22 44 0 t44 0"/>
+              </g>
+              <text x="430" y="252" fill="var(--ink)" font-size="12.5">basemap · terrain, roads, place names</text>
+              <text x="430" y="268" fill="var(--ink-3)">five styles, user-switchable; not our data</text>
+
+              <!-- left labels -->
+              <g fill="var(--ink-3)" font-size="10.5" letter-spacing="0.06em">
+                <text x="20" y="46">OURS — DRAWN LAST</text>
+                <text x="20" y="118">OURS — THE PRODUCT</text>
+                <text x="20" y="194">OURS, ON-DEVICE</text>
+                <text x="20" y="262">THIRD PARTY</text>
+              </g>
+              <line x1="230" y1="20" x2="230" y2="288" stroke="var(--rule)"/>
+
+              <!-- right annotation -->
+              <g color="var(--accent)">
+                <line x1="852" y1="288" x2="852" y2="30" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)"/>
+              </g>
+              <text x="836" y="150" fill="var(--accent)" font-size="11">paint</text>
+              <text x="836" y="164" fill="var(--accent)" font-size="11">order</text>
+
+              <!-- footer note -->
+              <line x1="20" y1="312" x2="880" y2="312" stroke="var(--rule)"/>
+              <text x="20" y="334" fill="var(--ink-2)" font-size="12">Swapping the basemap destroys and rebuilds everything above it.</text>
+              <text x="20" y="352" fill="var(--ink-3)">That single fact is responsible for a large share of the complexity in map.js — see section 03.</text>
+            </g>
+          </svg>
+        </div>
+        <figcaption>56 layers over 26 data sources — up from 41/19 at cycle 06, resolved id by id (literal, same-file <span class="mono">const</span>, or a loop's return value counted at each of its call sites) and restricted to the 119 files <span class="mono">/map/</span> actually serves. The whole of the increase is one feature: a trip's route, drawn on the main map (SNOW-1212/1213/1218) — <span class="mono">installTripRouteLayers</span> adds 7 sources and 16 layers (the shared drawing's 5 sources/10 layers, a second route-cursor source/5 layers, and the meeting-point source/layer), while the one-off <span class="mono">routes-line-pending</span> layer SNOW-1218 made unnecessary is removed, net +15 layers/+7 sources. <span class="mono">bulletin-terrain-raster</span> (SNOW-1194/1196, generalised from one region to every region) and the route-cursor's own call sites are reworked bodies at existing call sites, not new ones — confirmed by diffing each site's surrounding commit rather than trusting the id list alone.</figcaption>
+      </figure>
+    </div>
+    <div class="col">
+      <p>The consequence people trip over: the basemap is not a background image, it is a whole style document. Switching from OpenFreeMap to swisstopo replaces the entire scene — our sources and layers included. Everything we added has to be re-added, and everything we coloured has to be re-coloured. <code>repaintAfterStyleSwap</code> exists for exactly that.</p>
+      <div class="note">
+        <div class="t">New this cycle: a trip's route is drawn on the main map, by the same code three pages now share</div>
+        <p>Until this cycle, a trip's route only existed inside the Plan page's own 320px canvas or a followed-but-unsaved share's dashed teal line. SNOW-1212 extracted the route-drawing logic — line, legs, climb/descent cores, slope classes from z14, transitions, start/finish — out of <code>map.js</code>'s own private closures into a shared module, <code>route_drawing_core.js</code>, now consumed by the main map (<code>installTripRouteLayers</code>, <code>map.js:3310</code>), the trip page (<code>trip_map.js</code>) and the meeting picker. SNOW-1213 then let a tap on a trip's line on the main map open the route panel read-only, and SNOW-1218 retired the separate "pending, not yet saved" line and colour (<code>routes-line-pending</code>, <code>--color-route-line-pending</code>) in favour of drawing a followed share with the exact same layers and colours as a route you own — the panel's Save button is what says it isn't yours yet, not a different line. <code>installTripRouteLayers</code> is idempotent on its source, calls <code>raiseMarkerLayers()</code> after installing, and is re-run from <code>repaintAfterStyleSwap</code> (<code>map.js:10916</code>) exactly like every other install function on this page — read in full, this is the established pattern applied correctly to a fourth consumer, not a new one.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="state">
+  <div class="sec-head">
+    <div class="sec-num">03</div>
+    <div>
+      <h2>The trick that makes the season scrubber instant</h2>
+      <p class="kicker">Separate the shape of a thing from what is currently true about it.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>Dragging the scrubber recolours all 149 regions for a different day. Naïvely, that is a request per day and a re-upload of every polygon. It is neither.</p>
+      <p>MapLibre lets you attach a small bag of values to a feature <em>beside</em> the geometry, without touching the source — <em>feature-state</em>. The fill layer's colour expression reads that bag. So the geometry is uploaded to the GPU exactly once, and changing a day is 149 assignments into a side table.</p>
+    </div>
+    <div class="wide">
+      <figure>
+        <div class="figframe">
+          <svg viewBox="0 0 900 300" role="img" aria-label="Diagram: region geometry is fetched once at 184 kilobytes and cached for a day, while ratings are 3 kilobytes per day; scrubbing a new day costs 149 feature-state writes and no network.">
+            <g font-family="JetBrains Mono, monospace" font-size="11.5">
+
+              <text x="20" y="24" fill="var(--ink-3)" font-size="10.5" letter-spacing="0.08em">FETCHED ONCE, CACHED 24 HOURS</text>
+              <rect x="20" y="36" width="300" height="88" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <text x="38" y="62" fill="var(--ink)" font-size="13">/api/regions.geojson</text>
+              <text x="38" y="82" fill="var(--ink-2)">149 polygons · 184 KB</text>
+              <text x="38" y="100" fill="var(--ink-3)">the shape of Switzerland</text>
+              <text x="38" y="116" fill="var(--ink-3)">changes when a fixture changes</text>
+
+              <text x="20" y="164" fill="var(--ink-3)" font-size="10.5" letter-spacing="0.08em">FETCHED PER SEASON, HELD IN MEMORY</text>
+              <rect x="20" y="176" width="300" height="88" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <text x="38" y="202" fill="var(--ink)" font-size="13">/api/ratings/?country=ch</text>
+              <text x="38" y="222" fill="var(--ink-2)">~3 KB per day requested</text>
+              <text x="38" y="240" fill="var(--ink-3)">{"2026-02-16": {"CH-4115": 3, …}}</text>
+              <text x="38" y="256" fill="var(--ink-3)">one small integer per region per day</text>
+
+              <!-- arrows into the merge -->
+              <g stroke="var(--rule)" fill="none" stroke-width="1.3">
+                <path d="M320 80 L400 80 L400 148"/>
+                <path d="M320 220 L400 220 L400 152"/>
+              </g>
+
+              <rect x="400" y="118" width="216" height="64" fill="var(--accent-soft)" stroke="var(--accent)"/>
+              <text x="418" y="142" fill="var(--ink)" font-size="12.5">setFeatureState()</text>
+              <text x="418" y="162" fill="var(--ink-2)">149 writes · 0 bytes network</text>
+
+              <g stroke="var(--accent)" fill="none" stroke-width="1.3">
+                <path d="M616 150 L680 150"/>
+                <path d="M672 144 L680 150 L672 156" fill="var(--accent)"/>
+              </g>
+
+              <rect x="688" y="106" width="192" height="88" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <text x="704" y="130" fill="var(--ink)" font-size="12.5">fill-color</text>
+              <text x="704" y="148" fill="var(--ink-3)">["match", state.rating,</text>
+              <text x="716" y="164" fill="var(--ink-3)">1 → low, 2 → moderate…]</text>
+              <text x="704" y="184" fill="var(--ink-2)">evaluated on the GPU</text>
+
+              <line x1="20" y1="284" x2="880" y2="284" stroke="var(--rule)"/>
+              <text x="20" y="300" fill="var(--ink-2)" font-size="12">Cost of scrubbing to another day: 149 assignments. No fetch, no re-upload, no re-parse.</text>
+            </g>
+          </svg>
+        </div>
+        <figcaption>The same mechanism drives the timelapse, which steps through a season at several frames a second. Unchanged this cycle.</figcaption>
+      </figure>
+    </div>
+    <div class="col">
+      <p>This is a genuinely good decision and it pays for itself twice: it is why the scrubber feels native, and it is why the whole season fits in a few tens of kilobytes.</p>
+      <p>It has one sharp edge, and the codebase has been cut by it. Feature-state lives with the source. Destroy the source — which is what a basemap swap does — and every region falls back to "no rating" and the map goes grey. So every style change must trigger a full repaint from whatever day is currently displayed. That is a real coupling between two features that otherwise have nothing to do with each other, and it is the reason a basemap picker is 500 lines rather than 50.</p>
+      <div class="note">
+        <div class="t">The compensating design</div>
+        <p>Danger colours are painted <em>opaque</em>, with transparency pre-blended into the colour by <code>choropleth_core.js</code>. A translucent fill would blend with whatever basemap is underneath, so the same rating rendered as five different colours across five basemaps. On a safety product that is not a cosmetic bug. <code>slope_classes_core.js</code>'s five-degree palette, shared since cycle 06 by the main map's slope layer, the route line's slope colouring and the terrain filter, follows the same rule and is untouched this cycle.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section id="files">
+  <div class="sec-head">
+    <div class="sec-num">04</div>
+    <div>
+      <h2>Where the code lives, and the one rule that governs it</h2>
+      <p class="kicker">119 first-party files, no bundler, no import statements. Load order <em>is</em> the dependency graph.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>Browsers offer two ways to load a script. <em>Modules</em> declare their dependencies with <code>import</code> and each gets a private namespace. <em>Classic scripts</em> — the older form — all share one namespace, and a name declared in one file is visible in every file that loads after it.</p>
+      <p>Snowdesk uses classic scripts throughout. In practice these 119 files behave like a single file that happens to be split across 119 tabs: a variable declared in <code>map_state.js</code> is simply <em>in scope</em> by the time <code>map.js</code> runs. There is no import graph to read. The graph is the order of <code>&lt;script&gt;</code> tags in the template.</p>
+      <p>For a reader coming from a language with real modules, the closest analogue is a C build with no headers, where the compiler concatenates translation units in the order given and every symbol is global. The consequence is the same: correctness depends on order, and order is not checked by the language.</p>
+    </div>
+    <div class="wide">
+      <div class="order">
+        <div class="row"><span class="i">01</span><span class="f">map_state.js</span><span class="d">declares the shared handles</span></div>
+        <div class="row"><span class="i">02</span><span class="f">map_basemap_downloads.js</span><span class="d">offline tile bookkeeping</span></div>
+        <div class="row"><span class="i">03</span><span class="f">map_shared.js</span><span class="d">date helpers, ratings cache</span></div>
+        <div class="row mark"><span class="i">04</span><span class="f">map.js</span><span class="d">boot · ~10,100 lines</span></div>
+        <div class="gap">↓ surfaces, in the order they had when this was one file</div>
+        <div class="row"><span class="i">05</span><span class="f">map_scrubber.js</span><span class="d">the season scrubber</span></div>
+        <div class="row"><span class="i">06</span><span class="f">map_legend.js</span><span class="d">danger-scale legend</span></div>
+        <div class="row"><span class="i">07</span><span class="f">map_timelapse.js</span><span class="d">playback transport</span></div>
+        <div class="row"><span class="i">08</span><span class="f">map_basemap_picker.js</span><span class="d">basemap style switcher</span></div>
+        <div class="row"><span class="i">09</span><span class="f">map_region_download.js</span><span class="d">per-region offline download</span></div>
+        <div class="gap">… and eight more now, then the panels and sheets, then the tools</div>
+      </div>
+    </div>
+    <div class="col">
+      <p>Two things stop this being reckless. The template's order and the test harness's order are asserted against each other by a Python test, so adding a file in one place and forgetting the other is a red build rather than a map that silently stops booting — re-run against this cycle's own additions, still green. And a second linter, <code>js-globals-lint</code>, fails on any read of a global name that nothing anywhere assigns.</p>
+      <p>That second linter exists because of a real bug, and it is worth knowing as a cautionary tale. One module read <code>window.MAP</code> for its entire life. <code>map.js</code> declares a bare <code>let MAP</code> — which lands in the shared scope but <em>not</em> on the <code>window</code> object. So the read returned "undefined" every time, forever, and every guard around it silently took the "no map yet" branch. Nothing threw. Nothing logged. The feature just never worked.</p>
+      <div class="note">
+        <div class="t">Files outside the bundle</div>
+        <p>Modules loaded from their own partials can't rely on being after <code>map.js</code>, so they reach shared state through an explicitly published object, <code>window.snowdeskMapState</code>. It is frozen, so a typo throws instead of returning undefined. Knowing which of the two routes a file is allowed to use is the single most load-bearing piece of tribal knowledge in this codebase. This cycle's new overlay-adjacent files — <code>map_help_menu.js</code>, <code>map_tour_offer.js</code>, <code>map_help_mode.js</code>, <code>map_example_guide.js</code> — all load inside the main bundle and reach <code>map.js</code>'s state directly, correctly; none of the four needed the <code>window.snowdeskMapState</code> route.</p>
+      </div>
+      <div class="note">
+        <div class="t">The typed-JS rollout: every new core module opted in, on day one, without exception</div>
+        <p><strong>32 of 43</strong> <code>*_core.js</code> modules now carry <code>// @ts-check</code>, up from 21 of 32. All 11 new <code>*_core.js</code> modules this cycle (<code>route_drawing_core.js</code> among them — see §02) shipped typed and tested from their first commit, for a denominator that grew by eleven and a typed count that grew by exactly eleven. The <strong>eleven still untyped are the identical set cycle 06 named</strong>, unchanged for a second cycle running through genuine edits to three of them: <code>basemap_cache_core.js</code>, <code>basemap_download_core.js</code>, <code>basemap_manage_core.js</code>, <code>basemap_style_core.js</code>, <code>country_load_core.js</code>, <code>elevation_profile_core.js</code>, <code>layer_visibility_core.js</code>, <code>map_edit_locations_core.js</code>, <code>map_weather_core.js</code>, <code>mutation_queue_core.js</code>, <code>reset_data_summary_core.js</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section id="talk">
+  <div class="sec-head">
+    <div class="sec-num">05</div>
+    <div>
+      <h2>How 119 files that can't call each other manage to co-operate</h2>
+      <p class="kicker">A message bus, and a rule that each fact has exactly one writer.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>Without imports there is no clean way for the calendar to call into the scrubber. So the files broadcast instead. The browser's own event system is used as a publish/subscribe bus: anyone can fire a named message at the document, anyone can listen for it, and neither side needs a reference to the other.</p>
+      <p>The important discipline layered on top is <strong>one writer per fact</strong>. "Which day is shown" is the fact most things depend on. Three surfaces can change it — the scrubber, the calendar, the timelapse — but only one function commits it. The calendar does not write the URL or repaint anything; it fires <code>snowdesk:scrub-to</code>, and the scrubber's <code>commitDate</code> does the work. Everything downstream then hears one message, <code>snowdesk:date-changed</code>.</p>
+      <p>That is the right call, and the reason is stated plainly in the docs: two surfaces writing the URL is two places for the URL and the painted map to drift apart.</p>
+    </div>
+    <div class="wide">
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Message</th><th>Fired by</th><th>Who reacts</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">snowdesk:scrub-to</td><td>calendar</td><td>the scrubber — the only committer</td></tr>
+            <tr><td class="mono">snowdesk:date-changed</td><td>the scrubber, once</td><td>choropleth repaint · bulletin boundary refetch · weather re-projection · the "read the bulletin" link</td></tr>
+            <tr><td class="mono">snowdesk:date-preview</td><td>drag, per frame</td><td>blanks the boundary so it can't lag behind</td></tr>
+            <tr><td class="mono">snowdesk:basemap-changing</td><td>basemap picker</td><td>stops any running timelapse cleanly</td></tr>
+            <tr><td class="mono">snowdesk:placement-focus</td><td>the pin-placement flows</td><td>hides every overlay so you can see the ground</td></tr>
+            <tr><td class="mono">snowdesk:map-ready</td><td>map.js, on first paint</td><td>dismisses the app launch screen</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col">
+      <p>The same pattern solves a second problem. A growing set of surfaces float over the map — panels, menus, popups, a help tour — and only one is ever meaningful at once. Rather than each one knowing about the others, every surface registers a name plus "are you open?" and "close yourself" with a small registry, <code>window.pwaMapOverlays</code>, and calls "I'm opening" before it appears. The registry closes the rest.</p>
+      <div class="note">
+        <div class="t">Four new surfaces, and the registry question answered four different, all correct, ways</div>
+        <p>This cycle's onboarding and help work (SNOW-1117–1119, SNOW-1230) added four files that each had to answer "does this participate in single-open-surface exclusivity?" <code>map_help_menu.js</code> (the "?" roundel's menu) and <code>map_tour_offer.js</code> (the one-time tour prompt that replaced the old welcome panel) both call <code>window.pwaMapOverlays.register(...)</code> the ordinary way — <code>map_help_menu.js:84</code>, <code>map_tour_offer.js:195</code> — and are covered by <code>tests/js/test_map_tour_offer.js</code> and the hand-maintained matrix in <code>tests/js/test_map_overlay_exclusivity_surfaces.js</code> respectively. <code>map_help_mode.js</code> and <code>map_example_guide.js</code> both deliberately do <em>not</em> register, and both say so in their own header comment, not just in a trailing note: help mode is "a way of looking [at the map], not a thing displayed over it" (<code>map_help_mode.js:31</code>), and the example-route guide's is explicit enough to quote in full — "NOTHING IS LOCKED… The guide is not a map overlay and does not register with <code>window.pwaMapOverlays</code>: the map is the lesson" (<code>map_example_guide.js:17-18</code>). Four decisions, four correct and legible answers, with the reasoning sitting at the point of the decision rather than filed away in a ticket.</p>
+      </div>
+      <div class="note">
+        <div class="t">The one surface that still answers neither way</div>
+        <p>The contrast sharpens <code>SNOW-1040</code> rather than resolving it. The route rail's header comment is rewritten this cycle (<code>route_rail.js:18-28</code>) — it now spells out, in more words than before, that it is "not registered with <code>window.pwaMapOverlays</code>" and names <code>map_sheet.js</code>'s <code>bindDetents</code> as "the one exception" — but a comment restating the exception more fully is not a <code>docs/decisions/</code> entry, and it is still not a registration. Four surfaces this cycle alone show that answering this question, either way, costs one function call or one paragraph. The rail is the one place on the page that has had the question open for four cycles running. See <a href="#findings">§09</a>.</p>
+      </div>
+      <div class="note">
+        <div class="t">The honest downside</div>
+        <p>A message bus makes call sites unfindable. You cannot ask your editor "who calls this?" — you have to grep for a string. The codebase compensates with unusually thorough comments, which is a real cost paid to buy a real benefit; comments are 61.5% of the browser code this cycle (see §07 and §09) — up from 60.3% last cycle, still oscillating rather than settling.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section id="server">
+  <div class="sec-head">
+    <div class="sec-num">06</div>
+    <div>
+      <h2>The server side is deliberately boring</h2>
+      <p class="kicker">Plain Django views returning JSON. No REST framework, no serialisers, no GIS extension.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>Every endpoint the map talks to is a function that takes a request and returns a <code>JsonResponse</code>. Region boundaries are stored as JSON columns rather than in PostGIS, and the one geometric operation the request path needs — "which region contains this point?" — is forty lines of ray-casting in pure Python.</p>
+      <p>Measured against this checkout on a warm cache, the page itself renders in <strong>7 queries</strong> — the first change in this count in five cycles — in roughly 40–44 ms across four runs. The seventh query is new: <code>RouteShare.objects.example().exists()</code>, one indexed <code>EXISTS</code>, added by SNOW-1230's first-run onboarding (<code>apps/public/views.py</code>, <code>map_page</code>) to decide whether the welcome card's "Explore an example route" link and the "?" menu's way back to it should render at all. It runs unconditionally on every <code>/map/</code> request, not gated behind a session check for a visitor who has already walked the example — the same shape SNOW-957 is about, a small fixed cost paid by every visitor for a feature most of them will use once or never. Unlike SNOW-957, this one is a single indexed lookup rather than a per-country fan-out, the code names the cost in a comment at the call site ("One indexed EXISTS"), and the four-run render-time range (40.2–44.5 ms) stays inside the noise this series has flagged on this sandbox since cycle 02 — so it is recorded here as a described, accepted cost, not filed as a finding of its own.</p>
+      <p><code>apps/public/api.py</code> changed again this cycle, mostly in ways out of this table's scope (the resort page's own endpoints, the data-feed API). The one addition to the map's own endpoints is <code>api:problem_terrain</code> (<code>apps/public/problem_terrain.py</code>, SNOW-1194/1196) — every region's problem-terrain rule for a day, feeding the terrain filter's "by bulletin" mode and the region sheet's "show problem terrain" switch. It is <code>@cache_control(public=True)</code> with a day-scale TTL and <code>Vary: Accept-Encoding</code>, reads no <code>request.user</code>, and matches the cached, public shape of <code>bulletin-groupings</code> next to it rather than the uncached, per-session shape of the HTMX sheet partials. <code>region_sheet_partial</code>/<code>resort_sheet_partial</code>/<code>favourite_sheet_partial</code> — new last cycle — moved out of <code>api.py</code> into their own <code>region_sheet.py</code>/<code>place_sheet.py</code> modules this cycle; a file reorganisation, not a new endpoint, confirmed by diffing the view bodies rather than trusting the module split.</p>
+    </div>
+    <div class="wide">
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Endpoint</th><th class="num">Size</th><th class="num">Queries</th><th class="num">Time</th><th>Server cache</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">/api/regions.geojson</td><td class="num">179 KB</td><td class="num">0</td><td class="num">6.1 ms</td><td>day-long, keyed on country (SNOW-896/902)</td></tr>
+            <tr><td class="mono">/api/ratings/</td><td class="num">2.0 KB</td><td class="num">0</td><td class="num">0.5 ms</td><td>5 min / 1 h by date</td></tr>
+            <tr><td class="mono">/api/resorts.geojson</td><td class="num">33 KB</td><td class="num">1</td><td class="num">9.4 ms</td><td>HTTP only — re-queries every call</td></tr>
+            <tr><td class="mono">/api/bulletin-groupings.geojson</td><td class="num">58 KB</td><td class="num">0</td><td class="num">2.6 ms</td><td>5 min, plus a settled-date rule</td></tr>
+            <tr><td class="mono">/api/weather.geojson</td><td class="num">per day</td><td class="num">0</td><td class="num">0.6 ms</td><td>5 min</td></tr>
+            <tr><td class="mono">/api/area-content/</td><td class="num">per bbox</td><td class="num">0</td><td class="num">0.9 ms</td><td>day-free, memoised a day</td></tr>
+            <tr><td class="mono">/api/problem-terrain/</td><td class="num">per day</td><td class="num">0</td><td class="num">0.7 ms</td><td>day-scale, public, new this cycle</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col">
+      <p>Two details worth stealing, unchanged since cycle 02. The ratings payload encodes danger as a single integer per region — <code>{"2026-02-16": {"CH-4115": 3}}</code> — which is why a season is small even added up over months. And the bulletin-boundary endpoint varies its cache header by <em>date</em>: a day old enough that no provider will revise it is served <code>immutable</code> for a week.</p>
+      <p><code>resorts.geojson</code> remains the one endpoint in this table with no server-side cache — <code>@cache_control</code> only, so it re-queries the database on every call regardless of warmth. Unchanged since cycle 03 and not a new finding; it is a small, cheap query on static data, and its payload is flat at 33 KB this cycle (no change to <code>resorts_geojson</code> in this cycle's diff).</p>
+      <p>Every endpoint's query count and cache strategy carried from cycle 03 is unchanged; the one genuine addition to request-path cost in five cycles is this cycle's single onboarding <code>EXISTS</code>, described above.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="tests">
+  <div class="sec-head">
+    <div class="sec-num">07</div>
+    <div>
+      <h2>Testing, and the rule that keeps it affordable</h2>
+      <p class="kicker">Three layers, and putting a test in the wrong one is treated as a defect.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>The project's stated rule is to work top-down and stop at the first layer that can hold the assertion. Anything reachable from Django's test client is a Python test. Anything a browser-side module does that a simulated DOM can observe is a JavaScript unit test. Only what genuinely needs a real browser — WebGL, the service worker, real clipboard and passkey ceremonies — is an end-to-end test.</p>
+      <p>The third layer is still capped at roughly a dozen tests (12 files, 13 test functions, unchanged for a sixth cycle against <code>e2e-lint</code>'s backstop of 25) and the cap is still enforced by <code>e2e-lint</code>. The middle layer grew again, by its largest margin yet: <strong>245 files, 89,125 lines</strong> — up from 215/78,094 at cycle 06, tracking the eleven new <code>*_core.js</code> modules (each shipping with its own Vitest file, see §04) plus the resort/Plan-page rebuilds' own, out-of-scope Vitest coverage, which this count does not separate out from the map's.</p>
+      <div class="note">
+        <div class="t">Read this as a design signal</div>
+        <p>Needing a bespoke harness to reproduce your own loading model is the clearest evidence of what the no-modules choice costs. It works, it is well documented, and it is the kind of thing that is cheap to keep and expensive to acquire — but it is a permanent tax on every new test file.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section id="review">
+  <div class="sec-head">
+    <div class="sec-num">08</div>
+    <div>
+      <h2>Review — what holds up</h2>
+      <p class="kicker">The parts a sceptical reader should be told about before the criticism.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <ul class="holds">
+        <li><span class="tick">✓</span><p><strong>A third page learned to share the route-drawing code rather than re-implement it.</strong> <code>route_drawing_core.js</code> (new this cycle) now draws a route identically on the map, the Plan page and the meeting picker — same sources, same layers, same idempotent-install/<code>raiseMarkerLayers</code>/<code>repaintAfterStyleSwap</code> discipline every other install function on this page follows. See §02.</p></li>
+        <li><span class="tick">✓</span><p><strong>Four new overlay-adjacent surfaces all answered the exclusivity question explicitly, two by registering and two by writing down why not.</strong> <code>map_help_menu.js</code> and <code>map_tour_offer.js</code> call <code>window.pwaMapOverlays.register(...)</code>; <code>map_help_mode.js</code> and <code>map_example_guide.js</code> both carry a header comment naming the decision and the reason. Nobody shipped a fifth surface that simply forgot to ask. See §05.</p></li>
+        <li><span class="tick">✓</span><p><strong>Retiring a whole rendering path (the "pending share" line) left nothing dangling.</strong> <code>routes-line-pending</code> and <code>--color-route-line-pending</code> are both gone — from <code>map.js</code>, <code>src/css/main.css</code>, the component library and <code>DESIGN.md</code> in the same commit (SNOW-1218) — and a repo-wide grep for either name turns up nothing live.</p></li>
+        <li><span class="tick">✓</span><p><strong>A new, genuinely public, cacheable endpoint matched its nearest sibling's shape rather than inventing one.</strong> <code>api:problem_terrain</code> reads no <code>request.user</code>, caches at day scale, and sits next to <code>bulletin-groupings</code> in the same file with the same decorator shape. See §06.</p></li>
+        <li><span class="tick">✓</span><p><strong>Every guard this subsystem has re-runs clean against this checkout, at a larger scale than any prior cycle.</strong> Not assumed from CI — run fresh for this review: <code>js-globals-lint</code> (149 JS files / 0 unknown globals, up from 122), <code>ds-lint</code> (435 templates / 0 violations, up from 371), <code>i18n-lint</code> (0 hardcoded strings), <code>fidelity-lint</code> (63 CAAML paths / 9 sentinels, all classified, unchanged), <code>e2e-lint</code> (12 modules / 13 of 25 tests, unchanged), and <code>js-types</code> (0 errors across all 32 opted-in <code>*_core.js</code> modules, eleven of them new this cycle).</p></li>
+        <li><span class="tick">✓</span><p><strong>The request path absorbed the largest diff in the series' history for the cost of one indexed lookup.</strong> A resort-page rebuild, a Plan/trip-page rebuild, and a route-drawing extraction touched none of the six endpoints this series has measured since cycle 03; the one new query is small, described at its own call site, and does not move the render-time figure outside this sandbox's established noise band.</p></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section id="findings">
+  <div class="sec-head">
+    <div class="sec-num">09</div>
+    <div>
+      <h2>Review — closed, unchanged, new</h2>
+      <p class="kicker">One finding closed, independently re-confirmed. Three findings unchanged — one now in its sixth cycle open, one in its fourth. No new finding clears the bar for a ticket.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="wide">
+      <div class="scale">
+        <div style="background:var(--eaws-1);color:var(--eaws-1-ink)"><b>1</b>cosmetic</div>
+        <div style="background:var(--eaws-2);color:var(--eaws-2-ink)"><b>2</b>carrying cost</div>
+        <div style="background:var(--eaws-3);color:var(--eaws-3-ink)"><b>3</b>structural</div>
+        <div style="background:var(--eaws-4);color:var(--eaws-4-ink)"><b>4</b>user-visible</div>
+        <div style="background:var(--eaws-5);color:var(--eaws-5-ink)"><b>5</b>data or safety</div>
+      </div>
+
+      <h3 style="margin:34px 0 4px;font-size:22px;">Closed</h3>
+
+      <div class="findings">
+        <div class="finding">
+          <div class="dtile d4"><span class="lvl">4</span><span class="lab">visible</span></div>
+          <div class="fbody">
+            <h3>The route rail used to stay open under a sibling phone sheet — confirmed still fixed, independently of last cycle's own note</h3>
+            <p class="disp"><span class="k">SNOW-1116</span><span class="v">Done — re-confirmed this cycle, not just carried forward</span></p>
+            <p class="where">static/js/map_sheet.js (<code>boundSheets</code>, <code>closeOtherSheets</code>) · static/js/route_rail.js:476 (<code>bindDetents</code>, pushes into <code>boundSheets</code> even without registering with <code>pwaMapOverlays</code>)</p>
+            <p>Cycle 06 recorded this fixed the morning after its own baseline, by PR #1077 — before this series had done its own independent re-check of the fix on a later HEAD. This cycle is that re-check. <code>cffbbca2</code> (well before this cycle's <code>20bd41e</code> baseline) added <code>boundSheets</code> and <code>closeOtherSheets</code> to <code>map_sheet.js</code>; every caller of <code>bindDetents</code> — including the route rail's direct call, which still does not call the higher-level <code>attach</code> — is pushed into <code>boundSheets</code>, so <code>closeOtherSheets</code> closes the rail too. None of this cycle's own sheet-mechanics commits (<code>dd1a3db0</code> "drag a phone sheet by its whole body", <code>4ab533d9</code> "open the next panel at the same height", <code>f1ecf39e</code> "dock desktop sheets on the left") touch this registration path — read in full against HEAD, the mechanism is unchanged in shape from what cycle 06 described.</p>
+            <div class="fix"><b>Re-verification</b>Read <code>map_sheet.js</code>'s current <code>bindDetents</code>/<code>boundSheets</code>/<code>closeOtherSheets</code> against HEAD; confirmed Linear SNOW-1116 is <code>Done</code> (completed 2026-10-19); diffed <code>dd1a3db0</code>, <code>4ab533d9</code>, <code>f1ecf39e</code> for touches to this mechanism (none).</div>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="margin:44px 0 4px;font-size:22px;">Unchanged</h3>
+
+      <div class="findings">
+
+        <div class="finding">
+          <div class="dtile d3"><span class="lvl">3</span><span class="lab">struct</span></div>
+          <div class="fbody">
+            <h3>The route-rail mechanism still opts out of the single-open-surface registry, with no decision doc — now the one surface on the page answering this question without one</h3>
+            <p class="disp open"><span class="k">SNOW-1040</span><span class="v">Ready for dev — unchanged for a fourth cycle</span></p>
+            <p class="where">static/js/route_rail.js:18–28 (header comment rewritten this cycle, same substance) · route_rail.js:476 (<code>bindDetents</code>, not <code>attach</code>) · contrast static/js/map_help_menu.js:84, map_tour_offer.js:195 (register), map_help_mode.js:31, map_example_guide.js:17–18 (documented exceptions)</p>
+            <p>Independently re-confirmed, and — as with cycle 06 — sharper than last time, for a new reason. The header comment is not the same text as before: it now reads "ITS OWN LIFETIME. The rail is not registered with <code>window.pwaMapOverlays</code>…" plus a dated paragraph on the one bottom-sheet-at-a-time mechanism, replacing cycle 06's wording almost entirely. What has not changed is the thing that matters: still no file under <code>docs/decisions/</code> names this (checked again against every decision doc added this cycle — none is it), and the rail still reaches its phone-sheet behaviour through <code>bindDetents</code> directly rather than <code>attach</code>. This cycle's own diff supplies the sharper context: four <em>new</em> surfaces (§05) each answered the identical question — register, or write down why not — in one function call or one paragraph. The rail has had four cycles to do either.</p>
+            <div class="fix"><b>Re-verification</b>Read <code>route_rail.js</code>'s rewritten header comment and its <code>bindSheet()</code>/<code>close()</code> functions in full against HEAD; grepped <code>MapSheet\.\(attach\|bindDetents\)</code> across every sheet-owning file touched this cycle; checked this cycle's new <code>docs/decisions/</code> entries for anything naming rail exclusivity (none); confirmed Linear SNOW-1040 still <code>Ready for dev</code>, <code>startedAt: null</code>.</div>
+          </div>
+        </div>
+
+        <div class="finding">
+          <div class="dtile d2"><span class="lvl">2</span><span class="lab">cost</span></div>
+          <div class="fbody">
+            <h3>Boot still fetches season ratings for every basemap-covered country</h3>
+            <p class="disp open"><span class="k">SNOW-957</span><span class="v">Todo — open question, unchanged for a sixth cycle</span></p>
+            <p class="where">static/js/map.js:8270–8301 (the boot loop, line numbers shifted) · static/js/country_load_core.js (<code>planCountryFeeds</code>, logic untouched)</p>
+            <p>Independently re-confirmed against today's checkout. <code>git diff --stat 20bd41e..HEAD -- static/js/country_load_core.js</code> shows 65 insertions and 0 deletions, but reading the diff shows it is pure addition: SNOW-1186 added <code>createSourceBatch</code>, which batches the boot loop's geometry <code>setData</code> calls into one repaint rather than one per country — a performance change to <em>how</em> the geometry is written, not a new branch in <code>planCountryFeeds</code> for "loaded for the basemap only, no provider wants it." The boot loop in <code>map.js</code> still builds <code>bootCountries</code> as every boundary-covered country unioned with every provider-enabled one, and still calls <code>ensureCountryLoaded</code> — and by extension the season-ratings fetch — for all of them.</p>
+            <div class="fix"><b>Evidence</b>Read <code>map.js</code>'s boot loop and <code>country_load_core.js</code> in full against HEAD; read SNOW-1186's diff (<code>f679a24d</code>) to confirm it touches geometry batching only. No fix applied — SNOW-957 already carries the open question blocking Ready-for-dev promotion, now in its sixth cycle open, still the longest-lived finding in the series.</div>
+          </div>
+        </div>
+
+        <div class="finding">
+          <div class="dtile d1"><span class="lvl">1</span><span class="lab">cosm</span></div>
+          <div class="fbody">
+            <h3>Sixteen files still carry the stale "home.html" comment SNOW-1093 scoped</h3>
+            <p class="disp open"><span class="k">SNOW-1093</span><span class="v">Ready for dev — unchanged, no commits against it</span></p>
+            <p class="where">all sixteen files the ticket named, re-checked individually by <code>grep -c 'home\.html'</code> against HEAD</p>
+            <p>Re-run file by file, not trusting the ticket's own counts. <code>map.js</code> is down to 2 (cycle 06 counted 3 — another incidental drop from unrelated edits moving the surrounding region, no commit touches a <code>home.html</code> reference). <code>tests/js/_load_map_bundle.js</code> is unchanged at 5. The other fourteen files hold at least 1 occurrence each, exactly as cycle 06 found them. No commit in this cycle's 145 addresses the ticket; it sits at Ready for dev with <code>startedAt: null</code>, matching the code exactly.</p>
+            <div class="fix"><b>Re-verification</b><code>grep -c 'home\.html'</code> against each of the sixteen named files, against HEAD; <code>mcp__Linear__get_issue</code> for SNOW-1093 (Ready for dev, <code>startedAt: null</code>).</div>
+          </div>
+        </div>
+
+        <div class="finding">
+          <div class="dtile d1"><span class="lvl">1</span><span class="lab">cosm</span></div>
+          <div class="fbody">
+            <h3>A fetch-budget constant is duplicated across two offline modules</h3>
+            <p class="disp"><span class="k">not ticketed</span><span class="v">watching, unchanged</span></p>
+            <p class="where">static/js/map_basemap_downloads.js:870 <code>AREA_CONTENT_FETCH_BUDGET_MS</code> · static/js/offline_audit.js:133 <code>MANIFEST_FETCH_BUDGET_MS</code> (both = 15000)</p>
+            <p>Re-verified: both constants are still present, still 15000, and still separately justified by comment — each cross-references the other's reasoning rather than sharing a constant. Neither file's relevant region changed this cycle.</p>
+            <div class="fix"><b>Re-verification</b>Read the current comment at both definition sites in full; both match prior cycles' quotes verbatim, line numbers aside.</div>
+          </div>
+        </div>
+
+        <div class="finding">
+          <div class="dtile d1"><span class="lvl">1</span><span class="lab">cosm</span></div>
+          <div class="fbody">
+            <h3>Comments as a share of the browser code — still oscillating, not trending</h3>
+            <p class="disp"><span class="k">not ticketed</span><span class="v">watching, moved again</span></p>
+            <p class="where">measured across the 119 first-party files the map page actually serves</p>
+            <p>Re-measured, not carried forward: <strong>61.5%</strong> this cycle, against 58% (cycle 01), 58.8% (cycle 02), 62.3% (cycle 03), 60.5% (cycle 04), 61.0% (cycle 05) and 60.3% (cycle 06). Six measurements, five directions. Both code lines (22,625 → 25,333) and comment lines (34,372 → 40,458) rose, with comments rising slightly faster this time — consistent with eleven new, heavily-documented <code>*_core.js</code> modules each shipping the file-header and function-doc convention this codebase holds to. Still no trend to act on; still watching.</p>
+            <div class="fix"><b>Re-verification</b>Recomputed via the Django test client's rendered <code>&lt;script src&gt;</code> list against today's HEAD (119 first-party files, up from 96), classifying each line as comment or code by its leading token.</div>
+          </div>
+        </div>
+
+      </div>
+
+      <h3 style="margin:44px 0 4px;font-size:22px;">New</h3>
+      <p style="color:var(--ink-2);font-size:16px;margin:0 0 8px;max-width:var(--measure);">None that clear the bar for a ticket. The in-scope slice of this cycle's 145 commits — the trip-route drawing extension, the <code>problem_terrain</code> endpoint, the four new overlay-adjacent surfaces — was read in full against this subsystem's own established patterns (idempotent installs, <code>raiseMarkerLayers</code>, survival of a <code>setStyle</code> swap, the registry-or-documented-exception question, cached-and-public endpoint shape) and found to follow every one of them. No dangling reference was found from either deletion this cycle (<code>routes-line-pending</code>'s layer and colour token, and the earlier <code>resort_popup</code> endpoint/template, removed in the resort-page work and confirmed to have zero remaining references in <code>static/js</code> or templates). Per the series' own rule, a cycle that finds nothing new is recorded as such rather than manufactured a finding to fill the section.</p>
+
+      <div class="note" style="max-width:none;margin-top:20px;">
+        <div class="t">A large diff, read against the subsystem's boundary, not assumed from commit titles</div>
+        <p>All 145 commits since baseline were checked against whether they touch <code>static/js</code>, <code>apps/public/api.py</code>'s map endpoints, <code>map.html</code>/<code>_map_embed.html</code> or <code>static/css/map.css</code>. The large majority — the resort-page rebuild (SNOW-1143–1178), the Plan/trip-page rebuild (SNOW-1203–1230 beyond the two shared route-drawing modules), the app-icon redesign, the Sentry/PostHog swap, the CSP and error-handler work, the sitemap and data-feed work — do not, and are out of scope by the series' own boundary, not by convenience. What remains followed the subsystem's conventions at every point this review tested, which is why this cycle raises no ticket: a clean result from checking the code, the same discipline a cycle with findings would need, not a lighter pass because the diff looked large.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="plan">
+  <div class="sec-head">
+    <div class="sec-num">10</div>
+    <div>
+      <h2>If only three things get done</h2>
+      <p class="kicker">Two keep ageing on a maintainer's attention. The third turns this cycle's own observation into something a linter can hold, rather than something only a weekly review notices.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="wide">
+      <ol class="plan">
+        <li><div><p class="h">Resolve SNOW-957 — the series' longest-lived open finding, sixth cycle running</p><p>Every first-time visitor on the default configuration still fetches season ratings for countries no provider claims. Five re-verifications have now confirmed the code hasn't moved; this cycle also ruled out SNOW-1186's batching change as an accidental fix. What's missing is a maintainer's read of the open question blocking Ready-for-dev promotion.</p></div></li>
+        <li><div><p class="h">Give the route rail a decision doc, or register it — SNOW-1040, fourth cycle open</p><p>The rail is now the only surface on the page answering the registry question with neither a registration call nor a written decision — four newer surfaces this cycle alone did one or the other in a line or a paragraph. The fix is cheap by comparison to the question it has sat on for a month: write the one-paragraph decision doc the header comment already contains in substance, or spend the afternoon teaching the rail to register and accept that it then closes on any other overlay opening.</p></div></li>
+        <li><div><p class="h">Turn "does this surface answer the registry question" into something `ds-lint` or a Vitest suite checks, not something only this review notices</p><p>Four of four new overlay-adjacent files this cycle got this right, which is good news read one way and lucky read another: nothing currently fails a build if a fifth one doesn't. A lint rule — any file assigning to <code>window.pwa*Overlay</code>-shaped state, or any new entry in the sheet/panel template partials, must either call <code>pwaMapOverlays.register</code> or carry a comment matching <code>/not registered with .*pwaMapOverlays/i</code> within its header — would make the four-out-of-four streak a guarantee rather than an observation, and would have caught the gap <code>SNOW-1040</code> describes the day it was written rather than three cycles into this series noticing it.</p></div></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+
+<!-- 11 -->
+<section id="tickets">
+  <div class="sec-head">
+    <div class="sec-num">11</div>
+    <div>
+      <h2>What this cycle raised</h2>
+      <p class="kicker">One finding closed. Three carried-forward tickets re-verified unchanged. No new finding clears the bar for a ticket, so this cycle creates no findings ticket — only the bare reference this repo's commit convention requires.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="wide">
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Ticket</th><th>Finding</th><th class="num">Size</th><th>State</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">SNOW-1233</td><td>This cycle's reference ticket — no engineering follow-up, closed on creation</td><td class="num">—</td><td>Done</td></tr>
+            <tr><td class="mono">SNOW-1116</td><td>Route rail stays open under a sibling phone sheet — stacked sheets at the same position</td><td class="num">M (3)</td><td>Done (re-confirmed, not just carried)</td></tr>
+            <tr><td class="mono">SNOW-1040</td><td>Decision doc for the route-rail exclusivity exception</td><td class="num">S (2)</td><td>Ready for dev (unchanged, 4th cycle)</td></tr>
+            <tr><td class="mono">SNOW-957</td><td>Boot fetches season ratings for every basemap-covered country</td><td class="num">M (3)</td><td>Todo (unchanged, 6th cycle)</td></tr>
+            <tr><td class="mono">SNOW-1093</td><td>Stale "home.html" comments across 16 files, after SNOW-1047</td><td class="num">S (2)</td><td>Ready for dev (unchanged, no commits)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col">
+      <p><strong>No new findings, so no parent-and-children ticket this cycle.</strong> Following the precedent set at cycle 03 (SNOW-1005, also a no-findings cycle): a single reference ticket, <code>SNOW-1233</code>, carries the <code>SNOW-xxx</code> identifier this repo's commit/PR convention requires, labelled Chore + Map, and is closed on creation — it has no engineering follow-up of its own.</p>
+      <p><strong>One finding closed, independently re-confirmed rather than merely carried.</strong> <code>SNOW-1116</code> was already recorded fixed in cycle 06's own document, written the morning after the fix landed. This cycle re-derived the fix from the current code on a HEAD 145 commits later, rather than trusting last cycle's note — see §09.</p>
+      <p><strong>Three tickets re-verified unchanged.</strong> <code>SNOW-1040</code>, <code>SNOW-957</code> and <code>SNOW-1093</code> were each checked against the code, never against their own ticket text — see §09 for the specific check that re-established each. All three are exactly as open as last cycle: not more, not less, and in two cases (<code>SNOW-1040</code>, <code>SNOW-957</code>) now carrying one more cycle's worth of evidence that the gap is stable rather than closing on its own.</p>
+      <p><strong>Why a clean verdict on the series' largest diff is the finding, not the absence of one.</strong> 145 commits is more than three times cycle 06's 33, and the large majority of it sits outside this subsystem's boundary by design — a resort-page rebuild and a Plan/trip-page rebuild that earned their own review elsewhere. The in-scope remainder was read in full rather than skimmed because it was small: a route-drawing extraction now serving three pages, a cached public endpoint matching its siblings, and four new surfaces each correctly answering a question this series has been using as its sharpest diagnostic since cycle 04. That the diagnostic kept finding the same single gap (the route rail) rather than a new one is itself evidence the registry pattern has become the default reflex for new code on this page, not just a rule the oldest code happens to follow. This document re-ran six lint/type guards (<code>ds-lint</code>, <code>js-globals-lint</code>, <code>i18n-lint</code>, <code>e2e-lint</code>, <code>fidelity-lint</code>, <code>js-types</code> — all clean, see §08) plus <code>docs-lint</code> on this document itself, re-measured every figure in the strip from scratch, and read all 145 commits against the subsystem boundary rather than trusting any commit title.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="wrap">
+  <div>Figures measured against this checkout on 25 October 2026 — page render and query counts via the Django test client (warm cache; <span class="mono">DEBUG=True</span>, <span class="mono">connection.queries</span>). Wire sizes are gzip −9 over the deploy's own minified output, produced from an isolated scratch copy of <span class="mono">static/js</span> plus its own copy of <span class="mono">bin/minify-js</span> and a <span class="mono">node_modules</span> link, laid out as <span class="mono">&lt;scratch&gt;/bin/minify-js</span> next to <span class="mono">&lt;scratch&gt;/static</span> so <span class="mono">path.resolve(__dirname, '..')</span> resolves correctly — the repo's own <span class="mono">static/js</span> was never touched (<span class="mono">git status --short</span> confirmed before and after). The wire-cost figure covers all 121 scripts the map page serves (119 first-party, minified and gzipped from the scratch copy, plus the 2 vendored <span class="mono">*.min.js</span> bundles gzipped as shipped) — 419.2 KiB (197.3 KiB first-party, 221.9 KiB vendor), up from 381.0 KiB at cycle 06, proportional to the 23 extra first-party files. Layer/source counts are exact id-by-id resolution — literal, a same-file <span class="mono">const</span>, or a loop's return value counted at each of its call sites — restricted to the 119 files <span class="mono">/map/</span> actually serves, cross-checked against each relevant commit's diff rather than a bare id count, which is what distinguished this cycle's one genuinely new layer-owning feature (the trip route) from two reworked-in-place call sites (<span class="mono">bulletin-terrain-raster</span>, the route cursor) that could otherwise have been miscounted as new.</div>
+  <div>Further reading in the repository: <span class="mono">docs/map-and-api.md</span> · <span class="mono">docs/map-page-functional-spec.md</span> · <span class="mono">docs/offline-map.md</span> · <span class="mono">docs/client-side-tests.md</span> · <span class="mono">docs/decisions/the-plan-page-reads-like-the-map.md</span> · <span class="mono">docs/decisions/a-panel-opens-beside-what-opened-it.md</span> · <span class="mono">docs/decisions/sheet-detents-are-phone-only.md</span> · <span class="mono">docs/decisions/</span></div>
+  <div>Cycle 07 of the map-review series. Conventions: <span class="mono">docs/map-reviews/README.md</span>. Re-run weekly by the <span class="mono">audit-map</span> skill; run <span class="mono">/audit-map</span> for a fresh read at any time.</div>
+</footer>
