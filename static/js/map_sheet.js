@@ -66,6 +66,13 @@
  *     release settles at the detent ``pwaSheetDetentsCore.settle`` picks
  *     from the release height and velocity — or closes it, for a drag below
  *     the lowest detent;
+ *   - lets a finger anywhere on the body drag it too (Hugo, 25 Oct 2026),
+ *     as Google and Apple Maps do: below the tallest detent an up or down
+ *     drag moves the sheet, while a sideways one is left to the content;
+ *     at the tallest detent the body scrolls, and a pull down at the top
+ *     of the scroll takes the sheet down with it. Fields, menus and
+ *     anything marked ``data-sheet-no-drag`` keep their own press, and a
+ *     mouse keeps the handle and the header only;
  *   - turns a press on the handle (a click, Enter or Space), or a tap on a
  *     ``data-sheet-drag`` header away from its controls, into a step up to
  *     the next detent, so the three states are reachable without a drag;
@@ -202,6 +209,21 @@
   // A pointer that travels less than this is a press, not a drag — the
   // handle's click then steps to the next detent instead.
   var DRAG_SLOP_PX = 4;
+
+  // A finger on the sheet's BODY must travel further before it is read as
+  // a drag, and the axis it travelled most along decides what it is: up or
+  // down moves the sheet, sideways is left to the content (a scroller, the
+  // route profile's scrub). Four pixels is too little to tell the two apart.
+  var BODY_SLOP_PX = 8;
+
+  // A click this soon after a body drag ends is the drag's own, landing on
+  // whatever link or button the finger lifted over; it is swallowed.
+  var BODY_CLICK_GRACE_MS = 400;
+
+  // Content that keeps a press to itself on a phone sheet: fields, menus,
+  // and anything that marks itself `data-sheet-no-drag` (the weather
+  // timeline, which scrubs the hour on any movement).
+  var BODY_NO_DRAG = 'input, select, textarea, [contenteditable="true"], [role="menu"], [role="slider"], [data-sheet-no-drag]';
 
   // Only the last stretch of a drag says how fast it was released.
   var VELOCITY_WINDOW_MS = 100;
@@ -448,9 +470,11 @@
 
     /** @type {string|null} */
     var current = null;
-    /** @type {{ id: number, startY: number, startHeight: number, moved: boolean, samples: Array<{t: number, h: number}> }|null} */
+    /** @type {{ id: number, startX: number, startY: number, startHeight: number, moved: boolean, body: boolean, samples: Array<{t: number, h: number}> }|null} */
     var drag = null;
     var suppressClick = false;
+    // When a body drag ended: the click that follows it is swallowed.
+    var bodyDragEndedAt = -Infinity;
     boundSheets.push({ el: el, close: opts.onClose });
 
     function isOpen() {
@@ -678,19 +702,77 @@
       return !node.closest('button, a, input, select, textarea, [role="menu"]');
     }
 
+    /** Whether the sheet rests at the tallest detent it allows. */
+    function atTop() {
+      return current === detents[detents.length - 1];
+    }
+
+    /**
+     * The scrollers between a press and the sheet, the sheet included:
+     * every element on that path whose content overflows a box that
+     * scrolls. Only the tallest detent scrolls (static/css/map.css), so
+     * below it this is empty in practice.
+     *
+     * @param {Element} node
+     * @returns {Array<Element>}
+     */
+    function scrollersFrom(node) {
+      /** @type {Array<Element>} */
+      var found = [];
+      /** @type {Element|null} */
+      var at = node;
+      while (at && el.contains(at)) {
+        if (at.scrollHeight > at.clientHeight + 1) {
+          var overflow = window.getComputedStyle(at).overflowY;
+          if (overflow === 'auto' || overflow === 'scroll') found.push(at);
+        }
+        if (at === el) break;
+        at = at.parentElement;
+      }
+      return found;
+    }
+
+    /**
+     * Whether a press on the sheet's body may become a drag of the sheet
+     * (Hugo, 25 Oct 2026): any touch on a phone, not a mouse, which has the
+     * wheel for the content and the handle for the sheet, and not on a
+     * field, a menu or content that keeps its press. At the tallest detent
+     * the body scrolls, so a press on content already scrolled down is the
+     * start of a scroll, never a drag: only at the top of the scroll does a
+     * pull down take the sheet with it.
+     *
+     * @param {PointerEvent} event
+     */
+    function isBodyDragStart(event) {
+      if (event.pointerType === 'mouse') return false;
+      var node = /** @type {HTMLElement|null} */ (event.target);
+      if (!node || !node.closest || !el.contains(node)) return false;
+      if (node.closest(BODY_NO_DRAG)) return false;
+      if (!atTop()) return true;
+      return !scrollersFrom(node).some(function (scroller) {
+        return scroller.scrollTop > 0;
+      });
+    }
+
     el.addEventListener('pointerdown', function (event) {
       // A new press starts a new gesture: a suppression left by a drag
       // whose finger lifted off the handle (no click followed) ends here.
       suppressClick = false;
       if (!current || !isPhone() || drag) return;
-      if (!isDragSurface(event.target)) return;
+      var body = false;
+      if (!isDragSurface(event.target)) {
+        if (!isBodyDragStart(event)) return;
+        body = true;
+      }
       var now = event.timeStamp || Date.now();
       var startHeight = el.getBoundingClientRect().height;
       drag = {
         id: event.pointerId,
+        startX: event.clientX,
         startY: event.clientY,
         startHeight: startHeight,
         moved: false,
+        body: body,
         samples: [{ t: now, h: startHeight }],
       };
     });
@@ -699,9 +781,27 @@
       if (!drag || event.pointerId !== drag.id) return;
       var dy = drag.startY - event.clientY;
       if (!drag.moved) {
-        if (Math.abs(dy) < DRAG_SLOP_PX) return;
+        if (drag.body) {
+          var dx = event.clientX - drag.startX;
+          if (Math.max(Math.abs(dx), Math.abs(dy)) < BODY_SLOP_PX) return;
+          // Sideways is the content's; and at the tallest detent a push up
+          // over content with more below it is a scroll, not a drag.
+          var sideways = Math.abs(dx) > Math.abs(dy);
+          var scrollsOn = dy > 0 && atTop() && scrollersFrom(/** @type {Element} */ (event.target)).some(function (scroller) {
+            return scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1;
+          });
+          if (sideways || scrollsOn) {
+            drag = null;
+            return;
+          }
+        } else if (Math.abs(dy) < DRAG_SLOP_PX) {
+          return;
+        }
         drag.moved = true;
-        var target = /** @type {HTMLElement} */ (event.target);
+        // A body drag captures the pointer on the sheet itself, so content
+        // with a gesture of its own (the route profile's scrub) stops
+        // hearing a finger that is now moving the sheet.
+        var target = /** @type {HTMLElement} */ (drag.body ? el : event.target);
         if (target && target.setPointerCapture) {
           try {
             target.setPointerCapture(event.pointerId);
@@ -732,6 +832,7 @@
       // header, both of which step the sheet on a click (below) — so it
       // swallows that one. The next pointerdown clears it either way.
       suppressClick = true;
+      if (finished.body) bodyDragEndedAt = performance.now();
       var first = finished.samples[0];
       var last = finished.samples[finished.samples.length - 1];
       var elapsed = last.t - first.t;
@@ -753,6 +854,42 @@
 
     el.addEventListener('pointerup', endDrag);
     el.addEventListener('pointercancel', endDrag);
+
+    // The browser must not pan under a body drag. Below the tallest detent
+    // the sheet's `touch-action: pan-x` (static/css/map.css) already keeps
+    // vertical pans away; at the tallest one the body scrolls, so a drag
+    // that moves the sheet, and a pull down at the top of the scroll that
+    // is about to, cancel their touchmoves here. Pointer events fire before
+    // the touchmove of the same movement, so `moved` is already decided.
+    // Pulling down is cancelled before the slop is crossed because by then
+    // the browser may have started an overscroll it will not give back.
+    el.addEventListener(
+      'touchmove',
+      function (event) {
+        if (!drag || !drag.body || !event.cancelable) return;
+        if (drag.moved) {
+          event.preventDefault();
+          return;
+        }
+        var touch = event.touches && event.touches[0];
+        if (!touch) return;
+        var down = touch.clientY - drag.startY;
+        if (down > 0 && down >= Math.abs(touch.clientX - drag.startX)) event.preventDefault();
+      },
+      { passive: false },
+    );
+
+    // A body drag that lifts over a link or a button does not press it.
+    el.addEventListener(
+      'click',
+      function (event) {
+        if (performance.now() - bodyDragEndedAt > BODY_CLICK_GRACE_MS) return;
+        bodyDragEndedAt = -Infinity;
+        event.preventDefault();
+        event.stopPropagation();
+      },
+      true,
+    );
 
     // A press on the handle, or a tap on a header the content marks
     // draggable (not on a control inside it), steps up a detent and back

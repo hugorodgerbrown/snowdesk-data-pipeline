@@ -6035,9 +6035,12 @@ body.map-framing #map-legend {
         overflow-y: hidden;
     }
 
+    /* The content does not scroll under a finger that is moving the sheet:
+       a pull down from the top of FULL takes the sheet, not the list. */
     [data-detents][data-sheet-dragging] {
         height: var(--sheet-drag-height) !important; /* the finger wins over every detent rule above */
         transition: none;
+        overflow: hidden;
     }
 
     /* The handle and any header the content marks draggable take the
@@ -6046,6 +6049,22 @@ body.map-framing #map-legend {
     [data-detents] [data-sheet-handle],
     [data-detents] [data-sheet-drag] {
         touch-action: none;
+    }
+
+    /* THE WHOLE BODY DRAGS BELOW THE TOP (Hugo, 25 Oct 2026). At peek and
+       half a vertical swipe anywhere on the sheet moves it (map_sheet.js),
+       so the browser is told it may pan sideways only: a vertical pan would
+       cancel the pointer mid-drag. A sideways one still reaches a
+       horizontal scroller or the route profile's scrub. The held-still
+       lists (above) are scroll containers of their own, which touch-action
+       does not reach through, so they say it too. At FULL the body scrolls
+       and map_sheet.js cancels a touch's pan itself when it pulls down
+       from the top of the scroll. */
+    [data-detents][data-detent='peek'],
+    [data-detents][data-detent='half'],
+    [data-detents][data-detent='peek'] .overflow-y-auto,
+    [data-detents][data-detent='half'] .overflow-y-auto {
+        touch-action: pan-x;
     }
 
     /* COVERED, NOT MOVED (Hugo, 16 Oct). While a detent sheet is open on a

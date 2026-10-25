@@ -16,7 +16,9 @@ moves the selection. The plots themselves are not a control: a touch on a
 chart is a scroll, and a chart can be in view while the timeline that names
 the time is not. static/js/day_strips.js does that;
 without it the server's choice (the current block today, 09–12 on another
-day) is drawn and stays.
+day) is drawn and stays. The track is ``data-sheet-no-drag``: on the map's
+phone sheet a finger anywhere else on the body drags the sheet, but one on
+the track is scrubbing the hour.
 
 THE SELECTION IS TWO THINGS, kept apart on purpose:
 
@@ -56,7 +58,7 @@ Context:
         {# ── The time selector ─────────────────────────────────────── #}
         <div class="grid grid-cols-[2.25rem_1fr]">
             <span aria-hidden="true"></span>
-            <div class="relative h-7 touch-pan-y" data-day-strips-track>
+            <div class="relative h-7 touch-pan-y" data-day-strips-track data-sheet-no-drag>
                 {# The pill runs a little past the plot at both ends, so the #}
                 {# first and last boundary labels and an end capsule sit     #}
                 {# inside it; the labels keep the plot's own x.              #}

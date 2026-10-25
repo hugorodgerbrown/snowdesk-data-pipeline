@@ -233,6 +233,191 @@ describe('dragging', () => {
   });
 });
 
+/**
+ * Dispatch a pointer event with both axes and a pointer type, as a finger
+ * on the sheet's body sends it.
+ *
+ * @param {Element} target
+ * @param {string} type
+ * @param {{ x?: number, y: number, t: number, kind?: string }} at
+ */
+function finger(target, type, { x = 100, y, t, kind = 'touch' }) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    clientX: { value: x },
+    clientY: { value: y },
+    pointerId: { value: 1 },
+    pointerType: { value: kind },
+    timeStamp: { value: t },
+  });
+  target.dispatchEvent(event);
+}
+
+/**
+ * Dispatch a cancelable touchmove at one point.
+ *
+ * @param {Element} target
+ * @param {number} x
+ * @param {number} y
+ * @returns {Event}
+ */
+function touchmove(target, x, y) {
+  const event = new Event('touchmove', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'touches', { value: [{ clientX: x, clientY: y }] });
+  target.dispatchEvent(event);
+  return event;
+}
+
+/**
+ * Make an element a scroller of `content` px in a `box` px window,
+ * scrolled to `top`.
+ *
+ * @param {HTMLElement} el
+ * @param {{ box: number, content: number, top: number }} size
+ */
+function stubScroller(el, { box, content, top }) {
+  el.style.overflowY = 'auto';
+  Object.defineProperty(el, 'clientHeight', { configurable: true, value: box });
+  Object.defineProperty(el, 'scrollHeight', { configurable: true, value: content });
+  el.scrollTop = top;
+  Object.defineProperty(el, 'scrollTop', { configurable: true, writable: true, value: top });
+}
+
+describe('dragging by the body (Hugo, 25 Oct 2026)', () => {
+  /**
+   * @param {string} detents
+   * @param {string} initial
+   */
+  function withBody(detents, initial) {
+    const fixture = attachSheet(detents, initial);
+    const body = document.createElement('p');
+    body.textContent = 'Danger level 3';
+    fixture.sheet.appendChild(body);
+    fixture.controller.open();
+    return { ...fixture, body };
+  }
+
+  it('a swipe up anywhere on the body grows the sheet', () => {
+    const { sheet, body } = withBody('peek,half,full', 'half');
+    finger(body, 'pointerdown', { y: 500, t: 0 });
+    finger(body, 'pointermove', { y: 350, t: 500 });
+    expect(sheet.hasAttribute('data-sheet-dragging')).toBe(true);
+    finger(body, 'pointermove', { y: 200, t: 1000 });
+    finger(body, 'pointerup', { y: 200, t: 1000 });
+    expect(sheet.getAttribute('data-detent')).toBe('full');
+  });
+
+  it('a swipe down on the body closes from the lowest detent', () => {
+    const { sheet, body } = withBody('half,full', 'half');
+    finger(body, 'pointerdown', { y: 400, t: 0 });
+    finger(body, 'pointermove', { y: 700, t: 500 });
+    finger(body, 'pointerup', { y: 700, t: 500 });
+    expect(sheet.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('waits for more than the handle’s slop before deciding', () => {
+    const { sheet, body } = withBody('peek,half,full', 'half');
+    finger(body, 'pointerdown', { y: 500, t: 0 });
+    finger(body, 'pointermove', { y: 494, t: 10 });
+    expect(sheet.hasAttribute('data-sheet-dragging')).toBe(false);
+  });
+
+  it('leaves a sideways swipe to the content', () => {
+    const { sheet, body } = withBody('peek,half,full', 'half');
+    finger(body, 'pointerdown', { x: 100, y: 500, t: 0 });
+    finger(body, 'pointermove', { x: 160, y: 480, t: 100 });
+    finger(body, 'pointermove', { x: 220, y: 300, t: 200 });
+    finger(body, 'pointerup', { x: 220, y: 300, t: 200 });
+    expect(sheet.hasAttribute('data-sheet-dragging')).toBe(false);
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
+  it('a mouse does not drag by the body', () => {
+    const { sheet, body } = withBody('peek,half,full', 'half');
+    finger(body, 'pointerdown', { y: 500, t: 0, kind: 'mouse' });
+    finger(body, 'pointermove', { y: 300, t: 100, kind: 'mouse' });
+    expect(sheet.hasAttribute('data-sheet-dragging')).toBe(false);
+  });
+
+  it('a field, or content marked data-sheet-no-drag, keeps its press', () => {
+    const { sheet } = withBody('peek,half,full', 'half');
+    const field = document.createElement('input');
+    const track = document.createElement('div');
+    track.setAttribute('data-sheet-no-drag', '');
+    track.appendChild(document.createElement('span'));
+    sheet.append(field, track);
+    for (const target of [field, /** @type {Element} */ (track.firstChild)]) {
+      finger(target, 'pointerdown', { y: 500, t: 0 });
+      finger(target, 'pointermove', { y: 300, t: 100 });
+      expect(sheet.hasAttribute('data-sheet-dragging')).toBe(false);
+      finger(target, 'pointerup', { y: 300, t: 100 });
+    }
+  });
+
+  it('at full, content scrolled down scrolls rather than drags', () => {
+    const { sheet, body } = withBody('peek,half,full', 'full');
+    stubScroller(sheet, { box: 600, content: 1200, top: 120 });
+    finger(body, 'pointerdown', { y: 300, t: 0 });
+    finger(body, 'pointermove', { y: 500, t: 100 });
+    expect(sheet.hasAttribute('data-sheet-dragging')).toBe(false);
+  });
+
+  it('at full, a pull down from the top of the scroll takes the sheet down', () => {
+    const { sheet, body } = withBody('peek,half,full', 'full');
+    stubScroller(sheet, { box: 600, content: 1200, top: 0 });
+    finger(body, 'pointerdown', { y: 300, t: 0 });
+    // The pull is cancelled before the slop, so no overscroll starts.
+    expect(touchmove(body, 100, 304).defaultPrevented).toBe(true);
+    finger(body, 'pointermove', { y: 400, t: 500 });
+    expect(sheet.hasAttribute('data-sheet-dragging')).toBe(true);
+    expect(touchmove(body, 100, 400).defaultPrevented).toBe(true);
+    finger(body, 'pointermove', { y: 450, t: 1000 });
+    finger(body, 'pointerup', { y: 450, t: 1000 });
+    expect(sheet.getAttribute('data-detent')).not.toBe('full');
+  });
+
+  it('at full, a push up over more content scrolls it', () => {
+    const { sheet, body } = withBody('peek,half,full', 'full');
+    stubScroller(sheet, { box: 600, content: 1200, top: 0 });
+    finger(body, 'pointerdown', { y: 500, t: 0 });
+    expect(touchmove(body, 100, 496).defaultPrevented).toBe(false);
+    finger(body, 'pointermove', { y: 400, t: 100 });
+    expect(sheet.hasAttribute('data-sheet-dragging')).toBe(false);
+    expect(touchmove(body, 100, 400).defaultPrevented).toBe(false);
+  });
+
+  it('a drag that lifts over a link does not follow it', () => {
+    const { sheet } = withBody('peek,half,full', 'half');
+    const link = document.createElement('a');
+    link.href = '#resort';
+    sheet.appendChild(link);
+    const followed = vi.fn();
+    link.addEventListener('click', followed);
+    finger(link, 'pointerdown', { y: 500, t: 0 });
+    finger(link, 'pointermove', { y: 300, t: 100 });
+    finger(link, 'pointerup', { y: 300, t: 100 });
+    link.click();
+    expect(followed).not.toHaveBeenCalled();
+    // The next tap is a tap.
+    link.click();
+    expect(followed).toHaveBeenCalledTimes(1);
+  });
+
+  it('a tap on a link in the body still follows it', () => {
+    const { sheet } = withBody('peek,half,full', 'half');
+    const link = document.createElement('a');
+    link.href = '#resort';
+    sheet.appendChild(link);
+    const followed = vi.fn();
+    link.addEventListener('click', followed);
+    finger(link, 'pointerdown', { y: 500, t: 0 });
+    finger(link, 'pointerup', { y: 500, t: 50 });
+    link.click();
+    expect(followed).toHaveBeenCalledTimes(1);
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+});
+
 describe('the map around the sheet', () => {
   it('pads the camera by the sheet height and marks the root, then clears both', () => {
     const jumpTo = vi.fn();
