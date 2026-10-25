@@ -722,6 +722,13 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token(
                 "--color-chart-daylight", "Axis bar · daylight", "#f59e0b", "#fcd34d"
             ),
+            Token("--color-strip-night", "Time selector · night", "#d2d3d4", "#1a1917"),
+            Token(
+                "--color-strip-night-text",
+                "Time selector · ink on night",
+                "#57544e",
+                "#9a968e",
+            ),
             Token("--color-chart-note-bg", "Legend note · fill", "#eef2ff", "#252a44"),
             Token("--color-chart-note-text", "Legend note · ink", "#2563eb", "#93c5fd"),
         ),
