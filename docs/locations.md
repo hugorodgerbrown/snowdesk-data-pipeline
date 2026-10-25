@@ -2,7 +2,7 @@
 name: locations
 description: Coordinate reference — Location, Favourite, Resort, FieldObservation, MicroRegion.centre, Route.points, GeoIP; apps/core/geo haversine
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-10-25
 ---
 
 # Locations — what every coordinate in this codebase means
@@ -72,7 +72,14 @@ locations, and any still referenced, survive) — called by the favourites,
 trips and observations delete services (SNOW-1170).
 
 `elevation_m` is nullable and resolved out-of-band, because resolving it
-needs an Open-Meteo call that cannot ride on a model save.
+needs an Open-Meteo call that cannot ride on a model save. For a curated
+location that out-of-band pass follows the save straight away (SNOW-1226):
+creating, moving or linking one in the editor or the admin enqueues
+`apps.locations.services.prime.enqueue_location_prime`, which resolves the
+height and then fetches today's forecast — height first, because
+`fetch_weather_for_location` downscales to `elevation_m` and falls back to
+the model cell's mean terrain without it. `fill_location_elevations` is the
+sweep for anything that missed (a failed lookup, rows from before it).
 
 `what3words` is nullable for the same reason as `elevation_m`: resolving it
 needs an HTTP call that cannot ride on a model save, so it is filled out of
