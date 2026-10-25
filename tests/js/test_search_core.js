@@ -305,3 +305,45 @@ describe('groupResults (SNOW-1173)', () => {
     expect(groupResults([])).toEqual([]);
   });
 });
+
+describe('buildPinnedResortEntries', () => {
+  const ADELBODEN = {
+    resort_slug: 'adelboden', resort_name: 'Adelboden',
+    resort_region_id: 'CH-1226', resort_region_name: 'Adelboden',
+  };
+  const WENGEN = {
+    resort_slug: 'wengen', resort_name: 'Wengen',
+    resort_region_id: 'CH-1233', resort_region_name: 'Lauterbrunnen',
+  };
+  const PIN = { resort_slug: null, resort_name: null, resort_region_id: null, resort_region_name: null };
+
+  it('builds a resort row carrying the slug it opens', () => {
+    const [row] = core.buildPinnedResortEntries([WENGEN]);
+    expect(row).toMatchObject({
+      type: 'resort', primary: 'Wengen', secondary: 'Lauterbrunnen',
+      regionID: 'CH-1233', slug: 'wengen',
+    });
+  });
+
+  it('keeps a resort named like its region, which the index skips', () => {
+    expect(core.buildPinnedResortEntries([ADELBODEN]).map((r) => r.primary)).toEqual(['Adelboden']);
+  });
+
+  it('ignores a plain dropped pin', () => {
+    expect(core.buildPinnedResortEntries([PIN, WENGEN]).map((r) => r.slug)).toEqual(['wengen']);
+  });
+
+  it('sorts by name and lists a resort once', () => {
+    const rows = core.buildPinnedResortEntries([WENGEN, ADELBODEN, WENGEN]);
+    expect(rows.map((r) => r.slug)).toEqual(['adelboden', 'wengen']);
+  });
+
+  it('falls back to the region id when the region has no name', () => {
+    const [row] = core.buildPinnedResortEntries([{ ...WENGEN, resort_region_name: null }]);
+    expect(row.secondary).toBe('CH-1233');
+  });
+
+  it('is empty for no feed', () => {
+    expect(core.buildPinnedResortEntries(null)).toEqual([]);
+  });
+});

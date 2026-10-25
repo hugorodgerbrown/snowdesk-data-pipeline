@@ -39,9 +39,8 @@
 //     the sign-in sheet instead of ticking a box over an empty layer.
 //
 // The four new rows drive the SAME ``window.pwa*Overlay`` bridges the
-// panel switches drove. That is deliberate: the telemetry emitters, the
-// favourited-resort exclusion recompute and the roundel-ring announcement
-// all live inside those bridges, so routing through them keeps every one
+// panel switches drove. That is deliberate: the telemetry emitters and the
+// roundel-ring announcement all live inside those bridges, so routing through them keeps every one
 // of them without this file learning about any of them.
 //
 // Style swapping itself happens via MAP.setStyle(); the regions source
@@ -647,10 +646,9 @@
           // SNOW-499's snowdesk:favourites-visibility-changed dispatch stood
           // here, recomputing the resort layer's favourited-resort exclusion
           // whenever the favourites overlay was flipped from this menu.
-          // SNOW-658 took that row away; window.pwaFavouritesOverlay calls
-          // applyResortsFavouritedFilter directly on both edges instead, being
-          // inside the IIFE that owns it. The listener itself stays — other
-          // callers still fire that event.
+          // SNOW-658 took that row away, and SNOW-1229 the exclusion with
+          // its listener: a pinned resort is a blue resort dot now, which the
+          // favourites overlay does not govern.
         }
         return;
       }

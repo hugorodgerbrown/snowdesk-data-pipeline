@@ -72,11 +72,13 @@ apps/            Parent package for the sixteen Django apps (SNOW-557 — moved
   favourites/    The one saved-place model — ``Favourite`` is a map pin, a
                  saved resort, or a region pin (a region with no
                  coordinate, SNOW-802) — plus its relevance scoring and the
-                 HTMX partials under /favourites/. The two kinds are listed
-                 on two surfaces (SNOW-814): places in the map's pins sheet
-                 (``favourites:list``, ``placed()`` only), regions in
-                 search's empty state (``favourites:region_list``; the
-                 readout chip's panel that listed them went in SNOW-1173)
+                 HTMX partials under /favourites/. The kinds are listed
+                 on two surfaces: dropped pins in the map's pins sheet
+                 (``favourites:list``, ``dropped_pins()`` only), regions
+                 (SNOW-814, ``favourites:region_list``) and resorts
+                 (SNOW-1229, read from favourites.geojson) in search's
+                 empty state. A pinned resort is drawn as a blue resort
+                 dot, not a star
   observations/  Community field reports — the ``FieldObservation`` model and
                  the /partials/report/ submission endpoints
   routes/        Uploaded GPX routes (SNOW-685/686/690) — the ``Route`` model
@@ -717,6 +719,7 @@ Read these when working in the relevant area:
 | Why a trip share is a public page and needs none of SNOW-764's session pending-claim machinery (save_trip_route, write_route_copy) | [`docs/decisions/a-trip-share-is-a-page-not-a-pending-claim.md`](docs/decisions/a-trip-share-is-a-page-not-a-pending-claim.md) |
 | Why a bulletin belongs to the day it forecasts on every surface (Bulletin.target_date, target_day_for_valid_from, issues_for_date, select_default_issue, recompute_region_day; tonight's 17:00 issue shows on tomorrow) | [`docs/decisions/a-bulletin-belongs-to-the-day-it-forecasts.md`](docs/decisions/a-bulletin-belongs-to-the-day-it-forecasts.md) |
 | Why a bare `/map/` shows today, never the last rated day (readDisplayDate, data-today, the SNOW-660 distinction) | [`docs/decisions/map-defaults-to-today-not-the-last-rated-day.md`](docs/decisions/map-defaults-to-today-not-the-last-rated-day.md) |
+| Why a favourited resort is listed by search ("Pinned resorts") and drawn as a blue resort dot, not in the Favourites panel or as a star (dropped_pins, buildPinnedResortEntries, applyFavouritedResortColour, DROPPED_PIN_FILTER) | [`docs/decisions/a-pinned-resort-is-found-in-search.md`](docs/decisions/a-pinned-resort-is-found-in-search.md) |
 | Why a resort has no avalanche danger of its own, and how the three map panels tell themselves apart (no level, problems or season calendar on _resort_body.html; the one neutral region row, includes/_place_link_row.html; the "Avalanche region" / "Ski resort" / "Weather point" kind line; "Resorts in this region" and "Where this is" rows; map_panel_trail.js and its one-step back pill; snowdesk:region-open) | [`docs/decisions/a-resort-has-no-avalanche-danger.md`](docs/decisions/a-resort-has-no-avalanche-danger.md) |
 | HISTORICAL — why a resort page was a landing page showing today's danger in one card from the bulletin's own render model (resort_detail, _resort_bulletin_card.html, the region panel's day_windows rows since SNOW-1203, the forecast first in every season, _resort_bulletin_attribution, the one "Read the full {region} bulletin →" link; why SNOW-1156 retired the problem cards and the SNOW-1143 lift-range line; amends two-documents-and-a-map) | [`docs/decisions/a-resort-page-answers-the-query.md`](docs/decisions/a-resort-page-answers-the-query.md) |
 | Why the map's region, resort and weather sheets render the page's own body (_weather_body.html, build_bulletin_body / _region_body.html, build_resort_body / _resort_body.html, `in_map`, region_sheet_partial, resort_sheet_partial; the dated resort URL /resorts/<slug>/<date>/, resort_date, noindex off today; supersedes SNOW-1161's sheet/page ownership table) | [`docs/decisions/the-sheet-is-the-page.md`](docs/decisions/the-sheet-is-the-page.md) |

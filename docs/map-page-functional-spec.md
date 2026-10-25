@@ -2,7 +2,7 @@
 name: map-page-functional-spec
 description: Map page / functional spec — coverage, EAWS region layers, UGC (favourites, resorts, observations, routes), basemaps
 status: current
-last-reviewed: 2026-10-24
+last-reviewed: 2026-10-25
 ---
 
 # Map page — functional specification
@@ -87,8 +87,13 @@ holding the best match leads, so "verb" opens on Verbier and "bagn" on the
 Bagnes regions — and draws them differently: a resort row has a round pin
 tile and "in <region>", and no code; a region row has a square danger tile
 with the displayed day's level and keeps the flag and code. An empty field
-lists the pinned regions as region rows under "Pinned regions", the
-selected one marked with a bar at its left edge.
+lists the signed-in reader's favourited resorts as resort rows under
+"Pinned resorts", then the pinned regions as region rows under "Pinned
+regions", the selected region marked with a bar at its left edge. A pinned
+resort row opens that resort, as a typed resort match does. A pinned
+resort is not in the Favourites panel, which lists dropped pins, and is
+drawn on the map as a blue resort dot rather than a star
+([why](decisions/a-pinned-resort-is-found-in-search.md)).
 
 Tapping the selected region again deselects it, as does tapping empty
 map area outside any region; the ribbon greys out and the readout drops
@@ -1158,9 +1163,10 @@ each result carries a "Region" or "Resort" badge to disambiguate places
 whose region and resort share a name (e.g. Davos). Selecting a result
 routes through the same selection path as a map tap. On a phone search is
 a roundel in the top row that opens across it (§1); opened with an empty
-field it lists the signed-in reader's pinned regions — the same loaded
-list as the pin roundel, so the two cannot disagree — and typing replaces
-them with matches. A pick there frames the region above the sheet it
+field it lists the signed-in reader's favourited resorts, read from the
+favourites feed (fetched for search when the favourites layer is off), and
+pinned regions — the same loaded list as the pin roundel, so the two cannot
+disagree — and typing replaces them with matches. A pick there frames the region above the sheet it
 opens, and the field empties so the pinned list is there next time.
 
 **Placing a pin clears the map.** Positioning a pin is a precision task, so

@@ -893,7 +893,7 @@
       if (!isNaN(lat) && !isNaN(lon)) {
         document.dispatchEvent(
           new CustomEvent('snowdesk:favourite-pending', {
-            detail: { lat: lat, lon: lon, name: name },
+            detail: { lat: lat, lon: lon, name: name, resortSlug: resortSlug },
           }),
         );
       }

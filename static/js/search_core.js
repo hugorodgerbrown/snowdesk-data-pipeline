@@ -49,6 +49,9 @@
  *     A row per resort in the region, possibly empty.
  *   buildEntries(props, resorts)
  *     Both of the above in one call — what ``map.js`` indexes with.
+ *   buildPinnedResortEntries(favourites)
+ *     The "Pinned resorts" rows an empty field lists, from the user's
+ *     favourites feed. Each carries the resort's ``slug`` as well.
  *   runSearch(index, query, maxResults)
  *     The matching rows, ranked and capped.
  *   groupResults(results)
@@ -186,6 +189,7 @@
    * @property {string} primaryKey `primary`, normalised for matching.
    * @property {string} regionID The EAWS id this row selects.
    * @property {string} searchable Every matchable word, normalised.
+   * @property {string} [slug] A pinned resort's slug — the row opens it.
    */
 
   /**
@@ -203,6 +207,52 @@
     var region = buildRegionEntry(props);
     if (!region) return [];
     return [region].concat(buildResortEntries(props, resorts));
+  }
+
+  /**
+   * The rows search lists under "Pinned resorts" before anything is typed.
+   *
+   * A favourited resort is a ``Favourite`` with a resort, and the user's
+   * favourites feed (favourites.geojson) names each one's resort and region
+   * — so these rows come from that feed rather than from the index, which
+   * skips a resort named like its region ("Adelboden" in Adelboden) and
+   * holds only the countries loaded so far. The row is the shape a typed
+   * resort match has, plus ``slug``: the row opens the resort it names,
+   * whatever the user renamed the favourite to.
+   *
+   * Sorted by name, as the pinned regions are; one row per resort, and a
+   * plain dropped pin (no ``resort_slug``) contributes none.
+   *
+   * @param {Array<{resort_slug?: string|null, resort_name?: string|null,
+   *   resort_region_id?: string|null, resort_region_name?: string|null}>}
+   *   favourites Properties of the favourites feed's features.
+   * @returns {SearchEntry[]} Possibly empty.
+   */
+  function buildPinnedResortEntries(favourites) {
+    /** @type {SearchEntry[]} */
+    var entries = [];
+    /** @type {Object<string, boolean>} */
+    var seen = {};
+    (favourites || []).forEach(function (props) {
+      if (!props || !props.resort_slug || !props.resort_name) return;
+      if (seen[props.resort_slug]) return;
+      seen[props.resort_slug] = true;
+      var regionID = props.resort_region_id || '';
+      var regionName = props.resort_region_name || regionID;
+      entries.push({
+        type: 'resort',
+        primary: props.resort_name,
+        secondary: regionName,
+        primaryKey: normalise(props.resort_name),
+        regionID: regionID,
+        searchable: normalise([props.resort_name, regionName, regionID].join(' ')),
+        slug: props.resort_slug,
+      });
+    });
+    entries.sort(function (a, b) {
+      return a.primary.localeCompare(b.primary);
+    });
+    return entries;
   }
 
   /**
@@ -311,6 +361,7 @@
     buildRegionEntry: buildRegionEntry,
     buildResortEntries: buildResortEntries,
     buildEntries: buildEntries,
+    buildPinnedResortEntries: buildPinnedResortEntries,
     runSearch: runSearch,
   });
 })();
