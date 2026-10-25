@@ -1031,9 +1031,13 @@ def favourite_list(request: HttpRequest) -> HttpResponse:
     # lives in the region + date panel (``region_pin_list`` above). This is
     # the same predicate ``favourites_geojson`` has always filtered on, so
     # the sheet and the map layer finally list the same set of pins.
+    #
+    # SNOW-1229: ``dropped_pins()`` — a favourited resort left this list for
+    # search's "Pinned resorts", as region pins left it for search in
+    # SNOW-814, and the map draws it as a blue resort dot, not a star.
     favourites = list(
         Favourite.objects.for_user(request.user)
-        .placed()
+        .dropped_pins()
         .select_related("region", "location")
     )
 
@@ -1096,7 +1100,12 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
 
     Each feature is a Point with GeoJSON-ordered ``coordinates: [lon, lat]``
     (RFC 7946) and properties ``uuid``, ``name``, ``created_at`` and
-    ``resort_slug`` (SNOW-499; ``null`` for a plain dropped-pin favourite).
+    ``resort_slug`` (SNOW-499; ``null`` for a plain dropped-pin favourite),
+    plus ``resort_name``, ``resort_region_id`` and ``resort_region_name``
+    (``null`` likewise) — what search needs to list a favourited resort
+    under "Pinned resorts" before anything is typed, named as the resort
+    rather than the user's own label, and without waiting for the public
+    resorts feed or the resort's country to load.
     ``resort_slug`` lets the map client hide a favourited resort from the
     public resorts layer — it should render only as a favourite star, never
     as a plain dot as well. It is the slug, not the pk, because it has to
@@ -1127,7 +1136,9 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     # SNOW-802: ``placed()`` — a region pin has no coordinate, so it has no
     # feature and nothing for the map to draw. It lives in the pins sheet.
     favourites = list(
-        Favourite.objects.for_user(request.user).placed().select_related("resort")
+        Favourite.objects.for_user(request.user)
+        .placed()
+        .select_related("resort__region")
     )
 
     features: list[dict[str, Any]] = []
@@ -1136,10 +1147,20 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
             "uuid": str(favourite.uuid),
             "name": favourite.name,
             "created_at": favourite.created_at.isoformat(),
-            "resort_slug": (
-                favourite.resort.slug if favourite.resort is not None else None
-            ),
+            "resort_slug": None,
+            "resort_name": None,
+            "resort_region_id": None,
+            "resort_region_name": None,
         }
+        resort = favourite.resort
+        if resort is not None:
+            properties["resort_slug"] = resort.slug
+            properties["resort_name"] = resort.name
+            # The resort's own region, not the favourite's snapshot: search
+            # opens the resort and falls back to this region, so it must be
+            # the one the resort sits in today.
+            properties["resort_region_id"] = resort.region.region_id
+            properties["resort_region_name"] = resort.region.name
         # GeoJSON ordering: [longitude, latitude] per RFC 7946.
         features.append(
             {

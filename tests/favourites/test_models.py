@@ -185,3 +185,26 @@ class TestFavouriteResortConstraint:
 
         assert favourite.resort_id is None
         assert Favourite.objects.filter(pk=favourite.pk).exists()
+
+
+@pytest.mark.django_db
+class TestDroppedPins:
+    """FavouriteQuerySet.dropped_pins — the Favourites panel's rows (SNOW-1229)."""
+
+    def test_keeps_a_dropped_pin(self) -> None:
+        """A placed favourite with no resort is a dropped pin."""
+        pin = FavouriteFactory.create()
+
+        assert list(Favourite.objects.dropped_pins()) == [pin]
+
+    def test_drops_a_resort_favourite(self) -> None:
+        """A favourited resort is listed by search, not the panel."""
+        FavouriteFactory.create(resort=ResortFactory.create())
+
+        assert not Favourite.objects.dropped_pins().exists()
+
+    def test_drops_a_region_pin(self) -> None:
+        """A region pin has no coordinate, so it is no dropped pin."""
+        FavouriteFactory.create(region_pin=True, region=MicroRegionFactory.create())
+
+        assert not Favourite.objects.dropped_pins().exists()

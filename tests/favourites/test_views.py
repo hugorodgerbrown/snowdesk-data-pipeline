@@ -1564,6 +1564,20 @@ class TestFavouriteList:
         assert "Theirs" not in content
         assert str(mine.uuid) in content
 
+    def test_a_favourited_resort_is_not_listed(self, client: Client) -> None:
+        """The panel lists dropped pins; search lists pinned resorts (SNOW-1229)."""
+        user = UserFactory.create()
+        FavouriteFactory.create(user=user, name="Car park")
+        FavouriteFactory.create(
+            user=user, name="Wengen", resort=ResortFactory.create(name="Wengen")
+        )
+
+        client.force_login(user)
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "Car park" in content
+        assert "Wengen" not in content
+
     def test_map_variant_renders_the_lean_template(self, client: Client) -> None:
         """```` drops the card panel and the map link (SNOW-658)."""
         user = UserFactory.create()
@@ -2202,6 +2216,64 @@ class TestFavouritesGeojson:
         data = response.json()
         assert data["features"][0]["properties"]["resort_slug"] == resort.slug
         assert "resort_id" not in data["features"][0]["properties"]
+
+    def test_resort_favourite_carries_its_resort_and_region(
+        self, client: Client
+    ) -> None:
+        """A resort favourite names the resort and its region, for search.
+
+        Search lists favourited resorts under "Pinned resorts" with an
+        empty field. It names the RESORT, not the user's own label, so a
+        renamed favourite still reads as the resort it opens.
+        """
+        from apps.favourites.services import create_resort_favourite  # noqa: PLC0415
+
+        user = UserFactory.create()
+        client.force_login(user)
+        resort = ResortFactory.create(name="Wengen", latitude=46.6, longitude=7.9)
+        with patch("apps.favourites.services.fetch_elevation", return_value=1300.0):
+            favourite = create_resort_favourite(user, resort)
+        favourite.name = "Our chalet"
+        favourite.save()
+
+        response = client.get(GEOJSON_URL)
+
+        properties = response.json()["features"][0]["properties"]
+        assert properties["resort_name"] == "Wengen"
+        assert properties["resort_region_id"] == resort.region.region_id
+        assert properties["resort_region_name"] == resort.region.name
+
+    def test_plain_pin_carries_no_resort_fields(self, client: Client) -> None:
+        """A dropped pin's resort name and region are null, as its slug is."""
+        user = UserFactory.create()
+        client.force_login(user)
+        _create_via_service(user)
+
+        response = client.get(GEOJSON_URL)
+
+        properties = response.json()["features"][0]["properties"]
+        assert properties["resort_name"] is None
+        assert properties["resort_region_id"] is None
+        assert properties["resort_region_name"] is None
+
+    def test_resort_fields_cost_no_query_per_favourite(
+        self, client: Client, django_assert_max_num_queries: Any
+    ) -> None:
+        """The resort and its region are joined, not fetched per row."""
+        from apps.favourites.services import create_resort_favourite  # noqa: PLC0415
+
+        user = UserFactory.create()
+        client.force_login(user)
+        with patch("apps.favourites.services.fetch_elevation", return_value=1300.0):
+            for _ in range(3):
+                create_resort_favourite(
+                    user, ResortFactory.create(latitude=46.6, longitude=7.9)
+                )
+
+        with django_assert_max_num_queries(4):
+            response = client.get(GEOJSON_URL)
+
+        assert len(response.json()["features"]) == 3
 
     def test_created_at_is_an_iso_timestamp(self, client: Client) -> None:
         """Each feature carries the pin's save time as ISO-8601 (SNOW-658).

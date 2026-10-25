@@ -411,6 +411,18 @@ pages redirect into the map's sheets.
 | 3 | Close the sheet with its ×, then pick the same region from search | The sheet opens again for the same region (SNOW-1173) |
 | 4 | Press the filled star in the sheet's header | It hollows; open search with the field empty and the region is no longer listed — the two read the same list and must never disagree |
 
+### Scenario 12a: Find a favourited resort from search
+
+**Goal**: Verify a favourited resort is listed by search before anything is typed, and opens from there.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | While signed in, with the Resorts layer on, open a resort (e.g. Adelboden) and press the star in its sheet | It fills, and the resort's dot on the map turns blue. The Favourites panel does NOT list it — that panel lists dropped pins |
+| 2 | Open search and leave the field empty | The resort is listed under "Pinned resorts", above "Pinned regions", as a resort row with the gondola tile and "in <region>" |
+| 3 | Press it | The map flies to the resort and its sheet opens |
+| 4 | Turn the Favourites panel's "Show on the map" off, reload, and open search with the field empty | The resort is still listed under "Pinned resorts" |
+| 5 | Unstar the resort and open search again | It is no longer listed, and its dot is black again |
+
 ### Scenario 13: Delete the account from settings
 
 **Goal**: Verify the "Delete account" control hard-deletes the account.

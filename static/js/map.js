@@ -124,6 +124,10 @@
   // _map_embed.html reads the tokens, so a drift shows up as a legend that
   // disagrees with the map.
   const MARKER_FAVOURITE_COLOUR = '#1a73e8';
+  // A resort's dot. Not a token: its legend swatch is drawn inline in
+  // _map_embed.html. A pinned resort's dot takes MARKER_FAVOURITE_COLOUR
+  // instead (SNOW-1229).
+  const RESORT_PIN_COLOUR = '#1a1a1a';
   const MARKER_OBSERVATION_COLOUR = '#e8711a';
   // Hoist to module scope so fetchBulletinGroupingsForDate() (defined before
   // the IIFE) can reach the URL that was read from the DOM here.
@@ -1941,7 +1945,10 @@
           9, ['match', ['get', 'tier'], 'CORE', 7, 'MINOR', 3.5, 5],
           12, ['match', ['get', 'tier'], 'CORE', 9.5, 'MINOR', 5, 7],
         ],
-        'circle-color': '#1a1a1a',
+        // A pinned (favourited) resort is the one exception, drawn in the
+        // favourites blue (SNOW-1229) — applyFavouritedResortColour sets the
+        // expression; this is the colour before any favourites are known.
+        'circle-color': RESORT_PIN_COLOUR,
         'circle-stroke-color': '#ffffff',
         'circle-stroke-width': 1.5,
         'circle-opacity': 0.95,
@@ -1977,30 +1984,38 @@
         'text-halo-width': 1.4,
       },
     });
-    // SNOW-499: snapshot each layer's pristine filter (both are unfiltered
-    // at install time) so applyResortsFavouritedFilter can always compose
-    // from this base rather than the filter it itself set on a previous
-    // call — reading back the *current* filter would re-include an
-    // exclusion that no longer applies once a resort is unfavourited.
-    BASE_LAYER_FILTERS['resorts-pin'] = map.getFilter('resorts-pin') ?? null;
-    BASE_LAYER_FILTERS['resorts-label'] = map.getFilter('resorts-label') ?? null;
     raiseMarkerLayers();
     // Weather symbols step aside for a resort pin only once the pins exist
     // (weatherDataForCurrentView), and the two overlays load in either
     // order — so pins arriving after the symbols move them.
     refreshWeatherSourceData();
     // Re-apply in case favourites data (and therefore favouritedResortIds)
-    // was already known before this layer installed.
-    applyResortsFavouritedFilter();
+    // was already known before this layer installed — and read it if not,
+    // since with the favourites overlay off nothing else will.
+    applyFavouritedResortColour();
+    loadFavouritesFeed();
   };
 
-  // SNOW-499: ids of resorts the current user has already favourited —
-  // hidden from the resorts-pin/resorts-label layers so a favourited
-  // resort renders only as a favourite star (favourites-pin layer), never
-  // as a plain resort dot as well. Recomputed from the favourites
-  // FeatureCollection whenever it changes (installFavouritesLayer and the
-  // snowdesk:favourites-changed handler).
+  // Slugs of the resorts the current user has favourited — "pinned
+  // resorts". SNOW-1229 reversed SNOW-499's drawing of them: a pinned resort
+  // was hidden from the resorts layers and drawn as a favourite star; it is
+  // now its own resort dot in the favourites blue, shown and hidden with the
+  // resorts (applyFavouritedResortColour), and the favourites layer draws
+  // dropped pins only. Recomputed from the favourites FeatureCollection
+  // whenever it changes (installFavouritesLayer, the
+  // snowdesk:favourites-changed handler, search's own read), and added to
+  // at once by an offline star (snowdesk:favourite-pending).
   let favouritedResortIds = [];
+  // The same favourites' feature properties, for search's "Pinned resorts"
+  // (search_core.buildPinnedResortEntries). Null until a favourites feed
+  // has been read — by the layer, its refetch, or loadFavouritesFeed when
+  // the layer is off and never fetched one.
+  let favouritesFeedProps = null;
+  // Resorts starred offline and not yet confirmed by a refetch. Merged into
+  // every resync, so re-installing the favourites layer from the older
+  // cached feed (a basemap swap does) keeps their dots blue; cleared by the
+  // authoritative refetch in the snowdesk:favourites-changed handler.
+  let pendingResortSlugs = [];
 
   /**
    * Broadcast that one of the three roundel-owned overlays has changed
@@ -2043,8 +2058,7 @@
    * Whether one layer is currently painted on the map.
    *
    * SNOW-658: the one place this question is answered, because it is asked
-   * from two directions now — the resort exclusion just below, and the three
-   * overlay bridges' ``isVisible()`` at the foot of this IIFE. A layer that
+   * from the three overlay bridges' ``isVisible()`` at the foot of this IIFE. A layer that
    * was never installed (a lazy overlay whose fetch has not landed, or
    * failed) is not painted, which is why the ``getLayer`` guard is part of
    * the answer rather than a defensive wrapper around it.
@@ -2056,51 +2070,93 @@
     !!map.getLayer(layerId) &&
     map.getLayoutProperty(layerId, 'visibility') !== 'none';
 
-  // SNOW-499: whether the favourites overlay is currently drawn. The resort
-  // exclusion below is only justified while the favourite star is actually
-  // visible to stand in for the hidden resort dot — with the favourites
-  // overlay toggled off there is no star, so a favourited resort must fall
-  // back to its plain resort dot rather than vanishing from the map
-  // entirely. Reads the live layer state, so it is correct however the
-  // caller reached here (boot, toggle on, toggle off).
-  const favouritesLayerVisible = () => layerPainted('favourites-pin');
-
-  // SNOW-499: apply (or clear) the resorts-layer exclusion filter for the
-  // current favouritedResortIds. Composes with each layer's pristine base
-  // filter (captured in installResortsLayer) rather than its current
-  // filter, so repeated calls never accumulate a stale exclusion. The
-  // exclusion is gated on the favourites overlay being visible (see
-  // favouritesLayerVisible) so a favourited resort stays on the map as a
-  // plain dot when its star is hidden.
-  const applyResortsFavouritedFilter = () => {
-    const exclusion = favouritedResortIds.length && favouritesLayerVisible()
-      ? ['!', ['in', ['get', 'id'], ['literal', favouritedResortIds]]]
-      : null;
-    for (const layerId of ['resorts-pin', 'resorts-label']) {
-      if (!map.getLayer(layerId)) continue;
-      const base = BASE_LAYER_FILTERS[layerId] ?? null;
-      const filter = exclusion
-        ? (base ? ['all', base, exclusion] : exclusion)
-        : base;
-      map.setFilter(layerId, filter);
-    }
+  /**
+   * Paint each pinned resort's dot in the favourites blue (SNOW-1229).
+   *
+   * A data-driven ``circle-color`` on resorts-pin, rebuilt from
+   * ``favouritedResortIds`` whenever that changes. Independent of the
+   * favourites overlay: a pinned resort is a resort, so it is on the map
+   * exactly when the resorts are, and the Favourites panel's "Show on the
+   * map" governs the dropped pins it lists and nothing else.
+   *
+   * @returns {void}
+   */
+  const applyFavouritedResortColour = () => {
+    if (!map.getLayer('resorts-pin')) return;
+    map.setPaintProperty(
+      'resorts-pin',
+      'circle-color',
+      favouritedResortIds.length
+        ? ['case',
+          ['in', ['get', 'id'], ['literal', favouritedResortIds]], MARKER_FAVOURITE_COLOUR,
+          RESORT_PIN_COLOUR]
+        : RESORT_PIN_COLOUR,
+    );
   };
 
   // SNOW-499: recompute favouritedResortIds from a favourites
-  // FeatureCollection and reapply the exclusion filter. Called whenever
+  // FeatureCollection and repaint the pinned resorts. Called whenever
   // favouritesGeojsonCache is set to a new authoritative payload. The key
   // is the resort SLUG (SNOW-796): favourites.geojson carries it as
   // ``resort_slug`` and resorts.geojson as ``id``, so the exclusion filter
   // compares like with like.
   const syncFavouritedResortIds = (geojson) => {
     favouritedResortIds = [];
+    favouritesFeedProps = [];
     if (geojson && Array.isArray(geojson.features)) {
       for (const feature of geojson.features) {
         const resortSlug = feature.properties && feature.properties.resort_slug;
         if (resortSlug != null) favouritedResortIds.push(resortSlug);
+        if (feature.properties) favouritesFeedProps.push(feature.properties);
       }
     }
-    applyResortsFavouritedFilter();
+    for (const slug of pendingResortSlugs) {
+      if (!favouritedResortIds.includes(slug)) favouritedResortIds.push(slug);
+    }
+    applyFavouritedResortColour();
+  };
+
+  let favouritesFeedLoading = null;
+  /**
+   * Read the favourites feed when the favourites layer has not (SNOW-1229).
+   *
+   * The layer is the usual reader, but it loads only while its overlay is
+   * on — and both things the feed now also serves do not depend on that
+   * switch: a pinned resort's blue dot (asked for when the resorts layer
+   * installs) and search's "Pinned resorts" (asked for on an empty focus).
+   * Network first, then the overlay cache the layer writes through to, so a
+   * device that has read the feed before still has its pinned resorts
+   * offline. Resolves at once when a feed has been read, or for a visitor;
+   * a miss on both resolves with nothing read and clears the slot so the
+   * next ask tries again.
+   *
+   * @returns {Promise<void>}
+   */
+  const loadFavouritesFeed = () => {
+    if (favouritesFeedProps !== null || !FAVOURITES_ELIGIBLE || !FAVOURITES_URL) {
+      return Promise.resolve();
+    }
+    if (!favouritesFeedLoading) {
+      favouritesFeedLoading = fetch(FAVOURITES_URL)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+        .then(async (fc) => {
+          if (fc) {
+            window.pwaMapOverlayCache?.putOverlay('favourites', fc);
+            return fc;
+          }
+          return (await window.pwaMapOverlayCache?.getOverlay('favourites')) || null;
+        })
+        .then((fc) => {
+          // The layer may have landed its own feed meanwhile; that one wins.
+          if (fc && favouritesFeedProps === null) syncFavouritedResortIds(fc);
+        })
+        .catch(() => {})
+        .finally(() => {
+          favouritesFeedLoading = null;
+        });
+    }
+    return favouritesFeedLoading;
   };
 
   // SNOW-478: the favourites pin is drawn as an SDF icon image, not a ``★``
@@ -2160,6 +2216,9 @@
   // too. SNOW-478: the pin is an SDF icon image (registered here, guarded by
   // hasImage — addImage throws on a duplicate id, and setStyle wipes images on a
   // basemap swap so it must re-register in lockstep with the layer).
+  // A feature with no resort: a dropped pin, or an offline one still pending.
+  const DROPPED_PIN_FILTER = ['==', ['get', 'resort_slug'], null];
+
   const installFavouritesLayer = (geojson) => {
     if (!geojson || map.getSource('favourites')) return;
     if (!map.hasImage(FAVOURITE_STAR_ICON_ID)) {
@@ -2179,6 +2238,10 @@
       id: 'favourites-pin',
       type: 'symbol',
       source: 'favourites',
+      // SNOW-1229: dropped pins only. A favourited resort is in the feed (it
+      // feeds search's "Pinned resorts") but is drawn by the resorts layer,
+      // as a blue resort dot — see applyFavouritedResortColour.
+      filter: DROPPED_PIN_FILTER,
       layout: {
         visibility: overlayState.favourites ? 'visible' : 'none',
         'icon-image': FAVOURITE_STAR_ICON_ID,
@@ -2203,6 +2266,7 @@
       id: 'favourites-label',
       type: 'symbol',
       source: 'favourites',
+      filter: DROPPED_PIN_FILTER,
       minzoom: 8,
       layout: {
         visibility: overlayState.favourites ? 'visible' : 'none',
@@ -6124,12 +6188,6 @@
       // The resort-pin half of snowdesk:resorts-hidden: a re-enable installs
       // nothing, so installResortsLayer's own refresh does not run.
       if (key === 'resorts') refreshWeatherSourceData();
-      // SNOW-499: making the favourites overlay (re-)visible means any
-      // favourited resort should hide its plain dot again, now the star is
-      // back. ensureOverlayLoaded short-circuits for an already-loaded
-      // favourites layer, so the recompute inside syncFavouritedResortIds
-      // won't have run — reapply the exclusion here.
-      if (key === 'favourites') applyResortsFavouritedFilter();
       // SNOW-505: a successful lazy-load means the tier's GeoJSON has now
       // flowed through the SW (STATIC_PATHS → stale-while-revalidate cache)
       // or been written to the overlay IDB store, so it is now available
@@ -6293,15 +6351,6 @@
       // tile that is no longer cached is worse than no square.
       window.pwaDownloadedOverlay?.refresh();
     }
-  });
-
-  // SNOW-499: the picker toggles an already-installed favourites layer off
-  // via a direct setLayoutProperty in its own IIFE (no overlay-load event),
-  // so bridge that here: recompute the resort exclusion whenever the
-  // favourites overlay visibility changes, so a favourited resort's plain
-  // dot reappears the moment its star is hidden.
-  document.addEventListener('snowdesk:favourites-visibility-changed', () => {
-    applyResortsFavouritedFilter();
   });
 
   // ==== SNOW-570/SNOW-587: the downloaded-tiles overlay ====
@@ -6802,12 +6851,11 @@
   //
   // The bridges are what the picker calls rather than the storage write and
   // the lazy-load dispatch directly, because being INSIDE this IIFE they also
-  // recompute the favourited-resort exclusion and announce visibility to the
-  // roundels' overlay state — effects the picker cannot reach across the
-  // boundary, and which a row that only wrote localStorage would silently
-  // drop.
-  // (``snowdesk:favourites-visibility-changed`` stays: other callers still
-  // fire it, and its listener is the same one-line call.)
+  // announce visibility to the roundels' overlay state — an effect the picker
+  // cannot reach across the boundary, and which a row that only wrote
+  // localStorage would silently drop. (They recomputed SNOW-499's
+  // favourited-resort exclusion too, until SNOW-1229 drew a pinned resort as
+  // a blue resort dot, which no favourites toggle touches.)
   //
   // All four preferences persist, downloads included since SNOW-857 — though
   // that one is a TRI-STATE read raw at :490, where an untouched key means
@@ -6830,10 +6878,6 @@
     document.dispatchEvent(new CustomEvent('snowdesk:overlay-load', {
       detail: { key },
     }));
-    // SNOW-499: that handler calls this too, but only once its fetch settles —
-    // and ``ensureOverlayLoaded`` short-circuits for an already-loaded layer,
-    // so on a re-enable nothing would call it at all.
-    if (key === 'favourites') applyResortsFavouritedFilter();
     // SNOW-658 review: nothing is painted yet — the handler above sets
     // visibility a microtask later at the earliest — so this announcement
     // says "asked for, not drawn", and the one at the end of that handler
@@ -6859,10 +6903,6 @@
         map.setLayoutProperty(layerId, 'visibility', 'none');
       }
     }
-    // SNOW-499: a favourited resort must get its plain dot back the moment its
-    // star is hidden, or it disappears from the map entirely — the side effect
-    // the picker's own off-path used to trigger by CustomEvent.
-    if (key === 'favourites') applyResortsFavouritedFilter();
     announceOverlayVisibility();
   };
 
@@ -7118,6 +7158,9 @@
       // lands (SNOW-479). Keep the cache in sync so a subsequent optimistic
       // append starts from current truth.
       favouritesGeojsonCache = fc;
+      // The server's word on every resort starred offline: confirmed ones
+      // are in ``fc``, and one whose mutation failed for good is not.
+      pendingResortSlugs = [];
       // SNOW-499: recompute before installFavouritesLayer's own call so a
       // resort favourited/unfavourited elsewhere (e.g. the resort popup
       // star) is reflected on the resorts layer as soon as this refetch
@@ -7146,6 +7189,19 @@
   document.addEventListener('snowdesk:favourite-pending', (event) => {
     if (!FAVOURITES_ELIGIBLE) return;
     const detail = (event && event.detail) || {};
+    // SNOW-1229: a starred resort is drawn as a blue resort dot, not a
+    // pending star — so it turns blue at once, offline too, and the refetch
+    // once the queue drains confirms it.
+    if (detail.resortSlug) {
+      if (!pendingResortSlugs.includes(detail.resortSlug)) {
+        pendingResortSlugs = pendingResortSlugs.concat([detail.resortSlug]);
+      }
+      if (!favouritedResortIds.includes(detail.resortSlug)) {
+        favouritedResortIds = favouritedResortIds.concat([detail.resortSlug]);
+        applyFavouritedResortColour();
+      }
+      return;
+    }
     const lat = Number(detail.lat);
     const lon = Number(detail.lon);
     if (Number.isNaN(lat) || Number.isNaN(lon)) return;
@@ -10174,6 +10230,15 @@
     // loader for the list, the pin roundel and this. A visitor has none, and
     // sees nothing until they type.
 
+    //
+    // The favourited resorts join them, above, under "Pinned resorts" (Hugo,
+    // 25 Oct): a starred resort is a Favourite, listed in the Favourites
+    // panel as a place on the map, and listed here as somewhere to go —
+    // the same row a typed match draws, opening the same resort. Their rows
+    // come from the favourites feed (favouritesFeedProps), which the layer
+    // loads at boot; with the layer switched off the resorts layer or the
+    // first empty-field focus reads it (loadFavouritesFeed), once.
+
     const pinnedResults = () => {
       const ids = window.pwaPinnedRegions?.ids?.() || [];
       return ids
@@ -10181,14 +10246,26 @@
         .filter(Boolean);
     };
 
+    const pinnedResortResults = () => searchCore.buildPinnedResortEntries(favouritesFeedProps || []);
+
+    /** The empty field's two headed groups, either possibly absent. */
+    const pinnedGroups = () => [
+      { heading: MAP_STRINGS['search-group-pinned-resorts'], items: pinnedResortResults() },
+      { heading: MAP_STRINGS['search-group-pinned'], items: pinnedResults() },
+    ];
+
     const showEmptyState = () => {
       previewTop = false;
-      renderResults(pinnedResults(), MAP_STRINGS['search-group-pinned']);
-      // The list may still be loading on a first focus straight after boot.
-      window.pwaPinnedRegions?.ready?.().then(() => {
+      renderPinned(pinnedGroups());
+      // Either list may still be loading on a first focus straight after
+      // boot; redraw once both have settled.
+      Promise.all([
+        window.pwaPinnedRegions?.ready?.() || Promise.resolve(),
+        loadFavouritesFeed(),
+      ]).then(() => {
         if (!inputEl.value && document.activeElement === inputEl) {
           previewTop = false;
-          renderResults(pinnedResults(), MAP_STRINGS['search-group-pinned']);
+          renderPinned(pinnedGroups());
         }
       });
     };
@@ -10322,20 +10399,21 @@
      * (search_core's groupResults: the kind holding the best match leads)
      * and drawn differently: a resort row has the pin tile and "in
      * <region>" and no badge; a region row has its danger tile and keeps
-     * the flag and code. An empty field passes `heading`, so its pinned
-     * regions sit under "Pinned regions" in one group, with the selected
-     * region marked.
+     * the flag and code. An empty field passes `pinned` — its own groups,
+     * "Pinned resorts" over "Pinned regions" (renderPinned) — with the
+     * selected region marked.
      *
      * Headings are role="presentation" items outside the option sequence:
      * the keyboard and aria-activedescendant walk `.search-result` rows
      * only, so `currentResults[i]` is still the i-th row.
      *
      * @param {Array<Object>} results Ranked rows.
-     * @param {string} [heading] One heading for every row, in place of
-     *   the per-kind groups.
+     * @param {Array<{heading: string, items: Array<Object>}>} [pinned] The
+     *   empty field's headed groups, in place of the per-kind ones; their
+     *   rows are `results`, in order.
      * @returns {void}
      */
-    const renderResults = (results, heading) => {
+    const renderResults = (results, pinned) => {
       resultsEl.replaceChildren();
       activeIdx = -1;
       if (results.length === 0) {
@@ -10343,14 +10421,16 @@
         closeResults();
         return;
       }
-      const groups = heading
-        ? [{ type: 'pinned', items: results }]
-        : searchCore.groupResults(results);
       const GROUP_HEADINGS = {
         resort: MAP_STRINGS['search-group-resorts'],
         region: MAP_STRINGS['search-group-regions'],
-        pinned: heading,
       };
+      const groups = pinned
+        ? pinned.map((g) => ({ heading: g.heading, items: g.items }))
+        : searchCore.groupResults(results).map((g) => ({
+          heading: GROUP_HEADINGS[g.type] || '',
+          items: g.items,
+        }));
       // The rows in the order they are drawn, which is the order the
       // keyboard walks — grouping can move a row from where it ranked.
       currentResults = groups.flatMap((g) => g.items);
@@ -10359,7 +10439,7 @@
         const head = document.createElement('li');
         head.className = 'search-group-heading';
         head.setAttribute('role', 'presentation');
-        head.textContent = GROUP_HEADINGS[group.type] || '';
+        head.textContent = group.heading;
         resultsEl.append(head);
         group.items.forEach((r) => {
           const li = document.createElement('li');
@@ -10368,7 +10448,10 @@
           li.id = `search-result-${i}`;
           i += 1;
           li.dataset.resultType = r.type;
-          if (heading && selectedId !== null && FEATURE_BY_REGION_ID[r.regionID]?.id === selectedId) {
+          // A region row only: a pinned resort shares its region's id, and
+          // is not the selection when its region is.
+          if (pinned && r.type === 'region' && selectedId !== null
+            && FEATURE_BY_REGION_ID[r.regionID]?.id === selectedId) {
             li.classList.add('is-current');
             li.setAttribute('aria-current', 'true');
           }
@@ -10448,6 +10531,17 @@
       setActive(-1);
     };
 
+    /**
+     * Render the empty field's groups, dropping an empty one.
+     *
+     * @param {Array<{heading: string, items: Array<Object>}>} groups
+     * @returns {void}
+     */
+    const renderPinned = (groups) => {
+      const shown = groups.filter((g) => g.items.length);
+      renderResults(shown.flatMap((g) => g.items), shown);
+    };
+
     const chooseResult = (item) => {
       // SNOW-1161: a resort row opens the resort — its pin and its sheet —
       // rather than its parent region, which is what a resort tapped on the
@@ -10456,10 +10550,12 @@
       if (item.type === 'resort') {
         inputEl.value = '';
         collapseSearch();
-        openResort(
-          (props) => props.name === item.primary && (!props.region_id || props.region_id === item.regionID),
-          () => chooseRegion(item),
-        );
+        // A pinned resort row knows its slug (search_core's
+        // buildPinnedResortEntries); a typed match knows only its name.
+        const matches = item.slug
+          ? (props) => props.id === item.slug
+          : (props) => props.name === item.primary && (!props.region_id || props.region_id === item.regionID);
+        openResort(matches, () => chooseRegion(item));
         return;
       }
       chooseRegion(item);

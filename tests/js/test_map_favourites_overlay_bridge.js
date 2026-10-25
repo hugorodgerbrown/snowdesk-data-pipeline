@@ -16,12 +16,11 @@
  *      the menu row used, so a device carrying a stored preference from
  *      before this ticket keeps it.
  *   2. hide() actually drops the layers (the picker's old off-path).
- *   3. Both edges recompute the favourited-resort exclusion. That is the
- *      non-obvious one: a favourited resort hides its plain dot while its
- *      star is showing, so switching the star off without recomputing
- *      leaves the resort invisible — no star, no dot (SNOW-499). The
- *      picker got this right via a CustomEvent; the bridge has to do it
- *      directly.
+ *   3. Neither edge touches a pinned (favourited) resort. SNOW-499 hid
+ *      its plain dot while its star showed, so both edges had to
+ *      recompute that exclusion; SNOW-1229 draws it as a blue resort dot
+ *      instead, which is on the map exactly when the resorts are — so
+ *      switching favourites off must leave it painted, blue.
  *   4. The bridge answers two different questions and does not confuse
  *      them (SNOW-658 review): isVisible() is what the map is drawing,
  *      isEnabled() is what the user asked for. The roundel ring reads the
@@ -48,7 +47,7 @@ const COMMUNITY_REPORT_LAYERS = [
   'community-reports-point',
 ];
 
-/** One resort, favourited, so the exclusion filter has something to exclude. */
+/** One resort, favourited, so the blue paint has something to colour. */
 const RESORTS_GEOJSON = {
   type: 'FeatureCollection',
   features: [
@@ -81,6 +80,7 @@ function stubMapLibre() {
   const handlers = {};
   const layouts = new Map();
   const filters = new Map();
+  const paints = new Map();
   const map = {
     on: (ev, a, b) => {
       (handlers[ev] ||= []).push(typeof a === 'function' ? a : b);
@@ -92,7 +92,6 @@ function stubMapLibre() {
     getLayer: (id) => (layouts.has(id) ? { id } : null),
     getFilter: (id) => filters.get(id) ?? null,
     getLayoutProperty: (id, prop) => (layouts.get(id) || {})[prop],
-    getPaintProperty: () => undefined,
     getFeatureState: () => ({}),
     isSourceLoaded: () => true,
     getSource: () => null,
@@ -116,7 +115,10 @@ function stubMapLibre() {
       layout[prop] = value;
       layouts.set(id, layout);
     },
-    setPaintProperty: () => {},
+    setPaintProperty: (id, prop, value) => {
+      paints.set(`${id}:${prop}`, value);
+    },
+    getPaintProperty: (id, prop) => paints.get(`${id}:${prop}`),
     setFilter: (id, filter) => {
       filters.set(id, filter);
     },
@@ -195,9 +197,15 @@ function visibilities(map, ids) {
   return ids.map((id) => map.getLayoutProperty(id, 'visibility'));
 }
 
-/** Whether the resorts layers currently exclude the favourited resort. */
-function resortsExcludeFavourited(map) {
+/** Whether the resorts layers exclude any resort by filter (SNOW-499's way). */
+function resortsExcludeAny(map) {
   return JSON.stringify(map.getFilter('resorts-pin') ?? null).includes('"literal"');
+}
+
+/** Whether the resort dot paint singles the favourited resort out. */
+function resortPaintedPinned(map) {
+  const paint = JSON.stringify(map.getPaintProperty('resorts-pin', 'circle-color') ?? null);
+  return paint.includes('verbier') && paint.includes('#1a73e8');
 }
 
 let mapStub;
@@ -285,19 +293,34 @@ describe('window.pwaFavouritesOverlay', () => {
     expect(localStorage.getItem(FAVOURITES_KEY)).toBe('true');
   });
 
-  it('recomputes the favourited-resort exclusion on BOTH edges', async () => {
-    // With the stars showing, a favourited resort's plain dot is excluded…
-    await waitFor(() => resortsExcludeFavourited(mapStub));
-    expect(resortsExcludeFavourited(mapStub)).toBe(true);
+  it('paints a pinned resort blue on BOTH edges, and never hides it', async () => {
+    // The pinned resort is a resort dot in the favourites blue (SNOW-1229)…
+    await waitFor(() => resortPaintedPinned(mapStub));
+    expect(resortsExcludeAny(mapStub)).toBe(false);
 
-    // …and switching them off must bring it back, or the resort vanishes
-    // entirely: no star, no dot (SNOW-499).
+    // …and stays so with the favourites switched off: the switch governs
+    // the dropped pins the panel lists, not a resort.
     window.pwaFavouritesOverlay.hide();
-    expect(resortsExcludeFavourited(mapStub)).toBe(false);
+    expect(resortPaintedPinned(mapStub)).toBe(true);
+    expect(resortsExcludeAny(mapStub)).toBe(false);
 
     window.pwaFavouritesOverlay.show();
-    await waitFor(() => resortsExcludeFavourited(mapStub));
-    expect(resortsExcludeFavourited(mapStub)).toBe(true);
+    expect(resortPaintedPinned(mapStub)).toBe(true);
+  });
+
+  it('turns a resort starred offline blue at once, without a pending star', () => {
+    document.dispatchEvent(new CustomEvent('snowdesk:favourite-pending', {
+      detail: { lat: 46.0, lon: 7.7, name: 'Zermatt', resortSlug: 'zermatt' },
+    }));
+
+    const paint = JSON.stringify(mapStub.getPaintProperty('resorts-pin', 'circle-color'));
+    expect(paint).toContain('zermatt');
+    expect(paint).toContain('verbier');
+  });
+
+  it('draws only dropped pins as stars', () => {
+    expect(mapStub.getFilter('favourites-pin')).toEqual(['==', ['get', 'resort_slug'], null]);
+    expect(mapStub.getFilter('favourites-label')).toEqual(['==', ['get', 'resort_slug'], null]);
   });
 
   it('separates what is drawn from what was asked for', async () => {

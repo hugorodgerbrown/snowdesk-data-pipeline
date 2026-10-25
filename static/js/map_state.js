@@ -424,6 +424,7 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'search-group-resorts': 'Resorts',
   'search-group-regions': 'Regions',
   'search-group-pinned': 'Pinned regions',
+  'search-group-pinned-resorts': 'Pinned resorts',
   'search-resort-in': 'in %(region)s',
   // SNOW-658 removed 'custom-control-idle'/'custom-control-done' — the
   // custom-area roundel's two labels for a state it no longer has (see

@@ -58,6 +58,21 @@ class FavouriteQuerySet(models.QuerySet["Favourite"]):
         """
         return self.filter(latitude__isnull=False)
 
+    def dropped_pins(self) -> "FavouriteQuerySet":
+        """Return the placed favourites that are not a resort — dropped pins.
+
+        What the Favourites panel lists and the star layer draws (SNOW-1229).
+        A favourited resort is placed too, but it is listed by search under
+        "Pinned resorts" and drawn as a blue resort dot, so it is neither.
+        A resort favourite whose resort was deleted has ``resort`` nulled
+        (``SET_NULL``) and so becomes a dropped pin, which is what it is.
+
+        Returns:
+            Filtered queryset.
+
+        """
+        return self.placed().filter(resort__isnull=True)
+
     def region_pins(self) -> "FavouriteQuerySet":
         """Return the region pins — rows whose subject is the region itself.
 

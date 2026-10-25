@@ -2713,6 +2713,11 @@ html:has(> body.map-fullscreen) > body {
     box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25);
 }
 
+/* SNOW-1229: a pinned (favourited) resort's dot, in the favourites blue. */
+.map-legend-pin--pinned {
+    background: var(--color-marker-favourite);
+}
+
 /* Favourite / observation legend keys — a 12×12 box that centres the marker
    SVG (the star / flag reproduced from the on-map layers). Sized between the
    10px rating swatches and the row text so the marker reads as a point of

@@ -1239,6 +1239,13 @@ Optional context:
                 <div class="map-legend-row" data-testid="map-legend-resorts">
                     <span class="map-legend-pin" aria-hidden="true"></span>{% trans "Resorts" %}
                 </div>
+                {# SNOW-1229: a resort you have pinned, drawn blue by map.js. #}
+                <div class="map-legend-row" data-testid="map-legend-pinned-resorts">
+                    <span
+                        class="map-legend-pin map-legend-pin--pinned"
+                        aria-hidden="true"
+                    ></span>{% trans "Pinned resorts" %}
+                </div>
                 {# Favourites + observations keys — the solid star and flag    #}
                 {# reproduce the on-map markers (favourite-star / community-    #}
                 {# report-flag in map.js), in their icon-color tints, so the    #}
@@ -2555,6 +2562,7 @@ Optional context:
     <span data-string="search-group-resorts">{% trans "Resorts" %}</span>
     <span data-string="search-group-regions">{% trans "Regions" %}</span>
     <span data-string="search-group-pinned">{% trans "Pinned regions" %}</span>
+    <span data-string="search-group-pinned-resorts">{% trans "Pinned resorts" %}</span>
     <span data-string="search-resort-in">{% blocktrans %}in %(region)s{% endblocktrans %}</span>
     {# SNOW-658 removed "custom-control-idle"/"custom-control-done" —      #}
     {# #map-custom-download-control's two labels for a downloads state it  #}
