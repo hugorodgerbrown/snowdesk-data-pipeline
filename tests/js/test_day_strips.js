@@ -69,6 +69,34 @@ describe('day strips selection', () => {
     expect(selected(section).block).toBe('7');
   });
 
+  it('ignores the click a touch scrub ends with on the button it began on', () => {
+    const section = document.querySelector('[data-day-strips]');
+    const track = section.querySelector('[data-day-strips-track]');
+    track.getBoundingClientRect = () => ({ left: 0, width: 320, top: 0, height: 28 });
+    const start = section.querySelector('button[data-block="0"]');
+
+    track.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 10 }));
+    document.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 300 }));
+    document.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+    start.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(selected(section).block).toBe('7');
+
+    start.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+    expect(selected(section).block).toBe('0');
+  });
+
+  it('still honours a plain tap on a block', () => {
+    const section = document.querySelector('[data-day-strips]');
+    const track = section.querySelector('[data-day-strips-track]');
+    track.getBoundingClientRect = () => ({ left: 0, width: 320, top: 0, height: 28 });
+    const button = section.querySelector('button[data-block="5"]');
+
+    track.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 220 }));
+    document.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(selected(section).block).toBe('5');
+  });
+
   it('leaves the selection alone when a chart is touched', () => {
     const section = document.querySelector('[data-day-strips]');
     const plot = section.querySelector('.plot');
