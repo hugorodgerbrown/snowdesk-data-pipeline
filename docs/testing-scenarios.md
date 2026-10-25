@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-10-25
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -193,7 +193,8 @@ for the map's day, with the region's resorts under it (SNOW-1164).
 | 2 | Read the sheet title | Shows the region name (e.g. "Verbier") |
 | 3 | Drag the sheet to full | Shows the bulletin page's own body for the day — day summary, risk profile, problems, snowpack and weather, source line — then the region's resorts (SNOW-1164) |
 | 4 | Compare with the bulletin page | The same sections as `/CH-4115/martigny-verbier/` for that day, without the page's title card or "See on the map" |
-| 5 | Tap a resort under "Resorts in this region" | The resort's sheet opens on the map, showing the resort page's body for the same day |
+| 5 | Tap a resort under "Resorts in this region" | The resort's sheet opens in place, headed "Ski resort", with a "‹ <region>" back pill above its name; it shows the resort's forecast and facts and no danger level |
+| 5a | Tap the resort's "Avalanche bulletin" row, then the back pill | The region's sheet opens with a "‹ <resort>" pill; the pill returns to the resort's sheet, and × closes it with no pill left behind |
 | 6 | Return to /map/ and click a different region | Sheet content updates; the newly selected region's outline thickens and darkens |
 | 7 | Click the × close button on the sheet | Sheet dismisses; the region's selection outline is removed |
 

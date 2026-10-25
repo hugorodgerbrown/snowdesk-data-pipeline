@@ -45,6 +45,9 @@ Context:
             >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
         {% endif %}
         <div class="min-w-0 flex-1">
+            {# The kind of place, above its name, on every map panel (Hugo, 25 Oct 2026). #}
+            {% translate "Avalanche region" as region_kind %}
+            {% include "includes/_eyebrow.html" with tag="p" text=region_kind data_testid="sheet-kind" only %}
             <h2
                 class="truncate text-lg font-semibold leading-tight text-text-1"
                 title="{{ region.name }}"

@@ -2,7 +2,7 @@
 name: the-sheet-is-the-page
 description: Region and resort pages and map sheets share one body (_region_body.html, _resort_body.html, in_map); resort_date URL
 status: current
-last-reviewed: 2026-10-24
+last-reviewed: 2026-10-25
 ---
 
 # The sheet is the page
@@ -53,15 +53,12 @@ split.
   page or the sheet alone. Both containers then show it.
 - The sheets' own links onward ("Open bulletin", "Read the bulletin",
   "View resort") are gone; the body's own links stay — the resort body's
-  bulletin card still leads to the full bulletin.
-- The resort body gained the place sheet's one extra, **the day's
-  problems**, so the page shows the problem cards again after SNOW-1156
-  retired them. They come without the sheet's "Above / Below this
-  location" verdict (`annotate_problem_relevance`): a resort spans a range
-  of heights, so a verdict against one of them read as one about the whole
-  resort (Hugo, 21 Oct 2026). Each card states its own band. A saved pin,
-  which is one point, keeps the verdict. The pin's weather was already the
-  forecast strip's Base point.
+  region row leads to the region.
+- The resort body carried the day's problems for a while (21 Oct 2026);
+  since 25 Oct it carries no danger at all
+  ([`a-resort-has-no-avalanche-danger`](a-resort-has-no-avalanche-danger.md)).
+  A saved pin, which is one point, keeps its problems and their "Above /
+  Below this location" verdict.
 - The forecast strip lays itself out by its card's width (`@container`,
   `@md:`), not the viewport's, because it now sits in the inset panel too.
 - A saved pin's place sheet is unchanged: it has no page.

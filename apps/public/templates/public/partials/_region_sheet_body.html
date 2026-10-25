@@ -1,4 +1,4 @@
-{% load i18n components snowdesk_time %}
+{% load i18n components resort_tags snowdesk_time %}
 {% comment %}
 public/partials/_region_sheet_body.html — what a tapped region's phone sheet
 says (SNOW-1098).
@@ -58,6 +58,8 @@ Context:
     class="space-y-4"
     data-testid="region-sheet-body"
     data-region-id="{{ region.region_id }}"
+    data-panel-key="region:{{ region.region_id }}"
+    data-panel-label="{{ region.name }}"
     {# No bulletin for the day: nothing for FULL to reveal, so the sheet stops at half (map_sheet.js reads this). #}
     data-sheet-detents="{% if bulletin %}peek,half,full{% else %}peek,half{% endif %}"
 >
@@ -93,19 +95,16 @@ Context:
     {% endif %}
 
     {% if resorts %}
+        {# Each resort a row that opens its own panel (SNOW-1161; rows since #}
+        {# Hugo's review of 25 Oct 2026, so a region lists its resorts the  #}
+        {# way a resort names its region).                                  #}
         <section class="space-y-2" data-testid="region-sheet-resorts">
             {% translate "Resorts in this region" as resorts_eyebrow %}
             {% include "includes/_eyebrow.html" with text=resorts_eyebrow tag="h3" %}
-            <ul class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+            <ul class="divide-y divide-border overflow-hidden rounded-card border border-border bg-card">
                 {% for resort in resorts %}
                     <li>
-                        {# SNOW-1161: on the map a resort opens in its sheet; the href is #}
-                        {# the page, for a reader without JS and for a new tab.           #}
-                        <a
-                            href="{{ resort.get_absolute_url }}"
-                            data-resort-slug="{{ resort.slug }}"
-                            class="text-text-1 underline"
-                        >{{ resort.name }}</a>
+                        {% include "includes/_place_link_row.html" with kind="resort" title=resort.name subtitle=resort|resort_fact_summary href=resort.get_absolute_url open_id=resort.slug only %}
                     </li>
                 {% endfor %}
             </ul>

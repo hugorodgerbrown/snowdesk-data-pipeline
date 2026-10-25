@@ -8535,6 +8535,25 @@
     });
 
 
+    // A map panel's region row (a resort's region, a weather point's) asks
+    // for a region by id (map_panel_trail.js, Hugo, 25 Oct 2026). It is
+    // chosen as a search pick chooses one: the selection moves, the sheet
+    // opens (or opens again for the region already selected) and the map
+    // frames it. A region the map does not draw goes to its page.
+    document.addEventListener('snowdesk:region-open', (ev) => {
+      const regionID = ev.detail && ev.detail.region_id;
+      const href = ev.detail && ev.detail.href;
+      if (!regionID) return;
+      const feature = FEATURE_BY_REGION_ID[regionID];
+      if (!feature) {
+        if (href) window.location.assign(href);
+        return;
+      }
+      if (feature.id === selectedId) window.pwaRegionSheet?.reopen?.();
+      selectFeature(feature.id);
+      window.pwaMapFocus?.region?.(regionID);
+    });
+
     // Pin-positioning focus (static/js/map_placement_focus.js) clears every
     // app layer off the basemap while the user places a favourite, an
     // observation, or a resort. The popups are the other things floating over

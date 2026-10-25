@@ -65,12 +65,12 @@ from apps.public._component_fixtures import (
     OVERLAY_SHEET_VARIANTS,
     PAGE_TITLE_VARIANTS,
     PERIOD_TRANSITION_VARIANTS,
+    PLACE_LINK_ROW_VARIANTS,
     PLACE_PIN_VARIANTS,
     POINT_CARD_VARIANTS,
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
     REGION_TOOLTIP_VARIANTS,
-    RESORT_BULLETIN_CARD_VARIANTS,
     RESORT_FACTS_VARIANTS,
     RESORT_FORECAST_VARIANTS,
     RESORT_TILE_VARIANTS,
@@ -1576,25 +1576,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
-        slug="resort-bulletin-card",
-        label="Resort bulletin card",
+        slug="place-link-row",
+        label="Place link row",
         description=(
-            "The resort page's one-card summary of the day's avalanche danger "
-            "(SNOW-1156, SNOW-1203): an h2 eyebrow naming the region's "
-            "bulletin, then a card holding the region panel's own Day Risk "
-            "Profile rows (includes/day_windows.html, flush) — one per "
-            "window, the subdivision in words — a mono 'SLF · updated "
-            "17:00' line in Central European time, and 'Read the full "
-            "{region} bulletin →'. No aspects: each problem card below "
-            "states its own. With no bulletin the band is neutral, the tile "
-            "an outlined '–', a note names the resort's typical season (a "
-            "dateless sentence when unset) and the link reads 'Latest "
-            "{region} bulletin →'. The card is "
-            "[data-testid='resort-danger'] and holds exactly one link."
+            "The row each map panel ends with, naming another kind of place "
+            "and opening it: a resort's avalanche region, a region's "
+            "resorts, a weather point's region and resort (Hugo, 25 Oct "
+            "2026). It leads with the tile of the kind it opens — the "
+            "square for a region, the round cabin for a resort — and a "
+            "region row carries no level. A real link to the place's page; "
+            "on the map map_panel_trail.js opens the place's sheet in place "
+            "with a back pill instead."
         ),
         kind="components",
-        partial="public/partials/_resort_bulletin_card.html",
-        variants=RESORT_BULLETIN_CARD_VARIANTS,
+        partial="includes/_place_link_row.html",
+        variants=PLACE_LINK_ROW_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

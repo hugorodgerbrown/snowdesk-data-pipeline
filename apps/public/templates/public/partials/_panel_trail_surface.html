@@ -1,0 +1,32 @@
+{% load i18n static %}
+{% comment %}
+public/partials/_panel_trail_surface.html — the back pill a map panel shows
+when the reader reached it from another panel (Hugo, 25 Oct 2026).
+
+The region, resort and weather sheets each end with rows naming the other
+kinds of place (``includes/_place_link_row.html``). On the map
+``static/js/map_panel_trail.js`` opens the row's place in its own panel and
+clones the pill below into it, filling the name of the panel the reader
+came from: "‹ Veysonnaz". Pressing it opens that panel again. The trail is
+one step deep; see the module for when it ends.
+
+Included from map.html after the three sheets it serves.
+
+Context expected: none.
+{% endcomment %}
+<script defer src="{% static 'js/map_panel_trail.js' %}"></script>
+<template id="panel-trail-back-template">
+    <button
+        type="button"
+        data-panel-back
+        data-testid="panel-back"
+        class="mb-3 inline-flex max-w-full items-center gap-1 rounded-pill border border-border-strong bg-card py-1 pl-2 pr-3 text-sm text-text-1 hover:bg-card-hover"
+    >
+        {% include "includes/_icon_chevron.html" with size=16 svg_class="flex-none rotate-90" only %}
+        <span class="truncate" data-panel-back-name></span>
+    </button>
+</template>
+{# The module's own user-facing strings — see docs/i18n.md. {name} is the panel's place. #}
+<template id="panel-trail-strings-template">
+    <span data-string="back">{% trans "Back to {name}" %}</span>
+</template>

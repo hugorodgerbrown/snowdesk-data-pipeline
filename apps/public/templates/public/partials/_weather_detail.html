@@ -47,6 +47,9 @@ Context:
     issued_at  — datetime the row was last fetched, or None.
     target_date — datetime.date the sheet was opened for.
     another_day — bool: the target date is not today.
+    place_resort — Resort the point stands for, or None.
+    place_region — MicroRegion the point is in, or None.
+    place_region_url — str: that region's bulletin page for the day, or "".
     weather, panel, show_day_picker, selected_index, hourly_charts, day_strips,
                  day_figures —
                  the page's own forecast context
@@ -57,6 +60,8 @@ Context:
     class="space-y-4"
     data-testid="weather-detail"
     data-location-short-id="{{ location.short_id }}"
+    data-panel-key="weather:{{ location.short_id }}"
+    data-panel-label="{{ heading }}"
     data-sheet-detents="{% if show_day_picker or hourly_charts or day_strips %}peek,half,full{% elif panel %}peek,half{% else %}peek{% endif %}"
 >
     {# PEEK (SNOW-1101; Hugo, 21 Oct): the header row — the symbol, the   #}
@@ -75,6 +80,9 @@ Context:
                 >
             {% endif %}
             <div class="min-w-0 flex-1">
+                {# The kind of place, above its name, on every map panel (Hugo, 25 Oct 2026). #}
+                {% translate "Weather point" as weather_kind %}
+                {% include "includes/_eyebrow.html" with tag="p" text=weather_kind data_testid="sheet-kind" only %}
                 <h2
                     class="truncate text-lg font-semibold leading-tight text-text-1"
                     title="{{ heading }}"
@@ -137,4 +145,27 @@ Context:
         </p>
     {% endif %}
     {% include "public/partials/_weather_body.html" with weather=weather panel=panel show_day_picker=show_day_picker selected_index=selected_index hourly_charts=hourly_charts day_strips=day_strips day_figures=day_figures testid_prefix="weather-detail" selector_name="map-weather-day" in_map=True is_forecast=is_forecast only %}
+    {# WHERE THIS IS (Hugo, 25 Oct 2026): the resort the point stands for  #}
+    {# and the avalanche region it is in, each a row opening that place's #}
+    {# own panel — the weather point's way across to its neighbours.      #}
+    {% if place_resort.slug or place_region %}
+        <section class="space-y-2" data-testid="weather-detail-places">
+            {% translate "Where this is" as places_eyebrow %}
+            {% include "includes/_eyebrow.html" with text=places_eyebrow tag="h3" %}
+            <ul class="divide-y divide-border overflow-hidden rounded-card border border-border bg-card">
+                {% if place_resort.slug %}
+                    <li>
+                        {% translate "Ski resort" as resort_subtitle %}
+                        {% include "includes/_place_link_row.html" with kind="resort" title=place_resort.name subtitle=resort_subtitle href=place_resort.get_absolute_url open_id=place_resort.slug testid="weather-detail-resort-link" only %}
+                    </li>
+                {% endif %}
+                {% if place_region %}
+                    <li>
+                        {% translate "Avalanche region" as region_subtitle %}
+                        {% include "includes/_place_link_row.html" with kind="region" title=place_region.name subtitle=region_subtitle href=place_region_url open_id=place_region.region_id testid="weather-detail-region-link" only %}
+                    </li>
+                {% endif %}
+            </ul>
+        </section>
+    {% endif %}
 </div>

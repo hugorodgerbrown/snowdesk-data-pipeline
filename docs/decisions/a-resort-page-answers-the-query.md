@@ -1,11 +1,15 @@
 ---
 name: a-resort-page-answers-the-query
 description: resort_detail: forecast first, then the day's danger card (day_windows rows), then the problem cards; /resorts/<slug>/<date>/
-status: current
-last-reviewed: 2026-10-23
+status: historical
+last-reviewed: 2026-10-25
 ---
 
 # A resort page answers the query
+
+> **Superseded** by [`a-resort-has-no-avalanche-danger`](a-resort-has-no-avalanche-danger.md)
+> (25 Oct 2026): the resort page and sheet no longer show the region's
+> danger, problems or season calendar.
 
 Amends [`two-documents-and-a-map`](two-documents-and-a-map.md) for resort
 pages only (SNOW-1124). Narrowed by SNOW-1156: the page is a **landing

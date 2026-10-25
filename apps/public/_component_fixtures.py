@@ -1150,95 +1150,40 @@ RESORT_FACTS_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
-# Resort page bulletin card (SNOW-1156) ------------------------------------
-# Mirrors the context ``apps.public.views.resort_detail`` hands
-# ``public/partials/_resort_bulletin_card.html``: a panel (only its truth is
-# read), the Day Risk Profile rows ``_build_day_windows`` returns, the region
-# and resort, and ``_resort_bulletin_attribution``'s two strings (SNOW-1203).
-# A version-0 render model is not a distinct state: the view drops its
-# panel, so it renders as the no-bulletin card.
+# Place link row (Hugo, 25 Oct 2026) ------------------------------------------
+# ``includes/_place_link_row.html``: the row each map panel ends with, naming
+# the neighbouring kind of place and opening it.
 
-
-def _resort_day_window(
-    window: str, level: str, number: str, subdivision_label: str = ""
-) -> dict[str, Any]:
-    """Build one Day Risk Profile row as ``_build_day_windows`` returns it."""
-    return {
-        "type": window,
-        "level_key": level,
-        "level_css": level.replace("_", "-"),
-        "level_label": level.replace("_", " ").title(),
-        "level_number": number,
-        "subdivision_label": subdivision_label,
-        "caption": "",
-        "pill_label": {"later": "Later", "earlier": "Earlier"}.get(window, ""),
-    }
-
-
-def _resort_bulletin_card_context(
-    day_windows: list[dict[str, Any]] | None,
-    *,
-    provider: str = "",
-    updated: str = "",
-    season: tuple[str, str] = ("12-01", "04-30"),
-) -> dict[str, Any]:
-    """Build one bulletin-card variant's context; ``None`` is no bulletin."""
-    return {
-        "panel": {"rated": True} if day_windows is not None else None,
-        "day_windows": day_windows or [],
-        "region": SimpleNamespace(name="Martigny–Verbier"),
-        "resort": SimpleNamespace(
-            typical_season_open=season[0], typical_season_close=season[1]
-        ),
-        "bulletin_url": "#",
-        "target_date": datetime.date(2026, 1, 14),
-        "is_today": True,
-        "bulletin_provider": provider,
-        "bulletin_updated_time": updated,
-    }
-
-
-RESORT_BULLETIN_CARD_VARIANTS: tuple[dict[str, Any], ...] = (
+PLACE_LINK_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "Rated — one window, SLF",
-        "solo": True,
-        "context": _resort_bulletin_card_context(
-            [_resort_day_window("all_day", "considerable", "3")],
-            provider="SLF",
-            updated="17:00",
-        ),
+        "caption": "A resort's region — the square, no level",
+        "context": {
+            "kind": "region",
+            "title": "Martigny–Verbier",
+            "subtitle": "The avalanche region this resort is in",
+            "href": "#",
+            "open_id": "CH-4115",
+        },
     },
     {
-        "caption": "Rated with a subdivision, the day rising later — two windows",
-        "solo": True,
-        "context": _resort_bulletin_card_context(
-            [
-                _resort_day_window(
-                    "all_day", "moderate", "2-", "lower end of the band"
-                ),
-                _resort_day_window("later", "considerable", "3"),
-            ],
-            provider="SLF",
-            updated="17:00",
-        ),
+        "caption": "A region's resort — the round cabin",
+        "context": {
+            "kind": "resort",
+            "title": "Verbier",
+            "subtitle": "1,500–3,330 m",
+            "href": "#",
+            "open_id": "verbier",
+        },
     },
     {
-        "caption": "Very high, publication time unknown — provider alone",
-        "solo": True,
-        "context": _resort_bulletin_card_context(
-            [_resort_day_window("all_day", "very_high", "5")],
-            provider="Météo-France",
-        ),
-    },
-    {
-        "caption": "No bulletin — the typical season named",
-        "solo": True,
-        "context": _resort_bulletin_card_context(None),
-    },
-    {
-        "caption": "No bulletin, no typical season curated — the dateless note",
-        "solo": True,
-        "context": _resort_bulletin_card_context(None, season=("", "")),
+        "caption": "No subtitle",
+        "context": {
+            "kind": "region",
+            "title": "Conthey–Fully",
+            "subtitle": "",
+            "href": "#",
+            "open_id": "CH-4116",
+        },
     },
 )
 

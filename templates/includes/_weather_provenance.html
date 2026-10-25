@@ -34,6 +34,9 @@ Context:
               ``weather-provenance``.
     link_url  : str — optional. The onward link's href.
     link_text : str — the onward link's text; required with ``link_url``.
+    link_weather_id : str — optional. The point's location short id: on
+              the map, static/js/map_panel_trail.js opens that weather
+              point's panel from the link instead of leaving the map.
 {% endcomment %}
 {% firstof testid_prefix "weather-provenance" as prefix %}
 {% if link_url %}
@@ -47,6 +50,7 @@ Context:
         {% endif %}
         <a
             href="{{ link_url }}"
+            {% if link_weather_id %}data-panel-open="weather" data-panel-id="{{ link_weather_id }}"{% endif %}
             class="inline-block self-start text-sm text-accent hover:text-accent-hover"
             data-testid="{{ prefix }}-link"
         >{{ link_text }}</a>
