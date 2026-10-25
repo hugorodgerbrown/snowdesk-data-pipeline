@@ -370,7 +370,7 @@ def danger_pattern() -> Probe:
 
 
 def subdivision_suffix() -> Probe:
-    """Probe: an SLF subdivision reaches the Day Risk Profile row in words.
+    """Probe: an SLF subdivision reaches the page in words.
 
     SLF grades a rating within its level: ``plus`` sits at the top of the
     band, ``minus`` at the bottom, ``neutral`` in the middle. The first two
@@ -382,7 +382,10 @@ def subdivision_suffix() -> Probe:
     level-number chip. That chip is gone — the card said the level three
     other ways — and the day-window tile, which renders the same glyph, is
     ``aria-hidden``. Matching the words instead means the probe now tracks a
-    surface a screen reader can actually reach.
+    surface a screen reader can actually reach. Since SNOW-1234 the words
+    also follow the level on each problem card's title bar, "Considerable
+    (3-)", for a screen reader; the Day Risk Profile row that said them
+    visibly renders only for an elevation split.
     """
     words = {"plus": "upper end of the band", "minus": "lower end of the band"}
 
@@ -403,19 +406,20 @@ def subdivision_suffix() -> Probe:
 
 
 def time_period_label() -> Probe:
-    """Probe: a non-default time window reaches the Day Risk Profile row.
+    """Probe: a non-default time window reaches a problem card's title bar.
 
     ``all_day`` is the page's default window and is deliberately unlabelled
     (SNOW-727): naming it told the reader nothing on a single-window day,
-    and on a split day it is merely the baseline the "later" row departs
+    and on a split day it is merely the baseline the "later" window departs
     from. So ``all_day`` passes without a needle, the same way ``neutral``
     does in :func:`subdivision_suffix`.
 
-    ``earlier`` and ``later`` are the news, and each renders as its own
-    pill on the Day Risk Profile row. Note the pill is what this matches,
-    not the problem card: SLF words the window in the card's title bar in
-    its own register ("as the day progresses"), which no enum-derived label
-    would ever match.
+    ``earlier`` and ``later`` are the news. Since SNOW-1234 the Day Risk
+    Profile renders only for an elevation split, so a time window reaches
+    the reader on the card that covers it, as SLF and WhiteRisk give it:
+    either the enum-derived suffix after a middot ("· later") or, when the
+    provider's title already names the window, SLF's own register
+    (``_SLF_WINDOW_WORDS``), which no enum-derived label would ever match.
     """
 
     def probe(values: list[Any], page: RenderedPage) -> bool:
@@ -423,15 +427,25 @@ def time_period_label() -> Probe:
             token = str(value)
             if token == "all_day":
                 continue
-            if token not in {"earlier", "later"}:
+            if token not in _SLF_WINDOW_WORDS:
                 # A window the table has not seen — fail rather than pass
                 # silently, so a new enum member surfaces here.
                 return False
-            if token not in page.text:
+            needles = (token, *_SLF_WINDOW_WORDS[token])
+            if not any(needle in page.text for needle in needles):
                 return False
         return True
 
     return probe
+
+
+# SLF's own words for a window in a trait title ("Wet-snow avalanches, as the
+# day progresses"), beside the enum token the suffix renders. Casefolded, as
+# page.text is.
+_SLF_WINDOW_WORDS: dict[str, tuple[str, ...]] = {
+    "earlier": (),
+    "later": ("as the day progresses",),
+}
 
 
 def timestamp() -> Probe:
@@ -600,10 +614,11 @@ RENDERED: dict[str, Rendered] = {
     ),
     "avalancheProblems[].validTimePeriod": Rendered(
         time_period_label(),
-        "Day Risk Profile row, and the card's title bar after a middot. The "
-        "card's own time pill went in SNOW-727; the SNOW-739 suffix is "
-        "suppressed "
-        "when the provider's title already names the window.",
+        "The card's title bar, after a middot or in the provider's own "
+        "title (SNOW-1234; the Day Risk Profile renders only for an "
+        "elevation split). The card's own time pill went in SNOW-727; the "
+        "SNOW-739 suffix is suppressed when the provider's title already "
+        "names the window.",
     ),
     "customData.CH.aggregation[].category": Rendered(
         literal(),
@@ -616,7 +631,7 @@ RENDERED: dict[str, Rendered] = {
     ),
     "customData.CH.aggregation[].title": Rendered(literal(), "Trait block heading"),
     "customData.CH.aggregation[].validTimePeriod": Rendered(
-        time_period_label(), "Day Risk Profile row"
+        time_period_label(), "Problem card title bar (SNOW-1234)"
     ),
     "customData.LWD_Tyrol.dangerPatterns[]": Rendered(
         danger_pattern(), "Danger-pattern tags below the problem cards"
@@ -624,8 +639,9 @@ RENDERED: dict[str, Rendered] = {
     "customData.MF.j2Outlook.comment": Rendered(prose(), "Outlook collapsible panel"),
     "dangerRatings[].customData.CH.subdivision": Rendered(
         subdivision_suffix(),
-        "Day Risk Profile row, beside the level word: 'upper end of the "
-        "band' / 'lower end of the band'",
+        "Problem card title bar after the level, for a screen reader, and the "
+        "Day Risk Profile row on an elevation split: 'upper end of the "
+        "band' / 'lower end of the band' (SNOW-1234)",
     ),
     "dangerRatings[].elevation.lowerBound": Rendered(
         literal(), "Elevation-band heading above the trait block"
@@ -637,7 +653,7 @@ RENDERED: dict[str, Rendered] = {
         literal(), "Day Risk Profile row and hero rating"
     ),
     "dangerRatings[].validTimePeriod": Rendered(
-        time_period_label(), "Day Risk Profile row"
+        time_period_label(), "Problem card title bar (SNOW-1234)"
     ),
     "nextUpdate": Rendered(timestamp(), "Metadata strip, Next update cell"),
     "publicationTime": Rendered(timestamp(), "Metadata strip, Issued cell"),

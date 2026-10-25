@@ -263,7 +263,7 @@ class TestHalf:
         page = client.get(region.get_absolute_url()).content.decode()
         assert 'data-testid="region-sheet-bulletin"' in sheet
         for testid in (
-            "day-risk-profile-heading",
+            "panel-title-level",
             "avalanche-problems-heading",
             "metadata-strip",
         ):
@@ -329,6 +329,21 @@ class TestHalf:
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-breadcrumb"' in content
 
+    def test_breadcrumb_is_in_the_peek_and_the_date_below_it(
+        self, client: Client
+    ) -> None:
+        """SNOW-1234: the peek says where the region is; the day follows it."""
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        peek_at = content.index("data-sheet-peek")
+        crumb_at = content.index('data-testid="region-sheet-breadcrumb"')
+        date_at = content.index('data-testid="sheet-date-row"')
+        assert peek_at < crumb_at < date_at
+        # The peek's element closes between the breadcrumb and the date row.
+        assert "</div>" in content[crumb_at:date_at]
+        assert region.subregion.name_en in _text(content[crumb_at:date_at])
+
 
 @pytest.mark.django_db
 class TestNoBulletin:
@@ -376,6 +391,12 @@ class TestMapPage:
             assert f'data-region-sheet-slot="{slot}"' in row
         assert 'data-region-sheet-proxy="map-region-pin-control"' in row
         assert "data-sheet-date-day" in row
+        # A blank line holds the breadcrumb's place, so the peek keeps its
+        # height when the body lands (SNOW-1234).
+        crumb = row[row.index('data-testid="region-sheet-breadcrumb"') :]
+        assert "&nbsp;" in crumb[: crumb.index("</p>")]
+        # One root element: map_region_sheet.js clones only the first.
+        assert len(re.findall(r"^<div>", row.strip(), re.M)) == 1
 
 
 @pytest.mark.django_db

@@ -39,8 +39,10 @@ Expects the following variables in scope:
                                    ALBINA-only; empty list for SLF/MeteoFrance)
 
 Renders:
-  0. Title bar — always. Carries the provider's words for the trait, the
-     window it covers after a middot in normal weight (SNOW-739), and, via
+  0. Title bar — always. Leads with the trait's level in words and number,
+     "Considerable (3-)", in semibold (SNOW-1234); then the provider's words
+     for the trait and the window it covers after a middot, both in normal
+     weight (SNOW-739), and, via
      data-level, the saturated EAWS colour for the danger level (SNOW-727).
      Levels 1–3 take --color-eaws-{level} with -fg copy; 4 and 5 borrow the
      other dark value each level already owns, because the EAWS red the two
@@ -112,13 +114,26 @@ Renders:
         data-level="{{ card.danger_level|danger_level_key }}"
         data-testid="panel-title"
     >
-        {% if card.panel_title %}
-            {{ card.panel_title }}
-        {% else %}
-            {% blocktrans with category=card.category|capfirst trimmed %}
-                {{ category }} avalanches
-            {% endblocktrans %}
+        {# The level first, in words and number, as SLF and WhiteRisk head   #}
+        {# a problem: "Considerable (3-) Dry avalanches" (SNOW-1234). SLF     #}
+        {# gives no day rating of its own, so this is where its bulletin      #}
+        {# says the level, and the Day Risk Profile above no longer repeats   #}
+        {# it. The subdivision's words follow for a screen reader, which the  #}
+        {# glyph alone does not reach (SNOW-727).                             #}
+        {% if card.danger_level %}
+            <span data-testid="panel-title-level">{{ card.danger_level|danger_level_label }}
+                ({{ card.danger_level }}{{ card.subdivision }}){% if card.subdivision_label %}<span class="sr-only">,
+                        {{ card.subdivision_label }}</span>{% endif %}</span>
         {% endif %}
+        <span class="font-normal">
+            {% if card.panel_title %}
+                {{ card.panel_title }}
+            {% else %}
+                {% blocktrans with category=card.category|capfirst trimmed %}
+                    {{ category }} avalanches
+                {% endblocktrans %}
+            {% endif %}
+        </span>
         {# The window this trait covers, in normal weight after a middot.    #}
         {# Suppressed by _title_time_suffix when SLF's own title already     #}
         {# names it (", whole day" / ", as the day progresses") so the row   #}

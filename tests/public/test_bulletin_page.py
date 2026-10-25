@@ -26,6 +26,7 @@ from pytest_django.fixtures import Settings
 
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.public import views
 from apps.public.views import BULLETIN_SOURCE_LINKS
 from apps.regions.models import MicroRegion
 from tests.factories import (
@@ -1643,20 +1644,34 @@ class TestDayWindowsPanel:
     absent; each row is badge + rating-name + chip.
     """
 
-    def test_default_renders_panel(
+    def test_slf_day_with_cards_renders_no_panel(
         self, client: Client, variable_bulletin: Bulletin, region: MicroRegion
     ) -> None:
-        """The day-windows panel renders by default — no headline band."""
+        """An SLF day with problem cards renders no day-windows panel.
+
+        SNOW-1234: each card's title bar leads with its own level and window,
+        so the panel would only repeat them. No headline band either.
+        """
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="day-windows-panel"' in content
+        assert 'data-testid="day-windows-panel"' not in content
+        assert 'data-testid="panel-title-level"' in content
         assert 'data-testid="headline-band"' not in content
 
     def test_renders_day_risk_profile_heading_above_panel(
-        self, client: Client, variable_bulletin: Bulletin, region: MicroRegion
+        self, client: Client, region: MicroRegion
     ) -> None:
-        """The 'Day Risk Profile' h2 sits above the day-windows panel."""
+        """The 'Day Risk Profile' h2 sits above the day-windows panel.
+
+        A day with no problem cards keeps the profile (SNOW-1234): nothing
+        else on the body would state the level.
+        """
+        _make_am_bulletin(
+            region,
+            date(2026, 3, 15),
+            raw_data=_raw_data_with_ratings([_rating("low", "all_day")]),
+        )
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
@@ -2675,15 +2690,20 @@ class TestBulletinPageContent:
         content = response.content.decode()
         assert "Bas-Valais" in content
 
-    def test_still_renders_day_risk_profile_panel(
+    def test_split_day_says_its_levels_on_the_cards(
         self, client: Client, variable_bulletin: Bulletin, region: MicroRegion
     ) -> None:
-        """The Day Risk Profile heading + day-windows panel render below the header."""
+        """An SLF split day says its levels on the cards, not in a profile.
+
+        SNOW-1234: the cards' title bars carry each window's level, as SLF
+        and WhiteRisk give it, so the Day Risk Profile is not rendered.
+        """
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
-        assert 'data-testid="day-risk-profile-heading"' in content
-        assert 'data-testid="day-windows-panel"' in content
+        assert 'data-testid="day-risk-profile-heading"' not in content
+        assert 'data-testid="day-windows-panel"' not in content
+        assert content.count('data-testid="panel-title-level"') >= 2
 
 
 # ---------------------------------------------------------------------------
@@ -2852,12 +2872,16 @@ class TestDayCharacterEyebrow:
     def test_callout_precedes_day_risk_profile_heading(
         self, client: Client, simple_bulletin: Bulletin, region: MicroRegion
     ) -> None:
-        """The callout banner sits above the Day Risk Profile heading in DOM order."""
+        """The callout banner sits above the problems heading in DOM order.
+
+        It sat above the Day Risk Profile until SNOW-1234 took the profile
+        off an SLF day with problem cards.
+        """
         url = _url("ch-4115", "valais", "2026-03-15")
         response = client.get(url)
         content = response.content.decode()
         callout_idx = content.index('data-testid="day-character"')
-        heading_idx = content.index('data-testid="day-risk-profile-heading"')
+        heading_idx = content.index('data-testid="avalanche-problems-heading"')
         assert callout_idx < heading_idx
 
     def test_callout_absent_in_error_state(
@@ -4198,8 +4222,10 @@ class TestPeriodTransitionBulletinPage:
         response = client.get(self._url())
         content = response.content.decode()
         assert 'data-testid="period-transition-chip"' not in content
-        assert 'data-testid="day-risk-profile-flat-split-caption"' in content
-        assert "Problem type changes" in content
+        # SNOW-1234: the profile, and the caption with it, is off an SLF day
+        # with problem cards — each card names its own window and level.
+        assert 'data-testid="day-risk-profile-flat-split-caption"' not in content
+        assert content.count('data-testid="panel-title-level"') == 2
 
     def test_no_transition_row_for_all_day_only(
         self, client: Client, region: MicroRegion
@@ -4696,10 +4722,11 @@ class TestTypePillsVsTimePills:
         _make_am_bulletin(region, day, raw_data=raw_data)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
         assert 'data-testid="time-period-pill"' not in content
-        # The window survives in the title bar's wording and on the
-        # Day Risk Profile row, where "later" is the news.
+        # The window survives in the title bar's wording, beside the level
+        # (SNOW-1234 took the Day Risk Profile row, and its pill, away).
         assert "later" in content.casefold()
-        assert 'data-testid="day-window-pill"' in content
+        assert 'data-testid="day-window-pill"' not in content
+        assert "Considerable (3)" in " ".join(content.split())
 
     def test_split_day_drops_both_card_pills(
         self, client: Client, region: MicroRegion
@@ -4748,13 +4775,11 @@ class TestTypePillsVsTimePills:
         _make_am_bulletin(region, day, raw_data=raw_data)
         content = client.get(_url("ch-4115", "valais", "2026-03-15")).content.decode()
         # Neither axis needs a chip: the title bar names the window in the
-        # provider's words, and the Day Risk Profile row carries "Later".
+        # provider's words, after the level (SNOW-1234).
         assert 'data-testid="time-period-pill"' not in content
         assert 'data-testid="category-type-pill"' not in content
         assert 'data-testid="category-pill"' not in content
-        # "Later" is the news on a split day and does get a pill, on the
-        # Day Risk Profile row.
-        assert 'data-testid="day-window-pill"' in content
+        assert 'data-testid="day-window-pill"' not in content
 
 
 # ---------------------------------------------------------------------------
@@ -5706,7 +5731,7 @@ class TestSnow291FlatButSplit:
     wet-snow as the day progresses. Same danger level, different problem mix.
     """
 
-    def test_flat_split_renders_two_day_window_rows(
+    def test_flat_split_names_both_windows_on_the_cards(
         self, client: Client, region: MicroRegion
     ) -> None:
         """Flat-but-split bulletin renders two dw-row entries on the Day Risk Profile."""
@@ -5725,7 +5750,10 @@ class TestSnow291FlatButSplit:
         url = _url("ch-4115", "valais", "2026-05-07")
         response = client.get(url)
         content = response.content.decode()
-        assert content.count('data-testid="day-window-row"') == 2
+        # SNOW-1234: the two windows are told by the two cards' title bars;
+        # no Day Risk Profile row repeats them.
+        assert content.count('data-testid="day-window-row"') == 0
+        assert content.count('data-testid="panel-title-level"') == 2
 
     def test_flat_split_renders_two_rating_blocks(
         self, client: Client, region: MicroRegion
@@ -5780,7 +5808,7 @@ class TestSnow291FlatButSplit:
         # Two panel-title rows.
         assert content.count('data-testid="panel-title"') == 2
 
-    def test_flat_split_carries_subdivision_words_in_day_risk_row(
+    def test_flat_split_carries_subdivision_words_on_the_card(
         self, client: Client, region: MicroRegion
     ) -> None:
         """
@@ -5812,8 +5840,10 @@ class TestSnow291FlatButSplit:
         response = client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        # The subdivision is stated in words on the Day Risk Profile row.
-        assert 'data-testid="day-window-subdivision"' in content
+        # The subdivision is stated in words after the card's level, for a
+        # screen reader; the Day Risk Profile row is gone (SNOW-1234).
+        assert 'data-testid="day-window-subdivision"' not in content
+        assert "Moderate (2-)" in " ".join(content.split())
         assert "lower end of the band" in content
         # The card's level-number chip is gone (SNOW-727).
         assert 'data-testid="level-number-chip"' not in content
@@ -6449,3 +6479,30 @@ class TestBackToToday:
         response = client.get(url, follow=True)
         assert response.status_code == 200
         assert 'data-testid="another-day-strip"' not in response.content.decode()
+
+
+# ---------------------------------------------------------------------------
+# When the Day Risk Profile renders (SNOW-1234)
+# ---------------------------------------------------------------------------
+
+
+class TestDayRiskProfileAddsToCards:
+    """``_day_risk_profile_adds_to_cards`` — the profile only where it adds."""
+
+    def test_no_rows_never_renders(self) -> None:
+        assert views._day_risk_profile_adds_to_cards([], [{"label": "x"}]) is False
+
+    def test_rows_without_cards_render(self) -> None:
+        """Nothing else on the body would state the level."""
+        rows = [{"caption": ""}]
+        assert views._day_risk_profile_adds_to_cards(rows, []) is True
+
+    def test_time_windows_with_cards_do_not_render(self) -> None:
+        """Each card's title bar already carries its window's level."""
+        rows = [{"caption": ""}, {"caption": ""}]
+        assert views._day_risk_profile_adds_to_cards(rows, [{"label": "x"}]) is False
+
+    def test_an_elevation_split_renders(self) -> None:
+        """No single card's title can say 'below 2400 m'."""
+        rows = [{"caption": "below 2400m"}, {"caption": "above 2400m"}]
+        assert views._day_risk_profile_adds_to_cards(rows, [{"label": "x"}]) is True

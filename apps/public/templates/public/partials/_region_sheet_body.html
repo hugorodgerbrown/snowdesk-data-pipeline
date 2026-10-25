@@ -13,14 +13,15 @@ next part of it:
      peek height to; its own partial, ``_region_sheet_peek.html``, because
      the surface renders it a second time, empty, for the page to fill
      before this body arrives) — the header ROW: the danger tile, the
-     region's name, the pin and download controls and the ×; then the
-     day's full-width "Data from <day>" row (Hugo, 21 Oct, which took the
-     code, level and area out of the header). The name truncates rather
+     region's name, the pin and download controls and the ×; then where
+     the region is, the breadcrumb. The day's full-width "Data from <day>"
+     row follows just below the peek (SNOW-1234 swapped the two; Hugo,
+     21 Oct, had taken the code, level and area out of the header). The name truncates rather
      than wraps, because a peek that grows a line for a long name stops
      being a peek (Hugo's review, 16 Oct). The header is also
      ``data-sheet-drag``, so the reader can drag the sheet by it as well as
      by the handle; its buttons keep their own press.
-  2. HALF and FULL — where the region is, then the region's bulletin for the
+  2. HALF and FULL — the day's date row, then the region's bulletin for the
      day: the bulletin page's own body, ``public/partials/_region_body.html``
      (SNOW-1164). On a phone the sheet at full height covers the screen, so
      the sheet IS the page rather than a summary with a link on to it. FULL
@@ -66,14 +67,6 @@ Context:
     {# Another day says so in the peek's own date row (Hugo, 21 Oct), #}
     {# which took over from SNOW-1165's strip above it.              #}
     {% include "public/partials/_region_sheet_peek.html" %}
-
-    <p class="text-sm text-text-2" data-testid="region-sheet-breadcrumb">
-        {{ country_name }}
-        <span aria-hidden="true">›</span>
-        {{ region.subregion.major.name_en|default:region.subregion.major.name_native }}
-        <span aria-hidden="true">›</span>
-        {{ region.subregion.name_en|default:region.subregion.name_native }}
-    </p>
 
     {% if bulletin or covered %}
         {# One child, so the wrapper's space-y does not respace the body's own blocks. #}

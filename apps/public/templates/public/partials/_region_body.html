@@ -18,7 +18,8 @@ context comes from ``apps.public.views.build_bulletin_body``, the one
 builder both containers call.
 
 Context:
-  bulletin, panel, page_date, is_today, day_windows, day_movement,
+  bulletin, panel, page_date, is_today, day_windows,
+  show_day_risk_profile, day_movement,
   bulletin_source_label, bulletin_source_url, observation_counts,
   observation_has_user_located — from ``build_bulletin_body``.
   in_map — True inside the map's sheet: the superuser debug block, which
@@ -95,6 +96,12 @@ Context:
                    later) summarising the day's hazard windows. The
                    rating blocks below carry the full per-trait detail.
 
+                   Only where it adds to the problem cards (SNOW-1234):
+                   each card's title now leads with its own level and
+                   window, so the profile renders for an elevation split
+                   or a day with no cards — see
+                   views._day_risk_profile_adds_to_cards.
+
                    Flat-but-split: the sub-caption appears only when
                    day_movement is "shifting" — the level holds AND a
                    different problem takes the later window. A split
@@ -104,19 +111,21 @@ Context:
                    on, and 6 of those are two identical rows. See
                    docs/day-summary.md.
             {% endcomment %}
-            {% translate "Day Risk Profile" as day_risk_label %}
-            {% include "includes/_eyebrow.html" with text=day_risk_label data_testid="day-risk-profile-heading" class_extra="mb-1" %}
-            {% if day_movement == "shifting" %}
-                <p
-                    class="text-xs text-text-3 mb-3"
-                    data-testid="day-risk-profile-flat-split-caption"
-                >
-                    {% trans "Problem type changes as the day progresses" %}
-                </p>
-            {% else %}
-                <div class="mb-3"></div>
+            {% if show_day_risk_profile %}
+                {% translate "Day Risk Profile" as day_risk_label %}
+                {% include "includes/_eyebrow.html" with text=day_risk_label data_testid="day-risk-profile-heading" class_extra="mb-1" %}
+                {% if day_movement == "shifting" %}
+                    <p
+                        class="text-xs text-text-3 mb-3"
+                        data-testid="day-risk-profile-flat-split-caption"
+                    >
+                        {% trans "Problem type changes as the day progresses" %}
+                    </p>
+                {% else %}
+                    <div class="mb-3"></div>
+                {% endif %}
+                {% include "includes/day_windows.html" %}
             {% endif %}
-            {% include "includes/day_windows.html" %}
 
             {% comment %}
                    SECTION 3 — Rating block(s)
