@@ -8483,15 +8483,16 @@
       if (!Array.isArray(features)) return false;
       const feature = features.find((f) => f && f.properties && matches(f.properties));
       if (!feature) return false;
-      if (keepZoom) {
-        panIntoView(feature.geometry.coordinates);
-      } else {
+      if (!keepZoom) {
         map.flyTo({
           center: feature.geometry.coordinates,
           zoom: Math.max(map.getZoom(), POINT_FOCUS_ZOOM),
         });
       }
       openResortFeature(feature);
+      // After the open: the panel the pin must clear is the one that just
+      // opened, and it has no box to measure until it shows.
+      if (keepZoom) panIntoView(feature.geometry.coordinates, 'place-sheet');
       return true;
     };
 
@@ -8503,21 +8504,39 @@
      * Moving between the map's panels (a region's resort, the back pill)
      * is not a request to look closer (Hugo, 25 Oct 2026): the camera
      * stays put unless the place would be off screen or under a panel.
-     * The camera padding is the panels' footprint (map_sheet.js writes
-     * it), so "visible" is the canvas less that padding.
+     * Two things cover the map, and neither describes the other: the
+     * camera padding is a phone sheet's footprint (map_sheet.js writes it
+     * on phones only), while a desktop sheet docks in the left column and
+     * is in no padding at all — so the open panel's own box is measured
+     * too, and a pan clears it by centring the point in what is left.
      *
      * @param {[number, number]} lngLat The point.
+     * @param {string} panelId The panel that has just opened for it.
      * @returns {void}
      */
-    const panIntoView = (lngLat) => {
+    const panIntoView = (lngLat, panelId) => {
+      const canvas = map.getCanvas();
+      const frame = canvas.getBoundingClientRect();
       const point = map.project(lngLat);
       const pad = map.getPadding() || {};
-      const canvas = map.getCanvas();
-      const visible = point.x >= (pad.left || 0)
+      const panel = document.getElementById(panelId);
+      const box = panel && !panel.hidden ? panel.getBoundingClientRect() : null;
+      // A panel docked in the left column, beside the map rather than
+      // across its foot (a phone sheet spans the width): the column's
+      // width is covered at every height, since the panel opens at its
+      // peek and grows down the column as its body arrives.
+      const leftCover = box && box.width > 0 && box.width < frame.width / 2
+        && box.left < frame.left + frame.width / 2
+        ? Math.max(0, box.right - frame.left)
+        : 0;
+      const visible = point.x >= Math.max(pad.left || 0, leftCover)
         && point.x <= canvas.clientWidth - (pad.right || 0)
         && point.y >= (pad.top || 0)
         && point.y <= canvas.clientHeight - (pad.bottom || 0);
-      if (!visible) map.easeTo({ center: lngLat });
+      if (visible) return;
+      // ``offset`` rather than ``padding``: an easeTo padding stays on the
+      // camera afterwards, and map_sheet.js is its one writer.
+      map.easeTo({ center: lngLat, offset: [leftCover / 2, 0] });
     };
 
     /**
