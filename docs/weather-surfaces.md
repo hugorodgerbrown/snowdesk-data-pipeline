@@ -2,7 +2,7 @@
 name: weather-surfaces
 description: Weather UI — _weather_detail, _weather_panel, _weather_day_picker, _weather_day_line, _resort_forecast, build_weather_display, geojson
 status: current
-last-reviewed: 2026-10-24
+last-reviewed: 2026-10-25
 ---
 
 # Weather surfaces
@@ -130,6 +130,17 @@ first; the page keeps the meteogram until the hourly follow-up.
   `data-selected` marks the bold figures, the capsule's labels and the
   one visible reading in each header. Every reading is server-rendered,
   so the script writes no text.
+- **The selector shows the night and every hour** (Hugo, 25 Oct 2026):
+  a dot for each hour between the labels, and the hours before sunrise
+  and after sunset on a darker ground inside the pill
+  (`--color-strip-night`; labels and dots on it take
+  `--color-strip-night-text`). The service emits `night_before` /
+  `night_after` from the day's `sunrise_local` / `sunset_local` (via
+  `hourly_chart._daylight`) and a `night` flag on each boundary and dot;
+  a day with no readable pair loses the shading and keeps the dots. The
+  dots are block-indexed, so the two inside the capsule invert with it.
+  00 and 24 centre on their instant like every other label. The day line
+  states the same two times, so the shading is never the only channel.
 - **A later day keeps the rows**: temperature, freezing level (the day's
   highest), snow and wind, one figure each, and "Hour by hour
   from {weekday}" — the day it becomes tomorrow, `HOURLY_DAYS - 1` before.

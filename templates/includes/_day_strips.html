@@ -8,7 +8,9 @@ map's weather sheet shows it in place of ``_hourly_chart.html`` for each
 day that carries an hourly series; the location page keeps the meteogram.
 
 ONE TIME SELECTOR, ONE LINE: the hour scale 00–24 in a pill track, the
-selected three-hour block a dark capsule naming both its ends. Eight
+selected three-hour block a dark capsule naming both its ends. A dot marks
+each hour between the labels, and the hours before sunrise and after sunset
+sit on a darker ground — the day line above states the same two times. Eight
 buttons cover the eight blocks. Pressing one — or tapping or dragging
 across any strip — moves the selection. static/js/day_strips.js does that;
 without it the server's choice (the current block today, 09–12 on another
@@ -50,18 +52,50 @@ Context:
                 {# The pill runs a little past the plot at both ends, so the #}
                 {# first and last boundary labels and an end capsule sit     #}
                 {# inside it; the labels keep the plot's own x.              #}
-                <span class="absolute inset-y-0 -inset-x-2.5 rounded-pill bg-tag" aria-hidden="true"></span>
+                <span class="absolute inset-y-0 -inset-x-2.5 overflow-hidden rounded-pill bg-tag" aria-hidden="true">
+                    {# The night, in the plot's own x: the inner span undoes #}
+                    {# the overhang, and the outer one's rounded clip trims   #}
+                    {# each run where it reaches past the plot.               #}
+                    <span class="absolute inset-y-0 inset-x-2.5">
+                        {% if strips.night_before %}
+                            <span
+                                class="day-strips-night day-strips-night-before"
+                                style="--to: {{ strips.night_before }}"
+                                data-testid="{{ prefix }}-night-before"
+                            ></span>
+                        {% endif %}
+                        {% if strips.night_after %}
+                            <span
+                                class="day-strips-night day-strips-night-after"
+                                style="--from: {{ strips.night_after }}"
+                                data-testid="{{ prefix }}-night-after"
+                            ></span>
+                        {% endif %}
+                    </span>
+                </span>
                 <span class="day-strips-capsule rounded-pill bg-text-1" aria-hidden="true"></span>
-                {% for label in strips.boundaries %}
+                {% for boundary in strips.boundaries %}
                     <span
                         class="day-strips-boundary font-mono text-xs"
                         style="--at: {{ forloop.counter0 }}"
                         data-boundary="{{ forloop.counter0 }}"
+                        {% if boundary.night %}data-night{% endif %}
                         {% if forloop.counter0 == strips.selected or forloop.counter0 == strips.selected|add:1 %}
                             data-selected
                         {% endif %}
                         aria-hidden="true"
-                    >{{ label }}</span>
+                    >{{ boundary.label }}</span>
+                {% endfor %}
+                {% for dot in strips.hour_dots %}
+                    <span
+                        class="day-strips-dot"
+                        style="--at: {{ dot.at }}"
+                        data-block="{{ dot.block }}"
+                        {% if dot.night %}data-night{% endif %}
+                        {% if dot.block == strips.selected %}data-selected{% endif %}
+                        aria-hidden="true"
+                        data-testid="{{ prefix }}-hour-dot"
+                    ></span>
                 {% endfor %}
                 <div class="absolute inset-0 grid grid-cols-8">
                     {% for block in strips.blocks %}

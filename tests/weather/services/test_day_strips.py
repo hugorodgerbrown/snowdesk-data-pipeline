@@ -76,7 +76,7 @@ class TestBlocks:
             ("03", "06"),
         ]
         assert strips["blocks"][7]["end"] == "24"
-        assert strips["boundaries"] == [
+        assert [b["label"] for b in strips["boundaries"]] == [
             "00",
             "03",
             "06",
@@ -223,3 +223,56 @@ class TestGeometry:
         assert strips is not None
         assert {len(v) for v in strips["summaries"].values()} == {8}
         assert strips["summaries"]["precip"][3] == "4.5 cm snow"
+
+
+class TestTimeSelector:
+    """The hour dots and the night on the time selector."""
+
+    def test_a_dot_for_every_hour_between_the_labels(
+        self, storm: dict[str, Any]
+    ) -> None:
+        """Sixteen dots — two per block — each owned by its block."""
+        dots = build_day_strips(storm)["hour_dots"]  # type: ignore[index]
+        assert len(dots) == 16
+        assert dots[0] == {"at": "4.17%", "block": 0, "night": True}
+        assert [d["block"] for d in dots] == [b for b in range(8) for _ in (0, 1)]
+
+    def test_night_runs_to_sunrise_and_from_sunset(self, storm: dict[str, Any]) -> None:
+        """The storm day's sun is up 08:32–18:58."""
+        strips = build_day_strips(storm)
+        assert strips is not None
+        assert strips["night_before"] == "35.56%"
+        assert strips["night_after"] == "79.03%"
+
+    def test_labels_and_dots_on_the_night_are_marked(
+        self, storm: dict[str, Any]
+    ) -> None:
+        """Before 08:32 and after 18:58 is night; 09 to 18 are in the light."""
+        strips = build_day_strips(storm)
+        assert strips is not None
+        night_labels = [b["label"] for b in strips["boundaries"] if b["night"]]
+        assert night_labels == ["00", "03", "06", "21", "24"]
+        lit_hours = [
+            round(float(d["at"].rstrip("%")) * 24 / 100)
+            for d in strips["hour_dots"]
+            if not d["night"]
+        ]
+        assert lit_hours == [10, 11, 13, 14, 16, 17]
+
+    def test_the_local_pair_is_read(self) -> None:
+        """A forecast panel day's ``sunrise_local`` / ``sunset_local`` are read."""
+        day = _flat_day()
+        day.update(sunrise_local="07:01", sunset_local="17:27")
+        strips = build_day_strips(day)
+        assert strips is not None
+        assert strips["night_before"] == "29.24%"
+        assert strips["night_after"] == "72.71%"
+
+    def test_an_unreadable_daylight_shades_nothing(self) -> None:
+        """No sunrise or sunset: no night runs, and nothing marked night."""
+        strips = build_day_strips(_flat_day())
+        assert strips is not None
+        assert strips["night_before"] is None
+        assert strips["night_after"] is None
+        assert not any(b["night"] for b in strips["boundaries"])
+        assert not any(d["night"] for d in strips["hour_dots"])

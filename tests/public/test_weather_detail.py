@@ -598,6 +598,19 @@ class TestCardDayStrips:
         assert first_day.count('aria-pressed="true"') == 1
         assert "--block: 3" in first_day
 
+    def test_selector_carries_hour_dots_and_the_night(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """Sixteen hour dots per day, and the night shaded either side of the light."""
+        strips = self._html(client, resort_location).split(
+            'data-testid="weather-detail-strips"'
+        )[1]
+        first_day = strips.split('data-testid="weather-detail-strips"')[0]
+
+        assert first_day.count('data-testid="weather-detail-strips-hour-dot"') == 16
+        assert 'data-testid="weather-detail-strips-night-before"' in first_day
+        assert 'data-testid="weather-detail-strips-night-after"' in first_day
+
     def test_four_strips_each_with_a_figure_row(
         self, client: Client, resort_location: Location
     ) -> None:
