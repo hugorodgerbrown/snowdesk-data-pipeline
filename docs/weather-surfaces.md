@@ -114,8 +114,10 @@ first; the page keeps the meteogram until the hourly follow-up.
 
 - **Four strips on one time axis**: temperature; freezing level, split out
   of the temperature chart, with the location's height as a dotted rule
-  labelled by its height alone; snow / rain as hourly bars coloured apart;
-  wind speed, gusts and one arrow per block, pointing at the source.
+  labelled by its height alone; snow / rain as hourly bars coloured apart,
+  the title its own key ("Snow ■ / Rain ■" in the bars' two fills);
+  wind speed, gusts and one arrow per block, pointing at the source, the
+  arrow row labelled with a compass in the gutter.
 - **A row of figures under each strip, one per three-hour block**:
   temperature and freezing level as max over min (a mean is a reading
   nobody experiences), snow / rain as the block total in cm when most of
@@ -123,10 +125,15 @@ first; the page keeps the meteogram until the hourly follow-up.
   strongest gust. Dashed dividers carry the blocks down every strip.
 - **One selector, one line**: the hour scale 00–24 in a pill track, the
   selected block a dark capsule naming both its ends. Pressing a block,
-  or tapping or dragging across any strip, moves the selection
+  or dragging along the timeline, moves the selection; the charts are
+  not a control, because on a touch screen a touch there is a scroll and
+  a chart can be on screen while the timeline is not
   ([`static/js/day_strips.js`](../static/js/day_strips.js), arithmetic in
   `day_strips_core.js`). Today opens on the current block, any other day
-  on 09–12. `--block` on the section places the capsule and every band;
+  on 09–12. `--block` on the section places the capsule and every band.
+  Each strip has ONE band, a grid item spanning the plot and its figure
+  row, so the highlight has no seam where the two met and moves in one
+  transition with the capsule;
   `data-selected` marks the bold figures, the capsule's labels and the
   one visible reading in each header. Every reading is server-rendered,
   so the script writes no text.

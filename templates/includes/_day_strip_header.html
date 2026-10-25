@@ -1,3 +1,4 @@
+{% load i18n %}
 {% comment %}
 templates/includes/_day_strip_header.html — one strip's title row in
 _day_strips.html (SNOW-1219): the eyebrow, the selected block's reading and
@@ -10,13 +11,29 @@ word on the page stays server-rendered and translated.
 
 Context:
     title    — str, translated.
+    precip_key — bool, optional: title the snow / rain strip as its own key,
+               "Snow ■ / Rain ■", each square the fill its bars are drawn
+               in, so the two colours are named where they are read.
     unit     — str.
     summaries — list[str]: each block's reading, in block order.
     selected — int.
     testid   — str.
 {% endcomment %}
 <div class="mt-6 mb-2 flex items-baseline gap-2" data-testid="{{ testid }}-header">
-    <span class="font-mono text-xs font-medium tracking-[0.1em] uppercase text-text-1">{{ title }}</span>
+    {% if precip_key %}
+        <span
+            class="inline-flex items-center gap-1.5 self-center font-mono text-xs font-medium tracking-[0.1em] uppercase text-text-1"
+            data-testid="{{ testid }}-key"
+        >
+            {% translate "Snow" %}
+            <span class="size-2.5 bg-chart-snow" aria-hidden="true"></span>
+            /
+            {% translate "Rain" %}
+            <span class="size-2.5 bg-chart-precip" aria-hidden="true"></span>
+        </span>
+    {% else %}
+        <span class="font-mono text-xs font-medium tracking-[0.1em] uppercase text-text-1">{{ title }}</span>
+    {% endif %}
     {% for summary in summaries %}
         <span
             class="day-strips-summary text-summary text-text-2"

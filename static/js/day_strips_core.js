@@ -4,7 +4,7 @@
  *
  * The weather sheet's day strips (templates/includes/_day_strips.html)
  * share one time axis split into eight three-hour blocks, each 12.5% of
- * the plot. A tap or a drag anywhere across a plot selects the block under
+ * the plot. A tap or a drag along the timeline selects the block under
  * it. This module is that arithmetic and nothing else;
  * static/js/day_strips.js is the DOM half.
  *
@@ -25,13 +25,13 @@
   /**
    * The block under a horizontal position on a plot.
    *
-   * A drag that runs off either end of the plot keeps the end block, so
+   * A drag that runs off either end of the timeline keeps the end block, so
    * dragging past the last hour holds 21–24 rather than dropping the
    * selection.
    *
    * @param {number} x The pointer's client x.
-   * @param {number} left The plot's left edge, client px.
-   * @param {number} width The plot's width, px.
+   * @param {number} left The timeline's left edge, client px.
+   * @param {number} width The timeline's width, px.
    * @returns {?number}
    */
   function blockAt(x, left, width) {

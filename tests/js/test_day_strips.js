@@ -2,7 +2,7 @@
  * tests/js/test_day_strips.js — moving the day strips' selected block
  * (static/js/day_strips.js, SNOW-1219).
  *
- * A pressed block button and a tap or drag across a plot both move one
+ * A pressed block button and a tap or drag along the timeline both move one
  * selection: `--block` on the section, `data-selected` on every
  * block-indexed element and the two boundary labels, and `aria-pressed`
  * on the buttons. The hour dots are block-indexed too, so the two inside
@@ -21,7 +21,7 @@ function strips() {
   const dots = Array.from({ length: 16 }, (_, i) =>
     `<span class="dot" data-block="${i >> 1}" ${i >> 1 === 3 ? 'data-selected' : ''}></span>`).join('');
   return `<section data-day-strips style="--block: 3">${bounds}${dots}${buttons}
-    <div data-day-strips-plot></div>${figures}</section>`;
+    <div data-day-strips-track></div><div class="plot"></div>${figures}</section>`;
 }
 
 /** @param {Element} section */
@@ -58,12 +58,12 @@ describe('day strips selection', () => {
     });
   });
 
-  it('selects the block under a tap, and follows a drag', () => {
+  it('selects the block under a tap on the timeline, and follows a drag', () => {
     const section = document.querySelector('[data-day-strips]');
-    const plot = section.querySelector('[data-day-strips-plot]');
-    plot.getBoundingClientRect = () => ({ left: 0, width: 320, top: 0, height: 90 });
+    const track = section.querySelector('[data-day-strips-track]');
+    track.getBoundingClientRect = () => ({ left: 0, width: 320, top: 0, height: 28 });
 
-    plot.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 10 }));
+    track.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 10 }));
     expect(selected(section).block).toBe('0');
 
     document.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 300 }));
@@ -72,6 +72,46 @@ describe('day strips selection', () => {
     document.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
     document.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 100 }));
     expect(selected(section).block).toBe('7');
+  });
+
+  it('ignores the click a touch scrub ends with on the button it began on', () => {
+    const section = document.querySelector('[data-day-strips]');
+    const track = section.querySelector('[data-day-strips-track]');
+    track.getBoundingClientRect = () => ({ left: 0, width: 320, top: 0, height: 28 });
+    const start = section.querySelector('button[data-block="0"]');
+
+    track.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 10 }));
+    document.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 300 }));
+    document.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+    start.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(selected(section).block).toBe('7');
+
+    start.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+    expect(selected(section).block).toBe('0');
+  });
+
+  it('still honours a plain tap on a block', () => {
+    const section = document.querySelector('[data-day-strips]');
+    const track = section.querySelector('[data-day-strips-track]');
+    track.getBoundingClientRect = () => ({ left: 0, width: 320, top: 0, height: 28 });
+    const button = section.querySelector('button[data-block="5"]');
+
+    track.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 220 }));
+    document.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(selected(section).block).toBe('5');
+  });
+
+  it('leaves the selection alone when a chart is touched', () => {
+    const section = document.querySelector('[data-day-strips]');
+    const plot = section.querySelector('.plot');
+    plot.getBoundingClientRect = () => ({ left: 0, width: 320, top: 0, height: 90 });
+
+    plot.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 10 }));
+    document.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 300 }));
+    document.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+
+    expect(selected(section).block).toBe('3');
   });
 
   it('works on strips injected after load', () => {

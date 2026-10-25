@@ -1,0 +1,33 @@
+{% comment %}
+templates/includes/_icon_compass.html — the wind-direction mark.
+
+Labels the day strips' row of wind arrows in the left gutter
+(_day_strips.html), where the other rows carry their axis ticks, so the
+row says it is a DIRECTION before a reader takes the arrows for a trend.
+A ring with a needle across it, the needle tilted as a compass's is when
+it is not pointing at the reader's north, so it reads as "bearing" rather
+than as a clock or a target.
+
+House stroke style: 24 grid, 2px stroke, currentColor, decorative and
+aria-hidden; the row it labels is aria-hidden too, the figures under the
+plot carry the readings.
+
+Context:
+    size : int — width and height in px (default 14, the arrows' own size).
+{% endcomment %}
+{% firstof size 14 as px %}
+<svg
+    width="{{ px }}"
+    height="{{ px }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+    class="block"
+>
+    <circle cx="12" cy="12" r="9.5" />
+    <path d="M15.8 8.2 13.6 13.6 8.2 15.8 10.4 10.4z" fill="currentColor" />
+</svg>
