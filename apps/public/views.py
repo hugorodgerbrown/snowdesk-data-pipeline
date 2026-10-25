@@ -2334,13 +2334,25 @@ PWA_SCREENSHOTS = (
         "The whole bulletin: problems, aspects and elevations, in full",
     ),
     (
-        "narrow-3-weather",
+        "narrow-3-route",
+        "narrow",
+        "1170x2532",
+        "Your routes, read: slope and aspect under every step of a GPX",
+    ),
+    (
+        "narrow-4-resort",
+        "narrow",
+        "1170x2532",
+        "Every ski resort: its forecast at base, mid and summit",
+    ),
+    (
+        "narrow-5-weather",
         "narrow",
         "1170x2532",
         "Mountain weather: seven days for the place you're going",
     ),
     (
-        "narrow-4-map",
+        "narrow-6-map",
         "narrow",
         "1170x2532",
         "Any day of the season: step back through the winter's bulletins",
@@ -2358,7 +2370,19 @@ PWA_SCREENSHOTS = (
         "The whole bulletin: problems, aspects and elevations, in full",
     ),
     (
-        "wide-3-weather",
+        "wide-3-route",
+        "wide",
+        "2560x1440",
+        "Your routes, read: slope and aspect under every step of a GPX",
+    ),
+    (
+        "wide-4-resort",
+        "wide",
+        "2560x1440",
+        "Every ski resort: its forecast at base, mid and summit",
+    ),
+    (
+        "wide-5-weather",
         "wide",
         "2560x1440",
         "Mountain weather: seven days for the place you're going",
