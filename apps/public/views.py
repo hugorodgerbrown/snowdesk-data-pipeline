@@ -3610,6 +3610,43 @@ def _build_day_windows(
     return _day_windows_from_raw_ratings(bulletin)
 
 
+def _day_risk_profile_adds_to_cards(
+    day_windows: list[dict[str, Any]],
+    problem_cards: list[dict[str, Any]],
+) -> bool:
+    """
+    Whether the Day Risk Profile says anything the problem cards do not.
+
+    SNOW-1234: every problem card's title bar leads with its own level and
+    names its window — "Considerable (3-) Wet-snow avalanches, as the day
+    progresses" — which is how SLF and WhiteRisk give the level, with no
+    day rating of their own. A profile row for a time window therefore
+    repeats a card, and on a one-row day it also repeats the map sheet's
+    peek tile, which is what Hugo found on 25 Oct 2026. The profile stays
+    in two cases:
+
+    - a row carries an elevation caption: ALBINA and Météo-France rate the
+      danger by height rather than by problem ("Moderate below 2400 m,
+      Considerable above"), which no single card's title can say — 63% and
+      56% of their archived days;
+    - there are no problem cards, so nothing else on the body states the
+      level at all.
+
+    Args:
+        day_windows: Rows from :func:`_build_day_windows`.
+        problem_cards: The panel's problem cards.
+
+    Returns:
+        True when the profile should render.
+
+    """
+    if not day_windows:
+        return False
+    if not problem_cards:
+        return True
+    return any(w.get("caption") for w in day_windows)
+
+
 def _build_canonical_url(
     region: MicroRegion,
     target_date: datetime.date | None,
@@ -4317,6 +4354,9 @@ def build_bulletin_body(
     day_windows: list[dict[str, Any]] = _build_day_windows(
         selected, render_model=panel.get("render_model")
     )
+    show_day_risk_profile: bool = _day_risk_profile_adds_to_cards(
+        day_windows, panel.get("problem_cards") or []
+    )
 
     # Derive the source label and URL for the metadata strip Source cell
     # (SNOW-211). Read from the panel's render model — not selected.render_model
@@ -4384,6 +4424,7 @@ def build_bulletin_body(
         "is_today": is_today,
         "next_update_time": next_update_time,
         "day_windows": day_windows,
+        "show_day_risk_profile": show_day_risk_profile,
         "day_movement": day_movement,
         "bulletin_source_label": bulletin_source_label,
         "bulletin_source_url": bulletin_source_url,

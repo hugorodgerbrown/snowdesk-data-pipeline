@@ -2,9 +2,16 @@
 {% comment %}
 public/partials/_region_sheet_peek.html — the region sheet's PEEK row: the
 danger tile, the name, the pin and download proxies and
-the ×, over a full-width "Data from <day>" row (SNOW-1098; its own partial since 2026-10-19; the date line in
-place of the code and area since Hugo's review of 21 Oct, which found the
-sheet named no day and carried too much).
+the ×, over the region's breadcrumb (SNOW-1098; its own partial since
+2026-10-19). The full-width "Data from <day>" row follows, just below the
+peek (SNOW-1234).
+
+SNOW-1234 swapped the breadcrumb and the date row (Hugo, 25 Oct: "I want
+the peek to be meaningful"). At its lowest the sheet now says what was
+tapped and where it is: the level, the name, and Switzerland › Valais ›
+Lower Valais. The day moved out of the peek, one row down, where half
+shows it. The breadcrumb is one truncated line so a long sub-region name
+cannot grow the peek.
 
 Rendered twice, so the row the reader first sees and the row the body
 brings are the same markup and the sheet does not change height when the
@@ -28,68 +35,87 @@ Context:
   target_date  — The day the map is showing (absent when blank).
   another_day  — Whether that day is not today.
   covered      — Whether any provider ever rates this region (SNOW-1196).
-  blank        — True for the template copy.
+  country_name — "Switzerland" and so on (absent when blank).
+  blank        — True for the template copy. Its breadcrumb is a blank
+                 line of the same height, because the page holds no
+                 sub-region names to fill it from; the body brings them,
+                 and the peek does not change height when it lands.
 {% endcomment %}
-<div data-sheet-peek data-sheet-drag>
-    <div class="flex items-center gap-4">
-        {# Always a tile — a region's shape, as its search row's is — with   #}
-        {# the search row's "–" on a day with no rating (Hugo, 21 Oct).     #}
-        {% if blank or not day_rating %}
-            <span class="danger-tile flex-none" data-level="no_rating" data-region-sheet-slot="rating">–</span>
-        {% else %}
-            <span
-                class="danger-tile flex-none"
-                data-level="{{ day_rating.max_rating }}"
-                data-testid="region-sheet-rating"
-                data-region-sheet-slot="rating"
-            >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
-        {% endif %}
-        <div class="min-w-0 flex-1">
-            {# The kind of place, above its name, on every map panel (Hugo, 25 Oct 2026). #}
-            {% translate "Avalanche region" as region_kind %}
-            {% include "includes/_eyebrow.html" with tag="p" text=region_kind data_testid="sheet-kind" only %}
-            <h2
-                class="truncate text-lg font-semibold leading-tight text-text-1"
-                title="{{ region.name }}"
-                data-region-sheet-slot="name"
-            >
-                {{ region.name }}
-            </h2>
-            {# SNOW-1196: a region no provider rates says so in the peek, so its #}
-            {# "–" does not read as a day without a bulletin.                   #}
-            {% if not blank and covered is False %}
-                <p class="text-sm text-text-3" data-testid="region-sheet-not-forecast">
-                    {% trans "Not forecast" %}
-                </p>
+{# One root, because map_region_sheet.js clones the template's first element. #}
+<div>
+    <div data-sheet-peek data-sheet-drag>
+        <div class="flex items-center gap-4">
+            {# Always a tile — a region's shape, as its search row's is — with   #}
+            {# the search row's "–" on a day with no rating (Hugo, 21 Oct).     #}
+            {% if blank or not day_rating %}
+                <span class="danger-tile flex-none" data-level="no_rating" data-region-sheet-slot="rating">–</span>
+            {% else %}
+                <span
+                    class="danger-tile flex-none"
+                    data-level="{{ day_rating.max_rating }}"
+                    data-testid="region-sheet-rating"
+                    data-region-sheet-slot="rating"
+                >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
             {% endif %}
+            <div class="min-w-0 flex-1">
+                {# The kind of place, above its name, on every map panel (Hugo, 25 Oct 2026). #}
+                {% translate "Avalanche region" as region_kind %}
+                {% include "includes/_eyebrow.html" with tag="p" text=region_kind data_testid="sheet-kind" only %}
+                <h2
+                    class="truncate text-lg font-semibold leading-tight text-text-1"
+                    title="{{ region.name }}"
+                    data-region-sheet-slot="name"
+                >
+                    {{ region.name }}
+                </h2>
+                {# SNOW-1196: a region no provider rates says so in the peek, so its #}
+                {# "–" does not read as a day without a bulletin.                   #}
+                {% if not blank and covered is False %}
+                    <p class="text-sm text-text-3" data-testid="region-sheet-not-forecast">
+                        {% trans "Not forecast" %}
+                    </p>
+                {% endif %}
+            </div>
+            <button
+                type="button"
+                data-region-sheet-proxy="map-region-pin-control"
+                aria-label="{% trans 'Pin this region' %}"
+                title="{% trans 'Pin this region' %}"
+                class="{% icon_button_classes %}"
+            >
+                {% include "includes/_icon_favourite.html" with size=18 only %}
+            </button>
+            <button
+                type="button"
+                data-region-sheet-proxy="map-download-control"
+                aria-label="{% trans 'Download this region' %}"
+                title="{% trans 'Download this region' %}"
+                class="{% icon_button_classes %}"
+            >
+                {% include "includes/_icon_download_arrow.html" with size=18 only %}
+            </button>
+            <button
+                type="button"
+                data-action="dismiss"
+                aria-label="{% trans 'Close' %}"
+                class="{% icon_button_classes extra='-mr-3' %}"
+            >
+                {% include "includes/_icon_close.html" only %}
+            </button>
         </div>
-        <button
-            type="button"
-            data-region-sheet-proxy="map-region-pin-control"
-            aria-label="{% trans 'Pin this region' %}"
-            title="{% trans 'Pin this region' %}"
-            class="{% icon_button_classes %}"
-        >
-            {% include "includes/_icon_favourite.html" with size=18 only %}
-        </button>
-        <button
-            type="button"
-            data-region-sheet-proxy="map-download-control"
-            aria-label="{% trans 'Download this region' %}"
-            title="{% trans 'Download this region' %}"
-            class="{% icon_button_classes %}"
-        >
-            {% include "includes/_icon_download_arrow.html" with size=18 only %}
-        </button>
-        <button
-            type="button"
-            data-action="dismiss"
-            aria-label="{% trans 'Close' %}"
-            class="{% icon_button_classes extra='-mr-3' %}"
-        >
-            {% include "includes/_icon_close.html" only %}
-        </button>
+        {# Where the region is, inside the peek (SNOW-1234). #}
+        <p class="mt-3 truncate text-sm text-text-2" data-testid="region-sheet-breadcrumb">
+            {% if blank %}
+                &nbsp;
+            {% else %}
+                {{ country_name }}
+                <span aria-hidden="true">›</span>
+                {{ region.subregion.major.name_en|default:region.subregion.major.name_native }}
+                <span aria-hidden="true">›</span>
+                {{ region.subregion.name_en|default:region.subregion.name_native }}
+            {% endif %}
+        </p>
     </div>
-    {# The day, on its own full-width row under the header (Hugo, 21 Oct). #}
+    {# The day, on its own full-width row under the peek (Hugo, 21 Oct; below the peek since SNOW-1234). #}
     {% include "includes/_sheet_date_row.html" with day=target_date another_day=another_day only %}
 </div>
