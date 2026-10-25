@@ -198,6 +198,18 @@ change the frozenset + document the property shape here.
   `map.route.claimed` (a recipient's Save coming back 2xx). None of the five
   carries a file name, size, geometry, uuid or share token: a GPX track is a
   record of where somebody went, and a share token is a capability.
+  SNOW-1230: `map.route.created` carries `properties.after_example: true`
+  when the device finished or exited the example route walkthrough first.
+- **First-run onboarding** (SNOW-1230): `map.welcome.chosen` with
+  `properties.choice` (`resort` / `example` / `map` / `close`, the
+  "Explore Snowdesk" card), `map.help_menu.chosen` with `properties.choice`
+  (`welcome` / `help-mode` / `pages`, the "?" menu), and the example route
+  walkthrough's `map.example.opened`, `map.example.step_completed` with
+  `properties.step` (`intro` / `drag` / `zoom` / `colours`),
+  `map.example.exited` with the `step` it was left on, and
+  `map.example.finished`. No share token on any of them. The welcome
+  choice and three of the walkthrough events are fivebar goals; the help
+  menu and per-step events stay in the pipeline only.
 - **Uncaught client errors** (SNOW-894 — `js.error`, deliberately its own
   namespace): every uncaught exception and unhandled rejection, from
   `static/js/error_reporting.js`. See the emitter table below for the
@@ -441,6 +453,9 @@ below the table.
 | `static/js/map.js` — `window.pwaCommunityReportsOverlay` (SNOW-419, SNOW-658) | `map.community_reports.overlay_toggled` with `properties.visible` — emitted by the bridge's own `show()`/`hide()`, whatever drives them (the layers menu's "Field observations" row since SNOW-904) |
 | `static/js/map.js` (main IIFE, SNOW-419) | `map.community_reports.marker_tapped` with `properties.observation_type` — the `community-reports-point` layer's click handler, fired before the popup opens |
 | `static/js/routes.js` (SNOW-686, SNOW-764) | `map.route.created` (a successful upload to `routes:create`) / `map.route.deleted` (a panel row's Remove form returning 2xx) / `map.route.shared` (a share link minted, not sent) / `map.route.claimed` (a recipient's Save returning 2xx; `static/js/map.js` emits the same event for the map's own claim path). No file name, size, geometry, uuid or token on any of them |
+| `static/js/map_tour_offer.js` (SNOW-1230) | `map.welcome.chosen` with `properties.choice` — every answer to the "Explore Snowdesk" card |
+| `static/js/map_help_menu.js` (SNOW-1230) | `map.help_menu.chosen` with `properties.choice` — an item in the "?" menu |
+| `static/js/map_example_guide.js` (SNOW-1230) | `map.example.opened` (the example's route opened with `?example=1`) / `.step_completed` with `properties.step` / `.exited` with `properties.step` / `.finished` |
 | `static/js/map.js` — `window.pwaRoutesOverlay` (SNOW-687) | `map.route.overlay_toggled` with `properties.visible` — emitted by the bridge's own `show()`/`hide()`, the favourites sibling the routes set was missing at SNOW-686 |
 | `static/js/mutation_queue.js` (SNOW-462) | `pwa.mutation.discarded` with `properties.reason` — `account_change` (the whole queue cleared on a principal change at load) or `principal_mismatch` (one row caught by the drain guard). A discarded row is never replayed |
 | `static/js/map_region_download.js::_recordRegionDownload` (SNOW-612) | `map.basemap.record_write_failed` with `properties.region_id` — the `basemap.regions` write failed after a completed download, leaving a pinned bucket with no record behind it. Was swallowed silently before this ticket |

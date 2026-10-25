@@ -510,6 +510,9 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // is only told "that couldn't be saved" will retry the identical action.
   'route-save': 'Save route',
   'route-save-signin': 'Sign in to save this route',
+  // SNOW-1230: the example route's line in the rail, where a pending
+  // share's Save would sit — the example is never saved to an account.
+  'route-example-note': 'Example route · conditions from %(date)s, not today',
   'route-save-failed': "That couldn't be saved. Try again.",
   'route-save-limit': "You've reached your saved-route limit. Delete one to save this.",
 });

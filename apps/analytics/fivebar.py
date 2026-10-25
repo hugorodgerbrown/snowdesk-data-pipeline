@@ -79,6 +79,12 @@ GOAL_EVENTS: frozenset[str] = frozenset(
         "map.route.overlay_toggled",
         "map.route.shared",
         "map.route.claimed",
+        # SNOW-1230: the onboarding funnel — what the welcome card is
+        # answered with, and how far the example walkthrough gets.
+        "map.welcome.chosen",
+        "map.example.opened",
+        "map.example.exited",
+        "map.example.finished",
     }
 )
 

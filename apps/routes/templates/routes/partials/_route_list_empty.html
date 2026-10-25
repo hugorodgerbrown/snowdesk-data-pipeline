@@ -30,10 +30,23 @@ would be the only thing between it and shipping as English to every locale.
 Carries data-testid="route-list-empty" — the hook both variants' tests assert
 on, unchanged from when the clause was inline in each.
 
+SNOW-1230: when an example route is set, a third sentence offers it — a
+first-time visitor with no GPX to hand can see what an upload becomes
+before finding one. A plain link to routes:example, which reloads the map
+on the example's day with the walkthrough.
+
 Context:
-    none — the caller's ``{% if not routes %}`` decides whether this renders.
+    example_available : bool, optional — an example route is set
+                        (route_list asks only when this clause renders).
 {% endcomment %}
 <p class="py-2 text-sm text-text-2" data-testid="route-list-empty">
     {% trans "Upload routes as GPX files." %}
     {% trans "Routes can be recorded with smart devices from e.g. Garmin, Suunto." %}
+    {% if example_available %}
+        <a
+            href="{% url 'routes:example' %}"
+            class="text-text-1 underline"
+            data-testid="route-list-example"
+        >{% trans "Explore an example route" %}</a>
+    {% endif %}
 </p>

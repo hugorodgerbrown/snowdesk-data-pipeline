@@ -2789,6 +2789,19 @@
   };
 
   /**
+   * The example walkthrough's bar, viewport px, while it shows; null
+   * otherwise (SNOW-1230).
+   *
+   * @returns {?DOMRect}
+   */
+  const exampleGuideBox = () => {
+    const guide = document.getElementById('map-example-guide');
+    if (!guide || guide.hidden || !guide.getBoundingClientRect) return null;
+    const box = guide.getBoundingClientRect();
+    return box.height > 0 ? box : null;
+  };
+
+  /**
    * The route sheet's top edge, viewport px, while the route panel is open
    * as the phone's bottom sheet; null otherwise (SNOW-1099).
    *
@@ -6964,7 +6977,18 @@
     const url = key === 'routes' ? ROUTES_URL : COMMUNITY_REPORTS_URL;
     if (!url) return Promise.resolve(false);
     return fetch(url)
-      .then(r => r.json())
+      .then((r) => {
+        // SNOW-1230: a 403 from routes:geojson means this visitor holds no
+        // routes any more — a signed-out visitor whose only pending share
+        // (the example route, dropped as its walkthrough ends) has gone —
+        // so the answer is none, not the error body drawn as data. Any
+        // other failure leaves the map as it was.
+        if (key === 'routes' && r.status === 403) {
+          return { type: 'FeatureCollection', features: [] };
+        }
+        if (!r.ok) throw new Error(`overlay refresh: ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
         if (!data) return false;
         window.pwaMapOverlayCache?.putOverlay(key, data);
@@ -7614,12 +7638,18 @@
     if (!container) return padding;
     const canvas = container.getBoundingClientRect();
     if (!(canvas.height > 0)) return padding;
-    const panelBottom = routePanelBottom(canvas);
+    // SNOW-1230: the example walkthrough's bar rides with the panel — under
+    // it on a desktop, on top of the phone's sheet — so the fit reserves
+    // the panel and the bar together.
+    const guide = exampleGuideBox();
+    let panelBottom = routePanelBottom(canvas);
+    if (panelBottom !== null && guide) panelBottom = Math.max(panelBottom, guide.bottom - canvas.top);
     if (panelBottom !== null) {
       reserveFitEdge(padding, 'top', 'bottom', panelBottom - padding.top, canvas.height);
     }
     // SNOW-1099: the phone's route sheet covers the foot instead.
-    const sheetTop = routeSheetTop();
+    let sheetTop = routeSheetTop();
+    if (sheetTop !== null && guide) sheetTop = Math.min(sheetTop, guide.top);
     if (sheetTop !== null) {
       reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - sheetTop - padding.bottom, canvas.height);
     }
@@ -9570,6 +9600,30 @@
       return button;
     };
 
+    // SNOW-1230: the example route's note, in the rail's claim slot.
+    const ROUTE_EXAMPLE_NOTE_CLASS =
+      'mt-2 rounded-sm bg-status-info-bg px-3 py-2 text-meta text-status-info-text';
+
+    /**
+     * The example route's line where a pending share's Save would sit
+     * (SNOW-1230): it says whose day the conditions are from, and offers no
+     * Save, because the example is never claimed onto an account
+     * (RouteShareQuerySet.claimable leaves it out).
+     *
+     * @param {?string} exampleDate The example's day, YYYY-MM-DD.
+     * @returns {HTMLElement}
+     */
+    const buildRouteExampleNote = (exampleDate) => {
+      const note = document.createElement('p');
+      note.className = ROUTE_EXAMPLE_NOTE_CLASS;
+      note.setAttribute('data-route-example-note', '');
+      const day = window.pwaExampleGuideCore
+        ? window.pwaExampleGuideCore.formatDay(exampleDate || '', document.documentElement.lang)
+        : (exampleDate || '');
+      note.textContent = self.pwaStrings.interpolate(MAP_STRINGS['route-example-note'], { date: day });
+      return note;
+    };
+
     /**
      * The route feature one of its legs belongs to (SNOW-910, for the
      * slope segments that drew a route before SNOW-1017's legs).
@@ -9637,7 +9691,9 @@
       );
 
       window.pwaRouteRail?.open(cachedFeature || feature, {
-        claim: props.pending ? buildRouteClaimCta(props.token) : null,
+        claim: props.example
+          ? buildRouteExampleNote(props.example_date)
+          : (props.pending ? buildRouteClaimCta(props.token) : null),
       });
       // SNOW-1019: follow the new cursor, so its index is drawn on the
       // line and a tap on the line moves it. A pending share has no uuid
@@ -9814,6 +9870,36 @@
     // everything it reaches — activateRoute, readFeatureJson — is declared
     // between the two points. See its own note for why.
     openRouteShareDeepLink();
+
+    // SNOW-1230: open a pending share's route by its token — the example
+    // walkthrough's Resume. Framed as a share arrival is unless `frame` is
+    // false (a Resume past the zoom step keeps the reader's close-up).
+    // Returns false when the routes layer does not hold it (yet).
+    window.pwaRouteOpener = Object.freeze({
+      openShare: (token, { frame = true } = {}) => {
+        const feature = ((routesGeojsonCache && routesGeojsonCache.features) || []).find(
+          (f) => f && f.properties && f.properties.token === token,
+        );
+        if (!feature) return false;
+        if (!overlayState.routes) showPanelOverlay('routes');
+        activateRoute(feature, { frame });
+        return true;
+      },
+      // Re-frame the open share around whatever now covers the map — the
+      // walkthrough's bar, once it has appeared over a route already framed.
+      frame: (token) => {
+        const feature = ((routesGeojsonCache && routesGeojsonCache.features) || []).find(
+          (f) => f && f.properties && f.properties.token === token,
+        );
+        const bounds = feature ? readFeatureJson(feature.properties.bounds) : null;
+        if (!Array.isArray(bounds) || bounds.length !== 4) return false;
+        map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
+          padding: paddingClearingRail(),
+          duration: 400,
+        });
+        return true;
+      },
+    });
 
     // SNOW-828: and a ``/?trip=`` / ``/?trip_share=`` one. Declared at IIFE
     // level beside installTripRouteLayers rather than up here, because

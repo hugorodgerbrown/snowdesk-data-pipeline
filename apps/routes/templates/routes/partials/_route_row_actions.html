@@ -95,7 +95,14 @@ Context:
                     the Save replaces), supplied by _route.html as
                     ``#<the row's id>``.
 {% endcomment %}
-{% if pending_share %}
+{% if pending_share.is_example %}
+    {% comment %}
+        SNOW-1230: the example route is shown to every visitor and is never
+        claimable (RouteShare.claimable), so its row carries no Save — a
+        control routes:share_claim would refuse. Closing it from the map
+        dismisses it from the session.
+    {% endcomment %}
+{% elif pending_share %}
     {% comment %}
         The pending row's one control. A plain HTMX form, exactly the shape
         Delete already uses below — routes:share_claim answers with the

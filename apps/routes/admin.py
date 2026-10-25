@@ -179,11 +179,14 @@ class RouteShareAdmin(admin.ModelAdmin):
         "route",
         "created_by",
         "expires_at",
+        "is_example",
         "claim_count",
         "last_claimed_at",
         "created_at",
     ]
-    list_filter = ["expires_at", "created_at"]
+    # SNOW-1230: the example route is one flagged share; set it with the
+    # set_example_route command, never by hand here.
+    list_filter = ["is_example", "expires_at", "created_at"]
     search_fields = [
         "token",
         "created_by__email",
@@ -201,6 +204,8 @@ class RouteShareAdmin(admin.ModelAdmin):
         "route",
         "created_by",
         "expires_at",
+        "is_example",
+        "example_date",
         "claim_count",
         "last_claimed_at",
         "created_at",

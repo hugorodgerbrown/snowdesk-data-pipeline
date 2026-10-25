@@ -1,0 +1,173 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_example_guide.html — the example route walkthrough
+(SNOW-1230).
+
+The welcome card's "Explore an example route" goes to routes:example, which
+puts the example share in the session and lands here with
+?route_share=<token>&example=1&d=<the example's day>. The route opens as any
+followed share does; this partial is the guide over it, and
+static/js/map_example_guide.js runs it. Four steps — say what just happened
+to the date, follow the track, zoom in until the line shows the slope, read
+the colours — then a finish card, and the map back on today.
+
+Nothing is locked (Hugo, SNOW-1230): close the route or wander off and the
+bar folds into the paused pill, which keeps its step; change the date and
+the pill offers the way back to the example's day. Exit, Finish and Done
+always put the map back on today and say so.
+
+Everything a reader sees is rendered here so {% trans %} reaches it. The
+JS fills in only the day ([data-example-day], formatted in the reader's
+locale), the route's name ([data-example-name]), the step count and the
+zoom bar.
+
+Included from public/partials/_map_embed.html inside #map, beside the
+welcome card, on the map page only (show_tour_offer).
+{% endcomment %}
+<div
+    id="map-example-guide"
+    class="map-example-guide"
+    role="region"
+    aria-labelledby="map-example-guide-eyebrow"
+    aria-live="polite"
+    hidden
+>
+    <div class="map-example-guide-top">
+        <p id="map-example-guide-eyebrow" class="map-example-guide-eyebrow"></p>
+        <button type="button" class="map-example-guide-exit" data-example-exit>{% trans "Exit" %}</button>
+    </div>
+    <div data-example-step="intro">
+        <p class="map-example-guide-text">
+            {% blocktrans trimmed %}
+                We’ve moved the map to <strong data-example-day></strong>, a past day with a full bulletin.
+                <strong>Nothing here is today’s conditions.</strong>
+            {% endblocktrans %}
+        </p>
+        <button type="button" class="map-example-guide-btn" data-example-next>{% trans "Got it" %}</button>
+    </div>
+    <div data-example-step="drag" hidden>
+        <p class="map-example-guide-text">
+            <span class="map-example-touch">
+                {% blocktrans trimmed %}
+                    <strong data-example-name></strong>: <strong>drag along the profile</strong> and the dot follows you
+                    on the map.
+                {% endblocktrans %}
+            </span>
+            <span class="map-example-pointer">
+                {% blocktrans trimmed %}
+                    <strong data-example-name></strong>: <strong>move along the profile</strong> and the dot follows you
+                    on the map.
+                {% endblocktrans %}
+            </span>
+        </p>
+    </div>
+    <div data-example-step="zoom" hidden>
+        <p class="map-example-guide-text">
+            <span class="map-example-touch">
+                {% blocktrans trimmed %}
+                    <strong>Pinch to zoom in</strong> on the route. Close up, it changes colour to show the ground under
+                    it.
+                {% endblocktrans %}
+            </span>
+            <span class="map-example-pointer">
+                {% blocktrans trimmed %}
+                    <strong>Scroll or press +</strong> to zoom in on the route. Close up, it changes colour to show the
+                    ground under it.
+                {% endblocktrans %}
+            </span>
+        </p>
+        <div class="map-example-guide-meter" aria-hidden="true">
+            <span data-example-zoom-fill></span>
+        </div>
+    </div>
+    <div data-example-step="colours" hidden>
+        <p class="map-example-guide-text">
+            {% blocktrans trimmed %}
+                Each colour is the <strong>slope of the ground under your line</strong>. A measurement, not a safety
+                verdict: it does not show the slopes above you.
+            {% endblocktrans %}
+        </p>
+        {# The route line's own scale (route_drawing_core.js), in its tokens. #}
+        <ul class="map-example-guide-swatches">
+            <li>
+                <i class="map-example-swatch map-example-swatch--gentle"></i>{% trans "<30°" %}
+            </li>
+            <li>
+                <i class="map-example-swatch map-example-swatch--30"></i>30°
+            </li>
+            <li>
+                <i class="map-example-swatch map-example-swatch--35"></i>35°
+            </li>
+            <li>
+                <i class="map-example-swatch map-example-swatch--40"></i>40°
+            </li>
+            <li>
+                <i class="map-example-swatch map-example-swatch--45"></i>{% trans "45°+" %}
+            </li>
+        </ul>
+        <button type="button" class="map-example-guide-btn" data-example-finish>{% trans "Finish" %}</button>
+    </div>
+    <ol class="map-example-guide-dots" aria-hidden="true">
+        <li></li>
+        <li></li>
+        <li></li>
+        <li></li>
+    </ol>
+</div>
+{# The guide folded away: the route was closed, or the date changed. #}
+<div
+    id="map-example-pill"
+    class="map-example-pill"
+    role="region"
+    aria-label='{% trans "Example route" %}'
+    hidden
+>
+    <span class="map-example-pill-text" data-example-pill="paused">{% trans "Example route · paused" %}</span>
+    <span
+        class="map-example-pill-text"
+        data-example-pill="off-day"
+        hidden
+    >{% trans "You’ve left the example day" %}</span>
+    <button type="button" class="map-example-pill-btn" data-example-resume>{% trans "Resume" %}</button>
+    <button type="button" class="map-example-pill-btn" data-example-back-to-day hidden></button>
+    <button type="button" class="map-example-pill-btn" data-example-exit>{% trans "Exit" %}</button>
+</div>
+{# The end: the map is back on today, and the next thing to try. #}
+<div
+    id="map-example-finish"
+    class="map-example-finish"
+    role="region"
+    aria-labelledby="map-example-finish-title"
+    hidden
+>
+    <h2 id="map-example-finish-title" class="map-example-finish-title">{% trans "Now try it with your own track" %}</h2>
+    <p class="map-example-finish-body">
+        {% blocktrans trimmed %}
+            Upload a GPX and Snowdesk reads the slope under it and lays it against the day’s bulletin. The example is
+            in the “?” menu if you want it again.
+        {% endblocktrans %}
+    </p>
+    {% if routes_upload_eligible %}
+        <button type="button" class="map-example-finish-btn map-example-finish-btn--primary" data-example-upload>
+            {% trans "Upload your own GPX" %}
+        </button>
+    {% else %}
+        <a
+            href="{{ routes_signin_url }}"
+            class="map-example-finish-btn map-example-finish-btn--primary"
+        >{% trans "Sign in to upload your own GPX" %}</a>
+    {% endif %}
+    <button type="button" class="map-example-finish-btn" data-example-resort>{% trans "Find a resort" %}</button>
+    <button type="button" class="map-example-finish-btn map-example-finish-btn--quiet" data-example-done>
+        {% trans "Done" %}
+    </button>
+</div>
+{# "Back to today · <date>", once the example is left. Info, not the map  #}
+{# sheet toast's warning: nothing went wrong.                              #}
+{% include "includes/_toast.html" with id="map-example-toast" kind="info" body="" timeout=5000 %}
+{# Strings the JS composes. Read back with window.pwaStrings.read. #}
+<template id="map-example-guide-strings-template">
+    <span data-string="step-of">{% blocktrans %}Example route · %(n)s of %(count)s{% endblocktrans %}</span>
+    <span data-string="back-to-day">{% blocktrans %}Back to %(date)s{% endblocktrans %}</span>
+    <span data-string="back-to-today">{% blocktrans %}Back to today · %(date)s{% endblocktrans %}</span>
+</template>

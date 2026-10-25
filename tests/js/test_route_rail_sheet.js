@@ -35,7 +35,8 @@ document.body.innerHTML = `
   <div id="map">
     <section id="route-rail" data-route-rail hidden
              data-detents="peek,half,full" data-detent-initial="peek"
-             data-route-terrain-url-template="/routes/${NIL}/terrain.json">
+             data-route-terrain-url-template="/routes/${NIL}/terrain.json"
+             data-route-share-terrain-url-template="/routes/s/__TOKEN__/terrain.json">
       <div data-row-renameable data-sheet-drag>
         <h2 id="route-rail-eyebrow">Route</h2>
         <p data-route-rail-title><span data-row-label data-route-rail-name></span></p>
@@ -381,7 +382,21 @@ describe('the terrain slope line reveals the data', () => {
     expect(toggle().getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('offers nothing for a pending share, which has no rows', () => {
+  it('fetches a pending share’s rows by its token (SNOW-1230)', async () => {
+    const pending = feature();
+    delete pending.properties.uuid;
+    pending.properties.token = 'abc';
+    pending.properties.pending = true;
+    window.pwaRouteRail.open(pending);
+    expect(rail.hasAttribute('data-route-terrain-unavailable')).toBe(false);
+    toggle().click();
+    await settle();
+    expect(rail.getAttribute('data-detent')).toBe('full');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/routes/s/abc/terrain.json');
+  });
+
+  it('offers nothing for a route with neither a uuid nor a token', () => {
     const pending = feature();
     delete pending.properties.uuid;
     window.pwaRouteRail.open(pending);

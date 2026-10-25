@@ -122,7 +122,7 @@ from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
 from apps.regions.cantons import canton_label
 from apps.regions.models import MicroRegion, Resort
-from apps.routes.models import Route
+from apps.routes.models import Route, RouteShare
 from apps.routes.services.shares import pending_tokens
 from apps.weather.models import Weather
 from apps.weather.services.day_strips import build_day_strips
@@ -834,6 +834,9 @@ def map_page(request: HttpRequest) -> HttpResponse:
                                 layer, the filter's slope mode (SNOW-1073).
       ``terrain_class_tile_url`` — XYZ template for the terrain filter's
                                 class tiles, or "" while ineligible.
+      ``example_route_url``   — ``routes:example`` while an example route is
+                                set, else "" (SNOW-1230): the welcome card
+                                offers it only when there is one.
 
     Args:
         request: The incoming HTTP request.
@@ -939,6 +942,15 @@ def map_page(request: HttpRequest) -> HttpResponse:
             "is_offseason": is_offseason,
             "season_label": season_label,
             "archived_season_start": archived_season_start,
+            # SNOW-1230: the welcome card's "Explore an example route", and
+            # the "?" menu's way back to it, render only while an example
+            # is set (set_example_route). One indexed EXISTS, on this page
+            # alone — not in _routes_context, which the homepage runs too.
+            "example_route_url": (
+                reverse("routes:example")
+                if RouteShare.objects.example().exists()
+                else ""
+            ),
         },
     )
 
@@ -1840,8 +1852,8 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         ``route_create_url``, ``route_list_url``,
         ``route_rename_url_template``, ``route_share_url_template``,
         ``route_claim_url_template``, ``route_delete_url_template``,
-        ``route_name_max_length``, ``routes_geojson_url`` and
-        ``routes_signin_url``.
+        ``route_name_max_length``, ``routes_geojson_url``,
+        ``routes_signin_url`` and ``route_share_dismiss_url_template``.
 
     """
     # __UUID__ placeholder, mirroring _favourites_context — reverse with a
@@ -1898,6 +1910,12 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         # is nothing to draw.
         "routes_geojson_url": reverse("routes:geojson"),
         "routes_signin_url": reverse("accounts:sign_in"),
+        # SNOW-1230: where the example walkthrough drops the example from
+        # the session when it is exited or finished. Token-templated as the
+        # claim URL above is; a reverse, so no query.
+        "route_share_dismiss_url_template": reverse(
+            "routes:share_dismiss", args=["__TOKEN__"]
+        ),
     }
 
 

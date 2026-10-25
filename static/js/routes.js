@@ -726,7 +726,18 @@
           showToast(uploadFailureMessage(resp.status));
           return null;
         }
-        window.pwaTelemetry?.emit('map.route.created', {});
+        // SNOW-1230: whether this upload followed the example route's
+        // walkthrough on this device — the welcome card's measure.
+        let afterExample = false;
+        try {
+          afterExample = localStorage.getItem('snowdesk.example.walked') === 'yes';
+        } catch (_) {
+          // Private mode: nothing was recorded.
+        }
+        window.pwaTelemetry?.emit(
+          'map.route.created',
+          afterExample ? { after_example: true } : {},
+        );
         return resp.text();
       })
       // THE CATCH SITS HERE, between the two steps, and not at the end of

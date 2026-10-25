@@ -13,7 +13,7 @@ Covers:
 
   RouteShare (SNOW-764) to_string / __str__, including the deleted-route
     form; Meta.ordering; RouteShareQuerySet.active() against the two ways
-    a link dies (expiry, and the owner deleting the route); is_claimable
+    a link dies (expiry, and the owner deleting the route); is_live
     agreeing with active() row for row; the FK rules — SET_NULL on the
     route, CASCADE on the sharer.
 """
@@ -334,7 +334,7 @@ class TestRouteShareActive:
         # The row itself survives — SET_NULL, not CASCADE.
         assert RouteShare.objects.filter(pk=share.pk).exists()
 
-    def test_is_claimable_agrees_with_active_row_for_row(self) -> None:
+    def test_is_live_agrees_with_active_row_for_row(self) -> None:
         """The Python predicate and the SQL one answer the same question.
 
         They are written twice because Django cannot share a predicate
@@ -351,7 +351,7 @@ class TestRouteShareActive:
 
         active_ids = set(RouteShare.objects.active().values_list("pk", flat=True))
         for share in (live, expired, revoked):
-            assert share.is_claimable == (share.pk in active_ids)
+            assert share.is_live == (share.pk in active_ids)
 
 
 @pytest.mark.django_db

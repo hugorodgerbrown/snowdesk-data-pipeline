@@ -210,8 +210,14 @@ Context:
         grammar wants it — including after the figures.
         {% endcomment %}
         {% if pending_share %}
-            {% blocktrans trimmed with meta=row_meta asvar shared_meta %}Shared with you ·
-                {{ meta }}{% endblocktrans %}
+            {% if pending_share.is_example %}
+                {# SNOW-1230: the example route is nobody's share to the visitor. #}
+                {% blocktrans trimmed with meta=row_meta asvar shared_meta %}Example route ·
+                    {{ meta }}{% endblocktrans %}
+            {% else %}
+                {% blocktrans trimmed with meta=row_meta asvar shared_meta %}Shared with you ·
+                    {{ meta }}{% endblocktrans %}
+            {% endif %}
             {% include "includes/_ugc_panel_row.html" with row_id="route-share-"|add:pending_share.token row_target="#route-share-"|add:pending_share.token label=row_label label_testid="route-list-row-label" meta=shared_meta focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
         {% else %}
             {% include "includes/_ugc_panel_row.html" with row_id="route-"|add:uuid row_target="#route-"|add:uuid label=row_label label_testid="route-list-row-label" meta=row_meta renameable=True rename_label=rename_label focus_target=row_focus_target focus_label=row_focus_label actions_template="routes/partials/_route_row_actions.html" %}
