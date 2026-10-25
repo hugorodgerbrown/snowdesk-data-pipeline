@@ -196,6 +196,8 @@ interface Window {
   pwaNetworkMode: any;
   /** static/js/map_weather_detail.js — the weather sheet; open/close/point. */
   pwaWeatherDetail: any;
+  /** static/js/map_sheet.js — the sheet controller; attach/bindDetents/handOff/toast. */
+  MapSheet: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */
   pwaRouteRail: any;
   /** static/js/route_point_card.js — the point card on the map; attach/detach. */
