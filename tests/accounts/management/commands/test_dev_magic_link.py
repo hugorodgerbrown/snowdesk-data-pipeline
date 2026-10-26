@@ -4,6 +4,10 @@ dev_magic_link management command.
 
 Covers:
   - A new account is created (verified) and a magic-link URL is printed.
+    The URL is checked by verifying its token back to the email, never by
+    minting a second token and comparing strings: TimestampSigner stamps a
+    token to the second, so two tokens minted either side of a second
+    boundary differ and that comparison failed intermittently.
   - An existing unverified account is verified.
   - Email addresses are normalised to lowercase (Invariant 2).
   - The --email argument is required.
@@ -12,15 +16,19 @@ Covers:
 
 from __future__ import annotations
 
+import datetime as dt
+import re
+
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management import CommandError, call_command
 from django.test import override_settings
 from django.utils import timezone
+from freezegun import freeze_time
 
 from apps.accounts.models import Account
-from apps.accounts.services.token import SALT_ACCOUNT_ACCESS, generate_token
+from apps.accounts.services.token import SALT_ACCOUNT_ACCESS, verify_token
 from tests.factories import AccountFactory
 
 User = get_user_model()
@@ -30,6 +38,14 @@ def _run(email: str, capsys: pytest.CaptureFixture[str]) -> str:
     """Invoke dev_magic_link for ``email`` and return the captured stdout."""
     call_command("dev_magic_link", email=email)
     return capsys.readouterr().out
+
+
+def _printed_token(out: str) -> str:
+    """Return the token from the account-access URL printed in ``out``."""
+    base = re.escape(str(settings.WEBAUTHN_ORIGIN).rstrip("/"))
+    match = re.search(rf"{base}/account/access/([^/\s]+)/", out)
+    assert match, f"no account-access URL in output: {out!r}"
+    return match.group(1)
 
 
 @pytest.mark.django_db
@@ -49,9 +65,27 @@ class TestDevMagicLinkCreatesAccount:
     def test_prints_magic_link_url(self, capsys: pytest.CaptureFixture[str]) -> None:
         """The printed URL is the account-access magic link for the email."""
         out = _run("new@example.com", capsys)
-        expected_token = generate_token("new@example.com", salt=SALT_ACCOUNT_ACCESS)
-        base = str(settings.WEBAUTHN_ORIGIN).rstrip("/")
-        assert f"{base}/account/access/{expected_token}/" in out
+        token = _printed_token(out)
+        assert verify_token(token, salt=SALT_ACCOUNT_ACCESS, max_age=None) == (
+            "new@example.com"
+        )
+
+    def test_printed_link_survives_a_second_boundary(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A link printed just before a second ticks over still verifies.
+
+        Regression for the flake: the command signs at 12:00:00.999 and the
+        check runs at 12:00:01.001, the gap that broke a string comparison.
+        """
+        start = dt.datetime(2026, 10, 26, 12, 0, 0, 999_000, tzinfo=dt.UTC)
+        with freeze_time(start) as frozen:
+            out = _run("new@example.com", capsys)
+            frozen.tick(dt.timedelta(milliseconds=2))
+            token = _printed_token(out)
+            assert verify_token(token, salt=SALT_ACCOUNT_ACCESS, max_age=60) == (
+                "new@example.com"
+            )
 
 
 @pytest.mark.django_db
