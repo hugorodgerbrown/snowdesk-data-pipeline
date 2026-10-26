@@ -722,6 +722,23 @@ class TestFetchBulletinsErrorHandling:
                 "--commit",
             )
 
+    @patch(PATCH_SLF)
+    def test_failed_records_message_names_the_grouping_outline(
+        self, mock_run: MagicMock
+    ) -> None:
+        """SNOW-1228: a grouping-outline failure also counts, so the text says so."""
+        mock_run.return_value = _make_failed_records_run(records_failed=1)
+
+        with pytest.raises(CommandError, match="grouping-outline recompute"):
+            call_command(
+                "fetch_bulletins",
+                "--source",
+                "slf",
+                "--date",
+                "2026-03-15",
+                "--commit",
+            )
+
     @patch(PATCH_ALBINA)
     @patch(PATCH_SLF)
     def test_fail_at_end_one_source_raises_other_still_runs(

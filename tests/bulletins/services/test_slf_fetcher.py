@@ -20,8 +20,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from django.core.cache import cache
 from django.db import IntegrityError
-from django.test import override_settings
+from django.test import Client, override_settings
 
 from apps.bulletins.models import (
     Bulletin,
@@ -1400,6 +1401,96 @@ class TestUpsertBulletinGroupingHook:
 
         assert Bulletin.objects.count() == 1
         assert BulletinGrouping.objects.count() == 0
+
+    def test_failed_recompute_drops_the_stale_grouping_and_fails_the_run(
+        self, client: Client
+    ) -> None:
+        """SNOW-1228: a correction whose recompute fails leaves no old outline.
+
+        A+B is ingested and grouped; a correction re-issues the bulletin as
+        A+C and the grouping builder raises. The A+B outline used to stay
+        live — drawing an aggregation the provider had withdrawn, over a
+        region no longer in it. Now it is deleted, the failure counts against
+        the run, and the bulletin and its new region links still commit.
+        """
+        major = MajorRegionFactory.create(prefix="CH-4", country="CH")
+        sub = SubRegionFactory.create(prefix="CH-41", major=major)
+        for region_id, west in (("CH-4115", 6.9), ("CH-7111", 7.0), ("CH-4116", 7.1)):
+            east = round(west + 0.1, 1)
+            MicroRegionFactory.create(
+                region_id=region_id,
+                subregion=sub,
+                boundary={
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [west, 46.4],
+                            [east, 46.4],
+                            [east, 46.5],
+                            [west, 46.5],
+                            [west, 46.4],
+                        ]
+                    ],
+                },
+            )
+        upsert_bulletin(_make_raw_bulletin(), PipelineRunFactory.create())
+        grouping = BulletinGrouping.objects.get()
+        target_date = grouping.target_date
+
+        run = PipelineRunFactory.create()
+        failed_before = run.records_failed
+        with patch(
+            "apps.bulletins.services.slf_fetcher.compute_bulletin_grouping_boundary",
+            side_effect=RuntimeError("geometry exploded"),
+        ):
+            upsert_bulletin(
+                _make_raw_bulletin(
+                    publication_time="2025-03-15T09:00:00Z",
+                    regions=[
+                        {"regionID": "CH-4115", "name": "Piz Buin"},
+                        {"regionID": "CH-4116", "name": "Silvretta"},
+                    ],
+                ),
+                run,
+            )
+
+        assert BulletinGrouping.objects.count() == 0
+        run.refresh_from_db()
+        assert run.records_failed == failed_before + 1
+        bulletin = Bulletin.objects.get()
+        assert set(bulletin.regions.values_list("region_id", flat=True)) == {
+            "CH-4115",
+            "CH-4116",
+        }
+        cache.clear()
+        response = client.get(
+            "/api/bulletin-groupings.geojson", {"d": target_date.isoformat()}
+        )
+        assert response.status_code == 200
+        assert response.json()["features"] == []
+
+    def test_a_failing_stale_delete_does_not_abort_ingest(self) -> None:
+        """The delete's own guard: ingest continues, the run still fails."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        MicroRegionFactory.create(region_id="CH-7111")
+        run = PipelineRunFactory.create()
+        failed_before = run.records_failed
+
+        with (
+            patch(
+                "apps.bulletins.services.slf_fetcher.compute_bulletin_grouping_boundary",
+                side_effect=RuntimeError("geometry exploded"),
+            ),
+            patch(
+                "apps.bulletins.services.slf_fetcher.BulletinGrouping.objects.filter",
+                side_effect=RuntimeError("delete exploded"),
+            ),
+        ):
+            upsert_bulletin(_make_raw_bulletin(), run)
+
+        assert Bulletin.objects.count() == 1
+        run.refresh_from_db()
+        assert run.records_failed == failed_before + 1
 
 
 # ---------------------------------------------------------------------------
