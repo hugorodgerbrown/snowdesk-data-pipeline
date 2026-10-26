@@ -53,6 +53,7 @@ from uuid import UUID
 
 import waffle
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -356,12 +357,10 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     #
     # No elevation: an observation shows no forecast panel, and
     # resolving one would put an Open-Meteo call on the report path.
-    location = Location.objects.create(latitude=lat, longitude=lon)
-
+    #
     # _auth_gate above guarantees an authenticated User; cast narrows for mypy.
     create_kwargs: dict[str, object] = {
         "user": cast(User, request.user),
-        "location": location,
         "region": region,
         "latitude": lat,
         "longitude": lon,
@@ -376,7 +375,13 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     if isinstance(observed_at, datetime.datetime):
         create_kwargs["observed_at"] = observed_at
 
-    FieldObservation.objects.create(**create_kwargs)
+    # The Location and its observation are one write (SNOW-1228): a failed
+    # observation insert must not leave an orphan Location behind, which
+    # Location.objects.active() would then fetch weather for. Nothing in
+    # the block does I/O — the region was resolved above.
+    with transaction.atomic():
+        create_kwargs["location"] = Location.objects.create(latitude=lat, longitude=lon)
+        FieldObservation.objects.create(**create_kwargs)
 
     logger.info(
         "FieldObservation created: user=%s region=%s type=%s source=%s",
