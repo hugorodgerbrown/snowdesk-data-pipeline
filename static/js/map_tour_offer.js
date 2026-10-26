@@ -29,7 +29,8 @@
  *     itself) — that visit simply goes without, and nothing is recorded.
  *   - Every choice records the answer and emits 'map.welcome.chosen' with
  *     the choice (resort, example, map, close):
- *       "Find a resort"            closes the card and opens search;
+ *       "Find a resort"            closes the card and starts the resort
+ *                                  walkthrough (map_resort_guide.js);
  *       "Explore an example route" is a link to routes:example, which opens
  *                                  the example and its walkthrough
  *                                  (map_example_guide.js); rendered only
@@ -173,9 +174,15 @@
   if (resortBtn) {
     resortBtn.addEventListener('click', () => {
       answer('resort');
-      // Search finds a resort or a region, and its result opens the sheet
-      // with the bulletin and the weather — the thing this option promised.
-      document.getElementById('search-toggle')?.click();
+      // SNOW-1231: the "Find a resort" walkthrough (map_resort_guide.js)
+      // opens search for itself, with popular resorts, and walks from the
+      // resort to its region's bulletin. Without it on the page, plain
+      // search: its result opens the sheet all the same.
+      if (document.getElementById('map-resort-guide')) {
+        document.dispatchEvent(new CustomEvent('snowdesk:resort-guide-requested'));
+      } else {
+        document.getElementById('search-toggle')?.click();
+      }
     });
   }
   // A link: the answer is recorded and the navigation goes ahead.

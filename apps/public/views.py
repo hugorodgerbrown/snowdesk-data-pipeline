@@ -130,7 +130,7 @@ from apps.weather.services.fetch import FORECAST_DAYS, HOURLY_DAYS
 from apps.weather.services.hourly_chart import build_hourly_chart
 from apps.weather.services.weather_display import build_point_forecast_panel
 
-from . import competitor_matrix
+from . import competitor_matrix, resort_guide
 from .component_previews import help_illustrations
 from .decorators import lowercase_region_id
 from .guidance import load_field_guidance
@@ -837,6 +837,10 @@ def map_page(request: HttpRequest) -> HttpResponse:
       ``example_route_url``   — ``routes:example`` while an example route is
                                 set, else "" (SNOW-1230): the welcome card
                                 offers it only when there is one.
+      ``resort_guide_popular`` — the "Find a resort" guide's popular
+                                resorts (SNOW-1231, ``resort_guide``).
+      ``resort_guide_date``   — the day that guide moves the map to out of
+                                season, or None in season.
 
     Args:
         request: The incoming HTTP request.
@@ -917,6 +921,9 @@ def map_page(request: HttpRequest) -> HttpResponse:
     weather_ctx = _weather_overlay_context()
     terrain_filter_ctx = _terrain_filter_context()
     trips_ctx = _trips_context()
+    # SNOW-1230/1231: one query answers both the welcome card's example
+    # link (is one set?) and the resort guide's off-season day (its day).
+    example = RouteShare.objects.example().only("example_date").first()
 
     return render(
         request,
@@ -946,10 +953,12 @@ def map_page(request: HttpRequest) -> HttpResponse:
             # the "?" menu's way back to it, render only while an example
             # is set (set_example_route). One indexed EXISTS, on this page
             # alone — not in _routes_context, which the homepage runs too.
-            "example_route_url": (
-                reverse("routes:example")
-                if RouteShare.objects.example().exists()
-                else ""
+            "example_route_url": reverse("routes:example") if example else "",
+            # SNOW-1231: the "Find a resort" walkthrough's popular resorts
+            # and, out of season, the day it moves the map to.
+            "resort_guide_popular": resort_guide.popular_resorts(),
+            "resort_guide_date": resort_guide.guide_date(
+                is_offseason, example.example_date if example else None
             ),
         },
     )

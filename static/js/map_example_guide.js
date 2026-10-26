@@ -349,7 +349,8 @@
       document.getElementById('route-add-btn')?.click();
     } else if (target.closest('[data-example-resort]')) {
       hideFinish();
-      document.getElementById('search-toggle')?.click();
+      // SNOW-1231: the resort walkthrough, as the welcome card starts it.
+      document.dispatchEvent(new CustomEvent('snowdesk:resort-guide-requested'));
     }
   });
 

@@ -44,6 +44,7 @@ function buildFixture() {
         <button type="button" data-example-exit>Exit</button>
       </div>
       <div id="map-example-finish" hidden>
+        <button type="button" data-example-resort>Find a resort</button>
         <button type="button" data-example-done>Done</button>
       </div>
       <div id="map-example-toast" class="hidden"><p data-toast-body></p></div>
@@ -305,6 +306,20 @@ describe('leaving', () => {
 
     $('map-example-finish').querySelector('[data-example-done]').click();
     expect($('map-example-finish').hidden).toBe(true);
+  });
+
+  it('the finish card\'s "Find a resort" starts the resort walkthrough', async () => {
+    await load();
+    openExample();
+    guide().querySelector('[data-example-finish]').click();
+    const requested = vi.fn();
+    document.addEventListener('snowdesk:resort-guide-requested', requested);
+
+    $('map-example-finish').querySelector('[data-example-resort]').click();
+
+    expect(requested).toHaveBeenCalledTimes(1);
+    expect($('map-example-finish').hidden).toBe(true);
+    document.removeEventListener('snowdesk:resort-guide-requested', requested);
   });
 
   it('once ended, the route reopening starts nothing', async () => {
