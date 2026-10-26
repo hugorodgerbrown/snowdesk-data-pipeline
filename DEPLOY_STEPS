@@ -1,4 +1,4 @@
-# Deploy steps for release v50: run each once after production deploys.
+# Deploy steps for release v51: run each once after production deploys.
 # Written by bin/cut-release from the Deploy-Step: trailers in the release.
 # Read by the ops MCP tool deploy_steps_status (SNOW-1192).
-python manage.py set_example_route --commit
+set_example_route --commit
