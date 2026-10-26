@@ -2,7 +2,7 @@
 name: mcp-server
 description: MCP JSON-RPC at POST /api/mcp/ and staff /api/ops/mcp/ (ops_tools) — mcp-auth bearer auth, tools, MCP Apps view
 status: current
-last-reviewed: 2026-10-22
+last-reviewed: 2026-10-26
 ---
 
 # MCP server
@@ -253,7 +253,8 @@ only, so a private favourite pin is never addressable.
   uv_index_max, sunshine_duration, sunrise, sunset}, summary}`. When no row
   covers the day the result is `has_weather: false` with no `weather` key
   — a structured empty, not an error. Temperatures are °C, precipitation
-  mm, snowfall cm, wind km/h, heights m, durations seconds.
+  mm, snowfall cm, wind km/h, heights m; precipitation_hours is hours and
+  sunshine_duration is seconds. Sunrise and sunset are ISO datetime strings.
 
 ### `get_bulletin_metadata`
 
