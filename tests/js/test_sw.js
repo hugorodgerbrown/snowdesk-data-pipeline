@@ -3899,6 +3899,14 @@ describe('route share navigations (SNOW-1235)', () => {
     await map.catch(() => {});
   });
 
+  it('passes it through from a worker that has not read its mode yet', () => {
+    // A link from another app usually wakes a stopped worker; its mode is
+    // still unread when respondWith has to be decided.
+    const sw = loadSw({ caches: makeCaches() });
+
+    expect(dispatchNavigation(sw, '/routes/s/abc123/')).toBeNull();
+  });
+
   it('still answers it offline', async () => {
     const sw = loadSw({ caches: makeCaches() });
     await sw._hydrateNetworkMode();

@@ -1032,6 +1032,25 @@ function _isSessionRedirect(url) {
 }
 
 /**
+ * True when a session redirect may go to the browser (SNOW-1235).
+ *
+ * Looser than ``_mayPassThrough`` in one case: a worker woken BY the link
+ * has not yet read its network mode, and ``respondWith`` must be decided
+ * now. Intercepting there would forward the navigation and lose the share
+ * once more, and a worker idle long enough to be stopped is the usual
+ * state when a link arrives from another app. So an unread mode counts as
+ * 'auto'. The cost is narrow: a user who forced Offline mode, then opens a
+ * share link the moment the worker wakes, sends that one request, which
+ * needs the server to mean anything anyway.
+ *
+ * @returns {boolean}
+ */
+function _mayPassThroughSessionRedirect() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+  return !_networkModeHydrated || _networkMode === 'auto';
+}
+
+/**
  * The `/map/` URL a legacy root navigation should be redirected to.
  *
  * @param {URL} url The navigation's URL.
@@ -3929,7 +3948,7 @@ self.addEventListener('fetch', (event) => {
       event.respondWith(Response.redirect(legacyMapUrl, 301));
       return;
     }
-    if (_isSessionRedirect(url) && _mayPassThrough()) {
+    if (_isSessionRedirect(url) && _mayPassThroughSessionRedirect()) {
       _debugServe(request, 'navigate', 'passthrough', null, null);
       return;
     }
