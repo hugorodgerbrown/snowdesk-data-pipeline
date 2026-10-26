@@ -269,6 +269,16 @@ in addition to the shared map assets.
     {# sheet renders for every visitor, and routes.js branches on           #}
     {# ``routes_eligible`` (authentication) for its sign-in CTA.            #}
     {% include "public/partials/_routes_surface.html" %}
+    {# SNOW-1239: the weather, place and region sheets pause while the     #}
+    {# timeline plays — no request per frame, one when it stops — and say  #}
+    {# so in this band. Before the three surfaces, whose scripts read it.  #}
+    <script defer src="{% static 'js/sheet_playback_core.js' %}"></script>
+    <template id="sheet-playback-band-template">
+        <div role="status" class="px-2 py-2">
+            {% trans "Playback in progress" as sheet_playback_band %}
+            {% include "includes/_eyebrow.html" with tag="p" text=sheet_playback_band %}
+        </div>
+    </template>
     {# SNOW-761: weather detail sheet + JS. No roundel — the trigger is the  #}
     {# condition symbol on the map itself, so this surface is inert until    #}
     {# one is tapped.                                                        #}
