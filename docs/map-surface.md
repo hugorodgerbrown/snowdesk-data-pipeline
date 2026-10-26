@@ -2,7 +2,7 @@
 name: map-surface
 description: Map zoom bands (REGION_SELECT_MAXZOOM), tap priority, overlay kinds, pwaMapOverlays, one bottom sheet, camera padding owner
 status: current
-last-reviewed: 2026-10-24
+last-reviewed: 2026-10-26
 ---
 
 # The map surface: zoom, taps and overlays
@@ -223,3 +223,22 @@ blank copy of `_region_sheet_peek.html` that the map page carries in a
 partial, so the sheet keeps its height when the body lands. Reopening a
 region, or scrubbing back to a day already seen, paints the kept body with
 no request. If the body fails, the peek stays and a line under it says so.
+
+### During timeline playback
+
+The timelapse changes the day five times a second, and each object sheet
+used to reload on every frame — one server-rendered request per 200 ms,
+none cancelled (SNOW-1239). Now the weather, place and region sheets
+**pause** while the timeline plays: they stay open, show a "Playback in
+progress" band over a dimmed body, and ask for nothing. When playback stops
+each loads once, for the day it stopped on; a day picked by hand ends
+playback and loads that day instead, with no second load from the stop. A
+sheet opened during playback shows what needs no request (the region's
+kept body or peek row; the band alone for weather and place), and the band
+is its peek when it holds nothing else. A superseded request, and one in
+flight when the sheet closes by any route, is aborted. The pieces are
+`window.pwaSheetPlayback` (`sheet_playback_core.js`); the band and the
+`data-sheet-paused` mark live on the sheet element itself, because every
+paint replaces its children, and the dim is one data-attribute rule in
+`static/css/map.css`. `MapSheet.attach`'s `onTeardown` option is how each
+module hears every close route.

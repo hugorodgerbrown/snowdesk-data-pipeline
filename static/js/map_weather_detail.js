@@ -24,6 +24,13 @@
  * the numbers and drawing them here — would need the forecast a second time
  * on the wire, put translated strings in a file `makemessages` cannot see,
  * and duplicate a panel the location forecast page already renders server-side.
+ *
+ * PAUSED DURING PLAYBACK (SNOW-1239). A timeline frame changes the day five
+ * times a second; the sheet used to fetch on every one and cancel none. While
+ * the timeline plays it stays open under a "Playback in progress" band
+ * (window.pwaSheetPlayback, sheet_playback_core.js), asks for nothing, and
+ * loads once, for the day playback stopped on, when it stops. A newer ask,
+ * and every close, aborts the one in flight.
  */
 
 (function () {
@@ -31,7 +38,8 @@
 
   var mapEl = document.getElementById('map');
   var sheetEl = document.getElementById('weather-sheet');
-  if (!mapEl || !sheetEl || !window.MapSheet) return;
+  var playback = window.pwaSheetPlayback;
+  if (!mapEl || !sheetEl || !window.MapSheet || !playback) return;
 
   // Rendered via {% url 'api:weather_detail' short_id='__SHORTID__' %}; the
   // placeholder is substituted per tap, matching map_place_sheet.js's
@@ -52,13 +60,26 @@
       failed: "That weather couldn't be loaded — check your connection.",
     };
 
-  var sheet = window.MapSheet.attach(sheetEl, {});
-
-  // Bumped on every open. A tap on a second symbol while the first is still
+  // One request in flight. A tap on a second symbol while the first is still
   // in flight must not have the first response land in the sheet on top of
   // it — mountain valleys are dense enough at low zoom that a mis-tap
-  // followed by a correction is the normal case, not an edge one.
-  var requestToken = 0;
+  // followed by a correction is the normal case, not an edge one. A close
+  // by any route (onTeardown) aborts it too (SNOW-1239).
+  var guard = playback.createGuard();
+
+  // SNOW-1239: a day the sheet skipped while the timeline played, to load
+  // once when it stops. The day itself is `shownDate`.
+  var pendingRefresh = false;
+  /** @type {?string} */
+  var shownDate = null;
+
+  var sheet = window.MapSheet.attach(sheetEl, {
+    onTeardown: function () {
+      guard.invalidate();
+      pendingRefresh = false;
+      playback.markPaused(sheetEl, false);
+    },
+  });
 
   // SNOW-1195: the location the open sheet is showing, so a change of day
   // can reload it. The calendar no longer closes this sheet on its way in
@@ -111,6 +132,18 @@
 
     shownShortId = shortId;
     shownLngLat = Array.isArray(lngLat) ? lngLat : null;
+    shownDate = dateKey || null;
+    // SNOW-1239: opened during playback, the sheet shows the band alone and
+    // asks for nothing until the timeline stops.
+    if (playback.isPlaying()) {
+      guard.invalidate();
+      pendingRefresh = true;
+      sheetEl.replaceChildren();
+      playback.markPaused(sheetEl, true);
+      sheet.open();
+      document.dispatchEvent(new CustomEvent('snowdesk:sheet-leader-point'));
+      return false;
+    }
     // Paint first: the sheet measures its peek as it opens, so the loading
     // line must already be there or it opens at the fallback height.
     showMessage(strings.loading);
@@ -127,22 +160,23 @@
    * @returns {Promise<boolean>} Whether the body was rendered.
    */
   async function load(shortId, dateKey) {
-    var token = ++requestToken;
+    var ask = guard.begin();
     var url = URL_TEMPLATE.replace('__SHORTID__', encodeURIComponent(String(shortId)));
     if (dateKey) url += '?date=' + encodeURIComponent(dateKey);
 
     try {
-      var resp = await fetch(url, { headers: { Accept: 'application/json' } });
+      var resp = await fetch(url, { headers: { Accept: 'application/json' }, signal: ask.signal });
       if (!resp.ok) throw new Error('weather detail ' + resp.status);
       var data = await resp.json();
-      // A later tap won this race; its own response owns the sheet.
-      if (token !== requestToken) return false;
+      // A later tap won this race, or the sheet closed; either way this
+      // answer owns nothing.
+      if (!ask.isCurrent()) return false;
       // Server-trusted HTML: rendered by Django templates with autoescape
       // on. The same basis on which map.js calls popup.setHTML.
       sheetEl.innerHTML = data.html;
       return true;
     } catch (err) {
-      if (token !== requestToken) return false;
+      if (!ask.isCurrent() || playback.isAbort(err)) return false;
       showMessage(strings.failed);
       return false;
     }
@@ -151,10 +185,53 @@
   // SNOW-1195: reload the open sheet for the new day, as the region and
   // place sheets do. No loading line: the old day stays readable until the
   // new one lands, and a fast run of days keeps only the last response.
+  // SNOW-1239: a timelapse frame during playback only records the day.
   document.addEventListener('snowdesk:date-changed', function (ev) {
     if (shownShortId == null || !sheet.isOpen()) return;
-    var dateKey = ev.detail && ev.detail.date;
-    load(shownShortId, dateKey || undefined);
+    var detail = ev.detail || {};
+    shownDate = detail.date || null;
+    if (!playback.shouldReload(detail.source, playback.isPlaying())) {
+      pendingRefresh = true;
+      guard.invalidate();
+      playback.markPaused(sheetEl, true);
+      return;
+    }
+    // A day picked by hand ends playback; it arrives before the stop, so
+    // the stop that follows has nothing left to load.
+    pendingRefresh = false;
+    resume();
+  });
+
+  /**
+   * Lift the band and load the shown location for the shown day. A sheet
+   * opened during playback holds nothing but the band, so it says it is
+   * loading rather than standing empty.
+   *
+   * @returns {Promise<boolean>} Whether the body was rendered.
+   */
+  function resume() {
+    playback.markPaused(sheetEl, false);
+    if (!sheetEl.querySelector('[data-sheet-peek]')) showMessage(strings.loading);
+    return load(shownShortId, shownDate || undefined);
+  }
+
+  // SNOW-1239: playback starting pauses the open sheet; stopping lifts the
+  // band and loads the day it stopped on, once.
+  document.addEventListener('snowdesk:timelapse-state', function (ev) {
+    if (shownShortId == null || !sheet.isOpen()) return;
+    if (ev.detail && ev.detail.playing) {
+      // Whatever was in flight is for a day playback is about to leave.
+      guard.invalidate();
+      pendingRefresh = true;
+      playback.markPaused(sheetEl, true);
+      return;
+    }
+    if (!pendingRefresh) {
+      playback.markPaused(sheetEl, false);
+      return;
+    }
+    pendingRefresh = false;
+    resume();
   });
 
   window.pwaWeatherDetail = Object.freeze({

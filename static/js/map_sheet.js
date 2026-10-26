@@ -931,11 +931,15 @@
    * Wire one sheet element and return its controller.
    *
    * @param {HTMLElement} el - The sheet container ([data-overlay], hidden).
-   * @param {{ triggerSelector?: string, onBeforeOpen?: function(): void }} [options]
+   * @param {{ triggerSelector?: string, onBeforeOpen?: function(): void, onTeardown?: function(): void }} [options]
    *   ``triggerSelector`` — the control that opens the sheet. Its own click
    *   handler does the opening, so a click on it must not also be read as
    *   an outside click and close what just opened.
    *   ``onBeforeOpen`` — runs before the sheet is revealed.
+   *   ``onTeardown`` — runs after every close, by whichever route (Escape,
+   *   click-outside, the ×, a drag below peek, another overlay opening).
+   *   SNOW-1239: the object sheets abort their request in flight here, so
+   *   an answer for a sheet already closed never lands in it.
    * @returns {{ open: function(): void, close: function(): void, isOpen: function(): boolean, detent: function(string): void, element: HTMLElement }}
    */
   function attach(el, options) {
@@ -956,6 +960,7 @@
       window.PlacePicker?.deactivate();
       el.innerHTML = '';
       if (detents) detents.reset();
+      if (opts.onTeardown) opts.onTeardown();
     }
 
     function open() {
