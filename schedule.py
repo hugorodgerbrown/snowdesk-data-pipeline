@@ -24,13 +24,16 @@ pre-loaded with the recurring data-pipeline jobs:
   and an address that arrives a few hours late costs nothing — the surface
   renders a coordinate pair until it does.
 - **reconcile_slope_samples** — fires at 04:30 UTC, running
-  ``backfill_route_slope_samples --commit --limit 50`` and then
-  ``backfill_trip_slope_samples --commit --limit 50``. The safety net for
+  ``backfill_route_slope_samples --commit`` and then
+  ``backfill_trip_slope_samples --commit``. The safety net for
   a sampling task whose enqueue failed after its route or trip had
   committed (SNOW-1228): the enqueue helpers log such a failure rather
   than raise it, which leaves ``slope_samples`` null, and both commands
-  select exactly those rows. ``--limit`` bounds a day's outbound tile
-  requests; the commands' own one-second ``--delay`` paces them. The
+  select exactly those rows. Deliberately NOT capped with ``--limit``
+  (SNOW-1243): both commands walk newest-first and leave an unsampleable
+  row (a route outside terrain coverage) eligible, so a cap would let the
+  newest few such rows crowd out older ones whose enqueue really failed.
+  The commands' own one-second ``--delay`` paces the tile requests. The
   trip pass runs even if the route pass raises, and the first failure is
   re-raised afterwards, so it still reaches the worker log.
 - **check_resort_locations** — fires at 05:00 UTC, running
@@ -190,14 +193,6 @@ def _run_fill_what3words() -> None:
     call_command("fill_what3words", "--commit")
 
 
-# A day's ceiling on each slope backfill. Every candidate costs one tile
-# request per terrain tile its track crosses plus the commands' one-second
-# delay, and the job is a safety net for the rare failed enqueue, not the
-# main path, so a small batch drains a backlog over days rather than
-# holding the worker for hours.
-RECONCILE_SLOPE_LIMIT = 50
-
-
 def _run_reconcile_slope_samples() -> None:
     """Sample any route or trip whose terrain sampling never ran (SNOW-1228).
 
@@ -214,7 +209,7 @@ def _run_reconcile_slope_samples() -> None:
     first_error: Exception | None = None
     for command in ("backfill_route_slope_samples", "backfill_trip_slope_samples"):
         try:
-            call_command(command, "--commit", "--limit", str(RECONCILE_SLOPE_LIMIT))
+            call_command(command, "--commit")
         except Exception as exc:  # noqa: BLE001 — broad catch intentional: one pass failing must not skip the other; re-raised below
             logger.exception("schedule: %s failed", command)
             if first_error is None:

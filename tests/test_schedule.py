@@ -138,14 +138,16 @@ def test_reconcile_slope_samples_runs_after_fill_what3words(jobs: dict) -> None:
     assert str(_get_field(trigger, "minute")) == "30"
 
 
-def test_reconcile_slope_samples_commits_both_backfills_bounded() -> None:
-    """Route pass then trip pass, each with --commit and a --limit (SNOW-1228)."""
+def test_reconcile_slope_samples_commits_both_backfills_uncapped() -> None:
+    """Route pass then trip pass, each --commit and no --limit (SNOW-1243).
+
+    A cap would let unsampleable newest rows starve older candidates.
+    """
     with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
         schedule_module._run_reconcile_slope_samples()
-    limit = str(schedule_module.RECONCILE_SLOPE_LIMIT)
     assert mock_cc.call_args_list == [
-        mock.call("backfill_route_slope_samples", "--commit", "--limit", limit),
-        mock.call("backfill_trip_slope_samples", "--commit", "--limit", limit),
+        mock.call("backfill_route_slope_samples", "--commit"),
+        mock.call("backfill_trip_slope_samples", "--commit"),
     ]
 
 
