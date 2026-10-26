@@ -43,6 +43,17 @@ interface Window {
   /** static/js/day_nav_core.js — the date row's day steps and empty-day lookup (SNOW-1195). */
   pwaDayNavCore: any;
   pwaStaleDayCore: any;
+  /** static/js/sheet_playback_core.js — an object sheet pauses while the timeline plays (SNOW-1239). */
+  pwaSheetPlayback: {
+    createGuard(): {
+      begin(): { signal: AbortSignal | undefined; isCurrent(): boolean };
+      invalidate(): void;
+    };
+    shouldReload(source: unknown, playing: boolean): boolean;
+    isPlaying(): boolean;
+    isAbort(err: unknown): boolean;
+    markPaused(sheetEl: HTMLElement | null, on: boolean): void;
+  };
   /** static/js/today_core.js — whether the map's "Today" control has anywhere to go (SNOW-1165). */
   pwaTodayCore: {
     canGoToToday(date: string | null | undefined, today: string | null | undefined): boolean;
