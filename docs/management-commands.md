@@ -1633,6 +1633,15 @@ deduplicated.
 The cron invocation for the standard nightly run is:
 `fetch_bulletins --source slf albina meteofrance --commit`
 
+Each source's run is one `PipelineRun`, finished in one of three states:
+`SUCCESS`; `PARTIAL` when it completed but `records_failed > 0` — a bulletin
+that could not be stored, a render model, day rating or grouping outline
+that could not be (re)built (SNOW-1228); or `FAILED` when the pipeline
+itself raised. A `PARTIAL` run still writes the `--stash` archive, and then
+exits non-zero with a `CommandError` naming the failed count, exactly as
+before — the status only stops the run register calling it a success
+([why](decisions/a-run-with-failed-records-is-partial.md)).
+
 ```bash
 # Read-only walk, start date derived from DB for each source:
 #   - populated DB: (latest bulletin valid_from day) → today

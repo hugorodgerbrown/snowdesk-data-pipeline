@@ -638,7 +638,7 @@ Every tool is read-only and answers about the environment it runs on.
 | `command_history` | One command's runs grouped by build, latest dry run beside latest commit run, and whether it committed on the build now deployed |
 | `deploy_steps_status` | Each step in the release's `DEPLOY_STEPS` (from its `Deploy-Step:` trailers) as `DONE`, `FAILED`, `DRY_RUN_ONLY`, `PENDING` or `UNKNOWN_COMMAND` on the release now deployed |
 | `build_info` | Git SHA, release, `released_at` (the `BUILT_AT` stamp `bin/build.sh` writes), `booted_at`, Python/Django, unapplied migrations |
-| `ingest_status` | Per provider: latest issue, hours since, target date; the last `fetch_bulletins` run; 24 h of `PipelineRun` by status |
+| `ingest_status` | Per provider: latest issue, hours since, target date; the last `fetch_bulletins` run; 24 h of `PipelineRun` by status, the summary counting `FAILED` and `PARTIAL` runs (a finished run with failed records, SNOW-1228) |
 | `bulletin_coverage` | Per provider, for a day: regions expected versus rated, and which are missing |
 | `task_queue_health` | `django_tasks_db` backlog by status, oldest waiting task, 24 h of failures (inline backends report no queue) |
 | `weather_freshness` | Active locations with today's `Weather` row, the last fetch time and the last `fetch_weather` run |

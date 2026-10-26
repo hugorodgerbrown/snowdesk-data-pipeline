@@ -991,6 +991,31 @@ class TestRunPipeline:
         assert run.records_created == 1
         assert not Bulletin.objects.filter(bulletin_id="no-regions").exists()
         assert Bulletin.objects.filter(bulletin_id="fine").exists()
+        # SNOW-1228: the persisted status says so too, not only the counter.
+        run.refresh_from_db()
+        assert run.status == PipelineRun.Status.PARTIAL
+
+    @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
+    def test_a_grouping_failure_finishes_the_run_partial(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """SNOW-1228: a failed grouping recompute makes the run PARTIAL."""
+        mock_fetch.return_value = [_make_raw_bulletin("b1", "2025-03-15T08:00:00Z")]
+
+        with patch(
+            "apps.bulletins.services.slf_fetcher.compute_bulletin_grouping_boundary",
+            side_effect=RuntimeError("geometry exploded"),
+        ):
+            run = run_slf_pipeline(
+                start=date(2025, 3, 15),
+                end=date(2025, 3, 15),
+                triggered_by="test",
+            )
+
+        run.refresh_from_db()
+        assert run.records_failed == 1
+        assert run.records_created == 1
+        assert run.status == PipelineRun.Status.PARTIAL
 
     @patch("apps.bulletins.services.slf_fetcher.fetch_bulletin_page")
     def test_skips_bulletins_newer_than_end_date(self, mock_fetch: MagicMock) -> None:

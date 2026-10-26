@@ -31,6 +31,7 @@ import pytest
 import requests
 from django.test import override_settings
 
+from apps.bulletins.models import PipelineRun
 from apps.bulletins.services.meteofrance_fetcher import (
     _meteofrance_pdf_url,
     _read_local_mirror,
@@ -321,6 +322,9 @@ class TestRunMeteofrance:
             )
 
         assert run.records_failed == 1
+        # SNOW-1228: a run with a failed record finishes PARTIAL.
+        run.refresh_from_db()
+        assert run.status == PipelineRun.Status.PARTIAL
 
     @pytest.mark.django_db
     def test_on_fetched_callback_called_per_bulletin(self) -> None:

@@ -474,7 +474,7 @@ def load_meteofrance_archive(
         raise
 
     if run is not None:
-        run.mark_success(counts.created, counts.updated)
+        run.mark_finished(counts.created, counts.updated)
         logger.info(
             "Load complete: %d lines, %d created, %d updated, "
             "%d unknown-slug, %d bad-shape",

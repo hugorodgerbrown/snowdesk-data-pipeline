@@ -497,7 +497,7 @@ class Command(RegisteredCommand):
             raise CommandError(f"{feed}: {exc}") from exc
 
         if run is not None:
-            run.mark_success(counts[Outcome.CREATED], counts[Outcome.UPDATED])
+            run.mark_finished(counts[Outcome.CREATED], counts[Outcome.UPDATED])
         self._tally(feed, counts)
         if verbosity >= 1:
             self.stdout.write(

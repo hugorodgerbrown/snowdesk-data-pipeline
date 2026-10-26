@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from apps.bulletins.models import Bulletin
+from apps.bulletins.models import Bulletin, PipelineRun
 from apps.bulletins.services.albina_fetcher import (
     _albina_pdf_url,
     _normalise_response,
@@ -338,6 +338,9 @@ class TestRunEuregioPipeline:
             )
 
         assert run.records_failed == 1
+        # SNOW-1228: a run with a failed record finishes PARTIAL.
+        run.refresh_from_db()
+        assert run.status == PipelineRun.Status.PARTIAL
 
     def test_on_fetched_callback_called_for_each_bulletin(self) -> None:
         """on_fetched is invoked once per unique bulletin."""

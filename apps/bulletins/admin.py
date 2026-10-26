@@ -268,6 +268,15 @@ class BulletinAdmin(admin.ModelAdmin):
                 f"Backfill run #{run.pk} failed: {run.error_message}",
                 messages.ERROR,
             )
+        elif run.status == PipelineRun.Status.PARTIAL:
+            # SNOW-1228: finished, but some records failed — not a success.
+            self.message_user(
+                request,
+                f"Backfill run #{run.pk} finished with {run.records_failed} "
+                f"failed record(s) — {run.records_created} created, "
+                f"{run.records_updated} updated. Check the logs.",
+                messages.WARNING,
+            )
         else:
             self.message_user(
                 request,
