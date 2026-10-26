@@ -1941,8 +1941,8 @@ Two paths for seeding a fresh local development database:
 ### `bin/bootstrap-dev-db` — one-command seed (mirrors required)
 
 Runs migrate, loads all region/resort fixtures, and fetches bulletins from
-all three providers — via the local mirrors served by the running dev
-server.
+all three providers via the local mirrors — SLF and ALBINA served by the
+running dev server, Météo-France read from a directory on disk.
 
 **Prerequisites:**
 
