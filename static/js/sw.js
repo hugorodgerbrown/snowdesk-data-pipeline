@@ -1009,6 +1009,47 @@ const SHELL_PAGES = [SHELL_PAGE, '/offline/'];
 const ATTRIBUTION_PARAM_PREFIXES = ['utm_'];
 const ATTRIBUTION_PARAMS = new Set(['ref', 'fbclid', 'gclid', 'mc_cid', 'mc_eid']);
 
+// SNOW-1235: navigations the worker leaves to the browser. A followed route
+// share (`/routes/s/<token>/`) and the example route (`/routes/example/`)
+// write the share token into the session, but only on a request that
+// carries `Sec-Fetch-Dest: document` (apps/core/http.py
+// `is_top_level_navigation`, the guard against an `<img>` pointed at the
+// link). Any navigation this worker forwards reaches the server as
+// `Sec-Fetch-Dest: empty`, so the token was never recorded and the shared
+// route never drew for anyone with the app installed. Both are bare
+// redirects with nothing to serve offline, so passing them through costs
+// nothing. Online only: offline, they still get the shell fallback.
+const SESSION_REDIRECT_PATTERNS = [/^\/routes\/s\/[^/]+\/$/, /^\/routes\/example\/$/];
+
+/**
+ * True for a navigation the browser must make itself (SNOW-1235).
+ *
+ * @param {URL} url The navigation's URL.
+ * @returns {boolean}
+ */
+function _isSessionRedirect(url) {
+  return SESSION_REDIRECT_PATTERNS.some((pattern) => pattern.test(url.pathname));
+}
+
+/**
+ * True when a session redirect may go to the browser (SNOW-1235).
+ *
+ * Looser than ``_mayPassThrough`` in one case: a worker woken BY the link
+ * has not yet read its network mode, and ``respondWith`` must be decided
+ * now. Intercepting there would forward the navigation and lose the share
+ * once more, and a worker idle long enough to be stopped is the usual
+ * state when a link arrives from another app. So an unread mode counts as
+ * 'auto'. The cost is narrow: a user who forced Offline mode, then opens a
+ * share link the moment the worker wakes, sends that one request, which
+ * needs the server to mean anything anyway.
+ *
+ * @returns {boolean}
+ */
+function _mayPassThroughSessionRedirect() {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+  return !_networkModeHydrated || _networkMode === 'auto';
+}
+
 /**
  * The `/map/` URL a legacy root navigation should be redirected to.
  *
@@ -3905,6 +3946,10 @@ self.addEventListener('fetch', (event) => {
     const legacyMapUrl = _legacyRootMapUrl(url);
     if (legacyMapUrl) {
       event.respondWith(Response.redirect(legacyMapUrl, 301));
+      return;
+    }
+    if (_isSessionRedirect(url) && _mayPassThroughSessionRedirect()) {
+      _debugServe(request, 'navigate', 'passthrough', null, null);
       return;
     }
     event.respondWith(_guardedRespond(_networkFirst(request), request, event.clientId));

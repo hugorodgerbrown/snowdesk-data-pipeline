@@ -84,6 +84,8 @@ const SW_EXPORTS = [
   'SHELL_PAGE',
   // SNOW-1047: the legacy `/?<map state>` redirect the worker answers itself.
   '_legacyRootMapUrl',
+  // SNOW-1235: navigations left to the browser so they keep Sec-Fetch-Dest.
+  '_isSessionRedirect',
   'SHELL_SUBRESOURCE_LIMIT',
   // SNOW-930: the shell pages the activation walks.
   'SHELL_PAGES',
@@ -3853,6 +3855,66 @@ describe('legacy root map links (SNOW-1047)', () => {
     const response = await responded;
     expect(response.status).toBe(301);
     expect(response.headers.get('Location')).toBe(ORIGIN + '/map/?d=2026-02-16');
+  });
+});
+
+describe('route share navigations (SNOW-1235)', () => {
+  // The server records a followed share only on `Sec-Fetch-Dest: document`,
+  // and a navigation this worker forwards arrives as `empty`. So these
+  // redirects must be left to the browser while it is online.
+  function dispatchNavigation(sw, path) {
+    let responded = null;
+    sw.__listeners.fetch({
+      request: navRequest(path),
+      clientId: '',
+      respondWith(value) {
+        responded = value;
+      },
+    });
+    return responded;
+  }
+
+  it.each(['/routes/s/abc123/', '/routes/example/'])('recognises %s', (path) => {
+    const sw = loadSw();
+    expect(sw._isSessionRedirect(new URL(ORIGIN + path))).toBe(true);
+  });
+
+  it.each(['/routes/s/abc123/terrain.json', '/routes/s/abc123/dismiss/', '/routes/', '/map/'])(
+    'leaves %s to the worker',
+    (path) => {
+      const sw = loadSw();
+      expect(sw._isSessionRedirect(new URL(ORIGIN + path))).toBe(false);
+    },
+  );
+
+  it('passes the example route through untouched once online', async () => {
+    const sw = loadSw({ caches: makeCaches() });
+    await sw._hydrateNetworkMode();
+
+    expect(dispatchNavigation(sw, '/routes/example/')).toBeNull();
+    // Every other navigation is still the worker's (its answer, here the
+    // fetch stub's rejection, is not the point).
+    const map = dispatchNavigation(sw, '/map/');
+    expect(map).not.toBeNull();
+    await map.catch(() => {});
+  });
+
+  it('passes it through from a worker that has not read its mode yet', () => {
+    // A link from another app usually wakes a stopped worker; its mode is
+    // still unread when respondWith has to be decided.
+    const sw = loadSw({ caches: makeCaches() });
+
+    expect(dispatchNavigation(sw, '/routes/s/abc123/')).toBeNull();
+  });
+
+  it('still answers it offline', async () => {
+    const sw = loadSw({ caches: makeCaches() });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+
+    const share = dispatchNavigation(sw, '/routes/s/abc123/');
+    expect(share).not.toBeNull();
+    await share.catch(() => {});
   });
 });
 
