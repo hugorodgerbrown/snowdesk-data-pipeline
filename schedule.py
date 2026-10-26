@@ -2,7 +2,7 @@
 schedule.py — APScheduler job registry for Snowdesk.
 
 Defines ``build_scheduler()``, which constructs a :class:`BlockingScheduler`
-pre-loaded with the recurring data-pipeline job:
+pre-loaded with the recurring data-pipeline jobs:
 
 - **fetch_bulletins** — fires at ``:00`` and ``:05`` of every hour,
   running ``fetch_bulletins --source SLF ALBINA METEOFRANCE --commit``.
@@ -23,6 +23,16 @@ pre-loaded with the recurring data-pipeline job:
   hourly because the estate grows with user activity, not with the clock,
   and an address that arrives a few hours late costs nothing — the surface
   renders a coordinate pair until it does.
+- **reconcile_slope_samples** — fires at 04:30 UTC, running
+  ``backfill_route_slope_samples --commit --limit 50`` and then
+  ``backfill_trip_slope_samples --commit --limit 50``. The safety net for
+  a sampling task whose enqueue failed after its route or trip had
+  committed (SNOW-1228): the enqueue helpers log such a failure rather
+  than raise it, which leaves ``slope_samples`` null, and both commands
+  select exactly those rows. ``--limit`` bounds a day's outbound tile
+  requests; the commands' own one-second ``--delay`` paces them. The
+  trip pass runs even if the route pass raises, and the first failure is
+  re-raised afterwards, so it still reaches the worker log.
 - **check_resort_locations** — fires at 05:00 UTC, running
   ``link_resort_locations --check``. The only job here that writes nothing:
   it asks whether any geocoded resort has no ``ResortLocation``, which means
@@ -180,6 +190,39 @@ def _run_fill_what3words() -> None:
     call_command("fill_what3words", "--commit")
 
 
+# A day's ceiling on each slope backfill. Every candidate costs one tile
+# request per terrain tile its track crosses plus the commands' one-second
+# delay, and the job is a safety net for the rare failed enqueue, not the
+# main path, so a small batch drains a backlog over days rather than
+# holding the worker for hours.
+RECONCILE_SLOPE_LIMIT = 50
+
+
+def _run_reconcile_slope_samples() -> None:
+    """Sample any route or trip whose terrain sampling never ran (SNOW-1228).
+
+    Runs both slope backfill commands, route first. Each raises
+    ``CommandError`` when any row failed; the trip pass must still run
+    after a failed route pass, so the first error is held and re-raised
+    once both have run.
+    """
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing reconcile_slope_samples")
+    first_error: Exception | None = None
+    for command in ("backfill_route_slope_samples", "backfill_trip_slope_samples"):
+        try:
+            call_command(command, "--commit", "--limit", str(RECONCILE_SLOPE_LIMIT))
+        except Exception as exc:  # noqa: BLE001 — broad catch intentional: one pass failing must not skip the other; re-raised below
+            logger.exception("schedule: %s failed", command)
+            if first_error is None:
+                first_error = exc
+    if first_error is not None:
+        raise first_error
+
+
 def _run_check_resort_locations() -> None:
     """Invoke ``link_resort_locations --check`` to detect unlinked resorts.
 
@@ -226,7 +269,7 @@ def build_scheduler() -> BlockingScheduler:
     Returns
     -------
     BlockingScheduler
-        A scheduler with seven jobs pre-registered:
+        A scheduler with eight jobs pre-registered:
 
         ``fetch_bulletins``
             Cron: ``minute=0,5`` (every hour at :00 and :05 UTC).
@@ -236,6 +279,8 @@ def build_scheduler() -> BlockingScheduler:
             Cron: ``hour=3, minute=30`` (once a day, off the fetch hours).
         ``fill_what3words``
             Cron: ``hour=4`` (once a day, off the fetch hours).
+        ``reconcile_slope_samples``
+            Cron: ``hour=4, minute=30`` (once a day, SNOW-1228).
         ``check_resort_locations``
             Cron: ``hour=5`` (once a day; read-only detector, SNOW-885).
         ``purge_expired_oauth_tokens``
@@ -283,6 +328,16 @@ def build_scheduler() -> BlockingScheduler:
         switched("fill_what3words", _run_fill_what3words),
         trigger=CronTrigger(hour=4, minute=0, timezone="UTC"),
         id="fill_what3words",
+        **_common,
+    )
+
+    # SNOW-1228: after fill_what3words and before the 05:00 detector, on an
+    # hour no fetch job runs. Like fill_what3words it competes only for the
+    # outbound connection pool, and on most days it has nothing to do.
+    scheduler.add_job(
+        switched("reconcile_slope_samples", _run_reconcile_slope_samples),
+        trigger=CronTrigger(hour=4, minute=30, timezone="UTC"),
+        id="reconcile_slope_samples",
         **_common,
     )
 

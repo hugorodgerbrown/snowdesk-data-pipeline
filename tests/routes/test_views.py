@@ -150,6 +150,29 @@ class TestRouteCreateSuccess:
         assert route.point_count == 4
         assert route.ascent_m == pytest.approx(300.0)
 
+    def test_a_failed_sampling_enqueue_still_answers_the_upload(
+        self, client: Client
+    ) -> None:
+        """SNOW-1228: an enqueue failure after the commit is not the user's 500.
+
+        The route is stored; the upload answers with its row, exactly one
+        route exists, and its ``slope_samples`` stays null for the daily
+        reconcile job.
+        """
+        user = UserFactory.create()
+        client.force_login(user)
+
+        with patch(
+            "apps.routes.services.slope_segments._worker_sample_route_slopes"
+        ) as worker:
+            worker.enqueue.side_effect = RuntimeError("queue unavailable")
+            response = client.post(CREATE_URL, {"file": _upload()}, **HTMX_HEADERS)
+
+        assert response.status_code == 200
+        route = Route.objects.get(user=user)
+        assert route.slope_samples is None
+        assert f'id="route-{route.uuid}"' in response.content.decode()
+
     def test_source_filename_is_recorded(self, client: Client) -> None:
         """The upload's name is kept as a label."""
         user = UserFactory.create()

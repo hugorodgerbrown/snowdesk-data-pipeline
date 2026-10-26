@@ -93,6 +93,21 @@ class TestEnqueue:
 
         assert "meeting point weather fetch failed" in caplog.text
 
+    def test_a_failed_enqueue_is_logged_not_raised(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """SNOW-1228: the trip is saved; the scheduled fetch_weather fills it."""
+        trip = TripFactory.create(date=_days(1))
+
+        with patch(
+            "apps.trips.services.meeting_weather._worker_fetch_meeting_weather"
+        ) as worker:
+            worker.enqueue.side_effect = RuntimeError("queue unavailable")
+            enqueue_meeting_weather(trip)
+
+        worker.enqueue.assert_called_once_with(trip.pk, False)
+        assert "meeting weather enqueue failed" in caplog.text
+
     def test_a_deleted_trip_is_skipped(self) -> None:
         """The queue can outlive the row."""
         trip = TripFactory.create(date=_days(1))

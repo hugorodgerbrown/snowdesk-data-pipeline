@@ -632,8 +632,17 @@ def enqueue_route_slope_sampling(route: Route) -> None:
     holding the ``select_for_update`` lock on the user row. Every backend
     reads the same on a green test run; only production would differ.
 
+    SNOW-1228: AN ENQUEUE FAILURE IS LOGGED, NOT RAISED. This runs after
+    the route has committed, so raising would answer the user with a 500
+    for a route that does exist, and a retry would upload a second one.
+    The row keeps a null ``slope_samples``, which the daily
+    ``reconcile_slope_samples`` job (``schedule.py``) picks up.
+
     Args:
         route: The route to sample.
 
     """
-    _worker_sample_route_slopes.enqueue(route.pk)
+    try:
+        _worker_sample_route_slopes.enqueue(route.pk)
+    except Exception:  # noqa: BLE001 — broad catch intentional: any backend failure must not fail a committed upload
+        logger.exception("route slope sampling enqueue failed: route pk=%s", route.pk)

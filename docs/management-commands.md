@@ -169,16 +169,16 @@ everyone as the same OS user, so without it the row cannot say who ran it.
 
 ## Operational requirements
 
-Seven scheduled jobs run on the worker: two keep the public site in sync
-with upstream data, three delete or close rows past their useful life, one
-fills a derived column, and one is a read-only detector. All seven
+Eight scheduled jobs run on the worker: two keep the public site in sync
+with upstream data, three delete or close rows past their useful life, two
+fill a derived column, and one is a read-only detector. All eight
 are driven by the `snowdesk-scheduler` Render Background Worker, which
 runs `python manage.py run_scheduler` and uses APScheduler (SNOW-238) to
 fire the jobs on their cron schedules via `django.core.management.call_command`.
 The schedule is declared in [`schedule.py`](../schedule.py) at the repo root
-and documented in [`render.yaml`](../render.yaml). The six writing jobs run
-with `--commit` so they actually persist; the seventh runs `--check` and writes
-nothing. All seven exit non-zero on failure so a missed run is visible in the
+and documented in [`render.yaml`](../render.yaml). The seven writing jobs run
+with `--commit` so they actually persist; the eighth runs `--check` and writes
+nothing. All eight exit non-zero on failure so a missed run is visible in the
 worker logs.
 
 | Job | Command | Cadence | Purpose |
@@ -189,6 +189,7 @@ worker logs.
 | OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes expired MCP OAuth tokens and authorization codes with django-oauth-toolkit's `clear_expired()` (SNOW-1193). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
 | Run-register prune | `prune_command_runs --commit` | `50 3 * * *` (daily, 03:50 UTC) | Marks `CommandRun` rows a killed process left `RUNNING` for over six hours as `INTERRUPTED`, and deletes `SCHEDULER` runs older than 90 days (SNOW-1189). Every other run is kept for good. |
 | what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
+| Slope-sample reconcile | `backfill_route_slope_samples --commit --limit 50`, then `backfill_trip_slope_samples --commit --limit 50` | `30 4 * * *` (daily, 04:30 UTC) | The safety net for a terrain-sampling task that was never queued (SNOW-1228). Upload, trip creation and trip edits enqueue sampling after their row has committed, and an enqueue failure there is logged rather than raised — the user's route or trip exists, so a 500 would be a lie — which leaves `slope_samples` null. Both commands select exactly those rows. `--limit` bounds a day's tile requests, so a backlog drains over days; the trip pass still runs when the route pass fails, and the first failure is re-raised afterwards. Meeting-point weather needs no equivalent: the meeting point is an active `Location`, so `fetch_weather` fills it. |
 | Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports resorts with a coordinate but no pin `Location` (`Resort.location`, SNOW-1144) — each one a resort whose weather is not fetched, still on the map only through the transitional fallback to its mirrored coordinates (removed by SNOW-1147), with nothing else saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. Since SNOW-1144 every pin writer goes through `set_resort_pin`, so after the one-time backfill this should never fire; if it does, an operator runs `link_resort_locations --commit` by hand. |
 
 Each job checks a waffle switch, `schedule_<job id>` (for example
