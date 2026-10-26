@@ -71,6 +71,9 @@ import re
 from typing import Any
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 from django_ratelimit.decorators import ratelimit
@@ -424,6 +427,77 @@ def areas_json(request: HttpRequest) -> HttpResponse:
     return JsonResponse({"areas": [_serialise(area) for area in areas]})
 
 
+def _at_cap(user: User, area_id: str) -> bool:
+    """Return whether syncing ``area_id`` would take ``user`` past the cap.
+
+    One condition, short-circuited, not two nested ones: the cap is only
+    consulted for an area the account does NOT already hold, and ``and``
+    says so while guaranteeing the ``count()`` is skipped in the common
+    re-sync case — so a re-sync is never refused, and never counts.
+
+    Args:
+        user: The account the area would be saved against.
+        area_id: The client-minted area id being synced.
+
+    Returns:
+        True when the area is new to the account and the account already
+        holds ``settings.DOWNLOAD_AREAS_MAX_PER_USER`` areas.
+
+    """
+    owned = DownloadArea.objects.for_user(user)
+    return (
+        not owned.filter(area_id=area_id).exists()
+        and owned.count() >= settings.DOWNLOAD_AREAS_MAX_PER_USER
+    )
+
+
+def _cap_reached(user: User) -> HttpResponse:
+    """Log and answer a sync refused at the per-user cap.
+
+    Args:
+        user: The account that hit the cap.
+
+    Returns:
+        The 409 response.
+
+    """
+    logger.info("Download area sync blocked: user=%s hit the cap", user.pk)
+    return HttpResponse("You have reached the saved-area limit.", status=409)
+
+
+def _locked_upsert(user: User, area_id: str, defaults: dict[str, Any]) -> HttpResponse:
+    """Lock the user row, re-check the cap, then upsert the area.
+
+    SNOW-1228: two concurrent syncs of two NEW areas could both pass the
+    unlocked check in ``area_sync`` at cap - 1 and both insert. Locking the
+    user row serialises them, so the second re-check counts the first
+    insert. The lock is on the user because there is no row to lock for an
+    area that does not exist yet; this mirrors routes'
+    ``_locked_cap_recheck``. On SQLite (tests) ``FOR UPDATE`` is a silent
+    no-op, so the race itself is argued rather than demonstrated.
+
+    Args:
+        user: The account the area is saved against.
+        area_id: The client-minted area id being synced.
+        defaults: The field values to create or update the row with.
+
+    Returns:
+        The stored area as JSON, or the 409 when the re-check finds the cap
+        reached.
+
+    """
+    with transaction.atomic():
+        get_user_model().objects.select_for_update().get(pk=user.pk)
+        if _at_cap(user, area_id):
+            return _cap_reached(user)
+        area, _created = DownloadArea.objects.update_or_create(
+            user=user,
+            area_id=area_id,
+            defaults=defaults,
+        )
+    return JsonResponse(_serialise(area))
+
+
 @require_htmx
 @require_POST
 @ratelimit(key="user", rate="30/m", block=False)
@@ -504,17 +578,11 @@ def area_sync(request: HttpRequest) -> HttpResponse:
     if field_error:
         return HttpResponse(field_error, status=400)
 
-    # One condition, short-circuited, not two nested ones: the cap is only
-    # consulted for an area the account does NOT already hold, and `and`
-    # says so while guaranteeing the `count()` is skipped in the common
-    # re-sync case.
-    owned = DownloadArea.objects.for_user(request.user)
-    if (
-        not owned.filter(area_id=area_id).exists()
-        and owned.count() >= settings.DOWNLOAD_AREAS_MAX_PER_USER
-    ):
-        logger.info("Download area sync blocked: user=%s hit the cap", request.user.pk)
-        return HttpResponse("You have reached the saved-area limit.", status=409)
+    # The cheap unlocked check first, so a request already over the cap is
+    # refused without taking a lock; the locked re-check below is what
+    # actually enforces it.
+    if _at_cap(request.user, area_id):
+        return _cap_reached(request.user)
 
     defaults: dict[str, Any] = {
         **_terrain_defaults(raw_terrain),
@@ -528,12 +596,7 @@ def area_sync(request: HttpRequest) -> HttpResponse:
         "basemap_key": basemap_key,
         "name": name,
     }
-    area, _created = DownloadArea.objects.update_or_create(
-        user=request.user,
-        area_id=area_id,
-        defaults=defaults,
-    )
-    return JsonResponse(_serialise(area))
+    return _locked_upsert(request.user, area_id, defaults)
 
 
 @require_htmx

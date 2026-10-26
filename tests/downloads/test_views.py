@@ -36,8 +36,10 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from unittest.mock import patch
 
 import pytest
+from django.db import connection
 from django.test import Client
 
 from apps.downloads import views
@@ -361,6 +363,41 @@ class TestAreaSyncWrites:
         response = client.post(SYNC_URL, REGION_PAYLOAD, **HTMX_HEADERS)
 
         assert response.status_code == 409
+
+    def test_cap_is_rechecked_under_the_lock(
+        self, client: Client, signed_in: Any, settings: Any
+    ) -> None:
+        """SNOW-1228: a stale unlocked pre-check cannot take the user past the cap.
+
+        Two concurrent syncs of two new areas can both pass the unlocked
+        check at cap - 1. SQLite cannot run that race (``FOR UPDATE`` is a
+        no-op there), so it is simulated: the first ``_at_cap`` answers
+        False as a stale read would, and the second — which must run inside
+        the transaction holding the user-row lock — answers truthfully.
+        """
+        settings.DOWNLOAD_AREAS_MAX_PER_USER = 1
+        DownloadAreaFactory.create(
+            user=signed_in, area_id="region-ch-1", region_id="ch-1"
+        )
+        real_at_cap = views._at_cap
+        # The test itself runs inside a transaction, so what is compared is
+        # the atomic DEPTH at each call, not whether one is open at all.
+        depths: list[int] = []
+
+        def _at_cap(user: Any, area_id: str) -> bool:
+            """Answer stale on the first call, truthfully thereafter."""
+            depths.append(len(connection.atomic_blocks))
+            if len(depths) == 1:
+                return False
+            return real_at_cap(user, area_id)
+
+        with patch.object(views, "_at_cap", side_effect=_at_cap):
+            response = client.post(SYNC_URL, REGION_PAYLOAD, **HTMX_HEADERS)
+
+        assert response.status_code == 409
+        assert DownloadArea.objects.for_user(signed_in).count() == 1
+        assert len(depths) == 2
+        assert depths[1] > depths[0]
 
     def test_cap_still_allows_updating_an_area_already_held(
         self, client: Client, signed_in: Any, settings: Any
