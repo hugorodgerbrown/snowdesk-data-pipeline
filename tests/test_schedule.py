@@ -3,7 +3,7 @@ tests/test_schedule.py — Unit tests for schedule.py.
 
 Covers:
   - ``build_scheduler()`` returns a :class:`BlockingScheduler` with exactly
-    seven jobs.
+    eight jobs.
   - The jobs have the expected IDs, one per wrapped command in
     ``schedule.py``.
   - Their ``CronTrigger``s have the correct non-default field expressions.
@@ -50,9 +50,9 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_seven_jobs(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly seven registered jobs."""
-    assert len(scheduler.get_jobs()) == 7
+def test_scheduler_has_exactly_eight_jobs(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly eight registered jobs."""
+    assert len(scheduler.get_jobs()) == 8
 
 
 def test_job_ids(jobs: dict) -> None:
@@ -65,6 +65,7 @@ def test_job_ids(jobs: dict) -> None:
         "check_resort_locations",
         "purge_expired_oauth_tokens",
         "prune_command_runs",
+        "reconcile_slope_samples",
     }
 
 
@@ -128,6 +129,39 @@ def test_fill_what3words_runs_off_the_fetch_hours(jobs: dict) -> None:
     trigger = jobs["fill_what3words"].trigger
     assert str(_get_field(trigger, "hour")) == "4"
     assert str(_get_field(trigger, "minute")) == "0"
+
+
+def test_reconcile_slope_samples_runs_after_fill_what3words(jobs: dict) -> None:
+    """04:30 UTC — on the quiet stretch, after fill_what3words (SNOW-1228)."""
+    trigger = jobs["reconcile_slope_samples"].trigger
+    assert str(_get_field(trigger, "hour")) == "4"
+    assert str(_get_field(trigger, "minute")) == "30"
+
+
+def test_reconcile_slope_samples_commits_both_backfills_bounded() -> None:
+    """Route pass then trip pass, each with --commit and a --limit (SNOW-1228)."""
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        schedule_module._run_reconcile_slope_samples()
+    limit = str(schedule_module.RECONCILE_SLOPE_LIMIT)
+    assert mock_cc.call_args_list == [
+        mock.call("backfill_route_slope_samples", "--commit", "--limit", limit),
+        mock.call("backfill_trip_slope_samples", "--commit", "--limit", limit),
+    ]
+
+
+def test_reconcile_slope_samples_runs_the_trip_pass_after_a_route_failure() -> None:
+    """A failed route pass must not skip trips; its error still surfaces."""
+    from django.core.management.base import CommandError
+
+    with mock.patch(
+        "django.core.management.call_command",
+        autospec=True,
+        side_effect=[CommandError("route pass failed"), None],
+    ) as mock_cc:
+        with pytest.raises(CommandError, match="route pass failed"):
+            schedule_module._run_reconcile_slope_samples()
+    assert mock_cc.call_count == 2
+    assert mock_cc.call_args_list[1].args[0] == "backfill_trip_slope_samples"
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +313,7 @@ def test_purge_runs_clear_of_the_fetch_hours(jobs: dict) -> None:
         "check_resort_locations",
         "purge_expired_oauth_tokens",
         "prune_command_runs",
+        "reconcile_slope_samples",
     ],
 )
 def test_each_job_obeys_its_own_switch(jobs: dict, job_id: str) -> None:
@@ -294,7 +329,8 @@ def test_each_job_obeys_its_own_switch(jobs: dict, job_id: str) -> None:
     switch.save()
     with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
         jobs[job_id].func()
-    mock_cc.assert_called_once()
+    # Called, not called once: reconcile_slope_samples runs two commands.
+    assert mock_cc.called
 
 
 def test_every_job_has_a_switch_in_the_manifest(jobs: dict) -> None:

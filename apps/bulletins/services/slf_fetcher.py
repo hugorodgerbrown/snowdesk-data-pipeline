@@ -43,7 +43,12 @@ import requests
 from django.conf import settings
 from django.db import transaction
 
-from apps.bulletins.models import Bulletin, PipelineRun, RegionBulletin
+from apps.bulletins.models import (
+    Bulletin,
+    BulletinGrouping,
+    PipelineRun,
+    RegionBulletin,
+)
 from apps.bulletins.services.day_rating import (
     apply_bulletin_day_ratings,
     day_rating_pairs,
@@ -614,6 +619,45 @@ def _resolve_source(raw: dict[str, Any], bulletin_id: str) -> str:
         return ""
 
 
+def _refresh_grouping(bulletin: Bulletin, run: PipelineRun) -> None:
+    """
+    Recompute ``bulletin``'s grouping outline without ever aborting ingest.
+
+    The grouping is a denormalisation; the authoritative data lives in the
+    RegionBulletin rows, so a geometry error is logged and ingest continues.
+
+    SNOW-1228: a failed recompute must not leave the PREVIOUS outline live.
+    A correction that moved a region out of the bulletin would otherwise
+    keep drawing the old aggregation, which asserts the old region is still
+    covered by it. So the stale row is deleted — no outline is honest, an
+    old one is not — and the failure counts against the run, as a failed
+    day rating does, so cron/CI see it. The delete has its own guard: a
+    failing delete is logged but never aborts ingest either.
+
+    Args:
+        bulletin: The bulletin just upserted, its region links committed.
+        run: The pipeline run whose ``records_failed`` a failure increments.
+
+    """
+    try:
+        compute_bulletin_grouping_boundary(bulletin)
+    except Exception:
+        logger.exception(
+            "compute_bulletin_grouping_boundary failed for bulletin %s"
+            " — ingest continues",
+            bulletin.bulletin_id,
+        )
+        try:
+            BulletinGrouping.objects.filter(bulletin=bulletin).delete()
+        except Exception:
+            logger.exception(
+                "could not delete the stale BulletinGrouping for bulletin %s",
+                bulletin.bulletin_id,
+            )
+        run.records_failed += 1
+        run.save(update_fields=["records_failed"])
+
+
 def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") -> bool:
     """
     Create or update a single Bulletin from a raw API dict.
@@ -770,16 +814,8 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
         run.save(update_fields=["records_failed"])
 
     # Compute the dissolved grouping boundary — wrapped identically so that
-    # a geometry error never aborts ingest.  The grouping is a denormalisation;
-    # the authoritative data lives in the RegionBulletin rows.
-    try:
-        compute_bulletin_grouping_boundary(bulletin)
-    except Exception:
-        logger.exception(
-            "compute_bulletin_grouping_boundary failed for bulletin %s"
-            " — ingest continues",
-            bulletin_id,
-        )
+    # a geometry error never aborts ingest.
+    _refresh_grouping(bulletin, run)
 
     return created
 
@@ -994,9 +1030,9 @@ def run_slf_pipeline(
     )
 
     if dry_run:
-        run.mark_success(0, 0)
+        run.mark_finished(0, 0)
     else:
-        run.mark_success(counts[OUTCOME_CREATED], counts[OUTCOME_UPDATED])
+        run.mark_finished(counts[OUTCOME_CREATED], counts[OUTCOME_UPDATED])
 
     return run
 

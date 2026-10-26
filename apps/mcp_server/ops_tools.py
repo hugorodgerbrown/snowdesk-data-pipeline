@@ -690,7 +690,8 @@ def ingest_status(*, now: dt.datetime | None = None) -> dict[str, Any]:
             else (
                 f"Stalest provider {stalest['source']}: last issue "
                 f"{stalest['hours_since_issue']}h ago; "
-                f"{recent.get(PipelineRun.Status.FAILED, 0)} failed pipeline "
+                f"{recent.get(PipelineRun.Status.FAILED, 0)} failed and "
+                f"{recent.get(PipelineRun.Status.PARTIAL, 0)} partial pipeline "
                 "run(s) in 24h."
             )
         ),

@@ -87,6 +87,23 @@ class TestBackfillView:
         assert len(messages) == 1
         assert "failed" in str(messages[0]).lower()
 
+    def test_partial_run_shows_a_warning(self, admin_client: Client) -> None:
+        """SNOW-1228: a PARTIAL run is a warning naming the failed count."""
+        run = PipelineRunFactory.create(
+            status=PipelineRun.Status.PARTIAL,
+            records_created=5,
+            records_updated=1,
+            records_failed=2,
+        )
+        with patch("apps.bulletins.admin.run_slf_pipeline", return_value=run):
+            response = admin_client.post(BACKFILL_URL, follow=True)
+
+        messages = list(response.context["messages"])
+        assert len(messages) == 1
+        assert messages[0].level_tag == "warning"
+        assert "2 failed record(s)" in str(messages[0])
+        assert "5 created" in str(messages[0])
+
     def test_exception_shows_error(self, admin_client: Client) -> None:
         """An exception during the pipeline shows an error message."""
         with patch(

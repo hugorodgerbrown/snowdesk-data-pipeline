@@ -37,6 +37,7 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth.models import User
+from django.db import IntegrityError
 from django.test import Client
 from django.urls import reverse
 from django.utils import dateformat, timezone
@@ -595,6 +596,43 @@ class TestReportSubmitSuccess:
         assert obs.gps_latitude == 46.1
         assert obs.gps_longitude == 7.1
         assert obs.observation_type == FieldObservation.OBSERVATION_TYPE.WHUMPFING
+
+    def test_failed_observation_insert_leaves_no_orphan_location(
+        self, client: Client
+    ) -> None:
+        """SNOW-1228: the Location and its observation commit together or not at all.
+
+        A failing observation insert used to leave the Location minted for it
+        behind, an orphan that ``Location.objects.active()`` would fetch
+        weather for. The failure still surfaces as a 500.
+        """
+        user = _verified_user()
+        client.force_login(user)
+        client.raise_request_exception = False
+        locations_before = Location.objects.count()
+
+        with (
+            patch("apps.observations.views.region_for_point", return_value=None),
+            patch.object(
+                FieldObservation.objects,
+                "create",
+                side_effect=IntegrityError("simulated insert failure"),
+            ),
+        ):
+            response = client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": FieldObservation.OBSERVATION_TYPE.WHUMPFING,
+                },
+                **HTMX_HEADERS,
+            )
+
+        assert response.status_code == 500
+        assert Location.objects.count() == locations_before
+        assert not FieldObservation.objects.filter(user=user).exists()
 
     def test_authenticated_non_staff_user_creates_row(self, client: Client) -> None:
         """A non-staff authenticated user can submit (SNOW-333)."""

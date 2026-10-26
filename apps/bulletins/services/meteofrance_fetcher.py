@@ -374,9 +374,9 @@ def run_meteofrance_pipeline(
     )
 
     if dry_run:
-        run.mark_success(0, 0)
+        run.mark_finished(0, 0)
     else:
-        run.mark_success(counts[OUTCOME_CREATED], counts[OUTCOME_UPDATED])
+        run.mark_finished(counts[OUTCOME_CREATED], counts[OUTCOME_UPDATED])
 
     return run
 

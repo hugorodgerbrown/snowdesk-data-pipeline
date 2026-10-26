@@ -208,11 +208,16 @@ class TestCommitMode:
         run_loader(SAMPLE_NDJSON, commit=True, verbose=False)
         assert PipelineRun.objects.count() == 1
 
-    def test_pipeline_run_is_success(self) -> None:
-        """The PipelineRun is marked SUCCESS after a clean load."""
+    def test_pipeline_run_is_partial_when_a_row_failed(self) -> None:
+        """A load with a failed row finishes PARTIAL, not SUCCESS (SNOW-1228).
+
+        sample_archive.ndjson line 3 has UNKNOWNMASSIF, which the loader
+        counts in ``records_failed``.
+        """
         run_loader(SAMPLE_NDJSON, commit=True, verbose=False)
         run = PipelineRun.objects.get()
-        assert run.status == PipelineRun.Status.SUCCESS
+        assert run.records_failed > 0
+        assert run.status == PipelineRun.Status.PARTIAL
 
     def test_pipeline_run_triggered_by(self) -> None:
         """triggered_by is set to the canonical backfill label."""

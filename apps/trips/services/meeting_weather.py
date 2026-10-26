@@ -91,6 +91,11 @@ def enqueue_meeting_weather(trip: Trip, *, moved: bool = False) -> None:
     The checks that decide whether a call is made are the worker's, so a
     task that waits in the queue still sees the trip as it is when it runs.
 
+    SNOW-1228: an enqueue failure is logged, not raised. The trip has
+    already been saved, so raising would answer the user with a 500 for a
+    trip that does exist. The meeting point is an active Location, so the
+    next scheduled ``fetch_weather`` (four times a day) fills its forecast.
+
     Args:
         trip: The trip just saved.
         moved: Whether its meeting point has just moved.
@@ -98,4 +103,7 @@ def enqueue_meeting_weather(trip: Trip, *, moved: bool = False) -> None:
     """
     if not _in_window(trip.date, timezone.localdate()):
         return
-    _worker_fetch_meeting_weather.enqueue(trip.pk, moved)
+    try:
+        _worker_fetch_meeting_weather.enqueue(trip.pk, moved)
+    except Exception:  # noqa: BLE001 — broad catch intentional: any backend failure must not fail a saved trip
+        logger.exception("meeting weather enqueue failed: trip pk=%s", trip.pk)

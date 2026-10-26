@@ -851,6 +851,29 @@ class TestCreateRouteEnqueuesSampling:
             route = create_route(user, self._gpx(), "track.gpx")
         enqueue.assert_called_once_with(route)
 
+    def test_a_failed_enqueue_still_returns_the_committed_route(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """SNOW-1228: the route exists, so the upload must not fail with it.
+
+        The enqueue runs after the commit; raising from it answered a 500
+        for a stored route, and a retry uploaded a second. The failure is
+        logged and the route keeps a null ``slope_samples`` for the daily
+        reconcile job to pick up.
+        """
+        user = UserFactory.create()
+        with patch(
+            "apps.routes.services.slope_segments._worker_sample_route_slopes"
+        ) as worker:
+            worker.enqueue.side_effect = RuntimeError("queue unavailable")
+            route = create_route(user, self._gpx(), "track.gpx")
+
+        worker.enqueue.assert_called_once_with(route.pk)
+        assert Route.objects.filter(user=user).count() == 1
+        route.refresh_from_db()
+        assert route.slope_samples is None
+        assert "route slope sampling enqueue failed" in caplog.text
+
     def test_it_enqueues_outside_the_transaction(self) -> None:
         """The placement that only production would punish getting wrong.
 

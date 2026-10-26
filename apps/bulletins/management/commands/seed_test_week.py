@@ -114,7 +114,7 @@ class Command(RegisteredCommand):
             raise CommandError(f"Golden-week load failed: {exc}") from exc
 
         if run is not None:
-            run.mark_success(result.created, result.updated)
+            run.mark_finished(result.created, result.updated)
 
         self._report(result, commit=commit, verbosity=verbosity)
 

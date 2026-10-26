@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
 from django.contrib.auth import login
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -53,6 +54,47 @@ from .services.passkey import (
 logger = logging.getLogger(__name__)
 
 _TOKEN_BACKEND = "apps.accounts.backends.TokenBackend"  # noqa: S105 — backend path, not a password
+
+
+# ---------------------------------------------------------------------------
+# Request body
+# ---------------------------------------------------------------------------
+
+
+def _read_credential_object(
+    request: HttpRequest,
+) -> tuple[str, dict[str, Any]] | JsonResponse:
+    """
+    Read a WebAuthn credential body as text and as a JSON object.
+
+    The body is attacker-supplied: bytes that are not UTF-8, JSON that does
+    not parse, and JSON that parses to something other than an object (a
+    list, number, string or ``null``) are all answered with a 400 rather
+    than reaching the verifier (SNOW-1228).
+
+    Args:
+        request: POST request with the raw WebAuthn JSON in the body.
+
+    Returns:
+        ``(credential_json, payload)`` on success, or the 400 response to
+        return.
+
+    """
+    try:
+        credential_json = request.body.decode("utf-8")
+    except UnicodeDecodeError:
+        return JsonResponse({"error": "invalid_json"}, status=400)
+    if not credential_json:
+        return JsonResponse({"error": "empty_body"}, status=400)
+
+    try:
+        payload = json.loads(credential_json)
+    except json.JSONDecodeError, TypeError:
+        return JsonResponse({"error": "invalid_json"}, status=400)
+
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "invalid_json"}, status=400)
+    return credential_json, payload
 
 
 # ---------------------------------------------------------------------------
@@ -114,18 +156,14 @@ def passkey_auth_response(request: HttpRequest) -> JsonResponse:
     if getattr(request, "limited", False):
         return JsonResponse({"error": "rate_limited"}, status=429)
 
-    credential_json = request.body.decode("utf-8")
-    if not credential_json:
-        return JsonResponse({"error": "empty_body"}, status=400)
-
-    try:
-        payload = json.loads(credential_json)
-    except json.JSONDecodeError, TypeError:
-        return JsonResponse({"error": "invalid_json"}, status=400)
+    parsed = _read_credential_object(request)
+    if isinstance(parsed, JsonResponse):
+        return parsed
+    credential_json, payload = parsed
 
     # The body is attacker-shaped as well as attacker-supplied: anything that
     # is not a string is not a destination, and never reaches ``safe_next``.
-    raw_next = payload.get("next") if isinstance(payload, dict) else None
+    raw_next = payload.get("next")
     next_url = safe_next(request, raw_next if isinstance(raw_next, str) else None)
 
     try:
@@ -201,7 +239,10 @@ def passkey_register_response(request: HttpRequest) -> JsonResponse:
     if not request.user.is_authenticated:
         return JsonResponse({"error": "unauthenticated"}, status=403)
 
-    credential_json = request.body.decode("utf-8")
+    try:
+        credential_json = request.body.decode("utf-8")
+    except UnicodeDecodeError:
+        return JsonResponse({"error": "invalid_json"}, status=400)
     if not credential_json:
         return JsonResponse({"error": "empty_body"}, status=400)
 

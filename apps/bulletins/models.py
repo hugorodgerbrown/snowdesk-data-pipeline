@@ -77,6 +77,9 @@ class PipelineRun(BaseModel):
         PENDING = "PENDING", "Pending"
         RUNNING = "RUNNING", "Running"
         SUCCESS = "SUCCESS", "Success"
+        # SNOW-1228: finished, but some records failed (a render model, a day
+        # rating or a grouping outline) — see mark_finished.
+        PARTIAL = "PARTIAL", "Partial"
         FAILED = "FAILED", "Failed"
 
     started_at = models.DateTimeField(default=timezone.now, db_index=True)
@@ -92,8 +95,11 @@ class PipelineRun(BaseModel):
     records_failed = models.PositiveIntegerField(
         default=0,
         help_text=(
-            "Number of bulletins whose render model could not be built "
-            "(stored with version=0 error sentinel)."
+            "Number of records that failed during the run: a bulletin that "
+            "could not be stored or whose render model could not be built "
+            "(stored with a version=0 error sentinel), a day rating that "
+            "could not be recomputed, or a grouping outline that could not "
+            "be recomputed. Non-zero finishes the run as PARTIAL."
         ),
     )
     error_message = models.TextField(blank=True)
@@ -128,12 +134,50 @@ class PipelineRun(BaseModel):
         """
         Transition the run to SUCCESS and record counts.
 
+        For a caller that records no per-record failures. One that does —
+        anything that goes through ``upsert_bulletin`` — finishes with
+        ``mark_finished`` instead, so a run with failures is not filed as a
+        success.
+
         Args:
             records_created: Number of new Bulletin rows created.
             records_updated: Number of existing Bulletin rows updated.
 
         """
-        self.status = self.Status.SUCCESS
+        self._finish(self.Status.SUCCESS, records_created, records_updated)
+
+    def mark_finished(self, records_created: int, records_updated: int) -> None:
+        """
+        Finish the run as PARTIAL when any record failed, else as SUCCESS.
+
+        SNOW-1228: a run that completed with ``records_failed > 0`` used to
+        be stored as SUCCESS, so anything reading the status alone (the ops
+        ``ingest_status`` tool, the admin list filter) saw a clean run.
+        PARTIAL is a terminal state of its own: the run finished, the
+        failures are counted, and it is neither a success nor a FAILED run
+        (which means the pipeline itself raised).
+
+        Args:
+            records_created: Number of new Bulletin rows created.
+            records_updated: Number of existing Bulletin rows updated.
+
+        """
+        status = self.Status.PARTIAL if self.records_failed else self.Status.SUCCESS
+        self._finish(status, records_created, records_updated)
+
+    def _finish(
+        self, status: "PipelineRun.Status", records_created: int, records_updated: int
+    ) -> None:
+        """
+        Persist a finished run's terminal status and counts, and log it.
+
+        Args:
+            status: SUCCESS or PARTIAL.
+            records_created: Number of new Bulletin rows created.
+            records_updated: Number of existing Bulletin rows updated.
+
+        """
+        self.status = status
         self.finished_at = timezone.now()
         self.records_created = records_created
         self.records_updated = records_updated
@@ -145,12 +189,22 @@ class PipelineRun(BaseModel):
                 "records_updated",
             ]
         )
-        logger.info(
-            "PipelineRun %s succeeded: %d created, %d updated",
-            self.pk,
-            records_created,
-            records_updated,
-        )
+        if status == self.Status.PARTIAL:
+            logger.warning(
+                "PipelineRun %s finished with failures: %d created, %d updated, "
+                "%d failed",
+                self.pk,
+                records_created,
+                records_updated,
+                self.records_failed,
+            )
+        else:
+            logger.info(
+                "PipelineRun %s succeeded: %d created, %d updated",
+                self.pk,
+                records_created,
+                records_updated,
+            )
 
     def mark_failed(self, error: Exception) -> None:
         """

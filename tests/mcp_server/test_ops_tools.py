@@ -348,6 +348,24 @@ class TestIngestStatus:
         assert result["pipeline_runs_24h"][PipelineRun.Status.FAILED] == 1
         assert result["summary"].startswith("Stalest provider SLF")
 
+    def test_partial_runs_are_counted_and_named(self) -> None:
+        """SNOW-1228: a run with failed records is PARTIAL, and the summary says so."""
+        now = dt.datetime(2026, 10, 22, 12, tzinfo=UTC)
+        BulletinFactory.create(
+            source=Bulletin.Source.SLF, issued_at=now - dt.timedelta(hours=1)
+        )
+        PipelineRunFactory.create(
+            status=PipelineRun.Status.PARTIAL, records_failed=3, started_at=now
+        )
+        PipelineRunFactory.create(status=PipelineRun.Status.PARTIAL, started_at=now)
+        PipelineRunFactory.create(status=PipelineRun.Status.SUCCESS, started_at=now)
+
+        result = ops_tools.ingest_status(now=now)
+
+        assert result["pipeline_runs_24h"][PipelineRun.Status.PARTIAL] == 2
+        assert result["pipeline_runs_24h"][PipelineRun.Status.SUCCESS] == 1
+        assert "0 failed and 2 partial pipeline run(s) in 24h" in result["summary"]
+
     def test_empty(self) -> None:
         """With nothing stored the summary says so."""
         result = ops_tools.ingest_status()

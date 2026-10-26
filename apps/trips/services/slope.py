@@ -103,10 +103,19 @@ def enqueue_trip_slope_sampling(trip: Trip) -> None:
     buy an identical answer at the cost of a second pass over the tile
     origin.
 
+    SNOW-1228: AN ENQUEUE FAILURE IS LOGGED, NOT RAISED. This runs after
+    the trip has committed, so raising would answer the user with a 500
+    for a trip that does exist, and would skip whatever the caller enqueues
+    next. The row keeps a null ``slope_samples``, which the daily
+    ``reconcile_slope_samples`` job (``schedule.py``) picks up.
+
     Args:
         trip: The trip just created.
 
     """
     if trip.slope_samples is not None:
         return
-    _worker_sample_trip_slopes.enqueue(trip.pk)
+    try:
+        _worker_sample_trip_slopes.enqueue(trip.pk)
+    except Exception:  # noqa: BLE001 — broad catch intentional: any backend failure must not fail a committed trip
+        logger.exception("trip slope sampling enqueue failed: trip pk=%s", trip.pk)

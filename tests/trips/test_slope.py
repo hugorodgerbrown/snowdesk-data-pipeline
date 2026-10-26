@@ -151,6 +151,20 @@ class TestEnqueueTripSlopeSampling:
 
         worker.enqueue.assert_called_once_with(trip.pk)
 
+    def test_a_failed_enqueue_is_logged_not_raised(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """SNOW-1228: the trip is committed; the reconcile job samples it."""
+        trip = TripFactory.create(points=MERIDIAN_TRACK, slope_samples=None)
+
+        with patch("apps.trips.services.slope._worker_sample_trip_slopes") as worker:
+            worker.enqueue.side_effect = RuntimeError("queue unavailable")
+            enqueue_trip_slope_sampling(trip)
+
+        assert "trip slope sampling enqueue failed" in caplog.text
+        trip.refresh_from_db()
+        assert trip.slope_samples is None
+
     def test_create_trip_enqueues_outside_the_transaction(self) -> None:
         """Under ImmediateBackend the worker runs INLINE, so placement is
         the difference between a queued walk and one holding the cap's row

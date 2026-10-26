@@ -82,17 +82,20 @@ def _make_failed_run(error_message: str = "API timeout") -> PipelineRun:
 
 def _make_failed_records_run(records_failed: int = 2) -> PipelineRun:
     """
-    Build a SUCCESS-state run with a non-zero records_failed counter.
+    Build a PARTIAL-state run with a non-zero records_failed counter.
+
+    Since SNOW-1228 a finished run with failed records is PARTIAL, never
+    SUCCESS, so that is the state the pipelines hand back.
 
     Args:
         records_failed: The number of render-model failures to record.
 
     Returns:
-        A persisted PipelineRun with status=SUCCESS but records_failed > 0.
+        A persisted PipelineRun with status=PARTIAL and records_failed > 0.
 
     """
     return PipelineRunFactory.create(
-        status=PipelineRun.Status.SUCCESS,
+        status=PipelineRun.Status.PARTIAL,
         records_created=5,
         records_updated=0,
         records_failed=records_failed,
@@ -713,6 +716,48 @@ class TestFetchBulletinsErrorHandling:
         mock_run.return_value = _make_failed_records_run(records_failed=2)
 
         with pytest.raises(CommandError, match="render-model"):
+            call_command(
+                "fetch_bulletins",
+                "--source",
+                "slf",
+                "--date",
+                "2026-03-15",
+                "--commit",
+            )
+
+    @patch(PATCH_SLF)
+    def test_partial_run_flushes_the_stash_then_exits_non_zero(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        """SNOW-1228: PARTIAL is not FAILED — the stash is written, then it raises."""
+        mock_run.return_value = _make_failed_records_run(records_failed=1)
+
+        with (
+            patch(
+                "apps.bulletins.management.commands.fetch_bulletins.Command._flush_stash"
+            ) as flush,
+            override_settings(SLF_ARCHIVE_PATH=tmp_path / "slf.ndjson"),
+            pytest.raises(CommandError, match="1 failed record"),
+        ):
+            call_command(
+                "fetch_bulletins",
+                "--source",
+                "slf",
+                "--date",
+                "2026-03-15",
+                "--stash",
+            )
+
+        flush.assert_called_once()
+
+    @patch(PATCH_SLF)
+    def test_failed_records_message_names_the_grouping_outline(
+        self, mock_run: MagicMock
+    ) -> None:
+        """SNOW-1228: a grouping-outline failure also counts, so the text says so."""
+        mock_run.return_value = _make_failed_records_run(records_failed=1)
+
+        with pytest.raises(CommandError, match="grouping-outline recompute"):
             call_command(
                 "fetch_bulletins",
                 "--source",

@@ -31,6 +31,11 @@
       "active": true
     },
     {
+      "name": "schedule_reconcile_slope_samples",
+      "note": "SNOW-1228: the scheduled job reconcile_slope_samples (backfill_route_slope_samples and backfill_trip_slope_samples, --commit --limit 50), daily at 04:30 UTC (schedule.py). Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    },
+    {
       "name": "schedule_check_resort_locations",
       "note": "SNOW-1201: the scheduled job link_resort_locations --check, daily at 05:00 UTC (schedule.py). Off skips its runs from the next firing; on resumes them.",
       "active": true

@@ -203,6 +203,43 @@ class TestPasskeyAuthResponse:
         resp = client.get(reverse("accounts:passkey_auth_response"))
         assert resp.status_code == 405
 
+    @pytest.mark.parametrize(
+        "body",
+        [
+            b"[]",
+            b"null",
+            b"42",
+            b'"hello"',
+            b'{"id": 42}',
+            b'{"id": ["dGVzdA"]}',
+            b"\xff\xfe",
+        ],
+        ids=[
+            "list",
+            "null",
+            "number",
+            "string",
+            "numeric-id",
+            "list-id",
+            "invalid-utf8",
+        ],
+    )
+    def test_non_credential_body_returns_400(self, body: bytes) -> None:
+        """SNOW-1228: valid-but-wrong JSON or non-UTF-8 bytes are a 400, not a 500.
+
+        A challenge is in the session so the body reaches the verifier, which
+        is where a non-object payload used to raise ``AttributeError``.
+        """
+        client = Client(raise_request_exception=False)
+        _set_auth_challenge(client, "dGVzdA")
+        resp = client.post(
+            reverse("accounts:passkey_auth_response"),
+            data=body,
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        assert "_auth_user_id" not in client.session
+
 
 # ---------------------------------------------------------------------------
 # passkey_register_request
@@ -340,6 +377,25 @@ class TestPasskeyRegisterResponse:
             content_type="application/json",
         )
         assert resp.status_code == 400
+
+    @pytest.mark.parametrize(
+        "body",
+        [b"\xff\xfe", b"[]", b"null", b"42", b'"hello"'],
+        ids=["invalid-utf8", "list", "null", "number", "string"],
+    )
+    def test_non_credential_body_returns_400(self, body: bytes) -> None:
+        """SNOW-1228: non-UTF-8 bytes or non-object JSON are a 400, not a 500."""
+        account = AccountFactory.create()
+        client = _make_session_client(account.user)
+        client.raise_request_exception = False
+        _set_reg_challenge(client, "dGVzdA")
+        resp = client.post(
+            reverse("accounts:passkey_register_response"),
+            data=body,
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        assert not PasskeyCredential.objects.filter(user=account.user).exists()
 
     def test_get_not_allowed(self) -> None:
         account = AccountFactory.create()
