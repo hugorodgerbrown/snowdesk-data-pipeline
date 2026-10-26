@@ -2,7 +2,7 @@
 name: async-operations
 description: Catalogue of async callsites — django-tasks email backends, db_worker on Render
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-26
 ---
 
 # Async operations
@@ -33,6 +33,10 @@ moment `.enqueue()` is called, so:
 - Email lands in Mailpit immediately during local dev.
 - `mail.outbox` is populated synchronously during tests — no fixture hacks needed.
 - No `db_worker` process is required.
+
+`staging.py` sets the same `ImmediateBackend`: staging runs one web dyno
+and no `db_worker`, so a `DatabaseBackend` enqueue there would persist a
+task row that nothing ever sends.
 
 ### Production
 
