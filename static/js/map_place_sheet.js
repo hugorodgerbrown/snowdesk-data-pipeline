@@ -35,6 +35,12 @@
  *
  * OFFLINE, a saved pin's sheet falls back to its name and saved time, the
  * popup's own content, which the map holds without a request.
+ *
+ * PAUSED DURING PLAYBACK (SNOW-1239). While the timeline plays the sheet
+ * stays open under a "Playback in progress" band
+ * (window.pwaSheetPlayback, sheet_playback_core.js), fetches nothing for
+ * its frames, and loads once, for the day playback stopped on, when it
+ * stops. A newer ask, and every close, aborts the one in flight.
  */
 
 (function placeSheetInit() {
@@ -42,7 +48,8 @@
 
   const sheet = document.getElementById('place-sheet');
   const mapEl = document.getElementById('map');
-  if (!sheet || !mapEl || !window.MapSheet) return;
+  const playback = window.pwaSheetPlayback;
+  if (!sheet || !mapEl || !window.MapSheet || !playback) return;
 
   const RESORT_URL = mapEl.dataset.resortSheetUrl || '';
   const FAVOURITE_URL = mapEl.dataset.favouriteSheetUrl || '';
@@ -58,14 +65,26 @@
     'delete-failed': 'Could not delete this pin — please try again.',
   });
 
-  const controller = window.MapSheet.attach(sheet);
+  // One request in flight: a newer open supersedes it, and a close by any
+  // route (onTeardown) aborts it.
+  const guard = playback.createGuard();
+  // SNOW-1239: a reload the sheet skipped while the timeline played, to
+  // make once when it stops.
+  let pendingRefresh = false;
+
+  const controller = window.MapSheet.attach(sheet, {
+    onTeardown: () => {
+      guard.invalidate();
+      pendingRefresh = false;
+      playback.markPaused(sheet, false);
+    },
+  });
   const toast = window.MapSheet.toast || function () {};
 
   /** @type {?{kind: string, id: string, name?: string, createdAt?: string}} */
   let place = null;
   /** @type {?string} */
   let dateKey = null;
-  let seq = 0;
 
   const isPhone = () =>
     typeof window.matchMedia !== 'function' || !window.matchMedia(DESKTOP_QUERY).matches;
@@ -119,22 +138,26 @@
   const load = () => {
     const url = urlFor();
     if (!url) return Promise.resolve();
-    const mine = ++seq;
+    const ask = guard.begin();
     const current = place;
     if (!sheet.querySelector('[data-testid="place-sheet-body"]')) {
       paintLines(current && current.name ? current.name : '', STRINGS.loading);
     }
-    return fetch(url, { headers: { 'HX-Request': 'true' }, credentials: 'same-origin' })
+    return fetch(url, {
+      headers: { 'HX-Request': 'true' },
+      credentials: 'same-origin',
+      signal: ask.signal,
+    })
       .then((resp) => {
         if (!resp.ok) throw new Error('place sheet ' + resp.status);
         return resp.text();
       })
       .then((html) => {
-        if (mine !== seq || !controller.isOpen()) return;
+        if (!ask.isCurrent() || !controller.isOpen()) return;
         sheet.innerHTML = html;
       })
-      .catch(() => {
-        if (mine !== seq || !controller.isOpen()) return;
+      .catch((err) => {
+        if (!ask.isCurrent() || !controller.isOpen() || playback.isAbort(err)) return;
         // Offline, a saved pin still has what its popup showed: its name
         // and when it was saved, both on the feature the map holds.
         if (current && current.kind === 'favourite') {
@@ -171,14 +194,23 @@
     document.dispatchEvent(new CustomEvent('snowdesk:sheet-leader-point'));
     // Another place's body must not show under the new one's loading line.
     if (controller.isOpen()) sheet.replaceChildren();
-    load();
+    if (playback.isPlaying()) {
+      // SNOW-1239: opened during playback, the band alone, and the body
+      // when the timeline stops.
+      guard.invalidate();
+      pendingRefresh = true;
+      sheet.replaceChildren();
+      playback.markPaused(sheet, true);
+    } else {
+      load();
+    }
     if (!controller.isOpen()) controller.open();
     return true;
   };
 
   /** @returns {void} */
   const close = () => {
-    seq += 1;
+    guard.invalidate();
     place = null;
     if (controller.isOpen()) controller.close();
   };
@@ -267,14 +299,49 @@
       .catch(() => toast(STRINGS['delete-failed']));
   });
 
-  // A queued resort save lands, or a pin changes elsewhere: re-read.
+  // A queued resort save lands, or a pin changes elsewhere: re-read —
+  // when the timeline stops, if it is playing.
   document.addEventListener('snowdesk:favourites-changed', () => {
-    if (controller.isOpen() && place) load();
+    if (!controller.isOpen() || !place) return;
+    if (playback.isPlaying()) {
+      pendingRefresh = true;
+      return;
+    }
+    load();
   });
 
   document.addEventListener('snowdesk:date-changed', (ev) => {
-    dateKey = /** @type {CustomEvent} */ (ev).detail?.date || null;
-    if (controller.isOpen()) load();
+    const detail = /** @type {CustomEvent} */ (ev).detail || {};
+    dateKey = detail.date || null;
+    if (!controller.isOpen()) return;
+    // SNOW-1239: a timelapse frame during playback only records the day.
+    if (!playback.shouldReload(detail.source, playback.isPlaying())) {
+      pendingRefresh = true;
+      guard.invalidate();
+      playback.markPaused(sheet, true);
+      return;
+    }
+    // A day picked by hand ends playback; it arrives before the stop, so
+    // the stop that follows has nothing left to load.
+    pendingRefresh = false;
+    playback.markPaused(sheet, false);
+    load();
+  });
+
+  // SNOW-1239: playback starting pauses the open sheet; stopping lifts the
+  // band and loads the day it stopped on, once.
+  document.addEventListener('snowdesk:timelapse-state', (ev) => {
+    if (!controller.isOpen() || !place) return;
+    if (/** @type {CustomEvent} */ (ev).detail?.playing) {
+      guard.invalidate();
+      pendingRefresh = true;
+      playback.markPaused(sheet, true);
+      return;
+    }
+    playback.markPaused(sheet, false);
+    if (!pendingRefresh) return;
+    pendingRefresh = false;
+    load();
   });
 
   // A saved pin's sheet is the phone's; widening past `sm` hands it back
