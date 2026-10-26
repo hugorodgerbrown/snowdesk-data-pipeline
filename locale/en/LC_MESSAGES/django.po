@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-26 12:46+0000\n"
+"POT-Creation-Date: 2026-10-26 13:04+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -4589,6 +4589,9 @@ msgid "Showing this trip's route."
 msgstr ""
 
 msgid "Back to the trip"
+msgstr ""
+
+msgid "Playback in progress"
 msgstr ""
 
 msgid "What Snowdesk has saved on this device, and how to fix it."
