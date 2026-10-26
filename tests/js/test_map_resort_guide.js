@@ -127,13 +127,14 @@ function wireSearch() {
   });
 }
 
-function openResortSheet({ favourited = false } = {}) {
+function openResortSheet({ favourited = false, signedInSheet = true } = {}) {
   $('search-pill').setAttribute('data-state', 'collapsed');
   $('search-results').hidden = true;
   $('place-sheet').innerHTML = `
-    <h2>Verbier</h2>
-    <button data-resort-star data-resort-slug="verbier" data-resort-name="Verbier"
-      data-resort-lat="46.1" data-resort-lon="7.2" data-favourited="${favourited}"></button>
+    <div data-panel-key="resort:verbier"><h2>Verbier</h2>
+    ${signedInSheet ? `<button data-resort-star data-resort-slug="verbier" data-resort-name="Verbier"
+      data-resort-lat="46.1" data-resort-lon="7.2" data-favourited="${favourited}"></button>`
+    : '<a href="/accounts/sign-in/">Sign in to save</a>'}</div>
     <a data-testid="resort-region-link" data-panel-open="region" data-panel-id="CH-4115">
       <span class="font-semibold">Martigny-Verbier</span></a>`;
   $('place-sheet').hidden = false;
@@ -157,6 +158,7 @@ beforeEach(() => {
   buildFixture();
   window.pwaTelemetry = { emit: vi.fn() };
   window.pwaPlaceSheet = { detent: vi.fn() };
+  window.MapSheet = { canQueueMutations: () => true };
   events = [];
   WATCHED.forEach((name) => realAdd.document(name, (e) => events.push(e)));
 });
@@ -166,6 +168,7 @@ afterEach(() => {
   added = [];
   vi.useRealTimers();
   delete window.pwaPlaceSheet;
+  delete window.MapSheet;
 });
 
 describe('starting', () => {
@@ -257,6 +260,20 @@ describe('the steps', () => {
     expect(dispatched('snowdesk:resort-open')[0].detail).toEqual({ slug: 'verbier' });
   });
 
+  it('signed out, still knows the resort from the sheet\'s panel key', async () => {
+    await load();
+    start();
+    openResortSheet({ signedInSheet: false });
+    await settle();
+
+    $('place-sheet').hidden = true;
+    await settle();
+    pill().querySelector('[data-resort-guide-resume]').click();
+
+    expect(bar().querySelector('[data-resort-guide-name]').textContent).toBe('Verbier');
+    expect(dispatched('snowdesk:resort-open')[0].detail).toEqual({ slug: 'verbier' });
+  });
+
   it('Resume on the region step reopens the region', async () => {
     await load();
     await walkToRegion();
@@ -343,6 +360,22 @@ describe('leaving', () => {
     expect(pin.disabled).toBe(true);
     expect(pin.textContent).toBe('Verbier is pinned');
     expect(emitted('map.resort_guide.pinned')).toHaveLength(1);
+  });
+
+  it('claims no pin on a device that cannot queue the save', async () => {
+    buildFixture({ signedIn: true });
+    window.MapSheet.canQueueMutations = () => false;
+    await load();
+    await walkToRegion();
+    bar().querySelector('[data-resort-guide-finish]').click();
+
+    const pin = document.querySelector('[data-resort-guide-pin]');
+    pin.click();
+    vi.advanceTimersByTime(0);
+
+    expect(pin.disabled).toBe(false);
+    expect(pin.textContent).toBe('Pin Verbier');
+    expect(emitted('map.resort_guide.pinned')).toHaveLength(0);
   });
 
   it('a resort already pinned offers no pin', async () => {

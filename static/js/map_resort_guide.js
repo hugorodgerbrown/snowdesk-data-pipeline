@@ -139,12 +139,17 @@
   const readResort = () => {
     const row = regionRow();
     if (!row) return;
+    // The star is there only for a signed-in visitor; the body's panel key
+    // ("resort:<slug>") is there for everyone.
     const star = placeSheet.querySelector('[data-resort-star]');
+    const keyed = placeSheet.querySelector('[data-panel-key^="resort:"]');
+    const key = keyed ? keyed.getAttribute('data-panel-key') || '' : '';
     const heading = placeSheet.querySelector('h2, h1');
     const regionName = row.querySelector('.font-semibold');
     resort = {
-      slug: (star && star.getAttribute('data-resort-slug')) || '',
+      slug: (star && star.getAttribute('data-resort-slug')) || key.slice('resort:'.length),
       name: (star && star.getAttribute('data-resort-name'))
+        || (keyed && keyed.getAttribute('data-panel-label'))
         || (heading ? heading.textContent.trim() : ''),
       lat: (star && star.getAttribute('data-resort-lat')) || '',
       lon: (star && star.getAttribute('data-resort-lon')) || '',
@@ -453,6 +458,9 @@
     else if (target.closest('[data-resort-guide-back-to-day]')) goToGuideDay();
     else if (target.closest('[data-resort-guide-done]')) finishCard.hidden = true;
     else if (pinBtn && target.closest('[data-resort-guide-pin]')) {
+      // favourites.js saves nothing on a device that cannot queue the
+      // create (it says so), so the card claims nothing either.
+      if (!window.MapSheet?.canQueueMutations?.()) return;
       emit('map.resort_guide.pinned', {});
       // After favourites.js's own document listener has read the button.
       setTimeout(() => {
