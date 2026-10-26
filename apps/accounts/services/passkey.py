@@ -274,10 +274,21 @@ def verify_authentication_response(
 
     # Extract the credential ID from the JSON to look up the stored key.
     try:
-        raw_id = json.loads(credential_json).get("id", "")
+        payload = json.loads(credential_json)
     except (json.JSONDecodeError, TypeError) as exc:
         session.pop(_SESSION_AUTH_CHALLENGE, None)
         raise PasskeyError("Malformed credential JSON.") from exc
+
+    # Valid JSON is not necessarily a credential: a list, a number or a
+    # ``null`` has no ``.get``, and an ``id`` that is not a string is not a
+    # credential ID (SNOW-1228). Both are malformed, not unknown.
+    if not isinstance(payload, dict):
+        session.pop(_SESSION_AUTH_CHALLENGE, None)
+        raise PasskeyError("Credential JSON is not an object.")
+    raw_id = payload.get("id", "")
+    if not isinstance(raw_id, str):
+        session.pop(_SESSION_AUTH_CHALLENGE, None)
+        raise PasskeyError("Credential id is not a string.")
 
     try:
         passkey = PasskeyCredential.objects.select_related("user").get(

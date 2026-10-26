@@ -370,6 +370,24 @@ class TestVerifyAuthenticationResponse:
             verify_authentication_response(credential_json, session)
         assert exc_info.value.credential_id == "unknown-id"
 
+    @pytest.mark.parametrize(
+        "credential_json",
+        ["[]", "null", "42", '"hello"', '{"id": 42}', '{"id": ["dGVzdA"]}'],
+        ids=["list", "null", "number", "string", "numeric-id", "list-id"],
+    )
+    def test_non_credential_json_raises_passkey_error(
+        self, credential_json: str
+    ) -> None:
+        """SNOW-1228: valid JSON that is not a credential is malformed, not a crash.
+
+        The challenge is cleared, as it is for unparseable JSON.
+        """
+        session = _session_with_auth_challenge("dGVzdA")
+        with pytest.raises(PasskeyError) as exc_info:
+            verify_authentication_response(credential_json, session)
+        assert not isinstance(exc_info.value, PasskeyUnknownCredentialError)
+        assert "webauthn_auth_challenge" not in session
+
     def test_library_error_raises_passkey_error(self) -> None:
         user = UserFactory.create()
         PasskeyCredentialFactory.create(user=user, credential_id="dGVzdA")
