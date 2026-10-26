@@ -597,6 +597,26 @@ def test_the_weather_row_ships_hidden_with_its_strings() -> None:
 
 
 @pytest.mark.django_db
+def test_the_sheets_pause_band_loads_before_the_three_sheets() -> None:
+    """SNOW-1239: the paused-sheet band and its core precede every reader.
+
+    The weather, place and region sheets read ``window.pwaSheetPlayback``
+    and clone ``#sheet-playback-band-template`` at playback; the deferred
+    scripts run in document order, so the core must come first.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    band = content.index('<template id="sheet-playback-band-template">')
+    assert "Playback in progress" in content[band : content.index("</template>", band)]
+    core = content.index("/static/js/sheet_playback_core.js")
+    for script in (
+        "map_weather_detail.js",
+        "map_place_sheet.js",
+        "map_region_sheet.js",
+    ):
+        assert core < content.index(f"/static/js/{script}")
+
+
+@pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
 def test_the_problem_terrain_layer_has_no_date_row_chip() -> None:
     """SNOW-1206: the layer is named by the layers menu and the legend, not the date row.

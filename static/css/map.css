@@ -5986,6 +5986,19 @@ body.map-framing #map-legend {
     margin-bottom: 0;
 }
 
+/* —— An object sheet paused during playback (SNOW-1239) ————————————————
+   While the timeline plays, the weather, place and region sheets ask for
+   nothing; static/js/sheet_playback_core.js marks the sheet
+   `data-sheet-paused` and puts a "Playback in progress" band in it. The
+   body under the band is dimmed so the day it shows reads as the one
+   playback started from, not the one the map is on. A data-attribute rule
+   because the band and the mark live on the sheet itself, which every
+   paint empties; the drag handle stays at full strength, since it still
+   works. */
+[data-sheet-paused] > :not([data-sheet-playback-band]):not([data-sheet-handle]) {
+    opacity: 0.6;
+}
+
 /* —— Sheet detents on phones (SNOW-1097) ——————————————————————————————
    includes/_overlay_sheet.html's `detents` gives a map sheet the
    three-state shape readers know from Google and Apple Maps: PEEK (a short

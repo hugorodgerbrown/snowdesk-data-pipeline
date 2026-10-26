@@ -8,7 +8,8 @@
  * saved pin, so map.js keeps that pin's popup. A newer open drops an older answer, a
  * failed fetch falls back to what the map already holds, the date follows
  * the scrubber, and the saved pin's Share and Delete act from inside the
- * sheet.
+ * sheet. While the timeline plays (SNOW-1239) the sheet stays open under a
+ * "Playback in progress" band, fetches nothing, and loads once on stop.
  *
  * The module wires itself at import, so the page is built and the modules
  * imported ONCE; each test starts from a closed sheet instead. jsdom's
@@ -48,6 +49,7 @@ document.body.innerHTML = `
        data-detents="peek,half,full" data-detent-initial="peek">
     <button type="button" data-sheet-handle aria-label="Resize panel"></button>
   </div>
+  <template id="sheet-playback-band-template"><div role="status"><p>Playback in progress</p></div></template>
   <template id="place-sheet-strings-template">
     <span data-string="loading">Loading place details…</span>
     <span data-string="failed">Place details are unavailable offline.</span>
@@ -56,6 +58,7 @@ document.body.innerHTML = `
 await import('../../static/js/i18n_strings.js');
 await import('../../static/js/sheet_detents_core.js');
 await import('../../static/js/map_sheet.js');
+await import('../../static/js/sheet_playback_core.js');
 await import('../../static/js/map_place_sheet.js');
 
 const sheet = /** @type {HTMLElement} */ (document.getElementById('place-sheet'));
@@ -71,6 +74,7 @@ const answer = (html) => Promise.resolve({ ok: true, text: () => Promise.resolve
 let fetchMock;
 
 beforeEach(() => {
+  window.snowdeskMapState = { isPlaying: false };
   window.pwaPlaceSheet.close();
   document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: null } }));
   fetchMock = vi.fn(() => answer(FAVOURITE_BODY));
@@ -233,5 +237,109 @@ describe('while open', () => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     expect(fetchMock.mock.calls.length).toBe(calls);
     expect(window.pwaPlaceSheet.isOpen()).toBe(true);
+  });
+});
+
+// SNOW-1239: the timeline plays five frames a second; the sheet must not
+// fetch for each.
+describe('during playback', () => {
+  /** @param {boolean} playing */
+  const announceState = (playing) => {
+    window.snowdeskMapState.isPlaying = playing;
+    document.dispatchEvent(new CustomEvent('snowdesk:timelapse-state', { detail: { playing } }));
+  };
+  const frame = (date) =>
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+      detail: { date, source: 'timelapse' },
+    }));
+  const band = () => sheet.querySelector('[data-sheet-playback-band]');
+  /** A fetch that never answers, and rejects as an abort when aborted. */
+  const hang = () =>
+    fetchMock.mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    }));
+
+  it('fetches nothing for a hundred frames, then once for the last day', async () => {
+    fetchMock.mockImplementation(() => answer(RESORT_BODY));
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
+    await settle();
+    fetchMock.mockClear();
+    announceState(true);
+    for (let i = 0; i < 100; i += 1) frame(`2026-02-${String((i % 28) + 1).padStart(2, '0')}`);
+    frame('2026-03-15');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(band()?.textContent).toContain('Playback in progress');
+    // The body's own peek row stays the peek.
+    expect(band()?.hasAttribute('data-sheet-peek')).toBe(false);
+    announceState(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/partials/place-sheet/resort/verbier/?d=2026-03-15');
+    expect(band()).toBeNull();
+  });
+
+  it('reloads for a day picked by hand, and the stop that follows adds none', async () => {
+    window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc' });
+    await settle();
+    announceState(true);
+    frame('2026-01-02');
+    fetchMock.mockClear();
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+      detail: { date: '2026-01-20', source: 'scrubber' },
+    }));
+    announceState(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/partials/place-sheet/favourite/abc/?d=2026-01-20');
+  });
+
+  it('opens on the band alone during playback, and loads when it stops', async () => {
+    announceState(true);
+    expect(window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc' })).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+    expect(band()?.hasAttribute('data-sheet-peek')).toBe(true);
+    announceState(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(sheet.textContent).toContain('Lac des Vaux');
+  });
+
+  it('holds a favourites change until playback stops', async () => {
+    window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc' });
+    await settle();
+    announceState(true);
+    fetchMock.mockClear();
+    document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
+    expect(fetchMock).not.toHaveBeenCalled();
+    announceState(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts the request a newer open supersedes, and on close', () => {
+    hang();
+    window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc' });
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+    window.pwaPlaceSheet.close();
+    expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(true);
+  });
+
+  it('aborts on Escape, and a late answer does not paint', async () => {
+    let resolveLate;
+    fetchMock.mockImplementation(() => new Promise((resolve) => { resolveLate = resolve; }));
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+    resolveLate({ ok: true, text: () => Promise.resolve(RESORT_BODY) });
+    await settle();
+    expect(sheet.textContent).not.toContain('Verbier');
+  });
+
+  it('shows no failure line for an aborted request', async () => {
+    hang();
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
+    announceState(true);
+    await settle();
+    expect(sheet.textContent).not.toContain('unavailable offline');
+    expect(band()).not.toBeNull();
   });
 });
