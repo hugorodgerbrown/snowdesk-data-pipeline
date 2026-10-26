@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-10-25
+last-reviewed: 2026-10-26
 ---
 
 # PWA shell
@@ -475,6 +475,14 @@ The SW classifies every fetch into one of four buckets:
   offline page. Both the write and the two cache-fallback reads are
   partitioned by the account the HTML was rendered for — see
   "Principal-partitioned navigations" below.
+
+  Two navigations are left to the browser while online (SNOW-1235):
+  `/routes/s/<token>/` and `/routes/example/`. Both are redirects that
+  write a share token into the session, and the server writes it only on
+  `Sec-Fetch-Dest: document` (`is_top_level_navigation`). A navigation the
+  worker forwards arrives as `empty`, so with the worker on the path a
+  followed share or the example route never drew. Offline they take the
+  usual fallback.
 
 - **`basemap`** (SNOW-484) — cross-origin requests whose origin is in the
   SW's runtime `_basemapOrigins` allowlist. `static/js/map.js` populates
