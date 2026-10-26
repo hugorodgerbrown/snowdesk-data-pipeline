@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — RegisteredCommand / CommandRun register, fetch_bulletins, fetch_weather, purge_*, prune_command_runs, backfill_*
 status: current
-last-reviewed: 2026-10-23
+last-reviewed: 2026-10-26
 ---
 
 # Management commands
@@ -1944,9 +1944,33 @@ Runs migrate, loads all region/resort fixtures, and fetches bulletins from
 all three providers — via the local mirrors served by the running dev
 server.
 
-**Prerequisite:** the Django dev server must already be running on :8000
-before you execute this script. The SLF and ALBINA local mirrors are
-served by dev-only views in the running server.
+**Prerequisites:**
+
+1. The Django dev server running on :8000 — the SLF and ALBINA local
+   mirrors are NDJSON archives served by dev-only views in the running
+   server.
+2. `METEOFRANCE_API_LOCAL_MIRROR_URL` set in `.env` to an absolute
+   three-slash `file:///` URI of a directory of `massif-NNN.xml` files.
+   Météo-France's mirror is read straight from disk, not via the server;
+   under `--local-mirror` no `METEOFRANCE_API_KEY` is needed. The
+   committed sample, `docs/research/meteofrance/bulletins-2026-05-18/`,
+   holds the French massifs issued for 2026-05-18:
+
+   ```bash
+   METEOFRANCE_API_LOCAL_MIRROR_URL=file:///absolute/path/to/snowdesk-data-pipeline/docs/research/meteofrance/bulletins-2026-05-18
+   ```
+
+   Without it the Météo-France step fails with `CommandError:
+   --local-mirror requires settings.METEOFRANCE_API_LOCAL_MIRROR_URL to be
+   configured (only available in development).` and the script exits
+   non-zero after SLF and ALBINA have been fetched. See
+   [`meteofrance-live-ingest.md`](meteofrance-live-ingest.md#offline-testing----local-mirror)
+   and
+   [`decisions/cloud-sessions-hold-no-provider-credentials.md`](decisions/cloud-sessions-hold-no-provider-credentials.md).
+
+Without the server or the mirrors, use the
+[fully-offline alternative](#fully-offline-alternative-no-server-required)
+below.
 
 ```bash
 # In one terminal — keep this running.
@@ -1957,7 +1981,10 @@ uv run python manage.py runserver
 ```
 
 Once complete, open a bulletin page to verify:
-`http://localhost:8000/ch-4115/martigny-verbier/<today>/`
+`http://localhost:8000/ch-4115/martigny-verbier/2026-04-08/` (the URL the
+script prints). The mirrors hold historical data — the Swiss archive covers
+April 2026 — so today's date shows nothing; the Météo-France sample is a
+separate day and this page does not depend on it.
 
 ### Fully-offline alternative (no server required)
 
