@@ -58,10 +58,19 @@
     otherwise                    → role="status" aria-live="polite"
 
   Display notes:
-    ``flex`` is NOT baked into the base class. ``sw_register.js`` toggles
-    ``hidden``/``flex`` on reveal (see static/js/sw_register.js lines
-    46–67), and the HTMX error JS only removes ``hidden``. Adding ``flex``
-    here would break both patterns.
+    ``flex`` IS in the base class, beside ``hidden`` while the toast is
+    down: ``hidden`` comes later in the compiled CSS, so it wins while
+    present, and every reveal idiom works — ``sw_register.js`` toggling
+    ``hidden``/``flex``, and the HTMX error JS, map_sheet.js and the map's
+    walkthroughs only removing ``hidden``. Without it those last reveals
+    showed a block box, whose "×" wrapped onto a second line under the
+    message (Hugo, 26 Oct).
+
+    Width: a fixed box centred with ``left-1/2`` would shrink to the half
+    of the viewport right of its left edge and wrap even a short message.
+    ``w-max`` sizes it to the message, capped at 28rem or the viewport less
+    its gutters; a longer message wraps with the "×" kept on its first
+    line (``items-start``, the button on the text's line height).
 {% endcomment %}
 <div
     {% if id %}id="{{ id }}"{% endif %}
@@ -77,12 +86,12 @@
     {% if group %}data-toast-group="{{ group }}"{% endif %}
     {% if not static %}data-overlay data-overlay-hide="class"{% endif %}
     {% if timeout %}data-toast-timeout="{{ timeout }}"{% endif %}
-    class="{% if static %}inline-flex{% else %}{% if visible %}flex{% else %}hidden{% endif %} fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-toast)]{% endif %} items-center gap-3 max-w-md rounded-full bg-status-{{ kind }}-bg text-status-{{ kind }}-text px-4 py-2 text-sm shadow-lg"
+    class="{% if static %}inline-flex{% else %}flex{% if not visible %} hidden{% endif %} fixed bottom-4 left-1/2 -translate-x-1/2 z-[var(--z-toast)] w-max max-w-[min(28rem,calc(100dvw-2rem))]{% endif %} items-start gap-3 rounded-full bg-status-{{ kind }}-bg text-status-{{ kind }}-text px-4 py-2 text-sm shadow-lg"
 >
     {# data-toast-body: the hook a JS owner writes through to replace the  #}
     {# message without rebuilding the toast (static/js/map_sheet.js). A    #}
     {# server-rendered toast simply never has it written to.               #}
-    <span data-toast-body>{{ body }}</span>
+    <span data-toast-body class="min-w-0">{{ body }}</span>
     {% if cta_label and cta_href %}
         <button
             type="button"
@@ -97,7 +106,7 @@
             type="button"
             data-action="dismiss"
             aria-label="{% trans 'Dismiss' %}"
-            class="text-status-{{ kind }}-text opacity-70 hover:opacity-100 px-1 leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-{{ kind }}-text rounded"
+            class="text-status-{{ kind }}-text opacity-70 hover:opacity-100 px-1 leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-{{ kind }}-text rounded"
         >
             ×
         </button>

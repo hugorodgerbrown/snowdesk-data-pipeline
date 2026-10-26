@@ -248,6 +248,25 @@ class TestStaticFlag:
         html = render({"kind": "info", "body": "Note."})
         assert "fixed" in html
 
+    def test_hidden_toast_is_a_flex_row_once_revealed(self) -> None:
+        """A floating toast carries flex beside hidden, so removing hidden alone reveals a row.
+
+        The reveal most callers use (map_sheet.js, the map walkthroughs)
+        only removes ``hidden``; without ``flex`` the toast showed as a
+        block and its "×" wrapped under the message.
+        """
+        html = render({"kind": "info", "body": "Note."})
+        classes = html.split('class="', 1)[1].split('"', 1)[0].split()
+        assert "flex" in classes
+        assert "hidden" in classes
+
+    def test_floating_toast_sizes_to_its_message(self) -> None:
+        """A floating toast is as wide as its message, within the viewport."""
+        html = render({"kind": "info", "body": "Back to today · 26 Oct"})
+        assert "w-max" in html
+        assert "max-w-[min(28rem,calc(100dvw-2rem))]" in html
+        assert "items-start" in html
+
     def test_default_static_omits_inline_flex(self) -> None:
         """Omitting static defaults to False → inline-flex absent."""
         html = render({"kind": "info", "body": "Note."})

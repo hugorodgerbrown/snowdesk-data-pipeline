@@ -212,6 +212,23 @@ describe('answering it', () => {
     expect(searched).toHaveBeenCalledTimes(1);
   });
 
+  it('"Find a resort" starts the resort walkthrough when it is on the page', async () => {
+    await showOffer();
+    const guide = document.createElement('div');
+    guide.id = 'map-resort-guide';
+    document.body.append(guide);
+    const searched = vi.fn();
+    const requested = vi.fn();
+    document.getElementById('search-toggle').addEventListener('click', searched);
+    document.addEventListener('snowdesk:resort-guide-requested', requested);
+
+    document.getElementById('map-tour-offer-resort').click();
+
+    expect(requested).toHaveBeenCalledTimes(1);
+    expect(searched).not.toHaveBeenCalled();
+    document.removeEventListener('snowdesk:resort-guide-requested', requested);
+  });
+
   it('"Explore an example route" records the answer and lets the link go', async () => {
     await showOffer();
     const link = document.getElementById('map-tour-offer-example');
