@@ -940,7 +940,7 @@
    *   click-outside, the ×, a drag below peek, another overlay opening).
    *   SNOW-1239: the object sheets abort their request in flight here, so
    *   an answer for a sheet already closed never lands in it.
-   * @returns {{ open: function(): void, close: function(): void, isOpen: function(): boolean, element: HTMLElement }}
+   * @returns {{ open: function(): void, close: function(): void, isOpen: function(): boolean, detent: function(string): void, element: HTMLElement }}
    */
   function attach(el, options) {
     var opts = options || {};
@@ -1035,7 +1035,19 @@
       objectSheet: el.hasAttribute('data-detents'),
     });
 
-    return { open: open, close: close, isOpen: isOpen, element: el };
+    /**
+     * Rest a phone sheet at a named detent, as a drag there would (the
+     * resort walkthrough raises the place sheet to show the row it asks
+     * for, SNOW-1231). Nothing on a desktop, or for a sheet without it.
+     *
+     * @param {string} name
+     * @returns {void}
+     */
+    function detent(name) {
+      if (detents && isOpen() && isPhone()) detents.set(name);
+    }
+
+    return { open: open, close: close, isOpen: isOpen, detent: detent, element: el };
   }
 
   window.MapSheet = {

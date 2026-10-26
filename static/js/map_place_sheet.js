@@ -358,5 +358,7 @@
       ? place.lngLat
       : null),
     isOpen: () => controller.isOpen(),
+    /** Rest the phone sheet at a detent (SNOW-1231's walkthrough). */
+    detent: (name) => controller.detent(name),
   });
 }());

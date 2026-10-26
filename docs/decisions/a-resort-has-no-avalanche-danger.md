@@ -2,7 +2,7 @@
 name: a-resort-has-no-avalanche-danger
 description: _resort_body.html shows no danger; neutral region row (_place_link_row.html); panel kind line; map_panel_trail.js back pill
 status: current
-last-reviewed: 2026-10-25
+last-reviewed: 2026-10-26
 ---
 
 # A resort has no avalanche danger of its own
@@ -81,3 +81,26 @@ danger back on the resort.
 - A weather point that is neither a resort's point nor a region's centroid
   offers no "Where this is" rows rather than scanning every boundary on a
   tap (`views._weather_point_places`).
+
+## The first visit is taught it (SNOW-1231)
+
+Someone arriving for the first time looks for their resort's danger, and
+this decision means they will not find it on the resort. So the welcome
+card's "Find a resort" is a three-step walkthrough rather than plain search
+(`static/js/map_resort_guide.js`, `apps/public/resort_guide.py`): search
+opens with a few popular resorts, the resort's sheet says the resort has no
+danger level of its own and rings its region row, and the region's sheet is
+the bulletin. It watches the ordinary surfaces rather than replacing them,
+so what it teaches is exactly what the map does every other day.
+
+- **Popular resorts are a fixed list** (`POPULAR_RESORT_SLUGS`: Verbier,
+  Zermatt, Davos, St. Moritz — Hugo, 26 Oct). Every resort is Swiss, so
+  placing the visitor by IP would change little and cost a lookup.
+- **Out of season it borrows the example route's day** (Hugo, 26 Oct). With
+  no bulletin today the lesson would end on an empty page, so it moves the
+  map to `RouteShare.example_date` with the "Example day" badge and back to
+  today at the end, as the example walkthrough does. In season it keeps the
+  map's own day: the live bulletin is what the visitor came for.
+- **Pinning needs an account**, as the sheet's star does. The finish card's
+  pin is a `[data-resort-star]` that favourites.js saves; signed out it is a
+  sign-in link whose `next` reopens the resort on the map.

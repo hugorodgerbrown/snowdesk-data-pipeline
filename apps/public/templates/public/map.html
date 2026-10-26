@@ -591,6 +591,10 @@ in addition to the shared map assets.
     {# when a route opens, never at parse time.                           #}
     <script defer src="{% static 'js/example_guide_core.js' %}"></script>
     <script defer src="{% static 'js/map_example_guide.js' %}"></script>
+    {# SNOW-1231: the "Find a resort" walkthrough, its pure half first. #}
+    {# After map.js and both object sheets, whose events it drives.     #}
+    <script defer src="{% static 'js/resort_guide_core.js' %}"></script>
+    <script defer src="{% static 'js/map_resort_guide.js' %}"></script>
     {# Collapsible bottom-right control group. Independent of map.js — it     #}
     {# only reads #map-controls-br's DOM — but must load before map_help.js   #}
     {# so it is listening for snowdesk:map-help-open by the time an           #}

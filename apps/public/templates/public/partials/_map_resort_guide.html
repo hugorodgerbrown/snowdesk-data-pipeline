@@ -1,0 +1,165 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_resort_guide.html — the "Find a resort" walkthrough
+(SNOW-1231).
+
+The welcome card's "Find a resort" (and the example walkthrough's finish
+card) start it; static/js/map_resort_guide.js runs it. Three steps, each
+finished by doing it rather than by reading:
+
+  search  search opens with a few popular resorts above the visitor's own
+          pins (resort_guide_popular); the lead below sits at the top of
+          the dropdown. Picking any resort finishes it.
+  resort  the resort's sheet: the resort has no danger level of its own,
+          its avalanche region has (docs/decisions/a-resort-has-no-
+          avalanche-danger.md). The region row is ringed. Tapping it
+          finishes the step.
+  region  the region's sheet is the bulletin: one line on how to read it,
+          and Finish.
+
+Then the finish card: pin the resort, try the example route, or Done.
+
+OUT OF SEASON (resort_guide_date) it moves the map to the example's day
+first, with the "Example day" badge on the date, and back to today at the
+end with the example walkthrough's own toast (#map-example-toast), as that
+walkthrough does. Nothing is locked: close the sheet or wander off and the
+bar folds into the paused pill, which keeps its step.
+
+It wears the example walkthrough's classes (.map-example-guide, -pill,
+-finish): the same kind of guide, so the same look. Everything a reader sees
+is rendered here so {% trans %} reaches it; the JS fills in only the day,
+the resort's and region's names and the step count.
+
+Included from public/partials/_map_embed.html beside the example guide, on
+the map page only (show_tour_offer).
+{% endcomment %}
+<div
+    id="map-resort-guide"
+    data-guide-date="{{ resort_guide_date|date:'Y-m-d' }}"
+    data-map-url="{% url 'public:map' %}"
+    hidden
+>
+    {# The lead: cloned into the top of search's dropdown for step one. #}
+    <div class="map-example-guide map-resort-guide-lead" data-resort-guide-lead>
+        <div class="map-example-guide-top">
+            <p class="map-example-guide-eyebrow" data-resort-guide-eyebrow></p>
+            <button type="button" class="map-example-guide-exit" data-resort-guide-exit>{% trans "Exit" %}</button>
+        </div>
+        <p class="map-example-guide-text">
+            {% trans "Type where you ski, or pick one of these." %}
+            {% if resort_guide_date %}
+                {% blocktrans trimmed %}
+                    The map is on <strong data-resort-guide-day></strong>, a past day with a full bulletin.
+                {% endblocktrans %}
+            {% endif %}
+        </p>
+    </div>
+</div>
+<div
+    id="map-resort-guide-bar"
+    class="map-example-guide map-resort-guide-bar"
+    role="region"
+    aria-labelledby="map-resort-guide-eyebrow"
+    aria-live="polite"
+    hidden
+>
+    <div class="map-example-guide-top">
+        <p id="map-resort-guide-eyebrow" class="map-example-guide-eyebrow" data-resort-guide-eyebrow></p>
+        <button type="button" class="map-example-guide-exit" data-resort-guide-exit>{% trans "Exit" %}</button>
+    </div>
+    <div data-resort-guide-step="resort">
+        <p class="map-example-guide-text">
+            {% blocktrans trimmed %}
+                <strong data-resort-guide-name></strong> has no danger level of its own. It sits in the
+                <strong data-resort-guide-region></strong> avalanche region, and the bulletin is written for the region.
+                <strong>Tap it</strong> to read it.
+            {% endblocktrans %}
+        </p>
+    </div>
+    <div data-resort-guide-step="region" hidden>
+        <p class="map-example-guide-text">
+            {% blocktrans trimmed %}
+                This is the <strong data-resort-guide-region></strong> bulletin: read the <strong>danger level</strong>
+                first, then each <strong>avalanche problem</strong>, with where it is and how likely.
+            {% endblocktrans %}
+        </p>
+        <button type="button" class="map-example-guide-btn" data-resort-guide-finish>{% trans "Finish" %}</button>
+    </div>
+    <ol class="map-example-guide-dots" aria-hidden="true">
+        <li></li>
+        <li></li>
+        <li></li>
+    </ol>
+</div>
+{# The guide folded away: its sheet was closed, or the date changed. #}
+<div
+    id="map-resort-guide-pill"
+    class="map-example-pill"
+    role="region"
+    aria-label='{% trans "Find a resort" %}'
+    hidden
+>
+    <span class="map-example-pill-text" data-resort-guide-pill="paused">{% trans "Find a resort · paused" %}</span>
+    <span
+        class="map-example-pill-text"
+        data-resort-guide-pill="off-day"
+        hidden
+    >{% trans "You’ve left the example day" %}</span>
+    <button type="button" class="map-example-pill-btn" data-resort-guide-resume>{% trans "Resume" %}</button>
+    <button type="button" class="map-example-pill-btn" data-resort-guide-back-to-day hidden></button>
+    <button type="button" class="map-example-pill-btn" data-resort-guide-exit>{% trans "Exit" %}</button>
+</div>
+{# The end: keep the resort close, or try the example route. #}
+<div
+    id="map-resort-guide-finish"
+    class="map-example-finish"
+    role="region"
+    aria-labelledby="map-resort-guide-finish-title"
+    hidden
+>
+    <h2 id="map-resort-guide-finish-title" class="map-example-finish-title"></h2>
+    <p class="map-example-finish-body">
+        {% blocktrans trimmed %}
+            Pin it and it waits at the top of search, one tap from its region’s bulletin. The guide is in the “?”
+            menu if you want it again.
+        {% endblocktrans %}
+    </p>
+    {% if favourites_eligible %}
+        {# favourites.js's own [data-resort-star] handler saves it; the JS #}
+        {# copies the slug and pin from the star on the resort's sheet.   #}
+        <button
+            type="button"
+            class="map-example-finish-btn map-example-finish-btn--primary"
+            data-resort-star
+            data-resort-guide-pin
+            data-favourited="false"
+            hidden
+        >
+        </button>
+    {% else %}
+        <a
+            href="{% url 'accounts:sign_in' %}"
+            class="map-example-finish-btn map-example-finish-btn--primary"
+            data-resort-guide-signin
+            hidden
+        ></a>
+    {% endif %}
+    {% if example_route_url %}
+        <a href="{{ example_route_url }}" class="map-example-finish-btn">{% trans "Try the example route" %}</a>
+    {% endif %}
+    <button type="button" class="map-example-finish-btn map-example-finish-btn--quiet" data-resort-guide-done>
+        {% trans "Done" %}
+    </button>
+</div>
+{# Strings the JS composes. Read back with window.pwaStrings.read. #}
+<template id="map-resort-guide-strings-template">
+    <span data-string="step-of">{% blocktrans %}Find a resort · %(n)s of %(count)s{% endblocktrans %}</span>
+    <span data-string="popular">{% trans "Popular resorts" %}</span>
+    <span data-string="finish-title">{% blocktrans %}Keep %(name)s one tap away{% endblocktrans %}</span>
+    <span data-string="pin">{% blocktrans %}Pin %(name)s{% endblocktrans %}</span>
+    <span data-string="pinned">{% blocktrans %}%(name)s is pinned{% endblocktrans %}</span>
+    <span data-string="sign-in-to-pin">{% blocktrans %}Sign in to pin %(name)s{% endblocktrans %}</span>
+    <span data-string="back-to-day">{% blocktrans %}Back to %(date)s{% endblocktrans %}</span>
+    <span data-string="back-to-today">{% blocktrans %}Back to today · %(date)s{% endblocktrans %}</span>
+</template>
+{{ resort_guide_popular|json_script:"map-resort-guide-popular" }}

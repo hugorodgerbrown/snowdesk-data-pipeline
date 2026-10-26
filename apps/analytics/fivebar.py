@@ -85,6 +85,11 @@ GOAL_EVENTS: frozenset[str] = frozenset(
         "map.example.opened",
         "map.example.exited",
         "map.example.finished",
+        # SNOW-1231: how far the "Find a resort" walkthrough gets.
+        "map.resort_guide.opened",
+        "map.resort_guide.exited",
+        "map.resort_guide.finished",
+        "map.resort_guide.pinned",
     }
 )
 

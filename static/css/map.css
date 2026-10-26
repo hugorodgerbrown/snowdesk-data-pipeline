@@ -4586,6 +4586,53 @@ html:has(> body.map-fullscreen) > body {
     }
 }
 
+/* —————————————————————————————————————————————————————————
+   SNOW-1231 — The "Find a resort" walkthrough
+   It wears the example walkthrough's classes above. Two differences: the
+   first step's words are a lead at the top of search's dropdown rather
+   than a floating bar, and the region row the second step asks for is
+   ringed. static/js/map_resort_guide.js sets the bar's `top` and, on a
+   desktop, its `left` (beside the column the sheet docks in).
+   ————————————————————————————————————————————————————————— */
+
+#map-resort-guide[hidden] {
+    display: none;
+}
+
+/* In the dropdown it is a row, not a floating bar. */
+.search-resort-guide-lead {
+    list-style: none;
+    padding: 8px 8px 4px;
+}
+
+.search-resort-guide-lead .map-resort-guide-lead {
+    position: static;
+    box-shadow: none;
+}
+
+.map-example-finish-btn[hidden] {
+    display: none;
+}
+
+/* The row step two asks the visitor to tap. */
+[data-resort-guide-ring] {
+    position: relative;
+    box-shadow: inset 0 0 0 2px var(--ink);
+    animation: resort-guide-ring 1.6s ease-in-out infinite;
+}
+
+@keyframes resort-guide-ring {
+    50% {
+        box-shadow: inset 0 0 0 4px var(--ink);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-resort-guide-ring] {
+        animation: none;
+    }
+}
+
 /* The "?" menu is the welcome card's surface in the welcome card's corner;
    only one of the two is ever open (window.pwaMapOverlays). */
 .map-help-menu .map-tour-offer-eyebrow {

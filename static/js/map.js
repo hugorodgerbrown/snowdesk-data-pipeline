@@ -10334,11 +10334,46 @@
 
     const pinnedResortResults = () => searchCore.buildPinnedResortEntries(favouritesFeedProps || []);
 
-    /** The empty field's two headed groups, either possibly absent. */
-    const pinnedGroups = () => [
-      { heading: MAP_STRINGS['search-group-pinned-resorts'], items: pinnedResortResults() },
-      { heading: MAP_STRINGS['search-group-pinned'], items: pinnedResults() },
-    ];
+    // SNOW-1231: while the "Find a resort" walkthrough runs
+    // (map_resort_guide.js) the empty field leads with its words and a few
+    // popular resorts, above the visitor's own pins. The rows are the
+    // pinned-resort shape, slug and all, so a pick opens the resort exactly
+    // as a pinned one does. 'snowdesk:search-suggestions' with no resorts
+    // takes them away again.
+    /** @type {?{heading: string, items: Array<Object>, lead: ?Element}} */
+    let suggestions = null;
+    document.addEventListener('snowdesk:search-suggestions', (ev) => {
+      const detail = ev.detail || {};
+      const resorts = Array.isArray(detail.resorts) ? detail.resorts : [];
+      suggestions = resorts.length
+        ? {
+          heading: detail.heading || '',
+          items: searchCore.buildPinnedResortEntries(resorts.map((r) => ({
+            resort_slug: r.slug,
+            resort_name: r.name,
+            resort_region_id: r.region_id,
+            resort_region_name: r.region_name,
+          }))).sort((a, b) => resorts.findIndex((r) => r.slug === a.slug)
+            - resorts.findIndex((r) => r.slug === b.slug)),
+          lead: detail.lead instanceof Element ? detail.lead : null,
+        }
+        : null;
+      if (!inputEl.value && !resultsEl.hidden) showEmptyState();
+    });
+
+    /** The empty field's headed groups, any possibly absent. */
+    const pinnedGroups = () => {
+      const pinnedResorts = pinnedResortResults();
+      // A popular resort the visitor has pinned is listed once, as theirs.
+      const popular = suggestions
+        ? suggestions.items.filter((r) => !pinnedResorts.some((p) => p.slug === r.slug))
+        : [];
+      return [
+        { heading: suggestions ? suggestions.heading : '', items: popular },
+        { heading: MAP_STRINGS['search-group-pinned-resorts'], items: pinnedResorts },
+        { heading: MAP_STRINGS['search-group-pinned'], items: pinnedResults() },
+      ];
+    };
 
     const showEmptyState = () => {
       previewTop = false;
@@ -10626,6 +10661,16 @@
     const renderPinned = (groups) => {
       const shown = groups.filter((g) => g.items.length);
       renderResults(shown.flatMap((g) => g.items), shown);
+      // The walkthrough's words lead the list (SNOW-1231). A copy, so the
+      // original stays where its module keeps it; its buttons are handled
+      // by delegation, which a copy keeps.
+      if (suggestions && suggestions.lead && !resultsEl.hidden) {
+        const li = document.createElement('li');
+        li.className = 'search-resort-guide-lead';
+        li.setAttribute('role', 'presentation');
+        li.append(suggestions.lead.cloneNode(true));
+        resultsEl.prepend(li);
+      }
     };
 
     const chooseResult = (item) => {

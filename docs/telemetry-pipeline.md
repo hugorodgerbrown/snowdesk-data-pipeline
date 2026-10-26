@@ -210,6 +210,12 @@ change the frozenset + document the property shape here.
   `map.example.finished`. No share token on any of them. The welcome
   choice and three of the walkthrough events are fivebar goals; the help
   menu and per-step events stay in the pipeline only.
+  SNOW-1231 adds the "Find a resort" walkthrough:
+  `map.resort_guide.opened` with `properties.offseason`,
+  `map.resort_guide.step_completed` with `properties.step` (`search` /
+  `resort` / `region`), `map.resort_guide.exited` with the `step` it was
+  left on, `map.resort_guide.finished`, and `map.resort_guide.pinned` (the
+  finish card's pin pressed). All but the per-step event are fivebar goals.
 - **Uncaught client errors** (SNOW-894 — `js.error`, deliberately its own
   namespace): every uncaught exception and unhandled rejection, from
   `static/js/error_reporting.js`. See the emitter table below for the
@@ -456,6 +462,7 @@ below the table.
 | `static/js/map_tour_offer.js` (SNOW-1230) | `map.welcome.chosen` with `properties.choice` — every answer to the "Explore Snowdesk" card |
 | `static/js/map_help_menu.js` (SNOW-1230) | `map.help_menu.chosen` with `properties.choice` — an item in the "?" menu |
 | `static/js/map_example_guide.js` (SNOW-1230) | `map.example.opened` (the example's route opened with `?example=1`) / `.step_completed` with `properties.step` / `.exited` with `properties.step` / `.finished` |
+| `static/js/map_resort_guide.js` (SNOW-1231) | `map.resort_guide.opened` with `properties.offseason` / `.step_completed` with `properties.step` / `.exited` with `properties.step` / `.finished` / `.pinned` |
 | `static/js/map.js` — `window.pwaRoutesOverlay` (SNOW-687) | `map.route.overlay_toggled` with `properties.visible` — emitted by the bridge's own `show()`/`hide()`, the favourites sibling the routes set was missing at SNOW-686 |
 | `static/js/mutation_queue.js` (SNOW-462) | `pwa.mutation.discarded` with `properties.reason` — `account_change` (the whole queue cleared on a principal change at load) or `principal_mismatch` (one row caught by the drain guard). A discarded row is never replayed |
 | `static/js/map_region_download.js::_recordRegionDownload` (SNOW-612) | `map.basemap.record_write_failed` with `properties.region_id` — the `basemap.regions` write failed after a completed download, leaving a pinned bucket with no record behind it. Was swallowed silently before this ticket |

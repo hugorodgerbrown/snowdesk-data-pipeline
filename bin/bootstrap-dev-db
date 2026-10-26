@@ -8,8 +8,11 @@
 # PREREQUISITE: the Django dev server must be running on :8000 before you
 # execute this script. The SLF and ALBINA local mirrors are
 # served by dev-only views in the running server; Météo-France reads a local
-# directory and does not need the server, but it does need a configured
-# METEOFRANCE_API_KEY (or the local-mirror path) in your .env.
+# directory and does not need the server, but it does need
+# METEOFRANCE_API_LOCAL_MIRROR_URL set in your .env (a file:/// directory of
+# massif-NNN.xml files, e.g. the committed
+# docs/research/meteofrance/bulletins-2026-05-18/). No API key is used under
+# --local-mirror. See docs/management-commands.md "Local DB bootstrap".
 #
 # Usage:
 #   uv run python manage.py runserver &   # in another terminal
