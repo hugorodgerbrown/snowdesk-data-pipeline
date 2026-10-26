@@ -8,7 +8,9 @@
  * date, and a deselect closes it; a failed fetch says so; and the pin and
  * download proxies press, and mirror, the roundels they stand for. A
  * resort named in it opens the resort's own sheet rather than leaving the
- * map (SNOW-1161).
+ * map (SNOW-1161). While the timeline plays (SNOW-1239) the sheet stays open
+ * under a "Playback in progress" band, fetches nothing, and loads once on
+ * stop.
  *
  * The module wires itself at import against the elements present then, and
  * its listeners live on `document` for the rest of the file, so the page is
@@ -39,6 +41,7 @@ document.body.innerHTML = `
        data-detents="peek,half,full" data-detent-initial="peek">
     <button type="button" data-sheet-handle aria-label="Resize panel"></button>
   </div>
+  <template id="sheet-playback-band-template"><div role="status"><p>Playback in progress</p></div></template>
   <template id="region-sheet-strings-template">
     <span data-string="loading">Loading region details…</span>
     <span data-string="failed">Region details are unavailable offline.</span>
@@ -57,6 +60,7 @@ document.body.innerHTML = `
 await import('../../static/js/i18n_strings.js');
 await import('../../static/js/sheet_detents_core.js');
 await import('../../static/js/map_sheet.js');
+await import('../../static/js/sheet_playback_core.js');
 await import('../../static/js/map_region_sheet.js');
 
 const sheet = /** @type {HTMLElement} */ (document.getElementById('region-sheet'));
@@ -91,6 +95,7 @@ async function settle() {
 let fetchMock;
 
 beforeEach(() => {
+  window.snowdeskMapState = { isPlaying: false };
   document.dispatchEvent(new CustomEvent('snowdesk:region-selected', {
     detail: { region_id: null },
   }));
@@ -208,7 +213,7 @@ describe('opening', () => {
     expect(sheet.getAttribute('data-detent')).toBe('peek');
     expect(fetchMock).toHaveBeenCalledWith(
       '/partials/region-sheet/ch-4115/',
-      { headers: { 'HX-Request': 'true' } },
+      expect.objectContaining({ headers: { 'HX-Request': 'true' } }),
     );
     await settle();
     expect(sheet.textContent).toContain('Martigny-Verbier');
@@ -509,5 +514,123 @@ describe('a resort named in the sheet (SNOW-1161)', () => {
     document.removeEventListener('snowdesk:resort-open', asked);
     expect(leftToTheLink).toBe(true);
     expect(asked).not.toHaveBeenCalled();
+  });
+});
+
+// SNOW-1239: the timeline plays five frames a second; the sheet must not
+// fetch for each.
+describe('during playback', () => {
+  /** @param {boolean} playing */
+  const announceState = (playing) => {
+    window.snowdeskMapState.isPlaying = playing;
+    document.dispatchEvent(new CustomEvent('snowdesk:timelapse-state', { detail: { playing } }));
+  };
+  const frame = (date) =>
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+      detail: { date, source: 'timelapse' },
+    }));
+  const band = () => sheet.querySelector('[data-sheet-playback-band]');
+  /** A fetch that never answers, and rejects as an abort when aborted. */
+  const hang = () =>
+    fetchMock.mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    }));
+
+  it('fetches nothing for a hundred frames, then once for the last day', async () => {
+    select('CH-4115', 'tap');
+    await settle();
+    fetchMock.mockClear();
+    announceState(true);
+    for (let i = 0; i < 100; i += 1) frame(`2026-02-${String((i % 28) + 1).padStart(2, '0')}`);
+    frame('2026-03-15');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(band()?.textContent).toContain('Playback in progress');
+    expect(sheet.hasAttribute('data-sheet-paused')).toBe(true);
+    announceState(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/partials/region-sheet/ch-4115/?d=2026-03-15');
+    expect(band()).toBeNull();
+  });
+
+  it('reloads for a day picked by hand, and the stop that follows adds none', async () => {
+    select('CH-4115', 'tap');
+    await settle();
+    announceState(true);
+    frame('2026-01-02');
+    fetchMock.mockClear();
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
+      detail: { date: '2026-01-20', source: 'scrubber' },
+    }));
+    announceState(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/partials/region-sheet/ch-4115/?d=2026-01-20');
+  });
+
+  it('opens on the peek during playback, with no request, and loads when it stops', async () => {
+    announceState(true);
+    select('CH-4115', 'tap', { region_name: 'Martigny-Verbier' });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+    expect(sheet.querySelector('[data-region-sheet-slot="name"]').textContent).toBe('Martigny-Verbier');
+    expect(band()).not.toBeNull();
+    // The peek row stays the peek.
+    expect(band().hasAttribute('data-sheet-peek')).toBe(false);
+    announceState(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(sheet.querySelector('[data-testid="region-sheet-bulletin"]')).not.toBeNull();
+  });
+
+  it('paints a kept body under the band for a region picked during playback', async () => {
+    select('CH-4115', 'tap');
+    await settle();
+    select('CH-4116', 'tap');
+    await settle();
+    fetchMock.mockClear();
+    announceState(true);
+    select('CH-4115', 'search');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sheet.querySelector('[data-testid="region-sheet-bulletin"]')).not.toBeNull();
+    expect(band()).not.toBeNull();
+    announceState(false);
+    // The stop answers from the kept body too.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(band()).toBeNull();
+  });
+
+  it('aborts the request a newer selection supersedes, and on close', () => {
+    hang();
+    select('CH-4115', 'tap');
+    select('CH-4116', 'tap');
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+    select(null);
+    expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(true);
+  });
+
+  it('aborts on Escape, and keeps no body from it', async () => {
+    let resolveLate;
+    fetchMock.mockImplementation((_url, init) => new Promise((resolve, reject) => {
+      resolveLate = resolve;
+      init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    }));
+    select('CH-4115', 'tap');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+    resolveLate({ ok: true, text: () => Promise.resolve(BODY) });
+    await settle();
+    fetchMock.mockClear();
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    window.pwaRegionSheet.reopen();
+    // Nothing was kept, so the reopen asks again.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no failure line for an aborted request', async () => {
+    hang();
+    select('CH-4115', 'tap');
+    announceState(true);
+    await settle();
+    expect(sheet.textContent).not.toContain('unavailable offline');
+    expect(band()).not.toBeNull();
   });
 });

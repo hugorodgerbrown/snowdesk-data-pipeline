@@ -59,6 +59,15 @@
  *     (apps/public/region_sheet.py), so the browser's own cache answers a
  *     reload: a past day's body for a day, today's for ten minutes, because
  *     bulletins are amended during the day.
+ *
+ * PAUSED DURING PLAYBACK (SNOW-1239). While the timeline plays the sheet
+ * stays open under a "Playback in progress" band
+ * (window.pwaSheetPlayback, sheet_playback_core.js) and fetches nothing:
+ * a frame only records its day, and a selection made meanwhile paints what
+ * the page already holds (a kept body, or the peek row). It loads once,
+ * for the day playback stopped on, when it stops. A newer ask, and every
+ * close, aborts the one in flight; a kept body is only ever an answer
+ * that landed.
  */
 
 (function regionSheetInit() {
@@ -66,7 +75,8 @@
 
   const sheet = document.getElementById('region-sheet');
   const mapEl = document.getElementById('map');
-  if (!sheet || !mapEl || !window.MapSheet) return;
+  const playback = window.pwaSheetPlayback;
+  if (!sheet || !mapEl || !window.MapSheet || !playback) return;
 
   const URL_TEMPLATE = mapEl.dataset.regionSheetUrl || '';
   if (!URL_TEMPLATE) return;
@@ -99,7 +109,21 @@
   /** @type {Map<string, {html: string, at: number}>} Bodies by URL. */
   const bodies = new Map();
 
-  const controller = window.MapSheet.attach(sheet);
+  // Invalidates a fetch when a newer one starts, so a slow answer for the
+  // region the reader has already moved on from never paints over the new
+  // one, and aborts it on a close by any route (onTeardown).
+  const guard = playback.createGuard();
+  // SNOW-1239: a load the sheet skipped while the timeline played, to make
+  // once when it stops.
+  let pendingRefresh = false;
+
+  const controller = window.MapSheet.attach(sheet, {
+    onTeardown: () => {
+      guard.invalidate();
+      pendingRefresh = false;
+      playback.markPaused(sheet, false);
+    },
+  });
 
   // The sheet closes by several routes this module does not own (Escape,
   // the ×, a drag below peek, another overlay opening), so the root's mark
@@ -121,9 +145,6 @@
   let regionName = '';
   /** @type {?string} */
   let dateKey = null;
-  // Invalidates a fetch when a newer one starts, so a slow answer for the
-  // region the reader has already moved on from never paints over the new one.
-  let seq = 0;
 
   /**
    * Replace the sheet's body with one line of text.
@@ -388,34 +409,48 @@
    * same grounds every other sheet on the map injects HTML on. The peek is
    * filled with textContent and attributes only.
    *
+   * PAUSED (SNOW-1239), it paints only what needs no request — a kept
+   * body, or the peek — under the band, and leaves the fetch for the stop.
+   *
+   * @param {{paused?: boolean}} [opts]
    * @returns {Promise<void>}
    */
-  const load = () => {
+  const load = (opts = {}) => {
     if (!regionId) return Promise.resolve();
-    const mine = ++seq;
     // Lowercased here: the view's canonical URL is lowercase and answers
     // anything else with a redirect, which would cost a second round trip.
     let url = URL_TEMPLATE.replace('XX-0000', encodeURIComponent(regionId.toLowerCase()));
     if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
     const kept = cachedBody(url);
+    if (opts.paused) pendingRefresh = true;
     if (kept !== null) {
+      guard.invalidate();
       paintBody(kept);
+      if (opts.paused) playback.markPaused(sheet, true);
       return Promise.resolve();
     }
+    if (opts.paused) {
+      guard.invalidate();
+      if (!paintPeek()) sheet.replaceChildren();
+      playback.markPaused(sheet, true);
+      return Promise.resolve();
+    }
+    const ask = guard.begin();
     const peeked = paintPeek();
     if (!peeked) paintLine(STRINGS.loading);
-    return fetch(url, { headers: { 'HX-Request': 'true' } })
+    return fetch(url, { headers: { 'HX-Request': 'true' }, signal: ask.signal })
       .then((resp) => {
         if (!resp.ok) throw new Error('region sheet ' + resp.status);
         return resp.text();
       })
       .then((html) => {
+        // Kept even when superseded: it landed, and it is that region's day.
         keepBody(url, html);
-        if (mine !== seq || !controller.isOpen()) return;
+        if (!ask.isCurrent() || !controller.isOpen()) return;
         paintBody(html);
       })
-      .catch(() => {
-        if (mine !== seq || !controller.isOpen()) return;
+      .catch((err) => {
+        if (!ask.isCurrent() || !controller.isOpen() || playback.isAbort(err)) return;
         // The peek the page painted is still true: keep it, and say below
         // it that the rest could not be fetched.
         if (!peeked) {
@@ -431,7 +466,7 @@
 
   /** @returns {void} */
   const close = () => {
-    seq += 1;
+    guard.invalidate();
     if (controller.isOpen()) controller.close();
   };
 
@@ -443,8 +478,10 @@
       close();
       return;
     }
+    // SNOW-1239: during playback, paint without a request.
+    const paused = playback.isPlaying();
     if (controller.isOpen()) {
-      load();
+      load({ paused });
       return;
     }
     // The sheet opens however the region was picked — a tap, a search pick,
@@ -455,7 +492,7 @@
     // Load first: it paints the peek row synchronously (from the page, or
     // a kept body), so PEEK is measured from that row rather than the
     // empty-sheet fallback, and the sheet does not open tall and drop.
-    load();
+    load({ paused });
     controller.open();
   });
 
@@ -475,14 +512,43 @@
      */
     reopen: () => {
       if (!regionId || controller.isOpen()) return false;
-      load();
+      load({ paused: playback.isPlaying() });
       controller.open();
       return true;
     },
   });
 
   document.addEventListener('snowdesk:date-changed', (ev) => {
-    dateKey = ev.detail?.date || null;
-    if (controller.isOpen()) load();
+    const detail = ev.detail || {};
+    dateKey = detail.date || null;
+    if (!controller.isOpen()) return;
+    // SNOW-1239: a timelapse frame during playback only records the day.
+    if (!playback.shouldReload(detail.source, playback.isPlaying())) {
+      pendingRefresh = true;
+      guard.invalidate();
+      playback.markPaused(sheet, true);
+      return;
+    }
+    // A day picked by hand ends playback; it arrives before the stop, so
+    // the stop that follows has nothing left to load.
+    pendingRefresh = false;
+    playback.markPaused(sheet, false);
+    load();
+  });
+
+  // SNOW-1239: playback starting pauses the open sheet; stopping lifts the
+  // band and loads the day it stopped on, once.
+  document.addEventListener('snowdesk:timelapse-state', (ev) => {
+    if (!controller.isOpen() || !regionId) return;
+    if (ev.detail?.playing) {
+      guard.invalidate();
+      pendingRefresh = true;
+      playback.markPaused(sheet, true);
+      return;
+    }
+    playback.markPaused(sheet, false);
+    if (!pendingRefresh) return;
+    pendingRefresh = false;
+    load();
   });
 }());
