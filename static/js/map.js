@@ -8665,15 +8665,18 @@
 
     // SNOW-1161: the region sheet's "Resorts in this region" asks for a
     // resort by slug (map_region_sheet.js) instead of leaving the map. A
-    // resort with no pin is not in the feed, so it goes to its page — the
-    // link the region sheet held back.
+    // resort with no pin is not in the feed, but its sheet needs none — the
+    // body is the resort page's own, read by slug — so it opens in the
+    // panel all the same, with no pin to fly to and no leader line (Hugo,
+    // 27 Oct 2026: Val d'Entremont left the map while Champex beside it
+    // did not). Only a map that cannot open the sheet goes to the page.
     document.addEventListener('snowdesk:resort-open', (ev) => {
       const slug = ev.detail && ev.detail.slug;
       const href = ev.detail && ev.detail.href;
       if (!slug) return;
       // Asked for from another panel, so the camera keeps its zoom.
       openResort((props) => props.id === slug, () => {
-        if (href) window.location.assign(href);
+        if (!openResortSheet(slug, '', null) && href) window.location.assign(href);
       }, true);
     });
 

@@ -379,8 +379,9 @@
   // SNOW-1161: a resort named in the sheet opens in its own sheet — the map
   // keeps the reader — rather than navigating to the resort page. A
   // modified click (new tab, new window) keeps the link's own behaviour,
-  // and the href rides along so a resort with no pin still reaches its
-  // page (map.js's listener falls back to it).
+  // and the href rides along for a map that cannot open the sheet
+  // (map.js's listener falls back to it). A resort with no pin opens in
+  // the sheet too, without one.
   sheet.addEventListener('click', (ev) => {
     const link = ev.target.closest?.('a[data-resort-slug]');
     if (!link || !sheet.contains(link)) return;

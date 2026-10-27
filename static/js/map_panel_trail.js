@@ -22,7 +22,8 @@
  *   region  — `snowdesk:region-open` (map.js selects it as a search pick
  *             does, and the region sheet opens for the selection);
  *   resort  — `snowdesk:resort-open` (map.js flies to the pin and opens the
- *             place sheet, SNOW-1161). A resort row in the region sheet is
+ *             place sheet, SNOW-1161; a resort with no pin opens the sheet
+ *             all the same, without one). A resort row in the region sheet is
  *             already opened by map_region_sheet.js, which prevents the
  *             link's default; this module then only records the trail;
  *   weather — `window.pwaWeatherDetail.open(shortId, dateKey)`.
