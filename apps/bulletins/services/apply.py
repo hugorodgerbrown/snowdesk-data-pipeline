@@ -42,7 +42,14 @@ from apps.bulletins.services.render_model import (
     build_render_model,
     detect_source,
 )
-from apps.ingest.public import SLF_DEFAULT_LANG, parse_dt, resolve_issued_at
+from apps.ingest.public import (
+    OUTCOME_FAILED,
+    SLF_DEFAULT_LANG,
+    FetchOutcome,
+    NormalisedBulletin,
+    parse_dt,
+    resolve_issued_at,
+)
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -406,3 +413,40 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
     _refresh_grouping(bulletin, run)
 
     return created
+
+
+def apply_bulletin(record: NormalisedBulletin, run: PipelineRun) -> bool:
+    """Write one bulletin an ingest walk yielded.
+
+    Resolves the record's PDF URL only now, when the bulletin is actually
+    being written — for Météo-France that costs a request to its archive.
+
+    Args:
+        record: A bulletin from ``apps.ingest.public.fetch_bulletins``.
+        run: The PipelineRun to associate with it.
+
+    Returns:
+        True if a new row was created, False if an existing row was updated.
+
+    """
+    return upsert_bulletin(record.caaml, run, pdf_url=record.pdf_url())
+
+
+def count_outcome(
+    outcome: FetchOutcome, run: PipelineRun, counts: dict[str, int]
+) -> None:
+    """Count something an ingest walk met that is not a bulletin to apply.
+
+    A failed slot or massif is also a failed record on the run, so
+    ``fetch_bulletins`` exits non-zero for it.
+
+    Args:
+        outcome: The walk's outcome.
+        run: The active PipelineRun; its ``records_failed`` is saved.
+        counts: The pipeline's outcome counters; updated.
+
+    """
+    counts[outcome.kind] = counts.get(outcome.kind, 0) + 1
+    if outcome.kind == OUTCOME_FAILED:
+        run.records_failed += 1
+        run.save(update_fields=["records_failed"])

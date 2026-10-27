@@ -1,14 +1,16 @@
 """
-apps/bulletins/services/slf_fetcher.py — Fetching and persisting SLF bulletins.
+apps/bulletins/services/slf_fetcher.py — The SLF pipeline, app side.
 
-Contains pure-ish functions that:
-  1. Fetch a page of bulletins from the SLF CAAML list API (fetch_bulletin_page).
-  2. Persist a single bulletin into the database (upsert_bulletin).
-  3. Orchestrate a full pipeline run across a date range (run_slf_pipeline).
-  4. Log which CAAML export each page actually IS (_log_caaml_shape). The
-     classifier itself, detect_caaml_shape, and the other pure helpers
-     (response unwrapping, timestamp parsing, the PDF URL) live in
-     ``apps.ingest.normalise.slf`` since SNOW-1248.
+Since SNOW-1249 this module holds only what needs Snowdesk's tables:
+
+  run_slf_pipeline   drives ``apps.ingest.public.fetch_bulletins("SLF", …)``
+                     — the walk back through SLF's paginated list API, which
+                     lives in ingest with the HTTP — and decides what to do
+                     with each bulletin it yields: count it in a dry run,
+                     skip it when it is already stored, or write it through
+                     ``apply_bulletin``.
+  latest_slf_date    where the next run resumes from.
+  slf_stash_writer   ``--stash``'s archive writer.
 
 Also defines the ``BulletinSource`` registry used by the unified
 ``fetch_bulletins`` management command. The registry maps provider names
@@ -16,231 +18,72 @@ Also defines the ``BulletinSource`` registry used by the unified
 latest-date function, settings keys, and archive-writer adapter so the
 command can iterate over requested sources without owning any
 provider-specific logic.
-
-Note: ``upsert_bulletin``, ``UnknownRegionError``, and ``_get_region`` are
-shared helpers also imported by ``albina_fetcher`` and ``meteofrance_fetcher``.
-Extracting them into a dedicated ``persistence.py`` module is a separate
-cleanup ticket (not in scope here).
-
-The SLF API returns bulletins in reverse chronological order and is
-paginated by offset/limit — it does not support filtering by date. The
-pipeline pages through results, skipping bulletins newer than the end date
-and stopping once it passes the start date boundary.
-
-Keeping these as functions rather than a class makes them easy to test and
-compose. The management commands call run_slf_pipeline(); unit tests can call
-fetch_bulletin_page() and upsert_bulletin() independently.
 """
 
 import json
 import logging
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Any
-
-import requests
-from django.conf import settings
 
 from apps.bulletins.models import (
     Bulletin,
     PipelineRun,
 )
-from apps.bulletins.services.apply import NoResolvableRegionsError, upsert_bulletin
+from apps.bulletins.services.apply import (
+    NoResolvableRegionsError,
+    apply_bulletin,
+    count_outcome,
+)
 from apps.ingest.public import (
-    CAAML_SHAPE_PER_REGION,
     OUTCOME_CREATED,
     OUTCOME_FAILED,
     OUTCOME_UPDATED,
-    SLF_DEFAULT_LANG,
-    detect_caaml_shape,
+    PROVIDER_SLF,
+    FetchOutcome,
+    FetchStats,
+    NormalisedBulletin,
+    fetch_bulletins,
     merge_slf_archive,
-    normalise_slf_response,
     read_slf_archive,
-    resolve_issued_at,
-    slf_pdf_url,
     write_slf_archive,
 )
 
 logger = logging.getLogger(__name__)
 
-LANG = SLF_DEFAULT_LANG
-PAGE_SIZE = 50
-REQUEST_TIMEOUT = 30  # seconds
-_ONE_DAY = timedelta(days=1)
-
-
-def _resolve_base_url(base_url: str | None) -> str:
-    """Pick the base URL one fetch should use.
-
-    Three paths, in descending precedence:
-
-    1. An explicit ``base_url`` argument, which is how
-       ``fetch_bulletins --local-mirror`` points a run at the dev mirror.
-       A caller that named a URL gets the URL it named.
-    2. ``settings.SLF_API_LEGACY_URL``, when non-empty (SNOW-900) — the
-       environment-variable pin back to the pre-2026/27 export.
-    3. ``settings.SLF_API_BASE_URL``, the live API.
-
-    The pin lives HERE rather than in the ``fetch_bulletins`` command so
-    that it holds for every caller. It first shipped in the command, which
-    left ``BulletinAdmin.backfill_view`` — which calls
-    ``run_slf_pipeline`` with no ``base_url`` — fetching the live URL and
-    ingesting the new schema straight past a configured rollback. A pin
-    that one entry point ignores is worse than no pin, because it reads
-    as applied.
-
-    Args:
-        base_url: The caller's explicit override, or ``None``.
-
-    Returns:
-        The base URL to build this request from.
-
-    """
-    if base_url is not None:
-        return base_url
-
-    legacy_url: str = getattr(settings, "SLF_API_LEGACY_URL", "") or ""
-    if legacy_url:
-        # WARNING, every fetch, for as long as it is set: this is an
-        # emergency lever pointed at an endpoint SLF intend to retire, not
-        # a configuration to settle into. A pin left on by accident should
-        # be impossible to miss in the log.
-        logger.warning(
-            "SLF is pinned to settings.SLF_API_LEGACY_URL (%s) instead of "
-            "SLF_API_BASE_URL (%s)",
-            legacy_url,
-            settings.SLF_API_BASE_URL,
-        )
-        return legacy_url
-
-    resolved: str = settings.SLF_API_BASE_URL
-    return resolved
-
-
-def fetch_bulletin_page(
-    lang: str,
-    limit: int,
-    offset: int,
-    base_url: str | None = None,
-) -> list[dict[str, Any]]:
-    """
-    Fetch a single page of bulletins from the SLF CAAML list API.
-
-    Args:
-        lang: Language code ("en", "de", "fr", "it").
-        limit: Maximum number of bulletins to return.
-        offset: Number of bulletins to skip (for pagination).
-        base_url: Override for the API base URL. Resolved by
-            ``_resolve_base_url``, so ``None`` picks up the legacy pin
-            when one is set and the live API otherwise.
-
-    Returns:
-        A list of raw bulletin dicts as returned by the API.
-
-    Raises:
-        requests.HTTPError: If the API returns a non-2xx status.
-        ValueError: If the response body cannot be parsed as JSON.
-
-    Every page is classified by ``detect_caaml_shape`` and logged on the
-    way out — at WARNING when the 2026/27 per-region export is what
-    arrived (SNOW-900). Classification never blocks the fetch: the page
-    is returned whatever shape it is.
-
-    """
-    resolved_base = _resolve_base_url(base_url)
-    url = f"{resolved_base}/{lang}/json"
-    logger.debug(
-        "Fetching SLF bulletins: lang=%s limit=%d offset=%d base=%s",
-        lang,
-        limit,
-        offset,
-        resolved_base,
-    )
-
-    response = requests.get(
-        url,
-        params={"limit": limit, "offset": offset},
-        timeout=REQUEST_TIMEOUT,
-    )
-    response.raise_for_status()
-
-    data: Any = response.json()
-    bulletins = normalise_slf_response(data)
-    _log_caaml_shape(bulletins, resolved_base)
-    return bulletins
-
-
-def _log_caaml_shape(bulletins: list[dict[str, Any]], base_url: str) -> None:
-    """Log what shape a fetched page turned out to be.
-
-    WARNING for the new per-region export, INFO otherwise: the whole point
-    is that the changeover announces itself the first time it happens
-    rather than being inferred later from a row count. The base URL is in
-    the message because the shape is explicitly NOT a property of it —
-    seeing the two together is what tells an operator whether pinning
-    ``SLF_API_LEGACY_URL`` did anything.
-
-    Args:
-        bulletins: The normalised bulletin list from one page fetch.
-        base_url: The base URL the page was fetched from.
-
-    """
-    detected = detect_caaml_shape(bulletins)
-    level = (
-        logging.WARNING if detected.shape == CAAML_SHAPE_PER_REGION else logging.INFO
-    )
-    logger.log(
-        level,
-        "SLF page shape=%s bulletins=%d regions=%d max_regions=%d markers=%s base=%s",
-        detected.shape,
-        detected.bulletin_count,
-        detected.region_count,
-        detected.max_regions_per_bulletin,
-        ",".join(detected.markers) or "none",
-        base_url,
-    )
-
-
-# Per-bulletin processing outcomes returned by ``_process_bulletin``.
-# The generic OUTCOME_* constants are imported from fetcher_common; the
-# SLF pipeline also uses internal pagination-control variants that have
-# no equivalent in other providers.
+# The SLF pipeline's own outcome: a bulletin already stored and not forced.
+# The walk's outcomes (skipped_newer) come from apps.ingest.public.
 _OUTCOME_SKIPPED_EXISTS = "skipped_exists"
-_OUTCOME_SKIPPED_NEWER = "skipped_newer"
-_OUTCOME_OUT_OF_RANGE = "out_of_range"
 
 
 def _process_bulletin(
-    raw: dict[str, Any],
+    record: NormalisedBulletin,
     run: PipelineRun,
     *,
-    range_start: datetime,
-    range_end: datetime,
     dry_run: bool,
     force: bool,
 ) -> str:
     """
-    Decide how to handle a single bulletin within the paging loop.
+    Decide what to do with one bulletin the walk found in the window.
 
-    Returns one of the ``_OUTCOME_*`` constants so the caller can update
-    counters or terminate pagination without owning the decision logic.
+    Args:
+        record: The bulletin.
+        run: The active PipelineRun.
+        dry_run: When True, log and count without writing.
+        force: When True, rewrite a bulletin that already exists.
+
+    Returns:
+        ``OUTCOME_CREATED``, ``OUTCOME_UPDATED``, ``OUTCOME_FAILED`` or
+        ``_OUTCOME_SKIPPED_EXISTS``.
+
     """
-    issued_at = resolve_issued_at(raw)
-
-    if issued_at >= range_end:
-        return _OUTCOME_SKIPPED_NEWER
-    if issued_at < range_start:
-        logger.info("Passed start boundary at %s, stopping", issued_at.isoformat())
-        return _OUTCOME_OUT_OF_RANGE
-
     if dry_run:
-        logger.info("[dry-run] Would store %s", raw["bulletinID"])
+        logger.info("[dry-run] Would store %s", record.bulletin_id)
         return OUTCOME_CREATED
 
-    if not force and Bulletin.objects.filter(bulletin_id=raw["bulletinID"]).exists():
+    if not force and Bulletin.objects.filter(bulletin_id=record.bulletin_id).exists():
         return _OUTCOME_SKIPPED_EXISTS
 
     # A bulletin whose regions are all unresolvable fails that bulletin, not
@@ -248,56 +91,19 @@ def _process_bulletin(
     # inside upsert_bulletin. records_failed makes fetch_bulletins exit
     # non-zero per the management-command contract, so cron/CI surface it.
     try:
-        created = upsert_bulletin(raw, run, pdf_url=slf_pdf_url(raw))
+        created = apply_bulletin(record, run)
     except NoResolvableRegionsError:
-        logger.exception("Skipping bulletin %s", raw["bulletinID"])
+        logger.exception("Skipping bulletin %s", record.bulletin_id)
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
         return OUTCOME_FAILED
+    except KeyError:
+        logger.exception(
+            "Error parsing bulletin data:\n%s", json.dumps(record.caaml, indent=4)
+        )
+        raise
 
     return OUTCOME_CREATED if created else OUTCOME_UPDATED
-
-
-def _process_page(
-    page: list[dict[str, Any]],
-    run: PipelineRun,
-    counts: dict[str, int],
-    *,
-    range_start: datetime,
-    range_end: datetime,
-    dry_run: bool,
-    force: bool,
-    on_fetched: "Callable[[dict[str, Any]], None] | None",
-) -> bool:
-    """
-    Walk a page of bulletins, mutating counts; return True to stop paging.
-
-    Pulled out of ``run_slf_pipeline`` so the orchestration loop stays
-    under the cyclomatic-complexity limit. The return value collapses
-    the two pagination-termination signals into one: an out-of-range
-    bulletin (``_OUTCOME_OUT_OF_RANGE``) tells the caller to stop.
-    """
-    for raw in page:
-        if on_fetched is not None:
-            on_fetched(raw)
-        try:
-            outcome = _process_bulletin(
-                raw,
-                run,
-                range_start=range_start,
-                range_end=range_end,
-                dry_run=dry_run,
-                force=force,
-            )
-        except KeyError:
-            logger.exception(
-                "Error parsing bulletin data:\n%s", json.dumps(raw, indent=4)
-            )
-            raise
-        if outcome == _OUTCOME_OUT_OF_RANGE:
-            return True
-        counts[outcome] += 1
-    return False
 
 
 def run_slf_pipeline(
@@ -313,9 +119,10 @@ def run_slf_pipeline(
     """
     Orchestrate a full SLF pipeline run over a date range.
 
-    Pages through the SLF CAAML API in reverse chronological order.
-    Bulletins newer than ``end`` are skipped; once a bulletin older than
-    ``start`` is encountered, pagination stops.
+    The walk — paging back through the SLF API, skipping bulletins newer
+    than ``end`` and stopping at the first older than ``start`` — is
+    ``apps.ingest.public.fetch_bulletins``. This function decides what to
+    do with each bulletin it yields and records the run.
 
     Args:
         start: First date to include (inclusive).
@@ -345,19 +152,13 @@ def run_slf_pipeline(
     run = PipelineRun.objects.create(triggered_by=triggered_by)
     run.mark_running()
 
-    # Convert date boundaries to aware datetimes for comparison.
-    range_start = datetime(start.year, start.month, start.day, tzinfo=UTC)
-    range_end = datetime(end.year, end.month, end.day, tzinfo=UTC) + _ONE_DAY
-
     counts: dict[str, int] = {
         OUTCOME_CREATED: 0,
         OUTCOME_UPDATED: 0,
         _OUTCOME_SKIPPED_EXISTS: 0,
-        _OUTCOME_SKIPPED_NEWER: 0,
         OUTCOME_FAILED: 0,
     }
-    offset = 0
-    pages_fetched = 0
+    stats = FetchStats()
 
     try:
         logger.info(
@@ -369,34 +170,19 @@ def run_slf_pipeline(
             dry_run,
             delay,
         )
-
-        while True:
-            page = fetch_bulletin_page(LANG, PAGE_SIZE, offset, base_url=base_url)
-            pages_fetched += 1
-
-            if not page:
-                break
-
-            stop = _process_page(
-                page,
-                run,
-                counts,
-                range_start=range_start,
-                range_end=range_end,
-                dry_run=dry_run,
-                force=force,
-                on_fetched=on_fetched,
-            )
-
-            # Stop on either an out-of-range bulletin (``stop`` is True)
-            # or the upstream's "fewer than ``limit``" last-page signal.
-            if stop or len(page) < PAGE_SIZE:
-                break
-
-            offset += PAGE_SIZE
-
-            if delay > 0:
-                time.sleep(delay)
+        for item in fetch_bulletins(
+            PROVIDER_SLF,
+            start,
+            end,
+            base_url=base_url,
+            delay=delay,
+            on_item=on_fetched,
+            stats=stats,
+        ):
+            if isinstance(item, FetchOutcome):
+                count_outcome(item, run, counts)
+                continue
+            counts[_process_bulletin(item, run, dry_run=dry_run, force=force)] += 1
 
     except Exception as exc:
         run.mark_failed(exc)
@@ -406,7 +192,7 @@ def run_slf_pipeline(
         "Pipeline run %s finished: %d pages, %d created, %d updated, "
         "%d skipped, %d failed",
         run.pk,
-        pages_fetched,
+        stats.requests,
         counts[OUTCOME_CREATED],
         counts[OUTCOME_UPDATED],
         counts[_OUTCOME_SKIPPED_EXISTS],
