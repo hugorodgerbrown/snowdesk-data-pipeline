@@ -2,7 +2,7 @@
 name: oauth
 description: mcp-auth OAuth — /oauth/authorize|token|register, verified_account, disconnect, mint_mcp_token, service-client credentials
 status: current
-last-reviewed: 2026-10-23
+last-reviewed: 2026-10-27
 ---
 
 # OAuth for the MCP server
@@ -131,6 +131,10 @@ own credential inside the view, after the middleware has run.
   revokes it. It is not a `RegisteredCommand` — it is the package's — and
   it prints a credential, so it would keep its output out of the register
   anyway.
+- **`mint_feed_token`** (Snowdesk's, SNOW-1254) — a data feed token for a
+  service client, for a cloud dev environment that pulls the feed with
+  `DATA_FEED_TOKEN`. Scope `data`, no user, bound to `/api/data/v1/`,
+  90 days by default. See [`data-feed.md`](data-feed.md).
 - **`purge_expired_oauth_tokens`** — django-oauth-toolkit's
   `clear_expired()` under Snowdesk's command contract: read-only without
   `--commit`, tallies `access_tokens_deleted`, `refresh_tokens_deleted` and

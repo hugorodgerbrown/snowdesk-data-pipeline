@@ -1,8 +1,8 @@
 ---
 name: data-feed
-description: Data feed GET /api/data/v1/ (bulletins, weather, locations, resorts), service clients, pull_production_data, DATA_FEED_URL
+description: Data feed GET /api/data/v1/, service clients, pull_production_data, DATA_FEED_URL, DATA_FEED_TOKEN, mint_feed_token (cloud dev)
 status: current
-last-reviewed: 2026-10-23
+last-reviewed: 2026-10-27
 ---
 
 # The production data feed
@@ -136,6 +136,56 @@ uv run python manage.py pull_production_data
 
 **Revoking a client** is deleting its application on production. Its
 tokens go with it, so the next request is a 401.
+
+## Setting up a cloud dev environment (SNOW-1254)
+
+A Claude Code on the web session cannot hold a client secret in a form it
+can exchange safely, so it is given a **minted token** instead: an ordinary
+access token issued to a service client with the `data` scope, bound to the
+feed's URL, carrying no user and expiring after a set number of days.
+`require_feed_token` admits it unchanged.
+
+**1. On production, create a separate service client** named
+`Cloud dev feed`, exactly as in step 1 above. It must not be staging's:
+revoking the cloud token should never touch staging's credentials.
+
+**2. Mint the token** from production's shell. It is printed once and
+stored only as a hash:
+
+```bash
+uv run python manage.py mint_feed_token --client "Cloud dev feed"           # preview
+uv run python manage.py mint_feed_token --client "Cloud dev feed" --commit  # 90 days
+uv run python manage.py mint_feed_token --client "Cloud dev feed" --days 30 --commit
+```
+
+**3. On the cloud environment**, set two environment variables and open
+production's host (`snowdesk.info`) in its network policy
+([allowlist](environment-network-allowlist.md)):
+
+```
+DATA_FEED_URL=https://snowdesk.info/api/data/v1/
+DATA_FEED_TOKEN=<the minted token>
+```
+
+**4. In a session**, pulling is an explicit step. Seeding stays
+fixtures-first and nothing pulls at session start:
+
+```bash
+uv run python manage.py pull_production_data            # preview
+uv run python manage.py pull_production_data --commit   # apply
+```
+
+When `DATA_FEED_TOKEN` is set, `pull_production_data` sends it as it is and
+needs neither `DATA_FEED_CLIENT_ID` nor `DATA_FEED_CLIENT_SECRET`. A minted
+token cannot be renewed, so a 401 stops the pull with "expired or been
+revoked": mint a new one. **Revoking** is deleting the token (Django OAuth
+Toolkit → Access tokens) or the `Cloud dev feed` application on production.
+`purge_expired_oauth_tokens` clears expired tokens daily.
+
+What the token reaches is what the feed serves: bulletins, public-location
+weather, curated locations and resorts. No user-owned table is served, so
+none is reachable. Why a cloud session may hold this token when it holds no
+provider key: [`decisions/cloud-sessions-hold-no-provider-credentials.md`](decisions/cloud-sessions-hold-no-provider-credentials.md).
 
 ## `pull_production_data`
 

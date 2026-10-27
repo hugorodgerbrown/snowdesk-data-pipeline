@@ -2,7 +2,7 @@
 name: environment-network-allowlist
 description: Canonical egress allowlist (bare + *. pairs) for Claude Code on the web — EGRESS_BLOCKED hosts, provider APIs, basemaps, scan sites
 status: current
-last-reviewed: 2026-10-16
+last-reviewed: 2026-10-27
 ---
 
 # Environment network allow-list
@@ -99,7 +99,7 @@ and a 403 as the policy's.**
 
 | Allow | Hosts actually used | Status 2026-09-29 |
 |---|---|---|
-| `snowdesk.info`, `*.snowdesk.info` | Production site; route share links (`/routes/s/<token>/`) | bare open, `www.` blocked |
+| `snowdesk.info`, `*.snowdesk.info` | Production site; route share links (`/routes/s/<token>/`); the data feed `/api/data/v1/` that `pull_production_data` reads with a `DATA_FEED_TOKEN` (SNOW-1254) | bare open, `www.` blocked |
 | `snowdesk-data.info`, `*.snowdesk-data.info` | `tiles.snowdesk-data.info` — basemap origin and the `/terrain/v1/` grid `sample_route_slope` reads | open |
 
 ### Bulletin providers and the EAWS

@@ -2,7 +2,7 @@
 name: cloud-sessions-hold-no-provider-credentials
 description: Cloud sessions never hold a provider API key (METEOFRANCE_API_KEY, WHAT3WORDS_API_KEY, MAXMIND_LICENSE_KEY); tests and seeds need none
 status: current
-last-reviewed: 2026-09-30
+last-reviewed: 2026-10-27
 ---
 
 # Cloud sessions hold no provider credentials
@@ -48,3 +48,24 @@ a fixture, a mirror, or a fake — before a test may touch it. The network
 allowlist ([environment-network-allowlist.md](../environment-network-allowlist.md))
 can still open the provider's host for a probe; the policy opens the
 door, this decision keeps the key out of the room.
+
+## Amendment, 2026-10-27: a data feed token is allowed (SNOW-1254)
+
+A cloud environment may hold one Snowdesk credential: a **data feed
+token** minted with `mint_feed_token`, set as `DATA_FEED_TOKEN`, so a
+session can run `pull_production_data` and work against real bulletins and
+weather. This does not reopen the decision above, for three reasons.
+
+- **It is not a provider credential.** It calls no third-party API and
+  spends no one's quota. It reads Snowdesk's own feed, which serves
+  bulletins, public-location weather, curated locations and resorts, and
+  never a user-owned table.
+- **It is scoped and expires.** It carries the `data` scope only, is bound
+  to `/api/data/v1/`, has no user behind it, and lasts 90 days by default.
+- **It is revocable on its own.** It belongs to a dedicated `Cloud dev
+  feed` service client, so deleting that application ends cloud access
+  without touching staging's credentials.
+
+Provider keys stay out. Nothing in the suite or the seeds needs the token,
+and a session without it behaves exactly as before. Pulling is an explicit
+step, never part of session start.

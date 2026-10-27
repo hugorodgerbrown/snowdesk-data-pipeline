@@ -2,7 +2,7 @@
 name: worktrees
 description: init-worktree seed recipe, migrate + sync_waffle_flags + seed_canonical_routes every session, settings.ini not .env, dev credentials, reseed
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-27
 ---
 
 # Worktrees and DB seeding
@@ -195,6 +195,15 @@ pointed somewhere else — is left alone and no `settings.ini` is written
 beside it; sandboxed commands in that worktree then fail on the deny until
 the file is removed. Which settings file holds what, and why:
 [`.claude/README.md`](../.claude/README.md#which-file-a-setting-belongs-in).
+
+## Pulling real data into a session
+
+When the cloud environment sets `DATA_FEED_URL` and `DATA_FEED_TOKEN`
+(SNOW-1254), a session can top its seeded database up from production's
+feed with `uv run python manage.py pull_production_data --commit`. It is an
+explicit step, never part of the seed: the seed stays fixtures-first, and a
+session without the token behaves exactly as before. Setting up the token:
+[`data-feed.md`](data-feed.md#setting-up-a-cloud-dev-environment-snow-1254).
 
 ## Dev credentials
 

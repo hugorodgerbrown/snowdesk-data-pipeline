@@ -33,6 +33,7 @@ from apps.bulletins.models import Bulletin, RegionBulletin
 from apps.bulletins.services.slf_fetcher import upsert_bulletin
 from apps.core.models import CommandRun
 from apps.data_feed import feeds
+from apps.data_feed.client import FeedError
 from apps.data_feed.management.commands import pull_production_data as command
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import MicroRegion, Pass, Resort
@@ -432,6 +433,38 @@ class TestRefusals:
         """All three settings are named when missing."""
         with pytest.raises(CommandError, match="DATA_FEED_URL, DATA_FEED_CLIENT_ID"):
             _run()
+
+    @override_settings(
+        DATA_FEED_URL="",
+        DATA_FEED_CLIENT_ID="",
+        DATA_FEED_CLIENT_SECRET="",
+        DATA_FEED_TOKEN="minted",
+    )
+    def test_a_token_needs_only_the_url(self) -> None:
+        """With DATA_FEED_TOKEN set, the client pair is not asked for (SNOW-1254)."""
+        with pytest.raises(CommandError, match=r"^DATA_FEED_URL not set"):
+            _run()
+
+    @override_settings(
+        **FEED_SETTINGS | {"DATA_FEED_TOKEN": "minted"},
+    )
+    def test_a_token_is_preferred_to_the_client_pair(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The command hands DATA_FEED_TOKEN to the client."""
+        seen: dict[str, Any] = {}
+
+        def _capture(*args: Any, **kwargs: Any) -> Any:
+            seen.update(kwargs)
+            raise FeedError("stop")
+
+        monkeypatch.setattr(
+            "apps.data_feed.management.commands.pull_production_data.FeedClient",
+            _capture,
+        )
+        with pytest.raises(CommandError, match="stop"):
+            _run()
+        assert seen["token"] == "minted"
 
     @override_settings(
         **FEED_SETTINGS | {"DATA_FEED_URL": "http://prod.example/api/data/v1/"}

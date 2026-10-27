@@ -241,6 +241,12 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         secret=True,
         note="data feed service client secret (client credentials)",
     ),
+    # SNOW-1254: a minted bearer token, used in place of the pair above.
+    SettingSpec(
+        "DATA_FEED_TOKEN",
+        secret=True,
+        note="data feed bearer token from mint_feed_token (cloud dev environments)",
+    ),
     # The note used to read "CalVer tag of the running release", which this
     # has never been: it resolves to RENDER_GIT_COMMIT, a git SHA. The CalVer
     # tag is created by release.yml AFTER the deploy starts and never reaches

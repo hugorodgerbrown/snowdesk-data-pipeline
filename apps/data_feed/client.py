@@ -2,8 +2,9 @@
 apps/data_feed/client.py — Reading the production data feed over HTTPS.
 
 ``FeedClient`` is the client side of ``/api/data/v1/``: it gets an access
-token with the OAuth 2 client-credentials grant, then walks a feed page by
-page, following ``next_cursor`` until the server says there is no more.
+token with the OAuth 2 client-credentials grant — or is handed one minted
+ahead of time with ``mint_feed_token`` (SNOW-1254) — then walks a feed page
+by page, following ``next_cursor`` until the server says there is no more.
 
 Three rules, each a refusal rather than a warning:
 
@@ -16,7 +17,9 @@ Three rules, each a refusal rather than a warning:
   ``/api/data/v1/``.
 * **One token per run, renewed once on a 401.** Tokens last an hour; a long
   backfill can outlive one, so a 401 mid-walk fetches a fresh token and
-  retries that page once. A second 401 is a real refusal and raises.
+  retries that page once. A second 401 is a real refusal and raises. A
+  minted token cannot be renewed, so its first 401 raises at once and says
+  so: it has expired or been revoked.
 
 Plain ``requests`` with a module-level timeout, as every other outbound
 call in the project.
@@ -123,18 +126,37 @@ class FeedClient:
     def __init__(
         self,
         base_url: str,
-        client_id: str,
-        client_secret: str,
+        client_id: str = "",
+        client_secret: str = "",
         session: requests.Session | None = None,
+        *,
+        token: str = "",
     ) -> None:
-        """Validate the URL and hold the credentials; no request is made yet."""
+        """Validate the URL and hold the credentials; no request is made yet.
+
+        Args:
+            base_url: The feed's base URL.
+            client_id: A service client's id, for the client-credentials grant.
+            client_secret: That client's secret.
+            session: The ``requests`` session to use (tests pass a stub).
+            token: A bearer token minted with ``mint_feed_token``. When set it
+                is used as it is and the client credentials are not needed.
+
+        Raises:
+            FeedError: The URL is refused, or neither a token nor a client
+                id and secret were given.
+
+        """
         self.base_url = check_feed_url(base_url)
+        if not token and not (client_id and client_secret):
+            raise FeedError("a feed token or a client id and secret is required")
         parts = urlsplit(self.base_url)
         self.token_url = f"{parts.scheme}://{parts.netloc}/oauth/token/"
         self._client_id = client_id
         self._client_secret = client_secret
         self._session = session or requests.Session()
-        self._token: str | None = None
+        self._minted = bool(token)
+        self._token: str | None = token or None
 
     def _fetch_token(self) -> str:
         """Exchange the client credentials for a token bound to the feed.
@@ -197,6 +219,11 @@ class FeedClient:
                 )
             except requests.RequestException as exc:
                 raise FeedError(f"GET {url} failed: {exc}") from exc
+            if response.status_code == 401 and self._minted:
+                raise FeedError(
+                    f"GET {url} refused the feed token: it has expired or been "
+                    "revoked. Mint a new one on production with mint_feed_token."
+                )
             if response.status_code == 401 and attempt == 1:
                 self._token = None
                 continue
