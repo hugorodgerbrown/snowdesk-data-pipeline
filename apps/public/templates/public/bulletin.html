@@ -56,8 +56,7 @@ reachable via the SNOW-81 deep-link in the masthead.
 {% block page_meta %}
     {% firstof page_date|date:"j F Y" as page_day %}
     {% if is_today %}
-        {% blocktrans with name=region_name trimmed asvar page_title %}{{ name }} · Today ·
-            Snowdesk{% endblocktrans %}
+        {% blocktrans with name=region_name trimmed asvar page_title %}{{ name }} · Today · Snowdesk{% endblocktrans %}
     {% else %}
         {% blocktrans with name=region_name day=page_day trimmed asvar page_title %}{{ name }} · {{ day }} ·
             Snowdesk{% endblocktrans %}

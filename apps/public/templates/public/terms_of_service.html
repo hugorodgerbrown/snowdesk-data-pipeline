@@ -52,9 +52,9 @@ Content is authored directly in this template; no runtime context required.
                 {% blocktrans trimmed %}
                     Snowdesk is operated by Hugo Rodger-Brown ("I", "me", "my"), an individual based in London, UK.
                     Snowdesk displays avalanche bulletins published by the WSL Institute for Snow and Avalanche Research
-                    (SLF) for Switzerland, by ALBINA / EUREGIO for Tyrol, South Tyrol and Trentino, and by
-                    Météo-France for the French mountain ranges. It publishes no avalanche forecast of its own. There
-                    are no employees; the service is run entirely by the sole operator.
+                    (SLF) for Switzerland, by ALBINA / EUREGIO for Tyrol, South Tyrol and Trentino, and by Météo-France
+                    for the French mountain ranges. It publishes no avalanche forecast of its own. There are no
+                    employees; the service is run entirely by the sole operator.
                 {% endblocktrans %}
             </p>
         </section>
@@ -137,8 +137,11 @@ Content is authored directly in this template; no runtime context required.
                     {% blocktrans trimmed %}
                         Check the official bulletin for the region you are heading to — the European avalanche warning
                         services are indexed at
-                        <a class="underline" href="https://www.avalanches.org" target="_blank" rel="noopener"
-                        >avalanches.org</a>
+                        <a
+                            class="underline"
+                            href="https://www.avalanches.org"
+                            target="_blank"
+                            rel="noopener">avalanches.org</a>
                     {% endblocktrans %}
                 </li>
                 <li>{% trans "Seek current local knowledge from guides, hut keepers, or ski patrol" %}</li>
@@ -161,28 +164,29 @@ Content is authored directly in this template; no runtime context required.
             <p>
                 {% url 'public:colophon' as colophon_url %}
                 {% blocktrans trimmed %}
-                    The avalanche bulletin data displayed on Snowdesk is published by three avalanche warning services
-                    — the
-                    <a class="underline" href="https://www.slf.ch" target="_blank" rel="noopener"
-                    >WSL Institute for Snow and Avalanche Research SLF</a>,
-                    <a class="underline" href="https://avalanche.report" target="_blank" rel="noopener"
-                    >ALBINA / EUREGIO</a>
+                    The avalanche bulletin data displayed on Snowdesk is published by three avalanche warning services —
+                    the
+                    <a class="underline" href="https://www.slf.ch" target="_blank" rel="noopener">WSL Institute for Snow
+                        and Avalanche Research SLF</a>,
+                    <a class="underline" href="https://avalanche.report" target="_blank" rel="noopener">ALBINA /
+                        EUREGIO</a>
                     and
-                    <a class="underline" href="https://meteofrance.com/meteo-montagne" target="_blank" rel="noopener"
-                    >Météo-France</a>. The SLF and ALBINA bulletins are licensed under
+                    <a
+                        class="underline"
+                        href="https://meteofrance.com/meteo-montagne"
+                        target="_blank"
+                        rel="noopener">Météo-France</a>. The SLF and ALBINA bulletins are licensed under
                     <a
                         class="underline"
                         href="https://creativecommons.org/licenses/by/4.0/"
                         target="_blank"
-                        rel="noopener"
-                    >CC BY 4.0</a>; the Météo-France BRA is used under the
+                        rel="noopener">CC BY 4.0</a>; the Météo-France BRA is used under the
                     <a
                         class="underline"
                         href="https://portail-api.meteofrance.fr/web/en/DonneesPubliquesBRA/license"
                         target="_blank"
-                        rel="noopener"
-                    >Météo-France open-data licence</a>. Each service retains the intellectual property in its own
-                    data. Full attribution details are in the
+                        rel="noopener">Météo-France open-data licence</a>. Each service retains the intellectual
+                    property in its own data. Full attribution details are in the
                     <a class="underline" href="{{ colophon_url }}">colophon</a>.
                 {% endblocktrans %}
             </p>
@@ -212,9 +216,9 @@ Content is authored directly in this template; no runtime context required.
                             class="underline"
                             href="https://www.slf.ch/en/services-and-products/slf-data-service/"
                             target="_blank"
-                            rel="noopener"
-                        >data-service terms of use</a>, SLF makes bulletin data available for information purposes only
-                        and accepts no liability for the delivery of that data or for decisions made on the basis of it.
+                            rel="noopener">data-service terms of use</a>, SLF makes bulletin data available for
+                        information purposes only and accepts no liability for the delivery of that data or for
+                        decisions made on the basis of it.
                     {% endblocktrans %}
                 </li>
                 {% comment %}
@@ -234,8 +238,7 @@ Content is authored directly in this template; no runtime context required.
                             class="underline"
                             href="https://avalanche.report/more/open-data"
                             target="_blank"
-                            rel="noopener"
-                        >avalanche.report's open-data page</a>
+                            rel="noopener">avalanche.report's open-data page</a>
                         for the terms that apply to its data.
                     {% endblocktrans %}
                 </li>
@@ -246,9 +249,8 @@ Content is authored directly in this template; no runtime context required.
                             class="underline"
                             href="https://portail-api.meteofrance.fr/web/en/DonneesPubliquesBRA/license"
                             target="_blank"
-                            rel="noopener"
-                        >open-data licence</a>, which sets out the conditions of reuse and the limits of
-                        Météo-France's responsibility for the data.
+                            rel="noopener">open-data licence</a>, which sets out the conditions of reuse and the limits
+                        of Météo-France's responsibility for the data.
                     {% endblocktrans %}
                 </li>
             </ul>
@@ -274,8 +276,8 @@ Content is authored directly in this template; no runtime context required.
             <p class="mb-2">
                 {% blocktrans trimmed %}
                     To the maximum extent permitted by law, Snowdesk and its operator shall not be liable for any
-                    direct, indirect, incidental, or consequential loss arising from your use of — or inability to use
-                    — this service. This includes, without limitation, any decisions made on the basis of avalanche
+                    direct, indirect, incidental, or consequential loss arising from your use of — or inability to use —
+                    this service. This includes, without limitation, any decisions made on the basis of avalanche
                     information displayed on Snowdesk.
                 {% endblocktrans %}
             </p>
