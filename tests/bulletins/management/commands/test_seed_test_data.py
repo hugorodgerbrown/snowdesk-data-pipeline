@@ -398,7 +398,7 @@ class TestCommit:
 
     def test_seeding_makes_no_what3words_call(self) -> None:
         """Offline, for the reason the elevations are supplied not resolved."""
-        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+        with patch("apps.ingest.sources.what3words.requests.get") as mock_get:
             call_command(
                 "seed_test_data", "--include", "location", commit=True, verbosity=0
             )

@@ -44,8 +44,13 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  apps/ingest/public.py — tests/ingest/test_boundary.py fails
                  the build otherwise. normalise/ holds the pure functions
                  (SLF shape detection, the Météo-France translator, Open-Meteo
-                 parsing). Read docs/decisions/ingestion-is-a-rehostable-unit.md
-                 before importing from it
+                 parsing); sources/ the HTTP (the three bulletin providers,
+                 Open-Meteo forecast + elevation, what3words), settings read
+                 only via conf.py; runs.py walks a provider and yields
+                 NormalisedBulletin / FetchOutcome — the app decides what to
+                 write (SNOW-1249). Read
+                 docs/decisions/ingestion-is-a-rehostable-unit.md before
+                 importing from it
   bulletins/     Everything that originates from the three CAAML bulletin
                  providers — the models (Bulletin, RegionBulletin,
                  PipelineRun, RegionDayRating, …), the per-provider

@@ -1021,7 +1021,7 @@ class TestFavouriteCardThreeWordAddress:
         location = LocationFactory.create(what3words=None)
         favourite = FavouriteFactory.create(user=user, location=location)
 
-        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+        with patch("apps.ingest.sources.what3words.requests.get") as mock_get:
             client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
 
         mock_get.assert_not_called()
@@ -1890,7 +1890,7 @@ class TestFavouriteList:
         location = LocationFactory.create(what3words=None)
         FavouriteFactory.create(user=user, location=location)
 
-        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+        with patch("apps.ingest.sources.what3words.requests.get") as mock_get:
             client.get(LIST_URL, **HTMX_HEADERS)
 
         mock_get.assert_not_called()

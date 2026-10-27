@@ -34,7 +34,7 @@ standalone set of Locations and one Favourite per Location (all owned by the
 seeded normal dev user).
 
 Every seeded Location carries a FAKE three word address, invented offline by
-``apps.locations.services.what3words.fake_address`` — the same rule as the
+``apps.ingest.sources.what3words.fake_address`` — the same rule as the
 supplied elevations: the seed makes no outbound call. Without it the
 ``what3words`` feature is invisible locally, since seeing a real address
 needs a paid plan and an API key. The words name nowhere, which is safe
@@ -1417,7 +1417,7 @@ class Command(RegisteredCommand):
             The created Location instances.
 
         """
-        from apps.locations.services.what3words import fake_address
+        from apps.ingest.public import fake_address
         from tests.factories import LocationFactory
 
         now = django_timezone.now()
@@ -1639,7 +1639,7 @@ class Command(RegisteredCommand):
             The number of Trip rows created.
 
         """
-        from apps.locations.services.what3words import fake_address
+        from apps.ingest.public import fake_address
         from apps.trips.services.trips import create_trip
 
         if not routes:  # pragma: no cover — ROUTE is a TRIP prerequisite

@@ -439,7 +439,7 @@ class TestTripMeetingPointAddress:
         trip = TripFactory.create(meeting_point=_meeting_point())
         client.force_login(trip.created_by)
 
-        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+        with patch("apps.ingest.sources.what3words.requests.get") as mock_get:
             html = client.get(
                 reverse("trips:detail", args=[trip.uuid])
             ).content.decode()
@@ -553,7 +553,7 @@ class TestTripMeetingPointAddress:
         client.force_login(trip.created_by)
 
         with patch(
-            "apps.locations.services.what3words.requests.get",
+            "apps.ingest.sources.what3words.requests.get",
             side_effect=requests.Timeout("too slow"),
         ):
             response = client.get(reverse("trips:detail", args=[trip.uuid]))

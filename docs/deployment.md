@@ -135,7 +135,7 @@ free public host, which needs no key. The free per-IP quota is 600/minute,
 
 Two callers, with very different profiles:
 
-- **Elevation** (`apps.locations.services.elevation.fetch_elevation`)
+- **Elevation** (`apps.ingest.sources.open_meteo.fetch_elevation`)
   resolves a `Location`'s height once and stores it — a handful of calls
   when a favourite is created or a backfill runs, not a scheduled load.
 - **Forecast** (`apps.weather.services.fetch`, SNOW-759) runs on a schedule:

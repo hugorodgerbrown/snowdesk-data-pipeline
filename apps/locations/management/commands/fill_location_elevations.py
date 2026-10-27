@@ -47,10 +47,10 @@ from typing import Any
 
 from apps.core.command_iteration import iterate_rows, non_negative_float
 from apps.core.command_register import RegisteredCommand
+from apps.ingest.public import fetch_elevation
 from apps.locations.management.commands.dump_locations_sheets import notes_from
 from apps.locations.management.commands.import_locations import DEFAULT_SHEET_PATH
 from apps.locations.models import Location
-from apps.locations.services.elevation import fetch_elevation
 
 logger = logging.getLogger(__name__)
 

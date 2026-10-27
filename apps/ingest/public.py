@@ -26,6 +26,12 @@ The names are grouped by what they are for:
       massif catalogue.
   Weather
       Parsing an Open-Meteo forecast response, and the two shapes it returns.
+  A point
+      What Open-Meteo says about one coordinate — ``fetch_forecast`` over a
+      date range (``history_base_url`` for the backfill) and
+      ``fetch_elevation`` — and its what3words address, ``convert_to_3wa``
+      (``fake_address`` offline). Each takes a coordinate, never a
+      ``Location`` (SNOW-1249).
   Fetching bulletins
       ``fetch_bulletins`` walks one provider and yields ``NormalisedBulletin``
       and ``FetchOutcome`` items; what to do with each is the caller's
@@ -102,7 +108,13 @@ from apps.ingest.runs import (
     fetch_bulletins,
 )
 from apps.ingest.sources.meteofrance import meteofrance_pdf_url, pdf_session
+from apps.ingest.sources.open_meteo import (
+    fetch_elevation,
+    fetch_forecast,
+    history_base_url,
+)
 from apps.ingest.sources.slf import PAGE_SIZE as SLF_PAGE_SIZE
+from apps.ingest.sources.what3words import convert_to_3wa, fake_address
 
 __all__ = [
     "ALPINE_MASSIFS",
@@ -136,14 +148,19 @@ __all__ = [
     "albina_pdf_url",
     "build_bulletin_id",
     "compact_publication_stamp",
+    "convert_to_3wa",
     "daily_dates",
     "daily_fields",
     "daily_max_freezing_level",
     "day_is_complete",
     "detect_caaml_shape",
+    "fake_address",
     "fetch_bulletins",
+    "fetch_elevation",
+    "fetch_forecast",
     "forecast_entry",
     "format_comment_as_html",
+    "history_base_url",
     "hourly_rows_for_day",
     "merge_ndjson_records",
     "merge_slf_archive",

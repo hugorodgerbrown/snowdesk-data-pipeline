@@ -1113,7 +1113,7 @@ class TestObservationListThreeWordAddress:
         location = LocationFactory.create(what3words=None)
         FieldObservationFactory.create(user=user, location=location)
 
-        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+        with patch("apps.ingest.sources.what3words.requests.get") as mock_get:
             client.get(LIST_URL, **HTMX_HEADERS)
 
         mock_get.assert_not_called()

@@ -1,20 +1,11 @@
 """
-tests/locations/services/test_what3words.py — Tests for the what3words service.
+tests/locations/services/test_what3words.py — Tests for fill_what3words.
 
-Covers:
-  - convert_to_3wa: the happy path, the configured host, a ``base_url``
-    override, and that the key rides in the ``X-Api-Key`` HEADER and never
-    in the query string.
-  - convert_to_3wa NEVER RAISES: an empty key, a timeout, a 4xx carrying
-    the documented ``{"error": {"code": ...}}`` body, a non-JSON body and
-    a body with no ``words`` all return None. This is the property the
-    trip page depends on — a what3words outage must not take a page down.
-  - fill_what3words: a fresh cache is returned without a call, an expired
-    one is re-converted, both columns are written, and a failed conversion
-    leaves the row untouched (no negative caching).
-
-All outbound HTTP is mocked with ``unittest.mock.patch``, mirroring
-test_elevation.py.
+A fresh cache is returned without a call, an old address is never
+re-converted, both columns are written, and a failed conversion leaves the
+row untouched (no negative caching). The conversion itself lives in
+apps.ingest (SNOW-1249) and is tested in tests/ingest/sources/; here it is
+reached through ``requests.get``, mocked as there.
 """
 
 from __future__ import annotations
@@ -29,7 +20,7 @@ from django.utils import timezone
 from freezegun import freeze_time
 from pytest_django.fixtures import Settings
 
-from apps.locations.services.what3words import convert_to_3wa, fill_what3words
+from apps.locations.services.what3words import fill_what3words
 from tests.factories import LocationFactory
 
 
@@ -90,132 +81,6 @@ def _mock_get(body: dict[str, Any], status_code: int = 200) -> MagicMock:
     return MagicMock(return_value=response)
 
 
-class TestConvertTo3wa:
-    """The conversion call itself."""
-
-    def test_returns_the_words_from_the_response(self) -> None:
-        """The ``words`` value, unprefixed — the ``///`` is presentation."""
-        with patch(
-            "apps.locations.services.what3words.requests.get", _mock_get(_GOOD_BODY)
-        ):
-            assert convert_to_3wa(46.080012, 7.318197) == "filled.count.soap"
-
-    def test_uses_the_configured_host(self, settings: Settings) -> None:
-        """The configured base plus ``/convert-to-3wa``."""
-        settings.WHAT3WORDS_API_BASE_URL = "https://api.example/v3"
-        mock_get = _mock_get(_GOOD_BODY)
-        with patch("apps.locations.services.what3words.requests.get", mock_get):
-            convert_to_3wa(46.0, 7.0)
-        assert mock_get.call_args[0][0] == "https://api.example/v3/convert-to-3wa"
-
-    def test_base_url_override_replaces_the_host(self) -> None:
-        """A ``base_url`` override points the call somewhere else."""
-        mock_get = _mock_get(_GOOD_BODY)
-        with patch("apps.locations.services.what3words.requests.get", mock_get):
-            convert_to_3wa(46.0, 7.0, base_url="https://mirror.example/v3")
-        assert mock_get.call_args[0][0] == "https://mirror.example/v3/convert-to-3wa"
-
-    def test_sends_the_coordinate_and_english(self) -> None:
-        """One ``coordinates`` parameter, lat first, and ``language=en``.
-
-        The language is hardcoded on purpose: two people on one trip must
-        not be shown different words for the same square.
-        """
-        mock_get = _mock_get(_GOOD_BODY)
-        with patch("apps.locations.services.what3words.requests.get", mock_get):
-            convert_to_3wa(46.080012, 7.318197)
-        params = mock_get.call_args.kwargs["params"]
-        assert params["coordinates"] == "46.080012,7.318197"
-        assert params["language"] == "en"
-
-    def test_the_key_travels_in_the_header_not_the_query(self) -> None:
-        """A header cannot land in an access log or a proxy's URL capture."""
-        mock_get = _mock_get(_GOOD_BODY)
-        with patch("apps.locations.services.what3words.requests.get", mock_get):
-            convert_to_3wa(46.0, 7.0)
-        assert mock_get.call_args.kwargs["headers"]["X-Api-Key"] == "test-key"
-        assert "test-key" not in str(mock_get.call_args.kwargs["params"])
-
-
-class TestConvertTo3waFailures:
-    """Every failure returns None. None of them raise."""
-
-    def test_no_key_makes_no_request(self, settings: Settings) -> None:
-        """An unsubscribed environment is a supported state, not an error."""
-        settings.WHAT3WORDS_API_KEY = ""
-        mock_get = _mock_get(_GOOD_BODY)
-        with patch("apps.locations.services.what3words.requests.get", mock_get):
-            assert convert_to_3wa(46.0, 7.0) is None
-        mock_get.assert_not_called()
-
-    def test_a_timeout_returns_none(self) -> None:
-        """The upstream being slow renders a coordinate, not a 500."""
-        with patch(
-            "apps.locations.services.what3words.requests.get",
-            side_effect=requests.Timeout("too slow"),
-        ):
-            assert convert_to_3wa(46.0, 7.0) is None
-
-    def test_a_connection_error_returns_none(self) -> None:
-        """As does the upstream being unreachable."""
-        with patch(
-            "apps.locations.services.what3words.requests.get",
-            side_effect=requests.ConnectionError("no route"),
-        ):
-            assert convert_to_3wa(46.0, 7.0) is None
-
-    def test_a_4xx_returns_none_and_logs_the_error_code(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """``InvalidKey`` and ``QuotaExceeded`` need different fixes.
-
-        The status alone says "4xx", so the documented ``error.code`` is
-        what reaches the log.
-        """
-        body = {"error": {"code": "QuotaExceeded", "message": "Quota Exceeded"}}
-        with patch(
-            "apps.locations.services.what3words.requests.get", _mock_get(body, 402)
-        ):
-            assert convert_to_3wa(46.0, 7.0) is None
-        assert "QuotaExceeded" in caplog.text
-
-    def test_a_4xx_with_an_undocumented_body_still_returns_none(self) -> None:
-        """The failure handler must not fail inside the failure."""
-        with patch(
-            "apps.locations.services.what3words.requests.get", _mock_get({}, 500)
-        ):
-            assert convert_to_3wa(46.0, 7.0) is None
-
-    @pytest.mark.parametrize("body", [[], "a string", 42, None])
-    def test_json_that_is_not_an_object_returns_none(self, body: Any) -> None:
-        """Valid JSON is not necessarily an OBJECT.
-
-        A proxy, a WAF or a future API version can answer a list, a bare
-        string or null with a 200. ``response.json()`` succeeds on all of
-        them and ``[].get`` is an AttributeError — which would leave this
-        function by the one route its docstring says does not exist, and
-        500 a trip page instead of falling back to the coordinates.
-        """
-        with patch("apps.locations.services.what3words.requests.get", _mock_get(body)):
-            assert convert_to_3wa(46.080012, 7.318197) is None
-
-    def test_a_non_json_body_returns_none(self) -> None:
-        """An HTML error page from an intermediary is not a conversion."""
-        mock_get = _mock_get({})
-        mock_get.return_value.json.side_effect = ValueError("not JSON")
-        with patch("apps.locations.services.what3words.requests.get", mock_get):
-            assert convert_to_3wa(46.0, 7.0) is None
-
-    @pytest.mark.parametrize("words", [None, "", 3])
-    def test_a_body_without_usable_words_returns_none(self, words: object) -> None:
-        """Missing, blank and not-a-string are all "no address"."""
-        with patch(
-            "apps.locations.services.what3words.requests.get",
-            _mock_get({"words": words}),
-        ):
-            assert convert_to_3wa(46.0, 7.0) is None
-
-
 @pytest.mark.django_db
 class TestFillWhat3words:
     """The read path's entry point — cache first, convert second."""
@@ -227,7 +92,7 @@ class TestFillWhat3words:
             what3words_fetched_at=timezone.now(),
         )
         mock_get = _mock_get(_GOOD_BODY)
-        with patch("apps.locations.services.what3words.requests.get", mock_get):
+        with patch("apps.ingest.sources.what3words.requests.get", mock_get):
             assert fill_what3words(location) == "filled.count.soap"
         mock_get.assert_not_called()
 
@@ -246,7 +111,7 @@ class TestFillWhat3words:
             ),
         )
         mock_get = _mock_get(_GOOD_BODY)
-        with patch("apps.locations.services.what3words.requests.get", mock_get):
+        with patch("apps.ingest.sources.what3words.requests.get", mock_get):
             assert fill_what3words(location) == "filled.count.soap"
         mock_get.assert_not_called()
 
@@ -259,7 +124,7 @@ class TestFillWhat3words:
         """An unresolved row is what a fill is for."""
         location = LocationFactory.create()
         with patch(
-            "apps.locations.services.what3words.requests.get", _mock_get(_GOOD_BODY)
+            "apps.ingest.sources.what3words.requests.get", _mock_get(_GOOD_BODY)
         ):
             assert fill_what3words(location) == "filled.count.soap"
 
@@ -275,7 +140,7 @@ class TestFillWhat3words:
         """
         location = LocationFactory.create()
         with patch(
-            "apps.locations.services.what3words.requests.get",
+            "apps.ingest.sources.what3words.requests.get",
             side_effect=requests.Timeout("too slow"),
         ):
             assert fill_what3words(location) is None
@@ -288,73 +153,9 @@ class TestFillWhat3words:
         """Two concurrent callers both converting is harmless."""
         location = LocationFactory.create()
         with patch(
-            "apps.locations.services.what3words.requests.get", _mock_get(_GOOD_BODY)
+            "apps.ingest.sources.what3words.requests.get", _mock_get(_GOOD_BODY)
         ):
             first = fill_what3words(location)
             second = fill_what3words(location)
 
         assert first == second == "filled.count.soap"
-
-
-class TestTheLocalFake:
-    """The ``WHAT3WORDS_FAKE`` escape hatch for UX work and demos.
-
-    Not a test double — the tests above mock ``requests.get`` and do not
-    touch this. It is scaffolding that lets a person LOOK at the feature
-    without a paid subscription, so what matters here is that it produces
-    something address-shaped, produces the SAME thing every time, and
-    cannot escape a development machine.
-    """
-
-    def test_returns_three_words_without_calling_the_api(
-        self, settings: Settings
-    ) -> None:
-        """The whole point: an address, and no request."""
-        settings.WHAT3WORDS_FAKE = True
-        settings.DEBUG = True
-
-        with patch("apps.locations.services.what3words.requests.get") as mock_get:
-            address = convert_to_3wa(46.080012, 7.318197)
-
-        mock_get.assert_not_called()
-        assert address is not None
-        assert len(address.split(".")) == 3
-
-    def test_is_stable_across_calls(self, settings: Settings) -> None:
-        """The same square always reads the same way.
-
-        A meeting point that shuffled its words on reload would be a worse
-        lie than the invented words themselves.
-        """
-        settings.WHAT3WORDS_FAKE = True
-        settings.DEBUG = True
-
-        assert convert_to_3wa(46.080012, 7.318197) == convert_to_3wa(
-            46.080012, 7.318197
-        )
-
-    def test_different_places_read_differently(self, settings: Settings) -> None:
-        """Two meeting points must not collide into one address."""
-        settings.WHAT3WORDS_FAKE = True
-        settings.DEBUG = True
-
-        assert convert_to_3wa(46.080012, 7.318197) != convert_to_3wa(45.9237, 6.8694)
-
-    def test_the_setting_alone_does_not_fake_in_production(
-        self, settings: Settings
-    ) -> None:
-        """DEBUG is required on top of the setting.
-
-        A fabricated meeting point reaching a real group would send them
-        to a square that does not exist, so the env var is not enough on
-        its own — the real request goes out instead.
-        """
-        settings.WHAT3WORDS_FAKE = True
-        settings.DEBUG = False
-
-        with patch(
-            "apps.locations.services.what3words.requests.get", _mock_get(_GOOD_BODY)
-        ) as mock_get:
-            assert convert_to_3wa(46.080012, 7.318197) == "filled.count.soap"
-
-        mock_get.assert_called_once()

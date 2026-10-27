@@ -42,10 +42,10 @@ Each is a bug that was found the hard way and each has its own test:
   location, so a malformed timestamp partway through cannot leave a
   half-written row behind while the batch counts the location as failed.
 
-Addressing reuses ``apps.locations.services.open_meteo`` — ``request_url``
-takes any endpoint segment, so weather supplies its own ``FORECAST``
-constant and shares the host and customer-key resolution rather than
-duplicating it.
+The request itself is ``fetch_forecast`` from ``apps.ingest.public``
+(SNOW-1249), which knows a coordinate and a date range and never a
+``Location``. This module keeps the walk over locations, the choice of
+window and the write.
 """
 
 from __future__ import annotations
@@ -55,32 +55,22 @@ from collections.abc import Callable, Iterable
 from datetime import date, timedelta
 from typing import Any
 
-import requests
 from django.db import transaction
 
 from apps.ingest.public import (
-    DAILY_VARIABLES,
-    HOURLY_VARIABLES,
     daily_dates,
     daily_fields,
     daily_max_freezing_level,
     day_is_complete,
+    fetch_forecast,
     forecast_entry,
     hourly_rows_for_day,
 )
 from apps.locations.models import Location
-from apps.locations.services import open_meteo
 from apps.weather.models import Weather
 from apps.weather.services.upsert import upsert_weather
 
 logger = logging.getLogger(__name__)
-
-REQUEST_TIMEOUT = 30  # seconds
-
-# Endpoint path segment, appended to the resolved Open-Meteo base URL.
-# Weather owns its own endpoint constants; the locations service owns the
-# host and key resolution that ``request_url`` applies to them.
-FORECAST = "forecast"
 
 # How many days each request covers: the day itself plus a week-ahead
 # outlook. ``observed_on`` becomes the row; the rest become ``forecast``.
@@ -91,26 +81,6 @@ FORECAST_DAYS = 7
 # Bounded because the series is the bulk of the stored JSON and the
 # near-term days are the ones anyone plans an hour-by-hour day around.
 HOURLY_DAYS = 2
-
-
-def _get_forecast(url: str, params: dict[str, str]) -> dict[str, Any]:
-    """Issue one Open-Meteo forecast request and return the parsed payload.
-
-    Args:
-        url: The resolved request URL.
-        params: The query parameters, key already applied.
-
-    Returns:
-        The parsed JSON body.
-
-    Raises:
-        requests.HTTPError: The API returned a non-2xx status.
-
-    """
-    response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()
-    payload: dict[str, Any] = response.json()
-    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -165,31 +135,24 @@ def fetch_weather_for_location(
             day, and that day has passed.
 
     """
-    url = open_meteo.request_url(FORECAST, base_url)
     end_date = observed_on + timedelta(days=FORECAST_DAYS - 1)
 
-    params: dict[str, str] = {
-        "latitude": str(location.latitude),
-        "longitude": str(location.longitude),
-        "daily": DAILY_VARIABLES,
-        "hourly": HOURLY_VARIABLES,
-        "timezone": "auto",
-        "start_date": observed_on.isoformat(),
-        "end_date": end_date.isoformat(),
-    }
-    if location.elevation_m is not None:
-        params["elevation"] = str(location.elevation_m)
-
     logger.debug(
-        "Fetching weather for location=%s start=%s end=%s commit=%s url=%s",
+        "Fetching weather for location=%s start=%s end=%s commit=%s",
         location.pk,
         observed_on,
         end_date,
         commit,
-        url,
     )
 
-    data = _get_forecast(url, open_meteo.with_api_key(params, url))
+    data = fetch_forecast(
+        location.latitude,
+        location.longitude,
+        location.elevation_m,
+        observed_on,
+        end_date,
+        base_url=base_url,
+    )
 
     daily = data["daily"]
     hourly: dict[str, Any] | None = data.get("hourly")
