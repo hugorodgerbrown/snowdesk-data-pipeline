@@ -14,6 +14,8 @@ Covers:
     signed-in visitor and a sign-in link otherwise.
   - The map's context carries both values, the day read from the example
     share in the same query that answers the welcome card's link.
+  - SNOW-1244: the between-seasons note renders out of season only, with
+    its season, sample day and region, and the map page loads its script.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ import json
 import re
 
 import pytest
+from django.template.loader import render_to_string
 from django.test import Client
 from django.urls import reverse
 
@@ -158,3 +161,54 @@ class TestMapPage:
 
         assert re.search(r"data-resort-star\s+data-resort-guide-pin", content)
         assert "data-resort-guide-signin" not in content
+
+    def test_example_finish_card_continues_with_email_back_to_routes(self) -> None:
+        """SNOW-1244: signed out, the example's upload goes to the one page
+        for new and returning visitors, and comes back to the routes panel.
+        """
+        content = Client().get(reverse("public:map")).content.decode()
+
+        href = (
+            reverse("accounts:sign_in")
+            + "?next=%2Fmap%2F%3Fpanel%3Droutes&amp;intent=upload"
+        )
+        assert f'href="{href}"' in content
+        assert "Continue with email to upload" in content
+
+
+class TestBetweenSeasonsNote:
+    """SNOW-1244: the note that explains today's empty off-season map."""
+
+    def _render(self, *, is_offseason: bool) -> str:
+        """Render the partial as the map page would, out of season or in."""
+        return render_to_string(
+            "public/partials/_map_between_seasons.html",
+            {
+                "is_offseason": is_offseason,
+                "season_label": "2025/26",
+                "archived_season_start": datetime.date(2025, 11, 1),
+                "resort_guide_date": datetime.date(2026, 4, 10),
+                "resort_guide_popular": [{"region_id": "CH-4115"}],
+            },
+        )
+
+    def test_out_of_season_it_names_the_month_and_the_sample(self) -> None:
+        """The note says when bulletins return and offers the sample day."""
+        content = self._render(is_offseason=True)
+
+        assert 'id="map-between-seasons"' in content
+        assert 'data-season="2025/26"' in content
+        assert 'data-sample-date="2026-04-10"' in content
+        assert 'data-region-id="CH-4115"' in content
+        assert "No avalanche bulletins until November" in content
+        assert "Explore a sample bulletin · 10 Apr" in content
+
+    def test_in_season_it_renders_nothing(self) -> None:
+        """In season the map has colour, so there is nothing to explain."""
+        assert self._render(is_offseason=False).strip() == ""
+
+    def test_the_map_page_loads_its_script(self) -> None:
+        """The script is on the map page, which renders the note off-season."""
+        content = Client().get(reverse("public:map")).content.decode()
+
+        assert "js/map_between_seasons.js" in content

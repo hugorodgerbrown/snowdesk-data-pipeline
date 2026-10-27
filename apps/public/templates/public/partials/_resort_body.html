@@ -10,10 +10,13 @@ one-row peek. On a phone the sheet at full height therefore IS the page,
 and the two cannot drift: a fact about a resort is added here, never to the
 sheet or the page alone. Context from ``apps.public.views.build_resort_body``.
 
-The sections, in one order whatever the season: the forecast — the
-resort's own data — then, in the map, the curated facts, then one row naming
-the avalanche region the resort sits in. On the page the facts are a
-sidebar on a desktop and the last section on a phone.
+The sections, in one order whatever the season: one row naming the
+avalanche region the resort sits in, then the forecast — the resort's own
+data — then, in the map, the curated facts folded behind "About this
+resort". The region row leads because the bulletin is the reason most
+readers open a resort, and user testing (27 Oct 2026) found the row lost
+under the facts. On the page the facts are a sidebar on a desktop and the
+last section on a phone, unfolded.
 
 A RESORT HAS NO AVALANCHE DANGER OF ITS OWN (Hugo, 25 Oct 2026). Until
 then this body carried the region's bulletin card, the day's problem cards
@@ -35,22 +38,24 @@ Context (beyond what each included partial documents):
 {% endcomment %}
 <div class="flex flex-col gap-8{% if not in_map %} lg:flex-row lg:items-start lg:gap-10{% endif %}">
     <div class="flex min-w-0 flex-col {% if in_map %}gap-8{% else %}gap-12 lg:flex-1{% endif %}">
-        {# SNOW-1203: the forecast leads. It is the resort's own data. #}
-        {% if forecast_points %}
-            {% include "public/partials/_resort_forecast.html" %}
-        {% endif %}
-        {# In the map the facts come before the way out to the region. #}
-        {% if in_map %}
-            {% include "public/partials/_resort_facts.html" %}
-        {% endif %}
+        {# The way to the region's bulletin leads: the danger is the region's. #}
         <section aria-labelledby="resort-region-heading" data-testid="resort-region">
             {% translate "Avalanche bulletin" as region_eyebrow %}
             {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-region-heading" text=region_eyebrow class_extra="mb-3" only %}
-            <div class="overflow-hidden rounded-card border border-border bg-card">
-                {% translate "The avalanche region this resort is in" as region_subtitle %}
+            {# data-place-link-card: the onboarding guide rings this card, not the row it clips. #}
+            <div class="overflow-hidden rounded-card border border-border bg-card" data-place-link-card>
+                {% blocktranslate trimmed with day=target_date|date:"j M Y" asvar region_subtitle %}
+                    View region bulletin for {{ day }}
+                {% endblocktranslate %}
                 {% include "includes/_place_link_row.html" with kind="region" title=region.name subtitle=region_subtitle href=bulletin_url open_id=region.region_id testid="resort-region-link" only %}
             </div>
         </section>
+        {% if forecast_points %}
+            {% include "public/partials/_resort_forecast.html" %}
+        {% endif %}
+        {% if in_map %}
+            {% include "public/partials/_resort_facts.html" with folded=True %}
+        {% endif %}
     </div>
     {% if not in_map %}
         {% include "public/partials/_resort_facts.html" with class_extra="lg:w-80 lg:shrink-0" %}

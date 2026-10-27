@@ -488,8 +488,8 @@ class TestResortBody:
         """Hugo, 25 Oct 2026: the resort's own data first, the region last.
 
         Whatever the day holds, the sheet shows no danger of the resort's
-        own: the forecast (or its one "No forecast available" line), the
-        facts, then the one neutral row naming the region.
+        own: the one neutral row naming the region leads, then the forecast
+        (or its one "No forecast available" line), then the facts, folded.
         """
         resort = _resort(num_lifts=34)
         if has_forecast:
@@ -497,9 +497,10 @@ class TestResortBody:
         if rated:
             _todays_bulletin(resort.region)
         content = _get(client, _resort_url(resort.slug)).content.decode()
+        region = content.index('data-testid="resort-region"')
         forecast = content.index('data-testid="resort-forecast"')
-        facts = content.index('data-testid="resort-facts"')
-        assert forecast < facts < content.index('data-testid="resort-region"')
+        assert region < forecast < content.index('data-testid="resort-facts"')
+        assert 'data-testid="resort-facts-panel"' in content
         assert ('data-testid="resort-forecast-none"' in content) is not has_forecast
         for gone in ("resort-bulletin", "resort-problems", "resort-season"):
             assert f'data-testid="{gone}"' not in content

@@ -103,9 +103,9 @@ describe('barPosition', () => {
 });
 
 describe('signInHref', () => {
-  it('comes back to the map with the resort open', () => {
+  it('comes back to the map with the resort open, ready to pin it', () => {
     expect(core.signInHref('/accounts/sign-in/', '/map/', 'st-moritz'))
-      .toBe('/accounts/sign-in/?next=%2Fmap%2F%3Fresort%3Dst-moritz');
+      .toBe('/accounts/sign-in/?next=%2Fmap%2F%3Fresort%3Dst-moritz&intent=pin');
   });
 
   it('is the bare sign-in page without a resort', () => {

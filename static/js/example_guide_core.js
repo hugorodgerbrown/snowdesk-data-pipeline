@@ -11,10 +11,12 @@
  *   intro    — "we've moved the map to <day>"; confirmed with Got it,
  *              because the date jump is the one thing that must be said
  *              before anything else happens.
- *   drag     — move the point along the profile across at least
- *              DRAG_FRACTION of the route (a tap is not a drag).
+ *   drag     — the point is already placed (startIndex); move it along
+ *              the profile across at least DRAG_FRACTION of the route (a
+ *              tap is not a drag). Next appears after NEXT_AFTER_MS.
  *   zoom     — zoom in until the route draws in slope classes, which it
- *              does from ROUTE_SLOPE_MINZOOM (route_drawing_core.js).
+ *              does from ROUTE_SLOPE_MINZOOM (route_drawing_core.js);
+ *              "Show me" flies there, to the steepest stretch.
  *   colours  — what the colours mean; confirmed with Finish.
  *
  * This module owns no DOM and reads no globals: step order, the two
@@ -24,10 +26,12 @@
  *
  * Exports (frozen `self.pwaExampleGuideCore`):
  *
- *   STEPS, DRAG_FRACTION, EXAMPLE_PARAM
+ *   STEPS, DRAG_FRACTION, NEXT_AFTER_MS, EXAMPLE_PARAM
  *   stepNumber(step)                     — 1-based position, 0 if unknown
  *   nextStep(step)                       — the step after, or null
  *   createDragTracker(sampleCount)       — {record(index) → bool, reset()}
+ *   startIndex(sampleCount)              — where the point is placed first
+ *   steepestIndex(angles)                — where "Show me" flies
  *   zoomProgress(zoom, startZoom, target) — 0..1, the zoom bar's fill
  *   formatDay(iso, locale)               — "10 April 2026"
  *   formatShortDay(iso, locale)          — "10 Apr"
@@ -48,6 +52,15 @@
   // About a fifth of the profile: far enough that the dot is seen to
   // travel on the map, short enough that nobody has to drag end to end.
   var DRAG_FRACTION = 0.2;
+
+  // SNOW-1244: where the guide places the point before the drag step, as a
+  // share of the route — near the start, so a drag has room to run.
+  var START_FRACTION = 0.1;
+
+  // SNOW-1244: how long a step that waits on a gesture waits before it also
+  // offers Next. Long enough to try the gesture; a tester whose drag did not
+  // register was left with no way on.
+  var NEXT_AFTER_MS = 8000;
 
   // The parameter routes:example adds to the map URL. It starts the guide
   // and is stripped once read, so a reload does not start it again.
@@ -117,6 +130,36 @@
       },
       span: span,
     });
+  }
+
+  /**
+   * The index the guide places the point at before the drag step.
+   *
+   * @param {number} sampleCount The route's cursor segments.
+   * @returns {?number} null for a route with none.
+   */
+  function startIndex(sampleCount) {
+    if (!(sampleCount > 0)) return null;
+    return Math.floor(START_FRACTION * (sampleCount - 1));
+  }
+
+  /**
+   * The segment with the steepest ground under it — where "Show me" flies,
+   * because that is where the slope colours have the most to say.
+   *
+   * @param {Array<?number>} angles The slope per cursor segment, degrees.
+   * @returns {?number} The first steepest index; null with no angle at all.
+   */
+  function steepestIndex(angles) {
+    var best = null;
+    var bestAngle = -Infinity;
+    (angles || []).forEach(function (angle, index) {
+      if (typeof angle === 'number' && isFinite(angle) && angle > bestAngle) {
+        best = index;
+        bestAngle = angle;
+      }
+    });
+    return best;
   }
 
   /**
@@ -218,10 +261,13 @@
   self.pwaExampleGuideCore = Object.freeze({
     STEPS: STEPS,
     DRAG_FRACTION: DRAG_FRACTION,
+    NEXT_AFTER_MS: NEXT_AFTER_MS,
     EXAMPLE_PARAM: EXAMPLE_PARAM,
     stepNumber: stepNumber,
     nextStep: nextStep,
     createDragTracker: createDragTracker,
+    startIndex: startIndex,
+    steepestIndex: steepestIndex,
     zoomProgress: zoomProgress,
     formatDay: formatDay,
     formatShortDay: formatShortDay,

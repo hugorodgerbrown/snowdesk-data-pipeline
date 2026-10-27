@@ -167,6 +167,12 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         "map.example.step_completed",
         "map.example.exited",
         "map.example.finished",
+        # SNOW-1244: the zoom step's "Show me", which flies the camera in for
+        # the visitor; a step completed after it was not zoomed by hand.
+        "map.example.show_me",
+        # SNOW-1244: Back to today from the pill, after the visitor chose to
+        # keep exploring the example (`map.example.finished` {kept: true}).
+        "map.example.left",
         # SNOW-1231: the "Find a resort" walkthrough (map_resort_guide.js):
         # opened (`offseason`: whether it moved the map to the example's
         # day), each step done (`step`: search / resort / region), left by
@@ -176,6 +182,14 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         "map.resort_guide.exited",
         "map.resort_guide.finished",
         "map.resort_guide.pinned",
+        # SNOW-1244: Back to today from the pill after keeping exploring.
+        "map.resort_guide.left",
+        # SNOW-1244: the between-seasons note on today's empty off-season
+        # map (map_between_seasons.js): shown, its sample bulletin opened,
+        # or dismissed until the next off-season.
+        "map.between_seasons.shown",
+        "map.between_seasons.explored",
+        "map.between_seasons.dismissed",
         # SNOW-894: an uncaught exception or unhandled rejection in the
         # browser, from static/js/error_reporting.js. The first client-side
         # error signal the pipeline has carried — before it, every uncaught

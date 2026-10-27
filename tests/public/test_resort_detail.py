@@ -185,8 +185,19 @@ class TestResortDetailContent:
         assert 'data-panel-open="region"' in row
         assert f'data-panel-id="{region.region_id}"' in row
         assert "Martigny – Verbier" in html.unescape(row)
-        assert "The avalanche region this resort is in" in row
+        assert "View region bulletin for" in row
         assert "danger-tile" not in row
+
+    def test_the_region_row_leads_and_the_facts_stay_open(self) -> None:
+        """The page leads with the region row; its facts are not folded."""
+        resort = ResortFactory.create(num_lifts=34)
+        _todays_bulletin(resort.region)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        region = content.index('data-testid="resort-region"')
+        assert region < content.index('data-testid="resort-facts"')
+        assert 'data-testid="resort-facts-panel"' not in content
 
 
 @pytest.mark.django_db

@@ -4347,6 +4347,30 @@ html:has(> body.map-fullscreen) > body {
     cursor: pointer;
 }
 
+/* SNOW-1244: the drag step's late Next, quieter than a step's own action. */
+.map-example-guide-btn--quiet {
+    background: transparent;
+    color: var(--on-ink);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.map-example-guide-btn[hidden] {
+    display: none;
+}
+
+/* SNOW-1244: "Show me" with the do-it-yourself gesture beside it. */
+.map-example-guide-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+}
+
+.map-example-guide-aside {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
 .map-example-guide-meter {
     height: 6px;
     margin: 2px 0 10px;
@@ -4505,6 +4529,39 @@ html:has(> body.map-fullscreen) > body {
     text-decoration: underline;
 }
 
+/* SNOW-1244 — the between-seasons note (#map-between-seasons): the finish
+   card's look, along the top of the map under the controls, where the
+   example guide's bar sits on a phone. map_between_seasons.js sets `top`. */
+.map-between-seasons {
+    position: absolute;
+    left: calc(env(safe-area-inset-left, 0px) + 12px);
+    right: calc(env(safe-area-inset-right, 0px) + 12px);
+    z-index: 6;
+    padding: 16px 18px;
+    border: 0.5px solid var(--color-border);
+    border-radius: 12px;
+    background: var(--color-card);
+    box-shadow: var(--shadow-glass);
+    color: var(--color-text-1);
+    font-family: var(--sans);
+}
+
+.map-between-seasons[hidden] {
+    display: none;
+}
+
+.map-between-seasons .map-tour-offer-eyebrow {
+    padding-right: 28px;
+}
+
+@media (min-width: 640px) {
+    .map-between-seasons {
+        left: var(--map-edge-inset-left);
+        right: auto;
+        width: var(--route-column-width);
+    }
+}
+
 .map-example-finish-btn:focus-visible {
     outline: 2px solid var(--color-text-1);
     outline-offset: 2px;
@@ -4614,21 +4671,31 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
-/* The row step two asks the visitor to tap. */
-[data-resort-guide-ring] {
+/* The row step two asks the visitor to tap, and the profile the example's
+   drag step asks them to drag (SNOW-1244): an accent ring with a soft
+   halo, drawn OUTSIDE the card that holds the row. An inset ring on the
+   row itself lost its corners to the card's rounded overflow clip. */
+[data-resort-guide-ring],
+[data-example-ring] {
     position: relative;
-    box-shadow: inset 0 0 0 2px var(--ink);
+    box-shadow: 0 0 0 2px var(--color-accent), 0 0 0 6px var(--color-accent-tint);
     animation: resort-guide-ring 1.6s ease-in-out infinite;
+}
+
+/* The profile lane has no radius of its own; the ring wants one. */
+[data-example-ring] {
+    border-radius: var(--radius-sm);
 }
 
 @keyframes resort-guide-ring {
     50% {
-        box-shadow: inset 0 0 0 4px var(--ink);
+        box-shadow: 0 0 0 2px var(--color-accent), 0 0 0 9px var(--color-accent-tint);
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    [data-resort-guide-ring] {
+    [data-resort-guide-ring],
+    [data-example-ring] {
         animation: none;
     }
 }

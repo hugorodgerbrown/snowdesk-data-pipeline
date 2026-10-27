@@ -43,16 +43,18 @@ function buildFixture({ guideDate = DAY, signedIn = false } = {}) {
       <div id="map-resort-guide-bar" hidden>
         <p data-resort-guide-eyebrow></p>
         <button type="button" data-resort-guide-exit>Exit</button>
-        <div data-resort-guide-step="resort"><strong data-resort-guide-name></strong>
-          <strong data-resort-guide-region></strong></div>
-        <div data-resort-guide-step="region" hidden>
+        <div data-resort-guide-step="resort"><p>Avalanche bulletins are regional.</p></div>
+        <div data-resort-guide-step="region" hidden><strong data-resort-guide-region></strong>
+          <button type="button" data-resort-guide-keep>Keep exploring this example</button>
           <button type="button" data-resort-guide-finish>Finish</button></div>
         <ol class="map-example-guide-dots"><li></li><li></li><li></li></ol>
       </div>
       <div id="map-resort-guide-pill" hidden>
         <span data-resort-guide-pill="paused">paused</span>
         <span data-resort-guide-pill="off-day" hidden>off day</span>
+        <span data-resort-guide-pill="exploring" hidden>Example day · 10 Apr</span>
         <button type="button" data-resort-guide-resume>Resume</button>
+        <button type="button" data-resort-guide-back-to-today hidden>Back to today</button>
         <button type="button" data-resort-guide-back-to-day hidden></button>
         <button type="button" data-resort-guide-exit>Exit</button>
       </div>
@@ -135,8 +137,8 @@ function openResortSheet({ favourited = false, signedInSheet = true } = {}) {
     ${signedInSheet ? `<button data-resort-star data-resort-slug="verbier" data-resort-name="Verbier"
       data-resort-lat="46.1" data-resort-lon="7.2" data-favourited="${favourited}"></button>`
     : '<a href="/accounts/sign-in/">Sign in to save</a>'}</div>
-    <a data-testid="resort-region-link" data-panel-open="region" data-panel-id="CH-4115">
-      <span class="font-semibold">Martigny-Verbier</span></a>`;
+    <div data-place-link-card><a data-testid="resort-region-link" data-panel-open="region"
+      data-panel-id="CH-4115"><span class="font-semibold">Martigny-Verbier</span></a></div>`;
   $('place-sheet').hidden = false;
 }
 
@@ -227,10 +229,10 @@ describe('the steps', () => {
     await settle();
 
     expect(bar().hidden).toBe(false);
-    expect(bar().querySelector('[data-resort-guide-name]').textContent).toBe('Verbier');
     expect(bar().querySelector('[data-resort-guide-region]').textContent).toBe('Martigny-Verbier');
     expect(bar().querySelector('[data-resort-guide-eyebrow]').textContent).toBe('Find a resort · 2 of 3');
-    expect(document.querySelector('[data-testid="resort-region-link"]')
+    // The card holding the row, so the ring is not clipped at its corners.
+    expect(document.querySelector('[data-place-link-card]')
       .hasAttribute('data-resort-guide-ring')).toBe(true);
     expect(dispatched('snowdesk:search-suggestions').at(-1).detail.resorts).toEqual([]);
     expect(emitted('map.resort_guide.step_completed')[0][1]).toEqual({ step: 'search' });
@@ -270,7 +272,6 @@ describe('the steps', () => {
     await settle();
     pill().querySelector('[data-resort-guide-resume]').click();
 
-    expect(bar().querySelector('[data-resort-guide-name]').textContent).toBe('Verbier');
     expect(dispatched('snowdesk:resort-open')[0].detail).toEqual({ slug: 'verbier' });
   });
 
@@ -306,6 +307,37 @@ describe('the day', () => {
   });
 });
 
+describe('keep exploring (SNOW-1244)', () => {
+  it('keeps the bulletin and the day, with the way back on the pill', async () => {
+    await load();
+    await walkToRegion();
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: DAY } }));
+    await settle();
+    const scrubs = dispatched('snowdesk:scrub-to').length;
+
+    bar().querySelector('[data-resort-guide-keep]').click();
+
+    expect(bar().hidden).toBe(true);
+    expect(pill().hidden).toBe(false);
+    expect(pill().querySelector('[data-resort-guide-pill="exploring"]').hidden).toBe(false);
+    expect(pill().querySelector('[data-resort-guide-resume]').hidden).toBe(true);
+    expect(pill().querySelector('[data-resort-guide-exit]').hidden).toBe(true);
+    expect(dispatched('snowdesk:scrub-to')).toHaveLength(scrubs);
+    expect($('map-resort-guide-finish').hidden).toBe(true);
+    expect(emitted('map.resort_guide.finished')[0][1]).toEqual({ kept: true });
+
+    const closed = vi.fn();
+    $('region-sheet').querySelector('[data-action="dismiss"]').addEventListener('click', closed);
+    pill().querySelector('[data-resort-guide-back-to-today]').click();
+
+    expect(closed).toHaveBeenCalled();
+    expect(pill().hidden).toBe(true);
+    expect(dispatched('snowdesk:scrub-to').at(-1).detail.date).toBe(TODAY);
+    expect($('map-resort-guide-finish').hidden).toBe(false);
+    expect(emitted('map.resort_guide.left')).toHaveLength(1);
+  });
+});
+
 describe('leaving', () => {
   it('Exit puts the map back on today and says so', async () => {
     await load();
@@ -334,8 +366,8 @@ describe('leaving', () => {
     expect($('map-resort-guide-finish-title').textContent).toBe('Keep Verbier one tap away');
     const link = document.querySelector('[data-resort-guide-signin]');
     expect(link.hidden).toBe(false);
-    expect(link.textContent).toBe('Sign in to pin Verbier');
-    expect(link.getAttribute('href')).toBe('/accounts/sign-in/?next=%2Fmap%2F%3Fresort%3Dverbier');
+    expect(link.textContent).toBe('Continue with email to pin Verbier');
+    expect(link.getAttribute('href')).toBe('/accounts/sign-in/?next=%2Fmap%2F%3Fresort%3Dverbier&intent=pin');
     expect(emitted('map.resort_guide.finished')).toHaveLength(1);
 
     $('map-resort-guide-finish').querySelector('[data-resort-guide-done]').click();

@@ -121,9 +121,10 @@
    *   `floor` is already map-relative.
    * A phone sheet raised so high that the bar has no room above it (the
    * sheet at full) gets the bar laid over it instead: under the top
-   * controls when `overSheet` is 'top' (the resort step, whose row is low
-   * in the sheet), along the foot of the map when it is 'bottom' (the
-   * region step, whose level and problems lead the sheet).
+   * controls when `overSheet` is 'top' (for a row low in the sheet), along
+   * the foot of the map when it is 'bottom' (for a sheet whose lead is the
+   * point: both steps today, since the region row leads the resort's sheet
+   * and the level and problems lead the region's).
    *
    * @returns {{top: ?number, bottom: ?number, left: ?number}} Exactly one
    *   of `top` and `bottom` is set; `left` null keeps the CSS's.
@@ -148,7 +149,7 @@
 
   /**
    * The sign-in link that returns to the map with the resort open, so
-   * "Sign in to pin Verbier" lands where the star is one tap away.
+   * "Continue with email to pin Verbier" lands where the star is one tap away.
    *
    * @param {string} signInUrl The sign-in page, without a query.
    * @param {string} mapUrl The map's path.
@@ -158,7 +159,8 @@
   function signInHref(signInUrl, mapUrl, slug) {
     if (!slug) return signInUrl;
     var next = mapUrl + '?resort=' + encodeURIComponent(slug);
-    return signInUrl + '?next=' + encodeURIComponent(next);
+    // intent=pin: the sign-in page says the link comes back ready to pin.
+    return signInUrl + '?next=' + encodeURIComponent(next) + '&intent=pin';
   }
 
   self.pwaResortGuideCore = Object.freeze({

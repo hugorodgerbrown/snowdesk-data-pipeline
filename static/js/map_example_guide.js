@@ -9,9 +9,12 @@
  * and their tests are example_guide_core.js:
  *
  *   intro    say what just happened to the date; Got it.
- *   drag     move the point along the profile (the rail's cursor).
- *   zoom     zoom in until the line draws in slope classes.
- *   colours  what the colours mean; Finish.
+ *   drag     the point is placed for them and the profile ringed; drag
+ *            it along the profile (the rail's cursor). Next after a while.
+ *   zoom     zoom in until the line draws in slope classes — "Show me"
+ *            flies to the steepest stretch (pwaRouteOpener.showPoint).
+ *   colours  what the colours mean; then "Keep exploring this example" or
+ *            "Back to today" (SNOW-1244).
  *
  * NOTHING IS LOCKED (Hugo, SNOW-1230). The guide is not a map overlay and
  * does not register with window.pwaMapOverlays: the map is the lesson, so
@@ -24,14 +27,22 @@
  *     example's day, and the "Example day" badge comes off the date,
  *     because the badge never sits on a day the example did not choose.
  *
+ * KEEP EXPLORING (SNOW-1244). Testing found that finishing took away the
+ * route the visitor had just learned to read. The last step offers "Keep
+ * exploring this example" beside "Back to today": the first ends the guide
+ * but leaves the route, its profile and the example's day, with the pill
+ * reading "Example route · <day>" and one button, Back to today, for as
+ * long as they stay.
+ *
  * LEAVING ALWAYS PUTS THE MAP BACK ON TODAY, AND SAYS SO. Exit (from the bar
- * or the pill) and Finish both: drop the example from the session
+ * or the pill) and Back to today all: drop the example from the session
  * (routes:share_dismiss — it stops being drawn and listed), close the rail,
  * commit today through 'snowdesk:scrub-to' as map_today.js does, and toast
- * "Back to today · <date>". Finish then shows the finish card.
+ * "Back to today · <date>". Back to today then shows the finish card.
  *
  * Telemetry: map.example.opened, map.example.step_completed {step},
- * map.example.exited {step}, map.example.finished. A finished or exited walk
+ * map.example.show_me, map.example.exited {step}, map.example.finished
+ * {kept}, and map.example.left (Back to today after keeping exploring). A finished or exited walk
  * is remembered on the device ('snowdesk.example.walked'), so routes.js
  * can mark an upload that follows it.
  *
@@ -86,7 +97,7 @@
   const STEP_PAUSE_MS = 700;
   const GAP = 8;
 
-  /** @type {'waiting'|'running'|'ended'} */
+  /** @type {'waiting'|'running'|'exploring'|'ended'} */
   let phase = 'waiting';
   /** @type {string} */
   let step = exampleDate ? 'intro' : 'drag';
@@ -96,6 +107,7 @@
   let drag = null;
   let zoomStart = NaN;
   let stepTimer = null;
+  let skipTimer = null;
 
   const emit = (name, props) => window.pwaTelemetry?.emit(name, props || {});
 
@@ -106,6 +118,9 @@
   const dayText = core.formatDay(exampleDate, locale);
   guide.querySelectorAll('[data-example-day]').forEach((el) => {
     el.textContent = dayText;
+  });
+  pill.querySelectorAll('[data-example-short-day]').forEach((el) => {
+    el.textContent = core.formatShortDay(exampleDate, locale);
   });
   const backToDay = pill.querySelector('[data-example-back-to-day]');
   if (backToDay) {
@@ -128,10 +143,11 @@
 
   /**
    * Put a floating element beside the route it talks about: on a desktop
-   * under the route panel (a selection's column); on a phone on top of the
-   * route's sheet, so the words sit over the profile they point at and
-   * ride up and down with it; with no route open, under the controls along
-   * the top edge. Never above those controls.
+   * under the route panel (a selection's column); on a phone, and with no
+   * route open, under the controls along the top edge. Never above those
+   * controls. A phone's bar used to ride on top of the route's sheet;
+   * Hugo moved it to the top (SNOW-1244) so the route and the leader line
+   * from the profile to the dot show between the bar and the sheet.
    *
    * @param {HTMLElement} el
    */
@@ -142,10 +158,8 @@
     const rail = window.pwaRouteRail;
     const railEl = rail && rail.element;
     let top = floor;
-    if (railEl && rail.isOpen()) {
-      const box = railEl.getBoundingClientRect();
-      if (rail.isSheet && rail.isSheet()) top = box.top - mapTop - el.offsetHeight - GAP;
-      else top = box.bottom - mapTop + GAP;
+    if (railEl && rail.isOpen() && !(rail.isSheet && rail.isSheet())) {
+      top = railEl.getBoundingClientRect().bottom - mapTop + GAP;
     }
     el.style.top = `${Math.round(Math.max(floor, top))}px`;
   };
@@ -180,21 +194,43 @@
     dots.forEach((dot, i) => dot.classList.toggle('is-on', i < n));
   };
 
+  /**
+   * Ring the profile while the drag step asks for it, and only then
+   * (SNOW-1244: a tester tapped it and saw nothing happen).
+   *
+   * @param {boolean} on
+   */
+  const ringProfile = (on) => {
+    const rail = window.pwaRouteRail && window.pwaRouteRail.element;
+    const lane = rail && rail.querySelector('[data-route-rail-lane]');
+    if (lane) lane.toggleAttribute('data-example-ring', on);
+  };
+
   /** Bar, pill or neither; the badge on the date while it is the example's. */
   const paint = () => {
     const active = phase === 'running';
+    const exploring = phase === 'exploring';
     const showBar = active && railShowsExample && onExampleDay();
     guide.hidden = !showBar;
-    pill.hidden = !active || showBar;
-    if (active && !showBar) {
-      const offDay = !onExampleDay();
-      pill.querySelector('[data-example-pill="paused"]').hidden = offDay;
+    // Exploring, the pill stays put whatever the visitor opens or closes:
+    // it is the one way back to today (SNOW-1244).
+    pill.hidden = !(exploring || (active && !showBar));
+    if (!pill.hidden) {
+      const offDay = !exploring && !onExampleDay();
+      pill.querySelector('[data-example-pill="paused"]').hidden = exploring || offDay;
       pill.querySelector('[data-example-pill="off-day"]').hidden = !offDay;
-      pill.querySelector('[data-example-resume]').hidden = offDay;
+      pill.querySelector('[data-example-pill="exploring"]').hidden = !exploring;
+      pill.querySelector('[data-example-resume]').hidden = exploring || offDay;
       if (backToDay) backToDay.hidden = !offDay;
+      pill.querySelectorAll('[data-example-exit]').forEach((el) => {
+        el.hidden = exploring;
+      });
+      const backToToday = pill.querySelector('[data-example-back-to-today]');
+      if (backToToday) backToToday.hidden = !exploring;
     }
-    if (badge) badge.hidden = !(active && exampleDate && onExampleDay());
+    if (badge) badge.hidden = !((active || exploring) && exampleDate && onExampleDay());
     if (showBar) paintStep();
+    ringProfile(showBar && step === 'drag');
     placeAll();
   };
 
@@ -212,6 +248,46 @@
       if (phase !== 'running' || step !== 'drag') return;
       if (drag.record(state.index)) completeStep();
     });
+    if (step === 'drag') placePoint();
+  };
+
+  /**
+   * Start the drag step with the point already on the route (SNOW-1244), so
+   * the step asks for one gesture — a drag — rather than a tap to place the
+   * point and then a drag. Leaves a point the visitor placed where it is.
+   * map.js binds the route's cursor as the rail opens, so a first try that
+   * finds nothing to place on is tried once more a moment later.
+   *
+   * @param {boolean} [retried]
+   */
+  function placePoint(retried = false) {
+    const rail = window.pwaRouteRail;
+    const cursor = rail && rail.cursor();
+    if (!cursor || !railShowsExample || cursor.state().index !== null) return;
+    const index = core.startIndex(rail.sampleCount ? rail.sampleCount() : 0);
+    if (index === null) return;
+    const placed = window.pwaRouteOpener?.showPoint?.(index);
+    if (!placed && !retried) setTimeout(() => placePoint(true), 300);
+  }
+
+  /**
+   * "Show me" (SNOW-1244): fly to the steepest stretch at the zoom where the
+   * line shows the slope, with the point on it. Zooming by hand let the
+   * route slide off the screen in testing; this keeps it in the middle.
+   */
+  const showMe = () => {
+    if (phase !== 'running' || step !== 'zoom') return;
+    const opener = window.pwaRouteOpener;
+    const rail = window.pwaRouteRail;
+    const cursor = rail && rail.cursor();
+    let index = core.steepestIndex(opener?.slopeAngles ? opener.slopeAngles() : []);
+    if (index === null) index = cursor ? cursor.state().index : null;
+    if (index === null) index = core.startIndex(rail && rail.sampleCount ? rail.sampleCount() : 0);
+    if (index === null) return;
+    emit('map.example.show_me', {});
+    // Half a level past the threshold, so the colours are not on the edge.
+    // The map's padding keeps the bar clear, wherever it sits.
+    opener?.showPoint?.(index, ZOOM_TARGET + 0.5);
   };
 
   const theMap = () => window.snowdeskMapState && window.snowdeskMapState.map;
@@ -234,7 +310,19 @@
    */
   const enterStep = (next) => {
     step = next;
-    if (step === 'drag' && drag) drag.reset();
+    if (skipTimer !== null) clearTimeout(skipTimer);
+    skipTimer = null;
+    const skip = /** @type {HTMLElement|null} */ (guide.querySelector('[data-example-skip]'));
+    if (skip) skip.hidden = true;
+    if (step === 'drag') {
+      if (drag) drag.reset();
+      placePoint();
+      // A drag that does not register still leaves a way on.
+      skipTimer = setTimeout(() => {
+        skipTimer = null;
+        if (skip && phase === 'running' && step === 'drag') skip.hidden = false;
+      }, core.NEXT_AFTER_MS);
+    }
     if (step === 'zoom') {
       const map = theMap();
       zoomStart = map ? map.getZoom() : NaN;
@@ -275,6 +363,8 @@
     phase = 'ended';
     if (stepTimer !== null) clearTimeout(stepTimer);
     stepTimer = null;
+    if (skipTimer !== null) clearTimeout(skipTimer);
+    skipTimer = null;
     if (unsubscribeCursor) unsubscribeCursor();
     unsubscribeCursor = null;
     paint();
@@ -321,12 +411,43 @@
     end();
   };
 
+  /**
+   * "Back to today" on the last step, or from the exploring pill: leave,
+   * and offer the visitor's own track next.
+   */
   const finish = () => {
-    if (phase !== 'running') return;
-    emit('map.example.step_completed', { step: step });
-    emit('map.example.finished', {});
+    if (phase === 'running') {
+      emit('map.example.step_completed', { step: step });
+      emit('map.example.finished', { kept: false });
+    } else if (phase === 'exploring') {
+      emit('map.example.left', {});
+    } else {
+      return;
+    }
     end();
     finishCard.hidden = false;
+  };
+
+  /**
+   * "Keep exploring this example" (SNOW-1244): the guide is done, but the
+   * route, its profile and the example's day stay until the visitor chooses
+   * to leave. The pill keeps the way back to today.
+   */
+  const keepExploring = () => {
+    if (phase !== 'running') return;
+    emit('map.example.step_completed', { step: step });
+    emit('map.example.finished', { kept: true });
+    phase = 'exploring';
+    if (stepTimer !== null) clearTimeout(stepTimer);
+    stepTimer = null;
+    if (unsubscribeCursor) unsubscribeCursor();
+    unsubscribeCursor = null;
+    try {
+      localStorage.setItem(WALKED_KEY, 'yes');
+    } catch (_) {
+      // Private mode: as end() says.
+    }
+    paint();
   };
 
   const hideFinish = () => {
@@ -340,7 +461,11 @@
     if (!target) return;
     if (target.closest('[data-example-exit]')) exit();
     else if (target.closest('[data-example-next]') && step === 'intro') completeStep();
+    else if (target.closest('[data-example-skip]') && step === 'drag') completeStep();
+    else if (target.closest('[data-example-show-me]')) showMe();
     else if (target.closest('[data-example-finish]')) finish();
+    else if (target.closest('[data-example-keep]')) keepExploring();
+    else if (target.closest('[data-example-back-to-today]')) finish();
     else if (target.closest('[data-example-resume]')) resume();
     else if (target.closest('[data-example-back-to-day]')) goToExampleDay();
     else if (target.closest('[data-example-done]')) hideFinish();
@@ -374,6 +499,7 @@
     if (phase === 'ended') return;
     const rail = window.pwaRouteRail;
     railShowsExample = Boolean(rail && rail.isOpen() && rail.token() === exampleToken);
+    if (phase === 'exploring') return;
     if (railShowsExample) {
       fillRouteName();
       if (phase === 'waiting') {
@@ -392,7 +518,7 @@
     const detail = /** @type {CustomEvent} */ (event).detail;
     if (!detail || !detail.date) return;
     date = detail.date;
-    if (phase === 'running') paint();
+    if (phase === 'running' || phase === 'exploring') paint();
   });
 
   document.addEventListener('snowdesk:route-rail-resized', placeAll);

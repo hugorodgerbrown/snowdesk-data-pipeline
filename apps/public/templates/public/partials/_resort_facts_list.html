@@ -1,0 +1,43 @@
+{% comment %}
+apps/public/templates/public/partials/_resort_facts_list.html — the facts
+themselves, one ``<dl>`` row each, without their frame.
+
+Shared by the two frames ``_resort_facts.html`` draws: the eyebrow-and-card
+section on the resort page, and the folded "About this resort" panel in
+the map's place sheet. Formatting is ``resort_facts``' (see that partial).
+
+Context: ``facts`` — the list ``{% resort_facts %}`` returned.
+{% endcomment %}
+<dl class="divide-y divide-border">
+    {% for fact in facts %}
+        {% if fact.key == "notes" %}
+            {# A sentence does not read right-aligned: label above, prose below. #}
+            <div class="py-3.5" data-testid="resort-facts-notes">
+                {% include "includes/_meta_cell.html" with text=fact.label tag="dt" only %}
+                <dd class="mt-1 text-left text-sm leading-prose text-text-2">{{ fact.value }}</dd>
+            </div>
+        {% else %}
+            <div
+                class="flex items-baseline justify-between gap-4 py-3.5"
+                data-testid="resort-facts-{{ fact.key }}"
+            >
+                {% include "includes/_meta_cell.html" with text=fact.label tag="dt" only %}
+                <dd class="text-right text-label">
+                    {% if fact.href %}
+                        <a
+                            href="{{ fact.href }}"
+                            rel="noopener"
+                            target="_blank"
+                            class="inline-flex items-center gap-1.5 underline hover:text-text-2"
+                        >
+                            {{ fact.value }}
+                            {% include "includes/_icon_external_link.html" only %}
+                        </a>
+                    {% else %}
+                        {{ fact.value }}
+                    {% endif %}
+                </dd>
+            </div>
+        {% endif %}
+    {% endfor %}
+</dl>

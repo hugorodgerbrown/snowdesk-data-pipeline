@@ -1160,7 +1160,7 @@ PLACE_LINK_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
         "context": {
             "kind": "region",
             "title": "Martigny–Verbier",
-            "subtitle": "The avalanche region this resort is in",
+            "subtitle": "View region bulletin for 10 Apr 2026",
             "href": "#",
             "open_id": "CH-4115",
         },

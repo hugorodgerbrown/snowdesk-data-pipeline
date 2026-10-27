@@ -7638,18 +7638,23 @@
     if (!container) return padding;
     const canvas = container.getBoundingClientRect();
     if (!(canvas.height > 0)) return padding;
-    // SNOW-1230: the example walkthrough's bar rides with the panel — under
-    // it on a desktop, on top of the phone's sheet — so the fit reserves
-    // the panel and the bar together.
+    // SNOW-1230: the example walkthrough's bar is reserved with whatever it
+    // sits against. Under the panel on a desktop, and along the top of the
+    // map on a phone (SNOW-1244), it widens the top's reservation; were it
+    // ever to lap onto the phone's sheet, it would widen the foot's. Each
+    // edge goes through reserveFitEdge, so the pair stays under the canvas.
     const guide = exampleGuideBox();
     let panelBottom = routePanelBottom(canvas);
-    if (panelBottom !== null && guide) panelBottom = Math.max(panelBottom, guide.bottom - canvas.top);
+    // SNOW-1099: the phone's route sheet covers the foot instead.
+    let sheetTop = routeSheetTop();
+    if (guide && sheetTop !== null && guide.bottom > sheetTop) {
+      sheetTop = Math.min(sheetTop, guide.top);
+    } else if (guide) {
+      panelBottom = Math.max(panelBottom === null ? 0 : panelBottom, guide.bottom - canvas.top);
+    }
     if (panelBottom !== null) {
       reserveFitEdge(padding, 'top', 'bottom', panelBottom - padding.top, canvas.height);
     }
-    // SNOW-1099: the phone's route sheet covers the foot instead.
-    let sheetTop = routeSheetTop();
-    if (sheetTop !== null && guide) sheetTop = Math.min(sheetTop, guide.top);
     if (sheetTop !== null) {
       reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - sheetTop - padding.bottom, canvas.height);
     }
@@ -9897,6 +9902,39 @@
           padding: paddingClearingRail(),
           duration: 400,
         });
+        return true;
+      },
+      // SNOW-1244: the open route's slope per cursor segment, for the
+      // walkthrough to choose where to place the point and where "Show me"
+      // flies. Empty for a route with no slope record.
+      slopeAngles: () => {
+        const slope = routeCursorTarget && routeCursorTarget.slope;
+        return slope && Array.isArray(slope.angles) ? slope.angles.slice() : [];
+      },
+      // SNOW-1244: put the open route's point at `index` — the walkthrough
+      // starts with one placed, so its first ask is a single drag — and,
+      // given a `zoom`, fly in on it there ("Show me"), clear of the panel.
+      // The map writes the index, so the cursor's own keep-in-view pan does
+      // not fight the flight. The padding keeps the walkthrough's bar clear
+      // too, wherever it sits. False with no open route or no such point.
+      showPoint: (index, zoom) => {
+        if (!routeCursorTarget) return false;
+        mapWritesRouteIndex = true;
+        try {
+          routeCursorTarget.cursor.setIndex(index);
+        } finally {
+          mapWritesRouteIndex = false;
+        }
+        const point = routeCursorFeature(index);
+        if (!point) return false;
+        if (typeof zoom === 'number') {
+          map.easeTo({
+            center: point.geometry.coordinates,
+            zoom: zoom,
+            padding: paddingClearingRail(),
+            duration: 900,
+          });
+        }
         return true;
       },
     });

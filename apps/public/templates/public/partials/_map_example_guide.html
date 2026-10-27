@@ -8,13 +8,16 @@ puts the example share in the session and lands here with
 ?route_share=<token>&example=1&d=<the example's day>. The route opens as any
 followed share does; this partial is the guide over it, and
 static/js/map_example_guide.js runs it. Four steps — say what just happened
-to the date, follow the track, zoom in until the line shows the slope, read
-the colours — then a finish card, and the map back on today.
+to the date, drag the point the guide has placed along the profile, zoom in
+("Show me" does it) until the line shows the slope, read the colours — then
+a finish card, and the map back on today.
 
 Nothing is locked (Hugo, SNOW-1230): close the route or wander off and the
 bar folds into the paused pill, which keeps its step; change the date and
-the pill offers the way back to the example's day. Exit, Finish and Done
-always put the map back on today and say so.
+the pill offers the way back to the example's day. Exit and Back to today
+always put the map back on today and say so. "Keep exploring this example"
+(SNOW-1244) ends the guide but keeps the route and its day, with the pill
+holding the way back to today.
 
 Everything a reader sees is rendered here so {% trans %} reaches it. The
 JS fills in only the day ([data-example-day], formatted in the reader's
@@ -45,39 +48,44 @@ welcome card, on the map page only (show_tour_offer).
         </p>
         <button type="button" class="map-example-guide-btn" data-example-next>{% trans "Got it" %}</button>
     </div>
+    {# SNOW-1244: the point is already placed and the profile ringed, so the #}
+    {# step asks for one gesture. Next appears after a while, for a drag that #}
+    {# does not register (example_guide_core.NEXT_AFTER_MS).                  #}
     <div data-example-step="drag" hidden>
         <p class="map-example-guide-text">
             <span class="map-example-touch">
                 {% blocktrans trimmed %}
-                    <strong data-example-name></strong>: <strong>drag along the profile</strong> and the dot follows you
-                    on the map.
+                    <strong>Drag across the elevation profile</strong> below. The dot follows you along
+                    <strong data-example-name></strong> on the map.
                 {% endblocktrans %}
             </span>
             <span class="map-example-pointer">
                 {% blocktrans trimmed %}
-                    <strong data-example-name></strong>: <strong>move along the profile</strong> and the dot follows you
-                    on the map.
+                    <strong>Move along the elevation profile</strong> below. The dot follows you along
+                    <strong data-example-name></strong> on the map.
                 {% endblocktrans %}
             </span>
         </p>
+        <button type="button" class="map-example-guide-btn map-example-guide-btn--quiet" data-example-skip hidden>
+            {% trans "Next" %}
+        </button>
     </div>
+    {# SNOW-1244: "Show me" flies to the steepest stretch at the zoom where   #}
+    {# the colours appear, so the route never leaves the screen. Zooming by   #}
+    {# hand still completes the step.                                         #}
     <div data-example-step="zoom" hidden>
         <p class="map-example-guide-text">
-            <span class="map-example-touch">
-                {% blocktrans trimmed %}
-                    <strong>Pinch to zoom in</strong> on the route. Close up, it changes colour to show the ground under
-                    it.
-                {% endblocktrans %}
-            </span>
-            <span class="map-example-pointer">
-                {% blocktrans trimmed %}
-                    <strong>Scroll or press +</strong> to zoom in on the route. Close up, it changes colour to show the
-                    ground under it.
-                {% endblocktrans %}
-            </span>
+            {% blocktrans trimmed %}
+                Close up, the route <strong>changes colour to show the ground under it</strong>.
+            {% endblocktrans %}
         </p>
         <div class="map-example-guide-meter" aria-hidden="true">
             <span data-example-zoom-fill></span>
+        </div>
+        <div class="map-example-guide-actions">
+            <button type="button" class="map-example-guide-btn" data-example-show-me>{% trans "Show me" %}</button>
+            <span class="map-example-guide-aside map-example-touch">{% trans "or pinch to zoom in" %}</span>
+            <span class="map-example-guide-aside map-example-pointer">{% trans "or scroll to zoom in" %}</span>
         </div>
     </div>
     <div data-example-step="colours" hidden>
@@ -105,7 +113,15 @@ welcome card, on the map page only (show_tour_offer).
                 <i class="map-example-swatch map-example-swatch--45"></i>{% trans "45°+" %}
             </li>
         </ul>
-        <button type="button" class="map-example-guide-btn" data-example-finish>{% trans "Finish" %}</button>
+        {# SNOW-1244: finishing no longer takes the route away. #}
+        <div class="map-example-guide-actions">
+            <button type="button" class="map-example-guide-btn" data-example-keep>
+                {% trans "Keep exploring this example" %}
+            </button>
+            <button type="button" class="map-example-guide-btn map-example-guide-btn--quiet" data-example-finish>
+                {% trans "Back to today" %}
+            </button>
+        </div>
     </div>
     <ol class="map-example-guide-dots" aria-hidden="true">
         <li></li>
@@ -128,7 +144,14 @@ welcome card, on the map page only (show_tour_offer).
         data-example-pill="off-day"
         hidden
     >{% trans "You’ve left the example day" %}</span>
+    {# SNOW-1244: after "Keep exploring": the guide is done, the example stays. #}
+    <span class="map-example-pill-text" data-example-pill="exploring" hidden>
+        {% blocktrans trimmed %}Example route · <span data-example-short-day></span>{% endblocktrans %}
+    </span>
     <button type="button" class="map-example-pill-btn" data-example-resume>{% trans "Resume" %}</button>
+    <button type="button" class="map-example-pill-btn" data-example-back-to-today hidden>
+        {% trans "Back to today" %}
+    </button>
     <button type="button" class="map-example-pill-btn" data-example-back-to-day hidden></button>
     <button type="button" class="map-example-pill-btn" data-example-exit>{% trans "Exit" %}</button>
 </div>
@@ -153,9 +176,9 @@ welcome card, on the map page only (show_tour_offer).
         </button>
     {% else %}
         <a
-            href="{{ routes_signin_url }}"
+            href="{{ example_upload_signin_url }}"
             class="map-example-finish-btn map-example-finish-btn--primary"
-        >{% trans "Sign in to upload your own GPX" %}</a>
+        >{% trans "Continue with email to upload" %}</a>
     {% endif %}
     <button type="button" class="map-example-finish-btn" data-example-resort>{% trans "Find a resort" %}</button>
     <button type="button" class="map-example-finish-btn map-example-finish-btn--quiet" data-example-done>
