@@ -30,8 +30,10 @@ function buildFixture() {
         <button type="button" data-example-exit>Exit</button>
         <div data-example-step="intro"><strong data-example-day></strong>
           <button type="button" data-example-next>Got it</button></div>
-        <div data-example-step="drag" hidden><strong data-example-name></strong></div>
-        <div data-example-step="zoom" hidden><span data-example-zoom-fill></span></div>
+        <div data-example-step="drag" hidden><strong data-example-name></strong>
+          <button type="button" data-example-skip hidden>Next</button></div>
+        <div data-example-step="zoom" hidden><span data-example-zoom-fill></span>
+          <button type="button" data-example-show-me>Show me</button></div>
         <div data-example-step="colours" hidden>
           <button type="button" data-example-finish>Finish</button></div>
         <ol class="map-example-guide-dots"><li></li><li></li><li></li><li></li></ol>
@@ -49,7 +51,8 @@ function buildFixture() {
       </div>
       <div id="map-example-toast" class="hidden"><p data-toast-body></p></div>
     </div>
-    <div id="route-rail"><h2 data-route-rail-name>Mont Fort – Col de la Chaux</h2></div>
+    <div id="route-rail"><h2 data-route-rail-name>Mont Fort – Col de la Chaux</h2>
+      <div data-route-rail-lane></div></div>
   `;
 }
 
@@ -69,8 +72,23 @@ const realAdd = {
   window: window.addEventListener.bind(window),
 };
 
+let cursor;
+let cursorIndex;
+
 /** Build the stubs the guide reads from the page's other modules. */
 function stubs() {
+  cursorIndex = null;
+  cursor = {
+    state: () => ({ index: cursorIndex }),
+    setIndex: (index) => {
+      cursorIndex = index;
+      if (cursorListener) cursorListener({ index });
+    },
+    subscribe: (fn) => {
+      cursorListener = fn;
+      return () => { cursorListener = null; };
+    },
+  };
   rail = {
     element: $('route-rail'),
     open: false,
@@ -79,16 +97,16 @@ function stubs() {
     isSheet: () => false,
     token: () => (rail.open ? rail.openToken : null),
     sampleCount: () => 101,
-    cursor: () => ({
-      subscribe: (fn) => {
-        cursorListener = fn;
-        return () => { cursorListener = null; };
-      },
-    }),
+    cursor: () => cursor,
     close: vi.fn(() => { rail.open = false; railChanged(); }),
   };
   window.pwaRouteRail = rail;
-  window.pwaRouteOpener = { openShare: vi.fn(), frame: vi.fn() };
+  window.pwaRouteOpener = {
+    openShare: vi.fn(),
+    frame: vi.fn(),
+    slopeAngles: () => [10, 20, 42, 30],
+    showPoint: vi.fn((index) => { cursor.setIndex(index); return true; }),
+  };
   zoom = 11;
   window.snowdeskMapState = {
     map: {
@@ -230,6 +248,57 @@ describe('the steps', () => {
     zoomListener();
     vi.advanceTimersByTime(1000);
     expect(visibleStep()).toBe('colours');
+  });
+});
+
+describe('one gesture at a time (SNOW-1244)', () => {
+  /** Load, open the example and pass Got it. */
+  async function toDrag() {
+    await load();
+    openExample();
+    guide().querySelector('[data-example-next]').click();
+    vi.advanceTimersByTime(0);
+  }
+
+  it('the drag step starts with the point placed and the profile ringed', async () => {
+    await toDrag();
+
+    expect(window.pwaRouteOpener.showPoint).toHaveBeenCalledWith(10);
+    expect(cursorIndex).toBe(10);
+    expect(document.querySelector('[data-route-rail-lane]').hasAttribute('data-example-ring')).toBe(true);
+  });
+
+  it('leaves a point the visitor already placed where it is', async () => {
+    cursorIndex = 60;
+    await toDrag();
+
+    expect(window.pwaRouteOpener.showPoint).not.toHaveBeenCalled();
+  });
+
+  it('offers Next after a while, which moves on', async () => {
+    await toDrag();
+    const skip = guide().querySelector('[data-example-skip]');
+    expect(skip.hidden).toBe(true);
+
+    vi.advanceTimersByTime(8000);
+    expect(skip.hidden).toBe(false);
+
+    skip.click();
+    vi.advanceTimersByTime(1000);
+    expect(visibleStep()).toBe('zoom');
+    expect(document.querySelector('[data-route-rail-lane]').hasAttribute('data-example-ring')).toBe(false);
+  });
+
+  it('Show me flies to the steepest stretch past the slope zoom', async () => {
+    await toDrag();
+    guide().querySelector('[data-example-skip]').hidden = false;
+    guide().querySelector('[data-example-skip]').click();
+    vi.advanceTimersByTime(1000);
+
+    guide().querySelector('[data-example-show-me]').click();
+
+    expect(window.pwaRouteOpener.showPoint).toHaveBeenLastCalledWith(2, 14.5);
+    expect(emitted('map.example.show_me')).toHaveLength(1);
   });
 });
 

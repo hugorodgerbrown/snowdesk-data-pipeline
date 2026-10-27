@@ -4347,6 +4347,29 @@ html:has(> body.map-fullscreen) > body {
     cursor: pointer;
 }
 
+/* SNOW-1244: the drag step's late Next, quieter than a step's own action. */
+.map-example-guide-btn--quiet {
+    background: transparent;
+    color: var(--on-ink);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.map-example-guide-btn[hidden] {
+    display: none;
+}
+
+/* SNOW-1244: "Show me" with the do-it-yourself gesture beside it. */
+.map-example-guide-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.map-example-guide-aside {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
 .map-example-guide-meter {
     height: 6px;
     margin: 2px 0 10px;
@@ -4614,13 +4637,20 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
-/* The row step two asks the visitor to tap: an accent ring with a soft
+/* The row step two asks the visitor to tap, and the profile the example's
+   drag step asks them to drag (SNOW-1244): an accent ring with a soft
    halo, drawn OUTSIDE the card that holds the row. An inset ring on the
    row itself lost its corners to the card's rounded overflow clip. */
-[data-resort-guide-ring] {
+[data-resort-guide-ring],
+[data-example-ring] {
     position: relative;
     box-shadow: 0 0 0 2px var(--color-accent), 0 0 0 6px var(--color-accent-tint);
     animation: resort-guide-ring 1.6s ease-in-out infinite;
+}
+
+/* The profile lane has no radius of its own; the ring wants one. */
+[data-example-ring] {
+    border-radius: var(--radius-sm);
 }
 
 @keyframes resort-guide-ring {
@@ -4630,7 +4660,8 @@ html:has(> body.map-fullscreen) > body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    [data-resort-guide-ring] {
+    [data-resort-guide-ring],
+    [data-example-ring] {
         animation: none;
     }
 }

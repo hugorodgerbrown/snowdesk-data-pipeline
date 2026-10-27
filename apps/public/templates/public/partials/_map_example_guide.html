@@ -8,8 +8,9 @@ puts the example share in the session and lands here with
 ?route_share=<token>&example=1&d=<the example's day>. The route opens as any
 followed share does; this partial is the guide over it, and
 static/js/map_example_guide.js runs it. Four steps — say what just happened
-to the date, follow the track, zoom in until the line shows the slope, read
-the colours — then a finish card, and the map back on today.
+to the date, drag the point the guide has placed along the profile, zoom in
+("Show me" does it) until the line shows the slope, read the colours — then
+a finish card, and the map back on today.
 
 Nothing is locked (Hugo, SNOW-1230): close the route or wander off and the
 bar folds into the paused pill, which keeps its step; change the date and
@@ -45,39 +46,44 @@ welcome card, on the map page only (show_tour_offer).
         </p>
         <button type="button" class="map-example-guide-btn" data-example-next>{% trans "Got it" %}</button>
     </div>
+    {# SNOW-1244: the point is already placed and the profile ringed, so the #}
+    {# step asks for one gesture. Next appears after a while, for a drag that #}
+    {# does not register (example_guide_core.NEXT_AFTER_MS).                  #}
     <div data-example-step="drag" hidden>
         <p class="map-example-guide-text">
             <span class="map-example-touch">
                 {% blocktrans trimmed %}
-                    <strong data-example-name></strong>: <strong>drag along the profile</strong> and the dot follows you
-                    on the map.
+                    <strong>Drag across the elevation profile</strong> below. The dot follows you along
+                    <strong data-example-name></strong> on the map.
                 {% endblocktrans %}
             </span>
             <span class="map-example-pointer">
                 {% blocktrans trimmed %}
-                    <strong data-example-name></strong>: <strong>move along the profile</strong> and the dot follows you
-                    on the map.
+                    <strong>Move along the elevation profile</strong> below. The dot follows you along
+                    <strong data-example-name></strong> on the map.
                 {% endblocktrans %}
             </span>
         </p>
+        <button type="button" class="map-example-guide-btn map-example-guide-btn--quiet" data-example-skip hidden>
+            {% trans "Next" %}
+        </button>
     </div>
+    {# SNOW-1244: "Show me" flies to the steepest stretch at the zoom where   #}
+    {# the colours appear, so the route never leaves the screen. Zooming by   #}
+    {# hand still completes the step.                                         #}
     <div data-example-step="zoom" hidden>
         <p class="map-example-guide-text">
-            <span class="map-example-touch">
-                {% blocktrans trimmed %}
-                    <strong>Pinch to zoom in</strong> on the route. Close up, it changes colour to show the ground under
-                    it.
-                {% endblocktrans %}
-            </span>
-            <span class="map-example-pointer">
-                {% blocktrans trimmed %}
-                    <strong>Scroll or press +</strong> to zoom in on the route. Close up, it changes colour to show the
-                    ground under it.
-                {% endblocktrans %}
-            </span>
+            {% blocktrans trimmed %}
+                Close up, the route <strong>changes colour to show the ground under it</strong>.
+            {% endblocktrans %}
         </p>
         <div class="map-example-guide-meter" aria-hidden="true">
             <span data-example-zoom-fill></span>
+        </div>
+        <div class="map-example-guide-actions">
+            <button type="button" class="map-example-guide-btn" data-example-show-me>{% trans "Show me" %}</button>
+            <span class="map-example-guide-aside map-example-touch">{% trans "or pinch to zoom in" %}</span>
+            <span class="map-example-guide-aside map-example-pointer">{% trans "or scroll to zoom in" %}</span>
         </div>
     </div>
     <div data-example-step="colours" hidden>

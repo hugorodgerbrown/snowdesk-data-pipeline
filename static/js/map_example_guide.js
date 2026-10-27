@@ -9,8 +9,10 @@
  * and their tests are example_guide_core.js:
  *
  *   intro    say what just happened to the date; Got it.
- *   drag     move the point along the profile (the rail's cursor).
- *   zoom     zoom in until the line draws in slope classes.
+ *   drag     the point is placed for them and the profile ringed; drag
+ *            it along the profile (the rail's cursor). Next after a while.
+ *   zoom     zoom in until the line draws in slope classes — "Show me"
+ *            flies to the steepest stretch (pwaRouteOpener.showPoint).
  *   colours  what the colours mean; Finish.
  *
  * NOTHING IS LOCKED (Hugo, SNOW-1230). The guide is not a map overlay and
@@ -31,7 +33,7 @@
  * "Back to today · <date>". Finish then shows the finish card.
  *
  * Telemetry: map.example.opened, map.example.step_completed {step},
- * map.example.exited {step}, map.example.finished. A finished or exited walk
+ * map.example.show_me, map.example.exited {step}, map.example.finished. A finished or exited walk
  * is remembered on the device ('snowdesk.example.walked'), so routes.js
  * can mark an upload that follows it.
  *
@@ -96,6 +98,7 @@
   let drag = null;
   let zoomStart = NaN;
   let stepTimer = null;
+  let skipTimer = null;
 
   const emit = (name, props) => window.pwaTelemetry?.emit(name, props || {});
 
@@ -180,6 +183,18 @@
     dots.forEach((dot, i) => dot.classList.toggle('is-on', i < n));
   };
 
+  /**
+   * Ring the profile while the drag step asks for it, and only then
+   * (SNOW-1244: a tester tapped it and saw nothing happen).
+   *
+   * @param {boolean} on
+   */
+  const ringProfile = (on) => {
+    const rail = window.pwaRouteRail && window.pwaRouteRail.element;
+    const lane = rail && rail.querySelector('[data-route-rail-lane]');
+    if (lane) lane.toggleAttribute('data-example-ring', on);
+  };
+
   /** Bar, pill or neither; the badge on the date while it is the example's. */
   const paint = () => {
     const active = phase === 'running';
@@ -195,6 +210,7 @@
     }
     if (badge) badge.hidden = !(active && exampleDate && onExampleDay());
     if (showBar) paintStep();
+    ringProfile(showBar && step === 'drag');
     placeAll();
   };
 
@@ -212,6 +228,45 @@
       if (phase !== 'running' || step !== 'drag') return;
       if (drag.record(state.index)) completeStep();
     });
+    if (step === 'drag') placePoint();
+  };
+
+  /**
+   * Start the drag step with the point already on the route (SNOW-1244), so
+   * the step asks for one gesture — a drag — rather than a tap to place the
+   * point and then a drag. Leaves a point the visitor placed where it is.
+   * map.js binds the route's cursor as the rail opens, so a first try that
+   * finds nothing to place on is tried once more a moment later.
+   *
+   * @param {boolean} [retried]
+   */
+  function placePoint(retried = false) {
+    const rail = window.pwaRouteRail;
+    const cursor = rail && rail.cursor();
+    if (!cursor || !railShowsExample || cursor.state().index !== null) return;
+    const index = core.startIndex(rail.sampleCount ? rail.sampleCount() : 0);
+    if (index === null) return;
+    const placed = window.pwaRouteOpener?.showPoint?.(index);
+    if (!placed && !retried) setTimeout(() => placePoint(true), 300);
+  }
+
+  /**
+   * "Show me" (SNOW-1244): fly to the steepest stretch at the zoom where the
+   * line shows the slope, with the point on it. Zooming by hand let the
+   * route slide off the screen in testing; this keeps it in the middle.
+   */
+  const showMe = () => {
+    if (phase !== 'running' || step !== 'zoom') return;
+    const opener = window.pwaRouteOpener;
+    const rail = window.pwaRouteRail;
+    const cursor = rail && rail.cursor();
+    let index = core.steepestIndex(opener?.slopeAngles ? opener.slopeAngles() : []);
+    if (index === null) index = cursor ? cursor.state().index : null;
+    if (index === null) index = core.startIndex(rail && rail.sampleCount ? rail.sampleCount() : 0);
+    if (index === null) return;
+    emit('map.example.show_me', {});
+    // Half a level past the threshold, so the colours are not on the edge.
+    opener?.showPoint?.(index, ZOOM_TARGET + 0.5);
   };
 
   const theMap = () => window.snowdeskMapState && window.snowdeskMapState.map;
@@ -234,7 +289,19 @@
    */
   const enterStep = (next) => {
     step = next;
-    if (step === 'drag' && drag) drag.reset();
+    if (skipTimer !== null) clearTimeout(skipTimer);
+    skipTimer = null;
+    const skip = /** @type {HTMLElement|null} */ (guide.querySelector('[data-example-skip]'));
+    if (skip) skip.hidden = true;
+    if (step === 'drag') {
+      if (drag) drag.reset();
+      placePoint();
+      // A drag that does not register still leaves a way on.
+      skipTimer = setTimeout(() => {
+        skipTimer = null;
+        if (skip && phase === 'running' && step === 'drag') skip.hidden = false;
+      }, core.NEXT_AFTER_MS);
+    }
     if (step === 'zoom') {
       const map = theMap();
       zoomStart = map ? map.getZoom() : NaN;
@@ -275,6 +342,8 @@
     phase = 'ended';
     if (stepTimer !== null) clearTimeout(stepTimer);
     stepTimer = null;
+    if (skipTimer !== null) clearTimeout(skipTimer);
+    skipTimer = null;
     if (unsubscribeCursor) unsubscribeCursor();
     unsubscribeCursor = null;
     paint();
@@ -340,6 +409,8 @@
     if (!target) return;
     if (target.closest('[data-example-exit]')) exit();
     else if (target.closest('[data-example-next]') && step === 'intro') completeStep();
+    else if (target.closest('[data-example-skip]') && step === 'drag') completeStep();
+    else if (target.closest('[data-example-show-me]')) showMe();
     else if (target.closest('[data-example-finish]')) finish();
     else if (target.closest('[data-example-resume]')) resume();
     else if (target.closest('[data-example-back-to-day]')) goToExampleDay();

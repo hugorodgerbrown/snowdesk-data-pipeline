@@ -9899,6 +9899,38 @@
         });
         return true;
       },
+      // SNOW-1244: the open route's slope per cursor segment, for the
+      // walkthrough to choose where to place the point and where "Show me"
+      // flies. Empty for a route with no slope record.
+      slopeAngles: () => {
+        const slope = routeCursorTarget && routeCursorTarget.slope;
+        return slope && Array.isArray(slope.angles) ? slope.angles.slice() : [];
+      },
+      // SNOW-1244: put the open route's point at `index` — the walkthrough
+      // starts with one placed, so its first ask is a single drag — and,
+      // given a `zoom`, fly in on it there ("Show me"), clear of the panel.
+      // The map writes the index, so the cursor's own keep-in-view pan does
+      // not fight the flight. False with no open route or no such point.
+      showPoint: (index, zoom) => {
+        if (!routeCursorTarget) return false;
+        mapWritesRouteIndex = true;
+        try {
+          routeCursorTarget.cursor.setIndex(index);
+        } finally {
+          mapWritesRouteIndex = false;
+        }
+        const point = routeCursorFeature(index);
+        if (!point) return false;
+        if (typeof zoom === 'number') {
+          map.easeTo({
+            center: point.geometry.coordinates,
+            zoom: zoom,
+            padding: paddingClearingRail(),
+            duration: 900,
+          });
+        }
+        return true;
+      },
     });
 
     // SNOW-828: and a ``/?trip=`` / ``/?trip_share=`` one. Declared at IIFE

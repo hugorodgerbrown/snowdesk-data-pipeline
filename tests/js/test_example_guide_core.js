@@ -123,3 +123,26 @@ describe('the example parameter', () => {
     expect(core.withoutExampleParam('?example=1')).toBe('');
   });
 });
+
+describe('startIndex (SNOW-1244)', () => {
+  it('places the point a tenth of the way along', () => {
+    expect(core.startIndex(101)).toBe(10);
+  });
+
+  it('is the start of a one-segment route, and null with none', () => {
+    expect(core.startIndex(1)).toBe(0);
+    expect(core.startIndex(0)).toBeNull();
+  });
+});
+
+describe('steepestIndex (SNOW-1244)', () => {
+  it('is the first steepest segment', () => {
+    expect(core.steepestIndex([12, 38, 25, 38])).toBe(1);
+  });
+
+  it('skips segments with no angle, and is null with none at all', () => {
+    expect(core.steepestIndex([null, 5, null])).toBe(1);
+    expect(core.steepestIndex([null, null])).toBeNull();
+    expect(core.steepestIndex([])).toBeNull();
+  });
+});

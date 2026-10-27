@@ -167,6 +167,9 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         "map.example.step_completed",
         "map.example.exited",
         "map.example.finished",
+        # SNOW-1244: the zoom step's "Show me", which flies the camera in for
+        # the visitor; a step completed after it was not zoomed by hand.
+        "map.example.show_me",
         # SNOW-1231: the "Find a resort" walkthrough (map_resort_guide.js):
         # opened (`offseason`: whether it moved the map to the example's
         # day), each step done (`step`: search / resort / region), left by
