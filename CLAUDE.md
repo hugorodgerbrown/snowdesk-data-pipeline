@@ -53,7 +53,8 @@ apps/            Parent package for the sixteen Django apps (SNOW-557 — moved
                  command, scheduled 4×/day. ``services/backfill.py``
                  (SNOW-731) fills *past* days from the historical forecast
                  API — never today — behind both the ``backfill_weather``
-                 command and the LocationAdmin action. Migrations 0001–0006 belong to
+                 command (an hourly budgeted sweep since SNOW-1245) and the
+                 LocationAdmin action. Migrations 0001–0006 belong to
                  the estate SNOW-762 stripped and are retained because six
                  migrations in four other apps depend on them; 0007 creates
                  the new table. Read
@@ -698,6 +699,7 @@ Read these when working in the relevant area:
 | Weather UI (_weather_detail sheet and its detents, _weather_panel/_weather_day_picker/_weather_day_line, build_weather_display, is_day, /api/weather.geojson, map_weather_core.js) | [`docs/weather-surfaces.md`](docs/weather-surfaces.md) |
 | Why the Plan page borrows the nearest forecast and a trip fetches its own meeting point (nearest_weather, meeting_point_weather, enqueue_meeting_weather, upcoming trips in Location.active(), NEAREST_RADIUS_KM) | [`docs/decisions/a-plan-borrows-a-forecast-a-trip-has-its-own.md`](docs/decisions/a-plan-borrows-a-forecast-a-trip-has-its-own.md) |
 | Why the weather backfill is a capped inline admin action, and why a backfilled row has no forecast[] | [`docs/decisions/weather-backfill-is-an-admin-action.md`](docs/decisions/weather-backfill-is-an-admin-action.md) |
+| Why backfill_weather is an hourly sweep of fortnight blocks, newest first, inside a weighted-call budget (sweep, sweep_budget, request_weight, fortnight_blocks, Open-Meteo's weighted quota, the 429 stop, --location / --resort / --until) | [`docs/decisions/weather-backfill-sweeps-newest-fortnight-first.md`](docs/decisions/weather-backfill-sweeps-newest-fortnight-first.md) |
 | Why the weather day picker is a CSS radio group, not seven dated links (`?date=` picks the row, the picker picks inside it) | [`docs/decisions/weather-day-picker-is-a-selector-not-navigation.md`](docs/decisions/weather-day-picker-is-a-selector-not-navigation.md) |
 | Why Snowdesk draws its own weather icons (bin/build-weather-icons, the both-backgrounds palette, the baked silhouette edge) | [`docs/decisions/weather-icons-are-drawn-in-house.md`](docs/decisions/weather-icons-are-drawn-in-house.md) |
 | Why the weather icons are Yr / MET Norway and not MeteoSwiss, AccuWeather or the Met Office (legibility measurements + the licence position for each set) | [`docs/decisions/weather-icons-are-yr-not-meteoswiss.md`](docs/decisions/weather-icons-are-yr-not-meteoswiss.md) |

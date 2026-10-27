@@ -453,3 +453,270 @@ class TestBackfillLocations:
             )
 
         assert slept == []
+
+
+# ---------------------------------------------------------------------------
+# The sweep (SNOW-1245)
+# ---------------------------------------------------------------------------
+
+
+def _echo(url: str, params: dict[str, str], timeout: float) -> mock.Mock:
+    """Answer a patched ``requests.get`` with a payload covering what it asked for."""
+    start = datetime.date.fromisoformat(params["start_date"])
+    end = datetime.date.fromisoformat(params["end_date"])
+    return _response(_payload(_days(start, (end - start).days + 1)))
+
+
+def _throttled(*args: Any, **kwargs: Any) -> mock.Mock:
+    """Raise what ``raise_for_status`` raises on a 429."""
+    response = mock.Mock(status_code=429)
+    raise requests.HTTPError("429 Too Many Requests", response=response)
+
+
+def _selection(*locations: Any) -> Any:
+    """Return the locations as the queryset ``sweep`` takes."""
+    from apps.locations.models import Location
+
+    return Location.objects.filter(pk__in=[location.pk for location in locations])
+
+
+class TestWeighting:
+    """Open-Meteo's weighted call count, and the budget derived from it."""
+
+    def test_a_fortnight_of_every_variable_is_two_point_four_calls(self) -> None:
+        """24 variables over 14 days — the unit the sweep is built on."""
+        assert backfill.REQUEST_VARIABLES == 24
+        assert backfill.request_weight(14) == pytest.approx(2.4)
+
+    def test_fewer_days_cost_the_same_as_a_fortnight(self) -> None:
+        """A one-day request is charged a fortnight, so a block is one request."""
+        assert backfill.request_weight(1) == backfill.request_weight(14)
+
+    def test_a_whole_season_costs_tens_of_calls(self) -> None:
+        """The shape that throttled the first full run: ~63 calls a location."""
+        assert backfill.request_weight(366) == pytest.approx(62.74, abs=0.01)
+
+    def test_the_budget_is_what_the_live_fetch_leaves(self) -> None:
+        """590 locations × 2.4 × 4 runs leaves ~3,300 of 9,000 a day, /24."""
+        assert backfill.sweep_budget(590) == pytest.approx(139.0)
+
+    def test_the_budget_is_zero_once_the_live_fetch_needs_the_quota(self) -> None:
+        """The sweep stops, rather than going negative, as the estate grows."""
+        assert backfill.sweep_budget(2000) == 0.0
+
+    def test_live_fetches_per_day_matches_the_schedule(self) -> None:
+        """The budget's arithmetic must follow fetch_weather's real cadence."""
+        from schedule import build_scheduler
+
+        job = build_scheduler().get_job("fetch_weather")
+        hours = next(f for f in job.trigger.fields if f.name == "hour")
+        assert len(str(hours).split(",")) == backfill.LIVE_FETCHES_PER_DAY
+
+
+class TestFortnightBlocks:
+    """The calendar cut into the units a run works through."""
+
+    def test_blocks_are_newest_first_and_aligned_to_the_floor(self) -> None:
+        """The short block is the newest; the rest keep their boundaries."""
+        floor = datetime.date(2026, 1, 1)
+        until = datetime.date(2026, 1, 31)
+
+        assert backfill.fortnight_blocks(floor, until) == [
+            (datetime.date(2026, 1, 29), datetime.date(2026, 1, 31)),
+            (datetime.date(2026, 1, 15), datetime.date(2026, 1, 28)),
+            (datetime.date(2026, 1, 1), datetime.date(2026, 1, 14)),
+        ]
+
+    def test_an_inverted_window_has_no_blocks(self) -> None:
+        """Nothing to walk."""
+        day = datetime.date(2026, 1, 2)
+        assert backfill.fortnight_blocks(day, day - datetime.timedelta(days=1)) == []
+
+
+@pytest.mark.django_db
+class TestSweep:
+    """The budgeted, newest-first walk the hourly job runs."""
+
+    def _window(self) -> tuple[datetime.date, datetime.date]:
+        """Return a two-block window ending yesterday."""
+        until = backfill.backfill_until()
+        return until - datetime.timedelta(days=27), until
+
+    def test_the_newest_block_is_finished_everywhere_before_the_next(self) -> None:
+        """A budget for two requests buys the newest block for both locations."""
+        first, second = LocationFactory.create(), LocationFactory.create()
+        floor, until = self._window()
+
+        with mock.patch("requests.get", side_effect=_echo) as get:
+            result = backfill.sweep(
+                _selection(first, second),
+                floor=floor,
+                until=until,
+                commit=True,
+                budget=4.8,
+                delay=0,
+            )
+
+        newest_start = until - datetime.timedelta(days=13)
+        assert get.call_count == 2
+        assert result.stopped == "budget"
+        assert result.blocks_finished == 1
+        assert result.filled == 28
+        assert not Weather.objects.filter(observed_on__lt=newest_start).exists()
+
+    def test_the_next_run_resumes_where_the_budget_stopped(self) -> None:
+        """Finished locations no longer select, so a block is never redone."""
+        first, second = LocationFactory.create(), LocationFactory.create()
+        floor, until = self._window()
+
+        with mock.patch("requests.get", side_effect=_echo):
+            for _ in range(4):
+                backfill.sweep(
+                    _selection(first, second),
+                    floor=floor,
+                    until=until,
+                    commit=True,
+                    budget=2.4,
+                    delay=0,
+                )
+
+        assert Weather.objects.count() == 56
+
+    def test_one_request_spans_a_block_and_skips_the_days_held(self) -> None:
+        """A held day mid-block is not rewritten and costs no extra request."""
+        location = LocationFactory.create()
+        until = backfill.backfill_until()
+        floor = until - datetime.timedelta(days=13)
+        held = until - datetime.timedelta(days=6)
+        WeatherFactory.create(location=location, observed_on=held)
+
+        with mock.patch("requests.get", side_effect=_echo) as get:
+            result = backfill.sweep(
+                _selection(location),
+                floor=floor,
+                until=until,
+                commit=True,
+                budget=None,
+                delay=0,
+            )
+
+        assert get.call_count == 1
+        assert _requested_days(get.call_args) == _days(floor, 14)
+        assert result.failed == 0
+        assert result.filled == 13
+
+    def test_a_complete_location_is_not_selected(self) -> None:
+        """Nothing missing in a block means no request for it."""
+        location = LocationFactory.create()
+        day = backfill.backfill_until()
+        WeatherFactory.create(location=location, observed_on=day)
+
+        with mock.patch("requests.get") as get:
+            result = backfill.sweep(
+                _selection(location), floor=day, until=day, commit=True, budget=None
+            )
+
+        get.assert_not_called()
+        assert result.blocks == []
+
+    def test_a_throttle_stops_the_run_at_once(self) -> None:
+        """After a 429 every further request would be refused too."""
+        first, second = LocationFactory.create(), LocationFactory.create()
+        day = backfill.backfill_until()
+
+        with mock.patch("requests.get", side_effect=_throttled) as get:
+            result = backfill.sweep(
+                _selection(first, second),
+                floor=day,
+                until=day,
+                commit=True,
+                budget=None,
+                delay=0,
+            )
+
+        assert get.call_count == 1
+        assert result.stopped == "throttled"
+        assert result.blocks_finished == 0
+
+    def test_a_failing_location_is_counted_and_the_walk_continues(self) -> None:
+        """Any other error costs that location its block, nobody else."""
+        bad, good = LocationFactory.create(), LocationFactory.create()
+        day = backfill.backfill_until()
+
+        responses = [requests.HTTPError("boom"), _response(_payload([day]))]
+        with mock.patch("requests.get", side_effect=responses):
+            result = backfill.sweep(
+                _selection(bad, good),
+                floor=day,
+                until=day,
+                commit=True,
+                budget=None,
+                delay=0,
+            )
+
+        assert result.failed == 1
+        assert result.filled == 1
+        assert result.blocks_finished == 1
+
+    def test_a_malformed_response_is_counted_as_a_failure(self) -> None:
+        """A write that raises rolls back its block and is counted."""
+        location = LocationFactory.create()
+        day = backfill.backfill_until()
+
+        with mock.patch("requests.get", return_value=_response({"hourly": {}})):
+            result = backfill.sweep(
+                _selection(location), floor=day, until=day, commit=True, budget=None
+            )
+
+        assert result.failed == 1
+        assert not Weather.objects.exists()
+
+    def test_read_only_calls_the_api_but_writes_nothing(self) -> None:
+        """The probe is real; the write is not."""
+        location = LocationFactory.create()
+        day = backfill.backfill_until()
+
+        with mock.patch("requests.get", side_effect=_echo) as get:
+            result = backfill.sweep(
+                _selection(location), floor=day, until=day, commit=False, budget=None
+            )
+
+        assert get.called
+        assert result.requests == 1
+        assert not Weather.objects.exists()
+
+    def test_the_throttle_sleeps_between_requests_only(self) -> None:
+        """Three requests mean two waits."""
+        locations = [LocationFactory.create() for _ in range(3)]
+        day = backfill.backfill_until()
+        slept: list[float] = []
+
+        with mock.patch("requests.get", side_effect=_echo):
+            backfill.sweep(
+                _selection(*locations),
+                floor=day,
+                until=day,
+                commit=True,
+                budget=None,
+                delay=1.5,
+                sleep=slept.append,
+            )
+
+        assert slept == [1.5, 1.5]
+
+    def test_today_is_never_reached(self) -> None:
+        """An until of today is clamped to yesterday, as in backfill_location."""
+        location = LocationFactory.create()
+        today = timezone.localdate()
+
+        with mock.patch("requests.get", side_effect=_echo) as get:
+            backfill.sweep(
+                _selection(location),
+                floor=today - datetime.timedelta(days=1),
+                until=today,
+                commit=True,
+                budget=None,
+            )
+
+        assert _requested_days(get.call_args) == [backfill.backfill_until()]
+        assert not Weather.objects.filter(observed_on=today).exists()

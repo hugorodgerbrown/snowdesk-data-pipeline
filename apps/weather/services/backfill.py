@@ -20,6 +20,14 @@ Four functions, one operation:
   backfill_locations(locations, *, ...)
       The walk, catching per-location failures the way
       ``fetch.fetch_all_locations`` does, with a throttle between locations.
+      The LocationAdmin action's path: whole window, a handful of rows.
+
+  sweep(locations, *, budget, ...)
+      ``backfill_weather``'s path, and the hourly job's (SNOW-1245): the
+      window in fortnight blocks, newest first, each block across every
+      selected location before the next, inside a weighted-call budget that
+      ``sweep_budget`` derives from what ``fetch_weather`` leaves of
+      Open-Meteo's daily quota.
 
 **The caller diffs; ``upsert_weather`` is unchanged.** The write rule is
 that a past row is never rewritten — ``upsert_weather`` *raises* on one, it
@@ -70,8 +78,10 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
+import requests
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Count, QuerySet
 from django.utils import timezone
 
 from apps.locations.models import Location
@@ -80,6 +90,7 @@ from apps.weather.models import Weather
 from apps.weather.services.fetch import (
     DAILY_VARIABLES,
     FORECAST,
+    FORECAST_DAYS,
     HOURLY_VARIABLES,
     _daily_dates,
     _daily_fields,
@@ -118,6 +129,76 @@ ADMIN_MAX_LOCATIONS = 3
 # production's — so the walk is paced rather than fired as fast as the loop
 # can issue it.
 INTER_LOCATION_DELAY = 1.0
+
+
+# ---------------------------------------------------------------------------
+# Open-Meteo's weighted call count (SNOW-1245)
+# ---------------------------------------------------------------------------
+# The free tier counts *weighted* calls: a request is one call up to ten
+# variables and fourteen days, and scales linearly past either — so
+# 24 variables over a fortnight is 2.4 calls, and the same variables over a
+# whole season is ~63. A full-window walk of 590 locations is therefore
+# ~37,000 calls against a quota of 10,000 a day, which is how the first
+# unattended production run came to be throttled after 19 minutes.
+
+# Variables in one request — daily and hourly both count.
+REQUEST_VARIABLES = len(DAILY_VARIABLES.split(",")) + len(HOURLY_VARIABLES.split(","))
+
+# The days one weighted call covers, and so the sweep's block length: a
+# request for fewer days costs the same as one for fourteen.
+BLOCK_DAYS = 14
+
+# The free tier's per-IP daily quota, shared by every Open-Meteo host this
+# project calls — the live forecast, the history host and the elevation API.
+FREE_TIER_DAILY_CALLS = 10_000
+
+# The share of that quota the two weather jobs may plan to spend. The rest
+# is left for elevation lookups when a location is minted and for the
+# LocationAdmin backfill action, neither of which runs on a timetable.
+QUOTA_HEADROOM = 0.9
+
+# How many times a day fetch_weather runs. Must match its CronTrigger in
+# schedule.py; tests/weather/services/test_backfill.py asserts that it does.
+LIVE_FETCHES_PER_DAY = 4
+
+# How many sweeps run a day: backfill_weather is scheduled hourly.
+SWEEPS_PER_DAY = 24
+
+
+def request_weight(days: int) -> float:
+    """
+    Return the weighted Open-Meteo calls one backfill request costs.
+
+    Args:
+        days: The days the request spans, inclusive.
+
+    Returns:
+        ``max(1, variables / 10) × max(1, days / 14)``.
+
+    """
+    return max(1.0, REQUEST_VARIABLES / 10) * max(1.0, days / BLOCK_DAYS)
+
+
+def sweep_budget(active_locations: int) -> float:
+    """
+    Return the weighted calls one hourly sweep may spend.
+
+    What is left of the daily quota once ``fetch_weather`` has had its four
+    runs over the active estate, divided across the day's sweeps. Derived
+    rather than fixed, so the sweep shrinks as the estate grows instead of
+    tipping the live fetch into a throttle — and stops altogether, rather
+    than going negative, once the live fetch needs the whole quota.
+
+    Args:
+        active_locations: ``Location.objects.active().count()``.
+
+    Returns:
+        The per-run budget, never negative.
+
+    """
+    live = active_locations * request_weight(FORECAST_DAYS) * LIVE_FETCHES_PER_DAY
+    spare = FREE_TIER_DAILY_CALLS * QUOTA_HEADROOM - live
+    return max(0.0, spare / SWEEPS_PER_DAY)
 
 
 @dataclass
@@ -330,6 +411,8 @@ def _write_window(
     data: dict[str, Any],
     wanted: set[date],
     result: BackfillResult,
+    *,
+    present: frozenset[date] = frozenset(),
 ) -> None:
     """
     Write one response's storable days as ``Weather`` rows.
@@ -342,6 +425,12 @@ def _write_window(
             guard, and the thing that stops a shifted response reaching a row
             we never asked to write.
         result: Counters, mutated in place.
+        present: Days inside the requested span that already have a row.
+            The sweep asks for one span per block rather than one per gap,
+            because Open-Meteo charges a fortnight whether it is used or
+            not, so the days it already holds come back too. They are
+            skipped silently; anything else outside ``wanted`` still warns.
+            Defaults to empty.
 
     Raises:
         ValueError: The response's daily arrays are misaligned (SNOW-466).
@@ -357,6 +446,8 @@ def _write_window(
     # gap behind while the batch counts the location as failed (SNOW-546).
     with transaction.atomic():
         for idx, day in enumerate(dates):
+            if day in present:
+                continue
             if day not in wanted:
                 logger.warning(
                     "Backfill for location=%s: upstream returned %s, which "
@@ -549,3 +640,318 @@ def backfill_locations(
         commit,
     )
     return counts
+
+
+# ---------------------------------------------------------------------------
+# The sweep (SNOW-1245)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SweepResult:
+    """What one budgeted sweep did.
+
+    Attributes:
+        locations: Location-blocks a request was issued for.
+        filled: Days written that had no row before.
+        unresolved: Days the upstream returned without a usable
+            weather_code/sunrise/sunset triple, and which were dropped.
+        requests: Upstream requests issued.
+        weight: Weighted Open-Meteo calls those requests cost.
+        failed: Location-blocks whose request or write raised.
+        blocks: The ``(start, end)`` blocks the run worked in, newest first.
+        blocks_finished: How many of ``blocks`` the run walked to the end.
+        stopped: ``"budget"`` when the next request would have overspent,
+            ``"throttled"`` when the upstream answered 429, otherwise empty.
+
+    """
+
+    locations: int = 0
+    filled: int = 0
+    unresolved: int = 0
+    requests: int = 0
+    weight: float = 0.0
+    failed: int = 0
+    blocks: list[tuple[date, date]] = field(default_factory=list)
+    blocks_finished: int = 0
+    stopped: str = ""
+
+
+def fortnight_blocks(floor: date, until: date) -> list[tuple[date, date]]:
+    """
+    Split ``[floor, until]`` into ``BLOCK_DAYS`` blocks, newest first.
+
+    Aligned to ``floor`` rather than to ``until``, so a block keeps its
+    boundaries from one day to the next and a run that stops partway through
+    one resumes the same block. The newest block is the short one.
+
+    Args:
+        floor: Window start.
+        until: Window end, inclusive.
+
+    Returns:
+        The blocks, newest first. Empty when the window is.
+
+    """
+    blocks: list[tuple[date, date]] = []
+    start = floor
+    while start <= until:
+        end = min(start + timedelta(days=BLOCK_DAYS - 1), until)
+        blocks.append((start, end))
+        start = end + timedelta(days=1)
+    blocks.reverse()
+    return blocks
+
+
+def _complete_in(start: date, end: date) -> QuerySet[Any, Any]:
+    """
+    Return the ids of locations holding every day of ``[start, end]``.
+
+    A subquery, so the walk selects the locations with a gap in the block
+    without reading one row per location first.
+
+    Args:
+        start: Block start.
+        end: Block end, inclusive.
+
+    Returns:
+        A ``values("location")`` queryset to exclude on.
+
+    """
+    span = (end - start).days + 1
+    return (
+        Weather.objects.filter(observed_on__gte=start, observed_on__lte=end)
+        .values("location")
+        .annotate(days=Count("id"))
+        .filter(days=span)
+        .values("location")
+    )
+
+
+def _is_throttled(exc: requests.HTTPError) -> bool:
+    """Return True when ``exc`` is Open-Meteo refusing for rate, not for input."""
+    return exc.response is not None and exc.response.status_code == 429
+
+
+def _newest_first(queryset: QuerySet[Location]) -> Iterable[Location]:
+    """Stream ``queryset`` newest id first — the sweep's default order."""
+    return queryset.order_by("-id").iterator()
+
+
+def sweep(
+    locations: QuerySet[Location],
+    *,
+    floor: date | None = None,
+    until: date | None = None,
+    commit: bool,
+    budget: float | None,
+    base_url: str | None = None,
+    delay: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    stream: Callable[[QuerySet[Location]], Iterable[Location]] | None = None,
+    on_block: Callable[[date, date, int], None] | None = None,
+) -> SweepResult:
+    """
+    Fill the newest gaps first, a fortnight block at a time, within a budget.
+
+    Walks ``fortnight_blocks`` newest first. In each block it selects the
+    locations missing any day of it and issues **one** request per location,
+    spanning its first missing day to its last — a fortnight is the unit
+    Open-Meteo charges for, so splitting a block at the days already held
+    would cost more and save nothing. A block is finished across every
+    selected location before the next one starts, so a run's work is one
+    contiguous stretch of the calendar, and the estate's most recent
+    history fills in evenly rather than one location at a time.
+
+    The walk stops **before** a request that would take the run past
+    ``budget``, and stops at once on a 429 — the throttle is the upstream
+    saying the quota is spent, and every further request would only be
+    refused too. The next run picks up the same block where this one left
+    off, because the block's completed locations no longer select.
+
+    A location whose request or write raises is counted and skipped; it
+    never aborts the walk. One that keeps failing costs its request on every
+    run and blocks nothing else.
+
+    Args:
+        locations: The locations to fill. Filter before passing.
+        floor: Window start. Defaults to None, meaning ``backfill_floor()``.
+        until: Window end, inclusive. Defaults to None, meaning yesterday;
+            a later date is clamped to yesterday.
+        commit: When False the requests still execute but nothing is written.
+        budget: Weighted calls the run may spend; None for no limit.
+        base_url: Overrides the configured historical host.
+        delay: Seconds between requests. Defaults to None, meaning
+            ``INTER_LOCATION_DELAY``. 0 disables the throttle.
+        sleep: The sleep callable, injected so tests do not wait.
+        stream: Turns a block's selected locations into an iterable — the
+            command passes ``iterate_rows`` for its countdown. Defaults to
+            None, meaning newest id first, streamed.
+        on_block: Called with ``(start, end, locations)`` as each block with
+            a gap begins. Defaults to None.
+
+    Returns:
+        The counters for the run.
+
+    """
+    floor = backfill_floor() if floor is None else floor
+    until = min(backfill_until() if until is None else until, backfill_until())
+    delay = INTER_LOCATION_DELAY if delay is None else delay
+    stream = _newest_first if stream is None else stream
+
+    result = SweepResult()
+    for start, end in fortnight_blocks(floor, until):
+        pending = locations.exclude(pk__in=_complete_in(start, end))
+        count = pending.count()
+        if not count:
+            continue
+        if on_block is not None:
+            on_block(start, end, count)
+        result.blocks.append((start, end))
+        for location in stream(pending):
+            _sweep_location(
+                location,
+                start,
+                end,
+                result,
+                commit=commit,
+                budget=budget,
+                base_url=base_url,
+                delay=delay,
+                sleep=sleep,
+            )
+            if result.stopped:
+                break
+        if result.stopped:
+            break
+        result.blocks_finished += 1
+
+    logger.info(
+        "backfill sweep done: blocks=%d finished=%d locations=%d filled=%d "
+        "unresolved=%d requests=%d weight=%.1f failed=%d stopped=%s commit=%s",
+        len(result.blocks),
+        result.blocks_finished,
+        result.locations,
+        result.filled,
+        result.unresolved,
+        result.requests,
+        result.weight,
+        result.failed,
+        result.stopped or "-",
+        commit,
+    )
+    return result
+
+
+def _sweep_location(
+    location: Location,
+    start: date,
+    end: date,
+    result: SweepResult,
+    *,
+    commit: bool,
+    budget: float | None,
+    base_url: str | None,
+    delay: float,
+    sleep: Callable[[float], None],
+) -> None:
+    """
+    Fill one location's gap in one block, or set ``result.stopped``.
+
+    Args:
+        location: The location to fill.
+        start: Block start.
+        end: Block end, inclusive.
+        result: The run's counters, mutated in place.
+        commit: When False the request executes but nothing is written.
+        budget: Weighted calls the run may spend; None for no limit.
+        base_url: Overrides the configured historical host.
+        delay: Seconds to wait before this request when one has gone before.
+        sleep: The sleep callable.
+
+    """
+    missing = missing_dates(location, start, end)
+    if not missing:
+        return
+    span_start, span_end = missing[0], missing[-1]
+    weight = request_weight((span_end - span_start).days + 1)
+    if budget is not None and result.weight + weight > budget:
+        result.stopped = "budget"
+        return
+
+    if result.requests and delay:
+        sleep(delay)
+    result.locations += 1
+    data = _sweep_request(location, span_start, span_end, weight, result, base_url)
+    if data is None or not commit:
+        return
+
+    wanted = set(missing)
+    span = (span_end - span_start).days + 1
+    present = frozenset(
+        day
+        for offset in range(span)
+        if (day := span_start + timedelta(days=offset)) not in wanted
+    )
+    written = BackfillResult()
+    try:
+        _write_window(location, data, wanted, written, present=present)
+    except Exception:  # noqa: BLE001 — broad catch intentional: one location must not abort the sweep
+        logger.exception(
+            "Failed to write backfilled weather for location=%s", location.pk
+        )
+        result.failed += 1
+        return
+    result.filled += written.filled
+    result.unresolved += written.unresolved
+
+
+def _sweep_request(
+    location: Location,
+    start: date,
+    end: date,
+    weight: float,
+    result: SweepResult,
+    base_url: str | None,
+) -> dict[str, Any] | None:
+    """
+    Issue one sweep request, counting it, or record why there is no payload.
+
+    Args:
+        location: The location to fetch for.
+        start: First day of the span.
+        end: Last day of the span, inclusive.
+        weight: The request's weighted cost, added once it is spent.
+        result: The run's counters, mutated in place.
+        base_url: Overrides the configured historical host.
+
+    Returns:
+        The parsed body, or None when the request failed or was throttled —
+        a throttle also sets ``result.stopped``.
+
+    """
+    try:
+        data = _request_window(location, start, end, base_url=base_url)
+    except requests.HTTPError as exc:
+        if _is_throttled(exc):
+            logger.warning(
+                "Backfill sweep throttled at location=%s span=%s..%s; stopping",
+                location.pk,
+                start,
+                end,
+            )
+            result.stopped = "throttled"
+            return None
+        # Refused for its input, so the upstream counted it.
+        logger.exception("Failed to backfill weather for location=%s", location.pk)
+        result.failed += 1
+        result.requests += 1
+        result.weight += weight
+        return None
+    except Exception:  # noqa: BLE001 — broad catch intentional: one location must not abort the sweep
+        logger.exception("Failed to backfill weather for location=%s", location.pk)
+        result.failed += 1
+        return None
+    result.requests += 1
+    result.weight += weight
+    return data

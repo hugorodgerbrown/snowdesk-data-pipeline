@@ -3,7 +3,7 @@ tests/test_schedule.py — Unit tests for schedule.py.
 
 Covers:
   - ``build_scheduler()`` returns a :class:`BlockingScheduler` with exactly
-    eight jobs.
+    nine jobs.
   - The jobs have the expected IDs, one per wrapped command in
     ``schedule.py``.
   - Their ``CronTrigger``s have the correct non-default field expressions.
@@ -50,9 +50,9 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_eight_jobs(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly eight registered jobs."""
-    assert len(scheduler.get_jobs()) == 8
+def test_scheduler_has_exactly_nine_jobs(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly nine registered jobs."""
+    assert len(scheduler.get_jobs()) == 9
 
 
 def test_job_ids(jobs: dict) -> None:
@@ -60,6 +60,7 @@ def test_job_ids(jobs: dict) -> None:
     assert set(jobs) == {
         "fetch_bulletins",
         "fetch_weather",
+        "backfill_weather",
         "purge_request_logs",
         "fill_what3words",
         "check_resort_locations",
@@ -67,6 +68,20 @@ def test_job_ids(jobs: dict) -> None:
         "prune_command_runs",
         "reconcile_slope_samples",
     }
+
+
+def test_backfill_weather_runs_hourly_at_twenty_past(jobs: dict) -> None:
+    """:20 every hour — clear of the :00 and :05 fetches (SNOW-1245)."""
+    trigger = jobs["backfill_weather"].trigger
+    assert str(_get_field(trigger, "hour")) == "*"
+    assert str(_get_field(trigger, "minute")) == "20"
+
+
+def test_backfill_weather_commits() -> None:
+    """The scheduled sweep persists, at its default budget."""
+    with mock.patch("django.core.management.call_command") as mock_cc:
+        schedule_module._run_backfill_weather()
+    mock_cc.assert_called_once_with("backfill_weather", "--commit")
 
 
 def test_purge_expired_oauth_tokens_runs_daily_off_the_fetch_hours(jobs: dict) -> None:
@@ -310,6 +325,7 @@ def test_purge_runs_clear_of_the_fetch_hours(jobs: dict) -> None:
     [
         "fetch_bulletins",
         "fetch_weather",
+        "backfill_weather",
         "purge_request_logs",
         "fill_what3words",
         "check_resort_locations",

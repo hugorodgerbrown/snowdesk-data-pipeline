@@ -5,7 +5,9 @@ Covers the command contract from CLAUDE.md's management-command rules: it
 runs with no arguments, it writes nothing without ``--commit``, it streams
 a countdown rather than materialising, and it exits non-zero when any
 location failed. Plus the two flags that exist so the estate can be staged
-in batches — ``--limit`` and ``--delay``.
+in batches — ``--limit`` and ``--delay`` — and the SNOW-1245 additions:
+the location and date filters, the weighted-call budget, and the throttle
+exit.
 
 The write rule itself is tested in tests/weather/services/test_backfill.py;
 this file is about the command wrapper.
@@ -191,3 +193,147 @@ class TestBackfillWeatherCommand:
             )
 
         get.assert_not_called()
+
+
+def _echo(url: str, params: dict[str, str], timeout: float) -> mock.Mock:
+    """Answer a patched ``requests.get`` with a payload covering what it asked for."""
+    start = datetime.date.fromisoformat(params["start_date"])
+    end = datetime.date.fromisoformat(params["end_date"])
+    span = (end - start).days + 1
+    return _response(
+        _payload([start + datetime.timedelta(days=d) for d in range(span)])
+    )
+
+
+@pytest.mark.django_db
+class TestBackfillWeatherSelection:
+    """--location, --resort and --until (SNOW-1245)."""
+
+    def test_until_bounds_the_window(self, yesterday: datetime.date) -> None:
+        """One day, on its own, for the onboarding fill."""
+        location = _active_location()
+        day = yesterday - datetime.timedelta(days=30)
+
+        with mock.patch("requests.get", side_effect=_echo) as get:
+            call_command(
+                "backfill_weather",
+                "--commit",
+                "--floor",
+                day.isoformat(),
+                "--until",
+                day.isoformat(),
+                stdout=StringIO(),
+            )
+
+        assert get.call_count == 1
+        assert list(
+            Weather.objects.filter(location=location).values_list(
+                "observed_on", flat=True
+            )
+        ) == [day]
+
+    def test_location_selects_by_id(self, yesterday: datetime.date) -> None:
+        """Only the named location is requested."""
+        wanted = _active_location()
+        _active_location()
+
+        with mock.patch("requests.get", side_effect=_echo):
+            call_command(
+                "backfill_weather",
+                "--commit",
+                "--floor",
+                yesterday.isoformat(),
+                "--location",
+                str(wanted.pk),
+                stdout=StringIO(),
+            )
+
+        assert list(Weather.objects.values_list("location", flat=True)) == [wanted.pk]
+
+    def test_resort_selects_its_locations(self, yesterday: datetime.date) -> None:
+        """A resort's linked places are selected by its slug."""
+        link = ResortLocationFactory.create()
+        _active_location()
+
+        with mock.patch("requests.get", side_effect=_echo):
+            call_command(
+                "backfill_weather",
+                "--commit",
+                "--floor",
+                yesterday.isoformat(),
+                "--resort",
+                link.resort.slug,
+                stdout=StringIO(),
+            )
+
+        assert list(Weather.objects.values_list("location", flat=True)) == [
+            link.location_id
+        ]
+
+    def test_an_unknown_resort_is_an_error(self) -> None:
+        """A typo must not read as a finished, empty run."""
+        _active_location()
+
+        with pytest.raises(CommandError, match="no-such-resort"):
+            call_command(
+                "backfill_weather", "--resort", "no-such-resort", stdout=StringIO()
+            )
+
+
+@pytest.mark.django_db
+class TestBackfillWeatherBudget:
+    """The weighted-call budget and the throttle (SNOW-1245)."""
+
+    def test_the_budget_stops_the_run(self, yesterday: datetime.date) -> None:
+        """2.4 weighted calls buys one request, and the summary says so."""
+        for _ in range(3):
+            _active_location()
+        out = StringIO()
+
+        with mock.patch("requests.get", side_effect=_echo) as get:
+            call_command(
+                "backfill_weather",
+                "--commit",
+                "--floor",
+                yesterday.isoformat(),
+                "--budget",
+                "2.4",
+                "--delay",
+                "0",
+                stdout=out,
+            )
+
+        assert get.call_count == 1
+        assert "Stopped at the budget" in out.getvalue()
+
+    def test_the_default_budget_is_derived_from_the_estate(
+        self, yesterday: datetime.date
+    ) -> None:
+        """No --budget means one hourly sweep's share of the free quota."""
+        _active_location()
+        out = StringIO()
+
+        with mock.patch("requests.get", side_effect=_echo):
+            call_command(
+                "backfill_weather", "--floor", yesterday.isoformat(), stdout=out
+            )
+
+        expected = backfill.sweep_budget(Location.objects.active().count())
+        assert f"budget {expected:.0f} weighted call(s)" in out.getvalue()
+
+    def test_a_throttle_exits_non_zero(self, yesterday: datetime.date) -> None:
+        """A 429 is an alarm in the worker log, not a quiet partial run."""
+        _active_location()
+        throttled = requests.HTTPError("429", response=mock.Mock(status_code=429))
+
+        with (
+            mock.patch("requests.get", side_effect=throttled),
+            pytest.raises(CommandError, match="throttled"),
+        ):
+            call_command(
+                "backfill_weather",
+                "--commit",
+                "--floor",
+                yesterday.isoformat(),
+                stdout=StringIO(),
+            )
