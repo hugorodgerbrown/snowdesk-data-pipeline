@@ -180,7 +180,7 @@ class TestFailureReporting:
                 side_effect=([one_slf_record], [], []),
             ),
             mock.patch(
-                "apps.bulletins.services.slf_fetcher.build_render_model",
+                "apps.bulletins.services.apply.build_render_model",
                 side_effect=RenderModelBuildError("bad payload"),
             ),
             pytest.raises(CommandError, match="completed with failures"),

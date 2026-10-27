@@ -32,7 +32,7 @@ import requests
 from django.conf import settings
 
 from apps.bulletins.models import Bulletin, PipelineRun
-from apps.bulletins.services.slf_fetcher import upsert_bulletin
+from apps.bulletins.services.apply import upsert_bulletin
 from apps.ingest.public import (
     OUTCOME_CREATED,
     OUTCOME_FAILED,

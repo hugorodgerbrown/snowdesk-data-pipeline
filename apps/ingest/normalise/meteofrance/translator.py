@@ -2,7 +2,7 @@
 apps/ingest/normalise/meteofrance/translator.py — DPBRA XML → CAAML JSON translator.
 
 Converts a single Météo-France DPBRA XML document into the CAAML v6 JSON dict
-shape that ``upsert_bulletin()`` in ``apps/bulletins/services/slf_fetcher.py``
+shape that the host app's ``upsert_bulletin()`` (``apps/bulletins/services/apply.py``)
 consumes — identical in structure to the payloads produced by the SLF and
 ALBINA adapters.
 
