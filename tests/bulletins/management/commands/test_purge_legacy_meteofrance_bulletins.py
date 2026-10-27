@@ -24,11 +24,8 @@ from apps.bulletins.models import (
     RegionDayRating,
 )
 from apps.bulletins.services.meteofrance_archive_loader import load_meteofrance_archive
-from apps.bulletins.services.meteofrance_identity import (
-    BULLETIN_ID_RE,
-    compact_publication_stamp,
-)
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.ingest.public import BULLETIN_ID_RE, compact_publication_stamp
 from apps.regions.models import MicroRegion
 from tests.factories import (
     BulletinFactory,

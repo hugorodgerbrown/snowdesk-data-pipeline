@@ -21,7 +21,7 @@ from apps.bulletins.services.meteofrance_archive_loader import (
     _slug_to_region_id,
     load_meteofrance_archive,
 )
-from apps.bulletins.services.meteofrance_identity import compact_publication_stamp
+from apps.ingest.public import compact_publication_stamp
 from apps.regions.models import MicroRegion
 
 # ---------------------------------------------------------------------------

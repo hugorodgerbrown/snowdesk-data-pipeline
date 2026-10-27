@@ -83,9 +83,9 @@ from apps.bulletins.services.day_rating import (
     refresh_day_ratings,
     slim_regions_prefetch,
 )
-from apps.bulletins.services.meteofrance_identity import BULLETIN_ID_RE
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
+from apps.ingest.public import BULLETIN_ID_RE
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)

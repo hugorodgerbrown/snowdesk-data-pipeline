@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from apps.bulletins.services.meteofrance_identity import compact_publication_stamp
+from apps.ingest.public import compact_publication_stamp
 
 ARCHIVE = (
     Path(__file__).resolve().parents[2]

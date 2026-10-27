@@ -2,12 +2,12 @@
 name: meteofrance-mapping
 description: Field-by-field DPBRA XML to CAAML JSON mapping for meteofrance_translator — bulletinID synthesis, SAT_TO_EAWS, customData.MF
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-27
 ---
 
 # MeteoFrance DPBRA → CAAML JSON mapping spec
 
-**Status:** implemented — see `apps/bulletins/services/meteofrance_translator.py`; this doc is the field-mapping reference.
+**Status:** implemented — see `apps/ingest/normalise/meteofrance/translator.py`; this doc is the field-mapping reference.
 **Scope:** authoritative field-by-field translation reference for the
 MeteoFrance source adapter — a function that converts one DPBRA XML
 document into the same CAAML JSON dict shape that SLF and ALBINA emit,
@@ -94,7 +94,7 @@ bulletinID = "FR-{NN}-{validity_date}-{publication_stamp}"
 - `validity_date`: `@DATEVALIDITE` truncated to date in Europe/Paris.
 - `publication_stamp`: `@DATEDIFFUSION` as `YYYYMMDDHHMMSS` in **UTC**.
 
-Built by `apps/bulletins/services/meteofrance_identity.build_bulletin_id`, which the
+Built by `apps/ingest/normalise/meteofrance/identity.build_bulletin_id`, which the
 archive loader also uses so both ingest paths share one grammar.
 
 The publication stamp is load-bearing, not decoration. Météo-France publishes
@@ -497,7 +497,7 @@ production; the backfill remains a follow-up SNOW ticket.
 
 ### Cross-validation
 
-Comparing the output of `apps/bulletins/services/meteofrance_translator.py`
+Comparing the output of `apps/ingest/normalise/meteofrance/translator.py`
 against the same `(date, massif)` row in
 `meteofrance_bra_hist`'s CSV catches translation bugs the unit-test
 fixtures may miss — particularly around the elevation-split semantics

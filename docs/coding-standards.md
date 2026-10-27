@@ -2,7 +2,7 @@
 name: coding-standards
 description: Repository layout, Python style, model/service/view conventions, testing, and tooling (ruff, mypy, tox, pre-commit) rules
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-27
 ---
 
 # Coding Standards — Snowdesk Data Pipeline
@@ -23,7 +23,7 @@ is probably wrong — fix it rather than relaxing the rule.
 ```
 config/          Django project: split settings (base + development/staging/
                  production/perf overlays), urls, wsgi
-apps/            Parent package for the sixteen Django apps (SNOW-557 — moved
+apps/            Parent package for the seventeen Django apps (SNOW-557 — moved
                  here without changing any app label). The per-app summary
                  lives in CLAUDE.md's "Architecture" block; the apps below
                  are the ones this document's examples draw on
@@ -35,6 +35,9 @@ apps/            Parent package for the sixteen Django apps (SNOW-557 — moved
                  (dump_resorts_sheet, refresh_eaws_fixtures, the four
                  build_<country>_fixture commands, audit_resort_regions,
                  import_resorts)
+  ingest/        The providers' pure normalisation code (SNOW-1248), built
+                 to be rehostable: imports no other apps.* package, reached
+                 only through apps/ingest/public.py
   bulletins/     Bulletin ingestion + storage. Owns Bulletin, RegionBulletin,
                  PipelineRun, RegionDayRating, BulletinGrouping, the
                  ingestion services (slf_fetcher / albina_fetcher /

@@ -1,4 +1,4 @@
-# apps/bulletins/services/meteofrance_identity.py — The Météo-France bulletin
+# apps/ingest/normalise/meteofrance/identity.py — The Météo-France bulletin
 # identity scheme, shared by every path that creates or repairs an MF row.
 #
 # Météo-France issues more than one BRA per massif per covered day — typically a
