@@ -25,7 +25,6 @@ from django.contrib.auth import get_user_model
 from django.core import mail
 from django.test import Client
 from django.urls import reverse
-from pytest_django.fixtures import Settings
 
 from apps.accounts.models import Account
 from apps.accounts.services.email import send_verification_email
@@ -37,12 +36,6 @@ from apps.accounts.services.token import (
 from tests.factories import AccountFactory
 
 User = get_user_model()
-
-
-@pytest.fixture(autouse=True)
-def _locmem_email(settings: Settings) -> None:
-    """Use the locmem email backend so mail.outbox is populated inline."""
-    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 
 # ---------------------------------------------------------------------------

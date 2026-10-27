@@ -32,7 +32,6 @@ from django.core import mail
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
-from pytest_django.fixtures import Settings
 from waffle.testutils import override_flag
 
 from apps.accounts.models import Account
@@ -80,11 +79,6 @@ def _valid_account_token(email: str) -> str:
 @pytest.mark.django_db
 class TestSignInViewRequestLog:
     """Tests for RequestLog capture in sign_in_view."""
-
-    @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: Settings) -> None:
-        """Use in-memory email backend."""
-        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def test_sign_in_requested_includes_country_code(self) -> None:
         """sign_in_requested event includes country_code when non-empty."""
@@ -142,11 +136,6 @@ class TestSignInViewRequestLog:
 @pytest.mark.django_db
 class TestAccountView:
     """Tests for the account_view."""
-
-    @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: Settings) -> None:
-        """Use in-memory email backend to avoid real dispatch."""
-        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def test_get_renders_confirm_page_without_activating(self) -> None:
         """SNOW-439: GET renders the confirm page and does NOT verify on its own."""
@@ -303,11 +292,6 @@ class TestAccountView:
 class TestAccountViewInactiveUser:
     """SNOW-1167: a magic link never signs in an is_active=False user."""
 
-    @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: Settings) -> None:
-        """Use in-memory email backend to avoid real dispatch."""
-        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
-
     def _inactive_account(self) -> Account:
         """Create an unverified account whose user is deactivated."""
         return AccountFactory.create(
@@ -350,11 +334,6 @@ class TestAccountViewInactiveUser:
 @pytest.mark.django_db
 class TestSignInView:
     """Tests for the dedicated sign_in_view."""
-
-    @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: Settings) -> None:
-        """Use in-memory email backend so mail.outbox is populated."""
-        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def test_get_returns_200_with_email_form(self) -> None:
         """GET renders the email entry form."""
@@ -454,7 +433,6 @@ class TestSignInPostTimingSideChannel:
                 "QUEUES": ["default"],
             }
         },
-        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     )
     def test_known_and_unknown_response_time_within_bound(self) -> None:
         """With DatabaseBackend, both branches enqueue a task and return immediately.
@@ -770,11 +748,6 @@ class TestAnalyticsUnsubscribed:
 class TestAnalyticsSignInRequested:
     """analytics.track('sign_in_requested') fires when sign_in_view POST succeeds."""
 
-    @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: Settings) -> None:
-        """Use in-memory email backend so mail.outbox is populated."""
-        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
-
     def test_fires_for_known_email(self) -> None:
         """POST with a known email fires sign_in_requested with the existing PK."""
         account = AccountFactory.create(user__email="known@example.com")
@@ -863,11 +836,6 @@ class TestAccountViewLogging:
 @pytest.mark.django_db
 class TestSignInViewLogging:
     """SNOW-311: sign_in_view POST logs pk=, never the plaintext email address."""
-
-    @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: Settings) -> None:
-        """Use in-memory email backend so mail.outbox is populated."""
-        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def test_post_success_logs_pk_not_email(
         self,

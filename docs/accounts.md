@@ -2,7 +2,7 @@
 name: accounts
 description: accounts app — Account model, registration, is_verified gate, signed-token salts, the one /account/settings/ page, the redirects
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-10-27
 ---
 
 # Accounts
@@ -112,7 +112,7 @@ Production uses `DatabaseCache` (`LOCATION = "django_cache"`) so rate-limit coun
 **Settings** (all in `.env`):
 - `ACCOUNT_TOKEN_MAX_AGE` — account-access token TTL in seconds; defaults to `86400` (24h).
 - `SITE_BASE_URL` — base URL for absolute links when no request is available (e.g. management commands).
-- `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` / `EMAIL_USE_TLS` — standard Django SMTP settings.
+- `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` / `EMAIL_USE_TLS` — environment variables for the SMTP relay. Since Django 6.1 they feed `MAILERS["default"]` (via the `SMTP_*` settings in `config/settings/base.py`), not Django's deprecated flat `EMAIL_*` settings.
 - `DEFAULT_FROM_EMAIL` — sender address for outbound mail.
 
 **Dropped settings** — `MAGIC_LINK_SECRET_KEY`, `MAGIC_LINK_EXPIRY_SECONDS`, `MAGIC_LINK_BASE_URL`, and `RESEND_API_KEY` are no longer referenced anywhere in the codebase. Do not look for them.

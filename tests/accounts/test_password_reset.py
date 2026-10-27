@@ -25,7 +25,6 @@ from django.contrib.auth.models import User
 from django.core import mail
 from django.test import Client
 from django.urls import reverse
-from pytest_django.fixtures import Settings
 
 from apps.accounts.models import Account
 from apps.accounts.services.token import (
@@ -37,12 +36,6 @@ from tests.factories import AccountFactory, UserFactory
 _OLD = "Old-Passw0rd!"
 _NEW = "New-Passw0rd!"
 _MAX_AGE = 86400
-
-
-@pytest.fixture(autouse=True)
-def _locmem_email(settings: Settings) -> None:
-    """Use the locmem email backend so mail.outbox is populated inline."""
-    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 
 def _user_with_password(email: str = "u@example.com", password: str = _OLD) -> User:

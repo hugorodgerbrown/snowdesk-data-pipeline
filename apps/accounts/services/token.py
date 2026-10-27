@@ -131,7 +131,12 @@ def _reset_fingerprint(user: User) -> str:
     """
     login_ts = "" if user.last_login is None else user.last_login.isoformat()
     value = f"{user.password}{login_ts}"
-    return salted_hmac(f"{SALT_PASSWORD_RESET}.fingerprint", value).hexdigest()[:20]
+    # Explicit sha256: Django 2028 changes the default from sha1. Moving now
+    # voids only the reset links in flight at this deploy; naming it means
+    # the Django upgrade itself cannot void them later.
+    return salted_hmac(
+        f"{SALT_PASSWORD_RESET}.fingerprint", value, algorithm="sha256"
+    ).hexdigest()[:20]
 
 
 def generate_password_reset_token(user: User) -> str:

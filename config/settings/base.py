@@ -1233,14 +1233,34 @@ TASKS = {
 # ---------------------------------------------------------------------------
 # Email — SMTP everywhere.  Dev uses Mailpit (localhost:1025, no auth, no
 # TLS); prod uses Resend's SMTP relay (smtp.resend.com:587, STARTTLS).
+#
+# Django 6.1 deprecated the flat EMAIL_HOST/EMAIL_PORT/… settings in favour
+# of MAILERS: they are removed in Django 2028, and defining them alongside
+# MAILERS is an error. The environment variables keep their EMAIL_* names, so
+# no service's configuration changes. They are read into SMTP_* settings
+# first, rather than straight into the dict, so apps.core.settings_spec can
+# still validate and dump them — and because the test runner replaces MAILERS
+# wholesale with a locmem backend that carries no OPTIONS.
 # ---------------------------------------------------------------------------
 
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = config("EMAIL_HOST", default="localhost")
-EMAIL_PORT = config("EMAIL_PORT", default=1025, cast=int)
-EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
-EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
-EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=False, cast=bool)
+SMTP_HOST = config("EMAIL_HOST", default="localhost")
+SMTP_PORT = config("EMAIL_PORT", default=1025, cast=int)
+SMTP_USERNAME = config("EMAIL_HOST_USER", default="")
+SMTP_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+SMTP_USE_TLS = config("EMAIL_USE_TLS", default=False, cast=bool)
+
+MAILERS = {
+    "default": {
+        "BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+        "OPTIONS": {
+            "host": SMTP_HOST,
+            "port": SMTP_PORT,
+            "username": SMTP_USERNAME,
+            "password": SMTP_PASSWORD,
+            "use_tls": SMTP_USE_TLS,
+        },
+    }
+}
 
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@snowdesk.ch")
 

@@ -10,7 +10,6 @@ request once the user is deactivated.
 import pytest
 from django.test import Client
 from django.urls import reverse
-from pytest_django.fixtures import Settings
 
 from apps.accounts.backends import TokenBackend
 from apps.accounts.services.token import SALT_ACCOUNT_ACCESS, generate_token
@@ -39,11 +38,6 @@ class TestTokenBackendGetUser:
 @pytest.mark.django_db
 class TestDeactivationEndsTokenSession:
     """A magic-link session ends on the next request after deactivation."""
-
-    @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: Settings) -> None:
-        """Use in-memory email backend to avoid real dispatch."""
-        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def _signed_in_client(self, email: str) -> Client:
         """Sign in by magic-link POST and return the client holding the session."""

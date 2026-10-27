@@ -273,7 +273,6 @@ def _worker_send_account_access_email(
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[email],
         html_message=html_body,
-        fail_silently=False,
     )
 
 
@@ -314,7 +313,6 @@ def _worker_send_verification_email(email: str, base_url: str | None) -> None:
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[email],
         html_message=html_body,
-        fail_silently=False,
     )
 
 
@@ -368,7 +366,6 @@ def _worker_send_password_reset_email(email: str, base_url: str | None) -> None:
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[email],
         html_message=html_body,
-        fail_silently=False,
     )
 
 
@@ -412,7 +409,6 @@ def _worker_send_email_change_confirmation(
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[new_email],
         html_message=html_body,
-        fail_silently=False,
     )
 
 
@@ -443,7 +439,6 @@ def _worker_send_email_change_notice(email: str, stage: str) -> None:
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[email],
         html_message=html_body,
-        fail_silently=False,
     )
 
 

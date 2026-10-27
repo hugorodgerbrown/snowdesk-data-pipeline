@@ -16,7 +16,6 @@ from django.conf import settings
 from django.core import mail
 from django.core.mail import EmailMultiAlternatives
 from django.test import RequestFactory
-from pytest_django.fixtures import Settings
 
 from apps.accounts.services.email import send_account_access_email
 from apps.accounts.services.token import SALT_ACCOUNT_ACCESS, verify_token
@@ -30,11 +29,6 @@ def rf() -> RequestFactory:
 
 class TestSendAccountAccessEmail:
     """Tests for send_account_access_email."""
-
-    @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: Settings) -> None:
-        """Switch to the locmem backend so outbox works."""
-        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def test_sends_one_email(self) -> None:
         send_account_access_email("alice@example.com")
@@ -119,11 +113,6 @@ class TestSendAccountAccessEmail:
 @pytest.mark.django_db
 class TestEmailServiceLogging:
     """SNOW-311: email worker functions log masked email, never the plaintext address."""
-
-    @pytest.fixture(autouse=True)
-    def use_locmem_backend(self, settings: Settings) -> None:
-        """Switch to the locmem backend so outbox is populated inline."""
-        settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
     def test_account_access_email_logs_masked_not_plaintext(
         self,
