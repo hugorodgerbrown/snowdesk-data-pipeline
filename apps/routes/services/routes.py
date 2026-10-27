@@ -1,8 +1,9 @@
 """
 apps/routes/services/routes.py — Business logic for creating and deleting Routes.
 
-Provides ``create_route`` and ``delete_route`` — the mutating entry points
-used by ``apps/routes/views.py``. Parsing itself lives next door in
+Provides ``create_route``, ``create_drawn_route`` (SNOW-1255) and
+``delete_route`` — the mutating entry points used by
+``apps/routes/views.py``. Parsing itself lives next door in
 ``gpx.py``; this module owns the per-user cap and the database write.
 
 The uploaded bytes reach ``create_route``, are handed to ``parse_gpx``, and
@@ -33,8 +34,10 @@ from uuid import UUID
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.utils.translation import gettext
 
 from apps.routes.models import Route
+from apps.routes.services.drawn import draft_route
 from apps.routes.services.gpx import parse_gpx
 from apps.routes.services.slope_segments import enqueue_route_slope_sampling
 
@@ -184,6 +187,52 @@ def create_route(user: "User", raw: bytes, source_filename: str = "") -> Route:
     # twenty seconds later.
     enqueue_route_slope_sampling(route)
     return route
+
+
+def create_drawn_route(
+    user: "User", points: list[list[float | None]], name: str = ""
+) -> Route:
+    """Store waypoints drawn on the map as a Route for the given user.
+
+    The drawn twin of ``create_route`` (SNOW-1255): the same unlocked early
+    exit, the same locked re-check inside the transaction, and the same
+    terrain sampling enqueued after the commit — so a drawn route is
+    sampled, coloured and leg-split by exactly the path an upload takes.
+
+    Args:
+        user: The authenticated user saving the route.
+        points: Waypoints already through ``drawn.clean_waypoints``.
+        name: The route's name, already through ``drawn.clean_name``;
+            "Drawn route" when empty.
+
+    Returns:
+        The newly created Route.
+
+    Raises:
+        RouteLimitReached: When the user already holds
+            ``settings.ROUTES_MAX_PER_USER`` routes.
+
+    """
+    _assert_under_cap(user)
+
+    # A drawn route has no file to borrow a name from, and a row with no
+    # name reads as a broken one, so an unnamed draft gets a plain label
+    # its owner can rename.
+    draft = draft_route(points, name=name or gettext("Drawn route"), user=user)
+    with transaction.atomic():
+        _locked_cap_recheck(user)
+        draft.save()
+
+    logger.info(
+        "Drawn route created: user=%s uuid=%s points=%d",
+        user.pk,
+        draft.uuid,
+        draft.point_count,
+    )
+
+    # After the commit, never inside it — see create_route's own note.
+    enqueue_route_slope_sampling(draft)
+    return draft
 
 
 def delete_route(user: "User", uuid: UUID) -> None:

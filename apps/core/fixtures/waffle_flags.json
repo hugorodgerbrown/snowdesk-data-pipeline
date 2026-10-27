@@ -16,6 +16,11 @@
       "name": "what3words",
       "note": "Gates the SNOW-840 three word address on a trip's meeting point (both the trip page and the public share page) and its matching /help/ section. Off by default because convert-to-3wa is not on the what3words free plan — it needs the paid Basic plan and a WHAT3WORDS_API_KEY, so the feature deploys dark and is switched on per environment once one exists.",
       "superusers": true
+    },
+    {
+      "name": "route_drawing",
+      "note": "Gates drawing a route on the map (SNOW-1255/1256/1257/1259), the draft preview and save endpoints, the routes panel's Draw on the map CTA, the swisstopo ski-routes overlay shown while drawing (SNOW-1261) and the row menu's Download GPX (SNOW-1260). A rollout gate: superusers while it is a prototype. It sits on the surfaces that MAKE a drawn route and never on the ones that read one, so a drawn route shared with, or planned as a trip for, someone outside the flag still works for them.",
+      "superusers": true
     }
   ]
 }

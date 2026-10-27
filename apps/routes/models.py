@@ -3,7 +3,8 @@ apps/routes/models.py — Database models for the routes application.
 
 Defines two models:
 
-- ``Route``: a polyline an authenticated user imported from a GPX file.
+- ``Route``: a polyline an authenticated user imported from a GPX file or,
+  since SNOW-1255, drew on the map (``source`` says which).
   The row stores the coordinate list itself (``points``) plus the derived
   figures the list rows and the later fit-to-bounds need (``distance_m``,
   ``ascent_m``, ``point_count``, ``bounds``) plus the recording's two ends
@@ -156,11 +157,36 @@ class Route(BaseModel):
     null and SNOW-911 and SNOW-839 read the same record.
     """
 
+    class Source(models.TextChoices):
+        """How a route reached the account (SNOW-1255).
+
+        ``GPX`` is an uploaded file. ``DRAWN`` is a line of waypoints the
+        owner placed on the map, joined by straight segments. A drawn row
+        leaves every RECORDED field null — ``ascent_m``, ``descent_m``,
+        ``started_at``, ``finished_at``, ``source_point_count`` and each
+        point's ``ele`` — because nothing was recorded: its heights and its
+        climb come from the terrain model through ``slope_samples``, the
+        same path an altimeter-less upload already takes. See
+        docs/decisions/a-drawn-route-is-a-route.md.
+        """
+
+        GPX = "GPX", "GPX upload"
+        DRAWN = "DRAWN", "Drawn on the map"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="routes",
         help_text="User who uploaded this route.",
+    )
+    source = models.CharField(
+        max_length=8,
+        choices=Source.choices,
+        default=Source.GPX,
+        help_text=(
+            "How the route arrived: an uploaded GPX file, or waypoints drawn "
+            "on the map. A drawn route carries no recorded heights or times."
+        ),
     )
     name = models.CharField(
         max_length=100,

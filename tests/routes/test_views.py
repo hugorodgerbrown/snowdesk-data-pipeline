@@ -1246,6 +1246,9 @@ class TestRoutesGeojsonShape:
             "descent_m": route.descent_m,
             "duration_s": 7200,
             "bounds": route.bounds,
+            # SNOW-1255: how the route arrived. An upload carries no
+            # ``estimate_s`` — only a drawn route is estimated.
+            "source": "GPX",
             "legs": wire_legs(route.points, None),
         }
 

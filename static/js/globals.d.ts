@@ -178,6 +178,10 @@ interface Window {
   pwaDayStripsCore: any;
   /** static/js/route_leader_core.js — the leader line's path. */
   pwaRouteLeaderCore: any;
+  /** SNOW-1256: route_draw_core.js — the pure half of drawing a route. */
+  pwaRouteDrawCore: any;
+  /** SNOW-1256: route_draw.js — whether the map is in route draw mode. */
+  pwaRouteDraw: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
   pwaRouteRailCore: any;
   /** static/js/aspect_wheel_core.js — the aspect wheel's state and SVG. */

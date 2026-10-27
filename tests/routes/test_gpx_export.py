@@ -12,9 +12,10 @@ import datetime
 
 import pytest
 
+from apps.routes.models import Route
 from apps.routes.services.gpx import parse_gpx
 from apps.routes.services.gpx_export import build_gpx, gpx_filename
-from tests.factories import RouteFactory
+from tests.factories import DRIFTING_TRACK, RouteFactory, drifting_track_record
 
 pytestmark = pytest.mark.django_db
 
@@ -124,3 +125,43 @@ class TestGpxFilename:
         route = RouteFactory.create(name="🏔️🏔️", source_filename="")
 
         assert gpx_filename(route) == f"route-{route.uuid}.gpx"
+
+
+class TestBuildGpxForADrawnRoute:
+    """A drawn route exports its terrain track, and says it was drawn."""
+
+    def test_says_it_was_drawn(self) -> None:
+        """No upload to disclaim; the description names the source."""
+        route = RouteFactory.create(source=Route.Source.DRAWN)
+
+        document = build_gpx(route)
+
+        assert "Drawn on the map in Snowdesk" in document
+        assert "this is not it" not in document
+
+    def test_writes_the_terrain_track_with_the_models_heights(self) -> None:
+        """Densified at the sampler's boundaries, a height on every point."""
+        route = RouteFactory.create(
+            source=Route.Source.DRAWN,
+            points=[[lon, lat, None] for lon, lat, _ele in DRIFTING_TRACK],
+            slope_samples=drifting_track_record(),
+        )
+
+        parsed = parse_gpx(build_gpx(route).encode("utf-8"))
+
+        assert parsed.point_count > len(route.points)
+        assert all(point[2] is not None for point in parsed.points)
+        assert parsed.points[0][2] == pytest.approx(2000.0)
+
+    def test_an_unsampled_drawn_route_writes_its_waypoints(self) -> None:
+        """Outside the model, the waypoints alone, with no heights."""
+        route = RouteFactory.create(
+            source=Route.Source.DRAWN,
+            points=[[7.0, 46.0, None], [7.0, 46.001, None]],
+            slope_samples=None,
+        )
+
+        document = build_gpx(route)
+
+        assert document.count("<trkpt") == 2
+        assert "<ele>" not in document

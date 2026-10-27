@@ -227,15 +227,19 @@ def test_csp_allows_every_swisstopo_tile_shard() -> None:
 
 
 def test_csp_names_no_slope_raster_origin() -> None:
-    """SNOW-1073: swisstopo's slope raster, and its WMTS origin, are gone.
+    """SNOW-1073: swisstopo's slope raster is gone.
 
-    The map's slope layer is painted from the terrain-class tiles now, so
-    the policy has no reason to allow ``wmts.geo.admin.ch`` — and the
-    settings that derived it no longer exist to drift back in.
+    The map's slope layer is painted from the terrain-class tiles now, and
+    the settings that derived its origin no longer exist to drift back in.
+    SNOW-1260 put ``wmts.geo.admin.ch`` back in the policy for a different
+    layer — the ski-touring routes the route draw mode shows — under its own
+    fixed ``SWISSTOPO_WMTS_ORIGIN``, so the origin's presence is asserted
+    as that one value and nothing derived from a slope setting.
     """
     policy = settings.CSP_DEFAULTS
     for directive in ("connect-src", "img-src"):
-        assert not any("wmts.geo.admin.ch" in src for src in policy[directive])
+        hosts = [src for src in policy[directive] if "wmts.geo.admin.ch" in src]
+        assert hosts == [settings.SWISSTOPO_WMTS_ORIGIN]
     assert not hasattr(settings, "SLOPE_TILE_URL")
     assert not hasattr(settings, "SLOPE_TILE_ORIGIN")
 
@@ -280,7 +284,7 @@ def test_csp_allows_terrain_class_origin_in_connect_and_img_src() -> None:
 def test_csp_defaults_omit_the_terrain_class_origin_when_unset() -> None:
     """No terrain-class origin means no extra token in either directive."""
     policy = csp_defaults("https://tiles.example.test", terrain_class_origin=None)
-    assert policy["img-src"] == ["'self'", "data:"]
+    assert policy["img-src"] == ["'self'", "data:", settings.SWISSTOPO_WMTS_ORIGIN]
     assert None not in policy["connect-src"]
 
 

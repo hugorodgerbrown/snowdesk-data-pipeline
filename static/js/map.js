@@ -9974,6 +9974,10 @@
     // Priority: overlay controls > markers (exclusion zone) > resort pin >
     // region fill > empty-area deselect.
     map.on('click', (e) => {
+      // SNOW-1256: while a route is being drawn, a tap on the map is a
+      // waypoint and nothing else — route_draw.js owns it. Without this a
+      // click would also open the region under it.
+      if (window.pwaRouteDraw && window.pwaRouteDraw.isActive()) return;
       // SNOW-314: clicks that originate on an overlaid UI control (the
       // scrubber/timeline, legend, search/basemap cluster, intro card, help
       // coachmark) are not map-area taps — they must never select or deselect

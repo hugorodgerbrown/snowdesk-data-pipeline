@@ -1613,6 +1613,33 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
+/* SNOW-1256: the still cross a phone draws a route under. Moved into the
+   map's container by static/js/route_draw.js, which writes --route-draw-y
+   so the cross sits in the middle of the map the panel leaves visible, and
+   reads the waypoint from the same pixel — so the cross and the point it
+   adds can never disagree. Pointer-transparent: the map under it pans. */
+.route-draw-crosshair {
+    position: absolute;
+    left: 50%;
+    top: var(--route-draw-y, 50%);
+    transform: translate(-50%, -50%);
+    z-index: 1;
+    pointer-events: none;
+    color: var(--color-route-line);
+}
+
+.route-draw-crosshair[hidden] {
+    display: none;
+}
+
+/* While a route is drawn the map's notes step aside with its overlays: the
+   between-seasons note and the tour offer sit where the cross needs the
+   ground to be seen. Set on <html> by route_draw.js. */
+html[data-route-drawing] #map-between-seasons,
+html[data-route-drawing] #map-tour-offer {
+    display: none !important;
+}
+
 .hint {
     padding: 10px 12px;
     font-size: 11px;
