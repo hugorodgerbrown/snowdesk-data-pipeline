@@ -184,6 +184,12 @@ ALLOWED_EVENTS: frozenset[str] = frozenset(
         "map.resort_guide.pinned",
         # SNOW-1244: Back to today from the pill after keeping exploring.
         "map.resort_guide.left",
+        # SNOW-1244: the between-seasons note on today's empty off-season
+        # map (map_between_seasons.js): shown, its sample bulletin opened,
+        # or dismissed until the next off-season.
+        "map.between_seasons.shown",
+        "map.between_seasons.explored",
+        "map.between_seasons.dismissed",
         # SNOW-894: an uncaught exception or unhandled rejection in the
         # browser, from static/js/error_reporting.js. The first client-side
         # error signal the pipeline has carried — before it, every uncaught

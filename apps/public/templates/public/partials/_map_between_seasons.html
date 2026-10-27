@@ -1,0 +1,74 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_between_seasons.html — the between-seasons note on the
+map (SNOW-1244).
+
+Out of season today's map has no colour, and user testing found nothing on
+it to say why: the welcome card's archive line is read once, if at all. This
+note says it on the map itself, along the top under the controls, and offers
+a full day to look at instead: "Explore a sample bulletin" moves the map to
+the example's day (resort_guide_date) and opens the first popular resort's
+region (resort_guide_popular), Martigny-Verbier on every seeded environment.
+
+static/js/map_between_seasons.js shows it while the map is on today, after
+the welcome card has gone, and never while a walkthrough runs. Dismissed, it
+stays away until the next off-season (data-season, the archived season's
+label). Rendered only out of season, so in season it costs nothing.
+
+Included from public/partials/_map_embed.html inside #map, beside the
+welcome card, on the map page only (show_tour_offer).
+{% endcomment %}
+{% if is_offseason and resort_guide_date %}
+    <div
+        id="map-between-seasons"
+        class="map-between-seasons"
+        role="region"
+        aria-labelledby="map-between-seasons-title"
+        data-season="{{ season_label }}"
+        data-sample-date="{{ resort_guide_date|date:'Y-m-d' }}"
+        data-region-id="{{ resort_guide_popular.0.region_id|default:'' }}"
+        hidden
+    >
+        <button
+            type="button"
+            class="map-tour-offer-close"
+            data-between-seasons-close
+            aria-label='{% trans "Dismiss" %}'
+        >
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+            </svg>
+        </button>
+        <p class="map-tour-offer-eyebrow">{% trans "Between seasons" %}</p>
+        <h2 id="map-between-seasons-title" class="map-example-finish-title">
+            {% blocktrans trimmed with month=archived_season_start|date:"F" %}
+                No avalanche bulletins until {{ month }}
+            {% endblocktrans %}
+        </h2>
+        <p class="map-example-finish-body">
+            {% blocktrans trimmed %}
+                The map colours in when the providers start publishing. Until then, see what a full day looks like.
+            {% endblocktrans %}
+        </p>
+        <button
+            type="button"
+            class="map-example-finish-btn map-example-finish-btn--primary"
+            data-between-seasons-explore
+        >
+            {% blocktrans trimmed with day=resort_guide_date|date:"j M" %}
+                Explore a sample bulletin · {{ day }}
+            {% endblocktrans %}
+        </button>
+    </div>
+{% endif %}
