@@ -187,7 +187,8 @@ def _python_bin_scripts() -> list[str]:
         if not path.is_file():
             continue
         try:
-            first_line = path.open(encoding="utf-8").readline()
+            with path.open(encoding="utf-8") as handle:
+                first_line = handle.readline()
         except UnicodeDecodeError:
             continue  # a compiled artefact, not a script
         if first_line.startswith("#!") and "python" in first_line:

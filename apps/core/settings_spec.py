@@ -370,12 +370,18 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
     SettingSpec("MAXMIND_ACCOUNT_ID", secret=True, note="GeoIP download account"),
     SettingSpec("MAXMIND_LICENSE_KEY", secret=True, note="GeoIP download key"),
     # --- Email ------------------------------------------------------------
-    SettingSpec("EMAIL_HOST", note="SMTP host (Mailpit locally)"),
-    SettingSpec("EMAIL_PORT", validator=positive_int, note="SMTP port"),
-    SettingSpec("EMAIL_HOST_USER", note="SMTP username"),
-    SettingSpec("EMAIL_HOST_PASSWORD", secret=True, note="SMTP password"),
+    # Django 6.1 moved these into MAILERS; base.py reads each EMAIL_*
+    # environment variable into an SMTP_* setting first so it lands here.
+    SettingSpec("SMTP_HOST", note="SMTP host, env EMAIL_HOST (Mailpit locally)"),
+    SettingSpec("SMTP_PORT", validator=positive_int, note="SMTP port, env EMAIL_PORT"),
+    SettingSpec("SMTP_USERNAME", note="SMTP username, env EMAIL_HOST_USER"),
+    SettingSpec(
+        "SMTP_PASSWORD", secret=True, note="SMTP password, env EMAIL_HOST_PASSWORD"
+    ),
     SettingSpec("DEFAULT_FROM_EMAIL", note="From: on outbound mail"),
-    SettingSpec("EMAIL_USE_TLS", note="STARTTLS on the SMTP connection"),
+    SettingSpec(
+        "SMTP_USE_TLS", note="STARTTLS on the SMTP connection, env EMAIL_USE_TLS"
+    ),
     # --- WebAuthn ---------------------------------------------------------
     SettingSpec("WEBAUTHN_RP_ID", note="Relying-party ID — the registrable domain"),
     SettingSpec(

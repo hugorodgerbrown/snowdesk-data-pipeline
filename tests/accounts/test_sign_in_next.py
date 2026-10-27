@@ -33,7 +33,6 @@ import pytest
 from django.core import mail
 from django.test import Client, RequestFactory
 from django.urls import reverse
-from pytest_django.fixtures import Settings
 
 from apps.accounts.redirects import safe_next
 from apps.accounts.services.token import SALT_ACCOUNT_ACCESS, generate_token
@@ -47,12 +46,6 @@ _SAFE_NEXT = "/trips/s/abcdef123456/"
 # Where each path lands with no usable ``next``.
 _HOME = "/map/"
 _VERIFIED_LANDING_URL = "/map/?panel=favourites"
-
-
-@pytest.fixture(autouse=True)
-def _locmem_email(settings: Settings) -> None:
-    """Use the locmem email backend so the magic-link path does not hit SMTP."""
-    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 
 def _set_auth_challenge(client: Client, challenge: str) -> None:
