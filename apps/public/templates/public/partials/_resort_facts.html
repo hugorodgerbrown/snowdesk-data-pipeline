@@ -38,7 +38,10 @@ rendered a dashed "—" box for every blank. Staff curate in
 FOLDED (user testing, 27 Oct 2026). In the map's place sheet the facts
 sit behind a closed "About this resort" panel (``includes/_collapsible_panel.html``),
 so the region row leads the sheet without six fact rows between it and the
-forecast. The resort page keeps them open: it has the room.
+forecast. The resort page keeps them open: it has the room. The curated
+"why it matters" line opens the folded panel (Hugo, 27 Oct 2026: it sat
+above the bulletin and pushed it out of the sheet's HALF), so the panel
+draws for a resort with the line and no facts too.
 
 Context variables expected:
   resort      — regions.Resort instance.
@@ -47,13 +50,14 @@ Context variables expected:
                 page passes its sidebar width).
 {% endcomment %}
 {% resort_facts resort as facts %}
-{% if facts and folded %}
+{% if folded and facts or folded and resort.why_it_matters %}
     {# In the map: folded, so the region row above stays the sheet's lead. #}
+    {# The curated line opens it, above the facts (Hugo, 27 Oct 2026).     #}
     <section data-testid="resort-facts" aria-label="{% translate 'About this resort' %}">
         {% translate "About this resort" as resort_facts_title %}
-        {% include "includes/_collapsible_panel.html" with title=resort_facts_title data_testid="resort-facts-panel" body_template="public/partials/_resort_facts_list.html" %}
+        {% include "includes/_collapsible_panel.html" with title=resort_facts_title data_testid="resort-facts-panel" body_template="public/partials/_resort_about_body.html" %}
     </section>
-{% elif facts %}
+{% elif facts and not folded %}
     <section
         {% if class_extra %}class="{{ class_extra }}"{% endif %}
         data-testid="resort-facts"

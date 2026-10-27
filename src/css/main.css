@@ -2069,8 +2069,10 @@ a.season-day:focus-visible {
 
    Markup (public/partials/_resort_forecast.html):
    the visually hidden radios come FIRST in the
-   card, then the chip group, then one pane per
-   point, all siblings. So `:checked ~` reaches both
+   card, then one pane per point, then the chip
+   group, then one onward link per point, all
+   siblings (the chips and links moved under the
+   week on 27 Oct 2026). So `:checked ~` reaches both
    the chip and the pane — but `~` matches EVERY
    later sibling, which is why Tailwind's
    `peer-checked:` cannot do this: it would reveal
@@ -2082,13 +2084,23 @@ a.season-day:focus-visible {
 
    The pane's default is `display: none`, so an
    unmatched index shows nothing rather than all.
-   Selection's border is the accent, the weather
-   page's day picker's own checked border; the
+   The chips are one segmented row; the selected
+   segment takes the accent tint and text. The
    keyboard ring is the text colour, as on the board.
    ————————————————————————————————————————— */
 
-.resort-forecast-pane {
+.resort-forecast-pane,
+.resort-forecast-link {
   display: none;
+}
+
+.resort-forecast-point[data-point="0"]:checked
+  ~ .resort-forecast-link[data-point="0"],
+.resort-forecast-point[data-point="1"]:checked
+  ~ .resort-forecast-link[data-point="1"],
+.resort-forecast-point[data-point="2"]:checked
+  ~ .resort-forecast-link[data-point="2"] {
+  display: block;
 }
 
 .resort-forecast-point[data-point="0"]:checked
@@ -2112,8 +2124,8 @@ a.season-day:focus-visible {
   ~ .resort-forecast-chips
   label[data-point="2"]
   .resort-forecast-chip {
-  border-color: var(--color-accent);
-  color: var(--color-text-1);
+  background: var(--color-accent-tint);
+  color: var(--color-accent);
 }
 
 .resort-forecast-point[data-point="0"]:focus-visible
@@ -2129,7 +2141,7 @@ a.season-day:focus-visible {
   label[data-point="2"]
   .resort-forecast-chip {
   outline: 2px solid var(--color-text-1);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 

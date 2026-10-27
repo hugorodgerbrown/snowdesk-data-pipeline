@@ -1,6 +1,6 @@
 ---
 name: a-resort-has-no-avalanche-danger
-description: _resort_body.html shows no danger; neutral region row (_place_link_row.html); panel kind line; map_panel_trail.js back pill
+description: _resort_body.html region row shows the REGION's level (day_rating) or no bulletin; panel kind line; map_panel_trail.js
 status: current
 last-reviewed: 2026-10-27
 ---
@@ -31,6 +31,27 @@ resorts, a resort names its region, a weather point names the resort it
 stands for and its region. On the map a row opens that place's panel in
 place (`static/js/map_panel_trail.js`) with a one-step back pill naming
 where the reader came from; off the map it is a plain link to the page.
+
+## Amended 27 Oct 2026 — the callout shows the region's level
+
+Hugo's resort panel review (27 Oct 2026) put the level back on the region
+row, as the region's: the row's square is the region's danger tile for the
+day (`_place_link_row.html` with `day_rating`, from `RegionDayRating`), its
+title the level's name and its subtitle "<region> · View bulletin", under
+the eyebrow "Avalanche bulletin • <provider>". With no rated day the row
+becomes "No bulletin available on this date." and a "View bulletin
+history →" link to the region's page, whose season calendar is that
+history. The 24 Oct choice of a level-less row is reversed for this one
+row; the rest of this decision stands — no bulletin card, problem cards or
+season calendar on the resort, and the level is shown as the region's,
+named beside it, never as the resort's.
+
+The same review reshaped the phone sheet around it: the resort sheet opens
+at HALF (title, date, this callout and today's weather), the curated "why
+it matters" line moved into the folded "About this resort", the forecast's
+Base / Mid / Summit chips moved under the week as one row, and the weather
+section's eyebrow carries its source and time ("Weather • Open-Meteo
+06:01") in place of the footer line.
 
 ## Why
 

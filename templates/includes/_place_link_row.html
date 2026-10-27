@@ -9,8 +9,12 @@ place and its weather, the weather point one spot at one height — and each
 ends with rows like this one that take the reader to its neighbours. The
 row leads with the tile of the kind it OPENS (the square for a region, the
 round cabin for a resort), so the reader can tell where a tap goes before
-making it. A region row carries no danger level: the level is the region's
-own panel's to state, and a resort has no danger of its own.
+making it. A region row carries no danger level by default: the level is
+the region's own panel's to state, and a resort has no danger of its own.
+The one exception is the resort body's bulletin callout (Hugo, 27 Oct
+2026), which passes ``day_rating`` so the square shows the REGION's level
+for the day in place of the map glyph — the row still names the region and
+opens it, so the level reads as the region's.
 
 STILL A REAL LINK. ``href`` is the place's page, so the row works with no
 JavaScript and a modified click opens the page in a new tab. On the map,
@@ -27,7 +31,10 @@ Context:
   open_id  — what the map opens it by: a region id ("CH-4115"), a resort
              slug, or a location short id.
   testid   — optional ``data-testid``.
+  day_rating — optional, kind "region" only: a RegionDayRating whose
+             ``max_rating`` the square shows as the EAWS danger tile.
 {% endcomment %}
+{% load snowdesk_time %}
 <a
     href="{{ href }}"
     data-panel-open="{{ kind }}"
@@ -38,6 +45,14 @@ Context:
 >
     {% if kind == "resort" %}
         {% include "includes/_resort_tile.html" with kind="resort" only %}
+    {% elif day_rating %}
+        {# The region's level for the day — the resort's bulletin callout. #}
+        <span
+            class="danger-tile flex-none"
+            data-level="{{ day_rating.max_rating }}"
+            aria-hidden="true"
+            data-testid="place-link-region-level"
+        >{{ day_rating.max_rating|danger_level_digit }}{{ day_rating.max_subdivision|default_if_none:'' }}</span>
     {% else %}
         {# A region's square, without a level: the tile says "region", not "danger". #}
         <span

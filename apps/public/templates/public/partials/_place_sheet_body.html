@@ -20,15 +20,20 @@ detents, ordered so that each detent shows the next part of it:
      (``_favourite_row_menu_items.html``: Share → Rename → Delete). The
      header is ``data-sheet-drag`` and, for a saved pin, also the row the
      inline rename edits (``data-row-renameable``).
-  2. HALF (ends under ``data-sheet-half``) — a resort's curated "why it
-     matters" line when it is written and its one-line fact summary
-     (``resort_fact_summary``: "1,500–3,330 m · 34 lifts · 210 km piste"),
-     then the day's weather at the place and "Full forecast →". The level is
-     already on the peek row.
-  3. FULL — the region's avalanche problems, then the links onward: the
-     day's bulletin (primary) and the resort page (secondary). With none of
-     those there is nothing for FULL to show, so ``data-sheet-detents``
-     drops it.
+  2. HALF (ends under ``data-sheet-half``) — for a RESORT, where the sheet
+     OPENS (Hugo, 27 Oct 2026; ``map_place_sheet.js`` sets
+     ``data-detent-initial``): the bulletin callout ("Avalanche bulletin •
+     SLF", the region's level or "No bulletin available on this date"),
+     then the weather section down to today's tile for the chosen point.
+     The curated line moved into the folded "About this resort". For a
+     saved pin, which still opens at PEEK: the region's level, then the
+     day's weather at the place and "Full forecast →".
+  3. FULL — a resort's week, Base / Mid / Summit chips, "View hourly
+     forecast →" and "About this resort"; a saved pin's avalanche problems,
+     then the links onward: the day's bulletin (primary) and the resort
+     page (secondary). With none of those there is nothing for FULL to
+     show, so ``data-sheet-detents`` drops it. A tap on the handle at FULL
+     steps down to PEEK.
 
 WHAT THE SHEET DOES NOT SAY (SNOW-1161, docs/decisions/the-map-opens-a-
 resort-in-the-sheet.md). The sheet is "this place, on the map's day"; the
@@ -162,11 +167,8 @@ Context:
 
     {% if kind == "resort" %}
         {# SNOW-1164: under the peek row, the resort page's own body for   #}
-        {# the map's day. The curated line leads it, as it does the page's #}
-        {# header — only when written; the blank states are the page's.   #}
-        {% if resort.why_it_matters %}
-            {% include "public/partials/_resort_why_it_matters.html" %}
-        {% endif %}
+        {# the map's day. The curated line is in its folded "About this    #}
+        {# resort" (Hugo, 27 Oct 2026), so the bulletin leads HALF.         #}
         <div data-testid="place-sheet-resort-body">
             {% include "public/partials/_resort_body.html" with in_map=True %}
         </div>

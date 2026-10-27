@@ -545,12 +545,28 @@
      * FULL to reveal what a half-screen cap would clip.
      */
     function halfHeight() {
-      var marker = el.querySelector('[data-sheet-half]');
+      var marker = firstShownHalfMarker();
       var cap = marker && marker.getAttribute('data-sheet-half') === 'fit'
         ? fullHeight()
         : Math.round(window.innerHeight * 0.5);
       var measured = marker ? heightTo(marker.getBoundingClientRect().bottom) : contentHeight();
       return measured && measured > 0 ? Math.min(cap, measured) : cap;
+    }
+
+    /**
+     * The first `data-sheet-half` element that has a box. Content may mark
+     * one per alternative (the resort forecast marks the today tile in each
+     * Base / Mid / Summit pane, and only the chosen pane is displayed), so
+     * a hidden one must not stand for the shown one.
+     *
+     * @returns {Element|null}
+     */
+    function firstShownHalfMarker() {
+      var markers = el.querySelectorAll('[data-sheet-half]');
+      for (var i = 0; i < markers.length; i++) {
+        if (markers[i].getBoundingClientRect().height > 0) return markers[i];
+      }
+      return markers.length ? markers[0] : null;
     }
 
     /** FULL fits its content too, up to the room below the top inset. */
@@ -620,6 +636,10 @@
       // arriving later can still bring it down (the observer below) when
       // it does not allow that height.
       var carried = takeHandOff();
+      // Re-read at every open: a sheet that serves two kinds of content
+      // can ask for a different first detent per kind (the place sheet
+      // opens a resort at HALF, a saved pin at PEEK; Hugo, 27 Oct 2026).
+      initial = core.initialDetent(detents, el.getAttribute('data-detent-initial'));
       set(carried && detents.indexOf(carried) !== -1 ? carried : /** @type {string} */ (initial));
     }
 

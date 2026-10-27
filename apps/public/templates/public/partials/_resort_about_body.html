@@ -1,0 +1,16 @@
+{% comment %}
+apps/public/templates/public/partials/_resort_about_body.html — the body of
+the map's folded "About this resort" panel (``_resort_facts.html`` with
+``folded``): the curated "why it matters" line when it is written, then the
+facts (Hugo, 27 Oct 2026: the line moved here from the top of the sheet).
+
+Context: ``resort``; ``facts`` — the list ``{% resort_facts %}`` returned.
+{% endcomment %}
+{% if resort.why_it_matters %}
+    <div class="pt-3{% if not facts %} pb-3{% endif %}">
+        {% include "public/partials/_resort_why_it_matters.html" %}
+    </div>
+{% endif %}
+{% if facts %}
+    {% include "public/partials/_resort_facts_list.html" %}
+{% endif %}

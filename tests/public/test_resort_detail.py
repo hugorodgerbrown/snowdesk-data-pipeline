@@ -69,6 +69,7 @@ from tests.factories import (
     MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
+    RegionDayRatingFactory,
     ResortFactory,
     ResortLocationFactory,
     SubRegionFactory,
@@ -169,13 +170,21 @@ class TestResortDetailContent:
             "resort-no-rating",
         ):
             assert f'data-testid="{gone}"' not in content
-        assert "danger-tile" not in content
+        # No level card; a bulletin with no day rating reads as no bulletin.
+        assert "data-level=" not in content
 
     def test_the_region_row_names_the_region_and_links_its_bulletin(self) -> None:
-        """One neutral row, no level, linking today's bulletin page."""
+        """One row with the region's level, linking today's bulletin page."""
         region = MicroRegionFactory.create(name="Martigny – Verbier")
         resort = ResortFactory.create(region=region)
-        _todays_bulletin(region)
+        bulletin = _todays_bulletin(region)
+        RegionDayRatingFactory.create(
+            region=region,
+            date=timezone.localdate(),
+            max_rating="considerable",
+            source="SLF",
+            source_bulletin=bulletin,
+        )
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
@@ -185,8 +194,8 @@ class TestResortDetailContent:
         assert 'data-panel-open="region"' in row
         assert f'data-panel-id="{region.region_id}"' in row
         assert "Martigny – Verbier" in html.unescape(row)
-        assert "View region bulletin for" in row
-        assert "danger-tile" not in row
+        assert "View bulletin" in row
+        assert 'data-level="considerable"' in row
 
     def test_the_region_row_leads_and_the_facts_stay_open(self) -> None:
         """The page leads with the region row; its facts are not folded."""
@@ -494,9 +503,9 @@ class TestResortForecastPoints:
         top = chips.index('data-testid="resort-forecast-chip-top"')
         assert base < mid < top
         text = re.sub(r"\s+", " ", chips)
-        assert "Base · 1,494 m" in text
-        assert "Mid · 2,200 m" in text
-        assert "Summit · 3,330 m" in text
+        assert "Base 1,494" in text
+        assert "Mid 2,200" in text
+        assert "Summit 3,330" in text
 
     def test_the_chips_are_a_labelled_group_of_radios_with_base_checked(
         self,
@@ -527,8 +536,8 @@ class TestResortForecastPoints:
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        pane = _section(content, "resort-forecast-pane-base")
-        assert f'href="{resort.location.get_absolute_url()}"' in pane
+        link = _section(content, "resort-forecast-provenance-base")
+        assert f'href="{resort.location.get_absolute_url()}"' in link
         assert 'data-testid="resort-forecast-chip-top"' in content
         assert 'data-testid="resort-forecast-chip-mid"' not in content
 
@@ -541,8 +550,8 @@ class TestResortForecastPoints:
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        pane = _section(content, "resort-forecast-pane-base")
-        assert f'href="{village.get_absolute_url()}"' in pane
+        link = _section(content, "resort-forecast-provenance-base")
+        assert f'href="{village.get_absolute_url()}"' in link
         assert resort.location.get_absolute_url() not in content
 
     def test_the_primary_link_leads_within_a_role(self) -> None:
@@ -557,8 +566,8 @@ class TestResortForecastPoints:
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        pane = _section(content, "resort-forecast-pane-top")
-        assert f'href="{primary.get_absolute_url()}"' in pane
+        link = _section(content, "resort-forecast-provenance-top")
+        assert f'href="{primary.get_absolute_url()}"' in link
         assert content.count('data-testid="resort-forecast-chip-top"') == 1
 
     def test_a_single_point_is_still_one_chip(self) -> None:
@@ -619,8 +628,8 @@ class TestResortForecastStrip:
     """SNOW-1157: seven tiles per point, today first, from one row."""
 
     @freeze_time(MIDDAY)
-    def test_eyebrow_names_the_forecast_and_today(self) -> None:
-        """The h2 reads "Forecast • Thursday 15 January"."""
+    def test_eyebrow_names_the_source_and_its_time(self) -> None:
+        """The h2 reads "Weather • Open-Meteo HH:MM" (27 Oct 2026)."""
         resort = ResortFactory.create(geocoded=True)
         _todays_weather(resort.location)
 
@@ -628,9 +637,56 @@ class TestResortForecastStrip:
 
         assert re.search(
             r'<h2[^>]*id="resort-forecast-point-heading"[^>]*>'
-            r"\s*Forecast • Thursday 15 January\s*</h2>",
+            r"\s*Weather • Open-Meteo \d\d:\d\d\s*</h2>",
             content,
         )
+
+    @freeze_time(MIDDAY)
+    def test_the_chips_and_link_sit_under_the_week(self) -> None:
+        """27 Oct 2026: panes, then the one row of chips, then the link."""
+        resort = ResortFactory.create()
+        base = _role_link(resort, "BASE", elevation_m=1494.0)
+        _todays_weather(base)
+        _role_link(resort, "TOP", elevation_m=3292.0)
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        section = _section(content, "resort-forecast")
+        pane = section.index('data-testid="resort-forecast-pane-base"')
+        chips = section.index('data-testid="resort-forecast-chips"')
+        link = section.index('data-testid="resort-forecast-provenance-base"')
+        assert pane < chips < link
+
+    @freeze_time(MIDDAY)
+    def test_the_today_tile_names_its_point(self) -> None:
+        """The chips are below, so today's tile says which point it is."""
+        resort = ResortFactory.create()
+        _todays_weather(_role_link(resort, "BASE", elevation_m=1494.0))
+
+        content = Client().get(resort.get_absolute_url()).content.decode()
+
+        tile = _section(content, "resort-forecast-today-point")
+        assert "Base 1,494 m" in re.sub(r"\s+", " ", tile)
+
+    @freeze_time(MIDDAY)
+    def test_half_ends_under_today_in_the_sheet_only(self) -> None:
+        """The today tile marks the phone sheet's HALF; the page has none."""
+        resort = ResortFactory.create()
+        _todays_weather(_role_link(resort, "BASE", elevation_m=1494.0))
+
+        page = Client().get(resort.get_absolute_url()).content.decode()
+        sheet = (
+            Client()
+            .get(
+                reverse("public:resort_sheet_partial", args=[resort.slug]),
+                HTTP_HX_REQUEST="true",
+            )
+            .content.decode()
+        )
+
+        assert "data-sheet-half" not in page
+        today = sheet.index('data-testid="resort-forecast-today"')
+        assert 'data-sheet-half="fit"' in sheet[today : sheet.index(">", today)]
 
     @freeze_time(MIDDAY)
     def test_seven_tiles_today_first(self) -> None:
@@ -789,8 +845,8 @@ class TestResortForecastStrip:
         assert "clear-night.svg" in _section(content, "resort-forecast-today")
 
     @freeze_time(MIDDAY)
-    def test_each_pane_carries_its_own_attribution_and_link(self) -> None:
-        """The attribution line and the point's own forecast link, per pane."""
+    def test_each_point_has_its_own_hourly_link(self) -> None:
+        """One "View hourly forecast" link per point, no footer attribution."""
         resort = ResortFactory.create()
         base = _role_link(resort, "BASE", elevation_m=1500.0)
         top = _role_link(resort, "TOP", elevation_m=3000.0)
@@ -800,16 +856,15 @@ class TestResortForecastStrip:
         content = Client().get(resort.get_absolute_url()).content.decode()
 
         for role, location in (("base", base), ("top", top)):
-            pane = _section(content, f"resort-forecast-pane-{role}")
-            footer = _section(pane, f"resort-forecast-provenance-{role}")
-            assert re.search(r"Open-Meteo &middot; updated \d\d:\d\d", footer)
+            footer = _section(content, f"resort-forecast-provenance-{role}")
+            assert "Open-Meteo" not in footer
             link = _section(footer, f"resort-forecast-provenance-{role}-link")
             assert f'href="/weather/{location.short_id}/"' in link
-            assert "Read the full 7-day forecast →" in link
+            assert "View hourly forecast →" in link
 
     @freeze_time(MIDDAY)
     def test_a_point_without_a_short_id_still_credits_open_meteo(self) -> None:
-        """No weather page yet (backfill window): the attribution, no link."""
+        """No weather page yet (backfill window): the eyebrow credits, no link."""
         resort = ResortFactory.create()
         location = _role_link(resort, "BASE")
         _todays_weather(location)
@@ -817,10 +872,8 @@ class TestResortForecastStrip:
 
         content = Client().get(resort.get_absolute_url()).content.decode()
 
-        pane = _section(content, "resort-forecast-pane-base")
-        footer = _section(pane, "resort-forecast-provenance-base")
-        assert re.search(r"Open-Meteo &middot; updated \d\d:\d\d", footer)
-        assert "Read the full 7-day forecast" not in pane
+        assert re.search(r"Weather • Open-Meteo \d\d:\d\d", content)
+        assert 'data-testid="resort-forecast-provenance-base"' not in content
 
     @freeze_time(MIDDAY)
     def test_a_point_with_no_row_today_says_so_and_keeps_its_link(self) -> None:
@@ -837,7 +890,8 @@ class TestResortForecastStrip:
         assert "No forecast yet." in pane
         assert "resort-forecast-today" not in pane
         assert "Open-Meteo" not in pane
-        assert f'href="{base.get_absolute_url()}"' in pane
+        link = _section(content, "resort-forecast-provenance-base")
+        assert f'href="{base.get_absolute_url()}"' in link
 
     @freeze_time(MIDDAY)
     def test_no_forecast_at_any_point_is_one_line(self) -> None:

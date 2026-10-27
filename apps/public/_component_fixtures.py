@@ -1156,13 +1156,24 @@ RESORT_FACTS_VARIANTS: tuple[dict[str, Any], ...] = (
 
 PLACE_LINK_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "A resort's region — the square, no level",
+        "caption": "A region — the square, no level",
         "context": {
             "kind": "region",
             "title": "Martigny–Verbier",
             "subtitle": "View region bulletin for 10 Apr 2026",
             "href": "#",
             "open_id": "CH-4115",
+        },
+    },
+    {
+        "caption": "A resort's bulletin callout — the region's level (27 Oct 2026)",
+        "context": {
+            "kind": "region",
+            "title": "Considerable",
+            "subtitle": "Martigny–Verbier · View bulletin",
+            "href": "#",
+            "open_id": "CH-4115",
+            "day_rating": {"max_rating": "considerable", "max_subdivision": ""},
         },
     },
     {
@@ -3858,7 +3869,7 @@ WEATHER_PROVENANCE_VARIANTS: tuple[dict[str, Any], ...] = (
             },
             "testid_prefix": "component-library-provenance-linked",
             "link_url": "#",
-            "link_text": "Read the full 7-day forecast →",
+            "link_text": "View hourly forecast →",
         },
     },
 )
@@ -3984,6 +3995,9 @@ def _build_resort_forecast_variants() -> tuple[dict[str, Any], ...]:
                 "target_date": winter,
                 "is_today": True,
                 "forecast_available": True,
+                "forecast_updated_at": datetime.datetime(
+                    2026, 1, 15, 6, 1, tzinfo=datetime.UTC
+                ),
                 "selector_name": "component-library-forecast-snow",
             },
         },
@@ -3995,6 +4009,9 @@ def _build_resort_forecast_variants() -> tuple[dict[str, Any], ...]:
                 "target_date": autumn,
                 "is_today": True,
                 "forecast_available": True,
+                "forecast_updated_at": datetime.datetime(
+                    2026, 1, 15, 6, 1, tzinfo=datetime.UTC
+                ),
                 "selector_name": "component-library-forecast-rain",
             },
         },
@@ -4008,6 +4025,9 @@ def _build_resort_forecast_variants() -> tuple[dict[str, Any], ...]:
                 "target_date": winter,
                 "is_today": True,
                 "forecast_available": True,
+                "forecast_updated_at": datetime.datetime(
+                    2026, 1, 15, 6, 1, tzinfo=datetime.UTC
+                ),
                 "selector_name": "component-library-forecast-single",
             },
         },
@@ -4025,6 +4045,9 @@ def _build_resort_forecast_variants() -> tuple[dict[str, Any], ...]:
                 "target_date": winter,
                 "is_today": True,
                 "forecast_available": True,
+                "forecast_updated_at": datetime.datetime(
+                    2026, 1, 15, 6, 1, tzinfo=datetime.UTC
+                ),
                 "selector_name": "component-library-forecast-sparse",
             },
         },

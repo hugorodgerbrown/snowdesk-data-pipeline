@@ -90,6 +90,13 @@ describe('opening', () => {
     expect(sheet.getAttribute('data-detent')).toBe('half');
   });
 
+  it('re-reads the initial detent at every open', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'peek');
+    sheet.setAttribute('data-detent-initial', 'half');
+    controller.open();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
   it('rests at the lowest declared detent with no initial', () => {
     const { sheet, controller } = attachSheet('half,full');
     controller.open();
@@ -636,6 +643,16 @@ describe('fitting the content (SNOW-1099)', () => {
     controller.open();
     // 150 px to the marker's foot, plus the 16 px gap below it.
     expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('166px');
+  });
+
+  it('skips a half marker with no box for the first shown one', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'half');
+    // A hidden alternative (an unchosen forecast point's pane) comes first.
+    childEndingAt(sheet, 0, 'data-sheet-half');
+    childEndingAt(sheet, 180, 'data-sheet-half');
+    childEndingAt(sheet, 300);
+    controller.open();
+    expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('196px');
   });
 
   it('stops half at the end of the content when nothing is marked', () => {
