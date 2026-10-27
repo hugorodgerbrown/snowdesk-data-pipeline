@@ -35,16 +35,19 @@ def test_resort_to_bulletin_to_map_lands_on_the_same_region(
 
     The resort page is a router to the two documents (SNOW-807) and the
     bulletin's tail is one link back to the map (SNOW-806), so the journey
-    runs in that direction: the resort names its region (one row, no
-    level, since a resort has no danger of its own — 25 Oct 2026), and
-    the bulletin hands over to the map at that region's fragment.
+    runs in that direction: the resort's bulletin callout opens its region
+    — the level row on a rated day, "View bulletin history" on a day with
+    none (27 Oct 2026) — and the bulletin hands over to the map at that
+    region's fragment.
     """
     page.goto(f"{live_server.url}/resorts/verbier/")
     page.wait_for_load_state("networkidle")
     heading = page.locator('[data-testid="resort-heading"]')
     assert heading.inner_text().strip() == "Verbier"
 
-    page.locator('[data-testid="resort-region-link"]').click()
+    page.locator(
+        '[data-testid="resort-region-link"], [data-testid="resort-region-history"]'
+    ).click()
     page.wait_for_load_state("networkidle")
     assert "/ch-4115/" in page.url
 

@@ -557,7 +557,10 @@
      * The first `data-sheet-half` element that has a box. Content may mark
      * one per alternative (the resort forecast marks the today tile in each
      * Base / Mid / Summit pane, and only the chosen pane is displayed), so
-     * a hidden one must not stand for the shown one.
+     * a hidden one must not stand for the shown one. None shown (the chosen
+     * point has no forecast, so its pane has no today tile) is no marker:
+     * half then fits the content, rather than a hidden "fit" marker
+     * lifting it to FULL's room.
      *
      * @returns {Element|null}
      */
@@ -566,7 +569,7 @@
       for (var i = 0; i < markers.length; i++) {
         if (markers[i].getBoundingClientRect().height > 0) return markers[i];
       }
-      return markers.length ? markers[0] : null;
+      return null;
     }
 
     /** FULL fits its content too, up to the room below the top inset. */

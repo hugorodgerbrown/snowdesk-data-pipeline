@@ -655,6 +655,15 @@ describe('fitting the content (SNOW-1099)', () => {
     expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('196px');
   });
 
+  it('fits the content when every half marker is hidden', () => {
+    const { sheet, controller } = attachSheet('peek,half,full', 'half');
+    // The chosen point has no forecast: only hidden panes carry markers.
+    childEndingAt(sheet, 0, 'data-sheet-half="fit"');
+    childEndingAt(sheet, 200);
+    controller.open();
+    expect(sheet.style.getPropertyValue('--sheet-half-height')).toBe('216px');
+  });
+
   it('stops half at the end of the content when nothing is marked', () => {
     const { sheet, controller } = attachSheet('peek,half,full', 'half');
     childEndingAt(sheet, 120);
