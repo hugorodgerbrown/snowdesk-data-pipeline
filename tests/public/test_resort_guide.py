@@ -161,7 +161,8 @@ class TestMapPage:
 
     def test_example_finish_card_continues_with_email_back_to_routes(self) -> None:
         """SNOW-1244: signed out, the example's upload goes to the one page
-        for new and returning visitors, and comes back to the routes panel."""
+        for new and returning visitors, and comes back to the routes panel.
+        """
         content = Client().get(reverse("public:map")).content.decode()
 
         href = (
