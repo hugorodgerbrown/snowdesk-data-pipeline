@@ -506,16 +506,64 @@ class TestResortBody:
             assert f'data-testid="{gone}"' not in content
 
     def test_the_region_row_opens_the_region_panel(self, client: Client) -> None:
-        """One row, the region's square without a level, keyed for the map."""
+        """The callout is the region's row, keyed for the map."""
         resort = _resort()
-        _todays_bulletin(resort.region)
+        bulletin = _todays_bulletin(resort.region)
+        RegionDayRatingFactory.create(
+            region=resort.region,
+            max_rating="considerable",
+            source="SLF",
+            source_bulletin=bulletin,
+        )
         content = _get(client, _resort_url(resort.slug)).content.decode()
         start = content.index('data-testid="resort-region-link"')
         row = content[content.rindex("<a", 0, start) : content.index("</a>", start)]
         assert 'data-panel-open="region"' in row
         assert f'data-panel-id="{resort.region.region_id}"' in row
-        assert 'data-testid="place-link-region-tile"' in row
-        assert "danger-tile" not in row
+
+    def test_the_callout_shows_the_regions_level(self, client: Client) -> None:
+        """A rated day: the level's tile, its name and the source (27 Oct)."""
+        resort = _resort()
+        bulletin = _todays_bulletin(resort.region)
+        RegionDayRatingFactory.create(
+            region=resort.region,
+            max_rating="considerable",
+            source="SLF",
+            source_bulletin=bulletin,
+        )
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        start = content.index('data-testid="resort-region-link"')
+        row = content[content.rindex("<a", 0, start) : content.index("</a>", start)]
+        assert 'data-testid="place-link-region-level"' in row
+        assert 'data-level="considerable"' in row
+        assert "Considerable" in row
+        assert f"{resort.region.name} · View bulletin" in row
+        assert "Avalanche bulletin • SLF" in content
+        assert 'data-testid="resort-region-none"' not in content
+
+    def test_no_bulletin_says_so_and_links_the_history(self, client: Client) -> None:
+        """No rated day: the message and the region page in the callout."""
+        resort = _resort()
+        RegionDayRatingFactory.create(
+            region=resort.region,
+            date=timezone.localdate() - datetime.timedelta(days=3),
+            max_rating="moderate",
+            source="SLF",
+        )
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert 'data-testid="resort-region-link"' not in content
+        assert "No bulletin available on this date." in content
+        assert 'data-testid="resort-region-history"' in content
+        assert resort.region.get_absolute_url() in content
+        # The eyebrow names the provider of the region's latest rated day.
+        assert "Avalanche bulletin • SLF" in content
+
+    def test_a_region_never_rated_names_no_source(self, client: Client) -> None:
+        """No rating ever: the eyebrow is the plain section name."""
+        resort = _resort()
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        assert "Avalanche bulletin •" not in content
+        assert "Avalanche bulletin" in content
 
     def test_the_body_carries_its_panel_key(self, client: Client) -> None:
         """The back pill names the panel a row was followed from."""
@@ -544,6 +592,14 @@ class TestResortBody:
         resort = _resort(why_it_matters="Four lifts, national freeride reputation.")
         content = _get(client, _resort_url(resort.slug)).content.decode()
         assert "Four lifts, national freeride reputation." in content
+
+    def test_why_it_matters_opens_the_folded_about(self, client: Client) -> None:
+        """27 Oct 2026: the line moved from the top into "About this resort"."""
+        resort = _resort(why_it_matters="Four lifts, national freeride reputation.")
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        about = content.index('data-testid="resort-facts-panel"')
+        line = content.index("Four lifts, national freeride reputation.")
+        assert content.index('data-testid="resort-region"') < about < line
 
     @pytest.mark.parametrize("is_staff", [None, False, True])
     def test_unwritten_why_it_matters_shows_nothing(

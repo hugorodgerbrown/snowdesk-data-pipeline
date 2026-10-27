@@ -37,11 +37,16 @@ These are NOT the weather page's day-picker cells: those are labels for
 radios with a selection marker; these are inert summaries, and each one
 links nowhere — the pane's one link is to the full week.
 
-UNDER EACH PANE its own footer (``includes/_weather_provenance.html`` with
-a link): "Open-Meteo · updated HH:MM", then "Read the full 7-day forecast →"
-to that point's ``/weather/<short_id>/``, so the visible pane always links
-to the point it shows. A point with no row today says "No forecast yet."
-and keeps the link.
+UNDER THE PANES (Hugo, 27 Oct 2026) the point chips, as one segmented row
+— above the week they took two rows before any weather — then the shown
+point's "View hourly forecast →" to its ``/weather/<short_id>/``, one link
+per point revealed by its radio as its pane is. The source and fetch time
+are the section's eyebrow, "Weather • Open-Meteo HH:MM"
+(``forecast_updated_at``), not a footer line. Today's tile names the point
+it shows ("Base 1,494 m"), since the chips are now below it, and in the map
+(``in_map``) it marks the end of the phone sheet's HALF
+(``data-sheet-half="fit"``). A point with no row today says "No forecast
+yet." and keeps the link.
 
 WITH NO FORECAST AT ALL — no point has a row for the day — the card goes
 and one line stands in for the section: "No forecast available for
@@ -57,7 +62,10 @@ Context:
                     weather panel by it), weather (Weather or None), panel
                     (ForecastPanel or None). The caller renders nothing
                     when it is empty.
-  target_date     — datetime.date: the day shown, named in the eyebrow.
+  target_date     — datetime.date: the day shown.
+  forecast_updated_at — datetime or None: the latest fetch among the
+                    points, named in the eyebrow.
+  in_map          — bool, optional: rendered in the map's place sheet.
   is_today        — bool: the first tile is today, so it says "Today";
                     on another day it names its date (SNOW-1164).
   selector_name   — str, optional: the radio group's ``name`` and id
@@ -83,20 +91,22 @@ Context:
         aria-labelledby="{{ group_name }}-heading"
         data-testid="resort-forecast"
     >
-        {# In the map the sheet's date row names the day (Hugo, 21 Oct). #}
-        {% if in_map %}
-            {% trans "Forecast" as forecast_eyebrow %}
-        {% else %}
-            {% blocktrans with day=target_date|date:"l j F" trimmed asvar forecast_eyebrow %}
-                Forecast • {{ day }}
+        {# "Weather • Open-Meteo 06:01": the source and when it was last   #}
+        {# fetched head the section, so no footer line repeats them (Hugo, #}
+        {# 27 Oct 2026). In the map the sheet's date row names the day.    #}
+        {% if forecast_updated_at %}
+            {% blocktrans with updated=forecast_updated_at|time:"H:i" trimmed asvar forecast_eyebrow %}
+                Weather • Open-Meteo {{ updated }}
             {% endblocktrans %}
+        {% else %}
+            {% trans "Weather" as forecast_eyebrow %}
         {% endif %}
         {% include "includes/_eyebrow.html" with tag="h2" heading_id=group_name|add:"-heading" text=forecast_eyebrow class_extra="mb-3" only %}
         {# SNOW-1164: the strip lays itself out by its card's width, not the  #}
         {# viewport's (@container, @md: = 28rem), because the same body sits  #}
         {# in the map's ~350px inset panel on a desktop as well as the page.  #}
         <div class="@container rounded-card border border-border bg-card">
-            <div class="relative flex flex-col gap-6 p-4 @md:gap-7 @md:p-6">
+            <div class="relative flex flex-col gap-4 p-4 @md:gap-5 @md:p-6">
                 {% for point in forecast_points %}
                     <input
                         type="radio"
@@ -107,34 +117,6 @@ Context:
                         {% if forloop.first %}checked{% endif %}
                     >
                 {% endfor %}
-                {% translate "Forecast location" as chips_label %}
-                <div
-                    class="resort-forecast-chips -mb-2 flex flex-wrap gap-2"
-                    role="group"
-                    aria-label="{{ chips_label }}"
-                    data-testid="resort-forecast-chips"
-                >
-                    {% for point in forecast_points %}
-                        <label
-                            for="{{ group_name }}-{{ forloop.counter0 }}"
-                            class="inline-flex min-h-11 cursor-pointer items-center"
-                            data-point="{{ forloop.counter0 }}"
-                            data-testid="resort-forecast-chip-{{ point.role }}"
-                        >
-                            <span
-                                class="resort-forecast-chip rounded-pill border border-border-strong px-2.5 py-1 font-mono text-meta uppercase tracking-wider text-text-2 hover:bg-card-hover"
-                            >
-                                {% if point.elevation_m is not None %}
-                                    {% blocktrans with label=point.label elevation=point.elevation_m|intcomma trimmed %}
-                                        {{ label }} · {{ elevation }} m
-                                    {% endblocktrans %}
-                                {% else %}
-                                    {{ point.label }}
-                                {% endif %}
-                            </span>
-                        </label>
-                    {% endfor %}
-                </div>
                 {% for point in forecast_points %}
                     <div
                         class="resort-forecast-pane flex-col gap-6"
@@ -178,12 +160,26 @@ Context:
                                                 aria-label="{{ tile_label }}"
                                                 class="col-span-full flex items-center gap-4 rounded-card border border-border-strong bg-card px-4 py-3 @md:col-span-1 @md:flex-col @md:gap-1.5 @md:px-3"
                                                 data-testid="resort-forecast-today"
+                                                {% if in_map %}data-sheet-half="fit"{% endif %}
                                                 data-date="{{ day.date|date:'Y-m-d' }}"
                                             >
                                                 <div class="flex min-w-14 flex-col items-center gap-1.5">
                                                     <span
                                                         class="font-mono text-meta uppercase tracking-wider text-text-3"
                                                     >{% if is_today %}{% translate "Today" %}{% else %}{{ day.date|date:"D j M" }}{% endif %}</span>
+                                                    {# The chips are under the week now, so the tile says which point it is. #}
+                                                    <span
+                                                        class="whitespace-nowrap font-mono text-meta uppercase tracking-wider text-text-3"
+                                                        data-testid="resort-forecast-today-point"
+                                                    >
+                                                        {% if point.elevation_m is not None %}
+                                                            {% blocktrans with label=point.label elevation=point.elevation_m|intcomma trimmed %}
+                                                                {{ label }} {{ elevation }} m
+                                                            {% endblocktrans %}
+                                                        {% else %}
+                                                            {{ point.label }}
+                                                        {% endif %}
+                                                    </span>
                                                     <img
                                                         src="{% weather_icon_url day.icon_filename %}"
                                                         class="{% weather_icon_class %} h-8 w-8"
@@ -276,14 +272,50 @@ Context:
                                 {% translate "No forecast yet." %}
                             </p>
                         {% endif %}
-                        {% if point.url %}
-                            {% translate "Read the full 7-day forecast →" as forecast_link_text %}
-                            {% include "includes/_weather_provenance.html" with weather=point.weather testid_prefix="resort-forecast-provenance-"|add:point.role link_url=point.url link_text=forecast_link_text link_weather_id=point.short_id only %}
-                        {% elif point.weather %}
-                            {# No short_id yet (backfill window): no weather page to link, but the forecast shown still credits Open-Meteo. #}
-                            {% include "includes/_weather_provenance.html" with weather=point.weather testid_prefix="resort-forecast-provenance-"|add:point.role only %}
-                        {% endif %}
                     </div>
+                {% endfor %}
+                {# The point chips sit under the week, as one row (Hugo, 27 Oct #}
+                {# 2026: above it they took two rows before any weather). Still #}
+                {# later siblings of the radios, so :checked ~ reaches them.    #}
+                {% translate "Forecast location" as chips_label %}
+                <div
+                    class="resort-forecast-chips flex overflow-hidden rounded-pill border border-border-strong"
+                    role="group"
+                    aria-label="{{ chips_label }}"
+                    data-testid="resort-forecast-chips"
+                >
+                    {% for point in forecast_points %}
+                        <label
+                            for="{{ group_name }}-{{ forloop.counter0 }}"
+                            class="flex min-h-10 min-w-0 flex-1 cursor-pointer [&+&]:border-l [&+&]:border-border-strong"
+                            data-point="{{ forloop.counter0 }}"
+                            data-testid="resort-forecast-chip-{{ point.role }}"
+                        >
+                            <span
+                                class="resort-forecast-chip flex w-full items-center justify-center truncate px-1 font-mono text-meta uppercase tracking-wider text-text-2 hover:bg-card-hover"
+                            >
+                                {% if point.elevation_m is not None %}
+                                    {# One row on a phone: the unit is in the today tile's label. #}
+                                    {% blocktrans with label=point.label elevation=point.elevation_m|intcomma trimmed %}
+                                        {{ label }} {{ elevation }}
+                                    {% endblocktrans %}
+                                {% else %}
+                                    {{ point.label }}
+                                {% endif %}
+                            </span>
+                        </label>
+                    {% endfor %}
+                </div>
+                {# Under the chips, the shown point's own onward link — one per  #}
+                {# point, revealed by its radio as its pane is. Open-Meteo and #}
+                {# the time are in the eyebrow (Hugo, 27 Oct 2026).            #}
+                {% translate "View hourly forecast →" as forecast_link_text %}
+                {% for point in forecast_points %}
+                    {% if point.url %}
+                        <div class="resort-forecast-link" data-point="{{ forloop.counter0 }}">
+                            {% include "includes/_weather_provenance.html" with weather=None testid_prefix="resort-forecast-provenance-"|add:point.role link_url=point.url link_text=forecast_link_text link_weather_id=point.short_id only %}
+                        </div>
+                    {% endif %}
                 {% endfor %}
             </div>
         </div>

@@ -86,11 +86,11 @@ afterEach(() => {
 });
 
 describe('opening', () => {
-  it('opens at peek on a phone and fetches the resort body', async () => {
+  it('opens a resort at half on a phone and fetches its body', async () => {
     fetchMock.mockImplementation(() => answer(RESORT_BODY));
     expect(window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier', name: 'Verbier' })).toBe(true);
     expect(sheet.hasAttribute('hidden')).toBe(false);
-    expect(sheet.getAttribute('data-detent')).toBe('peek');
+    expect(sheet.getAttribute('data-detent')).toBe('half');
     expect(fetchMock.mock.calls[0][0]).toBe('/partials/place-sheet/resort/verbier/');
     expect(fetchMock.mock.calls[0][1].headers).toEqual({ 'HX-Request': 'true' });
     await settle();
@@ -100,6 +100,13 @@ describe('opening', () => {
   it('fetches a saved pin by its uuid', () => {
     window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc-123' });
     expect(fetchMock.mock.calls[0][0]).toBe('/partials/place-sheet/favourite/abc-123/');
+  });
+
+  it('opens a saved pin at peek, after a resort opened at half', () => {
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
+    window.pwaPlaceSheet.close();
+    window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc-123' });
+    expect(sheet.getAttribute('data-detent')).toBe('peek');
   });
 
   it('opens a resort on a desktop too, as the inset panel (SNOW-1161)', () => {

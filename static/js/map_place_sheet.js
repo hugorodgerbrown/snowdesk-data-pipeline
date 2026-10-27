@@ -204,7 +204,12 @@
     } else {
       load();
     }
-    if (!controller.isOpen()) controller.open();
+    if (!controller.isOpen()) {
+      // A resort opens at HALF — its name, the day, the bulletin and
+      // today's weather — and a saved pin at PEEK (Hugo, 27 Oct 2026).
+      sheet.setAttribute('data-detent-initial', next.kind === 'resort' ? 'half' : 'peek');
+      controller.open();
+    }
     return true;
   };
 

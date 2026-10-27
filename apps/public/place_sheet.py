@@ -218,8 +218,10 @@ def resort_sheet_partial(request: HttpRequest, slug: str) -> HttpResponse:
     # SNOW-1164: under the peek row, the resort page's own body for the
     # map's day — built by the page's own builder, so the two cannot drift.
     context = {
+        # The body states the region's level itself (its bulletin callout),
+        # so only the date row's "another day" comes from the peek context.
         **build_resort_body(request, resort, target_date),
-        **_peek_context(resort.region, target_date),
+        "another_day": target_date != timezone.localdate(),
         "kind": "resort",
         "name": resort.name,
         "can_favourite": request.user.is_authenticated,

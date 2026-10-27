@@ -5562,8 +5562,10 @@ def build_resort_body(
         timezone.now(),
         link_date=None if target_date == today else target_date,
     )
+    bulletin = _resort_bulletin_context(region, target_date)
 
     return {
+        **bulletin,
         "resort": resort,
         "region": region,
         "region_id": region.region_id,
@@ -5582,6 +5584,65 @@ def build_resort_body(
         # SNOW-1205: no point with a forecast for the day draws one line in
         # place of the card (Hugo, 23 Oct).
         "forecast_available": any(point["panel"] for point in forecast_points),
+        # "Weather • Open-Meteo HH:MM" (Hugo, 27 Oct 2026): the points are
+        # fetched in one walk, so the latest of their fetch times stands for
+        # the section; None when no point has a row.
+        "forecast_updated_at": max(
+            (p["weather"].fetched_at for p in forecast_points if p["weather"]),
+            default=None,
+        ),
+    }
+
+
+def _resort_bulletin_context(
+    region: MicroRegion, target_date: datetime.date
+) -> dict[str, Any]:
+    """Build the resort body's bulletin callout: the region's level, or none.
+
+    Hugo, 27 Oct 2026: the callout shows the region's rating for the day
+    when a bulletin produced one, and "No bulletin available on this date"
+    when none did. The level is the REGION's — the callout names the region
+    under it and opens it — so this amends, rather than undoes,
+    docs/decisions/a-resort-has-no-avalanche-danger.md.
+
+    The source names the provider in the section's eyebrow ("Avalanche
+    bulletin • SLF"). With no bulletin on the day it is the provider of the
+    region's latest rated day, so the eyebrow still says whose bulletin is
+    missing; a region never rated has none.
+
+    Args:
+        region: The resort's MicroRegion.
+        target_date: The day shown.
+
+    Returns:
+        ``day_rating`` (the RegionDayRating, or None with no bulletin),
+        ``level_label`` (the level's name, or "") and
+        ``bulletin_source_label`` (the provider's short name, or "").
+
+    """
+    day_rating = (
+        RegionDayRating.objects.filter(
+            region=region, date=target_date, source_bulletin__isnull=False
+        )
+        .exclude(max_rating=RegionDayRating.Rating.NO_RATING)
+        .first()
+    )
+    if day_rating is not None:
+        source = day_rating.source
+    else:
+        source = (
+            RegionDayRating.objects.filter(region=region)
+            .exclude(source="")
+            .order_by("-date")
+            .values_list("source", flat=True)
+            .first()
+            or ""
+        )
+    level_meta = _DANGER_PANEL_META.get(day_rating.max_rating) if day_rating else None
+    return {
+        "day_rating": day_rating,
+        "level_label": level_meta["label"] if level_meta else "",
+        "bulletin_source_label": BULLETIN_SOURCE_LINKS.get(source, ("", ""))[0],
     }
 
 

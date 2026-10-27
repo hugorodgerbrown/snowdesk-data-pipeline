@@ -18,6 +18,11 @@ readers open a resort, and user testing (27 Oct 2026) found the row lost
 under the facts. On the page the facts are a sidebar on a desktop and the
 last section on a phone, unfolded.
 
+THE CALLOUT (Hugo, 27 Oct 2026). The region row shows the REGION's level
+for the day (``day_rating``) as its square, under "Avalanche bulletin •
+<provider>"; with no bulletin on the day it reads "No bulletin available on
+this date." with a link to the region's page and its season calendar.
+
 A RESORT HAS NO AVALANCHE DANGER OF ITS OWN (Hugo, 25 Oct 2026). Until
 then this body carried the region's bulletin card, the day's problem cards
 and the season's danger calendar (SNOW-1156, SNOW-1164, SNOW-1126), so a
@@ -27,27 +32,53 @@ region's, and live on its panel and page; the resort keeps the one row
 
 ``in_map`` (set by the place sheet) keeps the body to one column whatever
 the viewport, since the desktop inset panel is a phone's width, and
-tightens the gap between sections to the sheet's.
+tightens the gap between sections to the sheet's (gap-6 since 27 Oct 2026, so HALF holds the bulletin and today's weather).
 
 Context (beyond what each included partial documents):
   region          — the resort's MicroRegion.
   bulletin_url    — the region's bulletin page for the day shown.
+  day_rating      — the region's RegionDayRating for the day, or None with
+                    no bulletin; ``level_label`` its level's name.
+  bulletin_source_label — the provider's short name for the eyebrow, or "".
   target_date     — the day shown; ``is_today`` — whether it is today.
   forecast_points — the forecast's (``_resort_forecast.html``).
   in_map          — bool: rendered inside the map's place sheet.
 {% endcomment %}
 <div class="flex flex-col gap-8{% if not in_map %} lg:flex-row lg:items-start lg:gap-10{% endif %}">
-    <div class="flex min-w-0 flex-col {% if in_map %}gap-8{% else %}gap-12 lg:flex-1{% endif %}">
+    <div class="flex min-w-0 flex-col {% if in_map %}gap-6{% else %}gap-12 lg:flex-1{% endif %}">
         {# The way to the region's bulletin leads: the danger is the region's. #}
         <section aria-labelledby="resort-region-heading" data-testid="resort-region">
-            {% translate "Avalanche bulletin" as region_eyebrow %}
+            {% if bulletin_source_label %}
+                {% blocktranslate trimmed with source=bulletin_source_label asvar region_eyebrow %}
+                    Avalanche bulletin • {{ source }}
+                {% endblocktranslate %}
+            {% else %}
+                {% translate "Avalanche bulletin" as region_eyebrow %}
+            {% endif %}
             {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-region-heading" text=region_eyebrow class_extra="mb-3" only %}
             {# data-place-link-card: the onboarding guide rings this card, not the row it clips. #}
             <div class="overflow-hidden rounded-card border border-border bg-card" data-place-link-card>
-                {% blocktranslate trimmed with day=target_date|date:"j M Y" asvar region_subtitle %}
-                    View region bulletin for {{ day }}
-                {% endblocktranslate %}
-                {% include "includes/_place_link_row.html" with kind="region" title=region.name subtitle=region_subtitle href=bulletin_url open_id=region.region_id testid="resort-region-link" only %}
+                {% if day_rating %}
+                    {% blocktranslate trimmed with region=region.name asvar region_subtitle %}
+                        {{ region }} · View bulletin
+                    {% endblocktranslate %}
+                    {% include "includes/_place_link_row.html" with kind="region" title=level_label subtitle=region_subtitle href=bulletin_url open_id=region.region_id day_rating=day_rating testid="resort-region-link" only %}
+                {% else %}
+                    {# No bulletin on the day: say so, and offer the region's  #}
+                    {# page, whose season calendar is the bulletin history     #}
+                    {# (Hugo, 27 Oct 2026).                                    #}
+                    <div class="flex min-w-0 items-start gap-3 px-4 py-3" data-testid="resort-region-none">
+                        {% include "includes/_danger_tile_empty.html" only %}
+                        <div class="min-w-0 flex-1">
+                            <p class="text-label text-text-1">{% translate "No bulletin available on this date." %}</p>
+                            <a
+                                href="{{ bulletin_url }}"
+                                class="text-sm text-accent hover:text-accent-hover"
+                                data-testid="resort-region-history"
+                            >{% translate "View bulletin history →" %}</a>
+                        </div>
+                    </div>
+                {% endif %}
             </div>
         </section>
         {% if forecast_points %}
