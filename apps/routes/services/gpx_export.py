@@ -107,6 +107,16 @@ def _describe(route: "Route") -> str:
         The description text, unescaped.
 
     """
+    if route.source == "DRAWN":
+        # SNOW-1255: there was never a file, so the upload's three claims do
+        # not apply. What a reader needs instead is where the heights came
+        # from — the points carry none of their own.
+        return (
+            f"Drawn on the map in Snowdesk (route {route.uuid}): "
+            f"{route.point_count} waypoints joined by straight lines. Heights "
+            "are the terrain model's wherever it covers the route; there are "
+            "no recorded heights or timestamps."
+        )
     parts = [
         f"Reconstituted from Snowdesk stored points (route {route.uuid}).",
         "The uploaded file was parsed and discarded at ingest; this is not it.",
@@ -127,6 +137,35 @@ def _describe(route: "Route") -> str:
         )
     parts.append("Per-point timestamps are not stored and are absent here.")
     return " ".join(parts)
+
+
+def _export_points(route: "Route") -> list[list[float | None]]:
+    """Return the points to write for one route.
+
+    An upload's stored points, verbatim — the reconstitution this module's
+    header describes. A DRAWN route's terrain track instead (SNOW-1255): its
+    stored waypoints carry no height and are joined by straight lines that
+    may be kilometres long, so a watch reading them would draw a flat line
+    between two dots. The terrain track is the same line densified at the
+    sampler's 25 m boundaries with the model's height on every point — the
+    geometry the map itself draws — and falls back to the waypoints when the
+    route has not been sampled or lies outside the model's coverage.
+
+    Args:
+        route: The route being exported.
+
+    Returns:
+        ``[lon, lat, ele]`` points, ``ele`` possibly None.
+
+    """
+    if route.source != "DRAWN":
+        stored: list[list[float | None]] = route.points
+        return stored
+    # Imported here: terrain_heights imports the slope sampler, which
+    # imports the models this module is imported beside.
+    from apps.routes.services.terrain_heights import terrain_points  # noqa: PLC0415
+
+    return terrain_points(route.points, route.slope_samples)
 
 
 def build_gpx(route: "Route") -> str:
@@ -171,7 +210,7 @@ def build_gpx(route: "Route") -> str:
         "    <trkseg>",
     ]
 
-    for point in route.points:
+    for point in _export_points(route):
         lon, lat = point[0], point[1]
         ele = point[2] if len(point) > 2 else None
         head = f'      <trkpt lat="{lat:.{_COORD_DP}f}" lon="{lon:.{_COORD_DP}f}">'

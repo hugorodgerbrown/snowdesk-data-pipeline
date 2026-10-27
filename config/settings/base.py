@@ -822,6 +822,12 @@ def optional_basemap_origin(tile_url: str) -> str | None:
 # the style URL or the catalogue above reveals them.
 SWISSTOPO_TILE_SHARDS = [f"https://vectortiles{n}.geo.admin.ch" for n in range(5)]
 
+# SNOW-1260: swisstopo's WMTS host, which serves the ski-touring routes
+# raster (``ch.swisstopo-karto.skitouren``) the route draw mode overlays.
+# Open government data under swisstopo's OGD terms: free, attribution
+# required, and the map names swisstopo while the layer is shown.
+SWISSTOPO_WMTS_ORIGIN = "https://wmts.geo.admin.ch"
+
 
 def csp_defaults(
     tile_origin: str,
@@ -885,6 +891,9 @@ def csp_defaults(
             "'self'",
             "data:",
             *([terrain_class_origin] if terrain_class_origin else []),
+            # SNOW-1260: swisstopo's ski-touring routes, a raster overlay
+            # the route draw mode shows under the line being drawn.
+            SWISSTOPO_WMTS_ORIGIN,
         ],
         "font-src": ["'self'", "data:"],
         # MapLibre creates its tile-parser workers from blob: URLs; /sw.js is
@@ -917,6 +926,9 @@ def csp_defaults(
             # Env-derived like tile_origin above, so the setting and the
             # policy cannot drift.
             *([terrain_class_origin] if terrain_class_origin else []),
+            # SNOW-1260: MapLibre fetches raster tiles with fetch(), so the
+            # ski-routes overlay's origin is here as well as in img-src.
+            SWISSTOPO_WMTS_ORIGIN,
             *([analytics_origin] if analytics_origin else []),
         ],
         "manifest-src": ["'self'"],

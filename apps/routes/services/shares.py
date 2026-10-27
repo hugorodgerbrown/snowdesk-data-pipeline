@@ -166,6 +166,9 @@ def create_route_share(user: "User", uuid: UUID) -> RouteShare:
 # row rather than describe a route.
 _COPIED_FIELDS = (
     "name",
+    # SNOW-1255: a drawn route stays a drawn route on the claimer's account
+    # — what it carries (and leaves null) is the same either side.
+    "source",
     "source_filename",
     "points",
     "distance_m",

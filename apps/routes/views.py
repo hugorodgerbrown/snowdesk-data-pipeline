@@ -30,6 +30,17 @@ plus one JSON endpoint the owner's Share button calls:
 - ``route_share_create`` (POST) — SNOW-764: mints a share link for one of
   the requesting user's own routes and returns its absolute URL.
 
+SNOW-1255 adds the drawing half, behind the ``route_drawing`` waffle flag
+(404 for anyone the flag does not cover — the flag sits on every endpoint
+that MAKES a drawn route, and none of the surfaces that read one):
+
+- ``route_draw_preview`` (POST) — the draft's waypoints in, the same
+  Feature ``routes_geojson`` builds out, sampled on the spot so the panel
+  can draw the profile and legs as the line grows. Saves nothing, needs no
+  account (drawing is free; saving needs one).
+- ``route_create_drawn`` (POST) — stores the waypoints as a Route.
+- ``route_gpx`` (GET) — any of the owner's routes as a ``.gpx`` download.
+
 There is no full page here. ``my_routes`` (SNOW-713) rendered
 ``/account/routes/`` as the account area's own list until SNOW-803 found it
 to be a second rendering of the map's routes sheet; the view is gone and the
@@ -74,6 +85,7 @@ Three properties keep that widening honest:
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -94,15 +106,29 @@ from django.utils import timezone
 from django.views.decorators.cache import cache_control
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django_ratelimit.decorators import ratelimit
+from waffle import flag_is_active
 
 from apps.core.decorators import require_htmx
 from apps.core.freshness import apply_freshness_headers
 from apps.core.http import client_ip, is_top_level_navigation
 from apps.routes.models import Route, RouteShare
+from apps.routes.services.drawn import (
+    DrawnRouteError,
+    clean_name,
+    clean_waypoints,
+    draft_route,
+)
+from apps.routes.services.estimate import estimate_duration_s
 from apps.routes.services.example import example_share
 from apps.routes.services.gpx import GPXParseError
+from apps.routes.services.gpx_export import build_gpx, gpx_filename
 from apps.routes.services.leg_wire import wire_legs
-from apps.routes.services.routes import RouteLimitReached, create_route, delete_route
+from apps.routes.services.routes import (
+    RouteLimitReached,
+    create_drawn_route,
+    create_route,
+    delete_route,
+)
 from apps.routes.services.shares import (
     RouteShareTokenCollision,
     add_pending_token,
@@ -112,6 +138,7 @@ from apps.routes.services.shares import (
     pending_shares,
     pending_tokens,
 )
+from apps.routes.services.slope_segments import build_slope_samples
 from apps.routes.services.slope_summary import summarise_record
 from apps.routes.services.slope_wire import compact_slope
 from apps.routes.services.terrain_detail import terrain_detail
@@ -182,6 +209,29 @@ _SHARE_CREATE_RATE = "20/m"
 # parse, and a recipient claiming several routes they were sent in one
 # message should not be told to wait.
 _SHARE_CLAIM_RATE = "20/m"
+
+# SNOW-1255: the drawing flag. Read on the endpoints that MAKE a drawn route
+# (the preview and the save) and on the download — never on a surface that
+# READS one, because a drawn route that is shared or opened on a trip must
+# keep working for a viewer the flag does not cover (docs/feature-flags.md,
+# the ``route_sharing`` lesson).
+ROUTE_DRAWING_FLAG = "route_drawing"
+
+# The preview's budget, keyed on the client IP because drawing needs no
+# account. One request per waypoint placed, debounced on the client so a
+# burst of taps costs one; a person drawing quickly places a point every
+# second or two, so 60/m is a generous ceiling for a human and a hard one
+# for a script spending terrain-tile reads on the server's behalf.
+_DRAW_PREVIEW_RATE = "60/m"
+
+# The save's budget: the same as an upload's, because each one writes a row
+# against the same per-user cap.
+_DRAW_CREATE_RATE = "10/m"
+
+# Fixed reply for waypoints that cannot make a route. The validation message
+# itself is logged, never returned — the same rule ``route_create`` keeps for
+# a parse error.
+_DRAWN_REJECTED_MESSAGE = "Those points could not be read as a route."
 
 # The 410 body for a share link that has stopped working. Deliberately says
 # nothing about WHY: expired, revoked and route-deleted are one answer to a
@@ -293,6 +343,19 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
                 else None
             ),
             "bounds": route.bounds,
+            # SNOW-1255/1258: how the route arrived, and — for a drawn one,
+            # which has no recording to time — the planning estimate. Never
+            # in ``duration_s``: an estimate must not read as a record.
+            "source": route.source,
+            **(
+                {
+                    "estimate_s": estimate_duration_s(
+                        route.distance_m, ascent_m, descent_m
+                    )
+                }
+                if route.source == Route.Source.DRAWN
+                else {}
+            ),
             # OMITTED ENTIRELY when the route has never been sampled, not
             # passed through as a null like the two above. The key's
             # presence says whether the route has a slope record at all —
@@ -572,6 +635,9 @@ def route_list(request: HttpRequest) -> HttpResponse:
             # same row with no handler for it; the map panel is the only
             # surface since SNOW-803, and static/js/routes.js wires Share.
             "sharing_enabled": True,
+            # SNOW-1260: the row menu's Download GPX, behind the drawing
+            # flag while that feature is a prototype.
+            "gpx_download_enabled": flag_is_active(request, ROUTE_DRAWING_FLAG),
         },
     )
 
@@ -1103,3 +1169,194 @@ def route_share_claim(request: HttpRequest, token: str) -> HttpResponse:
 # ---------------------------------------------------------------------------
 # Full-page views
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Drawing a route on the map (SNOW-1255 / SNOW-1257 / SNOW-1260)
+# ---------------------------------------------------------------------------
+
+
+def _draw_preview_rate_limit_key(group: str, request: HttpRequest) -> str:
+    """Return the rate-limit bucket for a draft preview: the client IP.
+
+    Args:
+        group: The django-ratelimit group name (unused — one group here).
+        request: The current HTTP request.
+
+    Returns:
+        An opaque bucket key.
+
+    """
+    return client_ip(request)
+
+
+def _read_drawn_body(request: HttpRequest) -> tuple[list[list[float | None]], str]:
+    """Decode and validate a drawn route's JSON body.
+
+    Args:
+        request: A POST whose body is ``{"points": [[lon, lat], …], "name"?}``.
+
+    Returns:
+        ``(points, name)``: the stored-shape points and the cleaned name.
+
+    Raises:
+        DrawnRouteError: For a body that is not JSON, not an object, or whose
+            points do not make a route.
+
+    """
+    try:
+        body = json.loads(request.body or b"null")
+    except ValueError as exc:
+        raise DrawnRouteError("the body is not JSON") from exc
+    if not isinstance(body, dict):
+        raise DrawnRouteError("the body is not an object")
+    return clean_waypoints(body.get("points")), clean_name(body.get("name"))
+
+
+@require_POST
+@ratelimit(key=_draw_preview_rate_limit_key, rate=_DRAW_PREVIEW_RATE, block=False)
+def route_draw_preview(request: HttpRequest) -> JsonResponse:
+    """Describe a draft route exactly as the map would once it is saved.
+
+    The live profile (SNOW-1257). The draft's waypoints are built into an
+    UNSAVED ``Route``, the terrain under them is sampled on the spot by the
+    same ``build_slope_samples`` walk the saved row will get, and the answer
+    is the Feature ``routes_geojson`` builds for a saved route — terrain
+    track, climb, legs, slope classes and, for a drawn route, the time
+    estimate. So the panel draws a draft with exactly the code that will
+    draw it after Save, and the two cannot disagree.
+
+    Nothing is written. No account is needed: drawing is free, saving is
+    not (decided 27 Oct 2026). The flag gates it, the IP-keyed rate limit
+    bounds what a script can spend on terrain reads, and
+    ``drawn.MAX_DRAWN_DISTANCE_M`` bounds what one request can cost.
+
+    Sampled inline, unlike a saved route's queued task: the caller is
+    waiting on exactly this answer, and the tiles a growing draft reads are
+    mostly the ones its previous preview has just read. Outside the terrain
+    model's coverage the sample comes back None and the Feature carries no
+    ``slope`` and a null climb — the client says there is no terrain data
+    there rather than drawing a flat profile.
+
+    Errors:
+        400 — the body is not a valid set of waypoints.
+        404 — the ``route_drawing`` flag is not active for this request.
+        429 — rate limit exceeded.
+
+    Args:
+        request: The incoming POST request.
+
+    Returns:
+        ``{"feature": {...}}``.
+
+    """
+    if not flag_is_active(request, ROUTE_DRAWING_FLAG):
+        raise Http404("Not found.")
+
+    if getattr(request, "limited", False):
+        return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
+
+    try:
+        points, name = _read_drawn_body(request)
+    except DrawnRouteError as exc:
+        logger.info("Route draft rejected: %s", exc)
+        return JsonResponse({"error": _DRAWN_REJECTED_MESSAGE}, status=400)
+
+    draft = draft_route(points, name=name)
+    draft.slope_samples = build_slope_samples(points, "route draft")
+    return JsonResponse({"feature": _route_feature(draft, {"draft": True})})
+
+
+@require_POST
+@ratelimit(key="user", rate=_DRAW_CREATE_RATE, block=False)
+def route_create_drawn(request: HttpRequest) -> JsonResponse:
+    """Store a route drawn on the map (SNOW-1255).
+
+    JSON in, JSON out, and not under ``partials/``: the caller is a plain
+    ``fetch`` that frames the new route from the ``bounds`` it gets back,
+    and a JSON body is what the mutation queue can replay once saving
+    offline lands (SNOW-1262).
+
+    Response (200)::
+
+        {"uuid": "…", "bounds": [w, s, e, n]}
+
+    Errors:
+        400 — the body is not a valid set of waypoints.
+        403 — anonymous request.
+        404 — the ``route_drawing`` flag is not active for this request.
+        409 — the user has reached ``settings.ROUTES_MAX_PER_USER``.
+        429 — rate limit exceeded.
+
+    Args:
+        request: The incoming POST request.
+
+    Returns:
+        A JsonResponse.
+
+    """
+    if not flag_is_active(request, ROUTE_DRAWING_FLAG):
+        raise Http404("Not found.")
+
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required"}, status=403)
+
+    if getattr(request, "limited", False):
+        return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
+
+    try:
+        points, name = _read_drawn_body(request)
+    except DrawnRouteError as exc:
+        logger.info("Drawn route rejected: user=%s %s", request.user.pk, exc)
+        return JsonResponse({"error": _DRAWN_REJECTED_MESSAGE}, status=400)
+
+    try:
+        route = create_drawn_route(request.user, points, name=name)
+    except RouteLimitReached:
+        logger.info("Drawn route blocked: user=%s hit the cap", request.user.pk)
+        return JsonResponse({"error": "route_limit_reached"}, status=409)
+
+    return JsonResponse({"uuid": str(route.uuid), "bounds": route.bounds})
+
+
+@require_GET
+@cache_control(private=True, no_store=True)
+def route_gpx(request: HttpRequest, uuid: UUID) -> HttpResponse:
+    """Download one of the requesting user's routes as a ``.gpx`` (SNOW-1260).
+
+    The admin's ``download_as_gpx`` for the owner: the same
+    ``gpx_export.build_gpx`` reconstitution, which states in its own
+    ``<desc>`` how it differs from the file that went in (or, for a drawn
+    route, that there never was one). Owner-scoped — another user's uuid
+    answers 404, never 403. A route the caller holds only as a followed,
+    unclaimed share has no uuid on their side and so no download.
+
+    Errors:
+        403 — anonymous request.
+        404 — the flag is not active, or the uuid is not this user's route.
+
+    Args:
+        request: The incoming GET request.
+        uuid: The Route's uuid, from the URL.
+
+    Returns:
+        A GPX attachment.
+
+    """
+    if not flag_is_active(request, ROUTE_DRAWING_FLAG):
+        raise Http404("Not found.")
+
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    try:
+        route = Route.objects.for_user(request.user).get(uuid=uuid)
+    except Route.DoesNotExist as exc:
+        raise Http404("Not found.") from exc
+
+    response = HttpResponse(
+        build_gpx(route).encode("utf-8"), content_type="application/gpx+xml"
+    )
+    response["Content-Disposition"] = f'attachment; filename="{gpx_filename(route)}"'
+    logger.info("Route downloaded as GPX: uuid=%s user=%s", route.uuid, request.user.pk)
+    return response

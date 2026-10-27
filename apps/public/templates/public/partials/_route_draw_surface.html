@@ -1,0 +1,188 @@
+{% load i18n static components %}
+{% comment %}
+public/partials/_route_draw_surface.html — draw a route on the map
+(SNOW-1256, behind the ``route_drawing`` flag).
+
+The routes panel's "Draw on the map" (public/partials/_route_draw_cta.html)
+closes that panel and opens this one. While it is open the map is a
+drawing surface: every app overlay steps aside (window.PlacementFocus, the
+same focus the pin pickers use), swisstopo's ski-touring routes are drawn
+under the line as a guide, and a press adds a waypoint.
+
+HOW A POINT IS PLACED differs by pointer, on purpose (decided 27 Oct 2026,
+phone first):
+
+  * on a phone (``pointer: coarse``) the map moves under a still cross and
+    "Add point" drops a waypoint where the cross is — the same "move the map
+    under a still pin" model a favourite and a meeting point are placed by
+    (docs/decisions/a-place-is-chosen-by-moving-the-map.md), because a
+    fingertip covers the very ground it is trying to choose;
+  * with a mouse a click on the map adds the point under the cursor, and
+    the cross and the Add button are not shown.
+
+Waypoints are joined by straight lines. After each change the waypoints are
+posted to routes:draw_preview, which samples the terrain under the line and
+answers with the Feature the routes layer itself draws — so the legs, the
+slope classes and the profile here are the saved route's, not an
+approximation of them.
+
+A FORM PANEL, in the design system's three kinds: a task, opened from the
+routes panel, so no detents and no drag-to-close. Escape, the × and another
+panel opening all close it, and closing keeps the draft on this device.
+
+Drawing needs no account; saving does. An anonymous drawer's Save button is
+a sign-in link, and the draft waits in localStorage for them to come back.
+
+Included from map.html only while the flag is active for the request.
+
+Context expected:
+  route_draw_preview_url  — str: POST endpoint for routes:draw_preview.
+  route_create_drawn_url  — str: POST endpoint for routes:create_drawn.
+  route_draw_signin_url   — str: the sign-in page, returning to the panel.
+  routes_upload_eligible  — bool: may this request save a route.
+{% endcomment %}
+{% trans "Draw a route" as route_draw_title %}
+{% include "includes/_overlay_sheet.html" with id="route-draw-sheet" aria_label=route_draw_title scroll_body=True %}
+{# The config and the CSRF token, outside the sheet because its body is    #}
+{# emptied on every close.                                                  #}
+<form
+    id="route-draw-config"
+    hidden
+    data-preview-url="{{ route_draw_preview_url }}"
+    data-create-url="{{ route_create_drawn_url }}"
+    data-signin-url="{{ route_draw_signin_url }}"
+    data-save-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
+>
+    {% csrf_token %}
+</form>
+{# The still cross a phone places a point under. route_draw.js moves it   #}
+{# into the map's container so it sits over the map, and lifts it above   #}
+{# the panel so it is never hidden under the thing driving it.            #}
+<div id="route-draw-crosshair" class="route-draw-crosshair" hidden aria-hidden="true">
+    <svg width="36" height="36" viewBox="0 0 36 36" fill="none" stroke-linecap="round">
+        <circle cx="18" cy="18" r="9" stroke="var(--color-card)" stroke-width="5" />
+        <circle cx="18" cy="18" r="9" stroke="currentColor" stroke-width="2.5" />
+        <path d="M18 2v8M18 26v8M2 18h8M26 18h8" stroke="var(--color-card)" stroke-width="5" />
+        <path d="M18 2v8M18 26v8M2 18h8M26 18h8" stroke="currentColor" stroke-width="2.5" />
+    </svg>
+</div>
+<template id="route-draw-template">
+    {# COMPACT ON PURPOSE. On a phone the panel docks over the bottom of    #}
+    {# the map and the cross sits in what is left above it, so every row   #}
+    {# here is height the drawer cannot see the ground through. The name   #}
+    {# and Save share one row, and the hint is shown only until the first  #}
+    {# point is down — after that the cross and the button explain         #}
+    {# themselves.                                                         #}
+    <div class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto">
+        <div>
+            {% include "includes/_sheet_header.html" with title=route_draw_title icon_template="includes/_icon_route.html" close_action="dismiss" title_class="text-lg font-semibold" %}
+            <p data-route-draw-hint class="-mt-1.5 px-2 text-summary text-text-3"></p>
+        </div>
+        <div class="flex flex-col gap-1.5 px-2">
+            {# The running figures: distance, climb, descent and the time   #}
+            {# estimate, written by route_draw.js after every preview.     #}
+            <p data-route-draw-stats aria-live="polite" class="font-mono text-meta text-text-1"></p>
+            <div data-route-draw-profile hidden>
+                {% include "includes/_route_profile.html" with height_class="h-12" %}
+            </div>
+            <p data-route-draw-notice hidden class="text-summary text-text-3"></p>
+        </div>
+        <div class="flex gap-2">
+            <button
+                type="button"
+                data-route-draw-undo
+                disabled
+                class='{% button_classes variant="secondary" size="compact" %} hover-affordance h-11 disabled:opacity-50'
+            >
+                {% trans "Undo" %}
+            </button>
+            <button
+                type="button"
+                data-route-draw-add
+                class='{% button_classes variant="primary" size="compact" %} hover-affordance inline-flex h-11 flex-1 items-center justify-center gap-1.5'
+            >
+                {% include "includes/_icon_plus.html" with size=16 %}
+                {% trans "Add point" %}
+            </button>
+        </div>
+        <form data-route-draw-save class="flex gap-2 border-t border-border pt-2.5">
+            <label class="sr-only" for="route-draw-name">{% trans "Route name" %}</label>
+            <input
+                id="route-draw-name"
+                name="name"
+                type="text"
+                maxlength="100"
+                autocomplete="off"
+                placeholder="{% trans 'Name this route' %}"
+                class="h-11 min-w-0 flex-1 rounded-tag border border-border bg-card px-3 text-sm text-text-1 placeholder:text-text-3 focus:outline-none"
+            >
+            {% if routes_upload_eligible %}
+                <button
+                    type="submit"
+                    data-route-draw-submit
+                    disabled
+                    class='{% button_classes variant="primary" size="compact" %} hover-affordance h-11 disabled:opacity-50'
+                >
+                    {% trans "Save" %}
+                </button>
+            {% else %}
+                <a
+                    href="{{ route_draw_signin_url }}"
+                    data-route-draw-signin
+                    class='{% button_classes variant="primary" size="compact" is_anchor=True %} hover-affordance inline-flex h-11 items-center'
+                >{% trans "Sign in to save" %}</a>
+            {% endif %}
+        </form>
+        {# swisstopo's OGD terms ask for the source to be named wherever  #}
+        {# its data is shown; the ski routes are on the map only while     #}
+        {# this panel is open, so the credit lives here too. Start over    #}
+        {# shares the line: it is destructive, so it is last (design rule  #}
+        {# 4) and small, and it is disabled while there is nothing to lose. #}
+        <div class="flex items-center justify-between gap-2 px-2">
+            <p class="text-meta text-text-3">{% trans "Ski-touring routes © swisstopo" %}</p>
+            <button
+                type="button"
+                data-route-draw-clear
+                disabled
+                class="hover-affordance rounded-tag px-2 py-1 text-meta text-status-error-text disabled:opacity-40"
+            >
+                {% trans "Start over" %}
+            </button>
+        </div>
+    </div>
+</template>
+{% include "includes/_route_profile_strings.html" %}
+{# Every user-facing string route_draw.js writes. makemessages never scans  #}
+{# static/js, so each is rendered here and read back through                #}
+{# window.pwaStrings (static/js/i18n_strings.js).                           #}
+<template id="route-draw-strings-template">
+    <span
+        data-string="hint-coarse"
+    >{% trans "Move the map to put the cross where you want the next point, then tap Add point." %}</span>
+    <span
+        data-string="hint-fine"
+    >{% trans "Click the map to add a point. Points are joined by straight lines." %}</span>
+    <span data-string="stats-empty">{% trans "No points yet." %}</span>
+    <span data-string="stats-one">{% trans "One point — add another to start the line." %}</span>
+    <span data-string="unit-km">{% blocktrans %}%(value)s km{% endblocktrans %}</span>
+    <span data-string="climb">{% blocktrans %}↑ %(value)s m{% endblocktrans %}</span>
+    <span data-string="descent">{% blocktrans %}↓ %(value)s m{% endblocktrans %}</span>
+    {# An estimate, never a recording, so it always carries the ≈.       #}
+    <span data-string="estimate-hm">{% blocktrans %}≈ %(hours)s h %(minutes)s{% endblocktrans %}</span>
+    <span data-string="estimate-h">{% blocktrans %}≈ %(hours)s h{% endblocktrans %}</span>
+    <span data-string="estimate-m">{% blocktrans %}≈ %(minutes)s min{% endblocktrans %}</span>
+    <span
+        data-string="no-terrain"
+    >{% trans "No terrain data here, so no profile, climb or time. Snowdesk models the ground in Switzerland only." %}</span>
+    <span data-string="preview-failed">{% trans "The profile couldn't be worked out. Check your connection." %}</span>
+    <span data-string="preview-rejected">{% trans "That line can't be drawn — it may be too long." %}</span>
+    <span data-string="saved">{% trans "Route saved." %}</span>
+    <span data-string="save-failed">{% trans "That route couldn't be saved. Try again." %}</span>
+    <span
+        data-string="save-limit"
+    >{% trans "You've reached your saved-route limit. Delete one to save another." %}</span>
+    <span data-string="save-offline">{% trans "You need to be online to save a route." %}</span>
+    <span data-string="default-name">{% trans "Drawn route" %}</span>
+</template>
+<script defer src="{% static 'js/route_draw_core.js' %}"></script>
+<script defer src="{% static 'js/route_draw.js' %}"></script>

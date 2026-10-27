@@ -54,6 +54,7 @@ If you're not sure: use a **Flag**. The other two are conveniences.
 | `sync_log` | `superusers=True` | The `/offline/` "Sync log" panel (SNOW-930 moved it off `/account/settings/`) (reads `window.pwaDb.getSyncLog()` via `static/js/sync_log.js`) and its matching `/help/` section. | SNOW-482. |
 | `debug_log` | `groups=["GRP_DEBUG"]` | The on-device debug trace on every public page — the panel and the `static/js/debug_log.js` recorder behind it ([`debug-log.md`](debug-log.md)). | SNOW-812. |
 | `what3words` | `superusers=True` | A three word address rendered as `///filled.count.soap`: a trip's meeting point on the trip page and the public share page (`_trip_context` in `apps/trips/views.py`), a saved pin's address (`apps/favourites/views.py`), a field observation's owner-only address (`apps/observations/views.py`), and its matching `/help/` section. | SNOW-840. |
+| `route_drawing` | `superusers=True` | Drawing a route on the map (SNOW-1255–1260): the routes panel's "Draw on the map" CTA and its draw panel (`public/partials/_route_draw_surface.html`, `static/js/route_draw.js`), `routes:draw_preview`, `routes:create_drawn` and the row menu's Download GPX (`routes:gpx`). Minting surfaces only: a saved drawn route reads everywhere regardless ([why](decisions/a-drawn-route-is-a-route.md)). | SNOW-1255. |
 
 **`what3words` is a subscription gate, not a rollout gate.** It is the
 one flag here whose off state is the *correct* state in an environment

@@ -346,6 +346,24 @@ Prerequisite: `uv run python manage.py set_example_route --commit`.
 | 7 | Open the routes panel | The example is no longer listed. With no routes of your own, the empty state links "Explore an example route" |
 | 8 | Repeat from step 1 and click "Exit" on step 2 | The same return to today and toast, with no finish card |
 
+### Scenario MS7c: Draw a route on the map
+
+**Goal**: Verify drawing a route (SNOW-1256, behind the `route_drawing`
+flag, superusers only): points join with straight lines, the profile and
+the estimate follow each point, and Save lands an ordinary route.
+Prerequisite: sign in as `admin@snowdesk.dev`.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Open http://localhost:8000/map/, open the routes panel | The foot has "Draw on the map" (filled) above "Upload a GPX" (outlined) |
+| 2 | Click "Draw on the map" and zoom to Verbier (z12+) | The routes panel closes and "Draw a route" opens; the danger colours and pins step aside; swisstopo's ski-touring routes are drawn in blue; the panel's foot credits swisstopo. On a phone a cross sits above the panel |
+| 3 | Add three points (click the map; on a phone, move the map and tap "Add point") | A dot per point and a dashed line between them; within a second the line is drawn as legs, the profile appears and the figures read "km · ↑ m · ↓ m · ≈ h" |
+| 4 | Click "Undo" | The last point goes, and the profile and figures follow |
+| 5 | Close the panel with ×, reopen the routes panel and click "Draw on the map" | The same points come back |
+| 6 | Draw a line in Chamonix (France) | The line is drawn; the panel says there is no terrain data there, with no profile, climb or time |
+| 7 | Type a name and click "Save" | The panel closes, a toast says "Route saved.", the routes layer comes on and the map frames the new route; it is listed in the routes panel, whose row menu has "Download GPX" |
+| 8 | Turn the flag on for everyone (`/admin/waffle/flag/`), sign out, repeat steps 1–3 and click "Sign in to save" | The sign-in page; after signing in, "Draw on the map" picks the draft up again |
+
 ### Scenario MS7b: Find a resort
 
 **Goal**: Verify the "Find a resort" walkthrough (SNOW-1231): it teaches

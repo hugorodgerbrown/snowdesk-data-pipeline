@@ -105,6 +105,12 @@ Parameters (passed via {% include … with … %}):
                   anything to hold.
   cta_label       (string) — the add-CTA's visible, translated label.
                   Required.
+  foot_template   (string, optional) — template path rendered in the CTA's
+                  strip, ABOVE the add button. The routes panel is the only
+                  user (SNOW-1256): with route drawing on it has two ways to
+                  add, "Draw on the map" and "Upload a GPX", and the second
+                  stays this partial's own button so its chrome is not
+                  restated.
   toggle_id       (string, optional) — DOM id for the "Show on the map"
                   switch. Omit it and the switch is not rendered at all.
                   Every real panel passes one of the four ids
@@ -172,7 +178,8 @@ state should not have to remember to bring its own.
     {# so the sign-in prompt goes where the next action lives rather than   #}
     {# over the list. It has to be OUTSIDE the rows container, which every  #}
     {# list load replaces wholesale.                                        #}
-    <div data-panel-foot class="border-t border-border pt-3">
+    <div data-panel-foot class="flex flex-col gap-2 border-t border-border pt-3">
+        {% if foot_template %}{% include foot_template %}{% endif %}
         <button
             type="button"
             data-panel-add

@@ -1936,6 +1936,26 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         "route_share_dismiss_url_template": reverse(
             "routes:share_dismiss", args=["__TOKEN__"]
         ),
+        # SNOW-1256: drawing a route on the map, behind the route_drawing
+        # flag. Short-circuited for an anonymous request, so a signed-out
+        # visitor pays no waffle query for it (the rule
+        # tests/public/test_debug_log_panel.py pins). Drawing is meant to be
+        # free, so rolling it out to signed-out visitors means removing this
+        # guard deliberately — and the endpoints themselves already read the
+        # flag for anyone.
+        "route_drawing_enabled": (
+            request.user.is_authenticated
+            and waffle.flag_is_active(request, "route_drawing")
+        ),
+        "route_draw_preview_url": reverse("routes:draw_preview"),
+        "route_create_drawn_url": reverse("routes:create_drawn"),
+        # Where an anonymous drawer's Save sends them. The draft waits on
+        # the device (route_draw.js), and the link comes back to the routes
+        # panel, whose "Draw on the map" picks the draft up again.
+        "route_draw_signin_url": "{}?{}".format(
+            reverse("accounts:sign_in"),
+            urlencode({"next": f"{reverse('public:map')}?panel=routes"}),
+        ),
     }
 
 

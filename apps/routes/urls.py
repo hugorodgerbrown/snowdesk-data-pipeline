@@ -21,6 +21,12 @@ URL structure:
   routes/s/<token>/dismiss/          POST — drop a pending share from the
                                             session (SNOW-1230)
   routes/example/                    GET  — open the example route (SNOW-1230)
+  routes/drawn/                      POST — store a route drawn on the map
+                                            (SNOW-1255, route_drawing flag)
+  routes/drawn/preview/              POST — describe a draft route, unsaved
+                                            (SNOW-1257, route_drawing flag)
+  routes/<uuid>/route.gpx            GET  — download an owned route as GPX
+                                            (SNOW-1260, route_drawing flag)
 
 ``routes.geojson`` sits OUTSIDE the ``partials/`` prefix on purpose: that
 prefix marks the HTMX fragment endpoints (``@require_htmx``), and this one
@@ -71,6 +77,23 @@ urlpatterns = [
         "partials/share/<str:token>/claim/",
         views.route_share_claim,
         name="share_claim",
+    ),
+    # SNOW-1255: drawing a route. JSON endpoints called by fetch, so not
+    # under partials/ — see apps.routes.views.route_create_drawn.
+    path(
+        "drawn/",
+        views.route_create_drawn,
+        name="create_drawn",
+    ),
+    path(
+        "drawn/preview/",
+        views.route_draw_preview,
+        name="draw_preview",
+    ),
+    path(
+        "<uuid:uuid>/route.gpx",
+        views.route_gpx,
+        name="gpx",
     ),
     path(
         "routes.geojson",

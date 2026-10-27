@@ -1,0 +1,28 @@
+{% load i18n components %}
+{% comment %}
+public/partials/_route_draw_cta.html — the routes panel's "Draw on the map"
+CTA (SNOW-1256).
+
+Rendered by includes/_ugc_panel.html's ``foot_template`` above the panel's
+own add button, which reads "Upload a GPX" while route drawing is on. Drawing
+is the PRIMARY way in and so the filled button; uploading a file stays the
+outlined one. Only included while the ``route_drawing`` flag is active for
+the request — see public/partials/_routes_surface.html.
+
+Drawing needs no account (decided 27 Oct 2026: "drawing is free, saving
+needs an account"), so this CTA is NOT removed for an anonymous visitor the
+way the upload button is; static/js/route_draw.js asks them to sign in only
+when they press Save.
+
+The hook is ``data-route-draw-start``. route_draw.js listens for it on the
+document because the panel body is re-cloned from its template on every
+open.
+{% endcomment %}
+<button
+    type="button"
+    data-route-draw-start
+    class='{% button_classes variant="primary" size="compact" full_width=True %} hover-affordance inline-flex h-11.5 items-center justify-center gap-1.5'
+>
+    {% include "includes/_icon_pencil.html" with size=16 %}
+    {% trans "Draw on the map" %}
+</button>

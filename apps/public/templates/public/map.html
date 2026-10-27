@@ -269,6 +269,12 @@ in addition to the shared map assets.
     {# sheet renders for every visitor, and routes.js branches on           #}
     {# ``routes_eligible`` (authentication) for its sign-in CTA.            #}
     {% include "public/partials/_routes_surface.html" %}
+    {# SNOW-1256: draw a route on the map — only while the route_drawing   #}
+    {# flag is on for this request. After the routes surface, whose panel  #}
+    {# holds the "Draw on the map" CTA that opens it.                      #}
+    {% if route_drawing_enabled %}
+        {% include "public/partials/_route_draw_surface.html" %}
+    {% endif %}
     {# SNOW-1239: the weather, place and region sheets pause while the     #}
     {# timeline plays — no request per frame, one when it stops — and say  #}
     {# so in this band. Before the three surfaces, whose scripts read it.  #}

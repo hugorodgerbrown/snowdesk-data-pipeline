@@ -74,6 +74,8 @@ Context (all from _route_row_actions.html's own):
     label           : str — the row's display name, for the aria-labels.
     row_target      : str — CSS selector for the row Delete empties.
     sharing_enabled : bool — draw the Share item. See _route_row_actions.html.
+    gpx_download_enabled : bool, optional — draw the Download GPX item
+                      (SNOW-1260; the route_drawing flag).
 {% endcomment %}
 {% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
 {% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
@@ -110,6 +112,28 @@ Context (all from _route_row_actions.html's own):
             {% include "includes/_icon_share.html" only %}
             {% trans "Share" %}
         </button>
+    </li>
+{% endif %}
+{# SNOW-1260: the route as a .gpx file, for a watch or another app. A     #}
+{# plain download link — routes:gpx answers an attachment, so nothing on   #}
+{# the page changes and no script is involved. After Share, before the     #}
+{# rule: it hands the route OUT, like Share, and Delete stays last (design  #}
+{# rule 4). Behind the route_drawing flag while that feature is a          #}
+{# prototype.                                                              #}
+{% if gpx_download_enabled %}
+    {% blocktrans trimmed with name=label asvar gpx_aria_label %}Download {{ name }} as a GPX file{% endblocktrans %}
+    <li role="none">
+        <a
+            href="{% url 'routes:gpx' route.uuid %}"
+            download
+            role="menuitem"
+            aria-label="{{ gpx_aria_label }}"
+            data-route-gpx="{{ route.uuid }}"
+            class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+        >
+            {% include "includes/_icon_download_arrow.html" only %}
+            {% trans "Download GPX" %}
+        </a>
     </li>
 {% endif %}
 {# The rule between the two halves. `aria-hidden` and no separator role:   #}
