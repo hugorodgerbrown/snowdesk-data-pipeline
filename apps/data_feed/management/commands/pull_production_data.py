@@ -31,7 +31,8 @@ idempotent). The first pull of a type goes back seven days; pass
 ``--since`` for a deeper backfill. ``bin/sync-staging-data`` remains the
 way to reset staging wholesale.
 
-Reads ``DATA_FEED_URL``, ``DATA_FEED_CLIENT_ID`` and
+Reads ``DATA_FEED_URL`` and either ``DATA_FEED_TOKEN`` (a token minted with
+``mint_feed_token``, SNOW-1254) or ``DATA_FEED_CLIENT_ID`` and
 ``DATA_FEED_CLIENT_SECRET`` (a service client created in production's
 admin — see ``docs/data-feed.md``).
 
@@ -394,25 +395,27 @@ class Command(RegisteredCommand):
                 points at this site.
 
         """
-        missing = [
-            name
-            for name in (
-                "DATA_FEED_URL",
-                "DATA_FEED_CLIENT_ID",
-                "DATA_FEED_CLIENT_SECRET",
-            )
-            if not getattr(settings, name, "")
-        ]
+        # A minted token (SNOW-1254) stands in for the client-credentials
+        # pair; it is how a cloud dev environment is granted the feed.
+        token = getattr(settings, "DATA_FEED_TOKEN", "")
+        required = (
+            ("DATA_FEED_URL",)
+            if token
+            else ("DATA_FEED_URL", "DATA_FEED_CLIENT_ID", "DATA_FEED_CLIENT_SECRET")
+        )
+        missing = [name for name in required if not getattr(settings, name, "")]
         if missing:
             raise CommandError(
                 f"{', '.join(missing)} not set — see docs/data-feed.md for "
-                "creating a service client on production."
+                "creating a service client on production, or set "
+                "DATA_FEED_TOKEN to a token from mint_feed_token."
             )
         try:
             client = FeedClient(
                 settings.DATA_FEED_URL,
                 settings.DATA_FEED_CLIENT_ID,
                 settings.DATA_FEED_CLIENT_SECRET,
+                token=token,
             )
         except FeedError as exc:
             raise CommandError(str(exc)) from exc

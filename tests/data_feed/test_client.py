@@ -194,3 +194,30 @@ class TestWalk:
 
         with pytest.raises(FeedError, match="GET"):
             list(_client(_PageDown([_token()], [])).pages("weather"))
+
+
+class TestMintedToken:
+    """FeedClient with a token from mint_feed_token (SNOW-1254)."""
+
+    def test_a_minted_token_is_sent_without_a_token_request(self) -> None:
+        """No call to /oauth/token/; the token goes straight on the page request."""
+        session = _Session([], [_page([1])])
+        client = FeedClient(BASE, session=session, token="minted")  # type: ignore[arg-type]
+        (page,) = client.pages("bulletins")
+        assert page.results == [1]
+        (call,) = session.calls
+        assert call[0] == "GET"
+        assert call[2]["headers"] == {"Authorization": "Bearer minted"}
+
+    def test_a_401_on_a_minted_token_says_mint_a_new_one(self) -> None:
+        """A minted token cannot be renewed, so the first 401 is final."""
+        session = _Session([], [_Response(401, {})])
+        client = FeedClient(BASE, session=session, token="old")  # type: ignore[arg-type]
+        with pytest.raises(FeedError, match="expired or been revoked"):
+            list(client.pages("weather"))
+        assert [c[0] for c in session.calls] == ["GET"]
+
+    def test_no_credentials_at_all_is_refused(self) -> None:
+        """Neither a token nor a client id and secret."""
+        with pytest.raises(FeedError, match="token or a client id"):
+            FeedClient(BASE)

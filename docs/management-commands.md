@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — RegisteredCommand / CommandRun register, fetch_bulletins, fetch_weather, purge_*, prune_command_runs, backfill_*
 status: current
-last-reviewed: 2026-10-26
+last-reviewed: 2026-10-27
 ---
 
 # Management commands
@@ -1141,7 +1141,8 @@ bulletins and weather. Without it, each type resumes from the start of its
 last successful `--commit` run, less an hour, or goes back seven days on
 the first pull. Locations and resorts are always pulled whole. Tallies are
 `<feed>_<created|updated|unchanged|kept|failed>`, zeros included. Any
-failed item exits non-zero. It refuses to run without `DATA_FEED_URL`,
+failed item exits non-zero. It refuses to run without `DATA_FEED_URL` and
+either `DATA_FEED_TOKEN` (a token from `mint_feed_token` below) or
 `DATA_FEED_CLIENT_ID` and `DATA_FEED_CLIENT_SECRET`, against a plain-HTTP
 remote URL, or against its own site. It never deletes; a wholesale reset
 is still `bin/sync-staging-data` below.
@@ -1151,6 +1152,24 @@ resorts after it, so its report matches what `--commit` would do
 (SNOW-1198). Each feed page's lookups are read in one query per kind of
 row (SNOW-1199). On staging it runs daily at 07:20 UTC as the
 `snowdesk-staging-data-pull` Render cron job (SNOW-1200).
+
+### `mint_feed_token` — mint a data feed token for a cloud dev environment
+
+Run on production (SNOW-1254, [`data-feed.md`](data-feed.md)). Issues an
+access token for a **service client** with the `data` scope, bound to this
+site's `/api/data/v1/`, carrying no user and expiring after `--days`
+(default 90). The token is printed once and stored only as a hash. It is
+what a cloud dev environment sets as `DATA_FEED_TOKEN`.
+
+```bash
+uv run python manage.py mint_feed_token --client "Cloud dev feed"           # preview
+uv run python manage.py mint_feed_token --client "Cloud dev feed" --commit
+```
+
+`--client` names the application (default `Cloud dev feed`), and
+`--resource` overrides the bound URL. It refuses an unknown application, one
+that is not a service client, and `--days` below 1. Tally:
+`tokens_minted`. One row is written, so it is exempt from the row countdown.
 
 ### `bin/sync-staging-data` — refresh staging's data from production
 

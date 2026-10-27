@@ -1205,6 +1205,10 @@ PRODUCTION_DATABASE_URL = config("PRODUCTION_DATABASE_URL", default="")
 DATA_FEED_URL = config("DATA_FEED_URL", default="")
 DATA_FEED_CLIENT_ID = config("DATA_FEED_CLIENT_ID", default="")
 DATA_FEED_CLIENT_SECRET = config("DATA_FEED_CLIENT_SECRET", default="")
+# Or a bearer token minted on the serving environment with `mint_feed_token`
+# (SNOW-1254), which takes the place of the pair above. It is how a cloud dev
+# environment is granted the feed: read-only, expiring, revocable on its own.
+DATA_FEED_TOKEN = config("DATA_FEED_TOKEN", default="")
 
 # django.contrib.sites — required by django.contrib.sitemaps (SNOW-218).
 # 1 is the "example.com" row the sites migration creates, and nothing
