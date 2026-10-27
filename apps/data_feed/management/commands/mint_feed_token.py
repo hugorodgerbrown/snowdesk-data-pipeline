@@ -63,6 +63,10 @@ def default_resource() -> str:
 class Command(RegisteredCommand):
     """Mint a long-lived, read-only data feed token for a service client."""
 
+    # The run is registered but its output is not (SNOW-1189): it prints the
+    # raw token, and the register is readable in the admin and over MCP.
+    capture_output = False
+
     help = (
         "Mints a bearer token with the data scope for a service client, bound to "
         "the feed URL and expiring after --days. Read-only without --commit."

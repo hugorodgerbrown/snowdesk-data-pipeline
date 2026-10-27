@@ -20,6 +20,7 @@ from django.test import Client
 from django.utils import timezone
 from oauth2_provider.models import AccessToken, Application
 
+from apps.core.models import CommandRun
 from tests.factories import OAuthApplicationFactory
 
 URL = "/api/data/v1/locations/"
@@ -79,6 +80,14 @@ class TestMint:
         assert token.resource == ["http://testserver/api/data/v1/"]
         expected = timezone.now() + dt.timedelta(days=30)
         assert abs((token.expires - expected).total_seconds()) < 60
+
+    def test_the_raw_token_is_not_kept_in_the_run_register(
+        self, cloud_client: Application
+    ) -> None:
+        """It is printed once; the CommandRun row records no output."""
+        raw = _minted(_run("--commit"))
+        run = CommandRun.objects.get(command="mint_feed_token")
+        assert raw not in run.output_tail
 
     def test_the_minted_token_opens_the_feed(
         self, client: Client, cloud_client: Application
