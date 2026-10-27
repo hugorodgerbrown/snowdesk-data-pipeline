@@ -27,62 +27,27 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
 
 import requests
 from django.conf import settings
 
 from apps.bulletins.models import Bulletin, PipelineRun
-from apps.bulletins.services.fetcher_common import (
+from apps.bulletins.services.slf_fetcher import upsert_bulletin
+from apps.ingest.public import (
     OUTCOME_CREATED,
     OUTCOME_FAILED,
     OUTCOME_SKIPPED,
     OUTCOME_UPDATED,
+    albina_pdf_url,
     normalise_bulletin_response,
     write_ndjson_archive,
 )
-from apps.bulletins.services.slf_fetcher import upsert_bulletin
 
 logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 30  # seconds
 
 _ONE_DAY = timedelta(days=1)
-
-_ALBINA_PDF_API = "https://api.avalanche.report/albina/api/bulletins/pdf"
-
-
-def _albina_pdf_url(raw: dict[str, Any], region: str) -> str:
-    """
-    Derive the ALBINA on-demand PDF URL from a raw bulletin dict.
-
-    The URL is constructed from fields already present in the raw CAAML
-    payload — no additional network call is needed.  The ``region``
-    parameter comes from the per-slot fetch loop in
-    ``run_albina_pipeline``.
-
-    Args:
-        raw: A single raw bulletin dict from the ALBINA CDN.  Must contain
-            ``validTime.startTime``.
-        region: The ALBINA region code used for this bulletin's CDN slot
-            (e.g. ``"AT-07"``, ``"IT-32-BZ"``, ``"IT-32-TN"``).  Passed
-            through to the PDF endpoint as the ``region`` query parameter.
-
-    Returns:
-        The full ALBINA PDF API URL, e.g.
-        ``https://api.avalanche.report/albina/api/bulletins/pdf
-        ?date=2025-11-30T16%3A00%3A00Z&region=AT-07&lang=en&grayscale=false``.
-
-    """
-    start_time: str = (raw.get("validTime") or {}).get("startTime", "")
-    lang: str = raw.get("lang", "en")
-    params = {
-        "date": start_time,
-        "region": region,
-        "lang": lang,
-        "grayscale": "false",
-    }
-    return f"{_ALBINA_PDF_API}?{urlencode(params)}"
 
 
 def fetch_albina_for_date(
@@ -221,7 +186,7 @@ def _process_albina_bulletin(
         run: The active PipelineRun instance.
         seen_ids: Mutable set of already-processed bulletin IDs (dedup).
         region: The ALBINA region code whose CDN slot was fetched
-            (e.g. ``"AT-07"``). Passed through to ``_albina_pdf_url``.
+            (e.g. ``"AT-07"``). Passed through to ``albina_pdf_url``.
         range_start: Lower bound of the ingest window (UTC-aware).
         range_end: Upper bound of the ingest window (UTC-aware).
         dry_run: When True, log and count without writing.
@@ -257,7 +222,7 @@ def _process_albina_bulletin(
         return OUTCOME_SKIPPED
 
     try:
-        created = upsert_bulletin(raw, run, pdf_url=_albina_pdf_url(raw, region))
+        created = upsert_bulletin(raw, run, pdf_url=albina_pdf_url(raw, region))
     except Exception as exc:
         logger.exception("Failed to upsert ALBINA bulletin %s: %s", bulletin_id, exc)
         run.records_failed += 1

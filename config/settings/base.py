@@ -237,6 +237,7 @@ INSTALLED_APPS = [
     "persistent_messages",
     # Local
     "apps.core",
+    "apps.ingest",
     "apps.locations",
     "apps.regions",
     "apps.weather",
@@ -1554,6 +1555,13 @@ LOGGING = {
             "propagate": False,
         },
         "apps.bulletins": {
+            "handlers": ["console", "file_pipeline", "file_errors"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        # SNOW-1248: the providers' normalisation moved here from
+        # apps.bulletins, so its lines keep going to the pipeline log.
+        "apps.ingest": {
             "handlers": ["console", "file_pipeline", "file_errors"],
             "level": "DEBUG",
             "propagate": False,

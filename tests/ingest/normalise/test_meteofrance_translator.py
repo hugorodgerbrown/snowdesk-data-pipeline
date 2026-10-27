@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.bulletins.services.meteofrance_translator import (
+from apps.ingest.normalise.meteofrance.translator import (
     MeteoFranceDelegatedRegionError,
     MeteoFranceTranslationError,
     _aspects_from_pente,

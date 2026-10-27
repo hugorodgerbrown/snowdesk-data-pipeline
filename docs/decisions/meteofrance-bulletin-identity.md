@@ -2,7 +2,7 @@
 name: meteofrance-bulletin-identity
 description: Météo-France bulletin_id carries the publication timestamp; the archive and live paths share the grammar but are separate identity spaces
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-27
 ---
 
 # Météo-France bulletin identity
@@ -10,7 +10,7 @@ last-reviewed: 2026-10-01
 **Decision.** A Météo-France `bulletin_id` is
 `FR-{NN}-{covered date}-{YYYYMMDDHHMMSS}` — massif, the day the bulletin
 forecasts, and the **publication instant in UTC**. Both ingest paths build it
-through `apps/bulletins/services/meteofrance_identity.py`. A record with no usable
+through `apps/ingest/normalise/meteofrance/identity.py`. A record with no usable
 publication timestamp is a failure, never an id without the stamp.
 
 The two paths take that timestamp from different places and are therefore

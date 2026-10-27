@@ -10,17 +10,23 @@ via the `fetch_bulletins` command.
   boundary. The base is `settings.SLF_API_BASE_URL`; a non-empty
   `SLF_API_LEGACY_URL` overrides it for every fetch (SNOW-900), and the
   CAAML shape is detected per response, never assumed from the URL
-  (`detect_caaml_shape`;
+  (`detect_caaml_shape`, in `apps/ingest/normalise/slf.py`;
   [why](docs/decisions/the-slf-caaml-shape-is-detected-not-assumed-from-the-url.md)).
   Historical depth limits: [`docs/slf-api-history.md`](docs/slf-api-history.md).
 - **ALBINA** (`apps/bulletins/services/albina_fetcher.py`) — EUREGIO
   avalanche.report CDN, no auth; per-day CAAML v6 JSON URLs for the AT-07,
   IT-32-BZ, and IT-32-TN regions. 404 means "no bulletin".
 - **Météo-France** (`apps/bulletins/services/meteofrance_fetcher.py`,
-  `meteofrance_translator.py`) — DPBRA XML per massif behind an API key
+  `apps/ingest/normalise/meteofrance/translator.py`) — DPBRA XML per massif behind an API key
   (`METEOFRANCE_API_KEY`), translated to the CAAML v6 shape that
   `upsert_bulletin` expects
   (mapping spec: [`docs/meteofrance-mapping.md`](docs/meteofrance-mapping.md)).
+
+The pure normalisation each fetcher calls — response unwrapping, shape
+detection, timestamp parsing, PDF URLs, the DPBRA translator, the NDJSON
+archives — lives in `apps/ingest/normalise/` since SNOW-1248, and is imported
+only through `apps.ingest.public`
+([why](docs/decisions/ingestion-is-a-rehostable-unit.md)).
 
 Raw bulletins from all three providers are wrapped in a GeoJSON Feature
 envelope before storage — `{ type: "Feature", geometry: null, properties: {…} }`

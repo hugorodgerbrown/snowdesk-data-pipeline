@@ -34,8 +34,8 @@ from pathlib import Path
 from django.conf import settings
 from django.http import HttpRequest, JsonResponse
 
-from apps.bulletins.services.slf_archive import read_archive
 from apps.bulletins.services.slf_fetcher import PAGE_SIZE
+from apps.ingest.public import read_slf_archive
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ def slf_mirror(request: HttpRequest, lang: str) -> JsonResponse:
     except ValueError:
         return JsonResponse({"error": "limit and offset must be integers"}, status=400)
 
-    records = list(read_archive(settings.SLF_ARCHIVE_PATH))
+    records = list(read_slf_archive(settings.SLF_ARCHIVE_PATH))
     records.sort(key=lambda r: r["publicationTime"], reverse=True)
     page = records[offset : offset + limit]
 

@@ -1,5 +1,5 @@
 """
-apps/bulletins/services/slf_archive.py — On-disk NDJSON archive of SLF bulletins.
+apps/ingest/normalise/slf_archive.py — On-disk NDJSON archive of SLF bulletins.
 
 Reading and writing ``apps/bulletins/local_mirrors/slf_archive.ndjson``: a
 single NDJSON file holding every bulletin captured by ``fetch_bulletins

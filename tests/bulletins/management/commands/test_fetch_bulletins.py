@@ -24,7 +24,7 @@ from django.core.management.base import CommandError
 from django.test import override_settings
 
 from apps.bulletins.models import PipelineRun
-from apps.bulletins.services.slf_archive import read_archive, write_archive
+from apps.ingest.public import read_slf_archive, write_slf_archive
 from tests.factories import BulletinFactory, PipelineRunFactory
 
 # ---------------------------------------------------------------------------
@@ -931,7 +931,7 @@ class TestFetchBulletinsStash:
                 "fetch_bulletins", "--source", "slf", "--date", "2026-03-15", "--stash"
             )
 
-        archived = list(read_archive(archive_path))
+        archived = list(read_slf_archive(archive_path))
         assert {r["bulletinID"] for r in archived} == {"b1", "b2"}
 
         out = capsys.readouterr().out
@@ -944,7 +944,7 @@ class TestFetchBulletinsStash:
     ) -> None:
         """--stash overlays new records onto the existing archive (later wins)."""
         archive_path = tmp_path / "archive.ndjson"
-        write_archive(
+        write_slf_archive(
             archive_path,
             [
                 {
@@ -983,7 +983,7 @@ class TestFetchBulletinsStash:
                 "fetch_bulletins", "--source", "slf", "--date", "2026-03-15", "--stash"
             )
 
-        archived = list(read_archive(archive_path))
+        archived = list(read_slf_archive(archive_path))
         assert [r["bulletinID"] for r in archived] == ["old", "new"]
 
     @patch(PATCH_ALBINA)
@@ -1047,7 +1047,7 @@ class TestFetchBulletinsStash:
 
         import json
 
-        slf_archived = list(read_archive(slf_archive))
+        slf_archived = list(read_slf_archive(slf_archive))
         assert {r["bulletinID"] for r in slf_archived} == {"slf-1"}
 
         albina_archived = [

@@ -56,7 +56,7 @@ null throughout, and freezing level is the figure that decides rain against
 snow. Host in ``settings.OPEN_METEO_HISTORY_BASE_URL``.
 
 **Nothing is reimplemented.** The response shape is identical to the live
-forecast endpoint's, so the parsing helpers in ``services/fetch.py`` are
+forecast endpoint's, so the parsing helpers in ``apps.ingest.normalise.weather`` are
 imported rather than copied — what differs is the host, and that one
 response yields N rows instead of one.
 """
@@ -74,20 +74,19 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from apps.ingest.public import (
+    DAILY_VARIABLES,
+    HOURLY_VARIABLES,
+    daily_dates,
+    daily_fields,
+    daily_max_freezing_level,
+    day_is_complete,
+    hourly_rows_for_day,
+)
 from apps.locations.models import Location
 from apps.locations.services import open_meteo
 from apps.weather.models import Weather
-from apps.weather.services.fetch import (
-    DAILY_VARIABLES,
-    FORECAST,
-    HOURLY_VARIABLES,
-    _daily_dates,
-    _daily_fields,
-    _daily_max_freezing_level,
-    _day_is_complete,
-    _get_forecast,
-    _hourly_rows_for_day,
-)
+from apps.weather.services.fetch import FORECAST, _get_forecast
 from apps.weather.services.upsert import upsert_weather
 
 logger = logging.getLogger(__name__)
@@ -350,7 +349,7 @@ def _write_window(
     """
     daily = data["daily"]
     hourly: dict[str, Any] | None = data.get("hourly")
-    dates = _daily_dates(daily, location.pk)
+    dates = daily_dates(daily, location.pk)
 
     # One transaction for the whole window — the unit of work for this
     # request, so a malformed day partway through cannot leave a half-filled
@@ -369,13 +368,13 @@ def _write_window(
             # weather_code while sunrise/sunset stay populated. Drop it
             # rather than raising, so one unusable day cannot roll back the
             # ones that did resolve (SNOW-628).
-            if not _day_is_complete(daily, idx):
+            if not day_is_complete(daily, idx):
                 result.unresolved += 1
                 continue
 
-            fields = _daily_fields(daily, idx)
-            fields["freezing_level_height"] = _daily_max_freezing_level(hourly, day)
-            fields["hourly"] = _hourly_rows_for_day(hourly, day) or None
+            fields = daily_fields(daily, idx)
+            fields["freezing_level_height"] = daily_max_freezing_level(hourly, day)
+            fields["hourly"] = hourly_rows_for_day(hourly, day) or None
             # Null, not []: see the module docstring. A stitched timeline is
             # not the outlook as issued on this day, and this column means
             # the latter.

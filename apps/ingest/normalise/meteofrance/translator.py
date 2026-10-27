@@ -1,5 +1,5 @@
 """
-apps/bulletins/services/meteofrance_translator.py — DPBRA XML → CAAML JSON translator.
+apps/ingest/normalise/meteofrance/translator.py — DPBRA XML → CAAML JSON translator.
 
 Converts a single Météo-France DPBRA XML document into the CAAML v6 JSON dict
 shape that ``upsert_bulletin()`` in ``apps/bulletins/services/slf_fetcher.py``
@@ -19,7 +19,7 @@ receives a dict back, or catches one of the two domain exceptions:
 
 Timezone handling: all ``DATE*`` attributes in DPBRA are naive local time in
 Europe/Paris. They are localised on ingress and emitted as UTC ISO-8601 strings
-ending in ``Z`` — the format ``_parse_dt()`` in ``slf_fetcher.py`` expects.
+ending in ``Z`` — the format ``parse_dt()`` in ``apps/ingest/normalise/slf.py`` expects.
 
 Provider-specific DPBRA content that has no CAAML equivalent is stored under
 ``customData.MF``, mirroring ``customData.CH`` (SLF) and
@@ -37,7 +37,7 @@ from zoneinfo import ZoneInfo
 
 from defusedxml.ElementTree import ParseError, fromstring
 
-from apps.bulletins.services.meteofrance_identity import build_bulletin_id
+from apps.ingest.normalise.meteofrance.identity import build_bulletin_id
 
 if TYPE_CHECKING:
     # The ``Element`` type lives in the stdlib; defusedxml.fromstring returns
