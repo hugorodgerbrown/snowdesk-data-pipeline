@@ -48,7 +48,9 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  Open-Meteo forecast + elevation, what3words), settings read
                  only via conf.py; runs.py walks a provider and yields
                  NormalisedBulletin / FetchOutcome — the app decides what to
-                 write (SNOW-1249). Read
+                 write (SNOW-1249). Its one table, SourceBulletin, holds what
+                 each provider published; the bulletins data feed reads it
+                 and every Bulletin is applied from it (SNOW-1250). Read
                  docs/decisions/ingestion-is-a-rehostable-unit.md before
                  importing from it
   bulletins/     Everything that originates from the three CAAML bulletin

@@ -15,6 +15,7 @@ Covers the unified fetch_bulletins command introduced in SNOW-190:
 """
 
 from datetime import UTC, date, datetime
+from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,9 +24,10 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
 
-from apps.bulletins.models import PipelineRun
+from apps.bulletins.models import Bulletin, PipelineRun
+from apps.ingest.models import SourceBulletin
 from apps.ingest.public import read_slf_archive, write_slf_archive
-from tests.factories import BulletinFactory, PipelineRunFactory
+from tests.factories import BulletinFactory, MicroRegionFactory, PipelineRunFactory
 
 # ---------------------------------------------------------------------------
 # Patch targets
@@ -1056,3 +1058,41 @@ class TestFetchBulletinsStash:
             if line.strip()
         ]
         assert {r["bulletinID"] for r in albina_archived} == {"eu-1"}
+
+
+@pytest.mark.django_db
+class TestFetchBulletinsStoresThenApplies:
+    """SNOW-1250: one run writes ingest's SourceBulletin and the app's Bulletin."""
+
+    @patch("apps.ingest.sources.slf.fetch_bulletin_page")
+    def test_a_fetch_writes_both_and_a_second_writes_neither(
+        self, fetch_page: MagicMock
+    ) -> None:
+        """The second run finds the same content and changes nothing."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        stamp = "2025-03-15T08:00:00Z"
+        fetch_page.return_value = [
+            {
+                "bulletinID": "b-1",
+                "publicationTime": stamp,
+                "validTime": {"startTime": stamp, "endTime": "2025-03-16T08:00:00Z"},
+                "lang": "en",
+                "regions": [{"regionID": "CH-4115", "name": "Piz Buin"}],
+                "dangerRatings": [],
+                "avalancheProblems": [],
+                "customData": {"CH": {}},
+            }
+        ]
+        args = ("--source", "slf", "--date", "2025-03-15", "--commit")
+
+        call_command("fetch_bulletins", *args, stdout=StringIO())
+        source = SourceBulletin.objects.get(bulletin_id="b-1")
+        bulletin = Bulletin.objects.get(bulletin_id="b-1")
+        assert bulletin.raw_data["properties"] == source.caaml
+        assert bulletin.pdf_url == source.pdf_url != ""
+
+        call_command("fetch_bulletins", *args, stdout=StringIO())
+        assert SourceBulletin.objects.get().updated_at == source.updated_at
+        assert Bulletin.objects.get().updated_at == bulletin.updated_at
+        second = PipelineRun.objects.latest("started_at")
+        assert (second.records_created, second.records_updated) == (0, 0)

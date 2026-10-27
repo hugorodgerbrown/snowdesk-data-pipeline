@@ -1,8 +1,8 @@
 """
 apps/ingest/apps.py — AppConfig for the ingest application.
 
-Holds the providers' fetch and normalisation code (SNOW-1247). No models yet:
-its own tables arrive with SNOW-1250 and SNOW-1253. See
+Holds the providers' fetch and normalisation code (SNOW-1247) and ingest's own
+table, ``SourceBulletin`` (SNOW-1250); weather follows with SNOW-1253. See
 ``docs/decisions/ingestion-is-a-rehostable-unit.md``.
 """
 

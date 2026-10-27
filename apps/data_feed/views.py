@@ -24,13 +24,13 @@ from django.views.decorators.http import require_GET
 from django_ratelimit.decorators import ratelimit
 
 from apps.data_feed.auth import require_feed_token
-from apps.data_feed.feeds import (
-    FEEDS,
-    PARAMETER_ERRORS,
+from apps.data_feed.feeds import FEEDS
+from apps.ingest.public import (
+    FEED_PARAMETER_ERRORS,
     FeedQueryError,
-    page,
-    parse_limit,
-    parse_since,
+    feed_page,
+    parse_feed_limit,
+    parse_feed_since,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,16 +51,16 @@ def feed(request: HttpRequest, name: str) -> HttpResponse:
 
     """
     try:
-        body = page(
+        body = feed_page(
             FEEDS[name],
-            since=parse_since(request.GET.get("since")),
+            since=parse_feed_since(request.GET.get("since")),
             cursor=request.GET.get("cursor") or None,
-            limit=parse_limit(request.GET.get("limit")),
+            limit=parse_feed_limit(request.GET.get("limit")),
         )
     except FeedQueryError as exc:
         logger.info("data feed: bad %s parameter: %s", exc.param, exc)
         response: HttpResponse = JsonResponse(
-            {"error": PARAMETER_ERRORS.get(exc.param, "invalid parameter")},
+            {"error": FEED_PARAMETER_ERRORS.get(exc.param, "invalid parameter")},
             status=400,
         )
     else:

@@ -40,6 +40,7 @@ from apps.bulletins.services.apply import (
 from apps.ingest.public import (
     OUTCOME_CREATED,
     OUTCOME_FAILED,
+    OUTCOME_UNCHANGED,
     OUTCOME_UPDATED,
     PROVIDER_SLF,
     FetchOutcome,
@@ -83,15 +84,12 @@ def _process_bulletin(
         logger.info("[dry-run] Would store %s", record.bulletin_id)
         return OUTCOME_CREATED
 
-    if not force and Bulletin.objects.filter(bulletin_id=record.bulletin_id).exists():
-        return _OUTCOME_SKIPPED_EXISTS
-
     # A bulletin whose regions are all unresolvable fails that bulletin, not
     # the batch (SNOW-547) — the same posture RenderModelBuildError takes
     # inside upsert_bulletin. records_failed makes fetch_bulletins exit
     # non-zero per the management-command contract, so cron/CI surface it.
     try:
-        created = apply_bulletin(record, run)
+        outcome = apply_bulletin(record, run, force=force)
     except NoResolvableRegionsError:
         logger.exception("Skipping bulletin %s", record.bulletin_id)
         run.records_failed += 1
@@ -103,7 +101,7 @@ def _process_bulletin(
         )
         raise
 
-    return OUTCOME_CREATED if created else OUTCOME_UPDATED
+    return _OUTCOME_SKIPPED_EXISTS if outcome == OUTCOME_UNCHANGED else outcome
 
 
 def run_slf_pipeline(
