@@ -9887,14 +9887,17 @@
       },
       // Re-frame the open share around whatever now covers the map — the
       // walkthrough's bar, once it has appeared over a route already framed.
-      frame: (token) => {
+      // SNOW-1244: `clearTop` keeps the bar's strip along the top clear too.
+      frame: (token, { clearTop = 0 } = {}) => {
         const feature = ((routesGeojsonCache && routesGeojsonCache.features) || []).find(
           (f) => f && f.properties && f.properties.token === token,
         );
         const bounds = feature ? readFeatureJson(feature.properties.bounds) : null;
         if (!Array.isArray(bounds) || bounds.length !== 4) return false;
+        const padding = paddingClearingRail();
+        padding.top += clearTop;
         map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-          padding: paddingClearingRail(),
+          padding: padding,
           duration: 400,
         });
         return true;
@@ -9910,8 +9913,10 @@
       // starts with one placed, so its first ask is a single drag — and,
       // given a `zoom`, fly in on it there ("Show me"), clear of the panel.
       // The map writes the index, so the cursor's own keep-in-view pan does
-      // not fight the flight. False with no open route or no such point.
-      showPoint: (index, zoom) => {
+      // not fight the flight. `clearTop` is px more to keep clear along the
+      // top of the map — the walkthrough's bar, which on a phone sits there.
+      // False with no open route or no such point.
+      showPoint: (index, zoom, { clearTop = 0 } = {}) => {
         if (!routeCursorTarget) return false;
         mapWritesRouteIndex = true;
         try {
@@ -9922,10 +9927,12 @@
         const point = routeCursorFeature(index);
         if (!point) return false;
         if (typeof zoom === 'number') {
+          const padding = paddingClearingRail();
+          padding.top += clearTop;
           map.easeTo({
             center: point.geometry.coordinates,
             zoom: zoom,
-            padding: paddingClearingRail(),
+            padding: padding,
             duration: 900,
           });
         }

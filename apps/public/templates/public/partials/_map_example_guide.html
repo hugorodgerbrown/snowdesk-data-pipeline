@@ -14,8 +14,10 @@ a finish card, and the map back on today.
 
 Nothing is locked (Hugo, SNOW-1230): close the route or wander off and the
 bar folds into the paused pill, which keeps its step; change the date and
-the pill offers the way back to the example's day. Exit, Finish and Done
-always put the map back on today and say so.
+the pill offers the way back to the example's day. Exit and Back to today
+always put the map back on today and say so. "Keep exploring this example"
+(SNOW-1244) ends the guide but keeps the route and its day, with the pill
+holding the way back to today.
 
 Everything a reader sees is rendered here so {% trans %} reaches it. The
 JS fills in only the day ([data-example-day], formatted in the reader's
@@ -111,7 +113,15 @@ welcome card, on the map page only (show_tour_offer).
                 <i class="map-example-swatch map-example-swatch--45"></i>{% trans "45°+" %}
             </li>
         </ul>
-        <button type="button" class="map-example-guide-btn" data-example-finish>{% trans "Finish" %}</button>
+        {# SNOW-1244: finishing no longer takes the route away. #}
+        <div class="map-example-guide-actions">
+            <button type="button" class="map-example-guide-btn" data-example-keep>
+                {% trans "Keep exploring this example" %}
+            </button>
+            <button type="button" class="map-example-guide-btn map-example-guide-btn--quiet" data-example-finish>
+                {% trans "Back to today" %}
+            </button>
+        </div>
     </div>
     <ol class="map-example-guide-dots" aria-hidden="true">
         <li></li>
@@ -134,7 +144,14 @@ welcome card, on the map page only (show_tour_offer).
         data-example-pill="off-day"
         hidden
     >{% trans "You’ve left the example day" %}</span>
+    {# SNOW-1244: after "Keep exploring": the guide is done, the example stays. #}
+    <span class="map-example-pill-text" data-example-pill="exploring" hidden>
+        {% blocktrans trimmed %}Example route · <span data-example-short-day></span>{% endblocktrans %}
+    </span>
     <button type="button" class="map-example-pill-btn" data-example-resume>{% trans "Resume" %}</button>
+    <button type="button" class="map-example-pill-btn" data-example-back-to-today hidden>
+        {% trans "Back to today" %}
+    </button>
     <button type="button" class="map-example-pill-btn" data-example-back-to-day hidden></button>
     <button type="button" class="map-example-pill-btn" data-example-exit>{% trans "Exit" %}</button>
 </div>

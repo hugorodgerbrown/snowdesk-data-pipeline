@@ -35,13 +35,16 @@ function buildFixture() {
         <div data-example-step="zoom" hidden><span data-example-zoom-fill></span>
           <button type="button" data-example-show-me>Show me</button></div>
         <div data-example-step="colours" hidden>
-          <button type="button" data-example-finish>Finish</button></div>
+          <button type="button" data-example-keep>Keep exploring this example</button>
+          <button type="button" data-example-finish>Back to today</button></div>
         <ol class="map-example-guide-dots"><li></li><li></li><li></li><li></li></ol>
       </div>
       <div id="map-example-pill" hidden>
         <span data-example-pill="paused">paused</span>
         <span data-example-pill="off-day" hidden>off day</span>
+        <span data-example-pill="exploring" hidden>Example route · <span data-example-short-day></span></span>
         <button type="button" data-example-resume>Resume</button>
+        <button type="button" data-example-back-to-today hidden>Back to today</button>
         <button type="button" data-example-back-to-day hidden></button>
         <button type="button" data-example-exit>Exit</button>
       </div>
@@ -190,7 +193,7 @@ describe('starting', () => {
     expect(guide().querySelector('[data-example-day]').textContent).toMatch(/2026/);
     expect($('map-example-guide-eyebrow').textContent).toBe('Example route · 1 of 4');
     expect($('map-example-day-badge').hidden).toBe(false);
-    expect(window.pwaRouteOpener.frame).toHaveBeenCalledWith(TOKEN);
+    expect(window.pwaRouteOpener.frame).toHaveBeenCalledWith(TOKEN, { clearTop: 0 });
     expect(emitted('map.example.opened')).toHaveLength(1);
   });
 
@@ -297,8 +300,63 @@ describe('one gesture at a time (SNOW-1244)', () => {
 
     guide().querySelector('[data-example-show-me]').click();
 
-    expect(window.pwaRouteOpener.showPoint).toHaveBeenLastCalledWith(2, 14.5);
+    expect(window.pwaRouteOpener.showPoint).toHaveBeenLastCalledWith(2, 14.5, { clearTop: 0 });
     expect(emitted('map.example.show_me')).toHaveLength(1);
+  });
+});
+
+describe('keep exploring (SNOW-1244)', () => {
+  it('ends the guide but keeps the route, the day and a way back', async () => {
+    await load();
+    openExample();
+    const scrub = vi.fn();
+    document.addEventListener('snowdesk:scrub-to', scrub);
+
+    guide().querySelector('[data-example-keep]').click();
+
+    expect(guide().hidden).toBe(true);
+    expect(pill().hidden).toBe(false);
+    expect(pill().querySelector('[data-example-pill="exploring"]').hidden).toBe(false);
+    expect(pill().querySelector('[data-example-pill="exploring"]').textContent).toMatch(/Apr/);
+    expect(pill().querySelector('[data-example-pill="paused"]').hidden).toBe(true);
+    expect(pill().querySelector('[data-example-resume]').hidden).toBe(true);
+    expect(pill().querySelector('[data-example-exit]').hidden).toBe(true);
+    expect(pill().querySelector('[data-example-back-to-today]').hidden).toBe(false);
+    expect($('map-example-day-badge').hidden).toBe(false);
+    expect(rail.close).not.toHaveBeenCalled();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(scrub).not.toHaveBeenCalled();
+    expect(emitted('map.example.finished')[0][1]).toEqual({ kept: true });
+    document.removeEventListener('snowdesk:scrub-to', scrub);
+  });
+
+  it('the pill stays when the route is closed', async () => {
+    await load();
+    openExample();
+    guide().querySelector('[data-example-keep]').click();
+
+    rail.open = false;
+    railChanged();
+
+    expect(pill().hidden).toBe(false);
+    expect(pill().querySelector('[data-example-back-to-today]').hidden).toBe(false);
+  });
+
+  it('Back to today from the pill leaves and offers the finish card', async () => {
+    await load();
+    openExample();
+    const scrub = vi.fn();
+    document.addEventListener('snowdesk:scrub-to', scrub);
+    guide().querySelector('[data-example-keep]').click();
+
+    pill().querySelector('[data-example-back-to-today]').click();
+
+    expect(pill().hidden).toBe(true);
+    expect(rail.close).toHaveBeenCalled();
+    expect(scrub.mock.calls[0][0].detail.date).toBe(TODAY);
+    expect($('map-example-finish').hidden).toBe(false);
+    expect(emitted('map.example.left')).toHaveLength(1);
+    document.removeEventListener('snowdesk:scrub-to', scrub);
   });
 });
 

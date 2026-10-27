@@ -96,7 +96,7 @@
     popular = [];
   }
 
-  /** @type {'waiting'|'running'|'ended'} */
+  /** @type {'waiting'|'running'|'exploring'|'ended'} */
   let phase = 'waiting';
   /** @type {string} */
   let step = 'search';
@@ -246,6 +246,26 @@
    * @param {boolean} [settled] The beat below has passed: draw the pill.
    */
   const paint = (settled = false) => {
+    if (phase === 'exploring') {
+      // SNOW-1244: the guide is done; the example's day stays, with the
+      // pill holding the one way back to today.
+      shown = 'pill';
+      bar.hidden = true;
+      pill.hidden = false;
+      pill.querySelector('[data-resort-guide-pill="paused"]').hidden = true;
+      pill.querySelector('[data-resort-guide-pill="off-day"]').hidden = true;
+      pill.querySelector('[data-resort-guide-pill="exploring"]').hidden = false;
+      pill.querySelector('[data-resort-guide-resume]').hidden = true;
+      if (backToDay) backToDay.hidden = true;
+      pill.querySelectorAll('[data-resort-guide-exit]').forEach((el) => {
+        el.hidden = true;
+      });
+      pill.querySelector('[data-resort-guide-back-to-today]').hidden = false;
+      if (badge) badge.hidden = !(guideDate && onGuideDay());
+      ring();
+      follow();
+      return;
+    }
     const view = core.surface(phase, step, mapState());
     // A pill that would replace the bar waits a beat: a pick or a tap on
     // the region row closes one surface just before the next one opens.
@@ -267,6 +287,11 @@
     pill.hidden = view.show !== 'pill';
     if (view.show === 'pill') {
       const offDay = view.pill === 'off-day';
+      pill.querySelector('[data-resort-guide-pill="exploring"]').hidden = true;
+      pill.querySelector('[data-resort-guide-back-to-today]').hidden = true;
+      pill.querySelectorAll('[data-resort-guide-exit]').forEach((el) => {
+        el.hidden = false;
+      });
       pill.querySelector('[data-resort-guide-pill="paused"]').hidden = offDay;
       pill.querySelector('[data-resort-guide-pill="off-day"]').hidden = !offDay;
       pill.querySelector('[data-resort-guide-resume]').hidden = offDay;
@@ -414,10 +439,34 @@
     }
   };
 
-  const finish = () => {
+  /**
+   * Out of season, "Keep exploring this example" (SNOW-1244): the guide is
+   * done, but the bulletin the visitor just opened and its day stay until
+   * they choose to leave. The pill keeps the way back to today.
+   */
+  const keepExploring = () => {
     if (phase !== 'running') return;
     emit('map.resort_guide.step_completed', { step: step });
-    emit('map.resort_guide.finished', {});
+    emit('map.resort_guide.finished', { kept: true });
+    if (stepTimer !== null) clearTimeout(stepTimer);
+    if (settleTimer !== null) clearTimeout(settleTimer);
+    stepTimer = null;
+    settleTimer = null;
+    phase = 'exploring';
+    paint();
+  };
+
+  const finish = () => {
+    if (phase === 'exploring') {
+      emit('map.resort_guide.left', {});
+      end();
+      paintFinish();
+      finishCard.hidden = false;
+      return;
+    }
+    if (phase !== 'running') return;
+    emit('map.resort_guide.step_completed', { step: step });
+    emit('map.resort_guide.finished', { kept: false });
     // The bulletin has been read; the finish card takes its place, as it
     // would sit under it otherwise.
     regionSheet?.querySelector('[data-action="dismiss"]')?.click();
@@ -454,6 +503,8 @@
     if (!target) return;
     if (target.closest('[data-resort-guide-exit]')) exit();
     else if (target.closest('[data-resort-guide-finish]')) finish();
+    else if (target.closest('[data-resort-guide-keep]')) keepExploring();
+    else if (target.closest('[data-resort-guide-back-to-today]')) finish();
     else if (target.closest('[data-resort-guide-resume]')) resume();
     else if (target.closest('[data-resort-guide-back-to-day]')) goToGuideDay();
     else if (target.closest('[data-resort-guide-done]')) finishCard.hidden = true;
@@ -478,7 +529,7 @@
     const detail = /** @type {CustomEvent} */ (event).detail;
     if (!detail || !detail.date) return;
     date = detail.date;
-    if (phase === 'running') paint();
+    if (phase === 'running' || phase === 'exploring') paint();
   });
 
   const observer = new MutationObserver(check);

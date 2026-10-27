@@ -4361,8 +4361,9 @@ html:has(> body.map-fullscreen) > body {
 /* SNOW-1244: "Show me" with the do-it-yourself gesture beside it. */
 .map-example-guide-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 8px 10px;
 }
 
 .map-example-guide-aside {

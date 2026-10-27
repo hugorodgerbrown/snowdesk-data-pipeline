@@ -45,13 +45,16 @@ function buildFixture({ guideDate = DAY, signedIn = false } = {}) {
         <button type="button" data-resort-guide-exit>Exit</button>
         <div data-resort-guide-step="resort"><p>Avalanche bulletins are regional.</p></div>
         <div data-resort-guide-step="region" hidden><strong data-resort-guide-region></strong>
+          <button type="button" data-resort-guide-keep>Keep exploring this example</button>
           <button type="button" data-resort-guide-finish>Finish</button></div>
         <ol class="map-example-guide-dots"><li></li><li></li><li></li></ol>
       </div>
       <div id="map-resort-guide-pill" hidden>
         <span data-resort-guide-pill="paused">paused</span>
         <span data-resort-guide-pill="off-day" hidden>off day</span>
+        <span data-resort-guide-pill="exploring" hidden>Example day · 10 Apr</span>
         <button type="button" data-resort-guide-resume>Resume</button>
+        <button type="button" data-resort-guide-back-to-today hidden>Back to today</button>
         <button type="button" data-resort-guide-back-to-day hidden></button>
         <button type="button" data-resort-guide-exit>Exit</button>
       </div>
@@ -301,6 +304,34 @@ describe('the day', () => {
     expect(back.hidden).toBe(false);
     back.click();
     expect(dispatched('snowdesk:scrub-to').at(-1).detail.date).toBe(DAY);
+  });
+});
+
+describe('keep exploring (SNOW-1244)', () => {
+  it('keeps the bulletin and the day, with the way back on the pill', async () => {
+    await load();
+    await walkToRegion();
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: DAY } }));
+    await settle();
+    const scrubs = dispatched('snowdesk:scrub-to').length;
+
+    bar().querySelector('[data-resort-guide-keep]').click();
+
+    expect(bar().hidden).toBe(true);
+    expect(pill().hidden).toBe(false);
+    expect(pill().querySelector('[data-resort-guide-pill="exploring"]').hidden).toBe(false);
+    expect(pill().querySelector('[data-resort-guide-resume]').hidden).toBe(true);
+    expect(pill().querySelector('[data-resort-guide-exit]').hidden).toBe(true);
+    expect(dispatched('snowdesk:scrub-to')).toHaveLength(scrubs);
+    expect($('map-resort-guide-finish').hidden).toBe(true);
+    expect(emitted('map.resort_guide.finished')[0][1]).toEqual({ kept: true });
+
+    pill().querySelector('[data-resort-guide-back-to-today]').click();
+
+    expect(pill().hidden).toBe(true);
+    expect(dispatched('snowdesk:scrub-to').at(-1).detail.date).toBe(TODAY);
+    expect($('map-resort-guide-finish').hidden).toBe(false);
+    expect(emitted('map.resort_guide.left')).toHaveLength(1);
   });
 });
 

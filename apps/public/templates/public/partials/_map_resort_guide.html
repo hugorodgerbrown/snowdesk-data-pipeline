@@ -21,8 +21,11 @@ Then the finish card: pin the resort, try the example route, or Done.
 OUT OF SEASON (resort_guide_date) it moves the map to the example's day
 first, with the "Example day" badge on the date, and back to today at the
 end with the example walkthrough's own toast (#map-example-toast), as that
-walkthrough does. Nothing is locked: close the sheet or wander off and the
-bar folds into the paused pill, which keeps its step.
+walkthrough does. Its last step then offers "Keep exploring this example"
+beside "Back to today" (SNOW-1244): keeping leaves the bulletin and its day
+on screen, with the pill holding the way back to today. Nothing is
+locked: close the sheet or wander off and the bar folds into the paused
+pill, which keeps its step.
 
 It wears the example walkthrough's classes (.map-example-guide, -pill,
 -finish): the same kind of guide, so the same look. Everything a reader sees
@@ -89,7 +92,23 @@ the map page only (show_tour_offer).
                 first, then each <strong>avalanche problem</strong>, with where it is and how likely.
             {% endblocktrans %}
         </p>
-        <button type="button" class="map-example-guide-btn" data-resort-guide-finish>{% trans "Finish" %}</button>
+        {% if resort_guide_date %}
+            {# SNOW-1244: out of season, finishing no longer takes the day away. #}
+            <div class="map-example-guide-actions">
+                <button type="button" class="map-example-guide-btn" data-resort-guide-keep>
+                    {% trans "Keep exploring this example" %}
+                </button>
+                <button
+                    type="button"
+                    class="map-example-guide-btn map-example-guide-btn--quiet"
+                    data-resort-guide-finish
+                >
+                    {% trans "Back to today" %}
+                </button>
+            </div>
+        {% else %}
+            <button type="button" class="map-example-guide-btn" data-resort-guide-finish>{% trans "Finish" %}</button>
+        {% endif %}
     </div>
     <ol class="map-example-guide-dots" aria-hidden="true">
         <li></li>
@@ -111,7 +130,14 @@ the map page only (show_tour_offer).
         data-resort-guide-pill="off-day"
         hidden
     >{% trans "You’ve left the example day" %}</span>
+    {# SNOW-1244: after "Keep exploring": the guide is done, the day stays. #}
+    <span class="map-example-pill-text" data-resort-guide-pill="exploring" hidden>
+        {% blocktrans trimmed with day=resort_guide_date|date:"j M" %}Example day · {{ day }}{% endblocktrans %}
+    </span>
     <button type="button" class="map-example-pill-btn" data-resort-guide-resume>{% trans "Resume" %}</button>
+    <button type="button" class="map-example-pill-btn" data-resort-guide-back-to-today hidden>
+        {% trans "Back to today" %}
+    </button>
     <button type="button" class="map-example-pill-btn" data-resort-guide-back-to-day hidden></button>
     <button type="button" class="map-example-pill-btn" data-resort-guide-exit>{% trans "Exit" %}</button>
 </div>

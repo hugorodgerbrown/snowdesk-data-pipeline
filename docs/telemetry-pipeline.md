@@ -207,8 +207,10 @@ change the frozenset + document the property shape here.
   walkthrough's `map.example.opened`, `map.example.step_completed` with
   `properties.step` (`intro` / `drag` / `zoom` / `colours`),
   `map.example.exited` with the `step` it was left on,
-  `map.example.finished`, and (SNOW-1244) `map.example.show_me`, the zoom
-  step's button that flies the camera in. No share token on any of them. The welcome
+  `map.example.finished` (SNOW-1244: with `kept`, whether the visitor
+  chose to keep exploring), and (SNOW-1244) `map.example.show_me`, the
+  zoom step's button that flies the camera in, and `map.example.left`,
+  Back to today after keeping exploring. No share token on any of them. The welcome
   choice and three of the walkthrough events are fivebar goals; the help
   menu and per-step events stay in the pipeline only.
   SNOW-1231 adds the "Find a resort" walkthrough:
