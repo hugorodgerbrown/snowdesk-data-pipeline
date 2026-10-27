@@ -162,7 +162,7 @@ class TestPasswordSignIn:
     def test_blank_page_button_names_the_magic_link(self, client: Client) -> None:
         """With the password field hidden, the button offers the link."""
         response = client.get(self.URL)
-        assert _submit_label(response.content.decode()) == "Send sign-in link"
+        assert _submit_label(response.content.decode()) == "Email me a link"
 
     def test_password_error_button_says_sign_in(self, client: Client) -> None:
         """SNOW-1022: a re-render with the password field open signs in.

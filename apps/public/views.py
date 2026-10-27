@@ -43,6 +43,7 @@ import random
 import unicodedata
 import uuid
 from typing import Any, cast
+from urllib.parse import urlencode
 
 import waffle
 from django.conf import settings
@@ -1862,7 +1863,8 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         ``route_rename_url_template``, ``route_share_url_template``,
         ``route_claim_url_template``, ``route_delete_url_template``,
         ``route_name_max_length``, ``routes_geojson_url``,
-        ``routes_signin_url`` and ``route_share_dismiss_url_template``.
+        ``routes_signin_url``, ``example_upload_signin_url`` and
+        ``route_share_dismiss_url_template``.
 
     """
     # __UUID__ placeholder, mirroring _favourites_context — reverse with a
@@ -1919,6 +1921,15 @@ def _routes_context(request: HttpRequest) -> dict[str, Any]:
         # is nothing to draw.
         "routes_geojson_url": reverse("routes:geojson"),
         "routes_signin_url": reverse("accounts:sign_in"),
+        # SNOW-1244: the example walkthrough's finish card. One page for new
+        # and returning visitors, and the link comes back to the routes
+        # panel, which is where an upload starts.
+        "example_upload_signin_url": "{}?{}".format(
+            reverse("accounts:sign_in"),
+            urlencode(
+                {"next": f"{reverse('public:map')}?panel=routes", "intent": "upload"}
+            ),
+        ),
         # SNOW-1230: where the example walkthrough drops the example from
         # the session when it is exited or finished. Token-templated as the
         # claim URL above is; a reverse, so no query.

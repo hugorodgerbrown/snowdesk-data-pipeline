@@ -75,6 +75,8 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.functional import Promise
+from django.utils.translation import gettext_lazy as _lazy
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django_ratelimit.core import get_usage
@@ -165,6 +167,50 @@ _AUTH_ENTRY_URL_NAMES: tuple[str, ...] = (
 )
 
 
+# What a visitor was doing when they were sent to sign in (SNOW-1244), so the
+# page and the "check your inbox" page can say where the link brings them
+# back to. A closed set keyed by ``?intent=``: the value never reaches the
+# page itself, so nothing a visitor types is echoed. Lazy, so each reads in
+# the request's language.
+_SIGN_IN_INTENTS: dict[str, Promise] = {
+    "upload": _lazy("The link brings you back to the map, ready to upload your GPX."),
+    "pin": _lazy("The link brings you back to the map, ready to pin your resort."),
+}
+
+
+def _sign_in_intent(request: HttpRequest) -> str:
+    """Return the request's sign-in intent key, or "" for none or an unknown one.
+
+    Read from the query string on GET and the form's hidden field on POST,
+    as ``next`` is, so it survives the round trip.
+
+    Args:
+        request: The current request.
+
+    Returns:
+        The intent's key when it is a known one, else "".
+
+    """
+    source = request.GET if request.method == "GET" else request.POST
+    key = source.get("intent") or ""
+    return key if key in _SIGN_IN_INTENTS else ""
+
+
+def _intent_context(request: HttpRequest) -> dict[str, object]:
+    """Return the template context for the request's sign-in intent.
+
+    Args:
+        request: The current request.
+
+    Returns:
+        ``intent`` (the key, carried by the form) and ``intent_line`` (what
+        the page says), both "" when there is none.
+
+    """
+    key = _sign_in_intent(request)
+    return {"intent": key, "intent_line": _SIGN_IN_INTENTS[key] if key else ""}
+
+
 def _get_account(request: HttpRequest) -> Account | None:
     """Return the authenticated Account profile from request.user, or None.
 
@@ -222,7 +268,12 @@ def _password_sign_in(
     return render(
         request,
         "accounts/sign_in.html",
-        {"form": EmailForm(), "password_error": True, "next_url": next_url},
+        {
+            "form": EmailForm(),
+            "password_error": True,
+            "next_url": next_url,
+            **_intent_context(request),
+        },
         status=200,
     )
 
@@ -303,7 +354,7 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         return render(
             request,
             "accounts/sign_in.html",
-            {"form": EmailForm(), "next_url": next_url},
+            {"form": EmailForm(), "next_url": next_url, **_intent_context(request)},
         )
 
     # POST — rate-limit then send (or noop).
@@ -327,7 +378,9 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
     form = EmailForm(request.POST)
     if not form.is_valid():
         return render(
-            request, "accounts/sign_in.html", {"form": form, "next_url": next_url}
+            request,
+            "accounts/sign_in.html",
+            {"form": form, "next_url": next_url, **_intent_context(request)},
         )
 
     email: str = form.cleaned_data["email"]
@@ -355,7 +408,7 @@ def sign_in_view(request: HttpRequest) -> HttpResponse:
         page=analytics.page_of(request),
     )
 
-    return render(request, "accounts/manage_sent.html", {})
+    return render(request, "accounts/manage_sent.html", _intent_context(request))
 
 
 # ---------------------------------------------------------------------------

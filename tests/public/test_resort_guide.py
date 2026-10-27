@@ -158,3 +158,15 @@ class TestMapPage:
 
         assert re.search(r"data-resort-star\s+data-resort-guide-pin", content)
         assert "data-resort-guide-signin" not in content
+
+    def test_example_finish_card_continues_with_email_back_to_routes(self) -> None:
+        """SNOW-1244: signed out, the example's upload goes to the one page
+        for new and returning visitors, and comes back to the routes panel."""
+        content = Client().get(reverse("public:map")).content.decode()
+
+        href = (
+            reverse("accounts:sign_in")
+            + "?next=%2Fmap%2F%3Fpanel%3Droutes&amp;intent=upload"
+        )
+        assert f'href="{href}"' in content
+        assert "Continue with email to upload" in content

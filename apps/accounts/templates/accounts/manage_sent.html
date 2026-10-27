@@ -20,5 +20,12 @@ whether the email was known or unknown to prevent account enumeration.
 {% block status_heading %}{% trans "Check your inbox" %}{% endblock %}
 
 {% block status_body %}
-    {% trans "If that address is registered, we've sent you a link to sign in. It expires in 24 hours." %}
+    {% comment %}
+        SNOW-1244: the sign-in form creates the account for a new email, so
+        every address gets a link and the old "If that address is registered"
+        was wrong for half its readers. Identical for every address, so it
+        still says nothing about which ones exist.
+    {% endcomment %}
+    {% trans "We've sent you a link. Open it and you're in, whether you're new or coming back. It expires in 24 hours." %}
+    {% if intent_line %}{{ intent_line }}{% endif %}
 {% endblock %}

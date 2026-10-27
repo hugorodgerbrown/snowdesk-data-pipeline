@@ -56,7 +56,7 @@
     'finish-title': 'Keep %(name)s one tap away',
     pin: 'Pin %(name)s',
     pinned: '%(name)s is pinned',
-    'sign-in-to-pin': 'Sign in to pin %(name)s',
+    'sign-in-to-pin': 'Continue with email to pin %(name)s',
     'back-to-day': 'Back to %(date)s',
     'back-to-today': 'Back to today · %(date)s',
   });
@@ -157,7 +157,6 @@
       regionId: row.getAttribute('data-panel-id') || '',
       regionName: regionName ? regionName.textContent.trim() : '',
     };
-    fill('[data-resort-guide-name]', resort.name);
     fill('[data-resort-guide-region]', resort.regionName);
   };
 

@@ -436,3 +436,50 @@ class TestSignInRefusesToBounceOffItself:
         response = client.get(self.URL, {"next": f"{self.URL}?next=/trips/"})
 
         assert response.headers["Location"] == reverse("public:map")
+
+
+@pytest.mark.django_db
+class TestSignInIntent:
+    """SNOW-1244: one page for new and returning visitors, naming the way back."""
+
+    def test_the_page_serves_new_and_returning_visitors(self, client: Client) -> None:
+        """Titled for both, with no detour to a separate sign-up page."""
+        html = client.get(reverse("accounts:sign_in")).content.decode()
+        assert "Sign in or create an account" in html
+        assert reverse("accounts:register") not in html
+        assert 'data-testid="sign-in-intent"' not in html
+
+    def test_a_known_intent_is_named_and_carried(self, client: Client) -> None:
+        """?intent=upload says where the link returns and rides the form."""
+        html = client.get(
+            reverse("accounts:sign_in"),
+            {"next": "/map/?panel=routes", "intent": "upload"},
+        ).content.decode()
+        assert "ready to upload your GPX" in html
+        assert '<input type="hidden" name="intent" value="upload">' in html
+
+    def test_an_unknown_intent_is_ignored(self, client: Client) -> None:
+        """Only the closed set is read; nothing a visitor types is echoed."""
+        html = client.get(
+            reverse("accounts:sign_in"), {"intent": "<script>"}
+        ).content.decode()
+        assert 'data-testid="sign-in-intent"' not in html
+        assert 'name="intent"' not in html
+
+    def test_a_new_email_is_sent_a_link_and_told_the_way_back(
+        self, client: Client
+    ) -> None:
+        """The inbox page names the intent; a new address still gets a link."""
+        response = client.post(
+            reverse("accounts:sign_in"),
+            {
+                "email": "new@example.com",
+                "next": "/map/?resort=verbier",
+                "intent": "pin",
+            },
+        )
+        html = response.content.decode()
+        assert "ready to pin your resort" in html
+        assert "If that address is registered" not in html
+        assert len(mail.outbox) == 1
+        assert "?next=%2Fmap%2F%3Fresort%3Dverbier" in mail.outbox[0].body

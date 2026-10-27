@@ -31,7 +31,15 @@ the manage page can be authenticated-only.
     <div class="px-4 py-10">
         <div class="max-w-narrow mx-auto">
             {% card padding="p-8" %}
-            {% trans "Sign in" as page_heading %}
+            {% comment %}
+                SNOW-1244: one page for new and returning visitors. The
+                magic-link form creates the account for an email it has not
+                seen (get_or_create_for_email), so "Sign in" alone sent new
+                visitors looking for a separate sign-up. ``intent_line`` names
+                what the link comes back to, when the page was reached from
+                something the visitor was doing (_SIGN_IN_INTENTS).
+            {% endcomment %}
+            {% trans "Sign in or create an account" as page_heading %}
             {% include "includes/_page_title.html" with text=page_heading class_extra="mb-2" %}
             {% comment %}
                 SNOW-1022: the intro and the primary button name what the form
@@ -44,9 +52,14 @@ the manage page can be authenticated-only.
                 {% if password_error %}
                     {% trans "Enter your email address and password." %}
                 {% else %}
-                    {% trans "Enter your email address and we'll send you a sign-in link." %}
+                    {% trans "New here or coming back, enter your email and we'll send you a link. Open it and you're in." %}
                 {% endif %}
             </p>
+            {% if intent_line %}
+                <p class="-mt-4 mb-6 text-sm leading-relaxed text-text-1" data-testid="sign-in-intent">
+                    {{ intent_line }}
+                </p>
+            {% endif %}
             {% if password_error %}
                 <div
                     role="alert"
@@ -65,6 +78,7 @@ the manage page can be authenticated-only.
             <form method="post" novalidate {% if next_url %}data-next="{{ next_url }}"{% endif %}>
                 {% csrf_token %}
                 {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+                {% if intent %}<input type="hidden" name="intent" value="{{ intent }}">{% endif %}
                 {% trans "Email address" as field_label %}
                 {% include "includes/_form_field.html" with field=form.email label=field_label %}
                 {% comment %}
@@ -106,7 +120,7 @@ the manage page can be authenticated-only.
                 {% if password_error %}
                     {% trans "Sign in" as label %}
                 {% else %}
-                    {% trans "Send sign-in link" as label %}
+                    {% trans "Email me a link" as label %}
                 {% endif %}
                 {% include "includes/_button.html" with label=label variant="primary" full_width=True button_id="sign-in-submit" %}
                 <button
@@ -130,12 +144,6 @@ the manage page can be authenticated-only.
                 >
                 </p>
             </div>
-            <p class="text-text-3 text-sm mt-6 text-center">
-                {% url 'accounts:register' as register_url %}
-                {% blocktrans trimmed %}
-                    New to Snowdesk? <a href="{{ register_url }}" class="underline">Create an account</a>.
-                {% endblocktrans %}
-            </p>
             {% endcard %}
         </div>
     </div>

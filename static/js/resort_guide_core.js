@@ -149,7 +149,7 @@
 
   /**
    * The sign-in link that returns to the map with the resort open, so
-   * "Sign in to pin Verbier" lands where the star is one tap away.
+   * "Continue with email to pin Verbier" lands where the star is one tap away.
    *
    * @param {string} signInUrl The sign-in page, without a query.
    * @param {string} mapUrl The map's path.
@@ -159,7 +159,8 @@
   function signInHref(signInUrl, mapUrl, slug) {
     if (!slug) return signInUrl;
     var next = mapUrl + '?resort=' + encodeURIComponent(slug);
-    return signInUrl + '?next=' + encodeURIComponent(next);
+    // intent=pin: the sign-in page says the link comes back ready to pin.
+    return signInUrl + '?next=' + encodeURIComponent(next) + '&intent=pin';
   }
 
   self.pwaResortGuideCore = Object.freeze({
