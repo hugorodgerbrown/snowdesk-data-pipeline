@@ -42,6 +42,7 @@ from apps.bulletins.services.day_rating import (
 from apps.core.models import CommandRun, RequestLog
 from apps.downloads.models import DownloadArea
 from apps.favourites.models import Favourite
+from apps.ingest.models import SourceBulletin, content_hash
 from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
 from apps.regions.models import (
@@ -269,6 +270,26 @@ class BulletinFactory(factory.django.DjangoModelFactory[Bulletin]):
     lang = "en"
     unscheduled = False
     pipeline_run = factory.SubFactory(PipelineRunFactory)
+
+
+class SourceBulletinFactory(factory.django.DjangoModelFactory[SourceBulletin]):
+    """Factory for ingest's SourceBulletin (SNOW-1250).
+
+    The hash is computed from the CAAML, as ``store_bulletin`` computes it,
+    so a factory row and a fetched one compare alike.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SourceBulletin
+
+    bulletin_id = factory.Sequence(lambda n: f"source-bulletin-{n:04d}")
+    provider = SourceBulletin.Provider.SLF
+    caaml = factory.LazyAttribute(lambda obj: {"bulletinID": obj.bulletin_id})
+    pdf_url = ""
+    content_hash = factory.LazyAttribute(lambda obj: content_hash(obj.caaml))
+    fetched_at = factory.LazyFunction(django_timezone.now)
 
 
 class RegionBulletinFactory(factory.django.DjangoModelFactory[RegionBulletin]):

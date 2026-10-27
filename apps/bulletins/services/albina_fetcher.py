@@ -32,6 +32,7 @@ from apps.ingest.public import (
     OUTCOME_DUPLICATE,
     OUTCOME_FAILED,
     OUTCOME_SKIPPED,
+    OUTCOME_UNCHANGED,
     OUTCOME_UPDATED,
     PROVIDER_ALBINA,
     FetchOutcome,
@@ -68,11 +69,8 @@ def _process_albina_bulletin(
         logger.info("[dry-run] Would store ALBINA %s", record.bulletin_id)
         return OUTCOME_CREATED
 
-    if not force and Bulletin.objects.filter(bulletin_id=record.bulletin_id).exists():
-        return OUTCOME_SKIPPED
-
     try:
-        created = apply_bulletin(record, run)
+        outcome = apply_bulletin(record, run, force=force)
     except Exception as exc:
         logger.exception(
             "Failed to upsert ALBINA bulletin %s: %s", record.bulletin_id, exc
@@ -81,7 +79,7 @@ def _process_albina_bulletin(
         run.save(update_fields=["records_failed"])
         return OUTCOME_FAILED
 
-    return OUTCOME_CREATED if created else OUTCOME_UPDATED
+    return OUTCOME_SKIPPED if outcome == OUTCOME_UNCHANGED else outcome
 
 
 def run_albina_pipeline(

@@ -27,8 +27,12 @@ from typing import Any
 from django.db import models
 from django.utils.dateparse import parse_date, parse_datetime
 
+from apps.ingest.public import FEED_DEFAULT_LIMIT, FEED_MAX_LIMIT, FEED_VERSION
+
 # Bumped on a breaking change to any shape below; it is also the URL's /v1/.
-VERSION = 1
+# The version and the page sizes are the paging rule's, which ingest owns
+# (apps/ingest/api/paging.py, SNOW-1250).
+VERSION = FEED_VERSION
 
 # The OAuth scope a service client's token must carry (config/settings/base.py).
 SCOPE = "data"
@@ -37,10 +41,9 @@ SCOPE = "data"
 # the resorts that link to them and the weather that hangs off them.
 FEEDS = ("locations", "resorts", "bulletins", "weather")
 
-# Page size: the default, and the most a client may ask for. A bulletin's
-# CAAML runs to tens of kilobytes, so the ceiling keeps a page to a few MB.
-DEFAULT_LIMIT = 100
-MAX_LIMIT = 500
+# Page size: the default, and the most a client may ask for.
+DEFAULT_LIMIT = FEED_DEFAULT_LIMIT
+MAX_LIMIT = FEED_MAX_LIMIT
 
 WEATHER_FIELDS: tuple[str, ...] = (
     "fetched_at",

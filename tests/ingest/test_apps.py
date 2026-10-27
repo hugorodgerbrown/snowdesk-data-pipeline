@@ -1,8 +1,8 @@
 """
 tests/ingest/test_apps.py — Smoke tests for the ingest app shell (SNOW-1248).
 
-The app is registered under its own label and, until SNOW-1250 gives it a
-table, owns no models.
+The app is registered under its own label and owns exactly the tables
+SNOW-1250 gave it.
 """
 
 from django.apps import apps
@@ -18,6 +18,7 @@ def test_ingest_app_is_registered() -> None:
     assert config.default_auto_field == "django.db.models.BigAutoField"
 
 
-def test_ingest_app_owns_no_models_yet() -> None:
-    """Its tables arrive with SNOW-1250 and SNOW-1253."""
-    assert list(apps.get_app_config("ingest").get_models()) == []
+def test_ingest_app_owns_its_own_tables() -> None:
+    """SourceBulletin (SNOW-1250); weather's arrive with SNOW-1253."""
+    models = apps.get_app_config("ingest").get_models()
+    assert [model.__name__ for model in models] == ["SourceBulletin"]

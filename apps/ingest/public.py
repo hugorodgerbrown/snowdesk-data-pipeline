@@ -36,8 +36,30 @@ The names are grouped by what they are for:
       ``fetch_bulletins`` walks one provider and yields ``NormalisedBulletin``
       and ``FetchOutcome`` items; what to do with each is the caller's
       (SNOW-1249). Plus the one Météo-France archive lookup a backfill needs.
+  Storing bulletins
+      ``SourceBulletin``, ingest's own table, and ``store_bulletin``, which
+      writes a fetched bulletin only when its content hash changes
+      (SNOW-1250).
+  The data feed
+      ``BULLETINS_FEED`` and its serialiser, and the keyset paging every
+      feed shares (``feed_page``, ``parse_feed_since``, ``parse_feed_limit``
+      and the ``FEED_*`` constants). The host mounts them behind its own
+      authentication.
 """
 
+from apps.ingest.api.bulletins import BULLETINS_FEED, serialise_source_bulletin
+from apps.ingest.api.paging import (
+    DEFAULT_LIMIT as FEED_DEFAULT_LIMIT,
+    MAX_LIMIT as FEED_MAX_LIMIT,
+    PARAMETER_ERRORS as FEED_PARAMETER_ERRORS,
+    VERSION as FEED_VERSION,
+    Feed,
+    FeedQueryError,
+    page as feed_page,
+    parse_limit as parse_feed_limit,
+    parse_since as parse_feed_since,
+)
+from apps.ingest.models import SourceBulletin
 from apps.ingest.normalise.albina import albina_pdf_url
 from apps.ingest.normalise.fetcher_common import (
     OUTCOME_CREATED,
@@ -115,14 +137,20 @@ from apps.ingest.sources.open_meteo import (
 )
 from apps.ingest.sources.slf import PAGE_SIZE as SLF_PAGE_SIZE
 from apps.ingest.sources.what3words import convert_to_3wa, fake_address
+from apps.ingest.store import OUTCOME_UNCHANGED, store_bulletin
 
 __all__ = [
     "ALPINE_MASSIFS",
+    "BULLETINS_FEED",
     "BULLETIN_ID_RE",
     "CAAML_SHAPE_AGGREGATED",
     "CAAML_SHAPE_PER_REGION",
     "CAAML_SHAPE_UNKNOWN",
     "DAILY_VARIABLES",
+    "FEED_DEFAULT_LIMIT",
+    "FEED_MAX_LIMIT",
+    "FEED_PARAMETER_ERRORS",
+    "FEED_VERSION",
     "HOURLY_VARIABLES",
     "OUTCOME_CREATED",
     "OUTCOME_DELEGATED",
@@ -130,6 +158,7 @@ __all__ = [
     "OUTCOME_FAILED",
     "OUTCOME_SKIPPED",
     "OUTCOME_SKIPPED_NEWER",
+    "OUTCOME_UNCHANGED",
     "OUTCOME_UPDATED",
     "PROVIDER_ALBINA",
     "PROVIDER_METEOFRANCE",
@@ -138,6 +167,8 @@ __all__ = [
     "SLF_PAGE_SIZE",
     "SLUG_TO_CODE",
     "CaamlPayloadShape",
+    "Feed",
+    "FeedQueryError",
     "FetchOutcome",
     "FetchStats",
     "ForecastDay",
@@ -145,6 +176,7 @@ __all__ = [
     "MeteoFranceDelegatedRegionError",
     "MeteoFranceTranslationError",
     "NormalisedBulletin",
+    "SourceBulletin",
     "albina_pdf_url",
     "build_bulletin_id",
     "compact_publication_stamp",
@@ -155,6 +187,7 @@ __all__ = [
     "day_is_complete",
     "detect_caaml_shape",
     "fake_address",
+    "feed_page",
     "fetch_bulletins",
     "fetch_elevation",
     "fetch_forecast",
@@ -171,11 +204,15 @@ __all__ = [
     "parse_dpbra_xml",
     "parse_dt",
     "parse_dt_preserve_offset",
+    "parse_feed_limit",
+    "parse_feed_since",
     "pdf_session",
     "read_slf_archive",
     "resolve_issued_at",
+    "serialise_source_bulletin",
     "slf_pdf_url",
     "slug_to_region_id",
+    "store_bulletin",
     "write_ndjson_archive",
     "write_slf_archive",
 ]

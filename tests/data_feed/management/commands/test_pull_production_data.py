@@ -30,11 +30,12 @@ from django.utils import timezone
 from oauth2_provider.models import Application
 
 from apps.bulletins.models import Bulletin, RegionBulletin
-from apps.bulletins.services.apply import upsert_bulletin
+from apps.bulletins.services.apply import apply_bulletin
 from apps.core.models import CommandRun
 from apps.data_feed import feeds
 from apps.data_feed.client import FeedError
 from apps.data_feed.management.commands import pull_production_data as command
+from apps.ingest.public import NormalisedBulletin
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import MicroRegion, Pass, Resort
 from apps.weather.models import Weather
@@ -138,20 +139,27 @@ def estate(db: None) -> dict[str, Any]:
     )
     centroid = LocationFactory.create(name="", kind="")
     MicroRegion.objects.filter(pk=region.pk).update(centroid_location=centroid)
-    upsert_bulletin(
-        {
-            "bulletinID": "b-1",
-            "publicationTime": "2026-10-20T15:00:00Z",
-            "validTime": {
-                "startTime": "2026-10-20T15:00:00Z",
-                "endTime": "2026-10-21T15:00:00Z",
+    # The way production writes one: ingest stores it, then it is applied
+    # (SNOW-1250) — so the feed, which reads ingest's table, serves it.
+    apply_bulletin(
+        NormalisedBulletin(
+            "b-1",
+            "SLF",
+            {
+                "bulletinID": "b-1",
+                "publicationTime": "2026-10-20T15:00:00Z",
+                "validTime": {
+                    "startTime": "2026-10-20T15:00:00Z",
+                    "endTime": "2026-10-21T15:00:00Z",
+                },
+                "lang": "en",
+                "regions": [{"regionID": "CH-4115", "name": "Piz Buin"}],
+                "dangerRatings": [],
+                "avalancheProblems": [],
+                "customData": {"CH": {}},
             },
-            "lang": "en",
-            "regions": [{"regionID": "CH-4115", "name": "Piz Buin"}],
-            "dangerRatings": [],
-            "avalancheProblems": [],
-            "customData": {"CH": {}},
-        },
+            lambda: "",
+        ),
         PipelineRunFactory.create(),
     )
     WeatherFactory.create(location=link.location)

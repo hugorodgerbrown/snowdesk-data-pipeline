@@ -52,7 +52,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from apps.bulletins.models import Bulletin, PipelineRun
-from apps.bulletins.services.apply import upsert_bulletin
+from apps.bulletins.services.apply import apply_feed_item
 from apps.data_feed import contract
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import MicroRegion, Pass, Resort
@@ -536,9 +536,10 @@ def apply_bulletin(
 ) -> Outcome:
     """Replay a bulletin's CAAML through this database's ``upsert_bulletin``.
 
-    Unchanged when the stored CAAML and PDF link are identical, which is
-    what makes a re-pull of the same window a no-op: ``upsert_bulletin``
-    would otherwise rewrite the row and recompute its derived tables.
+    The comparison and the write are ``apply_feed_item``, the step a
+    production fetch applies its own stored bulletins through (SNOW-1250),
+    so an item is applied the same way whichever side of the feed it is
+    on. Unchanged when the stored CAAML and PDF link are identical.
 
     Args:
         item: A ``bulletins`` feed item.
@@ -554,21 +555,19 @@ def apply_bulletin(
         ApplyError: The item carries no CAAML.
 
     """
-    caaml = item.get("caaml")
-    if not isinstance(caaml, dict):
+    if not isinstance(item.get("caaml"), dict):
         raise ApplyError(f"bulletin {item.get('bulletin_id')!r} carries no CAAML")
-    pdf_url = item.get("pdf_url") or ""
     lookups = lookups or lookups_for("bulletins", [item])
-    existing = lookups.bulletins.get(item["bulletin_id"])
-    if existing is not None:
-        stored = (existing.raw_data or {}).get("properties")
-        if stored == caaml and existing.pdf_url == pdf_url:
-            return Outcome.UNCHANGED
-    if commit:
-        if run is None:
-            raise ValueError("apply_bulletin needs a PipelineRun to commit")
-        upsert_bulletin(caaml, run, pdf_url=pdf_url)
-    return Outcome.CREATED if existing is None else Outcome.UPDATED
+    if commit and run is None:
+        raise ValueError("apply_bulletin needs a PipelineRun to commit")
+    return Outcome(
+        apply_feed_item(
+            item,
+            run,
+            existing=lookups.bulletins.get(item["bulletin_id"]),
+            commit=commit,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------

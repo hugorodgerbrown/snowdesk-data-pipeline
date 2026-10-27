@@ -31,6 +31,8 @@ from apps.bulletins.services.apply import (
     NoResolvableRegionsError,
     UnknownRegionError,
     _get_region,
+    apply_bulletin,
+    apply_feed_item,
     upsert_bulletin,
 )
 from apps.bulletins.services.day_rating import target_day_for_valid_from
@@ -38,7 +40,13 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
 )
-from apps.ingest.public import parse_dt, slf_pdf_url
+from apps.ingest.models import SourceBulletin
+from apps.ingest.public import (
+    NormalisedBulletin,
+    parse_dt,
+    slf_pdf_url,
+    store_bulletin,
+)
 from apps.regions.models import MicroRegion
 from tests.factories import (
     MajorRegionFactory,
@@ -1033,3 +1041,50 @@ class TestUpsertBulletinTargetDate:
         assert evening_bulletin.target_date == date(2025, 3, 15)
         assert morning_bulletin.target_date == date(2025, 3, 15)
         assert evening_bulletin.target_date == morning_bulletin.target_date
+
+
+@pytest.mark.usefixtures("_seed_test_regions")
+class TestStoreThenApply:
+    """apply_bulletin and apply_feed_item (SNOW-1250)."""
+
+    def _record(self, raw: dict[str, Any], pdf: str = "https://x/a.pdf") -> Any:
+        """A walk's record for ``raw``."""
+        return NormalisedBulletin(raw["bulletinID"], "SLF", raw, lambda: pdf)
+
+    def test_stores_in_ingest_then_writes_the_bulletin(self) -> None:
+        """The Bulletin is written from the stored row, CAAML and link alike."""
+        raw = _make_raw_bulletin("b-1")
+        outcome = apply_bulletin(self._record(raw), PipelineRunFactory.create())
+        assert outcome == "created"
+        source = SourceBulletin.objects.get(bulletin_id="b-1")
+        bulletin = Bulletin.objects.get(bulletin_id="b-1")
+        assert bulletin.raw_data["properties"] == source.caaml == raw
+        assert bulletin.pdf_url == source.pdf_url == "https://x/a.pdf"
+
+    def test_a_stored_bulletin_missing_here_is_applied_again(self) -> None:
+        """Ingest has it but Bulletin does not (a failed apply): it is retried."""
+        raw = _make_raw_bulletin("b-1")
+        store_bulletin(self._record(raw))
+        outcome = apply_bulletin(self._record(raw), PipelineRunFactory.create())
+        assert outcome == "created"
+        assert Bulletin.objects.filter(bulletin_id="b-1").exists()
+
+    def test_the_same_bulletin_twice_is_unchanged(self) -> None:
+        """The second apply writes nothing; force rewrites it."""
+        raw = _make_raw_bulletin("b-1")
+        apply_bulletin(self._record(raw), PipelineRunFactory.create())
+        run = PipelineRunFactory.create()
+        assert apply_bulletin(self._record(raw), run) == "unchanged"
+        assert apply_bulletin(self._record(raw), run, force=True) == "updated"
+
+    def test_a_dry_feed_item_decides_without_writing(self) -> None:
+        """commit=False reports the outcome and leaves the table alone."""
+        item = {"bulletin_id": "b-1", "caaml": _make_raw_bulletin("b-1")}
+        assert apply_feed_item(item, None, existing=None, commit=False) == "created"
+        assert not Bulletin.objects.exists()
+
+    def test_committing_needs_a_run(self) -> None:
+        """A write must be attributed to a PipelineRun."""
+        item = {"bulletin_id": "b-1", "caaml": _make_raw_bulletin("b-1")}
+        with pytest.raises(ValueError, match="PipelineRun"):
+            apply_feed_item(item, None, existing=None)

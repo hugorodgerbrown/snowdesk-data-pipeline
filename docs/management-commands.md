@@ -1683,6 +1683,15 @@ deduplicated.
 The cron invocation for the standard nightly run is:
 `fetch_bulletins --source slf albina meteofrance --commit`
 
+**Each bulletin is stored, then applied** (SNOW-1250). With `--commit`, a
+fetched bulletin is first written to ingest's own `SourceBulletin` — only
+when its CAAML hash has changed, so a re-fetch is free — and the stored row
+is then applied to `Bulletin` through `apply_feed_item`, the same step and
+the same wire item `pull_production_data` applies on staging. A bulletin is
+skipped when `Bulletin` already holds that CAAML and PDF link; a known id
+whose content changed is now updated without `--force`. `--force` rewrites
+regardless, and re-resolves the PDF link.
+
 Each source's run is one `PipelineRun`, finished in one of three states:
 `SUCCESS`; `PARTIAL` when it completed but `records_failed > 0` — a bulletin
 that could not be stored, a render model, day rating or grouping outline
