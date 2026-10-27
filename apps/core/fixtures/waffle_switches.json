@@ -11,6 +11,11 @@
       "active": true
     },
     {
+      "name": "schedule_backfill_weather",
+      "note": "SNOW-1245: the scheduled job backfill_weather, hourly at :20 (schedule.py) — one budgeted sweep of missing past weather days. Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    },
+    {
       "name": "schedule_purge_request_logs",
       "note": "SNOW-1201: the scheduled job purge_request_logs, daily at 03:30 UTC (schedule.py). Off skips its runs from the next firing; on resumes them.",
       "active": true

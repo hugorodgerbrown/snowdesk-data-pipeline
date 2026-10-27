@@ -11,6 +11,13 @@ pre-loaded with the recurring data-pipeline jobs:
   live on-demand fetch behind its page render the way a bulletin region
   does: the scheduled batch is the only thing that keeps today's row
   current, and today's row is the one every surface reads.
+- **backfill_weather** — fires at :20 every hour, running
+  ``backfill_weather --commit``. One budgeted sweep of the missing past
+  ``Weather`` days, newest fortnight first (SNOW-1245): the budget is this
+  hour's share of what ``fetch_weather`` leaves of Open-Meteo's free daily
+  quota, so the two never throttle each other, and each run resumes where
+  the last one stopped. At :20 so it never starts beside ``fetch_weather``
+  or ``fetch_bulletins``.
 - **purge_request_logs** — fires at 03:30 UTC, running
   ``purge_request_logs --commit``. Enforces the ``RequestLog`` retention
   window the Privacy Policy states (SNOW-775); until this job existed
@@ -173,6 +180,16 @@ def _run_fetch_weather() -> None:
     call_command("fetch_weather", "--commit")
 
 
+def _run_backfill_weather() -> None:
+    """Invoke ``backfill_weather`` for one budgeted sweep (SNOW-1245)."""
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing backfill_weather")
+    call_command("backfill_weather", "--commit")
+
+
 def _run_purge_request_logs() -> None:
     """Invoke ``purge_request_logs`` to enforce the RequestLog retention window."""
     from django.core.management import (
@@ -264,12 +281,14 @@ def build_scheduler() -> BlockingScheduler:
     Returns
     -------
     BlockingScheduler
-        A scheduler with eight jobs pre-registered:
+        A scheduler with nine jobs pre-registered:
 
         ``fetch_bulletins``
             Cron: ``minute=0,5`` (every hour at :00 and :05 UTC).
         ``fetch_weather``
             Cron: ``hour=0,6,12,18`` (four times a day, on the hour UTC).
+        ``backfill_weather``
+            Cron: ``minute=20`` (every hour, SNOW-1245).
         ``purge_request_logs``
             Cron: ``hour=3, minute=30`` (once a day, off the fetch hours).
         ``fill_what3words``
@@ -303,6 +322,17 @@ def build_scheduler() -> BlockingScheduler:
         switched("fetch_weather", _run_fetch_weather),
         trigger=CronTrigger(hour="0,6,12,18", minute=0, timezone="UTC"),
         id="fetch_weather",
+        **_common,
+    )
+
+    # SNOW-1245: at :20, clear of fetch_weather and fetch_bulletins at :00
+    # and :05. The two weather jobs share Open-Meteo's per-IP quota; the
+    # sweep's default budget is derived from fetch_weather's share of it
+    # (backfill.LIVE_FETCHES_PER_DAY must match the trigger above).
+    scheduler.add_job(
+        switched("backfill_weather", _run_backfill_weather),
+        trigger=CronTrigger(minute=20, timezone="UTC"),
+        id="backfill_weather",
         **_common,
     )
 

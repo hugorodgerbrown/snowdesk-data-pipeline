@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — RegisteredCommand / CommandRun register, fetch_bulletins, fetch_weather, purge_*, prune_command_runs, backfill_*
 status: current
-last-reviewed: 2026-10-26
+last-reviewed: 2026-10-27
 ---
 
 # Management commands
@@ -169,22 +169,24 @@ everyone as the same OS user, so without it the row cannot say who ran it.
 
 ## Operational requirements
 
-Eight scheduled jobs run on the worker: two keep the public site in sync
-with upstream data, three delete or close rows past their useful life, two
-fill a derived column, and one is a read-only detector. All eight
+Nine scheduled jobs run on the worker: two keep the public site in sync
+with upstream data, one sweeps up the weather history they missed, three
+delete or close rows past their useful life, two fill a derived column, and
+one is a read-only detector. All nine
 are driven by the `snowdesk-scheduler` Render Background Worker, which
 runs `python manage.py run_scheduler` and uses APScheduler (SNOW-238) to
 fire the jobs on their cron schedules via `django.core.management.call_command`.
 The schedule is declared in [`schedule.py`](../schedule.py) at the repo root
-and documented in [`render.yaml`](../render.yaml). The seven writing jobs run
-with `--commit` so they actually persist; the eighth runs `--check` and writes
-nothing. All eight exit non-zero on failure so a missed run is visible in the
+and documented in [`render.yaml`](../render.yaml). The eight writing jobs run
+with `--commit` so they actually persist; the ninth runs `--check` and writes
+nothing. All nine exit non-zero on failure so a missed run is visible in the
 worker logs.
 
 | Job | Command | Cadence | Purpose |
 |-----|---------|---------|---------|
 | Bulletin ingestion | `fetch_bulletins --source slf albina meteofrance --commit` | `0,5 * * * *` (every hour at :00 and :05 UTC) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
 | Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every active location. Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
+| Weather history sweep | `backfill_weather --commit` | `20 * * * *` (hourly, at :20 UTC) | One budgeted sweep of the missing past `Weather` days, newest fortnight first (SNOW-1245). The budget is this hour's share of what `fetch_weather` leaves of Open-Meteo's free daily quota, so the two never throttle each other; each run resumes where the last stopped, and a run with nothing missing issues no request. Exits non-zero on a 429. |
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
 | OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes expired MCP OAuth tokens and authorization codes with django-oauth-toolkit's `clear_expired()` (SNOW-1193). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
 | Run-register prune | `prune_command_runs --commit` | `50 3 * * *` (daily, 03:50 UTC) | Marks `CommandRun` rows a killed process left `RUNNING` for over six hours as `INTERRUPTED`, and deletes `SCHEDULER` runs older than 90 days (SNOW-1189). Every other run is kept for good. |
@@ -678,47 +680,76 @@ uv run python manage.py fetch_weather           # preview (calls the API)
 uv run python manage.py fetch_weather --commit  # persist
 ```
 
-### `backfill_weather` — fill the missing days for every active location
+### `backfill_weather` — sweep up the missing days, newest fortnight first
 
 The complement of `fetch_weather` (SNOW-731). Walks the same
-`Location.objects.active()` estate and fills every day between
-`settings.WEATHER_BACKFILL_FLOOR` and **yesterday** that has no `Weather`
+`Location.objects.active()` estate and fills days between
+`settings.WEATHER_BACKFILL_FLOOR` and **yesterday** that have no `Weather`
 row, against the Open-Meteo historical forecast API
-(`settings.OPEN_METEO_HISTORY_BASE_URL`).
+(`settings.OPEN_METEO_HISTORY_BASE_URL`). **Scheduled hourly at :20**
+(SNOW-1245); each run is one budgeted sweep, and the runs together sweep
+up everything missing over time.
 
-**Not scheduled, and not a re-fetch.** It diffs first: it reads each
-location's existing `observed_on` set, subtracts it, and requests only the
-gaps — so a complete location costs no call at all. That diff is what makes
-a re-run safe, because `upsert_weather` *raises* on an existing past row
-rather than skipping it. Idempotence here belongs to the caller, not to the
-write rule.
+**Not a re-fetch.** It diffs first and requests only what is missing — a
+complete location costs no call at all. That diff is what makes a re-run
+safe, because `upsert_weather` *raises* on an existing past row rather than
+skipping it. Idempotence here belongs to the caller, not to the write rule.
 
 **It never touches today.** Today is `fetch_weather`'s row, and
 `upsert_weather` permits a rewrite of it — so a backfill that reached today
-would silently overwrite the live forecast. The window ends at yesterday,
-and the write loop additionally skips any provider day outside the set it
-asked for.
+would silently overwrite the live forecast. The window ends at yesterday
+(a later `--until` is clamped), and the write loop additionally skips any
+provider day outside the set it asked for.
+
+**The walk is fortnight blocks, newest first, inside a budget.** Open-Meteo
+counts weighted calls: one per request up to ten variables and fourteen
+days, scaled linearly past either. A backfill request carries 24 variables,
+so a fortnight is 2.4 calls and a whole season ~63 — which is why the first
+full production run, one season-long request per location, was throttled
+after nineteen minutes. So the window is cut into fourteen-day blocks
+aligned to the floor and walked newest first; each block is finished across
+every selected location before the next begins, with **one request per
+location per block** spanning its first missing day to its last (the days
+it already holds come back too and are skipped). The run stops before the
+request that would overspend `--budget`, and at once on a 429, which also
+exits non-zero. A run that stopped partway through a block resumes it next
+time, because the locations it finished no longer select. Why this shape:
+[`decisions/weather-backfill-sweeps-newest-fortnight-first.md`](decisions/weather-backfill-sweeps-newest-fortnight-first.md).
+
+**The default budget is derived, not fixed.** `backfill.sweep_budget` takes
+the free tier's 10,000 calls a day, keeps 10% back, subtracts what
+`fetch_weather`'s four runs over the active estate cost (2.4 calls a
+location a run), and divides the rest across 24 hourly sweeps — 139 calls a
+run at 590 locations, about 57 requests. It shrinks as the estate grows and
+reaches zero, doing nothing, once the live fetch needs the whole quota. On a
+paid Open-Meteo key, pass `--budget` explicitly.
+
+| Flag | Effect |
+|------|--------|
+| `--commit` | Persist. Without it the requests still run (a real probe) and nothing is written. |
+| `--floor DATE` / `--until DATE` | The window, inclusive. Default: `WEATHER_BACKFILL_FLOOR` to yesterday. |
+| `--location ID` | Only this active location. Repeatable. |
+| `--resort SLUG` | Only this resort's active locations — its linked places and its pin. Repeatable; a slug matching nothing is an error. |
+| `--limit N` | Only the N newest of the selected locations. |
+| `--budget CALLS` | Weighted calls this run may spend. Default: `sweep_budget`, as above. |
+| `--delay SECONDS` | Wait between requests (default 1). 0 disables it. |
 
 A backfilled row carries its daily scalars and its 24 hourly readings, and
 **no `forecast[]`** — see
 [`decisions/weather-backfill-is-an-admin-action.md`](decisions/weather-backfill-is-an-admin-action.md)
 for why, and for what that means on the page.
 
-One request per contiguous gap (a whole season came back in one 287 KB
-response when probed), split at 366 days. `--delay` paces the walk between
-locations, because Open-Meteo blocks a misusing IP without notice and the IP
-is production's.
-
-The same service backs the **"Backfill missing weather" action on
-`LocationAdmin`**, which is where a curator fixes one location they spotted
-in the changelist's weather-coverage column. That action is capped per run;
-this command is the one to reach for when filling the estate.
+The same writer backs the **"Backfill missing weather" action on
+`LocationAdmin`**, which fills a few selected locations' whole windows
+inline — a different walk, capped per run, for a curator fixing a row they
+spotted in the changelist's weather-coverage column.
 
 ```bash
-uv run python manage.py backfill_weather                        # preview
-uv run python manage.py backfill_weather --commit               # persist
-uv run python manage.py backfill_weather --commit --limit 10 --delay 5
-uv run python manage.py backfill_weather --commit --floor 2026-01-01
+uv run python manage.py backfill_weather                 # preview this hour's sweep
+uv run python manage.py backfill_weather --commit        # one sweep (what the scheduler runs)
+uv run python manage.py backfill_weather --commit \
+    --floor 2026-04-10 --until 2026-04-10 --resort verbier --resort zermatt
+uv run python manage.py backfill_weather --commit --location 42 --budget 100
 ```
 
 ### `link_region_centroid_locations` — anchor each region to a Location

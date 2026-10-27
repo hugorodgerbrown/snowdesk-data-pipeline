@@ -2,7 +2,7 @@
 name: weather-backfill-is-an-admin-action
 description: The Weather backfill runs inline in a capped LocationAdmin action, not on the task queue, and a backfilled row's forecast[] stays null
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-27
 ---
 
 # The weather backfill is an inline admin action, and writes no forecast
@@ -41,7 +41,10 @@ run never reads as a finished one. If unattended bulk backfilling is wanted
 later, the escalation is a dedicated queue and its own worker
 (`db_worker --queue-name backfill`, `--exclude-queues backfill` on the
 existing one) — a separate ticket, and a dyno. It is not a reason to skip
-setting a sensible cap now.
+setting a sensible cap now. (SNOW-1245 took a cheaper route: the hourly
+`backfill_weather` sweep runs on the scheduler worker, which is not the
+email queue — see
+[`weather-backfill-sweeps-newest-fortnight-first.md`](weather-backfill-sweeps-newest-fortnight-first.md).)
 
 ## Decision 2 — a backfilled row's `forecast[]` stays null
 
