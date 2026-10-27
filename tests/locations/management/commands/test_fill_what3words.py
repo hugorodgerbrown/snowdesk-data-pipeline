@@ -41,9 +41,7 @@ def _mock_get(payload: dict[str, str]) -> "_patch[MagicMock]":
     response = requests.Response()
     response.status_code = 200
     response._content = json.dumps(payload).encode()
-    return patch(
-        "apps.locations.services.what3words.requests.get", return_value=response
-    )
+    return patch("apps.ingest.sources.what3words.requests.get", return_value=response)
 
 
 @pytest.fixture
@@ -119,7 +117,7 @@ class TestFillWhat3Words:
         LocationFactory.create(what3words=None)
         with (
             patch(
-                "apps.locations.services.what3words.requests.get",
+                "apps.ingest.sources.what3words.requests.get",
                 side_effect=requests.Timeout("too slow"),
             ),
             pytest.raises(CommandError, match="2 of 2"),
@@ -147,7 +145,7 @@ class TestFillWhat3WordsWithoutASubscription:
         LocationFactory.create(what3words=None)
         out = StringIO()
 
-        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+        with patch("apps.ingest.sources.what3words.requests.get") as mock_get:
             call_command(COMMAND, commit=True, delay=0, stdout=out)
 
         mock_get.assert_not_called()

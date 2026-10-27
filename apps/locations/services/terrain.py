@@ -18,7 +18,7 @@ Contains one enum, two result types and two functions:
 Reads the terrain height tileset SNOW-908 published — a 5 m Int16 grid over
 Switzerland in EPSG:3035 — through
 ``apps.locations.services.terrain_grid``. Distinct from
-``apps.locations.services.elevation``, which asks Open-Meteo for one
+``apps.ingest.public.fetch_elevation``, which asks Open-Meteo for one
 point's height over the whole world and can never answer a gradient, and
 from ``TERRAIN_CLASS_TILE_URL``, the terrain-class tiles the browser paints
 the terrain filter and the map's slope layer from and no Python reads back.

@@ -75,8 +75,8 @@ from apps.core.command_iteration import (
     non_negative_float,
 )
 from apps.core.command_register import RegisteredCommand
+from apps.ingest.public import convert_to_3wa
 from apps.locations.models import Location
-from apps.locations.services.what3words import convert_to_3wa
 
 logger = logging.getLogger(__name__)
 

@@ -431,7 +431,7 @@ class TestSharePageMeetingPoint:
         """
         trip = self._shared_trip()
 
-        with patch("apps.locations.services.what3words.requests.get") as mock_get:
+        with patch("apps.ingest.sources.what3words.requests.get") as mock_get:
             rendered = self._meeting_point_element(client, trip)
 
         assert "6.7 km west of the route&#x27;s start" in rendered
@@ -497,7 +497,7 @@ class TestSharePageMeetingPoint:
         trip = self._shared_trip()
 
         with patch(
-            "apps.locations.services.what3words.requests.get",
+            "apps.ingest.sources.what3words.requests.get",
             side_effect=requests.Timeout("too slow"),
         ):
             response = client.get(reverse("trips:share_page", args=[trip.share_token]))

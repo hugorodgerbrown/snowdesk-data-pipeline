@@ -580,7 +580,7 @@ class TestTripListMeetingAddress:
         )
         client.force_login(trip.created_by)
 
-        with mock.patch("apps.locations.services.what3words.requests.get") as mock_get:
+        with mock.patch("apps.ingest.sources.what3words.requests.get") as mock_get:
             html = client.get(reverse("trips:list")).content.decode()
 
         mock_get.assert_not_called()
@@ -597,7 +597,7 @@ class TestTripListMeetingAddress:
         trip = TripFactory.create()
         client.force_login(trip.created_by)
 
-        with mock.patch("apps.locations.services.what3words.requests.get") as mock_get:
+        with mock.patch("apps.ingest.sources.what3words.requests.get") as mock_get:
             html = client.get(reverse("trips:list")).content.decode()
 
         mock_get.assert_not_called()

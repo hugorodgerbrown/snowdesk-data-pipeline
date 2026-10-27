@@ -92,11 +92,8 @@ from django_ratelimit.decorators import ratelimit
 
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
-from apps.locations.services.what3words import (
-    convert_to_3wa,
-    fill_what3words,
-    what3words_map_url,
-)
+from apps.ingest.public import convert_to_3wa
+from apps.locations.services.what3words import fill_what3words, what3words_map_url
 from apps.routes.models import Route
 from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.routes import RouteLimitReached

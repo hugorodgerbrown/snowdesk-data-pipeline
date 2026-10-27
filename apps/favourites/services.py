@@ -8,7 +8,7 @@ whole-roster variant account erasure calls.
 
 Coordinate-argument convention: every function in this module takes
 latitude/longitude in that order — ``(latitude, longitude)`` — matching
-``apps.locations.services.elevation.fetch_elevation`` and
+``apps.ingest.sources.open_meteo.fetch_elevation`` and
 ``apps.regions.services.point_match.region_for_point`` (both lat-first since
 SNOW-426).
 """
@@ -25,10 +25,9 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.favourites.models import Favourite
+from apps.ingest.public import convert_to_3wa, fetch_elevation
 from apps.locations.models import Location
-from apps.locations.services.elevation import fetch_elevation
 from apps.locations.services.orphans import delete_location_if_orphaned
-from apps.locations.services.what3words import convert_to_3wa
 from apps.regions.services.point_match import region_for_point
 
 if TYPE_CHECKING:

@@ -50,7 +50,7 @@ _BASE = "apps.regions.management.commands.link_region_centroid_locations"
 
 # Patched at its source module, not at the command's import site — the point
 # of the assertion below is that the command does not import it at all.
-_ELEVATION = "apps.locations.services.elevation.fetch_elevation"
+_ELEVATION = "apps.ingest.sources.open_meteo.fetch_elevation"
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 FIXTURES_DIR = REPO_ROOT / "apps" / "regions" / "fixtures"

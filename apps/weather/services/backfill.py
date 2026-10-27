@@ -64,9 +64,9 @@ null throughout, and freezing level is the figure that decides rain against
 snow. Host in ``settings.OPEN_METEO_HISTORY_BASE_URL``.
 
 **Nothing is reimplemented.** The response shape is identical to the live
-forecast endpoint's, so the parsing helpers in ``apps.ingest.normalise.weather`` are
-imported rather than copied — what differs is the host, and that one
-response yields N rows instead of one.
+forecast endpoint's, so the request (``fetch_forecast``) and the parsing
+helpers come from ``apps.ingest.public`` rather than being copied — what
+differs is the host, and that one response yields N rows instead of one.
 """
 
 from __future__ import annotations
@@ -91,12 +91,13 @@ from apps.ingest.public import (
     daily_fields,
     daily_max_freezing_level,
     day_is_complete,
+    fetch_forecast,
+    history_base_url,
     hourly_rows_for_day,
 )
 from apps.locations.models import Location
-from apps.locations.services import open_meteo
 from apps.weather.models import Weather
-from apps.weather.services.fetch import FORECAST, FORECAST_DAYS, _get_forecast
+from apps.weather.services.fetch import FORECAST_DAYS
 from apps.weather.services.upsert import upsert_weather
 
 logger = logging.getLogger(__name__)
@@ -375,33 +376,23 @@ def _request_window(
         requests.HTTPError: The API returned a non-2xx status.
 
     """
-    if base_url is None:
-        base_url = settings.OPEN_METEO_HISTORY_BASE_URL
-    url = open_meteo.request_url(FORECAST, base_url)
-
-    params: dict[str, str] = {
-        "latitude": str(location.latitude),
-        "longitude": str(location.longitude),
-        "daily": DAILY_VARIABLES,
-        "hourly": HOURLY_VARIABLES,
-        "timezone": "auto",
-        "start_date": start.isoformat(),
-        "end_date": end.isoformat(),
-    }
-    if location.elevation_m is not None:
-        # Statistically downscales the day to the point's own altitude
-        # rather than the model cell's mean terrain, exactly as the live
-        # fetch does — so a backfilled day and a live day are comparable.
-        params["elevation"] = str(location.elevation_m)
-
     logger.debug(
-        "Backfilling weather for location=%s start=%s end=%s url=%s",
+        "Backfilling weather for location=%s start=%s end=%s",
         location.pk,
         start,
         end,
-        url,
     )
-    return _get_forecast(url, open_meteo.with_api_key(params, url))
+    # The same request as the live fetch, statistically downscaled to the
+    # point's own altitude, so a backfilled day and a live day are
+    # comparable; only the host differs.
+    return fetch_forecast(
+        location.latitude,
+        location.longitude,
+        location.elevation_m,
+        start,
+        end,
+        base_url=history_base_url() if base_url is None else base_url,
+    )
 
 
 def _write_window(

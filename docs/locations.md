@@ -2,7 +2,7 @@
 name: locations
 description: Coordinate reference — Location, Favourite, Resort, FieldObservation, MicroRegion.centre, Route.points, GeoIP; apps/core/geo haversine
 status: current
-last-reviewed: 2026-10-25
+last-reviewed: 2026-10-27
 ---
 
 # Locations — what every coordinate in this codebase means
@@ -248,7 +248,7 @@ where anybody is.
 ## Three rules the code follows and never stated
 
 **1. Elevation is always derived, never supplied.**
-`apps/locations/services/elevation.py::fetch_elevation` resolves it from a
+`apps/ingest/sources/open_meteo.py::fetch_elevation` resolves it from a
 lat/lon, and it is stored on `Location.elevation_m` so the lookup happens
 once. No surface asks a user for an elevation, and no import should accept
 one.

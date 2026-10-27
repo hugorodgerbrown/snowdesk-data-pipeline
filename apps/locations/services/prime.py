@@ -44,8 +44,8 @@ from django.db import transaction
 from django.utils import timezone
 from django_tasks import task
 
+from apps.ingest.public import fetch_elevation
 from apps.locations.models import Location
-from apps.locations.services.elevation import fetch_elevation
 from apps.weather.models import Weather
 from apps.weather.services.fetch import fetch_weather_for_location
 
