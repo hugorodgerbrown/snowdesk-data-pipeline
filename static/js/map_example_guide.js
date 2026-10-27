@@ -164,18 +164,6 @@
     el.style.top = `${Math.round(Math.max(floor, top))}px`;
   };
 
-  /**
-   * How much of the map's top the bar covers, for a camera move to keep
-   * clear: on a phone it lies along the top; on a desktop it sits under
-   * the route panel, which the map already keeps clear.
-   *
-   * @returns {number} px.
-   */
-  const barClearance = () => {
-    const rail = window.pwaRouteRail;
-    return rail && rail.isSheet && rail.isSheet() && !guide.hidden ? guide.offsetHeight + GAP : 0;
-  };
-
   // A phone's sheet moves between detents with no event of its own, so the
   // bar follows it frame by frame while it shows — help mode's approach to
   // the same problem (map_help_mode.js).
@@ -298,8 +286,8 @@
     if (index === null) return;
     emit('map.example.show_me', {});
     // Half a level past the threshold, so the colours are not on the edge.
-    // On a phone the bar sits along the top of the map, over the route.
-    opener?.showPoint?.(index, ZOOM_TARGET + 0.5, { clearTop: barClearance() });
+    // The map's padding keeps the bar clear, wherever it sits.
+    opener?.showPoint?.(index, ZOOM_TARGET + 0.5);
   };
 
   const theMap = () => window.snowdeskMapState && window.snowdeskMapState.map;
@@ -519,7 +507,7 @@
         emit('map.example.opened', {});
         enterStep(step);
         // The route was framed before the bar appeared over it.
-        window.pwaRouteOpener?.frame(exampleToken, { clearTop: barClearance() });
+        window.pwaRouteOpener?.frame(exampleToken);
       }
       followCursor();
     }

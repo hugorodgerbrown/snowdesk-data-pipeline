@@ -7638,18 +7638,23 @@
     if (!container) return padding;
     const canvas = container.getBoundingClientRect();
     if (!(canvas.height > 0)) return padding;
-    // SNOW-1230: the example walkthrough's bar rides with the panel — under
-    // it on a desktop, on top of the phone's sheet — so the fit reserves
-    // the panel and the bar together.
+    // SNOW-1230: the example walkthrough's bar is reserved with whatever it
+    // sits against. Under the panel on a desktop, and along the top of the
+    // map on a phone (SNOW-1244), it widens the top's reservation; were it
+    // ever to lap onto the phone's sheet, it would widen the foot's. Each
+    // edge goes through reserveFitEdge, so the pair stays under the canvas.
     const guide = exampleGuideBox();
     let panelBottom = routePanelBottom(canvas);
-    if (panelBottom !== null && guide) panelBottom = Math.max(panelBottom, guide.bottom - canvas.top);
+    // SNOW-1099: the phone's route sheet covers the foot instead.
+    let sheetTop = routeSheetTop();
+    if (guide && sheetTop !== null && guide.bottom > sheetTop) {
+      sheetTop = Math.min(sheetTop, guide.top);
+    } else if (guide) {
+      panelBottom = Math.max(panelBottom === null ? 0 : panelBottom, guide.bottom - canvas.top);
+    }
     if (panelBottom !== null) {
       reserveFitEdge(padding, 'top', 'bottom', panelBottom - padding.top, canvas.height);
     }
-    // SNOW-1099: the phone's route sheet covers the foot instead.
-    let sheetTop = routeSheetTop();
-    if (sheetTop !== null && guide) sheetTop = Math.min(sheetTop, guide.top);
     if (sheetTop !== null) {
       reserveFitEdge(padding, 'bottom', 'top', canvas.bottom - sheetTop - padding.bottom, canvas.height);
     }
@@ -9887,17 +9892,14 @@
       },
       // Re-frame the open share around whatever now covers the map — the
       // walkthrough's bar, once it has appeared over a route already framed.
-      // SNOW-1244: `clearTop` keeps the bar's strip along the top clear too.
-      frame: (token, { clearTop = 0 } = {}) => {
+      frame: (token) => {
         const feature = ((routesGeojsonCache && routesGeojsonCache.features) || []).find(
           (f) => f && f.properties && f.properties.token === token,
         );
         const bounds = feature ? readFeatureJson(feature.properties.bounds) : null;
         if (!Array.isArray(bounds) || bounds.length !== 4) return false;
-        const padding = paddingClearingRail();
-        padding.top += clearTop;
         map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-          padding: padding,
+          padding: paddingClearingRail(),
           duration: 400,
         });
         return true;
@@ -9913,10 +9915,9 @@
       // starts with one placed, so its first ask is a single drag — and,
       // given a `zoom`, fly in on it there ("Show me"), clear of the panel.
       // The map writes the index, so the cursor's own keep-in-view pan does
-      // not fight the flight. `clearTop` is px more to keep clear along the
-      // top of the map — the walkthrough's bar, which on a phone sits there.
-      // False with no open route or no such point.
-      showPoint: (index, zoom, { clearTop = 0 } = {}) => {
+      // not fight the flight. The padding keeps the walkthrough's bar clear
+      // too, wherever it sits. False with no open route or no such point.
+      showPoint: (index, zoom) => {
         if (!routeCursorTarget) return false;
         mapWritesRouteIndex = true;
         try {
@@ -9927,12 +9928,10 @@
         const point = routeCursorFeature(index);
         if (!point) return false;
         if (typeof zoom === 'number') {
-          const padding = paddingClearingRail();
-          padding.top += clearTop;
           map.easeTo({
             center: point.geometry.coordinates,
             zoom: zoom,
-            padding: padding,
+            padding: paddingClearingRail(),
             duration: 900,
           });
         }

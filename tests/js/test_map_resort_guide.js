@@ -326,8 +326,11 @@ describe('keep exploring (SNOW-1244)', () => {
     expect($('map-resort-guide-finish').hidden).toBe(true);
     expect(emitted('map.resort_guide.finished')[0][1]).toEqual({ kept: true });
 
+    const closed = vi.fn();
+    $('region-sheet').querySelector('[data-action="dismiss"]').addEventListener('click', closed);
     pill().querySelector('[data-resort-guide-back-to-today]').click();
 
+    expect(closed).toHaveBeenCalled();
     expect(pill().hidden).toBe(true);
     expect(dispatched('snowdesk:scrub-to').at(-1).detail.date).toBe(TODAY);
     expect($('map-resort-guide-finish').hidden).toBe(false);

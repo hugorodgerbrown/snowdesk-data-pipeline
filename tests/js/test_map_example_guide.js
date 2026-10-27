@@ -193,7 +193,7 @@ describe('starting', () => {
     expect(guide().querySelector('[data-example-day]').textContent).toMatch(/2026/);
     expect($('map-example-guide-eyebrow').textContent).toBe('Example route · 1 of 4');
     expect($('map-example-day-badge').hidden).toBe(false);
-    expect(window.pwaRouteOpener.frame).toHaveBeenCalledWith(TOKEN, { clearTop: 0 });
+    expect(window.pwaRouteOpener.frame).toHaveBeenCalledWith(TOKEN);
     expect(emitted('map.example.opened')).toHaveLength(1);
   });
 
@@ -300,7 +300,7 @@ describe('one gesture at a time (SNOW-1244)', () => {
 
     guide().querySelector('[data-example-show-me]').click();
 
-    expect(window.pwaRouteOpener.showPoint).toHaveBeenLastCalledWith(2, 14.5, { clearTop: 0 });
+    expect(window.pwaRouteOpener.showPoint).toHaveBeenLastCalledWith(2, 14.5);
     expect(emitted('map.example.show_me')).toHaveLength(1);
   });
 });

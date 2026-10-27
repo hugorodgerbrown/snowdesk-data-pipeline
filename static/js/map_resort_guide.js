@@ -459,6 +459,8 @@
   const finish = () => {
     if (phase === 'exploring') {
       emit('map.resort_guide.left', {});
+      // The bulletin kept open while exploring would sit over the card.
+      regionSheet?.querySelector('[data-action="dismiss"]')?.click();
       end();
       paintFinish();
       finishCard.hidden = false;
