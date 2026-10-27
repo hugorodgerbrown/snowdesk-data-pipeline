@@ -196,7 +196,9 @@
       floor: floor,
       height: el.offsetHeight,
       gap: GAP,
-      overSheet: step === 'resort' ? 'top' : 'bottom',
+      // Both steps' rows lead their sheets, so a bar with no room above a
+      // raised sheet goes along the foot of the map, clear of them.
+      overSheet: 'bottom',
     });
     el.style.top = pos.top === null ? 'auto' : `${pos.top}px`;
     el.style.bottom = pos.bottom === null ? '' : `${pos.bottom}px`;
@@ -222,7 +224,9 @@
       el.removeAttribute('data-resort-guide-ring');
     });
     const row = phase === 'running' && step === 'resort' ? regionRow() : null;
-    if (row) row.setAttribute('data-resort-guide-ring', '');
+    // The card the row sits in, so the ring is drawn whole round its corners.
+    const target = row ? row.closest('[data-place-link-card]') || row : null;
+    if (target) target.setAttribute('data-resort-guide-ring', '');
   };
 
   const paintStep = () => {
@@ -292,20 +296,17 @@
   };
 
   /**
-   * The region row sits low in the resort's sheet, under its weather and
-   * facts: on a phone, under the peek it opens at. Raise a phone sheet to
-   * full, and on every width scroll the row into the lower part of the
-   * sheet, clear of the bar laid over its top.
+   * The region row leads the resort's sheet, under its header: on a phone,
+   * just below the peek it opens at. Raise a phone sheet to half, where the
+   * row shows with the bar above the sheet, and on every width scroll the
+   * sheet back to its top so the row is in view.
    */
   const revealRegionRow = () => {
     if (!placeSheet) return;
-    if (isPhone()) window.pwaPlaceSheet?.detent?.('full');
+    if (isPhone()) window.pwaPlaceSheet?.detent?.('half');
     // Once the sheet has risen.
     setTimeout(() => {
-      const row = regionRow();
-      if (!row) return;
-      const offset = row.getBoundingClientRect().bottom - placeSheet.getBoundingClientRect().top;
-      placeSheet.scrollTop += offset - placeSheet.clientHeight * 0.8;
+      if (regionRow()) placeSheet.scrollTop = 0;
     }, REVEAL_DELAY_MS);
   };
 

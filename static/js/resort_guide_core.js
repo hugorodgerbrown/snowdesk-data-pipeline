@@ -121,9 +121,10 @@
    *   `floor` is already map-relative.
    * A phone sheet raised so high that the bar has no room above it (the
    * sheet at full) gets the bar laid over it instead: under the top
-   * controls when `overSheet` is 'top' (the resort step, whose row is low
-   * in the sheet), along the foot of the map when it is 'bottom' (the
-   * region step, whose level and problems lead the sheet).
+   * controls when `overSheet` is 'top' (for a row low in the sheet), along
+   * the foot of the map when it is 'bottom' (for a sheet whose lead is the
+   * point: both steps today, since the region row leads the resort's sheet
+   * and the level and problems lead the region's).
    *
    * @returns {{top: ?number, bottom: ?number, left: ?number}} Exactly one
    *   of `top` and `bottom` is set; `left` null keeps the CSS's.

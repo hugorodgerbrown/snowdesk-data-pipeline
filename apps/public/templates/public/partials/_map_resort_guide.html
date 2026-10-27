@@ -10,10 +10,9 @@ finished by doing it rather than by reading:
   search  search opens with a few popular resorts above the visitor's own
           pins (resort_guide_popular); the lead below sits at the top of
           the dropdown. Picking any resort finishes it.
-  resort  the resort's sheet: the resort has no danger level of its own,
-          its avalanche region has (docs/decisions/a-resort-has-no-
-          avalanche-danger.md). The region row is ringed. Tapping it
-          finishes the step.
+  resort  the resort's sheet: bulletins are regional, so the region row
+          (docs/decisions/a-resort-has-no-avalanche-danger.md), which
+          leads the sheet, is ringed. Tapping it finishes the step.
   region  the region's sheet is the bulletin: one line on how to read it,
           and Finish.
 
@@ -69,11 +68,18 @@ the map page only (show_tour_offer).
     </div>
     <div data-resort-guide-step="resort">
         <p class="map-example-guide-text">
-            {% blocktrans trimmed %}
-                <strong data-resort-guide-name></strong> has no danger level of its own. It sits in the
-                <strong data-resort-guide-region></strong> avalanche region, and the bulletin is written for the region.
-                <strong>Tap it</strong> to read it.
-            {% endblocktrans %}
+            <span class="map-example-touch">
+                {% blocktrans trimmed %}
+                    Avalanche bulletins are regional. <strong>Tap the highlighted row</strong> to view the local
+                    conditions.
+                {% endblocktrans %}
+            </span>
+            <span class="map-example-pointer">
+                {% blocktrans trimmed %}
+                    Avalanche bulletins are regional. <strong>Click the highlighted row</strong> to view the local
+                    conditions.
+                {% endblocktrans %}
+            </span>
         </p>
     </div>
     <div data-resort-guide-step="region" hidden>

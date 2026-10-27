@@ -4614,16 +4614,18 @@ html:has(> body.map-fullscreen) > body {
     display: none;
 }
 
-/* The row step two asks the visitor to tap. */
+/* The row step two asks the visitor to tap: an accent ring with a soft
+   halo, drawn OUTSIDE the card that holds the row. An inset ring on the
+   row itself lost its corners to the card's rounded overflow clip. */
 [data-resort-guide-ring] {
     position: relative;
-    box-shadow: inset 0 0 0 2px var(--ink);
+    box-shadow: 0 0 0 2px var(--color-accent), 0 0 0 6px var(--color-accent-tint);
     animation: resort-guide-ring 1.6s ease-in-out infinite;
 }
 
 @keyframes resort-guide-ring {
     50% {
-        box-shadow: inset 0 0 0 4px var(--ink);
+        box-shadow: 0 0 0 2px var(--color-accent), 0 0 0 9px var(--color-accent-tint);
     }
 }
 

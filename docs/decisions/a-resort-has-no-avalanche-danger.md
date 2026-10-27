@@ -2,7 +2,7 @@
 name: a-resort-has-no-avalanche-danger
 description: _resort_body.html shows no danger; neutral region row (_place_link_row.html); panel kind line; map_panel_trail.js back pill
 status: current
-last-reviewed: 2026-10-26
+last-reviewed: 2026-10-27
 ---
 
 # A resort has no avalanche danger of its own
@@ -104,3 +104,22 @@ so what it teaches is exactly what the map does every other day.
 - **Pinning needs an account**, as the sheet's star does. The finish card's
   pin is a `[data-resort-star]` that favourites.js saves; signed out it is a
   sign-in link whose `next` reopens the resort on the map.
+
+## The region row leads the resort (user testing, 27 Oct 2026)
+
+User testing found the walkthrough's "Tap it" pointing at a row that sat
+under the forecast and six fact rows, and the guide's ring drawn inside a
+card that clipped its corners. So, for every reader and not only during the
+guide (Hugo, 27 Oct):
+
+- **The region row comes first** in `_resort_body.html`, under the header,
+  and reads the region's name over "View region bulletin for <day>". The
+  forecast follows it. This reverses SNOW-1203's "the forecast leads"
+  ([a-resort-page-answers-the-query](a-resort-page-answers-the-query.md)):
+  the bulletin is the reason most people open a resort.
+- **In the map the facts are folded** behind a closed "About this resort"
+  panel (`includes/_collapsible_panel.html`, `folded=True` on
+  `_resort_facts.html`). The resort page keeps them open in its sidebar.
+- **The guide rings the card, not the row** (`[data-place-link-card]`), in
+  the accent colour with a halo, and says "Avalanche bulletins are
+  regional. Tap the highlighted row to view the local conditions."
