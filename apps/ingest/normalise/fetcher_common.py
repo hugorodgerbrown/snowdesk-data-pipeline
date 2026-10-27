@@ -1,5 +1,5 @@
 """
-apps/bulletins/services/fetcher_common.py — Shared helpers for the bulletin fetchers.
+apps/ingest/normalise/fetcher_common.py — Shared helpers for the bulletin fetchers.
 
 Centralises three pieces of logic that were duplicated across the SLF, ALBINA,
 and Météo-France fetchers:
@@ -13,7 +13,7 @@ and Météo-France fetchers:
 2. **NDJSON stash writers** — ``merge_ndjson_records`` (dedupe + sort) and
    ``write_ndjson_archive`` (read-existing → merge → atomic write) are the
    building blocks used by ALBINA and Météo-France stash writers.  The SLF
-   stash writer delegates to ``apps.bulletins.services.slf_archive`` which has its
+   stash writer delegates to ``apps.ingest.normalise.slf_archive`` which has its
    own decomposed helpers (``merge`` / ``write_archive``) because SLF serialises
    with ``ensure_ascii=False`` while ALBINA/MF use the JSON default; keeping
    separate code avoids a silent encoding divergence.
@@ -104,7 +104,7 @@ def write_ndjson_archive(
 
     Serialises with ``json.dumps(record)`` — i.e. ``ensure_ascii=True`` (the
     Python default).  The SLF archive uses ``ensure_ascii=False`` and is
-    handled separately in ``apps.bulletins.services.slf_archive`` to preserve
+    handled separately in ``apps.ingest.normalise.slf_archive`` to preserve
     byte-identical output.
 
     Args:

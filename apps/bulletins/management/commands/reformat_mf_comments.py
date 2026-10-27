@@ -54,7 +54,6 @@ from apps.bulletins.services.day_rating import (
     recompute_region_day,
     slim_regions_prefetch,
 )
-from apps.bulletins.services.meteofrance_translator import format_comment_as_html
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -62,6 +61,7 @@ from apps.bulletins.services.render_model import (
 )
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
+from apps.ingest.public import format_comment_as_html
 from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)

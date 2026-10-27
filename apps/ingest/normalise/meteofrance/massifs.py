@@ -1,4 +1,4 @@
-# apps/bulletins/services/meteofrance_massifs.py — Canonical massif name list for
+# apps/ingest/normalise/meteofrance/massifs.py — Canonical massif name list for
 # the 23 Alpine massifs covered by the Météo-France BRA pipeline.
 #
 # Usage: import ALPINE_MASSIFS for the canonical list; call slugify() to
@@ -94,8 +94,8 @@ ALL_MASSIFS: list[str] = [
 def _build_slug_to_code() -> dict[str, int]:
     """Build the slug→integer-code mapping from the massifs catalogue.
 
-    Reads ``docs/research/meteofrance/massifs.json`` (path resolved relative
-    to the repository root — two directories above this file) and
+    Reads ``massifs.json`` beside this file — the catalogue travels with
+    the code, so ``apps/ingest`` is self-contained (SNOW-1248) — and
     produces a dict keyed by the URL-slug form of each Alpine massif name
     (uppercased, spaces replaced with hyphens).
 
@@ -114,10 +114,7 @@ def _build_slug_to_code() -> dict[str, int]:
             catalogue.
 
     """
-    # This file lives at apps/bulletins/services/meteofrance_massifs.py.
-    # The repo root is three directories up: .../repo/apps/bulletins/services/<this>
-    _repo_root = Path(__file__).resolve().parents[3]
-    catalogue_path = _repo_root / "docs" / "research" / "meteofrance" / "massifs.json"
+    catalogue_path = Path(__file__).resolve().with_name("massifs.json")
     data: dict[str, list[dict[str, object]]] = json.loads(
         catalogue_path.read_text(encoding="utf-8")
     )
@@ -143,7 +140,7 @@ def _build_slug_to_code() -> dict[str, int]:
 # Known-bad spellings that appear in the upstream BRA PDFs and therefore
 # leak into ``customData.MF.massif`` after PDF extraction.  Aliasing them
 # here lets the loader round-trip those bulletins instead of dropping them.
-# Each key is the slug form produced by ``_normalise_slug`` on the raw
+# Each key is the slug form produced by ``normalise_slug`` on the raw
 # upstream name; the value is the integer massif code from massifs.json.
 #
 # - ``EMBRUNNAIS-PARPAILLON`` (double N): 66 rows in the 2025-2026 archive.
@@ -153,7 +150,7 @@ _MASSIF_ALIASES: dict[str, int] = {
 }
 
 
-def _normalise_slug(raw: str) -> str:
+def normalise_slug(raw: str) -> str:
     """Return the canonical slug form for an upstream massif identifier.
 
     The BRA PDFs use a mix of hyphens and spaces in massif names (e.g.
@@ -172,7 +169,7 @@ def _normalise_slug(raw: str) -> str:
 
 
 # Slug-to-integer massif code mapping for the 23 Alpine massifs.
-# Built at import time from ``docs/research/meteofrance/massifs.json``.
+# Built at import time from ``massifs.json`` beside this module.
 # Key: URL-slug form (e.g. ``"CHABLAIS"``).
 # Value: integer massif ID matching the ``FR-{NN}`` zero-padded region ID
 # used in EAWS fixtures (e.g. ``1`` → ``"FR-01"``).
@@ -202,7 +199,7 @@ def slug_to_region_id(slug: str) -> str:
             normalisation and alias resolution.
 
     """
-    code = SLUG_TO_CODE[_normalise_slug(slug)]
+    code = SLUG_TO_CODE[normalise_slug(slug)]
     return f"FR-{code:02d}"
 
 

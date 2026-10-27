@@ -25,7 +25,6 @@ from typing import Any
 import pytest
 
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.meteofrance_translator import parse_dpbra_xml
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -46,6 +45,7 @@ from apps.bulletins.services.render_model import (
     compute_day_character,
     detect_source,
 )
+from apps.ingest.public import parse_dpbra_xml
 
 # Path to test fixtures directory.
 _FIXTURE_DIR = Path(__file__).parents[2] / "fixtures"
