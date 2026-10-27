@@ -228,10 +228,27 @@
   // Only the last stretch of a drag says how fast it was released.
   var VELOCITY_WINDOW_MS = 100;
 
+  // How long a desktop panel takes to grow or shrink to new content — the
+  // CSS transition in static/css/map.css's `[data-sheet-morphing]` rule. The
+  // inline height is let go a little after it, so the panel is back to
+  // fitting its content even when no transitionend arrives.
+  var MORPH_MS = 240;
+  var MORPH_RELEASE_MS = MORPH_MS + 60;
+
+  // The longest a sheet handed over from another waits at the other's
+  // height for its body before settling on what it has (a loading line).
+  var HOLD_MS = 1500;
+
   /** @returns {boolean} */
   function isPhone() {
     if (typeof window.matchMedia !== 'function') return true;
     return !window.matchMedia(DESKTOP_QUERY).matches;
+  }
+
+  /** @returns {boolean} Whether the reader asked for less motion. */
+  function reducedMotion() {
+    return typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
   /** @returns {any} The MapLibre map, when the map bundle has made one. */
@@ -443,6 +460,24 @@
       if (entry.el === el || entry.el.hasAttribute('hidden') || !entry.close) return;
       entry.close();
     });
+  }
+
+  /**
+   * The height of the detent sheet open now, other than `el`: 0 when none
+   * is. Read by a sheet about to open, BEFORE pwaMapOverlays closes the
+   * other one, so the new sheet can take over at the height the old one
+   * stood at instead of the reader watching one drop and the next rise.
+   *
+   * @param {HTMLElement} el The sheet that is opening.
+   * @returns {number}
+   */
+  function openSheetHeight(el) {
+    var height = 0;
+    boundSheets.forEach(function (entry) {
+      if (entry.el === el || !entry.el.isConnected || entry.el.hasAttribute('hidden')) return;
+      height = Math.max(height, entry.el.getBoundingClientRect().height);
+    });
+    return height;
   }
 
   /**
@@ -963,7 +998,7 @@
    *   click-outside, the ×, a drag below peek, another overlay opening).
    *   SNOW-1239: the object sheets abort their request in flight here, so
    *   an answer for a sheet already closed never lands in it.
-   * @returns {{ open: function(): void, close: function(): void, isOpen: function(): boolean, detent: function(string): void, element: HTMLElement }}
+   * @returns {{ open: function({ awaiting?: boolean }=): void, close: function(): void, isOpen: function(): boolean, detent: function(string): void, pending: function({ keep?: Element|null }=): void, element: HTMLElement }}
    */
   function attach(el, options) {
     var opts = options || {};
@@ -975,23 +1010,196 @@
     // SNOW-1097: null unless the partial declared detents.
     var detents = bindDetents(el, { onClose: close });
 
+    // ONE PANEL, NEW CONTENT (Hugo, 27 Oct 2026). Tapping from one resort,
+    // region or weather point to the next used to empty the open sheet down
+    // to a loading line and grow it again when the answer landed, so the
+    // panel bobbed down and up between every two places. Now the owner
+    // marks the open sheet `pending` and keeps what it shows, dimmed, until
+    // the new body replaces it in one swap; a phone sheet then glides from
+    // one detent height to the next (its height is a CSS transition), and a
+    // desktop panel, which is as tall as its content and so has no height
+    // to transition, is carried from its old height to its new one here
+    // (`morph`). Only the object sheets do this — the ones with detents.
+    var lastHeight = 0;
+    var morphTimer = 0;
+    var holding = false;
+    var holdTimer = 0;
+
+    /** Let go of a morph's inline height: the panel fits its content again. */
+    function endMorph() {
+      clearTimeout(morphTimer);
+      el.removeAttribute('data-sheet-morphing');
+      el.style.removeProperty('height');
+    }
+
+    /**
+     * Carry a desktop panel from `from` px to the height its content now
+     * needs. Nothing on a phone, where the detent heights transition in CSS,
+     * or for a reader who asked for less motion.
+     *
+     * @param {number} from
+     */
+    function morph(from) {
+      if (!(from > 0) || isPhone() || reducedMotion()) return;
+      endMorph();
+      var to = el.getBoundingClientRect().height;
+      if (Math.abs(to - from) < 2) return;
+      el.style.height = from + 'px';
+      // The start height is laid out before the transition is switched on
+      // and the end height set, or the browser sees one change, not two.
+      void el.offsetHeight;
+      el.setAttribute('data-sheet-morphing', '');
+      el.style.height = to + 'px';
+      morphTimer = window.setTimeout(endMorph, MORPH_RELEASE_MS);
+    }
+
+    /**
+     * Dim what the open sheet shows while the next item's body is fetched,
+     * keeping `keep` (and the handle) at full strength — the region sheet
+     * repaints its peek row for the new region at once and keeps that.
+     *
+     * @param {Element} parent
+     * @param {Element|null} keep
+     */
+    function markStale(parent, keep) {
+      Array.prototype.forEach.call(parent.children, function (child) {
+        if (child.hasAttribute('data-sheet-handle') || child === keep) return;
+        if (keep && child.contains(keep)) {
+          markStale(child, keep);
+          return;
+        }
+        child.setAttribute('data-sheet-stale', '');
+      });
+    }
+
+    /**
+     * The open sheet is about to show something else: keep the current
+     * content up, dimmed, until the swap. (map_panel_trail.js scrolls it
+     * back to the top when the swap brings another place.)
+     *
+     * @param {{ keep?: Element|null }} [options]
+     */
+    function pending(options) {
+      if (!isOpen()) return;
+      var o = options || {};
+      el.setAttribute('data-sheet-pending', '');
+      el.setAttribute('aria-busy', 'true');
+      markStale(el, o.keep || null);
+    }
+
+    function clearPending() {
+      el.removeAttribute('data-sheet-pending');
+      el.removeAttribute('aria-busy');
+      Array.prototype.forEach.call(el.querySelectorAll('[data-sheet-stale]'), function (node) {
+        node.removeAttribute('data-sheet-stale');
+      });
+    }
+
+    // What is dimmed belongs to the place the reader has left: its star,
+    // Share, Rename and Delete still name that place, so they act on
+    // nothing until the swap (a press on one is swallowed here, before
+    // favourites.js's document handler or the owner's own sees it). The ×
+    // still closes the sheet. map.css takes the pointer off them too, so a
+    // finger on them drags the sheet as it would anywhere else.
+    /** @param {Event} event */
+    function swallowStale(event) {
+      if (!el.hasAttribute('data-sheet-pending')) return;
+      var target = /** @type {Element|null} */ (event.target instanceof Element ? event.target : null);
+      if (!target || !target.closest('[data-sheet-stale]')) return;
+      if (target.closest('[data-action="dismiss"]')) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (detents) {
+      el.addEventListener('click', swallowStale, true);
+      el.addEventListener('submit', swallowStale, true);
+    }
+
+    if (detents && typeof ResizeObserver === 'function') {
+      new ResizeObserver(function () {
+        lastHeight = isOpen() ? el.getBoundingClientRect().height : 0;
+      }).observe(el);
+    }
+
+    // Every owner fills the sheet by replacing its children, so a swap is a
+    // childList change. The height the panel had is the ResizeObserver's
+    // last reading (layout already holds the new content by now), or, mid
+    // morph, the height the transition has reached.
+    var swaps = detents && typeof MutationObserver === 'function'
+      ? new MutationObserver(function () {
+        if (!isOpen()) return;
+        if (holding) {
+          releaseHold();
+          return;
+        }
+        clearPending();
+        morph(el.hasAttribute('data-sheet-morphing') ? el.getBoundingClientRect().height : lastHeight);
+      })
+      : null;
+    if (swaps) swaps.observe(el, { childList: true });
+
     /**
      * Everything a close does beyond hiding. Split out because a dismissal
      * routed through overlays.js has already hidden the element.
      */
     function teardown() {
       window.PlacePicker?.deactivate();
+      holding = false;
+      clearTimeout(holdTimer);
+      endMorph();
       el.innerHTML = '';
+      clearPending();
+      el.removeAttribute('data-sheet-handover');
+      lastHeight = 0;
       if (detents) detents.reset();
       if (opts.onTeardown) opts.onTeardown();
     }
 
-    function open() {
+    /**
+     * Stop holding a handed-over sheet at the old sheet's height: the phone
+     * detent's own height takes over through its transition, and a desktop
+     * panel is carried to its content's.
+     */
+    function releaseHold() {
+      if (!holding) return;
+      holding = false;
+      clearTimeout(holdTimer);
+      if (isPhone()) {
+        el.style.removeProperty('height');
+        return;
+      }
+      morph(el.getBoundingClientRect().height);
+    }
+
+    /**
+     * @param {{ awaiting?: boolean }} [options]
+     *   ``awaiting`` — the owner has asked for the body and shows a loading
+     *   line meanwhile. A sheet handed over from another one then holds the
+     *   other's height until the body lands (or HOLD_MS passes), so the
+     *   loading line does not shrink it to a sliver first.
+     */
+    function open(options) {
+      // HANDED OVER, NOT DROPPED AND RAISED (Hugo, 27 Oct 2026). From a
+      // resort to a weather point, or a region to a resort, one object sheet
+      // closes as another opens. Read the height the open one stands at
+      // before the announcement below closes it, and open this one from
+      // there: it resizes to its own height rather than the reader watching
+      // one panel slide away and the next slide up from the foot.
+      var from = detents && !isOpen() ? openSheetHeight(el) : 0;
+      if (reducedMotion()) from = 0;
+      var handover = from > 0 && isPhone();
+      var hold = from > 0 && !!(options && options.awaiting);
       // SNOW-658: only one overlay is open over the map at a time. Announce
       // BEFORE the sheet is revealed, so the surface being replaced is gone
       // by the time this one is on screen.
       window.pwaMapOverlays?.opening(el.id);
       if (opts.onBeforeOpen) opts.onBeforeOpen();
+      if (handover) {
+        // No slide from the foot (map.css's @starting-style skips a sheet
+        // handed over), and the old sheet's height to start from.
+        el.setAttribute('data-sheet-handover', '');
+        el.style.height = from + 'px';
+      }
       el.removeAttribute('hidden');
       // SNOW-658: on desktop the sheet is a floating card, and
       // includes/_overlay_sheet.html can only put it in a fixed viewport
@@ -1004,6 +1212,22 @@
       // the right shape.
       window.pwaOverlayBounds?.positionSheet(el);
       if (detents) detents.open();
+      // What the owner painted before opening (its loading line) and the
+      // handle put back on the way in are not the body landing.
+      if (swaps) swaps.takeRecords();
+      if (hold) {
+        // The body is on its way: stay at the old height until it lands.
+        if (!handover) el.style.height = from + 'px';
+        holding = true;
+        holdTimer = window.setTimeout(releaseHold, HOLD_MS);
+      } else if (handover) {
+        // Laid out at the old height, then let go: the detent's own height
+        // takes over through the sheet's height transition.
+        void el.offsetHeight;
+        el.style.removeProperty('height');
+      } else if (from > 0) {
+        morph(from);
+      }
       el.focus();
     }
 
@@ -1070,7 +1294,14 @@
       if (detents && isOpen() && isPhone()) detents.set(name);
     }
 
-    return { open: open, close: close, isOpen: isOpen, detent: detent, element: el };
+    return {
+      open: open,
+      close: close,
+      isOpen: isOpen,
+      detent: detent,
+      pending: pending,
+      element: el,
+    };
   }
 
   window.MapSheet = {

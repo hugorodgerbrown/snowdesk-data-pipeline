@@ -144,6 +144,80 @@ describe('opening', () => {
   });
 });
 
+describe('from one place to the next (Hugo, 27 Oct 2026)', () => {
+  const ZERMATT = `
+    <div data-testid="place-sheet-body" data-place-kind="resort">
+      <div data-sheet-peek><h2 data-row-label>Zermatt</h2></div>
+      <section data-testid="place-sheet-weather">Zermatt weather</section>
+    </div>
+  `;
+
+  /** @param {Function} [hold] Receives the second answer's resolver. */
+  async function openZermattThenTap(hold) {
+    fetchMock
+      .mockImplementationOnce(() => answer(ZERMATT))
+      .mockImplementationOnce(() => new Promise((resolve) => { hold(resolve); }));
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'zermatt', name: 'Zermatt' });
+    await settle();
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'saas-fee', name: 'Saas-Fee' });
+  }
+
+  it('keeps the open body up, dimmed, under the new name until the answer lands', async () => {
+    let release;
+    await openZermattThenTap((r) => { release = r; });
+    // Not emptied to a loading line: that is what made the sheet bob.
+    expect(sheet.textContent).toContain('Zermatt weather');
+    expect(sheet.textContent).not.toContain('Loading place details');
+    expect(sheet.querySelector('h2[data-row-label]').textContent).toBe('Saas-Fee');
+    expect(sheet.getAttribute('aria-busy')).toBe('true');
+    expect(sheet.querySelector('[data-testid="place-sheet-weather"]').hasAttribute('data-sheet-stale')).toBe(true);
+    expect(sheet.querySelector('h2[data-row-label]').hasAttribute('data-sheet-stale')).toBe(false);
+    expect(sheet.querySelector('[data-sheet-handle]').hasAttribute('data-sheet-stale')).toBe(false);
+
+    release({ ok: true, text: () => Promise.resolve(RESORT_BODY) });
+    await settle();
+    expect(sheet.textContent).toContain('Verbier');
+    expect(sheet.hasAttribute('aria-busy')).toBe(false);
+    expect(sheet.hasAttribute('data-sheet-pending')).toBe(false);
+    expect(sheet.querySelector('[data-sheet-stale]')).toBeNull();
+  });
+
+  it("does not save the last resort from its star while the next one loads", async () => {
+    const ZERMATT_STAR = `
+      <div data-testid="place-sheet-body" data-place-kind="resort">
+        <div data-sheet-peek><h2 data-row-label>Zermatt</h2>
+          <button type="button" data-resort-star data-resort-slug="zermatt" data-favourited="false" aria-pressed="false"><svg fill="none"></svg></button>
+        </div>
+      </div>
+    `;
+    fetchMock
+      .mockImplementationOnce(() => answer(ZERMATT_STAR))
+      .mockImplementationOnce(() => new Promise(() => {}));
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'zermatt', name: 'Zermatt' });
+    await settle();
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'saas-fee', name: 'Saas-Fee' });
+    const star = sheet.querySelector('[data-resort-star]');
+    star.click();
+    expect(star.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('stays at the detent it rests at', async () => {
+    await openZermattThenTap(() => {});
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+    expect(sheet.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('takes the stale body down when the next place cannot be fetched', async () => {
+    let release;
+    await openZermattThenTap((r) => { release = r; });
+    release({ ok: false });
+    await settle();
+    expect(sheet.textContent).not.toContain('Zermatt weather');
+    expect(sheet.textContent).toContain('unavailable offline');
+    expect(sheet.hasAttribute('data-sheet-pending')).toBe(false);
+  });
+});
+
 describe('offline', () => {
   it('falls back to a saved pin\'s own name', async () => {
     fetchMock.mockImplementation(() => Promise.reject(new Error('offline')));

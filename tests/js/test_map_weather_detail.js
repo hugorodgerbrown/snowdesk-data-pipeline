@@ -81,6 +81,38 @@ describe('opening', () => {
   });
 });
 
+describe('from one point to the next (Hugo, 27 Oct 2026)', () => {
+  /** @param {string} html */
+  const card = (html) => Promise.resolve({ ok: true, json: () => Promise.resolve({ html }) });
+
+  it('keeps the open card up, dimmed, at its detent until the next lands', async () => {
+    let release;
+    fetchMock
+      .mockImplementationOnce(() => card('<div data-sheet-peek>Mayens de Conthey</div><section>Forecast A</section>'))
+      .mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    window.pwaWeatherDetail.open('aaa');
+    await settle();
+    sheet.querySelector('[data-sheet-handle]').click();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+
+    window.pwaWeatherDetail.open('bbb');
+    // Neither back to the loading line nor back to the first detent: the
+    // two together were the bob.
+    expect(sheet.textContent).toContain('Forecast A');
+    expect(sheet.textContent).not.toContain('Loading weather…');
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+    expect(sheet.getAttribute('aria-busy')).toBe('true');
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/weather/bbb/detail/');
+
+    release({ ok: true, json: () => Promise.resolve({ html: '<div data-sheet-peek>La Forclaz</div>' }) });
+    await settle();
+    expect(sheet.textContent).toContain('La Forclaz');
+    expect(sheet.textContent).not.toContain('Forecast A');
+    expect(sheet.hasAttribute('aria-busy')).toBe(false);
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+});
+
 // SNOW-1195: the calendar spares this sheet now, so a new day reloads it.
 describe('a change of day', () => {
   /** Announce a committed day, as map_scrubber.js does. */

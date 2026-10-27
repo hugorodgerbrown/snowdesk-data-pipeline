@@ -190,10 +190,10 @@
    */
   const open = (next) => {
     if (!next || !next.id || !takes(next)) return false;
+    const switching = controller.isOpen();
+    const sameKind = !!place && place.kind === next.kind;
     place = next;
     document.dispatchEvent(new CustomEvent('snowdesk:sheet-leader-point'));
-    // Another place's body must not show under the new one's loading line.
-    if (controller.isOpen()) sheet.replaceChildren();
     if (playback.isPlaying()) {
       // SNOW-1239: opened during playback, the band alone, and the body
       // when the timeline stops.
@@ -202,15 +202,36 @@
       sheet.replaceChildren();
       playback.markPaused(sheet, true);
     } else {
+      // FROM ONE PLACE TO THE NEXT THE SHEET STAYS UP (Hugo, 27 Oct 2026).
+      // It used to empty to a loading line and grow again when the body
+      // landed, so it bobbed between every two resorts. The old body stays,
+      // dimmed, under the new place's name until the new one replaces it.
+      if (switching) controller.pending({ keep: sameKind ? renameHeading(next) : null });
       load();
     }
     if (!controller.isOpen()) {
       // A resort opens at HALF — its name, the day, the bulletin and
       // today's weather — and a saved pin at PEEK (Hugo, 27 Oct 2026).
       sheet.setAttribute('data-detent-initial', next.kind === 'resort' ? 'half' : 'peek');
-      controller.open();
+      controller.open({ awaiting: !playback.isPlaying() });
     }
     return true;
+  };
+
+  /**
+   * Put the next place's name in the open body's heading at once, so the
+   * sheet says where the reader tapped while the rest of it is fetched.
+   *
+   * @param {{name?: string}} next
+   * @returns {?Element} The heading, or null when there is no name or none
+   *   to write it in.
+   */
+  const renameHeading = (next) => {
+    const heading = sheet.querySelector('[data-testid="place-sheet-body"] h2[data-row-label]');
+    if (!heading || !next.name) return null;
+    heading.textContent = next.name;
+    heading.setAttribute('title', next.name);
+    return heading;
   };
 
   /** @returns {void} */

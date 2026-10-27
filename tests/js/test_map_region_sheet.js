@@ -338,6 +338,62 @@ describe('while open', () => {
 
 });
 
+describe('from one region to the next (Hugo, 27 Oct 2026)', () => {
+  // The body's real shape: the peek partial's root inside the body root.
+  const bodyFor = (name, extra) => `
+    <div data-testid="region-sheet-body" data-panel-key="region:${name}">
+      <div><div data-sheet-peek><h2 data-region-sheet-slot="name">${name}</h2></div></div>
+      <div data-testid="region-sheet-bulletin">${extra}</div>
+    </div>
+  `;
+
+  /** Open Martigny-Verbier, then select Val d'Hérens with its body held. */
+  async function hopWithBodyHeld() {
+    let release;
+    fetchMock
+      .mockImplementationOnce(() =>
+        Promise.resolve({ ok: true, text: () => Promise.resolve(bodyFor('Martigny-Verbier', 'Old problems')) }))
+      .mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const sheet = await boot();
+    select('CH-4115', 'tap', { region_name: 'Martigny-Verbier' });
+    await settle();
+    sheet.querySelector('[data-sheet-handle]').click();
+    select('CH-4116', 'tap', { region_name: "Val d'Hérens" });
+    return { sheet, release: (r) => release(r) };
+  }
+
+  it('repaints the peek row in place and keeps the rest up, dimmed', async () => {
+    const { sheet } = await hopWithBodyHeld();
+    const names = [...sheet.querySelectorAll('[data-region-sheet-slot="name"]')].map((n) => n.textContent);
+    expect(names).toEqual(["Val d'Hérens"]);
+    // The old body stays rather than the sheet dropping to its peek row.
+    expect(sheet.querySelector('[data-testid="region-sheet-bulletin"]').textContent).toContain('Old problems');
+    expect(sheet.querySelector('[data-testid="region-sheet-bulletin"]').hasAttribute('data-sheet-stale')).toBe(true);
+    expect(sheet.querySelector('[data-sheet-peek]').closest('[data-sheet-stale]')).toBeNull();
+    expect(sheet.getAttribute('aria-busy')).toBe('true');
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
+  it('swaps in the new body when it lands', async () => {
+    const { sheet, release } = await hopWithBodyHeld();
+    release({ ok: true, text: () => Promise.resolve(bodyFor("Val d'Hérens", 'New problems')) });
+    await settle();
+    expect(sheet.textContent).toContain('New problems');
+    expect(sheet.textContent).not.toContain('Old problems');
+    expect(sheet.hasAttribute('aria-busy')).toBe(false);
+    expect(sheet.querySelector('[data-sheet-stale]')).toBeNull();
+  });
+
+  it('takes the old body down when the new one cannot be fetched', async () => {
+    const { sheet, release } = await hopWithBodyHeld();
+    release({ ok: false });
+    await settle();
+    expect(sheet.textContent).not.toContain('Old problems');
+    expect(sheet.querySelector('[data-region-sheet-slot="name"]').textContent).toBe("Val d'Hérens");
+    expect(sheet.textContent).toContain('unavailable offline');
+  });
+});
+
 describe('the problem-terrain switch', () => {
   const TERRAIN_BODY = `${BODY}
     <div data-testid="region-sheet-terrain">
