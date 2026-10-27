@@ -27,7 +27,7 @@ from apps.bulletins.models import (
 )
 from apps.bulletins.services.coverage import covered_region_ids
 from apps.bulletins.services.day_rating import refresh_day_ratings
-from apps.bulletins.services.slf_fetcher import upsert_bulletin
+from apps.bulletins.services.apply import upsert_bulletin
 from apps.core.models import CommandRun
 from apps.regions.models import MicroRegion, SubRegion
 from tests.factories import MicroRegionFactory, PipelineRunFactory, SubRegionFactory

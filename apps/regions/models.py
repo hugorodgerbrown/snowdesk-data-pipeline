@@ -66,7 +66,7 @@ MONTH_DAY_VALIDATOR = RegexValidator(
 #
 # All three models are fixture-backed and treated as static reference
 # data. ``MicroRegion`` is NOT auto-created at bulletin-ingest time (see
-# ``apps.bulletins.services.slf_fetcher._get_region``); an unknown
+# ``apps.bulletins.services.apply._get_region``); an unknown
 # ``region_id`` in an inbound bulletin raises ``UnknownRegionError`` so a
 # human can update the fixtures.
 #

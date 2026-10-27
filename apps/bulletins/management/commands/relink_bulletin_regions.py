@@ -69,7 +69,7 @@ from apps.bulletins.services.day_rating import (
     slim_regions_prefetch,
 )
 from apps.bulletins.services.grouping import compute_bulletin_grouping_boundary
-from apps.bulletins.services.slf_fetcher import _resolve_bulletin_regions
+from apps.bulletins.services.apply import _resolve_bulletin_regions
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion

@@ -32,7 +32,7 @@ from apps.bulletins.services.albina_fetcher import (
     latest_albina_date,
     run_albina_pipeline,
 )
-from apps.bulletins.services.slf_fetcher import upsert_bulletin
+from apps.bulletins.services.apply import upsert_bulletin
 from apps.ingest.public import albina_pdf_url
 from tests.factories import MicroRegionFactory, PipelineRunFactory
 

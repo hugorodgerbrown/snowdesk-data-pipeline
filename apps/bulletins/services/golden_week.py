@@ -431,7 +431,7 @@ def load_golden_week(*, run: "PipelineRun | None", commit: bool) -> GoldenWeekRe
             the loaded bulletins to.
 
     """
-    from apps.bulletins.services.slf_fetcher import upsert_bulletin
+    from apps.bulletins.services.apply import upsert_bulletin
 
     if commit and run is None:
         raise ValueError("load_golden_week(commit=True) requires a PipelineRun.")
