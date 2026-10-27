@@ -144,10 +144,20 @@
       document.dispatchEvent(new CustomEvent('snowdesk:sheet-leader-point'));
       return false;
     }
+    // FROM ONE POINT TO THE NEXT THE SHEET STAYS UP (Hugo, 27 Oct 2026).
+    // Opening it again used to drop it to the loading line and back to its
+    // first detent, so it bobbed between every two points. Already open, it
+    // keeps the last point's day up, dimmed, at the detent it rests at, and
+    // the new body replaces it.
+    if (sheet.isOpen()) {
+      sheet.pending();
+      document.dispatchEvent(new CustomEvent('snowdesk:sheet-leader-point'));
+      return load(shortId, dateKey);
+    }
     // Paint first: the sheet measures its peek as it opens, so the loading
     // line must already be there or it opens at the fallback height.
     showMessage(strings.loading);
-    sheet.open();
+    sheet.open({ awaiting: true });
     document.dispatchEvent(new CustomEvent('snowdesk:sheet-leader-point'));
     return load(shortId, dateKey);
   }

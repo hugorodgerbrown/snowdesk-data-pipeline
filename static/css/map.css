@@ -6066,6 +6066,36 @@ body.map-framing #map-legend {
     opacity: 0.6;
 }
 
+/* —— One panel, new content (Hugo, 27 Oct 2026) ———————————————————————
+   Moving from one resort, region or weather point to the next keeps the
+   open sheet and swaps what it shows. While the next body is on its way
+   the current one stays up, dimmed — after a beat, so an answer that lands
+   at once never flickers — with anything the owner has already refreshed
+   (the region sheet's peek row) and the drag handle left at full strength.
+   map_sheet.js's `pending` marks the sheet and its stale children; the
+   swap clears both. */
+[data-sheet-pending] [data-sheet-stale] {
+    opacity: 0.5;
+    transition: opacity 150ms ease-out 150ms;
+}
+
+/* A desktop panel is as tall as its content, and `auto` does not
+   transition, so map_sheet.js pins the old height, then the new one, for
+   the length of this transition, and lets go after it. Hidden overflow for
+   that moment only: a scrollbar must not flash while the box grows. */
+@media (min-width: 640px) {
+    [data-detents][data-sheet-morphing] {
+        overflow: hidden;
+        transition: height 240ms cubic-bezier(0.32, 0.72, 0, 1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-sheet-pending] [data-sheet-stale] {
+        transition: none;
+    }
+}
+
 /* —— Sheet detents on phones (SNOW-1097) ——————————————————————————————
    includes/_overlay_sheet.html's `detents` gives a map sheet the
    three-state shape readers know from Google and Apple Maps: PEEK (a short
@@ -6129,8 +6159,12 @@ body.map-framing #map-legend {
             transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
     }
 
+    /* ...UNLESS IT TAKES OVER FROM ANOTHER SHEET (Hugo, 27 Oct 2026): from
+       a resort to a weather point, say, the new sheet starts at the height
+       the old one stood at and resizes, rather than the old one vanishing
+       and the new one rising from the foot (map_sheet.js marks it). */
     @starting-style {
-        [data-detents] {
+        [data-detents]:not([data-sheet-handover]) {
             transform: translateY(100%);
         }
     }

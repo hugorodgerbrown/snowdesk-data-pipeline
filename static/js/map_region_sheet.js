@@ -141,6 +141,8 @@
 
   /** @type {?string} */
   let regionId = null;
+  /** Whether the last load is waiting on the network for the body. */
+  let awaiting = false;
   /** The selection's own name, for the peek painted from the page. */
   let regionName = '';
   /** @type {?string} */
@@ -239,6 +241,31 @@
     fillPeek(/** @type {Element} */ (row));
     sheet.replaceChildren(row);
     mirrorAll();
+    return true;
+  };
+
+  /**
+   * Repaint the open body's peek row for the selection now, in place, and
+   * dim the rest of the body until the new one replaces it (Hugo, 27 Oct
+   * 2026): the sheet keeps its height, and the name, level and day change
+   * at once, where emptying it to the peek row used to drop it to a sliver
+   * and raise it again when the body landed.
+   *
+   * @returns {boolean} False when there is no open body to repaint.
+   */
+  const swapPeekInPlace = () => {
+    if (!controller.isOpen()) return false;
+    const live = sheet.querySelector('[data-testid="region-sheet-body"] [data-sheet-peek]')?.parentElement;
+    const template = /** @type {HTMLTemplateElement|null} */ (
+      document.getElementById('region-sheet-peek-template')
+    );
+    const source = template?.content?.firstElementChild;
+    if (!live || !source) return false;
+    const row = /** @type {Element} */ (source.cloneNode(true));
+    fillPeek(row);
+    live.replaceWith(row);
+    mirrorAll();
+    controller.pending({ keep: row });
     return true;
   };
 
@@ -413,6 +440,9 @@
    * PAUSED (SNOW-1239), it paints only what needs no request — a kept
    * body, or the peek — under the band, and leaves the fetch for the stop.
    *
+   * An open sheet keeps its body up, dimmed under a repainted peek row,
+   * until the new body lands (``swapPeekInPlace``).
+   *
    * @param {{paused?: boolean}} [opts]
    * @returns {Promise<void>}
    */
@@ -424,6 +454,7 @@
     if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
     const kept = cachedBody(url);
     if (opts.paused) pendingRefresh = true;
+    awaiting = false;
     if (kept !== null) {
       guard.invalidate();
       paintBody(kept);
@@ -437,7 +468,9 @@
       return Promise.resolve();
     }
     const ask = guard.begin();
-    const peeked = paintPeek();
+    awaiting = true;
+    const swapped = swapPeekInPlace();
+    const peeked = swapped || paintPeek();
     if (!peeked) paintLine(STRINGS.loading);
     return fetch(url, { headers: { 'HX-Request': 'true' }, signal: ask.signal })
       .then((resp) => {
@@ -452,6 +485,9 @@
       })
       .catch((err) => {
         if (!ask.isCurrent() || !controller.isOpen() || playback.isAbort(err)) return;
+        // The body left up under the new peek row was the last region's or
+        // day's: take it down to the peek row alone.
+        if (swapped) paintPeek();
         // The peek the page painted is still true: keep it, and say below
         // it that the rest could not be fetched.
         if (!peeked) {
@@ -494,7 +530,7 @@
     // a kept body), so PEEK is measured from that row rather than the
     // empty-sheet fallback, and the sheet does not open tall and drop.
     load({ paused });
-    controller.open();
+    controller.open({ awaiting });
   });
 
   // REOPENING (2026-10-19). The sheet can close while the region stays
@@ -514,7 +550,7 @@
     reopen: () => {
       if (!regionId || controller.isOpen()) return false;
       load({ paused: playback.isPlaying() });
-      controller.open();
+      controller.open({ awaiting });
       return true;
     },
   });

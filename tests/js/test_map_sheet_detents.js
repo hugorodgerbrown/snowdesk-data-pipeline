@@ -839,3 +839,172 @@ describe('handing the height over to the next panel (Hugo, 25 Oct 2026)', () => 
     expect(t.b.getAttribute('data-detent')).toBe('peek');
   });
 });
+
+describe('one panel, new content (Hugo, 27 Oct 2026)', () => {
+  /**
+   * `matchMedia` answering for a width and for reduced motion apart: the
+   * desktop cases need `min-width` to match and `reduce` not to.
+   *
+   * @param {{ desktop?: boolean, reduce?: boolean }} answers
+   */
+  function media({ desktop = false, reduce = false }) {
+    window.matchMedia = /** @type {any} */ ((query) => ({
+      matches: query.includes('reduce') ? reduce : query.includes('min-width') ? desktop : false,
+    }));
+  }
+
+  /** A ResizeObserver jsdom lacks, whose callbacks the test fires. */
+  function stubResizeObserver() {
+    /** @type {Array<function(): void>} */
+    const callbacks = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        /** @param {function(): void} fn */
+        constructor(fn) {
+          callbacks.push(fn);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    return () => callbacks.forEach((fn) => fn());
+  }
+
+  /** The old panel open at 400 px and a second one about to take over. */
+  function twoPanels() {
+    const handle = '<button type="button" data-sheet-handle aria-label="Resize panel"></button>';
+    document.body.innerHTML = `
+      <div id="map"></div>
+      <div id="sheet-a" data-overlay hidden tabindex="-1" data-detents="peek,half,full" data-detent-initial="half">${handle}</div>
+      <div id="sheet-b" data-overlay hidden tabindex="-1" data-detents="peek,half,full" data-detent-initial="peek">${handle}</div>
+    `;
+    const a = /** @type {HTMLElement} */ (document.getElementById('sheet-a'));
+    const b = /** @type {HTMLElement} */ (document.getElementById('sheet-b'));
+    stubHeight(a, 400);
+    stubHeight(b, 120);
+    const ca = window.MapSheet.attach(a);
+    const cb = window.MapSheet.attach(b);
+    ca.open();
+    return { a, b, ca, cb };
+  }
+
+  afterEach(() => {
+    // @ts-ignore jsdom has none; the binding reads its absence as a phone.
+    delete window.matchMedia;
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  describe('pending', () => {
+    it('dims every child but the handle and what it keeps, until the swap', async () => {
+      const { sheet, controller } = attachSheet('peek,half,full', 'half');
+      sheet.insertAdjacentHTML('beforeend', '<header><h2 id="name">Old</h2><p id="meta">meta</p></header><section id="body">body</section>');
+      controller.open();
+      controller.pending({ keep: document.getElementById('name') });
+      expect(sheet.getAttribute('aria-busy')).toBe('true');
+      expect(document.getElementById('body').hasAttribute('data-sheet-stale')).toBe(true);
+      expect(document.getElementById('meta').hasAttribute('data-sheet-stale')).toBe(true);
+      expect(document.getElementById('name').hasAttribute('data-sheet-stale')).toBe(false);
+      expect(sheet.querySelector('header').hasAttribute('data-sheet-stale')).toBe(false);
+      expect(sheet.querySelector('[data-sheet-handle]').hasAttribute('data-sheet-stale')).toBe(false);
+
+      sheet.innerHTML = '<section>new</section>';
+      await Promise.resolve();
+      expect(sheet.hasAttribute('data-sheet-pending')).toBe(false);
+      expect(sheet.hasAttribute('aria-busy')).toBe(false);
+    });
+
+    it('does nothing to a closed sheet', () => {
+      const { sheet, controller } = attachSheet('peek,half,full', 'half');
+      controller.pending();
+      expect(sheet.hasAttribute('data-sheet-pending')).toBe(false);
+    });
+  });
+
+  describe('on a desktop the panel is carried to its new height', () => {
+    it('pins the old height, then the new one, and lets go after', async () => {
+      vi.useFakeTimers();
+      media({ desktop: true });
+      const resize = stubResizeObserver();
+      const { sheet, controller } = attachSheet('peek,half,full', 'half');
+      controller.open();
+      resize();
+      stubHeight(sheet, 220);
+      sheet.innerHTML = '<p>Shorter</p>';
+      await Promise.resolve();
+      expect(sheet.hasAttribute('data-sheet-morphing')).toBe(true);
+      expect(sheet.style.height).toBe('220px');
+      vi.advanceTimersByTime(400);
+      expect(sheet.hasAttribute('data-sheet-morphing')).toBe(false);
+      expect(sheet.style.height).toBe('');
+    });
+
+    it('stays put for a reader who asked for less motion', async () => {
+      media({ desktop: true, reduce: true });
+      const resize = stubResizeObserver();
+      const { sheet, controller } = attachSheet('peek,half,full', 'half');
+      controller.open();
+      resize();
+      stubHeight(sheet, 220);
+      sheet.innerHTML = '<p>Shorter</p>';
+      await Promise.resolve();
+      expect(sheet.hasAttribute('data-sheet-morphing')).toBe(false);
+      expect(sheet.style.height).toBe('');
+    });
+
+    it('opens a panel that takes over another at the other one\'s height', () => {
+      media({ desktop: true });
+      const t = twoPanels();
+      t.cb.open();
+      expect(t.a.hasAttribute('hidden')).toBe(true);
+      expect(t.b.hasAttribute('data-sheet-morphing')).toBe(true);
+      expect(t.b.style.height).toBe('120px');
+    });
+  });
+
+  describe('on a phone a sheet takes over from the one it replaces', () => {
+    it('skips the slide from the foot and lets go of the old height at once', () => {
+      const t = twoPanels();
+      t.cb.open();
+      expect(t.b.hasAttribute('data-sheet-handover')).toBe(true);
+      expect(t.b.style.height).toBe('');
+    });
+
+    it('holds the old height while its body is on its way, until it lands', async () => {
+      const t = twoPanels();
+      t.b.innerHTML = '<p data-sheet-peek>Loading…</p>';
+      t.cb.open({ awaiting: true });
+      await Promise.resolve();
+      // The loading line it opened on, and the handle put back, are not it.
+      expect(t.b.style.height).toBe('400px');
+      t.b.innerHTML = '<p data-sheet-peek>The body</p>';
+      await Promise.resolve();
+      expect(t.b.style.height).toBe('');
+    });
+
+    it('lets go of the old height when the body is slow', () => {
+      vi.useFakeTimers();
+      const t = twoPanels();
+      t.cb.open({ awaiting: true });
+      expect(t.b.style.height).toBe('400px');
+      vi.advanceTimersByTime(1600);
+      expect(t.b.style.height).toBe('');
+    });
+
+    it('slides up as before when nothing was open', () => {
+      const { sheet, controller } = attachSheet('peek,half,full', 'half');
+      controller.open({ awaiting: true });
+      expect(sheet.hasAttribute('data-sheet-handover')).toBe(false);
+      expect(sheet.style.height).toBe('');
+    });
+
+    it('forgets the hand-over on close', () => {
+      const t = twoPanels();
+      t.cb.open({ awaiting: true });
+      t.cb.close();
+      expect(t.b.hasAttribute('data-sheet-handover')).toBe(false);
+      expect(t.b.style.height).toBe('');
+    });
+  });
+});
