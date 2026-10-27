@@ -11,7 +11,7 @@ by older pipeline versions) are still dispatched correctly.
   * SLF       → ``slf_pdf_url(raw)``
   * ALBINA    → ``albina_pdf_url(raw, region)`` — region taken from the
                   first raw ``regions`` entry's ``regionID`` prefix
-  * METEOFRANCE → ``_meteofrance_pdf_url(massif_name, valid_date, session)``
+  * METEOFRANCE → ``meteofrance_pdf_url(massif_name, valid_date, session)``
                    massif_name read from ``customData["MF"]["massif"]``
 
 Safe by default — read-only unless ``--commit`` is passed (CLAUDE.md Option A).
@@ -41,14 +41,15 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.meteofrance_fetcher import (
-    _MF_USER_AGENT,
-    _meteofrance_pdf_url,
-)
 from apps.bulletins.services.render_model import RenderModelBuildError, detect_source
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
-from apps.ingest.public import albina_pdf_url, slf_pdf_url
+from apps.ingest.public import (
+    albina_pdf_url,
+    meteofrance_pdf_url,
+    pdf_session,
+    slf_pdf_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -210,8 +211,7 @@ def _process_queryset(
 
     Returns the counts dict and any unflushed batch (non-empty only in dry-run).
     """
-    mf_session = requests.Session()
-    mf_session.headers["User-Agent"] = _MF_USER_AGENT
+    mf_session = pdf_session()
 
     counts: dict[str, int] = {
         Bulletin.Source.SLF: 0,
@@ -295,7 +295,7 @@ def _derive_pdf_url(
             raw.get("customData", {}).get("MF", {}).get("massif", "") or ""
         )
         valid_date = bulletin.valid_from.date()
-        return _meteofrance_pdf_url(massif_name, valid_date, mf_session)
+        return meteofrance_pdf_url(massif_name, valid_date, mf_session)
 
     logger.info(
         "backfill_pdf_urls: unknown source %r for bulletin %s — skipping",

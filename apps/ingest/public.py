@@ -26,6 +26,10 @@ The names are grouped by what they are for:
       massif catalogue.
   Weather
       Parsing an Open-Meteo forecast response, and the two shapes it returns.
+  Fetching bulletins
+      ``fetch_bulletins`` walks one provider and yields ``NormalisedBulletin``
+      and ``FetchOutcome`` items; what to do with each is the caller's
+      (SNOW-1249). Plus the one Météo-France archive lookup a backfill needs.
 """
 
 from apps.ingest.normalise.albina import albina_pdf_url
@@ -85,6 +89,20 @@ from apps.ingest.normalise.weather import (
     hourly_rows_for_day,
     parse_dt_preserve_offset,
 )
+from apps.ingest.runs import (
+    OUTCOME_DELEGATED,
+    OUTCOME_DUPLICATE,
+    OUTCOME_SKIPPED_NEWER,
+    PROVIDER_ALBINA,
+    PROVIDER_METEOFRANCE,
+    PROVIDER_SLF,
+    FetchOutcome,
+    FetchStats,
+    NormalisedBulletin,
+    fetch_bulletins,
+)
+from apps.ingest.sources.meteofrance import meteofrance_pdf_url, pdf_session
+from apps.ingest.sources.slf import PAGE_SIZE as SLF_PAGE_SIZE
 
 __all__ = [
     "ALPINE_MASSIFS",
@@ -95,16 +113,26 @@ __all__ = [
     "DAILY_VARIABLES",
     "HOURLY_VARIABLES",
     "OUTCOME_CREATED",
+    "OUTCOME_DELEGATED",
+    "OUTCOME_DUPLICATE",
     "OUTCOME_FAILED",
     "OUTCOME_SKIPPED",
+    "OUTCOME_SKIPPED_NEWER",
     "OUTCOME_UPDATED",
+    "PROVIDER_ALBINA",
+    "PROVIDER_METEOFRANCE",
+    "PROVIDER_SLF",
     "SLF_DEFAULT_LANG",
+    "SLF_PAGE_SIZE",
     "SLUG_TO_CODE",
     "CaamlPayloadShape",
+    "FetchOutcome",
+    "FetchStats",
     "ForecastDay",
     "HourlyRow",
     "MeteoFranceDelegatedRegionError",
     "MeteoFranceTranslationError",
+    "NormalisedBulletin",
     "albina_pdf_url",
     "build_bulletin_id",
     "compact_publication_stamp",
@@ -113,17 +141,20 @@ __all__ = [
     "daily_max_freezing_level",
     "day_is_complete",
     "detect_caaml_shape",
+    "fetch_bulletins",
     "forecast_entry",
     "format_comment_as_html",
     "hourly_rows_for_day",
     "merge_ndjson_records",
     "merge_slf_archive",
+    "meteofrance_pdf_url",
     "normalise_bulletin_response",
     "normalise_slf_response",
     "normalise_slug",
     "parse_dpbra_xml",
     "parse_dt",
     "parse_dt_preserve_offset",
+    "pdf_session",
     "read_slf_archive",
     "resolve_issued_at",
     "slf_pdf_url",
