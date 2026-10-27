@@ -1095,6 +1095,26 @@
       });
     }
 
+    // What is dimmed belongs to the place the reader has left: its star,
+    // Share, Rename and Delete still name that place, so they act on
+    // nothing until the swap (a press on one is swallowed here, before
+    // favourites.js's document handler or the owner's own sees it). The ×
+    // still closes the sheet. map.css takes the pointer off them too, so a
+    // finger on them drags the sheet as it would anywhere else.
+    /** @param {Event} event */
+    function swallowStale(event) {
+      if (!el.hasAttribute('data-sheet-pending')) return;
+      var target = /** @type {Element|null} */ (event.target instanceof Element ? event.target : null);
+      if (!target || !target.closest('[data-sheet-stale]')) return;
+      if (target.closest('[data-action="dismiss"]')) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (detents) {
+      el.addEventListener('click', swallowStale, true);
+      el.addEventListener('submit', swallowStale, true);
+    }
+
     if (detents && typeof ResizeObserver === 'function') {
       new ResizeObserver(function () {
         lastHeight = isOpen() ? el.getBoundingClientRect().height : 0;

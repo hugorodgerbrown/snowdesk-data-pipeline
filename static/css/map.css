@@ -6076,7 +6076,16 @@ body.map-framing #map-legend {
    swap clears both. */
 [data-sheet-pending] [data-sheet-stale] {
     opacity: 0.5;
+    /* The dimmed controls still name the place the reader left: a press
+       falls through to the sheet (which drags) rather than acting on it.
+       map_sheet.js swallows a keyboard press on them too. */
+    pointer-events: none;
     transition: opacity 150ms ease-out 150ms;
+}
+
+/* ...except the ×, which closes the sheet whatever it is showing. */
+[data-sheet-pending] [data-sheet-stale] [data-action='dismiss'] {
+    pointer-events: auto;
 }
 
 /* A desktop panel is as tall as its content, and `auto` does not

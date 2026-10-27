@@ -915,6 +915,23 @@ describe('one panel, new content (Hugo, 27 Oct 2026)', () => {
       expect(sheet.hasAttribute('aria-busy')).toBe(false);
     });
 
+    it('swallows a press on a dimmed control, but not on the × or after the swap', async () => {
+      const { sheet, controller } = attachSheet('peek,half,full', 'half');
+      sheet.insertAdjacentHTML('beforeend', '<header><h2 id="name">Old</h2><button id="star">Save</button><button id="x" data-action="dismiss">×</button></header>');
+      controller.open();
+      const seen = [];
+      document.addEventListener('click', (ev) => seen.push(/** @type {Element} */ (ev.target).id));
+      controller.pending({ keep: document.getElementById('name') });
+      document.getElementById('star').click();
+      document.getElementById('x').click();
+      expect(seen).toEqual(['x']);
+
+      sheet.innerHTML = '<button id="star">Save</button>';
+      await Promise.resolve();
+      document.getElementById('star').click();
+      expect(seen).toEqual(['x', 'star']);
+    });
+
     it('does nothing to a closed sheet', () => {
       const { sheet, controller } = attachSheet('peek,half,full', 'half');
       controller.pending();

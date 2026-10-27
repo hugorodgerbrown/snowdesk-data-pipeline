@@ -182,6 +182,25 @@ describe('from one place to the next (Hugo, 27 Oct 2026)', () => {
     expect(sheet.querySelector('[data-sheet-stale]')).toBeNull();
   });
 
+  it("does not save the last resort from its star while the next one loads", async () => {
+    const ZERMATT_STAR = `
+      <div data-testid="place-sheet-body" data-place-kind="resort">
+        <div data-sheet-peek><h2 data-row-label>Zermatt</h2>
+          <button type="button" data-resort-star data-resort-slug="zermatt" data-favourited="false" aria-pressed="false"><svg fill="none"></svg></button>
+        </div>
+      </div>
+    `;
+    fetchMock
+      .mockImplementationOnce(() => answer(ZERMATT_STAR))
+      .mockImplementationOnce(() => new Promise(() => {}));
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'zermatt', name: 'Zermatt' });
+    await settle();
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'saas-fee', name: 'Saas-Fee' });
+    const star = sheet.querySelector('[data-resort-star]');
+    star.click();
+    expect(star.getAttribute('aria-pressed')).toBe('false');
+  });
+
   it('stays at the detent it rests at', async () => {
     await openZermattThenTap(() => {});
     expect(sheet.getAttribute('data-detent')).toBe('half');

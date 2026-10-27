@@ -40,6 +40,10 @@ comparing two places; the panel is the constant, only its content changes.
   calls `pending()` and lets the swap replace the content; a failed fetch
   replaces the stale body with its failure line, so an old place is never
   left under a new name.
+- What is dimmed still names the place the reader left, so its controls
+  (a resort's star, a pin's Share, Rename and Delete) act on nothing until
+  the swap: map.css takes the pointer off them and `swallowStale` drops a
+  keyboard press. The × still closes the sheet.
 - Opening an already-open object sheet must not call `open()` again — that
   restarts the detent. Keep the detent the reader chose.
 - `prefers-reduced-motion` turns off the desktop morph and the hand-over;
