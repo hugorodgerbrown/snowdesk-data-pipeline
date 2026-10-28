@@ -48,7 +48,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  prose parser, the period transition and the day-character
                  cascade — store_bulletin builds each bulletin's model onto
                  SourceBulletin and the feed serves it — plus the day-rating
-                 reading, the target day and the problem-terrain rules);
+                 reading, the target day and the problem-terrain rules;
+                 SourceDayRating, rated from the service's own bulletins,
+                 is served at /api/data/v2/day-ratings/ and copied over
+                 RegionDayRating by apply_day_rating_item);
                  sources/ the HTTP (the three bulletin providers,
                  Open-Meteo forecast + elevation, what3words), settings read
                  only via conf.py; runs.py walks a provider and yields

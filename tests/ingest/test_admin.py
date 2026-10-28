@@ -2,7 +2,8 @@
 tests/ingest/test_admin.py — Tests for ingest's read-only admins.
 
 SourceBulletinAdmin (SNOW-1250); SourceLocationAdmin and SourceWeatherAdmin
-(SNOW-1253); SourcePassAdmin and SourceResortAdmin (SNOW-1271).
+(SNOW-1253); SourcePassAdmin and SourceResortAdmin (SNOW-1271);
+SourceDayRatingAdmin (SNOW-1270).
 
 The admin is a read-only window: the list and a row render, and nothing can
 be added, changed or deleted.
@@ -18,6 +19,7 @@ from django.urls import reverse
 
 from apps.ingest.models import (
     SourceBulletin,
+    SourceDayRating,
     SourceLocation,
     SourcePass,
     SourceResort,
@@ -25,6 +27,7 @@ from apps.ingest.models import (
 )
 from tests.factories import (
     SourceBulletinFactory,
+    SourceDayRatingFactory,
     SourceLocationFactory,
     SourcePassFactory,
     SourceResortFactory,
@@ -82,7 +85,7 @@ def test_the_weather_service_pages_render(admin_client: Client) -> None:
 
 
 @pytest.mark.parametrize(
-    "model", [SourceLocation, SourceWeather, SourcePass, SourceResort]
+    "model", [SourceLocation, SourceWeather, SourcePass, SourceResort, SourceDayRating]
 )
 def test_the_weather_service_is_read_only(rf: RequestFactory, model: type) -> None:
     """A place is tombstoned by a sync, a past day stands: no hand edits."""
@@ -94,10 +97,11 @@ def test_the_weather_service_is_read_only(rf: RequestFactory, model: type) -> No
 
 
 def test_the_document_pages_render(admin_client: Client) -> None:
-    """The pass and resort lists and rows answer (SNOW-1271)."""
+    """The pass, resort and day-rating lists and rows answer."""
     for name, row in (
         ("sourcepass", SourcePassFactory.create()),
         ("sourceresort", SourceResortFactory.create()),
+        ("sourcedayrating", SourceDayRatingFactory.create()),
     ):
         assert (
             admin_client.get(reverse(f"admin:ingest_{name}_changelist")).status_code

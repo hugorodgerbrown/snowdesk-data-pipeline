@@ -44,6 +44,7 @@ from apps.downloads.models import DownloadArea
 from apps.favourites.models import Favourite
 from apps.ingest.models import (
     SourceBulletin,
+    SourceDayRating,
     SourceLocation,
     SourcePass,
     SourceResort,
@@ -311,6 +312,22 @@ class SourceLocationFactory(factory.django.DjangoModelFactory[SourceLocation]):
     latitude = factory.Sequence(lambda n: 46.0 + n * 0.001)
     longitude = factory.Sequence(lambda n: 7.0 + n * 0.001)
     elevation_m = 2000.0
+
+
+class SourceDayRatingFactory(factory.django.DjangoModelFactory[SourceDayRating]):
+    """Factory for ingest's SourceDayRating — the service's day rating (SNOW-1270)."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SourceDayRating
+
+    region_code = "CH-4115"
+    date = factory.LazyFunction(lambda: datetime.date(2026, 1, 2))
+    min_rating = "considerable"
+    max_rating = "considerable"
+    source = "SLF"
+    version = DAY_RATING_VERSION
 
 
 class SourcePassFactory(factory.django.DjangoModelFactory[SourcePass]):

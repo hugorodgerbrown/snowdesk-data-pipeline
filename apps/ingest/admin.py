@@ -17,6 +17,8 @@ or deleted here.
 * ``SourcePassAdmin`` and ``SourceResortAdmin`` — the curated passes and
   resorts (SNOW-1271), mirrored from production's ``Pass`` and ``Resort``
   by ``mirror_reference_data``; corrected there, for the same reason.
+* ``SourceDayRatingAdmin`` — the service's day ratings (SNOW-1270),
+  computed from its bulletins; a wrong one is fixed by fixing the rule.
 """
 
 import json
@@ -29,6 +31,7 @@ from django.utils.safestring import SafeString
 
 from .models import (
     SourceBulletin,
+    SourceDayRating,
     SourceLocation,
     SourcePass,
     SourceResort,
@@ -40,8 +43,15 @@ from .models import (
 class SourceBulletinAdmin(admin.ModelAdmin[SourceBulletin]):
     """Read-only admin for stored provider bulletins."""
 
-    list_display = ("bulletin_id", "provider", "fetched_at", "updated_at")
-    list_filter = ("provider",)
+    list_display = (
+        "bulletin_id",
+        "provider",
+        "target_date",
+        "render_model_version",
+        "fetched_at",
+        "updated_at",
+    )
+    list_filter = ("provider", "render_model_version")
     search_fields = ("bulletin_id",)
     date_hierarchy = "fetched_at"
     ordering = ("-updated_at",)
@@ -52,11 +62,15 @@ class SourceBulletinAdmin(admin.ModelAdmin[SourceBulletin]):
         "pdf_url",
         "content_hash",
         "fetched_at",
+        "valid_from",
+        "target_date",
+        "region_codes",
+        "render_model_version",
         "created_at",
         "updated_at",
         "caaml_pretty",
     )
-    exclude = ("caaml",)
+    exclude = ("caaml", "render_model")
 
     @admin.display(description="CAAML")
     def caaml_pretty(self, obj: SourceBulletin) -> SafeString:
@@ -170,3 +184,23 @@ class SourcePassAdmin(_SourceDocumentAdmin):
 @admin.register(SourceResort)
 class SourceResortAdmin(_SourceDocumentAdmin):
     """Read-only admin for the service's resorts."""
+
+
+@admin.register(SourceDayRating)
+class SourceDayRatingAdmin(_ReadOnly, admin.ModelAdmin[SourceDayRating]):
+    """Read-only admin for the service's day ratings (SNOW-1270)."""
+
+    list_display = (
+        "region_code",
+        "date",
+        "min_rating",
+        "max_rating",
+        "bulletin_id",
+        "version",
+        "updated_at",
+    )
+    list_filter = ("version", "source")
+    search_fields = ("region_code", "bulletin_id")
+    date_hierarchy = "date"
+    ordering = ("-date", "region_code")
+    readonly_fields = tuple(field.name for field in SourceDayRating._meta.get_fields())

@@ -36,6 +36,7 @@ from django.db.models import Prefetch, QuerySet
 from apps.data_feed import contract
 from apps.ingest.public import (
     BULLETINS_FEED,
+    DAY_RATINGS_FEED,
     LOCATIONS_FEED,
     PASSES_FEED,
     RESORTS_FEED,
@@ -171,11 +172,13 @@ FEEDS: dict[str, Feed] = {
 # /api/data/v2/: the reference-data service's own tables, every item keyed
 # by the service's uuid (a client's source_uuid) rather than production's
 # own ids, tombstones included. ``weather`` is SNOW-1253's; ``locations``,
-# ``passes`` and ``resorts`` SNOW-1271's. v1 stays served until staging's
-# pull has moved (SNOW-1272).
+# ``passes`` and ``resorts`` SNOW-1271's; ``day-ratings`` SNOW-1270's, keyed
+# by region code and day. v1 stays served until staging's pull has moved
+# (SNOW-1272).
 FEEDS_V2: dict[str, Feed] = {
     "weather": WEATHER_FEED_V2,
     "locations": LOCATIONS_FEED,
     "passes": PASSES_FEED,
     "resorts": RESORTS_FEED,
+    "day-ratings": DAY_RATINGS_FEED,
 }

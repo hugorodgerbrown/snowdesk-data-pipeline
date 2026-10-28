@@ -24,7 +24,8 @@ from the service; if only a signed-in user does, it stays in the instance.
 | Source of truth | bulletins, weather, reference `Location` rows and resort roles, `Resort`, `Pass` | Written only in the service; synced |
 | Code-held | the EAWS region tables (`apps/regions/fixtures/eaws_*.json`), the glossary | Ships with the code; every side loads the same commit |
 | Bulletin interpretation | the render model (`Bulletin.render_model`), day character, period transition | Built once in the service; synced with each bulletin |
-| Domain derivations | `RegionDayRating`, `RegionBulletin`, `BulletinGrouping`, problem-terrain rules | Computed once in the service from the render model; synced |
+| Domain derivations | `RegionDayRating`, problem-terrain rules | Computed once in the service from the render model; synced (`SourceDayRating`), or read from the synced model by the service's code (the rules) |
+| Region projections | `RegionBulletin`, `BulletinGrouping` | Each instance, from the synced CAAML's region list and the code-held region tables: nothing to interpret, so nothing to sync (SNOW-1270) |
 | Presentation | templates, translated labels and copy | Each instance, at render time |
 | User data | accounts, favourites, routes and shares, trips, downloads, field observations, bulletin shares, user-minted `Location` rows | Never leaves its instance |
 | Operations | `CommandRun`, `PipelineRun`, request logs, idempotency records, banners, flags | Per instance |

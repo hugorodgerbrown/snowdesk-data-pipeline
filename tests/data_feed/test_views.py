@@ -223,7 +223,7 @@ class TestAnswer:
         ).raw_token
         assert _get(client, token, "/api/data/v2/bulletins/").status_code == 404
 
-    @pytest.mark.parametrize("name", ["locations", "passes", "resorts"])
+    @pytest.mark.parametrize("name", ["locations", "passes", "resorts", "day-ratings"])
     def test_the_v2_reference_feeds_answer(
         self, client: Client, service_client: Application, name: str
     ) -> None:

@@ -37,8 +37,12 @@ which holds the current ticket list):
    `RENDER_MODEL_VERSION` and builds its own otherwise. Its third moves
    what is read from the model: the day a bulletin forecasts, the danger
    range it gives that day (`rate_render_model`) and its problem-terrain
-   rules. The instance still selects which bulletin governs a region's
-   day and writes `RegionDayRating`.
+   rules. Then the service rates every (region, day) from its own
+   bulletins (`SourceDayRating`, `/api/data/v2/day-ratings/`), and an
+   instance copies those ratings over its own when the rule versions
+   match. `RegionBulletin` and `BulletinGrouping` stay the instance's:
+   they are the CAAML's region list resolved onto the code-held region
+   tables, with nothing to interpret.
 8. SNOW-1252 (the `lookup_point` facade) is under review.
 
 **Why.**

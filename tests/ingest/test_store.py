@@ -10,6 +10,7 @@ written, or when ``force`` asks for it. Every write builds the render model
 
 from __future__ import annotations
 
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -56,6 +57,23 @@ def test_a_new_bulletin_is_created() -> None:
         "https://x/a.pdf",
     )
     assert stored.content_hash == content_hash({"bulletinID": "a"})
+
+
+def test_a_failed_rating_refresh_rolls_the_row_back() -> None:
+    """Codex on #1267: the retry with the same hash refreshes the ratings."""
+    with (
+        patch(
+            "apps.ingest.store.refresh_source_day_ratings",
+            side_effect=RuntimeError("boom"),
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        store_bulletin(_rec({"bulletinID": "a"}))
+    assert not SourceBulletin.objects.exists()
+    with patch("apps.ingest.store.refresh_source_day_ratings") as refresh:
+        _, outcome = store_bulletin(_rec({"bulletinID": "a"}))
+    assert outcome == OUTCOME_CREATED
+    refresh.assert_called_once()
 
 
 def test_the_same_content_writes_nothing() -> None:
@@ -141,10 +159,11 @@ class TestRenderModel:
 
     def test_a_current_model_is_not_rebuilt(self) -> None:
         """Same CAAML, current builder: nothing is built or written."""
+        caaml = {"bulletinID": "a", "validTime": {"startTime": "2026-01-02T07:00Z"}}
         with patch("apps.ingest.store.build_render_model", return_value=_MODEL):
-            store_bulletin(_rec({"bulletinID": "a"}))
+            store_bulletin(_rec(caaml))
         with patch("apps.ingest.store.build_render_model") as build:
-            _, outcome = store_bulletin(_rec({"bulletinID": "a"}))
+            _, outcome = store_bulletin(_rec(caaml))
         build.assert_not_called()
         assert outcome == OUTCOME_UNCHANGED
 
@@ -195,12 +214,15 @@ class TestRebuildRenderModel:
         assert "error" in row.render_model
 
     def test_stale_render_model_selects_old_and_failed_rows(self) -> None:
-        """The queryset the command walks: below the version, failures included."""
+        """The command's walk: old versions, failures and unindexed rows."""
         current = SourceBulletinFactory.create(
+            render_model_version=RENDER_MODEL_VERSION, target_date=date(2026, 1, 2)
+        )
+        unindexed = SourceBulletinFactory.create(
             render_model_version=RENDER_MODEL_VERSION
         )
         old = SourceBulletinFactory.create(render_model_version=1)
         failed = SourceBulletinFactory.create(render_model_version=0)
         stale = set(SourceBulletin.objects.stale_render_model(RENDER_MODEL_VERSION))
-        assert stale == {old, failed}
+        assert stale == {old, failed, unindexed}
         assert current not in stale

@@ -9,6 +9,7 @@ tests/ingest/test_store.py.
 
 from __future__ import annotations
 
+from datetime import date
 from io import StringIO
 from unittest.mock import patch
 
@@ -50,6 +51,7 @@ def test_commit_rebuilds_the_stale_rows_only() -> None:
     current = SourceBulletinFactory.create(
         render_model={"version": RENDER_MODEL_VERSION},
         render_model_version=RENDER_MODEL_VERSION,
+        target_date=date(2026, 1, 2),
     )
     with patch(_BUILD, return_value=_MODEL):
         out = _run("--commit")
@@ -78,7 +80,12 @@ def test_the_run_is_registered_with_its_tallies() -> None:
     with patch(_BUILD, return_value=_MODEL):
         _run("--commit")
     run = CommandRun.objects.get(command="rebuild_source_render_models")
-    assert run.counts == {"rebuilt": 1, "unchanged": 0, "failed": 0}
+    assert run.counts == {
+        "rebuilt": 1,
+        "unchanged": 0,
+        "failed": 0,
+        "day_ratings": 0,
+    }
 
 
 def test_a_failed_build_exits_non_zero() -> None:
