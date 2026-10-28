@@ -21,7 +21,7 @@ Why a feed and not a database copy:
 
 | Half | Where | What |
 |------|-------|------|
-| Server | `apps/data_feed/feeds.py`, `views.py`, `auth.py` | `GET /api/data/v1/<feed>/`, read-only, service clients only |
+| Server | `apps/data_feed/feeds.py`, `views.py`, `auth.py`; `apps/ingest/api/` | `GET /api/data/v1/<feed>/`, read-only, service clients only. The bulletins feed and the paging rule are ingest's (SNOW-1250); the host mounts them |
 | Client | `apps/data_feed/client.py`, `services/apply.py`, `pull_production_data` | Gets a token, walks a feed, applies each item idempotently |
 | Contract | `apps/data_feed/contract.py` | The field allowlists both halves read and write |
 
@@ -31,7 +31,7 @@ All four are `GET`, take the same parameters and answer the same shape.
 
 | URL | Item key | What is served |
 |-----|----------|----------------|
-| `/api/data/v1/bulletins/` | `bulletin_id` | Every bulletin's CAAML as stored, plus `pdf_url` |
+| `/api/data/v1/bulletins/` | `bulletin_id` | Every bulletin ingest has stored (`SourceBulletin`): its CAAML as normalised, plus `pdf_url` |
 | `/api/data/v1/weather/` | location `uuid` + `observed_on` | `Weather` rows for `Location.objects.public()` only |
 | `/api/data/v1/locations/` | `uuid` | `Location.objects.public()`, with `centroid_of` region codes |
 | `/api/data/v1/resorts/` | `slug` | Every resort with a slug: region code, pin uuid, passes, location links |
@@ -50,6 +50,15 @@ filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and
 }
 ```
 
+**Where the bulletins come from** (SNOW-1250). The bulletins feed reads
+ingest's `SourceBulletin`, which `fetch_bulletins` writes before it applies
+anything to `Bulletin`, and which changes only when a bulletin's CAAML hash
+does. Production's own `Bulletin` rows are applied from the same wire item
+the feed sends, so staging and production derive their bulletins from
+identical input. Migration `bulletins.0022` copied every existing
+`Bulletin` across, with its own timestamps, so a resumed pull saw nothing
+new on the release.
+
 `count` is on the first page only. Paging is a keyset on
 `(updated_at, id)` ascending, so a row updated mid-walk moves to the end
 and is still reached. Every response is `Cache-Control: no-store`. A bad
@@ -57,9 +66,10 @@ parameter is a `400` with an `error`.
 
 **Cost of a page.** A page is a fixed number of queries, whatever its
 size: one for bulletins and weather, two for locations and five for resorts
-(their relations are prefetched). `tests/data_feed/test_feeds.py` fails if a
-page of 12 rows costs more queries than a page of 2. Bulletins and weather
-have an `(updated_at, id)` index (`bulletin_feed_keyset`,
+(their relations are prefetched). `tests/data_feed/test_feeds.py` and
+`tests/ingest/api/test_bulletins_feed.py` fail if a page of 12 rows costs
+more queries than a page of 2. Bulletins and weather have an
+`(updated_at, id)` index (`ingest_srcb_keyset` on `SourceBulletin`,
 `weather_feed_keyset`), so each page reads the index from the cursor
 rather than scanning and sorting the table. `count` costs one extra query,
 on the first page only. Locations and resorts have no such index because

@@ -22,6 +22,7 @@ from apps.bulletins.models import (
 )
 from apps.bulletins.services.apply import upsert_bulletin
 from apps.bulletins.services.slf_fetcher import run_slf_pipeline
+from apps.ingest.normalise.slf import slf_pdf_url
 from tests.factories import MicroRegionFactory, PipelineRunFactory
 
 # The ``slf_fetcher`` logger, named once rather than spelled out at each
@@ -217,13 +218,11 @@ class TestRunPipeline:
 
     @patch("apps.ingest.sources.slf.fetch_bulletin_page")
     def test_skips_existing_without_force(self, mock_fetch: MagicMock) -> None:
-        """Without --force, existing bulletins are skipped."""
-        # Pre-create the bulletin
+        """Without --force, a bulletin already stored as fetched is skipped."""
+        # Pre-create the bulletin exactly as a fetch would have written it.
         pre_run = PipelineRunFactory.create()
-        upsert_bulletin(
-            _make_raw_bulletin("existing", "2025-03-15T08:00:00Z"),
-            pre_run,
-        )
+        raw = _make_raw_bulletin("existing", "2025-03-15T08:00:00Z")
+        upsert_bulletin(raw, pre_run, pdf_url=slf_pdf_url(raw))
 
         mock_fetch.return_value = [
             _make_raw_bulletin("existing", "2025-03-15T08:00:00Z"),
@@ -238,6 +237,25 @@ class TestRunPipeline:
 
         assert run.records_created == 0
         assert run.records_updated == 0
+
+    @patch("apps.ingest.sources.slf.fetch_bulletin_page")
+    def test_a_changed_bulletin_is_updated_without_force(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """SNOW-1250: a stored id whose content changed is applied, no --force."""
+        pre_run = PipelineRunFactory.create()
+        raw = _make_raw_bulletin("existing", "2025-03-15T08:00:00Z")
+        upsert_bulletin(raw, pre_run, pdf_url=slf_pdf_url(raw))
+        changed = {**raw, "lang": "de"}
+        mock_fetch.return_value = [changed]
+
+        run = run_slf_pipeline(
+            start=date(2025, 3, 15), end=date(2025, 3, 15), triggered_by="test"
+        )
+
+        assert (run.records_created, run.records_updated) == (0, 1)
+        stored = Bulletin.objects.get(bulletin_id="existing")
+        assert stored.raw_data["properties"]["lang"] == "de"
 
     @patch("apps.ingest.sources.slf.fetch_bulletin_page")
     def test_updates_existing_with_force(self, mock_fetch: MagicMock) -> None:

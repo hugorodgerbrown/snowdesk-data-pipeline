@@ -60,6 +60,20 @@ is staged across five tickets:
   `Location` rows and call `fetch_forecast` with a bare coordinate. Ingest
   reads settings only through `apps/ingest/conf.py`, which lists every name
   a rehosted service must set.
+- **Production's bulletins are applied from ingest's, one at a time**
+  (SNOW-1250). A fetch stores each bulletin in `SourceBulletin`, then
+  applies the stored row, serialised as the feed would send it, through
+  `apply_feed_item` — the step `pull_production_data` uses. The scoping
+  comment described this as a second pass over a local feed transport
+  after the walk. It is per bulletin instead, because a second pass from
+  the run's start would never revisit a bulletin whose apply failed (an
+  unresolvable region): ingest's hash would be unchanged on the next run,
+  so it would never be applied, where today it is retried every run. The
+  apply step compares against `Bulletin`, so it is retried.
+- **A migration that reads a host table lives in the host app.** The copy
+  of existing bulletins into `SourceBulletin` is `bulletins.0022`, not an
+  ingest migration: ingest's migration graph must not depend on an app a
+  rehosted ingest would not carry.
 - The management commands stay in the host apps as thin `RegisteredCommand`
   wrappers. Ingest's functions are plain and return counts, because
   `RegisteredCommand` lives in `apps.core`.

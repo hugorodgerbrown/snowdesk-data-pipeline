@@ -10,8 +10,11 @@ provider pipelines, the Météo-France archive loader, the golden week and
 ``pull_production_data``.
 
   upsert_bulletin(raw, run, pdf_url)   one raw CAAML dict → one row.
-  apply_bulletin(record, run)          the same, for an ingest
-                                       ``NormalisedBulletin``.
+  apply_feed_item(item, run, …)        one ``bulletins`` feed item → one
+                                       row, unless it is already here.
+  apply_bulletin(record, run, force)   store an ingest ``NormalisedBulletin``
+                                       in ``SourceBulletin``, then apply the
+                                       stored row as a feed item (SNOW-1250).
 
 Moved out of ``slf_fetcher.py`` unchanged, where it had lived since before
 the other two providers shared it.
@@ -43,12 +46,17 @@ from apps.bulletins.services.render_model import (
     detect_source,
 )
 from apps.ingest.public import (
+    OUTCOME_CREATED,
     OUTCOME_FAILED,
+    OUTCOME_UNCHANGED,
+    OUTCOME_UPDATED,
     SLF_DEFAULT_LANG,
     FetchOutcome,
     NormalisedBulletin,
     parse_dt,
     resolve_issued_at,
+    serialise_source_bulletin,
+    store_bulletin,
 )
 from apps.regions.models import MicroRegion
 
@@ -415,21 +423,89 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
     return created
 
 
-def apply_bulletin(record: NormalisedBulletin, run: PipelineRun) -> bool:
-    """Write one bulletin an ingest walk yielded.
+def apply_feed_item(
+    item: dict[str, Any],
+    run: PipelineRun | None,
+    *,
+    existing: Bulletin | None,
+    commit: bool = True,
+    force: bool = False,
+) -> str:
+    """Write one ``bulletins`` feed item here, unless it is already here.
 
-    Resolves the record's PDF URL only now, when the bulletin is actually
-    being written — for Météo-France that costs a request to its archive.
+    The one apply step both ways a bulletin reaches this database: a
+    production fetch applying what ingest just stored, and
+    ``pull_production_data`` applying what production's feed sent (via
+    ``apps.data_feed.services.apply.apply_bulletin``). Both hand it the same
+    wire item, built by ``serialise_source_bulletin``.
+
+    Unchanged when the stored CAAML and PDF link are identical, which is
+    what makes a re-fetch or a re-pull of the same window a no-op:
+    ``upsert_bulletin`` would otherwise rewrite the row and recompute its
+    derived tables.
+
+    Args:
+        item: A feed item, its ``caaml`` a dict.
+        run: The ``PipelineRun`` to attribute a write to; required when
+            ``commit``.
+        existing: The ``Bulletin`` already stored under the item's id (with
+            ``raw_data`` and ``pdf_url`` loaded), or None.
+        commit: Write; otherwise only decide.
+        force: Write even when nothing has changed.
+
+    Returns:
+        ``OUTCOME_CREATED``, ``OUTCOME_UPDATED`` or ``OUTCOME_UNCHANGED``.
+
+    """
+    caaml = item["caaml"]
+    pdf_url = item.get("pdf_url") or ""
+    if existing is not None and not force:
+        stored = (existing.raw_data or {}).get("properties")
+        if stored == caaml and existing.pdf_url == pdf_url:
+            return OUTCOME_UNCHANGED
+    if commit:
+        if run is None:
+            raise ValueError("apply_feed_item needs a PipelineRun to commit")
+        upsert_bulletin(caaml, run, pdf_url=pdf_url)
+    return OUTCOME_CREATED if existing is None else OUTCOME_UPDATED
+
+
+def apply_bulletin(
+    record: NormalisedBulletin, run: PipelineRun, *, force: bool = False
+) -> str:
+    """Store a fetched bulletin in ingest, then apply it here (SNOW-1250).
+
+    Two steps, in this order. Ingest keeps what the provider published
+    (``store_bulletin``, written only when its content hash changes); then
+    the stored row, as the feed would serialise it, is applied to
+    ``Bulletin`` by ``apply_feed_item`` — the same item, and the same apply
+    step, that a staging pull uses. Production's ``Bulletin`` is therefore
+    always derived from ingest's ``SourceBulletin``, never written around it.
+
+    The apply step compares with what ``Bulletin`` holds rather than trusting
+    the store's outcome, so a bulletin whose apply failed on one run (an
+    unresolvable region, say) is retried on the next even though ingest
+    already has it.
 
     Args:
         record: A bulletin from ``apps.ingest.public.fetch_bulletins``.
         run: The PipelineRun to associate with it.
+        force: Re-resolve the PDF link and rewrite the bulletin even when
+            nothing has changed.
 
     Returns:
-        True if a new row was created, False if an existing row was updated.
+        ``OUTCOME_CREATED``, ``OUTCOME_UPDATED`` or ``OUTCOME_UNCHANGED``.
 
     """
-    return upsert_bulletin(record.caaml, run, pdf_url=record.pdf_url())
+    row, _ = store_bulletin(record, force=force)
+    existing = (
+        Bulletin.objects.filter(bulletin_id=row.bulletin_id)
+        .only("pk", "bulletin_id", "raw_data", "pdf_url")
+        .first()
+    )
+    return apply_feed_item(
+        serialise_source_bulletin(row), run, existing=existing, force=force
+    )
 
 
 def count_outcome(

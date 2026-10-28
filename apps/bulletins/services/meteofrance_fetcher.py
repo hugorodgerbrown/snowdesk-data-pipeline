@@ -34,6 +34,7 @@ from apps.ingest.public import (
     OUTCOME_DELEGATED,
     OUTCOME_FAILED,
     OUTCOME_SKIPPED,
+    OUTCOME_UNCHANGED,
     OUTCOME_UPDATED,
     PROVIDER_METEOFRANCE,
     FetchOutcome,
@@ -182,12 +183,8 @@ def _process_bulletin(
         logger.info("[dry-run] Would store MeteoFrance %s", bulletin_id)
         return OUTCOME_CREATED
 
-    if not force and Bulletin.objects.filter(bulletin_id=bulletin_id).exists():
-        logger.debug("Skipping existing MeteoFrance bulletin %s", bulletin_id)
-        return OUTCOME_SKIPPED
-
     try:
-        created = apply_bulletin(record, run)
+        outcome = apply_bulletin(record, run, force=force)
     except UnknownRegionError as exc:
         logger.exception(
             "Unknown region for MeteoFrance bulletin %s: %s", bulletin_id, exc
@@ -203,7 +200,7 @@ def _process_bulletin(
         run.save(update_fields=["records_failed"])
         return OUTCOME_FAILED
 
-    return OUTCOME_CREATED if created else OUTCOME_UPDATED
+    return OUTCOME_SKIPPED if outcome == OUTCOME_UNCHANGED else outcome
 
 
 # ---------------------------------------------------------------------------
