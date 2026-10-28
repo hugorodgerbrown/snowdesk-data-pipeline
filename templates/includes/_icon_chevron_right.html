@@ -1,0 +1,31 @@
+{% comment %}
+templates/includes/_icon_chevron_right.html — the navigate glyph: a chevron
+pointing right (SNOW-1266).
+
+includes/_icon_chevron.html points DOWN and means "expand in place". This
+one means the opposite — "this opens a page of its own" — which is what a
+row of the map's layers menu does when it has options. The same mark
+rotated 180° by its caller (`rotate-180`) is the back arrow at the top of
+that page.
+
+Stroke width 2 on a 24×24 box, like every other house glyph
+(docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size      (int, optional) — rendered px, both axes. Default 16.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:16 }}"
+    height="{{ size|default:16 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="m9.5 6 6 6-6 6" />
+</svg>

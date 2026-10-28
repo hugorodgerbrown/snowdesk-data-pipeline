@@ -180,8 +180,6 @@ beforeEach(() => {
     const raw = window.localStorage.getItem(key);
     return raw === null ? dflt : raw === 'true';
   };
-  globalThis.LAYERS_SECTION_STORAGE_KEY = (slug) => `snowdesk.map.layers.section.${slug}`;
-  globalThis.LAYERS_SECTION_DEFAULT_OPEN = 'places';
 });
 
 afterEach(() => {

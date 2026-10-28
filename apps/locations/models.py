@@ -46,7 +46,6 @@ from typing import TYPE_CHECKING
 
 from django.db import models
 from django.urls import reverse
-from django.utils import timezone
 
 if TYPE_CHECKING:
     from django.contrib.auth.base_user import AbstractBaseUser
@@ -88,12 +87,12 @@ def generate_short_id() -> str:
 # ---------------------------------------------------------------------------
 
 
-# The two halves of "which locations matter", written once so ``public()``
-# and ``active()`` cannot drift apart. ``active()`` is ``public()`` plus
-# favourites; if these were spelled out separately in each method, a clause
-# added to one would silently not reach the other — and the direction that
-# fails is the dangerous one, since a public feed built from a stale
-# predicate leaks private pins.
+# The curated estate — "which locations matter" — written once so
+# ``public()``, ``active()`` and ``visible_to()`` cannot drift apart. If it
+# were spelled out separately in each method, a clause added to one would
+# silently not reach the others — and the direction that fails is the
+# dangerous one, since a public feed built from a stale predicate leaks
+# private pins.
 #
 # SNOW-1144: a resort's map pin is a ``Location`` (``Resort.location``,
 # reverse ``pinned_resorts``), and it is curated in the same sense a
@@ -104,20 +103,6 @@ _CURATED = (
     | models.Q(micro_regions__isnull=False)
     | models.Q(pinned_resorts__isnull=False)
 )
-_FAVOURITED = models.Q(favourites__isnull=False)
-
-
-def _upcoming_meeting_point() -> models.Q:
-    """Return the predicate for a trip's meeting point, while the trip is ahead.
-
-    SNOW-1217. A function rather than a constant beside the two above,
-    because "upcoming" is relative to today and a module-level Q would
-    freeze the day the process started. The trip's own day counts: the
-    group reads the forecast that morning. Once the day has passed the
-    point drops out, and its last row stays as the record of what was
-    known (docs/decisions/weather-is-one-immutable-location-row.md).
-    """
-    return models.Q(trips__date__gte=timezone.localdate())
 
 
 class LocationQuerySet(models.QuerySet["Location"]):
@@ -185,40 +170,37 @@ class LocationQuerySet(models.QuerySet["Location"]):
     def active(self) -> "LocationQuerySet":
         """Return the locations worth spending an upstream call on.
 
-        Every ``public()`` location, plus the ones a ``Favourite`` reaches,
-        plus the meeting point of every trip still ahead (SNOW-1217) — the
-        trip page shows the forecast for the trip's day where the group
-        meets, and nothing else would fetch it. A meeting point is private
-        in the same way a favourite is.
-        This is the set ``fetch_weather`` walks, so it is also the set that
-        costs money — one Open-Meteo call per row per run, four runs a day.
+        **The curated estate, and nothing else** (Hugo, 2026-10-28):
+        Snowdesk decides where a forecast is fetched, because Snowdesk pays
+        for it. This is the set ``fetch_weather`` walks — one Open-Meteo
+        call per row per run, four runs a day — so its cost is fixed by
+        what we curate, not by how many users there are.
 
-        **``public()`` and this method are not interchangeable.** This one
-        answers "what do we pay to fetch"; ``public()`` answers "what may
-        anyone see". A favourite is in the first and not the second, so
-        rendering a public surface from ``active()`` would leak a private
-        pin. Both assertions live in ``tests/locations/test_models.py``.
+        Until then it also held every ``Favourite``'s location and the
+        meeting point of every trip still ahead (SNOW-1217). Neither buys a
+        fetch now: a saved pin and a trip borrow the nearest curated
+        forecast and say which one it is
+        (``apps.weather.services.nearest``).
 
-        **A location reached only by a ``FieldObservation`` is excluded, and
-        that is the point of the method.** A field report is a user saying
-        "this happened here"; it is not a request for a forecast. Including
-        one would mint a billable call from a stranger dropping a pin, and
-        would let a private report surface a forecast panel on a public
-        page. The exclusion is asserted in ``tests/locations/test_models.py``
-        rather than left to this docstring.
+        **The same rows as ``public()``, asked a different question.**
+        ``public()`` answers "what may anyone see"; this answers "what do
+        we pay to fetch". They coincide by policy, not by definition, so
+        callers keep asking the question they mean: if a paid
+        "Fetch forecast" for a private pin ever lands, it widens this and
+        must never widen ``public()``.
 
-        ``.distinct()`` because a location referenced from two sides — a
-        resort's village that someone has also favourited — joins twice and
-        must still be fetched once.
+        **A location reached only by a ``FieldObservation`` is excluded.**
+        A field report is a user saying "this happened here"; it is not a
+        request for a forecast. The exclusion is asserted in
+        ``tests/locations/test_models.py`` rather than left to this
+        docstring.
 
         Returns:
-            Filtered queryset of locations reachable from a resort, a
-            region centroid, a favourite or an upcoming trip.
+            Filtered queryset of locations reachable from a resort or a
+            region centroid.
 
         """
-        return self.filter(
-            _CURATED | _FAVOURITED | _upcoming_meeting_point()
-        ).distinct()
+        return self.public()
 
     def visible_to(
         self, user: "AbstractBaseUser | AnonymousUser"

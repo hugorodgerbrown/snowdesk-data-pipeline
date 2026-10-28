@@ -11,9 +11,12 @@ zoom where the feature is available, which the scale shows in bold — not
 whether the reader has switched it on. The row is a button: a tap zooms
 the map to the feature's threshold, and the threshold reads ≥14, or ≤10
 for the region selector, which holds up to its level rather than from it.
+``data-zoom-side`` (above / below) is set only when two gates share a
+level, so their rows sit either side of its line instead of on top of
+each other.
 
 Context:
-* tick — {key, label, threshold, zoom, pct, reached}; absent
+* tick — {key, label, threshold, zoom, pct, reached, side}; absent
   for the template copy.
 {% endcomment %}
 {% localize off %}
@@ -21,6 +24,7 @@ Context:
         class="map-zoom-tick"
         data-zoom-tick="{{ tick.key|default:'' }}"
         {% if tick.reached %}data-reached{% endif %}
+        {% if tick.side %}data-zoom-side="{{ tick.side }}"{% endif %}
         style="top: {{ tick.pct|default:0 }}%"
     >
         {# A tap zooms the map to the level the feature starts at. #}

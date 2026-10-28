@@ -24,12 +24,12 @@ restoration.
 
 | Surface | Anchor | Which day |
 |---------|--------|-----------|
-| Favourite card ([`apps/favourites/templates/favourites/partials/_favourite_card.html`](../apps/favourites/templates/favourites/partials/_favourite_card.html)) | `Favourite.location` | today |
+| Favourite card ([`apps/favourites/templates/favourites/partials/_favourite_card.html`](../apps/favourites/templates/favourites/partials/_favourite_card.html)) and a pin's place sheet ([`apps/public/templates/public/partials/_place_sheet_body.html`](../apps/public/templates/public/partials/_place_sheet_body.html)) | the nearest `public()` location with a row for the day, at any distance, named under the weather (`nearest_forecast`) | today, or the map's day on the sheet |
 | Resort forecast strip ([`apps/public/templates/public/partials/_resort_forecast.html`](../apps/public/templates/public/partials/_resort_forecast.html)) | the resort's BASE / MID / TOP `ResortLocation`, the pin standing in for Base | today and the six days after it |
 | Location forecast page ([`apps/public/templates/public/location_weather.html`](../apps/public/templates/public/location_weather.html)) | one `Location` | `?date=` or today |
 | Map overlay ([`static/js/map.js`](../static/js/map.js)) | every `Location.objects.public()` | the scrubbed date |
-| Plan page day tiles ([`apps/trips/templates/trips/partials/_trip_when.html`](../apps/trips/templates/trips/partials/_trip_when.html)) | the nearest `public()` location with a row today, within 15 km of the route's start (`nearest_weather`) | each tile's day, today and the four after it |
-| Trip page forecast line ([`apps/trips/templates/trips/partials/_trip_weather.html`](../apps/trips/templates/trips/partials/_trip_weather.html)) | `Trip.meeting_point`, fetched while the trip is ahead (`meeting_point_weather`) | the trip's day |
+| Plan page day tiles ([`apps/trips/templates/trips/partials/_trip_when.html`](../apps/trips/templates/trips/partials/_trip_when.html)) | the nearest `public()` location with a row today, at any distance from the route's start (`nearest_weather`) | each tile's day, today and the four after it |
+| Trip page forecast line ([`apps/trips/templates/trips/partials/_trip_weather.html`](../apps/trips/templates/trips/partials/_trip_weather.html)) | the nearest `public()` location to `Trip.meeting_point` with a row for the day, at any distance (`meeting_point_weather`) | the trip's day |
 
 The first three are server-rendered; the map overlay is a GeoJSON feed and a
 MapLibre symbol layer, plus a tap sheet
@@ -633,10 +633,14 @@ visitor sees is payload for nothing.
 
 **The privacy contract is the load-bearing part.** The feed is filtered by
 `Location.objects.public()` — the curated estate, reachable from a
-`ResortLocation` or a `MicroRegion.centroid_location`. Never `active()`,
-which also reaches every location a `Favourite` points at: that is the set
-worth paying Open-Meteo for, not the set anyone may see. Serving `active()`
-here would publish a stranger's private pin and its coordinates.
+`ResortLocation` or a `MicroRegion.centroid_location`. Never `active()`:
+that is the set worth paying Open-Meteo for, not the set anyone may see.
+The two hold the same rows since 2026-10-28, when favourites and trip
+meeting points stopped buying a fetch
+([why](decisions/snowdesk-decides-where-a-forecast-is-fetched.md)), but
+by policy rather than by definition — a paid fetch for a private pin would
+widen `active()`, and serving it here would publish a stranger's pin and
+its coordinates.
 `tests/public/test_weather_geojson_api.py` asserts a favourite-only
 location is absent, because a comment would not have caught it.
 

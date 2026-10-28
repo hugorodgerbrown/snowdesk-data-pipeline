@@ -838,7 +838,7 @@
 }
 
 .basemap-menu-count {
-    margin: 0;
+    margin: 0 0 0 auto;
     font-size: 11px;
     color: var(--color-text-2, var(--color-text-1));
     white-space: nowrap;
@@ -899,41 +899,6 @@
     transition: background 120ms ease, border-color 120ms ease;
 }
 
-/* SNOW-1109: a row with a second control beside it — the terrain filter's
-   checkbox and its adjust button, one line. The checkbox takes the room;
-   the adjust button is a square the height of a one-line row. A row's
-   label can carry a second, quieter line (the terrain filter's summary
-   while it is on). */
-.basemap-menu-row {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-}
-
-.basemap-menu-row > .basemap-menu-item {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
-.basemap-menu-adjust {
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    background: transparent;
-    border: 0;
-    border-radius: 8px;
-    color: var(--color-text-2);
-}
-
-.basemap-menu-adjust:focus-visible {
-    outline: 2px solid var(--color-text-1);
-    outline-offset: 2px;
-}
-
 .basemap-menu-item-text {
     display: flex;
     flex: 1 1 auto;
@@ -984,80 +949,188 @@
     background: var(--color-border);
 }
 
-/* SNOW-904: the section heading is a BUTTON now — it opens and closes its
-   own group — so the `pointer-events: none` that used to sit here (a label
-   nobody could click) is gone with the label it described. */
-.basemap-menu-section-label {
+/* SNOW-1266: the group labels on level one ("Reference data", "Your data") and the
+   section labels on an options page ("Providers", "Bulletin opacity"). Not
+   controls — a reader scans them, nobody taps them. */
+.basemap-menu-group-label,
+.basemap-menu-page-label {
+    padding: 10px 12px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-3, var(--color-text-2));
+}
+
+.basemap-menu-group-label:first-child {
+    padding-top: 6px;
+}
+
+/* SNOW-1266: one level-one layer. A row with options is two controls on one
+   line — the opener (icon, name, summary, chevron) takes the room, and the
+   switch sits at the right edge. A row with only a switch is ONE control,
+   .basemap-menu-layer-row, laid out the same way so the switches line up
+   down the menu whichever kind a row is. */
+.basemap-menu-layer {
     display: flex;
     align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 6px 12px 4px;
+    gap: 4px;
+}
+
+.basemap-menu-layer-options,
+.basemap-menu-item.basemap-menu-layer-row {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    min-height: 48px;
+    padding: 6px 12px;
     background: transparent;
     border: 0;
     border-radius: 8px;
+    color: var(--color-text-1);
     font: inherit;
+    font-size: 14px;
     text-align: left;
-    color: var(--color-text-2, var(--color-text-1));
+    white-space: normal;
     cursor: pointer;
 }
 
-.basemap-menu-section-label:focus-visible {
-    outline: 2px solid var(--color-text-1);
-    outline-offset: 2px;
-}
-
-/* Title over summary, and the pair takes the remaining width so the chevron
-   stays pinned to the right edge whatever the summary says. `min-width: 0`
-   lets the summary ellipsise rather than push the chevron out of the box. */
-.basemap-menu-section-text {
-    display: flex;
-    flex: 1 1 auto;
-    min-width: 0;
-    flex-direction: column;
-    gap: 1px;
-}
-
-.basemap-menu-section-title {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-/* The derived second line: which of this section's rows are on. Written by
-   map_basemap_picker.js from the rows' own labels, so it is empty until
-   that module runs and the heading is simply a heading without it. */
-.basemap-menu-section-summary {
-    font-size: 11px;
-    font-weight: 400;
-    text-transform: none;
-    letter-spacing: 0;
-    color: var(--color-text-3, var(--color-text-2));
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.basemap-menu-section-summary:empty {
+/* The switch-only row draws its switch itself, not the checkbox glyph
+   every other overlay row leads with. */
+.basemap-menu-item.basemap-menu-layer-row::before {
     display: none;
 }
 
-/* Points DOWN when the group is closed and UP when it is open, so the mark
-   always points at where the rows will go — the meaning
-   includes/_icon_chevron.html's own docstring gives it. */
-.basemap-menu-chevron {
+.basemap-menu-layer-options:focus-visible,
+.basemap-menu-switch:focus-visible,
+.basemap-menu-back:focus-visible {
+    outline: 2px solid var(--color-text-1);
+    outline-offset: -2px;
+}
+
+.basemap-menu-layer-icon {
+    display: inline-flex;
     flex: 0 0 auto;
-    transition: transform 120ms ease;
+    color: var(--color-text-2);
 }
 
-[aria-expanded="true"] > .basemap-menu-chevron {
-    transform: rotate(180deg);
+/* Points at where the row goes: a page of its own. */
+.basemap-menu-layer-chevron {
+    flex: 0 0 auto;
+    color: var(--color-text-3, var(--color-text-2));
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .basemap-menu-chevron {
-        transition: none;
+/* The switch of a row with options: its own 48px target, separate from the
+   opener beside it. */
+.basemap-menu-switch {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 60px;
+    min-height: 48px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+/* Steep terrain's switch is its overlay row as well (map.js seeds every
+   .basemap-menu-item--overlay), so it sheds the row's padding and the
+   checkbox glyph and takes the master switches' shape. */
+.basemap-menu-item.basemap-menu-switch {
+    width: 60px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+}
+
+.basemap-menu-item.basemap-menu-switch::before {
+    display: none;
+}
+
+/* The switch-only row's track sits in the same 60px slot, flush with the
+   row's right edge, so every track in the menu shares one centre line. */
+.basemap-menu-item.basemap-menu-layer-row {
+    padding-right: 0;
+}
+
+.basemap-menu-switch-slot {
+    display: inline-flex;
+    flex: 0 0 60px;
+    justify-content: center;
+}
+
+/* An options page's first row: back, then the layer's name. */
+.basemap-menu-page-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-bottom: 2px;
+}
+
+.basemap-menu-back {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    color: var(--color-text-1);
+    cursor: pointer;
+}
+
+.basemap-menu-page-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-1);
+}
+
+/* The header's close button, on a phone only: there the menu covers the
+   roundel that opened it, so it needs a way out of its own. */
+.basemap-menu-close {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin: -8px -8px -8px 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    color: var(--color-text-2);
+    cursor: pointer;
+}
+
+@media (max-width: 639.98px) {
+    /* SNOW-1266: full width on a phone. The menu's containing block is the
+       roundel stack, which sits --map-edge-inset-right in from #map's right
+       edge, so the menu's right edge is pulled back out to the same gap from
+       the screen edge and its width is the screen less two gaps. */
+    .basemap-menu {
+        right: calc(var(--map-edge-gap) - var(--map-edge-inset-right));
+        width: calc(100vw - 2 * var(--map-edge-gap));
+    }
+
+    .basemap-menu-close {
+        display: inline-flex;
+    }
+}
+
+@media (min-width: 640px) {
+    /* Beside the roundels: a fixed width, so moving between pages never
+       makes the menu jump in size. */
+    .basemap-menu {
+        width: 340px;
     }
 }
 
@@ -1453,6 +1526,17 @@
     color: var(--ink);
 }
 
+/* SNOW-1264: a dropped pin's tile — round, because it is a place, and
+   carrying the star in the blue the map draws the pin in. */
+.search-result-tile--pin {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-marker-favourite) 12%, transparent);
+    color: var(--color-marker-favourite);
+}
+
 /* The gondola cabin inside the resort tile (SNOW-1177). `display` is explicit because the global
    reset sets `svg { display: block }`; the tile centres it either way. */
 .search-result-pin {
@@ -1800,8 +1884,9 @@ html[data-route-drawing] #map-tour-offer {
     display: none;
 }
 
-/* Bulletin opacity — five opacity steps, a row in the layers menu's
-   Conditions group under the three providers whose bulletins it shades.
+/* Bulletin opacity — four opacity steps on the layers menu's Avalanche
+   bulletins page, under the three providers whose bulletins it shades
+   (SNOW-1266 moved "off" to the page's level-one switch).
    SNOW-656 built it as a roundel in the control column with a flyout of
    its own; the two-capsule column moved it here, so every choice about
    what the map draws is made in one menu.
@@ -1812,17 +1897,6 @@ html[data-route-drawing] #map-tour-offer {
    uses) rather than widening the menu to five fixed targets. */
 .basemap-menu-opacity {
     padding: 4px 12px 6px;
-}
-
-/* Indented to the row labels' own column (12px row padding + a 14px
-   checkbox + the 8px gap, less this row's 12px), so it reads as a row
-   label; the steps beneath it take the menu's full inner width. */
-.basemap-menu-opacity-label {
-    margin: 0 0 4px;
-    padding-left: 22px;
-    font-size: 13px;
-    color: var(--color-text-1);
-    white-space: nowrap;
 }
 
 .map-fill-steps {
@@ -1872,7 +1946,6 @@ html[data-route-drawing] #map-tour-offer {
     background: var(--color-text-1);
 }
 
-.map-fill-step-swatch[data-step="0"] { background: transparent; }
 .map-fill-step-swatch[data-step="0.25"] { opacity: 0.25; }
 .map-fill-step-swatch[data-step="0.5"] { opacity: 0.5; }
 .map-fill-step-swatch[data-step="0.75"] { opacity: 0.75; }
@@ -2507,6 +2580,18 @@ html[data-route-drawing] #map-tour-offer {
     /* Half the row's height, less a pixel: the name's x-height, not its
        line box, reads as sitting on the level's line. */
     margin-top: -13px;
+}
+
+/* Two gates on one level (the region selector's ≤10 and the ski-touring
+   routes' ≥10): the "from" row sits just above the line, the "up to" row
+   just below, rather than one over the other. zoom_control_core.js's
+   `side`. */
+.map-zoom-tick[data-zoom-side="above"] {
+    margin-top: -25px;
+}
+
+.map-zoom-tick[data-zoom-side="below"] {
+    margin-top: -1px;
 }
 
 .map-zoom-tick-button {

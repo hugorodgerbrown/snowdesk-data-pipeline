@@ -182,6 +182,8 @@ interface Window {
   pwaRouteDrawCore: any;
   /** SNOW-1256: route_draw.js — whether the map is in route draw mode. */
   pwaRouteDraw: any;
+  /** map.js: swisstopo's ski-touring routes layer — hold(held), isEligible(). */
+  pwaSkiRoutes: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
   pwaRouteRailCore: any;
   /** static/js/aspect_wheel_core.js — the aspect wheel's state and SVG. */

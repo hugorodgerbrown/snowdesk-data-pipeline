@@ -116,6 +116,10 @@
   const TERRAIN_CLASS_TILE_URL = mapEl.dataset.terrainClassTileUrl || null;
   const TERRAIN_FILTER_ELIGIBLE =
     mapEl.dataset.terrainFilterEligible === 'true' && !!TERRAIN_CLASS_TILE_URL;
+  // swisstopo's ski-touring routes (ch.swisstopo-karto.skitouren): a raster
+  // of the SAC/swisstopo winter routes, drawn from z10 inside Switzerland.
+  // Gated with draw mode behind the route_drawing flag, whose guide it is.
+  const SKI_ROUTES_ELIGIBLE = mapEl.dataset.skiRoutesEligible === 'true';
 
   // SNOW-672: marker tints, in one place. MapLibre paint properties cannot
   // reference a CSS custom property, so these two literals are the JS side
@@ -448,6 +452,8 @@
     // SNOW-1185: regions no provider has ever rated stay off the map unless
     // asked for — see applyCountryFilters.
     unsupported: false,
+    // ON by default (seeded below) — see OVERLAY_STORAGE_KEY.ski_routes.
+    ski_routes: false,
   };
 
   // SNOW-656: the Bulletins row's live state — the persisted preference plus
@@ -554,6 +560,15 @@
   for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
+  /**
+   * The ski-touring routes' preference: on unless the reader switched it
+   * off, and never for an ineligible page, which has no row to switch.
+   *
+   * @returns {boolean}
+   */
+  const readSkiRoutesPreference = () =>
+    SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.ski_routes, true);
+  overlayState.ski_routes = readSkiRoutesPreference();
   // 2026-10-23: "By bulletin" left the terrain filter for a row of its own,
   // "Highlight problem terrain". A device that left the filter switched on
   // in that colour comes back with problem terrain on and the filter off,
@@ -4411,6 +4426,91 @@
     }));
   };
 
+  // ==== swisstopo's ski-touring routes ====
+  //
+  // ch.swisstopo-karto.skitouren, swisstopo's WMTS raster of the winter
+  // routes it keeps with the SAC: open government data, served without a
+  // key, attribution required. A raster cannot be filtered, so every line
+  // swisstopo draws is drawn — Hugo judged that uncrowded on a phone
+  // (28 Oct 2026). Choosing among the routes needs the vector dataset
+  // (SNOW-1261). Bounded to Switzerland, so a map elsewhere asks for no
+  // tiles; from SKI_ROUTES_MINZOOM, where the lines start to separate.
+  const SKI_ROUTES_SOURCE_ID = 'ski-routes';
+  const SKI_ROUTES_LAYER_ID = 'ski-routes';
+  const SKI_ROUTES_TILE_URL =
+    'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo-karto.skitouren/default/current/3857/{z}/{x}/{y}.png';
+  const SKI_ROUTES_BOUNDS = [5.9, 45.8, 10.5, 47.85];
+  const SKI_ROUTES_MINZOOM = 10;
+  // Draw mode shows the routes whatever the switch says — they are its
+  // guide — and hands them back on exit. window.pwaSkiRoutes.hold().
+  let skiRoutesHeld = false;
+
+  /**
+   * Install the ski-touring routes' raster source and layer, hidden unless
+   * the overlay is on (or draw mode is holding it).
+   *
+   * Idempotent, like installTerrainFilterLayer, so the styledata
+   * re-install handler can call it on every basemap swap. Installed
+   * eagerly: a hidden raster layer requests no tiles.
+   *
+   * @returns {void}
+   */
+  const installSkiRoutesLayer = () => {
+    if (!SKI_ROUTES_ELIGIBLE || map.getSource(SKI_ROUTES_SOURCE_ID)) return;
+    map.addSource(SKI_ROUTES_SOURCE_ID, {
+      type: 'raster',
+      tiles: [SKI_ROUTES_TILE_URL],
+      tileSize: 256,
+      bounds: SKI_ROUTES_BOUNDS,
+      maxzoom: 17,
+      // Names the dataset, for the reason the terrain filter's does: a
+      // bare "© swisstopo" would merge into the swisstopo basemaps' own
+      // credit in updateMapAttribution and credit nothing.
+      attribution:
+        '<a href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener">'
+        + 'swisstopo — ski routes</a>',
+    });
+    // Over the choropleth, so the lines read on any danger colour, and
+    // under the boundaries and every pin and line Snowdesk draws.
+    const beforeId = map.getLayer('regions-line') ? 'regions-line' : undefined;
+    map.addLayer(
+      {
+        id: SKI_ROUTES_LAYER_ID,
+        type: 'raster',
+        source: SKI_ROUTES_SOURCE_ID,
+        minzoom: SKI_ROUTES_MINZOOM,
+        layout: {
+          visibility: overlayState.ski_routes || skiRoutesHeld ? 'visible' : 'none',
+        },
+        paint: { 'raster-opacity': 0.9 },
+      },
+      beforeId,
+    );
+    raiseMarkerLayers();
+    attributionSourceIds = null;
+    updateMapAttribution();
+  };
+
+  window.pwaSkiRoutes = Object.freeze({
+    /**
+     * Show the routes regardless of the switch (true), or hand them back
+     * to it (false). Draw mode's one call each way.
+     *
+     * @param {boolean} held
+     * @returns {void}
+     */
+    hold(held) {
+      skiRoutesHeld = !!held;
+      if (!map.getLayer(SKI_ROUTES_LAYER_ID)) return;
+      // Storage, not overlayState: the picker writes the live layer and
+      // localStorage only (see the SNOW-473 note in the styledata handler).
+      const on = skiRoutesHeld || readSkiRoutesPreference();
+      map.setLayoutProperty(SKI_ROUTES_LAYER_ID, 'visibility', on ? 'visible' : 'none');
+    },
+    /** @returns {boolean} Whether this page has the layer at all. */
+    isEligible: () => SKI_ROUTES_ELIGIBLE,
+  });
+
   /**
    * Install the terrain filter's raster source and layer, hidden unless the
    * filter is on.
@@ -7387,8 +7487,11 @@
   //     and SNOW-1073's slope colouring share the tiles and the switch).
   //   route_slopes — a route's core switches from leg colours to slope
   //     classes at ROUTE_SLOPE_MINZOOM (z14).
+  //   ski_routes — swisstopo's ski-touring routes from SKI_ROUTES_MINZOOM
+  //     (z10). Named only on a page that has the layer.
   const ZOOM_GATES = Object.freeze([
     Object.freeze({ key: 'region_select', zoom: REGION_SELECT_MAXZOOM, upTo: true }),
+    ...(SKI_ROUTES_ELIGIBLE ? [Object.freeze({ key: 'ski_routes', zoom: SKI_ROUTES_MINZOOM })] : []),
     Object.freeze({ key: 'terrain_filter', zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12 }),
     Object.freeze({ key: 'route_slopes', zoom: ROUTE_SLOPE_MINZOOM }),
   ]);
@@ -8175,6 +8278,7 @@
     // round.
     installTerrainFilterLayer();
     installRegionsLayers(geojson);
+    installSkiRoutesLayer();
     // SNOW-979: after the regions — it sits above the choropleth. A reader
     // who left "Highlight problem terrain" on gets the day now.
     installBulletinTerrainLayer();
@@ -9163,6 +9267,22 @@
      */
     const openFavouriteDeepLink = () => {
       const uuid = consumeFavouriteDeepLink();
+      if (!uuid) return;
+      showFavourite(uuid);
+    };
+
+    /**
+     * Fly to the favourite carrying ``uuid`` and open what a tap on its pin
+     * opens.
+     *
+     * Shared by the ``?favourite=`` deep link above and a pin picked in
+     * search (SNOW-1264): both are someone asking to be taken to one
+     * specific pin, and two paths to one pin would drift apart.
+     *
+     * @param {string} uuid - The favourite's UUID.
+     * @returns {void}
+     */
+    const showFavourite = (uuid) => {
       if (!uuid || !FAVOURITES_ELIGIBLE) return;
 
       // Someone who followed a link to one specific pin means to see that
@@ -10305,7 +10425,18 @@
       }
     });
 
-    const runSearch = (query) => searchCore.runSearch(SEARCH_INDEX, query);
+    // SNOW-1264: the user's dropped pins, as rows. Not in SEARCH_INDEX,
+    // which is built once per region; these come from the favourites feed
+    // and change whenever a pin is saved, renamed or removed, so they are
+    // rebuilt from it on every read — a handful of rows, no cost worth
+    // caching. An unnamed pin is listed on an empty field and never matched
+    // by typing (search_core.buildPinEntries).
+    const pinEntries = () => searchCore.buildPinEntries(
+      favouritesFeedProps || [],
+      MAP_STRINGS['search-pin-unnamed'],
+    );
+
+    const runSearch = (query) => searchCore.runSearch(SEARCH_INDEX.concat(pinEntries()), query);
 
     const inputEl = document.getElementById('search-input');
     const resultsEl = document.getElementById('search-results');
@@ -10379,6 +10510,11 @@
 
     const pinnedResortResults = () => searchCore.buildPinnedResortEntries(favouritesFeedProps || []);
 
+    // SNOW-1264: dropped pins lead the empty field, under "Pinned places"
+    // (Hugo, 28 Oct: a favourite is a shortcut to somewhere on the map).
+    // SNOW-1229 had declined listing them here because typing could not
+    // find one; a named pin is now matched by its name too.
+
     // SNOW-1231: while the "Find a resort" walkthrough runs
     // (map_resort_guide.js) the empty field leads with its words and a few
     // popular resorts, above the visitor's own pins. The rows are the
@@ -10415,6 +10551,7 @@
         : [];
       return [
         { heading: suggestions ? suggestions.heading : '', items: popular },
+        { heading: MAP_STRINGS['search-group-pinned-places'], items: pinEntries() },
         { heading: MAP_STRINGS['search-group-pinned-resorts'], items: pinnedResorts },
         { heading: MAP_STRINGS['search-group-pinned'], items: pinnedResults() },
       ];
@@ -10440,6 +10577,15 @@
     const showMatches = () => {
       previewTop = true;
       renderResults(runSearch(inputEl.value));
+      // A named pin is a match too (SNOW-1264), and the feed holding it may
+      // not have been read yet on a first typed query; redraw once it has.
+      if (favouritesFeedProps === null) {
+        loadFavouritesFeed().then(() => {
+          if (inputEl.value && document.activeElement === inputEl) {
+            renderResults(runSearch(inputEl.value));
+          }
+        });
+      }
     };
 
     const openSearch = () => {
@@ -10503,7 +10649,9 @@
       // a row is arrowed to: nothing has been asked for yet, and an outline
       // on the first pinned region read as a second selection.
       const previewItem = currentResults[idx >= 0 ? idx : (previewTop ? 0 : -1)];
-      setPreview(previewItem ? previewItem.regionID : null);
+      // A pin row previews nothing (SNOW-1264): it goes to a point, not to
+      // the region it happens to sit in.
+      setPreview(previewItem && previewItem.type !== 'pin' ? previewItem.regionID : null);
     };
 
     // The day's level as a .danger-tile digit, keyed as the feature-state
@@ -10513,6 +10661,10 @@
     // SNOW-1177: the resort glyph the embed renders from _icon_resort.html.
     const resortIconTemplate = /** @type {HTMLTemplateElement|null} */ (
       document.getElementById('search-resort-icon-template')
+    );
+    // SNOW-1264: the favourites star, from the partial the roundel uses.
+    const pinIconTemplate = /** @type {HTMLTemplateElement|null} */ (
+      document.getElementById('search-pin-icon-template')
     );
 
     /**
@@ -10530,6 +10682,18 @@
      * @returns {Element} The tile, decorative (aria-hidden).
      */
     const resultTile = (r) => {
+      // SNOW-1264: a dropped pin is a place, so it is round like a resort,
+      // and carries the star the map draws it with, in the favourites blue.
+      if (r.type === 'pin') {
+        const tile = document.createElement('span');
+        tile.className = 'search-result-tile search-result-tile--pin';
+        tile.setAttribute('aria-hidden', 'true');
+        const star = pinIconTemplate
+          ? pinIconTemplate.content.firstElementChild.cloneNode(true)
+          : null;
+        if (star) tile.append(star);
+        return tile;
+      }
       if (r.type === 'resort') {
         const tile = document.createElement('span');
         tile.className = 'search-result-tile search-result-tile--resort';
@@ -10588,6 +10752,7 @@
         return;
       }
       const GROUP_HEADINGS = {
+        pin: MAP_STRINGS['search-group-pinned-places'],
         resort: MAP_STRINGS['search-group-resorts'],
         region: MAP_STRINGS['search-group-regions'],
       };
@@ -10632,9 +10797,12 @@
           // the two: the span is clipped to a 1px box, so a separator
           // outside it can collapse and leave a screen reader reading
           // "ResortVerbier" as one word. Invisible either way.
-          typeLabel.textContent = (r.type === 'resort'
-            ? MAP_STRINGS['search-type-resort']
-            : MAP_STRINGS['search-type-region']) + ' ';
+          const TYPE_LABELS = {
+            pin: MAP_STRINGS['search-type-pin'],
+            resort: MAP_STRINGS['search-type-resort'],
+            region: MAP_STRINGS['search-type-region'],
+          };
+          typeLabel.textContent = (TYPE_LABELS[r.type] || '') + ' ';
           primary.append(typeLabel, document.createTextNode(r.primary));
 
           const secondary = document.createElement('div');
@@ -10643,7 +10811,10 @@
           // fixture has no descriptive L2 (AT/IT). Resort row: "in" the
           // region it belongs to, so resorts sharing a first word stay told
           // apart and the region it opens on is named in words.
-          secondary.textContent = r.type === 'resort'
+          // A pin row: "in" the region it was dropped in, or nothing for a
+          // pin outside every region (SNOW-1264).
+          const placed = r.type === 'resort' || r.type === 'pin';
+          secondary.textContent = placed && r.secondary
             ? self.pwaStrings.interpolate(MAP_STRINGS['search-resort-in'], { region: r.secondary })
             : r.secondary;
           text.append(primary, secondary);
@@ -10655,7 +10826,7 @@
           // four countries with flag symbols in the map.html sprite render
           // a flag; an unknown prefix falls back to the bare id rather than
           // a broken <use>.
-          if (r.type !== 'resort') {
+          if (r.type === 'region') {
             const badge = document.createElement('span');
             badge.className = 'search-result-badge';
             const country = (r.regionID.split('-')[0] || '').toLowerCase();
@@ -10719,6 +10890,14 @@
     };
 
     const chooseResult = (item) => {
+      // SNOW-1264: a pin row goes to the pin and opens what a tap on it
+      // opens — the same path as the ?favourite= deep link.
+      if (item.type === 'pin') {
+        inputEl.value = '';
+        collapseSearch();
+        showFavourite(item.uuid);
+        return;
+      }
       // SNOW-1161: a resort row opens the resort — its pin and its sheet —
       // rather than its parent region, which is what a resort tapped on the
       // map does. A resort the pin feed does not carry (no coordinates yet)
@@ -10901,6 +11080,7 @@
       for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
+      overlayState.ski_routes = readSkiRoutesPreference();
       // l1, l2, l4 and bulletins are re-seeded before any install fn runs: the
       // fill's layout is derived from l4 and bulletins, and the bulletin
       // boundary's visibility from bulletins alone rather than a key of its
@@ -10943,6 +11123,7 @@
       // was loaded before the basemap switch is a no-op (loadedCountries
       // still has the code), so the data never comes back.
       installRegionsLayers(geojsonCache);
+      installSkiRoutesLayer();
       // SNOW-978: the terrain filter went with the style too. Re-added
       // after the regions here rather than before them — it resolves its
       // own `beforeId` against 'regions-fill', so it slots underneath either

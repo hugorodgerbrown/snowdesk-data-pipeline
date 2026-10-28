@@ -1,0 +1,26 @@
+{% comment %}
+templates/includes/_icon_slope.html — the steep-terrain glyph: a slope with hatching, for the slope and terrain-filter layer.
+
+Leads its row in the map's layers menu (public/partials/_map_embed.html),
+the same 24-grid 2px stroke as the rest of the house set
+(docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 18.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M3 20 21 5v15z" />
+    <path d="M9 20l6-6M14 20l5-5" />
+</svg>
