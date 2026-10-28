@@ -4602,9 +4602,12 @@
   // it (SNOW-1283: 19 tours against 111 segments round the Wildhorn).
   const SKI_ROUTES_VECTOR_MINZOOM = 12;
   // The raster's strength, and its strength while a tour list dims every
-  // line it does not name (ski_tours.js, window.pwaSkiRoutes.dim()).
-  const SKI_ROUTES_OPACITY = 0.9;
-  const SKI_ROUTES_DIMMED_OPACITY = 0.3;
+  // line it does not name (ski_tours.js, window.pwaSkiRoutes.dim()). Faint
+  // at every zoom (SNOW-1285): the raster is a picture nothing can tap, so
+  // it reads as a guide under SAC's bold, tappable tours rather than as
+  // more of them.
+  const SKI_ROUTES_OPACITY = 0.45;
+  const SKI_ROUTES_DIMMED_OPACITY = 0.2;
   // Draw mode shows the routes whatever the switch says — they are its
   // guide — and hands them back on exit. window.pwaSkiRoutes.hold().
   let skiRoutesHeld = false;

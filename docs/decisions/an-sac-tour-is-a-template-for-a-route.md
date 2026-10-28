@@ -62,7 +62,9 @@ without sampling again. A sync that rewrites the tour clears it.
 
 **The tours belong to the ski-touring routes overlay.** Below z12 the
 overlay is swisstopo's raster alone. From z12, ski_tours.js's vector lines
-and summits, in blue at full strength, are drawn on top of it. The raster
+and summits are drawn on top of it, bold, over a raster kept faint at every
+zoom (SNOW-1285). The raster is a picture nothing can tap, so bold means
+tappable and faint means a guide, whatever the zoom. The raster
 stays at every zoom because it draws swisstopo's whole network, and SAC's
 tours are only part of it: round the Wildhorn, 19 tours against 111
 network segments (SNOW-1283). Stopping it at z12, as SNOW-1278 first did,

@@ -260,13 +260,14 @@ describe('on an eligible page', () => {
     await boot();
     const opacity = () => mapStub.getPaintProperty(LAYER, 'raster-opacity');
 
-    expect(opacity()).toBe(0.9);
+    // Faint, as a guide under the tappable tours (SNOW-1285), and fainter.
+    expect(opacity()).toBe(0.45);
     window.pwaSkiRoutes.dim(true);
-    expect(opacity()).toBe(0.3);
+    expect(opacity()).toBe(0.2);
     await swapBasemap();
-    expect(opacity()).toBe(0.3);
+    expect(opacity()).toBe(0.2);
     window.pwaSkiRoutes.dim(false);
-    expect(opacity()).toBe(0.9);
+    expect(opacity()).toBe(0.45);
   });
 
   it('is named in the zoom control at z10', async () => {

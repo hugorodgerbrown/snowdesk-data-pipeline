@@ -14,8 +14,8 @@
  * OVERLAY_LAYERS.ski_routes, so the layers menu and window.pwaSkiRoutes
  * (draw mode's hold and hide) switch them with the raster.
  *
- * Lines are blue at full strength, as the mockup decided (28 Oct 2026):
- * this is the mode where the tours are the thing tapped. While a list is
+ * Lines are bold blue over a faint raster (SNOW-1285): bold is what can be
+ * tapped, and the raster's network under it cannot be. While a list is
  * open the tours it names are drawn over them in the route colour, a way
  * down dashed, each with a green dot at its far end (where a way up starts
  * and a way down finishes), and every other tour is dimmed, the raster
@@ -167,7 +167,9 @@
     const minzoom = core.MINZOOM;
     const isTour = ['==', ['get', 'kind'], 'tour'];
     const highlight = core.highlightFilter(state.highlight);
-    const width = ['interpolate', ['linear'], ['zoom'], 12, 1.5, 15, 3];
+    // Bold, over swisstopo's faint raster: what is drawn this strongly can
+    // be tapped, and the faint network under it cannot (SNOW-1285).
+    const width = ['interpolate', ['linear'], ['zoom'], 12, 3, 15, 5];
     map.addLayer({
       id: LINE,
       type: 'line',
@@ -181,7 +183,7 @@
         'line-opacity': state.highlight.length ? DIMMED_OPACITY : 1,
       },
     }, before);
-    const highlightWidth = ['interpolate', ['linear'], ['zoom'], 12, 3, 15, 5];
+    const highlightWidth = ['interpolate', ['linear'], ['zoom'], 12, 5, 15, 7];
     map.addLayer({
       id: HIGHLIGHT,
       type: 'line',
