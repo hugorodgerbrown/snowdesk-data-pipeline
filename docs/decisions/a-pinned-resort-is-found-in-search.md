@@ -1,8 +1,8 @@
 ---
 name: a-pinned-resort-is-found-in-search
-description: Why a favourited resort is listed by search and drawn blue on the map, not in the Favourites panel (dropped_pins, buildPinnedResortEntries)
+description: Why pinned resorts and dropped pins are found in search, resorts drawn blue (buildPinnedResortEntries, buildPinEntries, showFavourite)
 status: current
-last-reviewed: 2026-10-25
+last-reviewed: 2026-10-28
 ---
 
 # A pinned resort is found in search, and drawn as a blue resort dot
@@ -33,7 +33,8 @@ one list (pins → panel, resorts and regions → search) and one marker. It is
 the move SNOW-814 made for region pins, for the same reason.
 
 B was declined because typing can never find a dropped pin, so the empty
-list and the typed results would describe different sets.
+list and the typed results would describe different sets. **SNOW-1264
+reversed that half** — see below.
 
 ## Consequences
 
@@ -46,3 +47,37 @@ list and the typed results would describe different sets.
   search never offered.
 - Unpinning is the star in the resort's own sheet; there is no rename for a
   pinned resort.
+
+## SNOW-1264: dropped pins are searchable places too
+
+Hugo, 28 Oct 2026: "a favourite should be a searchable place … it's
+basically a shortcut to get somewhere on the map". So option B, declined
+three days earlier, is now the rule for dropped pins:
+
+- **An empty field lists them first**, under *Pinned places*, above
+  *Pinned resorts* and *Pinned regions*. Named pins by name, then unnamed
+  ones (as "Unnamed pin") newest first.
+- **Typing finds a pin by its name**, ranked with regions and resorts and
+  grouped under the same *Pinned places* heading. Its region is shown
+  ("in …") but not matched on, so typing a region's name still leads with
+  the region.
+- **Picking one flies to the pin and opens what a tap on it opens** —
+  `showFavourite(uuid)`, the path the `/map/?favourite=<uuid>` deep link
+  already took, so the two cannot drift. It switches the favourites layer
+  on if it was off, as the deep link does. The row previews no region
+  outline: it goes to a point, not to the region the point sits in.
+
+The objection that stopped B still holds for one case and is accepted
+rather than worked round: **an unnamed pin cannot be found by typing.**
+Snowdesk does not name a pin for the user — no nearest-place lookup, no
+prompt on drop. Hugo: "Don't do anything clever — this is UGC — they
+decide." An unnamed pin is in the empty list and nowhere else, and naming
+it (the pins panel's Rename) is what makes it typeable.
+
+The Favourites roundel and its pins panel stay, for managing the list
+(rename, share, remove). Search is how you get to a pin; the panel is how
+you look after them.
+
+`favourites.geojson` gained `region_id` and `region_name` — the
+favourite's own region, null for a pin outside every region — for the
+row's second line.

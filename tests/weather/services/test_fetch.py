@@ -36,6 +36,7 @@ from tests.factories import (
     FavouriteFactory,
     FieldObservationFactory,
     LocationFactory,
+    ResortLocationFactory,
 )
 
 # A fixed day so the payloads below read as literal dates rather than
@@ -394,6 +395,7 @@ class TestWrittenShape:
         money is the set the queryset defines rather than whatever a caller
         happened to pass.
         """
+        ResortLocationFactory.create()
         FavouriteFactory.create()
         FieldObservationFactory.create()
         today = timezone.localdate()
@@ -403,7 +405,8 @@ class TestWrittenShape:
         with mock.patch("requests.get", return_value=_response(payload)) as get:
             counts = fetch_all_locations(today, commit=True)
 
-        # The favourite's location only — the observation's is excluded.
+        # The resort's location only — a favourite's and an observation's
+        # are excluded.
         assert get.call_count == 1
         assert counts["created"] == 1
 

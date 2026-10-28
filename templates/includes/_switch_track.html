@@ -1,0 +1,31 @@
+{% comment %}
+templates/includes/_switch_track.html — the drawn half of a switch, for a
+control that is already a button (SNOW-1266).
+
+includes/_switch.html is a real checkbox input, which is right for a form
+or a settings row. The map's layers menu is a role="menu" of
+menuitemcheckbox BUTTONS whose aria-checked is the state every script that
+reads the menu already uses (map.js seeds it, map_basemap_picker.js flips
+it, map_layer_sync_status.js disables it), so a second, hidden input there
+would be a second copy of the state to keep in step. This partial draws the
+same 44×26 track and 20px thumb as _switch.html and nothing else: it is
+aria-hidden, and it reads its state from the nearest ancestor carrying
+Tailwind's `group` class through `group-aria-checked:`. The caller's
+button is the control — its role, its label and its aria-checked.
+
+Measurements and colours are _switch.html's, for the reasons set out there
+(the thumb travels 44 − 20 − 3 − 3 = 18px).
+
+Parameters (passed via {% include … with … %}):
+  demo_checked (bool, optional) — draw it on without a checked ancestor.
+                The component library's variants only; a real caller
+                leaves it unset so the button's aria-checked decides.
+{% endcomment %}
+<span aria-hidden="true" class="pointer-events-none relative inline-block h-6.5 w-11 shrink-0">
+    <span
+        class="absolute inset-0 rounded-full transition-colors group-aria-checked:bg-accent{% if demo_checked %} bg-accent{% else %} bg-border-strong{% endif %}"
+    ></span>
+    <span
+        class="absolute inset-y-0 left-0.75 my-auto h-5 w-5 rounded-full bg-accent-text shadow transition-transform group-aria-checked:translate-x-4.5{% if demo_checked %} translate-x-4.5{% endif %}"
+    ></span>
+</span>

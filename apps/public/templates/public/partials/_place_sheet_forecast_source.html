@@ -1,0 +1,16 @@
+{% comment %}
+public/partials/_place_sheet_forecast_source.html — which curated point a
+saved pin's weather is borrowed from (Hugo, 2026-10-28).
+
+A pin buys no forecast of its own; the sheet reads the curated point
+nearest it (apps/weather/services/nearest.py) and says so, in the words
+every borrowing surface uses (includes/_forecast_source.html).
+
+Context:
+  forecast_source — the NearestForecast, or None (no line).
+{% endcomment %}
+{% if forecast_source %}
+    <p class="text-meta text-text-3" data-testid="place-sheet-forecast-source">
+        {% include "includes/_forecast_source.html" with source=forecast_source anchor="pin" only %}
+    </p>
+{% endif %}

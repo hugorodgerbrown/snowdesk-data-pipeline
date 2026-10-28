@@ -98,6 +98,12 @@ const OVERLAY_STORAGE_KEY = {
   // condition symbol at every station is a second layer of information over
   // the danger ratings someone opened the map to read.
   weather: 'snowdesk.map.overlay.weather',
+  // swisstopo's ski-touring routes (ch.swisstopo-karto.skitouren). Defaults
+  // ON, unlike every other opt-in overlay here: it is a thin raster of
+  // lines, Hugo judged it uncrowded on a phone (28 Oct 2026), and it is
+  // exactly what a reader planning a tour wants under the map. Eligible
+  // only behind the route_drawing flag for now (data-ski-routes-eligible).
+  ski_routes: 'snowdesk.map.overlay.ski_routes',
   // The layers menu's "Display downloaded areas" row (SNOW-904; the
   // downloads panel's own switch before that). PERSISTED — this reverses
   // SNOW-645's "session-scoped inspection mode", which is what Hugo
@@ -160,23 +166,6 @@ const OVERLAY_STORAGE_KEY = {
 // persisted state of its own — see OVERLAY_VISIBILITY_GOVERNOR, which since
 // SNOW-656 points it at ``bulletins`` rather than ``l4``.
 
-// SNOW-904: whether one collapsible section of the layers menu is open, one
-// key per section slug (``places`` / ``conditions`` / ``boundaries`` /
-// ``basemap``). A factory rather than four literals for the same reason
-// ``COUNTRY_STORAGE_KEY`` is one: the slug is already in the DOM, on each
-// heading's ``data-section-toggle``, so restating it here four times would
-// be a fifth and sixth copy of the same name to keep in step.
-//
-// Every section defaults CLOSED except ``conditions``, read with
-// ``readBoolStorage`` — a plain two-state preference, unlike the downloads
-// overlay's tri-state next to it, because "never touched" and "closed" want
-// exactly the same behaviour here.
-const LAYERS_SECTION_STORAGE_KEY = (slug) => `snowdesk.map.layers.section.${slug}`;
-
-// The one section that opens EXPANDED on a first visit. Conditions is what
-// the map is for: the danger ratings and what the mountain is doing today.
-const LAYERS_SECTION_DEFAULT_OPEN = 'conditions';
-
 // SNOW-897: overlay key -> the MapLibre layer ids that overlay controls.
 //
 // ONE table. There were two, with near-identical names and identical shape:
@@ -225,6 +214,8 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-761: one symbol layer, not a pin+label pair — the condition glyph
   // is an inline `image` section inside `text-field`.
   weather: ['weather-point'],
+  // One raster layer, installed by map.js's installSkiRoutesLayer.
+  ski_routes: ['ski-routes'],
   // SNOW-687: the coloured line FIRST and the casing second — deliberately
   // the inverse of the order installRoutesLayer adds them in, where the
   // casing has to be added first to paint underneath. (SNOW-764's
@@ -426,6 +417,11 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'search-group-pinned': 'Pinned regions',
   'search-group-pinned-resorts': 'Pinned resorts',
   'search-resort-in': 'in %(region)s',
+  // SNOW-1264: a dropped pin's row — its screen-reader type word, its
+  // group heading, and the label for a pin the user has not named.
+  'search-type-pin': 'Pin',
+  'search-group-pinned-places': 'Pinned places',
+  'search-pin-unnamed': 'Unnamed pin',
   // SNOW-658 removed 'custom-control-idle'/'custom-control-done' — the
   // custom-area roundel's two labels for a state it no longer has (see
   // map_custom_download.js's header). Its label is server-rendered now,

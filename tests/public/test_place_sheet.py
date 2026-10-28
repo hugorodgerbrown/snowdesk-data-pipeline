@@ -336,35 +336,71 @@ def _pin(client: Client) -> Any:
     return favourite
 
 
+def _curated_near(favourite: Any, **weather: Any) -> Any:
+    """A curated forecast point 1.1 km north of a pin, with a row.
+
+    A pin buys no fetch of its own (2026-10-28): its sheet borrows the
+    nearest curated point, so a test that wants weather on the sheet puts
+    it HERE, never on the pin's own location.
+    """
+    point = LocationFactory.create(
+        name="Mont Fort",
+        latitude=favourite.location.latitude + 0.01,
+        longitude=favourite.location.longitude,
+        elevation_m=3329.0,
+    )
+    ResortLocationFactory.create(location=point)
+    WeatherFactory.create(location=point, **weather)
+    return point
+
+
 @pytest.mark.django_db
 class TestPinWeather:
-    """A saved pin's HALF ends under the day's weather at the pin."""
+    """A saved pin's HALF ends under the day's weather nearest the pin."""
 
     def test_todays_row_is_the_half_detents_end(self, client: Client) -> None:
         favourite = _pin(client)
-        WeatherFactory.create(location=favourite.location)
+        _curated_near(favourite)
         content = _get(client, _favourite_url(favourite.uuid)).content.decode()
         assert 'data-testid="place-sheet-weather" data-sheet-half' in content
-        assert "1500 m" in content
         # SNOW-1161: the week is the weather page's, not the sheet's.
         assert 'data-testid="place-sheet-week"' not in content
         assert 'data-testid="place-sheet-forecast-link"' in content
 
+    def test_the_borrowed_point_is_named_with_its_height_and_distance(
+        self, client: Client
+    ) -> None:
+        favourite = _pin(client)
+        _curated_near(favourite)
+        content = _get(client, _favourite_url(favourite.uuid)).content.decode()
+        source = re.search(
+            r'data-testid="place-sheet-forecast-source">(.*?)</p>', content, re.S
+        )
+        assert source is not None
+        text = " ".join(source.group(1).split())
+        assert text == "Forecast for Mont Fort (3329 m), 1.1 km from this pin."
+
+    def test_the_pins_own_row_is_never_read(self, client: Client) -> None:
+        """Rows fetched for a pin before 2026-10-28 are no longer shown."""
+        favourite = _pin(client)
+        WeatherFactory.create(location=favourite.location)
+        content = _get(client, _favourite_url(favourite.uuid)).content.decode()
+        assert 'data-testid="place-sheet-weather"' not in content
+
     def test_forward_day_reads_todays_forecast(self, client: Client) -> None:
         favourite = _pin(client)
         tomorrow = timezone.localdate() + datetime.timedelta(days=1)
-        WeatherFactory.create(
-            location=favourite.location, forecast=[_forecast_day(tomorrow)]
-        )
+        _curated_near(favourite, forecast=[_forecast_day(tomorrow)])
         content = _get(
             client, _favourite_url(favourite.uuid, tomorrow.isoformat())
         ).content.decode()
         assert "place-sheet-forward-day" in content
         assert "Forecast ·" in content
+        assert 'data-testid="place-sheet-forecast-source"' in content
 
     def test_forward_day_beyond_the_forecast_has_no_day(self, client: Client) -> None:
         favourite = _pin(client)
-        WeatherFactory.create(location=favourite.location)
+        _curated_near(favourite)
         later = timezone.localdate() + datetime.timedelta(days=3)
         content = _get(client, _favourite_url(favourite.uuid, later.isoformat()))
         assert b"place-sheet-forward-day" not in content.content
@@ -375,18 +411,20 @@ class TestPinWeather:
         content = _get(client, _favourite_url(favourite.uuid)).content.decode()
         assert 'data-testid="place-sheet-weather"' not in content
 
-    def test_forecast_link_carries_the_day(self, client: Client) -> None:
-        favourite = _pin(client)
-        content = _get(client, _favourite_url(favourite.uuid, "2026-02-03")).content
-        url = f"{favourite.location.get_absolute_url()}?date=2026-02-03"
-        assert url.encode() in content
-
-    def test_location_without_a_page_gets_no_forecast_link(
+    def test_forecast_link_is_the_borrowed_points_page_for_the_day(
         self, client: Client
     ) -> None:
         favourite = _pin(client)
-        favourite.location.short_id = None
-        favourite.location.save()
+        point = _curated_near(favourite, observed_on=datetime.date(2026, 2, 3))
+        content = _get(client, _favourite_url(favourite.uuid, "2026-02-03")).content
+        url = f"{point.get_absolute_url()}?date=2026-02-03"
+        assert url.encode() in content
+
+    def test_point_without_a_page_gets_no_forecast_link(self, client: Client) -> None:
+        favourite = _pin(client)
+        point = _curated_near(favourite)
+        point.short_id = None
+        point.save()
         content = _get(client, _favourite_url(favourite.uuid)).content.decode()
         assert "Full forecast" not in content
         assert 'href="?date=' not in content
