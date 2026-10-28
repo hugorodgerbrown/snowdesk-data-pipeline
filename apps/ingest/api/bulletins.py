@@ -19,6 +19,7 @@ apply what they fetch through this same serialiser, so production writes its
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from django.db.models import QuerySet
@@ -54,4 +55,10 @@ def _source_bulletins() -> QuerySet[SourceBulletin]:
     )
 
 
-BULLETINS_FEED = Feed("bulletins", _source_bulletins, serialise_source_bulletin)
+BULLETINS_FEED = Feed(
+    "bulletins", _source_bulletins, serialise_source_bulletin, day_field="target_date"
+)
+
+# The same feed under /api/data/v2/ (SNOW-1272), so one token bound to v2
+# reads everything the reference-data service serves. Same items.
+BULLETINS_FEED_V2 = replace(BULLETINS_FEED, version=2)

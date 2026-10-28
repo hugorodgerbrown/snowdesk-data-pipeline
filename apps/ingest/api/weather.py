@@ -73,4 +73,5 @@ WEATHER_FEED = Feed(
     _source_weather,
     serialise_source_weather,
     version=WEATHER_FEED_VERSION,
+    day_field="observed_on",
 )

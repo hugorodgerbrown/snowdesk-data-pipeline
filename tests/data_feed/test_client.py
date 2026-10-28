@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 import requests
 
-from apps.data_feed.client import FeedClient, FeedError, check_feed_url
+from apps.data_feed.client import FeedClient, FeedError, check_feed_url, v2_url
 
 BASE = "https://prod.example/api/data/v1/"
 
@@ -221,3 +221,22 @@ class TestMintedToken:
         """Neither a token nor a client id and secret."""
         with pytest.raises(FeedError, match="token or a client id"):
             FeedClient(BASE)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://prod.example/api/data/v1/", "https://prod.example/api/data/v2/"),
+        ("https://prod.example/api/data/v1", "https://prod.example/api/data/v2/"),
+        ("https://prod.example/api/data/v2/", "https://prod.example/api/data/v2/"),
+    ],
+)
+def test_v2_url_reads_v1_as_v2(url: str, expected: str) -> None:
+    """SNOW-1272: DATA_FEED_URL names v1; pull_reference_data reads v2 beside it."""
+    assert v2_url(url) == expected
+
+
+def test_v2_url_refuses_a_url_naming_no_version() -> None:
+    """A URL that names neither version cannot be guessed at."""
+    with pytest.raises(FeedError, match="does not end in"):
+        v2_url("https://prod.example/api/")

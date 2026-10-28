@@ -85,6 +85,31 @@ def _json(response: requests.Response) -> Any:
         raise FeedError(f"{response.url} did not answer with JSON") from exc
 
 
+def v2_url(url: str) -> str:
+    """Return the ``/api/data/v2/`` base beside a configured feed URL.
+
+    ``DATA_FEED_URL`` names v1, which ``pull_production_data`` reads;
+    ``pull_reference_data`` reads v2 on the same host (SNOW-1272).
+
+    Args:
+        url: The configured ``DATA_FEED_URL``.
+
+    Returns:
+        The same URL with its trailing ``/v1/`` as ``/v2/``; unchanged when
+        it already names v2.
+
+    Raises:
+        FeedError: It names neither version.
+
+    """
+    base = url.rstrip("/") + "/"
+    if base.endswith("/v2/"):
+        return base
+    if base.endswith("/v1/"):
+        return base[: -len("v1/")] + "v2/"
+    raise FeedError(f"DATA_FEED_URL {url!r} does not end in /v1/ or /v2/")
+
+
 def check_feed_url(url: str) -> str:
     """Return ``url`` normalised to end in a slash, or raise if it is unusable.
 
@@ -237,12 +262,21 @@ class FeedClient:
             return body
         raise FeedError(f"GET {url} refused the token twice")  # pragma: no cover
 
-    def pages(self, feed: str, *, since: str | None = None) -> Iterator[FeedPage]:
+    def pages(
+        self,
+        feed: str,
+        *,
+        since: str | None = None,
+        day_from: str | None = None,
+        day_to: str | None = None,
+    ) -> Iterator[FeedPage]:
         """Walk ``feed`` from the start (or ``since``), one page at a time.
 
         Args:
-            feed: The feed's name, one of ``contract.FEEDS``.
+            feed: The feed's name, one of ``contract.FEEDS`` (or a v2 feed).
             since: Only rows updated at or after this ISO 8601 datetime.
+            day_from: Only rows whose day is on or after this ISO date.
+            day_to: Only rows whose day is on or before this ISO date.
 
         Yields:
             Each page, in order, until ``next_cursor`` is null.
@@ -252,6 +286,10 @@ class FeedClient:
         params: dict[str, str] = {"limit": str(contract.MAX_LIMIT)}
         if since:
             params["since"] = since
+        if day_from:
+            params["from"] = day_from
+        if day_to:
+            params["to"] = day_to
         while True:
             body = self._get(url, params)
             yield FeedPage(results=body["results"], count=body.get("count"))

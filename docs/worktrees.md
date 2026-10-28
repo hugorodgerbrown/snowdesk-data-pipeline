@@ -210,11 +210,20 @@ the file is removed. Which settings file holds what, and why:
 
 ## Pulling real data into a session
 
-When the cloud environment sets `DATA_FEED_URL` and `DATA_FEED_TOKEN`
-(SNOW-1254), a session can top its seeded database up from production's
-feed with `uv run python manage.py pull_production_data --commit`. It is an
-explicit step, never part of the seed: the seed stays fixtures-first, and a
-session without the token behaves exactly as before. Setting up the token:
+When the cloud environment sets `DATA_FEED_URL` and `DATA_FEED_V2_TOKEN`
+(a token minted for `/api/data/v2/`), a session can seed its database from
+the reference-data service (SNOW-1272):
+
+```bash
+uv run python manage.py pull_reference_data --commit                # estate + last 14 days
+uv run python manage.py pull_reference_data --golden-week --commit   # estate + the golden week
+```
+
+The estate (places, passes, resorts) always comes whole; `--recent N` or
+`--golden-week` picks the days of bulletins, day ratings and weather. It is
+an explicit step, never part of the seed: the seed stays fixtures-first,
+and a session without the token behaves exactly as before. The v1
+`pull_production_data --commit`, with `DATA_FEED_TOKEN`, still works. Setting up the token:
 [`data-feed.md`](data-feed.md#setting-up-a-cloud-dev-environment-snow-1254).
 
 ## Dev credentials

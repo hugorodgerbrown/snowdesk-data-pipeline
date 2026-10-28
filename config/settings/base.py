@@ -1222,6 +1222,11 @@ DATA_FEED_CLIENT_SECRET = config("DATA_FEED_CLIENT_SECRET", default="")
 # (SNOW-1254), which takes the place of the pair above. It is how a cloud dev
 # environment is granted the feed: read-only, expiring, revocable on its own.
 DATA_FEED_TOKEN = config("DATA_FEED_TOKEN", default="")
+# A token minted for /api/data/v2/ (`mint_feed_token --resource .../v2/`),
+# which `pull_reference_data` reads (SNOW-1272). A token is bound to its URL
+# prefix, so a v1 token cannot open v2; with the client-credentials pair the
+# client asks for a v2 token itself and needs none of this.
+DATA_FEED_V2_TOKEN = config("DATA_FEED_V2_TOKEN", default="")
 
 # django.contrib.sites — required by django.contrib.sitemaps (SNOW-218).
 # 1 is the "example.com" row the sites migration creates, and nothing

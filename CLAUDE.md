@@ -170,9 +170,13 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
   data_feed/     Production's read-only data feed for other services
                  (SNOW-1197) — GET /api/data/v1/{bulletins,weather,
                  locations,resorts}/, OAuth client credentials issued only
-                 to a hand-made service client — and its client,
-                 pull_production_data (--type, --since, --commit), which
-                 replays bulletins through upsert_bulletin. No models; never
+                 to a hand-made service client — and its clients:
+                 pull_production_data (v1: --type, --since, --commit), which
+                 replays bulletins through upsert_bulletin, and
+                 pull_reference_data (SNOW-1272), which seeds an instance
+                 from v2 — the estate whole by source_uuid with its
+                 tombstones, then --recent N or --golden-week days of
+                 bulletins, day ratings and weather. No models; never
                  reads a user-owned table (docs/data-feed.md)
   public/        Public-facing bulletin site (route map: docs/site-structure.md)
     api.py       Plain JsonResponse endpoints — the map's feeds, plus
@@ -847,7 +851,7 @@ Read these when working in the relevant area:
 | Rebuild the Météo-France archive NDJSON from the local BRA PDFs | [`docs/runbooks/rebuild-meteofrance-archive.md`](docs/runbooks/rebuild-meteofrance-archive.md) |
 | Backfill an environment onto the Location model (the --commit commands, Open-Meteo elevation cost, progress log) | [`docs/runbooks/location-migration-backfill.md`](docs/runbooks/location-migration-backfill.md) |
 | Region centroid Locations — not re-linked on deploy; an operator runs `link_region_centroid_locations --commit` and `link_resort_locations --commit` ([`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md)) | [`docs/runbooks/region-centroid-backfill.md`](docs/runbooks/region-centroid-backfill.md) |
-| Production data feed for other services (GET /api/data/v1/ bulletins, weather, locations, resorts; OAuth client credentials, is_service_client, the data scope; pull_production_data --type --since --commit; DATA_FEED_URL, DATA_FEED_CLIENT_ID, DATA_FEED_CLIENT_SECRET) | [`docs/data-feed.md`](docs/data-feed.md) |
+| Production data feed for other services (GET /api/data/v1/ bulletins, weather, locations, resorts; v2 adds passes and day-ratings, from/to day windows and tombstones; OAuth client credentials, is_service_client, the data scope; pull_production_data --type --since --commit; pull_reference_data --recent --golden-week --commit; DATA_FEED_URL, DATA_FEED_CLIENT_ID, DATA_FEED_CLIENT_SECRET, DATA_FEED_V2_TOKEN) | [`docs/data-feed.md`](docs/data-feed.md) |
 | Why ingestion is a rehostable unit (apps/ingest imports no other apps.* package; apps.ingest.public is the only way in; tests/ingest/test_boundary.py; own tables, not a view over Snowdesk's; the five-ticket extraction SNOW-1248/1249/1250/1253/1252) | [`docs/decisions/ingestion-is-a-rehostable-unit.md`](docs/decisions/ingestion-is-a-rehostable-unit.md) |
 | Why reference data has one source of truth (apps/ingest serves everything the anonymous map shows — bulletins and their render models, weather, reference locations, resorts, passes, RegionDayRating, groupings, problem-terrain rules; reference_data() vs named(); source uuids and tombstones; subset syncs, the golden week; user data never leaves; EAWS regions stay code-held fixtures) | [`docs/decisions/reference-data-has-one-source-of-truth.md`](docs/decisions/reference-data-has-one-source-of-truth.md) |
 | Why production's data reaches staging through an HTTPS feed rather than a database credential (replay through upsert_bulletin, idempotent pulls, client credentials over an API key; sync-staging-data kept as the reset) | [`docs/decisions/data-reaches-other-environments-through-a-feed.md`](docs/decisions/data-reaches-other-environments-through-a-feed.md) |

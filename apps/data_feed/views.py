@@ -2,15 +2,19 @@
 apps/data_feed/views.py — The data feed endpoints, ``GET /api/data/v1/<feed>/``.
 
 One view serves all four v1 feeds (``bulletins``, ``weather``,
-``locations``, ``resorts``) and the four under ``/api/data/v2/``
+``locations``, ``resorts``) and the six under ``/api/data/v2/``
 (``weather``, SNOW-1253; ``locations``, ``passes``, ``resorts``,
-SNOW-1271); ``feeds.py`` says what each reads and ``auth.py`` who may read
-it. Query parameters, all optional:
+SNOW-1271; ``day-ratings``, SNOW-1270; ``bulletins``, SNOW-1272);
+``feeds.py`` says what each reads and ``auth.py`` who may read it. Query
+parameters, all optional:
 
 * ``since`` — ISO 8601 datetime with an offset; only rows updated at or
   after it.
 * ``cursor`` — the previous page's ``next_cursor``.
 * ``limit`` — page size, default 100, at most 500.
+* ``from`` / ``to`` — ISO 8601 dates, inclusive; only rows whose day (a
+  bulletin's target day, a weather or rating day) falls in the window. A
+  feed with no day answers 400 (SNOW-1272).
 
 A bad parameter is a 400 with a JSON ``error``: a fixed message per
 parameter, never the exception's text. Every response is
@@ -31,6 +35,7 @@ from apps.ingest.public import (
     FEED_PARAMETER_ERRORS,
     FeedQueryError,
     feed_page,
+    parse_feed_day,
     parse_feed_limit,
     parse_feed_since,
 )
@@ -60,6 +65,8 @@ def feed(request: HttpRequest, name: str, version: int = 1) -> HttpResponse:
             since=parse_feed_since(request.GET.get("since")),
             cursor=request.GET.get("cursor") or None,
             limit=parse_feed_limit(request.GET.get("limit")),
+            day_from=parse_feed_day(request.GET.get("from"), "from"),
+            day_to=parse_feed_day(request.GET.get("to"), "to"),
         )
     except FeedQueryError as exc:
         logger.info("data feed: bad %s parameter: %s", exc.param, exc)
