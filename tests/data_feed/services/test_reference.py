@@ -14,6 +14,7 @@ import uuid
 from typing import Any
 
 import pytest
+from django.db import IntegrityError, transaction
 
 from apps.data_feed.services.apply import ApplyError
 from apps.data_feed.services.reference import (
@@ -146,6 +147,31 @@ class TestPassesAndResorts:
             UPDATED
         )
         assert Pass.objects.get().name == "Magic Pass 2027"
+
+    def test_a_linked_slug_is_never_adopted(self) -> None:
+        """Codex on #1268: a row keyed to another uuid keeps its own key."""
+        other = uuid.uuid4()
+        PassFactory.create(slug="magic-pass", source_uuid=other)
+        ResortFactory.create(slug="verbier", source_uuid=other)
+        MicroRegionFactory.create(region_id="CH-4115")
+        index = ReferenceIndex.load()
+        pass_item: dict[str, Any] = {
+            "uuid": str(uuid.uuid4()),
+            "slug": "magic-pass",
+            "document": {"name": "Magic Pass", "website": ""},
+        }
+        resort_item: dict[str, Any] = {
+            "uuid": str(uuid.uuid4()),
+            "slug": "verbier",
+            "document": {"fields": {"name": "Verbier"}, "region": "CH-4115"},
+        }
+        # A fresh row collides on the unique slug: a failed item, not a re-key.
+        with pytest.raises(IntegrityError), transaction.atomic():
+            apply_reference_pass(pass_item, commit=True, index=index)
+        with pytest.raises(IntegrityError):
+            apply_reference_resort(resort_item, commit=True, index=index)
+        assert Pass.objects.get().source_uuid == other
+        assert Resort.objects.get().source_uuid == other
 
     def test_a_resort_with_its_links(self) -> None:
         """Region, pin, passes and roles are set from the document's uuids."""

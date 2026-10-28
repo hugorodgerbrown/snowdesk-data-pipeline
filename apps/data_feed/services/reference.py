@@ -279,8 +279,15 @@ def apply_reference_pass(
     if pass_ is None:
         if commit:
             # A pass a v1 pull created has the slug but no source_uuid yet:
-            # adopt it rather than collide on the unique slug.
-            pass_ = Pass.objects.filter(slug=values["slug"]).first() or Pass()
+            # adopt it rather than collide on the unique slug. Only an
+            # unlinked row: one already keyed to another uuid is that
+            # pass, and re-keying it would orphan its own updates.
+            pass_ = (
+                Pass.objects.filter(
+                    slug=values["slug"], source_uuid__isnull=True
+                ).first()
+                or Pass()
+            )
             for name, value in values.items():
                 setattr(pass_, name, value)
             pass_.source_uuid = source
@@ -397,7 +404,13 @@ def apply_reference_resort(
     with transaction.atomic():
         if resort is None:
             # A resort a v1 pull created has the slug but no source_uuid.
-            resort = Resort.objects.filter(slug=item["slug"]).first() or Resort()
+            # Only an unlinked row is adopted, as for a pass.
+            resort = (
+                Resort.objects.filter(
+                    slug=item["slug"], source_uuid__isnull=True
+                ).first()
+                or Resort()
+            )
         for name, value in fields.items():
             setattr(resort, name, value)
         resort.slug = item["slug"]

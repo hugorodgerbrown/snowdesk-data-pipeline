@@ -107,7 +107,7 @@ OUTCOMES: dict[str, tuple[str, ...]] = {
     "resorts": (CREATED, UPDATED, UNCHANGED, DELETED, DETACHED, ABSENT, FAILED),
     "bulletins": (CREATED, UPDATED, UNCHANGED, FAILED),
     "day-ratings": (CREATED, UPDATED, UNCHANGED, RECOMPUTED, SKIPPED, FAILED),
-    "weather": (CREATED, UPDATED, UNCHANGED, KEPT, FAILED),
+    "weather": (CREATED, UPDATED, UNCHANGED, KEPT, SKIPPED, FAILED),
 }
 
 DEFAULT_RECENT_DAYS = 14
@@ -205,6 +205,9 @@ class Command(RegisteredCommand):
         # Places a dry run would create, by service uuid, so their weather
         # counts as created rather than failing.
         self._planned: set[str] = set()
+        # Places the service has tombstoned, by service uuid: their days
+        # are skipped, not failed, since this run just buried the place.
+        self._buried: set[str] = set()
         self._index = ReferenceIndex.load()
         try:
             self._pull_all(client, day_from=day_from, day_to=day_to)
@@ -428,6 +431,8 @@ class Command(RegisteredCommand):
             for item in items:
                 if item.get("deleted_at"):
                     tombstones.append({"uuid": item["uuid"]})
+                    if feed == "locations":
+                        self._buried.add(str(item["uuid"]))
                     continue
                 outcome = self._record(
                     feed,
@@ -525,6 +530,8 @@ class Command(RegisteredCommand):
                         lookups=lookups or lookups_for("bulletins", [i]),
                     ),
                 )
+            elif str(item.get("location")) in self._buried:
+                self._record(feed, item, lambda i: SKIPPED)
             else:
                 self._record(
                     feed,

@@ -249,17 +249,23 @@ def test_a_tombstone_detaches_a_favourited_place(
     service_client: Application,
     estate: dict[str, Any],
 ) -> None:
-    """A removed place a user saved stays theirs; it leaves the estate."""
+    """A removed place a user saved stays theirs; it leaves the estate.
+
+    Its days, still served, are skipped rather than failing the run
+    (Codex on #1268).
+    """
     location = estate["link"].location
     FavouriteFactory.create(location=location)
     SourceLocation.objects.filter(uuid=location.source_uuid).update(
         deleted_at=timezone.now()
     )
-    SourceWeather.objects.all().delete()
+    assert SourceWeather.objects.exists()
     monkeypatch.setattr("apps.data_feed.client.requests.Session", _LiveSession)
     _run("--commit")
     counts = _counts()
     assert counts["locations_detached"] == 1
+    assert counts["weather_skipped"] == SourceWeather.objects.count()
+    assert counts["failed"] == 0
     location.refresh_from_db()
     assert location.source_uuid is None
     assert not ResortLocation.objects.filter(location=location).exists()
