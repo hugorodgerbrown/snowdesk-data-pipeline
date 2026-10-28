@@ -250,8 +250,9 @@ uv run python manage.py pull_reference_data --golden-week --commit   # estate + 
 - **The estate is pulled whole, every time:** places, then passes, then
   resorts, each matched on `source_uuid`. A new place takes the service's
   uuid as its own `uuid` too, as the curating instance's rows do; a row a
-  v1 pull made (same `uuid`, or same slug for a pass or resort) is adopted
-  rather than duplicated. A place's `centroid_of` claims those regions'
+  v1 pull made (same `uuid`, or same slug for a pass or resort with no
+  `source_uuid` yet) is adopted rather than duplicated; a slug already
+  keyed to another uuid is never re-keyed, and the item fails instead. A place's `centroid_of` claims those regions'
   centres and releases any it no longer names.
 - **Tombstones are applied after every live item** — resorts, then passes,
   then places. A row is deleted, unless this instance's user data points
@@ -265,7 +266,8 @@ uv run python manage.py pull_reference_data --golden-week --commit   # estate + 
   `--golden-week` is the seven days `seed_test_week` covers, for
   deterministic user testing. Bulletins go through `apply_bulletin`, day
   ratings through `apply_day_rating_item`, weather through `apply_weather`
-  (a past day already here is `kept`).
+  (a past day already here is `kept`; a day of a place this run
+  tombstoned is `skipped`).
 - **The regions are not pulled.** They are code-held fixtures every
   instance loads with its migrations.
 
