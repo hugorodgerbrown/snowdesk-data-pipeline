@@ -63,6 +63,18 @@ describe('loadBox and covers', () => {
     expect(core.loadBox([9, 46, 10, 47])).toBeNull();
   });
 
+  it('drops the padding before it drops a wide screen at z12', () => {
+    // 2560 px at z12 spans about 0.44°: too wide once padded, not on its own.
+    const wide = /** @type {[number, number, number, number]} */ ([9.8, 46.7, 10.24, 46.9]);
+    const box = core.loadBox(wide);
+    expect(box).not.toBeNull();
+    expect(core.covers(box, wide)).toBe(true);
+    expect(box[2] - box[0]).toBeLessThanOrEqual(0.5);
+    // A view just under the limit still loads, to the metre.
+    const edge = /** @type {[number, number, number, number]} */ ([9.8012, 46.7, 10.2995, 46.9]);
+    expect(core.covers(core.loadBox(edge), edge)).toBe(true);
+  });
+
   it('does not cover a view past its edge, or with nothing loaded', () => {
     expect(core.covers([10, 46.75, 10.2, 46.95], [10.15, 46.8, 10.25, 46.9])).toBe(false);
     expect(core.covers(null, view)).toBe(false);

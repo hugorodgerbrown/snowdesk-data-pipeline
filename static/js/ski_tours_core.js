@@ -85,24 +85,32 @@
    * small pan needs no new request, and rounded outward to the pad so two
    * near views ask the same URL (and the browser's cache answers).
    *
+   * A wide screen at z12 (2560 px spans about 0.44°) fits the endpoint's
+   * limit when the padding does not, so the padding gives way first: the
+   * view rounded outward to the pad, then the view itself to the metre.
+   * Only a view that is itself wider than the limit loads nothing.
+   *
    * @param {Box} bounds The view, west, south, east, north.
    * @returns {?Box} The rectangle, or null when the view is wider than the
    *   endpoint answers (the tours are not drawn that far out anyway).
    */
   function loadBox(bounds) {
-    const step = LOAD_PAD_DEG;
-    const down = (/** @type {number} */ v) => Math.floor(v / step - 1) * step;
-    const up = (/** @type {number} */ v) => Math.ceil(v / step + 1) * step;
-    const round = (/** @type {number} */ v) => Math.round(v * 1000) / 1000;
-    /** @type {Box} */
-    const box = [
-      round(down(bounds[0])),
-      round(down(bounds[1])),
-      round(up(bounds[2])),
-      round(up(bounds[3])),
-    ];
-    if (box[2] - box[0] > MAX_SPAN_DEG || box[3] - box[1] > MAX_SPAN_DEG) return null;
-    return box;
+    const fits = (/** @type {Box} */ b) =>
+      b[2] - b[0] <= MAX_SPAN_DEG && b[3] - b[1] <= MAX_SPAN_DEG;
+    for (const [step, pad] of [[LOAD_PAD_DEG, 1], [LOAD_PAD_DEG, 0], [0.001, 0]]) {
+      const down = (/** @type {number} */ v) => Math.floor(v / step - pad) * step;
+      const up = (/** @type {number} */ v) => Math.ceil(v / step + pad) * step;
+      const round = (/** @type {number} */ v) => Math.round(v * 1000) / 1000;
+      /** @type {Box} */
+      const box = [
+        round(down(bounds[0])),
+        round(down(bounds[1])),
+        round(up(bounds[2])),
+        round(up(bounds[3])),
+      ];
+      if (fits(box)) return box;
+    }
+    return null;
   }
 
   /**
