@@ -42,8 +42,8 @@ from django.utils.cache import patch_cache_control
 
 from apps.bulletins.models import Bulletin, RegionDayRating
 from apps.bulletins.services.coverage import covered_region_ids
-from apps.bulletins.services.problem_terrain import TerrainRule
 from apps.core.decorators import require_htmx
+from apps.ingest.public import TerrainRule
 from apps.public.api import _PROVIDER_BY_COUNTRY, COUNTRY_NAMES
 from apps.public.decorators import lowercase_region_id
 from apps.public.problem_terrain import (

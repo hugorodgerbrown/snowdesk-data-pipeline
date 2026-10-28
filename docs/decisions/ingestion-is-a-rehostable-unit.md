@@ -34,7 +34,11 @@ which holds the current ticket list):
    the instance keeps the labels and copy. Its second step stores each
    bulletin's render model on `SourceBulletin` and serves it in the
    bulletins feed; an instance copies it when it was built at its own
-   `RENDER_MODEL_VERSION` and builds its own otherwise.
+   `RENDER_MODEL_VERSION` and builds its own otherwise. Its third moves
+   what is read from the model: the day a bulletin forecasts, the danger
+   range it gives that day (`rate_render_model`) and its problem-terrain
+   rules. The instance still selects which bulletin governs a region's
+   day and writes `RegionDayRating`.
 8. SNOW-1252 (the `lookup_point` facade) is under review.
 
 **Why.**

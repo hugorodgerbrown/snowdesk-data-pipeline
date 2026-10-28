@@ -48,8 +48,8 @@ from django.views.decorators.cache import cache_control
 from django.views.decorators.vary import vary_on_headers
 
 from apps.bulletins.models import Bulletin, RegionBulletin
-from apps.bulletins.services.problem_terrain import TerrainRule, terrain_rules
 from apps.bulletins.services.selection import select_default_issue
+from apps.ingest.public import TerrainRule, terrain_rules
 from apps.public.views import _DANGER_PANEL_META, _get_properties, _get_render_model
 
 logger = logging.getLogger(__name__)

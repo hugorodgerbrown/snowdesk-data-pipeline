@@ -1,6 +1,6 @@
 """
-tests/bulletins/services/test_problem_terrain.py — a bulletin's problems as
-the map's problem-terrain rules (apps.bulletins.services.problem_terrain,
+tests/ingest/normalise/test_problem_terrain.py — a bulletin's problems as
+the map's problem-terrain rules (apps.ingest.normalise.problem_terrain,
 SNOW-979).
 
 Covers the rules the map paints from: aspects to octant indices, the
@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.bulletins.services.problem_terrain import terrain_rules
+from apps.core.geo import OCTANTS as CORE_OCTANTS
+from apps.ingest.normalise.problem_terrain import OCTANTS, terrain_rules
 
 
 def _problem(**overrides: Any) -> dict[str, Any]:
@@ -151,3 +152,8 @@ class TestTerrainRules:
         """The same problem in two traits is one rule."""
         rules = terrain_rules(_model(_trait(_problem()), _trait(_problem())))
         assert len(rules) == 1
+
+
+def test_the_octants_match_the_cores() -> None:
+    """Ingest's copy of the octant order is the same as apps.core.geo's."""
+    assert OCTANTS == CORE_OCTANTS
