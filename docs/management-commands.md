@@ -169,17 +169,18 @@ everyone as the same OS user, so without it the row cannot say who ran it.
 
 ## Operational requirements
 
-Nine scheduled jobs run on the worker: two keep the public site in sync
-with upstream data, one sweeps up the weather history they missed, three
+Ten scheduled jobs run on the worker: two keep the public site in sync
+with upstream data, one sweeps up the weather history they missed, one
+mirrors the curated estate into the reference-data service, three
 delete or close rows past their useful life, two fill a derived column, and
-one is a read-only detector. All nine
+one is a read-only detector. All ten
 are driven by the `snowdesk-scheduler` Render Background Worker, which
 runs `python manage.py run_scheduler` and uses APScheduler (SNOW-238) to
 fire the jobs on their cron schedules via `django.core.management.call_command`.
 The schedule is declared in [`schedule.py`](../schedule.py) at the repo root
-and documented in [`render.yaml`](../render.yaml). The eight writing jobs run
-with `--commit` so they actually persist; the ninth runs `--check` and writes
-nothing. All nine exit non-zero on failure so a missed run is visible in the
+and documented in [`render.yaml`](../render.yaml). The nine writing jobs run
+with `--commit` so they actually persist; the tenth runs `--check` and writes
+nothing. All ten exit non-zero on failure so a missed run is visible in the
 worker logs.
 
 | Job | Command | Cadence | Purpose |
@@ -187,6 +188,7 @@ worker logs.
 | Bulletin ingestion | `fetch_bulletins --source slf albina meteofrance --commit` | `0,5 * * * *` (every hour at :00 and :05 UTC) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
 | Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every curated location, through the weather service (SNOW-1253). Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
 | Weather history sweep | `backfill_weather --commit` | `20 * * * *` (hourly, at :20 UTC) | One budgeted sweep of the missing past `Weather` days, newest fortnight first (SNOW-1245). The budget is this hour's share of what `fetch_weather` leaves of Open-Meteo's free daily quota, so the two never throttle each other; each run resumes where the last stopped, and a run with nothing missing issues no request. Exits non-zero on a 429. |
+| Reference-data mirror | `mirror_reference_data --commit` | `40 * * * *` (hourly, at :40 UTC) | Copies the curated places, passes and resorts into the reference-data service's `SourceLocation`, `SourcePass` and `SourceResort`, which the v2 data feeds serve (SNOW-1271). Hourly so an edit in the resort sheet or the map-admin overlays reaches the feed within the hour; database-only, and a run with nothing changed writes nothing. |
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
 | OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes expired MCP OAuth tokens and authorization codes with django-oauth-toolkit's `clear_expired()` (SNOW-1193). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
 | Run-register prune | `prune_command_runs --commit` | `50 3 * * *` (daily, 03:50 UTC) | Marks `CommandRun` rows a killed process left `RUNNING` for over six hours as `INTERRUPTED`, and deletes `SCHEDULER` runs older than 90 days (SNOW-1189). Every other run is kept for good. |
@@ -688,6 +690,39 @@ which also carries the Open-Meteo cost this command's cadence implies.
 ```bash
 uv run python manage.py fetch_weather           # preview (calls the API)
 uv run python manage.py fetch_weather --commit  # persist
+```
+
+### `mirror_reference_data` — copy the curated estate into the service
+
+SNOW-1271. Until the reference-data service has its own editor, production
+is where the estate is curated: the resort sheet and `import_resorts`, the
+location sheets, and the staff map-admin overlays all write production's
+own `Location`, `Pass` and `Resort`. This command copies them into the
+service's tables, which `/api/data/v2/{locations,passes,resorts}/` serve:
+
+1. **Places**, through the same `mirror_reference_locations` that
+   `fetch_weather` runs: every public `Location` becomes a `SourceLocation`
+   under its own uuid, with a `document` of its kind, short id, what3words
+   address and the regions it is the centre of.
+2. **Passes**: every `Pass` becomes a `SourcePass`, `{"name", "website"}`.
+3. **Resorts**: every slugged `Resort` becomes a `SourceResort` whose
+   document is the v1 resort item with every relation named by the
+   service's uuid: the region by code, the pin and roles by
+   `Location.source_uuid`, the passes by `Pass.source_uuid`.
+
+A row with no `source_uuid` is given its own uuid first. A row that is gone
+is tombstoned (`deleted_at`), never deleted, and a document is rewritten
+only when its hash changes, so `updated_at` reads as "changed since".
+
+Read-only by default: the mirror runs inside a transaction that is rolled
+back, so the preview's counts are exactly what a commit would do. It
+tallies `<kind>_<outcome>` for `locations`, `passes` and `resorts` and each
+of `created`, `updated`, `deleted`, `unchanged` and `linked`. Exempt from
+the row countdown: each step reconciles a whole list, not a row at a time.
+
+```bash
+uv run python manage.py mirror_reference_data           # preview
+uv run python manage.py mirror_reference_data --commit  # write
 ```
 
 ### `backfill_weather` — sweep up the missing days, newest fortnight first

@@ -23,7 +23,10 @@ which holds the current ticket list):
    feed from it.
 4. SNOW-1253, re-scoped, owns the weather stations (`SourceLocation`) and
    `SourceWeather`, and serves them at `/api/data/v2/weather/`.
-5. SNOW-1252 (the `lookup_point` facade) is under review.
+5. SNOW-1271 adds the passes and resorts (`SourcePass`, `SourceResort`),
+   held as documents ingest stores and never reads, and serves them with
+   the places at `/api/data/v2/{locations,passes,resorts}/`.
+6. SNOW-1252 (the `lookup_point` facade) is under review.
 
 **Why.**
 

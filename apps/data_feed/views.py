@@ -1,9 +1,11 @@
 """
 apps/data_feed/views.py — The data feed endpoints, ``GET /api/data/v1/<feed>/``.
 
-One view serves all four feeds (``bulletins``, ``weather``, ``locations``,
-``resorts``), and ``/api/data/v2/weather/`` (SNOW-1253); ``feeds.py``
-says what each reads and ``auth.py`` who may read it. Query parameters, all optional:
+One view serves all four v1 feeds (``bulletins``, ``weather``,
+``locations``, ``resorts``) and the four under ``/api/data/v2/``
+(``weather``, SNOW-1253; ``locations``, ``passes``, ``resorts``,
+SNOW-1271); ``feeds.py`` says what each reads and ``auth.py`` who may read
+it. Query parameters, all optional:
 
 * ``since`` — ISO 8601 datetime with an offset; only rows updated at or
   after it.

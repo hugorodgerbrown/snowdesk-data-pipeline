@@ -35,7 +35,7 @@ from __future__ import annotations
 import logging
 import uuid as uuid_module
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
@@ -79,6 +79,8 @@ class LocationRecord:
         latitude: Exact WGS-84 latitude.
         longitude: Exact WGS-84 longitude.
         elevation_m: Its height in metres, or None.
+        document: What else the host curates about the place, stored as
+            given and never read by the service (SNOW-1271).
 
     """
 
@@ -87,6 +89,7 @@ class LocationRecord:
     latitude: float
     longitude: float
     elevation_m: float | None
+    document: dict[str, Any] = field(default_factory=dict)
 
 
 def forecast_fields(
@@ -244,6 +247,7 @@ def sync_source_locations(records: Iterable[LocationRecord]) -> dict[str, int]:
                 "latitude": record.latitude,
                 "longitude": record.longitude,
                 "elevation_m": record.elevation_m,
+                "document": record.document,
                 "deleted_at": None,
             }
             row = existing.get(record.uuid)

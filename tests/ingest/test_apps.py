@@ -19,10 +19,12 @@ def test_ingest_app_is_registered() -> None:
 
 
 def test_ingest_app_owns_its_own_tables() -> None:
-    """SourceBulletin (SNOW-1250); SourceLocation and SourceWeather (SNOW-1253)."""
+    """SourceBulletin (SNOW-1250); places and weather (SNOW-1253); passes and resorts (SNOW-1271)."""
     models = apps.get_app_config("ingest").get_models()
-    assert [model.__name__ for model in models] == [
+    assert sorted(model.__name__ for model in models) == [
         "SourceBulletin",
         "SourceLocation",
+        "SourcePass",
+        "SourceResort",
         "SourceWeather",
     ]
