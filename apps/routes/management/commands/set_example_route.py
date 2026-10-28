@@ -54,6 +54,10 @@ from apps.routes.services.routes import create_route
 
 logger = logging.getLogger(__name__)
 
+# What a run that has nothing to do prints, and all it prints. bin/init-worktree
+# greps for it to stay quiet on a session where the example is already set.
+UP_TO_DATE = "Example route up to date."
+
 
 def _iso_date(value: str) -> date:
     """Parse a ``YYYY-MM-DD`` argument.
@@ -181,7 +185,7 @@ class Command(RegisteredCommand):
         if _is_current(current, track, example_date):
             self.tally("set", 0)
             if verbosity >= 1:
-                self.stdout.write("Example route up to date.")
+                self.stdout.write(UP_TO_DATE)
             return
 
         if not commit:

@@ -55,7 +55,13 @@
 #                    which reconciles the one part of step 5 a worktree
 #                    must never be without — the dev user's four canonical
 #                    routes, created if absent and sampled if unsampled
-#                    (SNOW-1023).
+#                    (SNOW-1023). And a fourth:
+#                      7. set_example_route --commit
+#                    which loads the onboarding example route from its
+#                    canonical fixture, so "Explore an example route" works
+#                    in every worktree (SNOW-1273). The example is user
+#                    data, never synced from production, so each instance
+#                    loads its own. It runs on the seeding path too.
 #                    See docs/worktrees.md for credentials and reseed steps.
 #   - output.css   → compiled from src/css/main.css with the Tailwind CLI
 #                    (gitignored build artifact, not shared across worktrees).
@@ -172,6 +178,7 @@ seed_db() {
     # canonical routes through the same create_route, so it would only
     # print its no-op sentence. A route whose sampling failed on this run
     # is picked up by update_db on the next session.
+    uv run python manage.py set_example_route --commit
     echo "init-worktree: db.sqlite3 seeded"
     actions=$((actions + 1))
 }
@@ -259,6 +266,15 @@ update_db() {
     if ! quiet_when_unchanged "Canonical routes up to date." \
         seed_canonical_routes --commit; then
         echo "init-worktree: reconciled the canonical routes"
+        actions=$((actions + 1))
+    fi
+    # SNOW-1273: the onboarding example route, loaded from its canonical
+    # fixture. It is user data, so it never arrives through the data feed;
+    # each instance loads its own. The sentence is UP_TO_DATE in
+    # apps/routes/management/commands/set_example_route.py.
+    if ! quiet_when_unchanged "Example route up to date." \
+        set_example_route --commit; then
+        echo "init-worktree: set the example route"
         actions=$((actions + 1))
     fi
 }

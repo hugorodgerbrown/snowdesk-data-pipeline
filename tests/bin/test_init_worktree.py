@@ -41,12 +41,14 @@ SCRIPT = Path(__file__).resolve().parents[2] / "bin" / "init-worktree"
 NO_MIGRATIONS = "No migrations to apply."
 NO_FLAG_CHANGES = "Created 0 flag(s), deleted 0 flag(s)."
 NO_ROUTE_CHANGES = "Canonical routes up to date."
+NO_EXAMPLE_CHANGES = "Example route up to date."
 
 # What a run that DID change something looks like, in each command's own
 # output vocabulary.
 MIGRATIONS_APPLIED = "Running migrations:\n  Applying routes.0007_thing... OK"
 FLAGS_CHANGED = "Created 3 flag(s), deleted 0 flag(s)."
 ROUTES_CHANGED = "Created mont-fort-backside.gpx (sampled)"
+EXAMPLE_CHANGED = "Example set: mont-fort-col-de-la-chaux.gpx on 2026-04-10 (share abc)"
 
 # The data half of the seed recipe: the three commands that must never run
 # against a database that already exists.
@@ -79,6 +81,9 @@ case "$4" in
         ;;
     seed_canonical_routes)
         printf '%s\\n' "$STUB_ROUTES_OUTPUT"
+        ;;
+    set_example_route)
+        printf '%s\\n' "$STUB_EXAMPLE_OUTPUT"
         ;;
 esac
 # The real commands log to stderr on every run. Emitted here so the tests
@@ -193,6 +198,7 @@ def sandbox(tmp_path: Path) -> Sandbox:
             "STUB_MIGRATE_OUTPUT": NO_MIGRATIONS,
             "STUB_WAFFLE_OUTPUT": NO_FLAG_CHANGES,
             "STUB_ROUTES_OUTPUT": NO_ROUTE_CHANGES,
+            "STUB_EXAMPLE_OUTPUT": NO_EXAMPLE_CHANGES,
             "HOME": str(tmp_path),
         },
     )
@@ -226,7 +232,7 @@ class TestAFreshWorktree:
     """The path that already worked: no database, so seed the whole thing."""
 
     def test_runs_the_whole_seed_recipe_in_order(self, sandbox: Sandbox) -> None:
-        """All five commands, in the order the recipe documents.
+        """All six commands, in the order the recipe documents.
 
         Order is load-bearing rather than incidental: ``migrate`` has to
         build the schema before ``loaddata`` can write to it, and
@@ -242,6 +248,7 @@ class TestAFreshWorktree:
             "loaddata",
             "import_resorts",
             "seed_test_data",
+            "set_example_route",
         ]
 
     def test_links_the_venv_from_the_main_repo(self, sandbox: Sandbox) -> None:
@@ -320,6 +327,7 @@ class TestAnExistingDatabase:
             "migrate",
             "sync_waffle_flags",
             "seed_canonical_routes",
+            "set_example_route",
         ]
 
     @pytest.mark.parametrize("command", DATA_SEED_COMMANDS)
@@ -370,6 +378,13 @@ class TestAnExistingDatabase:
 
         assert "reconciled the canonical routes" in result.stdout
         assert "mont-fort-backside.gpx" in result.stdout
+
+    def test_it_announces_setting_the_example_route(self, sandbox: Sandbox) -> None:
+        """SNOW-1273: a worktree without the example gains it, and says so."""
+        result = _run(sandbox, sandbox.worktree, STUB_EXAMPLE_OUTPUT=EXAMPLE_CHANGED)
+
+        assert "set the example route" in result.stdout
+        assert "mont-fort-col-de-la-chaux.gpx" in result.stdout
 
     def test_unrecognised_output_is_reported_rather_than_swallowed(
         self, sandbox: Sandbox
