@@ -1,7 +1,7 @@
 """
 apps/ingest/models.py — What ingest keeps of what the providers published.
 
-Five models:
+Six models:
 
 * ``SourceBulletin`` (SNOW-1250): one row per bulletin a provider
   published, holding its CAAML as normalised, the link to its PDF and a
@@ -24,6 +24,10 @@ Five models:
   by ``uuid``. Ingest stores them and never reads inside them, as it treats
   a bulletin's CAAML: what a resort is belongs to whoever curates it. Both
   share ``SourceDocument``.
+* ``SourceDayRating`` (SNOW-1270): the danger range one region's governing
+  bulletin gives one day, read from the service's own bulletins and
+  served at ``/api/data/v2/day-ratings/``. Keyed by region code and date:
+  the regions themselves are code-held fixtures every side loads.
 
 **Not a ``BaseModel``.** ``apps/ingest`` imports no other ``apps.*`` package
 (``docs/decisions/ingestion-is-a-rehostable-unit.md``), so the id, uuid and
@@ -90,10 +94,15 @@ class SourceBulletinQuerySet(models.QuerySet["SourceBulletin"]):
 
         Returns:
             The filtered queryset. A failed build (version 0) counts as
-            stale, so a builder fix reaches it on the next rebuild.
+            stale, so a builder fix reaches it on the next rebuild; so is a
+            row never indexed (no ``target_date``), stored before
+            SNOW-1270 gave the service day ratings.
 
         """
-        return self.filter(render_model_version__lt=version)
+        return self.filter(
+            models.Q(render_model_version__lt=version)
+            | models.Q(target_date__isnull=True)
+        )
 
 
 class SourceBulletin(models.Model):
@@ -136,6 +145,23 @@ class SourceBulletin(models.Model):
         default=0,
         help_text="RENDER_MODEL_VERSION the render model was built at; 0 "
         "when it failed or was never built.",
+    )
+    valid_from = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="The CAAML's validTime.startTime; null until indexed.",
+    )
+    target_date = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="The day the bulletin forecasts (target_day_for_valid_from); "
+        "null until indexed.",
+    )
+    region_codes = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="The EAWS region codes the CAAML covers, sorted.",
     )
 
     objects = SourceBulletinQuerySet.as_manager()
@@ -516,3 +542,84 @@ WEATHER_COLUMNS: tuple[str, ...] = (
     "hourly",
     "forecast",
 )
+
+
+class SourceDayRatingQuerySet(models.QuerySet["SourceDayRating"]):
+    """Queryset for ``SourceDayRating``."""
+
+    def stale(self, version: int) -> SourceDayRatingQuerySet:
+        """Return the rows computed under an older day-rating rule.
+
+        Args:
+            version: The current ``DAY_RATING_VERSION``.
+
+        Returns:
+            The filtered queryset.
+
+        """
+        return self.filter(version__lt=version)
+
+
+class SourceDayRating(models.Model):
+    """The danger range one region's governing bulletin gives one day.
+
+    The service's ``RegionDayRating`` (SNOW-1270): the same columns, keyed by
+    the region's EAWS code and naming the bulletin by its id, so nothing
+    here points into an instance's tables. Written only when a value
+    changes, so ``updated_at`` reads as "changed since" for the feed.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    region_code = models.CharField(max_length=32, help_text="EAWS code, e.g. CH-4115.")
+    date = models.DateField()
+    bulletin_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="The governing bulletin; empty when none rates the day.",
+    )
+    min_rating = models.CharField(max_length=16)
+    min_subdivision = models.CharField(max_length=8, blank=True, default="")
+    max_rating = models.CharField(max_length=16)
+    max_subdivision = models.CharField(max_length=8, blank=True, default="")
+    am_rating = models.CharField(max_length=16, null=True, blank=True)
+    am_subdivision = models.CharField(max_length=8, blank=True, default="")
+    pm_rating = models.CharField(max_length=16, null=True, blank=True)
+    pm_subdivision = models.CharField(max_length=8, blank=True, default="")
+    source = models.CharField(max_length=16, blank=True, default="")
+    bands = models.JSONField(null=True, blank=True)
+    version = models.PositiveSmallIntegerField(
+        help_text="DAY_RATING_VERSION the row was computed under."
+    )
+
+    objects = SourceDayRatingQuerySet.as_manager()
+
+    class Meta:
+        """Model metadata."""
+
+        ordering = ["-date", "region_code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["region_code", "date"], name="ingest_srcdr_region_date"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["updated_at", "id"], name="ingest_srcdr_keyset"),
+        ]
+
+    def __str__(self) -> str:
+        """Return ``to_string()``."""
+        return self.to_string()
+
+    def to_string(self) -> str:
+        """Return the region, the day and the range, e.g. ``CH-4115 2026-01-02 2–3``.
+
+        Returns:
+            The description.
+
+        """
+        return f"{self.region_code} {self.date} {self.min_rating}–{self.max_rating}"

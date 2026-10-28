@@ -23,6 +23,7 @@ the other two providers shared it.
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Any
 
 from django.db import transaction
@@ -35,6 +36,7 @@ from apps.bulletins.models import (
 )
 from apps.bulletins.services.day_rating import (
     apply_bulletin_day_ratings,
+    apply_day_rating_item,
     day_rating_pairs,
     target_day_for_valid_from,
 )
@@ -53,9 +55,13 @@ from apps.ingest.public import (
     SLF_DEFAULT_LANG,
     FetchOutcome,
     NormalisedBulletin,
+    SourceBulletin,
+    SourceDayRating,
+    day_pairs,
     parse_dt,
     resolve_issued_at,
     serialise_source_bulletin,
+    serialise_source_day_rating,
     store_bulletin,
 )
 from apps.regions.models import MicroRegion
@@ -552,6 +558,10 @@ def apply_bulletin(
     unresolvable region, say) is retried on the next even though ingest
     already has it.
 
+    Then the service's day ratings for every (region, day) the bulletin
+    governed before or governs now are copied in
+    (``copy_service_day_ratings``, SNOW-1270).
+
     Args:
         record: A bulletin from ``apps.ingest.public.fetch_bulletins``.
         run: The PipelineRun to associate with it.
@@ -562,15 +572,49 @@ def apply_bulletin(
         ``OUTCOME_CREATED``, ``OUTCOME_UPDATED`` or ``OUTCOME_UNCHANGED``.
 
     """
+    prior = (
+        SourceBulletin.objects.filter(bulletin_id=record.bulletin_id)
+        .only("pk", "target_date", "region_codes")
+        .first()
+    )
+    pairs = day_pairs(prior) if prior is not None else set()
     row, _ = store_bulletin(record, force=force)
     existing = (
         Bulletin.objects.filter(bulletin_id=row.bulletin_id)
         .only("pk", "bulletin_id", "raw_data", "pdf_url", "render_model")
         .first()
     )
-    return apply_feed_item(
+    outcome = apply_feed_item(
         serialise_source_bulletin(row), run, existing=existing, force=force
     )
+    copy_service_day_ratings(pairs | day_pairs(row))
+    return outcome
+
+
+def copy_service_day_ratings(pairs: set[tuple[str, date]]) -> None:
+    """Copy the service's day ratings for ``pairs`` into ``RegionDayRating``.
+
+    The production half of SNOW-1270: the service rated these pairs when it
+    stored the bulletin, and its rating is the one every instance shows.
+    ``upsert_bulletin`` has already rated them from this instance's own
+    bulletins, by the same rules, so a copy normally changes nothing; when
+    the two differ, the service's stands. A failure is logged and never
+    aborts ingest, as a failed local rating does not.
+
+    Args:
+        pairs: (region code, day) pairs.
+
+    """
+    for rating in SourceDayRating.objects.filter(
+        region_code__in={code for code, _ in pairs},
+        date__in={day for _, day in pairs},
+    ):
+        if (rating.region_code, rating.date) not in pairs:
+            continue
+        try:
+            apply_day_rating_item(serialise_source_day_rating(rating))
+        except Exception:
+            logger.exception("Could not copy the service's day rating %s", rating)
 
 
 def count_outcome(

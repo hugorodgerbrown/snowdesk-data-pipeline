@@ -33,6 +33,7 @@ from apps.bulletins.services.apply import (
     _get_region,
     apply_bulletin,
     apply_feed_item,
+    copy_service_day_ratings,
     upsert_bulletin,
 )
 from apps.bulletins.services.day_rating import target_day_for_valid_from
@@ -40,7 +41,7 @@ from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
 )
-from apps.ingest.models import SourceBulletin
+from apps.ingest.models import SourceBulletin, SourceDayRating
 from apps.ingest.public import (
     NormalisedBulletin,
     parse_dt,
@@ -1152,6 +1153,42 @@ class TestStoreThenApply:
             apply_feed_item(item, PipelineRunFactory.create(), existing=existing)
             == "unchanged"
         )
+
+    def test_the_services_day_ratings_are_copied(self) -> None:
+        """The service rates the bulletin's regions; this instance shows them."""
+        raw = _make_raw_bulletin("b-1")
+        apply_bulletin(self._record(raw), PipelineRunFactory.create())
+        service = {r.region_code: r.max_rating for r in SourceDayRating.objects.all()}
+        assert set(service) == {"CH-4115", "CH-7111"}
+        local = {
+            r.region.region_id: r.max_rating
+            for r in RegionDayRating.objects.select_related("region")
+        }
+        assert local == service
+
+    def test_the_services_rating_stands_where_they_differ(self) -> None:
+        """A copy overwrites a local rating that disagrees."""
+        raw = _make_raw_bulletin("b-1")
+        apply_bulletin(self._record(raw), PipelineRunFactory.create())
+        SourceDayRating.objects.filter(region_code="CH-4115").update(max_rating="high")
+        copy_service_day_ratings(
+            {("CH-4115", target_day_for_valid_from(parse_dt("2025-03-15T17:00:00Z")))}
+        )
+        assert (
+            RegionDayRating.objects.get(region__region_id="CH-4115").max_rating
+            == "high"
+        )
+
+    def test_a_failed_copy_never_aborts_ingest(self) -> None:
+        """The local rating stands and the bulletin is applied."""
+        raw = _make_raw_bulletin("b-1")
+        with patch(
+            "apps.bulletins.services.apply.apply_day_rating_item",
+            side_effect=RuntimeError("boom"),
+        ):
+            outcome = apply_bulletin(self._record(raw), PipelineRunFactory.create())
+        assert outcome == "created"
+        assert RegionDayRating.objects.count() == 2
 
     def test_committing_needs_a_run(self) -> None:
         """A write must be attributed to a PipelineRun."""

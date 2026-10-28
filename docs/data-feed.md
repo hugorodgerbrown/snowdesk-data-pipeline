@@ -27,7 +27,7 @@ Why a feed and not a database copy:
 
 ## Endpoints
 
-All eight are `GET`, take the same parameters and answer the same shape.
+All nine are `GET`, take the same parameters and answer the same shape.
 
 | URL | Item key | What is served |
 |-----|----------|----------------|
@@ -39,6 +39,7 @@ All eight are `GET`, take the same parameters and answer the same shape.
 | `/api/data/v2/locations/` | `uuid` (`SourceLocation`) | Every reference place, with `deleted_at`: name, exact coordinate and height under `fields`, the host's `document` (kind, short id, what3words, `centroid_of`) |
 | `/api/data/v2/passes/` | `uuid` (`SourcePass`) | Every season pass, with `slug`, `deleted_at` and the `document` `{name, website}` (SNOW-1271) |
 | `/api/data/v2/resorts/` | `uuid` (`SourceResort`) | Every resort, with `slug`, `deleted_at` and the `document`: `fields`, `region` code, pin, `passes` and `locations` roles, each named by a source uuid (SNOW-1271) |
+| `/api/data/v2/day-ratings/` | `region_code` + `date` | Every `SourceDayRating`: the danger range the governing bulletin gives a region's day, naming that bulletin by `bulletin_id`, with the `version` of the rule it was computed under (SNOW-1270) |
 
 **v2 weather (SNOW-1253).** The item has the same shape and the same columns
 as v1's. The one change is the key: `location` is the weather service's id
@@ -56,6 +57,17 @@ wire is a production id. Every item carries `deleted_at`: a removal is
 served as a tombstone, so a client paging `since` learns of it (v1 cannot
 delete). A resort's document names its passes and places by their
 service uuids, so a client applies places, then passes, then resorts.
+
+**v2 day ratings (SNOW-1270).** The service rates every (region, day) from
+its own bulletins whenever it stores one, by the rule an instance uses: the
+latest-`valid_from` bulletin targeting the day, read by
+`rate_render_model`. A client applies an item with
+`apply_day_rating_item`: it copies the item when it was computed under the
+client's own `DAY_RATING_VERSION` and the governing bulletin is held, and
+recomputes the pair from its own bulletins otherwise. Apply bulletins
+before day ratings. Production copies its own service's ratings as it
+fetches (`copy_service_day_ratings`), so what a staging pull copies is
+what production shows.
 
 Parameters, all optional: `since` (ISO 8601 datetime **with an offset**,
 filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and

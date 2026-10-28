@@ -59,6 +59,7 @@ from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from apps.bulletins.services.day_rating import (
     DAY_RATING_VERSION,
     apply_bulletin_day_ratings,
+    apply_day_rating_item,
     day_rating_pairs,
     recompute_region_day,
     refresh_day_ratings,
@@ -2397,3 +2398,94 @@ class TestSubdivisionEndToEnd:
         assert rdr.max_subdivision == suffix
         assert rdr.min_subdivision == suffix
         assert rdr.version == DAY_RATING_VERSION
+
+
+# ---------------------------------------------------------------------------
+# apply_day_rating_item — copying the service's rating (SNOW-1270)
+# ---------------------------------------------------------------------------
+
+
+def _item(**overrides: Any) -> dict[str, Any]:
+    """A day-ratings feed item for CH-4115 on 15 Jan 2026, governed by b-1."""
+    item: dict[str, Any] = {
+        "region_code": "CH-4115",
+        "date": "2026-01-15",
+        "updated_at": "2026-01-15T07:00:00+00:00",
+        "bulletin_id": "b-1",
+        "min_rating": "moderate",
+        "min_subdivision": "",
+        "max_rating": "considerable",
+        "max_subdivision": "+",
+        "am_rating": "moderate",
+        "am_subdivision": "",
+        "pm_rating": "considerable",
+        "pm_subdivision": "",
+        "source": "SLF",
+        "bands": None,
+        "version": DAY_RATING_VERSION,
+    }
+    item.update(overrides)
+    return item
+
+
+@pytest.mark.django_db
+class TestApplyDayRatingItem:
+    """The client copies the service's rating, or recomputes the pair."""
+
+    def test_a_current_item_is_copied(self) -> None:
+        """Every column, and the bulletin resolved to this instance's row."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        bulletin = BulletinFactory.create(bulletin_id="b-1")
+        assert apply_day_rating_item(_item()) == "created"
+        row = RegionDayRating.objects.get(region=region)
+        assert (row.min_rating, row.max_rating) == ("moderate", "considerable")
+        assert row.max_subdivision == "+"
+        assert row.pm_rating == "considerable"
+        assert row.source_bulletin == bulletin
+
+    def test_the_same_item_twice_is_unchanged(self) -> None:
+        """A re-pull writes nothing."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        BulletinFactory.create(bulletin_id="b-1")
+        apply_day_rating_item(_item())
+        assert apply_day_rating_item(_item()) == "unchanged"
+        assert apply_day_rating_item(_item(max_rating="high")) == "updated"
+
+    def test_an_unrated_item_names_no_bulletin(self) -> None:
+        """No governing bulletin: no_rating with no source."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        apply_day_rating_item(
+            _item(bulletin_id="", min_rating="no_rating", max_rating="no_rating")
+        )
+        row = RegionDayRating.objects.get(region=region)
+        assert row.source_bulletin is None
+        assert row.max_rating == "no_rating"
+
+    def test_another_version_is_recomputed_here(self) -> None:
+        """A rule this code does not run: the pair is rated locally."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        BulletinFactory.create(bulletin_id="b-1")
+        with patch(
+            "apps.bulletins.services.day_rating.recompute_region_day"
+        ) as recompute:
+            assert apply_day_rating_item(_item(version=1)) == "recomputed"
+        recompute.assert_called_once()
+
+    def test_a_bulletin_not_held_yet_is_recomputed_here(self) -> None:
+        """The rating arrived first: rate from what this instance holds."""
+        region = MicroRegionFactory.create(region_id="CH-4115")
+        assert apply_day_rating_item(_item()) == "recomputed"
+        assert RegionDayRating.objects.get(region=region).max_rating == "no_rating"
+
+    def test_an_unknown_region_is_skipped(self) -> None:
+        """A code this instance's fixtures lack writes nothing."""
+        assert apply_day_rating_item(_item(region_code="XX-1")) == "skipped"
+        assert not RegionDayRating.objects.exists()
+
+    def test_without_commit_nothing_is_written(self) -> None:
+        """The preview decides."""
+        MicroRegionFactory.create(region_id="CH-4115")
+        BulletinFactory.create(bulletin_id="b-1")
+        assert apply_day_rating_item(_item(), commit=False) == "created"
+        assert apply_day_rating_item(_item(version=1), commit=False) == "recomputed"
+        assert not RegionDayRating.objects.exists()

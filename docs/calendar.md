@@ -127,7 +127,11 @@ invalidation has nothing to add. It sits in a card under the eyebrow
 `apps/bulletins/services/day_rating.py`). Since SNOW-1270 the selection
 and the write are the app's (`recompute_region_day`), and reading the
 chosen bulletin is the service's: `rate_render_model` and
-`target_day_for_valid_from` in `apps/ingest/normalise/day_rating.py`:
+`target_day_for_valid_from` in `apps/ingest/normalise/day_rating.py`. The
+service also rates every (region, day) itself (`SourceDayRating`, served
+at `/api/data/v2/day-ratings/`), and an instance copies those ratings
+(`apply_day_rating_item`) over its own when the rule versions match, so
+every instance shows the service's numbers:
 - For day X, pick the single bulletin whose `target_date` equals X with
   the latest `valid_from`. Morning-of-X (hour < 12) naturally wins over
   prior-evening-of-(X−1) (hour ≥ 12) because its `valid_from` is later.

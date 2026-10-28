@@ -81,6 +81,12 @@ The names are grouped by what they are for:
 
 import apps.ingest.normalise.prose.en  # noqa: F401, I001 — registers the "en" prose parser
 from apps.ingest.api.bulletins import BULLETINS_FEED, serialise_source_bulletin
+from apps.ingest.api.day_ratings import DAY_RATINGS_FEED, serialise_source_day_rating
+from apps.ingest.day_ratings import (
+    DAY_RATING_FIELDS,
+    day_pairs,
+    refresh_source_day_ratings,
+)
 from apps.ingest.api.paging import (
     DEFAULT_LIMIT as FEED_DEFAULT_LIMIT,
     MAX_LIMIT as FEED_MAX_LIMIT,
@@ -121,6 +127,7 @@ from apps.ingest.models import (
     WEATHER_COLUMNS,
     ImmutableSourceWeatherError,
     SourceBulletin,
+    SourceDayRating,
     SourceLocation,
     SourcePass,
     SourceResort,
@@ -259,6 +266,8 @@ __all__ = [
     "CAAML_SHAPE_PER_REGION",
     "CAAML_SHAPE_UNKNOWN",
     "DAILY_VARIABLES",
+    "DAY_RATINGS_FEED",
+    "DAY_RATING_FIELDS",
     "DAY_RATING_VERSION",
     "DRY_PROBLEM_TYPES",
     "FEED_DEFAULT_LIMIT",
@@ -315,6 +324,7 @@ __all__ = [
     "PeriodTransition",
     "RenderModelBuildError",
     "SourceBulletin",
+    "SourceDayRating",
     "SourceLocation",
     "SourcePass",
     "SourceResort",
@@ -337,6 +347,7 @@ __all__ = [
     "daily_max_freezing_level",
     "day_character_key",
     "day_is_complete",
+    "day_pairs",
     "derive_problem_family",
     "detect_caaml_shape",
     "detect_prose_spatial",
@@ -371,9 +382,11 @@ __all__ = [
     "rate_render_model",
     "read_slf_archive",
     "rebuild_render_model",
+    "refresh_source_day_ratings",
     "request_weight",
     "resolve_issued_at",
     "serialise_source_bulletin",
+    "serialise_source_day_rating",
     "serialise_source_document",
     "serialise_source_location",
     "serialise_source_weather",

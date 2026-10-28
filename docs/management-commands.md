@@ -1347,8 +1347,11 @@ incident that invalidates derived state:
   Re-runs the render-model derivation for every stale `Bulletin`.
 - `rebuild_source_render_models --commit` — the same, for the render
   models the weather service stores on `SourceBulletin` and serves in the
-  bulletins feed (SNOW-1270). Run on production after a version bump, and
-  once when SNOW-1270 first deploys: rows stored before it carry no model.
+  bulletins feed, and for the day ratings it computes from them
+  (`SourceDayRating`, SNOW-1270). Run on production after a
+  `RENDER_MODEL_VERSION` or `DAY_RATING_VERSION` bump, and once when
+  SNOW-1270 first deploys: rows stored before it carry no model, no index
+  and no ratings.
 - `reformat_mf_comments --commit` — one-off retroactive formatter for FR bulletins
   ingested before SNOW-207 added the HTML formatter (plain-text prose fields only;
   already-HTML rows are skipped). Filters to `bulletin_id__startswith='FR'`.
@@ -1878,9 +1881,12 @@ uv run python manage.py rebuild_render_models --commit  # persist
 
 # Rebuild the service's stored render models (SourceBulletin, SNOW-1270): the
 # rows whose render_model_version predates RENDER_MODEL_VERSION, failed builds
-# included, or every row with --all. A rebuilt row moves its updated_at, so the
-# bulletins feed serves it again. Tallies rebuilt / unchanged / failed and exits
-# non-zero when a build fails. Read-only by default.
+# and never-indexed rows included, or every row with --all; then the service's
+# day ratings (SourceDayRating) for every (region, day) a rebuilt row touched,
+# plus every rating computed under an older DAY_RATING_VERSION. A changed row
+# moves its updated_at, so the feeds serve it again. Tallies rebuilt /
+# unchanged / failed / day_ratings and exits non-zero when a build fails.
+# Read-only by default.
 uv run python manage.py rebuild_source_render_models           # read-only
 uv run python manage.py rebuild_source_render_models --commit  # persist
 

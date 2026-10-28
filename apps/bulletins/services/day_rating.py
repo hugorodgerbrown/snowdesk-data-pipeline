@@ -88,6 +88,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from datetime import date
+from typing import Any
 
 from django.conf import settings
 from django.core.cache import cache
@@ -97,7 +98,11 @@ from django.utils import timezone, translation
 
 from apps.bulletins.models import Bulletin
 from apps.ingest.public import (
+    DAY_RATING_FIELDS,
     DAY_RATING_VERSION,
+    OUTCOME_CREATED,
+    OUTCOME_UNCHANGED,
+    OUTCOME_UPDATED,
     RENDER_MODEL_VERSION,
     rate_render_model,
     target_day_for_valid_from,
@@ -488,3 +493,69 @@ def apply_bulletin_day_ratings(
         failed_count,
     )
     return failed_count
+
+
+# The outcomes apply_day_rating_item reports beyond created/updated/unchanged.
+DAY_RATING_RECOMPUTED = "recomputed"
+DAY_RATING_SKIPPED = "skipped"
+
+
+def apply_day_rating_item(item: dict[str, Any], *, commit: bool = True) -> str:
+    """Copy one of the service's day ratings into ``RegionDayRating``.
+
+    The client half of the service's day ratings (SNOW-1270). The item is
+    copied when it was computed under this code's ``DAY_RATING_VERSION`` and
+    its governing bulletin is held here; otherwise the pair is recomputed
+    from this instance's own bulletins — a branch testing a rule change, or
+    a rating that arrived before its bulletin did. A region this instance's
+    fixtures do not hold is skipped.
+
+    Args:
+        item: A ``day-ratings`` feed item (``serialise_source_day_rating``).
+        commit: Write; otherwise only decide.
+
+    Returns:
+        ``created``, ``updated``, ``unchanged``, ``recomputed`` or ``skipped``.
+
+    """
+    from apps.bulletins.models import RegionDayRating
+
+    region = (
+        MicroRegion.objects.filter(region_id=item["region_code"])
+        .only(*_SLIM_REGION_FIELDS)
+        .first()
+    )
+    if region is None:
+        logger.debug("Day rating for unknown region %s skipped", item["region_code"])
+        return DAY_RATING_SKIPPED
+    day = date.fromisoformat(item["date"])
+
+    bulletin: Bulletin | None = None
+    if item["bulletin_id"]:
+        bulletin = (
+            Bulletin.objects.filter(bulletin_id=item["bulletin_id"]).only("pk").first()
+        )
+    if item["version"] != DAY_RATING_VERSION or (item["bulletin_id"] and not bulletin):
+        if commit:
+            recompute_region_day(region, day)
+            _invalidate_season_calendars([region])
+        return DAY_RATING_RECOMPUTED
+
+    values: dict[str, Any] = {
+        name: item[name]
+        for name in DAY_RATING_FIELDS
+        if name not in ("bulletin_id", "version")
+    }
+    values["version"] = DAY_RATING_VERSION
+    values["source_bulletin_id"] = bulletin.pk if bulletin else None
+    existing = RegionDayRating.objects.filter(region=region, date=day).first()
+    if existing is not None and all(
+        getattr(existing, name) == value for name, value in values.items()
+    ):
+        return OUTCOME_UNCHANGED
+    if commit:
+        RegionDayRating.objects.update_or_create(
+            region=region, date=day, defaults=values
+        )
+        _invalidate_season_calendars([region])
+    return OUTCOME_CREATED if existing is None else OUTCOME_UPDATED
