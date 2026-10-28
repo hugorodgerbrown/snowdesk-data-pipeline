@@ -123,3 +123,32 @@ describe('ticks', () => {
     expect(core.ticks(null, 13, MIN, MAX)).toEqual([]);
   });
 });
+
+// SNOW-1280: the layers menu fades a row by isReached and names the span
+// of its gates with zoomRange.
+describe('isReached', () => {
+  it('holds a from gate from its zoom up, a hair early', () => {
+    const gate = { key: 'ski_routes', zoom: 10 };
+    expect(core.isReached(gate, 9.5)).toBe(false);
+    expect(core.isReached(gate, 9.9999)).toBe(true);
+    expect(core.isReached(gate, 12)).toBe(true);
+  });
+
+  it('holds an up-to gate through its whole zoom', () => {
+    const gate = { key: 'region_select', zoom: 10, upTo: true };
+    expect(core.isReached(gate, 10.9)).toBe(true);
+    expect(core.isReached(gate, 11)).toBe(false);
+  });
+});
+
+describe('zoomRange', () => {
+  it('spans the lowest to the highest zoom with an en dash', () => {
+    expect(core.zoomRange([{ key: 'b', zoom: 12 }, { key: 'a', zoom: 10 }])).toBe('10–12');
+  });
+
+  it('names one zoom once, and nothing for no gates', () => {
+    expect(core.zoomRange([{ key: 'a', zoom: 10 }, { key: 'b', zoom: 10 }])).toBe('10');
+    expect(core.zoomRange([])).toBe('');
+    expect(core.zoomRange(null)).toBe('');
+  });
+});

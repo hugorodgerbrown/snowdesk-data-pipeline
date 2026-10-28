@@ -39,6 +39,13 @@
  *   buttonState(zoom, minZoom, maxZoom)     → { canZoomOut, canZoomIn }
  *   ticks(gates, zoom, minZoom, maxZoom)    → Array<Tick>
  *   levels(minZoom, maxZoom)                → Array<{zoom, position}>
+ *   isReached(gate, zoom)                   → boolean
+ *   zoomRange(gates)                        → "10–12" | "10" | ""
+ *
+ * The last two serve the layers menu too (SNOW-1280,
+ * static/js/map_layers_zoom_gates.js): a zoom-limited row fades while its
+ * layer is on and `isReached` is false, and the menu's note names the
+ * span of the gates it shows.
  */
 
 // @ts-check
@@ -123,6 +130,39 @@
   }
 
   /**
+   * Whether a gated feature is available at a zoom.
+   *
+   * An `upTo` gate holds through its whole zoom (z10.9 still reads "10");
+   * every other gate holds from its zoom up, a hair early so an eased zoom
+   * that settles at 9.9999 counts as 10.
+   *
+   * @param {Gate} gate The gate.
+   * @param {number} zoom The camera's zoom.
+   * @returns {boolean}
+   */
+  function isReached(gate, zoom) {
+    return gate.upTo
+      ? Math.floor(zoom + EPSILON) <= gate.zoom
+      : zoom + EPSILON >= gate.zoom;
+  }
+
+  /**
+   * The span of zooms a set of gates covers, for a sentence that names it:
+   * "10–12" across two or more distinct zooms, "10" for one, "" for none.
+   *
+   * @param {ReadonlyArray<Gate>|null|undefined} gates
+   * @returns {string}
+   */
+  function zoomRange(gates) {
+    if (!Array.isArray(gates)) return '';
+    const zooms = gates.map((gate) => gate && gate.zoom).filter(Number.isFinite);
+    if (!zooms.length) return '';
+    const low = Math.min(...zooms);
+    const high = Math.max(...zooms);
+    return low === high ? String(low) : low + '\u2013' + high;
+  }
+
+  /**
    * The ticks the scale draws: one per gate inside the map's range.
    *
    * Whether the feature is switched on does not matter: the scale says
@@ -152,11 +192,7 @@
         zoom: gate.zoom,
         position: scalePosition(gate.zoom, minZoom, maxZoom),
         upTo: !!gate.upTo,
-        // An `upTo` gate holds through its whole zoom (z10.9 still reads
-        // "10"); every other gate holds from its zoom up.
-        reached: gate.upTo
-          ? Math.floor(zoom + EPSILON) <= gate.zoom
-          : zoom + EPSILON >= gate.zoom,
+        reached: isReached(gate, zoom),
         side: /** @type {?('above'|'below')} */ (null),
       }))
       .sort((a, b) => a.zoom - b.zoom
@@ -193,5 +229,7 @@
     faceZoom: faceZoom,
     buttonState: buttonState,
     ticks: ticks,
+    isReached: isReached,
+    zoomRange: zoomRange,
   });
 })();

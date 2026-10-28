@@ -1016,6 +1016,68 @@
     color: var(--color-text-2);
 }
 
+/* SNOW-1280: a zoom-limited row's name and its "· ≥z10" suffix share the
+   first line; the suffix is quieter than the name and never wraps apart. */
+.basemap-menu-item-label-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 6px;
+}
+
+.basemap-menu-zoom-suffix {
+    color: var(--color-text-3, var(--color-text-2));
+    font-family: var(--font-mono);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.basemap-menu-zoom-suffix:empty {
+    display: none;
+}
+
+/* The layer is on but cannot draw at this zoom: its name and icon fade.
+   The switch is left alone — the layer IS on, and a dimmed switch reads
+   as disabled. The terrain filter's summary gives way to "Zoom in to
+   view" while it lasts. */
+[data-zoom-hidden] [data-row-label],
+[data-zoom-hidden] .basemap-menu-layer-icon {
+    color: var(--color-text-3, var(--color-text-2));
+}
+
+[data-zoom-hidden] [data-terrain-filter-summary] {
+    display: none;
+}
+
+/* The menu's note while a row is faded. */
+.basemap-menu-zoom-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 2px 0 4px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--color-card-subtle);
+    color: var(--color-text-2);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.basemap-menu-zoom-note[hidden] {
+    display: none;
+}
+
+/* A hidden note is still the list's first child, so the group label after
+   it keeps the first label's tighter top. */
+.basemap-menu-zoom-note[hidden] + .basemap-menu-group-label {
+    padding-top: 6px;
+}
+
+.basemap-menu-zoom-note svg {
+    flex: 0 0 auto;
+    margin-top: 1px;
+}
+
 /* Points at where the row goes: a page of its own. */
 .basemap-menu-layer-chevron {
     flex: 0 0 auto;
