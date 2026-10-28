@@ -65,7 +65,7 @@
   // out here (ski_tours_core.farEnds), not features the server sends.
   const ENDS_SOURCE = 'ski-tours-ends';
   const FAR_END = 'ski-tours-far-end';
-  const LAYERS = [LINE, HIGHLIGHT, HIGHLIGHT_DOWN, FAR_END, SUMMIT, LABEL];
+  const LAYERS = [LINE, HIGHLIGHT, HIGHLIGHT_DOWN, SUMMIT, FAR_END, LABEL];
   // MapLibre paint cannot read a CSS custom property. The tours' blue is
   // swisstopo's own for its ski routes (blue-600); the highlight is the
   // route colour (--color-route-line); the marks are the ink and the card.
@@ -202,23 +202,6 @@
         'line-dasharray': [1.2, 1.2],
       },
     }, before);
-    map.addSource(ENDS_SOURCE, {
-      type: 'geojson',
-      data: core.farEnds(state.data.features, state.highlight),
-    });
-    map.addLayer({
-      id: FAR_END,
-      type: 'circle',
-      source: ENDS_SOURCE,
-      minzoom: minzoom,
-      layout: { visibility: visibility },
-      paint: {
-        'circle-radius': 5,
-        'circle-color': FAR_END_COLOUR,
-        'circle-stroke-color': HALO_COLOUR,
-        'circle-stroke-width': 2,
-      },
-    }, before);
     const isMark = ['in', ['get', 'kind'], ['literal', ['summit', 'hut']]];
     map.addLayer({
       id: SUMMIT,
@@ -234,6 +217,25 @@
         'circle-color': ['case', ['==', ['get', 'kind'], 'hut'], HALO_COLOUR, INK_COLOUR],
         'circle-stroke-color': ['case', ['==', ['get', 'kind'], 'hut'], INK_COLOUR, HALO_COLOUR],
         'circle-stroke-width': 1.5,
+      },
+    }, before);
+    // Over the summit and hut marks: a tour that starts at a hut is named
+    // by its green dot, not hidden under the hut's ring.
+    map.addSource(ENDS_SOURCE, {
+      type: 'geojson',
+      data: core.farEnds(state.data.features, state.highlight),
+    });
+    map.addLayer({
+      id: FAR_END,
+      type: 'circle',
+      source: ENDS_SOURCE,
+      minzoom: minzoom,
+      layout: { visibility: visibility },
+      paint: {
+        'circle-radius': 5,
+        'circle-color': FAR_END_COLOUR,
+        'circle-stroke-color': HALO_COLOUR,
+        'circle-stroke-width': 2,
       },
     }, before);
     // The map's own overlay font (SNOW-478), not the style's commonest,
@@ -333,6 +335,8 @@
         const source = map.getSource(SOURCE);
         if (source) source.setData(body);
         else installLayers(map);
+        // A pan that reloads while a list is open keeps its dots in place.
+        paintFarEnds(map);
       })
       .catch(function () {
         if (state.inflight === inflight) state.inflight = null;

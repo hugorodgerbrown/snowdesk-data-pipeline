@@ -182,6 +182,53 @@ class TestTheTourAsARoute:
             [*TOP, None],
         ]
 
+    def test_parts_stored_out_of_order_are_chained_from_start_to_finish(
+        self,
+    ) -> None:
+        """The Silvrettahütte way up, as swisstopo stores it (SNOW-1282).
+
+        The way to the summit, a spur off it, then the hut's part last: the
+        line runs hut → junction → summit and leaves the spur out.
+        """
+        hut, junction = [10.0415, 46.8544], [10.0863, 46.8499]
+        summit, spur = [10.0969, 46.8488], [10.0905, 46.8510]
+        tour = _tour(
+            geometry={
+                "type": "MultiLineString",
+                "coordinates": [[junction, summit], [junction, spur], [hut, junction]],
+            }
+        )
+        assert [p[:2] for p in tour_points(tour)] == [hut, junction, summit]
+        assert ends(tour) == (tuple(hut), tuple(summit))
+
+    def test_a_chain_drawn_mostly_backwards_runs_the_way_it_was_drawn(
+        self,
+    ) -> None:
+        """Both parts drawn summit-first: the line starts at the summit."""
+        middle = [10.09, 46.84]
+        tour = _tour(
+            geometry={
+                "type": "MultiLineString",
+                "coordinates": [[middle, VALLEY], [TOP, middle]],
+            }
+        )
+        assert [p[:2] for p in tour_points(tour)] == [TOP, middle, VALLEY]
+
+    def test_parts_that_do_not_join_keep_their_stored_order(self) -> None:
+        """A gap in swisstopo's own data: nothing to chain."""
+        tour = _tour(
+            geometry={
+                "type": "MultiLineString",
+                "coordinates": [[[10.09, 46.84], TOP], [VALLEY, [10.085, 46.835]]],
+            }
+        )
+        assert [p[:2] for p in tour_points(tour)] == [
+            [10.09, 46.84],
+            TOP,
+            VALLEY,
+            [10.085, 46.835],
+        ]
+
     def test_the_draft_is_titled_by_the_summit_and_marked_a_tour(self) -> None:
         """Title it "Signalhorn (GR) · <name>", source SKI_TOUR, the tour's uuid."""
         tour = _tour(name="Von der Silvrettahütte SAC")

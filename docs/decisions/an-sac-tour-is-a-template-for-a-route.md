@@ -88,5 +88,19 @@ and draw mode's `hold` and `hide` apply to them too.
   is on: Find a route, Create a route and Upload a GPX
   (`public/partials/_route_add_rows.html`). The rows replace the panel's
   own add button, and the empty-state sentence names all three.
-- The tour panel has no terrain rows (the "terrain data" fold). Those rows
-  are fetched by uuid or token, and an unsaved tour has neither.
+- The tour panel has the route panel's terrain rows (the "terrain data"
+  fold) too, from `routes:ski_tour_terrain` by the tour's uuid
+  (SNOW-1282). It reads only the record the tour already holds, so a tour
+  never sampled answers no rows until the panel's `?sample=1` refill has
+  built one.
+- A tour stored in several parts is read as one line from start to
+  finish (`ski_tours._chained`, SNOW-1282). swisstopo stores 258 of the
+  SAC tours as parts out of order, a tree of the way and a short spur, and
+  joining them in stored order doubled the line back on itself. The way is
+  the longest path between two loose ends, run in the direction swisstopo
+  drew most of it. The map still draws every part, spur included.
+- While a list is open, the tours it names are drawn in the route colour,
+  a green dot marks each one's far end (`ski_tours_core.farEnds`: the end
+  away from its summit, where a way up starts and a way down finishes),
+  and every other tour is dimmed (SNOW-1282). The mockup labels the dot
+  with a place name, which the data does not carry, so it is a dot alone.

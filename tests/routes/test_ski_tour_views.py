@@ -4,6 +4,8 @@ behind the ``route_drawing`` flag.
 
 * ``routes:ski_tour_feature`` — GET, the tour as the route panel draws it,
   at once without the terrain and with it on ``?sample=1``;
+* ``routes:ski_tour_terrain`` — GET, the tour's terrain rows for the
+  point card (SNOW-1282);
 * ``routes:ski_tour_save`` — POST, a copy onto the reader's routes;
 * ``routes:ski_tour_list`` — the HTMX list of a summit's tours or a tap's.
 """
@@ -103,6 +105,49 @@ class TestFeature:
         tour = SkiTourFactory.create()
         with patch("django_ratelimit.decorators.is_ratelimited", return_value=True):
             assert client.get(_feature_url(tour)).status_code == 429
+
+
+def _terrain_url(tour: Any) -> str:
+    """The tour's terrain rows URL."""
+    return reverse("routes:ski_tour_terrain", args=[tour.source_uuid])
+
+
+class TestTerrain:
+    """``routes:ski_tour_terrain``."""
+
+    def test_a_sampled_tour_answers_its_rows(self, client: Client) -> None:
+        """The held record and the tour's own points make the rows."""
+        tour = SkiTourFactory.create(slope_samples=RECORD)
+        rows = [{"index": 0, "ground_deg": 31.0}]
+        with patch("apps.routes.views.terrain_detail", return_value=rows) as detail:
+            response = client.get(_terrain_url(tour))
+        assert response.status_code == 200
+        assert response.json() == {"rows": rows}
+        samples, points = detail.call_args.args
+        assert samples == RECORD
+        assert points and points[0][2] is None
+
+    def test_an_unsampled_tour_answers_no_rows_and_walks_no_grid(
+        self, client: Client
+    ) -> None:
+        """Sampling is the feature's ``?sample=1``, never this."""
+        tour = SkiTourFactory.create()
+        with patch("apps.routes.services.ski_tours.build_slope_samples") as build:
+            response = client.get(_terrain_url(tour))
+        build.assert_not_called()
+        assert response.json() == {"rows": []}
+
+    def test_an_unknown_tour_is_404(self, client: Client) -> None:
+        """By uuid."""
+        url = reverse(
+            "routes:ski_tour_terrain", args=["00000000-0000-0000-0000-000000000000"]
+        )
+        assert client.get(url).status_code == 404
+
+    @override_flag("route_drawing", active=False)
+    def test_the_flag_off_is_404(self, client: Client) -> None:
+        """Invisible."""
+        assert client.get(_terrain_url(SkiTourFactory.create())).status_code == 404
 
 
 class TestSave:

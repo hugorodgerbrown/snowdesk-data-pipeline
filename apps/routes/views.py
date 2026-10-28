@@ -147,9 +147,9 @@ from apps.routes.services.ski_tours import (
     save_ski_tour,
     summits,
     tour_key,
+    tour_points,
     tour_properties,
     tour_slope_samples,
-    tour_points,
 )
 from apps.routes.services.slope_segments import build_slope_samples
 from apps.routes.services.slope_summary import summarise_record

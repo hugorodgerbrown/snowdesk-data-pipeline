@@ -70,7 +70,8 @@ _HUT_RE = re.compile(
 # Metres in a degree of latitude, for the short distances compared here.
 _M_PER_DEG = 111_320.0
 
-_SUMMITS_CACHE_KEY = "routes:ski-summits:v1:{count}:{stamp}"
+# v2: SNOW-1282 chains a tour's parts, which moves some summits.
+_SUMMITS_CACHE_KEY = "routes:ski-summits:v2:{count}:{stamp}"
 _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
 
 Point = tuple[float, float]
@@ -122,9 +123,119 @@ def tour_key(tour: SkiTour) -> str:
 
 
 def _lines(tour: SkiTour) -> list[list[list[float]]]:
-    """Return the tour's lines, skipping any too short to draw."""
-    coordinates = (tour.geometry or {}).get("coordinates") or []
-    return [line for line in coordinates if isinstance(line, list) and len(line) >= 2]
+    """Return the tour's lines, skipping any too short to draw, chained.
+
+    A tour in several parts is read as one line (``_chained``), so its ends,
+    its points and the route saved from it run from start to finish.
+    """
+    geometry = tour.geometry or {}
+    coordinates = geometry.get("coordinates") or []
+    if geometry.get("type") == "LineString":
+        coordinates = [coordinates]
+    lines = [line for line in coordinates if isinstance(line, list) and len(line) >= 2]
+    return _chained(lines)
+
+
+# The most parts a tour is chained from; the archive's most is 7. Past it
+# the stored order stands rather than an exhaustive search.
+_MAX_CHAIN_PARTS = 12
+
+
+_Node = tuple[float, float]
+# One part of a tour as the chaining sees it: its two ends and its length.
+_Edge = tuple[_Node, _Node, float]
+# A path through the parts: each part's index, and whether it is walked the
+# way it was drawn.
+_Path = list[tuple[int, bool]]
+
+
+def _node(point: list[float]) -> _Node:
+    """Return a part end as a graph node: the point to the micro-degree."""
+    return (round(float(point[0]), 6), round(float(point[1]), 6))
+
+
+def _line_metres(line: list[list[float]]) -> float:
+    """Return a line's length in metres."""
+    return sum(_metres((a[0], a[1]), (b[0], b[1])) for a, b in zip(line, line[1:]))
+
+
+def _all_joined(edges: list[_Edge], graph: dict[_Node, list[int]]) -> bool:
+    """Return whether every part can be reached from the first."""
+    reached, stack = {edges[0][0]}, [edges[0][0]]
+    while stack:
+        node = stack.pop()
+        for index in graph[node]:
+            for other in edges[index][:2]:
+                if other not in reached:
+                    reached.add(other)
+                    stack.append(other)
+    return len(reached) == len(graph)
+
+
+def _longest_path(edges: list[_Edge], graph: dict[_Node, list[int]]) -> _Path:
+    """Return the longest path through the parts, starting at a loose end."""
+    best: tuple[float, _Path] = (-1.0, [])
+
+    def walk(node: _Node, used: _Path, metres: float) -> None:
+        nonlocal best
+        if metres > best[0]:
+            best = (metres, list(used))
+        for index in graph[node]:
+            if any(index == u for u, _ in used):
+                continue
+            start, end, part_metres = edges[index]
+            forward = start == node
+            used.append((index, forward))
+            walk(end if forward else start, used, metres + part_metres)
+            used.pop()
+
+    leaves = [node for node, parts in graph.items() if len(parts) == 1]
+    for node in leaves or list(graph):
+        walk(node, [], 0.0)
+    return best[1]
+
+
+def _chained(lines: list[list[list[float]]]) -> list[list[list[float]]]:
+    """Return a tour's parts as one line from start to finish, when they join.
+
+    SNOW-1282. swisstopo stores 258 of the SAC tours in parts, out of order,
+    and as a tree: the way itself plus a short spur (a variant, or the last
+    metres to a ski depot) meeting it at a shared point. Joined in stored
+    order they made a line that doubled back on itself. The way is taken
+    to be the longest path between two loose ends, and it runs in the
+    direction swisstopo drew most of it, each part being drawn the way the
+    tour goes.
+
+    Parts that do not all join (two tours cross a gap in swisstopo's own
+    data) and one-part tours pass through as stored.
+
+    Args:
+        lines: The tour's parts, each two points or more.
+
+    Returns:
+        ``[line]``, or ``lines`` unchanged when they do not form one tree.
+
+    """
+    if len(lines) < 2 or len(lines) > _MAX_CHAIN_PARTS:
+        return lines
+    edges = [(_node(line[0]), _node(line[-1]), _line_metres(line)) for line in lines]
+    graph: dict[_Node, list[int]] = defaultdict(list)
+    for index, (start, end, _part_metres) in enumerate(edges):
+        graph[start].append(index)
+        graph[end].append(index)
+    if not _all_joined(edges, graph):
+        return lines
+
+    path = _longest_path(edges, graph)
+    total = sum(edges[i][2] for i, _ in path)
+    with_the_drawing = sum(edges[i][2] for i, forward in path if forward)
+    if with_the_drawing * 2 < total:
+        path = [(i, not forward) for i, forward in reversed(path)]
+    line: list[list[float]] = []
+    for index, forward in path:
+        part = lines[index] if forward else lines[index][::-1]
+        line.extend(part[1:] if line else part)
+    return [line]
 
 
 def ends(tour: SkiTour) -> tuple[Point, Point]:

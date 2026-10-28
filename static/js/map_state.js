@@ -225,6 +225,7 @@ const OVERLAY_LAYERS = Object.freeze({
     'ski-tours-highlight-down',
     'ski-tours-summit',
     'ski-tours-summit-label',
+    'ski-tours-far-end',
   ],
   // SNOW-687: the coloured line FIRST and the casing second — deliberately
   // the inverse of the order installRoutesLayer adds them in, where the

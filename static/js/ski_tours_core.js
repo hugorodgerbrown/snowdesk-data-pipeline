@@ -139,10 +139,10 @@
 
   /**
    * The far end of each of these tours: where it starts, for a way up, or
-   * where it finishes, for a way down. The end away from the tour's own
-   * summit, so a line swisstopo drew the other way round is still read
-   * right; with its summit not loaded, a way up's first point and a way
-   * down's last.
+   * where it finishes, for a way down. The end of any of its parts farthest
+   * from the tour's own summit, so a line drawn the other way round, or in
+   * parts stored out of order, is still read right; with its summit not
+   * loaded, a way up's first point and a way down's last.
    *
    * @param {Array<any>} features A loaded collection's features, summits
    *   and tours together.
@@ -175,12 +175,19 @@
       const summit = summits.get(p.summit);
       let end;
       if (summit) {
-        // Degrees, the longitude scaled by the latitude: only which end is
-        // nearer matters.
+        // The part ends farthest from the summit: swisstopo stores a tour's
+        // parts in no particular order, so its first point need not be where
+        // it starts. Degrees, the longitude scaled by the latitude: only
+        // which end is farther matters.
         const k = Math.cos((summit[1] * Math.PI) / 180);
         const d = (/** @type {Array<number>} */ c) =>
           ((c[0] - summit[0]) * k) ** 2 + (c[1] - summit[1]) ** 2;
-        end = d(first) < d(last) ? last : first;
+        end = first;
+        for (const part of line) {
+          for (const c of [part[0], part[part.length - 1]]) {
+            if (d(c) > d(end)) end = c;
+          }
+        }
       } else {
         end = p.down ? last : first;
       }
