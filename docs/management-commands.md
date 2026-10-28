@@ -739,8 +739,11 @@ up everything missing over time.
 selected locations' stations (`SourceLocation`, matched on `source_uuid`),
 diffs and writes `SourceWeather`, and applies each written row into
 `Weather` as `fetch_weather` does. A past day `Weather` already holds is
-kept. The service therefore holds the history it serves at
-`/api/data/v2/weather/`. Before the first sweep after the deploy, run
+kept. A day the service already holds but `Weather` lacks — its apply
+failed once, or it was written before the place was mirrored here — is
+copied across first (`replay_held`, tallied `replayed`) with no upstream
+call, since the service's diff would never select it again. The service
+therefore holds the history it serves at `/api/data/v2/weather/`. Before the first sweep after the deploy, run
 `copy_weather_to_service --commit` once (below), or the sweep re-fetches a
 season production already holds.
 
