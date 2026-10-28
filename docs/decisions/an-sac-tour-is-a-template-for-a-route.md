@@ -102,6 +102,11 @@ and draw mode's `hold` and `hide` apply to them too.
   joining them in stored order doubled the line back on itself. The way is
   the longest path between two loose ends, run in the direction swisstopo
   drew most of it. The map still draws every part, spur included.
+- Opening a tour brings it into view only when part of it is hidden,
+  and never by zooming in (map.js `frameTour`, `ski_tours_core.fitsView`,
+  SNOW-1284). The reader reached it from a summit at a scale they chose,
+  and the original fit to each tour's own extent zoomed in and out on
+  every pick.
 - While a list is open, the tours it names are drawn in the route colour,
   a green dot marks each one's far end (`ski_tours_core.farEnds`: the end
   away from its summit, where a way up starts and a way down finishes),

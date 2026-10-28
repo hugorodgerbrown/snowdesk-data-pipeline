@@ -507,7 +507,7 @@
   }
 
   /**
-   * Open a tour in the route panel, framed, and follow with its terrain
+   * Open a tour in the route panel, brought into view, and follow with its terrain
    * when the server has not sampled it before.
    *
    * @param {string} uuid
@@ -524,7 +524,7 @@
         return;
       }
       const claim = buildClaim(feature.properties || {});
-      window.pwaSkiTourRoute.open(feature, { claim: claim, frame: true });
+      window.pwaSkiTourRoute.open(feature, { claim: claim, frame: true, shows: core.fitsView });
       if (!(feature.properties && feature.properties.terrain_pending)) return;
       fetchFeature(uuid, true).then(function (sampled) {
         if (!sampled || state.opening !== uuid) return;

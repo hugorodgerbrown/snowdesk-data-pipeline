@@ -104,6 +104,30 @@ describe('URLs and the highlight', () => {
   });
 });
 
+describe('fitsView', () => {
+  const size = { width: 400, height: 800 };
+  const padding = { top: 60, right: 40, bottom: 350, left: 40 };
+  /** The four corners of a screen box, as map.js projects them. */
+  const box = (l, t, r, b) => [{ x: l, y: t }, { x: r, y: t }, { x: r, y: b }, { x: l, y: b }];
+
+  it('says a tour clear of the panels already shows (SNOW-1284)', () => {
+    expect(core.fitsView(box(50, 100, 300, 400), size, padding)).toBe(true);
+  });
+
+  it('says a tour under the sheet, or off an edge, does not', () => {
+    expect(core.fitsView(box(50, 100, 300, 500), size, padding)).toBe(false);
+    expect(core.fitsView(box(20, 100, 300, 400), size, padding)).toBe(false);
+    expect(core.fitsView(box(50, 40, 300, 400), size, padding)).toBe(false);
+    expect(core.fitsView(box(50, 100, 380, 400), size, padding)).toBe(false);
+  });
+
+  it('reads every corner, so a rotated map cannot hide one', () => {
+    // North-west, north-east and south-west clear; south-east under the sheet.
+    const rotated = [{ x: 200, y: 100 }, { x: 350, y: 250 }, { x: 200, y: 500 }, { x: 60, y: 300 }];
+    expect(core.fitsView(rotated, size, padding)).toBe(false);
+  });
+});
+
 describe('farEnds', () => {
   const summit = {
     geometry: { type: 'Point', coordinates: [10.1, 46.85] },

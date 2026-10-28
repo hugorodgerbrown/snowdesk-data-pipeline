@@ -3459,14 +3459,44 @@
   // The tour's Save control, seated in the panel's claim slot.
   let tourRouteClaim = null;
 
+  /**
+   * Bring a tour into view only when part of it is hidden, and never by
+   * zooming in (SNOW-1284). The reader reached the tour from a summit at
+   * a scale they chose; a fit to every tour's own extent changed that
+   * scale on each pick, in and out.
+   *
+   * @param {number[]} bounds The tour's [west, south, east, north].
+   * @param {?function(...any): boolean} shows Whether a box already shows
+   *   whole (ski_tours_core.fitsView, passed in by ski_tours.js); without
+   *   one the tour is always fitted.
+   * @returns {void}
+   */
+  const frameTour = (bounds, shows) => {
+    const padding = paddingClearingRail();
+    const canvas = map.getContainer().getBoundingClientRect();
+    const [west, south, east, north] = bounds;
+    const shown = typeof shows === 'function' && shows(
+      [[west, north], [east, north], [east, south], [west, south]].map((c) => map.project(c)),
+      { width: canvas.width, height: canvas.height },
+      padding,
+    );
+    if (shown) return;
+    map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
+      padding: padding,
+      duration: 400,
+      maxZoom: map.getZoom(),
+    });
+  };
+
   window.pwaSkiTourRoute = Object.freeze({
     /**
      * Open a tour's Feature in the route panel and draw it on the map.
      * Called again with the sampled Feature, it refills the open panel.
      *
      * @param {Object} feature From routes:ski_tour_feature.
-     * @param {{claim?: ?Node, frame?: boolean}} [options] `claim` is the
-     *   Save control; `frame` fits the map to the tour.
+     * @param {{claim?: ?Node, frame?: boolean, shows?: function(...any): boolean}} [options]
+     *   `claim` is the Save control; `frame` brings the tour into view if
+     *   `shows` says it is not (frameTour).
      * @returns {boolean} Whether the panel opened.
      */
     open(feature, options) {
@@ -3485,10 +3515,7 @@
       }
       const bounds = parseRouteProperty(feature.properties && feature.properties.bounds);
       if (opts.frame && Array.isArray(bounds) && bounds.length === 4) {
-        map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-          padding: paddingClearingRail(),
-          duration: 400,
-        });
+        frameTour(bounds, opts.shows || null);
       }
       return true;
     },
