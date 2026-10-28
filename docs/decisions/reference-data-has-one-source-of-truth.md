@@ -73,9 +73,12 @@ from the service; if only a signed-in user does, it stays in the instance.
   (`pull_reference_data`, SNOW-1272).
 - Changing how a bulletin is read (a render-model version, the day-rating
   or problem-terrain rule) needs a service deploy and a rebuild, not a
-  client deploy. A template that needs a field the render model lacks needs
-  a service change first. The stored model's shape is the contract between
-  the two, versioned by `RENDER_MODEL_VERSION`.
+  client deploy. The stored model's shape is the contract between the two,
+  versioned by `RENDER_MODEL_VERSION`.
+- An instance may extend what it is given (Hugo, 28 Oct 2026). A template
+  that needs a field the render model lacks derives it locally from the
+  synced bulletin. The field moves into the service only once it has
+  proved itself, so a new field never waits on a service deploy.
 - Anonymised community reports and the onboarding example route are user
   data, even though signed-out visitors see them. The example route is a
   fixture any instance can load (SNOW-1273).
