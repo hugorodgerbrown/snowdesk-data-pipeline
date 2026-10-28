@@ -21,7 +21,8 @@ from the service; if only a signed-in user does, it stays in the instance.
 
 | Bucket | Tables | Where it lives |
 |---|---|---|
-| Source of truth | bulletins, weather, reference `Location` rows and resort roles, `Resort`, `Pass`, the EAWS region tables | Written only in the service; synced |
+| Source of truth | bulletins, weather, reference `Location` rows and resort roles, `Resort`, `Pass` | Written only in the service; synced |
+| Code-held | the EAWS region tables (`apps/regions/fixtures/eaws_*.json`), the glossary | Ships with the code; every side loads the same commit |
 | Domain derivations | `RegionDayRating`, `RegionBulletin`, `BulletinGrouping`, problem-terrain rules | Computed once in the service; synced |
 | Presentation | render models | Rebuilt by each instance |
 | User data | accounts, favourites, routes and shares, trips, downloads, field observations, bulletin shares, user-minted `Location` rows | Never leaves its instance |
@@ -47,13 +48,18 @@ from the service; if only a signed-in user does, it stays in the instance.
   and a user's own, keyed on the row carrying the service's uuid. `named()`
   cannot be the line, because users can name their favourites. Synced and
   user-minted rows share the `Location` table.
-- Each synced row carries the service's uuid (regions use their EAWS code)
+- Each synced row carries the service's uuid
   and the apply upserts by it. User data points at the instance's own
   primary keys, so a favourite on a synced resort survives every sync.
 - Deletes travel as `deleted_at` tombstones. A tombstoned row that user data
   still references is hidden, not deleted.
-- Editing moves to the service: the resort and location sheets, their import
-  commands and `refresh_eaws_fixtures`. The staff map-admin overlays stay
+- **Regions stay code-held fixtures, not a feed** (Hugo, 28 Oct 2026). The
+  geometry is already one copy of the truth, the repository, versioned with
+  the code that reads it, and changes only when EAWS republishes; a feed
+  would send 15 MB for no gain. What varied per instance, the region centroid
+  `Location` and its elevation, becomes reference locations under SNOW-1253.
+- Editing moves to the service: the resort and location sheets and their
+  import commands. The staff map-admin overlays stay
   in production, writing the service's tables, until the service has its
   own editor.
 - A fresh instance syncs reference data whole and time series as a subset:
@@ -66,6 +72,6 @@ from the service; if only a signed-in user does, it stays in the instance.
   fixture any instance can load (SNOW-1273).
 - Whether this repository becomes the service or the web app moves out is
   undecided.
-- The work is staged as SNOW-1269 (regions), SNOW-1270 (derivations),
+- The work is staged as SNOW-1270 (derivations),
   SNOW-1253 (weather stations), SNOW-1271 (resorts and passes), SNOW-1272
   (bootstrap and tombstones) and SNOW-1273 (example route).
