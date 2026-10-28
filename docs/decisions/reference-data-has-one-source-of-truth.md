@@ -23,8 +23,9 @@ from the service; if only a signed-in user does, it stays in the instance.
 |---|---|---|
 | Source of truth | bulletins, weather, reference `Location` rows and resort roles, `Resort`, `Pass` | Written only in the service; synced |
 | Code-held | the EAWS region tables (`apps/regions/fixtures/eaws_*.json`), the glossary | Ships with the code; every side loads the same commit |
-| Domain derivations | `RegionDayRating`, `RegionBulletin`, `BulletinGrouping`, problem-terrain rules | Computed once in the service; synced |
-| Presentation | render models | Rebuilt by each instance |
+| Bulletin interpretation | the render model (`Bulletin.render_model`), day character, period transition | Built once in the service; synced with each bulletin |
+| Domain derivations | `RegionDayRating`, `RegionBulletin`, `BulletinGrouping`, problem-terrain rules | Computed once in the service from the render model; synced |
+| Presentation | templates, translated labels and copy | Each instance, at render time |
 | User data | accounts, favourites, routes and shares, trips, downloads, field observations, bulletin shares, user-minted `Location` rows | Never leaves its instance |
 | Operations | `CommandRun`, `PipelineRun`, request logs, idempotency records, banners, flags | Per instance |
 
@@ -33,10 +34,15 @@ from the service; if only a signed-in user does, it stays in the instance.
 - **One copy of each fact.** Staging, production and cloud sessions showing
   different resorts or different day ratings is a class of bug that a
   synced copy cannot have.
-- **Derivations of domain facts travel; presentation does not.** A day
-  rating is a pure function of bulletins and regions, so it is computed
-  once and every instance shows the same number. A render model follows
-  the templates, which change with each instance's deploy.
+- **Interpreting the bulletin belongs to the service; presenting it does
+  not** (Hugo, 28 Oct 2026). Despite its name, the render model is not
+  presentation. It makes three providers' CAAML look like one, matches
+  problems to ratings, validates against the EAWS enums and builds the
+  traits. That is a pure function of the provider's data, as is everything
+  derived from it: day ratings, groupings, problem-terrain rules. So it is
+  built once and every instance reads the same interpretation. The
+  instance keeps what really is presentation: the templates and the
+  translated labels, looked up from the model's codes at render time.
 - **Problem terrain is rules, not pixels.** The service precomputes each
   region's rules for the day. The device still paints them from the
   terrain-class tiles: pre-rendered rasters would need a tile set per
@@ -65,13 +71,16 @@ from the service; if only a signed-in user does, it stays in the instance.
 - A fresh instance syncs reference data whole and time series as a subset:
   a recent window by default, or the golden week for deterministic testing
   (`pull_reference_data`, SNOW-1272).
-- Changing the day-rating or problem-terrain rule needs a service deploy and
-  a recompute, not a client deploy.
+- Changing how a bulletin is read (a render-model version, the day-rating
+  or problem-terrain rule) needs a service deploy and a rebuild, not a
+  client deploy. A template that needs a field the render model lacks needs
+  a service change first. The stored model's shape is the contract between
+  the two, versioned by `RENDER_MODEL_VERSION`.
 - Anonymised community reports and the onboarding example route are user
   data, even though signed-out visitors see them. The example route is a
   fixture any instance can load (SNOW-1273).
 - Whether this repository becomes the service or the web app moves out is
   undecided.
-- The work is staged as SNOW-1270 (derivations),
+- The work is staged as SNOW-1270 (the render model and its derivations),
   SNOW-1253 (weather stations), SNOW-1271 (resorts and passes), SNOW-1272
   (bootstrap and tombstones) and SNOW-1273 (example route).
