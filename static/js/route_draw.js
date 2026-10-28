@@ -345,12 +345,33 @@
     };
   }
 
-  /** Redraw the network, and let swisstopo's raster step aside under it. */
+  /**
+   * Whether the network loaded so far covers the whole view.
+   *
+   * @param {any} map
+   * @returns {boolean}
+   */
+  function networkCoversView(map) {
+    const b = map.getBounds();
+    return state.loaded.some(function (done) {
+      return done[0] <= b.getWest() && done[1] <= b.getSouth()
+        && done[2] >= b.getEast() && done[3] >= b.getNorth();
+    });
+  }
+
+  /**
+   * Redraw the network, and let swisstopo's raster step aside under it —
+   * only once the shadow covers the view, so a failed or refused load
+   * (offline, with the raster's tiles cached) leaves the raster as the guide.
+   */
   function drawNetwork() {
     const map = getMap();
     const source = map && map.getSource(NETWORK_SOURCE);
     if (source) source.setData(networkCollection());
-    const shadow = Boolean(NETWORK_URL && state.follow && map && map.getZoom() >= NETWORK_MINZOOM);
+    const shadow = Boolean(
+      NETWORK_URL && state.follow && map && map.getZoom() >= NETWORK_MINZOOM
+        && networkCoversView(map),
+    );
     window.pwaSkiRoutes?.hide(shadow);
   }
 
