@@ -123,3 +123,39 @@ class TestApply:
         row: Any = SourceWeatherFactory.create()
         backfill.apply_backfilled_row(row)
         assert not Weather.objects.exists()
+
+
+class TestReplayHeld:
+    """Codex on #1263: a day the service holds but the app lacks is copied."""
+
+    def _held(self) -> tuple[Location, datetime.date]:
+        """Return a station and a day only the service holds."""
+        location = _station()
+        day = backfill.backfill_until()
+        assert location.source_uuid is not None
+        SourceWeatherFactory.create(
+            location=SourceLocation.objects.get(uuid=location.source_uuid),
+            observed_on=day,
+            weather_code=3,
+        )
+        return location, day
+
+    def test_a_dry_run_counts_and_writes_nothing(self) -> None:
+        """Read-only: the gap is reported, Weather is untouched."""
+        location, day = self._held()
+        selection = Location.objects.filter(pk=location.pk)
+        assert backfill.replay_held(selection, floor=day, until=day, commit=False) == 1
+        assert not Weather.objects.exists()
+
+    def test_the_sweep_copies_it_without_a_request(self) -> None:
+        """The held row lands in Weather and no upstream call is made."""
+        location, day = self._held()
+        with mock.patch("requests.get") as get:
+            counts = backfill.backfill_locations(
+                [location], floor=day, until=day, commit=True, delay=0
+            )
+        get.assert_not_called()
+        assert counts["replayed"] == 1
+        assert Weather.objects.get(location=location, observed_on=day).weather_code == 3
+        selection = Location.objects.filter(pk=location.pk)
+        assert backfill.replay_held(selection, floor=day, until=day, commit=True) == 0
