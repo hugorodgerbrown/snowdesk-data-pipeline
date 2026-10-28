@@ -4,9 +4,9 @@ apps/ingest/normalise/weather.py — Pure parsing of Open-Meteo forecast respons
 Moved out of ``apps/weather/services/fetch.py`` (SNOW-1248), which keeps the
 HTTP and the write. Everything here takes the ``daily`` and ``hourly`` blocks
 of an Open-Meteo response and returns plain values; none of it reads a
-location, a setting or the database. ``apps/weather/services/backfill.py``
-reads the historical host's responses through the same functions, because
-the two endpoints answer in the same shape.
+location, a setting or the database. ``apps/ingest/backfill.py`` reads the
+historical host's responses through the same functions, because the two
+endpoints answer in the same shape.
 
 Also the two shapes the parsing produces, which are the contract for the
 ``Weather.hourly`` and ``Weather.forecast`` JSON columns:

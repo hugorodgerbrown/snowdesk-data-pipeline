@@ -2,13 +2,20 @@
 name: weather-backfill-sweeps-newest-fortnight-first
 description: backfill_weather as an hourly budgeted sweep — fortnight blocks newest first, sweep_budget from Open-Meteo weighted quota
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-10-28
 ---
 
 # The weather backfill sweeps newest fortnight first, inside a derived budget
 
 SNOW-1245. Amends the "unattended bulk backfilling" consequence of
 [`weather-backfill-is-an-admin-action.md`](weather-backfill-is-an-admin-action.md).
+
+**Since SNOW-1275 (28 Oct 2026) the sweep is the weather service's.** It
+moved to `apps/ingest/backfill.py` unchanged in shape: it walks the
+stations (`SourceLocation`), diffs and writes `SourceWeather`, and hands
+each row to the host, which applies it into `Weather`, keeping a past day
+it already holds. Read "location" below as "station". The budget's live
+term counts the service's live stations, which are the curated estate.
 
 ## Decision
 

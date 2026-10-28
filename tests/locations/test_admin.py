@@ -31,6 +31,7 @@ from django.urls import reverse
 
 from apps.weather.models import Weather
 from apps.weather.services import backfill
+from apps.weather.services.reference import mirror_reference_locations
 from tests.factories import (
     LocationFactory,
     ResortFactory,
@@ -208,10 +209,21 @@ class TestBackfillMissingWeatherAction:
             follow=True,
         )
 
+    def _station(self, name: str) -> Any:
+        """Create a curated location the weather service holds (SNOW-1275).
+
+        The backfill is the service's, so a location must be in the curated
+        estate and mirrored into its station list to be backfilled.
+        """
+        location = ResortLocationFactory.create(location__name=name).location
+        mirror_reference_locations()
+        location.refresh_from_db()
+        return location
+
     def test_the_action_fills_a_gap(self, staff_client: Client, settings: Any) -> None:
         """Selecting an incomplete location and running the action writes its day."""
         yesterday = _one_day_window(settings)
-        location = LocationFactory.create(name="Mont Fort")
+        location = self._station("Mont Fort")
 
         with mock.patch("requests.get", return_value=_response(_payload([yesterday]))):
             response = self._run(staff_client, [location])
@@ -224,7 +236,7 @@ class TestBackfillMissingWeatherAction:
     ) -> None:
         """The action writes the same shape the service does — no invented outlook."""
         yesterday = _one_day_window(settings)
-        location = LocationFactory.create(name="Mont Fort")
+        location = self._station("Mont Fort")
 
         with mock.patch("requests.get", return_value=_response(_payload([yesterday]))):
             self._run(staff_client, [location])
@@ -242,13 +254,13 @@ class TestBackfillMissingWeatherAction:
         """
         yesterday = _one_day_window(settings)
         over = backfill.ADMIN_MAX_LOCATIONS + 2
-        locations = [LocationFactory.create(name=f"L{i:02d}") for i in range(over)]
+        locations = [self._station(f"L{i:02d}") for i in range(over)]
 
         with (
             mock.patch("requests.get", return_value=_response(_payload([yesterday]))),
             # The throttle is real behaviour and tested in the service suite;
             # paying it here would add four seconds to this assertion.
-            mock.patch.object(backfill, "INTER_LOCATION_DELAY", 0),
+            mock.patch("apps.ingest.backfill.INTER_LOCATION_DELAY", 0),
         ):
             response = self._run(staff_client, locations)
 
@@ -262,13 +274,26 @@ class TestBackfillMissingWeatherAction:
         import requests
 
         _one_day_window(settings)
-        location = LocationFactory.create(name="Mont Fort")
+        location = self._station("Mont Fort")
 
         with mock.patch("requests.get", side_effect=requests.HTTPError("boom")):
             response = self._run(staff_client, [location])
 
         assert response.status_code == 200
         assert "1 location(s) failed" in response.content.decode()
+
+    def test_a_location_the_service_does_not_hold_is_reported(
+        self, staff_client: Client, settings: Any
+    ) -> None:
+        """A point with no station is named as not backfilled, not passed over."""
+        _one_day_window(settings)
+        location = LocationFactory.create(name="Someone's pin")
+
+        with mock.patch("requests.get") as get:
+            response = self._run(staff_client, [location])
+
+        get.assert_not_called()
+        assert "1 location(s) not backfilled" in response.content.decode()
 
 
 @pytest.mark.django_db

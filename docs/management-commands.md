@@ -735,13 +735,22 @@ row, against the Open-Meteo historical forecast API
 (SNOW-1245); each run is one budgeted sweep, and the runs together sweep
 up everything missing over time.
 
+**Through the weather service since SNOW-1275.** The sweep walks the
+selected locations' stations (`SourceLocation`, matched on `source_uuid`),
+diffs and writes `SourceWeather`, and applies each written row into
+`Weather` as `fetch_weather` does. A past day `Weather` already holds is
+kept. The service therefore holds the history it serves at
+`/api/data/v2/weather/`. Before the first sweep after the deploy, run
+`copy_weather_to_service --commit` once (below), or the sweep re-fetches a
+season production already holds.
+
 **Not a re-fetch.** It diffs first and requests only what is missing — a
 complete location costs no call at all. That diff is what makes a re-run
-safe, because `upsert_weather` *raises* on an existing past row rather than
+safe, because `store_source_weather` *raises* on an existing past row rather than
 skipping it. Idempotence here belongs to the caller, not to the write rule.
 
 **It never touches today.** Today is `fetch_weather`'s row, and
-`upsert_weather` permits a rewrite of it — so a backfill that reached today
+`store_source_weather` permits a rewrite of it — so a backfill that reached today
 would silently overwrite the live forecast. The window ends at yesterday
 (a later `--until` is clamped), and the write loop additionally skips any
 provider day outside the set it asked for.
@@ -787,7 +796,8 @@ for why, and for what that means on the page.
 The same writer backs the **"Backfill missing weather" action on
 `LocationAdmin`**, which fills a few selected locations' whole windows
 inline — a different walk, capped per run, for a curator fixing a row they
-spotted in the changelist's weather-coverage column.
+spotted in the changelist's weather-coverage column. A selected location
+the service holds no station for is reported as not backfilled.
 
 ```bash
 uv run python manage.py backfill_weather                 # preview this hour's sweep
@@ -795,6 +805,23 @@ uv run python manage.py backfill_weather --commit        # one sweep (what the s
 uv run python manage.py backfill_weather --commit \
     --floor 2026-04-10 --until 2026-04-10 --resort verbier --resort zermatt
 uv run python manage.py backfill_weather --commit --location 42 --budget 100
+```
+
+### `copy_weather_to_service` — seed the service with production's history (once)
+
+SNOW-1275. Run once on production after the deploy that moves the backfill
+into the weather service, and before the next sweep. Copies every past
+`Weather` row of a reference location (`Location.objects.reference_data()`)
+into `SourceWeather` for its station, where the service does not hold that
+day. Today is never copied, a day the service holds is left alone, and a
+user's point is never reached, so a re-run copies nothing. A location with
+no station yet is counted `unstationed`; run `mirror_reference_data
+--commit` and re-run. Streams the locations as a countdown and tallies
+`copied` and `unstationed`.
+
+```bash
+uv run python manage.py copy_weather_to_service           # preview
+uv run python manage.py copy_weather_to_service --commit  # copy
 ```
 
 ### `link_region_centroid_locations` — anchor each region to a Location

@@ -9,8 +9,9 @@ in batches — ``--limit`` and ``--delay`` — and the SNOW-1245 additions:
 the location and date filters, the weighted-call budget, and the throttle
 exit.
 
-The write rule itself is tested in tests/weather/services/test_backfill.py;
-this file is about the command wrapper.
+The write rule itself is tested in tests/ingest/test_backfill.py, the apply
+in tests/weather/services/test_backfill.py; this file is about the command
+wrapper.
 """
 
 from __future__ import annotations
@@ -25,10 +26,16 @@ import requests
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
+from apps.ingest.public import SourceLocation
 from apps.locations.models import Location
 from apps.weather.models import Weather
 from apps.weather.services import backfill
-from tests.factories import LocationFactory, ResortLocationFactory, WeatherFactory
+from apps.weather.services.reference import mirror_reference_locations
+from tests.factories import (
+    LocationFactory,
+    ResortLocationFactory,
+    SourceWeatherFactory,
+)
 
 
 def _active_location(**kwargs: Any) -> Location:
@@ -36,10 +43,13 @@ def _active_location(**kwargs: Any) -> Location:
 
     A bare ``LocationFactory`` row is reachable from nothing, so
     ``Location.objects.active()`` excludes it by design. Linking a resort is
-    the cheapest way to put one in the walk.
+    the cheapest way to put one in the walk; mirroring it gives it the
+    weather service's station the sweep walks (SNOW-1275).
     """
     location = LocationFactory.create(**kwargs)
     ResortLocationFactory.create(location=location)
+    mirror_reference_locations()
+    location.refresh_from_db()
     return location
 
 
@@ -179,9 +189,16 @@ class TestBackfillWeatherCommand:
     def test_a_complete_estate_issues_no_request(
         self, yesterday: datetime.date
     ) -> None:
-        """Nothing missing, nothing called — the walk is a diff, not a re-fetch."""
+        """Nothing missing, nothing called — the walk is a diff, not a re-fetch.
+
+        Complete means the service holds the day (SNOW-1275): the diff is
+        over ``SourceWeather``, the history the feed serves.
+        """
         location = _active_location()
-        WeatherFactory.create(location=location, observed_on=yesterday)
+        SourceWeatherFactory.create(
+            location=SourceLocation.objects.get(uuid=str(location.source_uuid)),
+            observed_on=yesterday,
+        )
 
         with mock.patch("requests.get") as get:
             call_command(

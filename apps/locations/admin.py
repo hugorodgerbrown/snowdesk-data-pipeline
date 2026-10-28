@@ -333,6 +333,16 @@ class LocationAdmin(admin.ModelAdmin):
                 f"{counts['failed']} location(s) failed — see the logs.",
                 level=messages.ERROR,
             )
+        if counts["unheld"]:
+            # SNOW-1275: the backfill is the weather service's, and the
+            # service holds only the curated estate, mirrored hourly.
+            self.message_user(
+                request,
+                f"{counts['unheld']} location(s) not backfilled: the weather "
+                "service holds no station for them. A curated place is "
+                "mirrored within the hour; a user's own point never is.",
+                level=messages.WARNING,
+            )
         if skipped:
             self.message_user(
                 request,
