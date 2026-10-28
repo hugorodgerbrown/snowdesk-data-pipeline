@@ -2,7 +2,7 @@
 name: ingestion-is-a-rehostable-unit
 description: Why apps/ingest imports no other apps.* package and callers use apps.ingest.public, enforced by tests/ingest/test_boundary.py
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-10-28
 ---
 
 # Ingestion is a rehostable unit
@@ -12,15 +12,17 @@ one package, `apps/ingest`, that imports nothing from any other `apps.*`
 package (SNOW-1247). The rest of Snowdesk reaches it only through
 `apps/ingest/public.py`. `tests/ingest/test_boundary.py` enforces both rules
 by parsing source with `ast`, and fails the build on a breach. The extraction
-is staged across five tickets:
+was staged across five tickets, then widened on 28 Oct 2026 to everything a
+signed-out visitor sees on the map
+([`reference-data-has-one-source-of-truth.md`](reference-data-has-one-source-of-truth.md),
+which holds the current ticket list):
 
 1. SNOW-1248 moves the pure normalisation code.
 2. SNOW-1249 moves the HTTP sources and splits fetch from apply.
 3. SNOW-1250 adds ingest's own `SourceBulletin` table and serves the bulletin
    feed from it.
-4. SNOW-1253 adds the `WeatherPoint` / `SourceWeather` tables and
-   `/api/data/v2/weather`.
-5. SNOW-1252 adds the `lookup_point` facade.
+4. SNOW-1253, re-scoped, owns the weather stations and `SourceWeather`.
+5. SNOW-1252 (the `lookup_point` facade) is under review.
 
 **Why.**
 
