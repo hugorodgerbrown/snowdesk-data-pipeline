@@ -161,13 +161,9 @@ def test_bulletin_opacity_is_a_row_in_the_layers_menu() -> None:
     SNOW-656 governed the danger choropleth and the dissolved bulletin
     boundary with a five-step control on a roundel of its own, whose flyout
     opened to the left. The two-capsule column moved those steps into the
-    menu's Conditions group, directly after the ALBINA row and before the
-    hairline that leads into Weather, so every display choice is in one
-    place. The roundel and its flyout are gone.
-
-    The five steps are still 0 / 0.25 / 0.5 / 0.75 / 1 — 0 being the off
-    position — and 0.5 is pre-checked, matching ``layer_visibility_core``'s
-    DEFAULT_STEP for a device with nothing stored.
+    menu, so every display choice is in one place. The roundel and its
+    flyout are gone. SNOW-1266 put them on the Avalanche bulletins page and
+    took the 0 step out: off is that row's switch on level one now.
     """
     client = Client()
     content = client.get(reverse("public:map")).content.decode()
@@ -178,7 +174,7 @@ def test_bulletin_opacity_is_a_row_in_the_layers_menu() -> None:
 
     ancestors = _ancestor_ids(content, "map-bulletin-opacity")
     assert "basemap-menu" in ancestors, ancestors
-    assert "basemap-menu-group-conditions" in ancestors, ancestors
+    assert "basemap-menu-page-bulletins" in ancestors, ancestors
 
     group = _one(
         r'(<div[^>]*id="map-bulletin-opacity"[^>]*>)', content, "the opacity group"
@@ -186,23 +182,20 @@ def test_bulletin_opacity_is_a_row_in_the_layers_menu() -> None:
     assert 'role="radiogroup"' in group
     assert 'aria-label="Bulletin opacity"' in group
 
-    # Directly after ALBINA, before the separator that precedes Weather.
+    # After the three providers it shades.
     albina_idx = content.index('data-overlay-key="country.albina"')
-    opacity_idx = content.index('id="map-bulletin-opacity"')
-    separator_idx = content.index('role="separator"', albina_idx)
-    weather_idx = content.index('data-overlay-key="weather"')
-    assert albina_idx < opacity_idx < separator_idx < weather_idx
-    # Nothing but the opacity row stands between ALBINA and that separator.
-    assert content[albina_idx:separator_idx].count('<li role="none"') == 1
+    assert albina_idx < content.index('id="map-bulletin-opacity"')
 
-    for step in ("0", "0.25", "0.5", "0.75", "1"):
+    # SNOW-1266: "off" is the level-one switch, not a step.
+    for step in ("0.25", "0.5", "0.75", "1"):
         assert f'data-bulletins-step="{step}"' in content, step
+    assert 'data-bulletins-step="0"' not in content
 
     # Exactly one step is pre-checked, and it is the default one. Each step is
     # a <button …>, so scoping to the tag that carries the step attribute is
-    # what tells the checked one from its four siblings.
+    # what tells the checked one from its three siblings.
     buttons = re.findall(r"<button[^>]*data-bulletins-step=\"[\d.]+\"[^>]*>", content)
-    assert len(buttons) == 5, buttons
+    assert len(buttons) == 4, buttons
     checked = [b for b in buttons if 'aria-checked="true"' in b]
     assert len(checked) == 1, checked
     assert 'data-bulletins-step="0.5"' in checked[0]
@@ -930,84 +923,83 @@ def test_map_page_renders_scrubber_loading_state() -> None:
     assert 'id="scrubber-fast"' not in content
 
 
-@pytest.mark.django_db
-def test_map_layer_menu_section_order() -> None:
-    """
-    SNOW-243: The basemap-menu popover must present its sections in a fixed
-    order.  This is a presentation reorder only; all remaining items and
-    their data-* attributes are unchanged.
-
-    SNOW-904 rebuilt the menu around four sections, which is the fourth
-    revision of this list: Places (what is on the ground), Conditions (what
-    the mountain is doing today), Boundaries (the EAWS tiers) and Basemap
-    (the map underneath, plus the two things drawn on top of it). The six
-    it replaced — Bulletins, Boundaries, Locations, Conditions, Terrain,
-    Base map — are asserted gone where the name is now unused, because a
-    stale heading beside a new one is exactly the drift this pins.
-    """
-    client = Client()
-    response = client.get(reverse("public:map"))
-    content = response.content.decode()
-
-    # Each label is unique in the rendered output; assert relative order.
-    start = content.index("basemap-menu-section-title")
-    positions = [
-        content.index(f">{label}<", start)
-        for label in ("Places", "Conditions", "Boundaries", "Basemap")
+def _layers_page(content: str, slug: str) -> str:
+    """One page of the layers menu's markup: level one or a layer's options."""
+    start = content.index(f'data-layers-page="{slug}"')
+    # From the page's opening tag to the next page, or the menu's end.
+    ends = [
+        i
+        for i in (
+            content.find("data-layers-page=", start + 1),
+            content.find('id="map-controls-toggle"', start),
+        )
+        if i != -1
     ]
-
-    assert positions == sorted(positions), (
-        "Map layer menu sections are not in the expected order "
-        "(Places < Conditions < Boundaries < Basemap)"
-    )
-    assert "Options" not in content
-    # "Terrain" and "Locations" were sections of their own; their rows moved
-    # into Basemap and Places respectively. Rail two's eyebrow is "Terrain"
-    # (SNOW-1019), so the rail's own markup is left out of the check.
-    outside_rail = re.sub(
-        r'<section\s+id="route-rail".*?</section>', "", content, flags=re.S
-    )
-    assert ">Terrain<" not in outside_rail
-    assert ">Locations<" not in outside_rail
+    return content[start : min(ends)]
 
 
 @pytest.mark.django_db
-def test_map_layer_menu_row_order_for_an_anonymous_visitor() -> None:
-    """SNOW-904: every row, in one fixed order, for a visitor with no account.
+def test_map_layer_menu_level_one_order() -> None:
+    """SNOW-1266: one row per layer, in two groups, in one fixed order.
 
-    The menu renders the same seventeen rows for everyone — favourites and
-    routes included. Hiding a row for an anonymous visitor would leave the
-    menu a different shape for different people and would hide a working
-    view setting; tapping one of those two hands off to the sign-in sheet
-    instead, which is a JS behaviour covered in tests/js.
-
-    Asserted as ONE ordered list rather than per section, because the two
-    labelling asymmetries in it are deliberate and a reader "tidying" them
-    is the likeliest way this drifts: only the FIRST Conditions row says
-    "bulletins", and only the Basemap overlay row carries "Display ".
-    SNOW-1073 removed the second such row, swisstopo's "Display slope
-    angles": the slope layer is the terrain filter's slope mode now.
+    Hugo's design F (28 Oct 2026): "Reference data" — the layers Snowdesk draws
+    from the providers and its own reference data — then "Your data", what the
+    reader made. Each row is a switch; bulletins, boundaries and basemap
+    also open a page of options. SNOW-904's four collapsible sections
+    (Places, Conditions, Boundaries, Basemap) are asserted gone, because a
+    stale heading beside a new one is exactly the drift this pins.
     """
     client = Client()
     content = client.get(reverse("public:map")).content.decode()
 
-    start = content.index('id="basemap-menu"')
-    rows = [
-        "resorts",
-        "favourites",
-        "routes",
-        "country.ch",
-        "country.fr",
-        "country.albina",
-        "weather",
-        "community_reports",
-        "l1",
-        "l2",
-        "l4",
-        "downloads",
+    main = _layers_page(content, "main")
+    markers = [
+        ">Reference data<",
+        'data-layers-open="bulletins"',
+        'data-overlay-key="weather"',
+        'data-overlay-key="resorts"',
+        'data-layers-open="boundaries"',
+        'data-layers-open="basemap"',
+        ">Your data<",
+        'data-overlay-key="favourites"',
+        'data-overlay-key="routes"',
+        'data-overlay-key="community_reports"',
+        'data-overlay-key="downloads"',
     ]
-    positions = [content.index(f'data-overlay-key="{key}"', start) for key in rows]
-    assert positions == sorted(positions), rows
+    positions = [main.index(marker) for marker in markers]
+    assert positions == sorted(positions), markers
+    assert ">Map layers<" in content
+    assert "data-section-toggle" not in content
+    assert "Map display options" not in content
+    assert "Display downloaded areas" not in content
+
+
+@pytest.mark.django_db
+def test_map_layer_menu_options_pages() -> None:
+    """SNOW-1266: what each options page holds, and that none shows at first.
+
+    Providers and opacity under bulletins, the EAWS tiers and unsupported
+    regions under boundaries. The menu renders the same rows for everyone —
+    favourites and routes included; tapping one of those two signed out
+    hands off to the sign-in sheet, a JS behaviour covered in tests/js.
+    Only the FIRST provider row says "bulletins" (SNOW-904).
+    """
+    client = Client()
+    content = client.get(reverse("public:map")).content.decode()
+
+    for slug in ("bulletins", "boundaries", "basemap"):
+        tag = _one(
+            rf'(<ul[^>]*data-layers-page="{slug}"[^>]*>)', content, f"the {slug} page"
+        )
+        assert re.search(r"\shidden[\s>]", tag), tag
+        assert "data-layers-back" in _layers_page(content, slug)
+
+    bulletins = _layers_page(content, "bulletins")
+    for key in ("country.ch", "country.fr", "country.albina"):
+        assert f'data-overlay-key="{key}"' in bulletins, key
+    boundaries = _layers_page(content, "boundaries")
+    for key in ("l1", "l2", "l4", "unsupported"):
+        assert f'data-overlay-key="{key}"' in boundaries, key
 
     for label in (
         "SLF bulletins (CH)",
@@ -1015,13 +1007,28 @@ def test_map_layer_menu_row_order_for_an_anonymous_visitor() -> None:
         "ALBINA (AT, IT)",
         "Field observations",
         "Major regions (EAWS L1)",
-        "Display downloaded areas",
+        "Downloaded areas",
     ):
         assert label in content, label
     assert 'data-overlay-key="slope"' not in content
-    # The pattern the first Conditions row sets is NOT repeated.
     assert "MétéoFrance bulletins" not in content
     assert "ALBINA bulletins" not in content
+
+
+@pytest.mark.django_db
+def test_map_layer_menu_master_switches_render_their_state() -> None:
+    """SNOW-1266: bulletins and boundaries carry a switch of their own.
+
+    Each is derived from the rows on its page, and renders the configured
+    defaults (an opacity step above 0; one EAWS tier) as on, so the first
+    paint agrees with the map before map_basemap_picker.js runs.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    for slug in ("bulletins", "boundaries"):
+        tag = _one(rf'(<button[^>]*data-layer-master="{slug}"[^>]*>)', content, slug)
+        assert 'role="menuitemcheckbox"' in tag
+        assert 'aria-checked="true"' in tag
+        assert "data-layer-switch" in tag
 
 
 @pytest.mark.django_db
@@ -1467,28 +1474,21 @@ def test_the_layers_menu_has_no_slope_row() -> None:
 
 
 @pytest.mark.django_db
-def test_the_basemap_section_puts_its_radios_above_the_hairline() -> None:
-    """SNOW-904: four radios, a separator, then the "Display " row.
+def test_the_basemap_page_holds_the_radios_alone() -> None:
+    """SNOW-1266: one basemap is always drawn, so the page is a radio list.
 
-    The section holds two kinds of row — pick ONE basemap, then
-    additionally draw something over it — and the only thing marking the
-    boundary is a hairline. (SNOW-1073 removed the slope row that sat
-    above the downloaded-areas one.) Nothing is indented under anything
-    in this menu: an indent reads as a child of the row above it, and with
-    collapsible sections it would also hide rows the collapsed heading does
-    not govern.
+    The downloaded-areas row that sat under the hairline moved to Yours,
+    and the terrain filter that sat beside it is Steep terrain on level
+    one. Level one's Basemap row has no switch — there is no "off".
     """
     client = Client()
     content = client.get(reverse("public:map")).content.decode()
 
-    start = content.index('id="basemap-menu-group-basemap"')
-    group = content[start : content.index("</ul>", start)]
-
-    last_radio = group.rindex("data-basemap-key=")
-    separator = group.index("basemap-menu-separator")
-    downloads = group.index('data-overlay-key="downloads"')
-
-    assert last_radio < separator < downloads
+    page = _layers_page(content, "basemap")
+    assert page.count('role="menuitemradio"') >= 1
+    assert "data-overlay-key=" not in page
+    assert "basemap-menu-separator" not in page
+    assert 'data-layer-master="basemap"' not in content
 
 
 @pytest.mark.django_db
@@ -2259,27 +2259,33 @@ def test_terrain_filter_renders_when_tile_url_configured() -> None:
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_terrain_filter_row_is_a_checkbox_with_an_adjust_button() -> None:
-    """SNOW-1109: the row toggles the filter; the button beside it adjusts it.
+def test_steep_terrain_row_is_a_switch_and_an_options_opener() -> None:
+    """SNOW-1109, SNOW-1266: the switch toggles the filter; the left half adjusts it.
 
-    The row is a ``menuitemcheckbox`` overlay row keyed ``terrain``, which
-    map_basemap_picker.js drives through window.pwaTerrainFilter. The
-    adjust button is its own ``menuitem`` in the same ``<li>``, icon-only
-    and named, and it is the one that opens the sheet.
+    The switch is a ``menuitemcheckbox`` overlay row keyed ``terrain``,
+    which map_basemap_picker.js drives through window.pwaTerrainFilter. The
+    opener is its own ``menuitem`` in the same ``<li>``, carrying the row's
+    name and the filter's summary line, and it is the one that opens the
+    sheet.
     """
     content = Client().get(reverse("public:map")).content.decode()
     start = content.index('data-overlay-key="terrain"')
-    li = content[content.rindex("<li", 0, start) : content.index("</li>", start)]
+    li = content[
+        content.rindex('<li role="none" class="basemap-menu-layer">', 0, start) :
+    ]
+    li = li[: li.index("</li>")]
 
-    assert 'role="menuitemcheckbox"' in li
-    assert "basemap-menu-item--overlay" in li
-    assert 'aria-checked="false"' in li
+    switch = _one(r'(<button[^>]*data-overlay-key="terrain"[^>]*>)', li, "the switch")
+    assert 'role="menuitemcheckbox"' in switch
+    assert "basemap-menu-item--overlay" in switch
+    assert 'aria-checked="false"' in switch
+    assert 'aria-label="Steep terrain"' in switch
+    opener = _one(r"(<button[^>]*data-terrain-filter-open[^>]*>)", li, "the opener")
+    assert 'role="menuitem"' in opener
+    assert 'aria-label="Steep terrain options"' in opener
+    assert 'aria-controls="map-terrain-filter-sheet"' in opener
     assert "data-terrain-filter-summary" in li
-    assert ">Terrain filter<" in li
-    adjust = li[li.index("data-terrain-filter-open") - 200 :]
-    assert 'role="menuitem"' in adjust
-    assert 'aria-label="Adjust terrain filter"' in adjust
-    assert 'aria-controls="map-terrain-filter-sheet"' in adjust
+    assert ">Steep terrain<" in li
 
 
 @pytest.mark.django_db
@@ -2339,28 +2345,27 @@ def test_terrain_filter_sheet_renders_the_compact_controls() -> None:
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_highlight_problem_terrain_is_a_row_under_conditions() -> None:
+def test_highlight_problem_terrain_is_on_the_bulletins_page() -> None:
     """Hugo, 23 Oct: its own row, next to the bulletins it comes from.
 
-    A checkbox like the overlay rows round it, off as rendered (map.js
-    seeds it from storage), after the bulletin opacity steps and before the
-    weather row, with a second line saying what it does. Its key is its own
-    legend section, at the whole scale, hidden until the layer is on.
+    SNOW-1266 moved it onto the Avalanche bulletins options page, after the
+    opacity steps, while the steep-terrain layer is rethought. A checkbox
+    like the rows round it, off as rendered (map.js seeds it from storage),
+    with a second line saying what it does. Its key is its own legend
+    section, at the whole scale, hidden until the layer is on.
     """
     content = Client().get(reverse("public:map")).content.decode()
-    conditions = content[content.index('id="basemap-menu-group-conditions"') :]
-    conditions = conditions[: conditions.index("</ul>")]
-    row = conditions[conditions.index('data-overlay-key="problem_terrain"') - 250 :]
+    bulletins = _layers_page(content, "bulletins")
+    row = bulletins[bulletins.index('data-overlay-key="problem_terrain"') - 250 :]
     row = row[: row.index("</button>")]
     assert 'role="menuitemcheckbox"' in row
     assert 'aria-checked="false"' in row
     assert ">Highlight problem terrain<" in row
     assert "Replaces the region colour from zoom 12" in row
-    assert (
-        conditions.index('id="map-bulletin-opacity"')
-        < conditions.index('data-overlay-key="problem_terrain"')
-        < conditions.index('data-overlay-key="weather"')
+    assert bulletins.index('id="map-bulletin-opacity"') < bulletins.index(
+        'data-overlay-key="problem_terrain"'
     )
+    assert 'data-overlay-key="problem_terrain"' not in _layers_page(content, "main")
 
     legend = content[content.index('data-testid="map-legend-problem-terrain"') :]
     legend = legend[: legend.index("</section>")]
@@ -2402,17 +2407,22 @@ def test_terrain_filter_absent_without_tile_url() -> None:
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
-def test_terrain_filter_row_sits_under_basemap_after_the_hairline() -> None:
-    """SNOW-978: the row is drawn ON the basemap, so it lives under Basemap,
-    below the hairline and before the downloaded-areas row — where
-    "Display slope angles" sat until SNOW-1073 folded it into this row.
+def test_steep_terrain_is_a_level_one_row_whose_options_are_the_filter_sheet() -> None:
+    """SNOW-1266: "Steep terrain" sits under The map, after the bulletins.
+
+    It is the terrain filter (SNOW-978/1109) named for what it draws. Its
+    switch is the ``terrain`` overlay row; its options half opens the
+    filter's own sheet, which IS that layer's options, rather than a page
+    of the menu.
     """
     content = Client().get(reverse("public:map")).content.decode()
-    group = content[content.index('id="basemap-menu-group-basemap"') :]
-    separator = group.index("basemap-menu-separator")
-    terrain = group.index('data-overlay-key="terrain"')
-    downloads = group.index('data-overlay-key="downloads"')
-    assert separator < terrain < downloads
+    main = _layers_page(content, "main")
+    opener = main.index("data-terrain-filter-open")
+    switch = main.index('data-overlay-key="terrain"')
+    assert main.index('data-layers-open="bulletins"') < opener < switch
+    assert switch < main.index('data-overlay-key="weather"')
+    assert ">Steep terrain<" in main
+    assert 'aria-controls="map-terrain-filter-sheet"' in main
 
 
 # ---------------------------------------------------------------------------

@@ -579,132 +579,198 @@ Optional context:
             data-signin-url="{% url 'accounts:sign_in' %}"
             hidden
         >
-            {# The pinned header. The count says how many OVERLAY rows are on  #}
-            {# — never the basemap radio, which is always exactly one and so   #}
-            {# would only inflate every reading by one. Written by             #}
-            {# map_basemap_picker.js on every open and every toggle.           #}
+            {# Layers menu (SNOW-1266, Hugo 28 Oct 2026): on/off first,       #}
+            {# options one level down. Level one is one row per layer, in two #}
+            {# groups: "Reference data" (external and Snowdesk layers) and   #}
+            {# "Your data" (what a user made). A row's switch says whether the layer is   #}
+            {# drawn; a row with options has a second control on its left     #}
+            {# half that opens them, on a page of its own with a back arrow.  #}
+            {# Basemap has no switch: there is always one. Rows and their     #}
+            {# controls are the same .basemap-menu-item buttons the previous  #}
+            {# sections held, so map.js seeds them and map_basemap_picker.js  #}
+            {# drives them exactly as before; only the two master switches   #}
+            {# (bulletins, boundaries) are new, and they are not items.       #}
+            {# See docs/decisions/the-layers-menu-is-on-off-then-options.md.  #}
             <div class="basemap-menu-header">
-                <p class="basemap-menu-title">{% trans "Map display options" %}</p>
+                <p class="basemap-menu-title">{% trans "Map layers" %}</p>
                 <p class="basemap-menu-count" data-layers-count aria-live="polite"></p>
+                {# Phone only (CSS): there the menu is full width over the  #}
+                {# roundel that opened it, so it carries its own way out.   #}
+                <button
+                    type="button"
+                    class="basemap-menu-close hover-affordance"
+                    data-layers-close
+                    aria-label='{% trans "Close map layers" %}'
+                >
+                    {% include "includes/_icon_close.html" with size=18 only %}
+                </button>
             </div>
-            <ul class="basemap-menu-list" role="menu">
-                {# SNOW-904: Places — the things on the ground a reader might   #}
-                {# want marked. Resorts is reference data, favourites and       #}
-                {# routes are the reader's own; all three are pins or lines on  #}
-                {# the map rather than a judgement about a day, which is what   #}
-                {# separates this section from Conditions below.               #}
-                {#                                                              #}
-                {# Favourites and routes render for EVERY visitor, signed in or #}
-                {# not — the status quo the panel switches already had          #}
-                {# (_ugc_panel.html never gated its switch either). Hiding a    #}
-                {# row would hide a working view setting and leave the menu a   #}
-                {# different shape for different people; clicking one while     #}
-                {# signed out hands off to the sign-in sheet instead.          #}
-                <li role="presentation" class="basemap-menu-section">
+            <ul class="basemap-menu-list" role="menu" data-layers-page="main">
+                <li role="presentation" class="basemap-menu-group-label">{% trans "Reference data" %}</li>
+                {% trans "Avalanche bulletins" as layer_bulletins %}
+                <li role="none" class="basemap-menu-layer">
                     <button
                         type="button"
-                        class="basemap-menu-section-label hover-affordance"
-                        data-section-toggle="places"
-                        aria-expanded="false"
-                        aria-controls="basemap-menu-group-places"
+                        role="menuitem"
+                        class="basemap-menu-layer-options hover-affordance"
+                        data-layers-open="bulletins"
+                        aria-haspopup="true"
+                        aria-controls="basemap-menu-page-bulletins"
                     >
-                        <span class="basemap-menu-section-text">
-                            <span class="basemap-menu-section-title">{% trans "Places" %}</span>
-                            <span class="basemap-menu-section-summary" data-section-summary></span>
+                        <span
+                            class="basemap-menu-layer-icon"
+                        >{% include "includes/_icon_danger.html" with size=18 only %}</span>
+                        <span class="basemap-menu-item-text">
+                            <span data-row-label>{{ layer_bulletins }}</span>
+                            <span class="basemap-menu-item-detail" data-page-summary="bulletins"></span>
                         </span>
-                        {% include "includes/_icon_chevron.html" with size=16 svg_class="basemap-menu-chevron" only %}
+                        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
                     </button>
-                    <ul id="basemap-menu-group-places" class="basemap-menu-group" role="group" hidden>
-                        {# SNOW-78: Resorts overlay — geocoded ski resorts as   #}
-                        {# circle pins above the L4 choropleth. Off by default; #}
-                        {# state persists under snowdesk.map.overlay.resorts.   #}
-                        <li role="none">
-                            <button
-                                type="button"
-                                role="menuitemcheckbox"
-                                class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                                data-overlay-key="resorts"
-                                aria-checked="false"
-                            >
-                                <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                                {% trans "Resorts" %}
-                            </button>
-                        </li>
-                        <li role="none">
-                            <button
-                                type="button"
-                                role="menuitemcheckbox"
-                                class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                                data-overlay-key="favourites"
-                                aria-checked="false"
-                            >
-                                <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                                {% trans "Favourites" %}
-                            </button>
-                        </li>
-                        <li role="none">
-                            <button
-                                type="button"
-                                role="menuitemcheckbox"
-                                class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                                data-overlay-key="routes"
-                                aria-checked="false"
-                            >
-                                <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                                {% trans "Routes" %}
-                            </button>
-                        </li>
-                    </ul>
+                    {# On while any opacity step above 0 is checked: the switch #}
+                    {# is the old "Bulletins off" step, and switching it back on #}
+                    {# restores the step it was switched off at.                 #}
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-switch group hover-affordance"
+                        data-layer-master="bulletins"
+                        data-layer-switch
+                        aria-checked="{% if map_default_opacity_step %}true{% else %}false{% endif %}"
+                        aria-label="{{ layer_bulletins }}"
+                    >
+                        {% include "includes/_switch_track.html" only %}
+                    </button>
                 </li>
-                {# SNOW-172: country toggles — show/hide each country's region  #}
-                {# outlines. A row not switched on at boot has its GeoJSON      #}
-                {# lazy-fetched on first toggle-on. State persists in           #}
-                {# localStorage under snowdesk.map.overlay.country.<code>.      #}
-                {#                                                              #}
-                {# SNOW-872: which rows open checked is CONFIGURED, not literal #}
-                {# — settings.MAP_DEFAULT_PROVIDERS, reaching this partial as   #}
-                {# ``map_default_overlays`` (default: SLF alone). The same      #}
-                {# values ride on #map's data-default-overlays, which is what   #}
-                {# map.js seeds countryState from, so the rendered tick and the #}
-                {# painted map cannot disagree on first paint.                  #}
-                {#                                                              #}
-                {# SNOW-658: each row names its PROVIDER, because that is what  #}
-                {# it actually switches on — one provider's bulletins, drawn    #}
-                {# over the countries it publishes for. ALBINA publishes the    #}
-                {# EUREGIO bulletin for Austria AND Italy, so they are one row, #}
-                {# and toggling it fires one snowdesk:country-toggle PER CODE   #}
-                {# (map_basemap_picker.js).                                     #}
-                {#                                                              #}
-                {# ``data-country-codes`` is the DOM projection of              #}
-                {# COUNTRY_GROUPS in static/js/map_state.js, read by            #}
-                {# map_layer_sync_status.js (which loads before the map bundle  #}
-                {# and so cannot read that declaration directly).               #}
-                {# tests/public/test_map_country_groups.py fails if the two     #}
-                {# ever disagree.                                              #}
-                {#                                                              #}
-                {# SNOW-904: only the FIRST row says "bulletins". The first row #}
-                {# sets the pattern and the reader carries it down — repeating  #}
-                {# the word on all three would make the row about the noun      #}
-                {# rather than about the provider. Weather and field            #}
-                {# observations join them under one heading because all five    #}
-                {# describe the same thing: what the mountain is doing on the   #}
-                {# day being read. They are separated by a hairline, not an     #}
-                {# indent — an indent reads as a child of the row above it.     #}
-                <li role="presentation" class="basemap-menu-section">
+                {% if terrain_filter_eligible %}
+                    {% trans "Steep terrain" as layer_steep_terrain %}
+                    {% trans "Steep terrain options" as steep_terrain_options %}
+                    {# The terrain filter (SNOW-978/1109), named for what it    #}
+                    {# draws. Its options are the filter's own sheet — the mode #}
+                    {# (slope colours or my filter), aspects, slope and height — #}
+                    {# so the left half opens that sheet, as the adjust button  #}
+                    {# beside the old row did. The switch is the row it was.    #}
+                    <li role="none" class="basemap-menu-layer">
+                        <button
+                            type="button"
+                            role="menuitem"
+                            class="basemap-menu-layer-options hover-affordance"
+                            data-terrain-filter-open
+                            aria-haspopup="dialog"
+                            aria-controls="map-terrain-filter-sheet"
+                            aria-label="{{ steep_terrain_options }}"
+                        >
+                            <span
+                                class="basemap-menu-layer-icon"
+                            >{% include "includes/_icon_slope.html" with size=18 only %}</span>
+                            <span class="basemap-menu-item-text">
+                                <span data-row-label>{{ layer_steep_terrain }}</span>
+                                <span
+                                    class="basemap-menu-item-detail"
+                                    data-terrain-filter-summary
+                                    hidden
+                                ></span>
+                            </span>
+                            {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
+                        </button>
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay basemap-menu-switch group hover-affordance"
+                            data-overlay-key="terrain"
+                            data-layer-switch
+                            aria-checked="false"
+                            aria-label="{{ layer_steep_terrain }}"
+                        >
+                            {% include "includes/_switch_track.html" only %}
+                        </button>
+                    </li>
+                {% endif %}
+                {% include "public/partials/_map_layers_switch_row.html" with key="weather" label=_("Weather") icon="cloud" sync=True weather=True only %}
+                {% include "public/partials/_map_layers_switch_row.html" with key="resorts" label=_("Resorts") icon="resort" sync=True only %}
+                {% trans "Boundaries" as layer_boundaries %}
+                <li role="none" class="basemap-menu-layer">
                     <button
                         type="button"
-                        class="basemap-menu-section-label hover-affordance"
-                        data-section-toggle="conditions"
-                        aria-expanded="true"
-                        aria-controls="basemap-menu-group-conditions"
+                        role="menuitem"
+                        class="basemap-menu-layer-options hover-affordance"
+                        data-layers-open="boundaries"
+                        aria-haspopup="true"
+                        aria-controls="basemap-menu-page-boundaries"
                     >
-                        <span class="basemap-menu-section-text">
-                            <span class="basemap-menu-section-title">{% trans "Conditions" %}</span>
-                            <span class="basemap-menu-section-summary" data-section-summary></span>
+                        <span
+                            class="basemap-menu-layer-icon"
+                        >{% include "includes/_icon_boundary.html" with size=18 only %}</span>
+                        <span class="basemap-menu-item-text">
+                            <span data-row-label>{{ layer_boundaries }}</span>
+                            <span class="basemap-menu-item-detail" data-page-summary="boundaries"></span>
                         </span>
-                        {% include "includes/_icon_chevron.html" with size=16 svg_class="basemap-menu-chevron" only %}
+                        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
                     </button>
-                    <ul id="basemap-menu-group-conditions" class="basemap-menu-group" role="group">
+                    {# On while any EAWS tier is on. Off remembers which were, #}
+                    {# and on puts them back (Micro regions on a first visit).  #}
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-switch group hover-affordance"
+                        data-layer-master="boundaries"
+                        data-layer-switch
+                        aria-checked="{% if map_default_boundary %}true{% else %}false{% endif %}"
+                        aria-label="{{ layer_boundaries }}"
+                    >
+                        {% include "includes/_switch_track.html" only %}
+                    </button>
+                </li>
+                {% trans "Basemap" as layer_basemap %}
+                <li role="none" class="basemap-menu-layer">
+                    <button
+                        type="button"
+                        role="menuitem"
+                        class="basemap-menu-layer-options hover-affordance"
+                        data-layers-open="basemap"
+                        aria-haspopup="true"
+                        aria-controls="basemap-menu-page-basemap"
+                    >
+                        <span
+                            class="basemap-menu-layer-icon"
+                        >{% include "includes/_icon_map.html" with size=18 only %}</span>
+                        <span class="basemap-menu-item-text">
+                            <span data-row-label>{{ layer_basemap }}</span>
+                            <span class="basemap-menu-item-detail" data-page-summary="basemap"></span>
+                        </span>
+                        {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
+                    </button>
+                    {# No switch: there is always one basemap. The empty slot    #}
+                    {# keeps the chevron in line with the rows above it.          #}
+                    <span class="basemap-menu-switch" aria-hidden="true"></span>
+                </li>
+                <li role="presentation" class="basemap-menu-group-label">{% trans "Your data" %}</li>
+                {# Each is the same setting as its own panel's "Show on the map" #}
+                {# switch (static/js/map_panel_overlay_switch.js). Favourites and #}
+                {# routes hand an anonymous visitor to sign-in; field            #}
+                {# observations are public and work signed out.                  #}
+                {% include "public/partials/_map_layers_switch_row.html" with key="favourites" label=_("Favourites") icon="favourite" sync=True only %}
+                {% include "public/partials/_map_layers_switch_row.html" with key="routes" label=_("Routes") icon="route" sync=True only %}
+                {% include "public/partials/_map_layers_switch_row.html" with key="community_reports" label=_("Field observations") icon="observation" sync=True only %}
+                {# Downloaded areas: no sync dot (the list is local-only), and  #}
+                {# aria-checked is NOT server-renderable — SNOW-857's tri-state #}
+                {# preference is seeded by map.js from pwaDownloadedOverlay.    #}
+                {% include "public/partials/_map_layers_switch_row.html" with key="downloads" label=_("Downloaded areas") icon="downloads" only %}
+            </ul>
+            {# ---- Options pages. One shown at a time, in place of level one. ---- #}
+            <ul
+                id="basemap-menu-page-bulletins"
+                class="basemap-menu-list"
+                role="menu"
+                aria-label="{{ layer_bulletins }}"
+                data-layers-page="bulletins"
+                hidden
+            >
+                {% include "public/partials/_map_layers_page_header.html" with title=layer_bulletins only %}
+                <li role="presentation" class="basemap-menu-page-label">{% trans "Providers" %}</li>
+                <li role="none">
+                    <ul id="basemap-menu-group-bulletins" class="basemap-menu-group" role="group">
+                        {# SNOW-172/658/872: one row per PROVIDER; which open checked #}
+                        {# is settings.MAP_DEFAULT_PROVIDERS (map_default_overlays).  #}
                         <li role="none">
                             <button
                                 type="button"
@@ -714,9 +780,6 @@ Optional context:
                                 data-country-codes="ch"
                                 aria-checked="{% if 'country.ch' in map_default_overlays %}true{% else %}false{% endif %}"
                             >
-                                {# SNOW-524: per-row sync dot — green only when #}
-                                {# all four feeds are cached, for every country  #}
-                                {# the row switches.                             #}
                                 <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                                 {% trans "SLF bulletins (CH)" %}
                             </button>
@@ -747,211 +810,106 @@ Optional context:
                                 {% trans "ALBINA (AT, IT)" %}
                             </button>
                         </li>
-                        {# Bulletin opacity: how strongly the danger choropleth  #}
-                        {# (regions-fill) and the dissolved bulletin boundary    #}
-                        {# paint. SNOW-656 made it a roundel with a flyout; it   #}
-                        {# is a row here now, under the three providers whose    #}
-                        {# bulletins it shades, so every display choice is in    #}
-                        {# this one menu.                                        #}
-                        {#                                                       #}
-                        {# FIVE STEPS, NOT A TOGGLE. How strong the choropleth   #}
-                        {# should be depends on the basemap under it and on      #}
-                        {# whether the reader is after the danger or the         #}
-                        {# terrain. 0 is the off position. Discrete steps rather #}
-                        {# than a range input, so each is a one-tap target and   #}
-                        {# the stored value is one of five known numbers         #}
-                        {# (snowdesk.map.overlay.bulletins).                     #}
-                        {#                                                       #}
-                        {# The steps are NOT .basemap-menu-items: the picker's   #}
-                        {# row loop would read them as basemap radios. A click   #}
-                        {# leaves the menu open (map_basemap_picker.js).         #}
-                        {#                                                       #}
-                        {# SNOW-872: the step that opens checked follows         #}
-                        {# settings.MAP_DEFAULT_OPACITY_STEP. map.js's           #}
-                        {# applyBulletinsVisibility rewrites aria-checked on     #}
-                        {# every [data-bulletins-step] from the EFFECTIVE step   #}
-                        {# the moment it runs, so the rendered value only has to #}
-                        {# be true for first paint — and the same configured     #}
-                        {# value is what #map's data-default-opacity-step        #}
-                        {# carries.                                              #}
-                        {% trans "Bulletin opacity" as bulletin_opacity_label %}
-                        {% trans "Bulletins off" as step_label_0 %}
-                        {% trans "Bulletins at 25%" as step_label_25 %}
-                        {% trans "Bulletins at 50%" as step_label_50 %}
-                        {% trans "Bulletins at 75%" as step_label_75 %}
-                        {% trans "Bulletins at full strength" as step_label_100 %}
-                        <li role="none" class="basemap-menu-opacity">
-                            <p class="basemap-menu-opacity-label" aria-hidden="true">{{ bulletin_opacity_label }}</p>
-                            <div
-                                class="map-fill-steps"
-                                id="map-bulletin-opacity"
-                                role="radiogroup"
-                                aria-label="{{ bulletin_opacity_label }}"
-                            >
-                                <button
-                                    type="button"
-                                    role="radio"
-                                    aria-checked="{% if map_default_opacity_step == 0 %}true{% else %}false{% endif %}"
-                                    aria-label="{{ step_label_0 }}"
-                                    class="map-fill-step hover-affordance"
-                                    data-bulletins-step="0"
-                                >
-                                    <span class="map-fill-step-swatch" data-step="0" aria-hidden="true"></span>
-                                </button>
-                                <button
-                                    type="button"
-                                    role="radio"
-                                    aria-checked="{% if map_default_opacity_step == 0.25 %}true{% else %}false{% endif %}"
-                                    aria-label="{{ step_label_25 }}"
-                                    class="map-fill-step hover-affordance"
-                                    data-bulletins-step="0.25"
-                                >
-                                    <span class="map-fill-step-swatch" data-step="0.25" aria-hidden="true"></span>
-                                </button>
-                                <button
-                                    type="button"
-                                    role="radio"
-                                    aria-checked="{% if map_default_opacity_step == 0.5 %}true{% else %}false{% endif %}"
-                                    aria-label="{{ step_label_50 }}"
-                                    class="map-fill-step hover-affordance"
-                                    data-bulletins-step="0.5"
-                                >
-                                    <span class="map-fill-step-swatch" data-step="0.5" aria-hidden="true"></span>
-                                </button>
-                                <button
-                                    type="button"
-                                    role="radio"
-                                    aria-checked="{% if map_default_opacity_step == 0.75 %}true{% else %}false{% endif %}"
-                                    aria-label="{{ step_label_75 }}"
-                                    class="map-fill-step hover-affordance"
-                                    data-bulletins-step="0.75"
-                                >
-                                    <span class="map-fill-step-swatch" data-step="0.75" aria-hidden="true"></span>
-                                </button>
-                                <button
-                                    type="button"
-                                    role="radio"
-                                    aria-checked="{% if map_default_opacity_step == 1 %}true{% else %}false{% endif %}"
-                                    aria-label="{{ step_label_100 }}"
-                                    class="map-fill-step hover-affordance"
-                                    data-bulletins-step="1"
-                                >
-                                    <span class="map-fill-step-swatch" data-step="1" aria-hidden="true"></span>
-                                </button>
-                            </div>
-                        </li>
-                        {% comment %}
-                        "Highlight problem terrain" (2026-10-23): every region's
-                        steep ground painted by its own bulletin, from z12, where
-                        it replaces that region's danger colour. SNOW-1194 made it
-                        the terrain filter's third colour, "By bulletin"; Hugo
-                        found it hidden there, and it is the bulletin drawn another
-                        way rather than a filter, so it sits with the bulletins.
-                        It toggles through window.pwaBulletinTerrain
-                        (map_basemap_picker.js's OVERLAY_BRIDGES); the region
-                        sheet's switch writes the same state.
-                        map_problem_terrain_key.js swaps the second line for "No
-                        bulletin for this day" when there is nothing to paint.
-                        {% endcomment %}
-                        {% if terrain_filter_eligible %}
-                            <li role="none">
-                                <button
-                                    type="button"
-                                    role="menuitemcheckbox"
-                                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                                    data-overlay-key="problem_terrain"
-                                    aria-checked="false"
-                                >
-                                    <span class="basemap-menu-item-text">
-                                        <span data-row-label>{% trans "Highlight problem terrain" %}</span>
-                                        <span
-                                            class="basemap-menu-item-detail"
-                                            data-problem-terrain-detail
-                                        >{% trans "Replaces the region colour from zoom 12" %}</span>
-                                    </span>
-                                </button>
-                            </li>
-                        {% endif %}
-                        <li role="separator" class="basemap-menu-separator"></li>
-                        {# SNOW-761: one symbol per public Location — a region   #}
-                        {# centroid is a Location like any other now, so there   #}
-                        {# is no region tier and no point tier to switch         #}
-                        {# between. Off by default; overlapping stations         #}
-                        {# collapse to the lowest of each cluster                #}
-                        {# (static/js/map_weather_core.js) so a valley reading,  #}
-                        {# not a summit one, is what survives at low zoom.       #}
-                        <li role="none">
-                            <button
-                                type="button"
-                                role="menuitemcheckbox"
-                                class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                                data-overlay-key="weather"
-                                aria-checked="false"
-                            >
-                                <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                                {# SNOW-1196: the detail line names the forecast window #}
-                                {# on a day outside it (map_weather_window.js).         #}
-                                <span class="basemap-menu-item-text">
-                                    <span data-row-label>{% trans "Weather" %}</span>
-                                    <span
-                                        class="basemap-menu-item-detail"
-                                        data-weather-window-summary
-                                        hidden
-                                    ></span>
-                                </span>
-                            </button>
-                        </li>
-                        {# Community reports are PUBLIC data — #map's            #}
-                        {# data-community-reports-eligible is a hardcoded        #}
-                        {# "true" — so unlike favourites and routes this row     #}
-                        {# needs no sign-in hand-off and works signed out.       #}
-                        <li role="none">
-                            <button
-                                type="button"
-                                role="menuitemcheckbox"
-                                class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                                data-overlay-key="community_reports"
-                                aria-checked="false"
-                            >
-                                <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
-                                {% trans "Field observations" %}
-                            </button>
-                        </li>
                     </ul>
                 </li>
-                {# SNOW-59: EAWS region overlays. menuitemcheckbox toggles       #}
-                {# add/remove visibility on outline-only line layers stacked     #}
-                {# above the L4 choropleth. State persists in localStorage under #}
-                {# snowdesk.map.overlay.l1 / .l2 / .l4.                          #}
-                {#                                                               #}
-                {# SNOW-872: which tier opens checked is CONFIGURED —            #}
-                {# settings.MAP_DEFAULT_BOUNDARY (default: l4, the micro regions #}
-                {# the choropleth is painted onto). One tier at a time: the rows #}
-                {# stay independent once the visitor touches them, but the       #}
-                {# opening view names a single tier. They are CHECKBOXES, not    #}
-                {# radios, because the tiers really are independent — only the   #}
-                {# opening view names one.                                       #}
-                {#                                                               #}
-                {# SNOW-658: each tier names its EAWS level. "Major / Minor /    #}
-                {# Micro" is this app's own shorthand for a published hierarchy, #}
-                {# and the levels are what the data actually is — so the row     #}
-                {# carries both. The keys (l1/l2/l4) are unchanged; every        #}
-                {# consumer of the DOM contract keys off those.                  #}
-                <li role="presentation" class="basemap-menu-section">
-                    <button
-                        type="button"
-                        class="basemap-menu-section-label hover-affordance"
-                        data-section-toggle="boundaries"
-                        aria-expanded="false"
-                        aria-controls="basemap-menu-group-boundaries"
+                {# Bulletin opacity: the four strengths above off. "Off" is the #}
+                {# row's switch on level one, so it is no longer a step here.   #}
+                {# map.js mirrors the EFFECTIVE step onto these segments.       #}
+                {% trans "Bulletin opacity" as bulletin_opacity_label %}
+                {% trans "Bulletins at 25%" as step_label_25 %}
+                {% trans "Bulletins at 50%" as step_label_50 %}
+                {% trans "Bulletins at 75%" as step_label_75 %}
+                {% trans "Bulletins at full strength" as step_label_100 %}
+                <li role="presentation" class="basemap-menu-page-label">{{ bulletin_opacity_label }}</li>
+                <li role="none" class="basemap-menu-opacity">
+                    <div
+                        class="map-fill-steps"
+                        id="map-bulletin-opacity"
+                        role="radiogroup"
+                        aria-label="{{ bulletin_opacity_label }}"
                     >
-                        <span class="basemap-menu-section-text">
-                            <span class="basemap-menu-section-title">{% trans "Boundaries" %}</span>
-                            <span class="basemap-menu-section-summary" data-section-summary></span>
-                        </span>
-                        {% include "includes/_icon_chevron.html" with size=16 svg_class="basemap-menu-chevron" only %}
-                    </button>
-                    <ul id="basemap-menu-group-boundaries" class="basemap-menu-group" role="group" hidden>
+                        <button
+                            type="button"
+                            role="radio"
+                            aria-checked="{% if map_default_opacity_step == 0.25 %}true{% else %}false{% endif %}"
+                            aria-label="{{ step_label_25 }}"
+                            class="map-fill-step hover-affordance"
+                            data-bulletins-step="0.25"
+                        >
+                            <span class="map-fill-step-swatch" data-step="0.25" aria-hidden="true"></span>
+                        </button>
+                        <button
+                            type="button"
+                            role="radio"
+                            aria-checked="{% if map_default_opacity_step == 0.5 %}true{% else %}false{% endif %}"
+                            aria-label="{{ step_label_50 }}"
+                            class="map-fill-step hover-affordance"
+                            data-bulletins-step="0.5"
+                        >
+                            <span class="map-fill-step-swatch" data-step="0.5" aria-hidden="true"></span>
+                        </button>
+                        <button
+                            type="button"
+                            role="radio"
+                            aria-checked="{% if map_default_opacity_step == 0.75 %}true{% else %}false{% endif %}"
+                            aria-label="{{ step_label_75 }}"
+                            class="map-fill-step hover-affordance"
+                            data-bulletins-step="0.75"
+                        >
+                            <span class="map-fill-step-swatch" data-step="0.75" aria-hidden="true"></span>
+                        </button>
+                        <button
+                            type="button"
+                            role="radio"
+                            aria-checked="{% if map_default_opacity_step == 1 %}true{% else %}false{% endif %}"
+                            aria-label="{{ step_label_100 }}"
+                            class="map-fill-step hover-affordance"
+                            data-bulletins-step="1"
+                        >
+                            <span class="map-fill-step-swatch" data-step="1" aria-hidden="true"></span>
+                        </button>
+                    </div>
+                </li>
+                {# "Highlight problem terrain" (2026-10-23): the bulletin drawn   #}
+                {# another way, so it stays with the bulletins while the steep-  #}
+                {# terrain layer is rethought. Toggles through                   #}
+                {# window.pwaBulletinTerrain; the region sheet's switch writes   #}
+                {# the same state; map_problem_terrain_key.js swaps the second   #}
+                {# line for "No bulletin for this day".                          #}
+                {% if terrain_filter_eligible %}
+                    <li role="separator" class="basemap-menu-separator"></li>
+                    <li role="none">
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                            data-overlay-key="problem_terrain"
+                            aria-checked="false"
+                        >
+                            <span class="basemap-menu-item-text">
+                                <span data-row-label>{% trans "Highlight problem terrain" %}</span>
+                                <span
+                                    class="basemap-menu-item-detail"
+                                    data-problem-terrain-detail
+                                >{% trans "Replaces the region colour from zoom 12" %}</span>
+                            </span>
+                        </button>
+                    </li>
+                {% endif %}
+            </ul>
+            <ul
+                id="basemap-menu-page-boundaries"
+                class="basemap-menu-list"
+                role="menu"
+                aria-label="{{ layer_boundaries }}"
+                data-layers-page="boundaries"
+                hidden
+            >
+                {% include "public/partials/_map_layers_page_header.html" with title=layer_boundaries only %}
+                <li role="none">
+                    <ul id="basemap-menu-group-boundaries" class="basemap-menu-group" role="group">
+                        {# SNOW-872: the tier that opens checked is            #}
+                        {# settings.MAP_DEFAULT_BOUNDARY (map_default_boundary). #}
                         <li role="none">
                             <button
                                 type="button"
@@ -960,8 +918,6 @@ Optional context:
                                 data-overlay-key="l1"
                                 aria-checked="{% if map_default_boundary == 'l1' %}true{% else %}false{% endif %}"
                             >
-                                {# SNOW-505: sync-status dot — hidden (unknown) #}
-                                {# until map_layer_sync_status.js resolves it.  #}
                                 <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                                 {% trans "Major regions (EAWS L1)" %}
                             </button>
@@ -990,152 +946,55 @@ Optional context:
                                 {% trans "Micro regions (EAWS L4)" %}
                             </button>
                         </li>
-                        {# SNOW-1185: the micro regions no provider has ever rated.  #}
-                        {# Off on every first visit, so this is rendered unchecked; #}
-                        {# map.js re-seeds aria-checked from localStorage at boot.  #}
-                        <li role="none">
-                            <button
-                                type="button"
-                                role="menuitemcheckbox"
-                                class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                                data-overlay-key="unsupported"
-                                aria-checked="false"
-                            >
-                                {% trans "Show unsupported regions" %}
-                            </button>
-                        </li>
                     </ul>
                 </li>
-                {# SNOW-904: the basemap radios, and under a hairline the two    #}
-                {# things drawn ON TOP of whichever one is chosen. Both of those #}
-                {# carry a "Display " prefix and the radios do not: the verb is  #}
-                {# what separates "additionally draw this" from the radio        #}
-                {# group's "choose this", and it is the only place in this menu  #}
-                {# where the two kinds of row sit together.                      #}
-                <li role="presentation" class="basemap-menu-section">
+                {# SNOW-1185: a re-filter of the micro regions, not a tier of its #}
+                {# own, so it sits outside the group the switch summarises.       #}
+                <li role="separator" class="basemap-menu-separator"></li>
+                <li role="none">
                     <button
                         type="button"
-                        class="basemap-menu-section-label hover-affordance"
-                        data-section-toggle="basemap"
-                        aria-expanded="false"
-                        aria-controls="basemap-menu-group-basemap"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                        data-overlay-key="unsupported"
+                        aria-checked="false"
                     >
-                        <span class="basemap-menu-section-text">
-                            <span class="basemap-menu-section-title">{% trans "Basemap" %}</span>
-                            <span class="basemap-menu-section-summary" data-section-summary></span>
-                        </span>
-                        {% include "includes/_icon_chevron.html" with size=16 svg_class="basemap-menu-chevron" only %}
+                        {% trans "Show unsupported regions" %}
                     </button>
-                    <ul id="basemap-menu-group-basemap" class="basemap-menu-group" role="group" hidden>
+                </li>
+            </ul>
+            <ul
+                id="basemap-menu-page-basemap"
+                class="basemap-menu-list"
+                role="menu"
+                aria-label="{{ layer_basemap }}"
+                data-layers-page="basemap"
+                hidden
+            >
+                {% include "public/partials/_map_layers_page_header.html" with title=layer_basemap only %}
+                <li role="none">
+                    <ul id="basemap-menu-group-basemap" class="basemap-menu-group" role="group">
                         {% for bm in basemaps %}
                             <li role="none">
+                                {# SNOW-891: data-basemap-countries — the countries this #}
+                                {# style draws; map.js scopes the boundary outlines to   #}
+                                {# them, and map_layer_sync_status.js probes the same    #}
+                                {# codes. The sync dot is hidden until that module       #}
+                                {# resolves it on open (red = offline and uncached).     #}
                                 <button
                                     type="button"
                                     role="menuitemradio"
                                     class="basemap-menu-item hover-affordance"
                                     data-basemap-key="{{ bm.key }}"
                                     data-basemap-url="{{ bm.url }}"
-                                    {# SNOW-891: the countries this style actually draws. #}
-                                    {# map.js scopes the EAWS boundary outlines to them so #}
-                                    {# an outline never covers ground the tiles leave      #}
-                                    {# blank; map_layer_sync_status.js probes the same     #}
-                                    {# codes for the boundary tiers' dots.                 #}
                                     data-basemap-countries="{{ bm.countries }}"
                                     aria-checked="false"
                                 >
-                                    {# Offline-integrity: sync-status dot per basemap —  #}
-                                    {# hidden (unknown) until map_layer_sync_status.js     #}
-                                    {# resolves it on menu-open. Green = cached tiles      #}
-                                    {# available offline; red = offline and uncached (the #}
-                                    {# row is disabled to match).                          #}
                                     <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
                                     {{ bm.label }}
                                 </button>
                             </li>
                         {% endfor %}
-                        <li role="separator" class="basemap-menu-separator"></li>
-                        {% comment %}
-                        SNOW-978 / SNOW-1109: the terrain filter. The row is a
-                        checkbox like the overlay rows round it — a tap turns the
-                        filter on or off through window.pwaTerrainFilter
-                        (map_basemap_picker.js's OVERLAY_BRIDGES, key "terrain").
-                        While it is on, its second line carries a short summary
-                        ("3 aspects · 35°+ · above 2,400 m"), or why nothing is drawn ("zoom in",
-                        "outside coverage"); terrain_filter_sheet.js writes it.
-
-                        Beside it, an icon-only adjust button opens the filter's
-                        sheet (the mode, aspects, slope range and elevation), and
-                        turns the filter on first if it is off. Two controls on
-                        one row would normally collapse into a "…" menu (design
-                        rule 5); this row is the agreed exception for SNOW-1109:
-                        one is the row's own toggle, the other its only action,
-                        and a menu holding a single item would hide it for
-                        nothing.
-
-                        SNOW-1073: the slope layer is the sheet's "By slope" mode.
-                        The swisstopo slope row that sat above this one is gone, so
-                        this row is the one way to slope shading.
-                        {% endcomment %}
-                        {% if terrain_filter_eligible %}
-                            <li role="none" class="basemap-menu-row">
-                                <button
-                                    type="button"
-                                    role="menuitemcheckbox"
-                                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                                    data-overlay-key="terrain"
-                                    aria-checked="false"
-                                >
-                                    <span class="basemap-menu-item-text">
-                                        <span data-row-label>{% trans "Terrain filter" %}</span>
-                                        <span
-                                            class="basemap-menu-item-detail"
-                                            data-terrain-filter-summary
-                                            hidden
-                                        ></span>
-                                    </span>
-                                </button>
-                                {% trans "Adjust terrain filter" as adjust_terrain_filter %}
-                                <button
-                                    type="button"
-                                    role="menuitem"
-                                    class="basemap-menu-adjust hover-affordance"
-                                    data-terrain-filter-open
-                                    aria-haspopup="dialog"
-                                    aria-controls="map-terrain-filter-sheet"
-                                    aria-label="{{ adjust_terrain_filter }}"
-                                    title="{{ adjust_terrain_filter }}"
-                                >
-                                    {% include "includes/_icon_sliders.html" with size=18 only %}
-                                </button>
-                            </li>
-                        {% endif %}
-                        {# SNOW-570/587 drew one translucent square per tile held   #}
-                        {# in the pinned basemap cache. SNOW-645 moved it into the  #}
-                        {# "Manage downloads" sheet; SNOW-904 brings it back here,  #}
-                        {# where every other layer is chosen.                       #}
-                        {#                                                           #}
-                        {# It carries no sync dot: the list it draws is local-only, #}
-                        {# so "is this available offline" is always yes.            #}
-                        {#                                                           #}
-                        {# ITS aria-checked IS NOT SERVER-RENDERABLE. The stored    #}
-                        {# preference is a TRI-state (SNOW-857): 'true'/'false' are #}
-                        {# the user's own answer and null means untouched, which    #}
-                        {# derives to "on while offline". map.js seeds this row     #}
-                        {# from pwaDownloadedOverlay.isEnabled() and the picker     #}
-                        {# writes storage only on a real click — a seeding pass     #}
-                        {# that wrote 'false' would convert "untouched" into        #}
-                        {# "explicitly off" and kill the auto-on.                   #}
-                        <li role="none">
-                            <button
-                                type="button"
-                                role="menuitemcheckbox"
-                                class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
-                                data-overlay-key="downloads"
-                                aria-checked="false"
-                            >
-                                {% trans "Display downloaded areas" %}
-                            </button>
-                        </li>
                     </ul>
                 </li>
             </ul>
@@ -2550,10 +2409,6 @@ Optional context:
     <span data-string="count-one">{% trans "1 layer on" %}</span>
     <span data-string="count-many">{% blocktrans %}%(count)s layers on{% endblocktrans %}</span>
     <span data-string="none-selected">{% trans "None selected" %}</span>
-    {# The verb the Basemap overlay rows carry. Stripped off a row's label    #}
-    {# when it is shortened for the summary line, so "Display downloaded      #}
-    {# areas" reads there as "downloaded areas" — one string, not one per row. #}
-    <span data-string="label-prefix">{% trans "Display" %}</span>
     {# The fallback when the listed names would not fit on the line, rather  #}
     {# than clipping a name mid-word.                                        #}
     <span data-string="summary-overflow">{% blocktrans %}%(count)s of %(total)s on{% endblocktrans %}</span>

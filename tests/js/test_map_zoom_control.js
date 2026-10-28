@@ -49,7 +49,7 @@ document.body.innerHTML = `
       <span data-string="threshold-from">≥%(zoom)s</span>
       <span data-string="threshold-up-to">≤%(zoom)s</span>
       <span data-string="gate-region_select">Region selector</span>
-      <span data-string="gate-terrain_filter">Terrain overlay</span>
+      <span data-string="gate-terrain_filter">Steep terrain</span>
       <span data-string="gate-route_slopes">Route slope colours</span>
     </template>
   </div>
@@ -253,7 +253,7 @@ describe('the ticks', () => {
     expect(ticks().map((li) => li.dataset.zoomTick))
       .toEqual(['region_select', 'terrain_filter', 'route_slopes']);
     expect(tick('terrain_filter').querySelector('[data-zoom-tick-label]').textContent)
-      .toBe('Terrain overlay');
+      .toBe('Steep terrain');
     // z12 sits 8/14 of the way up z4..z18.
     expect(tick('terrain_filter').style.top).toBe('42.86%');
   });

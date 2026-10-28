@@ -2,9 +2,9 @@
 {% comment %}
 public/partials/_map_terrain_filter_sheet.html — the terrain filter's sheet (SNOW-978, SNOW-1109).
 
-The layers menu's terrain filter row is a checkbox that turns the filter on
-and off; the adjust (sliders) button beside it opens this sheet, and turns
-the filter on first if it is off. So the sheet carries no switch of its own
+The layers menu's "Steep terrain" row (SNOW-1266) has a switch that turns
+the filter on and off; its name, on the left half of the row, opens this
+sheet, and turns the filter on first if it is off. So the sheet carries no switch of its own
 and no availability line: the menu row's second line says when the filter
 is on but cannot draw (zoom in; outside coverage).
 
@@ -20,7 +20,7 @@ includes/_terrain_filter_key.html (the map legend still does):
     terrain-filter-mode — "One tint" (value match) and "By slope" (value
     slope, the map's slope layer since SNOW-1073). Each tile shows its own
     swatch. SNOW-1194's third tile, "By bulletin", left on 2026-10-23 for a
-    layers-menu row of its own under Conditions, "Highlight problem
+    layers-menu row of its own beside the bulletins, "Highlight problem
     terrain": it is the bulletin drawn another way, not a filter the reader
     sets (Hugo).
   - SLOPE ANGLE: a ramp of five toggle buttons, one per slope class
