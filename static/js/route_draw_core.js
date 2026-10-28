@@ -14,18 +14,27 @@
  * exist so the device never stores or posts a list it already knows the
  * server will refuse.
  *
+ * A TAP is one press that added to the line (SNOW-1277). With snapping
+ * off a tap adds one waypoint; snapped to swisstopo's network it adds the
+ * whole leg along it, dozens of points. The draft keeps the index of each
+ * tap's last point, so Undo takes back a whole leg and the map marks the
+ * taps rather than every vertex of a routed leg.
+ *
  * Exports (frozen `self.pwaRouteDrawCore`):
  *
  *   DRAFT_KEY                       — the localStorage key of the draft
  *   MAX_WAYPOINTS                   — the most points a draft may hold
  *   addPoint(points, lon, lat)      — a new list with one more point
  *   undo(points)                    — a new list without the last point
+ *   addLeg(points, taps, leg)       — the line and taps with one more leg
+ *   undoLeg(points, taps)           — the line and taps without the last leg
  *   lengthM(points)                 — the straight-line length, metres
  *   formatKm(metres)                — "5.4" (one decimal place)
  *   durationParts(seconds)          — {hours, minutes} of an estimate
  *   statsParts(props, points)       — the figures the panel shows, as data
- *   guideCollection(points, cursor) — the map's waypoints and guide line
- *   serialiseDraft(points, name)    — the draft as a string to store
+ *   guideCollection(points, cursor, options) — the map's taps, guide line,
+ *                                     next leg and snap ring
+ *   serialiseDraft(points, name, taps) — the draft as a string to store
  *   parseDraft(raw)                 — a stored draft back, or null
  */
 
@@ -127,6 +136,52 @@
   }
 
   /**
+   * Every index of a list: the taps of a line drawn one point per tap.
+   *
+   * @param {Array<any>} points
+   * @returns {Array<number>}
+   */
+  function everyIndex(points) {
+    return points.map(function (_point, index) {
+      return index;
+    });
+  }
+
+  /**
+   * The line and its taps with one more leg on the end.
+   *
+   * Each of the leg's points is added as `addPoint` would add it, so a
+   * point on the last one is dropped and the list never passes
+   * MAX_WAYPOINTS. A leg that adds nothing is no tap.
+   *
+   * @param {Array<Waypoint>} points
+   * @param {Array<number>} taps
+   * @param {Array<Waypoint>} leg The points the tap adds, in order.
+   * @returns {{points: Array<Waypoint>, taps: Array<number>}}
+   */
+  function addLeg(points, taps, leg) {
+    let next = points;
+    (leg || []).forEach(function (point) {
+      next = addPoint(next, point[0], point[1]);
+    });
+    if (next === points) return { points: points, taps: taps };
+    return { points: next, taps: taps.concat([next.length - 1]) };
+  }
+
+  /**
+   * The line and its taps without the last leg: back to the tap before.
+   *
+   * @param {Array<Waypoint>} points
+   * @param {Array<number>} taps
+   * @returns {{points: Array<Waypoint>, taps: Array<number>}}
+   */
+  function undoLeg(points, taps) {
+    if (taps.length <= 1) return { points: [], taps: [] };
+    const kept = taps.slice(0, -1);
+    return { points: points.slice(0, kept[kept.length - 1] + 1), taps: kept };
+  }
+
+  /**
    * The straight-line length along the waypoints, in metres.
    *
    * @param {Array<Waypoint>} points
@@ -195,24 +250,33 @@
   }
 
   /**
-   * What the map draws under the cursor: each waypoint as a dot, the
-   * straight line through them, and — while a cursor position is known —
-   * a dashed segment from the last waypoint to it, so the next leg can be
-   * seen before it is added.
+   * What the map draws under the cursor: each tap as a dot, the line
+   * through the points, and — while a cursor position is known — a dashed
+   * segment from the last point to it, so the next leg can be seen before
+   * it is added. When the cursor is near enough the network to snap, a
+   * ring marks where the tap would land and the dashed segment goes there.
    *
    * @param {Array<Waypoint>} points
    * @param {?Waypoint} cursor The cross or the mouse, or null.
+   * @param {{taps?: ?Array<number>, snap?: ?Waypoint}} [options] Which
+   *   points are taps (every one, when not given), and the snapped place.
    * @returns {FeatureCollection}
    */
-  function guideCollection(points, cursor) {
+  function guideCollection(points, cursor, options) {
+    const opts = options || {};
+    const taps = opts.taps || everyIndex(points);
     /** @type {Array<Object>} */
-    const features = points.map(function (point, index) {
-      return {
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: point },
-        properties: { role: 'waypoint', first: index === 0 },
-      };
-    });
+    const features = taps
+      .filter(function (index) {
+        return index >= 0 && index < points.length;
+      })
+      .map(function (index) {
+        return {
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: points[index] },
+          properties: { role: 'waypoint', first: index === 0 },
+        };
+      });
     if (points.length >= 2) {
       features.push({
         type: 'Feature',
@@ -220,12 +284,21 @@
         properties: { role: 'line' },
       });
     }
+    const snap = opts.snap && isWaypoint(opts.snap) ? opts.snap : null;
+    const target = snap || (cursor && isWaypoint(cursor) ? cursor : null);
     const last = points[points.length - 1];
-    if (last && cursor && isWaypoint(cursor)) {
+    if (last && target) {
       features.push({
         type: 'Feature',
-        geometry: { type: 'LineString', coordinates: [last, cursor] },
+        geometry: { type: 'LineString', coordinates: [last, target] },
         properties: { role: 'pending' },
+      });
+    }
+    if (snap) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: snap },
+        properties: { role: 'snap' },
       });
     }
     return { type: 'FeatureCollection', features: features };
@@ -236,19 +309,42 @@
    *
    * @param {Array<Waypoint>} points
    * @param {string} name
+   * @param {Array<number>} [taps] The taps; every point when not given.
    * @returns {string}
    */
-  function serialiseDraft(points, name) {
-    return JSON.stringify({ v: 1, points: points, name: name || '' });
+  function serialiseDraft(points, name, taps) {
+    return JSON.stringify({
+      v: 1,
+      points: points,
+      name: name || '',
+      taps: taps || everyIndex(points),
+    });
+  }
+
+  /**
+   * Whether a stored tap list fits its points: rising, from the first
+   * point to the last.
+   *
+   * @param {any} taps
+   * @param {number} count
+   * @returns {boolean}
+   */
+  function tapsFit(taps, count) {
+    if (!Array.isArray(taps) || taps.length === 0) return false;
+    if (taps[0] !== 0 || taps[taps.length - 1] !== count - 1) return false;
+    return taps.every(function (tap, i) {
+      return Number.isInteger(tap) && (i === 0 || tap > taps[i - 1]);
+    });
   }
 
   /**
    * A stored draft back, or null for anything that is not one — a stale
    * shape, a hand-edited value, a list with a bad point in it. A draft
-   * with no points is no draft.
+   * with no points is no draft. A draft from before SNOW-1277, or with a
+   * tap list that does not fit, has a tap at every point.
    *
    * @param {?string} raw
-   * @returns {?{points: Array<Waypoint>, name: string}}
+   * @returns {?{points: Array<Waypoint>, name: string, taps: Array<number>}}
    */
   function parseDraft(raw) {
     if (typeof raw !== 'string' || !raw) return null;
@@ -261,11 +357,14 @@
     if (!value || value.v !== 1 || !Array.isArray(value.points)) return null;
     if (value.points.length === 0 || value.points.length > MAX_WAYPOINTS) return null;
     if (!value.points.every(isWaypoint)) return null;
+    /** @type {Array<Waypoint>} */
+    const points = value.points.map(function (/** @type {Array<number>} */ point) {
+      return /** @type {Waypoint} */ ([point[0], point[1]]);
+    });
     return {
-      points: value.points.map(function (/** @type {Array<number>} */ point) {
-        return /** @type {Waypoint} */ ([point[0], point[1]]);
-      }),
+      points: points,
       name: typeof value.name === 'string' ? value.name : '',
+      taps: tapsFit(value.taps, points.length) ? value.taps.slice() : everyIndex(points),
     };
   }
 
@@ -274,6 +373,8 @@
     MAX_WAYPOINTS: MAX_WAYPOINTS,
     addPoint: addPoint,
     undo: undo,
+    addLeg: addLeg,
+    undoLeg: undoLeg,
     lengthM: lengthM,
     formatKm: formatKm,
     durationParts: durationParts,

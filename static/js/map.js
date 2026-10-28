@@ -4444,6 +4444,10 @@
   // Draw mode shows the routes whatever the switch says — they are its
   // guide — and hands them back on exit. window.pwaSkiRoutes.hold().
   let skiRoutesHeld = false;
+  // While draw mode follows the vector network it draws those same lines
+  // itself, as a faint shadow, so the raster steps aside (SNOW-1277).
+  // Outranks the hold and the switch alike. window.pwaSkiRoutes.hide().
+  let skiRoutesHidden = false;
 
   /**
    * Install the ski-touring routes' raster source and layer, hidden unless
@@ -4480,7 +4484,8 @@
         source: SKI_ROUTES_SOURCE_ID,
         minzoom: SKI_ROUTES_MINZOOM,
         layout: {
-          visibility: overlayState.ski_routes || skiRoutesHeld ? 'visible' : 'none',
+          visibility:
+            (overlayState.ski_routes || skiRoutesHeld) && !skiRoutesHidden ? 'visible' : 'none',
         },
         paint: { 'raster-opacity': 0.9 },
       },
@@ -4489,6 +4494,19 @@
     raiseMarkerLayers();
     attributionSourceIds = null;
     updateMapAttribution();
+  };
+
+  /**
+   * Show or hide the raster as the hold, the hide and the switch decide.
+   *
+   * @returns {void}
+   */
+  const applySkiRoutesVisibility = () => {
+    if (!map.getLayer(SKI_ROUTES_LAYER_ID)) return;
+    // Storage, not overlayState: the picker writes the live layer and
+    // localStorage only (see the SNOW-473 note in the styledata handler).
+    const on = !skiRoutesHidden && (skiRoutesHeld || readSkiRoutesPreference());
+    map.setLayoutProperty(SKI_ROUTES_LAYER_ID, 'visibility', on ? 'visible' : 'none');
   };
 
   window.pwaSkiRoutes = Object.freeze({
@@ -4501,11 +4519,18 @@
      */
     hold(held) {
       skiRoutesHeld = !!held;
-      if (!map.getLayer(SKI_ROUTES_LAYER_ID)) return;
-      // Storage, not overlayState: the picker writes the live layer and
-      // localStorage only (see the SNOW-473 note in the styledata handler).
-      const on = skiRoutesHeld || readSkiRoutesPreference();
-      map.setLayoutProperty(SKI_ROUTES_LAYER_ID, 'visibility', on ? 'visible' : 'none');
+      applySkiRoutesVisibility();
+    },
+    /**
+     * Hide the routes whatever holds them (true), or stop hiding them
+     * (false): draw mode, while it draws the network as a shadow itself.
+     *
+     * @param {boolean} hidden
+     * @returns {void}
+     */
+    hide(hidden) {
+      skiRoutesHidden = !!hidden;
+      applySkiRoutesVisibility();
     },
     /** @returns {boolean} Whether this page has the layer at all. */
     isEligible: () => SKI_ROUTES_ELIGIBLE,

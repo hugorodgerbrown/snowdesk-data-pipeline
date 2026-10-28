@@ -1,8 +1,8 @@
 /*
  * tests/js/test_route_draw_core.js — the pure half of drawing a route
- * (static/js/route_draw_core.js, SNOW-1256).
+ * (static/js/route_draw_core.js, SNOW-1256; taps and legs, SNOW-1277).
  *
- * The waypoint list and its two edits, the figures the panel shows, the
+ * The waypoint list and its edits, a tap's whole leg and its undo, the figures the panel shows, the
  * guide the map draws, and the draft stored on the device.
  */
 
@@ -39,6 +39,31 @@ describe('undo', () => {
   it('drops the last point, and nothing from an empty list', () => {
     expect(core.undo([[7, 46], [7, 46.001]])).toEqual([[7, 46]]);
     expect(core.undo([])).toEqual([]);
+  });
+});
+
+describe('addLeg and undoLeg', () => {
+  it('adds a routed leg as one tap at its last point', () => {
+    const next = core.addLeg([[7, 46]], [0], [[7, 46.001], [7.001, 46.002], [7.002, 46.002]]);
+
+    expect(next.points).toHaveLength(4);
+    expect(next.taps).toEqual([0, 3]);
+  });
+
+  it('drops a leg point on the last one, and a leg that adds nothing is no tap', () => {
+    const points = [[7, 46]];
+
+    expect(core.addLeg(points, [0], [[7, 46], [7, 46.001]]).points).toEqual([[7, 46], [7, 46.001]]);
+    expect(core.addLeg(points, [0], [[7, 46]])).toEqual({ points: points, taps: [0] });
+    expect(core.addLeg([], [], [[7, 46]])).toEqual({ points: [[7, 46]], taps: [0] });
+  });
+
+  it('takes back the whole last leg, and the first tap leaves nothing', () => {
+    const points = [[7, 46], [7, 46.001], [7, 46.002], [7, 46.003]];
+
+    expect(core.undoLeg(points, [0, 1, 3])).toEqual({ points: points.slice(0, 2), taps: [0, 1] });
+    expect(core.undoLeg([[7, 46]], [0])).toEqual({ points: [], taps: [] });
+    expect(core.undoLeg([], [])).toEqual({ points: [], taps: [] });
   });
 });
 
@@ -118,13 +143,38 @@ describe('guideCollection', () => {
   it('draws nothing for no points', () => {
     expect(core.guideCollection([], [7, 46]).features).toEqual([]);
   });
+
+  it('marks only the taps, and sends the next leg to the snap ring', () => {
+    const points = [[7, 46], [7, 46.001], [7, 46.002]];
+    const fc = core.guideCollection(points, [7.01, 46.01], { taps: [0, 2], snap: [7.002, 46.002] });
+    const roles = fc.features.map((f) => f.properties.role);
+
+    expect(roles).toEqual(['waypoint', 'waypoint', 'line', 'pending', 'snap']);
+    expect(fc.features[1].geometry.coordinates).toEqual([7, 46.002]);
+    expect(fc.features[3].geometry.coordinates[1]).toEqual([7.002, 46.002]);
+    expect(fc.features[4].geometry.coordinates).toEqual([7.002, 46.002]);
+  });
 });
 
 describe('the stored draft', () => {
-  it('round-trips points and name', () => {
-    const raw = core.serialiseDraft([[7, 46], [7, 46.001]], 'Mont Fort');
+  it('round-trips points, name and taps', () => {
+    const raw = core.serialiseDraft([[7, 46], [7, 46.001], [7, 46.002]], 'Mont Fort', [0, 2]);
 
-    expect(core.parseDraft(raw)).toEqual({ points: [[7, 46], [7, 46.001]], name: 'Mont Fort' });
+    expect(core.parseDraft(raw)).toEqual({
+      points: [[7, 46], [7, 46.001], [7, 46.002]],
+      name: 'Mont Fort',
+      taps: [0, 2],
+    });
+  });
+
+  it('puts a tap at every point when the stored taps do not fit', () => {
+    const at = (taps) => core.parseDraft(JSON.stringify({ v: 1, points: [[7, 46], [7, 46.001]], taps }));
+
+    expect(core.parseDraft(core.serialiseDraft([[7, 46], [7, 46.001]], '')).taps).toEqual([0, 1]);
+    expect(at(undefined).taps).toEqual([0, 1]);
+    expect(at([0]).taps).toEqual([0, 1]);
+    expect(at([1, 1]).taps).toEqual([0, 1]);
+    expect(at([0, 0.5, 1]).taps).toEqual([0, 1]);
   });
 
   it('reads anything that is not a draft as none', () => {
@@ -136,6 +186,6 @@ describe('the stored draft', () => {
   });
 
   it('keeps a draft whose name is missing', () => {
-    expect(core.parseDraft('{"v":1,"points":[[7,46]]}')).toEqual({ points: [[7, 46]], name: '' });
+    expect(core.parseDraft('{"v":1,"points":[[7,46]]}')).toEqual({ points: [[7, 46]], name: '', taps: [0] });
   });
 });

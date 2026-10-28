@@ -305,6 +305,10 @@ class TestMapPageDrawSurface:
         assert 'id="route-draw-sheet"' in body
         assert "js/route_draw.js" in body
         assert "Upload a GPX" in body
+        # Draw mode follows the ski-touring network (SNOW-1277).
+        assert "js/ski_snap_core.js" in body
+        assert f'data-network-url="{reverse("api:ski_network_geojson")}"' in body
+        assert "data-route-draw-follow" in body
         # swisstopo's ski-touring routes ride on the same flag.
         assert 'data-overlay-key="ski_routes"' in body
         assert 'data-ski-routes-eligible="true"' in body
