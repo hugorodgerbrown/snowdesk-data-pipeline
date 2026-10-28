@@ -2,7 +2,7 @@
 name: a-drawn-route-is-a-route
 description: A route drawn on the map is a Route (source DRAWN), previewed by routes:draw_preview with the routes layer's Feature
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-10-28
 ---
 
 # A drawn route is a route
@@ -87,3 +87,17 @@ anyone.
 - The draft waits in `localStorage` (`snowdesk.route-draft`) across a
   close and across a sign-in. Only "Start over" or a successful save
   discards it.
+- A leg can follow swisstopo's ski-touring network (SNOW-1277). From z12
+  draw mode loads `/api/ski-network.geojson` for the view and draws it as
+  a faint shadow; the raster steps aside via `pwaSkiRoutes.hide()`. A tap
+  within 24 px of a line snaps to it. When the last point is on the
+  network too, the leg is the shortest path along it
+  (`static/js/ski_snap_core.js`, Dijkstra on the device, with no server
+  routing), or straight when that path is over three times the straight
+  distance. The path's vertices are ordinary waypoints, so
+  `routes:draw_preview`, `routes:create_drawn` and the GPX keep their
+  contracts. The draft also stores `taps`, the index of each tap's last
+  point, so Undo takes back a whole leg and the map marks taps rather
+  than every vertex. "Follow ski routes" turns this off on the device
+  (`snowdesk.route-draw-follow`). `direction` and `access` are ignored,
+  and snowshoe-only segments are neither drawn nor snapped to.

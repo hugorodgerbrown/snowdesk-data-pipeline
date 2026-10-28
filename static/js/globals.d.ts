@@ -180,9 +180,11 @@ interface Window {
   pwaRouteLeaderCore: any;
   /** SNOW-1256: route_draw_core.js — the pure half of drawing a route. */
   pwaRouteDrawCore: any;
+  /** SNOW-1277: static/js/ski_snap_core.js — snapping and routing on the ski network. */
+  pwaSkiSnapCore: any;
   /** SNOW-1256: route_draw.js — whether the map is in route draw mode. */
   pwaRouteDraw: any;
-  /** map.js: swisstopo's ski-touring routes layer — hold(held), isEligible(). */
+  /** map.js: swisstopo's ski-touring routes layer — hold(held), hide(hidden), isEligible(). */
   pwaSkiRoutes: any;
   /** static/js/route_rail_core.js — rail one's ticks, figures and leg fills. */
   pwaRouteRailCore: any;

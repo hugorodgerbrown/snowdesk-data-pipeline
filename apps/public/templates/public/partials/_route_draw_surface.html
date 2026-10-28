@@ -20,7 +20,11 @@ phone first):
   * with a mouse a click on the map adds the point under the cursor, and
     the cross and the Add button are not shown.
 
-Waypoints are joined by straight lines. After each change the waypoints are
+FOLLOWING THE SKI ROUTES (SNOW-1277). From z12 the panel draws swisstopo's
+ski-touring network (/api/ski-network.geojson) as a faint shadow and a tap
+near a line snaps to it, the leg routed along the network when the last
+point is on it too; the "Follow ski routes" switch turns that off, and
+then the waypoints are joined by straight lines. After each change the waypoints are
 posted to routes:draw_preview, which samples the terrain under the line and
 answers with the Feature the routes layer itself draws — so the legs, the
 slope classes and the profile here are the saved route's, not an
@@ -52,6 +56,7 @@ Context expected:
     data-create-url="{{ route_create_drawn_url }}"
     data-signin-url="{{ route_draw_signin_url }}"
     data-save-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
+    data-network-url="{% url 'api:ski_network_geojson' %}"
 >
     {% csrf_token %}
 </form>
@@ -87,6 +92,20 @@ Context expected:
             </div>
             <p data-route-draw-notice hidden class="text-summary text-text-3"></p>
         </div>
+        {# A switch, not a checkbox: route_draw.js owns the state and keeps  #}
+        {# aria-checked, which the drawn track reads (_switch_track.html).  #}
+        {# Hidden until the script has seen the network is reachable.       #}
+        <button
+            type="button"
+            role="switch"
+            aria-checked="true"
+            data-route-draw-follow
+            hidden
+            class="hover-affordance group flex w-full items-center justify-between gap-3 rounded-tag px-2 py-1 text-left text-sm text-text-1"
+        >
+            <span>{% trans "Follow ski routes" %}</span>
+            {% include "includes/_switch_track.html" only %}
+        </button>
         <div class="flex gap-2">
             <button
                 type="button"
@@ -161,7 +180,7 @@ Context expected:
     >{% trans "Move the map to put the cross where you want the next point, then tap Add point." %}</span>
     <span
         data-string="hint-fine"
-    >{% trans "Click the map to add a point. Points are joined by straight lines." %}</span>
+    >{% trans "Click the map to add a point. Near a ski route it snaps to the route." %}</span>
     <span data-string="stats-empty">{% trans "No points yet." %}</span>
     <span data-string="stats-one">{% trans "One point — add another to start the line." %}</span>
     <span data-string="unit-km">{% blocktrans %}%(value)s km{% endblocktrans %}</span>
@@ -185,4 +204,5 @@ Context expected:
     <span data-string="default-name">{% trans "Drawn route" %}</span>
 </template>
 <script defer src="{% static 'js/route_draw_core.js' %}"></script>
+<script defer src="{% static 'js/ski_snap_core.js' %}"></script>
 <script defer src="{% static 'js/route_draw.js' %}"></script>
