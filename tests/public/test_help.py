@@ -159,14 +159,11 @@ class TestHelpPage:
         # as a refusal to claim something the app cannot check.
         assert b"neither could answer honestly" in content
 
-    def test_layers_panel_explains_the_collapsible_sections(
-        self, client: Client
-    ) -> None:
-        """SNOW-904: the menu's headings open, close and summarise.
+    def test_layers_panel_explains_the_two_kinds_of_row(self, client: Client) -> None:
+        """SNOW-1266: a switch says on or off; a row with an arrow has options.
 
-        The summary line under a collapsed heading is the whole reason a
-        seventeen-row menu can be read without scrolling it, so the copy
-        has to say the line is there rather than leave it to be found.
+        The options live one tap down, so the copy has to say they are
+        there rather than leave them to be found.
         """
         content = client.get(reverse("public:help")).content
         assert b"help-layers-sections" in content

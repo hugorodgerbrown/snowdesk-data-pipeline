@@ -2,10 +2,11 @@
 tests/trips/test_trip_weather.py — the forecast for a trip's day (SNOW-1217).
 
 Covers ``apps.trips.services.trip_weather``: the Plan page's nearest public
-forecast point to a route's start (never a private one, never one too far,
-never one with no row today, named the way its forecast page is), and the
-trip page's meeting point forecast — today's row while the trip is ahead,
-the row of the day itself once it has passed.
+forecast point to a route's start (never a private one, never one with no
+row today, at any distance, named the way its forecast page is), and the
+trip page's forecast, borrowed from the curated point nearest the meeting
+point (Hugo, 2026-10-28) — today's row while the trip is ahead, the row of
+the day itself once it has passed.
 """
 
 from __future__ import annotations
@@ -14,8 +15,8 @@ import datetime
 
 import pytest
 
+from apps.locations.models import Location
 from apps.trips.services.trip_weather import (
-    NEAREST_RADIUS_KM,
     meeting_point_weather,
     nearest_weather,
 )
@@ -34,15 +35,23 @@ TODAY = datetime.date(2026, 10, 24)
 START = (46.10, 7.20)
 
 
-def _public_point(latitude: float, longitude: float, name: str = "Verbier") -> object:
-    """A named resort location with today's forecast."""
+MEETING = (46.1, 7.4)  # TripFactory's meeting point.
+
+
+def _public_point(
+    latitude: float,
+    longitude: float,
+    name: str = "Verbier",
+    observed_on: datetime.date = TODAY,
+    **weather: object,
+) -> Location:
+    """A named resort location with a forecast row for ``observed_on``."""
     location = LocationFactory.create(
         name=name, latitude=latitude, longitude=longitude, elevation_m=1520.0
     )
     ResortLocationFactory.create(location=location)
-    WeatherFactory.create(
-        location=location, observed_on=TODAY, forecast=forecast_days(TODAY, [73, 0])
-    )
+    weather.setdefault("forecast", forecast_days(observed_on, [73, 0]))
+    WeatherFactory.create(location=location, observed_on=observed_on, **weather)
     return location
 
 
@@ -73,12 +82,20 @@ class TestNearestWeather:
         assert weather.on(TODAY + datetime.timedelta(days=9)) is None
         assert "Near" in str(weather)
 
-    def test_a_point_beyond_the_radius_is_no_answer(self) -> None:
-        """A forecast from the next valley does not stand for this one."""
-        degrees = (NEAREST_RADIUS_KM + 2) / 111.0
-        _public_point(START[0] + degrees, START[1])
+    def test_a_distant_point_is_still_borrowed(self) -> None:
+        """No distance cap (Hugo, 2026-10-28): the page says how far it is.
 
-        assert nearest_weather(*START, TODAY) is None
+        Until then a point past 15 km was no answer, and a remote start's
+        tiles had no forecast at all.
+        """
+        _public_point(START[0] + 0.5, START[1], "Arolla")
+
+        weather = nearest_weather(*START, TODAY)
+
+        assert weather is not None
+        assert weather.label == "Arolla"
+        assert weather.distance_km == pytest.approx(55.6, abs=0.1)
+        assert not weather.is_same_place
 
     def test_a_private_pin_is_never_borrowed(self) -> None:
         """A favourite's forecast would name somebody's private place."""
@@ -138,33 +155,38 @@ class TestNearestWeather:
 
 @pytest.mark.django_db
 class TestMeetingPointWeather:
-    """``meeting_point_weather`` — the trip page's forecast."""
+    """``meeting_point_weather`` — the trip page's borrowed forecast."""
 
-    def test_an_upcoming_trip_reads_todays_row(self) -> None:
-        """The newest forecast, carrying the trip's day in its window."""
+    def test_an_upcoming_trip_borrows_the_nearest_points_row(self) -> None:
+        """Today's row from the nearest curated point, carrying the trip's day."""
         trip = TripFactory.create(date=TODAY + datetime.timedelta(days=2))
-        WeatherFactory.create(
-            location=trip.meeting_point,
-            observed_on=TODAY - datetime.timedelta(days=1),
-            forecast=forecast_days(TODAY - datetime.timedelta(days=1), [0, 0, 0]),
-        )
-        WeatherFactory.create(
-            location=trip.meeting_point,
-            observed_on=TODAY,
+        near = _public_point(
+            MEETING[0] + 0.01,
+            MEETING[1],
+            "Near",
             forecast=forecast_days(TODAY, [61, 73], snow=[0.0, 8.0]),
         )
+        _public_point(MEETING[0] + 0.05, MEETING[1], "Far")
 
         weather = meeting_point_weather(trip, TODAY)
 
         assert weather is not None
-        assert weather.distance_km is None
-        assert weather.label == ""
+        assert weather.location == near
+        assert weather.label == "Near"
+        assert weather.distance_km == pytest.approx(1.11, abs=0.01)
         day = weather.on(trip.date)
         assert day is not None
         assert day["snowfall_sum"] == 8.0
-        assert "meeting point" in str(weather)
+        assert "Near" in str(weather)
 
-    def test_the_meeting_time_is_read_on_the_meeting_points_clock(self) -> None:
+    def test_the_meeting_point_itself_is_never_read(self) -> None:
+        """A meeting point's own rows, fetched before 2026-10-28, are ignored."""
+        trip = TripFactory.create(date=TODAY)
+        WeatherFactory.create(location=trip.meeting_point, observed_on=TODAY)
+
+        assert meeting_point_weather(trip, TODAY) is None
+
+    def test_the_meeting_time_is_read_on_the_forecast_points_clock(self) -> None:
         """06:30 at a UTC+2 point is before a 07:40 sunrise: a night icon.
 
         Read in the site's zone (UTC) it would be 08:30 local, after
@@ -173,17 +195,13 @@ class TestMeetingPointWeather:
         day = TODAY + datetime.timedelta(days=1)
         early = TripFactory.create(date=day, start_time=datetime.time(6, 30))
         late = TripFactory.create(date=day, start_time=datetime.time(9, 0))
-        for trip in (early, late):
-            WeatherFactory.create(
-                location=trip.meeting_point,
-                observed_on=TODAY,
-                forecast=forecast_days(TODAY, [0]),
-            )
+        _public_point(*MEETING, forecast=forecast_days(TODAY, [0, 0]))
 
         before = meeting_point_weather(early, TODAY)
         after = meeting_point_weather(late, TODAY)
 
         assert before is not None and after is not None
+        assert before.is_same_place
         assert before.days[day]["icon_filename"] == "clear-night.svg"
         assert after.days[day]["icon_filename"] == "clear-day.svg"
 
@@ -191,14 +209,10 @@ class TestMeetingPointWeather:
         """What the forecast said that morning, never rewritten."""
         day = TODAY - datetime.timedelta(days=3)
         trip = TripFactory.create(date=day)
-        WeatherFactory.create(
-            location=trip.meeting_point, observed_on=day, temperature_2m_max=-1.0
+        point = _public_point(
+            *MEETING, observed_on=day, forecast=None, temperature_2m_max=-1.0
         )
-        WeatherFactory.create(
-            location=trip.meeting_point,
-            observed_on=TODAY,
-            temperature_2m_max=9.0,
-        )
+        WeatherFactory.create(location=point, observed_on=TODAY, temperature_2m_max=9.0)
 
         weather = meeting_point_weather(trip, TODAY)
 
@@ -207,8 +221,8 @@ class TestMeetingPointWeather:
         assert that_day is not None
         assert that_day["temp_max"] == -1.0
 
-    def test_nothing_fetched_yet_is_none(self) -> None:
-        """Until the first fetch lands, the page has no line."""
+    def test_no_curated_row_is_none(self) -> None:
+        """Before any curated point has a row for the day, the page has no line."""
         trip = TripFactory.create(date=TODAY)
 
         assert meeting_point_weather(trip, TODAY) is None

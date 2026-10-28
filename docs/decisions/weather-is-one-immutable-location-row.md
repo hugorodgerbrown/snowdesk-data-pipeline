@@ -1,8 +1,8 @@
 ---
 name: weather-is-one-immutable-location-row
-description: Weather model — one row per (Location, observed_on), immutable once past; upsert_weather, fetch_weather, Location.objects.active()
+description: Weather model — one row per (Location, observed_on), immutable once past; upsert_weather, fetch_weather, Location.active()
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-28
 ---
 
 # Weather is one immutable row per location per day (SNOW-757)
@@ -51,12 +51,13 @@ Three rules follow, and they are the whole decision:
    therefore a `.first()` on the unique constraint, never an
    `.order_by("-fetched_at").first()`.
 
-**The fetch is one walk over `Location.objects.active()`** — a location
-reachable from a `ResortLocation`, a `MicroRegion.centroid_location`, a
-`Favourite` or an upcoming trip's meeting point (SNOW-1217, see
-[a-plan-borrows-a-forecast-a-trip-has-its-own](a-plan-borrows-a-forecast-a-trip-has-its-own.md)),
-and explicitly *not* one reachable only from a
-`FieldObservation`. One shared queryset method, because the map feed asks
+**The fetch is one walk over `Location.objects.active()`** — since
+2026-10-28 the curated estate only: a location reachable from a
+`ResortLocation`, a resort's pin or a `MicroRegion.centroid_location`.
+A `Favourite` and an upcoming trip's meeting point were in it until then
+(SNOW-1217); they now borrow the nearest curated point's row instead
+([snowdesk-decides-where-a-forecast-is-fetched](snowdesk-decides-where-a-forecast-is-fetched.md)),
+and one reachable only from a `FieldObservation` never was. One shared queryset method, because the map feed asks
 the same question and two implementations would drift until a private pin
 leaked into a public feed.
 
@@ -89,8 +90,10 @@ silently serving a rewritten past.
 real places produced 240 distinct quantised cells — zero sharing, in a test
 rigged in dedup's favour. The grid existed to keep the `ForecastCell` *table*
 small, and there is no longer a table for it to keep small. What would
-reverse this: if `active()` ever widened to every favourite, the estate could
-reach thousands with genuine clustering. Re-measure then.
+reverse this: if `active()` ever widened to every favourite again, the
+estate could reach thousands with genuine clustering. Re-measure then.
+Since 2026-10-28 it holds only the curated estate, which makes that less
+likely, not more.
 
 **Weather is still its own app.** The reason survives the collapse from four
 models to one: a different upstream (Open-Meteo, not the CAAML providers), a

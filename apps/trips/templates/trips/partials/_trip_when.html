@@ -33,10 +33,12 @@ tile's, and the server shows it first, so it reads without the script.
 THE FORECAST, WHEN THERE IS ONE (SNOW-1217). Each tile shows the day's
 weather icon and high from the forecast point nearest the route's start
 (apps/trips/services/trip_weather.py), with the danger chip under it on
-the days a bulletin rated. The line under the captions names the point
-and how far it is from the start, because it is not the start: a route
-has no forecast of its own. With no point near enough the tiles carry no
-weather slot at all, rather than seven empty ones.
+the days a bulletin rated. The line under the captions names the point,
+its height and how far it is from the start
+(includes/_forecast_source.html), because it is not the start: a route
+has no forecast of its own, and the point is borrowed at any distance
+(2026-10-28). With no curated point holding today's row the tiles carry
+no weather slot at all, rather than seven empty ones.
 
 Context:
     form       : TripForm.
@@ -184,15 +186,7 @@ Context:
         {% if plan_week.weather %}
             {% with source=plan_week.weather %}
                 <p class="mt-1 text-text-3" data-testid="trip-weather-source">
-                    {% if source.elevation_m is not None %}
-                        {% blocktrans trimmed with place=source.label height=source.elevation_m km=source.distance_km|floatformat:"-1" %}
-                            Forecast for {{ place }} ({{ height }} m), {{ km }} km from the route's start.
-                        {% endblocktrans %}
-                    {% else %}
-                        {% blocktrans trimmed with place=source.label km=source.distance_km|floatformat:"-1" %}
-                            Forecast for {{ place }}, {{ km }} km from the route's start.
-                        {% endblocktrans %}
-                    {% endif %}
+                    {% include "includes/_forecast_source.html" with source=source anchor="start" only %}
                 </p>
             {% endwith %}
         {% endif %}

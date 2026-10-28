@@ -22,7 +22,7 @@ So saving one enqueues a single task that does both, in this order:
    row then describes where the pin used to be, and is rewritten in place,
    as today's row may be).
 
-The same shape as ``apps.trips.services.meeting_weather`` (SNOW-1217): the
+The same shape the retired trip meeting-point fetch had (SNOW-1217): the
 decisions are the worker's, so a task that waits in the queue sees the row
 as it is when it runs; a failure is logged, never raised, and the scheduled
 runs are the retry.

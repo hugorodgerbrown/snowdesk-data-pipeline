@@ -1,0 +1,65 @@
+{% load i18n %}
+{% comment %}
+includes/_forecast_source.html — which curated point a borrowed forecast is
+from: "Forecast for Mont Fort (3,329 m), 2.1 km from this pin."
+
+Hugo, 2026-10-28: only Snowdesk decides where a forecast is fetched, so a
+saved pin, a trip's meeting point and a route's start each borrow the
+nearest curated point's forecast, at any distance
+(apps/weather/services/nearest.py). Being open about where it is from is
+what makes the distance not matter, so every surface that borrows says
+it, in the same words. The point is chosen by distance; its height is
+stated so the reader can judge a peak against a valley.
+
+A sentence, no wrapper: the caller owns the element, its spacing and its
+test id, because the Plan caption, the trip card and the pin sheet each
+set the line in their own block.
+
+Context:
+    source : anything with ``label``, ``elevation_m`` (int or None),
+             ``distance_km`` and ``is_same_place`` — a TripWeather or a
+             NearestForecast.
+    anchor : what borrows it — "start" (a route's start), "meeting" (a
+             trip's meeting point) or "pin" (a saved pin).
+{% endcomment %}
+{% if source.is_same_place %}
+    {% if source.elevation_m is not None %}
+        {% blocktrans trimmed with place=source.label height=source.elevation_m %}
+            Forecast for {{ place }} ({{ height }} m).
+        {% endblocktrans %}
+    {% else %}
+        {% blocktrans trimmed with place=source.label %}
+            Forecast for {{ place }}.
+        {% endblocktrans %}
+    {% endif %}
+{% elif anchor == "meeting" %}
+    {% if source.elevation_m is not None %}
+        {% blocktrans trimmed with place=source.label height=source.elevation_m km=source.distance_km|floatformat:"-1" %}
+            Forecast for {{ place }} ({{ height }} m), {{ km }} km from the meeting point.
+        {% endblocktrans %}
+    {% else %}
+        {% blocktrans trimmed with place=source.label km=source.distance_km|floatformat:"-1" %}
+            Forecast for {{ place }}, {{ km }} km from the meeting point.
+        {% endblocktrans %}
+    {% endif %}
+{% elif anchor == "pin" %}
+    {% if source.elevation_m is not None %}
+        {% blocktrans trimmed with place=source.label height=source.elevation_m km=source.distance_km|floatformat:"-1" %}
+            Forecast for {{ place }} ({{ height }} m), {{ km }} km from this pin.
+        {% endblocktrans %}
+    {% else %}
+        {% blocktrans trimmed with place=source.label km=source.distance_km|floatformat:"-1" %}
+            Forecast for {{ place }}, {{ km }} km from this pin.
+        {% endblocktrans %}
+    {% endif %}
+{% else %}
+    {% if source.elevation_m is not None %}
+        {% blocktrans trimmed with place=source.label height=source.elevation_m km=source.distance_km|floatformat:"-1" %}
+            Forecast for {{ place }} ({{ height }} m), {{ km }} km from the route's start.
+        {% endblocktrans %}
+    {% else %}
+        {% blocktrans trimmed with place=source.label km=source.distance_km|floatformat:"-1" %}
+            Forecast for {{ place }}, {{ km }} km from the route's start.
+        {% endblocktrans %}
+    {% endif %}
+{% endif %}

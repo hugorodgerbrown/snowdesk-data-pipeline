@@ -234,8 +234,8 @@ class TestRowsFollowTheConfiguration:
             step: state == "true" for state, step in _STEP_RE.findall(_page(client))
         }
 
+        # SNOW-1266: no "0" step — off is the bulletins row's switch.
         assert checked == {
-            "0": False,
             "0.25": True,
             "0.5": False,
             "0.75": False,

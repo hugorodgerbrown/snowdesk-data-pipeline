@@ -28,15 +28,32 @@
 // this file:
 //
 //   - the menu has a pinned header carrying a live "N layers on" count, and
-//     each section a derived second line naming what is on inside it. Both
+//     each layer with options a derived second line naming what is on in
+//     them. Both
 //     are read off the rows' own ``aria-checked``, so nothing here keeps a
 //     flag that could disagree with the controls;
-//   - the sections COLLAPSE, persisted one key per section
-//     (``LAYERS_SECTION_STORAGE_KEY``), because seventeen rows in one list
-//     is a scroll rather than a menu;
+//   - (SNOW-1266 replaced SNOW-904's collapsible sections — see below);
 //   - a row whose overlay needs an account (favourites and routes, never
 //     field observations — those are public) hands an anonymous visitor to
 //     the sign-in sheet instead of ticking a box over an empty layer.
+//
+// SNOW-1266: on/off first, options one level down. The first level is one
+// row per layer, in two groups ("The map", "Yours"). A row's switch says
+// whether its layer is drawn; a row with options opens them on a PAGE of
+// their own, in place of the first level, with a back arrow — the
+// collapsible sections, and the per-section storage keys that remembered
+// which were open, are gone. Two layers have no single row of their own to
+// be the switch, so their switches are MASTERS (``data-layer-master``),
+// derived from the rows on their options page and never counted twice:
+//
+//   - bulletins: on while any opacity step above 0 is checked. Off sends
+//     step 0 — the old "Bulletins off" segment, which is no longer drawn —
+//     and on sends back the step it was switched off at;
+//   - boundaries: on while any EAWS tier is. Off clicks each checked tier
+//     off and remembers which; on clicks them back (Micro regions when
+//     nothing is remembered).
+//
+// See docs/decisions/the-layers-menu-is-on-off-then-options.md.
 //
 // The four new rows drive the SAME ``window.pwa*Overlay`` bridges the
 // panel switches drove. That is deliberate: the telemetry emitters and the
@@ -59,7 +76,7 @@
 
   const STORAGE_KEY = BASEMAP_STORAGE_KEY;
 
-  // SNOW-904: the header count and the section summaries are assembled
+  // SNOW-904: the header count and the level-one summaries are assembled
   // here, so their words have to be server-translated and read back —
   // ``makemessages`` never scans JavaScript. The literals are the English
   // fallback for a page that omits the strings template.
@@ -69,13 +86,21 @@
     'count-many': '%(count)s layers on',
     'none-selected': 'None selected',
     'summary-overflow': '%(count)s of %(total)s on',
-    'label-prefix': 'Display',
     'signin-favourites': 'Sign in to save places and show your favourites on the map.',
     'signin-routes': 'Sign in to upload routes and show them on the map.',
     'signin-cta': 'Sign in',
   });
 
-  // Longest a section's summary may get before it stops naming rows and
+  // SNOW-1266: where the two master switches remember what they turned off.
+  // The bulletins one holds a step (0.25…1), the boundaries one a JSON list
+  // of tier keys. Read only when a master is switched back on.
+  const BULLETINS_LAST_STEP_KEY = 'snowdesk.map.bulletins.last-on-step';
+  const BOUNDARIES_LAST_ON_KEY = 'snowdesk.map.boundaries.last-on';
+  const DEFAULT_BULLETINS_STEP = 0.5;
+  const DEFAULT_BOUNDARIES = ['l4'];
+  const BOUNDARY_KEYS = ['l1', 'l2', 'l4'];
+
+  // Longest a page's summary may get before it stops naming rows and
   // states a count instead. The menu is shrink-to-fit and its rows are
   // ``white-space: nowrap``, so an unbounded summary would widen the whole
   // menu to fit a line nobody reads.
@@ -132,14 +157,10 @@
   };
 
   /**
-   * A row's label, shortened for a section summary.
+   * A row's label, shortened for a level-one summary line.
    *
    * Derived from the row's own text rather than a second string per row:
-   * a trailing parenthetical goes ("SLF bulletins (CH)" → "SLF bulletins")
-   * and so does the leading "Display" verb the Basemap overlay rows carry
-   * ("Display downloaded areas" → "downloaded areas"). The verb is read from
-   * the strings template, so the strip survives a locale that words it
-   * differently.
+   * a trailing parenthetical goes ("SLF bulletins (CH)" → "SLF bulletins").
    *
    * @param {HTMLElement} item - a ``.basemap-menu-item``.
    * @returns {string}
@@ -149,12 +170,7 @@
     // names itself by its label span alone.
     const labelEl = item.querySelector('[data-row-label]');
     const full = self.pwaStrings.collapse((labelEl || item).textContent);
-    const withoutParenthetical = full.replace(/\s*\([^)]*\)$/, '').trim();
-    const prefix = STRINGS['label-prefix'];
-    if (prefix && withoutParenthetical.toLowerCase().startsWith(`${prefix.toLowerCase()} `)) {
-      return withoutParenthetical.slice(prefix.length + 1);
-    }
-    return withoutParenthetical;
+    return full.replace(/\s*\([^)]*\)$/, '').trim();
   };
 
   /**
@@ -168,14 +184,15 @@
   const rowIsOn = (row) => row.getAttribute('aria-checked') === 'true';
 
   /**
-   * The one-line summary under a section heading: which of its rows are on.
+   * The second line of a level-one row with options: which of the rows on
+   * its page are on.
    *
    * "None selected" when nothing is; the names, comma-separated, when they
-   * fit; "N of M on" when they do not. The Basemap section names its own
-   * radio selection through the same path, since a checked radio is a
-   * checked row like any other.
+   * fit; "N of M on" when they do not. The Basemap row names its radio
+   * selection through the same path, since a checked radio is a checked
+   * row like any other.
    *
-   * @param {HTMLElement} group - the section's ``role="group"`` list.
+   * @param {HTMLElement} group - the page's ``role="group"`` list.
    * @returns {string}
    */
   const summaryFor = (group) => {
@@ -191,22 +208,52 @@
   };
 
   /**
-   * Repaint the header count and every section's summary from the rows'
-   * live ``aria-checked``.
+   * Whether the bulletins master is on: any opacity step above 0 checked.
    *
-   * The count is OVERLAY rows only — the basemap radio is always exactly
-   * one and would inflate every reading by one without ever varying. Run on
-   * every open, after every toggle and at parse time, which is after map.js
-   * has seeded the rows from the persisted state.
+   * map.js mirrors the EFFECTIVE step onto the segments, so this reads off
+   * while resort-edit mode suppresses the choropleth, as the segments do.
+   *
+   * @returns {boolean}
+   */
+  const bulletinsOn = () => Array.from(menu.querySelectorAll('[data-bulletins-step]')).some(
+    (seg) => Number(seg.dataset.bulletinsStep) > 0 && seg.getAttribute('aria-checked') === 'true',
+  );
+
+  /**
+   * The EAWS tier rows, in menu order.
+   *
+   * @returns {HTMLElement[]}
+   */
+  const boundaryRows = () => BOUNDARY_KEYS
+    .map((key) => menu.querySelector(`[data-overlay-key="${key}"]`))
+    .filter(Boolean);
+
+  /**
+   * Repaint the header count, the two master switches and every level-one
+   * summary from the rows' live ``aria-checked``.
+   *
+   * The count is the level-one SWITCHES that are on — one per layer, so a
+   * provider or a tier never counts on top of the layer it belongs to, and
+   * the basemap, which has no switch, never inflates it. Run on every open,
+   * after every toggle and at parse time, which is after map.js has seeded
+   * the rows from the persisted state.
    *
    * @returns {void}
    */
   const refreshReadout = () => {
+    const bulletinsMaster = menu.querySelector('[data-layer-master="bulletins"]');
+    if (bulletinsMaster) {
+      bulletinsMaster.setAttribute('aria-checked', bulletinsOn() ? 'true' : 'false');
+    }
+    const boundariesMaster = menu.querySelector('[data-layer-master="boundaries"]');
+    if (boundariesMaster) {
+      boundariesMaster.setAttribute(
+        'aria-checked', boundaryRows().some(rowIsOn) ? 'true' : 'false',
+      );
+    }
     const countEl = menu.querySelector('[data-layers-count]');
     if (countEl) {
-      const on = items.filter(
-        (item) => item.classList.contains('basemap-menu-item--overlay') && rowIsOn(item),
-      ).length;
+      const on = Array.from(menu.querySelectorAll('[data-layer-switch]')).filter(rowIsOn).length;
       if (on === 0) {
         countEl.textContent = STRINGS['count-none'];
       } else if (on === 1) {
@@ -217,10 +264,9 @@
         });
       }
     }
-    for (const section of menu.querySelectorAll('.basemap-menu-section')) {
-      const group = section.querySelector('.basemap-menu-group');
-      const summary = section.querySelector('[data-section-summary]');
-      if (group && summary) summary.textContent = summaryFor(group);
+    for (const summary of menu.querySelectorAll('[data-page-summary]')) {
+      const group = document.getElementById(`basemap-menu-group-${summary.dataset.pageSummary}`);
+      if (group) summary.textContent = summaryFor(group);
     }
   };
 
@@ -298,42 +344,52 @@
   };
 
   /**
-   * Open or close one section, and remember the choice.
+   * Show one page of the menu — ``'main'``, or the options of one layer —
+   * in place of whichever was showing.
    *
-   * ``positionMenu()`` is called on every toggle, not only on open: it
-   * writes ``max-height`` inline from the room the viewport leaves, and the
-   * content whose height that bounds has just changed.
+   * ``positionMenu()`` runs on every change, not only on open: it writes
+   * ``max-height`` inline from the room the viewport leaves, and the content
+   * that height bounds has just been swapped. Focus moves with the page —
+   * to its back button going in, and to the row that opened it coming out —
+   * so a keyboard user is never left on a control that just disappeared.
    *
-   * @param {string} slug - the section's ``data-section-toggle`` value.
-   * @param {boolean} open
-   * @param {boolean} persist - false while seeding from storage at boot, so
-   *   reading a preference never writes one back.
+   * @param {string} slug - a ``data-layers-page`` value.
+   * @param {{focus?: boolean}} [options] - ``focus: false`` while resetting
+   *   the menu as it opens, which keeps focus where the opener left it.
    * @returns {void}
    */
-  const setSectionOpen = (slug, open, persist) => {
-    const button = menu.querySelector(`[data-section-toggle="${slug}"]`);
-    const group = document.getElementById(`basemap-menu-group-${slug}`);
-    if (!button || !group) return;
-    button.setAttribute('aria-expanded', open ? 'true' : 'false');
-    group.hidden = !open;
-    if (persist) writeStorage(LAYERS_SECTION_STORAGE_KEY(slug), String(open));
+  const showPage = (slug, { focus = true } = {}) => {
+    const current = menu.querySelector('[data-layers-page]:not([hidden])');
+    const from = current ? current.dataset.layersPage : 'main';
+    let target = null;
+    for (const page of menu.querySelectorAll('[data-layers-page]')) {
+      const shown = page.dataset.layersPage === slug;
+      page.hidden = !shown;
+      if (shown) target = page;
+    }
+    if (!target) return;
+    target.scrollTop = 0;
     if (!menu.hidden) positionMenu();
+    if (!focus) return;
+    const next = slug === 'main'
+      ? menu.querySelector(`[data-layers-open="${from}"]`)
+      : target.querySelector('[data-layers-back]');
+    if (next) next.focus();
   };
 
-  for (const button of menu.querySelectorAll('[data-section-toggle]')) {
-    const slug = button.dataset.sectionToggle;
-    setSectionOpen(
-      slug,
-      readBoolStorage(
-        LAYERS_SECTION_STORAGE_KEY(slug), slug === LAYERS_SECTION_DEFAULT_OPEN,
-      ),
-      false,
-    );
-    button.addEventListener('click', (e) => {
+  for (const opener of menu.querySelectorAll('[data-layers-open]')) {
+    opener.addEventListener('click', (e) => {
       // Same reason every row below stops propagation: the document-level
-      // outside-click dismiss must not read a heading tap as "outside".
+      // outside-click dismiss must not read an opener tap as "outside" —
+      // and by the time it ran, the row tapped would no longer be shown.
       e.stopPropagation();
-      setSectionOpen(slug, button.getAttribute('aria-expanded') !== 'true', true);
+      showPage(opener.dataset.layersOpen);
+    });
+  }
+  for (const back of menu.querySelectorAll('[data-layers-back]')) {
+    back.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showPage('main');
     });
   }
 
@@ -378,6 +434,10 @@
     // SNOW-1196: on a desktop the menu opens at the right, clear of the
     // left-column sheet, so it leaves that sheet open there.
     if (open) window.pwaMapOverlays?.opening(MENU_OVERLAY_NAME, { spareObjectSheets: 'wide' });
+    // SNOW-1266: every open starts at the first level, so the menu always
+    // opens on the answer to "what is on my map", never on a page left open
+    // by the last visit.
+    if (open) showPage('main', { focus: false });
     pill.dataset.state = open ? 'expanded' : 'collapsed';
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     menu.hidden = !open;
@@ -388,7 +448,7 @@
     // bucket, so repeated opens coalesce inside `refresh()` rather than
     // each starting their own pass.
     if (open) window.pwaLayerSyncStatus?.refresh();
-    // SNOW-904: the count and the section summaries are derived, so they are
+    // SNOW-904: the count and the level-one summaries are derived, so they are
     // recomputed here as well as on every toggle — the downloads row can
     // change under the menu while it is closed (its untouched state follows
     // the connection), and a stale header is exactly the kind of quiet lie
@@ -417,7 +477,7 @@
   // when someone focuses or creates a favourite, route or observation while
   // it is off (its ``reveal()`` calls ``overlay.show()``), and the deep-link
   // paths in map.js do the same. Nothing wrote that back to the row, so its
-  // ``aria-checked`` went stale: the header undercounted, the section summary
+  // ``aria-checked`` went stale: the header undercounted, the level-one summary
   // omitted a layer that was plainly on the map, and the row's next click
   // called ``show()`` on an already-shown overlay — costing the user a
   // second click to turn something off.
@@ -490,6 +550,17 @@
     setMenuOpen(menu.hidden);
   });
 
+  // SNOW-1266: the header's close button, shown on a phone only, where the
+  // full-width menu covers the roundel that opened it.
+  const closeButton = menu.querySelector('[data-layers-close]');
+  if (closeButton) {
+    closeButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setMenuOpen(false);
+      toggle.focus();
+    });
+  }
+
   // Outside-click dismiss. Use click (not pointerdown) so an item
   // selection inside the menu fires before this handler can close.
   //
@@ -497,7 +568,7 @@
   // a DESCENDANT of the pill, so `pill.contains` covered both; it is a sibling
   // of the collapsible group now. Item clicks stop propagation and so never
   // reach this handler either way — but this menu is mostly not items. A tap
-  // on a section heading, a separator, the 4px padding or the scrollbar would
+  // on a group label, a separator, the 4px padding or the scrollbar would
   // otherwise read as "outside" and close the menu the user was reading.
   document.addEventListener('click', (e) => {
     if (menu.hidden) return;
@@ -680,7 +751,7 @@
           other === item ? 'true' : 'false',
         );
       }
-      // The Basemap section's summary names its selection, so it moves with
+      // The Basemap row's summary names its selection, so it moves with
       // the radios even though the header count deliberately does not.
       refreshReadout();
       setMenuOpen(false);
@@ -688,10 +759,12 @@
     });
   }
 
-  // SNOW-978 / SNOW-1109: the terrain filter's adjust button, beside its
-  // row. Not a ``.basemap-menu-item`` — it has no layer of its own to count
-  // or summarise — so it is wired here rather than in the loop above. It
-  // opens the filter's sheet (which turns the filter on if it is off); the
+  // SNOW-978 / SNOW-1109: the opener that leads the Steep terrain row (it was
+  // an adjust button beside the row until SNOW-1266). Not a
+  // ``.basemap-menu-item`` — it has no layer of its own to count or
+  // summarise — so it is wired here rather than in the loop above. It opens
+  // the filter's sheet rather than a page here: the sheet IS that layer's
+  // options (which turns the filter on if it is off); the
   // sheet announces itself to window.pwaMapOverlays, which closes this menu
   // on the way in.
   for (const adjust of menu.querySelectorAll('[data-terrain-filter-open]')) {
@@ -701,8 +774,9 @@
     });
   }
 
-  // Bulletin opacity — the five steps in the Conditions group, under the
-  // three providers whose bulletins they shade. SNOW-656 built this as a
+  // Bulletin opacity — the steps on the Avalanche bulletins page, under the
+  // three providers whose bulletins they shade. SNOW-1266 took the "off"
+  // step out: that is the level-one switch now, below. SNOW-656 built this as a
   // roundel of its own with a flyout (``mapFillControlInit``, which lived
   // below this IIFE); the two-capsule column moved it into this menu, so
   // every choice about what the map draws is made in one place.
@@ -736,6 +810,72 @@
       document.dispatchEvent(new CustomEvent('snowdesk:bulletins-step', {
         detail: { step },
       }));
+      // map.js's listener runs inside that dispatch and has already
+      // mirrored the step onto the segments, so the master reads it here.
+      refreshReadout();
+    });
+  }
+
+  /**
+   * Send one bulletin step through map.js, as an opacity segment would.
+   *
+   * @param {number} step - 0 (off) or a step above it.
+   * @returns {void}
+   */
+  const sendBulletinsStep = (step) => {
+    if (step > 0 && MAP && !MAP.getLayer('regions-fill')) {
+      document.dispatchEvent(new CustomEvent('snowdesk:regions-reinstall'));
+    }
+    document.dispatchEvent(new CustomEvent('snowdesk:bulletins-step', {
+      detail: { step },
+    }));
+    refreshReadout();
+  };
+
+  // SNOW-1266: the two master switches. Each toggles the rows on its page
+  // through the paths those rows already use, so nothing downstream learns
+  // that a master exists — and each remembers what it turned off, so off
+  // then on is a round trip rather than a reset to the defaults.
+  const bulletinsMaster = menu.querySelector('[data-layer-master="bulletins"]');
+  if (bulletinsMaster) {
+    bulletinsMaster.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (bulletinsOn()) {
+        const checked = menu.querySelector('[data-bulletins-step][aria-checked="true"]');
+        if (checked) writeStorage(BULLETINS_LAST_STEP_KEY, checked.dataset.bulletinsStep);
+        sendBulletinsStep(0);
+        return;
+      }
+      const remembered = Number(readStorage(BULLETINS_LAST_STEP_KEY));
+      sendBulletinsStep(remembered > 0 ? remembered : DEFAULT_BULLETINS_STEP);
+    });
+  }
+
+  const boundariesMaster = menu.querySelector('[data-layer-master="boundaries"]');
+  if (boundariesMaster) {
+    boundariesMaster.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const on = boundaryRows().filter(rowIsOn);
+      if (on.length > 0) {
+        writeStorage(
+          BOUNDARIES_LAST_ON_KEY, JSON.stringify(on.map((row) => row.dataset.overlayKey)),
+        );
+        for (const row of on) row.click();
+        return;
+      }
+      let keys = DEFAULT_BOUNDARIES;
+      try {
+        const stored = JSON.parse(readStorage(BOUNDARIES_LAST_ON_KEY) || 'null');
+        if (Array.isArray(stored)) {
+          const known = stored.filter((key) => BOUNDARY_KEYS.includes(key));
+          if (known.length > 0) keys = known;
+        }
+      } catch {
+        // A hand-edited or truncated value reads as "nothing remembered".
+      }
+      for (const row of boundaryRows()) {
+        if (keys.includes(row.dataset.overlayKey)) row.click();
+      }
     });
   }
 })();
