@@ -95,6 +95,18 @@ def test_load_fields_parses_a_date_column() -> None:
         contract.load_fields(_Stub, ("day",), {"day": "Thursday"})
 
 
+def test_load_fields_parses_a_uuid_column() -> None:
+    """A UUIDField comes back as uuid.UUID, so it equals the stored value."""
+    raw = "6f1c2b8e-7d4a-4c1e-9a55-2f0e9d3c4b11"
+    loaded = contract.load_fields(Location, ("source_uuid",), {"source_uuid": raw})
+    assert loaded == {"source_uuid": uuid.UUID(raw)}
+    assert contract.load_fields(Location, ("source_uuid",), {"source_uuid": None}) == {
+        "source_uuid": None
+    }
+    with pytest.raises(ValueError):
+        contract.load_fields(Location, ("source_uuid",), {"source_uuid": "nope"})
+
+
 def test_the_weather_fields_are_the_services_columns() -> None:
     """SNOW-1253: v1 and v2 weather items carry the same columns."""
     from apps.ingest.public import WEATHER_COLUMNS
