@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from django.test import Client, override_settings
 
-from apps.bulletins.services.slf_archive import write_archive
+from apps.ingest.public import write_slf_archive
 
 
 def _record(bulletin_id: str, publication_time: str) -> dict[str, Any]:
@@ -44,7 +44,7 @@ def _make_archive(path: Path, count: int) -> list[dict[str, Any]]:
         _record(f"b{i:03d}", (base + timedelta(days=i)).isoformat() + "Z")
         for i in range(count)
     ]
-    write_archive(path, records)
+    write_slf_archive(path, records)
     return list(reversed(records))
 
 

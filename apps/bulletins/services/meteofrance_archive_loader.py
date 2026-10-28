@@ -12,7 +12,7 @@
 # Two impedance mismatches between the NDJSON shape and ``upsert_bulletin``
 # are fixed at load time:
 #   1. ``regionID`` translation: ``FR-{MASSIF_SLUG}`` → ``FR-{NN}`` using
-#      ``SLUG_TO_CODE`` from ``apps.bulletins.services.meteofrance_massifs``.
+#      ``SLUG_TO_CODE`` from ``apps.ingest.normalise.meteofrance.massifs``.
 #   2. ``bulletinID`` synthesis: the CAAML builder does not write one;
 #      ``upsert_bulletin`` requires one.  Synthesised as
 #      ``FR-{NN:02d}-{covered date}-{publication timestamp}``.
@@ -42,8 +42,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, cast
 
-from apps.bulletins.services.meteofrance_identity import compact_publication_stamp
-from apps.bulletins.services.meteofrance_massifs import SLUG_TO_CODE, _normalise_slug
+from apps.ingest.public import SLUG_TO_CODE, compact_publication_stamp, normalise_slug
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +251,7 @@ def fixup_envelope(
     Mutates ``properties`` in place:
     - ``regions[0]["regionID"]`` is translated from ``FR-{SLUG}`` to
       ``FR-{NN}`` using ``SLUG_TO_CODE`` (after normalising the raw slug
-      via ``_normalise_slug`` to fold the space/hyphen variants used by
+      via ``normalise_slug`` to fold the space/hyphen variants used by
       the upstream PDFs onto the canonical form).
     - ``bulletinID`` is synthesised as
       ``FR-{NN}-{customData.MF.date}-{publicationTime}``.
@@ -284,7 +283,7 @@ def fixup_envelope(
         )
         return None
 
-    slug = _normalise_slug(raw_slug)
+    slug = normalise_slug(raw_slug)
     try:
         region_id = _slug_to_region_id(slug)
     except KeyError:
@@ -350,7 +349,7 @@ def _process_line(
     bulletin_id = fixup_envelope(properties)
     if bulletin_id is None:
         raw_slug = properties.get("customData", {}).get("MF", {}).get("massif", "")
-        if raw_slug and _normalise_slug(raw_slug) not in SLUG_TO_CODE:
+        if raw_slug and normalise_slug(raw_slug) not in SLUG_TO_CODE:
             counts.unknown_slug += 1
         else:
             counts.bad_shape += 1

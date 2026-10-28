@@ -69,7 +69,7 @@ from django.conf import settings
 from apps.bulletins.models import Bulletin
 from apps.bulletins.services.day_rating import target_day_for_valid_from
 from apps.bulletins.services.meteofrance_archive_loader import fixup_envelope
-from apps.bulletins.services.slf_archive import read_archive
+from apps.ingest.public import read_slf_archive
 
 if TYPE_CHECKING:
     from apps.bulletins.models import PipelineRun
@@ -228,7 +228,7 @@ def _iter_source_records(source: str) -> Iterator[dict[str, Any]]:
         CAAML payload dicts ready for ``upsert_bulletin``.
 
     """
-    for record in read_archive(archive_path(source)):
+    for record in read_slf_archive(archive_path(source)):
         if source != SOURCE_METEOFRANCE:
             yield record
             continue

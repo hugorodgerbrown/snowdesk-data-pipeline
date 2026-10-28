@@ -8,8 +8,8 @@ derived from ``bulletin.raw_data["properties"]["customData"]`` via
 so that rows with stale ``render_model`` values (e.g. ``"euregio"`` written
 by older pipeline versions) are still dispatched correctly.
 
-  * SLF       → ``_slf_pdf_url(raw)``
-  * ALBINA    → ``_albina_pdf_url(raw, region)`` — region taken from the
+  * SLF       → ``slf_pdf_url(raw)``
+  * ALBINA    → ``albina_pdf_url(raw, region)`` — region taken from the
                   first raw ``regions`` entry's ``regionID`` prefix
   * METEOFRANCE → ``_meteofrance_pdf_url(massif_name, valid_date, session)``
                    massif_name read from ``customData["MF"]["massif"]``
@@ -41,15 +41,14 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.albina_fetcher import _albina_pdf_url
 from apps.bulletins.services.meteofrance_fetcher import (
     _MF_USER_AGENT,
     _meteofrance_pdf_url,
 )
 from apps.bulletins.services.render_model import RenderModelBuildError, detect_source
-from apps.bulletins.services.slf_fetcher import _slf_pdf_url
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
+from apps.ingest.public import albina_pdf_url, slf_pdf_url
 
 logger = logging.getLogger(__name__)
 
@@ -278,13 +277,13 @@ def _derive_pdf_url(
 
     """
     if source == Bulletin.Source.SLF:
-        return _slf_pdf_url(raw)
+        return slf_pdf_url(raw)
 
     if source == Bulletin.Source.ALBINA:
         regions = raw.get("regions") or []
         micro_region_id = regions[0].get("regionID", "") if regions else ""
         region = _albina_cdn_region(micro_region_id)
-        return _albina_pdf_url(raw, region)
+        return albina_pdf_url(raw, region)
 
     if source == Bulletin.Source.METEOFRANCE:
         if mf_call_count > 0:

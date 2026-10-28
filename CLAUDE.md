@@ -19,7 +19,7 @@ oddly after a dependency change, rebuild them with `uv run tox --recreate`.
 ```
 config/          Django project settings (base + development/staging/
                  production/perf overlays — see "Conventions → Code")
-apps/            Parent package for the sixteen Django apps (SNOW-557 — moved
+apps/            Parent package for the seventeen Django apps (SNOW-557 — moved
                  here without changing any app label; see
                  docs/decisions/ for the why)
   core/          Shared abstractions (BaseModel), HTTP-layer middleware, the
@@ -38,6 +38,14 @@ apps/            Parent package for the sixteen Django apps (SNOW-557 — moved
                  SubRegion / Resort, plus the fixture-maintenance commands
                  (dump_resorts_sheet, refresh_eaws_fixtures) and the
                  curated resort sheet + its import_resorts command
+  ingest/        The providers' fetch and normalisation code, built to be
+                 rehostable (SNOW-1247): it imports NO other apps.* package,
+                 and everything else imports it only through
+                 apps/ingest/public.py — tests/ingest/test_boundary.py fails
+                 the build otherwise. normalise/ holds the pure functions
+                 (SLF shape detection, the Météo-France translator, Open-Meteo
+                 parsing). Read docs/decisions/ingestion-is-a-rehostable-unit.md
+                 before importing from it
   bulletins/     Everything that originates from the three CAAML bulletin
                  providers — the models (Bulletin, RegionBulletin,
                  PipelineRun, RegionDayRating, …), the per-provider
@@ -810,6 +818,7 @@ Read these when working in the relevant area:
 | Backfill an environment onto the Location model (the --commit commands, Open-Meteo elevation cost, progress log) | [`docs/runbooks/location-migration-backfill.md`](docs/runbooks/location-migration-backfill.md) |
 | Region centroid Locations — not re-linked on deploy; an operator runs `link_region_centroid_locations --commit` and `link_resort_locations --commit` ([`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md)) | [`docs/runbooks/region-centroid-backfill.md`](docs/runbooks/region-centroid-backfill.md) |
 | Production data feed for other services (GET /api/data/v1/ bulletins, weather, locations, resorts; OAuth client credentials, is_service_client, the data scope; pull_production_data --type --since --commit; DATA_FEED_URL, DATA_FEED_CLIENT_ID, DATA_FEED_CLIENT_SECRET) | [`docs/data-feed.md`](docs/data-feed.md) |
+| Why ingestion is a rehostable unit (apps/ingest imports no other apps.* package; apps.ingest.public is the only way in; tests/ingest/test_boundary.py; own tables, not a view over Snowdesk's; the five-ticket extraction SNOW-1248/1249/1250/1253/1252) | [`docs/decisions/ingestion-is-a-rehostable-unit.md`](docs/decisions/ingestion-is-a-rehostable-unit.md) |
 | Why production's data reaches staging through an HTTPS feed rather than a database credential (replay through upsert_bulletin, idempotent pulls, client credentials over an API key; sync-staging-data kept as the reset) | [`docs/decisions/data-reaches-other-environments-through-a-feed.md`](docs/decisions/data-reaches-other-environments-through-a-feed.md) |
 | Refresh staging's bulletins from production (bin/sync-staging-data, run by hand since the cron was disabled 2026-08-27, the read-only role) | [`docs/runbooks/refresh-staging-from-production.md`](docs/runbooks/refresh-staging-from-production.md) |
 | Reset the live DB after a migration-history rewrite | [`docs/runbooks/reset-live-db.md`](docs/runbooks/reset-live-db.md) |

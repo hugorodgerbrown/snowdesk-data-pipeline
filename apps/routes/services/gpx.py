@@ -34,7 +34,7 @@ What the parser accepts, and why:
 
 Parsing goes through ``defusedxml.ElementTree`` rather than the stdlib
 parser — the same choice, for the same reason, as the Météo-France DPBRA
-path in ``apps/bulletins/services/meteofrance_translator.py``: an XXE or
+path in ``apps/ingest/normalise/meteofrance/translator.py``: an XXE or
 entity-bomb payload is rejected by the parser itself rather than by
 validation we would have to remember to write.
 """

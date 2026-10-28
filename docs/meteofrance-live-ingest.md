@@ -2,7 +2,7 @@
 name: meteofrance-live-ingest
 description: Météo-France DPBRA ingest operations — fetch_bulletins --source meteofrance, METEOFRANCE_API_KEY on Render, --local-mirror
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-27
 ---
 
 # Météo-France live ingest — operations guide
@@ -46,7 +46,7 @@ for the full operational-requirements table.
 | Corse | 40, 41 | 2 | Cinto-Rotondo, Renoso |
 | Pyrenees | 64–70, 72–74 | 10 | Néouvielle → Haute-Ariège, Andorre excluded |
 
-Full list: [`docs/research/meteofrance/massifs.json`](research/meteofrance/massifs.json).
+Full list: [`apps/ingest/normalise/meteofrance/massifs.json`](../apps/ingest/normalise/meteofrance/massifs.json).
 
 ### Delegated-region skips
 
@@ -167,10 +167,10 @@ live path.
 
 - **`apps/bulletins/services/meteofrance_fetcher.py`** — HTTP/local-mirror
   fetch, pipeline orchestration, stash writer, `latest_meteofrance_date`.
-- **`apps/bulletins/services/meteofrance_translator.py`** — pure DPBRA XML →
+- **`apps/ingest/normalise/meteofrance/translator.py`** — pure DPBRA XML →
   CAAML JSON translator; no I/O. Raises `MeteoFranceDelegatedRegionError`
   or `MeteoFranceTranslationError` on bad input.
-- **`apps/bulletins/services/meteofrance_massifs.py`** — the canonical
+- **`apps/ingest/normalise/meteofrance/massifs.py`** — the canonical
   massif *name* list (`ALPINE_MASSIFS`, `ALL_MASSIFS`) and the slug →
   integer code lookup (`SLUG_TO_CODE`, `slug_to_region_id`), built from
   `docs/research/meteofrance/massifs.json`. Used by the archive loader and
