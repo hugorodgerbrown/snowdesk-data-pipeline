@@ -1,6 +1,6 @@
 ---
 name: worktrees
-description: init-worktree seed recipe, migrate + sync_waffle_flags + seed_canonical_routes every session, settings.ini not .env, dev credentials, reseed
+description: init-worktree seed recipe; migrate, sync_waffle_flags, seed_canonical_routes, set_example_route each session; dev credentials
 status: current
 last-reviewed: 2026-10-27
 ---
@@ -57,12 +57,14 @@ environment.
 ## On every session after the first
 
 The first two commands above run again at every session start; the last
-three never do (SNOW-997). A third command runs after them (SNOW-1023):
+three never do (SNOW-997). A third command runs after them (SNOW-1023),
+and a fourth after that (SNOW-1273):
 
 ```bash
 uv run python manage.py migrate --noinput
 uv run python manage.py sync_waffle_flags --commit
 uv run python manage.py seed_canonical_routes --commit
+uv run python manage.py set_example_route --commit
 ```
 
 `migrate --noinput` and `sync_waffle_flags --commit` are idempotent and
@@ -93,6 +95,16 @@ failed at seed time (no network) gets it retried. It is not run on the
 seeding path, where `seed_test_data` has just created the routes. With no
 dev user it reports that and changes nothing.
 
+`set_example_route --commit` loads the onboarding example route ("Explore
+an example route", `/routes/example/`) from its canonical fixture, so the
+walkthrough works in every worktree. The example is user data — it is never
+synced from production (see
+[`reference-data-has-one-source-of-truth.md`](decisions/reference-data-has-one-source-of-truth.md))
+— so each instance loads its own. Unlike `seed_canonical_routes` it also
+runs on the seeding path, last, because `seed_test_data` does not set the
+example. It prints `Example route up to date.` (`UP_TO_DATE` in the
+command module) when the example is already set.
+
 Until SNOW-997 the whole recipe was gated on `db.sqlite3` being absent, so
 it ran exactly once in a worktree's life. That is fine for a worktree left
 alone: `showmigrations` compares the database against the migration files
@@ -103,11 +115,11 @@ nothing ever applies them. The symptom was either a `no such column` from
 an unrelated-looking command, or no symptom at all and a
 `monitor_query_counts` failure against a perfectly correct baseline.
 
-The cost is three `manage.py` startups, roughly three to six seconds, at
+The cost is four `manage.py` startups, roughly four to eight seconds, at
 every session start. A session where nothing had to change prints
 nothing: each command's output is captured, including the logging it
 writes to stderr, and only a run that actually applied a migration,
-changed a flag or reconciled a route says so. Output that matches no
+changed a flag, reconciled a route or set the example says so. Output that matches no
 command's "nothing to do" sentence is reported rather than swallowed, so a
 reworded message upstream makes this noisy instead of making it silent
 again. `seed_canonical_routes` prints `Canonical routes up to date.`
