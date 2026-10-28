@@ -452,8 +452,9 @@
     // SNOW-1185: regions no provider has ever rated stay off the map unless
     // asked for — see applyCountryFilters.
     unsupported: false,
-    // ON by default (seeded below) — see OVERLAY_STORAGE_KEY.ski_routes.
-    ski_routes: false,
+    // ON by default (seeded below) — see OVERLAY_STORAGE_KEY.ski_tours.
+    ski_tours: false,
+    ski_summits: false,
   };
 
   // SNOW-656: the Bulletins row's live state — the persisted preference plus
@@ -560,15 +561,9 @@
   for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
-  /**
-   * The ski-touring routes' preference: on unless the reader switched it
-   * off, and never for an ineligible page, which has no row to switch.
-   *
-   * @returns {boolean}
-   */
-  const readSkiRoutesPreference = () =>
-    SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.ski_routes, true);
-  overlayState.ski_routes = readSkiRoutesPreference();
+  // SNOW-1285: the two ski-touring parts, on unless switched off.
+  overlayState.ski_tours = SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.ski_tours, true);
+  overlayState.ski_summits = SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.ski_summits, true);
   // 2026-10-23: "By bulletin" left the terrain filter for a row of its own,
   // "Highlight problem terrain". A device that left the filter switched on
   // in that colour comes back with problem terrain on and the filter off,
@@ -4581,166 +4576,99 @@
     }));
   };
 
-  // ==== swisstopo's ski-touring routes ====
+  // ==== Ski touring: SAC's summits and tours ====
   //
-  // ch.swisstopo-karto.skitouren, swisstopo's WMTS raster of the winter
-  // routes it keeps with the SAC: open government data, served without a
-  // key, attribution required. A raster cannot be filtered, so every line
-  // swisstopo draws is drawn — Hugo judged that uncrowded on a phone
-  // (28 Oct 2026). Choosing among the routes needs the vector dataset
-  // (SNOW-1261). Bounded to Switzerland, so a map elsewhere asks for no
-  // tiles; from SKI_ROUTES_MINZOOM, where the lines start to separate.
-  const SKI_ROUTES_SOURCE_ID = 'ski-routes';
-  const SKI_ROUTES_LAYER_ID = 'ski-routes';
-  const SKI_ROUTES_TILE_URL =
-    'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo-karto.skitouren/default/current/3857/{z}/{x}/{y}.png';
-  const SKI_ROUTES_BOUNDS = [5.9, 45.8, 10.5, 47.85];
-  const SKI_ROUTES_MINZOOM = 10;
-  // SNOW-1278: from here ski_tours.js draws SAC's tours as vector lines,
-  // which can be tapped, over the raster. The raster stays at every zoom:
-  // it draws swisstopo's whole network, and SAC's tours are only part of
-  // it (SNOW-1283: 19 tours against 111 segments round the Wildhorn).
-  const SKI_ROUTES_VECTOR_MINZOOM = 12;
-  // The raster's strength, and its strength while a tour list dims every
-  // line it does not name (ski_tours.js, window.pwaSkiRoutes.dim()).
-  const SKI_ROUTES_OPACITY = 0.9;
-  const SKI_ROUTES_DIMMED_OPACITY = 0.3;
-  // Draw mode shows the routes whatever the switch says — they are its
-  // guide — and hands them back on exit. window.pwaSkiRoutes.hold().
-  let skiRoutesHeld = false;
-  // While draw mode follows the vector network it draws those same lines
-  // itself, as a faint shadow, so the raster steps aside (SNOW-1277).
-  // Outranks the hold and the switch alike. window.pwaSkiRoutes.hide().
-  let skiRoutesHidden = false;
-  // While a tour list is open, SNOW-1283. Kept here so a basemap swap's
-  // re-install comes back dimmed.
-  let skiRoutesDimmed = false;
-
-  /** @returns {number} The raster's opacity, dimmed or not. */
-  const skiRoutesOpacity = () => (skiRoutesDimmed ? SKI_ROUTES_DIMMED_OPACITY : SKI_ROUTES_OPACITY);
+  // SNOW-1285: two layers under the layers menu's "Ski touring" row, each
+  // with its own switch, both drawn by ski_tours.js and both tappable at
+  // every zoom they are drawn at. swisstopo's raster of its whole network
+  // (ch.swisstopo-karto.skitouren) is gone from the map: it drew lines
+  // nothing could tap. Draw mode still draws that network, as the vector
+  // shadow it snaps to (route_draw.js). Behind the route_drawing flag
+  // (data-ski-routes-eligible). Inside Switzerland only, since that is
+  // where the tours are.
+  //
+  // The zoom the layers are drawn from: the whole set loads at once below
+  // ski_tours_core.MINZOOM, the view's own detail from it.
+  const SKI_TOURING_MINZOOM = 9;
 
   /**
-   * Install the ski-touring routes' raster source and layer, hidden unless
-   * the overlay is on (or draw mode is holding it).
+   * One part's switch: on unless the reader switched it off, and never for
+   * an ineligible page, which has no row to switch.
    *
-   * Idempotent, like installTerrainFilterLayer, so the styledata
-   * re-install handler can call it on every basemap swap. Installed
-   * eagerly: a hidden raster layer requests no tiles.
+   * @param {'ski_tours'|'ski_summits'} key
+   * @returns {boolean}
+   */
+  const readSkiTouringPart = (key) =>
+    SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY[key], true);
+
+  /**
+   * Show or hide each part's layers as its switch says.
    *
    * @returns {void}
    */
-  const installSkiRoutesLayer = () => {
-    if (!SKI_ROUTES_ELIGIBLE || map.getSource(SKI_ROUTES_SOURCE_ID)) return;
-    map.addSource(SKI_ROUTES_SOURCE_ID, {
-      type: 'raster',
-      tiles: [SKI_ROUTES_TILE_URL],
-      tileSize: 256,
-      bounds: SKI_ROUTES_BOUNDS,
-      maxzoom: 17,
-      // Names the dataset, for the reason the terrain filter's does: a
-      // bare "© swisstopo" would merge into the swisstopo basemaps' own
-      // credit in updateMapAttribution and credit nothing.
-      attribution:
-        '<a href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener">'
-        + 'swisstopo — ski routes</a>',
-    });
-    // Over the choropleth, so the lines read on any danger colour, and
-    // under the boundaries and every pin and line Snowdesk draws.
-    const beforeId = map.getLayer('regions-line') ? 'regions-line' : undefined;
-    map.addLayer(
-      {
-        id: SKI_ROUTES_LAYER_ID,
-        type: 'raster',
-        source: SKI_ROUTES_SOURCE_ID,
-        minzoom: SKI_ROUTES_MINZOOM,
-        layout: {
-          visibility: skiRoutesShown() ? 'visible' : 'none',
-        },
-        paint: { 'raster-opacity': skiRoutesOpacity() },
-      },
-      beforeId,
-    );
-    raiseMarkerLayers();
-    attributionSourceIds = null;
-    updateMapAttribution();
-  };
-
-  /**
-   * Show or hide the raster as the hold, the hide and the switch decide.
-   *
-   * @returns {void}
-   */
-  const applySkiRoutesVisibility = () => {
-    // Storage, not overlayState: the picker writes the live layer and
-    // localStorage only (see the SNOW-473 note in the styledata handler).
-    const on = skiRoutesShown();
-    // SNOW-1278: the raster and the vector tours ski_tours.js draws from
-    // z12 are one overlay, OVERLAY_LAYERS.ski_routes.
-    for (const id of OVERLAY_LAYERS.ski_routes) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+  const applySkiTouringVisibility = () => {
+    for (const key of /** @type {const} */ (['ski_tours', 'ski_summits'])) {
+      const on = readSkiTouringPart(key);
+      for (const id of OVERLAY_LAYERS[key]) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+      }
     }
   };
 
-  /** @returns {boolean} Whether the ski-touring routes should be drawn now. */
-  const skiRoutesShown = () => !skiRoutesHidden && (skiRoutesHeld || readSkiRoutesPreference());
+  /**
+   * The bridge the layers menu switches one part through
+   * (map_basemap_picker.js OVERLAY_BRIDGES), as it does favourites'.
+   *
+   * @param {'ski_tours'|'ski_summits'} key
+   */
+  const skiTouringPart = (key) => {
+    const set = (on) => {
+      if (!SKI_ROUTES_ELIGIBLE) return;
+      writeStorage(OVERLAY_STORAGE_KEY[key], String(on));
+      overlayState[key] = on;
+      applySkiTouringVisibility();
+      announceOverlayVisibility();
+    };
+    return Object.freeze({
+      show: () => set(true),
+      hide: () => set(false),
+      isEnabled: () => readSkiTouringPart(key),
+    });
+  };
 
   window.pwaSkiRoutes = Object.freeze({
+    /** The tours' switch. */
+    tours: skiTouringPart('ski_tours'),
+    /** The summits' switch. */
+    summits: skiTouringPart('ski_summits'),
     /**
-     * Show the routes regardless of the switch (true), or hand them back
-     * to it (false). Draw mode's one call each way.
-     *
-     * @param {boolean} held
-     * @returns {void}
-     */
-    hold(held) {
-      skiRoutesHeld = !!held;
-      applySkiRoutesVisibility();
-    },
-    /**
-     * Hide the routes whatever holds them (true), or stop hiding them
-     * (false): draw mode, while it draws the network as a shadow itself.
-     *
-     * @param {boolean} hidden
-     * @returns {void}
-     */
-    hide(hidden) {
-      skiRoutesHidden = !!hidden;
-      applySkiRoutesVisibility();
-    },
-    /**
-     * Turn the overlay on, as its layers-menu row would: "Find a route"
+     * Turn both parts on, as the layers menu's master would: "Find a route"
      * (SNOW-1278).
      *
      * @returns {void}
      */
     show() {
       if (!SKI_ROUTES_ELIGIBLE) return;
-      writeStorage(OVERLAY_STORAGE_KEY.ski_routes, 'true');
-      overlayState.ski_routes = true;
-      applySkiRoutesVisibility();
+      for (const key of ['ski_tours', 'ski_summits']) {
+        writeStorage(OVERLAY_STORAGE_KEY[key], 'true');
+        overlayState[key] = true;
+      }
+      applySkiTouringVisibility();
       announceOverlayVisibility();
     },
+    /** @returns {boolean} Whether either part is switched on. */
+    isShown: () => readSkiTouringPart('ski_tours') || readSkiTouringPart('ski_summits'),
     /**
-     * Dim the raster (true), or bring it back (false): ski_tours.js, while
-     * a list names the tours it draws in the route colour (SNOW-1283).
-     *
-     * @param {boolean} dimmed
-     * @returns {void}
+     * @param {'ski_tours'|'ski_summits'} key
+     * @returns {boolean} Whether that part is switched on.
      */
-    dim(dimmed) {
-      skiRoutesDimmed = !!dimmed;
-      if (map.getLayer(SKI_ROUTES_LAYER_ID)) {
-        map.setPaintProperty(SKI_ROUTES_LAYER_ID, 'raster-opacity', skiRoutesOpacity());
-      }
-    },
-    /** @returns {boolean} Whether the routes are drawn now. */
-    isShown: () => SKI_ROUTES_ELIGIBLE && skiRoutesShown(),
-    /** @returns {boolean} Whether this page has the layer at all. */
+    isPartShown: (key) => readSkiTouringPart(key),
+    /** @returns {boolean} Whether this page has the layers at all. */
     isEligible: () => SKI_ROUTES_ELIGIBLE,
     /** @returns {Array<string>} The font stack the map's own overlay labels use. */
     textFont: () => overlayTextFont,
-    /** The zoom ski_tours.js's lines are drawn from, over the raster. */
-    VECTOR_MINZOOM: SKI_ROUTES_VECTOR_MINZOOM,
+    /** The zoom both parts are drawn from. */
+    MINZOOM: SKI_TOURING_MINZOOM,
   });
 
   /**
@@ -7719,11 +7647,11 @@
   //     and SNOW-1073's slope colouring share the tiles and the switch).
   //   route_slopes — a route's core switches from leg colours to slope
   //     classes at ROUTE_SLOPE_MINZOOM (z14).
-  //   ski_routes — swisstopo's ski-touring routes from SKI_ROUTES_MINZOOM
-  //     (z10). Named only on a page that has the layer.
+  //   ski_routes — SAC's summits and tours from SKI_TOURING_MINZOOM (z9).
+  //     Named only on a page that has the layers.
   const ZOOM_GATES = Object.freeze([
     Object.freeze({ key: 'region_select', zoom: REGION_SELECT_MAXZOOM, upTo: true }),
-    ...(SKI_ROUTES_ELIGIBLE ? [Object.freeze({ key: 'ski_routes', zoom: SKI_ROUTES_MINZOOM })] : []),
+    ...(SKI_ROUTES_ELIGIBLE ? [Object.freeze({ key: 'ski_routes', zoom: SKI_TOURING_MINZOOM })] : []),
     Object.freeze({ key: 'terrain_filter', zoom: TERRAIN_CORE ? TERRAIN_CORE.MIN_ZOOM : 12 }),
     Object.freeze({ key: 'route_slopes', zoom: ROUTE_SLOPE_MINZOOM }),
   ]);
@@ -8510,7 +8438,6 @@
     // round.
     installTerrainFilterLayer();
     installRegionsLayers(geojson);
-    installSkiRoutesLayer();
     // SNOW-979: after the regions — it sits above the choropleth. A reader
     // who left "Highlight problem terrain" on gets the day now.
     installBulletinTerrainLayer();
@@ -11331,7 +11258,8 @@
       for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
-      overlayState.ski_routes = readSkiRoutesPreference();
+      overlayState.ski_tours = readSkiTouringPart('ski_tours');
+      overlayState.ski_summits = readSkiTouringPart('ski_summits');
       // l1, l2, l4 and bulletins are re-seeded before any install fn runs: the
       // fill's layout is derived from l4 and bulletins, and the bulletin
       // boundary's visibility from bulletins alone rather than a key of its
@@ -11374,7 +11302,6 @@
       // was loaded before the basemap switch is a no-op (loadedCountries
       // still has the code), so the data never comes back.
       installRegionsLayers(geojsonCache);
-      installSkiRoutesLayer();
       // SNOW-978: the terrain filter went with the style too. Re-added
       // after the regions here rather than before them — it resolves its
       // own `beforeId` against 'regions-fill', so it slots underneath either

@@ -6,20 +6,19 @@
  * view loads, the URLs) is ski_tours_core.js. The surface is
  * public/partials/_ski_tours_surface.html, which explains the interaction.
  *
- * THE TOURS ARE PART OF THE SKI-TOURING ROUTES OVERLAY. Below z12 that
- * overlay is swisstopo's raster (map.js) alone; from z12 the lines and
- * summits drawn here, loaded per view from /api/ski-tours.geojson, sit on
- * top of it. The raster stays because it draws swisstopo's whole network,
- * of which SAC's tours are only part (SNOW-1283). The layer ids are in
- * OVERLAY_LAYERS.ski_routes, so the layers menu and window.pwaSkiRoutes
- * (draw mode's hold and hide) switch them with the raster.
+ * THE TOURS AND THE SUMMITS ARE THE SKI-TOURING LAYER (SNOW-1285): two
+ * parts, each with its own switch in the layers menu (map.js keeps the
+ * switches, window.pwaSkiRoutes; the layer ids are OVERLAY_LAYERS.ski_tours
+ * and .ski_summits). Both are drawn from z9 and tapped the same way at
+ * every zoom: below z12 from every tour at once, each line thinned
+ * (/api/ski-tours.geojson?overview=1, loaded once), and from z12 from the
+ * view's own rectangle at full detail. swisstopo's raster of its whole
+ * network is no longer drawn: nothing in it could be tapped.
  *
- * Lines are blue at full strength, as the mockup decided (28 Oct 2026):
- * this is the mode where the tours are the thing tapped. While a list is
- * open the tours it names are drawn over them in the route colour, a way
- * down dashed, each with a green dot at its far end (where a way up starts
- * and a way down finishes), and every other tour is dimmed, the raster
- * with them (window.pwaSkiRoutes.dim).
+ * While a list is open the tours it names are drawn over the rest in the
+ * route colour, a way down dashed, each with a green dot at its far end
+ * (where a way up starts and a way down finishes), and every other tour is
+ * dimmed.
  *
  * A TAP (map.js's dispatcher calls `tap(point)` after the markers and the
  * weather symbols) on a summit lists every tour to it; on a line it opens
@@ -104,9 +103,15 @@
     /** The last collection loaded, for a basemap swap's re-install. */
     /** @type {{type: string, features: Array<any>}} */
     data: { type: 'FeatureCollection', features: [] },
-    /** The rectangle `data` covers, or null. */
+    /** The rectangle `data` covers, or null (and null for the overview). */
     /** @type {?[number, number, number, number]} */
     loaded: null,
+    /** What `data` is: the overview, a view's detail, or nothing yet. */
+    /** @type {'none'|'overview'|'detail'} */
+    mode: 'none',
+    /** The overview, once loaded: it does not change while the page lives. */
+    /** @type {?{type: string, features: Array<any>}} */
+    overview: null,
     /** @type {?AbortController} */
     inflight: null,
     /** @type {?number} */
@@ -134,9 +139,40 @@
     return (window.snowdeskMapState && window.snowdeskMapState.map) || null;
   }
 
-  /** @returns {boolean} Whether the tours are switched on at all. */
+  /** @returns {boolean} Whether either part is switched on. */
   function shown() {
     return !!(window.pwaSkiRoutes && window.pwaSkiRoutes.isShown());
+  }
+
+  /** @returns {boolean} Whether a placement mode (draw mode) has the map. */
+  function focused() {
+    return !!(window.PlacementFocus && window.PlacementFocus.isActive());
+  }
+
+  /**
+   * A part's layers' visibility: as its switch says, and hidden while a
+   * placement mode has the map. PlacementFocus hides only the layers that
+   * exist when it starts, and the tours are often added later, on the
+   * first zoom past z9.
+   *
+   * @param {'ski_tours'|'ski_summits'} key
+   * @returns {'visible'|'none'}
+   */
+  function partVisibility(key) {
+    const on = window.pwaSkiRoutes && window.pwaSkiRoutes.isPartShown(key);
+    return on && !focused() ? 'visible' : 'none';
+  }
+
+  /** Show or hide each part's layers, once they exist. */
+  function applyVisibility() {
+    const map = getMap();
+    if (!map || !map.getLayer(LINE)) return;
+    for (const id of [LINE, HIGHLIGHT, HIGHLIGHT_DOWN, FAR_END]) {
+      map.setLayoutProperty(id, 'visibility', partVisibility('ski_tours'));
+    }
+    for (const id of [SUMMIT, LABEL]) {
+      map.setLayoutProperty(id, 'visibility', partVisibility('ski_summits'));
+    }
   }
 
   /** @returns {string} The CSRF token for a POST. */
@@ -154,20 +190,27 @@
   /**
    * Add the tours' source and layers, once per style.
    *
-   * Under the boundaries and every pin, over the danger colours, as
-   * swisstopo's raster is.
+   * Under the boundaries and every pin, over the danger colours. Each
+   * part's layers start as its switch says.
    *
    * @param {any} map
    */
   function installLayers(map) {
     if (map.getSource(SOURCE)) return;
-    map.addSource(SOURCE, { type: 'geojson', data: state.data });
-    const visibility = shown() ? 'visible' : 'none';
+    map.addSource(SOURCE, {
+      type: 'geojson',
+      data: state.data,
+      attribution: 'SAC ski tours © swisstopo',
+    });
+    const visibility = partVisibility('ski_tours');
+    const summitVisibility = partVisibility('ski_summits');
     const before = map.getLayer('regions-line') ? 'regions-line' : undefined;
     const minzoom = core.MINZOOM;
     const isTour = ['==', ['get', 'kind'], 'tour'];
     const highlight = core.highlightFilter(state.highlight);
-    const width = ['interpolate', ['linear'], ['zoom'], 12, 1.5, 15, 3];
+    // Bold from z12, where the lines separate; thinner further out, where
+    // the whole of a valley's tours share a few pixels.
+    const width = ['interpolate', ['linear'], ['zoom'], 9, 1.5, 12, 3, 15, 5];
     map.addLayer({
       id: LINE,
       type: 'line',
@@ -181,7 +224,7 @@
         'line-opacity': state.highlight.length ? DIMMED_OPACITY : 1,
       },
     }, before);
-    const highlightWidth = ['interpolate', ['linear'], ['zoom'], 12, 3, 15, 5];
+    const highlightWidth = ['interpolate', ['linear'], ['zoom'], 9, 3, 12, 5, 15, 7];
     map.addLayer({
       id: HIGHLIGHT,
       type: 'line',
@@ -211,11 +254,11 @@
       source: SOURCE,
       minzoom: minzoom,
       filter: isMark,
-      layout: { visibility: visibility },
+      layout: { visibility: summitVisibility },
       paint: {
         // A summit is a dot of ink; a hut a ring, as a hut is drawn on a
         // topographic map.
-        'circle-radius': 4.5,
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 3, 11, 4.5],
         'circle-color': ['case', ['==', ['get', 'kind'], 'hut'], HALO_COLOUR, INK_COLOUR],
         'circle-stroke-color': ['case', ['==', ['get', 'kind'], 'hut'], INK_COLOUR, HALO_COLOUR],
         'circle-stroke-width': 1.5,
@@ -249,10 +292,10 @@
       id: LABEL,
       type: 'symbol',
       source: SOURCE,
-      minzoom: minzoom,
+      minzoom: core.LABEL_MINZOOM,
       filter: isMark,
       layout: {
-        visibility: visibility,
+        visibility: summitVisibility,
         'text-field': [
           'case',
           ['has', 'altitude_m'],
@@ -288,8 +331,6 @@
     map.setFilter(HIGHLIGHT, ['all', isTour, ['!', ['get', 'down']], highlight]);
     map.setFilter(HIGHLIGHT_DOWN, ['all', isTour, ['get', 'down'], highlight]);
     map.setPaintProperty(LINE, 'line-opacity', state.highlight.length ? DIMMED_OPACITY : 1);
-    // The raster under the tours draws the rest of the network: it dims too.
-    window.pwaSkiRoutes?.dim(state.highlight.length > 0);
     paintFarEnds(map);
   }
 
@@ -308,43 +349,76 @@
   // ---------------------------------------------------------------------------
 
   /**
-   * Load the tours for the view, when they are on and close enough to be
-   * drawn, and the view is not already loaded.
+   * Put a loaded collection on the map.
+   *
+   * @param {any} map
+   * @param {{type: string, features: Array<any>}} body
    */
-  function load() {
-    const map = getMap();
-    if (!map || !GEOJSON_URL || !shown() || map.getZoom() < core.MINZOOM) return;
-    const b = map.getBounds();
-    /** @type {[number, number, number, number]} */
-    const view = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-    if (core.covers(state.loaded, view)) return;
-    const box = core.loadBox(view);
-    if (!box) return;
+  function paintData(map, body) {
+    state.data = body;
+    const source = map.getSource(SOURCE);
+    if (source) source.setData(body);
+    else installLayers(map);
+    // A pan that reloads while a list is open keeps its dots in place.
+    paintFarEnds(map);
+  }
+
+  /**
+   * Fetch one collection, the one in flight before it dropped.
+   *
+   * @param {string} url
+   * @param {function({type: string, features: Array<any>}): void} done
+   */
+  function fetchData(url, done) {
     if (state.inflight) state.inflight.abort();
     const inflight = new AbortController();
     state.inflight = inflight;
-    fetch(GEOJSON_URL + '?bbox=' + box.join(','), {
-      credentials: 'same-origin',
-      signal: inflight.signal,
-    })
+    fetch(url, { credentials: 'same-origin', signal: inflight.signal })
       .then(function (resp) {
         return resp.ok ? resp.json() : null;
       })
       .then(function (body) {
         if (state.inflight !== inflight) return;
         state.inflight = null;
-        if (!body || !Array.isArray(body.features)) return;
-        state.data = body;
-        state.loaded = box;
-        const source = map.getSource(SOURCE);
-        if (source) source.setData(body);
-        else installLayers(map);
-        // A pan that reloads while a list is open keeps its dots in place.
-        paintFarEnds(map);
+        if (body && Array.isArray(body.features)) done(body);
       })
       .catch(function () {
         if (state.inflight === inflight) state.inflight = null;
       });
+  }
+
+  /**
+   * Load what the zoom asks for, when either part is on: every tour thinned
+   * out to z12, the view's own detail from it, and nothing past z9.
+   */
+  function load() {
+    const map = getMap();
+    if (!map || !GEOJSON_URL || !shown() || focused()) return;
+    const mode = core.loadMode(map.getZoom());
+    if (mode === 'none') return;
+    if (mode === 'overview') {
+      if (state.mode === 'overview') return;
+      const show = function (/** @type {{type: string, features: Array<any>}} */ body) {
+        state.overview = body;
+        state.mode = 'overview';
+        state.loaded = null;
+        paintData(map, body);
+      };
+      if (state.overview) show(state.overview);
+      else fetchData(GEOJSON_URL + '?overview=1', show);
+      return;
+    }
+    const b = map.getBounds();
+    /** @type {[number, number, number, number]} */
+    const view = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    if (state.mode === 'detail' && core.covers(state.loaded, view)) return;
+    const box = core.loadBox(view);
+    if (!box) return;
+    fetchData(GEOJSON_URL + '?bbox=' + box.join(','), function (body) {
+      state.mode = 'detail';
+      state.loaded = box;
+      paintData(map, body);
+    });
   }
 
   /** Load after the map settles, at most once a quarter second. */
@@ -622,7 +696,9 @@
    */
   function tap(point) {
     const map = getMap();
-    if (!map || !shown() || map.getZoom() < core.MINZOOM || !map.getLayer(LINE)) return false;
+    if (!map || !shown() || core.loadMode(map.getZoom()) === 'none' || !map.getLayer(LINE)) {
+      return false;
+    }
     /** @param {number} px */
     const box = (px) => [[point.x - px, point.y - px], [point.x + px, point.y + px]];
     const hits = map.queryRenderedFeatures(box(SUMMIT_TAP_PX), { layers: [SUMMIT, LABEL] })
@@ -675,8 +751,12 @@
     };
     map.on('styledata', ready);
     map.on('moveend', scheduleLoad);
-    // The overlay switched on from the layers menu loads as soon as asked.
-    document.addEventListener('snowdesk:overlay-visibility-changed', scheduleLoad);
+    // A part switched on loads as soon as asked; a placement mode's start
+    // and end (PlacementFocus announces both) hide and restore the parts.
+    document.addEventListener('snowdesk:overlay-visibility-changed', function () {
+      applyVisibility();
+      scheduleLoad();
+    });
     ready();
   }
   bindMap();

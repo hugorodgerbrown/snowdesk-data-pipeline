@@ -91,3 +91,42 @@ def test_past_the_cap_the_answer_says_truncated(
     body = _get(client).json()
     assert body["truncated"] is True
     assert sum(1 for f in body["features"] if f["properties"]["kind"] == "tour") == 1
+
+
+def test_the_overview_serves_every_tour_thinned(client: Client) -> None:
+    """SNOW-1285: no box, every tour and summit, each line with what a tap reads."""
+    near = SkiTourFactory.create()
+    far = SkiTourFactory.create(
+        target_name="Far",
+        descent_m=900,
+        ascent_m=None,
+        west=7.0,
+        south=46.0,
+        east=7.1,
+        north=46.1,
+        geometry={
+            "type": "LineString",
+            "coordinates": [[7.0, 46.0, 2000.0], [7.05, 46.05000001], [7.1, 46.1]],
+        },
+    )
+    url = reverse("api:ski_tours_geojson")
+    response = client.get(url, {"overview": "1"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["truncated"] is False
+    tours = {f["id"]: f for f in body["features"] if f["properties"]["kind"] == "tour"}
+    assert set(tours) == {str(near.source_uuid), str(far.source_uuid)}
+    line = tours[str(far.source_uuid)]
+    assert line["properties"] == {
+        "kind": "tour",
+        "uuid": str(far.source_uuid),
+        "summit": "far-3312",
+        "down": True,
+    }
+    # The middle point is on the line, so the thinning drops it.
+    assert line["geometry"] == {
+        "type": "MultiLineString",
+        "coordinates": [[[7.0, 46.0], [7.1, 46.1]]],
+    }
+    summits = {f["id"] for f in body["features"] if f["properties"]["kind"] != "tour"}
+    assert summits == {"summit:piz-buin-3312", "summit:far-3312"}

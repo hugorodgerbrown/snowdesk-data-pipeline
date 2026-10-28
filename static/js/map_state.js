@@ -98,12 +98,15 @@ const OVERLAY_STORAGE_KEY = {
   // condition symbol at every station is a second layer of information over
   // the danger ratings someone opened the map to read.
   weather: 'snowdesk.map.overlay.weather',
-  // swisstopo's ski-touring routes (ch.swisstopo-karto.skitouren). Defaults
-  // ON, unlike every other opt-in overlay here: it is a thin raster of
-  // lines, Hugo judged it uncrowded on a phone (28 Oct 2026), and it is
-  // exactly what a reader planning a tour wants under the map. Eligible
-  // only behind the route_drawing flag for now (data-ski-routes-eligible).
-  ski_routes: 'snowdesk.map.overlay.ski_routes',
+  // SAC's ski tours and their summits, the two parts of the "Ski touring"
+  // layer (SNOW-1285). Both default ON, unlike every other opt-in overlay
+  // here: they are what a reader planning a tour wants under the map, and
+  // Hugo judged the lines uncrowded on a phone (28 Oct 2026). Eligible only
+  // behind the route_drawing flag for now (data-ski-routes-eligible). The
+  // tours keep the key the swisstopo raster's switch had, so a reader who
+  // switched that off keeps the tours off.
+  ski_tours: 'snowdesk.map.overlay.ski_routes',
+  ski_summits: 'snowdesk.map.overlay.ski_summits',
   // The layers menu's "Display downloaded areas" row (SNOW-904; the
   // downloads panel's own switch before that). PERSISTED — this reverses
   // SNOW-645's "session-scoped inspection mode", which is what Hugo
@@ -214,19 +217,17 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-761: one symbol layer, not a pin+label pair — the condition glyph
   // is an inline `image` section inside `text-field`.
   weather: ['weather-point'],
-  // swisstopo's raster at every zoom, installed by map.js's
-  // installSkiRoutesLayer, and over it from z12 SAC's tours as lines and
-  // summits, which can be tapped (SNOW-1278, SNOW-1283, static/js/ski_tours.js). The raster stays first: the first
-  // id is the one whose visibility says whether the overlay is painted.
-  ski_routes: [
-    'ski-routes',
+  // SNOW-1285: SAC's tours, and the summits and huts they go to, drawn by
+  // static/js/ski_tours.js from z9 and tappable wherever drawn. Two parts,
+  // each its own switch. A tour list's highlight and far-end dots are the
+  // tours' too: with the tours off there is no list to light them.
+  ski_tours: [
     'ski-tours-line',
     'ski-tours-highlight',
     'ski-tours-highlight-down',
-    'ski-tours-summit',
-    'ski-tours-summit-label',
     'ski-tours-far-end',
   ],
+  ski_summits: ['ski-tours-summit', 'ski-tours-summit-label'],
   // SNOW-687: the coloured line FIRST and the casing second — deliberately
   // the inverse of the order installRoutesLayer adds them in, where the
   // casing has to be added first to paint underneath. (SNOW-764's

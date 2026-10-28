@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-10-25
+last-reviewed: 2026-10-28
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -374,9 +374,11 @@ Prerequisite: sign in as `admin@snowdesk.dev`, with the ski tours synced
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Open the routes panel and click "Find a route" | The panel closes; a dark hint says "Zoom in, then tap a summit or a route" (or "Tap a summit or a route" from z12) |
-| 2 | Zoom to the Silvretta (z12+) | Every line swisstopo's raster drew at z11 is still there, with SAC's tours drawn over it in blue, a labelled dot per summit and a ring per hut |
-| 3 | Tap the Signalhorn's dot | A sheet "Signalhorn (GR) · 3207 m", "4 SAC routes · 2 up, 2 down", the ways up and the ways down apart; the four lines turn fuchsia on the map, the ways down dashed, each with a green dot at its far end, and every other route dims, swisstopo's raster included |
+| 1 | Open the routes panel and click "Find a route" | The panel closes; a dark hint says "Zoom in, then tap a summit or a route" (or "Tap a summit or a route" from z9) |
+| 1a | Zoom to z9–z11 over the Silvretta | SAC's tours as thin blue lines and a dot per summit (named from z10); tapping either works as below. No other ski-touring lines are drawn |
+| 2 | Zoom to the Silvretta (z12+) | SAC's tours in bold blue, a labelled dot per summit and a ring per hut |
+| 2a | Open the layers menu, then "Ski touring" | Two switches, Tours and Summits, both on; switching one off hides only it; the master switch turns both off and back on |
+| 3 | Tap the Signalhorn's dot | A sheet "Signalhorn (GR) · 3207 m", "4 SAC routes · 2 up, 2 down", the ways up and the ways down apart; the four lines turn fuchsia on the map, the ways down dashed, each with a green dot at its far end, and every other route dims |
 | 4 | Tap a line just outside the Silvrettahütte, where several meet | A sheet "N routes pass here", each row titled by its summit |
 | 5 | Tap a row | The route panel opens on the tour. The map does not move if the whole tour already shows; otherwise it pans, or zooms out, just enough, and never zooms in. The panel shows the tour's title, figures, and the line "SAC route · PD+ · ↑ 960 m · 3 h 30 (SAC guide time)"; the profile follows within seconds the first time any reader opens it |
 | 5a | Tap the profile, then the point header's terrain slope line | The terrain data opens with the ground's slope and aspect under the point, as for a saved route |

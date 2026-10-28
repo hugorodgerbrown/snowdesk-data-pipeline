@@ -60,15 +60,25 @@ which samples the line and stores the result in `SkiTour.slope_samples`.
 Every later reader gets it straight away, and every saved copy inherits it
 without sampling again. A sync that rewrites the tour clears it.
 
-**The tours belong to the ski-touring routes overlay.** Below z12 the
-overlay is swisstopo's raster alone. From z12, ski_tours.js's vector lines
-and summits, in blue at full strength, are drawn on top of it. The raster
-stays at every zoom because it draws swisstopo's whole network, and SAC's
-tours are only part of it: round the Wildhorn, 19 tours against 111
-network segments (SNOW-1283). Stopping it at z12, as SNOW-1278 first did,
-made most of the lines vanish on zooming in. All of these layers are listed
-in `OVERLAY_LAYERS.ski_routes`, so the layers menu switches them together,
-and draw mode's `hold` and `hide` apply to them too.
+**The tours and their summits are the map's ski-touring layer, and
+everything it draws can be tapped** (SNOW-1285). The layers menu's "Ski
+touring" row opens a page with two switches, Tours and Summits, under a
+master that is on while either is (as the boundaries' master is). Both are
+on by default, and both are drawn from z9. Below z12 the tours come from
+`/api/ski-tours.geojson?overview=1`: every tour at once, each line thinned
+to about 20 m (`ski_tours.tour_overview`, ~0.6 MB gzipped, loaded once).
+From z12 they come from the view's own rectangle at full detail. A tap
+works the same way at every zoom. The ids are `OVERLAY_LAYERS.ski_tours`
+and `.ski_summits`, and map.js keeps the switches (`window.pwaSkiRoutes`).
+
+swisstopo's raster of its whole network (`ch.swisstopo-karto.skitouren`)
+is no longer drawn on the map. SNOW-1283 kept it at every zoom because the
+network is bigger than SAC's tours (round the Wildhorn, 19 tours against
+111 segments), and SNOW-1285 first faded it under bold tours. Hugo found
+lines that could be seen but not tapped confusing (28 Oct 2026), so it
+went. The network is still drawn where it is used: in draw mode, as the
+vector shadow a leg snaps to (`/api/ski-network.geojson`). The map no
+longer calls swisstopo's tile server for it.
 
 ## Why
 
@@ -110,6 +120,5 @@ and draw mode's `hold` and `hide` apply to them too.
 - While a list is open, the tours it names are drawn in the route colour,
   a green dot marks each one's far end (`ski_tours_core.farEnds`: the end
   away from its summit, where a way up starts and a way down finishes),
-  and every other tour is dimmed (SNOW-1282), the raster with them
-  (`window.pwaSkiRoutes.dim`, SNOW-1283). The mockup labels the dot
+  and every other tour is dimmed (SNOW-1282). The mockup labels the dot
   with a place name, which the data does not carry, so it is a dot alone.

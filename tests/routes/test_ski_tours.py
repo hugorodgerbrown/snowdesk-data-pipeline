@@ -4,7 +4,8 @@ tests/routes/test_ski_tours.py — finding SAC's ski tours (SNOW-1278).
 The services in apps/routes/services/ski_tours.py: which end of a tour is
 its target, where a summit stands and what it counts, the hut and way-down
 rules, the guide time, the tour as route points and an unsaved Route, the
-terrain kept on the tour, and saving a copy.
+terrain kept on the tour, saving a copy, and every tour thinned for a
+zoomed-out map (SNOW-1285).
 """
 
 from __future__ import annotations
@@ -26,11 +27,13 @@ from apps.routes.services.ski_tours import (
     is_descent,
     is_hut,
     localised,
+    overview_geometry,
     sac_time,
     save_ski_tour,
     summit_key,
     summits,
     target_end,
+    tour_overview,
     tour_points,
     tour_properties,
     tour_slope_samples,
@@ -163,6 +166,46 @@ class TestSummits:
         assert set(summits()) == {"signalhorn-gr-3207"}
         _tour(target_name="Piz Buin", target_altitude_m=3312)
         assert set(summits()) == {"signalhorn-gr-3207", "piz-buin-3312"}
+
+
+class TestTheOverview:
+    """Every tour at once, thinned, for a map zoomed out past z12."""
+
+    def test_a_line_is_thinned_rounded_and_flattened(self) -> None:
+        """A point within the tolerance goes; heights go; five places stay."""
+        geometry = overview_geometry(
+            {
+                "type": "MultiLineString",
+                "coordinates": [
+                    [[10.0, 46.8, 1800.0], [10.05, 46.80001], [10.1, 46.8]],
+                    [[10.123456789, 46.9], [10.2, 47.0]],
+                    [[10.3, 47.1]],
+                ],
+            }
+        )
+        assert geometry == {
+            "type": "MultiLineString",
+            "coordinates": [
+                [[10.0, 46.8], [10.1, 46.8]],
+                [[10.12346, 46.9], [10.2, 47.0]],
+            ],
+        }
+
+    def test_a_line_with_nothing_to_draw_is_none(self) -> None:
+        """No part with two points."""
+        assert (
+            overview_geometry({"type": "LineString", "coordinates": [[1, 2]]}) is None
+        )
+        assert overview_geometry({}) is None
+
+    def test_the_overview_is_cached_until_the_tours_change(self) -> None:
+        """A tour with no line is left out; a new tour reads afresh."""
+        _tour()
+        _tour(geometry={"type": "MultiLineString", "coordinates": []})
+        (first,) = tour_overview()
+        assert first["properties"]["summit"] == "signalhorn-gr-3207"
+        _tour(target_name="Piz Buin", target_altitude_m=3312)
+        assert len(tour_overview()) == 2
 
 
 class TestTheTourAsARoute:

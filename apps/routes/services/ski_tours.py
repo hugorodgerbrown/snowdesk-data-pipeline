@@ -28,8 +28,9 @@ open a tour samples it (``tour_slope_samples``) and the record is kept on
 the tour, for every later reader and for every saved copy, until a sync
 rewrites the tour and clears it.
 
-The pure helpers take plain values; ``summits`` reads every tour once and
-is cached until the tours change (a weekly import at most).
+The pure helpers take plain values; ``summits`` and ``tour_overview`` each
+read every tour once and are cached until the tours change (a weekly
+import at most).
 """
 
 from __future__ import annotations
@@ -73,6 +74,14 @@ _M_PER_DEG = 111_320.0
 # v2: SNOW-1282 chains a tour's parts, which moves some summits.
 _SUMMITS_CACHE_KEY = "routes:ski-summits:v2:{count}:{stamp}"
 _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
+
+# SNOW-1285: every tour at once, for a map zoomed out past the per-view
+# load. Thinned to about 20 m (Douglas-Peucker in degrees) and rounded to
+# five places (about a metre): at z9-z11 a pixel is 20-150 m, so nothing
+# drawn moves, and the whole set is ~2.3 MB, ~0.6 MB gzipped.
+_OVERVIEW_CACHE_KEY = "routes:ski-overview:v1:{count}:{stamp}"
+_OVERVIEW_TOLERANCE_DEG = 0.0002
+_OVERVIEW_PLACES = 5
 
 Point = tuple[float, float]
 
@@ -326,17 +335,22 @@ def build_summits(tours: list[SkiTour]) -> list[Summit]:
     return summits
 
 
-def summits() -> dict[str, Summit]:
-    """Return every summit, by key, cached until the tours change.
+def _tours_stamp(template: str) -> str:
+    """Return a cache key from ``template`` that changes when the tours do.
 
-    The cache key carries the tours' count and newest ``updated_at``,
-    so an import that adds, rewrites or removes a tour reads afresh.
+    It carries the tours' count and newest ``updated_at``, so an import
+    that adds, rewrites or removes a tour reads afresh.
     """
     stamp = SkiTour.objects.aggregate(count=Count("id"), newest=Max("updated_at"))
-    key = _SUMMITS_CACHE_KEY.format(
+    return template.format(
         count=stamp["count"],
         stamp=stamp["newest"].timestamp() if stamp["newest"] else 0,
     )
+
+
+def summits() -> dict[str, Summit]:
+    """Return every summit, by key, cached until the tours change."""
+    key = _tours_stamp(_SUMMITS_CACHE_KEY)
     cached: dict[str, Summit] | None = cache.get(key)
     if cached is None:
         cached = {
@@ -354,6 +368,86 @@ def summits() -> dict[str, Summit]:
                 )
             )
         }
+        cache.set(key, cached, _SUMMITS_CACHE_SECONDS)
+    return cached
+
+
+def overview_geometry(geometry: dict[str, Any]) -> dict[str, Any] | None:
+    """Return a tour's line thinned for a zoomed-out map, or None.
+
+    Args:
+        geometry: The tour's stored GeoJSON LineString or MultiLineString.
+
+    Returns:
+        A MultiLineString of (lon, lat) pairs, or None when nothing in it
+        is long enough to draw.
+
+    """
+    from shapely.geometry import shape  # noqa: PLC0415 — see gpx._simplify
+
+    coordinates = (geometry or {}).get("coordinates") or []
+    if (geometry or {}).get("type") == "LineString":
+        coordinates = [coordinates]
+    lines = []
+    for line in coordinates:
+        if not isinstance(line, list) or len(line) < 2:
+            continue
+        thinned = shape(
+            {"type": "LineString", "coordinates": [point[:2] for point in line]}
+        ).simplify(_OVERVIEW_TOLERANCE_DEG, preserve_topology=False)
+        lines.append(
+            [
+                [round(lon, _OVERVIEW_PLACES), round(lat, _OVERVIEW_PLACES)]
+                for lon, lat, *_ in thinned.coords
+            ]
+        )
+    if not lines:
+        return None
+    return {"type": "MultiLineString", "coordinates": lines}
+
+
+def tour_overview() -> list[dict[str, Any]]:
+    """Return every tour as a thinned line Feature, cached until they change.
+
+    SNOW-1285. What a map zoomed out past the per-view load draws, and is
+    tapped on: the line and only what a tap and the highlight read (its
+    uuid, its summit's key, whether it is a way down). The panel and the
+    list ask the server for the rest. Not localised, so one copy serves
+    every language.
+
+    Returns:
+        The Features, in SAC id order.
+
+    """
+    key = _tours_stamp(_OVERVIEW_CACHE_KEY)
+    cached: list[dict[str, Any]] | None = cache.get(key)
+    if cached is None:
+        cached = []
+        tours = SkiTour.objects.order_by("sac_id").only(
+            "source_uuid",
+            "geometry",
+            "target_name",
+            "target_altitude_m",
+            "ascent_m",
+            "descent_m",
+        )
+        for tour in tours.iterator():
+            geometry = overview_geometry(tour.geometry)
+            if geometry is None:
+                continue
+            cached.append(
+                {
+                    "type": "Feature",
+                    "id": str(tour.source_uuid),
+                    "geometry": geometry,
+                    "properties": {
+                        "kind": "tour",
+                        "uuid": str(tour.source_uuid),
+                        "summit": tour_key(tour),
+                        "down": is_descent(tour),
+                    },
+                }
+            )
         cache.set(key, cached, _SUMMITS_CACHE_SECONDS)
     return cached
 

@@ -78,7 +78,7 @@ import re
 import secrets
 import uuid
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import date, datetime, timedelta
 from typing import Any, cast
 
@@ -136,11 +136,13 @@ from apps.regions.services.basemap_tiles import blob_summary
 from apps.regions.services.resort_pin import set_resort_pin
 from apps.routes.models import SkiSegment, SkiTour
 from apps.routes.services.ski_tours import (
+    Summit,
     is_descent,
     localised,
     sac_time,
     summits,
     tour_key,
+    tour_overview,
 )
 from apps.weather.models import Weather
 from apps.weather.services.weather_display import build_point_weather_days
@@ -1423,6 +1425,27 @@ def ski_network_geojson(request: HttpRequest) -> HttpResponse:
 SKI_TOURS_MAX_FEATURES = 1500
 
 
+def _summit_features(chosen: Iterable[Summit]) -> list[dict[str, Any]]:
+    """Return these summits as GeoJSON point Features.
+
+    Args:
+        chosen: The summits to draw.
+
+    Returns:
+        One Feature per summit, its id ``summit:<key>``.
+
+    """
+    return [
+        {
+            "type": "Feature",
+            "id": f"summit:{summit.key}",
+            "geometry": {"type": "Point", "coordinates": [summit.lon, summit.lat]},
+            "properties": summit.as_properties(),
+        }
+        for summit in chosen
+    ]
+
+
 @vary_on_headers("Accept-Encoding", "Accept-Language", "Cookie")
 @require_GET
 def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
@@ -1453,6 +1476,11 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
 
     Names are in the request's language where SAC has one, hence the Vary.
 
+    ``?overview=1`` instead of a bbox answers every tour at once, for a map
+    zoomed out past the per-view load (SNOW-1285): each line thinned
+    (``tour_overview``) and carrying only ``kind``, ``uuid``, ``summit`` and
+    ``down``, with every summit as above. ``truncated`` is always false.
+
     Args:
         request: The incoming HTTP request.
 
@@ -1460,6 +1488,13 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
         A JsonResponse with the payload above, or 400 for a bad bbox.
 
     """
+    if request.GET.get("overview") == "1":
+        overview = [*tour_overview(), *_summit_features(summits().values())]
+        return _geojson_response(
+            request,
+            {"type": "FeatureCollection", "truncated": False, "features": overview},
+            empty=not overview,
+        )
     bbox = _parse_bbox_param(request.GET.get("bbox", ""))
     if bbox is None:
         return JsonResponse({"error": "invalid_bbox"}, status=400)
@@ -1495,19 +1530,13 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
         }
         for row in rows[:SKI_TOURS_MAX_FEATURES]
     ]
-    for summit in summits().values():
-        if west <= summit.lon <= east and south <= summit.lat <= north:
-            features.append(
-                {
-                    "type": "Feature",
-                    "id": f"summit:{summit.key}",
-                    "geometry": {
-                        "type": "Point",
-                        "coordinates": [summit.lon, summit.lat],
-                    },
-                    "properties": summit.as_properties(),
-                }
-            )
+    features.extend(
+        _summit_features(
+            summit
+            for summit in summits().values()
+            if west <= summit.lon <= east and south <= summit.lat <= north
+        )
+    )
     payload = {
         "type": "FeatureCollection",
         "truncated": len(rows) > SKI_TOURS_MAX_FEATURES,
