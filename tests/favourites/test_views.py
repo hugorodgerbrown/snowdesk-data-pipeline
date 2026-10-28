@@ -106,6 +106,7 @@ from tests.factories import (
     RegionBulletinFactory,
     RegionDayRatingFactory,
     ResortFactory,
+    ResortLocationFactory,
     UserFactory,
     WeatherFactory,
 )
@@ -1217,11 +1218,7 @@ class TestFavouriteCard:
         RegionDayRatingFactory.create(region=region, max_rating="considerable")
         favourite = FavouriteFactory.create(user=user, region=region)
         stale_fetched_at = django_timezone.now() - datetime.timedelta(hours=6)
-        WeatherFactory.create(
-            location=favourite.location,
-            observed_on=django_timezone.localdate(),
-            fetched_at=stale_fetched_at,
-        )
+        _curated_point_near(favourite, fetched_at=stale_fetched_at)
 
         response = client.get(_card_url(favourite.uuid), **HTMX_HEADERS)
 
@@ -1229,6 +1226,60 @@ class TestFavouriteCard:
         assert response["X-Data-Generated-At"] == stale_fetched_at.isoformat(
             timespec="seconds"
         )
+
+
+def _curated_point_near(favourite: Favourite, **weather: Any) -> Location:
+    """A curated forecast point 1.1 km north of a pin, with today's row.
+
+    A pin buys no fetch of its own (2026-10-28), so the card borrows the
+    nearest curated point; weather a test wants on the card goes HERE.
+    """
+    assert favourite.location is not None
+    point = LocationFactory.create(
+        name="Mont Fort",
+        latitude=favourite.location.latitude + 0.01,
+        longitude=favourite.location.longitude,
+        elevation_m=3329.0,
+    )
+    ResortLocationFactory.create(location=point)
+    weather.setdefault("observed_on", django_timezone.localdate())
+    WeatherFactory.create(location=point, **weather)
+    return point
+
+
+@pytest.mark.django_db
+class TestFavouriteCardWeather:
+    """The card's weather is borrowed from the nearest curated point."""
+
+    def test_the_borrowed_point_is_named_and_linked(self, client: Client) -> None:
+        """Its name, height and distance, and its page for the week."""
+        favourite = FavouriteFactory.create()
+        client.force_login(favourite.user)
+        point = _curated_point_near(favourite)
+
+        html = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="favourite-card-weather"' in html
+        source = re.search(
+            r'data-testid="favourite-card-forecast-source">(.*?)</p>', html, re.S
+        )
+        assert source is not None
+        assert " ".join(source.group(1).split()) == (
+            "Forecast for Mont Fort (3329 m), 1.1 km from this pin."
+        )
+        assert f'href="{point.get_absolute_url()}"' in html
+
+    def test_the_pins_own_row_is_never_read(self, client: Client) -> None:
+        """Rows fetched for a pin before 2026-10-28 are no longer shown."""
+        favourite = FavouriteFactory.create()
+        client.force_login(favourite.user)
+        WeatherFactory.create(
+            location=favourite.location, observed_on=django_timezone.localdate()
+        )
+
+        html = client.get(_card_url(favourite.uuid), **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="favourite-card-weather"' not in html
 
 
 # ---------------------------------------------------------------------------

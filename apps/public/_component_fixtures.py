@@ -3875,6 +3875,52 @@ WEATHER_PROVENANCE_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Forecast source (2026-10-28) ---------------------------------------------
+# Plain dicts in the shape ``includes/_forecast_source.html`` reads from a
+# NearestForecast or a TripWeather.
+FORECAST_SOURCE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A saved pin borrows the nearest curated point",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Mont Fort",
+                "elevation_m": 3329,
+                "distance_km": 2.13,
+                "is_same_place": False,
+            },
+            "anchor": "pin",
+        },
+    },
+    {
+        "caption": "A trip, from its meeting point; no height known",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Val de Bagnes",
+                "elevation_m": None,
+                "distance_km": 23.4,
+                "is_same_place": False,
+            },
+            "anchor": "meeting",
+        },
+    },
+    {
+        "caption": "The place IS the point (a saved resort's own pin)",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Verbier",
+                "elevation_m": 1500,
+                "distance_km": 0.0,
+                "is_same_place": True,
+            },
+            "anchor": "pin",
+        },
+    },
+)
+
+
 # Resort forecast strip (SNOW-1157) -----------------------------------------
 # Mirrors ``apps.public.views._resort_forecast_points``: one dict per point
 # with its role, label, rounded elevation, URL, today's row (a plain dict —

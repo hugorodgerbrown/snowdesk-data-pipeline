@@ -30,10 +30,11 @@ Content:
      falls outside every known boundary), a "no bulletin coverage" note
      is shown instead. Copy states plainly the rating is for the whole
      region, not this exact spot.
-  3. Weather — this spot (SNOW-761). The pin's own ``Location``, read for
-     today: one condition row plus the multi-day outlook from the same
-     ``Weather`` row's ``forecast`` column. Absent when the pin has no
-     location or no row for today.
+  3. Weather — near this spot (SNOW-761). Borrowed since 2026-10-28: a
+     pin buys no fetch of its own, so this is the curated forecast point
+     nearest it, read for today and named under the panel
+     (includes/_forecast_source.html). Absent when the pin has no
+     location or no curated point has a row for today.
   4. Avalanche problems — this location (SNOW-422). Only rendered when
      problem_cards is non-empty (region + today's default bulletin both
      resolved). One _favourite_problem.html per card, each carrying an
@@ -207,12 +208,17 @@ has no section heading to rank under either.
         {% endif %}
     </div>
 
-    {# 3. Weather — this spot (SNOW-761) #}
+    {# 3. Weather — borrowed from the nearest curated point (2026-10-28) #}
     {% if weather_display %}
         <div class="mt-4 pt-4 border-t border-border" data-testid="favourite-card-weather">
-            {% translate "Weather — this spot" as weather_eyebrow_label %}
+            {% translate "Weather — near this spot" as weather_eyebrow_label %}
             {% include "includes/_eyebrow.html" with text=weather_eyebrow_label class_extra="mb-2" only %}
             {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="favourite-weather" location_label="" only %}
+            {% if forecast_source %}
+                <p class="mt-2 text-xs text-text-3" data-testid="favourite-card-forecast-source">
+                    {% include "includes/_forecast_source.html" with source=forecast_source anchor="pin" only %}
+                </p>
+            {% endif %}
             {# SNOW-783: today here, the week behind the link. This card is #}
             {# already a scrolling surface and a seven-day strip with its   #}
             {# hourly tables was most of its height.                        #}

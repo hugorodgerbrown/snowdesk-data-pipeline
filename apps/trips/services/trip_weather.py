@@ -3,20 +3,17 @@ apps/trips/services/trip_weather.py — the forecast for a trip's day.
 
 SNOW-1217. Hugo, 2026-10-24: the forecast is a better guide than the
 avalanche danger level on the Plan and trip pages, because the forecast
-covers the week and a bulletin covers only today and tomorrow. The two
-pages read the forecast from two different places, and that was chosen on
-purpose:
+covers the week and a bulletin covers only today and tomorrow.
 
-- **The Plan page reads the NEAREST forecast point.** A route has no
-  ``Location`` of its own and nothing fetches its start, so the Plan page
-  borrows the forecast of the closest public location (a resort point or
-  a region centroid) within ``NEAREST_RADIUS_KM`` of the start, and says
-  which one it is and how far away. No upstream call is made for a route
-  being planned.
-- **The trip page reads the MEETING POINT itself.** A trip's meeting point
-  is a ``Location`` already, and ``Location.objects.active()`` includes it
-  while the trip is ahead, so ``fetch_weather`` keeps it current; saving a
-  trip fetches it once straight away (``meeting_weather.py``).
+**Both pages borrow the nearest curated forecast** (Hugo, 2026-10-28).
+Snowdesk decides where a forecast is fetched, because Snowdesk pays for it,
+so neither a route's start nor a trip's meeting point buys a fetch of its
+own. The Plan page reads the curated point nearest the route's start; the
+trip page reads the one nearest the meeting point. Either is found at any
+distance and named with its height and how far away it is
+(``apps.weather.services.nearest``). Until then the trip page read its
+meeting point's own forecast, fetched on save and four times a day while
+the trip was ahead, and the Plan page gave up past 15 km.
 
 Both answer in ``ForecastPanelDay`` — the weather pages' own per-day shape
 (``apps.weather.services.weather_display``) — so a tile and a card show
@@ -32,15 +29,18 @@ from __future__ import annotations
 
 import datetime
 import logging
-import math
 from dataclasses import dataclass, field
 
 from django.utils import timezone
 
-from apps.core.geo import haversine_km
 from apps.locations.models import Location
 from apps.trips.models import Trip
 from apps.weather.models import Weather
+from apps.weather.services.nearest import (
+    SAME_PLACE_KM,
+    NearestForecast,
+    nearest_forecast,
+)
 from apps.weather.services.weather_display import (
     ForecastPanelDay,
     build_point_forecast_panel,
@@ -48,32 +48,24 @@ from apps.weather.services.weather_display import (
 
 logger = logging.getLogger(__name__)
 
-# How far from a route's start a forecast point may be and still stand for
-# it. Far enough to reach the resort village or region centre a tour
-# usually starts near; near enough that it is the same valley's weather.
-NEAREST_RADIUS_KM = 15.0
-
-# Kilometres per degree of latitude, for the search box around the start.
-_KM_PER_DEGREE = 111.0
-
 
 @dataclass(frozen=True)
 class TripWeather:
-    """A forecast for a plan, and where it is from.
+    """A forecast for a plan, and the curated point it is borrowed from.
 
     Attributes:
         location: The forecast point.
         label: How the point is named — its own name, its resort's or its
-            region's; "" for the meeting point, which the page names.
-        distance_km: How far the point is from what it stands for; None
-            when it IS the place (the meeting point).
+            region's.
+        distance_km: How far the point is from what it stands for — the
+            route's start, or the meeting point.
         days: Each forecast day by its date.
 
     """
 
     location: Location
     label: str
-    distance_km: float | None
+    distance_km: float
     days: dict[datetime.date, ForecastPanelDay] = field(default_factory=dict)
 
     @property
@@ -82,14 +74,18 @@ class TripWeather:
         height = self.location.elevation_m
         return round(height) if height is not None else None
 
+    @property
+    def is_same_place(self) -> bool:
+        """Return whether the point is, near enough, the place itself."""
+        return self.distance_km < SAME_PLACE_KM
+
     def on(self, day: datetime.date) -> ForecastPanelDay | None:
         """Return the forecast for one day, or None outside the window."""
         return self.days.get(day)
 
     def to_string(self) -> str:
         """Return the point and its window, for logs and test failures."""
-        where = self.label or "meeting point"
-        return f"{where} ({len(self.days)} day(s))"
+        return f"{self.label} ({len(self.days)} day(s))"
 
     def __str__(self) -> str:
         """Delegate to ``to_string``."""
@@ -128,104 +124,66 @@ def _days(
     return {day["date"]: day for day in panel["days"]} if panel else {}
 
 
-def _label(location: Location) -> str:
-    """Name a public location the way its forecast page heads it.
-
-    Its own name, else its resort's (the resort it pins, or one it is
-    linked to), else its region's — the precedence
-    ``apps.public.views.location_weather`` uses, because most public
-    locations are unnamed region centroids. Three small queries at most.
-    """
-    if location.name:
-        return location.name
-    pinned = location.pinned_resorts.first()
-    if pinned is not None:
-        return pinned.name
-    link = location.resort_locations.select_related("resort").first()
-    if link is not None:
-        return link.resort.name
-    region = location.micro_regions.first()
-    return region.name if region is not None else ""
+def _borrowed(
+    nearest: NearestForecast, day: datetime.date, at: datetime.time
+) -> TripWeather:
+    """Wrap a borrowed row as a plan's forecast, its icons projected at ``at``."""
+    row = nearest.row
+    return TripWeather(
+        location=nearest.location,
+        label=nearest.label,
+        distance_km=nearest.distance_km,
+        days=_days(row, _at_the_point(row, day, at)),
+    )
 
 
 def nearest_weather(
     latitude: float, longitude: float, today: datetime.date
 ) -> TripWeather | None:
-    """Return the nearest public forecast point to a place, with its week.
+    """Return the nearest curated forecast to a route's start, with its week.
 
-    Reads only locations with a row for ``today`` — a point with no
-    forecast is no help, however close — and only ``public()`` ones: a
-    favourite is somebody's private pin, and naming it on a stranger's
-    Plan page would leak it. A search box around the place keeps the
-    candidates to a handful before the exact distances are taken.
+    Reads only points with a row for ``today`` — a point with no forecast
+    is no help, however close — and only ``public()`` ones: a favourite is
+    somebody's private pin, and naming it on a stranger's Plan page would
+    leak it. No distance cap (Hugo, 2026-10-28): the page names the point
+    and how far away it is, and that is the honesty the cap stood in for.
 
     Args:
-        latitude: The place's latitude, e.g. a route's start.
+        latitude: The route start's latitude.
         longitude: Its longitude.
         today: The site's current day, the row read.
 
     Returns:
-        The nearest point within ``NEAREST_RADIUS_KM`` and its forecast,
-        or None when there is none.
+        The nearest point and its forecast, or None when no curated point
+        has a row today.
 
     """
-    lat_span = NEAREST_RADIUS_KM / _KM_PER_DEGREE
-    lon_span = lat_span / max(math.cos(math.radians(latitude)), 0.01)
-    rows = (
-        Weather.objects.on_date(today)
-        .filter(
-            location__in=Location.objects.public(),
-            location__latitude__range=(latitude - lat_span, latitude + lat_span),
-            location__longitude__range=(longitude - lon_span, longitude + lon_span),
-        )
-        .select_related("location")
-    )
-    best: tuple[float, Weather] | None = None
-    for row in rows:
-        distance = haversine_km(
-            latitude, longitude, row.location.latitude, row.location.longitude
-        )
-        if distance <= NEAREST_RADIUS_KM and (best is None or distance < best[0]):
-            best = (distance, row)
-    if best is None:
+    nearest = nearest_forecast(latitude, longitude, today)
+    if nearest is None:
         return None
-    distance, row = best
-    return TripWeather(
-        location=row.location,
-        label=_label(row.location),
-        distance_km=distance,
-        days=_days(row, _at_the_point(row, today, datetime.time(12))),
-    )
+    return _borrowed(nearest, today, datetime.time(12))
 
 
 def meeting_point_weather(trip: Trip, today: datetime.date) -> TripWeather | None:
-    """Return the forecast at a trip's meeting point, as last known.
+    """Return the nearest curated forecast to a trip's meeting point.
 
-    The newest row on or before the trip's day: today's while the trip is
-    ahead, and once it has passed, the row of the day itself — the record
-    of what the forecast said that morning, which is never rewritten.
+    The meeting point buys no fetch of its own (Hugo, 2026-10-28), so the
+    trip page borrows, as the Plan page does. The row read is today's while
+    the trip is ahead, and once it has passed, the row of the trip's own
+    day — the record of what the forecast said that morning, which is
+    never rewritten.
 
     Args:
         trip: The trip, with ``meeting_point`` loaded.
         today: The site's current day.
 
     Returns:
-        The meeting point's forecast, or None when nothing has been
-        fetched for it yet.
+        The borrowed forecast, or None when no curated point has a row for
+        that day.
 
     """
-    row = (
-        Weather.objects.for_location(trip.meeting_point)
-        .filter(observed_on__lte=min(today, trip.date))
-        .order_by("-observed_on")
-        .first()
-    )
-    if row is None:
+    point = trip.meeting_point
+    nearest = nearest_forecast(point.latitude, point.longitude, min(today, trip.date))
+    if nearest is None:
         return None
-    meeting = _at_the_point(row, trip.date, trip.start_time)
-    return TripWeather(
-        location=trip.meeting_point,
-        label="",
-        distance_km=None,
-        days=_days(row, meeting),
-    )
+    return _borrowed(nearest, trip.date, trip.start_time)

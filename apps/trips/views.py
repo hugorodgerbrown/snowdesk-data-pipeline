@@ -120,7 +120,11 @@ from apps.trips.services.shares import (
     mint_trip_share,
     revoke_trip_share,
 )
-from apps.trips.services.trip_weather import meeting_point_weather, nearest_weather
+from apps.trips.services.trip_weather import (
+    TripWeather,
+    meeting_point_weather,
+    nearest_weather,
+)
 from apps.trips.services.trips import (
     TripLimitReached,
     create_trip,
@@ -336,21 +340,26 @@ def _basemap_context() -> dict[str, Any]:
     }
 
 
-def _trip_day_weather(trip: Trip) -> ForecastPanelDay | None:
-    """Return the meeting point's forecast for the trip's day, or None.
+def _trip_day_weather(trip: Trip) -> tuple[ForecastPanelDay, TripWeather] | None:
+    """Return the trip's day from the forecast nearest its meeting point.
 
-    SNOW-1217. See ``apps.trips.services.trip_weather.meeting_point_weather``
-    for which row it reads; this picks the trip's day out of it.
+    SNOW-1217; borrowed since 2026-10-28. See
+    ``apps.trips.services.trip_weather.meeting_point_weather`` for which
+    row it reads; this picks the trip's day out of it, and keeps the point
+    it came from so the card can name it.
 
     Args:
         trip: The trip, with ``meeting_point`` loaded.
 
     Returns:
-        The day's forecast, or None.
+        The day's forecast and where it is from, or None.
 
     """
     weather = meeting_point_weather(trip, timezone.localdate())
-    return weather.on(trip.date) if weather else None
+    day = weather.on(trip.date) if weather else None
+    if weather is None or day is None:
+        return None
+    return day, weather
 
 
 def _plan_context(form: TripForm, points: list[list[float]]) -> dict[str, Any]:
@@ -767,8 +776,9 @@ def _trip_context(trip: Trip, request: HttpRequest) -> dict[str, Any]:
         # plan card's one line — None on every day no bulletin rated, which
         # is most of them, and the card then simply has no line.
         "trip_danger": trip_danger(trip.date, trip.points),
-        # SNOW-1217. The forecast for the trip's day at the meeting point
-        # itself, or None until it has been fetched or outside its window.
+        # SNOW-1217. The forecast for the trip's day, borrowed from the
+        # curated point nearest the meeting point, and that point — or
+        # None outside the forecast window.
         "trip_weather": _trip_day_weather(trip),
         # SNOW-829. The CATALOGUE, not one resolved URL, because the page
         # resolves the reader's own choice client-side: ``localStorage`` is
