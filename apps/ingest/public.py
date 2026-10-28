@@ -48,6 +48,12 @@ The names are grouped by what they are for:
       the past-day rule, and ``forecast_fields`` is the one request-and-parse
       both the service and a host's fetch of a user point share.
       ``WEATHER_COLUMNS`` names what an apply copies.
+  Reading a bulletin
+      The render model (SNOW-1270): ``build_render_model`` and its version,
+      the provider detection, the period transition and the day-character
+      cascade key — the service's interpretation of a bulletin's CAAML —
+      plus the prose parser registry it uses (``parse_prose_for``). The
+      labels and copy a page shows for them are the instance's.
   The weather backfill
       Filling a station's missing past days from the historical forecast
       API (SNOW-1275): ``sweep``, the hourly budgeted walk, and
@@ -68,6 +74,7 @@ The names are grouped by what they are for:
       authentication.
 """
 
+import apps.ingest.normalise.prose.en  # noqa: F401, I001 — registers the "en" prose parser
 from apps.ingest.api.bulletins import BULLETINS_FEED, serialise_source_bulletin
 from apps.ingest.api.paging import (
     DEFAULT_LIMIT as FEED_DEFAULT_LIMIT,
@@ -141,6 +148,25 @@ from apps.ingest.normalise.meteofrance.translator import (
     format_comment_as_html,
     parse_dpbra_xml,
 )
+from apps.ingest.normalise.prose import ParsedScope, parse_for as parse_prose_for
+from apps.ingest.normalise.render_model import (
+    DRY_PROBLEM_TYPES,
+    KNOWN_PROBLEM_TYPES,
+    PROBLEM_TYPE_TO_CATEGORY,
+    RENDER_MODEL_VERSION,
+    WET_PROBLEM_TYPES,
+    PeriodTransition,
+    RenderModelBuildError,
+    band_id_for_problem,
+    band_label_for_elevation,
+    build_render_model,
+    compute_period_transition,
+    day_character_key,
+    derive_problem_family,
+    detect_prose_spatial,
+    detect_source,
+    problem_types_for,
+)
 from apps.ingest.normalise.slf import (
     CAAML_SHAPE_AGGREGATED,
     CAAML_SHAPE_PER_REGION,
@@ -205,6 +231,24 @@ from apps.ingest.weather import (
 )
 
 __all__ = [
+    "DRY_PROBLEM_TYPES",
+    "KNOWN_PROBLEM_TYPES",
+    "PROBLEM_TYPE_TO_CATEGORY",
+    "RENDER_MODEL_VERSION",
+    "WET_PROBLEM_TYPES",
+    "ParsedScope",
+    "PeriodTransition",
+    "RenderModelBuildError",
+    "band_id_for_problem",
+    "band_label_for_elevation",
+    "build_render_model",
+    "compute_period_transition",
+    "day_character_key",
+    "derive_problem_family",
+    "detect_prose_spatial",
+    "detect_source",
+    "parse_prose_for",
+    "problem_types_for",
     "ADMIN_MAX_LOCATIONS",
     "INTER_LOCATION_DELAY",
     "LIVE_FETCHES_PER_DAY",

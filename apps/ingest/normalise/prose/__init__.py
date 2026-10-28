@@ -1,5 +1,5 @@
 """
-apps/bulletins/services/prose/__init__.py — Prose-parser registry for wet-snow comments.
+apps/ingest/normalise/prose/__init__.py — Prose-parser registry for wet-snow comments.
 
 Provides a language-keyed registry of prose parsers that extract aspect and
 altitude tokens from free-text avalanche problem comments.  The registry is

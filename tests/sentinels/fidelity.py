@@ -810,7 +810,7 @@ EXCLUDED: dict[str, Excluded] = {
     ),
     "lang": Excluded(
         "The language the provider wrote this bulletin in. It selects the "
-        "prose parser (apps.bulletins.services.prose) and nothing else. "
+        "prose parser (apps.ingest.normalise.prose) and nothing else. "
         "The page's own language is the reader's, not the payload's."
     ),
     "meteofrance:tendency[].highlights": Excluded(

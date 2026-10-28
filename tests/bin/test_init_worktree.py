@@ -88,7 +88,7 @@ case "$4" in
 esac
 # The real commands log to stderr on every run. Emitted here so the tests
 # exercise the capture that keeps it off a quiet session's console.
-echo "DEBUG apps.bulletins.services.prose prose parser registered" >&2
+echo "DEBUG apps.ingest.normalise.prose prose parser registered" >&2
 exit 0
 """
 

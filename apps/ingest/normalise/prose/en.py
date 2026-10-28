@@ -1,5 +1,5 @@
 r"""
-apps/bulletins/services/prose/en.py — English prose parser for wet-snow problems.
+apps/ingest/normalise/prose/en.py — English prose parser for wet-snow problems.
 
 Extracts aspect and altitude tokens from SLF English wet-snow comment text
 using a constrained phrase grammar.  The parser is deliberately simple: it
@@ -75,7 +75,7 @@ from __future__ import annotations
 import re
 from html.parser import HTMLParser
 
-from apps.bulletins.services.prose import ParsedScope, register
+from apps.ingest.normalise.prose import ParsedScope, register
 
 # ---------------------------------------------------------------------------
 # HTML stripper

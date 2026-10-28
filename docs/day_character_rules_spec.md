@@ -10,7 +10,7 @@ last-reviewed: 2026-06-10
 ## Overview
 
 Implemented as `compute_day_character(render_model) -> str` in
-`apps/bulletins/services/render_model.py`. Takes a render model dict (as produced
+`apps/bulletins/services/render_model.py`, over the cascade key `day_character_key()` in `apps/ingest/normalise/render_model.py` (the service's since SNOW-1270). Takes a render model dict (as produced
 by `build_render_model`) and returns one of five string labels. This was
 task 13 in the SnowDesk design doc: compute labels for all historical
 bulletins and verify the distribution looks sensible before surfacing them

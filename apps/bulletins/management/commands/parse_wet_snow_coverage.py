@@ -30,12 +30,11 @@ import logging
 from argparse import ArgumentParser
 from typing import Any
 
-import apps.bulletins.services.prose.en  # noqa: F401 — registers the "en" parser
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.prose import parse_for
 from apps.bulletins.services.render_model import WET_PROBLEM_TYPES
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
+from apps.ingest.public import parse_prose_for as parse_for
 
 logger = logging.getLogger(__name__)
 

@@ -29,7 +29,10 @@ which holds the current ticket list):
 6. SNOW-1275 moves the weather backfill sweep into ingest
    (`apps/ingest/backfill.py`), so the service holds the history it serves;
    the app applies each row and copied its existing history in once.
-7. SNOW-1252 (the `lookup_point` facade) is under review.
+7. SNOW-1270 moves the render model builder, its prose parser, the period
+   transition and the day-character cascade into `apps/ingest/normalise/`;
+   the instance keeps the labels and copy.
+8. SNOW-1252 (the `lookup_point` facade) is under review.
 
 **Why.**
 
