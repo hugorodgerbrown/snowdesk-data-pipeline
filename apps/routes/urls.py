@@ -30,6 +30,9 @@ URL structure:
   routes/ski-tours/<uuid>/feature.json
                                      GET  — an SAC tour as the route panel
                                             draws it (SNOW-1278)
+  routes/ski-tours/<uuid>/terrain.json
+                                     GET  — an SAC tour's terrain rows
+                                            (SNOW-1278)
   routes/ski-tours/<uuid>/save/      POST — copy an SAC tour onto the
                                             account (SNOW-1278)
   routes/partials/ski-tours/         GET  — the list of tours under a tap
@@ -103,6 +106,11 @@ urlpatterns = [
         "ski-tours/<uuid:uuid>/feature.json",
         views.ski_tour_feature,
         name="ski_tour_feature",
+    ),
+    path(
+        "ski-tours/<uuid:uuid>/terrain.json",
+        views.ski_tour_terrain,
+        name="ski_tour_terrain",
     ),
     path(
         "ski-tours/<uuid:uuid>/save/",

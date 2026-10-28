@@ -14,8 +14,10 @@
  * (draw mode's hold and hide) switch them with the raster.
  *
  * Lines are blue at full strength, as the mockup decided (28 Oct 2026):
- * this is the mode where the tours are the thing tapped. The tours a list
- * names are drawn over them in the route colour, a way down dashed.
+ * this is the mode where the tours are the thing tapped. While a list is
+ * open the tours it names are drawn over them in the route colour, a way
+ * down dashed, each with a green dot at its far end (where a way up starts
+ * and a way down finishes), and every other tour is dimmed.
  *
  * A TAP (map.js's dispatcher calls `tap(point)` after the markers and the
  * weather symbols) on a summit lists every tour to it; on a line it opens
@@ -59,7 +61,11 @@
   const HIGHLIGHT_DOWN = 'ski-tours-highlight-down';
   const SUMMIT = 'ski-tours-summit';
   const LABEL = 'ski-tours-summit-label';
-  const LAYERS = [LINE, HIGHLIGHT, HIGHLIGHT_DOWN, SUMMIT, LABEL];
+  // The listed tours' far ends, from a source of their own: points worked
+  // out here (ski_tours_core.farEnds), not features the server sends.
+  const ENDS_SOURCE = 'ski-tours-ends';
+  const FAR_END = 'ski-tours-far-end';
+  const LAYERS = [LINE, HIGHLIGHT, HIGHLIGHT_DOWN, FAR_END, SUMMIT, LABEL];
   // MapLibre paint cannot read a CSS custom property. The tours' blue is
   // swisstopo's own for its ski routes (blue-600); the highlight is the
   // route colour (--color-route-line); the marks are the ink and the card.
@@ -67,6 +73,10 @@
   const HIGHLIGHT_COLOUR =
     (self.pwaRouteDrawingCore && self.pwaRouteDrawingCore.ROUTE_LINE_COLOUR) || '#c026d3';
   const INK_COLOUR = '#1a1916';
+  // The mockup's green dot at a tour's far end: --color-sync-ok (green-600).
+  const FAR_END_COLOUR = '#16a34a';
+  // While a list is open the tours it does not name step back.
+  const DIMMED_OPACITY = 0.3;
   const HALO_COLOUR = '#ffffff';
   // A summit is a smaller target than a line: reached only close to it.
   const SUMMIT_TAP_PX = 12;
@@ -163,7 +173,11 @@
       minzoom: minzoom,
       filter: isTour,
       layout: { visibility: visibility, 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': TOUR_COLOUR, 'line-width': width },
+      paint: {
+        'line-color': TOUR_COLOUR,
+        'line-width': width,
+        'line-opacity': state.highlight.length ? DIMMED_OPACITY : 1,
+      },
     }, before);
     const highlightWidth = ['interpolate', ['linear'], ['zoom'], 12, 3, 15, 5];
     map.addLayer({
@@ -186,6 +200,23 @@
         'line-color': HIGHLIGHT_COLOUR,
         'line-width': highlightWidth,
         'line-dasharray': [1.2, 1.2],
+      },
+    }, before);
+    map.addSource(ENDS_SOURCE, {
+      type: 'geojson',
+      data: core.farEnds(state.data.features, state.highlight),
+    });
+    map.addLayer({
+      id: FAR_END,
+      type: 'circle',
+      source: ENDS_SOURCE,
+      minzoom: minzoom,
+      layout: { visibility: visibility },
+      paint: {
+        'circle-radius': 5,
+        'circle-color': FAR_END_COLOUR,
+        'circle-stroke-color': HALO_COLOUR,
+        'circle-stroke-width': 2,
       },
     }, before);
     const isMark = ['in', ['get', 'kind'], ['literal', ['summit', 'hut']]];
@@ -239,7 +270,8 @@
   }
 
   /**
-   * Draw these tours in the route colour.
+   * Draw these tours in the route colour with their far ends, and dim the
+   * rest; an empty list puts every tour back at full strength.
    *
    * @param {Array<string>} uuids
    */
@@ -251,6 +283,18 @@
     const highlight = core.highlightFilter(state.highlight);
     map.setFilter(HIGHLIGHT, ['all', isTour, ['!', ['get', 'down']], highlight]);
     map.setFilter(HIGHLIGHT_DOWN, ['all', isTour, ['get', 'down'], highlight]);
+    map.setPaintProperty(LINE, 'line-opacity', state.highlight.length ? DIMMED_OPACITY : 1);
+    paintFarEnds(map);
+  }
+
+  /**
+   * Re-place the listed tours' far ends, from the collection now loaded.
+   *
+   * @param {any} map
+   */
+  function paintFarEnds(map) {
+    const source = map && map.getSource(ENDS_SOURCE);
+    if (source) source.setData(core.farEnds(state.data.features, state.highlight));
   }
 
   // ---------------------------------------------------------------------------

@@ -120,6 +120,8 @@ Context:
         data-route-terrain-url-template="{% url 'routes:terrain' uuid='00000000-0000-0000-0000-000000000000' %}"
         {# SNOW-1230: the same rows for a route someone was SENT, by its token. #}
         data-route-share-terrain-url-template="{% url 'routes:share_terrain' token='__TOKEN__' %}"
+        {# SNOW-1278: and for an SAC tour not yet saved, by the tour's uuid. #}
+        data-route-tour-terrain-url-template="{% url 'routes:ski_tour_terrain' uuid='00000000-0000-0000-0000-000000000000' %}"
     {% endif %}
     class="{% if not static %}route-rail {% endif %}grid grid-cols-1 gap-x-4 gap-y-2 rounded-card border border-border bg-card px-4 py-3 shadow-glass"
 >
