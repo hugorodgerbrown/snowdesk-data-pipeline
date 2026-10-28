@@ -7,9 +7,10 @@
  * public/partials/_ski_tours_surface.html, which explains the interaction.
  *
  * THE TOURS ARE PART OF THE SKI-TOURING ROUTES OVERLAY. Below z12 that
- * overlay is swisstopo's raster (map.js); from z12 it is the lines and
- * summits drawn here, loaded per view from /api/ski-tours.geojson, and the
- * raster steps aside so the tours are drawn once. The layer ids are in
+ * overlay is swisstopo's raster (map.js) alone; from z12 the lines and
+ * summits drawn here, loaded per view from /api/ski-tours.geojson, sit on
+ * top of it. The raster stays because it draws swisstopo's whole network,
+ * of which SAC's tours are only part (SNOW-1283). The layer ids are in
  * OVERLAY_LAYERS.ski_routes, so the layers menu and window.pwaSkiRoutes
  * (draw mode's hold and hide) switch them with the raster.
  *
@@ -17,7 +18,8 @@
  * this is the mode where the tours are the thing tapped. While a list is
  * open the tours it names are drawn over them in the route colour, a way
  * down dashed, each with a green dot at its far end (where a way up starts
- * and a way down finishes), and every other tour is dimmed.
+ * and a way down finishes), and every other tour is dimmed, the raster
+ * with them (window.pwaSkiRoutes.dim).
  *
  * A TAP (map.js's dispatcher calls `tap(point)` after the markers and the
  * weather symbols) on a summit lists every tour to it; on a line it opens
@@ -286,6 +288,8 @@
     map.setFilter(HIGHLIGHT, ['all', isTour, ['!', ['get', 'down']], highlight]);
     map.setFilter(HIGHLIGHT_DOWN, ['all', isTour, ['get', 'down'], highlight]);
     map.setPaintProperty(LINE, 'line-opacity', state.highlight.length ? DIMMED_OPACITY : 1);
+    // The raster under the tours draws the rest of the network: it dims too.
+    window.pwaSkiRoutes?.dim(state.highlight.length > 0);
     paintFarEnds(map);
   }
 

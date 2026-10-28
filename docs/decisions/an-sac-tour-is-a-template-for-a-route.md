@@ -61,9 +61,12 @@ Every later reader gets it straight away, and every saved copy inherits it
 without sampling again. A sync that rewrites the tour clears it.
 
 **The tours belong to the ski-touring routes overlay.** Below z12 the
-overlay is swisstopo's raster. From z12 it is ski_tours.js's vector lines
-and summits, in blue at full strength. The raster stops at z12, so the
-tours are only ever drawn once on screen. All of these layers are listed
+overlay is swisstopo's raster alone. From z12, ski_tours.js's vector lines
+and summits, in blue at full strength, are drawn on top of it. The raster
+stays at every zoom because it draws swisstopo's whole network, and SAC's
+tours are only part of it: round the Wildhorn, 19 tours against 111
+network segments (SNOW-1283). Stopping it at z12, as SNOW-1278 first did,
+made most of the lines vanish on zooming in. All of these layers are listed
 in `OVERLAY_LAYERS.ski_routes`, so the layers menu switches them together,
 and draw mode's `hold` and `hide` apply to them too.
 
@@ -102,5 +105,6 @@ and draw mode's `hold` and `hide` apply to them too.
 - While a list is open, the tours it names are drawn in the route colour,
   a green dot marks each one's far end (`ski_tours_core.farEnds`: the end
   away from its summit, where a way up starts and a way down finishes),
-  and every other tour is dimmed (SNOW-1282). The mockup labels the dot
+  and every other tour is dimmed (SNOW-1282), the raster with them
+  (`window.pwaSkiRoutes.dim`, SNOW-1283). The mockup labels the dot
   with a place name, which the data does not carry, so it is a dot alone.
