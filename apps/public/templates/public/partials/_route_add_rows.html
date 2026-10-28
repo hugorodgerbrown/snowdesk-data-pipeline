@@ -27,11 +27,11 @@ template on every open.
 <div class="flex flex-col gap-2">
     {% trans "Find a route" as find_title %}
     {% trans "Start from a swisstopo / SAC ski tour" as find_subtitle %}
-    {% include "public/partials/_route_add_row.html" with hook="data-ski-tour-find" title=find_title subtitle=find_subtitle icon="includes/_icon_compass.html" emphasised=True %}
+    {% include "public/partials/_route_add_row.html" with hook="find" title=find_title subtitle=find_subtitle icon="includes/_icon_compass.html" emphasised=True %}
     {% trans "Create a route" as create_title %}
     {% trans "Draw your own tour, snap to existing routes where available" as create_subtitle %}
-    {% include "public/partials/_route_add_row.html" with hook="data-route-draw-start" title=create_title subtitle=create_subtitle icon="includes/_icon_pencil.html" %}
+    {% include "public/partials/_route_add_row.html" with hook="create" title=create_title subtitle=create_subtitle icon="includes/_icon_pencil.html" %}
     {% trans "Upload a GPX" as upload_title %}
     {% trans "A track from a watch or another app" as upload_subtitle %}
-    {% include "public/partials/_route_add_row.html" with hook="data-panel-add" title=upload_title subtitle=upload_subtitle icon="includes/_icon_plus.html" %}
+    {% include "public/partials/_route_add_row.html" with hook="upload" title=upload_title subtitle=upload_subtitle icon="includes/_icon_plus.html" %}
 </div>
