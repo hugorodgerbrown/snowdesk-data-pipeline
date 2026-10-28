@@ -126,6 +126,10 @@ Optional context:
     {# would be an invitation to install the layer anyway.                    #}
     {% if terrain_filter_eligible %}data-terrain-class-tile-url="{{ terrain_class_tile_url }}"{% endif %}
     data-terrain-filter-eligible="{{ terrain_filter_eligible|yesno:'true,false' }}"
+    {# swisstopo's ski-touring routes layer: behind the route_drawing flag  #}
+    {# with draw mode, whose guide it is                                     #}
+    {# (docs/decisions/a-drawn-route-is-a-route.md).                         #}
+    data-ski-routes-eligible="{{ route_drawing_enabled|yesno:'true,false' }}"
     {# HACK MODE (feature discovery): may this request spoof its position   #}
     {# with ?loc=? Superusers and local development only — see              #}
     {# apps.public.views._fake_location_allowed for why the field report is #}
@@ -687,6 +691,13 @@ Optional context:
                 {% endif %}
                 {% include "public/partials/_map_layers_switch_row.html" with key="weather" label=_("Weather") icon="cloud" sync=True weather=True only %}
                 {% include "public/partials/_map_layers_switch_row.html" with key="resorts" label=_("Resorts") icon="resort" sync=True only %}
+                {# swisstopo's ski-touring routes, drawn from z10 inside    #}
+                {# Switzerland. ON by default: map.js seeds aria-checked    #}
+                {# from localStorage, true when unset. No sync dot — the    #}
+                {# tiles come from swisstopo and are never cached offline.  #}
+                {% if route_drawing_enabled %}
+                    {% include "public/partials/_map_layers_switch_row.html" with key="ski_routes" label=_("Ski-touring routes") icon="compass" only %}
+                {% endif %}
                 {% trans "Boundaries" as layer_boundaries %}
                 <li role="none" class="basemap-menu-layer">
                     <button

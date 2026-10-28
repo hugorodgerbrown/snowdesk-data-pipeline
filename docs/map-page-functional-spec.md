@@ -695,6 +695,7 @@ full width with its own ×; on a desktop it sits beside the roundels.
 | | Steep terrain (absent without `TERRAIN_CLASS_TILE_URL`) | The terrain filter | The terrain filter's own sheet (§3.5a–b) |
 | | Weather | Yes | None |
 | | Resorts | Yes | None |
+| | Ski-touring routes (only with the `route_drawing` flag, signed in) | Yes, on by default; swisstopo raster, Switzerland only, drawn from z10 | None |
 | | Boundaries | Master: on while any tier is; remembers which | Major / Minor / Micro regions (EAWS L1, L2, L4), drawn for the countries the ACTIVE BASEMAP covers ([why](decisions/boundaries-follow-the-basemap.md)); Show unsupported regions |
 | | Basemap | None, because there is always one | One radio per basemap |
 | **Your data** | Favourites, Routes, Field observations, Downloaded areas | Yes, the same setting as each panel's "Show on the map" switch | None |

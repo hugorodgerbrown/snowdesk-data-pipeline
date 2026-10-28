@@ -66,6 +66,7 @@
   const STRINGS = self.pwaStrings.read('map-zoom-strings-template', {
     'toggle-label': 'Zoom level %(zoom)s',
     'gate-region_select': 'Region selector',
+    'gate-ski_routes': 'Ski-touring routes',
     'gate-terrain_filter': 'Steep terrain',
     'gate-route_slopes': 'Route slope angle',
     'threshold-from': '≥%(zoom)s',
@@ -171,6 +172,8 @@
       if (!tickNode) continue;
       tickNode.dataset.zoomTick = tick.key;
       tickNode.toggleAttribute('data-reached', tick.reached);
+      if (tick.side) tickNode.dataset.zoomSide = tick.side;
+      else delete tickNode.dataset.zoomSide;
       tickNode.style.top = ((1 - tick.position) * 100).toFixed(2) + '%';
       const button = tickNode.querySelector('[data-zoom-tick-button]');
       if (button) button.dataset.zoomTarget = String(tick.zoom);

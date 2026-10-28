@@ -305,6 +305,9 @@ class TestMapPageDrawSurface:
         assert 'id="route-draw-sheet"' in body
         assert "js/route_draw.js" in body
         assert "Upload a GPX" in body
+        # swisstopo's ski-touring routes ride on the same flag.
+        assert 'data-overlay-key="ski_routes"' in body
+        assert 'data-ski-routes-eligible="true"' in body
 
     def test_absent_for_an_anonymous_visitor(self, client: Client) -> None:
         """No waffle read and no surface for a visitor with no session."""
@@ -312,6 +315,8 @@ class TestMapPageDrawSurface:
             body = client.get(reverse("public:map")).content.decode()
 
         assert "data-route-draw-start" not in body
+        assert 'data-overlay-key="ski_routes"' not in body
+        assert 'data-ski-routes-eligible="false"' in body
 
     def test_absent_with_the_flag_off(self, client: Client) -> None:
         """The panel reads as it did before."""
@@ -322,3 +327,4 @@ class TestMapPageDrawSurface:
         assert "data-route-draw-start" not in body
         assert 'id="route-draw-sheet"' not in body
         assert "Add a route" in body
+        assert 'data-overlay-key="ski_routes"' not in body

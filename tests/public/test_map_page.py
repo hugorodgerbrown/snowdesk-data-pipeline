@@ -23,6 +23,7 @@ from django.conf import settings
 from django.test import Client, override_settings
 from django.urls import reverse
 from freezegun import freeze_time
+from waffle.testutils import override_flag
 
 from tests.factories import (
     AccountFactory,
@@ -972,6 +973,32 @@ def test_map_layer_menu_level_one_order() -> None:
     assert "data-section-toggle" not in content
     assert "Map display options" not in content
     assert "Display downloaded areas" not in content
+    assert 'data-overlay-key="ski_routes"' not in content
+
+
+@pytest.mark.django_db
+def test_map_layer_menu_ski_routes_row_follows_resorts() -> None:
+    """SNOW-1267: with ``route_drawing`` on, swisstopo's ski-touring routes sit
+    in "Reference data" straight after Resorts and before Boundaries.
+
+    The row rides on the drawing flag, which needs a signed-in user, so the
+    level-one order test above (anonymous) never sees it.
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("route_drawing", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+
+    main = _layers_page(content, "main")
+    markers = [
+        ">Reference data<",
+        'data-overlay-key="resorts"',
+        'data-overlay-key="ski_routes"',
+        'data-layers-open="boundaries"',
+        ">Your data<",
+    ]
+    positions = [main.index(marker) for marker in markers]
+    assert positions == sorted(positions), markers
 
 
 @pytest.mark.django_db
