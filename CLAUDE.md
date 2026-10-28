@@ -44,7 +44,9 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  apps/ingest/public.py — tests/ingest/test_boundary.py fails
                  the build otherwise. normalise/ holds the pure functions
                  (SLF shape detection, the Météo-France translator, Open-Meteo
-                 parsing); sources/ the HTTP (the three bulletin providers,
+                 parsing, and since SNOW-1270 the render model builder, its
+                 prose parser, the period transition and the day-character
+                 cascade); sources/ the HTTP (the three bulletin providers,
                  Open-Meteo forecast + elevation, what3words), settings read
                  only via conf.py; runs.py walks a provider and yields
                  NormalisedBulletin / FetchOutcome — the app decides what to

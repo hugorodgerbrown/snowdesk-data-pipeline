@@ -25,7 +25,8 @@ from typing import Any
 import pytest
 
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.render_model import (
+from apps.bulletins.services.render_model import compute_day_character
+from apps.ingest.normalise.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
     _build_metadata,
@@ -42,7 +43,6 @@ from apps.bulletins.services.render_model import (
     band_id_for_problem,
     band_label_for_elevation,
     build_render_model,
-    compute_day_character,
     detect_source,
 )
 from apps.ingest.public import parse_dpbra_xml
@@ -1008,7 +1008,7 @@ class TestBuildRenderModel3PlusTraits:
                 }
             },
         }
-        with patch("apps.bulletins.services.render_model.logger") as mock_logger:
+        with patch("apps.ingest.normalise.render_model.logger") as mock_logger:
             rm = build_render_model(props)
 
         assert len(rm["traits"]) == 3
@@ -2443,7 +2443,7 @@ class TestResolveProblemMeteoFrance:
 
     def test_mf_problem_comment_is_empty(self) -> None:
         """METEOFRANCE per-problem comment is always empty (activity lives at bulletin level)."""
-        from apps.bulletins.services.render_model import _resolve_problem_comment
+        from apps.ingest.normalise.render_model import _resolve_problem_comment
 
         problem: dict[str, Any] = {"comment": "Some prose."}
         result = _resolve_problem_comment(problem, Bulletin.Source.METEOFRANCE)
@@ -2457,7 +2457,7 @@ class TestResolveProblemMeteoFrance:
 
     def test_mf_problem_avalanche_type_is_none(self) -> None:
         """METEOFRANCE avalanche_type is always None (no ALBINA customData)."""
-        from apps.bulletins.services.render_model import _resolve_problem_avalanche_type
+        from apps.ingest.normalise.render_model import _resolve_problem_avalanche_type
 
         problem: dict[str, Any] = {}
         result = _resolve_problem_avalanche_type(problem, Bulletin.Source.METEOFRANCE)
@@ -2638,7 +2638,7 @@ class TestSlfAdapter:
     """Unit tests for the SlfAdapter class."""
 
     def _adapter(self) -> Any:
-        from apps.bulletins.services.render_model import SlfAdapter
+        from apps.ingest.normalise.render_model import SlfAdapter
 
         return SlfAdapter()
 
@@ -2751,7 +2751,7 @@ class TestAlbinaAdapter:
     """Unit tests for the AlbinaAdapter class."""
 
     def _adapter(self) -> Any:
-        from apps.bulletins.services.render_model import AlbinaAdapter
+        from apps.ingest.normalise.render_model import AlbinaAdapter
 
         return AlbinaAdapter()
 
@@ -2928,7 +2928,7 @@ class TestMeteoFranceAdapter:
     """Unit tests for the MeteoFranceAdapter class."""
 
     def _adapter(self) -> Any:
-        from apps.bulletins.services.render_model import MeteoFranceAdapter
+        from apps.ingest.normalise.render_model import MeteoFranceAdapter
 
         return MeteoFranceAdapter()
 
