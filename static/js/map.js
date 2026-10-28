@@ -3474,9 +3474,9 @@
   const frameTour = (bounds, shows) => {
     const padding = paddingClearingRail();
     const canvas = map.getContainer().getBoundingClientRect();
+    const [west, south, east, north] = bounds;
     const shown = typeof shows === 'function' && shows(
-      map.project([bounds[0], bounds[1]]),
-      map.project([bounds[2], bounds[3]]),
+      [[west, north], [east, north], [east, south], [west, south]].map((c) => map.project(c)),
       { width: canvas.width, height: canvas.height },
       padding,
     );
