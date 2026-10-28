@@ -202,6 +202,18 @@ class Command(RegisteredCommand):
                     )
                 )
 
+        # Days the service already holds but this instance lacks cost no
+        # request: copy them across before the sweep looks for gaps.
+        replayed = backfill.replay_held(
+            locations, floor=floor, until=until, commit=commit
+        )
+        if verbosity >= 1 and replayed:
+            self.stdout.write(
+                f"{replayed} held day(s) copied from the weather service"
+                + ("" if commit else " (read-only: counted, not written)")
+            )
+        self.tally("replayed", replayed)
+
         result = backfill.sweep(
             locations,
             floor=floor,
