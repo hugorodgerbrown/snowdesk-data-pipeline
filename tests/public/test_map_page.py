@@ -973,13 +973,13 @@ def test_map_layer_menu_level_one_order() -> None:
     assert "data-section-toggle" not in content
     assert "Map display options" not in content
     assert "Display downloaded areas" not in content
-    assert 'data-overlay-key="ski_routes"' not in content
+    assert 'data-layer-master="ski_touring"' not in content
 
 
 @pytest.mark.django_db
 def test_map_layer_menu_ski_routes_row_follows_resorts() -> None:
-    """SNOW-1267: with ``route_drawing`` on, swisstopo's ski-touring routes sit
-    in "Reference data" straight after Resorts and before Boundaries.
+    """SNOW-1267: with ``route_drawing`` on, the ski-touring row sits in
+    "Reference data" straight after Resorts and before Boundaries.
 
     The row rides on the drawing flag, which needs a signed-in user, so the
     level-one order test above (anonymous) never sees it.
@@ -993,7 +993,7 @@ def test_map_layer_menu_ski_routes_row_follows_resorts() -> None:
     markers = [
         ">Reference data<",
         'data-overlay-key="resorts"',
-        'data-overlay-key="ski_routes"',
+        'data-layer-master="ski_touring"',
         'data-layers-open="boundaries"',
         ">Your data<",
     ]
@@ -1004,7 +1004,7 @@ def test_map_layer_menu_ski_routes_row_follows_resorts() -> None:
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
 def test_layers_menu_marks_its_zoom_limited_rows() -> None:
-    """SNOW-1280: Steep terrain and Ski-touring routes carry their gate key,
+    """SNOW-1280: Steep terrain and Ski touring carry their gate key,
     an empty zoom suffix and a hidden "Zoom in to view" line; the menu opens
     with its zoom note hidden, and the script that fills them loads after
     the zoom control's core.
@@ -1022,7 +1022,7 @@ def test_layers_menu_marks_its_zoom_limited_rows() -> None:
     assert main.count("data-zoom-gate=") == 2
     for key, label in (
         ("terrain_filter", "Steep terrain"),
-        ("ski_routes", "Ski-touring routes"),
+        ("ski_routes", "Ski touring"),
     ):
         start = main.index(f'data-zoom-gate="{key}"')
         row = main[start : main.index("</li>", start)]

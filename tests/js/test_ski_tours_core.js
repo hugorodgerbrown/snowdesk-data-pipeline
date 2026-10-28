@@ -14,6 +14,18 @@ const core = self.pwaSkiToursCore;
 
 const tour = (uuid) => ({ properties: { kind: 'tour', uuid } });
 
+describe('loadMode', () => {
+  it('loads nothing out past z9, every tour thinned to z12, the detail from it', () => {
+    expect(core.MINZOOM).toBe(9);
+    expect(core.loadMode(8.99)).toBe('none');
+    expect(core.loadMode(9)).toBe('overview');
+    expect(core.loadMode(11.99)).toBe('overview');
+    expect(core.loadMode(core.DETAIL_MINZOOM)).toBe('detail');
+    expect(core.DETAIL_MINZOOM).toBe(12);
+    expect(core.LABEL_MINZOOM).toBe(10);
+  });
+});
+
 describe('resolveTap', () => {
   it('answers nothing for nothing', () => {
     expect(core.resolveTap([])).toBeNull();

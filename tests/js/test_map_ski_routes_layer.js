@@ -1,12 +1,15 @@
 /*
- * tests/js/test_map_ski_routes_layer.js — swisstopo's ski-touring routes as
- * a map layer: the layers menu's "Ski-touring routes" row, the zoom
- * control's gate, draw mode's hold, and the dimming a tour list asks for.
+ * tests/js/test_map_ski_routes_layer.js — the ski-touring layer's switches
+ * (SNOW-1285): its two parts, Tours and Summits, each a row on the layers
+ * menu's "Ski touring" page under a master switch, and the zoom control's
+ * gate.
  *
- * The layer is a raster installed eagerly by installSkiRoutesLayer, ON by
- * default from z10 (Hugo, 28 Oct 2026), and only on a page that carries
- * data-ski-routes-eligible="true" — the route_drawing flag, for now. Each
- * suite boots its own bundle, following test_map_layer_defaults.js,
+ * ski_tours.js draws both parts; map.js keeps their switches
+ * (window.pwaSkiRoutes) and shows or hides the layers OVERLAY_LAYERS names
+ * for each. Both are ON by default, and only on a page that carries
+ * data-ski-routes-eligible="true" — the route_drawing flag, for now.
+ * swisstopo's raster, which this file tested before, is no longer drawn.
+ * Each suite boots its own bundle, following test_map_layer_defaults.js,
  * because the boot seed reads localStorage once.
  */
 
@@ -16,8 +19,14 @@ import '../../static/js/i18n_strings.js';
 import { loadMapBundle } from './_load_map_bundle.js';
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
-const SKI_KEY = 'snowdesk.map.overlay.ski_routes';
-const LAYER = 'ski-routes';
+// The tours keep the key the raster's switch had.
+const TOURS_KEY = 'snowdesk.map.overlay.ski_routes';
+const SUMMITS_KEY = 'snowdesk.map.overlay.ski_summits';
+const MASTER_KEY = 'snowdesk.map.ski-touring.last-on';
+const TOUR_LAYERS = [
+  'ski-tours-line', 'ski-tours-highlight', 'ski-tours-highlight-down', 'ski-tours-far-end',
+];
+const SUMMIT_LAYERS = ['ski-tours-summit', 'ski-tours-summit-label'];
 
 /** Minimal MapLibre stub tracking per-layer layout and paint. */
 function stubMapLibre() {
@@ -113,17 +122,31 @@ function stubMapLibre() {
 }
 
 /**
- * The DOM map.js's boot reads, with the ski-touring routes row when the
- * page is eligible — the row _map_embed.html renders only then.
+ * The DOM map.js's boot reads, with the ski-touring master and its page's
+ * two rows when the page is eligible — _map_embed.html renders them only
+ * then.
  *
  * @param {boolean} eligible
  */
 function buildFixture(eligible) {
   const row = eligible
     ? `<li role="none">
-         <button type="button" role="menuitemcheckbox"
-                 class="basemap-menu-item basemap-menu-item--overlay"
-                 data-overlay-key="ski_routes" aria-checked="true">Ski-touring routes</button>
+         <button type="button" role="menuitemcheckbox" data-layer-master="ski_touring"
+                 data-layer-switch aria-checked="false"></button>
+       </li>
+       <li role="none">
+         <ul id="basemap-menu-group-ski_touring">
+           <li role="none">
+             <button type="button" role="menuitemcheckbox"
+                     class="basemap-menu-item basemap-menu-item--overlay"
+                     data-overlay-key="ski_tours" aria-checked="false">Tours</button>
+           </li>
+           <li role="none">
+             <button type="button" role="menuitemcheckbox"
+                     class="basemap-menu-item basemap-menu-item--overlay"
+                     data-overlay-key="ski_summits" aria-checked="false">Summits</button>
+           </li>
+         </ul>
        </li>`
     : '';
   document.body.innerHTML = `
@@ -182,6 +205,10 @@ async function boot({ eligible = true, storage = {} } = {}) {
   loadMapBundle();
   // MapLibre never fires 'load' in jsdom, and the install hangs off it.
   for (const handler of mapStub.handlers.load || []) await handler();
+  // The layers ski_tours.js would have added, drawn.
+  for (const id of [...TOUR_LAYERS, ...SUMMIT_LAYERS]) {
+    mapStub.addLayer({ id, layout: { visibility: 'visible' } });
+  }
 }
 
 /** Replace the style and fire styledata, as a basemap swap does. */
@@ -190,8 +217,14 @@ async function swapBasemap() {
   for (const handler of mapStub.handlers.styledata || []) await handler();
 }
 
-const visibility = () => mapStub.getLayoutProperty(LAYER, 'visibility');
-const row = () => document.querySelector('[data-overlay-key="ski_routes"]');
+/** @param {Array<string>} ids @returns {Array<string>} Each layer's visibility. */
+const visibilities = (ids) => ids.map((id) => mapStub.getLayoutProperty(id, 'visibility'));
+const toursDrawn = () => visibilities(TOUR_LAYERS).every((v) => v === 'visible');
+const toursHidden = () => visibilities(TOUR_LAYERS).every((v) => v === 'none');
+const summitsDrawn = () => visibilities(SUMMIT_LAYERS).every((v) => v === 'visible');
+const summitsHidden = () => visibilities(SUMMIT_LAYERS).every((v) => v === 'none');
+const row = (key) => document.querySelector(`[data-overlay-key="${key}"]`);
+const master = () => document.querySelector('[data-layer-master="ski_touring"]');
 const gateKeys = () => window.pwaZoomGates.list().map((gate) => gate.key);
 
 beforeAll(() => {
@@ -213,77 +246,76 @@ afterAll(() => {
 });
 
 describe('on an eligible page', () => {
-  it('draws the routes on a first visit, from z10', async () => {
+  it('switches both parts on for a first visit, and draws no raster', async () => {
     await boot();
 
-    expect(visibility()).toBe('visible');
-    expect(mapStub.defs.get(LAYER).minzoom).toBe(10);
-    expect(row().getAttribute('aria-checked')).toBe('true');
+    expect(row('ski_tours').getAttribute('aria-checked')).toBe('true');
+    expect(row('ski_summits').getAttribute('aria-checked')).toBe('true');
+    expect(master().getAttribute('aria-checked')).toBe('true');
+    expect(window.pwaSkiRoutes.isShown()).toBe(true);
+    // SNOW-1285: swisstopo's raster of the whole network is gone.
+    expect(mapStub.defs.has('ski-routes')).toBe(false);
   });
 
-  it('keeps a reader\'s "off", through a basemap swap', async () => {
-    await boot({ storage: { [SKI_KEY]: 'false' } });
+  it("keeps the old switch's \"off\" for the tours, and not the summits", async () => {
+    await boot({ storage: { [TOURS_KEY]: 'false' } });
 
-    expect(visibility()).toBe('none');
-    expect(row().getAttribute('aria-checked')).toBe('false');
-    await swapBasemap();
-    expect(visibility()).toBe('none');
+    expect(row('ski_tours').getAttribute('aria-checked')).toBe('false');
+    expect(row('ski_summits').getAttribute('aria-checked')).toBe('true');
+    expect(window.pwaSkiRoutes.isPartShown('ski_tours')).toBe(false);
+    expect(window.pwaSkiRoutes.isShown()).toBe(true);
   });
 
-  it('is switched by its layers-menu row, and remembers it', async () => {
+  it('switches each part by its own row, and remembers it', async () => {
     await boot();
 
-    row().click();
-    expect(visibility()).toBe('none');
-    expect(localStorage.getItem(SKI_KEY)).toBe('false');
-    row().click();
-    expect(visibility()).toBe('visible');
+    row('ski_tours').click();
+    expect(toursHidden()).toBe(true);
+    expect(summitsDrawn()).toBe(true);
+    expect(localStorage.getItem(TOURS_KEY)).toBe('false');
+    row('ski_summits').click();
+    expect(summitsHidden()).toBe(true);
+    expect(localStorage.getItem(SUMMITS_KEY)).toBe('false');
+    expect(master().getAttribute('aria-checked')).toBe('false');
+    row('ski_tours').click();
+    expect(toursDrawn()).toBe(true);
+    expect(master().getAttribute('aria-checked')).toBe('true');
   });
 
-  it('is held on through draw mode, then handed back to the switch', async () => {
-    await boot({ storage: { [SKI_KEY]: 'false' } });
+  it('switches off what is on with the master, and puts it back', async () => {
+    await boot({ storage: { [SUMMITS_KEY]: 'false' } });
 
-    window.pwaSkiRoutes.hold(true);
-    expect(visibility()).toBe('visible');
-    window.pwaSkiRoutes.hold(false);
-    expect(visibility()).toBe('none');
+    master().click();
+    expect(toursHidden()).toBe(true);
+    expect(JSON.parse(localStorage.getItem(MASTER_KEY))).toEqual(['ski_tours']);
+    master().click();
+    expect(toursDrawn()).toBe(true);
+    expect(summitsHidden()).toBe(true);
   });
 
-  it('stays at every zoom under the vector tours (SNOW-1283)', async () => {
-    await boot();
+  it('switches both on for "Find a route"', async () => {
+    await boot({ storage: { [TOURS_KEY]: 'false', [SUMMITS_KEY]: 'false' } });
 
-    // The raster is swisstopo's whole network; SAC's tours are only part.
-    expect(mapStub.defs.get(LAYER).maxzoom).toBeUndefined();
+    window.pwaSkiRoutes.show();
+    expect(toursDrawn()).toBe(true);
+    expect(summitsDrawn()).toBe(true);
+    expect(row('ski_tours').getAttribute('aria-checked')).toBe('true');
   });
 
-  it('dims while a tour list is open, through a basemap swap', async () => {
-    await boot();
-    const opacity = () => mapStub.getPaintProperty(LAYER, 'raster-opacity');
-
-    // Faint, as a guide under the tappable tours (SNOW-1285), and fainter.
-    expect(opacity()).toBe(0.45);
-    window.pwaSkiRoutes.dim(true);
-    expect(opacity()).toBe(0.2);
-    await swapBasemap();
-    expect(opacity()).toBe(0.2);
-    window.pwaSkiRoutes.dim(false);
-    expect(opacity()).toBe(0.45);
-  });
-
-  it('is named in the zoom control at z10', async () => {
+  it('is named in the zoom control at z9', async () => {
     await boot();
 
     expect(window.pwaZoomGates.list()).toContainEqual(
-      { key: 'ski_routes', zoom: 10, upTo: false },
+      { key: 'ski_routes', zoom: 9, upTo: false },
     );
   });
 });
 
 describe('on an ineligible page', () => {
-  it('installs nothing and names no gate', async () => {
+  it('shows nothing and names no gate', async () => {
     await boot({ eligible: false });
 
-    expect(mapStub.getLayer(LAYER)).toBeNull();
+    expect(window.pwaSkiRoutes.isShown()).toBe(false);
     expect(gateKeys()).not.toContain('ski_routes');
     expect(window.pwaSkiRoutes.isEligible()).toBe(false);
   });

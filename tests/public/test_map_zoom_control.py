@@ -73,7 +73,7 @@ def test_a_filled_variant_names_the_zoom_and_draws_its_ticks() -> None:
     assert "Some features are only available at certain zoom levels." in html
     for name in (
         "Region selector",
-        "Ski-touring routes",
+        "Ski touring",
         "Steep terrain",
         "Route slope angle",
     ):
@@ -128,12 +128,9 @@ def test_the_library_panel_renders(staff_client: Client) -> None:
     assert "Camera zoom 12.47" in body
 
 
-def test_two_gates_on_one_level_sit_either_side_of_its_line() -> None:
-    """The ski-touring routes' ≥10 above z10's line, the region selector's ≤10 below."""
+def test_a_gate_alone_on_its_level_sits_on_its_line() -> None:
+    """SNOW-1285: ski touring's ≥9 and the region selector's ≤10 share no level."""
     html = render_to_string(PARTIAL, _variant("At z12")["context"])
-    ski = html[html.index('data-zoom-tick="ski_routes"') :]
-    assert 'data-zoom-side="above"' in ski[: ski.index(">")]
-    region = html[html.index('data-zoom-tick="region_select"') :]
-    assert 'data-zoom-side="below"' in region[: region.index(">")]
-    terrain = html[html.index('data-zoom-tick="terrain_filter"') :]
-    assert "data-zoom-side" not in terrain[: terrain.index(">")]
+    for key in ("ski_routes", "region_select", "terrain_filter"):
+        tick = html[html.index(f'data-zoom-tick="{key}"') :]
+        assert "data-zoom-side" not in tick[: tick.index(">")]

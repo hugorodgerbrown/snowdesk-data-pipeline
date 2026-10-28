@@ -62,16 +62,12 @@ anyone.
   routes is deliberately not done. The routes are shown as a guide under
   the line (`ch.swisstopo-karto.skitouren`, open government data,
   attribution required), and the drawer decides where to go.
-- **The guide is the map's own layer** (28 Oct 2026). Hugo saw it on a
-  phone, judged it uncrowded and useful, and asked for it on the map
-  generally: the layers menu's "Ski-touring routes" row
-  (`data-overlay-key="ski_routes"`, `installSkiRoutesLayer` in map.js),
-  ON by default, from z10 (`SKI_ROUTES_MINZOOM`), named in the zoom
-  control. Draw mode no longer adds a copy; it holds the map's layer on
-  (`window.pwaSkiRoutes.hold`) whatever the switch says and hands it back
-  on exit. It is a raster, so it cannot be filtered: choosing the SAC
-  catalogue's routes over the rest needs the vector dataset (SNOW-1261).
-  It rides on the `route_drawing` flag until the feature goes live.
+- **The guide was the map's own layer** (28 Oct 2026), swisstopo's raster
+  under the layers menu's "Ski-touring routes" row, held on by draw mode
+  (`window.pwaSkiRoutes.hold`). SNOW-1285 took the raster off the map: the
+  map's ski-touring layer is SAC's tours and summits, every one of them
+  tappable, and draw mode draws swisstopo's network itself as the vector
+  shadow below, whether or not a leg follows it.
 
 ## Consequences
 
@@ -89,7 +85,7 @@ anyone.
   discards it.
 - A leg can follow swisstopo's ski-touring network (SNOW-1277). From z12
   draw mode loads `/api/ski-network.geojson` for the view and draws it as
-  a faint shadow; the raster steps aside via `pwaSkiRoutes.hide()`. A tap
+  a faint shadow, followed or not (SNOW-1285). While following, a tap
   within 24 px of a line snaps to it. When the last point is on the
   network too, the leg is the shortest path along it
   (`static/js/ski_snap_core.js`, Dijkstra on the device, with no server

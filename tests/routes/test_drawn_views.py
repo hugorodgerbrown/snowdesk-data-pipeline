@@ -309,8 +309,10 @@ class TestMapPageDrawSurface:
         assert "js/ski_snap_core.js" in body
         assert f'data-network-url="{reverse("api:ski_network_geojson")}"' in body
         assert "data-route-draw-follow" in body
-        # swisstopo's ski-touring routes ride on the same flag.
-        assert 'data-overlay-key="ski_routes"' in body
+        # SNOW-1285: the ski-touring layer's two parts ride on the same flag.
+        assert 'data-layer-master="ski_touring"' in body
+        assert 'data-overlay-key="ski_tours"' in body
+        assert 'data-overlay-key="ski_summits"' in body
         assert 'data-ski-routes-eligible="true"' in body
         # SNOW-1278: three ways to add a route, replacing the add button,
         # and "Find a route"'s surface.
@@ -332,7 +334,7 @@ class TestMapPageDrawSurface:
             body = client.get(reverse("public:map")).content.decode()
 
         assert "data-route-draw-start" not in body
-        assert 'data-overlay-key="ski_routes"' not in body
+        assert 'data-overlay-key="ski_tours"' not in body
         assert 'data-ski-routes-eligible="false"' in body
 
     def test_absent_with_the_flag_off(self, client: Client) -> None:
@@ -346,4 +348,4 @@ class TestMapPageDrawSurface:
         assert "data-ski-tour-find" not in body
         assert 'id="ski-tours-sheet"' not in body
         assert "Add a route" in body
-        assert 'data-overlay-key="ski_routes"' not in body
+        assert 'data-overlay-key="ski_tours"' not in body

@@ -3164,10 +3164,9 @@ def _zoom_variant(
     ticks = [
         _zoom_tick(
             "ski_routes",
-            "Ski-touring routes",
-            10,
+            "Ski touring",
+            9,
             camera,
-            side="above",
         ),
         _zoom_tick(
             "region_select",
@@ -3175,7 +3174,6 @@ def _zoom_variant(
             10,
             camera,
             up_to=True,
-            side="below",
         ),
         _zoom_tick(
             "terrain_filter",

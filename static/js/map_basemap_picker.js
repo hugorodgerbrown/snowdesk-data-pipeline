@@ -42,7 +42,7 @@
 // whether its layer is drawn; a row with options opens them on a PAGE of
 // their own, in place of the first level, with a back arrow — the
 // collapsible sections, and the per-section storage keys that remembered
-// which were open, are gone. Two layers have no single row of their own to
+// which were open, are gone. Three layers have no single row of their own to
 // be the switch, so their switches are MASTERS (``data-layer-master``),
 // derived from the rows on their options page and never counted twice:
 //
@@ -51,7 +51,9 @@
 //     and on sends back the step it was switched off at;
 //   - boundaries: on while any EAWS tier is. Off clicks each checked tier
 //     off and remembers which; on clicks them back (Micro regions when
-//     nothing is remembered).
+//     nothing is remembered);
+//   - ski touring (SNOW-1285): the same over its two rows, Tours and
+//     Summits (both when nothing is remembered).
 //
 // See docs/decisions/the-layers-menu-is-on-off-then-options.md.
 //
@@ -91,14 +93,28 @@
     'signin-cta': 'Sign in',
   });
 
-  // SNOW-1266: where the two master switches remember what they turned off.
-  // The bulletins one holds a step (0.25…1), the boundaries one a JSON list
-  // of tier keys. Read only when a master is switched back on.
+  // SNOW-1266: where the master switches remember what they turned off.
+  // The bulletins one holds a step (0.25…1); the others a JSON list of the
+  // keys of the rows on their page. Read only when a master is switched
+  // back on.
   const BULLETINS_LAST_STEP_KEY = 'snowdesk.map.bulletins.last-on-step';
-  const BOUNDARIES_LAST_ON_KEY = 'snowdesk.map.boundaries.last-on';
   const DEFAULT_BULLETINS_STEP = 0.5;
-  const DEFAULT_BOUNDARIES = ['l4'];
-  const BOUNDARY_KEYS = ['l1', 'l2', 'l4'];
+  // The masters over a page of on/off rows: on while any row is, off
+  // clicks each one that is on and remembers which, on clicks them back
+  // (the defaults when nothing is remembered). Boundaries (SNOW-1266), and
+  // ski touring's tours and summits (SNOW-1285).
+  const ROW_MASTERS = Object.freeze({
+    boundaries: Object.freeze({
+      keys: ['l1', 'l2', 'l4'],
+      defaults: ['l4'],
+      storageKey: 'snowdesk.map.boundaries.last-on',
+    }),
+    ski_touring: Object.freeze({
+      keys: ['ski_tours', 'ski_summits'],
+      defaults: ['ski_tours', 'ski_summits'],
+      storageKey: 'snowdesk.map.ski-touring.last-on',
+    }),
+  });
 
   // Longest a page's summary may get before it stops naming rows and
   // states a count instead. The menu is shrink-to-fit and its rows are
@@ -124,6 +140,9 @@
     // SNOW-1185: "Show unsupported regions" — a re-filter of the micro
     // regions that only map.js's applyCountryFilters can compose.
     unsupported: () => window.pwaUnsupportedRegions,
+    // SNOW-1285: ski touring's two parts, under the "Ski touring" master.
+    ski_tours: () => window.pwaSkiRoutes && window.pwaSkiRoutes.tours,
+    ski_summits: () => window.pwaSkiRoutes && window.pwaSkiRoutes.summits,
   };
 
   // The two rows that need an account, and the sentence each hands off
@@ -220,11 +239,12 @@
   );
 
   /**
-   * The EAWS tier rows, in menu order.
+   * The rows under one master, in menu order.
    *
+   * @param {string} name - A key of ROW_MASTERS.
    * @returns {HTMLElement[]}
    */
-  const boundaryRows = () => BOUNDARY_KEYS
+  const masterRows = (name) => ROW_MASTERS[name].keys
     .map((key) => menu.querySelector(`[data-overlay-key="${key}"]`))
     .filter(Boolean);
 
@@ -245,11 +265,11 @@
     if (bulletinsMaster) {
       bulletinsMaster.setAttribute('aria-checked', bulletinsOn() ? 'true' : 'false');
     }
-    const boundariesMaster = menu.querySelector('[data-layer-master="boundaries"]');
-    if (boundariesMaster) {
-      boundariesMaster.setAttribute(
-        'aria-checked', boundaryRows().some(rowIsOn) ? 'true' : 'false',
-      );
+    for (const name of Object.keys(ROW_MASTERS)) {
+      const master = menu.querySelector(`[data-layer-master="${name}"]`);
+      if (master) {
+        master.setAttribute('aria-checked', masterRows(name).some(rowIsOn) ? 'true' : 'false');
+      }
     }
     const countEl = menu.querySelector('[data-layers-count]');
     if (countEl) {
@@ -851,29 +871,28 @@
     });
   }
 
-  const boundariesMaster = menu.querySelector('[data-layer-master="boundaries"]');
-  if (boundariesMaster) {
-    boundariesMaster.addEventListener('click', (e) => {
+  for (const [name, master] of Object.entries(ROW_MASTERS)) {
+    const button = menu.querySelector(`[data-layer-master="${name}"]`);
+    if (!button) continue;
+    button.addEventListener('click', (e) => {
       e.stopPropagation();
-      const on = boundaryRows().filter(rowIsOn);
+      const on = masterRows(name).filter(rowIsOn);
       if (on.length > 0) {
-        writeStorage(
-          BOUNDARIES_LAST_ON_KEY, JSON.stringify(on.map((row) => row.dataset.overlayKey)),
-        );
+        writeStorage(master.storageKey, JSON.stringify(on.map((row) => row.dataset.overlayKey)));
         for (const row of on) row.click();
         return;
       }
-      let keys = DEFAULT_BOUNDARIES;
+      let keys = master.defaults;
       try {
-        const stored = JSON.parse(readStorage(BOUNDARIES_LAST_ON_KEY) || 'null');
+        const stored = JSON.parse(readStorage(master.storageKey) || 'null');
         if (Array.isArray(stored)) {
-          const known = stored.filter((key) => BOUNDARY_KEYS.includes(key));
+          const known = stored.filter((key) => master.keys.includes(key));
           if (known.length > 0) keys = known;
         }
       } catch {
         // A hand-edited or truncated value reads as "nothing remembered".
       }
-      for (const row of boundaryRows()) {
+      for (const row of masterRows(name)) {
         if (keys.includes(row.dataset.overlayKey)) row.click();
       }
     });

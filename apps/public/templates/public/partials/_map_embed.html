@@ -699,12 +699,43 @@ Optional context:
                 {% endif %}
                 {% include "public/partials/_map_layers_switch_row.html" with key="weather" label=_("Weather") icon="cloud" sync=True weather=True only %}
                 {% include "public/partials/_map_layers_switch_row.html" with key="resorts" label=_("Resorts") icon="resort" sync=True only %}
-                {# swisstopo's ski-touring routes, drawn from z10 inside    #}
-                {# Switzerland. ON by default: map.js seeds aria-checked    #}
-                {# from localStorage, true when unset. No sync dot — the    #}
-                {# tiles come from swisstopo and are never cached offline.  #}
+                {# SNOW-1285: SAC's ski tours and the summits they go to,   #}
+                {# drawn from z9 inside Switzerland, two layers on a page of #}
+                {# their own. ON by default: map.js seeds the rows from     #}
+                {# localStorage, true when unset. The switch is a master,    #}
+                {# on while either is, as the boundaries' is.               #}
                 {% if route_drawing_enabled %}
-                    {% include "public/partials/_map_layers_switch_row.html" with key="ski_routes" label=_("Ski-touring routes") icon="compass" zoom_gate="ski_routes" only %}
+                    {% trans "Ski touring" as layer_ski_touring %}
+                    <li role="none" class="basemap-menu-layer" data-zoom-gate="ski_routes">
+                        <button
+                            type="button"
+                            role="menuitem"
+                            class="basemap-menu-layer-options hover-affordance"
+                            data-layers-open="ski_touring"
+                            aria-haspopup="true"
+                            aria-controls="basemap-menu-page-ski_touring"
+                        >
+                            <span
+                                class="basemap-menu-layer-icon"
+                            >{% include "includes/_icon_compass.html" with size=18 only %}</span>
+                            <span class="basemap-menu-item-text">
+                                {% include "public/partials/_map_layers_zoom_label.html" with label=layer_ski_touring only %}
+                                <span class="basemap-menu-item-detail" data-page-summary="ski_touring"></span>
+                            </span>
+                            {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
+                        </button>
+                        <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            class="basemap-menu-switch group hover-affordance"
+                            data-layer-master="ski_touring"
+                            data-layer-switch
+                            aria-checked="false"
+                            aria-label="{{ layer_ski_touring }}"
+                        >
+                            {% include "includes/_switch_track.html" only %}
+                        </button>
+                    </li>
                 {% endif %}
                 {% trans "Boundaries" as layer_boundaries %}
                 <li role="none" class="basemap-menu-layer">
@@ -982,6 +1013,46 @@ Optional context:
                     </button>
                 </li>
             </ul>
+            {% if route_drawing_enabled %}
+                {# SNOW-1285: the two parts of the ski-touring layer. No sync #}
+                {# dot: the tours are not part of a downloaded area.          #}
+                <ul
+                    id="basemap-menu-page-ski_touring"
+                    class="basemap-menu-list"
+                    role="menu"
+                    aria-label="{{ layer_ski_touring }}"
+                    data-layers-page="ski_touring"
+                    hidden
+                >
+                    {% include "public/partials/_map_layers_page_header.html" with title=layer_ski_touring only %}
+                    <li role="none">
+                        <ul id="basemap-menu-group-ski_touring" class="basemap-menu-group" role="group">
+                            <li role="none">
+                                <button
+                                    type="button"
+                                    role="menuitemcheckbox"
+                                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                                    data-overlay-key="ski_tours"
+                                    aria-checked="false"
+                                >
+                                    {% trans "Tours" %}
+                                </button>
+                            </li>
+                            <li role="none">
+                                <button
+                                    type="button"
+                                    role="menuitemcheckbox"
+                                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                                    data-overlay-key="ski_summits"
+                                    aria-checked="false"
+                                >
+                                    {% trans "Summits" %}
+                                </button>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+            {% endif %}
             <ul
                 id="basemap-menu-page-basemap"
                 class="basemap-menu-list"

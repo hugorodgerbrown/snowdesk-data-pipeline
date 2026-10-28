@@ -184,8 +184,10 @@ interface Window {
   pwaSkiSnapCore: any;
   /** SNOW-1256: route_draw.js — whether the map is in route draw mode. */
   pwaRouteDraw: any;
-  /** map.js: the ski-touring routes overlay — hold, hide, show, isShown, isEligible. */
+  /** map.js: the ski-touring layer's switches — tours, summits, show, isShown, isPartShown (SNOW-1285). */
   pwaSkiRoutes: any;
+  /** map_placement_focus.js: overlays step aside for a placement mode — enter, exit, isActive. */
+  PlacementFocus: any;
   /** SNOW-1278: static/js/ski_tours_core.js — what a tap on the tours means, URLs. */
   pwaSkiToursCore: any;
   /** SNOW-1278: static/js/ski_tours.js — tap(point), find(). */

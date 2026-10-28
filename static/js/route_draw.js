@@ -14,10 +14,8 @@
  *      closes that panel and opens #route-draw-sheet, a form panel.
  *   2. Every app overlay steps aside (window.PlacementFocus, which hides
  *      every GeoJSON layer that exists AT THAT MOMENT — so the draft's own
- *      layers are added after it, and stay). swisstopo's ski-touring routes
- *      — the map's own layer, a raster PlacementFocus leaves alone — are
- *      held on as a guide under the draft (window.pwaSkiRoutes.hold),
- *      whatever the layers menu says, and handed back on exit.
+ *      layers are added after it, and stay). SAC's tours and summits are
+ *      among them; the guide under the draft is swisstopo's network, below.
  *   3. Each added or removed point redraws the guide at once, stores the
  *      draft on the device, and — debounced, the previous request aborted
  *      — posts the waypoints to routes:draw_preview. Its answer is the
@@ -29,11 +27,11 @@
  *      re-reads the layer once the terrain task has run), and the routes
  *      layer revealed and framed on the new route (window.pwaRowFocus).
  *
- * FOLLOWING THE SKI ROUTES (SNOW-1277). While "Follow ski routes" is on
- * and the map is at z12 or closer, the panel loads swisstopo's ski-touring
- * network for the view (/api/ski-network.geojson) and draws it as a faint
- * shadow under the draft; swisstopo's raster steps aside, since the shadow
- * is the same lines. A tap within 24 px of a line snaps to it, and a ring
+ * THE NETWORK (SNOW-1277). At z12 or closer the panel loads swisstopo's
+ * ski-touring network for the view (/api/ski-network.geojson) and draws it
+ * as a faint shadow under the draft, whether or not it is followed: since
+ * SNOW-1285 it is the only place the map draws that network. While "Follow
+ * ski routes" is on, a tap within 24 px of a line snaps to it, and a ring
  * shows where it would land before it is placed. When the last point is on
  * the network too, the new leg is routed along it (ski_snap_core.js, the
  * shortest way, straight instead when that is over three times as far).
@@ -190,8 +188,8 @@
   }
 
   /**
-   * Add the draft's sources and layers: the drawn preview at the bottom
-   * (over the map's ski-routes layer), the waypoints and straight guide on
+   * Add the draft's sources and layers: the network's shadow and the drawn
+   * preview at the bottom, the waypoints and straight guide on
    * top.
    *
    * @param {any} map
@@ -337,42 +335,16 @@
     return snapCore.nearestOnNetwork(state.graph, point, snapReach());
   }
 
-  /** @returns {Object} The loaded network, or nothing while following is off. */
+  /** @returns {Object} The loaded network. */
   function networkCollection() {
-    return {
-      type: 'FeatureCollection',
-      features: state.follow ? Array.from(state.network.values()) : [],
-    };
+    return { type: 'FeatureCollection', features: Array.from(state.network.values()) };
   }
 
-  /**
-   * Whether the network loaded so far covers the whole view.
-   *
-   * @param {any} map
-   * @returns {boolean}
-   */
-  function networkCoversView(map) {
-    const b = map.getBounds();
-    return state.loaded.some(function (done) {
-      return done[0] <= b.getWest() && done[1] <= b.getSouth()
-        && done[2] >= b.getEast() && done[3] >= b.getNorth();
-    });
-  }
-
-  /**
-   * Redraw the network, and let swisstopo's raster step aside under it —
-   * only once the shadow covers the view, so a failed or refused load
-   * (offline, with the raster's tiles cached) leaves the raster as the guide.
-   */
+  /** Redraw the network's shadow. */
   function drawNetwork() {
     const map = getMap();
     const source = map && map.getSource(NETWORK_SOURCE);
     if (source) source.setData(networkCollection());
-    const shadow = Boolean(
-      NETWORK_URL && state.follow && map && map.getZoom() >= NETWORK_MINZOOM
-        && networkCoversView(map),
-    );
-    window.pwaSkiRoutes?.hide(shadow);
   }
 
   /** Load the network for the view once the map has stopped moving. */
@@ -388,7 +360,7 @@
   function loadNetwork() {
     state.networkTimer = null;
     const map = getMap();
-    if (!map || !state.active || !state.follow || !NETWORK_URL || !snapCore) return;
+    if (!map || !state.active || !NETWORK_URL || !snapCore) return;
     if (map.getZoom() < NETWORK_MINZOOM || !online()) return;
     const bounds = map.getBounds();
     const centre = map.getCenter();
@@ -850,7 +822,6 @@
     // are not among the layers PlacementFocus hides.
     window.PlacementFocus?.enter();
     installLayers(map);
-    window.pwaSkiRoutes?.hold(true);
     drawNetwork();
 
     const container = map.getContainer();
@@ -894,8 +865,6 @@
       map.off('moveend', onMapMoveEnd);
       removeLayers(map);
     }
-    window.pwaSkiRoutes?.hide(false);
-    window.pwaSkiRoutes?.hold(false);
     window.PlacementFocus?.exit();
     document.dispatchEvent(new CustomEvent('snowdesk:route-draw', { detail: { active: false } }));
   }
