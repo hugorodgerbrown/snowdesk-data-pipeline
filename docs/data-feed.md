@@ -1,8 +1,8 @@
 ---
 name: data-feed
-description: Data feed GET /api/data/v1/, service clients, pull_production_data, DATA_FEED_URL, DATA_FEED_TOKEN, mint_feed_token (cloud dev)
+description: Data feed GET /api/data/v1/ + v2/weather, service clients, pull_production_data, DATA_FEED_URL, DATA_FEED_TOKEN, mint_feed_token (cloud dev)
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-10-28
 ---
 
 # The production data feed
@@ -27,7 +27,7 @@ Why a feed and not a database copy:
 
 ## Endpoints
 
-All four are `GET`, take the same parameters and answer the same shape.
+All five are `GET`, take the same parameters and answer the same shape.
 
 | URL | Item key | What is served |
 |-----|----------|----------------|
@@ -35,6 +35,15 @@ All four are `GET`, take the same parameters and answer the same shape.
 | `/api/data/v1/weather/` | location `uuid` + `observed_on` | `Weather` rows for `Location.objects.public()` only |
 | `/api/data/v1/locations/` | `uuid` | `Location.objects.public()`, with `centroid_of` region codes |
 | `/api/data/v1/resorts/` | `slug` | Every resort with a slug: region code, pin uuid, passes, location links |
+| `/api/data/v2/weather/` | `SourceLocation.uuid` + `observed_on` | Every `SourceWeather` row the weather service has stored (SNOW-1253), tombstoned places included |
+
+**v2 weather (SNOW-1253).** The item has the same shape and the same columns
+as v1's. The one change is the key: `location` is the weather service's id
+for the place (`SourceLocation.uuid`). A client holds that id as
+`Location.source_uuid`, which the v1 `locations` feed now sends, so it never
+needs production's own location ids. v1 stays served until staging's pull
+moves to v2 (SNOW-1272). A token is bound to its URL prefix, so a client
+needs a token bound to `/api/data/v2/` to read it.
 
 Parameters, all optional: `since` (ISO 8601 datetime **with an offset**,
 filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and
@@ -77,10 +86,10 @@ they are a few thousand rows, read whole. On the client,
 `FeedClient.pages` is a generator and the command applies items as they
 arrive, so a pull holds only one page (at most 500 items) in memory.
 
-**What is never served.** The four querysets are the only reads, and no
-user-owned table is among them. A favourite's pin is fetched for weather
-(`Location.objects.active()`), but it is one person's saved place, so its
-location and its weather never leave production. The column lists in
+**What is never served.** The five querysets are the only reads, and no
+user-owned table is among them. A favourite's pin is never fetched: it
+borrows the nearest curated forecast (SNOW-1265), so nothing about it
+leaves production. The column lists in
 `contract.py` are allowlists too: a new column is not published until
 someone adds it, and `tests/data_feed/test_contract.py` fails until they
 decide.

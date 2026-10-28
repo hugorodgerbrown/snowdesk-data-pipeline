@@ -1,5 +1,8 @@
 """
-tests/ingest/test_admin.py — Tests for SourceBulletinAdmin (SNOW-1250).
+tests/ingest/test_admin.py — Tests for ingest's read-only admins.
+
+SourceBulletinAdmin (SNOW-1250); SourceLocationAdmin and SourceWeatherAdmin
+(SNOW-1253).
 
 The admin is a read-only window: the list and a row render, and nothing can
 be added, changed or deleted.
@@ -13,8 +16,12 @@ from django.contrib.auth.models import User
 from django.test import Client, RequestFactory
 from django.urls import reverse
 
-from apps.ingest.models import SourceBulletin
-from tests.factories import SourceBulletinFactory
+from apps.ingest.models import SourceBulletin, SourceLocation, SourceWeather
+from tests.factories import (
+    SourceBulletinFactory,
+    SourceLocationFactory,
+    SourceWeatherFactory,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -41,6 +48,35 @@ def test_the_list_and_a_row_render(admin_client: Client) -> None:
 def test_nothing_can_be_added_changed_or_deleted(rf: RequestFactory) -> None:
     """A row is the record of what a provider said."""
     model_admin = site._registry[SourceBulletin]
+    request = rf.get("/")
+    assert not model_admin.has_add_permission(request)
+    assert not model_admin.has_change_permission(request)
+    assert not model_admin.has_delete_permission(request)
+
+
+def test_the_weather_service_pages_render(admin_client: Client) -> None:
+    """The place and place-day lists and rows answer."""
+    row = SourceWeatherFactory.create(location=SourceLocationFactory.create())
+    for name, pk in (
+        ("sourcelocation", row.location.pk),
+        ("sourceweather", row.pk),
+    ):
+        assert (
+            admin_client.get(reverse(f"admin:ingest_{name}_changelist")).status_code
+            == 200
+        )
+        assert (
+            admin_client.get(
+                reverse(f"admin:ingest_{name}_change", args=[pk])
+            ).status_code
+            == 200
+        )
+
+
+@pytest.mark.parametrize("model", [SourceLocation, SourceWeather])
+def test_the_weather_service_is_read_only(rf: RequestFactory, model: type) -> None:
+    """A place is tombstoned by a sync, a past day stands: no hand edits."""
+    model_admin = site._registry[model]
     request = rf.get("/")
     assert not model_admin.has_add_permission(request)
     assert not model_admin.has_change_permission(request)

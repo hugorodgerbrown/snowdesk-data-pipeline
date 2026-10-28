@@ -182,7 +182,7 @@ def parse_dt_preserve_offset(value: str) -> datetime:
     return parsed
 
 
-def daily_dates(daily: dict[str, Any], location_pk: int) -> list[date]:
+def daily_dates(daily: dict[str, Any], location_pk: object) -> list[date]:
     """
     Parse and validate the provider's ``daily.time`` array.
 
@@ -193,7 +193,7 @@ def daily_dates(daily: dict[str, Any], location_pk: int) -> list[date]:
 
     Args:
         daily: The ``"daily"`` block of an Open-Meteo forecast response.
-        location_pk: The location's pk, for error messages only.
+        location_pk: What to call the point (a pk or a uuid), for error messages only.
 
     Returns:
         The provider-supplied dates, in response order.

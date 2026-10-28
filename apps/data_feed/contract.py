@@ -22,6 +22,7 @@ seeded independently agree on all of those and on none of the integer ids.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 from typing import Any
 
 from django.db import models
@@ -82,6 +83,9 @@ LOCATION_FIELDS: tuple[str, ...] = (
     "elevation_m",
     "what3words",
     "what3words_fetched_at",
+    # SNOW-1253: the weather service's id for a reference place. Sent so a
+    # pulled location carries the key /api/data/v2/weather/ is matched on.
+    "source_uuid",
 )
 LOCATION_NOT_SENT = frozenset({"id", "uuid", "created_at", "updated_at"})
 
@@ -132,11 +136,14 @@ def to_wire(value: Any) -> Any:
         value: A model field's value.
 
     Returns:
-        The value, with ``date`` and ``datetime`` rendered as ISO strings.
+        The value, with ``date`` and ``datetime`` rendered as ISO strings
+        and a ``UUID`` as its canonical string.
 
     """
     if isinstance(value, dt.datetime | dt.date):
         return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
     return value
 
 
@@ -161,7 +168,9 @@ def load_fields(
 
     Only names in ``names`` are read, so a field a newer server sends is
     ignored rather than passed to the ORM. Date and datetime columns are
-    parsed from their ISO strings; everything else is JSON already.
+    parsed from their ISO strings and UUID columns back into ``uuid.UUID``,
+    so a value compares equal to the stored one and an unchanged row reads
+    as unchanged; everything else is JSON already.
 
     Args:
         model: The model the columns belong to.
@@ -172,7 +181,7 @@ def load_fields(
         ``{name: python value}`` for every allowlisted name present.
 
     Raises:
-        ValueError: A date or datetime string does not parse.
+        ValueError: A date, datetime or UUID string does not parse.
 
     """
     loaded: dict[str, Any] = {}
@@ -185,6 +194,8 @@ def load_fields(
             value = _parsed(parse_datetime(value), name, value)
         elif value is not None and isinstance(field, models.DateField):
             value = _parsed(parse_date(value), name, value)
+        elif isinstance(value, str) and isinstance(field, models.UUIDField):
+            value = uuid.UUID(value)
         loaded[name] = value
     return loaded
 

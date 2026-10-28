@@ -19,6 +19,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.utils import timezone
 
+from apps.ingest.public import SourceLocation, SourceWeather
 from apps.weather.models import Weather
 from tests.factories import (
     FavouriteFactory,
@@ -170,3 +171,55 @@ class TestFetchWeatherCommand:
         past.refresh_from_db()
         assert past.weather_code == 3
         assert Weather.objects.for_location(location).count() == 2
+
+
+@pytest.mark.django_db
+class TestReferencePlacesGoThroughTheService:
+    """SNOW-1253: a curated place is fetched by the service and applied here."""
+
+    def test_commit_mirrors_fetches_and_applies(self) -> None:
+        """The place becomes a station, the service stores its day, Weather gets it."""
+        link = ResortLocationFactory.create(location__name="Attelas")
+        stdout = StringIO()
+
+        with mock.patch(
+            "requests.get", return_value=_response(_payload(timezone.localdate()))
+        ) as get:
+            call_command("fetch_weather", "--commit", stdout=stdout)
+
+        assert get.call_count == 1
+        station = SourceLocation.objects.get()
+        assert station.uuid == link.location.uuid
+        assert SourceWeather.objects.get().location == station
+        weather = Weather.objects.get()
+        assert weather.location == link.location
+        output = stdout.getvalue()
+        assert "1 station(s)" in output
+        assert "Stations: 1 created" in output
+
+    def test_a_favourite_is_never_fetched(self) -> None:
+        """User points borrow a forecast (SNOW-1265); the service never sees them."""
+        ResortLocationFactory.create()
+        FavouriteFactory.create()
+
+        with mock.patch(
+            "requests.get", return_value=_response(_payload(timezone.localdate()))
+        ) as get:
+            call_command("fetch_weather", "--commit", stdout=StringIO())
+
+        assert get.call_count == 1
+        assert SourceLocation.objects.count() == 1
+        assert Weather.objects.count() == 1
+
+    def test_read_only_mirrors_nothing(self) -> None:
+        """Without --commit the station list is left as it is."""
+        ResortLocationFactory.create()
+
+        with mock.patch(
+            "requests.get", return_value=_response(_payload(timezone.localdate()))
+        ):
+            call_command("fetch_weather", stdout=StringIO())
+
+        assert SourceLocation.objects.count() == 0
+        assert SourceWeather.objects.count() == 0
+        assert Weather.objects.count() == 0

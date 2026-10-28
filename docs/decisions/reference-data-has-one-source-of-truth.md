@@ -57,6 +57,14 @@ from the service; if only a signed-in user does, it stays in the instance.
 - Each synced row carries the service's uuid
   and the apply upserts by it. User data points at the instance's own
   primary keys, so a favourite on a synced resort survives every sync.
+- User points get no weather of their own (Hugo, 28 Oct 2026). A favourite,
+  a trip's meeting point or a route's start borrows the nearest curated
+  forecast (SNOW-1265), so the weather service never sees a user's
+  coordinate and no instance calls Open-Meteo for one.
+- Until the service has its own editor, production's curated `Location`
+  rows are the station list: `fetch_weather` mirrors them into
+  `SourceLocation` under their own uuid, which becomes their `source_uuid`
+  (SNOW-1253).
 - Deletes travel as `deleted_at` tombstones. A tombstoned row that user data
   still references is hidden, not deleted.
 - **Regions stay code-held fixtures, not a feed** (Hugo, 28 Oct 2026). The

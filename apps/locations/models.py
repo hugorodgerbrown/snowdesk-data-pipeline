@@ -130,6 +130,26 @@ class LocationQuerySet(models.QuerySet["Location"]):
         """
         return self.exclude(name="")
 
+    def reference_data(self) -> "LocationQuerySet":
+        """Return the locations the reference-data service owns.
+
+        A row is reference data when it carries the service's uuid
+        (``source_uuid``, SNOW-1253): it came from, or is mirrored into,
+        ingest's ``SourceLocation`` list, and its weather is applied from
+        the service rather than fetched here. Everything else — a
+        favourite's pin, a trip's meeting point, a field report — is this
+        instance's user data.
+
+        Not ``named()``: a user can name a favourite, so a name says nothing
+        about where a row came from
+        (``docs/decisions/reference-data-has-one-source-of-truth.md``).
+
+        Returns:
+            Filtered queryset of locations carrying a ``source_uuid``.
+
+        """
+        return self.filter(source_uuid__isnull=False)
+
     def anonymous(self) -> "LocationQuerySet":
         """Return locations carrying no name — the complement of ``named()``.
 
@@ -356,6 +376,17 @@ class Location(BaseModel):
             "the id weather.geojson emits (SNOW-797). Opaque rather than a slug "
             "because most public locations are unnamed region centroids. Null "
             "only on a row backfill_location_short_ids has not reached yet."
+        ),
+    )
+    source_uuid = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
+        help_text=(
+            "The reference-data service's id for this place "
+            "(SourceLocation.uuid, SNOW-1253). Set on a reference location, "
+            "whose weather is applied from the service; null on a user's own "
+            "point. See LocationQuerySet.reference_data()."
         ),
     )
     name = models.CharField(

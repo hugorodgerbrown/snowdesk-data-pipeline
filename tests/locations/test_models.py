@@ -240,6 +240,20 @@ class TestLocationQuerySet:
         assert named | anonymous == set(Location.objects.all())
         assert named & anonymous == set()
 
+    def test_reference_data_is_the_rows_carrying_a_source_uuid(self) -> None:
+        """SNOW-1253: the line is the service's uuid, not a name.
+
+        A user can name a favourite, so a named row is not necessarily
+        reference data, and an unnamed region centre can be.
+        """
+        import uuid
+
+        station = LocationFactory.create(anonymous=True, source_uuid=uuid.uuid4())
+        named_pin = LocationFactory.create(name="My spot")
+
+        assert list(Location.objects.reference_data()) == [station]
+        assert named_pin in Location.objects.named()
+
     def test_unresolved_selects_rows_with_no_elevation(self) -> None:
         """unresolved() is exactly the rows still missing an elevation."""
         missing = LocationFactory.create()

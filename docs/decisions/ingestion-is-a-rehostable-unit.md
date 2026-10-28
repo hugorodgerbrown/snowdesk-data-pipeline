@@ -21,7 +21,8 @@ which holds the current ticket list):
 2. SNOW-1249 moves the HTTP sources and splits fetch from apply.
 3. SNOW-1250 adds ingest's own `SourceBulletin` table and serves the bulletin
    feed from it.
-4. SNOW-1253, re-scoped, owns the weather stations and `SourceWeather`.
+4. SNOW-1253, re-scoped, owns the weather stations (`SourceLocation`) and
+   `SourceWeather`, and serves them at `/api/data/v2/weather/`.
 5. SNOW-1252 (the `lookup_point` facade) is under review.
 
 **Why.**

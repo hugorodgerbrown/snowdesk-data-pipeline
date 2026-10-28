@@ -40,8 +40,18 @@ The names are grouped by what they are for:
       ``SourceBulletin``, ingest's own table, and ``store_bulletin``, which
       writes a fetched bulletin only when its content hash changes
       (SNOW-1250).
+  The weather service
+      ``SourceLocation``, the reference places the service fetches, and
+      ``SourceWeather``, its account of each day (SNOW-1253).
+      ``sync_source_locations`` makes the place list equal what a host hands
+      it, ``fetch_source_weather`` walks it, ``store_source_weather`` holds
+      the past-day rule, and ``forecast_fields`` is the one request-and-parse
+      both the service and a host's fetch of a user point share.
+      ``WEATHER_COLUMNS`` names what an apply copies.
   The data feed
-      ``BULLETINS_FEED`` and its serialiser, and the keyset paging every
+      ``WEATHER_FEED_V2`` (``/api/data/v2/weather/``, keyed by the
+      service's place uuid, SNOW-1253) and ``BULLETINS_FEED``, each with its
+      serialiser, and the keyset paging every
       feed shares (``feed_page``, ``parse_feed_since``, ``parse_feed_limit``
       and the ``FEED_*`` constants). The host mounts them behind its own
       authentication.
@@ -59,7 +69,17 @@ from apps.ingest.api.paging import (
     parse_limit as parse_feed_limit,
     parse_since as parse_feed_since,
 )
-from apps.ingest.models import SourceBulletin
+from apps.ingest.api.weather import (
+    WEATHER_FEED as WEATHER_FEED_V2,
+    serialise_source_weather,
+)
+from apps.ingest.models import (
+    WEATHER_COLUMNS,
+    ImmutableSourceWeatherError,
+    SourceBulletin,
+    SourceLocation,
+    SourceWeather,
+)
 from apps.ingest.normalise.albina import albina_pdf_url
 from apps.ingest.normalise.fetcher_common import (
     OUTCOME_CREATED,
@@ -138,8 +158,32 @@ from apps.ingest.sources.open_meteo import (
 from apps.ingest.sources.slf import PAGE_SIZE as SLF_PAGE_SIZE
 from apps.ingest.sources.what3words import convert_to_3wa, fake_address
 from apps.ingest.store import OUTCOME_UNCHANGED, store_bulletin
+from apps.ingest.weather import (
+    FORECAST_DAYS,
+    HOURLY_DAYS,
+    LocationRecord,
+    fetch_source_location,
+    fetch_source_weather,
+    forecast_fields,
+    store_source_weather,
+    sync_source_locations,
+)
 
 __all__ = [
+    "WEATHER_FEED_V2",
+    "serialise_source_weather",
+    "FORECAST_DAYS",
+    "HOURLY_DAYS",
+    "LocationRecord",
+    "fetch_source_location",
+    "fetch_source_weather",
+    "forecast_fields",
+    "store_source_weather",
+    "sync_source_locations",
+    "WEATHER_COLUMNS",
+    "ImmutableSourceWeatherError",
+    "SourceLocation",
+    "SourceWeather",
     "ALPINE_MASSIFS",
     "BULLETINS_FEED",
     "BULLETIN_ID_RE",

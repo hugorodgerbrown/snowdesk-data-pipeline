@@ -42,7 +42,12 @@ from apps.bulletins.services.day_rating import (
 from apps.core.models import CommandRun, RequestLog
 from apps.downloads.models import DownloadArea
 from apps.favourites.models import Favourite
-from apps.ingest.models import SourceBulletin, content_hash
+from apps.ingest.models import (
+    SourceBulletin,
+    SourceLocation,
+    SourceWeather,
+    content_hash,
+)
 from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
 from apps.regions.models import (
@@ -290,6 +295,48 @@ class SourceBulletinFactory(factory.django.DjangoModelFactory[SourceBulletin]):
     pdf_url = ""
     content_hash = factory.LazyAttribute(lambda obj: content_hash(obj.caaml))
     fetched_at = factory.LazyFunction(django_timezone.now)
+
+
+class SourceLocationFactory(factory.django.DjangoModelFactory[SourceLocation]):
+    """Factory for ingest's SourceLocation — a reference place (SNOW-1253)."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SourceLocation
+
+    name = factory.Sequence(lambda n: f"Station {n}")
+    latitude = factory.Sequence(lambda n: 46.0 + n * 0.001)
+    longitude = factory.Sequence(lambda n: 7.0 + n * 0.001)
+    elevation_m = 2000.0
+
+
+class SourceWeatherFactory(factory.django.DjangoModelFactory[SourceWeather]):
+    """Factory for ingest's SourceWeather — one place-day (SNOW-1253).
+
+    Defaults to today, the writable day, as ``WeatherFactory`` does.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SourceWeather
+
+    location = factory.SubFactory(SourceLocationFactory)
+    observed_on = factory.LazyFunction(django_timezone.localdate)
+    fetched_at = factory.LazyFunction(django_timezone.now)
+    weather_code = 3
+    sunrise = factory.LazyFunction(
+        lambda: django_timezone.now().replace(hour=6, minute=30)
+    )
+    sunset = factory.LazyFunction(
+        lambda: django_timezone.now().replace(hour=18, minute=45)
+    )
+    temperature_2m_max = 4.5
+    temperature_2m_min = -2.0
+    snowfall_sum = 1.2
+    hourly = None
+    forecast = factory.LazyFunction(list)
 
 
 class RegionBulletinFactory(factory.django.DjangoModelFactory[RegionBulletin]):
