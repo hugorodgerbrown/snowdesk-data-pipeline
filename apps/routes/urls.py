@@ -27,6 +27,13 @@ URL structure:
                                             (SNOW-1257, route_drawing flag)
   routes/<uuid>/route.gpx            GET  — download an owned route as GPX
                                             (SNOW-1260, route_drawing flag)
+  routes/ski-tours/<uuid>/feature.json
+                                     GET  — an SAC tour as the route panel
+                                            draws it (SNOW-1278)
+  routes/ski-tours/<uuid>/save/      POST — copy an SAC tour onto the
+                                            account (SNOW-1278)
+  routes/partials/ski-tours/         GET  — the list of tours under a tap
+                                            or to a summit (SNOW-1278)
 
 ``routes.geojson`` sits OUTSIDE the ``partials/`` prefix on purpose: that
 prefix marks the HTMX fragment endpoints (``@require_htmx``), and this one
@@ -89,6 +96,23 @@ urlpatterns = [
         "drawn/preview/",
         views.route_draw_preview,
         name="draw_preview",
+    ),
+    # SNOW-1278: SAC's tours. The feature and the save are JSON for a
+    # fetch; the list is a fragment.
+    path(
+        "ski-tours/<uuid:uuid>/feature.json",
+        views.ski_tour_feature,
+        name="ski_tour_feature",
+    ),
+    path(
+        "ski-tours/<uuid:uuid>/save/",
+        views.ski_tour_save,
+        name="ski_tour_save",
+    ),
+    path(
+        "partials/ski-tours/",
+        views.ski_tour_list,
+        name="ski_tour_list",
     ),
     path(
         "<uuid:uuid>/route.gpx",

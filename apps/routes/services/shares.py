@@ -169,6 +169,9 @@ _COPIED_FIELDS = (
     # SNOW-1255: a drawn route stays a drawn route on the claimer's account
     # — what it carries (and leaves null) is the same either side.
     "source",
+    # SNOW-1278: and an SAC route stays one, naming the tour it came from,
+    # so the claimer's GPX export and route list say where it started.
+    "ski_tour_uuid",
     "source_filename",
     "points",
     "distance_m",

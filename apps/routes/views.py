@@ -96,6 +96,7 @@ from django.http import (
     Http404,
     HttpRequest,
     HttpResponse,
+    HttpResponseBadRequest,
     HttpResponseGone,
     HttpResponseRedirect,
     JsonResponse,
@@ -111,7 +112,7 @@ from waffle import flag_is_active
 from apps.core.decorators import require_htmx
 from apps.core.freshness import apply_freshness_headers
 from apps.core.http import client_ip, is_top_level_navigation
-from apps.routes.models import Route, RouteShare
+from apps.routes.models import Route, RouteShare, SkiTour
 from apps.routes.services.drawn import (
     DrawnRouteError,
     clean_name,
@@ -137,6 +138,17 @@ from apps.routes.services.shares import (
     drop_pending_token,
     pending_shares,
     pending_tokens,
+)
+from apps.routes.services.ski_tours import (
+    draft_tour_route,
+    is_descent,
+    localised,
+    sac_time,
+    save_ski_tour,
+    summits,
+    tour_key,
+    tour_properties,
+    tour_slope_samples,
 )
 from apps.routes.services.slope_segments import build_slope_samples
 from apps.routes.services.slope_summary import summarise_record
@@ -353,7 +365,7 @@ def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
                         route.distance_m, ascent_m, descent_m
                     )
                 }
-                if route.source == Route.Source.DRAWN
+                if route.source in (Route.Source.DRAWN, Route.Source.SKI_TOUR)
                 else {}
             ),
             # OMITTED ENTIRELY when the route has never been sampled, not
@@ -618,6 +630,7 @@ def route_list(request: HttpRequest) -> HttpResponse:
         else []
     )
 
+    drawing = flag_is_active(request, ROUTE_DRAWING_FLAG)
     return render(
         request,
         "routes/partials/_route_list_map.html",
@@ -637,7 +650,10 @@ def route_list(request: HttpRequest) -> HttpResponse:
             "sharing_enabled": True,
             # SNOW-1260: the row menu's Download GPX, behind the drawing
             # flag while that feature is a prototype.
-            "gpx_download_enabled": flag_is_active(request, ROUTE_DRAWING_FLAG),
+            "gpx_download_enabled": drawing,
+            # SNOW-1278: the empty clause names the three ways to add a
+            # route the panel's foot offers while the flag is on.
+            "route_drawing_enabled": drawing,
         },
     )
 
@@ -1317,6 +1333,182 @@ def route_create_drawn(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": "route_limit_reached"}, status=409)
 
     return JsonResponse({"uuid": str(route.uuid), "bounds": route.bounds})
+
+
+# The most tours one "N routes pass here" list names. A tap near a hut
+# reaches six; the cap bounds what a hand-written query can ask for.
+_SKI_TOUR_LIST_MAX = 50
+
+
+def _ski_tour_or_404(uuid: UUID) -> SkiTour:
+    """Return the tour swisstopo keys ``uuid``, or raise 404."""
+    try:
+        return SkiTour.objects.get(source_uuid=uuid)
+    except SkiTour.DoesNotExist as exc:
+        raise Http404("Not found.") from exc
+
+
+@require_GET
+@ratelimit(key=_draw_preview_rate_limit_key, rate=_DRAW_PREVIEW_RATE, block=False)
+def ski_tour_feature(request: HttpRequest, uuid: UUID) -> JsonResponse:
+    """Describe one SAC tour as the route panel draws a route (SNOW-1278).
+
+    The tour's line built into an UNSAVED Route and described by the
+    Feature ``routes_geojson`` builds for a saved route — so the panel shows
+    a tour's profile, legs and estimate with the code that will show them
+    once it is saved — plus what SAC says of it (``tour_properties``). The
+    Feature carries no ``uuid`` and no ``token``: nothing about it is the
+    reader's, so the panel offers none of a route's own actions.
+
+    The terrain is the tour's own record (``tour_slope_samples``). A tour
+    never sampled answers at once without it, flagged
+    ``terrain_pending``, and the panel asks again with ``?sample=1``, which
+    walks the grid (seconds, for a long tour) and keeps the record.
+
+    Errors:
+        404 — no such tour, or the ``route_drawing`` flag is off.
+        429 — rate limit exceeded.
+
+    Args:
+        request: The incoming GET request.
+        uuid: The tour's swisstopo uuid (``SkiTour.source_uuid``).
+
+    Returns:
+        ``{"feature": {...}}``.
+
+    """
+    if not flag_is_active(request, ROUTE_DRAWING_FLAG):
+        raise Http404("Not found.")
+    if getattr(request, "limited", False):
+        return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
+    tour = _ski_tour_or_404(uuid)
+    sample = request.GET.get("sample") == "1"
+    draft = draft_tour_route(tour)
+    draft.slope_samples = tour_slope_samples(tour, sample=sample)
+    identity: dict[str, Any] = {"tour": True, **tour_properties(tour)}
+    if draft.slope_samples is None and not sample:
+        identity["terrain_pending"] = True
+    return JsonResponse({"feature": _route_feature(draft, identity)})
+
+
+@require_POST
+@ratelimit(key="user", rate=_DRAW_CREATE_RATE, block=False)
+def ski_tour_save(request: HttpRequest, uuid: UUID) -> JsonResponse:
+    """Copy one SAC tour onto the requesting user's routes (SNOW-1278).
+
+    Response (200)::
+
+        {"uuid": "…", "bounds": [w, s, e, n]}
+
+    Errors:
+        403 — anonymous request.
+        404 — no such tour, or the ``route_drawing`` flag is off.
+        409 — the user has reached ``settings.ROUTES_MAX_PER_USER``.
+        429 — rate limit exceeded.
+
+    Args:
+        request: The incoming POST request.
+        uuid: The tour's swisstopo uuid.
+
+    Returns:
+        A JsonResponse.
+
+    """
+    if not flag_is_active(request, ROUTE_DRAWING_FLAG):
+        raise Http404("Not found.")
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required"}, status=403)
+    if getattr(request, "limited", False):
+        return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
+    tour = _ski_tour_or_404(uuid)
+    try:
+        route = save_ski_tour(request.user, tour)
+    except RouteLimitReached:
+        logger.info("Ski tour save blocked: user=%s hit the cap", request.user.pk)
+        return JsonResponse({"error": "route_limit_reached"}, status=409)
+    return JsonResponse({"uuid": str(route.uuid), "bounds": route.bounds})
+
+
+def _tour_rows(tours: list[SkiTour]) -> list[dict[str, Any]]:
+    """Return what each row of a tour list shows, by summit and then name."""
+    rows = [
+        {
+            "uuid": str(tour.source_uuid),
+            "name": localised(tour.names, tour.name),
+            "target_name": tour.target_name,
+            "target_altitude_m": tour.target_altitude_m,
+            "grade": localised(tour.grades, tour.grade) or tour.grade,
+            "ascent_m": tour.ascent_m,
+            "descent_m": tour.descent_m,
+            "time": sac_time(tour.ascent_time_label),
+            "down": is_descent(tour),
+        }
+        for tour in tours
+    ]
+    rows.sort(key=lambda row: (row["target_name"], row["name"]))
+    return rows
+
+
+@require_GET
+@require_htmx
+def ski_tour_list(request: HttpRequest) -> HttpResponse:
+    """Render the sheet that lists tours: those under a tap, or to a summit.
+
+    SNOW-1278. A tap never picks a tour on its own: more than one tour in
+    reach opens this list. ``?tours=<uuid>,<uuid>`` lists those tours
+    ("6 routes pass here"), each row named by its summit; ``?summit=<key>``
+    lists every tour to one summit or hut, in two groups, the ways up and
+    the ways down, each row named by SAC's name for it.
+
+    Errors:
+        400 — neither parameter, or a malformed uuid.
+        404 — the ``route_drawing`` flag is off, or the summit is unknown.
+
+    Args:
+        request: The incoming HTMX GET request.
+
+    Returns:
+        The rendered sheet body.
+
+    """
+    if not flag_is_active(request, ROUTE_DRAWING_FLAG):
+        raise Http404("Not found.")
+    summit_key_param = request.GET.get("summit", "")
+    if summit_key_param:
+        summit = summits().get(summit_key_param)
+        if summit is None:
+            raise Http404("Not found.")
+        tours = [
+            tour
+            for tour in SkiTour.objects.filter(
+                target_name=summit.name, target_altitude_m=summit.altitude_m
+            )
+            if tour_key(tour) == summit.key
+        ]
+        rows = _tour_rows(tours)
+        context: dict[str, Any] = {
+            "summit": summit,
+            "count": len(rows),
+            "up_rows": [row for row in rows if not row["down"]],
+            "down_rows": [row for row in rows if row["down"]],
+        }
+    else:
+        try:
+            uuids = [
+                UUID(value)
+                for value in request.GET.get("tours", "").split(",")[
+                    :_SKI_TOUR_LIST_MAX
+                ]
+                if value
+            ]
+        except ValueError:
+            return HttpResponseBadRequest("Bad tour id.")
+        if not uuids:
+            return HttpResponseBadRequest("No tours.")
+        context = {
+            "rows": _tour_rows(list(SkiTour.objects.filter(source_uuid__in=uuids)))
+        }
+    return render(request, "routes/partials/_ski_tour_list.html", context)
 
 
 @require_GET

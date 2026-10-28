@@ -92,16 +92,13 @@ Context expected:
 {# already carries, and routes.js posts what it commits.                    #}
 <template id="route-list-template">
     {% trans "Routes" as route_list_title %}
+    {# SNOW-1278: with route drawing on there are three ways to add a     #}
+    {# route — find, create, upload — and the three rows replace the       #}
+    {# panel's own add button (the upload row carries its hook).           #}
     {% if route_drawing_enabled %}
-        {% firstof "public/partials/_route_draw_cta.html" as route_draw_cta_template %}
+        {% firstof "public/partials/_route_add_rows.html" as route_add_rows_template %}
     {% endif %}
-    {# SNOW-1256: with route drawing on there are two ways to add a route, #}
-    {# so the file one names itself and "Draw on the map" sits above it.   #}
-    {% if route_drawing_enabled %}
-        {% trans "Upload a GPX" as route_add_label %}
-    {% else %}
-        {% trans "Add a route" as route_add_label %}
-    {% endif %}
+    {% trans "Add a route" as route_add_label %}
     {# The context strip — where this panel's data lives.                   #}
     {#                                                                      #}
     {# SNOW-765: this said "Routes are private and not shared." until       #}
@@ -121,7 +118,7 @@ Context expected:
     {# SNOW-904 took it away; the two-capsule column brought it back as    #}
     {# "Show on the map", bound to the layers menu's Routes row by         #}
     {# static/js/map_panel_overlay_switch.js, which finds it by this id.   #}
-    {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label toggle_id="map-routes-overlay-toggle" foot_template=route_draw_cta_template %}
+    {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label toggle_id="map-routes-overlay-toggle" foot_template=route_add_rows_template foot_replaces_add=route_drawing_enabled %}
 </template>
 {# Optimistic-confirmation template (SNOW-886) — cloned into #route-sheet  #}
 {# by routes.js the instant route_create answers 200, modelled on           #}

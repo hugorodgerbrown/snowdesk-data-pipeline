@@ -57,6 +57,7 @@ urlpatterns = [
     # SNOW-1276: swisstopo's ski-touring segments crossing one rectangle —
     # the vector network a drawn route snaps to. Public reference data.
     path("ski-network.geojson", api.ski_network_geojson, name="ski_network_geojson"),
+    path("ski-tours.geojson", api.ski_tours_geojson, name="ski_tours_geojson"),
     path("weather.geojson", api.weather_geojson, name="weather_geojson"),
     # SNOW-761: the sheet body behind a tap on a weather symbol. Keyed on
     # Location like the feed it is tapped from, and 404s for anything

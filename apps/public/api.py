@@ -134,7 +134,14 @@ from apps.regions.services.area_content import (
 )
 from apps.regions.services.basemap_tiles import blob_summary
 from apps.regions.services.resort_pin import set_resort_pin
-from apps.routes.models import SkiSegment
+from apps.routes.models import SkiSegment, SkiTour
+from apps.routes.services.ski_tours import (
+    is_descent,
+    localised,
+    sac_time,
+    summits,
+    tour_key,
+)
 from apps.weather.models import Weather
 from apps.weather.services.weather_display import build_point_weather_days
 
@@ -1406,6 +1413,104 @@ def ski_network_geojson(request: HttpRequest) -> HttpResponse:
     payload = {
         "type": "FeatureCollection",
         "truncated": len(rows) > SKI_NETWORK_MAX_FEATURES,
+        "features": features,
+    }
+    return _geojson_response(request, payload, empty=not features)
+
+
+# The most tours one answer carries. A half-degree around the Silvretta holds
+# about four hundred; past the cap the answer says ``truncated``.
+SKI_TOURS_MAX_FEATURES = 1500
+
+
+@vary_on_headers("Accept-Encoding", "Accept-Language", "Cookie")
+@require_GET
+def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
+    """
+    Return SAC's ski tours, and the summits they go to, inside one rectangle.
+
+    SNOW-1278. What "Find a route" draws and is tapped on: each tour's line
+    with what its list row says, and a point per summit or hut (the
+    handles, apps/routes/services/ski_tours.py). ``?bbox=`` as for
+    ``ski_network_geojson``, with the same cap. Response shape::
+
+        {"type": "FeatureCollection",
+         "truncated": false,
+         "features": [
+           {"type": "Feature", "id": "<tour uuid>",
+            "geometry": {"type": "MultiLineString", ...},
+            "properties": {"kind": "tour", "uuid": "…", "summit": "<key>",
+                           "name": "Von der Silvrettahütte SAC",
+                           "target_name": "Signalhorn (GR)",
+                           "target_altitude_m": 3207, "grade": "PD+",
+                           "ascent_m": 870, "descent_m": 870,
+                           "time": "3 h 30", "down": false}},
+           {"type": "Feature", "id": "summit:<key>",
+            "geometry": {"type": "Point", ...},
+            "properties": {"kind": "summit" | "hut", "key": "…",
+                           "name": "Signalhorn (GR)", "altitude_m": 3207,
+                           "up": 2, "down": 2}}, ...]}
+
+    Names are in the request's language where SAC has one, hence the Vary.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with the payload above, or 400 for a bad bbox.
+
+    """
+    bbox = _parse_bbox_param(request.GET.get("bbox", ""))
+    if bbox is None:
+        return JsonResponse({"error": "invalid_bbox"}, status=400)
+    west, south, east, north = bbox
+    if (
+        east - west > SKI_NETWORK_MAX_SPAN_DEG
+        or north - south > SKI_NETWORK_MAX_SPAN_DEG
+    ):
+        return JsonResponse({"error": "bbox_too_large"}, status=400)
+    rows = list(
+        SkiTour.objects.intersecting(west, south, east, north).order_by("sac_id")[
+            : SKI_TOURS_MAX_FEATURES + 1
+        ]
+    )
+    features: list[dict[str, Any]] = [
+        {
+            "type": "Feature",
+            "id": str(row.source_uuid),
+            "geometry": row.geometry,
+            "properties": {
+                "kind": "tour",
+                "uuid": str(row.source_uuid),
+                "summit": tour_key(row),
+                "name": localised(row.names, row.name),
+                "target_name": row.target_name,
+                "target_altitude_m": row.target_altitude_m,
+                "grade": localised(row.grades, row.grade) or row.grade,
+                "ascent_m": row.ascent_m,
+                "descent_m": row.descent_m,
+                "time": sac_time(row.ascent_time_label),
+                "down": is_descent(row),
+            },
+        }
+        for row in rows[:SKI_TOURS_MAX_FEATURES]
+    ]
+    for summit in summits().values():
+        if west <= summit.lon <= east and south <= summit.lat <= north:
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": f"summit:{summit.key}",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [summit.lon, summit.lat],
+                    },
+                    "properties": summit.as_properties(),
+                }
+            )
+    payload = {
+        "type": "FeatureCollection",
+        "truncated": len(rows) > SKI_TOURS_MAX_FEATURES,
         "features": features,
     }
     return _geojson_response(request, payload, empty=not features)

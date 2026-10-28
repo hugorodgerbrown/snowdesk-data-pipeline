@@ -52,6 +52,7 @@ from django.template.loader import render_to_string
 from django.test import Client
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
+from waffle.testutils import override_flag
 
 from apps.core.freshness import DEFAULT_MAX_AGE_SECONDS
 from apps.routes.models import Route
@@ -618,6 +619,18 @@ class TestRouteListScoping:
         body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
 
         assert "Routes can be recorded with smart devices" in body
+
+    def test_empty_state_names_all_three_ways_with_drawing_on(
+        self, client: Client
+    ) -> None:
+        """With the route_drawing flag on it names find, draw and upload (SNOW-1278)."""
+        client.force_login(UserFactory.create())
+
+        with override_flag("route_drawing", active=True):
+            body = client.get(MAP_LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert "Start from a known tour, draw one, or upload a track" in body
+        assert "Routes can be recorded with smart devices" not in body
 
     def test_empty_state_is_absent_once_a_route_exists(self, client: Client) -> None:
         """A user WITH a route gets no empty clause at all."""

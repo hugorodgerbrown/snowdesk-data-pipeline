@@ -39,6 +39,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 from django.contrib.sessions.backends.db import SessionStore
@@ -201,6 +202,21 @@ class TestClaimRouteShare:
         assert copy.finished_at == route.finished_at
         assert copy.point_count == route.point_count
         assert copy.bounds == route.bounds
+
+    def test_an_sac_route_keeps_the_tour_it_came_from(self) -> None:
+        """A claimed SAC route is still SKI_TOUR and still names its tour."""
+        owner = UserFactory.create()
+        claimer = UserFactory.create()
+        tour_uuid = uuid4()
+        route = RouteFactory.create(
+            user=owner, source=Route.Source.SKI_TOUR, ski_tour_uuid=tour_uuid
+        )
+        share = RouteShareFactory.create(route=route, created_by=owner)
+
+        copy = claim_route_share(claimer, share.token)
+
+        assert copy.source == Route.Source.SKI_TOUR
+        assert copy.ski_tour_uuid == tour_uuid
 
     def test_a_null_ascent_is_copied_as_null(self) -> None:
         """Unknown must survive the copy — it is not zero on either row."""
