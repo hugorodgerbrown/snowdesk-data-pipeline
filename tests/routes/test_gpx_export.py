@@ -9,6 +9,7 @@ can be read straight back in by the project's own parser.
 from __future__ import annotations
 
 import datetime
+from uuid import uuid4
 
 import pytest
 
@@ -165,3 +166,31 @@ class TestBuildGpxForADrawnRoute:
 
         assert document.count("<trkpt") == 2
         assert "<ele>" not in document
+
+
+class TestBuildGpxForASkiTour:
+    """A saved SAC tour exports its terrain track and credits its source (SNOW-1278)."""
+
+    def test_credits_sac_and_swisstopo(self) -> None:
+        """The description names the tour it was copied from."""
+        tour_uuid = uuid4()
+        route = RouteFactory.create(
+            source=Route.Source.SKI_TOUR, ski_tour_uuid=tour_uuid
+        )
+
+        document = build_gpx(route)
+
+        assert f"from SAC ski tour {tour_uuid}" in document
+        assert "© swisstopo" in document
+
+    def test_writes_the_terrain_track_with_the_models_heights(self) -> None:
+        """As a drawn route: a height on every point."""
+        route = RouteFactory.create(
+            source=Route.Source.SKI_TOUR,
+            points=[[lon, lat, None] for lon, lat, _ele in DRIFTING_TRACK],
+            slope_samples=drifting_track_record(),
+        )
+
+        parsed = parse_gpx(build_gpx(route).encode("utf-8"))
+
+        assert all(point[2] is not None for point in parsed.points)

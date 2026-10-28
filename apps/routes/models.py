@@ -180,6 +180,10 @@ class Route(BaseModel):
 
         GPX = "GPX", "GPX upload"
         DRAWN = "DRAWN", "Drawn on the map"
+        # SNOW-1278: a copy of one of SAC's tours (``SkiTour``). Its line is
+        # the tour's, so it leaves the recorded fields null as a drawn row
+        # does, and ``ski_tour_uuid`` names the tour it came from.
+        SKI_TOUR = "SKI_TOUR", "SAC route"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -202,6 +206,15 @@ class Route(BaseModel):
         help_text=(
             "Route label — seeded from the GPX's own name, editable by the "
             "owner afterwards."
+        ),
+    )
+    ski_tour_uuid = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The SAC tour this route was copied from (SkiTour.source_uuid), "
+            "kept so a later correction to the tour can be offered. Null for "
+            "every other route."
         ),
     )
     source_filename = models.CharField(
@@ -750,6 +763,16 @@ class SkiTour(_SkiLine):
     target_altitude_m = models.PositiveIntegerField(null=True, blank=True)
     urls = models.JSONField(default=dict, help_text="SAC's page by language.")
     source = models.CharField(max_length=64, blank=True, default="")
+    slope_samples = models.JSONField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The terrain under the tour's line, sampled the first time "
+            "anyone opens it (SNOW-1278) and copied into a saved route, in "
+            "Route.slope_samples' shape. Null means NEVER SAMPLED; a sync "
+            "that rewrites the tour clears it."
+        ),
+    )
 
     objects = SkiLineQuerySet.as_manager()
 

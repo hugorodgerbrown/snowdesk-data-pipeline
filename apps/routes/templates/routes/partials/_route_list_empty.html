@@ -35,13 +35,21 @@ first-time visitor with no GPX to hand can see what an upload becomes
 before finding one. A plain link to routes:example, which reloads the map
 on the example's day with the walkthrough.
 
+SNOW-1278: with route drawing on, the panel has three ways to add a route,
+and the sentence names all three (Hugo, 28 Oct 2026).
+
 Context:
+    route_drawing_enabled : bool, optional — the route_drawing flag is on.
     example_available : bool, optional — an example route is set
                         (route_list asks only when this clause renders).
 {% endcomment %}
 <p class="py-2 text-sm text-text-2" data-testid="route-list-empty">
-    {% trans "Upload routes as GPX files." %}
-    {% trans "Routes can be recorded with smart devices from e.g. Garmin, Suunto." %}
+    {% if route_drawing_enabled %}
+        {% trans "Start from a known tour, draw one, or upload a track recorded previously (e.g. smart watch, GPS device)." %}
+    {% else %}
+        {% trans "Upload routes as GPX files." %}
+        {% trans "Routes can be recorded with smart devices from e.g. Garmin, Suunto." %}
+    {% endif %}
     {% if example_available %}
         <a
             href="{% url 'routes:example' %}"

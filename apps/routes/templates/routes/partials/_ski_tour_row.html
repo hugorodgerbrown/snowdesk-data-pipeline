@@ -1,0 +1,56 @@
+{% load i18n %}
+{% comment %}
+routes/partials/_ski_tour_row.html — one row of a tour list (SNOW-1278).
+
+Included only by routes/partials/_ski_tour_list.html. A button, so the whole
+row is the target; static/js/ski_tours.js opens the tour on a press of
+``data-ski-tour``.
+
+The swatch is the route's line as the map draws a highlighted tour, dashed
+for a way down. The title is the tour's summit and height in a "passes here"
+list (``by_name`` false), where the summit is how a reader tells the rows
+apart, and SAC's name for the way in a summit's list (``by_name`` true),
+where every row shares the summit.
+
+Parameters:
+  row     — a row dict from apps.routes.views._tour_rows.
+  by_name — bool: title the row by SAC's name rather than its summit.
+{% endcomment %}
+<li class="border-b border-border last:border-b-0">
+    <button
+        type="button"
+        data-ski-tour="{{ row.uuid }}"
+        class="hover-affordance flex w-full items-center gap-3 rounded-tag px-2 py-2.5 text-left"
+    >
+        <svg width="20" height="8" viewBox="0 0 20 8" fill="none" aria-hidden="true" class="shrink-0 text-route-line">
+            <path
+                d="M1 4h18"
+                stroke="currentColor"
+                stroke-width="3"
+                stroke-linecap="round"
+                {% if row.down %}stroke-dasharray="3 4"{% endif %}
+            />
+        </svg>
+        <span class="flex min-w-0 flex-1 flex-col">
+            <span class="truncate text-sm font-medium text-text-1">
+                {% if by_name %}
+                    {{ row.name }}
+                {% elif row.target_altitude_m %}
+                    {% blocktrans with name=row.target_name altitude=row.target_altitude_m %}{{ name }} · {{ altitude }} m{% endblocktrans %}
+                {% else %}
+                    {{ row.target_name|default:row.name }}
+                {% endif %}
+            </span>
+            <span class="truncate font-mono text-meta text-text-2">
+                {% if row.grade %}{{ row.grade }} ·{% endif %}
+                {% if row.down %}
+                    {% if row.descent_m %}↓ {{ row.descent_m }} m{% endif %}
+                {% elif row.ascent_m %}
+                    ↑ {{ row.ascent_m }} m
+                {% endif %}
+                {% if row.time %}· {{ row.time }}{% endif %}
+            </span>
+        </span>
+        {% include "includes/_icon_chevron_right.html" with size=16 %}
+    </button>
+</li>

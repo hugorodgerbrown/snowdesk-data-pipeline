@@ -214,3 +214,15 @@ def test_the_service_host_stops_at_a_failed_page(
     assert result["ski-network"][FAILED] == 1
     assert SkiSegment.objects.count() == 2
     assert not SkiSegment.objects.filter(source_uuid=later.uuid).exists()
+
+
+def test_a_rewritten_tour_forgets_its_terrain() -> None:
+    """A newer document clears the sampled terrain SNOW-1278 kept on it."""
+    source = SourceSkiTourFactory.create()
+    apply_ski_items("ski-tours", [serialise_source_document(source)], commit=True)
+    SkiTour.objects.update(slope_samples={"v": 1})
+    item = serialise_source_document(source)
+    item["updated_at"] = (timezone.now() + dt.timedelta(days=1)).isoformat()
+    counts = apply_ski_items("ski-tours", [item], commit=True)
+    assert counts[UPDATED] == 1
+    assert SkiTour.objects.get().slope_samples is None

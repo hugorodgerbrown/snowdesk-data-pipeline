@@ -1,0 +1,37 @@
+{% load i18n %}
+{% comment %}
+public/partials/_route_add_rows.html — the routes panel's three ways to add
+a route (SNOW-1278; "Draw on the map" alone since SNOW-1256).
+
+Rendered by includes/_ugc_panel.html's ``foot_template`` IN PLACE OF the
+panel's own add button (``foot_replaces_add``), only while the
+``route_drawing`` flag is active for the request — see
+public/partials/_routes_surface.html. Three full-width rows, ordered by how
+much work each takes, so the least is first and emphasised (Hugo,
+28 Oct 2026):
+
+  * Find a route — start from an SAC tour (``data-ski-tour-find``,
+    static/js/ski_tours.js): the panel closes, the ski-touring routes come
+    on, and a hint says to tap a summit or a route.
+  * Create a route — draw one, snapping to existing routes where there are
+    any (``data-route-draw-start``, static/js/route_draw.js).
+  * Upload a GPX — ``data-panel-add``, the hook routes.js has always opened
+    the file picker by, and removes for a visitor who cannot upload.
+
+Finding and drawing need no account ("drawing is free, saving needs an
+account", 27 Oct 2026), so those two stay for an anonymous visitor; each
+asks them to sign in only when they press Save. All three hooks are read
+on the document or the sheet, because the panel body is re-cloned from its
+template on every open.
+{% endcomment %}
+<div class="flex flex-col gap-2">
+    {% trans "Find a route" as find_title %}
+    {% trans "Start from a swisstopo / SAC ski tour" as find_subtitle %}
+    {% include "public/partials/_route_add_row.html" with hook="data-ski-tour-find" title=find_title subtitle=find_subtitle icon="includes/_icon_compass.html" emphasised=True %}
+    {% trans "Create a route" as create_title %}
+    {% trans "Draw your own tour, snap to existing routes where available" as create_subtitle %}
+    {% include "public/partials/_route_add_row.html" with hook="data-route-draw-start" title=create_title subtitle=create_subtitle icon="includes/_icon_pencil.html" %}
+    {% trans "Upload a GPX" as upload_title %}
+    {% trans "A track from a watch or another app" as upload_subtitle %}
+    {% include "public/partials/_route_add_row.html" with hook="data-panel-add" title=upload_title subtitle=upload_subtitle icon="includes/_icon_plus.html" %}
+</div>

@@ -1,0 +1,170 @@
+/*
+ * static/js/ski_tours_core.js — the pure half of "Find a route": choosing a
+ * SAC ski tour from the map (SNOW-1278).
+ *
+ * The tours are /api/ski-tours.geojson: each tour's line (`kind: "tour"`,
+ * carrying its uuid and its summit's key) and a point per summit or hut a
+ * tour goes to (`kind: "summit"` or `"hut"`). ski_tours.js draws them and
+ * hands this module what a tap landed on.
+ *
+ * A TAP NEVER PICKS A TOUR ON ITS OWN. A summit under the tap lists every
+ * tour to it, up and down; otherwise one tour in reach opens its panel and
+ * more than one lists them, which near a hut is nearly always (decided
+ * 28 Oct 2026).
+ *
+ * Nothing here touches the DOM or the map.
+ *
+ * Exports (frozen `self.pwaSkiToursCore`):
+ *
+ *   MINZOOM                    — the zoom the tours are drawn from
+ *   TAP_PX                     — how near a line a tap reaches, px
+ *   LOAD_PAD_DEG               — how far past the view a load reaches
+ *   resolveTap(features)       — what a tap means: a summit's list, one
+ *                                tour, a list of tours, or nothing
+ *   loadBox(bounds)            — the rectangle to load for a view
+ *   covers(box, bounds)        — whether a loaded rectangle holds a view
+ *   highlightFilter(uuids)     — the filter that draws only those tours
+ *   listUrl(base, choice)      — the list sheet's URL for a tap
+ *   featureUrl(template, uuid, sample) — a tour's Feature URL
+ */
+
+// @ts-check
+
+(function () {
+  'use strict';
+
+  /** From here the vector tours replace swisstopo's raster. */
+  const MINZOOM = 12;
+
+  /** A tap reaches a line this many pixels either side (about a fingertip). */
+  const TAP_PX = 20;
+
+  /** A load reaches this far past each edge of the view, in degrees. */
+  const LOAD_PAD_DEG = 0.05;
+
+  /** The widest rectangle the endpoint answers, as ski-network's cap. */
+  const MAX_SPAN_DEG = 0.5;
+
+  /**
+   * @typedef {{properties?: ?Object<string, any>}} TapFeature
+   * @typedef {{kind: 'summit', key: string}
+   *   | {kind: 'tour', uuid: string}
+   *   | {kind: 'list', uuids: Array<string>}} TapChoice
+   * @typedef {[number, number, number, number]} Box west, south, east, north
+   */
+
+  /**
+   * What a tap on the tours means.
+   *
+   * @param {Array<TapFeature>} features What the tap's box hit, summits
+   *   and tour lines in any order (a tour clipped into several tiles may
+   *   appear more than once).
+   * @returns {?TapChoice} A summit's list when a summit or hut is under
+   *   the tap; one tour when only one is in reach; the list of them when
+   *   more are; null when nothing is.
+   */
+  function resolveTap(features) {
+    /** @type {Array<string>} */
+    const uuids = [];
+    for (const feature of features || []) {
+      const props = (feature && feature.properties) || {};
+      if ((props.kind === 'summit' || props.kind === 'hut') && props.key) {
+        return { kind: 'summit', key: String(props.key) };
+      }
+      if (props.kind === 'tour' && props.uuid && !uuids.includes(String(props.uuid))) {
+        uuids.push(String(props.uuid));
+      }
+    }
+    if (!uuids.length) return null;
+    if (uuids.length === 1) return { kind: 'tour', uuid: uuids[0] };
+    return { kind: 'list', uuids: uuids };
+  }
+
+  /**
+   * The rectangle to load for a view: the view padded on every side, so a
+   * small pan needs no new request, and rounded outward to the pad so two
+   * near views ask the same URL (and the browser's cache answers).
+   *
+   * @param {Box} bounds The view, west, south, east, north.
+   * @returns {?Box} The rectangle, or null when the view is wider than the
+   *   endpoint answers (the tours are not drawn that far out anyway).
+   */
+  function loadBox(bounds) {
+    const step = LOAD_PAD_DEG;
+    const down = (/** @type {number} */ v) => Math.floor(v / step - 1) * step;
+    const up = (/** @type {number} */ v) => Math.ceil(v / step + 1) * step;
+    const round = (/** @type {number} */ v) => Math.round(v * 1000) / 1000;
+    /** @type {Box} */
+    const box = [
+      round(down(bounds[0])),
+      round(down(bounds[1])),
+      round(up(bounds[2])),
+      round(up(bounds[3])),
+    ];
+    if (box[2] - box[0] > MAX_SPAN_DEG || box[3] - box[1] > MAX_SPAN_DEG) return null;
+    return box;
+  }
+
+  /**
+   * Whether a loaded rectangle holds the whole of a view.
+   *
+   * @param {?Box} box What was loaded, or null.
+   * @param {Box} bounds The view.
+   * @returns {boolean}
+   */
+  function covers(box, bounds) {
+    return !!box
+      && box[0] <= bounds[0] && box[1] <= bounds[1]
+      && box[2] >= bounds[2] && box[3] >= bounds[3];
+  }
+
+  /**
+   * The MapLibre filter that keeps only these tours.
+   *
+   * @param {Array<string>} uuids
+   * @returns {Array<any>}
+   */
+  function highlightFilter(uuids) {
+    return ['in', ['get', 'uuid'], ['literal', (uuids || []).slice()]];
+  }
+
+  /**
+   * The list sheet's URL for a tap's choice.
+   *
+   * @param {string} base routes:ski_tour_list.
+   * @param {TapChoice} choice A summit's or a list's choice.
+   * @returns {?string} Null for a single tour, which has no list.
+   */
+  function listUrl(base, choice) {
+    if (!base || !choice) return null;
+    const join = base.includes('?') ? '&' : '?';
+    if (choice.kind === 'summit') return base + join + 'summit=' + encodeURIComponent(choice.key);
+    if (choice.kind === 'list') return base + join + 'tours=' + choice.uuids.map(encodeURIComponent).join(',');
+    return null;
+  }
+
+  /**
+   * A tour's Feature URL.
+   *
+   * @param {string} template routes:ski_tour_feature with `__UUID__`.
+   * @param {string} uuid
+   * @param {boolean} sample Ask the server to sample the terrain now.
+   * @returns {string}
+   */
+  function featureUrl(template, uuid, sample) {
+    const url = template.replace('__UUID__', encodeURIComponent(uuid));
+    return sample ? url + (url.includes('?') ? '&' : '?') + 'sample=1' : url;
+  }
+
+  self.pwaSkiToursCore = Object.freeze({
+    MINZOOM: MINZOOM,
+    TAP_PX: TAP_PX,
+    LOAD_PAD_DEG: LOAD_PAD_DEG,
+    resolveTap: resolveTap,
+    loadBox: loadBox,
+    covers: covers,
+    highlightFilter: highlightFilter,
+    listUrl: listUrl,
+    featureUrl: featureUrl,
+  });
+})();
