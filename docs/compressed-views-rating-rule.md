@@ -28,8 +28,9 @@ on days where conditions deteriorate in the afternoon.
 
 ## How peak is computed
 
-`apps/bulletins/services/day_rating.py` — `recompute_region_day` — implements the
-split logic (policy introduced in v8; `DAY_RATING_VERSION = 9` since SNOW-1054 fixed the
+`apps/bulletins/services/day_rating.py` — `recompute_region_day` — selects the
+bulletin, and `apps/ingest/normalise/day_rating.py` — `rate_render_model`, the
+service's since SNOW-1270 — implements the split logic (policy introduced in v8; `DAY_RATING_VERSION = 9` since SNOW-1054 fixed the
 stored subdivision):
 
 1. A single authoritative bulletin is selected for each (region, calendar day)

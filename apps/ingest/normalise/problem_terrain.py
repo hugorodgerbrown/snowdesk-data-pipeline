@@ -1,5 +1,5 @@
 """
-apps/bulletins/services/problem_terrain.py — problem-terrain rules (SNOW-979).
+apps/ingest/normalise/problem_terrain.py — problem-terrain rules (SNOW-979).
 
 A bulletin's problems as rules the map can test a pixel of terrain against.
 
@@ -38,6 +38,11 @@ How the rules are read from the render model:
 The rules say where the bulletin DESCRIBES its problems, not where it is
 dangerous: a bulletin's aspects and heights mark its core zone, not a
 boundary. See docs/decisions/the-bulletin-terrain-layer-paints-what-it-cannot-decide.md.
+
+Moved here from ``apps/bulletins/services/`` by SNOW-1270: the rules are a
+pure reading of the service's render model, so they are the service's too
+(``apps.ingest.public.terrain_rules``). The map's feed that groups them by
+region, ``apps/public/problem_terrain.py``, stays the instance's.
 """
 
 from __future__ import annotations
@@ -45,9 +50,13 @@ from __future__ import annotations
 import logging
 from typing import Any, TypedDict
 
-from apps.core.geo import OCTANTS
-
 logger = logging.getLogger(__name__)
+
+# The CAAML aspect enum in octant order, N=0 … NW=7 — the indices the tiles'
+# octant bits use. Ingest imports no other apps.* package, so this is its own
+# copy of ``apps.core.geo.OCTANTS``; tests/ingest/normalise/
+# test_problem_terrain.py checks the two agree.
+OCTANTS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
 
 # EAWS level name → the number the map paints and compares.
 _RATING_NUMBER: dict[str, int] = {

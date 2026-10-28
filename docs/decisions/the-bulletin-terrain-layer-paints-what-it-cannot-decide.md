@@ -12,7 +12,8 @@ Conditions, and the region sheet a switch of the same name below the
 bulletin that writes the same state (Hugo, 23 Oct 2026; until then it was
 the terrain filter's third colour, "By bulletin", SNOW-1194). Switched on, every region's ground of 30° and over is painted on the device
 from the terrain filter's class tiles, by rules read from that region's
-bulletin for the day (`apps/bulletins/services/problem_terrain.py` →
+bulletin for the day (`apps/ingest/normalise/problem_terrain.py`, the
+service's since SNOW-1270 →
 `/api/problem-terrain/` → `static/js/bulletin_terrain_core.js`), in four
 states:
 

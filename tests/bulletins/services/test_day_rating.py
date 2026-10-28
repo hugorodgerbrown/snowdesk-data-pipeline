@@ -58,12 +58,6 @@ from django.utils import timezone
 from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from apps.bulletins.services.day_rating import (
     DAY_RATING_VERSION,
-    _derive_albina_bands,
-    _detect_elevation_band_split,
-    _elevation_to_band_id,
-    _extract_headline_from_render_model,
-    _resolve_am_pm_keys,
-    _resolve_min_max_keys,
     apply_bulletin_day_ratings,
     day_rating_pairs,
     recompute_region_day,
@@ -75,6 +69,14 @@ from apps.bulletins.services.day_rating import (
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     build_render_model,
+)
+from apps.ingest.normalise.day_rating import (
+    _derive_albina_bands,
+    _detect_elevation_band_split,
+    _elevation_to_band_id,
+    _extract_headline_from_render_model,
+    _resolve_am_pm_keys,
+    _resolve_min_max_keys,
 )
 from apps.regions.models import MicroRegion
 from tests.factories import (
