@@ -2,7 +2,7 @@
 name: worktrees
 description: init-worktree seed recipe; migrate, sync_waffle_flags, seed_canonical_routes, set_example_route each session; dev credentials
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-10-28
 ---
 
 # Worktrees and DB seeding

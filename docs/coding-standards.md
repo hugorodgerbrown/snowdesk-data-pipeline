@@ -2,7 +2,7 @@
 name: coding-standards
 description: Repository layout, Python style, model/service/view conventions, testing, and tooling (ruff, mypy, tox, pre-commit) rules
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-10-28
 ---
 
 # Coding Standards — Snowdesk Data Pipeline
@@ -222,8 +222,8 @@ Contains pure-ish functions that:
 - **Every** datetime must carry `tzinfo`. `USE_TZ = True` is set in
   settings; naive datetimes will raise warnings in tests.
 - Use `datetime.UTC` (Python 3.11+), not `timezone.utc` or `pytz`.
-- CAAML timestamps are parsed through `_parse_dt` in
-  [apps/bulletins/services/slf_fetcher.py](../apps/bulletins/services/slf_fetcher.py)
+- CAAML timestamps are parsed through `parse_dt` in
+  [apps/ingest/normalise/slf.py](../apps/ingest/normalise/slf.py),
   which always returns a UTC-aware datetime.
 - In factories, use `tzinfo=UTC` — see
   [tests/factories.py](../tests/factories.py).

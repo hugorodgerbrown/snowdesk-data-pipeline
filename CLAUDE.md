@@ -72,9 +72,13 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  importing from it
   bulletins/     Everything that originates from the three CAAML bulletin
                  providers — the models (Bulletin, RegionBulletin,
-                 PipelineRun, RegionDayRating, …), the per-provider
-                 fetchers/translators and render-model services under
-                 services/, the ingestion commands (see
+                 PipelineRun, RegionDayRating, …), the apply step that
+                 writes them from ingest's SourceBulletin and
+                 SourceDayRating (services/apply.py, day_rating.py), the
+                 per-provider fetch commands' glue (the HTTP and
+                 translators are ingest's), the render model's
+                 presentation (services/render_model.py: labels and copy;
+                 the builder is ingest's), the ingestion commands (see
                  docs/management-commands.md), and their admin classes
   weather/       The Open-Meteo domain, rebuilt by SNOW-759 — one model,
                  ``Weather``: what was known about one Location on one day,
