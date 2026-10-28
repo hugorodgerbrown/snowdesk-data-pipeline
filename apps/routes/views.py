@@ -1393,9 +1393,10 @@ def ski_tour_feature(request: HttpRequest, uuid: UUID) -> JsonResponse:
 
 
 @require_GET
-# Reference data, the same for every reader, but behind a feature flag: a
-# shared cache must not hand it to a request the flag would refuse.
-@cache_control(private=True, max_age=300)
+# Never held, as route_terrain: a tour opened before its first sampling
+# answers no rows, and a cached empty answer would outlive the sampling
+# the panel's ?sample=1 refill triggers moments later.
+@cache_control(private=True, no_store=True)
 def ski_tour_terrain(request: HttpRequest, uuid: UUID) -> JsonResponse:
     """Return one SAC tour's terrain rows as JSON (SNOW-1278).
 

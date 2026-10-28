@@ -136,6 +136,8 @@ class TestTerrain:
             response = client.get(_terrain_url(tour))
         build.assert_not_called()
         assert response.json() == {"rows": []}
+        # Never held: the sampling the panel triggers next must be seen.
+        assert "no-store" in response["Cache-Control"]
 
     def test_an_unknown_tour_is_404(self, client: Client) -> None:
         """By uuid."""
