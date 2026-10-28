@@ -3466,13 +3466,15 @@
    * scale on each pick, in and out.
    *
    * @param {number[]} bounds The tour's [west, south, east, north].
+   * @param {?function(...any): boolean} shows Whether a box already shows
+   *   whole (ski_tours_core.fitsView, passed in by ski_tours.js); without
+   *   one the tour is always fitted.
    * @returns {void}
    */
-  const frameTour = (bounds) => {
+  const frameTour = (bounds, shows) => {
     const padding = paddingClearingRail();
     const canvas = map.getContainer().getBoundingClientRect();
-    const core = window.pwaSkiToursCore;
-    const shown = core && core.fitsView(
+    const shown = typeof shows === 'function' && shows(
       map.project([bounds[0], bounds[1]]),
       map.project([bounds[2], bounds[3]]),
       { width: canvas.width, height: canvas.height },
@@ -3492,9 +3494,9 @@
      * Called again with the sampled Feature, it refills the open panel.
      *
      * @param {Object} feature From routes:ski_tour_feature.
-     * @param {{claim?: ?Node, frame?: boolean}} [options] `claim` is the
-     *   Save control; `frame` brings the tour into view if it is not
-     *   (frameTour).
+     * @param {{claim?: ?Node, frame?: boolean, shows?: function(...any): boolean}} [options]
+     *   `claim` is the Save control; `frame` brings the tour into view if
+     *   `shows` says it is not (frameTour).
      * @returns {boolean} Whether the panel opened.
      */
     open(feature, options) {
@@ -3512,7 +3514,9 @@
         routeCursorTarget.cursor.setIndex(index);
       }
       const bounds = parseRouteProperty(feature.properties && feature.properties.bounds);
-      if (opts.frame && Array.isArray(bounds) && bounds.length === 4) frameTour(bounds);
+      if (opts.frame && Array.isArray(bounds) && bounds.length === 4) {
+        frameTour(bounds, opts.shows || null);
+      }
       return true;
     },
     /** @returns {?string} The open tour's uuid, or null. */
