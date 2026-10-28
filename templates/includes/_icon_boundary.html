@@ -1,0 +1,25 @@
+{% comment %}
+templates/includes/_icon_boundary.html — the boundaries glyph: a dashed outline, for the EAWS region outlines.
+
+Leads its row in the map's layers menu (public/partials/_map_embed.html),
+the same 24-grid 2px stroke as the rest of the house set
+(docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 18.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M4 7l7-4 9 4-2 11-8 3-6-7z" stroke-dasharray="3 3" />
+</svg>

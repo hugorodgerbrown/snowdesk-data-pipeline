@@ -104,6 +104,20 @@ describe('ticks', () => {
     expect(core.levels(NaN, MAX)).toEqual([]);
   });
 
+  it('sets two gates on one level either side of its line, from above up-to', () => {
+    const shared = [
+      { key: 'region_select', zoom: 10, upTo: true },
+      { key: 'ski_routes', zoom: 10 },
+      { key: 'terrain_filter', zoom: 12 },
+    ];
+    const out = core.ticks(shared, 11, MIN, MAX);
+    expect(out.map((t) => [t.key, t.side])).toEqual([
+      ['ski_routes', 'above'],
+      ['region_select', 'below'],
+      ['terrain_filter', null],
+    ]);
+  });
+
   it('drops a gate outside the range, and survives a missing list', () => {
     expect(core.ticks([{ key: 'x', zoom: 20, active: true }], 13, MIN, MAX)).toEqual([]);
     expect(core.ticks(null, 13, MIN, MAX)).toEqual([]);

@@ -196,19 +196,19 @@ def _page_url(location: Location) -> str:
 class TestPrivacy:
     """Neither surface may answer for a location outside the public estate."""
 
-    def test_favourite_only_location_is_in_active_but_not_public(
+    def test_favourite_only_location_is_neither_active_nor_public(
         self, favourite_only_location: Location
     ) -> None:
         """The predicates themselves, before any view is involved.
 
-        ``active()`` is the billable set and ``public()`` the visible one.
-        A favourite's location belongs in the first and not the second, and
-        every assertion below rests on that distinction holding.
+        ``public()`` is the visible set, and a favourite's location must
+        never be in it; every assertion below rests on that. Since
+        2026-10-28 it is not fetched either: ``active()`` is the curated
+        estate only, and a pin borrows the nearest curated forecast.
         """
-        assert Location.objects.active().filter(pk=favourite_only_location.pk).exists()
-        assert (
-            not Location.objects.public().filter(pk=favourite_only_location.pk).exists()
-        )
+        pk = favourite_only_location.pk
+        assert not Location.objects.active().filter(pk=pk).exists()
+        assert not Location.objects.public().filter(pk=pk).exists()
 
     def test_card_404s_for_a_favourite_only_location(
         self, client: Client, favourite_only_location: Location

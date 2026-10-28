@@ -31,6 +31,7 @@ z  4    5    6    7    8    9   10   11   12   13   14   15 … 18
    region fit / search frame stops at 10 (REGION_FIT_MAX_ZOOM)
                             favourite labels 8 →
                                   resort labels, route endpoints 10 →
+                                  swisstopo ski-touring routes 10 → (SKI_ROUTES_MINZOOM, CH only)
                                        route transitions 11 →
                                        pin / report focus 11 (POINT_FOCUS_ZOOM)
                                                  terrain filter / slope tiles 12–14, overzoomed above

@@ -26,6 +26,7 @@ from tests.factories import (
     LocationFactory,
     MicroRegionFactory,
     RegionDayRatingFactory,
+    ResortLocationFactory,
     TripFactory,
     WeatherFactory,
     forecast_days,
@@ -156,6 +157,7 @@ class TestWithWeather:
     def test_each_tile_in_the_window_takes_its_day(self) -> None:
         """The forecast reaches two days here; the rest keep none."""
         location = LocationFactory.create()
+        ResortLocationFactory.create(location=location)
         WeatherFactory.create(
             location=location, observed_on=TODAY, forecast=forecast_days(TODAY, [73])
         )
@@ -175,7 +177,7 @@ class TestWithWeather:
         ]
 
     def test_no_forecast_point_leaves_the_week_alone(self) -> None:
-        """No point near enough: the same week back."""
+        """No curated point has a forecast: the same week back."""
         week = plan_week(TODAY, [])
 
         assert with_weather(week, None) is week

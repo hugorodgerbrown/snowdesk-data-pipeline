@@ -59,8 +59,8 @@ class Command(RegisteredCommand):
 
     help = (
         "Fetch today's Open-Meteo forecast — one Weather row per active "
-        "location (one reachable from a resort, a region centroid or a "
-        "favourite). Read-only unless --commit is passed."
+        "location (one reachable from a resort or a region centroid — the "
+        "curated estate). Read-only unless --commit is passed."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -96,8 +96,8 @@ class Command(RegisteredCommand):
             commit,
         )
 
-        # Streamed, not materialised: the estate grows with every favourite
-        # and every region EAWS adds. iterate_rows orders -id and prints a
+        # Streamed, not materialised: the estate grows with every curated
+        # point and every region EAWS adds. iterate_rows orders -id and prints a
         # countdown line per location, so an unattended run reads as a
         # countdown to 1 (SNOW-602).
         counts = fetch_all_locations(

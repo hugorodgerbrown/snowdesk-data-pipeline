@@ -59,7 +59,7 @@ from apps.public.views import (
     problem_cards_for_bulletin,
 )
 from apps.regions.models import MicroRegion, Resort
-from apps.weather.models import Weather
+from apps.weather.services.nearest import nearest_forecast
 from apps.weather.services.weather_display import (
     build_point_forecast_panel,
     build_weather_display,
@@ -126,7 +126,8 @@ def _place_context(
 
     Args:
         region: The region the place sits in, or None outside coverage.
-        location: The place's own Location, read for its weather.
+        location: The place's own Location; its weather is borrowed from
+            the curated point nearest it.
         target_date: The day the map is showing.
         elevation: The place's altitude, to judge each problem against; None
             leaves the problems unannotated, as the favourite card does for
@@ -150,17 +151,23 @@ def _place_context(
     # carries the days after it in that row's ``forecast`` column, which is
     # what the map's weather layer draws from too. So a forward day reads
     # today's row, and the day itself is that row's matching forecast entry.
+    #
+    # The row is BORROWED (Hugo, 2026-10-28): a pin buys no fetch of its
+    # own, so the sheet reads the curated point nearest it, at any
+    # distance, and names it under the weather.
     today = timezone.localdate()
     row_date = min(target_date, today)
-    weather = (
-        Weather.objects.for_location(location).on_date(row_date).first()
+    source = (
+        nearest_forecast(location.latitude, location.longitude, row_date)
         if location is not None
         else None
     )
+    weather = source.row if source is not None else None
     now = timezone.now()
-    # "" for a location backfill_location_short_ids has not reached: it has
-    # no page yet, so the sheet offers no link rather than a bare "?date=".
-    base_url = location.get_absolute_url() if location is not None else ""
+    # The week is on the forecast point's own page. "" for a location
+    # backfill_location_short_ids has not reached: it has no page yet, so
+    # the sheet offers no link rather than a bare "?date=".
+    base_url = source.location.get_absolute_url() if source is not None else ""
     forecast_panel = build_point_forecast_panel(weather, now)
     forward_day = None
     if forecast_panel is not None and target_date > today:
@@ -176,6 +183,7 @@ def _place_context(
         else "",
         "problem_cards": problem_cards,
         "location": location,
+        "forecast_source": source,
         "weather_display": build_weather_display(weather, now)
         if row_date == target_date
         else None,

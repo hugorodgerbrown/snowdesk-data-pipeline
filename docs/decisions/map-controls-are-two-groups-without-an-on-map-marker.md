@@ -2,10 +2,12 @@
 name: map-controls-are-two-groups-without-an-on-map-marker
 description: .map-control-group capsules (map, yours), no data-overlay-shown ring, bulletin opacity menu row, map_panel_overlay_switch.js
 status: current
-last-reviewed: 2026-10-19
+last-reviewed: 2026-10-28
 ---
 
 # The map controls are two groups, with no on-map marker
+
+> Amended by [the-layers-menu-is-on-off-then-options](the-layers-menu-is-on-off-then-options.md) (SNOW-1266): the bulletin opacity row is now on the Avalanche bulletins options page, with four steps; "off" is that row's switch.
 
 **Decision.** The bottom-right control column is two glass capsules
 (`.map-control-group`), 16px apart, above the chevron:

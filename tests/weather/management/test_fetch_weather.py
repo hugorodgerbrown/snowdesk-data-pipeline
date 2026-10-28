@@ -24,6 +24,8 @@ from tests.factories import (
     FavouriteFactory,
     FieldObservationFactory,
     LocationFactory,
+    ResortLocationFactory,
+    TripFactory,
     WeatherFactory,
 )
 
@@ -57,7 +59,7 @@ class TestFetchWeatherCommand:
 
     def test_runs_with_no_arguments_and_writes_nothing(self) -> None:
         """The bare invocation is a read-only probe — the command-design rule."""
-        FavouriteFactory.create()
+        ResortLocationFactory.create()
         stdout = StringIO()
 
         with mock.patch(
@@ -71,8 +73,8 @@ class TestFetchWeatherCommand:
 
     def test_commit_writes_one_row_per_active_location(self) -> None:
         """--commit persists exactly one row per active location."""
-        FavouriteFactory.create()
-        FavouriteFactory.create()
+        ResortLocationFactory.create()
+        ResortLocationFactory.create()
         stdout = StringIO()
 
         with mock.patch(
@@ -85,7 +87,7 @@ class TestFetchWeatherCommand:
 
     def test_a_second_run_refines_rather_than_appending(self) -> None:
         """The four daily runs must not accumulate rows for the same day."""
-        FavouriteFactory.create()
+        ResortLocationFactory.create()
 
         with mock.patch(
             "requests.get", return_value=_response(_payload(timezone.localdate()))
@@ -94,6 +96,20 @@ class TestFetchWeatherCommand:
             call_command("fetch_weather", "--commit", stdout=StringIO())
 
         assert Weather.objects.count() == 1
+
+    def test_a_favourite_or_a_trip_is_never_fetched(self) -> None:
+        """Only Snowdesk decides where a forecast is fetched (2026-10-28).
+
+        A saved pin and a trip's meeting point borrow the nearest curated
+        forecast; neither buys a call of its own.
+        """
+        FavouriteFactory.create()
+        TripFactory.create(date=timezone.localdate())
+
+        with mock.patch("requests.get") as get:
+            call_command("fetch_weather", "--commit", stdout=StringIO())
+
+        assert get.call_count == 0
 
     def test_an_observation_only_location_is_never_fetched(self) -> None:
         """A field report must not mint a billable forecast call.
@@ -112,7 +128,7 @@ class TestFetchWeatherCommand:
 
     def test_exits_non_zero_when_a_location_failed(self) -> None:
         """A partially failed batch must be visible to cron and CI."""
-        FavouriteFactory.create()
+        ResortLocationFactory.create()
 
         with (
             mock.patch("requests.get", side_effect=requests.HTTPError("boom")),
@@ -123,7 +139,7 @@ class TestFetchWeatherCommand:
     def test_prints_a_countdown_line_per_location(self) -> None:
         """Streamed output reads as a countdown, per the SNOW-602 rule."""
         location = LocationFactory.create(name="Mont Fort")
-        FavouriteFactory.create(location=location)
+        ResortLocationFactory.create(location=location)
         stdout = StringIO()
 
         with mock.patch(
@@ -140,7 +156,7 @@ class TestFetchWeatherCommand:
         rewritten, which is the whole point of the immutability rule.
         """
         location = LocationFactory.create()
-        FavouriteFactory.create(location=location)
+        ResortLocationFactory.create(location=location)
         yesterday = timezone.localdate() - datetime.timedelta(days=1)
         past = WeatherFactory.create(
             location=location, observed_on=yesterday, weather_code=3

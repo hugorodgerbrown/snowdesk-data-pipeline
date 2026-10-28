@@ -5,54 +5,62 @@ Content partial for the help page; included via the body_template
 parameter of includes/_collapsible_panel.html.
 
 Documents the layers menu (#basemap-menu in
-public/partials/_map_embed.html) section by section, in the order the
-menu itself renders them: Places, Conditions, Boundaries, Basemap. Three
-of those rows have a panel of their own on this page — Weather, Slope
-angle and Downloads — so they get a sentence and a pointer rather than a
-second copy of the detail.
+public/partials/_map_embed.html) row by row, in the order the menu
+renders them: "Reference data" (bulletins, steep terrain, weather, resorts,
+boundaries, basemap), then "Your data" (favourites, routes, field
+observations, downloaded areas). Three of those rows have a panel of their
+own on this page — Weather, Slope angle and Downloads — so they get a
+sentence and a pointer rather than a second copy of the detail.
 
-SNOW-904 rewrote this topic with the menu. Every layer is switched on
-here now, including the four (downloads, favourites, field observations,
-routes) that SNOW-658 had moved into the footer of whichever panel their
-roundel opened — so the paragraph that sent a reader off to those panels
-is gone, and the sections named below are the ones the menu renders.
+SNOW-904 rewrote this topic when every layer moved into the menu.
+SNOW-1266 rewrote it again when the menu became one switch per layer, with
+options one level down; the paragraph that explained the collapsible
+headings (help-layers-sections) now explains the two kinds of row.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            The stacked-squares button on the right of the map opens the layers menu &mdash; one list controlling
-            everything the map draws, grouped by what each row is. A row you switch on stays on the next time you open
-            Snowdesk on this device.
+            The stacked-squares button on the right of the map opens the layers menu &mdash; one list of everything the
+            map can draw, with a switch for each. A layer you switch on stays on the next time you open Snowdesk on this
+            device.
         {% endblocktrans %}
     </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Places" %}</h3>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-resorts">
+    <p class="mb-3 last:mb-0" data-testid="help-layers-sections">
         {% blocktrans trimmed %}
-            Resorts draws a pin at every ski resort Snowdesk knows about. Tapping one opens a short popup &mdash; the
-            resort's name, the region it sits in, a link to that region's bulletin, and a star to save it to your
-            favourites.
+            The switch on the right of a row says whether that layer is drawn. A row with an arrow also has options: tap
+            its name to see them, and the back arrow to return. The line under a row's name says what its options are
+            set to, and the count at the top of the menu says how many layers are on altogether.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-ugc">
-        {% blocktrans trimmed %}
-            Favourites draws your own saved places, and Routes draws every track you have uploaded. Both need an
-            account: tapping one while you are signed out offers you the way in rather than switching on a layer with
-            nothing in it.
-        {% endblocktrans %}
-    </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Conditions" %}</h3>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Reference data" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-layers-bulletins">
         {% blocktrans trimmed %}
-            One row per bulletin provider &mdash; SLF (CH), Météo-France (FR) and ALBINA (AT, IT) &mdash; each covering
-            the countries that provider publishes for. Switching one off takes its bulletins off the map, which is the
-            way to look at one country's picture on its own. Switzerland is on to start with.
+            Avalanche bulletins paints each region in its danger colour. Its options have one row per bulletin provider
+            &mdash; SLF (CH), Météo-France (FR) and ALBINA (AT, IT) &mdash; each covering the countries that provider
+            publishes for. Switching one off takes its bulletins off the map, which is the way to look at one country's
+            picture on its own. Switzerland is on to start with.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-fill">
         {% blocktrans trimmed %}
-            Under the three providers, "Bulletin opacity" sets how strongly the danger colour paints: five steps from
-            off to full, so you can read the terrain underneath without losing the bulletin altogether.
+            Under the providers, "Bulletin opacity" sets how strongly the danger colour paints: four steps up to full,
+            so you can read the terrain underneath without losing the bulletin altogether. Switching the bulletins off
+            and on again brings back the strength you left them at. "Highlight problem terrain" is there too: it paints
+            the slopes the day's bulletin describes, from zoom 12.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-terrain-filter">
+        {% blocktrans trimmed %}
+            Steep terrain highlights ground by aspect, slope range and, if you like, a band of elevation. Tap its name
+            to open the panel where you choose them. Read "Terrain filter" below for what it does not tell you.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-slope">
+        {% blocktrans trimmed %}
+            The same panel holds the slope layer, which shades the ground by steepness: choose &ldquo;By slope&rdquo;.
+            It is the layer with the most real limits on what it can tell you, so read "Slope angle" below before you
+            rely on a shading.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-weather">
@@ -62,51 +70,50 @@ is gone, and the sections named below are the ones the menu renders.
             rules of its own worth knowing about &mdash; read "Weather on the map" below.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-observations">
+    <p class="mb-3 last:mb-0" data-testid="help-layers-resorts">
         {% blocktrans trimmed %}
-            Field observations draws what other people have reported from the ground, fading as each report ages. It is
-            public, so it works whether or not you are signed in.
+            Resorts draws a pin at every ski resort Snowdesk knows about. Tapping one opens a short popup &mdash; the
+            resort's name, the region it sits in, a link to that region's bulletin, and a star to save it to your
+            favourites.
         {% endblocktrans %}
     </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Boundaries" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-layers-boundaries">
         {% blocktrans trimmed %}
-            Outlines of the European avalanche regions at three scales: Major (EAWS Level 1), Minor (EAWS L2) and Micro
-            (EAWS L4). Micro is the level bulletins are issued at and is drawn by default; the two coarser outlines help
-            you place a small region inside the wider area it belongs to. They follow the base map rather than the
-            Bulletins rows: on a national base map you see that country's regions, and on OpenFreeMap you see all of
-            them.
+            Boundaries outlines the European avalanche regions at three scales: Major (EAWS Level 1), Minor (EAWS L2)
+            and Micro (EAWS L4). Micro is the level bulletins are issued at and is drawn by default; the two coarser
+            outlines help you place a small region inside the wider area it belongs to. They follow the base map rather
+            than the bulletin providers: on a national base map you see that country's regions, and on OpenFreeMap you
+            see all of them.
         {% endblocktrans %}
     </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Basemap" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-layers-basemaps">
         {% blocktrans trimmed %}
-            The map underneath everything else, and the only section where you pick one rather than switching several
-            on. OpenFreeMap covers the whole area; the national mapping-agency maps &mdash; Swisstopo (CH), IGN (FR) and
-            basemap.at (AT) &mdash; carry far more detail for their own country and are blank outside it, so switching
-            to one is a choice to look closely at one place.
+            Basemap is the map underneath everything else, and the one row with no switch: there is always one, and you
+            pick which. OpenFreeMap covers the whole area; the national mapping-agency maps &mdash; Swisstopo (CH), IGN
+            (FR) and basemap.at (AT) &mdash; carry far more detail for their own country and are blank outside it, so
+            switching to one is a choice to look closely at one place.
         {% endblocktrans %}
     </p>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-slope">
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Your data" %}</h3>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-ugc">
         {% blocktrans trimmed %}
-            Two things are drawn on top of whichever one you chose, which is why they sit under this heading. The slope
-            layer, which shades the ground by steepness, lives inside "Terrain filter": choose &ldquo;By slope&rdquo; in
-            the panel its adjust button opens. It is the layer with the most real limits on what it can tell you, so
-            read "Slope angle" below before you rely on a shading.
+            Favourites draws your own saved places, and Routes draws every track you have uploaded. Both need an
+            account: tapping one while you are signed out offers you the way in rather than switching on a layer with
+            nothing in it. Each panel has its own "Show on the map" switch, which is the same setting as the switch
+            here.
+        {% endblocktrans %}
+    </p>
+    <p class="mb-3 last:mb-0" data-testid="help-layers-observations">
+        {% blocktrans trimmed %}
+            Field observations draws what people have reported from the ground, fading as each report ages. It is
+            public, so it works whether or not you are signed in.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-downloads">
         {% blocktrans trimmed %}
-            "Display downloaded areas" shades the ground you already hold on this device, so you can see the edges of
-            your own coverage before you set off. Left alone it switches itself on whenever you are offline, which is
-            when the answer matters.
-        {% endblocktrans %}
-    </p>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-terrain-filter">
-        {% blocktrans trimmed %}
-            "Terrain filter" turns on a layer that highlights ground by aspect, slope range and, if you like, a band of
-            elevation; the adjust button beside it opens the panel where you choose them. Read "Terrain filter" below
-            for what it does not tell you.
+            Downloaded areas shades the ground you already hold on this device, so you can see the edges of your own
+            coverage before you set off. Left alone it switches itself on whenever you are offline, which is when the
+            answer matters.
         {% endblocktrans %}
     </p>
     <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "The dot on each row" %}</h3>
@@ -115,22 +122,14 @@ is gone, and the sections named below are the ones the menu renders.
             Most rows carry a small dot saying whether that layer is held on this device: green for available offline,
             grey for not stored yet, and a pulse while it is being fetched. Green means the data is on the device right
             now, checked rather than assumed, so you can see what will still work before you lose signal. Two rows have
-            no dot, because neither could answer honestly: the terrain filter draws from tiles kept as you look at the
-            map, so what is held depends on where you have been, and your downloaded areas are on this device by
-            definition.
+            no dot, because neither could answer honestly: steep terrain draws from tiles kept as you look at the map,
+            so what is held depends on where you have been, and your downloaded areas are on this device by definition.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-layers-disabled-rows">
         {% blocktrans trimmed %}
             A row is sometimes switched off with a reason attached &mdash; a layer that has never been loaded while you
             were online, for instance. The note on the row says why.
-        {% endblocktrans %}
-    </p>
-    <p class="mb-3 last:mb-0" data-testid="help-layers-sections">
-        {% blocktrans trimmed %}
-            Each heading opens and closes, and remembers which way you left it. The line under a heading says what is on
-            inside it without you having to open it, and the count at the top of the menu says how many layers are on
-            altogether.
         {% endblocktrans %}
     </p>
 </div>

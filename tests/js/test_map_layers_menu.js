@@ -1,32 +1,31 @@
 /*
- * tests/js/test_map_layers_menu.js — the layers menu's collapsible
- * sections, its derived readout and its sign-in hand-off (SNOW-904).
+ * tests/js/test_map_layers_menu.js — the layers menu's pages, its master
+ * switches, its derived readout and its sign-in hand-off (SNOW-904,
+ * SNOW-1266).
  *
- * The menu became the sole control for every layer this ticket: four
- * overlays that were toggled from a "Display on the map" switch in the
- * footer of their own panel (downloads, favourites, field observations,
- * routes) are rows here. Three behaviours came with them, all owned by
- * static/js/map_basemap_picker.js and all covered below:
+ * SNOW-904 made the menu the sole control for every layer; SNOW-1266 made
+ * it on/off first with options one level down. The behaviours covered
+ * below are all owned by static/js/map_basemap_picker.js:
  *
- *   - each section opens and closes, independently and persistently, with
- *     Conditions the one open on a first visit;
- *   - a heading carries a derived second line naming what is on inside it,
- *     and the menu a header count of the overlay rows that are on;
+ *   - level one is one row per layer; a row with options opens them on a
+ *     page of its own, with a back button, and every open starts at level
+ *     one;
+ *   - bulletins and boundaries have MASTER switches derived from the rows
+ *     on their pages, which remember what they turned off;
+ *   - the header counts the level-one switches that are on, and a row with
+ *     options names what is on in them;
  *   - a row whose overlay needs an account hands an anonymous visitor to
  *     the sign-in sheet rather than ticking a box over an empty layer —
  *     favourites and routes only, never field observations, which are
- *     public data.
- *
- * Since the two-capsule control column the menu also carries the five
- * "Bulletin opacity" steps (they had a roundel and flyout of their own), so
- * the last block covers those: a step dispatches the same
- * ``snowdesk:bulletins-step`` the flyout did, and leaves the menu open.
+ *     public data;
+ *   - the opacity steps dispatch ``snowdesk:bulletins-step`` and leave the
+ *     menu open.
  *
  * The picker is a classic script reading bare identifiers from the shared
- * script scope (`writeStorage`, `OVERLAY_STORAGE_KEY`,
- * `LAYERS_SECTION_STORAGE_KEY`, …), which under Vitest have to be globals.
- * That is the same harness tests/js/test_map_layers_menu_position.js uses;
- * see its header for why `map_state.js` cannot simply be imported.
+ * script scope (`writeStorage`, `OVERLAY_STORAGE_KEY`, …), which under
+ * Vitest have to be globals. That is the same harness
+ * tests/js/test_map_layers_menu_position.js uses; see its header for why
+ * `map_state.js` cannot simply be imported.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -34,24 +33,46 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import '../../static/js/signin_cta.js';
 
-const SECTION_KEY = (slug) => `snowdesk.map.layers.section.${slug}`;
+const BULLETINS_LAST_STEP_KEY = 'snowdesk.map.bulletins.last-on-step';
+const BOUNDARIES_LAST_ON_KEY = 'snowdesk.map.boundaries.last-on';
 
 /** Every write the picker makes, in order, so a boot-time write is visible. */
 let writes;
 
 /**
  * Build the menu in the shape _map_embed.html renders it: a positioned
- * wrapper carrying the header, and an inner scrolling `role="menu"` whose
- * sections each hold a `role="group"` of rows.
+ * wrapper carrying the header, a level-one `role="menu"` of layer rows, and
+ * one hidden `role="menu"` page per layer with options.
  *
- * @param {{favouritesEligible?: boolean, routesEligible?: boolean}} [options]
+ * @param {{favouritesEligible?: boolean, routesEligible?: boolean, step?: string, tier?: string}} [options]
  */
-function buildFixture({ favouritesEligible = true, routesEligible = true } = {}) {
-  const row = (key, label) => `
+function buildFixture({
+  favouritesEligible = true, routesEligible = true, step = 'none', tier = 'none',
+} = {}) {
+  const switchRow = (key, label) => `
+    <li role="none">
+      <button type="button" role="menuitemcheckbox"
+              class="basemap-menu-item basemap-menu-item--overlay basemap-menu-layer-row group"
+              data-overlay-key="${key}" data-layer-switch aria-checked="false">
+        <span data-row-label>${label}</span>
+      </button>
+    </li>`;
+  const row = (key, label, checked = false) => `
     <li role="none">
       <button type="button" role="menuitemcheckbox"
               class="basemap-menu-item basemap-menu-item--overlay"
-              data-overlay-key="${key}" aria-checked="false">${label}</button>
+              data-overlay-key="${key}" aria-checked="${checked}">${label}</button>
+    </li>`;
+  const optionsRow = (slug, label) => `
+    <li role="none" class="basemap-menu-layer">
+      <button type="button" role="menuitem" class="basemap-menu-layer-options"
+              data-layers-open="${slug}">
+        <span data-row-label>${label}</span>
+        <span data-page-summary="${slug}"></span>
+      </button>
+      <button type="button" role="menuitemcheckbox" class="basemap-menu-switch group"
+              data-layer-master="${slug}" data-layer-switch aria-checked="false"
+              aria-label="${label}"></button>
     </li>`;
   const basemap = (key, label, checked) => `
     <li role="none">
@@ -60,32 +81,24 @@ function buildFixture({ favouritesEligible = true, routesEligible = true } = {})
               data-basemap-url="https://tiles.example.invalid/${key}.json"
               aria-checked="${checked ? 'true' : 'false'}">${label}</button>
     </li>`;
-  const opacityRow = () => `
+  const page = (slug, body) => `
+    <ul id="basemap-menu-page-${slug}" class="basemap-menu-list" role="menu"
+        data-layers-page="${slug}" hidden>
+      <li role="none" class="basemap-menu-page-header">
+        <button type="button" role="menuitem" class="basemap-menu-back" data-layers-back></button>
+      </li>
+      ${body}
+    </ul>`;
+  const opacity = `
     <li role="none" class="basemap-menu-opacity">
-      <p class="basemap-menu-opacity-label" aria-hidden="true">Bulletin opacity</p>
-      <div class="map-fill-steps" id="map-bulletin-opacity" role="radiogroup"
-           aria-label="Bulletin opacity">
-        ${['0', '0.25', '0.5', '0.75', '1'].map((step) => `
+      <div class="map-fill-steps" id="map-bulletin-opacity" role="radiogroup">
+        ${['0.25', '0.5', '0.75', '1'].map((value) => `
           <button type="button" role="radio" class="map-fill-step"
-                  aria-checked="${step === '0.5' ? 'true' : 'false'}"
-                  data-bulletins-step="${step}">
-            <span class="map-fill-step-swatch" data-step="${step}"></span>
+                  aria-checked="${value === step ? 'true' : 'false'}"
+                  data-bulletins-step="${value}">
+            <span class="map-fill-step-swatch" data-step="${value}"></span>
           </button>`).join('')}
       </div>
-    </li>`;
-  const section = (slug, title, rows) => `
-    <li role="presentation" class="basemap-menu-section">
-      <button type="button" class="basemap-menu-section-label"
-              data-section-toggle="${slug}" aria-expanded="false"
-              aria-controls="basemap-menu-group-${slug}">
-        <span class="basemap-menu-section-text">
-          <span class="basemap-menu-section-title">${title}</span>
-          <span class="basemap-menu-section-summary" data-section-summary></span>
-        </span>
-      </button>
-      <ul id="basemap-menu-group-${slug}" class="basemap-menu-group" role="group" hidden>
-        ${rows}
-      </ul>
     </li>`;
 
   document.body.innerHTML = `
@@ -103,33 +116,47 @@ function buildFixture({ favouritesEligible = true, routesEligible = true } = {})
       </div>
       <div id="basemap-menu" data-signin-url="/account/sign-in/" hidden>
         <div class="basemap-menu-header">
-          <p class="basemap-menu-title">Map display options</p>
+          <p class="basemap-menu-title">Map layers</p>
           <p class="basemap-menu-count" data-layers-count></p>
+          <button type="button" class="basemap-menu-close" data-layers-close></button>
         </div>
-        <ul class="basemap-menu-list" role="menu">
-          ${section(
-            'places',
-            'Places',
-            row('resorts', 'Resorts')
-              + row('favourites', 'Favourites')
-              + row('routes', 'Routes'),
-          )}
-          ${section(
-            'conditions',
-            'Conditions',
-            row('country.ch', 'SLF bulletins (CH)')
-              + opacityRow()
-              + row('weather', 'Weather')
-              + row('community_reports', 'Field observations'),
-          )}
-          ${section(
-            'basemap',
-            'Basemap',
-            basemap('openfreemap_liberty', 'OpenFreeMap', true)
-              + basemap('swisstopo_winter', 'Swisstopo (CH)', false)
-              + row('downloads', 'Display downloaded areas'),
-          )}
+        <ul class="basemap-menu-list" role="menu" data-layers-page="main">
+          <li role="presentation" class="basemap-menu-group-label">Reference data</li>
+          ${optionsRow('bulletins', 'Avalanche bulletins')}
+          ${switchRow('weather', 'Weather')}
+          ${switchRow('resorts', 'Resorts')}
+          ${optionsRow('boundaries', 'Boundaries')}
+          <li role="none" class="basemap-menu-layer">
+            <button type="button" role="menuitem" class="basemap-menu-layer-options"
+                    data-layers-open="basemap">
+              <span data-row-label>Basemap</span>
+              <span data-page-summary="basemap"></span>
+            </button>
+          </li>
+          <li role="presentation" class="basemap-menu-group-label">Your data</li>
+          ${switchRow('favourites', 'Favourites')}
+          ${switchRow('routes', 'Routes')}
+          ${switchRow('community_reports', 'Field observations')}
+          ${switchRow('downloads', 'Downloaded areas')}
         </ul>
+        ${page('bulletins', `
+          <li role="none"><ul id="basemap-menu-group-bulletins" class="basemap-menu-group" role="group">
+            ${row('country.ch', 'SLF bulletins (CH)', true)}
+            ${row('country.fr', 'MétéoFrance (FR)')}
+          </ul></li>
+          ${opacity}`)}
+        ${page('boundaries', `
+          <li role="none"><ul id="basemap-menu-group-boundaries" class="basemap-menu-group" role="group">
+            ${row('l1', 'Major regions (EAWS L1)', tier === 'l1')}
+            ${row('l2', 'Minor regions (EAWS L2)', tier === 'l2')}
+            ${row('l4', 'Micro regions (EAWS L4)', tier === 'l4')}
+          </ul></li>
+          ${row('unsupported', 'Show unsupported regions')}`)}
+        ${page('basemap', `
+          <li role="none"><ul id="basemap-menu-group-basemap" class="basemap-menu-group" role="group">
+            ${basemap('openfreemap_liberty', 'OpenFreeMap', true)}
+            ${basemap('swisstopo_winter', 'Swisstopo (CH)', false)}
+          </ul></li>`)}
       </div>
     </div>
     <div id="map-layer-signin-sheet" hidden tabindex="-1" data-overlay></div>
@@ -151,19 +178,20 @@ function openMenu() {
   document.getElementById('basemap-toggle').click();
 }
 
-function group(slug) {
-  return document.getElementById(`basemap-menu-group-${slug}`);
+function page(slug) {
+  return document.querySelector(`[data-layers-page="${slug}"]`);
 }
 
-function heading(slug) {
-  return document.querySelector(`[data-section-toggle="${slug}"]`);
+function opener(slug) {
+  return document.querySelector(`[data-layers-open="${slug}"]`);
+}
+
+function master(slug) {
+  return document.querySelector(`[data-layer-master="${slug}"]`);
 }
 
 function summary(slug) {
-  return heading(slug)
-    .closest('.basemap-menu-section')
-    .querySelector('[data-section-summary]')
-    .textContent;
+  return document.querySelector(`[data-page-summary="${slug}"]`).textContent;
 }
 
 function count() {
@@ -193,8 +221,7 @@ beforeEach(() => {
     const raw = window.localStorage.getItem(key);
     return raw === null ? dflt : raw === 'true';
   };
-  globalThis.LAYERS_SECTION_STORAGE_KEY = SECTION_KEY;
-  globalThis.LAYERS_SECTION_DEFAULT_OPEN = 'conditions';
+  globalThis.readStorage = (key) => window.localStorage.getItem(key);
 
   for (const name of [
     'pwaFavouritesOverlay',
@@ -219,70 +246,206 @@ afterEach(() => {
   }
 });
 
-describe('collapsible sections', () => {
-  it('opens Conditions and nothing else on a first visit', async () => {
+describe('pages', () => {
+  it('opens at level one, with every options page hidden', async () => {
     await loadPicker();
+    openMenu();
 
-    expect(group('conditions').hidden).toBe(false);
-    expect(heading('conditions').getAttribute('aria-expanded')).toBe('true');
-    expect(group('places').hidden).toBe(true);
-    expect(group('basemap').hidden).toBe(true);
+    expect(page('main').hidden).toBe(false);
+    for (const slug of ['bulletins', 'boundaries', 'basemap']) {
+      expect(page(slug).hidden).toBe(true);
+    }
   });
 
-  it('writes nothing while seeding from storage', async () => {
-    // Reading a preference must never write one back — the same discipline
-    // the downloads row's tri-state depends on next door.
+  it('shows a layer\'s options in place of level one', async () => {
     await loadPicker();
+    openMenu();
 
-    expect(writes).toEqual([]);
+    opener('boundaries').click();
+
+    expect(page('main').hidden).toBe(true);
+    expect(page('boundaries').hidden).toBe(false);
+    expect(page('bulletins').hidden).toBe(true);
+    // Focus goes with the page, so a keyboard user is not left on a control
+    // that has just disappeared.
+    expect(document.activeElement).toBe(page('boundaries').querySelector('[data-layers-back]'));
+    // And the tap was not read as one outside the menu.
+    expect(document.getElementById('basemap-menu').hidden).toBe(false);
   });
 
-  it('toggles one section without touching its neighbours', async () => {
+  it('goes back to level one, focusing the row that opened the page', async () => {
     await loadPicker();
+    openMenu();
+    opener('bulletins').click();
 
-    heading('places').click();
+    page('bulletins').querySelector('[data-layers-back]').click();
 
-    expect(group('places').hidden).toBe(false);
-    // The rows a collapsed heading does not govern must stay where they are.
-    expect(group('conditions').hidden).toBe(false);
-    expect(group('basemap').hidden).toBe(true);
+    expect(page('main').hidden).toBe(false);
+    expect(page('bulletins').hidden).toBe(true);
+    expect(document.activeElement).toBe(opener('bulletins'));
   });
 
-  it('persists each section under its own key', async () => {
+  it('starts at level one on every open', async () => {
     await loadPicker();
+    openMenu();
+    opener('basemap').click();
+    openMenu(); // closes
+    openMenu(); // and opens again
 
-    heading('places').click();
-    heading('conditions').click();
-
-    expect(window.localStorage.getItem(SECTION_KEY('places'))).toBe('true');
-    expect(window.localStorage.getItem(SECTION_KEY('conditions'))).toBe('false');
+    expect(page('main').hidden).toBe(false);
+    expect(page('basemap').hidden).toBe(true);
   });
 
-  it('restores what the last visit left', async () => {
-    window.localStorage.setItem(SECTION_KEY('places'), 'true');
-    window.localStorage.setItem(SECTION_KEY('conditions'), 'false');
-    await loadPicker();
-
-    expect(group('places').hidden).toBe(false);
-    expect(group('conditions').hidden).toBe(true);
-  });
-
-  it('re-measures the menu after a collapse toggle', async () => {
+  it('re-measures the menu when the page changes', async () => {
     // positionMenu writes `max-height` inline from the room the viewport
-    // leaves, and the content it bounds has just changed height.
+    // leaves, and the content it bounds has just been swapped.
     await loadPicker();
     openMenu();
     const menu = document.getElementById('basemap-menu');
     menu.style.maxHeight = '';
 
-    heading('places').click();
+    opener('boundaries').click();
 
     expect(menu.style.maxHeight).not.toBe('');
+  });
+
+  it('writes nothing at boot', async () => {
+    await loadPicker();
+
+    expect(writes).toEqual([]);
+  });
+
+  it('closes from its own close button', async () => {
+    await loadPicker();
+    openMenu();
+
+    document.querySelector('[data-layers-close]').click();
+
+    expect(document.getElementById('basemap-menu').hidden).toBe(true);
+    expect(document.activeElement).toBe(document.getElementById('basemap-toggle'));
+  });
+});
+
+describe('the bulletins switch', () => {
+  /** Mirror map.js: a dispatched step lands as the checked segment. */
+  function mirrorSteps() {
+    const listener = (event) => {
+      for (const seg of document.querySelectorAll('[data-bulletins-step]')) {
+        const on = Number(seg.dataset.bulletinsStep) === event.detail.step;
+        seg.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
+    };
+    document.addEventListener('snowdesk:bulletins-step', listener);
+    return () => document.removeEventListener('snowdesk:bulletins-step', listener);
+  }
+
+  it('reads on while a step above 0 is checked', async () => {
+    buildFixture({ step: '0.5' });
+    await loadPicker();
+
+    expect(master('bulletins').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('reads off when no step is checked', async () => {
+    await loadPicker();
+
+    expect(master('bulletins').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('switches off to step 0 and back on to the step it left', async () => {
+    const stop = mirrorSteps();
+    buildFixture({ step: '0.75' });
+    await loadPicker();
+    const seen = [];
+    const record = (event) => seen.push(event.detail.step);
+    document.addEventListener('snowdesk:bulletins-step', record);
+
+    master('bulletins').click();
+    expect(master('bulletins').getAttribute('aria-checked')).toBe('false');
+    expect(window.localStorage.getItem(BULLETINS_LAST_STEP_KEY)).toBe('0.75');
+
+    master('bulletins').click();
+    expect(seen).toEqual([0, 0.75]);
+    expect(master('bulletins').getAttribute('aria-checked')).toBe('true');
+    document.removeEventListener('snowdesk:bulletins-step', record);
+    stop();
+  });
+
+  it('switches on at 50% when nothing is remembered', async () => {
+    await loadPicker();
+    const seen = [];
+    const record = (event) => seen.push(event.detail.step);
+    document.addEventListener('snowdesk:bulletins-step', record);
+
+    master('bulletins').click();
+
+    expect(seen).toEqual([0.5]);
+    document.removeEventListener('snowdesk:bulletins-step', record);
+  });
+
+  it('counts once, however many providers are on', async () => {
+    buildFixture({ step: '0.5' });
+    await loadPicker();
+    rowFor('country.fr').click();
+
+    expect(count()).toBe('1 layer on');
+  });
+});
+
+describe('the boundaries switch', () => {
+  it('reads on while any tier is on', async () => {
+    buildFixture({ tier: 'l4' });
+    await loadPicker();
+
+    expect(master('boundaries').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('turns every tier off, and back on to the ones it turned off', async () => {
+    const seen = [];
+    const record = (event) => seen.push([event.detail.key, event.detail.visible]);
+    document.addEventListener('snowdesk:overlays-changed', record);
+    buildFixture({ tier: 'l4' });
+    await loadPicker();
+    rowFor('l1').click();
+
+    master('boundaries').click();
+    expect(rowFor('l1').getAttribute('aria-checked')).toBe('false');
+    expect(rowFor('l4').getAttribute('aria-checked')).toBe('false');
+    expect(master('boundaries').getAttribute('aria-checked')).toBe('false');
+    expect(JSON.parse(window.localStorage.getItem(BOUNDARIES_LAST_ON_KEY)))
+      .toEqual(['l1', 'l4']);
+
+    master('boundaries').click();
+    expect(rowFor('l1').getAttribute('aria-checked')).toBe('true');
+    expect(rowFor('l2').getAttribute('aria-checked')).toBe('false');
+    expect(rowFor('l4').getAttribute('aria-checked')).toBe('true');
+    // Each tier went through its own row, so map.js heard about each one.
+    expect(seen).toContainEqual(['l4', false]);
+    expect(seen).toContainEqual(['l4', true]);
+    document.removeEventListener('snowdesk:overlays-changed', record);
+  });
+
+  it('switches on Micro regions when nothing is remembered', async () => {
+    await loadPicker();
+
+    master('boundaries').click();
+
+    expect(rowFor('l4').getAttribute('aria-checked')).toBe('true');
+    expect(rowFor('l1').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('leaves "Show unsupported regions" alone', async () => {
+    buildFixture({ tier: 'l4' });
+    await loadPicker();
+
+    master('boundaries').click();
+
+    expect(rowFor('unsupported').getAttribute('aria-checked')).toBe('false');
   });
 });
 
 describe('the derived readout', () => {
-  it('counts the overlay rows that are on, never the basemap radio', async () => {
+  it('counts the level-one switches that are on, never the basemap', async () => {
     await loadPicker();
     expect(count()).toBe('No layers on');
 
@@ -293,46 +456,45 @@ describe('the derived readout', () => {
     expect(count()).toBe('2 layers on');
   });
 
-  it('says "None selected" for a section with nothing on', async () => {
+  it('counts a master switch as one layer', async () => {
+    buildFixture({ step: '0.5', tier: 'l4' });
     await loadPicker();
 
-    expect(summary('places')).toBe('None selected');
+    // Bulletins at 50% and Micro regions: two layers, whatever is inside.
+    expect(count()).toBe('2 layers on');
+  });
+
+  it('says "None selected" for a page with nothing on', async () => {
+    await loadPicker();
+
+    expect(summary('boundaries')).toBe('None selected');
   });
 
   it('names the rows that are on, shortened from their own labels', async () => {
     await loadPicker();
 
-    rowFor('country.ch').click();
-    rowFor('weather').click();
+    rowFor('country.fr').click();
 
     // The trailing parenthetical is stripped; nothing else is.
-    expect(summary('conditions')).toBe('SLF bulletins, Weather');
+    expect(summary('bulletins')).toBe('SLF bulletins, MétéoFrance');
   });
 
-  it('strips the "Display" verb the Basemap overlay row carries', async () => {
-    await loadPicker();
-
-    rowFor('downloads').click();
-
-    expect(summary('basemap')).toBe('OpenFreeMap, downloaded areas');
-  });
-
-  it('names the radio section\'s own selection', async () => {
+  it('names the basemap\'s own selection', async () => {
     await loadPicker();
 
     expect(summary('basemap')).toBe('OpenFreeMap');
   });
 
   it('falls back to a count when the names would not fit', async () => {
+    buildFixture({ tier: 'l4' });
     await loadPicker();
 
-    rowFor('country.ch').click();
-    rowFor('weather').click();
-    rowFor('community_reports').click();
+    rowFor('l1').click();
+    rowFor('l2').click();
 
-    // "SLF bulletins, Weather, Field observations" is past the line, so
-    // the summary states the count rather than clipping a name mid-word.
-    expect(summary('conditions')).toBe('3 of 3 on');
+    // Three tier names are past the line, so the summary states the count
+    // rather than clipping a name mid-word.
+    expect(summary('boundaries')).toBe('3 of 3 on');
   });
 });
 
@@ -509,6 +671,7 @@ describe('the bulletin opacity row', () => {
   it('writes no aria-checked of its own', async () => {
     // map.js mirrors the EFFECTIVE step back onto every [data-bulletins-step];
     // an optimistic tick here could disagree with it.
+    buildFixture({ step: '0.5' });
     await loadPicker();
     openMenu();
 
@@ -518,7 +681,7 @@ describe('the bulletin opacity row', () => {
     expect(step('0.5').getAttribute('aria-checked')).toBe('true');
   });
 
-  it('is not a menu row: no style swap, no count, no summary entry', async () => {
+  it('is not a menu row: no style swap, no storage write', async () => {
     const swap = vi.fn(() => Promise.resolve({}));
     globalThis.resolveBasemapStyle = swap;
     await loadPicker();
@@ -527,8 +690,7 @@ describe('the bulletin opacity row', () => {
     step('0.25').click();
 
     expect(swap).not.toHaveBeenCalled();
-    expect(count()).toBe('No layers on');
-    expect(summary('conditions')).toBe('None selected');
+    expect(summary('bulletins')).toBe('SLF bulletins');
     expect(writes).toEqual([]);
   });
 
@@ -536,13 +698,14 @@ describe('the bulletin opacity row', () => {
     globalThis.MAP = { getLayer: () => null };
     const reinstall = vi.fn();
     document.addEventListener('snowdesk:regions-reinstall', reinstall);
+    buildFixture({ step: '0.5' });
     await loadPicker();
 
     step('0.5').click();
     expect(reinstall).toHaveBeenCalledTimes(1);
 
-    // The off step paints nothing, so it needs nothing reinstalled.
-    step('0').click();
+    // Switching off paints nothing, so it needs nothing reinstalled.
+    master('bulletins').click();
     expect(reinstall).toHaveBeenCalledTimes(1);
     document.removeEventListener('snowdesk:regions-reinstall', reinstall);
   });

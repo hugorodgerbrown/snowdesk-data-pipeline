@@ -1,6 +1,6 @@
 /*
  * tests/js/test_map_terrain_filter_bridge.js — window.pwaTerrainFilter and
- * the layers menu's "Terrain filter" row (SNOW-978, SNOW-1109).
+ * the layers menu's "Steep terrain" row (SNOW-978, SNOW-1109, SNOW-1266).
  *
  * The bridge is the filter's one owner of state: it persists the switch and
  * the criteria, and announces every change. Since SNOW-1109 the row is a
@@ -128,20 +128,22 @@ function buildFixture() {
             aria-checked="true"
           >OpenFreeMap</button>
         </li>
-        <li role="none" class="basemap-menu-row">
-          <button
-            type="button"
-            role="menuitemcheckbox"
-            class="basemap-menu-item basemap-menu-item--overlay"
-            data-overlay-key="terrain"
-            aria-checked="false"
-          ><span data-row-label>Terrain filter</span></button>
+        <li role="none" class="basemap-menu-layer">
           <button
             type="button"
             role="menuitem"
-            class="basemap-menu-adjust"
+            class="basemap-menu-layer-options"
             data-terrain-filter-open
-            aria-label="Adjust terrain filter"
+            aria-label="Steep terrain options"
+          ><span data-row-label>Steep terrain</span></button>
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            class="basemap-menu-item basemap-menu-item--overlay basemap-menu-switch group"
+            data-overlay-key="terrain"
+            data-layer-switch
+            aria-checked="false"
+            aria-label="Steep terrain"
           ></button>
         </li>
       </ul>
@@ -265,7 +267,7 @@ describe('the layers menu row', () => {
     expect(row().getAttribute('aria-checked')).toBe('false');
   });
 
-  it('leaves the sheet to the adjust button', () => {
+  it('leaves the sheet to the row\'s options half', () => {
     window.pwaTerrainFilterSheet = { open: vi.fn() };
     row().click();
     expect(window.pwaTerrainFilterSheet.open).not.toHaveBeenCalled();

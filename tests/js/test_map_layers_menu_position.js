@@ -62,24 +62,18 @@ function buildFixture({ stackTop = 319, bottomRow = true } = {}) {
       </div>
       <div id="basemap-menu" hidden>
         <div class="basemap-menu-header">
-          <p class="basemap-menu-title">Map display options</p>
+          <p class="basemap-menu-title">Map layers</p>
           <p class="basemap-menu-count" data-layers-count></p>
         </div>
-        <ul class="basemap-menu-list" role="menu">
-          <li role="presentation" class="basemap-menu-section">
-            <button
-              type="button"
-              class="basemap-menu-section-label"
-              data-section-toggle="basemap"
-              aria-expanded="false"
-              aria-controls="basemap-menu-group-basemap"
-            >
-              <span class="basemap-menu-section-summary" data-section-summary></span>
-            </button>
-            <ul id="basemap-menu-group-basemap" class="basemap-menu-group" role="group" hidden>
-              <li><button class="basemap-menu-item" data-basemap-key="a"></button></li>
-            </ul>
+        <ul class="basemap-menu-list" role="menu" data-layers-page="main">
+          <li role="none">
+            <button type="button" role="menuitem" data-layers-open="basemap"></button>
           </li>
+        </ul>
+        <ul class="basemap-menu-list" role="menu" data-layers-page="basemap" hidden>
+          <li role="none"><ul id="basemap-menu-group-basemap" class="basemap-menu-group" role="group">
+            <li><button class="basemap-menu-item" data-basemap-key="a"></button></li>
+          </ul></li>
         </ul>
       </div>
     </div>
@@ -115,12 +109,8 @@ beforeEach(() => {
   globalThis.writeStorage = () => {};
   globalThis.OVERLAY_STORAGE_KEY = {};
   globalThis.resolveBasemapStyle = () => Promise.resolve({});
-  // SNOW-904: the collapse machinery's own three, declared in map_state.js
-  // beside the storage keys the picker already read from there.
   globalThis.readBoolStorage = (_key, dflt) => dflt;
-  globalThis.LAYERS_SECTION_STORAGE_KEY = (slug) =>
-    `snowdesk.map.layers.section.${slug}`;
-  globalThis.LAYERS_SECTION_DEFAULT_OPEN = 'conditions';
+  globalThis.readStorage = () => null;
 });
 
 afterEach(() => {

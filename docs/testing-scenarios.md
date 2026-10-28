@@ -478,6 +478,17 @@ pages redirect into the map's sheets.
 | 4 | Turn the Favourites panel's "Show on the map" off, reload, and open search with the field empty | The resort is still listed under "Pinned resorts" |
 | 5 | Unstar the resort and open search again | It is no longer listed, and its dot is black again |
 
+### Scenario 12b: Find a dropped pin from search
+
+**Goal**: Verify a dropped pin is a searchable place — listed before anything is typed, found by its name, and opened from there (SNOW-1264).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | While signed in, drop two pins from the Favourites roundel; rename one "Col de Mille" and leave the other unnamed | Both stars are on the map |
+| 2 | Open search and leave the field empty | Both are listed under "Pinned places", above "Pinned resorts" and "Pinned regions": "Col de Mille" first, then "Unnamed pin", each with a blue star tile and "in <region>" |
+| 3 | Type "mille" | "Col de Mille" is listed under "Pinned places"; typing "unnamed" lists no pin |
+| 4 | Pan far away, turn the Favourites panel's "Show on the map" off, then pick "Col de Mille" from search | The stars come back on, the map flies to the pin and its sheet opens, as a tap on the star would |
+
 ### Scenario 13: Delete the account from settings
 
 **Goal**: Verify the "Delete account" control hard-deletes the account.

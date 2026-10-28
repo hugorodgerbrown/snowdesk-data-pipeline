@@ -1022,15 +1022,23 @@ _DANGER_TRACK = [[7.2, 46.1, 1500.0], [7.3, 46.2, 2400.0]]
 
 @pytest.mark.django_db
 class TestTripPageWeather:
-    """SNOW-1217: the plan card's forecast line, at the meeting point."""
+    """The plan card's forecast line, borrowed from the nearest curated point.
+
+    SNOW-1217 put it on the card; since 2026-10-28 the meeting point buys no
+    fetch, so the line reads the nearest curated point and names it.
+    """
 
     @freeze_time("2026-10-24 10:00:00")
     def test_the_days_forecast_is_shown_above_the_danger(self, client: Client) -> None:
-        """Icon and words, from the meeting point's own row."""
+        """Icon and words, then which point they are borrowed from."""
         today = datetime.date(2026, 10, 24)
         trip = TripFactory.create(date=datetime.date(2026, 10, 25))
+        point = LocationFactory.create(
+            name="Verbier", latitude=46.11, longitude=7.4, elevation_m=1500.0
+        )
+        ResortLocationFactory.create(location=point)
         WeatherFactory.create(
-            location=trip.meeting_point,
+            location=point,
             observed_on=today,
             forecast=forecast_days(today, [71], snow=[2.0]),
         )
@@ -1038,14 +1046,15 @@ class TestTripPageWeather:
 
         html = client.get(reverse("trips:detail", args=[trip.uuid])).content.decode()
 
-        line = re.search(r'data-testid="trip-weather".*?</p>', html, re.S)
+        line = re.search(r'data-testid="trip-weather".*?</div>\s*</div>', html, re.S)
         assert line is not None
         text = " ".join(re.sub(r"<[^>]+>", " ", line.group(0)).split())
-        assert "Light snow · 3° / -6° · 2 cm new snow at the meeting point" in text
+        assert "Light snow · 3° / -6° · 2 cm new snow" in text
+        assert "Forecast for Verbier (1500 m), 1.1 km from the meeting point." in text
 
     @freeze_time("2026-10-24 10:00:00")
     def test_no_forecast_yet_means_no_line(self, client: Client) -> None:
-        """Until the first fetch, the card has no strip at all."""
+        """No curated point has a row today: the card has no strip at all."""
         trip = TripFactory.create(date=datetime.date(2026, 10, 25))
         client.force_login(trip.created_by)
 

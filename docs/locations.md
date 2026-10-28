@@ -289,7 +289,9 @@ writing a fifth, import this one.
 
 - A user placed it → **precise**, stored exactly, no rounding.
 - It fans out to an upstream API you pay per call → **quantised and
-  shared**, and register the referent in `active()`.
+  shared**. Only a curated place is registered in `active()`; a user's
+  place borrows the nearest curated one
+  ([why](decisions/snowdesk-decides-where-a-forecast-is-fetched.md)).
 - You inferred it → **derived with provenance**: store how, and store how
   far to trust it.
 - It is a path rather than a place → **polyline**, in a JSON column, and no
