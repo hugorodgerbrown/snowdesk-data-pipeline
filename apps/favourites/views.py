@@ -1106,6 +1106,9 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     under "Pinned resorts" before anything is typed, named as the resort
     rather than the user's own label, and without waiting for the public
     resorts feed or the resort's country to load.
+    ``region_id`` and ``region_name`` (SNOW-1264; ``null`` when the pin falls
+    outside every region) are the favourite's own region, which a dropped
+    pin's search row names on its second line ("in …").
     ``resort_slug`` lets the map client hide a favourited resort from the
     public resorts layer — it should render only as a favourite star, never
     as a plain dot as well. It is the slug, not the pk, because it has to
@@ -1138,7 +1141,7 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
     favourites = list(
         Favourite.objects.for_user(request.user)
         .placed()
-        .select_related("resort__region")
+        .select_related("resort__region", "region")
     )
 
     features: list[dict[str, Any]] = []
@@ -1151,7 +1154,12 @@ def favourites_geojson(request: HttpRequest) -> JsonResponse:
             "resort_name": None,
             "resort_region_id": None,
             "resort_region_name": None,
+            "region_id": None,
+            "region_name": None,
         }
+        if favourite.region is not None:
+            properties["region_id"] = favourite.region.region_id
+            properties["region_name"] = favourite.region.name
         resort = favourite.resort
         if resort is not None:
             properties["resort_slug"] = resort.slug

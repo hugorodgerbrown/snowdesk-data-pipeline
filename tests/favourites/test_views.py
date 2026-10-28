@@ -2256,6 +2256,31 @@ class TestFavouritesGeojson:
         assert properties["resort_region_id"] is None
         assert properties["resort_region_name"] is None
 
+    def test_pin_carries_its_own_region(self, client: Client) -> None:
+        """A dropped pin names the region it sits in, for its search row (SNOW-1264)."""
+        user = UserFactory.create()
+        client.force_login(user)
+        region = MicroRegionFactory.create(region_id="CH-4115", name="Martigny-Verbier")
+        FavouriteFactory.create(user=user, name="Col", region=region)
+
+        response = client.get(GEOJSON_URL)
+
+        properties = response.json()["features"][0]["properties"]
+        assert properties["region_id"] == "CH-4115"
+        assert properties["region_name"] == "Martigny-Verbier"
+
+    def test_pin_outside_every_region_carries_null_region(self, client: Client) -> None:
+        """A pin no region contains says so with nulls, not an empty string."""
+        user = UserFactory.create()
+        client.force_login(user)
+        _create_via_service(user)
+
+        response = client.get(GEOJSON_URL)
+
+        properties = response.json()["features"][0]["properties"]
+        assert properties["region_id"] is None
+        assert properties["region_name"] is None
+
     def test_resort_fields_cost_no_query_per_favourite(
         self, client: Client, django_assert_max_num_queries: Any
     ) -> None:

@@ -1453,6 +1453,17 @@
     color: var(--ink);
 }
 
+/* SNOW-1264: a dropped pin's tile — round, because it is a place, and
+   carrying the star in the blue the map draws the pin in. */
+.search-result-tile--pin {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-marker-favourite) 12%, transparent);
+    color: var(--color-marker-favourite);
+}
+
 /* The gondola cabin inside the resort tile (SNOW-1177). `display` is explicit because the global
    reset sets `svg { display: block }`; the tile centres it either way. */
 .search-result-pin {

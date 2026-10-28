@@ -75,11 +75,12 @@ apps/            Parent package for the sixteen Django apps (SNOW-557 — moved
                  coordinate, SNOW-802) — plus its relevance scoring and the
                  HTMX partials under /favourites/. The kinds are listed
                  on two surfaces: dropped pins in the map's pins sheet
-                 (``favourites:list``, ``dropped_pins()`` only), regions
-                 (SNOW-814, ``favourites:region_list``) and resorts
-                 (SNOW-1229, read from favourites.geojson) in search's
-                 empty state. A pinned resort is drawn as a blue resort
-                 dot, not a star
+                 (``favourites:list``, ``dropped_pins()`` only), and all
+                 three in search — dropped pins (SNOW-1264, "Pinned
+                 places", matched by name), regions (SNOW-814,
+                 ``favourites:region_list``) and resorts (SNOW-1229),
+                 the pins and resorts read from favourites.geojson. A
+                 pinned resort is drawn as a blue resort dot, not a star
   observations/  Community field reports — the ``FieldObservation`` model and
                  the /partials/report/ submission endpoints
   routes/        Uploaded GPX routes (SNOW-685/686/690) — the ``Route`` model
@@ -723,7 +724,7 @@ Read these when working in the relevant area:
 | Why a trip share is a public page and needs none of SNOW-764's session pending-claim machinery (save_trip_route, write_route_copy) | [`docs/decisions/a-trip-share-is-a-page-not-a-pending-claim.md`](docs/decisions/a-trip-share-is-a-page-not-a-pending-claim.md) |
 | Why a bulletin belongs to the day it forecasts on every surface (Bulletin.target_date, target_day_for_valid_from, issues_for_date, select_default_issue, recompute_region_day; tonight's 17:00 issue shows on tomorrow) | [`docs/decisions/a-bulletin-belongs-to-the-day-it-forecasts.md`](docs/decisions/a-bulletin-belongs-to-the-day-it-forecasts.md) |
 | Why a bare `/map/` shows today, never the last rated day (readDisplayDate, data-today, the SNOW-660 distinction) | [`docs/decisions/map-defaults-to-today-not-the-last-rated-day.md`](docs/decisions/map-defaults-to-today-not-the-last-rated-day.md) |
-| Why a favourited resort is listed by search ("Pinned resorts") and drawn as a blue resort dot, not in the Favourites panel or as a star (dropped_pins, buildPinnedResortEntries, applyFavouritedResortColour, DROPPED_PIN_FILTER) | [`docs/decisions/a-pinned-resort-is-found-in-search.md`](docs/decisions/a-pinned-resort-is-found-in-search.md) |
+| Why a favourited resort is listed by search ("Pinned resorts") and drawn as a blue resort dot, not in the Favourites panel or as a star, and why dropped pins joined search as "Pinned places" (dropped_pins, buildPinnedResortEntries, buildPinEntries, showFavourite, applyFavouritedResortColour, DROPPED_PIN_FILTER; an unnamed pin is never typeable) | [`docs/decisions/a-pinned-resort-is-found-in-search.md`](docs/decisions/a-pinned-resort-is-found-in-search.md) |
 | Why a problem card states its own level and the Day Risk Profile shows only an elevation split (panel-title-level, _day_risk_profile_adds_to_cards, show_day_risk_profile; the region sheet peek holds the breadcrumb, the date row below it) | [`docs/decisions/a-problem-card-states-its-own-level.md`](docs/decisions/a-problem-card-states-its-own-level.md) |
 | Why a resort has no avalanche danger of its own, and how the three map panels tell themselves apart (no level, problems or season calendar on _resort_body.html; the one region row, includes/_place_link_row.html, which since 27 Oct 2026 carries the REGION's level (day_rating) or "No bulletin available on this date"; the "Avalanche region" / "Ski resort" / "Weather point" kind line; "Resorts in this region" and "Where this is" rows; map_panel_trail.js and its one-step back pill; snowdesk:region-open; the "Find a resort" walkthrough that teaches it, map_resort_guide.js, POPULAR_RESORT_SLUGS) | [`docs/decisions/a-resort-has-no-avalanche-danger.md`](docs/decisions/a-resort-has-no-avalanche-danger.md) |
 | HISTORICAL — why a resort page was a landing page showing today's danger in one card from the bulletin's own render model (resort_detail, _resort_bulletin_card.html, the region panel's day_windows rows since SNOW-1203, the forecast first in every season, _resort_bulletin_attribution, the one "Read the full {region} bulletin →" link; why SNOW-1156 retired the problem cards and the SNOW-1143 lift-range line; amends two-documents-and-a-map) | [`docs/decisions/a-resort-page-answers-the-query.md`](docs/decisions/a-resort-page-answers-the-query.md) |
