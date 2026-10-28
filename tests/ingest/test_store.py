@@ -59,6 +59,23 @@ def test_a_new_bulletin_is_created() -> None:
     assert stored.content_hash == content_hash({"bulletinID": "a"})
 
 
+def test_a_failed_rating_refresh_rolls_the_row_back() -> None:
+    """Codex on #1267: the retry with the same hash refreshes the ratings."""
+    with (
+        patch(
+            "apps.ingest.store.refresh_source_day_ratings",
+            side_effect=RuntimeError("boom"),
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        store_bulletin(_rec({"bulletinID": "a"}))
+    assert not SourceBulletin.objects.exists()
+    with patch("apps.ingest.store.refresh_source_day_ratings") as refresh:
+        _, outcome = store_bulletin(_rec({"bulletinID": "a"}))
+    assert outcome == OUTCOME_CREATED
+    refresh.assert_called_once()
+
+
 def test_the_same_content_writes_nothing() -> None:
     """Unchanged: no write, no PDF lookup, updated_at unmoved."""
     first, _ = store_bulletin(_rec({"bulletinID": "a"}))

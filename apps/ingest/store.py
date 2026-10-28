@@ -34,6 +34,7 @@ import logging
 from datetime import date
 from typing import Any
 
+from django.db import transaction
 from django.utils import timezone
 
 from apps.ingest.day_ratings import (
@@ -146,6 +147,7 @@ def rebuild_render_model(
     return REBUILT if changed else OUTCOME_UNCHANGED
 
 
+@transaction.atomic
 def store_bulletin(
     record: NormalisedBulletin, *, force: bool = False
 ) -> tuple[SourceBulletin, str]:
@@ -153,7 +155,10 @@ def store_bulletin(
 
     Every write derives the render model and the day-rating index, then
     refreshes the service's day ratings for the (region, day) pairs the
-    bulletin governed before and governs now.
+    bulletin governed before and governs now. Both happen in one
+    transaction: a refresh that fails rolls the row back with it, so a
+    retry with the same hash is not mistaken for unchanged and the
+    ratings are refreshed then.
 
     Args:
         record: A bulletin from ``fetch_bulletins``.
