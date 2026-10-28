@@ -51,6 +51,7 @@ from apps.public._component_fixtures import (
     DAY_WINDOWS_VARIANTS,
     EYEBROW_VARIANTS,
     FAVOURITE_PROBLEM_VARIANTS,
+    FORECAST_SOURCE_VARIANTS,
     FORM_FIELD_VARIANTS,
     GLOSSARY_TERM_VARIANTS,
     HOURLY_CHART_VARIANTS,
@@ -2108,6 +2109,25 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_weather_provenance.html",
         variants=WEATHER_PROVENANCE_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="forecast-source",
+        label="Forecast source",
+        description=(
+            'Which curated point a borrowed forecast is from: "Forecast '
+            'for Mont Fort (3,329 m), 2.1 km from this pin." Only resort '
+            "points and region centres are fetched (Hugo, 2026-10-28), so "
+            "a saved pin, a trip's meeting point and a route's start each "
+            "read the nearest one, at any distance, and every one of them "
+            "says so in these words. The point is chosen by distance; its "
+            "height is stated so a reader can judge a peak against a "
+            "valley. A sentence with no wrapper: each caller sets it in "
+            "its own block."
+        ),
+        kind="components",
+        partial="includes/_forecast_source.html",
+        variants=FORECAST_SOURCE_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

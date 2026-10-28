@@ -377,10 +377,11 @@ class TestLocationQuerySetActive:
     The set this returns is the set that costs money: one Open-Meteo call
     per row, four times a day.
 
-    It is **not** the set the map feed publishes. That is ``public()``,
-    which is narrower — see ``TestLocationQuerySetPublic``. The two were
-    briefly assumed to be one question during SNOW-761 scoping; they are
-    not, and conflating them puts a private favourite on a public map.
+    Since 2026-10-28 it is the curated estate and nothing else: Snowdesk
+    decides where a forecast is fetched, because Snowdesk pays for it. It
+    holds the same rows as ``public()`` by policy, so the tests below pin
+    down what may NOT buy a fetch: a favourite, a trip's meeting point and
+    a field report.
     """
 
     def test_a_resort_location_is_active(self) -> None:
@@ -396,16 +397,21 @@ class TestLocationQuerySetActive:
 
         assert list(Location.objects.active()) == [location]
 
-    def test_a_favourited_location_is_active(self) -> None:
-        """A saved pin is a place its owner asked us to watch."""
-        favourite = FavouriteFactory.create()
+    def test_a_favourited_location_is_excluded(self) -> None:
+        """A saved pin borrows the nearest curated forecast; it buys none.
 
-        assert list(Location.objects.active()) == [favourite.location]
+        Until 2026-10-28 every favourite was fetched, so the bill grew with
+        every user who dropped a pin.
+        """
+        FavouriteFactory.create()
 
-    def test_an_upcoming_trips_meeting_point_is_active(self) -> None:
-        """SNOW-1217: the trip page shows the forecast where the group meets.
+        assert list(Location.objects.active()) == []
 
-        Today counts as upcoming — the group reads it that morning.
+    def test_an_upcoming_trips_meeting_point_is_excluded(self) -> None:
+        """A trip borrows the forecast nearest its meeting point, too.
+
+        SNOW-1217 fetched an upcoming trip's meeting point; the trip page
+        now reads the nearest curated point instead.
         """
         today = timezone.localdate()
         ahead = TripFactory.create(date=today + datetime.timedelta(days=3))
@@ -413,17 +419,16 @@ class TestLocationQuerySetActive:
 
         active = set(Location.objects.active())
 
-        assert ahead.meeting_point in active
-        assert on_the_day.meeting_point in active
-        assert ahead.meeting_point not in set(Location.objects.public())
+        assert ahead.meeting_point not in active
+        assert on_the_day.meeting_point not in active
 
-    def test_a_past_trips_meeting_point_is_excluded(self) -> None:
-        """Once the day has passed there is nothing left to forecast."""
-        trip = TripFactory.create(
-            date=timezone.localdate() - datetime.timedelta(days=1)
-        )
+    def test_active_is_public(self) -> None:
+        """What we pay to fetch is exactly the curated estate."""
+        ResortLocationFactory.create()
+        FavouriteFactory.create()
+        TripFactory.create(date=timezone.localdate())
 
-        assert trip.meeting_point not in set(Location.objects.active())
+        assert set(Location.objects.active()) == set(Location.objects.public())
 
     def test_an_observation_only_location_is_excluded(self) -> None:
         """A field report must never mint a billable forecast.
@@ -445,7 +450,7 @@ class TestLocationQuerySetActive:
         assert list(Location.objects.active()) == []
 
     def test_a_location_reachable_two_ways_appears_once(self) -> None:
-        """A resort's village that someone has also favourited is fetched once.
+        """A resort's village that someone has also saved is fetched once.
 
         Without ``.distinct()`` the joins multiply and the location is
         billed twice per run.
@@ -476,8 +481,8 @@ class TestLocationQuerySetPublic:
     """Tests for ``LocationQuerySet.public()`` — what anyone may see.
 
     SNOW-761's map weather feed renders this set. The boundary that matters
-    is the one against ``active()``: a favourite is a billable pin but a
-    private one, so it belongs in ``active()`` and must never reach here.
+    is a favourite: it is one person's private pin and must never reach
+    here.
     """
 
     def test_a_resort_location_is_public(self) -> None:
@@ -502,9 +507,8 @@ class TestLocationQuerySetPublic:
         favourite-only points for this reason; this assertion is what keeps
         the rebuilt feed honest.
         """
-        favourite = FavouriteFactory.create()
+        FavouriteFactory.create()
 
-        assert list(Location.objects.active()) == [favourite.location]
         assert list(Location.objects.public()) == []
 
     def test_an_observation_only_location_is_not_public(self) -> None:
@@ -513,23 +517,6 @@ class TestLocationQuerySetPublic:
 
         assert observation.location is not None
         assert list(Location.objects.public()) == []
-
-    def test_public_is_a_subset_of_active(self) -> None:
-        """Everything public is fetched; not everything fetched is public.
-
-        Stated as one assertion so the direction of the containment cannot
-        be quietly reversed by a later edit.
-        """
-        resort_link = ResortLocationFactory.create()
-        favourite = FavouriteFactory.create()
-
-        public = set(Location.objects.public())
-        active = set(Location.objects.active())
-
-        assert public < active
-        assert resort_link.location in public
-        assert favourite.location in active
-        assert favourite.location not in public
 
     def test_a_location_reachable_two_ways_appears_once(self) -> None:
         """A resort's village that is also a region centroid joins twice."""
@@ -571,15 +558,22 @@ class TestLocationQuerySetVisibleTo:
         assert favourite.location not in Location.objects.visible_to(stranger)
         assert favourite.location not in Location.objects.visible_to(AnonymousUser())
 
-    def test_it_never_widens_beyond_active(self) -> None:
-        """Whatever a reader sees, we already pay to fetch it."""
+    def test_it_never_widens_beyond_public_and_my_own_pins(self) -> None:
+        """A reader sees the curated estate and their own pins, nothing else.
+
+        Until 2026-10-28 this was "never beyond ``active()``", which held
+        because every favourite was fetched. A pin is no longer fetched, so
+        its own page keeps only the rows recorded before then; the live
+        forecast a pin shows is borrowed from a ``public()`` point.
+        """
         owner = UserFactory.create()
-        FavouriteFactory.create(user=owner)
+        mine = FavouriteFactory.create(user=owner)
+        FavouriteFactory.create()
         ResortLocationFactory.create()
         FieldObservationFactory.create()
 
         visible = set(Location.objects.visible_to(owner))
-        assert visible <= set(Location.objects.active())
+        assert visible == set(Location.objects.public()) | {mine.location}
 
     def test_a_location_reachable_two_ways_appears_once(self) -> None:
         """A curated place the reader has also favourited joins twice."""

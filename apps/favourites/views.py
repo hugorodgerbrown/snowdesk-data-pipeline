@@ -92,7 +92,7 @@ from apps.locations.services.what3words import what3words_map_url
 from apps.public.templatetags.snowdesk_time import danger_level_digit
 from apps.public.views import problem_cards_for_bulletin
 from apps.regions.models import MicroRegion, Resort
-from apps.weather.models import Weather
+from apps.weather.services.nearest import nearest_forecast
 from apps.weather.services.weather_display import (
     build_weather_display,
 )
@@ -572,12 +572,11 @@ def _favourite_card_context(
     boundary), the card renders a "no bulletin coverage here" note
     instead.
 
-    Also reads the pin's own ``Location`` for today's ``Weather`` row
-    (SNOW-761) and builds both the single-day panel and the multi-day
-    outlook from it. The lookup is on the ``(location, observed_on)``
-    unique constraint; a pre-SNOW-704 row with no location, or a location
-    with no row for today, yields ``None`` and the card's weather section
-    is absent rather than empty.
+    Also reads today's ``Weather`` row from the curated point nearest the
+    pin (SNOW-761; borrowed since 2026-10-28, a pin buys no fetch of its
+    own) and builds the day's panel from it. A pre-SNOW-704 row with no
+    location, or no curated point with a row for today, yields ``None`` and
+    the card's weather section is absent rather than empty.
 
     When a region and today's default bulletin both resolve, also builds
     the avalanche-problems section (SNOW-422): the bulletin's problem cards
@@ -630,19 +629,22 @@ def _favourite_card_context(
                 else cards
             )
 
-    # SNOW-761: weather for the pin's own Location, read for today on the
-    # (location, observed_on) unique constraint. A pre-SNOW-704 row with no
-    # location, or a location with no row for today, yields None and the
-    # card's weather section is simply absent.
+    # SNOW-761: today's weather near the pin. Borrowed since 2026-10-28 — a
+    # pin buys no fetch of its own, so this is the curated point nearest it
+    # (``apps.weather.services.nearest``), which the card names. A row with
+    # no location (pre-SNOW-704), or no curated point with a row for today,
+    # yields None and the card's weather section is simply absent.
     #
     # Read before the freshness pair, not after: the row's fetched_at is one
     # of the two constituents _card_freshness takes the older of, so the card
     # reports the staleness of the weather it actually renders.
-    weather = (
-        Weather.objects.for_location(favourite.location).on_date(today).first()
-        if favourite.location_id
+    location = favourite.location
+    source = (
+        nearest_forecast(location.latitude, location.longitude, today)
+        if location is not None
         else None
     )
+    weather = source.row if source is not None else None
 
     generated_at, unsafe_after = _card_freshness(
         day_rating, weather.fetched_at if weather else None
@@ -658,14 +660,11 @@ def _favourite_card_context(
         "bulletin_url": bulletin_url,
         "problem_cards": problem_cards,
         "weather_display": build_weather_display(weather, now),
+        "forecast_source": source,
         # SNOW-783: the day, then a link. The week and the hourly detail
-        # live on the location's own forecast page rather than being
-        # redrawn inside a card that is already a scrolling surface.
-        "forecast_url": (
-            favourite.location.get_absolute_url()
-            if favourite.location is not None
-            else ""
-        ),
+        # live on the forecast point's own page rather than being redrawn
+        # inside a card that is already a scrolling surface.
+        "forecast_url": source.location.get_absolute_url() if source else "",
         "cache_payload": cache_payload,
         "freshness_state": state,
         "freshness_generated_at": generated_at,
