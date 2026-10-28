@@ -3,7 +3,8 @@ apps/mcp_server/ops_tools.py — the staff ops MCP tool registry (SNOW-1191).
 
 The tools Claude calls at ``POST /api/mcp/ops/`` to answer an operator's
 questions about one environment: what ran, on which build, with what
-result, and whether the estate looks healthy. Every tool is read-only.
+result, and whether the estate looks healthy. Every tool is read-only
+except the two waffle setters, ``set_switch`` and ``set_flag``.
 The endpoint is staff-only; the public avalanche tools live in
 ``apps.mcp_server.tools`` and share only the envelope, ``ToolSpec`` and
 ``ToolError``.
@@ -19,6 +20,12 @@ Two families:
 * **Health** — ``build_info``, ``ingest_status``, ``bulletin_coverage``,
   ``task_queue_health``, ``weather_freshness``, ``location_estate_health``
   and ``feature_flags``.
+* **Waffle writes** — ``set_switch`` and ``set_flag`` turn an existing
+  switch or flag on or off. Each needs the name, the state and a reason,
+  changes nothing when the row is already in that state, never creates a
+  row, and records every change as an admin ``LogEntry`` against the staff
+  account that made it (so it shows in the row's admin History) and as a
+  WARNING log line.
 
 Each tool is a plain function returning a JSON-safe dict with a one-line
 ``summary`` (the text Claude reads first), wrapped by a ``_handle_*``
@@ -40,8 +47,10 @@ from typing import Any
 
 import django
 from django.conf import settings
+from django.contrib.admin.models import CHANGE, LogEntry
+from django.contrib.contenttypes.models import ContentType
 from django.core.management import get_commands
-from django.db import DEFAULT_DB_ALIAS, connections
+from django.db import DEFAULT_DB_ALIAS, connections, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.db.models import Count, Max, Q
 from django.utils import timezone
@@ -51,7 +60,12 @@ from apps.core.command_register import _environment
 from apps.core.models import CommandRun
 from apps.locations.models import Location
 from apps.mcp_server.resolvers import _PROVIDER_BY_COUNTRY
-from apps.mcp_server.tools import ToolError, ToolSpec, _optional_iso_date
+from apps.mcp_server.tools import (
+    ToolError,
+    ToolSpec,
+    _optional_iso_date,
+    _require_str,
+)
 from apps.regions.models import MicroRegion
 from apps.weather.models import Weather
 
@@ -69,6 +83,18 @@ MISSING_REGIONS_SHOWN: int = 50
 
 # The window the health tools call "recent".
 RECENT: dt.timedelta = dt.timedelta(hours=24)
+
+# How many recent waffle changes feature_flags returns from the admin log.
+RECENT_WAFFLE_CHANGES: int = 10
+
+# The longest reason a waffle setter accepts; LogEntry.change_message is a
+# TextField, so this is about a readable History page, not storage.
+MAX_REASON_LENGTH: int = 500
+
+# A flag's ``everyone`` per state: on and off override every other rule,
+# targeted hands the decision back to its percent, groups and users.
+FLAG_STATES: dict[str, bool | None] = {"on": True, "off": False, "targeted": None}
+SWITCH_STATES: dict[str, bool] = {"on": True, "off": False}
 
 
 # ---------------------------------------------------------------------------
@@ -877,20 +903,20 @@ def location_estate_health() -> dict[str, Any]:
 
 
 def feature_flags() -> dict[str, Any]:
-    """Return every waffle flag's targeting, and drift from the manifest.
+    """Return every waffle flag, switch and sample, and drift from the manifest.
 
     ``sync_waffle_flags`` creates and deletes rows to match
     ``apps/core/fixtures/waffle_flags.json`` but never edits one, so a
-    flag's live targeting is whatever the admin last set.
+    flag's live targeting is whatever the admin (or ``set_flag``) last set.
 
     Returns:
-        ``flags``, ``switches``, ``not_in_manifest``, ``missing_from_db``
-        and ``summary``.
+        ``flags``, ``switches``, ``samples``, ``not_in_manifest``,
+        ``missing_from_db``, ``recent_changes`` and ``summary``.
 
     """
     # Imported here so this module loads without waffle's models in a
     # context that never calls the tool.
-    from waffle.models import Flag, Switch
+    from waffle.models import Flag, Sample, Switch
 
     from apps.core.management.commands.sync_waffle_flags import (
         DEFAULT_MANIFEST_PATH,
@@ -914,22 +940,275 @@ def feature_flags() -> dict[str, Any]:
         for flag in Flag.objects.order_by("name")
     ]
     switches = [
-        {"name": switch.name, "active": switch.active}
+        {"name": switch.name, "active": switch.active, "note": switch.note}
         for switch in Switch.objects.order_by("name")
+    ]
+    samples = [
+        {"name": sample.name, "percent": float(sample.percent), "note": sample.note}
+        for sample in Sample.objects.order_by("name")
     ]
     manifest = {spec.name for spec in load_manifest(DEFAULT_MANIFEST_PATH)}
     live = {flag["name"] for flag in flags}
     on_for_everyone = sum(1 for flag in flags if flag["everyone"])
+    switches_on = sum(1 for switch in switches if switch["active"])
     return {
         "flags": flags,
         "switches": switches,
+        "samples": samples,
         "not_in_manifest": sorted(live - manifest),
         "missing_from_db": sorted(manifest - live),
+        "recent_changes": _recent_waffle_changes(),
         "summary": (
             f"{len(flags)} flag(s), {on_for_everyone} on for everyone; "
-            f"{len(live ^ manifest)} differ from the manifest."
+            f"{switches_on}/{len(switches)} switch(es) on; "
+            f"{len(samples)} sample(s); "
+            f"{len(live ^ manifest)} flag(s) differ from the manifest."
         ),
     }
+
+
+def _recent_waffle_changes() -> list[dict[str, Any]]:
+    """Return the latest admin-log entries on any waffle flag, switch or sample.
+
+    The same rows the admin's History page shows, whether the change came
+    from the admin or from ``set_switch`` / ``set_flag``.
+
+    Returns:
+        Up to ``RECENT_WAFFLE_CHANGES`` entries, newest first.
+
+    """
+    from waffle.models import Flag, Sample, Switch
+
+    content_types = ContentType.objects.get_for_models(Flag, Switch, Sample)
+    kinds = {ct.pk: model.__name__.lower() for model, ct in content_types.items()}
+    entries = (
+        LogEntry.objects.filter(content_type_id__in=kinds)
+        .select_related("user")
+        .order_by("-action_time")[:RECENT_WAFFLE_CHANGES]
+    )
+    return [
+        {
+            "at": _iso(entry.action_time),
+            # content_type is nullable on LogEntry; the filter rules out None.
+            "kind": kinds.get(entry.content_type_id or 0, ""),
+            "name": entry.object_repr,
+            "by": entry.user.get_username(),
+            "change": entry.get_change_message(),
+        }
+        for entry in entries
+    ]
+
+
+def _reason(arguments: dict[str, Any]) -> str:
+    """Return the required ``reason`` argument, bounded in length.
+
+    Args:
+        arguments: The raw ``arguments`` dict.
+
+    Returns:
+        The stripped reason.
+
+    Raises:
+        ToolError: The reason is missing, blank or too long.
+
+    """
+    reason = _require_str(arguments, "reason").strip()
+    if len(reason) > MAX_REASON_LENGTH:
+        raise ToolError(f"'reason' must be at most {MAX_REASON_LENGTH} characters.")
+    return reason
+
+
+def _state(arguments: dict[str, Any], states: dict[str, Any]) -> str:
+    """Return the required ``state`` argument, validated against ``states``.
+
+    Args:
+        arguments: The raw ``arguments`` dict.
+        states: The accepted states.
+
+    Returns:
+        The state, lower-cased.
+
+    Raises:
+        ToolError: The state is missing or not one of ``states``.
+
+    """
+    state = _require_str(arguments, "state").strip().lower()
+    if state not in states:
+        raise ToolError(f"'state' must be one of: {', '.join(states)}.")
+    return state
+
+
+def _flag_state(everyone: bool | None) -> str:
+    """Return the state name for a flag's ``everyone`` value.
+
+    Args:
+        everyone: ``Flag.everyone``.
+
+    Returns:
+        ``on``, ``off`` or ``targeted``.
+
+    """
+    return next(state for state, value in FLAG_STATES.items() if value is everyone)
+
+
+def _audit(actor: Any, row: Any, change: str) -> LogEntry:
+    """Record one waffle change in the admin log and the application log.
+
+    Args:
+        actor: The staff user who made the change.
+        row: The flag or switch changed (already saved).
+        change: What changed and why, as the History page should read it.
+
+    Returns:
+        The new ``LogEntry``.
+
+    """
+    entry: LogEntry = LogEntry.objects.log_actions(
+        user_id=actor.pk,
+        queryset=[row],
+        action_flag=CHANGE,
+        change_message=change,
+        single_object=True,
+    )
+    logger.warning(
+        "ops_mcp: %s changed waffle %s %r: %s",
+        actor.get_username(),
+        type(row).__name__.lower(),
+        row.name,
+        change,
+    )
+    return entry
+
+
+def set_switch(name: str, state: str, reason: str, actor: Any) -> dict[str, Any]:
+    """Turn an existing waffle switch on or off, and audit the change.
+
+    A switch already in ``state`` is left alone and nothing is logged. A
+    name with no row is an error: the switch manifest creates rows, this
+    never does.
+
+    Args:
+        name: The switch's exact name.
+        state: ``on`` or ``off``.
+        reason: Why, recorded with the change.
+        actor: The staff user making the change.
+
+    Returns:
+        ``name``, ``previous``, ``state``, ``changed``, ``log_entry_id``
+        and ``summary``.
+
+    Raises:
+        ToolError: No switch has that name.
+
+    """
+    from waffle.models import Switch
+
+    active = SWITCH_STATES[state]
+    with transaction.atomic():
+        switch = Switch.objects.select_for_update().filter(name=name).first()
+        if switch is None:
+            raise ToolError(f"No switch named {name!r}; feature_flags lists them.")
+        previous = "on" if switch.active else "off"
+        entry = None
+        if switch.active is not active:
+            switch.active = active
+            # save() also flushes waffle's cache of the switch.
+            switch.save()
+            entry = _audit(
+                actor,
+                switch,
+                f"Switch turned {state} (was {previous}) via the ops MCP "
+                f"server: {reason}",
+            )
+    changed = entry is not None
+    return {
+        "name": name,
+        "previous": previous,
+        "state": state,
+        "changed": changed,
+        "log_entry_id": entry.pk if entry else None,
+        "summary": (
+            f"Switch {name} turned {state} (was {previous})."
+            if changed
+            else f"Switch {name} was already {state}; nothing changed."
+        ),
+    }
+
+
+def set_flag(name: str, state: str, reason: str, actor: Any) -> dict[str, Any]:
+    """Set an existing waffle flag on, off or back to its targeting.
+
+    Only ``Flag.everyone`` is written: ``on`` and ``off`` override the
+    flag's other rules for every request, ``targeted`` clears the override
+    so its percent, staff, groups and users decide again. A flag already in
+    ``state`` is left alone and nothing is logged; an unknown name is an
+    error, never a new row.
+
+    Args:
+        name: The flag's exact name.
+        state: ``on``, ``off`` or ``targeted``.
+        reason: Why, recorded with the change.
+        actor: The staff user making the change.
+
+    Returns:
+        ``name``, ``previous``, ``state``, ``changed``, ``log_entry_id``
+        and ``summary``.
+
+    Raises:
+        ToolError: No flag has that name.
+
+    """
+    from waffle.models import Flag
+
+    everyone = FLAG_STATES[state]
+    with transaction.atomic():
+        flag = Flag.objects.select_for_update().filter(name=name).first()
+        if flag is None:
+            raise ToolError(f"No flag named {name!r}; feature_flags lists them.")
+        previous = _flag_state(flag.everyone)
+        entry = None
+        if flag.everyone is not everyone:
+            flag.everyone = everyone
+            # save() also flushes waffle's cache of the flag.
+            flag.save()
+            entry = _audit(
+                actor,
+                flag,
+                f"Flag set {state} (was {previous}) via the ops MCP server: {reason}",
+            )
+    changed = entry is not None
+    return {
+        "name": name,
+        "previous": previous,
+        "state": state,
+        "changed": changed,
+        "log_entry_id": entry.pk if entry else None,
+        "summary": (
+            f"Flag {name} set {state} (was {previous})."
+            if changed
+            else f"Flag {name} was already {state}; nothing changed."
+        ),
+    }
+
+
+def _handle_set_switch(arguments: dict[str, Any], actor: Any) -> dict[str, Any]:
+    """Validate ``set_switch`` arguments and call it."""
+    return set_switch(
+        _require_str(arguments, "name").strip(),
+        _state(arguments, SWITCH_STATES),
+        _reason(arguments),
+        actor,
+    )
+
+
+def _handle_set_flag(arguments: dict[str, Any], actor: Any) -> dict[str, Any]:
+    """Validate ``set_flag`` arguments and call it."""
+    return set_flag(
+        _require_str(arguments, "name").strip(),
+        _state(arguments, FLAG_STATES),
+        _reason(arguments),
+        actor,
+    )
 
 
 def _no_arguments(tool: Any) -> Any:
@@ -1132,10 +1411,69 @@ OPS_TOOLS: dict[str, ToolSpec] = {
     "feature_flags": ToolSpec(
         name="feature_flags",
         description=(
-            "Return every feature flag's live targeting and switch state, "
-            "and the flags that differ from the committed manifest."
+            "Return every waffle feature flag's live targeting, every "
+            "switch's on/off state and note, every sample's percent, the "
+            "flags that differ from the committed manifest, and the last "
+            "few changes from the admin log (who, when, why)."
         ),
         input_schema=_NO_ARGUMENTS,
         handler=_no_arguments(feature_flags),
+    ),
+    "set_switch": ToolSpec(
+        name="set_switch",
+        description=(
+            "Turn an existing waffle switch on or off on this environment, "
+            "e.g. a schedule_<job> switch to pause or resume a scheduled "
+            "job. Takes effect at once for every request. Confirm the name "
+            "and state with the operator before calling; the change and "
+            "reason are recorded against their account in the admin "
+            "History. A switch already in that state is left alone."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Exact switch name, from feature_flags.",
+                },
+                "state": {"type": "string", "enum": list(SWITCH_STATES)},
+                "reason": {
+                    "type": "string",
+                    "description": "Why, in a sentence; recorded with the change.",
+                },
+            },
+            "required": ["name", "state", "reason"],
+        },
+        handler=_handle_set_switch,
+        writes=True,
+    ),
+    "set_flag": ToolSpec(
+        name="set_flag",
+        description=(
+            "Set an existing waffle flag on or off for everyone on this "
+            "environment, or 'targeted' to clear that override so its "
+            "percent, staff, groups and users decide again. Takes effect at "
+            "once. Confirm the name and state with the operator before "
+            "calling; the change and reason are recorded against their "
+            "account in the admin History. A flag already in that state is "
+            "left alone."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Exact flag name, from feature_flags.",
+                },
+                "state": {"type": "string", "enum": list(FLAG_STATES)},
+                "reason": {
+                    "type": "string",
+                    "description": "Why, in a sentence; recorded with the change.",
+                },
+            },
+            "required": ["name", "state", "reason"],
+        },
+        handler=_handle_set_flag,
+        writes=True,
     ),
 }
