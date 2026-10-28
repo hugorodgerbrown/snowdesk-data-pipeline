@@ -43,7 +43,6 @@ from pathlib import PurePosixPath
 from typing import Any, SupportsIndex
 
 import pytest
-import requests
 import sentry_sdk
 from pytest_django.fixtures import Settings
 
@@ -194,25 +193,3 @@ def _no_live_terrain_origin(settings: Settings) -> None:
     on, so the refusal is immediate — no DNS, no timeout, no wait.
     """
     settings.TERRAIN_TILE_BASE_URL = "http://127.0.0.1:9/terrain/v1"
-
-
-@pytest.fixture(autouse=True)
-def _no_live_meeting_point_forecast(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Guarantee saving a trip never reaches Open-Meteo (SNOW-1217).
-
-    The terrain guard's twin. Since SNOW-1217 an ordinary ``create_trip``
-    enqueues a forecast fetch for its meeting point, and under
-    ``ImmediateBackend`` that fetch runs INLINE in a plain trip test. The
-    fetch the worker calls is replaced with one that is refused, which the
-    worker logs and drops — its real failure path. Patched at the worker's
-    import rather than by pointing ``OPEN_METEO_API_BASE_URL`` at a closed
-    port, because the Open-Meteo tests assert the shipped host is a free
-    one. A test that wants a forecast patches the same name, and wins.
-    """
-
-    def refuse(*_args: object, **_kwargs: object) -> None:
-        raise requests.ConnectionError("no live Open-Meteo in tests")
-
-    monkeypatch.setattr(
-        "apps.trips.services.meeting_weather.fetch_weather_for_location", refuse
-    )

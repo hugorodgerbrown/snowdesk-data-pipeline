@@ -54,10 +54,13 @@ Context:
   bulletin_url    — that day's bulletin page, or "".
   problem_cards   — the bulletin's problem cards, possibly annotated.
   location        — the place's Location, or None.
-  weather_display — build_weather_display's result for the day's own row,
-                    or None (always None on a forward day).
+  forecast_source — the NearestForecast the weather is borrowed from: the
+                    curated point nearest the pin (Hugo, 2026-10-28 — a pin
+                    buys no fetch of its own), or None.
+  weather_display — build_weather_display's result for that point's row
+                    for the day, or None (always None on a forward day).
   forward_day     — on a forward day, today's forecast entry for it, or None.
-  forecast_url    — the location's forecast page, or "".
+  forecast_url    — that point's forecast page, or "".
   resort          — the Resort (a resort, or a saved resort), or None.
   resort_url      — the resort page, or "".
   favourite       — the Favourite (kind "favourite" only), with
@@ -200,15 +203,12 @@ Context:
             </p>
             {% if weather_display %}
                 <section class="space-y-2" data-testid="place-sheet-weather" data-sheet-half>
-                    {% if location.elevation_m is not None %}
-                        {% blocktrans with m=location.elevation_m|floatformat:0 d=target_date|date:"D j M" trimmed asvar weather_label %}
-                            Weather · {{ d }} · {{ m }} m
-                        {% endblocktrans %}
-                    {% else %}
-                        {% blocktrans with d=target_date|date:"D j M" trimmed asvar weather_label %}Weather ·
-                            {{ d }}{% endblocktrans %}
-                    {% endif %}
+                    {# The height is the forecast point's, so it is stated on the #}
+                    {# source line under the panel rather than beside the day.   #}
+                    {% blocktrans with d=target_date|date:"D j M" trimmed asvar weather_label %}Weather ·
+                        {{ d }}{% endblocktrans %}
                     {% include "includes/_weather_panel.html" with weather_display=weather_display testid_prefix="place-sheet-weather" location_label=weather_label only %}
+                    {% include "public/partials/_place_sheet_forecast_source.html" %}
                     {% include "public/partials/_place_sheet_forecast_link.html" %}
                 </section>
             {% elif forward_day %}
@@ -218,6 +218,7 @@ Context:
                         {{ d }}{% endblocktrans %}
                     {% include "includes/_eyebrow.html" with text=forward_label tag="h3" %}
                     {% include "includes/_weather_day_line.html" with day=forward_day testid_prefix="place-sheet-forward-day" only %}
+                    {% include "public/partials/_place_sheet_forecast_source.html" %}
                     {% include "public/partials/_place_sheet_forecast_link.html" %}
                 </section>
             {% elif forecast_url %}

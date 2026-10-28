@@ -74,7 +74,7 @@ def test_a_filled_variant_names_the_zoom_and_draws_its_ticks() -> None:
     for name in (
         "Region selector",
         "Ski-touring routes",
-        "Terrain overlay",
+        "Steep terrain",
         "Route slope angle",
     ):
         assert name in html

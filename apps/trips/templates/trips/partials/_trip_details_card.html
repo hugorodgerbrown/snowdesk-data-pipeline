@@ -41,8 +41,9 @@ Context:
                             when there is no address (``_meeting_place``).
     trip_danger           : TripDanger|None — the day's level on the route's
                             start (apps.trips.services.plan_days).
-    trip_weather          : ForecastPanelDay|None — the day's forecast at
-                            the meeting point (SNOW-1217).
+    trip_weather          : (ForecastPanelDay, TripWeather)|None — the
+                            day's forecast and the curated point it is
+                            borrowed from, nearest the meeting point.
 {% endcomment %}
 {% card padding="p-0" extra="overflow-hidden" %}
 <dl class="grid grid-cols-2 gap-x-4.5 gap-y-4 p-4.5" data-testid="trip-summary">
@@ -67,7 +68,7 @@ Context:
 {% if trip_weather or trip_danger %}
     <div class="flex flex-col gap-2.5 border-t border-border bg-card-subtle px-4.5 py-3">
         {% if trip_weather %}
-            {% include "trips/partials/_trip_weather.html" with day=trip_weather only %}
+            {% include "trips/partials/_trip_weather.html" with day=trip_weather.0 source=trip_weather.1 only %}
         {% endif %}
         {% if trip_danger %}
             {% include "trips/partials/_trip_danger.html" with trip=trip danger=trip_danger only %}

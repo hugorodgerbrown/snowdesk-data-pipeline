@@ -23,8 +23,9 @@ is one variable set, one request shape and one row per location per run.
 was measured on 2026-08-29: 240 real places produced 240 distinct cells,
 zero sharing, in a test rigged in its favour. It existed to keep a *table*
 small, and there is no longer a table for it to keep small. If
-``Location.objects.active()`` ever widens to every favourite the estate
-could reach thousands with genuine clustering — re-measure then.
+``Location.objects.active()`` ever widens to every favourite again (it is
+the curated estate only since 2026-10-28), the estate could reach
+thousands with genuine clustering — re-measure then.
 
 **Three behaviours carried across from the fetcher SNOW-762 stripped.**
 Each is a bug that was found the hard way and each has its own test:
@@ -550,7 +551,8 @@ def fetch_all_locations(
     Fetch weather for every active location.
 
     Walks ``Location.objects.active()`` — a location reachable from a
-    resort, a region centroid or a favourite. A per-location failure is
+    resort or a region centroid: the curated estate, and nothing a user
+    placed (2026-10-28). A per-location failure is
     caught, logged and counted; it never aborts the batch, so one region
     whose coordinates Open-Meteo dislikes cannot cost every other location
     its daily row.

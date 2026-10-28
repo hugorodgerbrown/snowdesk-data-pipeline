@@ -67,7 +67,7 @@
     'toggle-label': 'Zoom level %(zoom)s',
     'gate-region_select': 'Region selector',
     'gate-ski_routes': 'Ski-touring routes',
-    'gate-terrain_filter': 'Terrain overlay',
+    'gate-terrain_filter': 'Steep terrain',
     'gate-route_slopes': 'Route slope angle',
     'threshold-from': '≥%(zoom)s',
     'threshold-up-to': '≤%(zoom)s',

@@ -1,0 +1,26 @@
+{% comment %}
+templates/includes/_icon_danger.html — the avalanche-bulletin glyph: a warning triangle. The bulletin is the one surface whose job is hazard, which is why the field-observation glyph gave the triangle up (_icon_observation.html).
+
+Leads its row in the map's layers menu (public/partials/_map_embed.html),
+the same 24-grid 2px stroke as the rest of the house set
+(docs/decisions/ui-icons-are-house-stroke-partials.md).
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 18.
+  svg_class (string, optional) — classes on the <svg>.
+{% endcomment %}
+<svg
+    {% if svg_class %}class="{{ svg_class }}"{% endif %}
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <path d="M12 3 2 20h20z" />
+    <path d="M12 10v4M12 17h.01" />
+</svg>

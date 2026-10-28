@@ -1403,6 +1403,18 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Switch track (SNOW-1266) ----------------------------------------------------
+# The drawn half of a switch, for a control that is already a button: the
+# map layers menu's menuitemcheckbox rows. In the menu its state comes from
+# the button's aria-checked; here there is no button, so `demo_checked`
+# draws the on state.
+
+SWITCH_TRACK_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Off", "context": {}},
+    {"caption": "On", "context": {"demo_checked": True}},
+)
+
+
 # Segmented option -------------------------------------------------------------
 # SNOW-1073: one option of a segmented control. Each variant is a lone pill, so
 # each carries its own radio name — two variants sharing one would let only one
@@ -3167,7 +3179,7 @@ def _zoom_variant(
         ),
         _zoom_tick(
             "terrain_filter",
-            "Terrain overlay",
+            "Steep terrain",
             12,
             camera,
         ),
@@ -3882,6 +3894,52 @@ WEATHER_PROVENANCE_VARIANTS: tuple[dict[str, Any], ...] = (
             "testid_prefix": "component-library-provenance-linked",
             "link_url": "#",
             "link_text": "View hourly forecast →",
+        },
+    },
+)
+
+
+# Forecast source (2026-10-28) ---------------------------------------------
+# Plain dicts in the shape ``includes/_forecast_source.html`` reads from a
+# NearestForecast or a TripWeather.
+FORECAST_SOURCE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A saved pin borrows the nearest curated point",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Mont Fort",
+                "elevation_m": 3329,
+                "distance_km": 2.13,
+                "is_same_place": False,
+            },
+            "anchor": "pin",
+        },
+    },
+    {
+        "caption": "A trip, from its meeting point; no height known",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Val de Bagnes",
+                "elevation_m": None,
+                "distance_km": 23.4,
+                "is_same_place": False,
+            },
+            "anchor": "meeting",
+        },
+    },
+    {
+        "caption": "The place IS the point (a saved resort's own pin)",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Verbier",
+                "elevation_m": 1500,
+                "distance_km": 0.0,
+                "is_same_place": True,
+            },
+            "anchor": "pin",
         },
     },
 )
