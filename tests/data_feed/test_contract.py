@@ -92,3 +92,18 @@ def test_load_fields_parses_a_date_column() -> None:
     }
     with pytest.raises(ValueError, match="day"):
         contract.load_fields(_Stub, ("day",), {"day": "Thursday"})
+
+
+def test_the_weather_fields_are_the_services_columns() -> None:
+    """SNOW-1253: v1 and v2 weather items carry the same columns."""
+    from apps.ingest.public import WEATHER_COLUMNS
+
+    assert contract.WEATHER_FIELDS == WEATHER_COLUMNS
+
+
+def test_a_uuid_goes_on_the_wire_as_a_string() -> None:
+    """``source_uuid`` is sent, so a UUID must serialise."""
+    import uuid
+
+    value = uuid.uuid4()
+    assert contract.to_wire(value) == str(value)

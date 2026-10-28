@@ -110,6 +110,12 @@ current — and today's row is the one every surface reads.
 
 ## Consequences
 
+- **The row exists twice since SNOW-1253, under one rule.** The weather
+  service keeps its own account of each reference place's day
+  (`apps.ingest.models.SourceWeather`, written by `store_source_weather`),
+  and every instance applies it into `Weather` through `upsert_weather`.
+  Both refuse to rewrite a past day, so a pull can never change history
+  the service has fixed.
 - **`weather_weather`, not `bulletins_weather`.** A genuinely new table takes
   the natural name; none of the `bulletins_*` pinning SNOW-654 left behind
   carries forward, and SNOW-655 (the rename) is retired.

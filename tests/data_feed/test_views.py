@@ -24,6 +24,7 @@ from tests.factories import (
     OAuthAccessTokenFactory,
     OAuthApplicationFactory,
     ResortLocationFactory,
+    SourceWeatherFactory,
 )
 
 if TYPE_CHECKING:
@@ -188,6 +189,31 @@ class TestAnswer:
         """The feed is read-only."""
         response = client.post(URL, headers={"Authorization": f"Bearer {feed_token}"})
         assert response.status_code == 405
+
+    def test_the_v2_weather_feed_answers_a_token_bound_to_v2(
+        self, client: Client, service_client: Application
+    ) -> None:
+        """SNOW-1253: /api/data/v2/weather/ serves the service's rows as version 2."""
+        row = SourceWeatherFactory.create()
+        token = OAuthAccessTokenFactory.create(
+            user=None,
+            application=service_client,
+            scope="data",
+            resource=["http://testserver/api/data/v2/"],
+        ).raw_token
+        response = _get(client, token, "/api/data/v2/weather/")
+        assert response.status_code == 200
+        body = json.loads(response.content)
+        assert body["version"] == 2
+        assert [i["location"] for i in body["results"]] == [str(row.location.uuid)]
+
+    def test_a_v1_token_does_not_open_v2(self, client: Client, feed_token: str) -> None:
+        """A token is bound to its URL prefix, so v2 needs a v2 token."""
+        assert _get(client, feed_token, "/api/data/v2/weather/").status_code == 401
+
+    def test_only_weather_has_a_v2(self, client: Client, feed_token: str) -> None:
+        """The other feeds did not change shape, so v2 does not route them."""
+        assert _get(client, feed_token, "/api/data/v2/locations/").status_code == 404
 
     def test_unknown_feed_is_a_404(self, client: Client, feed_token: str) -> None:
         """Only the four feeds are routed."""

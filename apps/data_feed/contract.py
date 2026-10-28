@@ -22,6 +22,7 @@ seeded independently agree on all of those and on none of the integer ids.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 from typing import Any
 
 from django.db import models
@@ -82,6 +83,9 @@ LOCATION_FIELDS: tuple[str, ...] = (
     "elevation_m",
     "what3words",
     "what3words_fetched_at",
+    # SNOW-1253: the weather service's id for a reference place. Sent so a
+    # pulled location carries the key /api/data/v2/weather/ is matched on.
+    "source_uuid",
 )
 LOCATION_NOT_SENT = frozenset({"id", "uuid", "created_at", "updated_at"})
 
@@ -132,11 +136,14 @@ def to_wire(value: Any) -> Any:
         value: A model field's value.
 
     Returns:
-        The value, with ``date`` and ``datetime`` rendered as ISO strings.
+        The value, with ``date`` and ``datetime`` rendered as ISO strings
+        and a ``UUID`` as its canonical string.
 
     """
     if isinstance(value, dt.datetime | dt.date):
         return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
     return value
 
 

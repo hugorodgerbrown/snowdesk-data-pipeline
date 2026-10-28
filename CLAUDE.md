@@ -48,9 +48,14 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  Open-Meteo forecast + elevation, what3words), settings read
                  only via conf.py; runs.py walks a provider and yields
                  NormalisedBulletin / FetchOutcome — the app decides what to
-                 write (SNOW-1249). Its one table, SourceBulletin, holds what
-                 each provider published; the bulletins data feed reads it
-                 and every Bulletin is applied from it (SNOW-1250). Read
+                 write (SNOW-1249). SourceBulletin holds what each provider
+                 published; the bulletins data feed reads it and every
+                 Bulletin is applied from it (SNOW-1250). SourceLocation
+                 (the reference places, keyed by the uuid each instance
+                 holds as Location.source_uuid) and SourceWeather (their
+                 days) are the weather service: fetch_weather mirrors the
+                 curated estate in, fetches it and applies each row into
+                 Weather; /api/data/v2/weather/ serves it (SNOW-1253). Read
                  docs/decisions/ingestion-is-a-rehostable-unit.md before
                  importing from it
   bulletins/     Everything that originates from the three CAAML bulletin
@@ -63,8 +68,10 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  ``Weather``: what was known about one Location on one day,
                  one row per (location, observed_on), never rewritten once
                  that day is past. Plus ``services/upsert.py`` (the write
-                 rule), ``services/fetch.py`` (one walk over
-                 ``Location.objects.active()``) and the ``fetch_weather``
+                 rule), ``services/fetch.py`` (one coordinate's fetch, for
+                 a single location), ``services/reference.py`` (mirror the
+                 curated estate into ingest's station list and apply its
+                 SourceWeather rows, SNOW-1253) and the ``fetch_weather``
                  command, scheduled 4×/day. ``services/backfill.py``
                  (SNOW-731) fills *past* days from the historical forecast
                  API — never today — behind both the ``backfill_weather``

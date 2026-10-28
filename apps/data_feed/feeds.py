@@ -34,7 +34,7 @@ from typing import Any
 from django.db.models import Prefetch, QuerySet
 
 from apps.data_feed import contract
-from apps.ingest.public import BULLETINS_FEED, Feed
+from apps.ingest.public import BULLETINS_FEED, WEATHER_FEED_V2, Feed
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import MicroRegion, Pass, Resort
 from apps.weather.models import Weather
@@ -159,4 +159,11 @@ FEEDS: dict[str, Feed] = {
     "weather": Feed("weather", _weather, serialise_weather),
     "locations": Feed("locations", _locations, serialise_location),
     "resorts": Feed("resorts", _resorts, serialise_resort),
+}
+
+# SNOW-1253: /api/data/v2/. Only the feeds whose shape changed: ``weather``
+# is keyed by the weather service's place uuid rather than production's own
+# location ids. v1 stays served until staging's pull has moved (SNOW-1272).
+FEEDS_V2: dict[str, Feed] = {
+    "weather": WEATHER_FEED_V2,
 }
