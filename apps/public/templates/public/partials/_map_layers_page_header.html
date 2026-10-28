@@ -1,0 +1,27 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_layers_page_header.html — the first row of an options
+page in the map's layers menu (SNOW-1266): a back button and the page's
+title.
+
+The back button returns to the menu's first level and hands focus back to
+the row that opened this page (map_basemap_picker.js). It is a
+role="menuitem" so arrow-key focus in the menu reaches it, and it stops
+propagation like every other row so the outside-click dismiss never reads
+it as a tap off the menu.
+
+Parameters (passed via {% include … with … only %}):
+  title (string) — the layer's translated name, as level one shows it.
+{% endcomment %}
+<li role="none" class="basemap-menu-page-header">
+    <button
+        type="button"
+        role="menuitem"
+        class="basemap-menu-back hover-affordance"
+        data-layers-back
+        aria-label='{% trans "Back to map layers" %}'
+    >
+        {% include "includes/_icon_chevron_right.html" with size=18 svg_class="rotate-180" only %}
+    </button>
+    <p class="basemap-menu-page-title">{{ title }}</p>
+</li>

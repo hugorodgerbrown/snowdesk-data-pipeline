@@ -1,0 +1,53 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_layers_switch_row.html — one on/off row of the map's
+layers menu (SNOW-1266): a layer with nothing to choose but whether it is
+drawn.
+
+The whole row is the control — one menuitemcheckbox button carrying the
+layer's icon, its name and a switch drawn at the right edge
+(includes/_switch_track.html, which reads this button's aria-checked). It
+is a `.basemap-menu-item--overlay` exactly as the row it replaced was, so
+map.js seeds it from the persisted state, map_basemap_picker.js toggles it
+through the overlay's bridge or storage key, and map_layer_sync_status.js
+finds its sync dot. A row that HAS options is not this partial: it splits
+into an opener and a separate switch (_map_embed.html).
+
+Every row renders unchecked; map.js writes the real state before the menu
+can open.
+
+Parameters (passed via {% include … with … only %}):
+  key     (string) — the row's data-overlay-key.
+  label   (string) — the layer's translated name.
+  icon    (string) — the house icon to lead with: includes/_icon_<icon>.html.
+  sync    (bool, optional) — carry a sync-status dot. Off for downloaded
+          areas, whose list is local and so always available offline.
+  weather (bool, optional) — carry the weather row's second line, which
+          map_weather_window.js fills on a day outside the forecast window.
+{% endcomment %}
+<li role="none">
+    <button
+        type="button"
+        role="menuitemcheckbox"
+        class="basemap-menu-item basemap-menu-item--overlay basemap-menu-layer-row group hover-affordance"
+        data-overlay-key="{{ key }}"
+        data-layer-switch
+        aria-checked="false"
+    >
+        <span
+            class="basemap-menu-layer-icon"
+        >{% include "includes/_icon_"|add:icon|add:".html" with size=18 only %}</span>
+        <span class="basemap-menu-item-text">
+            <span data-row-label>{{ label }}</span>
+            {% if weather %}
+                <span class="basemap-menu-item-detail" data-weather-window-summary hidden></span>
+            {% endif %}
+        </span>
+        {% if sync %}
+            <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+        {% endif %}
+        {# The same 60px slot the master switches sit in, so the tracks line #}
+        {# up down the menu whichever kind of row each is.                     #}
+        <span class="basemap-menu-switch-slot">{% include "includes/_switch_track.html" only %}</span>
+    </button>
+</li>

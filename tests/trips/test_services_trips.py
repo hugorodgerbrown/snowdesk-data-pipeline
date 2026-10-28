@@ -477,26 +477,17 @@ class TestDeleteTripsForUser:
 
 
 _SLOPE_WORKER = "apps.trips.services.slope._worker_sample_trip_slopes"
-_WEATHER_WORKER = "apps.trips.services.meeting_weather._worker_fetch_meeting_weather"
 
 
 @pytest.mark.django_db
 class TestEnqueueFailuresAfterCommit:
     """SNOW-1228: a failed enqueue never fails a trip that has been saved."""
 
-    def test_create_trip_survives_both_enqueues_failing(self) -> None:
-        """The slope enqueue failing must not skip the weather one.
-
-        Both run after the commit, one after the other; the first raising
-        used to answer a 500 for a trip that existed and skip the second.
-        """
+    def test_create_trip_survives_the_slope_enqueue_failing(self) -> None:
+        """The trip is saved even when its slope sampling cannot be queued."""
         route = RouteFactory.create(slope_samples=None)
-        with (
-            patch(_SLOPE_WORKER) as slope_worker,
-            patch(_WEATHER_WORKER) as weather_worker,
-        ):
+        with patch(_SLOPE_WORKER) as slope_worker:
             slope_worker.enqueue.side_effect = RuntimeError("queue unavailable")
-            weather_worker.enqueue.side_effect = RuntimeError("queue unavailable")
             trip = create_trip(
                 route.user,
                 route_uuid=route.uuid,
@@ -505,27 +496,6 @@ class TestEnqueueFailuresAfterCommit:
             )
 
         slope_worker.enqueue.assert_called_once_with(trip.pk)
-        weather_worker.enqueue.assert_called_once_with(trip.pk, False)
         assert Trip.objects.filter(created_by=route.user).count() == 1
         trip.refresh_from_db()
         assert trip.slope_samples is None
-
-    def test_update_trip_survives_the_enqueue_failing(self) -> None:
-        """The edit is saved even when the forecast fetch cannot be queued."""
-        trip = TripFactory.create(
-            date=timezone.localdate() + datetime.timedelta(days=1)
-        )
-        with patch(_WEATHER_WORKER) as weather_worker:
-            weather_worker.enqueue.side_effect = RuntimeError("queue unavailable")
-            update_trip(
-                trip.created_by,
-                trip.uuid,
-                date=trip.date,
-                start_time=datetime.time(6, 0),
-                name="Still saved",
-            )
-
-        weather_worker.enqueue.assert_called_once()
-        trip.refresh_from_db()
-        assert trip.name == "Still saved"
-        assert trip.start_time == datetime.time(6, 0)

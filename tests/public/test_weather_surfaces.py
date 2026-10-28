@@ -43,6 +43,7 @@ from django.urls import reverse
 from django.utils import timezone
 from freezegun import freeze_time
 
+from apps.favourites.models import Favourite
 from apps.locations.models import Location
 from apps.public.views import _location_forecast_context
 from tests.factories import (
@@ -157,17 +158,32 @@ class TestBulletinMasthead:
         assert "light_snow.svg" not in content
 
 
+def _curated_near(favourite: Favourite) -> Location:
+    """A curated forecast point 1.1 km north of a pin.
+
+    A pin buys no fetch of its own (2026-10-28); the card borrows the
+    nearest curated point, so the weather a test wants goes here.
+    """
+    assert favourite.location is not None
+    point = LocationFactory.create(
+        latitude=favourite.location.latitude + 0.01,
+        longitude=favourite.location.longitude,
+    )
+    ResortLocationFactory.create(location=point)
+    return point
+
+
 @pytest.mark.django_db
 class TestFavouriteCard:
     """The favourite detail card's weather section."""
 
     @freeze_time(MIDDAY)
-    def test_the_pins_own_location_reaches_the_card(self) -> None:
-        """The card reads the pin's Location, not its region's centroid."""
+    def test_the_nearest_curated_point_reaches_the_card(self) -> None:
+        """The card borrows the curated point nearest the pin (2026-10-28)."""
         user = UserFactory.create()
         favourite = FavouriteFactory.create(user=user, name="The col")
         WeatherFactory.create(
-            location=favourite.location,
+            location=_curated_near(favourite),
             observed_on=datetime.date(2026, 8, 30),
             weather_code=0,
             sunrise=SUNRISE,
@@ -211,7 +227,7 @@ class TestFavouriteCard:
         user = UserFactory.create()
         favourite = FavouriteFactory.create(user=user, name="The col")
         WeatherFactory.create(
-            location=favourite.location,
+            location=_curated_near(favourite),
             observed_on=datetime.date(2026, 8, 30),
             sunrise=SUNRISE,
             sunset=SUNSET,
@@ -229,8 +245,8 @@ class TestFavouriteCard:
         assert 'data-testid="favourite-weather-panel"' in content
         assert 'data-testid="favourite-forecast-panel"' not in content
         assert 'data-testid="favourite-card-forecast-link"' in content
-        assert favourite.location is not None
-        assert favourite.location.get_absolute_url() in content
+        point = Location.objects.public().get()
+        assert point.get_absolute_url() in content
 
     @freeze_time(MIDDAY)
     def test_the_card_keeps_freezing_level_and_sun_times(self) -> None:
@@ -238,7 +254,7 @@ class TestFavouriteCard:
         user = UserFactory.create()
         favourite = FavouriteFactory.create(user=user, name="The col")
         WeatherFactory.create(
-            location=favourite.location,
+            location=_curated_near(favourite),
             observed_on=PAGE_DATE,
             sunrise=SUNRISE,
             sunset=SUNSET,

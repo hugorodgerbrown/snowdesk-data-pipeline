@@ -1403,6 +1403,18 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Switch track (SNOW-1266) ----------------------------------------------------
+# The drawn half of a switch, for a control that is already a button: the
+# map layers menu's menuitemcheckbox rows. In the menu its state comes from
+# the button's aria-checked; here there is no button, so `demo_checked`
+# draws the on state.
+
+SWITCH_TRACK_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Off", "context": {}},
+    {"caption": "On", "context": {"demo_checked": True}},
+)
+
+
 # Segmented option -------------------------------------------------------------
 # SNOW-1073: one option of a segmented control. Each variant is a lone pill, so
 # each carries its own radio name — two variants sharing one would let only one
@@ -3099,10 +3111,12 @@ SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
 # The roundel at the top of the map's bottom-left stack and the flyout it
 # opens. On /map/ static/js/map_zoom_control.js fills every value from the
 # map; here each variant sets them, across the map's range of z4 to z18.
-# The gates are the ones window.pwaZoomGates publishes: the region selector
-# at z10 and below, the terrain overlay from z12 and the route slope angle
-# from z14. All three are named on every variant, bold where the camera's
-# zoom makes them available — switched on or not.
+# The gates are the ones window.pwaZoomGates publishes on a page with every
+# layer: the ski-touring routes from z10, the region selector at z10 and
+# below, the terrain overlay from z12 and the route slope angle from z14.
+# All four are named on every variant, bold where the camera's zoom makes
+# them available — switched on or not. The two at z10 sit either side of
+# its line (``side``).
 
 _MAP_MIN_ZOOM = 4
 _MAP_MAX_ZOOM = 18
@@ -3120,9 +3134,11 @@ def _zoom_tick(
     camera: float,
     *,
     up_to: bool = False,
+    side: str | None = None,
 ) -> dict[str, Any]:
     """Return one tick, reached when ``camera`` is where the feature works."""
     return {
+        "side": side,
         "key": key,
         "label": label,
         "zoom": gate,
@@ -3147,15 +3163,23 @@ def _zoom_variant(
     """Return one zoom-control variant at a camera zoom."""
     ticks = [
         _zoom_tick(
+            "ski_routes",
+            "Ski-touring routes",
+            10,
+            camera,
+            side="above",
+        ),
+        _zoom_tick(
             "region_select",
             "Region selector",
             10,
             camera,
             up_to=True,
+            side="below",
         ),
         _zoom_tick(
             "terrain_filter",
-            "Terrain overlay",
+            "Steep terrain",
             12,
             camera,
         ),
@@ -3870,6 +3894,52 @@ WEATHER_PROVENANCE_VARIANTS: tuple[dict[str, Any], ...] = (
             "testid_prefix": "component-library-provenance-linked",
             "link_url": "#",
             "link_text": "View hourly forecast →",
+        },
+    },
+)
+
+
+# Forecast source (2026-10-28) ---------------------------------------------
+# Plain dicts in the shape ``includes/_forecast_source.html`` reads from a
+# NearestForecast or a TripWeather.
+FORECAST_SOURCE_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "caption": "A saved pin borrows the nearest curated point",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Mont Fort",
+                "elevation_m": 3329,
+                "distance_km": 2.13,
+                "is_same_place": False,
+            },
+            "anchor": "pin",
+        },
+    },
+    {
+        "caption": "A trip, from its meeting point; no height known",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Val de Bagnes",
+                "elevation_m": None,
+                "distance_km": 23.4,
+                "is_same_place": False,
+            },
+            "anchor": "meeting",
+        },
+    },
+    {
+        "caption": "The place IS the point (a saved resort's own pin)",
+        "solo": True,
+        "context": {
+            "source": {
+                "label": "Verbier",
+                "elevation_m": 1500,
+                "distance_km": 0.0,
+                "is_same_place": True,
+            },
+            "anchor": "pin",
         },
     },
 )

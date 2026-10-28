@@ -1,11 +1,18 @@
 ---
 name: a-plan-borrows-a-forecast-a-trip-has-its-own
 description: nearest_weather, meeting_point_weather, enqueue_meeting_weather, Location.active() upcoming trips; Plan tiles and trip page forecast
-status: current
-last-reviewed: 2026-10-24
+status: historical
+last-reviewed: 2026-10-28
 ---
 
 # A plan borrows a forecast; a trip has its own
+
+> **Superseded on 2026-10-28** by
+> [snowdesk-decides-where-a-forecast-is-fetched](snowdesk-decides-where-a-forecast-is-fetched.md).
+> A trip no longer has its own forecast: its meeting point is not fetched,
+> and the trip page borrows the nearest curated point, as the Plan page
+> does. The Plan page's 15 km cap is gone too. Points 3 and 4 below still
+> hold; points 1 and 2 are kept as the record of what SNOW-1217 built.
 
 ## Decision
 

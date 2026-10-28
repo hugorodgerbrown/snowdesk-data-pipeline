@@ -87,13 +87,18 @@ holding the best match leads, so "verb" opens on Verbier and "bagn" on the
 Bagnes regions — and draws them differently: a resort row has a round pin
 tile and "in <region>", and no code; a region row has a square danger tile
 with the displayed day's level and keeps the flag and code. An empty field
-lists the signed-in reader's favourited resorts as resort rows under
+lists the signed-in reader's dropped pins under "Pinned places" (SNOW-1264
+— a round tile with the blue star; a named pin by name, an unnamed one as
+"Unnamed pin"), then their favourited resorts as resort rows under
 "Pinned resorts", then the pinned regions as region rows under "Pinned
 regions", the selected region marked with a bar at its left edge. A pinned
 resort row opens that resort, as a typed resort match does. A pinned
 resort is not in the Favourites panel, which lists dropped pins, and is
 drawn on the map as a blue resort dot rather than a star
-([why](decisions/a-pinned-resort-is-found-in-search.md)).
+([why](decisions/a-pinned-resort-is-found-in-search.md)). Typing matches a
+dropped pin by its name, under "Pinned places", and never an unnamed one;
+picking a pin flies to it and opens its sheet, as the
+`/map/?favourite=<uuid>` link does.
 
 Tapping the selected region again deselects it, as does tapping empty
 map area outside any region; the ribbon greys out and the readout drops
@@ -670,39 +675,37 @@ verdict, Switzerland only, hatched means no data.
 
 ---
 
-## 3.6 What the layer menu lists (SNOW-904)
+## 3.6 What the layer menu lists (SNOW-904, SNOW-1266)
 
 The layer menu (the stacked-layers roundel) is the map's **one control for
-everything it draws**. It is titled "Map display options" and carries a live
-"N layers on" count of the overlay rows that are switched on — never the
-basemap radio, which is always exactly one.
+everything it draws**. It is titled "Map layers" and carries a live
+"N layers on" count of the level-one switches that are on. The basemap,
+which has no switch, is never counted.
 
-Four sections, each collapsible and each remembering how it was left, with
-**Conditions** the one open on a first visit:
+**On/off first, options one level down** (SNOW-1266,
+[why](decisions/the-layers-menu-is-on-off-then-options.md)). Level one has
+one row per layer, in two groups. A row's switch says whether the layer is
+drawn. A row with an arrow also opens its options, on a page of their own
+with a back arrow. Every open starts at level one. On a phone the menu is
+full width with its own ×; on a desktop it sits beside the roundels.
 
-| Section | Rows | What a row switches |
-|---------|------|---------------------|
-| **Places** | Resorts, Favourites, Routes | A thing on the ground: the resorts Snowdesk knows, the reader's own saved places, the reader's own uploaded tracks |
-| **Conditions** | SLF bulletins (CH), MétéoFrance (FR), ALBINA (AT, IT) · Weather, Field observations | One warning service's bulletins over every country it publishes for (SNOW-891); then, under a hairline, the two other things that describe the day |
-| **Boundaries** | Major regions (EAWS L1), Minor regions (EAWS L2), Micro regions (EAWS L4) | One tier of the EAWS region hierarchy, drawn for the countries the ACTIVE BASEMAP covers rather than for the enabled providers ([why](decisions/boundaries-follow-the-basemap.md)) |
-| **Basemap** | one radio per basemap · Terrain filter (absent without `TERRAIN_CLASS_TILE_URL`; a checkbox, with an adjust button that opens a sheet holding the filter and the slope layer, §3.5a–b), Display downloaded areas | The geographic backdrop; then, under a hairline, the things drawn ON TOP of whichever one is chosen |
+| Group | Row | Switch | Options |
+|-------|-----|--------|---------|
+| **Reference data** | Avalanche bulletins | Master: on while an opacity step above 0 is checked; remembers the step it was switched off at | SLF bulletins (CH), MétéoFrance (FR), ALBINA (AT, IT); Bulletin opacity (four steps); Highlight problem terrain |
+| | Steep terrain (absent without `TERRAIN_CLASS_TILE_URL`) | The terrain filter | The terrain filter's own sheet (§3.5a–b) |
+| | Weather | Yes | None |
+| | Resorts | Yes | None |
+| | Ski-touring routes (only with the `route_drawing` flag, signed in) | Yes, on by default; swisstopo raster, Switzerland only, drawn from z10 | None |
+| | Boundaries | Master: on while any tier is; remembers which | Major / Minor / Micro regions (EAWS L1, L2, L4), drawn for the countries the ACTIVE BASEMAP covers ([why](decisions/boundaries-follow-the-basemap.md)); Show unsupported regions |
+| | Basemap | None, because there is always one | One radio per basemap |
+| **Your data** | Favourites, Routes, Field observations, Downloaded areas | Yes, the same setting as each panel's "Show on the map" switch | None |
 
-Four things about that layout are decisions rather than accidents, and a
-tidy-up would undo each of them:
-
-* **Nothing is indented under anything.** A hairline separates a sub-group.
-  An indent reads as a child of the row above it, and with collapsible
-  sections it would also hide rows the collapsed heading does not govern.
-* **Only the first Conditions row says "bulletins".** The first row sets the
-  pattern and the reader carries it down.
-* **Only the Basemap overlay row carries "Display ".** There the verb
-  separates "additionally draw this" from the radio group's "choose this".
-* **The Boundaries tiers are checkboxes, not radios.** They are independent;
-  only the opening view names one, via `settings.MAP_DEFAULT_BOUNDARY`.
-
-Each heading also carries a derived second line naming what is on inside it
-— "None selected" when nothing is, the row names when they fit, "N of M on"
-when they would not — so a collapsed section still answers its own question.
+A row with options carries a derived second line naming what is on inside
+them. It reads "None selected" when nothing is on, the row names when they
+fit, and "N of M on" when they would not. Only the first provider row says
+"bulletins". The Boundaries tiers are checkboxes, not radios: they are
+independent, and only the opening view names one, via
+`settings.MAP_DEFAULT_BOUNDARY`.
 
 **Everything is in it, including the user's own data.** Downloads,
 favourites, field observations and routes were toggled from a "Display on
@@ -829,7 +832,7 @@ stack and the date row, where the legend card opens:
 - **A vertical scale**, + over −, across the map's whole zoom range,
   every whole level numbered on the line, with a marker at the camera.
 - **Each zoom-gated feature, named at its level** with its threshold:
-  **Route slope angle ≥14** (§3.4a), **Terrain overlay ≥12** (§3.5b, in
+  **Route slope angle ≥14** (§3.4a), **Steep terrain ≥12** (§3.5b, in
   either of its modes) and **Region selector ≤10** (§1). A feature is in
   strong text while the camera is at a zoom where it is available, and
   muted otherwise — whether or not it is switched on, because the scale

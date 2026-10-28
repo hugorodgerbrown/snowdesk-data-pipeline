@@ -1,30 +1,36 @@
 {% load i18n weather_icons %}
 {% comment %}
-trips/partials/_trip_weather.html — the forecast for the trip's day at the
-meeting point, in one line (SNOW-1217).
+trips/partials/_trip_weather.html — the forecast for the trip's day, in two
+lines (SNOW-1217).
 
-The day's icon, then "Light snow · 2° / −4° · 5 cm new snow at the meeting
-point" (_trip_weather_words.html). The meeting point's OWN forecast: a
-trip's meeting point is a Location that fetch_weather refreshes while the
-trip is ahead, and saving the trip fetches it once at once
-(apps/trips/services/meeting_weather.py). Once the day has passed this is
-the forecast as it stood that morning.
+The day's icon, then "Light snow · 2° / −4° · 5 cm new snow"
+(_trip_weather_words.html), and under it which curated point the forecast
+is borrowed from: "Forecast for Verbier (1,500 m), 0.8 km from the meeting
+point." (includes/_forecast_source.html). The meeting point buys no fetch
+of its own (Hugo, 2026-10-28); the trip borrows the nearest curated point,
+as the Plan page does. Once the day has passed this is that point's
+forecast as it stood that morning.
 
-RENDERED ONLY WHEN THERE IS A FORECAST — until the first fetch lands, and
-for a day still more than a week out, the caller leaves it out.
+RENDERED ONLY WHEN THERE IS A FORECAST — for a day still more than a week
+out, or before any curated point has today's row, the caller leaves it out.
 
 Context:
-    day : ForecastPanelDay — the trip's day.
+    day    : ForecastPanelDay — the trip's day.
+    source : TripWeather — the point it is borrowed from.
 {% endcomment %}
-<p class="flex items-center gap-2 text-sm text-text-1" data-testid="trip-weather">
+<div class="flex items-start gap-2 text-sm" data-testid="trip-weather">
     <img
         src="{% weather_icon_url day.icon_filename %}"
         class="{% weather_icon_class %} h-6 w-6 flex-none"
         alt=""
         aria-hidden="true"
     >
-    <span class="min-w-0">
-        <span class="font-semibold">{% include "trips/partials/_trip_weather_words.html" with day=day only %}</span>
-        <span class="text-text-2">{% trans "at the meeting point" %}</span>
-    </span>
-</p>
+    <div class="min-w-0">
+        <p class="font-semibold text-text-1">
+            {% include "trips/partials/_trip_weather_words.html" with day=day only %}
+        </p>
+        <p class="text-text-3" data-testid="trip-weather-source">
+            {% include "includes/_forecast_source.html" with source=source anchor="meeting" only %}
+        </p>
+    </div>
+</div>
