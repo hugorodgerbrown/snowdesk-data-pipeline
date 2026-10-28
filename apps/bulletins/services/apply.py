@@ -261,7 +261,73 @@ def _refresh_grouping(bulletin: Bulletin, run: PipelineRun) -> None:
         run.save(update_fields=["records_failed"])
 
 
-def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") -> bool:
+def _render_model(
+    raw: dict[str, Any],
+    served: dict[str, Any] | None,
+    run: PipelineRun,
+) -> tuple[dict[str, Any], int]:
+    """Return the render model to store: the service's, or one built here.
+
+    The service builds every bulletin's render model and serves it with the
+    CAAML (SNOW-1270). It is copied when it was built at this code's
+    ``RENDER_MODEL_VERSION``; otherwise — an older service, a failed build
+    there, a caller with no served model — it is built here, so an instance
+    running a newer builder is never held to the service's output.
+
+    Args:
+        raw: The CAAML properties.
+        served: The service's render model, if the caller has one.
+        run: The run whose ``records_failed`` a failed local build bumps.
+
+    Returns:
+        ``(render_model, version)``.
+
+    """
+    if served is not None and served.get("version") == RENDER_MODEL_VERSION:
+        return served, RENDER_MODEL_VERSION
+    try:
+        return build_render_model(raw), RENDER_MODEL_VERSION
+    except RenderModelBuildError as exc:
+        logger.exception(
+            "Failed to build render model for bulletin %s: %s",
+            raw.get("bulletinID"),
+            exc,
+        )
+        run.records_failed += 1
+        run.save(update_fields=["records_failed"])
+        return {
+            "version": 0,
+            "error": str(exc),
+            "error_type": exc.__class__.__name__,
+        }, 0
+
+
+def served_render_model_differs(item: dict[str, Any], existing: Bulletin) -> bool:
+    """Say whether a feed item carries a current render model ``existing`` lacks.
+
+    Args:
+        item: A ``bulletins`` feed item.
+        existing: The stored row, with ``render_model`` loaded.
+
+    Returns:
+        True when the item's model is at this code's version and differs
+        from the stored one — a service rebuild after a builder change.
+
+    """
+    served = item.get("render_model")
+    return (
+        isinstance(served, dict)
+        and served.get("version") == RENDER_MODEL_VERSION
+        and served != existing.render_model
+    )
+
+
+def upsert_bulletin(
+    raw: dict[str, Any],
+    run: PipelineRun,
+    pdf_url: str = "",
+    render_model: dict[str, Any] | None = None,
+) -> bool:
     """
     Create or update a single Bulletin from a raw API dict.
 
@@ -275,6 +341,8 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
         pdf_url: Optional URL of the source bulletin PDF. Defaults to ``""``
             (empty) when not supplied — callers compute this via the
             per-source ``_*_pdf_url`` helpers and pass it through.
+        render_model: The service's render model for this bulletin, copied
+            when it is at this code's version (``_render_model``).
 
     Returns:
         True if a new row was created, False if an existing row was updated.
@@ -290,24 +358,9 @@ def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") ->
     next_update_raw: str | None = raw.get("nextUpdate")
     raw_regions: list[dict[str, str]] = raw.get("regions", [])
 
-    # Build render model from the raw properties.
-    try:
-        computed_render_model = build_render_model(raw)
-        computed_render_model_version = RENDER_MODEL_VERSION
-    except RenderModelBuildError as exc:
-        logger.exception(
-            "Failed to build render model for bulletin %s: %s",
-            bulletin_id,
-            exc,
-        )
-        computed_render_model = {
-            "version": 0,
-            "error": str(exc),
-            "error_type": exc.__class__.__name__,
-        }
-        computed_render_model_version = 0
-        run.records_failed += 1
-        run.save(update_fields=["records_failed"])
+    computed_render_model, computed_render_model_version = _render_model(
+        raw, render_model, run
+    )
 
     valid_from = parse_dt(raw["validTime"]["startTime"])
 
@@ -442,14 +495,16 @@ def apply_feed_item(
     Unchanged when the stored CAAML and PDF link are identical, which is
     what makes a re-fetch or a re-pull of the same window a no-op:
     ``upsert_bulletin`` would otherwise rewrite the row and recompute its
-    derived tables.
+    derived tables — unless the item's render model is current and differs
+    from the stored one, which is the service having rebuilt it (SNOW-1270).
+    The item's render model is handed to ``upsert_bulletin`` to copy.
 
     Args:
         item: A feed item, its ``caaml`` a dict.
         run: The ``PipelineRun`` to attribute a write to; required when
             ``commit``.
         existing: The ``Bulletin`` already stored under the item's id (with
-            ``raw_data`` and ``pdf_url`` loaded), or None.
+            ``raw_data``, ``pdf_url`` and ``render_model`` loaded), or None.
         commit: Write; otherwise only decide.
         force: Write even when nothing has changed.
 
@@ -461,12 +516,22 @@ def apply_feed_item(
     pdf_url = item.get("pdf_url") or ""
     if existing is not None and not force:
         stored = (existing.raw_data or {}).get("properties")
-        if stored == caaml and existing.pdf_url == pdf_url:
+        if (
+            stored == caaml
+            and existing.pdf_url == pdf_url
+            and not served_render_model_differs(item, existing)
+        ):
             return OUTCOME_UNCHANGED
     if commit:
         if run is None:
             raise ValueError("apply_feed_item needs a PipelineRun to commit")
-        upsert_bulletin(caaml, run, pdf_url=pdf_url)
+        served = item.get("render_model")
+        upsert_bulletin(
+            caaml,
+            run,
+            pdf_url=pdf_url,
+            render_model=served if isinstance(served, dict) else None,
+        )
     return OUTCOME_CREATED if existing is None else OUTCOME_UPDATED
 
 
@@ -500,7 +565,7 @@ def apply_bulletin(
     row, _ = store_bulletin(record, force=force)
     existing = (
         Bulletin.objects.filter(bulletin_id=row.bulletin_id)
-        .only("pk", "bulletin_id", "raw_data", "pdf_url")
+        .only("pk", "bulletin_id", "raw_data", "pdf_url", "render_model")
         .first()
     )
     return apply_feed_item(
