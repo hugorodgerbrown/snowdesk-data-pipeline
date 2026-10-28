@@ -251,8 +251,11 @@ uv run python manage.py pull_reference_data --golden-week --commit   # estate + 
   resorts, each matched on `source_uuid`. A new place takes the service's
   uuid as its own `uuid` too, as the curating instance's rows do; a row a
   v1 pull made (same `uuid`, or same slug for a pass or resort with no
-  `source_uuid` yet) is adopted rather than duplicated; a slug already
-  keyed to another uuid is never re-keyed, and the item fails instead. A place's `centroid_of` claims those regions'
+  `source_uuid` yet) is adopted rather than duplicated. A row keyed to
+  another uuid is never re-keyed: an item whose slug it holds (a resort
+  removed and recreated under a new uuid) is retried after the
+  tombstones, once the old row has gone, and fails only if it still
+  collides. A place's `centroid_of` claims those regions'
   centres and releases any it no longer names.
 - **Tombstones are applied after every live item** — resorts, then passes,
   then places. A row is deleted, unless this instance's user data points

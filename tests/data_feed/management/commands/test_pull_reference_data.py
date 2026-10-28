@@ -20,6 +20,7 @@ and the exit code.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 from io import StringIO
 from typing import Any
 
@@ -240,6 +241,36 @@ def test_replay_into_an_empty_instance_restores_everything(
 
     _run("--commit")
     assert _written(_counts()) == 0
+
+
+@pytest.mark.django_db
+@override_settings(**FEED_SETTINGS)
+def test_a_resort_recreated_under_its_slug_replaces_the_old_one(
+    monkeypatch: pytest.MonkeyPatch,
+    service_client: Application,
+    estate: dict[str, Any],
+) -> None:
+    """Codex on #1268: the old row is buried, then the new uuid takes its slug.
+
+    The live replacement wants a slug the old row still holds, so it is
+    deferred until the old tombstone is applied, not adopted onto the old
+    row (which the tombstone would then delete) and not failed.
+    """
+    capture = _capture()
+    body = capture[("/api/data/v2/resorts/", None)]
+    (old,) = body["results"]
+    replacement = old | {"uuid": str(uuid.uuid4())}
+    body["results"] = [replacement, old | {"deleted_at": timezone.now().isoformat()}]
+    monkeypatch.setattr(
+        "apps.data_feed.client.requests.Session", lambda: _ReplaySession(capture)
+    )
+    _run("--commit")
+    counts = _counts()
+    assert counts["failed"] == 0
+    assert (counts["resorts_created"], counts["resorts_deleted"]) == (1, 1)
+    resort = Resort.objects.get(slug=estate["resort"].slug)
+    assert str(resort.source_uuid) == replacement["uuid"]
+    assert resort.resort_locations.get().is_primary
 
 
 @pytest.mark.django_db

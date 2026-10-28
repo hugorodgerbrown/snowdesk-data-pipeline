@@ -288,6 +288,7 @@ def apply_reference_pass(
                 ).first()
                 or Pass()
             )
+            _claim_slug(Pass, values["slug"], pass_)
             for name, value in values.items():
                 setattr(pass_, name, value)
             pass_.source_uuid = source
@@ -297,10 +298,37 @@ def apply_reference_pass(
     if all(getattr(pass_, k) == v for k, v in values.items()):
         return UNCHANGED
     if commit:
+        _claim_slug(Pass, values["slug"], pass_)
         for name, value in values.items():
             setattr(pass_, name, value)
         pass_.save()
     return UPDATED
+
+
+class SlugTaken(ApplyError):
+    """Another row, keyed to another uuid, holds the slug an item wants.
+
+    The service's ``slug`` is not unique across tombstones: a resort removed
+    and recreated keeps its slug under a new uuid, and the old row here
+    still holds it until the old tombstone is applied. The command defers
+    such an item and retries it after the tombstones.
+    """
+
+
+def _claim_slug(model: type[Pass] | type[Resort], slug: str, row: Any) -> None:
+    """Raise ``SlugTaken`` when a row other than ``row`` holds ``slug``.
+
+    Args:
+        model: ``Pass`` or ``Resort``.
+        slug: The slug the item wants.
+        row: The row being written; unsaved when it is new.
+
+    Raises:
+        SlugTaken: Another row holds the slug.
+
+    """
+    if model.objects.filter(slug=slug).exclude(pk=row.pk).exists():
+        raise SlugTaken(f"slug {slug!r} is held by another {model.__name__}")
 
 
 # ---------------------------------------------------------------------------
@@ -411,6 +439,7 @@ def apply_reference_resort(
                 ).first()
                 or Resort()
             )
+        _claim_slug(Resort, item["slug"], resort)
         for name, value in fields.items():
             setattr(resort, name, value)
         resort.slug = item["slug"]

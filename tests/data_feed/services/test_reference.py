@@ -14,7 +14,6 @@ import uuid
 from typing import Any
 
 import pytest
-from django.db import IntegrityError, transaction
 
 from apps.data_feed.services.apply import ApplyError
 from apps.data_feed.services.reference import (
@@ -25,6 +24,7 @@ from apps.data_feed.services.reference import (
     UNCHANGED,
     UPDATED,
     ReferenceIndex,
+    SlugTaken,
     apply_reference_location,
     apply_reference_pass,
     apply_reference_resort,
@@ -165,10 +165,11 @@ class TestPassesAndResorts:
             "slug": "verbier",
             "document": {"fields": {"name": "Verbier"}, "region": "CH-4115"},
         }
-        # A fresh row collides on the unique slug: a failed item, not a re-key.
-        with pytest.raises(IntegrityError), transaction.atomic():
+        # Not adopted, and not written: SlugTaken, which the command defers
+        # until the old row's tombstone has been applied.
+        with pytest.raises(SlugTaken):
             apply_reference_pass(pass_item, commit=True, index=index)
-        with pytest.raises(IntegrityError):
+        with pytest.raises(SlugTaken):
             apply_reference_resort(resort_item, commit=True, index=index)
         assert Pass.objects.get().source_uuid == other
         assert Resort.objects.get().source_uuid == other

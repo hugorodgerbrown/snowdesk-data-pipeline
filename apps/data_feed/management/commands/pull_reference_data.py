@@ -76,6 +76,7 @@ from apps.data_feed.services.reference import (
     UNCHANGED,
     UPDATED,
     ReferenceIndex,
+    SlugTaken,
     apply_reference_day_rating,
     apply_reference_location,
     apply_reference_pass,
@@ -93,6 +94,12 @@ REFERENCE_FEEDS: tuple[str, ...] = ("locations", "passes", "resorts")
 # Tombstones are applied after every live item, resorts first, so a resort
 # has let go of a place before the place is removed.
 TOMBSTONE_ORDER: tuple[str, ...] = ("resorts", "passes", "locations")
+# Each estate feed's live-item apply.
+REFERENCE_APPLY: dict[str, Callable[..., str]] = {
+    "locations": apply_reference_location,
+    "passes": apply_reference_pass,
+    "resorts": apply_reference_resort,
+}
 # The time series, pulled for a window of days.
 SERIES_FEEDS: tuple[str, ...] = ("bulletins", "day-ratings", "weather")
 
@@ -101,6 +108,8 @@ FAILED = "failed"
 KEPT = "kept"
 RECOMPUTED = "recomputed"
 SKIPPED = "skipped"
+# Not an outcome: an item set aside to retry after the tombstones.
+DEFERRED = "deferred"
 OUTCOMES: dict[str, tuple[str, ...]] = {
     "locations": (CREATED, UPDATED, UNCHANGED, DELETED, DETACHED, ABSENT, FAILED),
     "passes": (CREATED, UPDATED, UNCHANGED, DELETED, ABSENT, FAILED),
@@ -241,13 +250,32 @@ class Command(RegisteredCommand):
 
         """
         tombstones: dict[str, list[dict[str, Any]]] = {f: [] for f in REFERENCE_FEEDS}
+        deferred: dict[str, list[dict[str, Any]]] = {f: [] for f in REFERENCE_FEEDS}
         for feed in REFERENCE_FEEDS:
-            self._pull_reference(client, feed, tombstones[feed])
+            self._pull_reference(client, feed, tombstones[feed], deferred[feed])
         for feed in TOMBSTONE_ORDER:
             for item in tombstones[feed]:
                 self._record(feed, item, self._burier(feed))
+        # A pass or resort recreated under a new uuid wanted a slug its old
+        # row held; that row is gone (or detached, and so adoptable) now.
+        for feed in REFERENCE_FEEDS:
+            for item in deferred[feed]:
+                self._record(feed, item, self._applier(feed))
+            if deferred[feed] and self._verbosity >= 1:
+                self.stdout.write(
+                    f"{feed}: {len(deferred[feed])} retried after the tombstones"
+                )
         for feed in SERIES_FEEDS:
             self._pull_series(client, feed, day_from=day_from, day_to=day_to)
+
+    def _applier(self, feed: str) -> Callable[[dict[str, Any]], str]:
+        """Return the live-item apply for ``feed``, bound to this run."""
+
+        def apply(item: dict[str, Any]) -> str:
+            """Apply one live item of ``feed``."""
+            return REFERENCE_APPLY[feed](item, commit=self._commit, index=self._index)
+
+        return apply
 
     def _burier(self, feed: str) -> Callable[[dict[str, Any]], str]:
         """Return the tombstone apply for ``feed``, bound to this run."""
@@ -398,7 +426,8 @@ class Command(RegisteredCommand):
                 "%s: %s item failed: %s", COMMAND_NAME, feed, item_key(item)
             )
             outcome = FAILED
-        self._outcomes[feed][outcome] += 1
+        if outcome != DEFERRED:
+            self._outcomes[feed][outcome] += 1
         return outcome
 
     def _report(self, feed: str) -> None:
@@ -412,7 +441,11 @@ class Command(RegisteredCommand):
             )
 
     def _pull_reference(
-        self, client: FeedClient, feed: str, tombstones: list[dict[str, Any]]
+        self,
+        client: FeedClient,
+        feed: str,
+        tombstones: list[dict[str, Any]],
+        deferred: list[dict[str, Any]],
     ) -> None:
         """Apply every live item of one estate feed; set its tombstones aside.
 
@@ -420,13 +453,19 @@ class Command(RegisteredCommand):
             client: The feed client.
             feed: ``locations``, ``passes`` or ``resorts``.
             tombstones: Filled with the feed's tombstoned items.
+            deferred: Filled with items whose slug a tombstoned row holds.
 
         """
-        apply = {
-            "locations": apply_reference_location,
-            "passes": apply_reference_pass,
-            "resorts": apply_reference_resort,
-        }[feed]
+        apply_item = REFERENCE_APPLY[feed]
+
+        def apply(i: dict[str, Any], **kwargs: Any) -> str:
+            """Apply one item, deferring it when its slug is taken."""
+            try:
+                return apply_item(i, **kwargs)
+            except SlugTaken:
+                deferred.append(i)
+                return DEFERRED
+
         for _page, items in self._walk(client, feed):
             for item in items:
                 if item.get("deleted_at"):
