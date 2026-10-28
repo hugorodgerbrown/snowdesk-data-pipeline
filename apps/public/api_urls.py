@@ -54,6 +54,9 @@ urlpatterns = [
     # region-anchored /api/region-weather.geojson that SNOW-762 removed.
     # Filtered by Location.objects.public(), never active(): the latter also
     # reaches favourites, and a public feed built from it leaks private pins.
+    # SNOW-1276: swisstopo's ski-touring segments crossing one rectangle —
+    # the vector network a drawn route snaps to. Public reference data.
+    path("ski-network.geojson", api.ski_network_geojson, name="ski_network_geojson"),
     path("weather.geojson", api.weather_geojson, name="weather_geojson"),
     # SNOW-761: the sheet body behind a tap on a weather symbol. Keyed on
     # Location like the feed it is tapped from, and 404s for anything

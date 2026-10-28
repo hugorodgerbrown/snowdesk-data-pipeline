@@ -13,6 +13,7 @@ below (SNOW-1249):
   OPEN_METEO_API_BASE_URL, OPEN_METEO_HISTORY_BASE_URL, OPEN_METEO_API_KEY
   WEATHER_BACKFILL_FLOOR (the earliest day the backfill asks for)
   WHAT3WORDS_API_BASE_URL, WHAT3WORDS_API_KEY, WHAT3WORDS_FAKE
+  SWISSTOPO_STAC_URL (the ski-touring GeoPackage's STAC host)
   DEBUG (only to gate the what3words fake)
 
 Each accessor reads the setting at call time, not import time, so a test's

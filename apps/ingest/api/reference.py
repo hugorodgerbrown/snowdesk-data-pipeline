@@ -11,6 +11,9 @@ removal. All three serve tombstoned rows too.
   the regions it is the centre of) as stored.
 * ``passes`` and ``resorts`` — ``SourcePass`` and ``SourceResort``: the
   ``slug`` and the ``document`` as stored.
+* ``ski-network`` and ``ski-tours`` — ``SourceSkiSegment`` and
+  ``SourceSkiTour`` (SNOW-1276), in the same shape: swisstopo's segments
+  and SAC's tours, each document carrying its line as WGS84 GeoJSON.
 """
 
 from __future__ import annotations
@@ -20,7 +23,14 @@ from typing import Any
 from django.db.models import QuerySet
 
 from apps.ingest.api.paging import Feed
-from apps.ingest.models import SourceDocument, SourceLocation, SourcePass, SourceResort
+from apps.ingest.models import (
+    SourceDocument,
+    SourceLocation,
+    SourcePass,
+    SourceResort,
+    SourceSkiSegment,
+    SourceSkiTour,
+)
 
 # The version these feeds are served under — the /v2/ in their URLs.
 REFERENCE_FEED_VERSION = 2
@@ -97,6 +107,16 @@ def _resorts() -> QuerySet[SourceResort]:
     return SourceResort.objects.all()
 
 
+def _ski_segments() -> QuerySet[SourceSkiSegment]:
+    """Return every ski-touring segment, tombstones included."""
+    return SourceSkiSegment.objects.all()
+
+
+def _ski_tours() -> QuerySet[SourceSkiTour]:
+    """Return every SAC ski tour, tombstones included."""
+    return SourceSkiTour.objects.all()
+
+
 LOCATIONS_FEED = Feed(
     "locations",
     _locations,
@@ -112,6 +132,18 @@ PASSES_FEED = Feed(
 RESORTS_FEED = Feed(
     "resorts",
     _resorts,
+    serialise_source_document,
+    version=REFERENCE_FEED_VERSION,
+)
+SKI_NETWORK_FEED = Feed(
+    "ski-network",
+    _ski_segments,
+    serialise_source_document,
+    version=REFERENCE_FEED_VERSION,
+)
+SKI_TOURS_FEED = Feed(
+    "ski-tours",
+    _ski_tours,
     serialise_source_document,
     version=REFERENCE_FEED_VERSION,
 )

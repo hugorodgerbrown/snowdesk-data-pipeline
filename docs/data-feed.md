@@ -40,6 +40,8 @@ All ten are `GET`, take the same parameters and answer the same shape.
 | `/api/data/v2/locations/` | `uuid` (`SourceLocation`) | Every reference place, with `deleted_at`: name, exact coordinate and height under `fields`, the host's `document` (kind, short id, what3words, `centroid_of`) |
 | `/api/data/v2/passes/` | `uuid` (`SourcePass`) | Every season pass, with `slug`, `deleted_at` and the `document` `{name, website}` (SNOW-1271) |
 | `/api/data/v2/resorts/` | `uuid` (`SourceResort`) | Every resort, with `slug`, `deleted_at` and the `document`: `fields`, `region` code, pin, `passes` and `locations` roles, each named by a source uuid (SNOW-1271) |
+| `/api/data/v2/ski-network/` | `uuid` (`SourceSkiSegment`) | Every segment of swisstopo's ski-touring network, with `slug`, `deleted_at` and the `document`: `segment_id`, `discipline`, the undocumented `direction` / `access` / `route_info` codes as published, and the line as a WGS84 `MultiLineString` simplified to 5 m (SNOW-1276) |
+| `/api/data/v2/ski-tours/` | `uuid` (`SourceSkiTour`, swisstopo's `route_uuid`) | Every named SAC ski tour, in the same shape: SAC ids, `name` and `names` by language, `grade` and `difficulty`, `ascent_m` and time, `descent_m`, the summit, the SAC `urls` and the line (SNOW-1276) |
 | `/api/data/v2/day-ratings/` | `region_code` + `date` | Every `SourceDayRating`: the danger range the governing bulletin gives a region's day, naming that bulletin by `bulletin_id`, with the `version` of the rule it was computed under (SNOW-1270) |
 
 **v2 weather (SNOW-1253).** The item has the same shape and the same columns
@@ -58,6 +60,14 @@ wire is a production id. Every item carries `deleted_at`: a removal is
 served as a tombstone, so a client paging `since` learns of it (v1 cannot
 delete). A resort's document names its passes and places by their
 service uuids, so a client applies places, then passes, then resorts.
+
+**v2 ski-touring lines (SNOW-1276).** swisstopo's ski-touring map,
+imported weekly into the service by `import_ski_tours` and served as two
+document feeds like passes and resorts. About 20,000 segments and 2,900
+tours, some 7 MB of geometry, which changes about once a year, so a
+client pulls them incrementally (`since` the newest line it holds) rather
+than whole. A tombstone deletes the line: no user data points at one.
+Licence OGD, credit "© swisstopo".
 
 **v2 day ratings (SNOW-1270).** The service rates every (region, day) from
 its own bulletins whenever it stores one, by the rule an instance uses: the
@@ -263,6 +273,11 @@ uv run python manage.py pull_reference_data --golden-week --commit   # estate + 
   favourite, is **detached** instead — its `source_uuid` is cleared and its
   estate links (roles, pins, region centres) dropped, so it leaves
   `reference_data()` while the user's row keeps its target.
+- **The ski-touring lines are pulled incrementally:** `ski-network`, then
+  `ski-tours`, `since` the newest `source_updated_at` held, into
+  `SkiSegment` and `SkiTour`. An item whose `updated_at` matches the row's
+  is `unchanged` without its geometry being compared; a tombstone deletes
+  (`deleted`, or `absent` when never held).
 - **The time series are a window of days:** bulletins, then day ratings,
   then weather, with `from`/`to` sent to the feed. `--recent N` (default 14)
   is from N days ago with no upper bound, so forecasts come too;

@@ -1,7 +1,7 @@
 """
 apps/routes/models.py — Database models for the routes application.
 
-Defines two models:
+Defines four models:
 
 - ``Route``: a polyline an authenticated user imported from a GPX file or,
   since SNOW-1255, drew on the map (``source`` says which).
@@ -12,6 +12,14 @@ Defines two models:
   re-walk the geometry.
 - ``RouteShare`` (SNOW-764): a tokenised link that lets the owner hand one
   of their routes to another account, which claims a COPY of it.
+
+- ``SkiSegment`` and ``SkiTour`` (SNOW-1276): this instance's read-only
+  copy of swisstopo's ski-touring network and of SAC's named tours over
+  it — reference data, not user data. Each is keyed by the
+  reference-data service's uuid (``source_uuid``) and filled by
+  ``import_ski_tours`` (the service's own host) or ``pull_reference_data``
+  (every other instance), never edited here. Each row carries its line's
+  bounding box, so "what crosses this map view" is four comparisons.
 
 The uploaded ``.gpx`` is parsed and discarded — there is no ``FileField``
 here and no copy of the original on disk. See
@@ -26,7 +34,7 @@ sharing half in ``apps/routes/services/shares.py``.
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 from django.db import models
@@ -602,4 +610,163 @@ class RouteShare(BaseModel):
 
     def __str__(self) -> str:
         """Return a human-readable representation."""
+        return self.to_string()
+
+
+# ---------------------------------------------------------------------------
+# Ski-touring reference data (SNOW-1276)
+# ---------------------------------------------------------------------------
+
+
+class SkiLineQuerySet(models.QuerySet[Any]):
+    """Queryset shared by ``SkiSegment`` and ``SkiTour``."""
+
+    def intersecting(
+        self, west: float, south: float, east: float, north: float
+    ) -> SkiLineQuerySet:
+        """Return the lines whose bounding box overlaps the rectangle.
+
+        Edge-inclusive and over-inclusive: a line whose box overlaps but
+        whose path misses the rectangle is returned too, which a map view
+        draws harmlessly off-screen.
+
+        Args:
+            west: The rectangle's western longitude.
+            south: Its southern latitude.
+            east: Its eastern longitude.
+            north: Its northern latitude.
+
+        Returns:
+            The filtered queryset.
+
+        """
+        return self.filter(
+            west__lte=east, east__gte=west, south__lte=north, north__gte=south
+        )
+
+
+class SkiSegmentQuerySet(SkiLineQuerySet):
+    """Custom queryset for SkiSegment."""
+
+    def skiable(self) -> SkiSegmentQuerySet:
+        """Return the segments for skis, leaving out the snowshoe-only ones.
+
+        Returns:
+            The filtered queryset.
+
+        """
+        return self.filter(discipline=SkiSegment.SKI_TOUR)
+
+
+class _SkiLine(BaseModel):
+    """What a synced segment and a synced tour share.
+
+    ``source_updated_at`` is the service's ``updated_at`` for the item, so
+    an unchanged item is recognised without reading its geometry, and the
+    newest one held is where the next incremental pull starts.
+    """
+
+    source_uuid = models.UUIDField(
+        unique=True, help_text="The reference-data service's id for this line."
+    )
+    source_updated_at = models.DateTimeField(
+        help_text="When the service last changed the item this row copies."
+    )
+    geometry = models.JSONField(
+        help_text="The line as a WGS84 GeoJSON MultiLineString, simplified to ~5 m."
+    )
+    west = models.FloatField(help_text="Bounding box: western longitude.")
+    south = models.FloatField(help_text="Bounding box: southern latitude.")
+    east = models.FloatField(help_text="Bounding box: eastern longitude.")
+    north = models.FloatField(help_text="Bounding box: northern latitude.")
+
+    class Meta(BaseModel.Meta):
+        """Model metadata."""
+
+        abstract = True
+
+
+class SkiSegment(_SkiLine):
+    """One segment of swisstopo's ski-touring network.
+
+    Segments meet at shared ends, so together they are a graph that a
+    drawn route can snap to and be routed along (SNOW-1277).
+    ``direction`` and ``access`` are swisstopo's codes, kept as published:
+    what their values mean is not documented yet, and nothing reads them.
+    """
+
+    SKI_TOUR = "ski_tour"
+
+    segment_id = models.PositiveIntegerField(help_text="swisstopo's segm_id.")
+    discipline = models.CharField(
+        max_length=32, help_text="ski_tour or ski_snowshoe_tour, as published."
+    )
+    direction = models.SmallIntegerField(null=True, blank=True)
+    access = models.SmallIntegerField(null=True, blank=True)
+
+    objects = SkiSegmentQuerySet.as_manager()
+
+    class Meta(_SkiLine.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["west", "east", "south", "north"], name="routes_skiseg_bbox"
+            ),
+        ]
+
+    def to_string(self) -> str:
+        """Return ``segment <id> (<discipline>)``."""
+        return f"segment {self.segment_id} ({self.discipline})"
+
+    def __str__(self) -> str:
+        """Return ``to_string()``."""
+        return self.to_string()
+
+
+class SkiTour(_SkiLine):
+    """One of SAC's named ski tours, as swisstopo publishes it.
+
+    A template, not a route: nobody owns it, and saving one to an account
+    copies it into an ordinary ``Route`` (SNOW-1278). ``names``, ``grades``
+    and ``urls`` are keyed by language (de, fr, it, en).
+    """
+
+    sac_id = models.PositiveIntegerField(help_text="SAC's route id.")
+    name = models.CharField(max_length=255)
+    names = models.JSONField(default=dict, help_text="The name by language.")
+    grade = models.CharField(
+        max_length=8, blank=True, default="", help_text="SAC grade, e.g. PD+."
+    )
+    grades = models.JSONField(default=dict, help_text="The grade by language.")
+    difficulty = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="The grade as a rank, 1 (F) to 13 (TD)."
+    )
+    ascent_m = models.PositiveIntegerField(null=True, blank=True)
+    ascent_time_label = models.CharField(max_length=32, blank=True, default="")
+    descent_m = models.PositiveIntegerField(null=True, blank=True)
+    target_name = models.CharField(max_length=255, blank=True, default="")
+    target_altitude_m = models.PositiveIntegerField(null=True, blank=True)
+    urls = models.JSONField(default=dict, help_text="SAC's page by language.")
+    source = models.CharField(max_length=64, blank=True, default="")
+
+    objects = SkiLineQuerySet.as_manager()
+
+    class Meta(_SkiLine.Meta):
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["west", "east", "south", "north"], name="routes_skitour_bbox"
+            ),
+        ]
+
+    def to_string(self) -> str:
+        """Return ``<name> (<grade>)``, or the name alone when ungraded."""
+        return f"{self.name} ({self.grade})" if self.grade else self.name
+
+    def __str__(self) -> str:
+        """Return ``to_string()``."""
         return self.to_string()

@@ -55,7 +55,8 @@ def sync_source_documents(
     """Make the live rows of ``model`` equal ``records``.
 
     Args:
-        model: ``SourcePass`` or ``SourceResort``.
+        model: ``SourcePass``, ``SourceResort``, ``SourceSkiSegment`` or
+            ``SourceSkiTour``.
         records: Every record of that kind, as the host holds them now.
 
     Returns:
@@ -64,7 +65,17 @@ def sync_source_documents(
     """
     counts = {"created": 0, "updated": 0, "deleted": 0, "unchanged": 0}
     seen: set[uuid_module.UUID] = set()
-    existing = {row.uuid: row for row in model.objects.all()}
+    # Slim: a document is not read to decide, only its hash; the ski
+    # network runs to tens of thousands of lines (SNOW-1276). A deferred
+    # row saves only its loaded fields, so ``updated_at`` is loaded for
+    # auto_now to move it, and a rewrite assigns ``document``, which loads
+    # it for the save.
+    existing = {
+        row.uuid: row
+        for row in model.objects.only(
+            "id", "uuid", "slug", "content_hash", "deleted_at", "updated_at"
+        )
+    }
 
     with transaction.atomic():
         for record in records:

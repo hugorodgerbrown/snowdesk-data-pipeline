@@ -38,10 +38,17 @@ from apps.data_feed.management.commands.pull_reference_data import (
     describe_item,
     place_label,
 )
-from apps.ingest.public import NormalisedBulletin, SourceLocation, SourceWeather
+from apps.ingest.public import (
+    NormalisedBulletin,
+    SourceLocation,
+    SourceWeather,
+    serialise_source_document,
+)
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import MicroRegion, Pass, Resort
 from apps.regions.services.reference import mirror_reference_data
+from apps.routes.models import SkiSegment, SkiTour
+from apps.routes.services.ski_network import apply_from_service
 from apps.weather.models import Weather
 from apps.weather.services.reference import apply_source_weather
 from tests.data_feed.management.commands.test_pull_production_data import (
@@ -58,6 +65,9 @@ from tests.factories import (
     PipelineRunFactory,
     ResortFactory,
     ResortLocationFactory,
+    SkiSegmentFactory,
+    SourceSkiSegmentFactory,
+    SourceSkiTourFactory,
     SourceWeatherFactory,
 )
 
@@ -70,7 +80,16 @@ FEED_SETTINGS = {
     "DATA_FEED_V2_TOKEN": "",
     "SITE_BASE_URL": "https://staging.example",
 }
-FEEDS = ("locations", "passes", "resorts", "bulletins", "day-ratings", "weather")
+FEEDS = (
+    "locations",
+    "passes",
+    "resorts",
+    "ski-network",
+    "ski-tours",
+    "bulletins",
+    "day-ratings",
+    "weather",
+)
 
 
 @pytest.fixture
@@ -122,6 +141,11 @@ def estate(db: None) -> dict[str, Any]:
     assert link.location.source_uuid is not None
     place = SourceLocation.objects.get(uuid=link.location.source_uuid)
     apply_source_weather(SourceWeatherFactory.create(location=place))
+    # SNOW-1276: a segment and a tour, imported and applied as the
+    # service's host does.
+    SourceSkiSegmentFactory.create()
+    SourceSkiTourFactory.create()
+    apply_from_service(commit=True)
     return {"resort": resort, "link": link, "centroid": centroid}
 
 
@@ -189,6 +213,7 @@ def test_live_pull_against_itself_changes_nothing(
     assert counts["bulletins_unchanged"] == 1
     assert counts["day-ratings_unchanged"] == 1
     assert counts["weather_unchanged"] == 1
+    assert counts["ski-network_unchanged"] == counts["ski-tours_unchanged"] == 1
     assert counts["failed"] == 0
     assert _written(counts) == 0
     assert "verbier" in output  # the countdown names each resort
@@ -218,6 +243,8 @@ def test_replay_into_an_empty_instance_restores_everything(
     MicroRegion.objects.update(centroid_location=None)
     Location.objects.all().delete()
     Pass.objects.all().delete()
+    SkiSegment.objects.all().delete()
+    SkiTour.objects.all().delete()
     monkeypatch.setattr(
         "apps.data_feed.client.requests.Session", lambda: _ReplaySession(capture)
     )
@@ -229,7 +256,9 @@ def test_replay_into_an_empty_instance_restores_everything(
     assert counts["failed"] == 0
     assert counts["locations_created"] == 3
     assert counts["weather_created"] == 1
+    assert counts["ski-network_created"] == counts["ski-tours_created"] == 1
     assert not Location.objects.exists()
+    assert not SkiSegment.objects.exists()
 
     _run("--commit")
     counts = _counts()
@@ -247,6 +276,7 @@ def test_replay_into_an_empty_instance_restores_everything(
     assert RegionBulletin.objects.filter(bulletin__bulletin_id="b-1").count() == 1
     assert RegionDayRating.objects.filter(region__region_id="CH-4115").exists()
     assert Weather.objects.count() == 1
+    assert SkiSegment.objects.count() == SkiTour.objects.count() == 1
 
     _run("--commit")
     assert _written(_counts()) == 0
@@ -350,9 +380,25 @@ def test_the_window_reaches_the_series_and_not_the_estate(
     for feed in ("bulletins", "day-ratings", "weather"):
         assert session.seen[feed].get("from") == day_from
         assert session.seen[feed].get("to") == day_to
-    for feed in ("locations", "passes", "resorts"):
+    for feed in ("locations", "passes", "resorts", "ski-network", "ski-tours"):
         assert "from" not in session.seen[feed]
+        assert "since" not in session.seen[feed]
     assert "/api/data/v2/" in output
+
+
+@pytest.mark.django_db
+@override_settings(**FEED_SETTINGS)
+def test_the_ski_lines_are_pulled_since_the_newest_held(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SNOW-1276: incremental, from the newest line this instance holds."""
+    held = SkiSegmentFactory.create()
+    session = _Recording({})
+    session.seen = {}
+    monkeypatch.setattr("apps.data_feed.client.requests.Session", lambda: session)
+    _run()
+    assert session.seen["ski-network"]["since"] == held.source_updated_at.isoformat()
+    assert "since" not in session.seen["ski-tours"]
 
 
 @pytest.mark.django_db
@@ -424,6 +470,33 @@ def test_a_failed_item_fails_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
     counts = _counts()
     assert counts["passes_failed"] == counts["failed"] == 1
     assert counts["weather_unchanged"] == 0  # zeros are recorded too
+
+
+@pytest.mark.django_db
+@override_settings(**FEED_SETTINGS)
+def test_a_failed_ski_page_stops_the_feed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing of a failed page is written and the next page is not asked for.
+
+    The next pull starts from the newest line held, so a line written past
+    a failure would carry it beyond the failed one for good.
+    """
+    empty: dict[str, Any] = {"results": [], "next_cursor": None, "count": 0}
+    capture: dict[tuple[str, str | None], dict] = {
+        (f"/api/data/v2/{feed}/", None): empty for feed in FEEDS
+    }
+    good = serialise_source_document(SourceSkiSegmentFactory.create())
+    capture[("/api/data/v2/ski-network/", None)] = {
+        "results": [good, {**good, "uuid": "not-a-uuid"}],
+        "next_cursor": "page-2",  # not captured: asking for it would fail
+        "count": 3,
+    }
+    monkeypatch.setattr(
+        "apps.data_feed.client.requests.Session", lambda: _ReplaySession(capture)
+    )
+    with pytest.raises(CommandError, match="1 failed item"):
+        _run("--commit")
+    assert not SkiSegment.objects.exists()
+    assert _counts()["ski-network_failed"] == 1
 
 
 @pytest.mark.parametrize(

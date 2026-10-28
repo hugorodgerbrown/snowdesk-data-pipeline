@@ -230,7 +230,16 @@ class TestAnswer:
         assert undated.status_code == 400
 
     @pytest.mark.parametrize(
-        "name", ["locations", "passes", "resorts", "day-ratings", "bulletins"]
+        "name",
+        [
+            "locations",
+            "passes",
+            "resorts",
+            "day-ratings",
+            "bulletins",
+            "ski-network",
+            "ski-tours",
+        ],
     )
     def test_the_v2_reference_feeds_answer(
         self, client: Client, service_client: Application, name: str

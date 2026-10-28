@@ -69,10 +69,16 @@ The names are grouped by what they are for:
       ``SourcePass`` and ``SourceResort``, the curated records held as the
       JSON document a client applies, and ``sync_source_documents``, which
       makes either list equal what a host hands it (SNOW-1271).
+  The ski-touring map
+      ``SourceSkiSegment`` and ``SourceSkiTour``, swisstopo's network and
+      SAC's tours over it, and ``import_ski_archive``, which makes both
+      equal one GeoPackage zip, downloaded by ``download_ski_archive``
+      (SNOW-1276). ``SKI_NETWORK`` and ``SKI_TOURS`` name the two kinds.
   The data feed
       ``WEATHER_FEED_V2`` (``/api/data/v2/weather/``, keyed by the
       service's place uuid, SNOW-1253), the v2 ``LOCATIONS_FEED``,
-      ``PASSES_FEED`` and ``RESORTS_FEED`` (SNOW-1271) and
+      ``PASSES_FEED`` and ``RESORTS_FEED`` (SNOW-1271), the
+      ``SKI_NETWORK_FEED`` and ``SKI_TOURS_FEED`` (SNOW-1276) and
       ``BULLETINS_FEED``, with their serialisers, and the keyset paging every
       feed shares (``feed_page``, ``parse_feed_since``, ``parse_feed_limit``
       and the ``FEED_*`` constants). The host mounts them behind its own
@@ -107,6 +113,8 @@ from apps.ingest.api.reference import (
     LOCATIONS_FEED,
     PASSES_FEED,
     RESORTS_FEED,
+    SKI_NETWORK_FEED,
+    SKI_TOURS_FEED,
     serialise_source_document,
     serialise_source_location,
 )
@@ -136,6 +144,8 @@ from apps.ingest.models import (
     SourceLocation,
     SourcePass,
     SourceResort,
+    SourceSkiSegment,
+    SourceSkiTour,
     SourceWeather,
 )
 from apps.ingest.normalise.albina import albina_pdf_url
@@ -242,7 +252,14 @@ from apps.ingest.sources.open_meteo import (
     fetch_forecast,
     history_base_url,
 )
+from apps.ingest.ski import (
+    SKI_NETWORK,
+    SKI_TOURS,
+    SkiArchiveError,
+    import_ski_archive,
+)
 from apps.ingest.sources.slf import PAGE_SIZE as SLF_PAGE_SIZE
+from apps.ingest.sources.swisstopo import SwisstopoError, download_ski_archive
 from apps.ingest.sources.what3words import convert_to_3wa, fake_address
 from apps.ingest.store import (
     OUTCOME_UNCHANGED,
@@ -306,6 +323,10 @@ __all__ = [
     "REBUILT",
     "RENDER_MODEL_VERSION",
     "RESORTS_FEED",
+    "SKI_NETWORK",
+    "SKI_NETWORK_FEED",
+    "SKI_TOURS",
+    "SKI_TOURS_FEED",
     "SLF_DEFAULT_LANG",
     "SLF_PAGE_SIZE",
     "SLUG_TO_CODE",
@@ -335,7 +356,11 @@ __all__ = [
     "SourceLocation",
     "SourcePass",
     "SourceResort",
+    "SourceSkiSegment",
+    "SourceSkiTour",
     "SourceWeather",
+    "SkiArchiveError",
+    "SwisstopoError",
     "SweepResult",
     "TerrainRule",
     "albina_pdf_url",
@@ -359,6 +384,7 @@ __all__ = [
     "detect_caaml_shape",
     "detect_prose_spatial",
     "detect_source",
+    "download_ski_archive",
     "expected_days",
     "fake_address",
     "feed_page",
@@ -371,6 +397,7 @@ __all__ = [
     "forecast_fields",
     "format_comment_as_html",
     "history_base_url",
+    "import_ski_archive",
     "hourly_rows_for_day",
     "merge_ndjson_records",
     "merge_slf_archive",

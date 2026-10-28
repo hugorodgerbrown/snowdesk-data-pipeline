@@ -643,6 +643,13 @@ OPEN_METEO_HISTORY_BASE_URL = config(
     default="https://historical-forecast-api.open-meteo.com/v1",
 )
 
+# SNOW-1276: swisstopo's STAC API, where the ski-touring GeoPackage the
+# service imports weekly (import_ski_tours) is published. Public, no key.
+SWISSTOPO_STAC_URL = config(
+    "SWISSTOPO_STAC_URL",
+    default="https://data.geo.admin.ch/api/stac/v1",
+)
+
 # The earliest day ``backfill_weather`` and the LocationAdmin action will
 # ask the upstream for. The API reaches back to roughly 2021 (probed), but
 # one full season across the estate is already ~95,000 rows against the

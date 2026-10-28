@@ -12,6 +12,7 @@ call sites.
 
 import datetime
 import secrets
+import uuid
 from datetime import UTC
 from typing import Any
 
@@ -48,6 +49,8 @@ from apps.ingest.models import (
     SourceLocation,
     SourcePass,
     SourceResort,
+    SourceSkiSegment,
+    SourceSkiTour,
     SourceWeather,
     content_hash,
 )
@@ -62,7 +65,7 @@ from apps.regions.models import (
     SubRegion,
 )
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
-from apps.routes.models import Route, RouteShare
+from apps.routes.models import Route, RouteShare, SkiSegment, SkiTour
 from apps.routes.services.slope_segments import stride_coordinates
 from apps.trips.models import Trip, TripParticipant
 from apps.weather.models import Weather
@@ -361,6 +364,71 @@ class SourceResortFactory(factory.django.DjangoModelFactory[SourceResort]):
             "location": None,
             "passes": [],
             "locations": [],
+        }
+    )
+    content_hash = factory.LazyAttribute(lambda obj: content_hash(obj.document))
+
+
+def _ski_line(n: int) -> dict[str, Any]:
+    """A short line near the Silvrettahütte, offset by ``n`` (SNOW-1276)."""
+    lon, lat = 10.05 + n * 0.001, 46.85
+    return {
+        "type": "MultiLineString",
+        "coordinates": [[[lon, lat], [lon + 0.002, lat + 0.001]]],
+    }
+
+
+class SourceSkiSegmentFactory(factory.django.DjangoModelFactory[SourceSkiSegment]):
+    """Factory for ingest's SourceSkiSegment — one network segment (SNOW-1276)."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SourceSkiSegment
+
+    slug = factory.Sequence(lambda n: f"segment-{n}")
+    document = factory.Sequence(
+        lambda n: {
+            "segment_id": n,
+            "discipline": "ski_tour",
+            "direction": 0,
+            "access": 0,
+            "route_info": 1,
+            "geometry": _ski_line(n),
+        }
+    )
+    content_hash = factory.LazyAttribute(lambda obj: content_hash(obj.document))
+
+
+class SourceSkiTourFactory(factory.django.DjangoModelFactory[SourceSkiTour]):
+    """Factory for ingest's SourceSkiTour — one SAC tour (SNOW-1276)."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SourceSkiTour
+
+    slug = factory.Sequence(lambda n: f"piz-buin-{n}")
+    document = factory.Sequence(
+        lambda n: {
+            "sac_id": 1000 + n,
+            "sac_tour_id": None,
+            "route_number": "",
+            "source": "swisstopo_sac",
+            "source_text": "©swisstopo",
+            "name": f"Piz Buin {n}",
+            "names": {"de": f"Piz Buin {n}", "fr": "", "it": "", "en": ""},
+            "difficulty": 4,
+            "grade": "PD",
+            "grades": {"de": "WS", "fr": "PD", "it": "PD", "en": "PD"},
+            "ascent_m": 1100,
+            "ascent_time_min": 240,
+            "ascent_time_label": "04:00 h",
+            "descent_m": None,
+            "target_name": "Piz Buin",
+            "target_altitude_m": 3312,
+            "urls": {"en": "https://www.sac-cas.ch/en/"},
+            "geometry": _ski_line(n),
         }
     )
     content_hash = factory.LazyAttribute(lambda obj: content_hash(obj.document))
@@ -829,6 +897,55 @@ class RouteFactory(factory.django.DjangoModelFactory[Route]):
     # larger value; one for a pre-SNOW-988 row sets None.
     source_point_count = 3
     bounds = factory.LazyFunction(lambda: [7.4, 46.1, 7.42, 46.12])
+
+
+class SkiSegmentFactory(factory.django.DjangoModelFactory[SkiSegment]):
+    """Factory for SkiSegment — a synced network segment (SNOW-1276).
+
+    Its bounding box is the default line's; a test placing a segment
+    elsewhere passes ``geometry`` and the four edges together.
+    """
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SkiSegment
+
+    source_uuid = factory.LazyFunction(uuid.uuid4)
+    source_updated_at = factory.LazyFunction(django_timezone.now)
+    segment_id = factory.Sequence(lambda n: n)
+    discipline = SkiSegment.SKI_TOUR
+    direction = 0
+    access = 0
+    geometry = factory.LazyAttribute(lambda o: _ski_line(o.segment_id % 100))
+    west = factory.LazyAttribute(lambda o: o.geometry["coordinates"][0][0][0])
+    south = factory.LazyAttribute(lambda o: o.geometry["coordinates"][0][0][1])
+    east = factory.LazyAttribute(lambda o: o.geometry["coordinates"][0][-1][0])
+    north = factory.LazyAttribute(lambda o: o.geometry["coordinates"][0][-1][1])
+
+
+class SkiTourFactory(factory.django.DjangoModelFactory[SkiTour]):
+    """Factory for SkiTour — a synced SAC tour (SNOW-1276)."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SkiTour
+
+    source_uuid = factory.LazyFunction(uuid.uuid4)
+    source_updated_at = factory.LazyFunction(django_timezone.now)
+    sac_id = factory.Sequence(lambda n: 1000 + n)
+    name = factory.Sequence(lambda n: f"Piz Buin {n}")
+    grade = "PD"
+    difficulty = 4
+    ascent_m = 1100
+    target_name = "Piz Buin"
+    target_altitude_m = 3312
+    geometry = factory.LazyFunction(lambda: _ski_line(0))
+    west = 10.05
+    south = 46.85
+    east = 10.052
+    north = 46.851
 
 
 class RouteShareFactory(factory.django.DjangoModelFactory[RouteShare]):

@@ -321,6 +321,12 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
         required_in_production=True,
         note="Historical forecast host (SNOW-731 backfill)",
     ),
+    # --- swisstopo (SNOW-1276) --------------------------------------------
+    SettingSpec(
+        "SWISSTOPO_STAC_URL",
+        validator=absolute_url,
+        note="STAC API the ski-touring GeoPackage is read from",
+    ),
     # --- what3words (SNOW-840) --------------------------------------------
     # NOT required_in_production: the feature is gated on a waffle flag and
     # an empty key makes no request at all, so an environment with no

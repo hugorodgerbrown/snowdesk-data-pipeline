@@ -3,21 +3,28 @@ tests/routes/test_admin.py — Admin registration smoke test for routes.
 
 Verifies that Route and RouteShare are registered with Django admin and
 that both admin classes are read-mostly, mirroring FavouriteAdmin, plus
-SNOW-988's download action — the one action on either model, and a read.
+SNOW-988's download action — the one action on either model, and a read —
+and SNOW-1276's two read-only ski-touring admins.
 """
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from django.contrib import admin
 from django.contrib.messages.storage.cookie import CookieStorage
 from django.test import RequestFactory
+from django.urls import reverse
 
 from apps.routes.admin import RouteAdmin, RouteShareAdmin
-from apps.routes.models import Route, RouteShare
-from tests.factories import RouteFactory, UserFactory
+from apps.routes.models import Route, RouteShare, SkiSegment, SkiTour
+from tests.factories import (
+    RouteFactory,
+    SkiSegmentFactory,
+    SkiTourFactory,
+    UserFactory,
+)
 
 
 class TestRouteAdminRegistration:
@@ -182,3 +189,33 @@ class TestTerrainDetailLink:
         """Nothing to link to until the sampler has run."""
         route = RouteFactory.create()
         assert self._admin().terrain_detail_link(route) == "—"
+
+
+@pytest.mark.django_db
+class TestSkiLineAdmins:
+    """SNOW-1276: the synced ski-touring tables are read-only windows."""
+
+    @pytest.mark.parametrize("model", [SkiSegment, SkiTour])
+    def test_nothing_can_be_added_changed_or_deleted(self, model: type) -> None:
+        """A hand edit would be undone by the next sync."""
+        model_admin = admin.site._registry[model]
+        request = RequestFactory().get("/")
+        assert not model_admin.has_add_permission(request)
+        assert not model_admin.has_change_permission(request)
+        assert not model_admin.has_delete_permission(request)
+
+    def test_the_lists_leave_out_the_geometry(self) -> None:
+        """The line is the whole geometry, as ``points`` is for a route."""
+        for model in (SkiSegment, SkiTour):
+            assert "geometry" not in admin.site._registry[model].list_display
+
+    def test_the_lists_and_rows_render(self, admin_client: Any) -> None:
+        """Both changelists and a row of each answer."""
+        for name, row in (
+            ("skisegment", SkiSegmentFactory.create()),
+            ("skitour", SkiTourFactory.create()),
+        ):
+            changelist = reverse(f"admin:routes_{name}_changelist")
+            assert admin_client.get(changelist).status_code == 200
+            change = reverse(f"admin:routes_{name}_change", args=[row.pk])
+            assert admin_client.get(change).status_code == 200

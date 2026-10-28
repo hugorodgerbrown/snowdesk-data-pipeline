@@ -169,18 +169,19 @@ everyone as the same OS user, so without it the row cannot say who ran it.
 
 ## Operational requirements
 
-Ten scheduled jobs run on the worker: two keep the public site in sync
+Eleven scheduled jobs run on the worker: two keep the public site in sync
 with upstream data, one sweeps up the weather history they missed, one
-mirrors the curated estate into the reference-data service, three
+mirrors the curated estate into the reference-data service, one imports
+swisstopo's ski-touring map into it, three
 delete or close rows past their useful life, two fill a derived column, and
-one is a read-only detector. All ten
+one is a read-only detector. All eleven
 are driven by the `snowdesk-scheduler` Render Background Worker, which
 runs `python manage.py run_scheduler` and uses APScheduler (SNOW-238) to
 fire the jobs on their cron schedules via `django.core.management.call_command`.
 The schedule is declared in [`schedule.py`](../schedule.py) at the repo root
-and documented in [`render.yaml`](../render.yaml). The nine writing jobs run
-with `--commit` so they actually persist; the tenth runs `--check` and writes
-nothing. All ten exit non-zero on failure so a missed run is visible in the
+and documented in [`render.yaml`](../render.yaml). The ten writing jobs run
+with `--commit` so they actually persist; the eleventh runs `--check` and writes
+nothing. All eleven exit non-zero on failure so a missed run is visible in the
 worker logs.
 
 | Job | Command | Cadence | Purpose |
@@ -189,6 +190,7 @@ worker logs.
 | Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every curated location, through the weather service (SNOW-1253). Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
 | Weather history sweep | `backfill_weather --commit` | `20 * * * *` (hourly, at :20 UTC) | One budgeted sweep of the missing past `Weather` days, newest fortnight first (SNOW-1245). The budget is this hour's share of what `fetch_weather` leaves of Open-Meteo's free daily quota, so the two never throttle each other; each run resumes where the last stopped, and a run with nothing missing issues no request. Exits non-zero on a 429. |
 | Reference-data mirror | `mirror_reference_data --commit` | `40 * * * *` (hourly, at :40 UTC) | Copies the curated places, passes and resorts into the reference-data service's `SourceLocation`, `SourcePass` and `SourceResort`, which the v2 data feeds serve (SNOW-1271). Hourly so an edit in the resort sheet or the map-admin overlays reaches the feed within the hour; database-only, and a run with nothing changed writes nothing. |
+| Ski-touring import | `import_ski_tours --commit` | `30 2 * * 1` (weekly, Mondays 02:30 UTC) | Downloads swisstopo's ski-touring GeoPackage, makes the service's `SourceSkiSegment` and `SourceSkiTour` equal it and applies what changed to `SkiSegment` and `SkiTour` (SNOW-1276). Weekly because swisstopo releases the data about once a year; a run against an unchanged release writes nothing. |
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
 | OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes expired MCP OAuth tokens and authorization codes with django-oauth-toolkit's `clear_expired()` (SNOW-1193). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
 | Run-register prune | `prune_command_runs --commit` | `50 3 * * *` (daily, 03:50 UTC) | Marks `CommandRun` rows a killed process left `RUNNING` for over six hours as `INTERRUPTED`, and deletes `SCHEDULER` runs older than 90 days (SNOW-1189). Every other run is kept for good. |
@@ -725,6 +727,37 @@ uv run python manage.py mirror_reference_data           # preview
 uv run python manage.py mirror_reference_data --commit  # write
 ```
 
+### `import_ski_tours` — swisstopo's ski-touring map into the service
+
+SNOW-1276. swisstopo publishes its ski-touring map (STAC collection
+`ch.swisstopo-karto.skitouren`, OGD licence, "© swisstopo") as a zip of two
+GeoPackages in LV95. This command reads the STAC item for the zip's URL,
+downloads it (about 17 MB) and:
+
+1. makes the service's `SourceSkiSegment` rows equal `ski_network_2056`
+   (about 20,000 segments, keyed by a uuid5 of `segm_id`) and its
+   `SourceSkiTour` rows equal the named SAC tours in `ski_routes_2056`
+   (about 2,900, keyed by swisstopo's `route_uuid`; the layer's 7,800
+   lines with no route information are skipped). Lines are simplified to
+   5 m and held as WGS84 GeoJSON. Unchanged rows are not rewritten, and a
+   line swisstopo dropped is tombstoned;
+2. applies what changed to this instance's `SkiSegment` and `SkiTour`
+   (`apps/routes/services/ski_network.py`), the same apply
+   `pull_reference_data` runs elsewhere.
+
+Read-only by default: both steps run inside a transaction that is rolled
+back. Tallies `service_<kind>_<outcome>` for the sync and `<kind>_<outcome>`
+for the apply, kinds `ski-network` and `ski-tours`. Exempt from the row
+countdown: each step reconciles a whole layer. `--archive PATH` reads a
+local zip instead of downloading, for an instance with no outbound access.
+A first import takes about 20 seconds; an unchanged one about 9.
+
+```bash
+uv run python manage.py import_ski_tours                 # preview
+uv run python manage.py import_ski_tours --commit        # write
+uv run python manage.py import_ski_tours --archive skitouren_2056.gpkg.zip --commit
+```
+
 ### `backfill_weather` — sweep up the missing days, newest fortnight first
 
 The complement of `fetch_weather` (SNOW-731). Walks the same
@@ -1231,8 +1264,9 @@ The v2 client (SNOW-1272, [`data-feed.md`](data-feed.md#pull_reference_data-snow
 successor to `pull_production_data` below. Pulls places, passes and resorts
 whole from `/api/data/v2/`, matched on `source_uuid`, then applies their
 tombstones (a row a favourite, trip or field report points at is
-detached, not deleted), then a window of bulletins, day ratings and
-weather.
+detached, not deleted), then what changed in the ski-touring network and
+tours since the newest line held (SNOW-1276), then a window of bulletins,
+day ratings and weather.
 
 ```bash
 uv run python manage.py pull_reference_data                          # preview

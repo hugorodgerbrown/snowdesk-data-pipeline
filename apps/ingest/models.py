@@ -1,7 +1,7 @@
 """
 apps/ingest/models.py — What ingest keeps of what the providers published.
 
-Six models:
+Eight models:
 
 * ``SourceBulletin`` (SNOW-1250): one row per bulletin a provider
   published, holding its CAAML as normalised, the link to its PDF and a
@@ -24,6 +24,10 @@ Six models:
   by ``uuid``. Ingest stores them and never reads inside them, as it treats
   a bulletin's CAAML: what a resort is belongs to whoever curates it. Both
   share ``SourceDocument``.
+* ``SourceSkiSegment`` and ``SourceSkiTour`` (SNOW-1276): swisstopo's
+  ski-touring network, one segment per row, and SAC's named tours over
+  it, imported weekly from swisstopo's GeoPackage. Documents too, each
+  with its line as WGS84 GeoJSON, so they share ``SourceDocument``.
 * ``SourceDayRating`` (SNOW-1270): the danger range one region's governing
   bulletin gives one day, read from the service's own bulletins and
   served at ``/api/data/v2/day-ratings/``. Keyed by region code and date:
@@ -399,6 +403,42 @@ class SourceResort(SourceDocument):
         indexes = [
             models.Index(fields=["updated_at", "id"], name="ingest_srcr_keyset"),
             models.Index(fields=["slug"], name="ingest_srcr_slug"),
+        ]
+
+
+class SourceSkiSegment(SourceDocument):
+    """One segment of swisstopo's ski-touring network (SNOW-1276).
+
+    The document is ``segment_document()``'s: swisstopo's segment id, its
+    discipline (``ski_tour`` or ``ski_snowshoe_tour``), the undocumented
+    ``direction``, ``access`` and ``route_info`` codes as published, and the
+    line as a WGS84 ``MultiLineString``. Segments meet at shared ends.
+    """
+
+    class Meta(SourceDocument.Meta):
+        """Model metadata."""
+
+        indexes = [
+            models.Index(fields=["updated_at", "id"], name="ingest_srcss_keyset"),
+            models.Index(fields=["slug"], name="ingest_srcss_slug"),
+        ]
+
+
+class SourceSkiTour(SourceDocument):
+    """One of SAC's named ski tours, as swisstopo publishes it (SNOW-1276).
+
+    The document is ``tour_document()``'s: the SAC ids, the name in four
+    languages, the grade, the height gain and time, the summit and the SAC
+    links, and the line as a WGS84 ``MultiLineString``. The ``uuid`` is
+    swisstopo's own ``route_uuid``.
+    """
+
+    class Meta(SourceDocument.Meta):
+        """Model metadata."""
+
+        indexes = [
+            models.Index(fields=["updated_at", "id"], name="ingest_srcst_keyset"),
+            models.Index(fields=["slug"], name="ingest_srcst_slug"),
         ]
 
 

@@ -15,6 +15,11 @@ SNOW-988 adds the one action on either model: downloading a route back out
 as a ``.gpx``. It is a READ, which is why it sits on an otherwise
 read-mostly admin without contradicting it — nothing about the row changes.
 
+SNOW-1276 adds ``SkiSegmentAdmin`` and ``SkiTourAdmin``: fully read-only
+windows on the synced ski-touring reference data, which is swisstopo's to
+correct and the reference-data service's to serve. ``geometry`` is left
+out of the changelist for the same reason ``points`` is.
+
 SNOW-1020 adds a link from a route to its per-segment terrain table on the
 staff debug page, for the same reason: it reads the row and changes nothing.
 """
@@ -27,7 +32,7 @@ from django.http import HttpRequest, HttpResponse
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .models import Route, RouteShare
+from .models import Route, RouteShare, SkiSegment, SkiTour
 from .services.gpx_export import build_gpx, gpx_filename
 
 logger = logging.getLogger(__name__)
@@ -212,3 +217,43 @@ class RouteShareAdmin(admin.ModelAdmin):
         "updated_at",
     ]
     date_hierarchy = "created_at"
+
+
+class _ReadOnlySkiLineAdmin(admin.ModelAdmin):
+    """Read-only admin shared by the synced ski-touring tables (SNOW-1276)."""
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Refuse: rows arrive from the reference-data service only."""
+        return False
+
+    def has_change_permission(
+        self, request: HttpRequest, obj: object | None = None
+    ) -> bool:
+        """Refuse: a hand edit would be undone by the next sync."""
+        return False
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: object | None = None
+    ) -> bool:
+        """Refuse: a deleted row is recreated by the next full sync."""
+        return False
+
+
+@admin.register(SkiSegment)
+class SkiSegmentAdmin(_ReadOnlySkiLineAdmin):
+    """Read-only admin for swisstopo's ski-touring segments."""
+
+    list_display = ["segment_id", "discipline", "direction", "access", "updated_at"]
+    list_filter = ["discipline", "direction", "access"]
+    search_fields = ["segment_id", "source_uuid"]
+    ordering = ["segment_id"]
+
+
+@admin.register(SkiTour)
+class SkiTourAdmin(_ReadOnlySkiLineAdmin):
+    """Read-only admin for SAC's ski tours."""
+
+    list_display = ["name", "grade", "ascent_m", "target_name", "updated_at"]
+    list_filter = ["grade", "source"]
+    search_fields = ["name", "target_name", "sac_id", "source_uuid"]
+    ordering = ["name"]

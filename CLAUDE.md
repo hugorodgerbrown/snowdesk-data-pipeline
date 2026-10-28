@@ -67,7 +67,11 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  SourcePass and SourceResort hold the passes and resorts
                  as documents; mirror_reference_data copies production's
                  estate in hourly and /api/data/v2/{locations,passes,
-                 resorts}/ serve it (SNOW-1271). Read
+                 resorts}/ serve it (SNOW-1271). SourceSkiSegment and
+                 SourceSkiTour are swisstopo's ski-touring network and
+                 SAC's tours, imported weekly by import_ski_tours and
+                 served at /api/data/v2/ski-{network,tours}/ (SNOW-1276).
+                 Read
                  docs/decisions/ingestion-is-a-rehostable-unit.md before
                  importing from it
   bulletins/     Everything that originates from the three CAAML bulletin
@@ -129,7 +133,11 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  (FK to auth.User), surfaced in the map's routes panel, plus
                  ``RouteShare``, the tokenised link whose claim COPIES a
                  route to another account (SNOW-764), and the terrain
-                 services under services/ (slope, legs, fall line, bank)
+                 services under services/ (slope, legs, fall line, bank).
+                 Also SkiSegment and SkiTour, the synced reference copy of
+                 swisstopo's ski-touring network and SAC's tours
+                 (SNOW-1276), served to draw mode by
+                 /api/ski-network.geojson?bbox=
   trips/         Shareable trips (SNOW-819) — ``Trip`` (a route the organiser
                  owns, on a named day, at a stated time and meeting point)
                  and ``TripParticipant`` (every account that has SAVED it,
