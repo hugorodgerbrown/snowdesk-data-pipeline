@@ -62,6 +62,9 @@
    * @property {boolean} upTo Whether the gate holds up to its zoom.
    * @property {boolean} reached Whether the feature is available at the
    *   camera's zoom.
+   * @property {?('above'|'below')} side Set only when two gates share a
+   *   zoom: their rows would sit on the same line, so the first is drawn
+   *   just above it and the second just below. Null otherwise.
    */
 
   /**
@@ -131,11 +134,17 @@
    * @param {number} zoom The camera's zoom.
    * @param {number} minZoom The map's minimum zoom.
    * @param {number} maxZoom The map's maximum zoom.
-   * @returns {Array<Tick>} Sorted by zoom, then key.
+   * At a shared zoom an `upTo` gate sorts after a `from` one, and is the
+   * one drawn below the line: it holds from there DOWN the scale, and the
+   * other from there up (the region selector's ≤10 and the ski-touring
+   * routes' ≥10).
+   *
+   * @returns {Array<Tick>} Sorted by zoom, then from-before-upTo, then key.
    */
   function ticks(gates, zoom, minZoom, maxZoom) {
     if (!Array.isArray(gates)) return [];
-    return gates
+    /** @type {Array<Tick>} */
+    const out = gates
       .filter((gate) => gate && Number.isFinite(gate.zoom)
         && gate.zoom >= minZoom && gate.zoom <= maxZoom)
       .map((gate) => ({
@@ -148,8 +157,17 @@
         reached: gate.upTo
           ? Math.floor(zoom + EPSILON) <= gate.zoom
           : zoom + EPSILON >= gate.zoom,
+        side: /** @type {?('above'|'below')} */ (null),
       }))
-      .sort((a, b) => a.zoom - b.zoom || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+      .sort((a, b) => a.zoom - b.zoom
+        || Number(a.upTo) - Number(b.upTo)
+        || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    for (let i = 1; i < out.length; i += 1) {
+      if (out[i].zoom !== out[i - 1].zoom) continue;
+      out[i - 1].side = out[i - 1].side || 'above';
+      out[i].side = 'below';
+    }
+    return out;
   }
 
   /**

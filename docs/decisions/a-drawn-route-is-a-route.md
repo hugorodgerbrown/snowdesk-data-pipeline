@@ -62,6 +62,16 @@ anyone.
   routes is deliberately not done. The routes are shown as a guide under
   the line (`ch.swisstopo-karto.skitouren`, open government data,
   attribution required), and the drawer decides where to go.
+- **The guide is the map's own layer** (28 Oct 2026). Hugo saw it on a
+  phone, judged it uncrowded and useful, and asked for it on the map
+  generally: the layers menu's "Ski-touring routes" row
+  (`data-overlay-key="ski_routes"`, `installSkiRoutesLayer` in map.js),
+  ON by default, from z10 (`SKI_ROUTES_MINZOOM`), named in the zoom
+  control. Draw mode no longer adds a copy; it holds the map's layer on
+  (`window.pwaSkiRoutes.hold`) whatever the switch says and hands it back
+  on exit. It is a raster, so it cannot be filtered: choosing the SAC
+  catalogue's routes over the rest needs the vector dataset (SNOW-1261).
+  It rides on the `route_drawing` flag until the feature goes live.
 
 ## Consequences
 

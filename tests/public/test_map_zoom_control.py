@@ -59,7 +59,7 @@ def test_empty_render_is_a_closed_roundel_named_zoom_level() -> None:
 def test_strings_template_carries_one_label_per_gate() -> None:
     """Each key window.pwaZoomGates publishes has a translatable label."""
     html = render_to_string(PARTIAL, {})
-    for key in ("region_select", "terrain_filter", "route_slopes"):
+    for key in ("region_select", "ski_routes", "terrain_filter", "route_slopes"):
         assert f'data-string="gate-{key}"' in html
     assert 'data-string="toggle-label"' in html
 
@@ -71,7 +71,12 @@ def test_a_filled_variant_names_the_zoom_and_draws_its_ticks() -> None:
     assert 'aria-label="Zoom level 12"' in html
     assert 'aria-expanded="true"' in html
     assert "Some features are only available at certain zoom levels." in html
-    for name in ("Region selector", "Terrain overlay", "Route slope angle"):
+    for name in (
+        "Region selector",
+        "Ski-touring routes",
+        "Terrain overlay",
+        "Route slope angle",
+    ):
         assert name in html
     assert html.count('class="map-zoom-level"') == 15
     terrain = html[html.index('data-zoom-tick="terrain_filter"') :]
@@ -121,3 +126,14 @@ def test_the_library_panel_renders(staff_client: Client) -> None:
         MAP_ZOOM_CONTROL_VARIANTS
     )
     assert "Camera zoom 12.47" in body
+
+
+def test_two_gates_on_one_level_sit_either_side_of_its_line() -> None:
+    """The ski-touring routes' ≥10 above z10's line, the region selector's ≤10 below."""
+    html = render_to_string(PARTIAL, _variant("At z12")["context"])
+    ski = html[html.index('data-zoom-tick="ski_routes"') :]
+    assert 'data-zoom-side="above"' in ski[: ski.index(">")]
+    region = html[html.index('data-zoom-tick="region_select"') :]
+    assert 'data-zoom-side="below"' in region[: region.index(">")]
+    terrain = html[html.index('data-zoom-tick="terrain_filter"') :]
+    assert "data-zoom-side" not in terrain[: terrain.index(">")]

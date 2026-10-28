@@ -126,6 +126,10 @@ Optional context:
     {# would be an invitation to install the layer anyway.                    #}
     {% if terrain_filter_eligible %}data-terrain-class-tile-url="{{ terrain_class_tile_url }}"{% endif %}
     data-terrain-filter-eligible="{{ terrain_filter_eligible|yesno:'true,false' }}"
+    {# swisstopo's ski-touring routes layer: behind the route_drawing flag  #}
+    {# with draw mode, whose guide it is                                     #}
+    {# (docs/decisions/a-drawn-route-is-a-route.md).                         #}
+    data-ski-routes-eligible="{{ route_drawing_enabled|yesno:'true,false' }}"
     {# HACK MODE (feature discovery): may this request spoof its position   #}
     {# with ?loc=? Superusers and local development only — see              #}
     {# apps.public.views._fake_location_allowed for why the field report is #}
@@ -626,6 +630,25 @@ Optional context:
                                 {% trans "Resorts" %}
                             </button>
                         </li>
+                        {# swisstopo's ski-touring routes, drawn from z10 inside #}
+                        {# Switzerland. ON by default, so rendered checked;      #}
+                        {# map.js re-seeds aria-checked from localStorage. No    #}
+                        {# sync dot, as the downloads row and SNOW-1073's slope  #}
+                        {# row before it: the tiles come from swisstopo and are  #}
+                        {# never cached for offline, so a dot would say nothing. #}
+                        {% if route_drawing_enabled %}
+                            <li role="none">
+                                <button
+                                    type="button"
+                                    role="menuitemcheckbox"
+                                    class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                                    data-overlay-key="ski_routes"
+                                    aria-checked="true"
+                                >
+                                    {% trans "Ski-touring routes" %}
+                                </button>
+                            </li>
+                        {% endif %}
                         <li role="none">
                             <button
                                 type="button"

@@ -98,6 +98,12 @@ const OVERLAY_STORAGE_KEY = {
   // condition symbol at every station is a second layer of information over
   // the danger ratings someone opened the map to read.
   weather: 'snowdesk.map.overlay.weather',
+  // swisstopo's ski-touring routes (ch.swisstopo-karto.skitouren). Defaults
+  // ON, unlike every other opt-in overlay here: it is a thin raster of
+  // lines, Hugo judged it uncrowded on a phone (28 Oct 2026), and it is
+  // exactly what a reader planning a tour wants under the map. Eligible
+  // only behind the route_drawing flag for now (data-ski-routes-eligible).
+  ski_routes: 'snowdesk.map.overlay.ski_routes',
   // The layers menu's "Display downloaded areas" row (SNOW-904; the
   // downloads panel's own switch before that). PERSISTED — this reverses
   // SNOW-645's "session-scoped inspection mode", which is what Hugo
@@ -225,6 +231,8 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-761: one symbol layer, not a pin+label pair — the condition glyph
   // is an inline `image` section inside `text-field`.
   weather: ['weather-point'],
+  // One raster layer, installed by map.js's installSkiRoutesLayer.
+  ski_routes: ['ski-routes'],
   // SNOW-687: the coloured line FIRST and the casing second — deliberately
   // the inverse of the order installRoutesLayer adds them in, where the
   // casing has to be added first to paint underneath. (SNOW-764's

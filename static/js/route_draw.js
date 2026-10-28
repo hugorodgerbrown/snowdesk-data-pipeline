@@ -15,7 +15,9 @@
  *   2. Every app overlay steps aside (window.PlacementFocus, which hides
  *      every GeoJSON layer that exists AT THAT MOMENT — so the draft's own
  *      layers are added after it, and stay). swisstopo's ski-touring routes
- *      are added as a raster guide under the draft.
+ *      — the map's own layer, a raster PlacementFocus leaves alone — are
+ *      held on as a guide under the draft (window.pwaSkiRoutes.hold),
+ *      whatever the layers menu says, and handed back on exit.
  *   3. Each added or removed point redraws the guide at once, stores the
  *      draft on the device, and — debounced, the previous request aborted
  *      — posts the waypoints to routes:draw_preview. Its answer is the
@@ -59,14 +61,6 @@
 
   const PREFIX = 'route-draft';
   const GUIDE_SOURCE = PREFIX + '-guide';
-  const SKI_SOURCE = PREFIX + '-skitouren';
-  // swisstopo's ski-touring routes (ch.swisstopo-karto.skitouren), served
-  // without a key under swisstopo's open-data terms. Bounded to
-  // Switzerland so a draft elsewhere asks for no tiles at all.
-  const SKI_TILES =
-    'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo-karto.skitouren/default/current/3857/{z}/{x}/{y}.png';
-  const SKI_BOUNDS = [5.9, 45.8, 10.5, 47.85];
-  const SKI_MINZOOM = 11;
   // The route colour (--color-route-line) and the white halo the map's
   // markers use; MapLibre paint cannot read a CSS custom property.
   const LINE_COLOUR =
@@ -144,30 +138,13 @@
   }
 
   /**
-   * Add the draft's sources and layers: the ski-routes guide at the
-   * bottom, the drawn preview over it, the waypoints and straight guide on
+   * Add the draft's sources and layers: the drawn preview at the bottom
+   * (over the map's ski-routes layer), the waypoints and straight guide on
    * top.
    *
    * @param {any} map
    */
   function installLayers(map) {
-    if (!map.getSource(SKI_SOURCE)) {
-      map.addSource(SKI_SOURCE, {
-        type: 'raster',
-        tiles: [SKI_TILES],
-        tileSize: 256,
-        bounds: SKI_BOUNDS,
-        maxzoom: 17,
-        attribution: '© swisstopo',
-      });
-      map.addLayer({
-        id: SKI_SOURCE,
-        type: 'raster',
-        source: SKI_SOURCE,
-        minzoom: SKI_MINZOOM,
-        paint: { 'raster-opacity': 0.9 },
-      });
-    }
     if (self.pwaRouteDrawingCore) {
       self.pwaRouteDrawingCore.install(map, null, { prefix: PREFIX });
     }
@@ -613,6 +590,7 @@
     // are not among the layers PlacementFocus hides.
     window.PlacementFocus?.enter();
     installLayers(map);
+    window.pwaSkiRoutes?.hold(true);
 
     const container = map.getContainer();
     if (crosshair.parentElement !== container) container.appendChild(crosshair);
@@ -648,6 +626,7 @@
       map.off('move', onMapMove);
       removeLayers(map);
     }
+    window.pwaSkiRoutes?.hold(false);
     window.PlacementFocus?.exit();
     document.dispatchEvent(new CustomEvent('snowdesk:route-draw', { detail: { active: false } }));
   }

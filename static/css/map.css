@@ -2509,6 +2509,18 @@ html[data-route-drawing] #map-tour-offer {
     margin-top: -13px;
 }
 
+/* Two gates on one level (the region selector's ≤10 and the ski-touring
+   routes' ≥10): the "from" row sits just above the line, the "up to" row
+   just below, rather than one over the other. zoom_control_core.js's
+   `side`. */
+.map-zoom-tick[data-zoom-side="above"] {
+    margin-top: -25px;
+}
+
+.map-zoom-tick[data-zoom-side="below"] {
+    margin-top: -1px;
+}
+
 .map-zoom-tick-button {
     display: flex;
     align-items: baseline;

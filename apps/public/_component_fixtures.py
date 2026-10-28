@@ -3099,10 +3099,12 @@ SEASON_SCRUBBER_VARIANTS: tuple[dict[str, Any], ...] = (
 # The roundel at the top of the map's bottom-left stack and the flyout it
 # opens. On /map/ static/js/map_zoom_control.js fills every value from the
 # map; here each variant sets them, across the map's range of z4 to z18.
-# The gates are the ones window.pwaZoomGates publishes: the region selector
-# at z10 and below, the terrain overlay from z12 and the route slope angle
-# from z14. All three are named on every variant, bold where the camera's
-# zoom makes them available — switched on or not.
+# The gates are the ones window.pwaZoomGates publishes on a page with every
+# layer: the ski-touring routes from z10, the region selector at z10 and
+# below, the terrain overlay from z12 and the route slope angle from z14.
+# All four are named on every variant, bold where the camera's zoom makes
+# them available — switched on or not. The two at z10 sit either side of
+# its line (``side``).
 
 _MAP_MIN_ZOOM = 4
 _MAP_MAX_ZOOM = 18
@@ -3120,9 +3122,11 @@ def _zoom_tick(
     camera: float,
     *,
     up_to: bool = False,
+    side: str | None = None,
 ) -> dict[str, Any]:
     """Return one tick, reached when ``camera`` is where the feature works."""
     return {
+        "side": side,
         "key": key,
         "label": label,
         "zoom": gate,
@@ -3147,11 +3151,19 @@ def _zoom_variant(
     """Return one zoom-control variant at a camera zoom."""
     ticks = [
         _zoom_tick(
+            "ski_routes",
+            "Ski-touring routes",
+            10,
+            camera,
+            side="above",
+        ),
+        _zoom_tick(
             "region_select",
             "Region selector",
             10,
             camera,
             up_to=True,
+            side="below",
         ),
         _zoom_tick(
             "terrain_filter",
