@@ -90,6 +90,7 @@ from apps.data_feed.services.reference import (
     reference_weather_lookups,
 )
 from apps.routes.services.ski_network import (
+    FAILED as SKI_FAILED,
     OUTCOMES as SKI_OUTCOMES,
     SKI_KINDS,
     apply_ski_items,
@@ -522,6 +523,9 @@ class Command(RegisteredCommand):
         ):
             outcomes = apply_ski_items(feed, list(items), commit=self._commit)
             self._outcomes[feed].update(outcomes)
+            # Nothing past a failed page: it would move "since" beyond it.
+            if outcomes[SKI_FAILED]:
+                break
         self._report(feed)
 
     def _pull_series(

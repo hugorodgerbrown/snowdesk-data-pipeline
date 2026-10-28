@@ -34,7 +34,12 @@ from oauth2_provider.models import Application
 from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from apps.bulletins.services.apply import apply_bulletin
 from apps.core.models import CommandRun
-from apps.ingest.public import NormalisedBulletin, SourceLocation, SourceWeather
+from apps.ingest.public import (
+    NormalisedBulletin,
+    SourceLocation,
+    SourceWeather,
+    serialise_source_document,
+)
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import MicroRegion, Pass, Resort
 from apps.regions.services.reference import mirror_reference_data
@@ -456,3 +461,30 @@ def test_a_failed_item_fails_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
     counts = _counts()
     assert counts["passes_failed"] == counts["failed"] == 1
     assert counts["weather_unchanged"] == 0  # zeros are recorded too
+
+
+@pytest.mark.django_db
+@override_settings(**FEED_SETTINGS)
+def test_a_failed_ski_page_stops_the_feed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing of a failed page is written and the next page is not asked for.
+
+    The next pull starts from the newest line held, so a line written past
+    a failure would carry it beyond the failed one for good.
+    """
+    empty: dict[str, Any] = {"results": [], "next_cursor": None, "count": 0}
+    capture: dict[tuple[str, str | None], dict] = {
+        (f"/api/data/v2/{feed}/", None): empty for feed in FEEDS
+    }
+    good = serialise_source_document(SourceSkiSegmentFactory.create())
+    capture[("/api/data/v2/ski-network/", None)] = {
+        "results": [good, {**good, "uuid": "not-a-uuid"}],
+        "next_cursor": "page-2",  # not captured: asking for it would fail
+        "count": 3,
+    }
+    monkeypatch.setattr(
+        "apps.data_feed.client.requests.Session", lambda: _ReplaySession(capture)
+    )
+    with pytest.raises(CommandError, match="1 failed item"):
+        _run("--commit")
+    assert not SkiSegment.objects.exists()
+    assert _counts()["ski-network_failed"] == 1

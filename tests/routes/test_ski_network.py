@@ -116,8 +116,12 @@ def test_a_tombstone_deletes_or_is_absent() -> None:
     assert not SkiSegment.objects.exists()
 
 
-def test_a_malformed_item_fails_alone() -> None:
-    """No uuid, no updated_at, no line, or no id: each costs only itself."""
+def test_a_malformed_item_fails_and_its_page_writes_nothing() -> None:
+    """No uuid, no updated_at, no line, or no id: each is counted failed.
+
+    The good item beside them is counted but not written, so the newest
+    line held, which the next pull starts from, never passes a failure.
+    """
     bad = [
         _segment() | {"uuid": "nope"},
         _segment(updated_at=None),
@@ -126,6 +130,7 @@ def test_a_malformed_item_fails_alone() -> None:
     ]
     counts = apply_ski_items("ski-network", [*bad, _segment()], commit=True)
     assert (counts[FAILED], counts[CREATED]) == (4, 1)
+    assert not SkiSegment.objects.exists()
 
 
 def test_a_dry_run_decides_without_writing() -> None:
@@ -187,3 +192,25 @@ def test_the_service_host_applies_its_own_rows(
     assert result["ski-network"][DELETED] == 1
     assert result["ski-network"][CREATED] == 0
     assert SkiSegment.objects.count() == 2
+
+
+def test_the_service_host_stops_at_a_failed_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A page with a failure, and every page after it, is left for next time."""
+    monkeypatch.setattr("apps.routes.services.ski_network.APPLY_CHUNK", 1)
+    stamp = timezone.now()
+    SourceSkiSegmentFactory.create()
+    broken = SourceSkiSegmentFactory.create()
+    SourceSkiSegmentFactory.create()
+    type(broken).objects.filter(pk=broken.pk).update(
+        document={"geometry": LINE}, updated_at=stamp + dt.timedelta(seconds=1)
+    )
+    later = SourceSkiSegmentFactory.create()
+    type(later).objects.filter(pk=later.pk).update(
+        updated_at=stamp + dt.timedelta(seconds=2)
+    )
+    result = apply_from_service(commit=True)
+    assert result["ski-network"][FAILED] == 1
+    assert SkiSegment.objects.count() == 2
+    assert not SkiSegment.objects.filter(source_uuid=later.uuid).exists()

@@ -204,7 +204,10 @@ def apply_ski_items(
 
     The rows the page names are read in one query, slim; new rows are
     written in one ``bulk_create``. A malformed item is logged and counted
-    ``failed`` without stopping the rest.
+    ``failed``, and then the page writes nothing at all: an instance's
+    "since" is the newest line it holds, so a later item written past a
+    failed one would carry the next pull beyond it and it would never be
+    retried. Callers stop at such a page for the same reason.
 
     Args:
         kind: ``ski-network`` or ``ski-tours``.
@@ -225,24 +228,28 @@ def apply_ski_items(
         ).only("id", "source_uuid", "source_updated_at")
     }
     new: list[Any] = []
+    changed: list[tuple[int, dict[str, Any]]] = []
     gone: list[int] = []
+    for item, key in page:
+        if key is None:
+            logger.warning("ski apply: %s item has no uuid", kind)
+            counts[FAILED] += 1
+            continue
+        outcome, values = _decide(kind, item, key, held.get(key))
+        counts[outcome] += 1
+        if outcome == CREATED:
+            new.append(model(source_uuid=key, **values))
+        elif outcome == UPDATED:
+            changed.append((held[key].pk, values))
+        elif outcome == DELETED:
+            gone.append(held[key].pk)
+    if not commit or counts[FAILED]:
+        return counts
     with transaction.atomic():
-        for item, key in page:
-            if key is None:
-                logger.warning("ski apply: %s item has no uuid", kind)
-                counts[FAILED] += 1
-                continue
-            outcome, values = _decide(kind, item, key, held.get(key))
-            counts[outcome] += 1
-            if outcome == CREATED:
-                new.append(model(source_uuid=key, **values))
-            elif outcome == UPDATED and commit:
-                model.objects.filter(pk=held[key].pk).update(**values)
-            elif outcome == DELETED:
-                gone.append(held[key].pk)
-        if commit:
-            model.objects.bulk_create(new)
-            model.objects.filter(pk__in=gone).delete()
+        for pk, values in changed:
+            model.objects.filter(pk=pk).update(**values)
+        model.objects.bulk_create(new)
+        model.objects.filter(pk__in=gone).delete()
     return counts
 
 
@@ -298,6 +305,9 @@ def apply_from_service(*, commit: bool) -> dict[str, Counter[str]]:
     for kind in SKI_KINDS:
         counts: Counter[str] = Counter()
         for page in _service_pages(kind, synced_since(kind)):
-            counts.update(apply_ski_items(kind, page, commit=commit))
+            outcomes = apply_ski_items(kind, page, commit=commit)
+            counts.update(outcomes)
+            if outcomes[FAILED]:
+                break
         result[kind] = counts
     return result
