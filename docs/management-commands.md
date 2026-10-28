@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — RegisteredCommand / CommandRun register, fetch_bulletins, fetch_weather, purge_*, prune_command_runs, backfill_*
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-10-28
 ---
 
 # Management commands
@@ -1224,6 +1224,28 @@ the default manifest path (`apps/core/fixtures/waffle_flags.json`). Respects
 `--verbosity`. A missing manifest file, malformed JSON, an entry missing
 `name`/`note`, a duplicate `name`, or an unrecognised key all raise a
 `CommandError` (non-zero exit).
+
+### `pull_reference_data` — seed an instance from the reference-data service
+
+The v2 client (SNOW-1272, [`data-feed.md`](data-feed.md#pull_reference_data-snow-1272)),
+successor to `pull_production_data` below. Pulls places, passes and resorts
+whole from `/api/data/v2/`, matched on `source_uuid`, then applies their
+tombstones (a row a favourite, trip or field report points at is
+detached, not deleted), then a window of bulletins, day ratings and
+weather.
+
+```bash
+uv run python manage.py pull_reference_data                          # preview
+uv run python manage.py pull_reference_data --commit                 # estate + last 14 days
+uv run python manage.py pull_reference_data --golden-week --commit   # estate + 9–15 Feb 2026
+```
+
+`--recent N` (default 14) pulls the time series from N days ago with no
+upper bound; `--golden-week` pulls `seed_test_week`'s seven days instead.
+Tallies are `<feed>_<outcome>`, zeros included, with `deleted`, `detached`
+and `absent` for tombstones and `recomputed`/`skipped` for day ratings.
+Any failed item exits non-zero. It reads `DATA_FEED_URL` (its `/v1/` read
+as `/v2/`) and `DATA_FEED_V2_TOKEN` or the client-credentials pair.
 
 ### `pull_production_data` — pull bulletins, weather and resorts from production's feed
 

@@ -2,7 +2,7 @@
 name: meteofrance-mapping
 description: Field-by-field DPBRA XML to CAAML JSON mapping for meteofrance_translator — bulletinID synthesis, SAT_TO_EAWS, customData.MF
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-10-28
 ---
 
 # MeteoFrance DPBRA → CAAML JSON mapping spec
@@ -115,7 +115,7 @@ separates MF from SLF (`CH-`) and ALBINA (`AT-…`, `IT-…`).
 Every `DATE*` attribute in DPBRA is naive local time in Europe/Paris. The
 translator MUST localise on the way in and emit ISO-8601 UTC strings
 ending in `Z` — exactly the format SLF emits, exactly what
-`_parse_dt()` in `slf_fetcher.py` expects:
+`parse_dt()` in `apps/ingest/normalise/slf.py` expects:
 
 ```python
 _PARIS = ZoneInfo("Europe/Paris")

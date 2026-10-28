@@ -80,7 +80,11 @@ The names are grouped by what they are for:
 """
 
 import apps.ingest.normalise.prose.en  # noqa: F401, I001 — registers the "en" prose parser
-from apps.ingest.api.bulletins import BULLETINS_FEED, serialise_source_bulletin
+from apps.ingest.api.bulletins import (
+    BULLETINS_FEED,
+    BULLETINS_FEED_V2,
+    serialise_source_bulletin,
+)
 from apps.ingest.api.day_ratings import DAY_RATINGS_FEED, serialise_source_day_rating
 from apps.ingest.day_ratings import (
     DAY_RATING_FIELDS,
@@ -95,6 +99,7 @@ from apps.ingest.api.paging import (
     Feed,
     FeedQueryError,
     page as feed_page,
+    parse_day as parse_feed_day,
     parse_limit as parse_feed_limit,
     parse_since as parse_feed_since,
 )
@@ -258,6 +263,8 @@ from apps.ingest.weather import (
 )
 
 __all__ = [
+    "parse_feed_day",
+    "BULLETINS_FEED_V2",
     "ADMIN_MAX_LOCATIONS",
     "ALPINE_MASSIFS",
     "BULLETINS_FEED",

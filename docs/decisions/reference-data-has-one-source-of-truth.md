@@ -70,7 +70,10 @@ from the service; if only a signed-in user does, it stays in the instance.
   Passes and resorts are held as documents the service stores and never
   reads, as it treats a bulletin's CAAML.
 - Deletes travel as `deleted_at` tombstones. A tombstoned row that user data
-  still references is hidden, not deleted.
+  still references is detached, not deleted: it loses its `source_uuid` and
+  its estate links (resort roles and pins, region centres), so it leaves
+  `reference_data()` while the favourite, trip or field report keeps its
+  target (`apps/data_feed/services/reference.py`, SNOW-1272).
 - **Regions stay code-held fixtures, not a feed** (Hugo, 28 Oct 2026). The
   geometry is already one copy of the truth, the repository, versioned with
   the code that reads it, and changes only when EAWS republishes; a feed
@@ -98,5 +101,7 @@ from the service; if only a signed-in user does, it stays in the instance.
 - Whether this repository becomes the service or the web app moves out is
   undecided.
 - The work is staged as SNOW-1270 (the render model and its derivations),
-  SNOW-1253 (weather stations), SNOW-1271 (resorts and passes), SNOW-1272
-  (bootstrap and tombstones) and SNOW-1273 (example route).
+  SNOW-1253 (weather stations), SNOW-1271 (resorts and passes), SNOW-1275
+  (the weather backfill), SNOW-1272 (bootstrap and tombstones) and
+  SNOW-1273 (example route). Deploying it is
+  [`runbooks/reference-data-cut-over.md`](../runbooks/reference-data-cut-over.md).

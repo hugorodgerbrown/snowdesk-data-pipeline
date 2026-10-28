@@ -10,6 +10,7 @@ apps.ingest with SNOW-1250 and are tested in tests/ingest/api/.
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any
 
 import pytest
 from django.db import connection
@@ -31,7 +32,7 @@ from tests.factories import (
 )
 
 
-def _all(name: str, **kwargs: object) -> list[dict]:
+def _all(name: str, **kwargs: Any) -> list[dict]:
     """Return every item of feed ``name``, following the cursor to the end."""
     items: list[dict] = []
     cursor = None

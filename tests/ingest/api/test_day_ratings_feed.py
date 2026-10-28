@@ -6,6 +6,8 @@ An item is the key, updated_at and every rated column, served under v2.
 
 from __future__ import annotations
 
+import datetime
+
 import pytest
 
 from apps.ingest.api.day_ratings import DAY_RATINGS_FEED
@@ -38,3 +40,19 @@ def test_an_item_is_the_stored_rating() -> None:
         "bands": [{"band_id": "x"}],
         "version": row.version,
     }
+
+
+def test_a_window_narrows_the_feed_by_day() -> None:
+    """from/to are inclusive and filter on the rating's date (SNOW-1272)."""
+    for day in (1, 2, 3):
+        SourceDayRatingFactory.create(date=datetime.date(2026, 1, day))
+    body = feed_page(
+        DAY_RATINGS_FEED,
+        since=None,
+        cursor=None,
+        limit=10,
+        day_from=datetime.date(2026, 1, 2),
+        day_to=datetime.date(2026, 1, 2),
+    )
+    assert body["count"] == 1
+    assert [item["date"] for item in body["results"]] == ["2026-01-02"]

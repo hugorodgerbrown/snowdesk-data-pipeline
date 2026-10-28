@@ -211,19 +211,27 @@ class TestAnswer:
         """A token is bound to its URL prefix, so v2 needs a v2 token."""
         assert _get(client, feed_token, "/api/data/v2/weather/").status_code == 401
 
-    def test_bulletins_have_no_v2(
+    def test_v2_windows_a_feed_by_day(
         self, client: Client, service_client: Application
     ) -> None:
-        """Only the reference-data feeds are routed under v2."""
+        """SNOW-1272: from/to narrow a dated feed, and a bad date is a 400."""
         token = OAuthAccessTokenFactory.create(
             user=None,
             application=service_client,
             scope="data",
             resource=["http://testserver/api/data/v2/"],
         ).raw_token
-        assert _get(client, token, "/api/data/v2/bulletins/").status_code == 404
+        url = "/api/data/v2/bulletins/?from=2026-02-09&to=2026-02-15"
+        assert _get(client, token, url).status_code == 200
+        bad = _get(client, token, "/api/data/v2/bulletins/?from=yesterday")
+        assert bad.status_code == 400
+        assert json.loads(bad.content)["error"] == "from must be an ISO 8601 date"
+        undated = _get(client, token, "/api/data/v2/passes/?from=2026-02-09")
+        assert undated.status_code == 400
 
-    @pytest.mark.parametrize("name", ["locations", "passes", "resorts", "day-ratings"])
+    @pytest.mark.parametrize(
+        "name", ["locations", "passes", "resorts", "day-ratings", "bulletins"]
+    )
     def test_the_v2_reference_feeds_answer(
         self, client: Client, service_client: Application, name: str
     ) -> None:

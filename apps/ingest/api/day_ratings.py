@@ -49,4 +49,5 @@ DAY_RATINGS_FEED = Feed(
     _source_day_ratings,
     serialise_source_day_rating,
     version=REFERENCE_FEED_VERSION,
+    day_field="date",
 )

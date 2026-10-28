@@ -19,10 +19,12 @@ from django.utils import timezone
 
 from apps.ingest.api.bulletins import BULLETINS_FEED
 from apps.ingest.api.paging import (
+    Feed,
     FeedQueryError,
     decode_cursor,
     encode_cursor,
     page as feed_page,
+    parse_day,
     parse_limit,
     parse_since,
 )
@@ -153,3 +155,42 @@ def test_a_page_costs_the_same_queries_at_any_size() -> None:
         return len(ctx.captured_queries)
 
     assert queries(2) == queries(12) == 1
+
+
+@pytest.mark.django_db
+def test_a_window_reads_the_target_day() -> None:
+    """from/to filter bulletins on the day they forecast (SNOW-1272)."""
+    SourceBulletinFactory.create(target_date=dt.date(2026, 2, 9))
+    SourceBulletinFactory.create(target_date=dt.date(2026, 3, 1))
+    SourceBulletinFactory.create()
+    body = feed_page(
+        BULLETINS_FEED,
+        since=None,
+        cursor=None,
+        limit=10,
+        day_from=dt.date(2026, 2, 9),
+        day_to=dt.date(2026, 2, 15),
+    )
+    assert body["count"] == 1
+
+
+def test_a_window_is_refused_on_a_feed_with_no_day() -> None:
+    """A feed with no day field cannot be windowed."""
+    undated = Feed("x", SourceBulletinFactory._meta.model.objects.none, dict)
+    with pytest.raises(FeedQueryError):
+        feed_page(
+            undated,
+            since=None,
+            cursor=None,
+            limit=1,
+            day_from=dt.date(2026, 1, 1),
+        )
+
+
+def test_parse_day() -> None:
+    """An absent day is None; a bad one names its parameter."""
+    assert parse_day(None, "from") is None
+    assert parse_day("2026-02-09", "from") == dt.date(2026, 2, 9)
+    with pytest.raises(FeedQueryError) as error:
+        parse_day("2026-13-40", "to")
+    assert error.value.param == "to"

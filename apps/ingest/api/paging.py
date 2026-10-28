@@ -12,6 +12,13 @@ the order and is still reached, and no page is a re-run OFFSET of the one
 before. ``?since=`` filters on ``updated_at`` for an incremental pull.
 ``count`` — how many rows the whole pull returns — is sent on the first page
 only.
+
+**A feed with a day may be windowed by it** (SNOW-1272). ``?from=`` and
+``?to=`` (ISO dates, inclusive) filter on the feed's ``day_field`` — a
+bulletin's target day, a weather row's day, a day rating's date — so a
+client can seed the last fortnight or one fixed week rather than the whole
+archive. The paging is unchanged: the window narrows the rows, the keyset
+walks them.
 """
 
 from __future__ import annotations
@@ -24,7 +31,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db.models import Q, QuerySet
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_date, parse_datetime
 
 # Bumped on a breaking change to any feed's shape; it is also the URL's /v1/.
 VERSION = 1
@@ -57,6 +64,9 @@ PARAMETER_ERRORS: dict[str, str] = {
     "since": "since must be an ISO 8601 datetime with a UTC offset",
     "cursor": "cursor is not one this feed issued",
     "limit": "limit must be a positive integer",
+    "from": "from must be an ISO 8601 date",
+    "to": "to must be an ISO 8601 date",
+    "window": "this feed has no day to window by",
 }
 
 
@@ -72,6 +82,8 @@ class Feed:
         version: The version the feed is served under — the ``vN`` in its
             URL and the ``version`` in every page. ``VERSION`` unless a feed
             changed shape (SNOW-1253's v2 weather).
+        day_field: The date column ``?from=``/``?to=`` filter on; None
+            for a feed with no day, which refuses a window.
 
     """
 
@@ -79,6 +91,7 @@ class Feed:
     queryset: Callable[[], QuerySet[Any]]
     serialise: Callable[[Any], dict[str, Any]]
     version: int = VERSION
+    day_field: str | None = None
 
 
 def encode_cursor(updated_at: dt.datetime, pk: int) -> str:
@@ -143,6 +156,31 @@ def parse_since(raw: str | None) -> dt.datetime | None:
     return parsed
 
 
+def parse_day(raw: str | None, param: str) -> dt.date | None:
+    """Return ``?from=`` or ``?to=`` as a date, or None when absent.
+
+    Args:
+        raw: The parameter, an ISO 8601 date.
+        param: Its name, for the error.
+
+    Returns:
+        The date, or None.
+
+    Raises:
+        FeedQueryError: It does not parse.
+
+    """
+    if not raw:
+        return None
+    try:
+        parsed = parse_date(raw)
+    except ValueError:
+        parsed = None
+    if parsed is None:
+        raise FeedQueryError(param, f"{param} {raw!r} must be an ISO 8601 date")
+    return parsed
+
+
 def parse_limit(raw: str | None) -> int:
     """Return ``?limit=``, defaulted and held to ``MAX_LIMIT``.
 
@@ -173,6 +211,8 @@ def page(
     since: dt.datetime | None,
     cursor: str | None,
     limit: int,
+    day_from: dt.date | None = None,
+    day_to: dt.date | None = None,
 ) -> dict[str, Any]:
     """Return one page of ``feed``: its items, and the cursor to the next.
 
@@ -184,6 +224,8 @@ def page(
         since: Only rows updated at or after this, when given.
         cursor: Resume after this cursor, when given.
         limit: The page size.
+        day_from: Only rows whose ``day_field`` is on or after this.
+        day_to: Only rows whose ``day_field`` is on or before this.
 
     Returns:
         The response body: ``feed``, ``version``, ``results``,
@@ -191,12 +233,20 @@ def page(
         ``count``.
 
     Raises:
-        FeedQueryError: ``cursor`` does not decode.
+        FeedQueryError: ``cursor`` does not decode, or a window was asked
+            of a feed with no day.
 
     """
     queryset = feed.queryset()
     if since is not None:
         queryset = queryset.filter(updated_at__gte=since)
+    if day_from is not None or day_to is not None:
+        if feed.day_field is None:
+            raise FeedQueryError("window", f"{feed.name} has no day to window by")
+        if day_from is not None:
+            queryset = queryset.filter(**{f"{feed.day_field}__gte": day_from})
+        if day_to is not None:
+            queryset = queryset.filter(**{f"{feed.day_field}__lte": day_to})
     body: dict[str, Any] = {"feed": feed.name, "version": feed.version}
     if cursor is None:
         body["count"] = queryset.count()

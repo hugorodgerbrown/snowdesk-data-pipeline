@@ -81,6 +81,12 @@ class TestMint:
         expected = timezone.now() + dt.timedelta(days=30)
         assert abs((token.expires - expected).total_seconds()) < 60
 
+    def test_a_v2_token_names_its_own_setting(self, cloud_client: Application) -> None:
+        """SNOW-1272: a token minted for v2 is set as DATA_FEED_V2_TOKEN."""
+        output = _run("--resource", "http://testserver/api/data/v2/", "--commit")
+        assert "Set it as DATA_FEED_V2_TOKEN" in output
+        assert "Set it as DATA_FEED_TOKEN" in _run("--commit")
+
     def test_the_raw_token_is_not_kept_in_the_run_register(
         self, cloud_client: Application
     ) -> None:

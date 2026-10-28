@@ -1,6 +1,6 @@
 ---
 name: data-feed
-description: Data feed /api/data/v1/ + v2 (weather, locations, passes, resorts), service clients, pull_production_data, DATA_FEED_*, mint_feed_token
+description: Data feed /api/data/v1/ + v2, from/to windows, service clients, pull_reference_data, pull_production_data, DATA_FEED_*, mint_feed_token
 status: current
 last-reviewed: 2026-10-28
 ---
@@ -22,12 +22,12 @@ Why a feed and not a database copy:
 | Half | Where | What |
 |------|-------|------|
 | Server | `apps/data_feed/feeds.py`, `views.py`, `auth.py`; `apps/ingest/api/` | `GET /api/data/v1/<feed>/`, read-only, service clients only. The bulletins feed and the paging rule are ingest's (SNOW-1250); the host mounts them |
-| Client | `apps/data_feed/client.py`, `services/apply.py`, `pull_production_data` | Gets a token, walks a feed, applies each item idempotently |
+| Client | `apps/data_feed/client.py`, `services/apply.py`, `services/reference.py`; `pull_reference_data` (v2), `pull_production_data` (v1) | Gets a token, walks a feed, applies each item idempotently |
 | Contract | `apps/data_feed/contract.py` | The field allowlists both halves read and write |
 
 ## Endpoints
 
-All nine are `GET`, take the same parameters and answer the same shape.
+All ten are `GET`, take the same parameters and answer the same shape.
 
 | URL | Item key | What is served |
 |-----|----------|----------------|
@@ -35,6 +35,7 @@ All nine are `GET`, take the same parameters and answer the same shape.
 | `/api/data/v1/weather/` | location `uuid` + `observed_on` | `Weather` rows for `Location.objects.public()` only |
 | `/api/data/v1/locations/` | `uuid` | `Location.objects.public()`, with `centroid_of` region codes |
 | `/api/data/v1/resorts/` | `slug` | Every resort with a slug: region code, pin uuid, passes, location links |
+| `/api/data/v2/bulletins/` | `bulletin_id` | The v1 bulletins feed served under v2, so one v2 token reads the whole service; windowed by `target_date` (SNOW-1272) |
 | `/api/data/v2/weather/` | `SourceLocation.uuid` + `observed_on` | Every `SourceWeather` row the weather service has stored (SNOW-1253), tombstoned places included |
 | `/api/data/v2/locations/` | `uuid` (`SourceLocation`) | Every reference place, with `deleted_at`: name, exact coordinate and height under `fields`, the host's `document` (kind, short id, what3words, `centroid_of`) |
 | `/api/data/v2/passes/` | `uuid` (`SourcePass`) | Every season pass, with `slug`, `deleted_at` and the `document` `{name, website}` (SNOW-1271) |
@@ -71,7 +72,11 @@ what production shows.
 
 Parameters, all optional: `since` (ISO 8601 datetime **with an offset**,
 filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and
-`limit` (default 100, at most 500).
+`limit` (default 100, at most 500). The dated v2 feeds also take `from` and
+`to` (ISO dates, inclusive), which window them by the day each row is about
+— a bulletin's `target_date`, a day rating's `date`, a weather row's
+`observed_on` (SNOW-1272). An undated feed answers `from` or `to` with a
+`400`.
 
 ```json
 {
@@ -230,7 +235,63 @@ weather, curated locations and resorts. No user-owned table is served, so
 none is reachable. Why a cloud session may hold this token when it holds no
 provider key: [`decisions/cloud-sessions-hold-no-provider-credentials.md`](decisions/cloud-sessions-hold-no-provider-credentials.md).
 
+## `pull_reference_data` (SNOW-1272)
+
+The v2 client: it seeds an empty instance from the reference-data service,
+or tops one up, and is the successor to `pull_production_data`.
+
+```bash
+uv run python manage.py pull_reference_data                          # preview
+uv run python manage.py pull_reference_data --commit                 # estate + last 14 days
+uv run python manage.py pull_reference_data --recent 3 --commit      # estate + last 3 days
+uv run python manage.py pull_reference_data --golden-week --commit   # estate + 9–15 Feb 2026
+```
+
+- **The estate is pulled whole, every time:** places, then passes, then
+  resorts, each matched on `source_uuid`. A new place takes the service's
+  uuid as its own `uuid` too, as the curating instance's rows do; a row a
+  v1 pull made (same `uuid`, or same slug for a pass or resort with no
+  `source_uuid` yet) is adopted rather than duplicated. A row keyed to
+  another uuid is never re-keyed: an item whose slug it holds (a resort
+  removed and recreated under a new uuid) is retried after the
+  tombstones, once the old row has gone, and fails only if it still
+  collides. A place's `centroid_of` claims those regions'
+  centres and releases any it no longer names.
+- **Tombstones are applied after every live item** — resorts, then passes,
+  then places. A row is deleted, unless this instance's user data points
+  at it: a place with a favourite, trip or field report, or a resort with a
+  favourite, is **detached** instead — its `source_uuid` is cleared and its
+  estate links (roles, pins, region centres) dropped, so it leaves
+  `reference_data()` while the user's row keeps its target.
+- **The time series are a window of days:** bulletins, then day ratings,
+  then weather, with `from`/`to` sent to the feed. `--recent N` (default 14)
+  is from N days ago with no upper bound, so forecasts come too;
+  `--golden-week` is the seven days `seed_test_week` covers, for
+  deterministic user testing. Bulletins go through `apply_bulletin`, day
+  ratings through `apply_day_rating_item`, weather through `apply_weather`
+  (a past day already here is `kept`; a day of a place this run
+  tombstoned is `skipped`).
+- **The regions are not pulled.** They are code-held fixtures every
+  instance loads with its migrations.
+
+Tallies are per feed and outcome (`locations_detached`,
+`day-ratings_recomputed`, …), zeros included. A failed item is logged,
+counted and does not stop the pull; any failure exits non-zero.
+
+**Credentials.** It reads `DATA_FEED_URL` and swaps its trailing `/v1/` for
+`/v2/`. With the client-credentials pair it asks for a v2 token itself. A
+minted token is bound to the prefix it was minted for, so a cloud
+environment needs one minted for v2, set as `DATA_FEED_V2_TOKEN`:
+
+```bash
+uv run python manage.py mint_feed_token --client "Cloud dev feed" \
+    --resource https://snowdesk.info/api/data/v2/ --commit
+```
+
 ## `pull_production_data`
+
+The v1 client staging runs daily until the cut-over moves it onto
+`pull_reference_data`.
 
 ```bash
 uv run python manage.py pull_production_data                      # preview everything
@@ -300,8 +361,9 @@ kind of row, not one per item (SNOW-1199).
 
 ## What it does not do
 
-- **Delete.** A resort, location or bulletin removed on production stays on
-  the client. `bin/sync-staging-data`
+- **Delete (v1).** A resort, location or bulletin removed on production
+  stays on a client that pulls v1. `pull_reference_data` honours v2's
+  tombstones for places, passes and resorts; a bulletin is never deleted. `bin/sync-staging-data`
   ([runbook](runbooks/refresh-staging-from-production.md)) is still the way
   to reset staging wholesale.
 - **Copy anything derived.** Region links, day ratings and groupings are

@@ -159,8 +159,14 @@ class Command(RegisteredCommand):
             name,
             expires.isoformat(),
         )
+        # A v2 token is read by pull_reference_data, from its own setting.
+        setting = (
+            "DATA_FEED_V2_TOKEN"
+            if resource.rstrip("/").endswith("/v2")
+            else "DATA_FEED_TOKEN"
+        )
         self.stdout.write(
             f"Minted a data token for {name!r}, bound to {resource}, expiring "
             f"{expires:%Y-%m-%d}. It is shown once and cannot be read back:\n\n"
-            f"{raw}\n\nSet it as DATA_FEED_TOKEN on the consumer."
+            f"{raw}\n\nSet it as {setting} on the consumer."
         )

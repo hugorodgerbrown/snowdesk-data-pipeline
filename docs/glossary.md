@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-10-28
 ---
 
 # Glossary — domain terms to code symbols
@@ -224,7 +224,7 @@ Which coordinate on which model is exact, approximate or derived:
 | PasskeyCredential | WebAuthn platform passkey for an `auth.User` (FK to `User`, not `Account` — any authenticated user, including staff without an Account profile, can register one) | `apps/accounts/models.py` |
 | Connected app | An OAuth client (Claude, Claude Code, a `mint_mcp_token` local token) the user holds a live access or refresh token for, so it can call the MCP server as them. Listed on `/account/settings/`; Disconnect revokes every token it holds (SNOW-1035, SNOW-1193) | `mcp_auth.connected.connected_apps` / `disconnect`; django-oauth-toolkit's `Application`; `apps/oauth/views.py::disconnect`; `docs/oauth.md` |
 | PushSubscription | Web Push endpoint (spike) | `apps/accounts/models.py` |
-| Data feed | Production's read-only HTTPS feed of what it ingests — bulletins (CAAML), weather, curated locations and resorts — for other services, staging first (SNOW-1197). Natural keys only, allowlisted columns, keyset-paged on `updated_at` | `GET /api/data/v1/<feed>/` (`api:data_feed:<feed>`); `apps/data_feed/feeds.py`, `contract.py`; client `pull_production_data`; [data-feed.md](data-feed.md) |
+| Data feed | Production's read-only HTTPS feed of what it ingests — bulletins (CAAML), weather, curated locations and resorts — for other services, staging first (SNOW-1197). Natural keys only, allowlisted columns, keyset-paged on `updated_at` | `GET /api/data/v1/<feed>/` (`api:data_feed:<feed>`); `apps/data_feed/feeds.py`, `contract.py`; clients `pull_reference_data` (v2, SNOW-1272) and `pull_production_data` (v1); [data-feed.md](data-feed.md) |
 | Service client | An OAuth application that reads the data feed as no one: confidential, client-credentials grant, created by hand in the admin. The only kind of client the token endpoint issues a client-credentials token to | `apps.oauth.validators.is_service_client`; `apps/data_feed/auth.py::require_feed_token`; [data-feed.md](data-feed.md) |
 | BulletinShare / BulletinShareClick | Tokenised short share URL and its per-follow click log | `apps/bulletins/models.py` |
 | Command run register | One row per run of a project management command — dry run or `--commit`, with its arguments, counts, outcome, operator and the build it ran on (SNOW-1189) | `CommandRun` in `apps/core/models.py`; `RegisteredCommand` / `tally()` in `apps/core/command_register.py`; [every-command-run-is-registered.md](decisions/every-command-run-is-registered.md) |
