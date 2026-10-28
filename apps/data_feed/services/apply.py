@@ -52,7 +52,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from apps.bulletins.models import Bulletin, PipelineRun
-from apps.bulletins.services.slf_fetcher import upsert_bulletin
+from apps.bulletins.services.apply import upsert_bulletin
 from apps.data_feed import contract
 from apps.locations.models import Location, ResortLocation
 from apps.regions.models import MicroRegion, Pass, Resort

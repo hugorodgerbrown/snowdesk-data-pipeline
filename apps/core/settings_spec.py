@@ -475,7 +475,7 @@ SETTINGS_SPEC: tuple[SettingSpec, ...] = (
 # Free-tier Open-Meteo hosts. A key sent to these is silently ignored; a
 # customer host reached without one 401s on every request.
 #
-# Must stay in step with ``apps.locations.services.open_meteo.FREE_HOSTNAMES``
+# Must stay in step with ``apps.ingest.sources.open_meteo.FREE_HOSTNAMES``
 # and with the shipped ``OPEN_METEO_*_BASE_URL`` defaults: a default host
 # absent from this set reads as a customer host, and
 # ``check_open_meteo_key_host_pairing`` would then fail every production

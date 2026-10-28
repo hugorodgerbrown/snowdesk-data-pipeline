@@ -56,7 +56,7 @@ from django.core.management.base import CommandError
 
 from apps.core.command_iteration import non_negative_float
 from apps.core.command_register import RegisteredCommand
-from apps.locations.services.elevation import fetch_elevation
+from apps.ingest.public import fetch_elevation
 from apps.regions.fixture_utils import centre_from_bbox, load_fixture, write_fixture
 
 logger = logging.getLogger(__name__)

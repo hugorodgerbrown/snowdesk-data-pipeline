@@ -63,13 +63,13 @@ from django.db import transaction
 from django.db.models import QuerySet
 
 from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
+from apps.bulletins.services.apply import _resolve_bulletin_regions
 from apps.bulletins.services.day_rating import (
     day_rating_pairs,
     refresh_day_ratings,
     slim_regions_prefetch,
 )
 from apps.bulletins.services.grouping import compute_bulletin_grouping_boundary
-from apps.bulletins.services.slf_fetcher import _resolve_bulletin_regions
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
 from apps.regions.models import MicroRegion

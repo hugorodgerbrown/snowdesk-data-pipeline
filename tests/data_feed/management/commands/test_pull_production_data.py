@@ -30,7 +30,7 @@ from django.utils import timezone
 from oauth2_provider.models import Application
 
 from apps.bulletins.models import Bulletin, RegionBulletin
-from apps.bulletins.services.slf_fetcher import upsert_bulletin
+from apps.bulletins.services.apply import upsert_bulletin
 from apps.core.models import CommandRun
 from apps.data_feed import feeds
 from apps.data_feed.client import FeedError

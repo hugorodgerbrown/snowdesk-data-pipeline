@@ -1,14 +1,16 @@
 """
-apps/bulletins/services/slf_fetcher.py — Fetching and persisting SLF bulletins.
+apps/bulletins/services/slf_fetcher.py — The SLF pipeline, app side.
 
-Contains pure-ish functions that:
-  1. Fetch a page of bulletins from the SLF CAAML list API (fetch_bulletin_page).
-  2. Persist a single bulletin into the database (upsert_bulletin).
-  3. Orchestrate a full pipeline run across a date range (run_slf_pipeline).
-  4. Log which CAAML export each page actually IS (_log_caaml_shape). The
-     classifier itself, detect_caaml_shape, and the other pure helpers
-     (response unwrapping, timestamp parsing, the PDF URL) live in
-     ``apps.ingest.normalise.slf`` since SNOW-1248.
+Since SNOW-1249 this module holds only what needs Snowdesk's tables:
+
+  run_slf_pipeline   drives ``apps.ingest.public.fetch_bulletins("SLF", …)``
+                     — the walk back through SLF's paginated list API, which
+                     lives in ingest with the HTTP — and decides what to do
+                     with each bulletin it yields: count it in a dry run,
+                     skip it when it is already stored, or write it through
+                     ``apply_bulletin``.
+  latest_slf_date    where the next run resumes from.
+  slf_stash_writer   ``--stash``'s archive writer.
 
 Also defines the ``BulletinSource`` registry used by the unified
 ``fetch_bulletins`` management command. The registry maps provider names
@@ -16,607 +18,72 @@ Also defines the ``BulletinSource`` registry used by the unified
 latest-date function, settings keys, and archive-writer adapter so the
 command can iterate over requested sources without owning any
 provider-specific logic.
-
-Note: ``upsert_bulletin``, ``UnknownRegionError``, and ``_get_region`` are
-shared helpers also imported by ``albina_fetcher`` and ``meteofrance_fetcher``.
-Extracting them into a dedicated ``persistence.py`` module is a separate
-cleanup ticket (not in scope here).
-
-The SLF API returns bulletins in reverse chronological order and is
-paginated by offset/limit — it does not support filtering by date. The
-pipeline pages through results, skipping bulletins newer than the end date
-and stopping once it passes the start date boundary.
-
-Keeping these as functions rather than a class makes them easy to test and
-compose. The management commands call run_slf_pipeline(); unit tests can call
-fetch_bulletin_page() and upsert_bulletin() independently.
 """
 
 import json
 import logging
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Any
 
-import requests
-from django.conf import settings
-from django.db import transaction
-
 from apps.bulletins.models import (
     Bulletin,
-    BulletinGrouping,
     PipelineRun,
-    RegionBulletin,
 )
-from apps.bulletins.services.day_rating import (
-    apply_bulletin_day_ratings,
-    day_rating_pairs,
-    target_day_for_valid_from,
-)
-from apps.bulletins.services.grouping import compute_bulletin_grouping_boundary
-from apps.bulletins.services.render_model import (
-    RENDER_MODEL_VERSION,
-    RenderModelBuildError,
-    build_render_model,
-    detect_source,
+from apps.bulletins.services.apply import (
+    NoResolvableRegionsError,
+    apply_bulletin,
+    count_outcome,
 )
 from apps.ingest.public import (
-    CAAML_SHAPE_PER_REGION,
     OUTCOME_CREATED,
     OUTCOME_FAILED,
     OUTCOME_UPDATED,
-    SLF_DEFAULT_LANG,
-    detect_caaml_shape,
+    PROVIDER_SLF,
+    FetchOutcome,
+    FetchStats,
+    NormalisedBulletin,
+    fetch_bulletins,
     merge_slf_archive,
-    normalise_slf_response,
-    parse_dt,
     read_slf_archive,
-    resolve_issued_at,
-    slf_pdf_url,
     write_slf_archive,
 )
-from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
-LANG = SLF_DEFAULT_LANG
-PAGE_SIZE = 50
-REQUEST_TIMEOUT = 30  # seconds
-_ONE_DAY = timedelta(days=1)
-
-
-def _resolve_base_url(base_url: str | None) -> str:
-    """Pick the base URL one fetch should use.
-
-    Three paths, in descending precedence:
-
-    1. An explicit ``base_url`` argument, which is how
-       ``fetch_bulletins --local-mirror`` points a run at the dev mirror.
-       A caller that named a URL gets the URL it named.
-    2. ``settings.SLF_API_LEGACY_URL``, when non-empty (SNOW-900) — the
-       environment-variable pin back to the pre-2026/27 export.
-    3. ``settings.SLF_API_BASE_URL``, the live API.
-
-    The pin lives HERE rather than in the ``fetch_bulletins`` command so
-    that it holds for every caller. It first shipped in the command, which
-    left ``BulletinAdmin.backfill_view`` — which calls
-    ``run_slf_pipeline`` with no ``base_url`` — fetching the live URL and
-    ingesting the new schema straight past a configured rollback. A pin
-    that one entry point ignores is worse than no pin, because it reads
-    as applied.
-
-    Args:
-        base_url: The caller's explicit override, or ``None``.
-
-    Returns:
-        The base URL to build this request from.
-
-    """
-    if base_url is not None:
-        return base_url
-
-    legacy_url: str = getattr(settings, "SLF_API_LEGACY_URL", "") or ""
-    if legacy_url:
-        # WARNING, every fetch, for as long as it is set: this is an
-        # emergency lever pointed at an endpoint SLF intend to retire, not
-        # a configuration to settle into. A pin left on by accident should
-        # be impossible to miss in the log.
-        logger.warning(
-            "SLF is pinned to settings.SLF_API_LEGACY_URL (%s) instead of "
-            "SLF_API_BASE_URL (%s)",
-            legacy_url,
-            settings.SLF_API_BASE_URL,
-        )
-        return legacy_url
-
-    resolved: str = settings.SLF_API_BASE_URL
-    return resolved
-
-
-def fetch_bulletin_page(
-    lang: str,
-    limit: int,
-    offset: int,
-    base_url: str | None = None,
-) -> list[dict[str, Any]]:
-    """
-    Fetch a single page of bulletins from the SLF CAAML list API.
-
-    Args:
-        lang: Language code ("en", "de", "fr", "it").
-        limit: Maximum number of bulletins to return.
-        offset: Number of bulletins to skip (for pagination).
-        base_url: Override for the API base URL. Resolved by
-            ``_resolve_base_url``, so ``None`` picks up the legacy pin
-            when one is set and the live API otherwise.
-
-    Returns:
-        A list of raw bulletin dicts as returned by the API.
-
-    Raises:
-        requests.HTTPError: If the API returns a non-2xx status.
-        ValueError: If the response body cannot be parsed as JSON.
-
-    Every page is classified by ``detect_caaml_shape`` and logged on the
-    way out — at WARNING when the 2026/27 per-region export is what
-    arrived (SNOW-900). Classification never blocks the fetch: the page
-    is returned whatever shape it is.
-
-    """
-    resolved_base = _resolve_base_url(base_url)
-    url = f"{resolved_base}/{lang}/json"
-    logger.debug(
-        "Fetching SLF bulletins: lang=%s limit=%d offset=%d base=%s",
-        lang,
-        limit,
-        offset,
-        resolved_base,
-    )
-
-    response = requests.get(
-        url,
-        params={"limit": limit, "offset": offset},
-        timeout=REQUEST_TIMEOUT,
-    )
-    response.raise_for_status()
-
-    data: Any = response.json()
-    bulletins = normalise_slf_response(data)
-    _log_caaml_shape(bulletins, resolved_base)
-    return bulletins
-
-
-def _log_caaml_shape(bulletins: list[dict[str, Any]], base_url: str) -> None:
-    """Log what shape a fetched page turned out to be.
-
-    WARNING for the new per-region export, INFO otherwise: the whole point
-    is that the changeover announces itself the first time it happens
-    rather than being inferred later from a row count. The base URL is in
-    the message because the shape is explicitly NOT a property of it —
-    seeing the two together is what tells an operator whether pinning
-    ``SLF_API_LEGACY_URL`` did anything.
-
-    Args:
-        bulletins: The normalised bulletin list from one page fetch.
-        base_url: The base URL the page was fetched from.
-
-    """
-    detected = detect_caaml_shape(bulletins)
-    level = (
-        logging.WARNING if detected.shape == CAAML_SHAPE_PER_REGION else logging.INFO
-    )
-    logger.log(
-        level,
-        "SLF page shape=%s bulletins=%d regions=%d max_regions=%d markers=%s base=%s",
-        detected.shape,
-        detected.bulletin_count,
-        detected.region_count,
-        detected.max_regions_per_bulletin,
-        ",".join(detected.markers) or "none",
-        base_url,
-    )
-
-
-class UnknownRegionError(LookupError):
-    """Raised when an ingested bulletin references an unseeded region_id.
-
-    Regions are fixture-backed reference data, not auto-created. If a
-    CAAML bulletin arrives with a ``region_id`` that isn't in the
-    ``pipeline_region`` table, we want that to fail loudly so a human
-    can investigate (new EAWS region published? typo in the feed?) and
-    update the fixture deliberately.
-    """
-
-
-class NoResolvableRegionsError(LookupError):
-    """Raised when *every* region on a bulletin is unresolvable (SNOW-547).
-
-    A bulletin that lists regions but resolves none of them would
-    otherwise be ingested as a success while erasing all of its coverage:
-    the update path deletes the existing ``RegionBulletin`` rows, creates
-    no replacements, and reports created/updated with ``records_failed``
-    untouched. That is indistinguishable from a legitimately
-    empty-``regions`` bulletin, which is benign and must keep succeeding.
-
-    The partial case — at least one region resolves — deliberately stays
-    a WARNING and a success. Failing on partial resolution would turn
-    every scheduled run red on routine fixture drift from a single stale
-    region ID; only total coverage loss is unambiguous enough to fail on.
-    """
-
-
-def _get_region(region_id: str) -> MicroRegion:
-    """
-    Look up the MicroRegion for an ingested bulletin entry.
-
-    Regions are fixture-backed; unseen identifiers raise
-    ``UnknownRegionError`` rather than being silently auto-created.
-
-    Args:
-        region_id: SLF region identifier, e.g. "CH-4115".
-
-    Returns:
-        The matching MicroRegion instance.
-
-    Raises:
-        UnknownRegionError: The region_id does not correspond to any
-            seeded MicroRegion row.
-
-    """
-    try:
-        return MicroRegion.objects.get(region_id=region_id)
-    except MicroRegion.DoesNotExist as exc:
-        raise UnknownRegionError(
-            f"Bulletin references unknown region_id={region_id!r} — "
-            "add it to apps/regions/fixtures/eaws_CH.json (and rerun "
-            "refresh_eaws_fixtures if the EAWS source has changed) before "
-            "re-ingesting."
-        ) from exc
-
-
-def _resolve_bulletin_regions(
-    raw_regions: list[dict[str, str]],
-) -> tuple[list[tuple[MicroRegion, str]], list[str]]:
-    """Resolve raw region entries to ``(region, name)`` pairs before any write.
-
-    Returns the resolvable ``(MicroRegion, region_name_at_time)`` pairs plus
-    the region_ids skipped because they are not in the fixtures. Raises
-    ``KeyError`` if a region entry is missing ``regionID`` or ``name`` — this
-    surfaces malformed provider data *before* the caller mutates the DB, so a
-    bad entry can never leave a bulletin with a half-written link set
-    (SNOW-460).
-
-    Args:
-        raw_regions: The ``regions`` list from a raw bulletin dict.
-
-    Returns:
-        ``(resolved, skipped)`` where ``resolved`` is a list of
-        ``(MicroRegion, region_name_at_time)`` pairs and ``skipped`` is the
-        list of unresolved (unknown) region_ids.
-
-    """
-    resolved: list[tuple[MicroRegion, str]] = []
-    skipped: list[str] = []
-    for raw_region in raw_regions:
-        region_id = raw_region["regionID"]
-        try:
-            region = _get_region(region_id)
-        except UnknownRegionError:
-            skipped.append(region_id)
-            continue
-        resolved.append((region, raw_region["name"]))
-    return resolved, skipped
-
-
-def _assert_any_region_resolved(
-    bulletin_id: str,
-    raw_regions: list[dict[str, str]],
-    resolved_regions: list[tuple[MicroRegion, str]],
-    skipped_regions: list[str],
-) -> None:
-    """Raise if a bulletin listed regions but resolved none of them (SNOW-547).
-
-    Called *before* the write transaction, so a total resolution failure
-    leaves the bulletin's existing region links untouched instead of
-    deleting them and creating no replacements — which reported success
-    while silently erasing the bulletin's coverage from the map.
-
-    A bulletin with no ``regions`` at all is a different, benign case and
-    passes; so does partial resolution, which stays a WARNING (see
-    ``NoResolvableRegionsError``).
-
-    Args:
-        bulletin_id: The bulletin being ingested, for the error message.
-        raw_regions: The ``regions`` list from the raw bulletin dict.
-        resolved_regions: Pairs returned by ``_resolve_bulletin_regions``.
-        skipped_regions: Unresolved region_ids from the same call.
-
-    Raises:
-        NoResolvableRegionsError: ``raw_regions`` is non-empty and
-            ``resolved_regions`` is empty.
-
-    """
-    if not raw_regions or resolved_regions:
-        return
-    raise NoResolvableRegionsError(
-        f"Bulletin {bulletin_id}: none of the {len(raw_regions)} region(s) "
-        f"resolved ({', '.join(sorted(skipped_regions))}). Ingesting would "
-        "delete this bulletin's existing region links and replace them with "
-        "nothing. Check apps/regions/fixtures/ against the upstream EAWS region "
-        "scheme before re-ingesting."
-    )
-
-
-def _resolve_source(raw: dict[str, Any], bulletin_id: str) -> str:
-    """
-    Detect the provider a raw bulletin came from, degrading to blank.
-
-    Provenance is detected from the raw payload rather than read back out of
-    ``render_model["source"]``: it is an ingest fact, so it must survive a
-    render-model build failure and must not be rewritten by
-    ``rebuild_render_models``.
-
-    Args:
-        raw: The raw CAAML properties dict.
-        bulletin_id: The bulletin identifier, for the warning log line.
-
-    Returns:
-        A ``Bulletin.Source`` value, or ``""`` when the payload carries no
-        known source marker.
-
-    """
-    try:
-        return detect_source(raw)
-    except RenderModelBuildError:
-        logger.warning(
-            "No known source marker in customData for bulletin %s — "
-            "leaving source blank",
-            bulletin_id,
-        )
-        return ""
-
-
-def _refresh_grouping(bulletin: Bulletin, run: PipelineRun) -> None:
-    """
-    Recompute ``bulletin``'s grouping outline without ever aborting ingest.
-
-    The grouping is a denormalisation; the authoritative data lives in the
-    RegionBulletin rows, so a geometry error is logged and ingest continues.
-
-    SNOW-1228: a failed recompute must not leave the PREVIOUS outline live.
-    A correction that moved a region out of the bulletin would otherwise
-    keep drawing the old aggregation, which asserts the old region is still
-    covered by it. So the stale row is deleted — no outline is honest, an
-    old one is not — and the failure counts against the run, as a failed
-    day rating does, so cron/CI see it. The delete has its own guard: a
-    failing delete is logged but never aborts ingest either.
-
-    Args:
-        bulletin: The bulletin just upserted, its region links committed.
-        run: The pipeline run whose ``records_failed`` a failure increments.
-
-    """
-    try:
-        compute_bulletin_grouping_boundary(bulletin)
-    except Exception:
-        logger.exception(
-            "compute_bulletin_grouping_boundary failed for bulletin %s"
-            " — ingest continues",
-            bulletin.bulletin_id,
-        )
-        try:
-            BulletinGrouping.objects.filter(bulletin=bulletin).delete()
-        except Exception:
-            logger.exception(
-                "could not delete the stale BulletinGrouping for bulletin %s",
-                bulletin.bulletin_id,
-            )
-        run.records_failed += 1
-        run.save(update_fields=["records_failed"])
-
-
-def upsert_bulletin(raw: dict[str, Any], run: PipelineRun, pdf_url: str = "") -> bool:
-    """
-    Create or update a single Bulletin from a raw API dict.
-
-    Wraps the raw bulletin in a GeoJSON Feature envelope (matching the
-    format expected by downstream consumers) before storing. Creates or
-    looks up MicroRegion records and links them via RegionBulletin.
-
-    Args:
-        raw: A single bulletin dict from the SLF CAAML API.
-        run: The PipelineRun to associate with this bulletin.
-        pdf_url: Optional URL of the source bulletin PDF. Defaults to ``""``
-            (empty) when not supplied — callers compute this via the
-            per-source ``_*_pdf_url`` helpers and pass it through.
-
-    Returns:
-        True if a new row was created, False if an existing row was updated.
-
-    """
-    bulletin_id: str = raw["bulletinID"]
-    raw_data: dict[str, Any] = {
-        "type": "Feature",
-        "geometry": None,
-        "properties": raw,
-    }
-
-    next_update_raw: str | None = raw.get("nextUpdate")
-    raw_regions: list[dict[str, str]] = raw.get("regions", [])
-
-    # Build render model from the raw properties.
-    try:
-        computed_render_model = build_render_model(raw)
-        computed_render_model_version = RENDER_MODEL_VERSION
-    except RenderModelBuildError as exc:
-        logger.exception(
-            "Failed to build render model for bulletin %s: %s",
-            bulletin_id,
-            exc,
-        )
-        computed_render_model = {
-            "version": 0,
-            "error": str(exc),
-            "error_type": exc.__class__.__name__,
-        }
-        computed_render_model_version = 0
-        run.records_failed += 1
-        run.save(update_fields=["records_failed"])
-
-    valid_from = parse_dt(raw["validTime"]["startTime"])
-
-    defaults: dict[str, Any] = {
-        "raw_data": raw_data,
-        "source": _resolve_source(raw, bulletin_id),
-        "render_model": computed_render_model,
-        "render_model_version": computed_render_model_version,
-        "issued_at": resolve_issued_at(raw),
-        "valid_from": valid_from,
-        "valid_to": parse_dt(raw["validTime"]["endTime"]),
-        "target_date": target_day_for_valid_from(valid_from),
-        "next_update": parse_dt(next_update_raw) if next_update_raw else None,
-        "lang": raw.get("lang", LANG),
-        "unscheduled": raw.get("unscheduled", False),
-        "pipeline_run": run,
-        "pdf_url": pdf_url,
-    }
-
-    # Resolve every region *before* touching the DB (SNOW-460): a malformed
-    # entry raises here, before the delete-and-recreate below, so it can never
-    # leave a bulletin with a truncated link set. Unknown-but-well-formed
-    # regions are skipped as before (absent from the fixtures, not an error).
-    resolved_regions, skipped_regions = _resolve_bulletin_regions(raw_regions)
-
-    # Total resolution failure is a coverage-erasing event, not a skip
-    # (SNOW-547) — raised here, before the transaction below deletes the
-    # existing links, so prior state survives untouched.
-    _assert_any_region_resolved(
-        bulletin_id, raw_regions, resolved_regions, skipped_regions
-    )
-
-    # Replace the bulletin and its region links in one transaction so a
-    # failure can never commit a bulletin with a half-written link set — the
-    # bulletin and its associations move between consistent versions atomically.
-    with transaction.atomic():
-        # Capture the (region, day) pairs the stored row covers *before* the
-        # update rewrites its target day and the delete below drops its links:
-        # afterwards they are unrecoverable, and a correction that narrows the
-        # coverage would leave the dropped regions' ratings sourced from a
-        # bulletin that no longer covers them (SNOW-1168). Slim read — only
-        # what day_rating_pairs needs.
-        existing = (
-            Bulletin.objects.filter(bulletin_id=bulletin_id)
-            .only("pk", "target_date", "valid_from")
-            .first()
-        )
-        prior_pairs = day_rating_pairs([existing]) if existing else set()
-
-        bulletin, created = Bulletin.objects.update_or_create(
-            bulletin_id=bulletin_id,
-            defaults=defaults,
-        )
-
-        # Clear existing links on update to stay in sync.
-        if not created:
-            RegionBulletin.objects.filter(bulletin=bulletin).delete()
-
-        for region, region_name_at_time in resolved_regions:
-            RegionBulletin.objects.create(
-                bulletin=bulletin,
-                region=region,
-                region_name_at_time=region_name_at_time,
-            )
-
-    linked_count = len(resolved_regions)
-
-    if skipped_regions:
-        logger.warning(
-            "Bulletin %s: %d/%d region(s) skipped — not in fixtures: %s",
-            bulletin_id,
-            len(skipped_regions),
-            len(raw_regions),
-            ", ".join(sorted(skipped_regions)),
-        )
-
-    action = "Created" if created else "Updated"
-    logger.debug(
-        "%s bulletin %s (issued %s, %d/%d regions linked)",
-        action,
-        bulletin_id,
-        defaults["issued_at"],
-        linked_count,
-        len(raw_regions),
-    )
-
-    # Refresh day ratings. Day ratings are a denormalisation — the
-    # authoritative data lives in Bulletin/RegionBulletin — so a rating failure
-    # must not abort ingest. But a failed recompute would otherwise leave a
-    # stale, possibly wrong (e.g. low-when-now-high) rating live, so
-    # apply_bulletin_day_ratings invalidates the affected rows and reports how
-    # many pairs failed; we add those to records_failed so the pipeline run
-    # is marked failed and cron/CI surface it (SNOW-461). The prior pairs make
-    # it reconcile what a correction dropped as well (SNOW-1168). The broad
-    # except is a backstop for an unexpected wholesale failure (e.g. the
-    # region query) — count it as one failure so the run still fails.
-    try:
-        rating_failures = apply_bulletin_day_ratings(bulletin, prior_pairs=prior_pairs)
-    except Exception:
-        logger.exception(
-            "apply_bulletin_day_ratings failed for bulletin %s — ingest continues",
-            bulletin_id,
-        )
-        rating_failures = 1
-    if rating_failures:
-        run.records_failed += rating_failures
-        run.save(update_fields=["records_failed"])
-
-    # Compute the dissolved grouping boundary — wrapped identically so that
-    # a geometry error never aborts ingest.
-    _refresh_grouping(bulletin, run)
-
-    return created
-
-
-# Per-bulletin processing outcomes returned by ``_process_bulletin``.
-# The generic OUTCOME_* constants are imported from fetcher_common; the
-# SLF pipeline also uses internal pagination-control variants that have
-# no equivalent in other providers.
+# The SLF pipeline's own outcome: a bulletin already stored and not forced.
+# The walk's outcomes (skipped_newer) come from apps.ingest.public.
 _OUTCOME_SKIPPED_EXISTS = "skipped_exists"
-_OUTCOME_SKIPPED_NEWER = "skipped_newer"
-_OUTCOME_OUT_OF_RANGE = "out_of_range"
 
 
 def _process_bulletin(
-    raw: dict[str, Any],
+    record: NormalisedBulletin,
     run: PipelineRun,
     *,
-    range_start: datetime,
-    range_end: datetime,
     dry_run: bool,
     force: bool,
 ) -> str:
     """
-    Decide how to handle a single bulletin within the paging loop.
+    Decide what to do with one bulletin the walk found in the window.
 
-    Returns one of the ``_OUTCOME_*`` constants so the caller can update
-    counters or terminate pagination without owning the decision logic.
+    Args:
+        record: The bulletin.
+        run: The active PipelineRun.
+        dry_run: When True, log and count without writing.
+        force: When True, rewrite a bulletin that already exists.
+
+    Returns:
+        ``OUTCOME_CREATED``, ``OUTCOME_UPDATED``, ``OUTCOME_FAILED`` or
+        ``_OUTCOME_SKIPPED_EXISTS``.
+
     """
-    issued_at = resolve_issued_at(raw)
-
-    if issued_at >= range_end:
-        return _OUTCOME_SKIPPED_NEWER
-    if issued_at < range_start:
-        logger.info("Passed start boundary at %s, stopping", issued_at.isoformat())
-        return _OUTCOME_OUT_OF_RANGE
-
     if dry_run:
-        logger.info("[dry-run] Would store %s", raw["bulletinID"])
+        logger.info("[dry-run] Would store %s", record.bulletin_id)
         return OUTCOME_CREATED
 
-    if not force and Bulletin.objects.filter(bulletin_id=raw["bulletinID"]).exists():
+    if not force and Bulletin.objects.filter(bulletin_id=record.bulletin_id).exists():
         return _OUTCOME_SKIPPED_EXISTS
 
     # A bulletin whose regions are all unresolvable fails that bulletin, not
@@ -624,56 +91,19 @@ def _process_bulletin(
     # inside upsert_bulletin. records_failed makes fetch_bulletins exit
     # non-zero per the management-command contract, so cron/CI surface it.
     try:
-        created = upsert_bulletin(raw, run, pdf_url=slf_pdf_url(raw))
+        created = apply_bulletin(record, run)
     except NoResolvableRegionsError:
-        logger.exception("Skipping bulletin %s", raw["bulletinID"])
+        logger.exception("Skipping bulletin %s", record.bulletin_id)
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
         return OUTCOME_FAILED
+    except KeyError:
+        logger.exception(
+            "Error parsing bulletin data:\n%s", json.dumps(record.caaml, indent=4)
+        )
+        raise
 
     return OUTCOME_CREATED if created else OUTCOME_UPDATED
-
-
-def _process_page(
-    page: list[dict[str, Any]],
-    run: PipelineRun,
-    counts: dict[str, int],
-    *,
-    range_start: datetime,
-    range_end: datetime,
-    dry_run: bool,
-    force: bool,
-    on_fetched: "Callable[[dict[str, Any]], None] | None",
-) -> bool:
-    """
-    Walk a page of bulletins, mutating counts; return True to stop paging.
-
-    Pulled out of ``run_slf_pipeline`` so the orchestration loop stays
-    under the cyclomatic-complexity limit. The return value collapses
-    the two pagination-termination signals into one: an out-of-range
-    bulletin (``_OUTCOME_OUT_OF_RANGE``) tells the caller to stop.
-    """
-    for raw in page:
-        if on_fetched is not None:
-            on_fetched(raw)
-        try:
-            outcome = _process_bulletin(
-                raw,
-                run,
-                range_start=range_start,
-                range_end=range_end,
-                dry_run=dry_run,
-                force=force,
-            )
-        except KeyError:
-            logger.exception(
-                "Error parsing bulletin data:\n%s", json.dumps(raw, indent=4)
-            )
-            raise
-        if outcome == _OUTCOME_OUT_OF_RANGE:
-            return True
-        counts[outcome] += 1
-    return False
 
 
 def run_slf_pipeline(
@@ -689,9 +119,10 @@ def run_slf_pipeline(
     """
     Orchestrate a full SLF pipeline run over a date range.
 
-    Pages through the SLF CAAML API in reverse chronological order.
-    Bulletins newer than ``end`` are skipped; once a bulletin older than
-    ``start`` is encountered, pagination stops.
+    The walk — paging back through the SLF API, skipping bulletins newer
+    than ``end`` and stopping at the first older than ``start`` — is
+    ``apps.ingest.public.fetch_bulletins``. This function decides what to
+    do with each bulletin it yields and records the run.
 
     Args:
         start: First date to include (inclusive).
@@ -721,19 +152,13 @@ def run_slf_pipeline(
     run = PipelineRun.objects.create(triggered_by=triggered_by)
     run.mark_running()
 
-    # Convert date boundaries to aware datetimes for comparison.
-    range_start = datetime(start.year, start.month, start.day, tzinfo=UTC)
-    range_end = datetime(end.year, end.month, end.day, tzinfo=UTC) + _ONE_DAY
-
     counts: dict[str, int] = {
         OUTCOME_CREATED: 0,
         OUTCOME_UPDATED: 0,
         _OUTCOME_SKIPPED_EXISTS: 0,
-        _OUTCOME_SKIPPED_NEWER: 0,
         OUTCOME_FAILED: 0,
     }
-    offset = 0
-    pages_fetched = 0
+    stats = FetchStats()
 
     try:
         logger.info(
@@ -745,34 +170,19 @@ def run_slf_pipeline(
             dry_run,
             delay,
         )
-
-        while True:
-            page = fetch_bulletin_page(LANG, PAGE_SIZE, offset, base_url=base_url)
-            pages_fetched += 1
-
-            if not page:
-                break
-
-            stop = _process_page(
-                page,
-                run,
-                counts,
-                range_start=range_start,
-                range_end=range_end,
-                dry_run=dry_run,
-                force=force,
-                on_fetched=on_fetched,
-            )
-
-            # Stop on either an out-of-range bulletin (``stop`` is True)
-            # or the upstream's "fewer than ``limit``" last-page signal.
-            if stop or len(page) < PAGE_SIZE:
-                break
-
-            offset += PAGE_SIZE
-
-            if delay > 0:
-                time.sleep(delay)
+        for item in fetch_bulletins(
+            PROVIDER_SLF,
+            start,
+            end,
+            base_url=base_url,
+            delay=delay,
+            on_item=on_fetched,
+            stats=stats,
+        ):
+            if isinstance(item, FetchOutcome):
+                count_outcome(item, run, counts)
+                continue
+            counts[_process_bulletin(item, run, dry_run=dry_run, force=force)] += 1
 
     except Exception as exc:
         run.mark_failed(exc)
@@ -782,7 +192,7 @@ def run_slf_pipeline(
         "Pipeline run %s finished: %d pages, %d created, %d updated, "
         "%d skipped, %d failed",
         run.pk,
-        pages_fetched,
+        stats.requests,
         counts[OUTCOME_CREATED],
         counts[OUTCOME_UPDATED],
         counts[_OUTCOME_SKIPPED_EXISTS],

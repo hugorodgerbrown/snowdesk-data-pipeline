@@ -335,7 +335,7 @@ def _process_line(
         counts: Mutable counter object updated by this call.
 
     """
-    from apps.bulletins.services.slf_fetcher import (
+    from apps.bulletins.services.apply import (
         NoResolvableRegionsError,
         upsert_bulletin,
     )

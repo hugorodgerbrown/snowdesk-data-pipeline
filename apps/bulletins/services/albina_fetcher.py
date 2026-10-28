@@ -1,230 +1,82 @@
 """
-apps/bulletins/services/albina_fetcher.py — Fetching and persisting ALBINA bulletins.
+apps/bulletins/services/albina_fetcher.py — The ALBINA pipeline, app side.
 
-Walks the ALBINA CDN at::
+Since SNOW-1249 the walk across the ALBINA CDN — every (date, region) slot at::
 
     {base}/{date}/{date}_{region}_en_CAAMLv6.json
 
-for a date range × region combination, deduplicating by ``bulletinID`` and
-persisting each bulletin via the shared ``upsert_bulletin`` pipeline.
+with a 404 read as "no bulletin for this slot" and a bulletin spanning
+regions yielded once — is ``apps.ingest.public.fetch_bulletins("ALBINA",
+…)``. This module decides what to do with each bulletin it yields and
+records the run.
 
-Each CDN file is a JSON array (or ``{"bulletins": [...]}`` envelope) of raw
-CAAML v6 bulletin dicts. A 404 response for a given (date, region) pair means
-"no bulletin published for this slot" — not an error. Any other 4xx/5xx
-response logs a warning and skips the slot.
-
-``fetch_albina_for_date``, ``run_albina_pipeline``, and ``albina_stash_writer``
-are the public entry points. The management command ``fetch_bulletins`` calls
-``run_albina_pipeline`` and ``albina_stash_writer``; unit tests can call any
-of them independently via mocked ``requests.get``.
+``run_albina_pipeline``, ``latest_albina_date`` and ``albina_stash_writer``
+are the entry points the ``fetch_bulletins`` command wires up via the
+``BulletinSource`` registry.
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Any
 
-import requests
 from django.conf import settings
 
 from apps.bulletins.models import Bulletin, PipelineRun
-from apps.bulletins.services.slf_fetcher import upsert_bulletin
+from apps.bulletins.services.apply import apply_bulletin, count_outcome
 from apps.ingest.public import (
     OUTCOME_CREATED,
+    OUTCOME_DUPLICATE,
     OUTCOME_FAILED,
     OUTCOME_SKIPPED,
     OUTCOME_UPDATED,
-    albina_pdf_url,
-    normalise_bulletin_response,
+    PROVIDER_ALBINA,
+    FetchOutcome,
+    FetchStats,
+    NormalisedBulletin,
+    fetch_bulletins,
     write_ndjson_archive,
 )
 
 logger = logging.getLogger(__name__)
 
-REQUEST_TIMEOUT = 30  # seconds
-
-_ONE_DAY = timedelta(days=1)
-
-
-def fetch_albina_for_date(
-    target_date: date,
-    region: str,
-    base_url: str | None = None,
-) -> list[dict[str, Any]]:
-    """
-    Fetch ALBINA bulletins for one (date, region) pair from the ALBINA CDN.
-
-    The CDN publishes per-date, per-region CAAMLv6 files at::
-
-        {base}/{date}/{date}_{region}_en_CAAMLv6.json
-
-    A 404 response means no bulletin was published for this date/region
-    combination (off-season gap, or the region didn't publish that day).
-    That is the expected shape for an archive gap, not an error.
-
-    Args:
-        target_date: The date whose bulletin to fetch.
-        region: ALBINA region code, e.g. ``"AT-07"``.
-        base_url: Override the ALBINA CDN base URL. Falls back to
-            ``settings.ALBINA_API_BASE_URL`` when ``None``.
-
-    Returns:
-        A flat list of raw bulletin dicts. Empty when the CDN returns 404
-        or when the response body has an unexpected shape.
-
-    Raises:
-        requests.HTTPError: If the CDN returns any non-404 error status.
-
-    """
-    resolved_base = base_url if base_url is not None else settings.ALBINA_API_BASE_URL
-    date_str = target_date.isoformat()
-    url = f"{resolved_base}/{date_str}/{date_str}_{region}_en_CAAMLv6.json"
-
-    logger.debug(
-        "Fetching ALBINA bulletins: date=%s region=%s url=%s",
-        date_str,
-        region,
-        url,
-    )
-
-    response = requests.get(url, timeout=REQUEST_TIMEOUT)
-
-    if response.status_code == 404:
-        logger.debug("No bulletin for %s / %s (404)", date_str, region)
-        return []
-
-    response.raise_for_status()
-
-    data: Any = response.json()
-    return _normalise_response(data, date_str, region)
-
-
-def _normalise_response(data: Any, date_str: str, region: str) -> list[dict[str, Any]]:
-    """
-    Normalise an ALBINA CDN response into a flat list of bulletin dicts.
-
-    The CDN may return:
-
-    - A JSON array of bulletin dicts (most common).
-    - A ``{"bulletins": [...]}`` envelope dict.
-
-    Delegates to ``normalise_bulletin_response`` from ``fetcher_common``,
-    passing ``"ALBINA {date_str}/{region}"`` as the source label so warning
-    messages retain the per-slot context.
-
-    Args:
-        data: The parsed JSON response from the CDN.
-        date_str: ISO date string used in warning messages.
-        region: Region code used in warning messages.
-
-    Returns:
-        A flat list of bulletin dicts.
-
-    """
-    return normalise_bulletin_response(data, f"ALBINA {date_str}/{region}")
-
-
-def _parse_issued_at(raw: dict[str, Any], fallback: datetime) -> datetime:
-    """
-    Derive an ``issued_at`` datetime from a raw ALBINA bulletin dict.
-
-    Tries ``publicationTime`` first, then ``validTime.startTime``, then
-    falls back to ``fallback`` when neither parses.
-
-    Args:
-        raw: A raw bulletin dict from the ALBINA CDN.
-        fallback: Returned when neither timestamp field is parseable.
-
-    Returns:
-        A UTC-aware datetime.
-
-    """
-    candidates: list[str] = [
-        raw.get("publicationTime", "") or "",
-        (raw.get("validTime") or {}).get("startTime", "") or "",
-    ]
-    for value in candidates:
-        if not value:
-            continue
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
-        except ValueError:
-            continue
-    return fallback
-
-
-# ALBINA-specific outcome — a bulletin whose ``bulletinID`` was already
-# processed in a prior CDN slot (it spans multiple regions).  Not a shared
-# constant because this dedup tag is meaningless for the SLF and MF pipelines.
-_OUTCOME_DUPLICATE = "duplicate"
-
 
 def _process_albina_bulletin(
-    raw: dict[str, Any],
+    record: NormalisedBulletin,
     run: PipelineRun,
-    seen_ids: set[str],
     *,
-    region: str,
-    range_start: datetime,
-    range_end: datetime,
     dry_run: bool,
     force: bool,
-    on_fetched: Callable[[dict[str, Any]], None] | None,
 ) -> str:
     """
-    Decide how to handle a single ALBINA bulletin.
-
-    Returns a short outcome tag: ``"created"``, ``"updated"``, ``"skipped"``,
-    ``"duplicate"``, or ``"failed"``.
+    Decide what to do with one ALBINA bulletin the walk found in the window.
 
     Args:
-        raw: A single raw bulletin dict.
-        run: The active PipelineRun instance.
-        seen_ids: Mutable set of already-processed bulletin IDs (dedup).
-        region: The ALBINA region code whose CDN slot was fetched
-            (e.g. ``"AT-07"``). Passed through to ``albina_pdf_url``.
-        range_start: Lower bound of the ingest window (UTC-aware).
-        range_end: Upper bound of the ingest window (UTC-aware).
+        record: The bulletin.
+        run: The active PipelineRun.
         dry_run: When True, log and count without writing.
         force: When True, upsert even if the bulletin already exists.
-        on_fetched: Optional callback called for each unique bulletin (after
-            dedup) so consumers like ``--stash`` see one entry per
-            ``bulletinID`` even when a bulletin spans regions.
+
+    Returns:
+        ``"created"``, ``"updated"``, ``"skipped"`` or ``"failed"``.
 
     """
-    bulletin_id: str = raw.get("bulletinID", "")
-    if not bulletin_id:
-        logger.warning("ALBINA bulletin with no bulletinID — skipping")
-        return OUTCOME_SKIPPED
-
-    # Deduplicate — the same bulletin ID appears in multiple region files
-    # when its coverage spans regions.
-    if bulletin_id in seen_ids:
-        return _OUTCOME_DUPLICATE
-    seen_ids.add(bulletin_id)
-
-    if on_fetched is not None:
-        on_fetched(raw)
-
-    issued_at = _parse_issued_at(raw, fallback=range_start)
-    if not (range_start <= issued_at < range_end):
-        return OUTCOME_SKIPPED
-
     if dry_run:
-        logger.info("[dry-run] Would store ALBINA %s", bulletin_id)
+        logger.info("[dry-run] Would store ALBINA %s", record.bulletin_id)
         return OUTCOME_CREATED
 
-    if not force and Bulletin.objects.filter(bulletin_id=bulletin_id).exists():
+    if not force and Bulletin.objects.filter(bulletin_id=record.bulletin_id).exists():
         return OUTCOME_SKIPPED
 
     try:
-        created = upsert_bulletin(raw, run, pdf_url=albina_pdf_url(raw, region))
+        created = apply_bulletin(record, run)
     except Exception as exc:
-        logger.exception("Failed to upsert ALBINA bulletin %s: %s", bulletin_id, exc)
+        logger.exception(
+            "Failed to upsert ALBINA bulletin %s: %s", record.bulletin_id, exc
+        )
         run.records_failed += 1
         run.save(update_fields=["records_failed"])
         return OUTCOME_FAILED
@@ -245,11 +97,6 @@ def run_albina_pipeline(
 ) -> PipelineRun:
     """
     Orchestrate a full ALBINA bulletin ingest over a date range × region set.
-
-    Walks the ALBINA CDN for every (date, region) combination in the
-    Cartesian product of ``[start..end]`` × ``regions``, deduplicating
-    bulletins by ``bulletinID`` so that cross-region bulletins are only
-    stored once.
 
     Args:
         start: First date to include (inclusive).
@@ -285,14 +132,10 @@ def run_albina_pipeline(
         OUTCOME_CREATED: 0,
         OUTCOME_UPDATED: 0,
         OUTCOME_SKIPPED: 0,
-        _OUTCOME_DUPLICATE: 0,
+        OUTCOME_DUPLICATE: 0,
         OUTCOME_FAILED: 0,
     }
-    request_count = 0
-    seen_ids: set[str] = set()
-
-    range_start = datetime(start.year, start.month, start.day, tzinfo=UTC)
-    range_end = datetime(end.year, end.month, end.day, tzinfo=UTC) + _ONE_DAY
+    stats = FetchStats()
 
     try:
         logger.info(
@@ -304,46 +147,21 @@ def run_albina_pipeline(
             force,
             dry_run,
         )
-
-        current = start
-        while current <= end:
-            for region in resolved_regions:
-                if delay > 0 and request_count > 0:
-                    time.sleep(delay)
-
-                try:
-                    bulletins = fetch_albina_for_date(
-                        current, region, base_url=base_url
-                    )
-                except requests.HTTPError as exc:
-                    logger.exception(
-                        "HTTP error fetching %s / %s: %s — skipping slot",
-                        current.isoformat(),
-                        region,
-                        exc,
-                    )
-                    run.records_failed += 1
-                    run.save(update_fields=["records_failed"])
-                    request_count += 1
-                    continue
-
-                request_count += 1
-
-                for raw in bulletins:
-                    outcome = _process_albina_bulletin(
-                        raw,
-                        run,
-                        seen_ids,
-                        region=region,
-                        range_start=range_start,
-                        range_end=range_end,
-                        dry_run=dry_run,
-                        force=force,
-                        on_fetched=on_fetched,
-                    )
-                    counts[outcome] += 1
-
-            current += _ONE_DAY
+        for item in fetch_bulletins(
+            PROVIDER_ALBINA,
+            start,
+            end,
+            regions=resolved_regions,
+            base_url=base_url,
+            delay=delay,
+            on_item=on_fetched,
+            stats=stats,
+        ):
+            if isinstance(item, FetchOutcome):
+                count_outcome(item, run, counts)
+                continue
+            outcome = _process_albina_bulletin(item, run, dry_run=dry_run, force=force)
+            counts[outcome] += 1
 
     except Exception as exc:
         run.mark_failed(exc)
@@ -353,7 +171,7 @@ def run_albina_pipeline(
         "ALBINA pipeline run %s finished: %d requests, "
         "%d created, %d updated, %d skipped",
         run.pk,
-        request_count,
+        stats.requests,
         counts[OUTCOME_CREATED],
         counts[OUTCOME_UPDATED],
         counts[OUTCOME_SKIPPED],

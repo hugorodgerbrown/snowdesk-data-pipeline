@@ -52,6 +52,14 @@ is staged across five tickets:
 - Data the code needs travels with it: the Météo-France massif catalogue now
   lives at `apps/ingest/normalise/meteofrance/massifs.json`, not under
   `docs/research/`.
+- **Ingest fetches; the host decides what to write** (SNOW-1249).
+  `fetch_bulletins` walks a provider and yields a `NormalisedBulletin` or a
+  `FetchOutcome`. The bulletin pipelines keep the dry-run, "already have it"
+  and write decisions and the run's counts (`apply_bulletin`,
+  `count_outcome`). The weather services likewise keep the walk over
+  `Location` rows and call `fetch_forecast` with a bare coordinate. Ingest
+  reads settings only through `apps/ingest/conf.py`, which lists every name
+  a rehosted service must set.
 - The management commands stay in the host apps as thin `RegisteredCommand`
   wrappers. Ingest's functions are plain and return counts, because
   `RegisteredCommand` lives in `apps.core`.

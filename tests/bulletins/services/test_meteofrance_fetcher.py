@@ -1,18 +1,14 @@
 """
 tests/bulletins/services/test_meteofrance_fetcher.py — Tests for the MeteoFrance fetcher.
 
-Covers:
-  - fetch_meteofrance_bulletin: HTTP success, 404 → None, HTTP error, live URL
-    construction, missing API key error, file:// local mirror path.
-  - _read_local_mirror: file present → bytes, file absent → None.
+Covers (the DPBRA fetch, the local mirror and the archive PDF lookup are
+tested in tests/ingest/sources/test_meteofrance.py since SNOW-1249):
   - run_meteofrance_pipeline: dry-run no writes, force vs. dedup, delegated
     skip without failure count, translation error increments records_failed,
     HTTP error increments records_failed, on_fetched callback, PipelineRun
     lifecycle.
   - latest_meteofrance_date: returns None when DB empty, latest date otherwise.
   - meteofrance_stash_writer: merge, dedup, sort, atomic write.
-  - _meteofrance_pdf_url: 200-with-match, 200-without-match, 404, network
-    error, empty massif — all return "" or correct URL.
 
 DB tests use MicroRegionFactory to seed the regions referenced by test XMLs
 (FR-01 = Chablais). HTTP calls are mocked via unittest.mock.patch.
@@ -29,14 +25,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-from django.test import override_settings
 
 from apps.bulletins.models import PipelineRun
 from apps.bulletins.services.meteofrance_fetcher import (
-    _meteofrance_pdf_url,
-    _read_local_mirror,
-    _resolve_base_url,
-    fetch_meteofrance_bulletin,
     latest_meteofrance_date,
     meteofrance_stash_writer,
     run_meteofrance_pipeline,
@@ -94,142 +85,6 @@ def _mock_http_error(status: int = 500) -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# fetch_meteofrance_bulletin — HTTP path
-# ---------------------------------------------------------------------------
-
-
-class TestFetchMeteofrance:
-    """fetch_meteofrance_bulletin handles HTTP and file:// paths."""
-
-    @patch("apps.bulletins.services.meteofrance_fetcher.requests.get")
-    def test_returns_bytes_on_200(self, mock_get: MagicMock) -> None:
-        """A 200 response returns the content bytes."""
-        mock_get.return_value = _mock_ok(b"<xml/>")
-        result = fetch_meteofrance_bulletin(1, "https://api.example.com", "key123")
-        assert result == b"<xml/>"
-
-    @patch("apps.bulletins.services.meteofrance_fetcher.requests.get")
-    def test_returns_none_on_404(self, mock_get: MagicMock) -> None:
-        """A 404 response returns None (no bulletin today)."""
-        mock_get.return_value = _mock_404()
-        result = fetch_meteofrance_bulletin(1, "https://api.example.com", "key123")
-        assert result is None
-
-    @patch("apps.bulletins.services.meteofrance_fetcher.requests.get")
-    def test_raises_on_http_error(self, mock_get: MagicMock) -> None:
-        """A 500 response raises requests.HTTPError."""
-        mock_get.return_value = _mock_http_error(500)
-        with pytest.raises(requests.HTTPError):
-            fetch_meteofrance_bulletin(1, "https://api.example.com", "key123")
-
-    @patch("apps.bulletins.services.meteofrance_fetcher.requests.get")
-    def test_url_uses_massif_id(self, mock_get: MagicMock) -> None:
-        """The request URL includes the massif ID at the correct path."""
-        mock_get.return_value = _mock_ok(b"<xml/>")
-        fetch_meteofrance_bulletin(7, "https://api.example.com", "key")
-        call_url = mock_get.call_args[0][0]
-        assert "/massif/7/BRA" in call_url
-
-    @patch("apps.bulletins.services.meteofrance_fetcher.requests.get")
-    def test_api_key_sent_as_header(self, mock_get: MagicMock) -> None:
-        """The apikey header is sent with the request."""
-        mock_get.return_value = _mock_ok(b"<xml/>")
-        fetch_meteofrance_bulletin(1, "https://api.example.com", "my-secret-key")
-        headers = mock_get.call_args[1]["headers"]
-        assert headers.get("apikey") == "my-secret-key"
-
-    def test_raises_when_no_api_key_and_live_url(self) -> None:
-        """An empty api_key with a live URL raises RuntimeError."""
-        with pytest.raises(RuntimeError, match="METEOFRANCE_API_KEY"):
-            fetch_meteofrance_bulletin(1, "https://api.example.com", "")
-
-
-# ---------------------------------------------------------------------------
-# _read_local_mirror
-# ---------------------------------------------------------------------------
-
-
-class TestReadLocalMirror:
-    """_read_local_mirror reads files from a file:// directory."""
-
-    def test_returns_bytes_when_file_exists(self) -> None:
-        """When massif-001.xml is present, returns its bytes."""
-        with tempfile.TemporaryDirectory() as tmp:
-            massif_file = Path(tmp) / "massif-001.xml"
-            massif_file.write_bytes(b"<test/>")
-            result = _read_local_mirror(1, f"file://{tmp}")
-            assert result == b"<test/>"
-
-    def test_returns_none_when_file_absent(self) -> None:
-        """Missing file for a massif returns None (mirrors HTTP 404 semantics)."""
-        with tempfile.TemporaryDirectory() as tmp:
-            result = _read_local_mirror(99, f"file://{tmp}")
-            assert result is None
-
-    def test_file_path_uses_three_digit_padding(self) -> None:
-        """The file name is massif-{id:03d}.xml (zero-padded to 3 digits)."""
-        with tempfile.TemporaryDirectory() as tmp:
-            # Create massif-005.xml (not massif-5.xml)
-            (Path(tmp) / "massif-005.xml").write_bytes(b"<padded/>")
-            result = _read_local_mirror(5, f"file://{tmp}")
-            assert result == b"<padded/>"
-
-
-# ---------------------------------------------------------------------------
-# _resolve_base_url — live by default, mirror only when explicit
-# ---------------------------------------------------------------------------
-
-
-class TestResolveBaseUrl:
-    """_resolve_base_url never picks up the mirror setting implicitly."""
-
-    @override_settings(
-        METEOFRANCE_API_BASE_URL="https://api.example.com",
-        METEOFRANCE_API_LOCAL_MIRROR_URL="file:///should/not/be/used",
-    )
-    def test_uses_live_when_base_url_none_even_if_mirror_set(self) -> None:
-        """A stale mirror setting must not redirect a default (live) run."""
-        assert _resolve_base_url(None) == "https://api.example.com"
-
-    @override_settings(
-        METEOFRANCE_API_BASE_URL="https://api.example.com",
-        METEOFRANCE_API_LOCAL_MIRROR_URL="",
-    )
-    def test_uses_live_when_mirror_empty(self) -> None:
-        """With no mirror configured, the live setting is used."""
-        assert _resolve_base_url(None) == "https://api.example.com"
-
-    @override_settings(METEOFRANCE_API_BASE_URL="https://api.example.com")
-    def test_explicit_base_url_wins(self) -> None:
-        """An explicit base_url argument always wins."""
-        assert _resolve_base_url("file:///explicit/mirror") == "file:///explicit/mirror"
-
-
-# ---------------------------------------------------------------------------
-# fetch_meteofrance_bulletin — local-mirror path
-# ---------------------------------------------------------------------------
-
-
-class TestFetchMeteofrancoLocalMirror:
-    """fetch_meteofrance_bulletin reads from file:// without network I/O."""
-
-    def test_returns_bytes_from_local_mirror(self) -> None:
-        """A file:// base_url reads from the local directory, no HTTP call."""
-        with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / "massif-001.xml").write_bytes(b"<local/>")
-            result = fetch_meteofrance_bulletin(1, f"file://{tmp}", "")
-            assert result == b"<local/>"
-
-    def test_no_api_key_required_for_local_mirror(self) -> None:
-        """Empty api_key is fine for file:// mirrors."""
-        with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / "massif-002.xml").write_bytes(b"<local/>")
-            # Must not raise even though api_key is ""
-            result = fetch_meteofrance_bulletin(2, f"file://{tmp}", "")
-            assert result == b"<local/>"
-
-
-# ---------------------------------------------------------------------------
 # run_meteofrance_pipeline — dry-run (no DB needed)
 # ---------------------------------------------------------------------------
 
@@ -244,7 +99,7 @@ def _no_pdf_index() -> Iterator[MagicMock]:
     because it fails open. ``None`` is the function's own "no index" answer.
     """
     with patch(
-        "apps.bulletins.services.meteofrance_fetcher._fetch_mf_index",
+        "apps.ingest.sources.meteofrance.fetch_mf_index",
         return_value=None,
     ) as stub:
         yield stub
@@ -309,7 +164,7 @@ class TestRunMeteofrance:
     def test_http_error_increments_records_failed(self) -> None:
         """An HTTP error for a massif increments records_failed."""
         with patch(
-            "apps.bulletins.services.meteofrance_fetcher.fetch_meteofrance_bulletin"
+            "apps.ingest.sources.meteofrance.fetch_meteofrance_bulletin"
         ) as mock_fetch:
             mock_fetch.side_effect = requests.HTTPError("500 Server Error")
             run = run_meteofrance_pipeline(
@@ -463,9 +318,7 @@ class TestRunMeteofrance:
         """
         MicroRegionFactory.create(region_id="FR-01", name="Chablais")
         mirror_url = f"file://{_SAMPLE_DIR}"
-        with patch(
-            "apps.bulletins.services.meteofrance_fetcher.requests.get"
-        ) as mock_get:
+        with patch("apps.ingest.sources.meteofrance.requests.get") as mock_get:
             run = run_meteofrance_pipeline(
                 date(2026, 5, 18),
                 date(2026, 5, 18),
@@ -676,99 +529,6 @@ class TestMeteofranceStashWriter:
 
 # ---------------------------------------------------------------------------
 # _meteofrance_pdf_url
-# ---------------------------------------------------------------------------
-
-
-def _make_index_response(entries: list[dict]) -> MagicMock:
-    """Build a mock session.get() response returning a JSON index list."""
-    mock = MagicMock()
-    mock.status_code = 200
-    mock.ok = True
-    mock.json.return_value = entries
-    mock.raise_for_status.return_value = None
-    return mock
-
-
-def _make_session(get_return: MagicMock) -> MagicMock:
-    """Build a mock requests.Session whose get() returns get_return."""
-    session = MagicMock(spec=requests.Session)
-    session.get.return_value = get_return
-    return session
-
-
-class TestMeteofrancePdfUrl:
-    """Tests for _meteofrance_pdf_url (network calls fully mocked)."""
-
-    def test_returns_url_when_massif_matches(self) -> None:
-        """Returns the PDF URL when the massif is found and heures is non-empty."""
-        index = [
-            {"massif": "CHABLAIS", "heures": ["20260115100000"]},
-            {"massif": "MONT-BLANC", "heures": ["20260115100000"]},
-        ]
-        session = _make_session(_make_index_response(index))
-        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
-        assert result == (
-            "https://donneespubliques.meteofrance.fr/donnees_libres/Pdf/BRA/"
-            "BRA.CHABLAIS.20260115100000.pdf"
-        )
-
-    def test_picks_latest_heures_when_multiple(self) -> None:
-        """When a massif has multiple heures, the last (sorted) entry is used."""
-        index = [
-            {"massif": "MONT-BLANC", "heures": ["20260115100000", "20260115153000"]},
-        ]
-        session = _make_session(_make_index_response(index))
-        result = _meteofrance_pdf_url("MONT-BLANC", date(2026, 1, 15), session)
-        assert "20260115153000" in result
-        assert "20260115100000" not in result
-
-    def test_returns_empty_when_massif_not_in_index(self) -> None:
-        """Returns '' when the massif is absent from the index."""
-        index = [{"massif": "BELLEDONNE", "heures": ["20260115100000"]}]
-        session = _make_session(_make_index_response(index))
-        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
-        assert result == ""
-
-    def test_returns_empty_on_404(self) -> None:
-        """Returns '' when the index endpoint returns 404 (off-season)."""
-        mock_resp = MagicMock()
-        mock_resp.status_code = 404
-        mock_resp.ok = False
-        session = _make_session(mock_resp)
-        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
-        assert result == ""
-
-    def test_returns_empty_on_network_error(self) -> None:
-        """Returns '' when a network-level exception is raised (fail-open)."""
-        session = MagicMock(spec=requests.Session)
-        session.get.side_effect = requests.RequestException("timeout")
-        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
-        assert result == ""
-
-    def test_returns_empty_for_empty_massif_name(self) -> None:
-        """Returns '' immediately when massif_name is empty."""
-        session = MagicMock(spec=requests.Session)
-        result = _meteofrance_pdf_url("", date(2026, 1, 15), session)
-        assert result == ""
-        session.get.assert_not_called()
-
-    def test_returns_empty_when_heures_is_empty_list(self) -> None:
-        """Returns '' when the massif exists but heures is an empty list."""
-        index = [{"massif": "CHABLAIS", "heures": []}]
-        session = _make_session(_make_index_response(index))
-        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
-        assert result == ""
-
-    def test_returns_empty_on_non_200_non_404(self) -> None:
-        """Returns '' on an unexpected 5xx response (fail-open)."""
-        mock_resp = MagicMock()
-        mock_resp.status_code = 503
-        mock_resp.ok = False
-        session = _make_session(mock_resp)
-        result = _meteofrance_pdf_url("CHABLAIS", date(2026, 1, 15), session)
-        assert result == ""
-
-
 @pytest.mark.django_db
 @pytest.mark.usefixtures("_no_pdf_index")
 class TestReissuedBulletin:
