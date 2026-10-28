@@ -104,6 +104,12 @@ class TestApplyLocation:
         assert location.short_id == "abcdefghijk"
         assert apply_location(item, commit=True) is Outcome.UNCHANGED
 
+    def test_a_source_uuid_reads_as_unchanged(self) -> None:
+        """Codex on #1260: a wire source_uuid compares as a UUID, not a string."""
+        item = _location_item(source_uuid=str(uuid.uuid4()))
+        assert apply_location(item, commit=True) is Outcome.CREATED
+        assert apply_location(item, commit=True) is Outcome.UNCHANGED
+
     def test_a_moved_pin_is_updated(self) -> None:
         """A corrected coordinate updates the same row."""
         item = _location_item()

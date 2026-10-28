@@ -19,9 +19,15 @@ apply:
       already holds is kept: its account of the day stands, as
       ``upsert_weather`` insists, and the service's copy simply joins it.
 
+  replay_held(locations, ...)
+      Apply the service's rows for days this instance still lacks. The
+      service skips a day it already holds, so a row whose apply failed
+      once (or that landed before the app's mirror) is never re-fetched;
+      this copies it across without spending an upstream call.
+
   backfill_locations(locations, ...) / sweep(locations, ...)
       The service's walks over ``stations_for(locations)``, each written
-      row applied as it is written.
+      row applied as it is written. Both replay the held rows first.
 
 The window helpers the admin reads (``backfill_floor``, ``backfill_until``,
 ``expected_days``) and the constants are re-exported, so callers keep one
@@ -35,7 +41,7 @@ from collections.abc import Callable, Iterable
 from datetime import date
 from typing import Any
 
-from django.db.models import QuerySet
+from django.db.models import Exists, OuterRef, QuerySet
 
 from apps.ingest.public import (
     ADMIN_MAX_LOCATIONS,
@@ -54,6 +60,7 @@ from apps.ingest.public import (
 )
 from apps.locations.models import Location
 from apps.weather.exceptions import ImmutableWeatherRowError
+from apps.weather.models import Weather
 from apps.weather.services.reference import apply_source_weather
 
 logger = logging.getLogger(__name__)
@@ -68,6 +75,7 @@ __all__ = [
     "backfill_locations",
     "backfill_until",
     "expected_days",
+    "replay_held",
     "request_weight",
     "stations_for",
     "sweep",
@@ -111,6 +119,57 @@ def apply_backfilled_row(row: SourceWeather) -> None:
         )
 
 
+def replay_held(
+    locations: QuerySet[Location],
+    *,
+    floor: date | None = None,
+    until: date | None = None,
+    commit: bool,
+) -> int:
+    """Apply the service's rows for days the app's ``Weather`` lacks.
+
+    The service's walk skips a day ``SourceWeather`` already holds, so it
+    never re-fetches one whose apply into ``Weather`` failed, or that it
+    wrote before this location was mirrored here. Such a day is copied
+    across from the service's row — no upstream call, no budget spent.
+
+    Args:
+        locations: The locations to fill.
+        floor: Window start; defaults to ``backfill_floor()``.
+        until: Window end; defaults to yesterday.
+        commit: When False the rows are counted, not applied.
+
+    Returns:
+        How many held rows the app lacked (applied, when ``commit``).
+
+    """
+    floor = floor or backfill_floor()
+    until = until or backfill_until()
+    missing = (
+        SourceWeather.objects.filter(
+            location__in=stations_for(locations),
+            observed_on__gte=floor,
+            observed_on__lte=until,
+        )
+        .exclude(
+            Exists(
+                Weather.objects.filter(
+                    location__source_uuid=OuterRef("location__uuid"),
+                    observed_on=OuterRef("observed_on"),
+                )
+            )
+        )
+        .select_related("location")
+    )
+    if not commit:
+        return missing.count()
+    replayed = 0
+    for row in missing.iterator():
+        apply_backfilled_row(row)
+        replayed += 1
+    return replayed
+
+
 def backfill_locations(
     locations: Iterable[Location],
     *,
@@ -136,9 +195,17 @@ def backfill_locations(
 
     Returns:
         The service walk's counters, plus ``unheld``: locations the service
-        holds no live station for, which were not backfilled.
+        holds no live station for, which were not backfilled; and
+        ``replayed``: held days copied across without a request.
 
     """
+    locations = list(locations)
+    replayed = replay_held(
+        Location.objects.filter(pk__in=[location.pk for location in locations]),
+        floor=floor,
+        until=until,
+        commit=commit,
+    )
     wanted = [location.source_uuid for location in locations]
     by_uuid = {
         station.uuid: station
@@ -160,6 +227,7 @@ def backfill_locations(
         on_row=apply_backfilled_row,
     )
     counts["unheld"] = len(wanted) - len(stations)
+    counts["replayed"] = replayed
     return counts
 
 
