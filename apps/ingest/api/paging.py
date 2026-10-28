@@ -69,12 +69,16 @@ class Feed:
         queryset: Returns the base queryset, already restricted to what may
             be served and slimmed to what ``serialise`` reads.
         serialise: Turns one row into one wire item.
+        version: The version the feed is served under — the ``vN`` in its
+            URL and the ``version`` in every page. ``VERSION`` unless a feed
+            changed shape (SNOW-1253's v2 weather).
 
     """
 
     name: str
     queryset: Callable[[], QuerySet[Any]]
     serialise: Callable[[Any], dict[str, Any]]
+    version: int = VERSION
 
 
 def encode_cursor(updated_at: dt.datetime, pk: int) -> str:
@@ -193,7 +197,7 @@ def page(
     queryset = feed.queryset()
     if since is not None:
         queryset = queryset.filter(updated_at__gte=since)
-    body: dict[str, Any] = {"feed": feed.name, "version": VERSION}
+    body: dict[str, Any] = {"feed": feed.name, "version": feed.version}
     if cursor is None:
         body["count"] = queryset.count()
     else:

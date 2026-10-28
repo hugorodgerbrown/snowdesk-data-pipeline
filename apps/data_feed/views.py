@@ -2,8 +2,8 @@
 apps/data_feed/views.py — The data feed endpoints, ``GET /api/data/v1/<feed>/``.
 
 One view serves all four feeds (``bulletins``, ``weather``, ``locations``,
-``resorts``); ``feeds.py`` says what each reads and ``auth.py`` who may
-read it. Query parameters, all optional:
+``resorts``), and ``/api/data/v2/weather/`` (SNOW-1253); ``feeds.py``
+says what each reads and ``auth.py`` who may read it. Query parameters, all optional:
 
 * ``since`` — ISO 8601 datetime with an offset; only rows updated at or
   after it.
@@ -24,7 +24,7 @@ from django.views.decorators.http import require_GET
 from django_ratelimit.decorators import ratelimit
 
 from apps.data_feed.auth import require_feed_token
-from apps.data_feed.feeds import FEEDS
+from apps.data_feed.feeds import FEEDS, FEEDS_V2
 from apps.ingest.public import (
     FEED_PARAMETER_ERRORS,
     FeedQueryError,
@@ -39,12 +39,14 @@ logger = logging.getLogger(__name__)
 @ratelimit(key="ip", rate="240/m", block=True)
 @require_GET
 @require_feed_token
-def feed(request: HttpRequest, name: str) -> HttpResponse:
+def feed(request: HttpRequest, name: str, version: int = 1) -> HttpResponse:
     """Return one page of the feed called ``name``.
 
     Args:
         request: The authenticated GET.
-        name: The feed, one of ``feeds.FEEDS`` (the URLconf allows no other).
+        name: The feed, one of ``feeds.FEEDS`` — or of ``feeds.FEEDS_V2``
+            when ``version`` is 2 (the URLconf allows no other).
+        version: The URL's version, 1 or 2.
 
     Returns:
         The page as JSON, or a 400 naming the bad parameter.
@@ -52,7 +54,7 @@ def feed(request: HttpRequest, name: str) -> HttpResponse:
     """
     try:
         body = feed_page(
-            FEEDS[name],
+            (FEEDS_V2 if version == 2 else FEEDS)[name],
             since=parse_feed_since(request.GET.get("since")),
             cursor=request.GET.get("cursor") or None,
             limit=parse_feed_limit(request.GET.get("limit")),

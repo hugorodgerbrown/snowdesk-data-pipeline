@@ -53,19 +53,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterable
-from datetime import date, timedelta
-from typing import Any
+from datetime import date
 
 from django.db import transaction
 
 from apps.ingest.public import (
-    daily_dates,
-    daily_fields,
-    daily_max_freezing_level,
-    day_is_complete,
-    fetch_forecast,
-    forecast_entry,
-    hourly_rows_for_day,
+    FORECAST_DAYS,
+    HOURLY_DAYS,
+    forecast_fields,
 )
 from apps.locations.models import Location
 from apps.weather.models import Weather
@@ -73,15 +68,14 @@ from apps.weather.services.upsert import upsert_weather
 
 logger = logging.getLogger(__name__)
 
-# How many days each request covers: the day itself plus a week-ahead
-# outlook. ``observed_on`` becomes the row; the rest become ``forecast``.
-FORECAST_DAYS = 7
-
-# How many days carry an hourly series. ``observed_on`` always does, in its
-# own column; the next day carries one nested in its ``forecast`` entry.
-# Bounded because the series is the bulk of the stored JSON and the
-# near-term days are the ones anyone plans an hour-by-hour day around.
-HOURLY_DAYS = 2
+# FORECAST_DAYS and HOURLY_DAYS are ingest's (SNOW-1253), re-exported here
+# for the callers that read them from this module.
+__all__ = [
+    "FORECAST_DAYS",
+    "HOURLY_DAYS",
+    "fetch_all_locations",
+    "fetch_weather_for_location",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -136,76 +130,23 @@ def fetch_weather_for_location(
             day, and that day has passed.
 
     """
-    end_date = observed_on + timedelta(days=FORECAST_DAYS - 1)
-
     logger.debug(
-        "Fetching weather for location=%s start=%s end=%s commit=%s",
+        "Fetching weather for location=%s observed_on=%s commit=%s",
         location.pk,
         observed_on,
-        end_date,
         commit,
     )
 
-    data = fetch_forecast(
+    # The request and its parsing are ingest's (SNOW-1253), shared with the
+    # service's own fetch of its reference places so the two cannot drift.
+    row_date, fields = forecast_fields(
         location.latitude,
         location.longitude,
         location.elevation_m,
         observed_on,
-        end_date,
+        label=location.pk,
         base_url=base_url,
     )
-
-    daily = data["daily"]
-    hourly: dict[str, Any] | None = data.get("hourly")
-
-    # Provider dates, validated to align with the per-day arrays (SNOW-466).
-    dates = daily_dates(daily, location.pk)
-
-    # Drop the days the model did not resolve, BEFORE the transaction below
-    # opens. Filtering here is what stops an unusable tail rolling back the
-    # near-term days the surfaces actually read (SNOW-628).
-    storable = [idx for idx in range(len(dates)) if day_is_complete(daily, idx)]
-    if not storable:
-        raise ValueError(
-            f"Open-Meteo forecast for location={location.pk}: no day carries a "
-            f"complete weather_code/sunrise/sunset — refusing to store."
-        )
-    if len(storable) < len(dates):
-        logger.info(
-            "Open-Meteo forecast for location=%s: %d of %d day(s) resolved — "
-            "the rest fall beyond the model's horizon",
-            location.pk,
-            len(storable),
-            len(dates),
-        )
-
-    first = storable[0]
-    if first != 0:
-        # Losing the tail is routine; losing day 0 is not, since that is the
-        # day the row is OF. Worth a warning, but not worth discarding the
-        # days that did resolve — which is what raising here would do.
-        logger.warning(
-            "Open-Meteo forecast for location=%s: day 0 (%s) carries no usable "
-            "data — recording %s instead",
-            location.pk,
-            dates[0],
-            dates[first],
-        )
-
-    row_date = dates[first]
-    fields = daily_fields(daily, first)
-    fields["freezing_level_height"] = daily_max_freezing_level(hourly, row_date)
-    fields["hourly"] = hourly_rows_for_day(hourly, row_date) or None
-    fields["forecast"] = [
-        forecast_entry(
-            daily,
-            hourly,
-            idx,
-            dates[idx],
-            with_hourly=position < HOURLY_DAYS,
-        )
-        for position, idx in enumerate(storable[1:], start=1)
-    ]
 
     if not commit:
         return None

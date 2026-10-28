@@ -185,13 +185,13 @@ worker logs.
 | Job | Command | Cadence | Purpose |
 |-----|---------|---------|---------|
 | Bulletin ingestion | `fetch_bulletins --source slf albina meteofrance --commit` | `0,5 * * * *` (every hour at :00 and :05 UTC) | Fetches the latest bulletins from all three providers. Walks from each source's latest stored `valid_from` day up to today (UTC), so a missed run self-heals on the next invocation. |
-| Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every active location. Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
+| Weather ingestion | `fetch_weather --commit` | `0 0,6,12,18 * * *` (four times a day, on the hour UTC) | Fetches today's Open-Meteo forecast for every curated location, through the weather service (SNOW-1253). Four runs because a location has no live on-demand fetch behind its page render the way a bulletin region does — the scheduled batch is the only thing keeping today's row current. |
 | Weather history sweep | `backfill_weather --commit` | `20 * * * *` (hourly, at :20 UTC) | One budgeted sweep of the missing past `Weather` days, newest fortnight first (SNOW-1245). The budget is this hour's share of what `fetch_weather` leaves of Open-Meteo's free daily quota, so the two never throttle each other; each run resumes where the last stopped, and a run with nothing missing issues no request. Exits non-zero on a 429. |
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
 | OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes expired MCP OAuth tokens and authorization codes with django-oauth-toolkit's `clear_expired()` (SNOW-1193). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
 | Run-register prune | `prune_command_runs --commit` | `50 3 * * *` (daily, 03:50 UTC) | Marks `CommandRun` rows a killed process left `RUNNING` for over six hours as `INTERRUPTED`, and deletes `SCHEDULER` runs older than 90 days (SNOW-1189). Every other run is kept for good. |
 | what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
-| Slope-sample reconcile | `backfill_route_slope_samples --commit`, then `backfill_trip_slope_samples --commit` | `30 4 * * *` (daily, 04:30 UTC) | The safety net for a terrain-sampling task that was never queued (SNOW-1228). Upload, trip creation and trip edits enqueue sampling after their row has committed, and an enqueue failure there is logged rather than raised — the user's route or trip exists, so a 500 would be a lie — which leaves `slope_samples` null. Both commands select exactly those rows. Deliberately uncapped (SNOW-1243): the commands walk newest-first and leave an unsampleable row (a route outside terrain coverage) eligible, so a `--limit` would let those rows crowd out older ones whose enqueue really failed; the commands' own delay paces tile requests. The trip pass still runs when the route pass fails, and the first failure is re-raised afterwards. Meeting-point weather needs no equivalent: the meeting point is an active `Location`, so `fetch_weather` fills it. |
+| Slope-sample reconcile | `backfill_route_slope_samples --commit`, then `backfill_trip_slope_samples --commit` | `30 4 * * *` (daily, 04:30 UTC) | The safety net for a terrain-sampling task that was never queued (SNOW-1228). Upload, trip creation and trip edits enqueue sampling after their row has committed, and an enqueue failure there is logged rather than raised — the user's route or trip exists, so a 500 would be a lie — which leaves `slope_samples` null. Both commands select exactly those rows. Deliberately uncapped (SNOW-1243): the commands walk newest-first and leave an unsampleable row (a route outside terrain coverage) eligible, so a `--limit` would let those rows crowd out older ones whose enqueue really failed; the commands' own delay paces tile requests. The trip pass still runs when the route pass fails, and the first failure is re-raised afterwards. |
 | Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports resorts with a coordinate but no pin `Location` (`Resort.location`, SNOW-1144) — each one a resort whose weather is not fetched, still on the map only through the transitional fallback to its mirrored coordinates (removed by SNOW-1147), with nothing else saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. Since SNOW-1144 every pin writer goes through `set_resort_pin`, so after the one-time backfill this should never fire; if it does, an operator runs `link_resort_locations --commit` by hand. |
 
 Each job checks a waffle switch, `schedule_<job id>` (for example
@@ -644,11 +644,21 @@ uv run python manage.py dump_locations_sheets --commit \
 
 ### `fetch_weather` — today's Open-Meteo forecast for every active location
 
-Rebuilt by SNOW-759. One pass over one anchor: it walks
-`Location.objects.active()` — a location reachable from a `ResortLocation`,
-a `MicroRegion.centroid_location`, a `Favourite` or, since SNOW-1217, the
-meeting point of a trip dated today or later — and writes one
-`Weather` row per location, for today.
+Rebuilt by SNOW-759. It fetches the curated estate,
+`Location.objects.active()`: a location reachable from a `ResortLocation`, a
+resort's pin or a `MicroRegion.centroid_location`. Since SNOW-1265 that is
+all it fetches. A favourite, a trip's meeting point and a route's start
+borrow the nearest curated forecast instead.
+
+**Through the weather service since SNOW-1253.** With `--commit` the curated
+estate is first mirrored into ingest's station list (`SourceLocation`, under
+each location's own uuid, which becomes its `source_uuid`). Each station is
+then fetched into `SourceWeather`, and each row is applied into `Weather`
+through `upsert_weather`, the same apply a pull from
+`/api/data/v2/weather/` runs. A read-only run mirrors nothing: it probes the
+same coordinates and writes nothing anywhere. The register tallies
+`stations_created`, `stations_updated`, `stations_deleted` and
+`stations_linked` beside `created`, `updated` and `failed`.
 
 **An observation-only location is excluded.** A field report must not mint a
 billable forecast call, and must never raise a forecast panel on a public
