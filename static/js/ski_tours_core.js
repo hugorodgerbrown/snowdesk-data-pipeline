@@ -25,6 +25,7 @@
  *   covers(box, bounds)        — whether a loaded rectangle holds a view
  *   highlightFilter(uuids)     — the filter that draws only those tours
  *   farEnds(features, uuids)   — where each of these tours starts or ends
+ *   fitsView(a, b, size, padding) — whether a tour already shows whole
  *   listUrl(base, choice)      — the list sheet's URL for a tap
  *   featureUrl(template, uuid, sample) — a tour's Feature URL
  */
@@ -125,6 +126,25 @@
     return !!box
       && box[0] <= bounds[0] && box[1] <= bounds[1]
       && box[2] >= bounds[2] && box[3] >= bounds[3];
+  }
+
+  /**
+   * Whether a tour's box, as drawn on screen, sits wholly inside the view
+   * clear of its padding: when it does, opening the tour leaves the camera
+   * where the reader put it (SNOW-1284).
+   *
+   * @param {{x: number, y: number}} a One corner of the box, in px.
+   * @param {{x: number, y: number}} b The opposite corner, in px.
+   * @param {{width: number, height: number}} size The map's canvas.
+   * @param {{top: number, right: number, bottom: number, left: number}} padding
+   *   What the panels and the fit's margins cover, in px.
+   * @returns {boolean}
+   */
+  function fitsView(a, b, size, padding) {
+    return Math.min(a.x, b.x) >= padding.left
+      && Math.max(a.x, b.x) <= size.width - padding.right
+      && Math.min(a.y, b.y) >= padding.top
+      && Math.max(a.y, b.y) <= size.height - padding.bottom;
   }
 
   /**
@@ -237,6 +257,7 @@
     covers: covers,
     highlightFilter: highlightFilter,
     farEnds: farEnds,
+    fitsView: fitsView,
     listUrl: listUrl,
     featureUrl: featureUrl,
   });

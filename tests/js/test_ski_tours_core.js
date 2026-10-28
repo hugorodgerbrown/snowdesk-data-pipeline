@@ -104,6 +104,22 @@ describe('URLs and the highlight', () => {
   });
 });
 
+describe('fitsView', () => {
+  const size = { width: 400, height: 800 };
+  const padding = { top: 60, right: 40, bottom: 350, left: 40 };
+
+  it('says a tour clear of the panels already shows (SNOW-1284)', () => {
+    expect(core.fitsView({ x: 50, y: 400 }, { x: 300, y: 100 }, size, padding)).toBe(true);
+  });
+
+  it('says a tour under the sheet, or off an edge, does not', () => {
+    expect(core.fitsView({ x: 50, y: 500 }, { x: 300, y: 100 }, size, padding)).toBe(false);
+    expect(core.fitsView({ x: 20, y: 400 }, { x: 300, y: 100 }, size, padding)).toBe(false);
+    expect(core.fitsView({ x: 50, y: 400 }, { x: 300, y: 40 }, size, padding)).toBe(false);
+    expect(core.fitsView({ x: 50, y: 400 }, { x: 380, y: 100 }, size, padding)).toBe(false);
+  });
+});
+
 describe('farEnds', () => {
   const summit = {
     geometry: { type: 'Point', coordinates: [10.1, 46.85] },

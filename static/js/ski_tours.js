@@ -507,7 +507,7 @@
   }
 
   /**
-   * Open a tour in the route panel, framed, and follow with its terrain
+   * Open a tour in the route panel, brought into view, and follow with its terrain
    * when the server has not sampled it before.
    *
    * @param {string} uuid
