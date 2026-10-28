@@ -1,0 +1,29 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_layers_zoom_label.html — the name and second line of a
+zoom-limited layers-menu row (SNOW-1280).
+
+Included inside a row's .basemap-menu-item-text, in place of its bare
+[data-row-label], by the two rows whose layer draws only past a zoom:
+Steep terrain (public/partials/_map_embed.html) and Ski-touring routes
+(public/partials/_map_layers_switch_row.html, ``zoom_gate``).
+
+* The SUFFIX after the name — "· ≥z10" — is always there, so the limit is
+  learnable before it matters. Empty here: the zooms live in
+  window.pwaZoomGates (static/js/map.js), and map_layers_zoom_gates.js
+  writes it from there so there is one source for each number.
+* The HINT — "Zoom in to view" — shows only while the layer is switched on
+  and the map is outside its range, when the row also fades
+  (``data-zoom-hidden`` on the row, set by the same script).
+
+The row's [data-row-label] stays the bare name: map_basemap_picker.js reads
+it to build the section summaries.
+
+Parameters (passed via {% include … with … only %}):
+  label (string) — the layer's translated name.
+{% endcomment %}
+<span class="basemap-menu-item-label-line">
+    <span data-row-label>{{ label }}</span>
+    <span class="basemap-menu-zoom-suffix" data-zoom-suffix></span>
+</span>
+<span class="basemap-menu-item-detail" data-zoom-hint hidden>{% trans "Zoom in to view" %}</span>

@@ -1002,6 +1002,51 @@ def test_map_layer_menu_ski_routes_row_follows_resorts() -> None:
 
 
 @pytest.mark.django_db
+@override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
+def test_layers_menu_marks_its_zoom_limited_rows() -> None:
+    """SNOW-1280: Steep terrain and Ski-touring routes carry their gate key,
+    an empty zoom suffix and a hidden "Zoom in to view" line; the menu opens
+    with its zoom note hidden, and the script that fills them loads after
+    the zoom control's core.
+
+    The numbers are not server-rendered — they live in window.pwaZoomGates
+    (map.js) — so the suffix starts empty. The row's ``data-row-label``
+    stays the bare name, which map_basemap_picker.js reads.
+    """
+    client = Client()
+    client.force_login(UserFactory.create())
+    with override_flag("route_drawing", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+
+    main = _layers_page(content, "main")
+    assert main.count("data-zoom-gate=") == 2
+    for key, label in (
+        ("terrain_filter", "Steep terrain"),
+        ("ski_routes", "Ski-touring routes"),
+    ):
+        start = main.index(f'data-zoom-gate="{key}"')
+        row = main[start : main.index("</li>", start)]
+        assert f"<span data-row-label>{label}</span>" in row
+        assert "data-zoom-suffix></span>" in row
+        assert re.search(r"data-zoom-hint\s+hidden>Zoom in to view<", row)
+    assert re.search(r"data-zoom-note\s+hidden", main)
+    assert main.index("data-zoom-note") < main.index(">Reference data<")
+    assert 'id="map-layers-zoom-strings-template"' in content
+    assert content.index("/static/js/zoom_control_core.js") < content.index(
+        "/static/js/map_layers_zoom_gates.js"
+    )
+
+
+@pytest.mark.django_db
+def test_layers_menu_without_zoom_limited_layers_has_no_gate_rows() -> None:
+    """SNOW-1280: an anonymous visitor on an environment without terrain
+    tiles sees neither zoom-limited row, so nothing carries a gate key.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+    assert "data-zoom-gate=" not in _layers_page(content, "main")
+
+
+@pytest.mark.django_db
 def test_map_layer_menu_options_pages() -> None:
     """SNOW-1266: what each options page holds, and that none shows at first.
 
@@ -2298,7 +2343,7 @@ def test_steep_terrain_row_is_a_switch_and_an_options_opener() -> None:
     content = Client().get(reverse("public:map")).content.decode()
     start = content.index('data-overlay-key="terrain"')
     li = content[
-        content.rindex('<li role="none" class="basemap-menu-layer">', 0, start) :
+        content.rindex('<li role="none" class="basemap-menu-layer"', 0, start) :
     ]
     li = li[: li.index("</li>")]
 

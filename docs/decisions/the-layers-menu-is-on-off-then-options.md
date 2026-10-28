@@ -1,6 +1,6 @@
 ---
 name: the-layers-menu-is-on-off-then-options
-description: Layers menu #basemap-menu — one switch per layer, options pages (data-layers-page), bulletins and boundaries master switches
+description: Layers menu #basemap-menu — one switch per layer, options pages (data-layers-page), master switches, zoom-limited rows (data-zoom-gate)
 status: current
 last-reviewed: 2026-10-28
 ---
@@ -67,3 +67,16 @@ Field observations are user-generated content, so they belong in Your data.
   if it has options. It is never a row on another layer's page.
 - Amends [map-controls-are-two-groups-without-an-on-map-marker](map-controls-are-two-groups-without-an-on-map-marker.md):
   the opacity control is now on the bulletins page, and it has four steps.
+- A layer drawn only past a zoom says so on its row (SNOW-1280, Hugo
+  28 Oct 2026). Its name is followed by "· ≥z10", always. While it is
+  switched on and the map is below that zoom, its name and icon fade and
+  a second line reads "Zoom in to view"; the switch is never dimmed,
+  because the layer is on. A note heads the menu for as long as any row
+  is faded. Hugo turned down a tap-to-zoom pill as too distracting, and
+  then the whole row as a zoom action, because a reader can zoom
+  themselves. The row still only toggles. The numbers come from
+  `window.pwaZoomGates`, through `static/js/map_layers_zoom_gates.js` and
+  `public/partials/_map_layers_zoom_label.html`. Two gates stay off the
+  menu: a route's slope colours (z14), because the routes themselves draw
+  at every zoom, and the region selector (≤z10), because the bulletins
+  never stop drawing. Both are still named in the zoom control's flyout.
