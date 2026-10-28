@@ -36,11 +36,16 @@ def _navigate_home(page: Page, live_server_url: str) -> None:
 
 
 def _assert_transparent_fill_is_still_queryable(page: Page) -> None:
-    """Set the bulletin fill to its off step, then prove it still hit-tests."""
+    """Switch the bulletins off, then prove the fill still hit-tests.
+
+    SNOW-1266: "off" is the bulletins row's master switch, which sends step 0.
+    """
     page.wait_for_function(
         "() => MAP.queryRenderedFeatures({ layers: ['regions-fill'] }).length > 0"
     )
-    page.evaluate("() => document.querySelector('[data-bulletins-step=\"0\"]').click()")
+    page.evaluate(
+        "() => document.querySelector('[data-layer-master=\"bulletins\"]').click()"
+    )
     page.wait_for_function(
         "() => MAP.getPaintProperty('regions-fill', 'fill-opacity') === 0"
     )
