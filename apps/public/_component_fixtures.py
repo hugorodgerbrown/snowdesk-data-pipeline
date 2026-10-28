@@ -1403,6 +1403,18 @@ SWITCH_VARIANTS: tuple[dict[str, Any], ...] = (
 )
 
 
+# Switch track (SNOW-1266) ----------------------------------------------------
+# The drawn half of a switch, for a control that is already a button: the
+# map layers menu's menuitemcheckbox rows. In the menu its state comes from
+# the button's aria-checked; here there is no button, so `demo_checked`
+# draws the on state.
+
+SWITCH_TRACK_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"caption": "Off", "context": {}},
+    {"caption": "On", "context": {"demo_checked": True}},
+)
+
+
 # Segmented option -------------------------------------------------------------
 # SNOW-1073: one option of a segmented control. Each variant is a lone pill, so
 # each carries its own radio name — two variants sharing one would let only one
@@ -3155,7 +3167,7 @@ def _zoom_variant(
         ),
         _zoom_tick(
             "terrain_filter",
-            "Terrain overlay",
+            "Steep terrain",
             12,
             camera,
         ),

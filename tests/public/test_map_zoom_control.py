@@ -71,7 +71,7 @@ def test_a_filled_variant_names_the_zoom_and_draws_its_ticks() -> None:
     assert 'aria-label="Zoom level 12"' in html
     assert 'aria-expanded="true"' in html
     assert "Some features are only available at certain zoom levels." in html
-    for name in ("Region selector", "Terrain overlay", "Route slope angle"):
+    for name in ("Region selector", "Steep terrain", "Route slope angle"):
         assert name in html
     assert html.count('class="map-zoom-level"') == 15
     terrain = html[html.index('data-zoom-tick="terrain_filter"') :]

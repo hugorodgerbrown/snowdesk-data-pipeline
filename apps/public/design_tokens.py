@@ -87,6 +87,7 @@ from apps.public._component_fixtures import (
     SHEET_HEADER_VARIANTS,
     SITE_FOOTER_VARIANTS,
     STATUS_PAGE_VARIANTS,
+    SWITCH_TRACK_VARIANTS,
     SWITCH_VARIANTS,
     TENDENCY_OUTLOOK_VARIANTS,
     TERRAIN_FILTER_KEY_VARIANTS,
@@ -1713,6 +1714,21 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_switch.html",
         variants=SWITCH_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="switch-track",
+        label="Switch track",
+        description=(
+            "The drawn half of a switch (SNOW-1266), for a control that is "
+            "already a button — the map layers menu's menuitemcheckbox rows. "
+            "Same 44×26 track and 20px thumb as the Switch; aria-hidden, and "
+            "it reads its state from the nearest `group` ancestor's "
+            "aria-checked, so the button stays the one copy of the state."
+        ),
+        kind="components",
+        partial="includes/_switch_track.html",
+        variants=SWITCH_TRACK_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
