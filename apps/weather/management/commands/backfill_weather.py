@@ -30,10 +30,16 @@ nineteen minutes. That is the failure the budget exists to prevent.
 behind the ``schedule_backfill_weather`` switch. It sweeps up a newly
 minted location's history and any day a ``fetch_weather`` run missed.
 
+**Through the weather service since SNOW-1275.** The sweep walks the
+selected locations' stations (``SourceLocation``, matched on
+``source_uuid``) and writes ``SourceWeather``, so the service holds the
+history it serves; each row is applied into ``Weather`` as it is written.
+A location the service holds no station for is not swept.
+
 **The admin action is a different walk over the same writer.**
 ``LocationAdmin``'s "Backfill missing weather" fills a handful of selected
-locations' whole windows inline; neither owns the logic —
-``apps.weather.services.backfill`` does.
+locations' whole windows inline; neither owns the logic — the service does
+(``apps.ingest.public``), behind ``apps.weather.services.backfill``.
 
 Usage:
     # Preview this hour's sweep — calls the API, writes nothing.
@@ -62,6 +68,7 @@ from django.db.models import Q, QuerySet
 
 from apps.core.command_iteration import iterate_rows, non_negative_float
 from apps.core.command_register import RegisteredCommand
+from apps.ingest.public import SourceLocation
 from apps.locations.models import Location
 from apps.weather.services import backfill
 
@@ -164,15 +171,15 @@ class Command(RegisteredCommand):
         until: date = min(options["until"] or yesterday, yesterday)
         budget: float | None = options["budget"]
         if budget is None:
-            budget = backfill.sweep_budget(Location.objects.active().count())
+            budget = backfill.sweep_budget(SourceLocation.objects.live().count())
 
         locations = self._select(options)
-        total = locations.count()
+        total = backfill.stations_for(locations).count()
 
         flag_label = "" if commit else " [READ-ONLY]"
         self.stdout.write(
             self.style.MIGRATE_HEADING(
-                f"Sweeping {floor} → {until} over {total} active location(s), "
+                f"Sweeping {floor} → {until} over {total} station(s), "
                 f"budget {budget:.0f} weighted call(s){flag_label}"
             )
         )
@@ -194,6 +201,18 @@ class Command(RegisteredCommand):
                         f"{start} → {end}: {count} location(s) with a gap"
                     )
                 )
+
+        # Days the service already holds but this instance lacks cost no
+        # request: copy them across before the sweep looks for gaps.
+        replayed = backfill.replay_held(
+            locations, floor=floor, until=until, commit=commit
+        )
+        if verbosity >= 1 and replayed:
+            self.stdout.write(
+                f"{replayed} held day(s) copied from the weather service"
+                + ("" if commit else " (read-only: counted, not written)")
+            )
+        self.tally("replayed", replayed)
 
         result = backfill.sweep(
             locations,

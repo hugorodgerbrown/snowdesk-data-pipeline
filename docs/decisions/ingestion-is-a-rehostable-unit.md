@@ -26,7 +26,10 @@ which holds the current ticket list):
 5. SNOW-1271 adds the passes and resorts (`SourcePass`, `SourceResort`),
    held as documents ingest stores and never reads, and serves them with
    the places at `/api/data/v2/{locations,passes,resorts}/`.
-6. SNOW-1252 (the `lookup_point` facade) is under review.
+6. SNOW-1275 moves the weather backfill sweep into ingest
+   (`apps/ingest/backfill.py`), so the service holds the history it serves;
+   the app applies each row and copied its existing history in once.
+7. SNOW-1252 (the `lookup_point` facade) is under review.
 
 **Why.**
 

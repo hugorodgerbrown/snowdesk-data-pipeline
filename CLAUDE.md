@@ -76,11 +76,15 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  a single location), ``services/reference.py`` (mirror the
                  curated estate into ingest's station list and apply its
                  SourceWeather rows, SNOW-1253) and the ``fetch_weather``
-                 command, scheduled 4×/day. ``services/backfill.py``
-                 (SNOW-731) fills *past* days from the historical forecast
-                 API — never today — behind both the ``backfill_weather``
-                 command (an hourly budgeted sweep since SNOW-1245) and the
-                 LocationAdmin action. Migrations 0001–0006 belong to
+                 command, scheduled 4×/day. The backfill (SNOW-731) fills
+                 *past* days from the historical forecast API — never
+                 today — and since SNOW-1275 is the weather service's
+                 (apps/ingest/backfill.py, writing SourceWeather);
+                 ``services/backfill.py`` applies each row into Weather
+                 behind both the ``backfill_weather`` command (an hourly
+                 budgeted sweep since SNOW-1245) and the LocationAdmin
+                 action. ``copy_weather_to_service`` seeds the service
+                 with the history Weather already held, once. Migrations 0001–0006 belong to
                  the estate SNOW-762 stripped and are retained because six
                  migrations in four other apps depend on them; 0007 creates
                  the new table. Read

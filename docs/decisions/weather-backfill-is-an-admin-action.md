@@ -2,13 +2,19 @@
 name: weather-backfill-is-an-admin-action
 description: The Weather backfill runs inline in a capped LocationAdmin action, not on the task queue, and a backfilled row's forecast[] stays null
 status: current
-last-reviewed: 2026-10-27
+last-reviewed: 2026-10-28
 ---
 
 # The weather backfill is an inline admin action, and writes no forecast
 
 Two decisions from SNOW-731, recorded together because both look like
 omissions and neither is.
+
+Both still hold since SNOW-1275 moved the backfill into the weather service
+(`apps/ingest/backfill.py`): the action now fills the selected locations'
+stations in `SourceWeather` and applies each row into `Weather`, still
+inline and still capped, and a backfilled row's `forecast` is still null in
+both tables.
 
 ## Decision 1 — inline in the request, capped, not enqueued
 
@@ -48,7 +54,7 @@ email queue — see
 
 ## Decision 2 — a backfilled row's `forecast[]` stays null
 
-**Decision.** `backfill_location` writes `forecast=None` on every row. It
+**Decision.** `backfill_location` writes `forecast=None` on every row (in `SourceWeather`, and so in the `Weather` row applied from it). It
 does not derive forward days from the historical response.
 
 **Why.** `Weather.forecast` means *the days after `observed_on`, as known on

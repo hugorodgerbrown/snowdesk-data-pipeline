@@ -48,6 +48,12 @@ The names are grouped by what they are for:
       the past-day rule, and ``forecast_fields`` is the one request-and-parse
       both the service and a host's fetch of a user point share.
       ``WEATHER_COLUMNS`` names what an apply copies.
+  The weather backfill
+      Filling a station's missing past days from the historical forecast
+      API (SNOW-1275): ``sweep``, the hourly budgeted walk, and
+      ``backfill_locations``, the admin's whole-window walk, each with an
+      ``on_row`` hook for the host's apply; the window helpers and the
+      weighted-call arithmetic.
   Passes and resorts
       ``SourcePass`` and ``SourceResort``, the curated records held as the
       JSON document a client applies, and ``sync_source_documents``, which
@@ -84,6 +90,20 @@ from apps.ingest.api.reference import (
 from apps.ingest.api.weather import (
     WEATHER_FEED as WEATHER_FEED_V2,
     serialise_source_weather,
+)
+from apps.ingest.backfill import (
+    ADMIN_MAX_LOCATIONS,
+    INTER_LOCATION_DELAY,
+    LIVE_FETCHES_PER_DAY,
+    BackfillResult,
+    SweepResult,
+    backfill_floor,
+    backfill_locations,
+    backfill_until,
+    expected_days,
+    request_weight,
+    sweep,
+    sweep_budget,
 )
 from apps.ingest.models import (
     WEATHER_COLUMNS,
@@ -185,6 +205,18 @@ from apps.ingest.weather import (
 )
 
 __all__ = [
+    "ADMIN_MAX_LOCATIONS",
+    "INTER_LOCATION_DELAY",
+    "LIVE_FETCHES_PER_DAY",
+    "BackfillResult",
+    "SweepResult",
+    "backfill_floor",
+    "backfill_locations",
+    "backfill_until",
+    "expected_days",
+    "request_weight",
+    "sweep",
+    "sweep_budget",
     "LOCATIONS_FEED",
     "PASSES_FEED",
     "RESORTS_FEED",
