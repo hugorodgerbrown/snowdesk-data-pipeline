@@ -29,8 +29,9 @@ The time series are a subset, by the day each row is about: ``--recent N``
 deterministic user testing. Every apply is idempotent, so a second run
 writes nothing.
 
-``pull_production_data`` is the v1 client staging still runs; it stays
-until the cut-over moves staging onto this command.
+Staging runs it daily as the ``snowdesk-staging-data-pull`` cron
+(``render.yaml``, SNOW-1281); ``pull_production_data``, the v1 client it
+replaced there, stays for v1.
 
 Reads ``DATA_FEED_URL`` (its ``/v1/`` read as ``/v2/``) and either
 ``DATA_FEED_V2_TOKEN`` (minted on the service with ``mint_feed_token
@@ -122,27 +123,57 @@ OUTCOMES: dict[str, tuple[str, ...]] = {
 DEFAULT_RECENT_DAYS = 14
 
 
-def describe_item(feed: str) -> Callable[[dict[str, Any]], str]:
+def place_label(item: dict[str, Any]) -> str:
+    """Return what an operator reads for one v2 place.
+
+    Its curated name; an unnamed region centre by the regions it is the
+    centre of; anything else by its service uuid.
+
+    Args:
+        item: A v2 ``locations`` item, tombstone or live.
+
+    Returns:
+        The label.
+
+    """
+    name = (item.get("fields") or {}).get("name")
+    if name:
+        return str(name)
+    centroid_of = (item.get("document") or {}).get("centroid_of")
+    if centroid_of:
+        return "centre of " + ", ".join(sorted(centroid_of))
+    return str(item["uuid"])
+
+
+def describe_item(
+    feed: str, places: dict[str, str] | None = None
+) -> Callable[[dict[str, Any]], str]:
     """Return the countdown label for one item of ``feed``.
 
-    Reads only the item, never the database.
+    Reads only the item and ``places``, never the database.
 
     Args:
         feed: The feed's name.
+        places: Each place's label by service uuid, from this run's
+            ``locations`` feed, so a day of weather names its place.
 
     Returns:
         A function from item to label.
 
     """
     if feed == "locations":
-        return lambda item: (item.get("fields") or {}).get("name") or item["uuid"]
+        return place_label
     if feed in ("passes", "resorts"):
         return lambda item: str(item.get("slug") or item["uuid"])
     if feed == "bulletins":
         return lambda item: f"{item['bulletin_id']} {item.get('target_date') or ''}"
     if feed == "day-ratings":
         return lambda item: f"{item['region_code']} {item['date']}"
-    return lambda item: f"{item['observed_on']} at {item['location']}"
+    names = places or {}
+    return lambda item: (
+        f"{item['observed_on']} at "
+        f"{names.get(str(item['location'])) or item['location']}"
+    )
 
 
 def item_key(item: dict[str, Any]) -> object:
@@ -217,6 +248,9 @@ class Command(RegisteredCommand):
         # Places the service has tombstoned, by service uuid: their days
         # are skipped, not failed, since this run just buried the place.
         self._buried: set[str] = set()
+        # Every place's label by service uuid, filled from the estate (pulled
+        # whole), so the weather countdown names a place without a query.
+        self._places: dict[str, str] = {}
         self._index = ReferenceIndex.load()
         try:
             self._pull_all(client, day_from=day_from, day_to=day_to)
@@ -375,7 +409,7 @@ class Command(RegisteredCommand):
         first = next(pages)
         remaining = first.count if first.count is not None else len(first.results)
         self.stdout.write(self.style.MIGRATE_LABEL(f"{feed}: {remaining} item(s)"))
-        describe = describe_item(feed)
+        describe = describe_item(feed, self._places)
         page = first
         while True:
             # SNOW-602 exempt: the unit of work is a feed item fetched over
@@ -468,10 +502,10 @@ class Command(RegisteredCommand):
 
         for _page, items in self._walk(client, feed):
             for item in items:
+                if feed == "locations":
+                    self._note_place(item)
                 if item.get("deleted_at"):
                     tombstones.append({"uuid": item["uuid"]})
-                    if feed == "locations":
-                        self._buried.add(str(item["uuid"]))
                     continue
                 outcome = self._record(
                     feed,
@@ -481,6 +515,18 @@ class Command(RegisteredCommand):
                 if feed == "locations" and outcome == CREATED and not self._commit:
                     self._planned.add(str(item["uuid"]))
         self._report(feed)
+
+    def _note_place(self, item: dict[str, Any]) -> None:
+        """Remember one place's label, and whether the service buried it.
+
+        Args:
+            item: A v2 ``locations`` item, tombstone or live.
+
+        """
+        uuid = str(item["uuid"])
+        self._places[uuid] = place_label(item)
+        if item.get("deleted_at"):
+            self._buried.add(uuid)
 
     def _pull_series(
         self,

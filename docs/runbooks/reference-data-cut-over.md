@@ -122,10 +122,10 @@ slugs, so the first run adopts them: expect `unchanged` and `updated`,
 very few `created`, and any `detached` or `deleted` only for what
 production has removed since. A second `--commit` should write nothing.
 
-Then change the `snowdesk-staging-data-pull` cron in `render.yaml` from
-`pull_production_data --commit` to `pull_reference_data --commit`. That is
-a code change (its own ticket); until it lands, the v1 pull carries on
-working alongside.
+Then the `snowdesk-staging-data-pull` cron in `render.yaml` runs
+`pull_reference_data --commit` instead of `pull_production_data --commit`
+(SNOW-1281). Render picks the new start command up from the blueprint on
+the deploy that carries it; nothing is set by hand.
 
 ## Rolling back
 
