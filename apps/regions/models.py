@@ -619,6 +619,15 @@ class PassQuerySet(models.QuerySet["Pass"]):
         """Return every pass keyed by its slug, the key the resort sheet uses."""
         return {ski_pass.slug: ski_pass for ski_pass in self}
 
+    def reference_data(self) -> "PassQuerySet":
+        """Return the passes carrying the reference-data service's uuid (SNOW-1271).
+
+        Returns:
+            Filtered queryset of passes with a ``source_uuid``.
+
+        """
+        return self.filter(source_uuid__isnull=False)
+
 
 class Pass(BaseModel):
     """
@@ -648,6 +657,16 @@ class Pass(BaseModel):
         blank=True,
         help_text="The pass's own site, where its resort list is published.",
     )
+    source_uuid = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
+        help_text=(
+            "The reference-data service's id for this pass (SourcePass.uuid, "
+            "SNOW-1271). On production, the pass's own uuid, set by "
+            "mirror_reference_data."
+        ),
+    )
 
     objects = PassQuerySet.as_manager()
 
@@ -673,6 +692,15 @@ class Pass(BaseModel):
 
 class ResortQuerySet(models.QuerySet):
     """Custom queryset for Resort."""
+
+    def reference_data(self) -> "ResortQuerySet":
+        """Return the resorts carrying the reference-data service's uuid (SNOW-1271).
+
+        Returns:
+            Filtered queryset of resorts with a ``source_uuid``.
+
+        """
+        return self.filter(source_uuid__isnull=False)
 
     def geocoded(self) -> "ResortQuerySet":
         """Return only resorts with a map pin (SNOW-1144).
@@ -860,6 +888,16 @@ class Resort(BaseModel):
             "saved and NEVER regenerated on rename: the resort page is an "
             "indexed landing page, so a changed slug is a broken URL. Null "
             "only on a row backfill_resort_slugs has not reached yet."
+        ),
+    )
+    source_uuid = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
+        help_text=(
+            "The reference-data service's id for this resort "
+            "(SourceResort.uuid, SNOW-1271). On production, the resort's own "
+            "uuid, set by mirror_reference_data."
         ),
     )
     kind = models.CharField(

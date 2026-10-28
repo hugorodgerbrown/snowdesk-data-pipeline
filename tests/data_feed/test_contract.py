@@ -116,7 +116,18 @@ def test_the_weather_fields_are_the_services_columns() -> None:
 
 def test_a_uuid_goes_on_the_wire_as_a_string() -> None:
     """``source_uuid`` is sent, so a UUID must serialise."""
-    import uuid
-
     value = uuid.uuid4()
     assert contract.to_wire(value) == str(value)
+
+
+def test_a_uuid_loads_back_as_a_uuid() -> None:
+    """SNOW-1271: so a pulled source_uuid compares equal to the stored one.
+
+    Left a string, every pull would count an unchanged location or resort
+    as updated.
+    """
+    value = uuid.uuid4()
+    loaded = contract.load_fields(
+        Resort, contract.RESORT_FIELDS, {"source_uuid": str(value)}
+    )
+    assert loaded == {"source_uuid": value}

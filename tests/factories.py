@@ -45,6 +45,8 @@ from apps.favourites.models import Favourite
 from apps.ingest.models import (
     SourceBulletin,
     SourceLocation,
+    SourcePass,
+    SourceResort,
     SourceWeather,
     content_hash,
 )
@@ -309,6 +311,42 @@ class SourceLocationFactory(factory.django.DjangoModelFactory[SourceLocation]):
     latitude = factory.Sequence(lambda n: 46.0 + n * 0.001)
     longitude = factory.Sequence(lambda n: 7.0 + n * 0.001)
     elevation_m = 2000.0
+
+
+class SourcePassFactory(factory.django.DjangoModelFactory[SourcePass]):
+    """Factory for ingest's SourcePass — a season pass's document (SNOW-1271)."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SourcePass
+
+    slug = factory.Sequence(lambda n: f"pass-{n}")
+    document = factory.LazyAttribute(
+        lambda obj: {"name": obj.slug.title(), "website": ""}
+    )
+    content_hash = factory.LazyAttribute(lambda obj: content_hash(obj.document))
+
+
+class SourceResortFactory(factory.django.DjangoModelFactory[SourceResort]):
+    """Factory for ingest's SourceResort — a resort's document (SNOW-1271)."""
+
+    class Meta:
+        """Factory metadata."""
+
+        model = SourceResort
+
+    slug = factory.Sequence(lambda n: f"resort-{n}")
+    document = factory.LazyAttribute(
+        lambda obj: {
+            "fields": {"name": obj.slug.title()},
+            "region": "CH-1111",
+            "location": None,
+            "passes": [],
+            "locations": [],
+        }
+    )
+    content_hash = factory.LazyAttribute(lambda obj: content_hash(obj.document))
 
 
 class SourceWeatherFactory(factory.django.DjangoModelFactory[SourceWeather]):

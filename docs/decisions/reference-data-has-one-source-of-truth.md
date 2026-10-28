@@ -61,10 +61,13 @@ from the service; if only a signed-in user does, it stays in the instance.
   a trip's meeting point or a route's start borrows the nearest curated
   forecast (SNOW-1265), so the weather service never sees a user's
   coordinate and no instance calls Open-Meteo for one.
-- Until the service has its own editor, production's curated `Location`
-  rows are the station list: `fetch_weather` mirrors them into
-  `SourceLocation` under their own uuid, which becomes their `source_uuid`
-  (SNOW-1253).
+- Until the service has its own editor, production is the service's
+  editor. Its curated `Location`, `Pass` and `Resort` rows are mirrored into
+  `SourceLocation`, `SourcePass` and `SourceResort` under their own uuid,
+  which becomes their `source_uuid`: `fetch_weather` mirrors the places
+  (SNOW-1253), and `mirror_reference_data` all three, hourly (SNOW-1271).
+  Passes and resorts are held as documents the service stores and never
+  reads, as it treats a bulletin's CAAML.
 - Deletes travel as `deleted_at` tombstones. A tombstoned row that user data
   still references is hidden, not deleted.
 - **Regions stay code-held fixtures, not a feed** (Hugo, 28 Oct 2026). The
@@ -72,10 +75,11 @@ from the service; if only a signed-in user does, it stays in the instance.
   the code that reads it, and changes only when EAWS republishes; a feed
   would send 15 MB for no gain. What varied per instance, the region centroid
   `Location` and its elevation, becomes reference locations under SNOW-1253.
-- Editing moves to the service: the resort and location sheets and their
-  import commands. The staff map-admin overlays stay
-  in production, writing the service's tables, until the service has its
-  own editor.
+- Editing moves to the service once it has its own editor: the resort and
+  location sheets, their import commands and the staff map-admin overlays.
+  Until then they stay in production (Hugo, 28 Oct 2026: keep the admin
+  overlays until the new project is working well) and reach the service
+  through the mirror.
 - A fresh instance syncs reference data whole and time series as a subset:
   a recent window by default, or the golden week for deterministic testing
   (`pull_reference_data`, SNOW-1272).

@@ -1,7 +1,7 @@
 """
 apps/ingest/models.py — What ingest keeps of what the providers published.
 
-Three models:
+Five models:
 
 * ``SourceBulletin`` (SNOW-1250): one row per bulletin a provider
   published, holding its CAAML as normalised, the link to its PDF and a
@@ -17,6 +17,11 @@ Three models:
   on one day — the same columns and the same rule as the app's
   ``Weather``: one row per (location, day), never rewritten once that day
   is past.
+* ``SourcePass`` and ``SourceResort`` (SNOW-1271): the season passes and
+  resorts, each one JSON ``document`` in the shape a client applies, keyed
+  by ``uuid``. Ingest stores them and never reads inside them, as it treats
+  a bulletin's CAAML: what a resort is belongs to whoever curates it. Both
+  share ``SourceDocument``.
 
 **Not a ``BaseModel``.** ``apps/ingest`` imports no other ``apps.*`` package
 (``docs/decisions/ingestion-is-a-rehostable-unit.md``), so the id, uuid and
@@ -189,6 +194,13 @@ class SourceLocation(models.Model):
         blank=True,
         help_text="Elevation in metres, passed to the forecast request.",
     )
+    document = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="What else the host curates about the place (its kind, "
+        "what3words address, the regions it is the centre of), stored as "
+        "handed over and never read here (SNOW-1271).",
+    )
     deleted_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -223,6 +235,118 @@ class SourceLocation(models.Model):
         height = "" if self.elevation_m is None else f" @{self.elevation_m:.0f}m"
         gone = " (deleted)" if self.deleted_at is not None else ""
         return f"{label} {self.latitude},{self.longitude}{height}{gone}"
+
+
+class SourceDocumentQuerySet(models.QuerySet[Any]):
+    """Queryset shared by the document tables, ``SourcePass`` and ``SourceResort``."""
+
+    def live(self) -> SourceDocumentQuerySet:
+        """Return the documents not tombstoned.
+
+        Returns:
+            The filtered queryset.
+
+        """
+        return self.filter(deleted_at__isnull=True)
+
+    def tombstoned(self) -> SourceDocumentQuerySet:
+        """Return the documents that were removed, kept so a client learns of it.
+
+        Returns:
+            The filtered queryset.
+
+        """
+        return self.filter(deleted_at__isnull=False)
+
+
+class SourceDocument(models.Model):
+    """One curated record, held as the JSON document a client applies.
+
+    Abstract: ``SourcePass`` and ``SourceResort`` are the two tables. The
+    ``uuid`` is the record's identity on every instance (its
+    ``source_uuid``); ``slug`` is a readable label, not a key, so it is
+    indexed but not unique. ``content_hash`` is the document's
+    ``content_hash()``, and a row is written only when it changes, so
+    ``updated_at`` reads as "changed since" for the feed.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    uuid = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        help_text="The service's id for this record — source_uuid on every instance.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    slug = models.SlugField(
+        max_length=255, help_text="The record's slug, for reading; not a key."
+    )
+    document = models.JSONField(help_text="The record, in the shape a client applies.")
+    content_hash = models.CharField(
+        max_length=64, help_text="sha256 of the document in canonical JSON."
+    )
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the record was removed. A tombstone is kept, not "
+        "deleted, so a client syncing since then learns of it.",
+    )
+
+    objects = SourceDocumentQuerySet.as_manager()
+
+    class Meta:
+        """Model metadata."""
+
+        abstract = True
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        """Return ``to_string()``."""
+        return self.to_string()
+
+    def to_string(self) -> str:
+        """Return the slug, marked when tombstoned.
+
+        Format: ``verbier`` or ``verbier (deleted)``.
+
+        Returns:
+            The description.
+
+        """
+        gone = " (deleted)" if self.deleted_at is not None else ""
+        return f"{self.slug}{gone}"
+
+
+class SourcePass(SourceDocument):
+    """A season pass: ``{"name": …, "website": …}``."""
+
+    class Meta(SourceDocument.Meta):
+        """Model metadata."""
+
+        indexes = [
+            models.Index(fields=["updated_at", "id"], name="ingest_srcp_keyset"),
+            models.Index(fields=["slug"], name="ingest_srcp_slug"),
+        ]
+        verbose_name_plural = "source passes"
+
+
+class SourceResort(SourceDocument):
+    """A resort: its fields, region, pin, passes and location roles.
+
+    The document names its places by ``SourceLocation.uuid`` and its passes
+    by ``SourcePass.uuid``, so a client resolves every relation through
+    ``source_uuid`` and never needs the host's own ids.
+    """
+
+    class Meta(SourceDocument.Meta):
+        """Model metadata."""
+
+        indexes = [
+            models.Index(fields=["updated_at", "id"], name="ingest_srcr_keyset"),
+            models.Index(fields=["slug"], name="ingest_srcr_slug"),
+        ]
 
 
 class SourceWeatherQuerySet(models.QuerySet["SourceWeather"]):

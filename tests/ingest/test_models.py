@@ -1,7 +1,8 @@
 """
 tests/ingest/test_models.py — Tests for ingest's models and content_hash.
 
-SourceBulletin (SNOW-1250); SourceLocation and SourceWeather (SNOW-1253).
+SourceBulletin (SNOW-1250); SourceLocation and SourceWeather (SNOW-1253);
+SourcePass and SourceResort (SNOW-1271).
 
 The model kit CLAUDE.md asks of every model — declared rather than inherited
 here, because ingest may not import ``apps.core`` — plus the canonical hash.
@@ -10,6 +11,7 @@ here, because ingest may not import ``apps.core`` — plus the canonical hash.
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any
 
 import pytest
 from django.utils import timezone
@@ -19,12 +21,16 @@ from apps.ingest.models import (
     ImmutableSourceWeatherError,
     SourceBulletin,
     SourceLocation,
+    SourcePass,
+    SourceResort,
     SourceWeather,
     content_hash,
 )
 from tests.factories import (
     SourceBulletinFactory,
     SourceLocationFactory,
+    SourcePassFactory,
+    SourceResortFactory,
     SourceWeatherFactory,
 )
 
@@ -151,3 +157,29 @@ class TestSourceWeather:
         key = {"id", "uuid", "created_at", "updated_at", "location", "observed_on"}
         assert source - key == set(WEATHER_COLUMNS)
         assert weather - key == set(WEATHER_COLUMNS)
+
+
+@pytest.mark.django_db
+class TestSourceDocument:
+    """SourcePass and SourceResort share the document shape (SNOW-1271)."""
+
+    @pytest.mark.parametrize("factory_class", [SourcePassFactory, SourceResortFactory])
+    def test_to_string_is_the_slug_marked_when_tombstoned(
+        self, factory_class: Any
+    ) -> None:
+        """A tombstone says so, so the admin list reads at a glance."""
+        row = factory_class.create(slug="verbier")
+        assert str(row) == "verbier"
+        row.deleted_at = timezone.now()
+        assert row.to_string() == "verbier (deleted)"
+
+    @pytest.mark.parametrize("model", [SourcePass, SourceResort])
+    def test_live_and_tombstoned_split_the_table(self, model: Any) -> None:
+        """``live()`` is what a host still curates; ``tombstoned()`` the rest."""
+        factory_class = (
+            SourcePassFactory if model is SourcePass else SourceResortFactory
+        )
+        live = factory_class.create()
+        gone = factory_class.create(deleted_at=timezone.now())
+        assert list(model.objects.live()) == [live]
+        assert list(model.objects.tombstoned()) == [gone]

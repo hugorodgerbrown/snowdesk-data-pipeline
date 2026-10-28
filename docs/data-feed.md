@@ -1,6 +1,6 @@
 ---
 name: data-feed
-description: Data feed GET /api/data/v1/ + v2/weather, service clients, pull_production_data, DATA_FEED_URL, DATA_FEED_TOKEN, mint_feed_token (cloud dev)
+description: Data feed /api/data/v1/ + v2 (weather, locations, passes, resorts), service clients, pull_production_data, DATA_FEED_*, mint_feed_token
 status: current
 last-reviewed: 2026-10-28
 ---
@@ -27,7 +27,7 @@ Why a feed and not a database copy:
 
 ## Endpoints
 
-All five are `GET`, take the same parameters and answer the same shape.
+All eight are `GET`, take the same parameters and answer the same shape.
 
 | URL | Item key | What is served |
 |-----|----------|----------------|
@@ -36,6 +36,9 @@ All five are `GET`, take the same parameters and answer the same shape.
 | `/api/data/v1/locations/` | `uuid` | `Location.objects.public()`, with `centroid_of` region codes |
 | `/api/data/v1/resorts/` | `slug` | Every resort with a slug: region code, pin uuid, passes, location links |
 | `/api/data/v2/weather/` | `SourceLocation.uuid` + `observed_on` | Every `SourceWeather` row the weather service has stored (SNOW-1253), tombstoned places included |
+| `/api/data/v2/locations/` | `uuid` (`SourceLocation`) | Every reference place, with `deleted_at`: name, exact coordinate and height under `fields`, the host's `document` (kind, short id, what3words, `centroid_of`) |
+| `/api/data/v2/passes/` | `uuid` (`SourcePass`) | Every season pass, with `slug`, `deleted_at` and the `document` `{name, website}` (SNOW-1271) |
+| `/api/data/v2/resorts/` | `uuid` (`SourceResort`) | Every resort, with `slug`, `deleted_at` and the `document`: `fields`, `region` code, pin, `passes` and `locations` roles, each named by a source uuid (SNOW-1271) |
 
 **v2 weather (SNOW-1253).** The item has the same shape and the same columns
 as v1's. The one change is the key: `location` is the weather service's id
@@ -44,6 +47,15 @@ for the place (`SourceLocation.uuid`). A client holds that id as
 needs production's own location ids. v1 stays served until staging's pull
 moves to v2 (SNOW-1272). A token is bound to its URL prefix, so a client
 needs a token bound to `/api/data/v2/` to read it.
+
+**v2 places, passes and resorts (SNOW-1271).** Served from the
+reference-data service's own tables, which `mirror_reference_data` fills
+from production's curated estate every hour. Every item is keyed by the
+service's uuid, which a client holds as `source_uuid`, so nothing on the
+wire is a production id. Every item carries `deleted_at`: a removal is
+served as a tombstone, so a client paging `since` learns of it (v1 cannot
+delete). A resort's document names its passes and places by their
+service uuids, so a client applies places, then passes, then resorts.
 
 Parameters, all optional: `since` (ISO 8601 datetime **with an offset**,
 filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and
@@ -86,7 +98,7 @@ they are a few thousand rows, read whole. On the client,
 `FeedClient.pages` is a generator and the command applies items as they
 arrive, so a pull holds only one page (at most 500 items) in memory.
 
-**What is never served.** The five querysets are the only reads, and no
+**What is never served.** The eight querysets are the only reads, and no
 user-owned table is among them. A favourite's pin is never fetched: it
 borrows the nearest curated forecast (SNOW-1265), so nothing about it
 leaves production. The column lists in

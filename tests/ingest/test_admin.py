@@ -2,7 +2,7 @@
 tests/ingest/test_admin.py — Tests for ingest's read-only admins.
 
 SourceBulletinAdmin (SNOW-1250); SourceLocationAdmin and SourceWeatherAdmin
-(SNOW-1253).
+(SNOW-1253); SourcePassAdmin and SourceResortAdmin (SNOW-1271).
 
 The admin is a read-only window: the list and a row render, and nothing can
 be added, changed or deleted.
@@ -16,10 +16,18 @@ from django.contrib.auth.models import User
 from django.test import Client, RequestFactory
 from django.urls import reverse
 
-from apps.ingest.models import SourceBulletin, SourceLocation, SourceWeather
+from apps.ingest.models import (
+    SourceBulletin,
+    SourceLocation,
+    SourcePass,
+    SourceResort,
+    SourceWeather,
+)
 from tests.factories import (
     SourceBulletinFactory,
     SourceLocationFactory,
+    SourcePassFactory,
+    SourceResortFactory,
     SourceWeatherFactory,
 )
 
@@ -73,7 +81,9 @@ def test_the_weather_service_pages_render(admin_client: Client) -> None:
         )
 
 
-@pytest.mark.parametrize("model", [SourceLocation, SourceWeather])
+@pytest.mark.parametrize(
+    "model", [SourceLocation, SourceWeather, SourcePass, SourceResort]
+)
 def test_the_weather_service_is_read_only(rf: RequestFactory, model: type) -> None:
     """A place is tombstoned by a sync, a past day stands: no hand edits."""
     model_admin = site._registry[model]
@@ -81,3 +91,21 @@ def test_the_weather_service_is_read_only(rf: RequestFactory, model: type) -> No
     assert not model_admin.has_add_permission(request)
     assert not model_admin.has_change_permission(request)
     assert not model_admin.has_delete_permission(request)
+
+
+def test_the_document_pages_render(admin_client: Client) -> None:
+    """The pass and resort lists and rows answer (SNOW-1271)."""
+    for name, row in (
+        ("sourcepass", SourcePassFactory.create()),
+        ("sourceresort", SourceResortFactory.create()),
+    ):
+        assert (
+            admin_client.get(reverse(f"admin:ingest_{name}_changelist")).status_code
+            == 200
+        )
+        assert (
+            admin_client.get(
+                reverse(f"admin:ingest_{name}_change", args=[row.pk])
+            ).status_code
+            == 200
+        )

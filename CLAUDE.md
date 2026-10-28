@@ -55,7 +55,11 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  holds as Location.source_uuid) and SourceWeather (their
                  days) are the weather service: fetch_weather mirrors the
                  curated estate in, fetches it and applies each row into
-                 Weather; /api/data/v2/weather/ serves it (SNOW-1253). Read
+                 Weather; /api/data/v2/weather/ serves it (SNOW-1253).
+                 SourcePass and SourceResort hold the passes and resorts
+                 as documents; mirror_reference_data copies production's
+                 estate in hourly and /api/data/v2/{locations,passes,
+                 resorts}/ serve it (SNOW-1271). Read
                  docs/decisions/ingestion-is-a-rehostable-unit.md before
                  importing from it
   bulletins/     Everything that originates from the three CAAML bulletin

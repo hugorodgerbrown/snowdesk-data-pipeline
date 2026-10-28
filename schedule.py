@@ -18,6 +18,12 @@ pre-loaded with the recurring data-pipeline jobs:
   quota, so the two never throttle each other, and each run resumes where
   the last one stopped. At :20 so it never starts beside ``fetch_weather``
   or ``fetch_bulletins``.
+- **mirror_reference_data** — fires at :40 every hour, running
+  ``mirror_reference_data --commit``. Copies the curated places, passes
+  and resorts into the reference-data service's tables, which the v2 data
+  feeds serve (SNOW-1271). Hourly because an edit in the resort sheet or
+  the map-admin overlays should reach the feed the same hour; a run with
+  nothing changed writes nothing. At :40, clear of every other hourly job.
 - **purge_request_logs** — fires at 03:30 UTC, running
   ``purge_request_logs --commit``. Enforces the ``RequestLog`` retention
   window the Privacy Policy states (SNOW-775); until this job existed
@@ -190,6 +196,16 @@ def _run_backfill_weather() -> None:
     call_command("backfill_weather", "--commit")
 
 
+def _run_mirror_reference_data() -> None:
+    """Invoke ``mirror_reference_data``: the estate into the service (SNOW-1271)."""
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing mirror_reference_data")
+    call_command("mirror_reference_data", "--commit")
+
+
 def _run_purge_request_logs() -> None:
     """Invoke ``purge_request_logs`` to enforce the RequestLog retention window."""
     from django.core.management import (
@@ -281,7 +297,7 @@ def build_scheduler() -> BlockingScheduler:
     Returns
     -------
     BlockingScheduler
-        A scheduler with nine jobs pre-registered:
+        A scheduler with ten jobs pre-registered:
 
         ``fetch_bulletins``
             Cron: ``minute=0,5`` (every hour at :00 and :05 UTC).
@@ -289,6 +305,8 @@ def build_scheduler() -> BlockingScheduler:
             Cron: ``hour=0,6,12,18`` (four times a day, on the hour UTC).
         ``backfill_weather``
             Cron: ``minute=20`` (every hour, SNOW-1245).
+        ``mirror_reference_data``
+            Cron: ``minute=40`` (every hour, SNOW-1271).
         ``purge_request_logs``
             Cron: ``hour=3, minute=30`` (once a day, off the fetch hours).
         ``fill_what3words``
@@ -333,6 +351,15 @@ def build_scheduler() -> BlockingScheduler:
         switched("backfill_weather", _run_backfill_weather),
         trigger=CronTrigger(minute=20, timezone="UTC"),
         id="backfill_weather",
+        **_common,
+    )
+
+    # SNOW-1271: at :40, clear of the :00/:05 fetches and the :20 sweep.
+    # Database-only — no upstream call — so it competes for nothing else.
+    scheduler.add_job(
+        switched("mirror_reference_data", _run_mirror_reference_data),
+        trigger=CronTrigger(minute=40, timezone="UTC"),
+        id="mirror_reference_data",
         **_common,
     )
 

@@ -11,6 +11,11 @@
       "active": true
     },
     {
+      "name": "schedule_mirror_reference_data",
+      "note": "SNOW-1271: the scheduled job mirror_reference_data, hourly at :40 (schedule.py) — copies the curated places, passes and resorts into the reference-data service. Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    },
+    {
       "name": "schedule_backfill_weather",
       "note": "SNOW-1245: the scheduled job backfill_weather, hourly at :20 (schedule.py) — one budgeted sweep of missing past weather days. Off skips its runs from the next firing; on resumes them.",
       "active": true

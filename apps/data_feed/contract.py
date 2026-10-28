@@ -112,6 +112,9 @@ RESORT_FIELDS: tuple[str, ...] = (
     "top_elevation_m",
     "typical_season_open",
     "typical_season_close",
+    # SNOW-1271: the reference-data service's id for the resort, so a pulled
+    # resort carries the key /api/data/v2/resorts/ is matched on.
+    "source_uuid",
 )
 # region, location and passes are relations: they travel as natural keys
 # in their own members of the item (see feeds.serialise_resort).
@@ -167,10 +170,9 @@ def load_fields(
     """Return the allowlisted columns of ``data``, parsed back into Python.
 
     Only names in ``names`` are read, so a field a newer server sends is
-    ignored rather than passed to the ORM. Date and datetime columns are
-    parsed from their ISO strings and UUID columns back into ``uuid.UUID``,
-    so a value compares equal to the stored one and an unchanged row reads
-    as unchanged; everything else is JSON already.
+    ignored rather than passed to the ORM. Date, datetime and UUID columns
+    are parsed from their strings, so a loaded value compares equal to the
+    stored one; everything else is JSON already.
 
     Args:
         model: The model the columns belong to.
@@ -194,7 +196,7 @@ def load_fields(
             value = _parsed(parse_datetime(value), name, value)
         elif value is not None and isinstance(field, models.DateField):
             value = _parsed(parse_date(value), name, value)
-        elif isinstance(value, str) and isinstance(field, models.UUIDField):
+        elif value is not None and isinstance(field, models.UUIDField):
             value = uuid.UUID(value)
         loaded[name] = value
     return loaded

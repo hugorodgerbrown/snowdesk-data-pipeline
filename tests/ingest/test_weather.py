@@ -112,6 +112,16 @@ class TestSyncSourceLocations:
         row.refresh_from_db()
         assert row.deleted_at is None
 
+    def test_a_changed_document_is_an_update(self) -> None:
+        """The host's extras travel too, and a change to them is a change."""
+        record = _record(document={"kind": "PEAK"})
+        sync_source_locations([record])
+        counts = sync_source_locations(
+            [_record(uuid=record.uuid, document={"kind": "VILLAGE"})]
+        )
+        assert SourceLocation.objects.get().document == {"kind": "VILLAGE"}
+        assert counts["updated"] == 1
+
     def test_a_tombstone_is_not_stamped_twice(self) -> None:
         """A second sync without the place leaves its tombstone's time alone."""
         sync_source_locations([_record()])

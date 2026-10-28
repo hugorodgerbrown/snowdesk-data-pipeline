@@ -48,10 +48,15 @@ The names are grouped by what they are for:
       the past-day rule, and ``forecast_fields`` is the one request-and-parse
       both the service and a host's fetch of a user point share.
       ``WEATHER_COLUMNS`` names what an apply copies.
+  Passes and resorts
+      ``SourcePass`` and ``SourceResort``, the curated records held as the
+      JSON document a client applies, and ``sync_source_documents``, which
+      makes either list equal what a host hands it (SNOW-1271).
   The data feed
       ``WEATHER_FEED_V2`` (``/api/data/v2/weather/``, keyed by the
-      service's place uuid, SNOW-1253) and ``BULLETINS_FEED``, each with its
-      serialiser, and the keyset paging every
+      service's place uuid, SNOW-1253), the v2 ``LOCATIONS_FEED``,
+      ``PASSES_FEED`` and ``RESORTS_FEED`` (SNOW-1271) and
+      ``BULLETINS_FEED``, with their serialisers, and the keyset paging every
       feed shares (``feed_page``, ``parse_feed_since``, ``parse_feed_limit``
       and the ``FEED_*`` constants). The host mounts them behind its own
       authentication.
@@ -69,6 +74,13 @@ from apps.ingest.api.paging import (
     parse_limit as parse_feed_limit,
     parse_since as parse_feed_since,
 )
+from apps.ingest.api.reference import (
+    LOCATIONS_FEED,
+    PASSES_FEED,
+    RESORTS_FEED,
+    serialise_source_document,
+    serialise_source_location,
+)
 from apps.ingest.api.weather import (
     WEATHER_FEED as WEATHER_FEED_V2,
     serialise_source_weather,
@@ -78,6 +90,8 @@ from apps.ingest.models import (
     ImmutableSourceWeatherError,
     SourceBulletin,
     SourceLocation,
+    SourcePass,
+    SourceResort,
     SourceWeather,
 )
 from apps.ingest.normalise.albina import albina_pdf_url
@@ -137,6 +151,7 @@ from apps.ingest.normalise.weather import (
     hourly_rows_for_day,
     parse_dt_preserve_offset,
 )
+from apps.ingest.reference import DocumentRecord, sync_source_documents
 from apps.ingest.runs import (
     OUTCOME_DELEGATED,
     OUTCOME_DUPLICATE,
@@ -170,6 +185,15 @@ from apps.ingest.weather import (
 )
 
 __all__ = [
+    "LOCATIONS_FEED",
+    "PASSES_FEED",
+    "RESORTS_FEED",
+    "serialise_source_document",
+    "serialise_source_location",
+    "SourcePass",
+    "SourceResort",
+    "DocumentRecord",
+    "sync_source_documents",
     "WEATHER_FEED_V2",
     "serialise_source_weather",
     "FORECAST_DAYS",

@@ -1,7 +1,7 @@
 """
 apps/ingest/admin.py — Django admin registration for the ingest app.
 
-Three registrations, all read-only windows: nothing can be added, edited
+Five registrations, all read-only windows: nothing can be added, edited
 or deleted here.
 
 * ``SourceBulletinAdmin`` — a ``SourceBulletin`` is what a provider
@@ -10,19 +10,30 @@ or deleted here.
   served to every feed client as if the provider had said it.
 * ``SourceLocationAdmin`` — the reference places (SNOW-1253). Until the
   service has its own editor they are mirrored from production's curated
-  ``Location`` rows by ``fetch_weather``, so a correction is made there.
+  ``Location`` rows by ``fetch_weather`` and ``mirror_reference_data``,
+  so a correction is made there.
 * ``SourceWeatherAdmin`` — the service's account of each day, which is
   never rewritten once the day is past.
+* ``SourcePassAdmin`` and ``SourceResortAdmin`` — the curated passes and
+  resorts (SNOW-1271), mirrored from production's ``Pass`` and ``Resort``
+  by ``mirror_reference_data``; corrected there, for the same reason.
 """
 
 import json
+from typing import Any
 
 from django.contrib import admin
 from django.http import HttpRequest
 from django.utils.html import format_html
 from django.utils.safestring import SafeString
 
-from .models import SourceBulletin, SourceLocation, SourceWeather
+from .models import (
+    SourceBulletin,
+    SourceLocation,
+    SourcePass,
+    SourceResort,
+    SourceWeather,
+)
 
 
 @admin.register(SourceBulletin)
@@ -103,6 +114,7 @@ class SourceLocationAdmin(_ReadOnly, admin.ModelAdmin[SourceLocation]):
         "latitude",
         "longitude",
         "elevation_m",
+        "document",
         "deleted_at",
         "created_at",
         "updated_at",
@@ -130,3 +142,31 @@ class SourceWeatherAdmin(_ReadOnly, admin.ModelAdmin[SourceWeather]):
             for field in SourceWeather._meta.concrete_fields
             if field.name not in ("id", "hourly", "forecast")
         ]
+
+
+class _SourceDocumentAdmin(_ReadOnly, admin.ModelAdmin[Any]):
+    """Read-only admin shared by the two document tables (SNOW-1271)."""
+
+    list_display = ("slug", "updated_at", "deleted_at")
+    list_filter = (("deleted_at", admin.EmptyFieldListFilter),)
+    search_fields = ("slug", "uuid")
+    ordering = ("slug",)
+    readonly_fields = (
+        "uuid",
+        "slug",
+        "document",
+        "content_hash",
+        "deleted_at",
+        "created_at",
+        "updated_at",
+    )
+
+
+@admin.register(SourcePass)
+class SourcePassAdmin(_SourceDocumentAdmin):
+    """Read-only admin for the service's season passes."""
+
+
+@admin.register(SourceResort)
+class SourceResortAdmin(_SourceDocumentAdmin):
+    """Read-only admin for the service's resorts."""

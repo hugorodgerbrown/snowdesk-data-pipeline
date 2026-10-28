@@ -23,6 +23,7 @@ from apps.weather.services.reference import (
 from tests.factories import (
     FavouriteFactory,
     LocationFactory,
+    MicroRegionFactory,
     ResortLocationFactory,
     SourceLocationFactory,
     SourceWeatherFactory,
@@ -55,6 +56,26 @@ class TestMirrorReferenceLocations:
         assert station.name == "Attelas"
         assert counts["linked"] == 1
         assert counts["created"] == 1
+
+    def test_a_station_carries_what_a_client_needs_to_rebuild_the_row(
+        self,
+    ) -> None:
+        """SNOW-1271: kind, short id, address and the regions it centres."""
+        fetched = timezone.now()
+        location = LocationFactory.create(
+            what3words="filled.count.soap", what3words_fetched_at=fetched
+        )
+        MicroRegionFactory.create(region_id="CH-2222", centroid_location=location)
+        MicroRegionFactory.create(region_id="CH-1111", centroid_location=location)
+        mirror_reference_locations()
+        document = SourceLocation.objects.get().document
+        assert document == {
+            "short_id": location.short_id,
+            "kind": location.kind,
+            "what3words": "filled.count.soap",
+            "what3words_fetched_at": fetched.isoformat(),
+            "centroid_of": ["CH-1111", "CH-2222"],
+        }
 
     def test_a_favourite_never_becomes_a_station(self) -> None:
         """User data never leaves the instance."""

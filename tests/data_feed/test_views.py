@@ -211,9 +211,33 @@ class TestAnswer:
         """A token is bound to its URL prefix, so v2 needs a v2 token."""
         assert _get(client, feed_token, "/api/data/v2/weather/").status_code == 401
 
-    def test_only_weather_has_a_v2(self, client: Client, feed_token: str) -> None:
-        """The other feeds did not change shape, so v2 does not route them."""
-        assert _get(client, feed_token, "/api/data/v2/locations/").status_code == 404
+    def test_bulletins_have_no_v2(
+        self, client: Client, service_client: Application
+    ) -> None:
+        """Only the reference-data feeds are routed under v2."""
+        token = OAuthAccessTokenFactory.create(
+            user=None,
+            application=service_client,
+            scope="data",
+            resource=["http://testserver/api/data/v2/"],
+        ).raw_token
+        assert _get(client, token, "/api/data/v2/bulletins/").status_code == 404
+
+    @pytest.mark.parametrize("name", ["locations", "passes", "resorts"])
+    def test_the_v2_reference_feeds_answer(
+        self, client: Client, service_client: Application, name: str
+    ) -> None:
+        """SNOW-1271: places, passes and resorts are served from the service."""
+        token = OAuthAccessTokenFactory.create(
+            user=None,
+            application=service_client,
+            scope="data",
+            resource=["http://testserver/api/data/v2/"],
+        ).raw_token
+        response = _get(client, token, f"/api/data/v2/{name}/")
+        assert response.status_code == 200
+        body = json.loads(response.content)
+        assert (body["feed"], body["version"]) == (name, 2)
 
     def test_unknown_feed_is_a_404(self, client: Client, feed_token: str) -> None:
         """Only the four feeds are routed."""
