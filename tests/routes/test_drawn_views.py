@@ -313,6 +313,7 @@ class TestMapPageDrawSurface:
         assert 'data-layer-master="ski_touring"' in body
         assert 'data-overlay-key="ski_tours"' in body
         assert 'data-overlay-key="ski_summits"' in body
+        assert "sac-route-portal" in body
         assert 'data-ski-routes-eligible="true"' in body
         # SNOW-1278: three ways to add a route, replacing the add button,
         # and "Find a route"'s surface.

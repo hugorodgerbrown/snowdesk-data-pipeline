@@ -1051,6 +1051,17 @@ Optional context:
                             </li>
                         </ul>
                     </li>
+                    {# Hugo, 28 Oct 2026: credit SAC, whose tours these are, and #}
+                    {# swisstopo, who publish them.                               #}
+                    <li role="presentation" class="px-4 pt-2 pb-3 text-meta text-text-3">
+                        {% blocktrans trimmed with sac_url="https://www.sac-cas.ch/en/huts-and-tours/sac-route-portal/" %}
+                            Tours and summits from the <a
+                                href="{{ sac_url }}"
+                                target="_blank"
+                                rel="noopener"
+                                class="underline">SAC route portal</a>, published by swisstopo.
+                        {% endblocktrans %}
+                    </li>
                 </ul>
             {% endif %}
             <ul
