@@ -144,14 +144,17 @@ projects:
                 sync: false
               - fromGroup: Staging
 
-          # Daily pull from production's data feed (SNOW-1200). Staging has no
-          # scheduler, so this cron job is what keeps its bulletins, weather and
-          # resort estate current. It is incremental and idempotent: each type
-          # resumes from its last successful --commit run, and an unchanged row
-          # is not written. It exits non-zero when any item fails, so a broken
-          # pull shows as a failed run in Render. 07:20 UTC, after production's
+          # Daily pull from production's reference-data feed (SNOW-1200; v2
+          # since SNOW-1281). Staging has no scheduler, so this cron job is what
+          # keeps its estate, bulletins, day ratings and weather current. It
+          # reads the estate whole (tombstones honoured) and the last 14 days of
+          # the time series, so a run missed for up to a fortnight is caught up
+          # by the next; every apply is idempotent, so an unchanged row is not
+          # written. It exits non-zero when any item fails, so a broken pull
+          # shows as a failed run in Render. 07:20 UTC, after production's
           # 06:00 fetch_weather and the morning bulletin issue (schedule.py).
-          # The DATA_FEED_* values are the web service's, set in the dashboard.
+          # The DATA_FEED_* values are the web service's, set in the dashboard;
+          # the client pair is exchanged for a token scoped to /api/data/v2/.
           - type: cron
             name: snowdesk-staging-data-pull
             runtime: python
@@ -161,7 +164,7 @@ projects:
             branch: main
             schedule: "20 7 * * *"
             buildCommand: ./bin/build_headless.sh
-            startCommand: uv run --no-sync python manage.py pull_production_data --commit
+            startCommand: uv run --no-sync python manage.py pull_reference_data --commit
             envVars:
               - key: DJANGO_SETTINGS_MODULE
                 value: config.settings.staging
