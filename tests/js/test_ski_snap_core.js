@@ -96,6 +96,21 @@ describe('shortestPath', () => {
   it('is null between lines that never meet', () => {
     expect(core.shortestPath(graph, at(W), at(FAR))).toBeNull();
   });
+
+  it('leaves a closed line by the end it is near, not round the loop', () => {
+    // A square loop starting and ending at P, and a branch west from P.
+    const P = [10.05, LAT];
+    const loop = core.buildGraph([
+      seg('loop', P, [10.06, LAT], [10.06, LAT + 0.01], [10.05, LAT + 0.01], P),
+      seg('branch', P, [10.04, LAT]),
+    ]);
+    const near = (p) => core.nearestOnNetwork(loop, p, 5);
+    // Just before the loop's end (its last side runs back down to P).
+    const path = core.shortestPath(loop, near([10.05, LAT + 0.0005]), near([10.045, LAT]));
+    expect(path.lengthM).toBeCloseTo(55 + 380, -1);
+    expect(path.coordinates).toContainEqual(P);
+    expect(path.coordinates.every(([, lat]) => lat <= LAT + 0.0005)).toBe(true);
+  });
 });
 
 describe('legFor', () => {

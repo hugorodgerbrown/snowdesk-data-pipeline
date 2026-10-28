@@ -244,10 +244,15 @@
    * `b`'s. Returns the node path and its cost, or null when the two are
    * not connected.
    *
+   * Which END of `a`'s and `b`'s edges the path leaves and joins by is
+   * returned as an offset along the edge (0 or its length), not read back
+   * from the node: a closed line's two ends are one node, and reading the
+   * direction from the key alone walked the whole loop the wrong way.
+   *
    * @param {Graph} graph
    * @param {Snap} a
    * @param {Snap} b
-   * @returns {?{cost: number, start: string, end: string, steps: Array<{edge: number, from: string}>}}
+   * @returns {?{cost: number, start: string, end: string, startAt: number, endAt: number, steps: Array<{edge: number, from: string}>}}
    */
   function search(graph, a, b) {
     const ea = graph.edges[a.edge];
@@ -287,18 +292,32 @@
       }
       return top;
     };
-    const seed = (/** @type {string} */ node, /** @type {number} */ c) => {
+    /** Where along `a`'s edge each seeded node was left from. */
+    /** @type {Map<string, number>} */
+    const startAt = new Map();
+    const seed = (
+      /** @type {string} */ node,
+      /** @type {number} */ c,
+      /** @type {number} */ at,
+    ) => {
       if (c < (cost.get(node) ?? Infinity)) {
         cost.set(node, c);
         via.set(node, null);
+        startAt.set(node, at);
         push(c, node);
       }
     };
-    seed(ea.from, a.offset);
-    seed(ea.to, ea.length - a.offset);
-    /** @type {Map<string, number>} */
-    const exits = new Map([[eb.from, b.offset], [eb.to, eb.length - b.offset]]);
-    if (eb.from === eb.to) exits.set(eb.from, Math.min(b.offset, eb.length - b.offset));
+    seed(ea.from, a.offset, 0);
+    seed(ea.to, ea.length - a.offset, ea.length);
+    /** Each exit node's cost onto `b`, and where along `b`'s edge it joins. */
+    /** @type {Map<string, {cost: number, at: number}>} */
+    const exits = new Map();
+    const exit = (/** @type {string} */ node, /** @type {number} */ c, /** @type {number} */ at) => {
+      const held = exits.get(node);
+      if (!held || c < held.cost) exits.set(node, { cost: c, at: at });
+    };
+    exit(eb.from, b.offset, 0);
+    exit(eb.to, eb.length - b.offset, eb.length);
     let best = Infinity;
     let end = '';
     const done = new Set();
@@ -307,9 +326,9 @@
       if (done.has(node)) continue;
       done.add(node);
       if (c >= best) break;
-      const exit = exits.get(node);
-      if (exit !== undefined && c + exit < best) {
-        best = c + exit;
+      const out = exits.get(node);
+      if (out !== undefined && c + out.cost < best) {
+        best = c + out.cost;
         end = node;
       }
       (graph.adjacency.get(node) || []).forEach(function (step) {
@@ -331,7 +350,14 @@
       node = hop.from;
       hop = via.get(node);
     }
-    return { cost: best, start: node, end: end, steps: steps };
+    return {
+      cost: best,
+      start: node,
+      end: end,
+      startAt: /** @type {number} */ (startAt.get(node)),
+      endAt: /** @type {{cost: number, at: number}} */ (exits.get(end)).at,
+      steps: steps,
+    };
   }
 
   /**
@@ -353,11 +379,11 @@
       return { coordinates: subline(ea, a.offset, b.offset), lengthM: direct };
     }
     /** @type {Array<Point>} */
-    let coordinates = subline(ea, a.offset, found.start === ea.from ? 0 : ea.length);
+    let coordinates = subline(ea, a.offset, found.startAt);
     found.steps.forEach(function (step) {
       coordinates = coordinates.concat(walk(graph.edges[step.edge], step.from).slice(1));
     });
-    const tail = subline(eb, found.end === eb.from ? 0 : eb.length, b.offset);
+    const tail = subline(eb, found.endAt, b.offset);
     coordinates = coordinates.concat(tail.slice(1));
     return { coordinates: coordinates, lengthM: found.cost };
   }
