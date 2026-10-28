@@ -127,11 +127,17 @@ def _result_envelope(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
 
 
 class ToolServer(NamedTuple):
-    """One MCP server this endpoint can speak as: its name and its catalogue."""
+    """One MCP server this endpoint can speak as: its name and its catalogue.
+
+    ``actor`` is the signed-in user a view binds per request (with
+    ``_replace``) so a tool that ``writes`` can attribute its change. The
+    module-level servers carry none, and a write tool refuses without one.
+    """
 
     name: str
     tools: Mapping[str, Any]
     resources: Mapping[str, Any]
+    actor: Any = None
 
 
 #: The public avalanche-data server at ``/api/mcp/``.
@@ -333,6 +339,16 @@ def _tool_listing(spec: Any) -> dict[str, Any]:
     }
     if spec.meta:
         entry["_meta"] = spec.meta
+    if spec.writes:
+        # MCP tool annotations: a client treats an unannotated tool as
+        # possibly writing anyway, but saying so plainly is what makes it
+        # ask before calling one.
+        entry["annotations"] = {
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        }
     return entry
 
 
@@ -408,7 +424,7 @@ def _handle_tools_call(params: dict[str, Any], server: ToolServer) -> dict[str, 
         raise ProtocolError(INVALID_PARAMS, "'arguments' must be an object")
 
     try:
-        result = spec.handler(arguments)
+        result = _call_tool(spec, arguments, server)
     except ToolError as exc:
         return {"content": [{"type": "text", "text": str(exc)}], "isError": True}
 
@@ -420,6 +436,31 @@ def _handle_tools_call(params: dict[str, Any], server: ToolServer) -> dict[str, 
         "structuredContent": result,
         "isError": False,
     }
+
+
+def _call_tool(spec: Any, arguments: dict[str, Any], server: ToolServer) -> Any:
+    """Call one tool's handler, passing the actor to a tool that writes.
+
+    Args:
+        spec: The :class:`apps.mcp_server.tools.ToolSpec` being called.
+        arguments: The call's ``arguments``.
+        server: The server answering, carrying the request's actor.
+
+    Returns:
+        The handler's result.
+
+    Raises:
+        ToolError: A writing tool called with no actor bound — nothing
+            unattributed is ever changed.
+
+    """
+    if not spec.writes:
+        return spec.handler(arguments)
+    if server.actor is None or not server.actor.is_authenticated:
+        raise ToolError(
+            f"{spec.name} changes the environment and needs a signed-in account."
+        )
+    return spec.handler(arguments, server.actor)
 
 
 _METHOD_HANDLERS: dict[str, Any] = {

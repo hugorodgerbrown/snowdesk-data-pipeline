@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 import pytest
+from django.contrib.admin.models import LogEntry
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import Client
@@ -28,6 +29,7 @@ from freezegun import freeze_time
 from mcp_auth.connected import disconnect
 from mcp_auth.testing import MCPAuthContract
 from oauth2_provider.models import AccessToken
+from waffle.models import Switch
 
 from apps.core.models import IdempotencyRecord
 from apps.mcp_server import protocol
@@ -239,6 +241,43 @@ def test_ops_server_is_403_for_a_non_staff_account(client: Client) -> None:
     assert response.status_code == 403
     assert json.loads(response.content)["error"] == "forbidden"
     assert "WWW-Authenticate" not in response
+
+
+@pytest.mark.django_db
+def test_ops_server_attributes_a_switch_change_to_the_token_holder(
+    client: Client,
+) -> None:
+    """set_switch over HTTP records the change against the staff account."""
+    switch, _ = Switch.objects.update_or_create(
+        name="schedule_backfill_weather", defaults={"active": True}
+    )
+    token = _token(OPS, is_staff=True)
+
+    response = _post(
+        client,
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "set_switch",
+                "arguments": {
+                    "name": switch.name,
+                    "state": "off",
+                    "reason": "cut-over",
+                },
+            },
+        },
+        token,
+        url="/api/ops/mcp/",
+    )
+
+    assert json.loads(response.content)["result"]["isError"] is False
+    switch.refresh_from_db()
+    assert switch.active is False
+    entry = LogEntry.objects.get()
+    assert entry.user.is_staff is True
+    assert "cut-over" in entry.get_change_message()
 
 
 @pytest.mark.django_db

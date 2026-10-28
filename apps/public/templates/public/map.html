@@ -583,6 +583,12 @@ in addition to the shared map assets.
     {# half, zoom_control_core.js, loads just before it.                     #}
     <script defer src="{% static 'js/zoom_control_core.js' %}"></script>
     <script defer src="{% static 'js/map_zoom_control.js' %}"></script>
+    {# SNOW-1280: the layers menu's zoom-limited rows — the "· ≥z10"      #}
+    {# suffix, the faded row and its "Zoom in to view" line, and the note #}
+    {# above them. Reads MAP and window.pwaZoomGates (map.js) and         #}
+    {# zoom_control_core.js, so after the bundle and the core; outside its  #}
+    {# contiguous run because no bundle module reads it.                  #}
+    <script defer src="{% static 'js/map_layers_zoom_gates.js' %}"></script>
     {% if request.GET.layers == 'exploded' %}
         {# Loaded after map.js publishes snowdeskLayerExplainer; omitted from #}
         {# ordinary map visits so the feature has no JS cost until opened.  #}

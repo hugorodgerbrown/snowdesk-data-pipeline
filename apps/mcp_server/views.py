@@ -7,7 +7,8 @@ Two endpoints, one shape, different tool catalogues:
   danger ratings, resorts) for any connected account.
 * ``ops_mcp_endpoint`` at ``POST /api/ops/mcp/`` (SNOW-1191) — the staff ops
   catalogue (the command run register, build info, ingest and estate
-  health). A connected account that is not staff gets a 403.
+  health, and the waffle setters). A connected account that is not staff
+  gets a 403.
 
 The ops endpoint is a sibling path, not ``/api/mcp/ops/``: django-oauth-
 toolkit checks a token's audience by URL prefix, so a token bound to
@@ -115,4 +116,6 @@ def ops_mcp_endpoint(request: HttpRequest) -> HttpResponse:
             },
             status=403,
         )
-    return _answer(request, OPS_SERVER)
+    # The actor is bound per request so the waffle setters can attribute
+    # each change to the staff account that made it.
+    return _answer(request, OPS_SERVER._replace(actor=request.user))

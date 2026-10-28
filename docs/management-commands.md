@@ -1279,7 +1279,11 @@ upper bound; `--golden-week` pulls `seed_test_week`'s seven days instead.
 Tallies are `<feed>_<outcome>`, zeros included, with `deleted`, `detached`
 and `absent` for tombstones and `recomputed`/`skipped` for day ratings.
 Any failed item exits non-zero. It reads `DATA_FEED_URL` (its `/v1/` read
-as `/v2/`) and `DATA_FEED_V2_TOKEN` or the client-credentials pair.
+as `/v2/`) and `DATA_FEED_V2_TOKEN` or the client-credentials pair. The
+countdown names each place (an unnamed region centre by its regions), and
+each day of weather by its place, from the estate the run has just read.
+On staging it runs daily at 07:20 UTC as the `snowdesk-staging-data-pull`
+Render cron job (SNOW-1281; `pull_production_data` before it).
 
 ### `pull_production_data` — pull bulletins, weather and resorts from production's feed
 
@@ -1312,8 +1316,9 @@ is still `bin/sync-staging-data` below.
 A dry run counts a location it would create as present for the weather and
 resorts after it, so its report matches what `--commit` would do
 (SNOW-1198). Each feed page's lookups are read in one query per kind of
-row (SNOW-1199). On staging it runs daily at 07:20 UTC as the
-`snowdesk-staging-data-pull` Render cron job (SNOW-1200).
+row (SNOW-1199). It ran daily on staging as the `snowdesk-staging-data-pull`
+Render cron job (SNOW-1200) until `pull_reference_data` took the job over
+(SNOW-1281).
 
 ### `mint_feed_token` — mint a data feed token for a cloud dev environment
 

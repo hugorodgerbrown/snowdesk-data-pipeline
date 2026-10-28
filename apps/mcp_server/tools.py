@@ -126,9 +126,15 @@ class ToolSpec:
     name: str
     description: str
     input_schema: dict[str, Any]
-    handler: Callable[[dict[str, Any]], dict[str, Any]]
+    #: Called as ``handler(arguments)``, or ``handler(arguments, actor)``
+    #: for a tool that ``writes`` — hence the loose signature.
+    handler: Callable[..., dict[str, Any]]
     #: Tool ``_meta`` — for an MCP Apps tool, ``{"ui": {"resourceUri": ...}}``.
     meta: dict[str, Any] | None = None
+    #: True for a tool that changes the environment (the ops waffle
+    #: setters). It is called with the signed-in user as ``actor`` and
+    #: advertised with MCP annotations that tell the client it writes.
+    writes: bool = False
 
 
 # ---------------------------------------------------------------------------

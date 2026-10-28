@@ -2,7 +2,7 @@
 tests/mcp_server/test_ops_tools.py — Tests for apps.mcp_server.ops_tools.
 
 One class per tool in the staff ops catalogue (SNOW-1191): the four command
-run register tools and the seven health tools. Each tool's logic is called
+run register tools, the health tools and the two waffle setters. Each tool's logic is called
 directly; the ``_handle_*`` adapters are exercised through ``protocol``
 for argument validation, the way the endpoint reaches them.
 """
@@ -16,9 +16,10 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from django.contrib.admin.models import LogEntry
 from django.test import override_settings
 from django.utils import timezone
-from waffle.models import Flag
+from waffle.models import Flag, Sample, Switch
 
 from apps.bulletins.models import Bulletin, PipelineRun, RegionDayRating
 from apps.core.models import CommandRun
@@ -33,6 +34,7 @@ from tests.factories import (
     RegionDayRatingFactory,
     ResortLocationFactory,
     SubRegionFactory,
+    UserFactory,
     WeatherFactory,
 )
 
@@ -496,6 +498,239 @@ class TestFeatureFlags:
         assert "sync_log" in result["missing_from_db"]
         rogue = next(f for f in result["flags"] if f["name"] == "rogue_flag")
         assert rogue["everyone"] is True
+
+    def test_switches_samples_and_recent_changes(self) -> None:
+        """Switch notes, sample percents and the admin-log tail are returned."""
+        Switch.objects.update_or_create(
+            name="schedule_backfill_weather", defaults={"active": True}
+        )
+        Sample.objects.create(name="half", percent=50, note="a coin")
+        ops_tools.set_switch(
+            "schedule_backfill_weather", "off", "cut-over", UserFactory.create()
+        )
+
+        result = _call("feature_flags")["structuredContent"]
+
+        switch = next(
+            s for s in result["switches"] if s["name"] == "schedule_backfill_weather"
+        )
+        assert switch["active"] is False
+        assert "note" in switch
+        assert result["samples"] == [
+            {"name": "half", "percent": 50.0, "note": "a coin"}
+        ]
+        latest = result["recent_changes"][0]
+        assert latest["kind"] == "switch"
+        assert latest["name"] == "schedule_backfill_weather"
+        assert "cut-over" in latest["change"]
+        assert "1 sample(s)" in result["summary"]
+
+
+def _write(name: str, arguments: dict[str, Any], actor: Any = None) -> dict[str, Any]:
+    """Call a writing ops tool through the dispatcher with ``actor`` bound.
+
+    Args:
+        name: The tool name.
+        arguments: The tool's arguments.
+        actor: The user bound to the server, as the view binds it.
+
+    Returns:
+        The ``CallToolResult``.
+
+    """
+    response = protocol.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+        OPS._replace(actor=actor),
+    )
+    assert response is not None
+    result: dict[str, Any] = response["result"]
+    return result
+
+
+@pytest.mark.django_db
+class TestSetSwitch:
+    """set_switch: turn an existing switch on or off, audited."""
+
+    @pytest.fixture
+    def switch(self) -> Switch:
+        """The backfill schedule switch, on."""
+        Switch.objects.update_or_create(
+            name="schedule_backfill_weather", defaults={"active": True}
+        )
+        switch: Switch = Switch.objects.get(name="schedule_backfill_weather")
+        return switch
+
+    def test_turns_off_and_audits(self, switch: Switch) -> None:
+        """The switch flips, and the admin log names who, what and why."""
+        staff = UserFactory.create()
+
+        result = _write(
+            "set_switch",
+            {"name": switch.name, "state": "off", "reason": "Reference data cut-over"},
+            staff,
+        )
+
+        assert result["isError"] is False
+        payload = result["structuredContent"]
+        assert payload["changed"] is True
+        assert payload["previous"] == "on"
+        assert (
+            payload["summary"]
+            == "Switch schedule_backfill_weather turned off (was on)."
+        )
+        switch.refresh_from_db()
+        assert switch.active is False
+        entry = LogEntry.objects.get(pk=payload["log_entry_id"])
+        assert entry.user == staff
+        assert entry.object_id == str(switch.pk)
+        assert entry.get_change_message() == (
+            "Switch turned off (was on) via the ops MCP server: Reference data cut-over"
+        )
+
+    def test_already_in_state_changes_nothing(self, switch: Switch) -> None:
+        """Turning on a switch that is on writes no row and no log entry."""
+        result = _write(
+            "set_switch",
+            {"name": switch.name, "state": "on", "reason": "check"},
+            UserFactory.create(),
+        )["structuredContent"]
+
+        assert result["changed"] is False
+        assert result["log_entry_id"] is None
+        assert not LogEntry.objects.exists()
+
+    def test_waffle_reads_the_new_state(
+        self, switch: Switch, django_capture_on_commit_callbacks: Any
+    ) -> None:
+        """The cache is flushed on commit, so waffle sees the change at once."""
+        from waffle import switch_is_active
+
+        assert switch_is_active(switch.name) is True
+        # waffle flushes its cache in an on_commit hook.
+        with django_capture_on_commit_callbacks(execute=True):
+            ops_tools.set_switch(switch.name, "off", "pause", UserFactory.create())
+        assert switch_is_active(switch.name) is False
+
+    def test_unknown_name_never_creates_a_row(self) -> None:
+        """A typo is an error, not a new switch."""
+        result = _write(
+            "set_switch",
+            {"name": "schedule_nope", "state": "on", "reason": "typo"},
+            UserFactory.create(),
+        )
+
+        assert result["isError"] is True
+        assert "No switch named 'schedule_nope'" in result["content"][0]["text"]
+        assert not Switch.objects.filter(name="schedule_nope").exists()
+
+    @pytest.mark.parametrize(
+        ("arguments", "message"),
+        [
+            ({"state": "off", "reason": "x"}, "'name' is required"),
+            ({"name": "s", "reason": "x"}, "'state' is required"),
+            ({"name": "s", "state": "maybe", "reason": "x"}, "'state' must be one of"),
+            ({"name": "s", "state": "off"}, "'reason' is required"),
+            ({"name": "s", "state": "off", "reason": "  "}, "'reason' is required"),
+            ({"name": "s", "state": "off", "reason": "x" * 501}, "at most 500"),
+        ],
+    )
+    def test_requires_name_state_and_reason(
+        self, switch: Switch, arguments: dict[str, Any], message: str
+    ) -> None:
+        """Every argument is required and validated before anything is read."""
+        result = _write("set_switch", arguments, UserFactory.create())
+
+        assert result["isError"] is True
+        assert message in result["content"][0]["text"]
+        switch.refresh_from_db()
+        assert switch.active is True
+
+    def test_refused_without_an_actor(self, switch: Switch) -> None:
+        """A server with no signed-in user bound cannot write."""
+        result = _write(
+            "set_switch", {"name": switch.name, "state": "off", "reason": "x"}
+        )
+
+        assert result["isError"] is True
+        assert "needs a signed-in account" in result["content"][0]["text"]
+        switch.refresh_from_db()
+        assert switch.active is True
+
+
+@pytest.mark.django_db
+class TestSetFlag:
+    """set_flag: on, off or back to its targeting, audited."""
+
+    @pytest.fixture
+    def flag(self) -> Flag:
+        """A staff-targeted flag with no everyone override."""
+        Flag.objects.create(name="ops_test_flag", everyone=None, staff=True)
+        flag: Flag = Flag.objects.get(name="ops_test_flag")
+        return flag
+
+    @pytest.mark.parametrize(
+        ("state", "everyone"), [("on", True), ("off", False), ("targeted", None)]
+    )
+    def test_each_state(self, flag: Flag, state: str, everyone: bool | None) -> None:
+        """Each state writes the matching everyone and only that."""
+        flag.everyone = None if state != "targeted" else True
+        flag.save()
+
+        result = _write(
+            "set_flag",
+            {"name": flag.name, "state": state, "reason": "trial"},
+            UserFactory.create(),
+        )["structuredContent"]
+
+        flag.refresh_from_db()
+        assert flag.everyone is everyone
+        assert flag.staff is True
+        assert result["changed"] is True
+        assert LogEntry.objects.filter(pk=result["log_entry_id"]).exists()
+
+    def test_already_in_state_changes_nothing(self, flag: Flag) -> None:
+        """Targeted to targeted is a no-op."""
+        result = _write(
+            "set_flag",
+            {"name": flag.name, "state": "targeted", "reason": "check"},
+            UserFactory.create(),
+        )["structuredContent"]
+
+        assert result["changed"] is False
+        assert (
+            result["summary"]
+            == "Flag ops_test_flag was already targeted; nothing changed."
+        )
+        assert not LogEntry.objects.exists()
+
+    def test_unknown_name_never_creates_a_row(self) -> None:
+        """A typo is an error, not a new flag."""
+        result = _write(
+            "set_flag",
+            {"name": "no_such_flag", "state": "on", "reason": "typo"},
+            UserFactory.create(),
+        )
+
+        assert result["isError"] is True
+        assert not Flag.objects.filter(name="no_such_flag").exists()
+
+
+def test_write_tools_are_annotated_as_writes() -> None:
+    """tools/list marks the setters as writing and leaves the readers bare."""
+    response = protocol.dispatch(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, OPS
+    )
+    assert response is not None
+    listed = {tool["name"]: tool for tool in response["result"]["tools"]}
+    for name in ("set_switch", "set_flag"):
+        assert listed[name]["annotations"]["readOnlyHint"] is False
+        assert listed[name]["annotations"]["destructiveHint"] is True
+    assert "annotations" not in listed["feature_flags"]
 
 
 @pytest.mark.django_db

@@ -1,0 +1,30 @@
+{% comment %}
+templates/includes/_icon_zoom_in.html — the zoom glyph: a magnifier with a +
+inside the lens (SNOW-1280).
+
+Leads the layers menu's note that some layers draw only at certain zoom
+levels (public/partials/_map_embed.html). A magnifier alone is search's
+mark on the map; the + inside it makes it "zoom", the reading Hugo's
+board drew for it.
+
+Stroke width 2, the house idiom for every glyph (see _icon_pencil.html).
+
+Parameters (passed via {% include … with … %}):
+  size (int, optional) — rendered px, both axes. Default 18.
+{% endcomment %}
+<svg
+    width="{{ size|default:18 }}"
+    height="{{ size|default:18 }}"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3-3" />
+    <path d="M8 11h6" />
+    <path d="M11 8v6" />
+</svg>

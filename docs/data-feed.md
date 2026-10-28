@@ -361,9 +361,10 @@ its own `SITE_BASE_URL`.
 
 Staging has no scheduler, so the pull runs as its own Render cron job,
 `snowdesk-staging-data-pull` in [`render.yaml`](../render.yaml):
-`pull_production_data --commit` at 07:20 UTC, after production's 06:00
-`fetch_weather` and the morning bulletin issue. Each type resumes from its
-last successful `--commit` run, so a missed day is caught up by the next.
+`pull_reference_data --commit` at 07:20 UTC (`pull_production_data` until
+SNOW-1281), after production's 06:00 `fetch_weather` and the morning
+bulletin issue. It reads the estate whole and the last 14 days of the time
+series, so a run missed for up to a fortnight is caught up by the next.
 The job reads the same three `DATA_FEED_*` variables as the web service,
 set on the job in the dashboard. Any failed item makes it exit non-zero,
 which Render shows as a failed run; the item and its error are in the log,

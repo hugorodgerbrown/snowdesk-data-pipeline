@@ -34,6 +34,10 @@ from oauth2_provider.models import Application
 from apps.bulletins.models import Bulletin, RegionBulletin, RegionDayRating
 from apps.bulletins.services.apply import apply_bulletin
 from apps.core.models import CommandRun
+from apps.data_feed.management.commands.pull_reference_data import (
+    describe_item,
+    place_label,
+)
 from apps.ingest.public import (
     NormalisedBulletin,
     SourceLocation,
@@ -213,6 +217,11 @@ def test_live_pull_against_itself_changes_nothing(
     assert counts["failed"] == 0
     assert _written(counts) == 0
     assert "verbier" in output  # the countdown names each resort
+    link = estate["link"].location
+    assert link.name
+    assert f"at {link.name}" in output  # and each day of weather by its place
+    assert str(link.source_uuid) not in output
+    assert "centre of CH-4115" in output  # an unnamed centre by its region
 
 
 @pytest.mark.django_db
@@ -488,3 +497,35 @@ def test_a_failed_ski_page_stops_the_feed(monkeypatch: pytest.MonkeyPatch) -> No
         _run("--commit")
     assert not SkiSegment.objects.exists()
     assert _counts()["ski-network_failed"] == 1
+
+
+@pytest.mark.parametrize(
+    ("item", "label"),
+    [
+        ({"uuid": "u-1", "fields": {"name": "Mont Fort"}}, "Mont Fort"),
+        (
+            {
+                "uuid": "u-2",
+                "fields": {"name": ""},
+                "document": {"centroid_of": ["CH-2", "CH-1"]},
+            },
+            "centre of CH-1, CH-2",
+        ),
+        ({"uuid": "u-3", "fields": {"name": None}, "document": {}}, "u-3"),
+        ({"uuid": "u-4", "deleted_at": "2026-10-28T00:00:00+00:00"}, "u-4"),
+    ],
+)
+def test_place_label(item: dict[str, Any], label: str) -> None:
+    """A place reads by its name, then its regions, then its uuid."""
+    assert place_label(item) == label
+
+
+def test_a_day_of_weather_is_described_by_its_place() -> None:
+    """The weather label reads the place's label; an unknown place its uuid."""
+    describe = describe_item("weather", {"u-1": "Mont Fort"})
+    assert describe({"observed_on": "2026-10-28", "location": "u-1"}) == (
+        "2026-10-28 at Mont Fort"
+    )
+    assert describe({"observed_on": "2026-10-28", "location": "u-9"}) == (
+        "2026-10-28 at u-9"
+    )

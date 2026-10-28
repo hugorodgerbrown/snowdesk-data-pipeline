@@ -24,8 +24,12 @@ Parameters (passed via {% include … with … only %}):
           areas, whose list is local and so always available offline.
   weather (bool, optional) — carry the weather row's second line, which
           map_weather_window.js fills on a day outside the forecast window.
+  zoom_gate (string, optional) — the layer's key in window.pwaZoomGates,
+          for a layer drawn only past a zoom (SNOW-1280): the row gets
+          the zoom suffix and the "Zoom in to view" line
+          (_map_layers_zoom_label.html), driven by map_layers_zoom_gates.js.
 {% endcomment %}
-<li role="none">
+<li role="none" {% if zoom_gate %}data-zoom-gate="{{ zoom_gate }}"{% endif %}>
     <button
         type="button"
         role="menuitemcheckbox"
@@ -38,7 +42,11 @@ Parameters (passed via {% include … with … only %}):
             class="basemap-menu-layer-icon"
         >{% include "includes/_icon_"|add:icon|add:".html" with size=18 only %}</span>
         <span class="basemap-menu-item-text">
-            <span data-row-label>{{ label }}</span>
+            {% if zoom_gate %}
+                {% include "public/partials/_map_layers_zoom_label.html" with label=label only %}
+            {% else %}
+                <span data-row-label>{{ label }}</span>
+            {% endif %}
             {% if weather %}
                 <span class="basemap-menu-item-detail" data-weather-window-summary hidden></span>
             {% endif %}
