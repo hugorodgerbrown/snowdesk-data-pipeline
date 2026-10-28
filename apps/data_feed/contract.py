@@ -168,7 +168,9 @@ def load_fields(
 
     Only names in ``names`` are read, so a field a newer server sends is
     ignored rather than passed to the ORM. Date and datetime columns are
-    parsed from their ISO strings; everything else is JSON already.
+    parsed from their ISO strings and UUID columns back into ``uuid.UUID``,
+    so a value compares equal to the stored one and an unchanged row reads
+    as unchanged; everything else is JSON already.
 
     Args:
         model: The model the columns belong to.
@@ -179,7 +181,7 @@ def load_fields(
         ``{name: python value}`` for every allowlisted name present.
 
     Raises:
-        ValueError: A date or datetime string does not parse.
+        ValueError: A date, datetime or UUID string does not parse.
 
     """
     loaded: dict[str, Any] = {}
@@ -192,6 +194,8 @@ def load_fields(
             value = _parsed(parse_datetime(value), name, value)
         elif value is not None and isinstance(field, models.DateField):
             value = _parsed(parse_date(value), name, value)
+        elif isinstance(value, str) and isinstance(field, models.UUIDField):
+            value = uuid.UUID(value)
         loaded[name] = value
     return loaded
 
