@@ -9163,6 +9163,22 @@
      */
     const openFavouriteDeepLink = () => {
       const uuid = consumeFavouriteDeepLink();
+      if (!uuid) return;
+      showFavourite(uuid);
+    };
+
+    /**
+     * Fly to the favourite carrying ``uuid`` and open what a tap on its pin
+     * opens.
+     *
+     * Shared by the ``?favourite=`` deep link above and a pin picked in
+     * search (SNOW-1264): both are someone asking to be taken to one
+     * specific pin, and two paths to one pin would drift apart.
+     *
+     * @param {string} uuid - The favourite's UUID.
+     * @returns {void}
+     */
+    const showFavourite = (uuid) => {
       if (!uuid || !FAVOURITES_ELIGIBLE) return;
 
       // Someone who followed a link to one specific pin means to see that
@@ -10305,7 +10321,18 @@
       }
     });
 
-    const runSearch = (query) => searchCore.runSearch(SEARCH_INDEX, query);
+    // SNOW-1264: the user's dropped pins, as rows. Not in SEARCH_INDEX,
+    // which is built once per region; these come from the favourites feed
+    // and change whenever a pin is saved, renamed or removed, so they are
+    // rebuilt from it on every read — a handful of rows, no cost worth
+    // caching. An unnamed pin is listed on an empty field and never matched
+    // by typing (search_core.buildPinEntries).
+    const pinEntries = () => searchCore.buildPinEntries(
+      favouritesFeedProps || [],
+      MAP_STRINGS['search-pin-unnamed'],
+    );
+
+    const runSearch = (query) => searchCore.runSearch(SEARCH_INDEX.concat(pinEntries()), query);
 
     const inputEl = document.getElementById('search-input');
     const resultsEl = document.getElementById('search-results');
@@ -10379,6 +10406,11 @@
 
     const pinnedResortResults = () => searchCore.buildPinnedResortEntries(favouritesFeedProps || []);
 
+    // SNOW-1264: dropped pins lead the empty field, under "Pinned places"
+    // (Hugo, 28 Oct: a favourite is a shortcut to somewhere on the map).
+    // SNOW-1229 had declined listing them here because typing could not
+    // find one; a named pin is now matched by its name too.
+
     // SNOW-1231: while the "Find a resort" walkthrough runs
     // (map_resort_guide.js) the empty field leads with its words and a few
     // popular resorts, above the visitor's own pins. The rows are the
@@ -10415,6 +10447,7 @@
         : [];
       return [
         { heading: suggestions ? suggestions.heading : '', items: popular },
+        { heading: MAP_STRINGS['search-group-pinned-places'], items: pinEntries() },
         { heading: MAP_STRINGS['search-group-pinned-resorts'], items: pinnedResorts },
         { heading: MAP_STRINGS['search-group-pinned'], items: pinnedResults() },
       ];
@@ -10440,6 +10473,15 @@
     const showMatches = () => {
       previewTop = true;
       renderResults(runSearch(inputEl.value));
+      // A named pin is a match too (SNOW-1264), and the feed holding it may
+      // not have been read yet on a first typed query; redraw once it has.
+      if (favouritesFeedProps === null) {
+        loadFavouritesFeed().then(() => {
+          if (inputEl.value && document.activeElement === inputEl) {
+            renderResults(runSearch(inputEl.value));
+          }
+        });
+      }
     };
 
     const openSearch = () => {
@@ -10503,7 +10545,9 @@
       // a row is arrowed to: nothing has been asked for yet, and an outline
       // on the first pinned region read as a second selection.
       const previewItem = currentResults[idx >= 0 ? idx : (previewTop ? 0 : -1)];
-      setPreview(previewItem ? previewItem.regionID : null);
+      // A pin row previews nothing (SNOW-1264): it goes to a point, not to
+      // the region it happens to sit in.
+      setPreview(previewItem && previewItem.type !== 'pin' ? previewItem.regionID : null);
     };
 
     // The day's level as a .danger-tile digit, keyed as the feature-state
@@ -10513,6 +10557,10 @@
     // SNOW-1177: the resort glyph the embed renders from _icon_resort.html.
     const resortIconTemplate = /** @type {HTMLTemplateElement|null} */ (
       document.getElementById('search-resort-icon-template')
+    );
+    // SNOW-1264: the favourites star, from the partial the roundel uses.
+    const pinIconTemplate = /** @type {HTMLTemplateElement|null} */ (
+      document.getElementById('search-pin-icon-template')
     );
 
     /**
@@ -10530,6 +10578,18 @@
      * @returns {Element} The tile, decorative (aria-hidden).
      */
     const resultTile = (r) => {
+      // SNOW-1264: a dropped pin is a place, so it is round like a resort,
+      // and carries the star the map draws it with, in the favourites blue.
+      if (r.type === 'pin') {
+        const tile = document.createElement('span');
+        tile.className = 'search-result-tile search-result-tile--pin';
+        tile.setAttribute('aria-hidden', 'true');
+        const star = pinIconTemplate
+          ? pinIconTemplate.content.firstElementChild.cloneNode(true)
+          : null;
+        if (star) tile.append(star);
+        return tile;
+      }
       if (r.type === 'resort') {
         const tile = document.createElement('span');
         tile.className = 'search-result-tile search-result-tile--resort';
@@ -10588,6 +10648,7 @@
         return;
       }
       const GROUP_HEADINGS = {
+        pin: MAP_STRINGS['search-group-pinned-places'],
         resort: MAP_STRINGS['search-group-resorts'],
         region: MAP_STRINGS['search-group-regions'],
       };
@@ -10632,9 +10693,12 @@
           // the two: the span is clipped to a 1px box, so a separator
           // outside it can collapse and leave a screen reader reading
           // "ResortVerbier" as one word. Invisible either way.
-          typeLabel.textContent = (r.type === 'resort'
-            ? MAP_STRINGS['search-type-resort']
-            : MAP_STRINGS['search-type-region']) + ' ';
+          const TYPE_LABELS = {
+            pin: MAP_STRINGS['search-type-pin'],
+            resort: MAP_STRINGS['search-type-resort'],
+            region: MAP_STRINGS['search-type-region'],
+          };
+          typeLabel.textContent = (TYPE_LABELS[r.type] || '') + ' ';
           primary.append(typeLabel, document.createTextNode(r.primary));
 
           const secondary = document.createElement('div');
@@ -10643,7 +10707,10 @@
           // fixture has no descriptive L2 (AT/IT). Resort row: "in" the
           // region it belongs to, so resorts sharing a first word stay told
           // apart and the region it opens on is named in words.
-          secondary.textContent = r.type === 'resort'
+          // A pin row: "in" the region it was dropped in, or nothing for a
+          // pin outside every region (SNOW-1264).
+          const placed = r.type === 'resort' || r.type === 'pin';
+          secondary.textContent = placed && r.secondary
             ? self.pwaStrings.interpolate(MAP_STRINGS['search-resort-in'], { region: r.secondary })
             : r.secondary;
           text.append(primary, secondary);
@@ -10655,7 +10722,7 @@
           // four countries with flag symbols in the map.html sprite render
           // a flag; an unknown prefix falls back to the bare id rather than
           // a broken <use>.
-          if (r.type !== 'resort') {
+          if (r.type === 'region') {
             const badge = document.createElement('span');
             badge.className = 'search-result-badge';
             const country = (r.regionID.split('-')[0] || '').toLowerCase();
@@ -10719,6 +10786,14 @@
     };
 
     const chooseResult = (item) => {
+      // SNOW-1264: a pin row goes to the pin and opens what a tap on it
+      // opens — the same path as the ?favourite= deep link.
+      if (item.type === 'pin') {
+        inputEl.value = '';
+        collapseSearch();
+        showFavourite(item.uuid);
+        return;
+      }
       // SNOW-1161: a resort row opens the resort — its pin and its sheet —
       // rather than its parent region, which is what a resort tapped on the
       // map does. A resort the pin feed does not carry (no coordinates yet)

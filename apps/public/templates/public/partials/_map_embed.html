@@ -257,6 +257,10 @@ Optional context:
         <template id="search-resort-icon-template">
             {% include "includes/_icon_resort.html" with svg_class="search-result-pin" %}
         </template>
+        {# SNOW-1264: a dropped pin's row leads with the favourites star. #}
+        <template id="search-pin-icon-template">
+            {% include "includes/_icon_favourite.html" with svg_class="search-result-pin" filled=True %}
+        </template>
     </div>
     {# SNOW-475: fixed centre pin for touch-friendly placement. Shown by     #}
     {# place_picker.js while placing a favourite/observation; the map pans   #}
@@ -2614,6 +2618,11 @@ Optional context:
     {# from the pin glyph and the secondary line.                          #}
     <span data-string="search-type-region">{% trans "Region" %}</span>
     <span data-string="search-type-resort">{% trans "Resort" %}</span>
+    {# SNOW-1264: a dropped pin's row — its kind, its group, and the label #}
+    {# for a pin the user has not named (the pins panel's own words).     #}
+    <span data-string="search-type-pin">{% trans "Pin" %}</span>
+    <span data-string="search-group-pinned-places">{% trans "Pinned places" %}</span>
+    <span data-string="search-pin-unnamed">{% trans "Unnamed pin" %}</span>
     {# SNOW-1173: the dropdown's group headings, and a resort row's line  #}
     {# naming the region it sits in.                                       #}
     <span data-string="search-group-resorts">{% trans "Resorts" %}</span>

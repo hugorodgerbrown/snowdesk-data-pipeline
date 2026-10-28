@@ -52,6 +52,9 @@
  *   buildPinnedResortEntries(favourites)
  *     The "Pinned resorts" rows an empty field lists, from the user's
  *     favourites feed. Each carries the resort's ``slug`` as well.
+ *   buildPinEntries(favourites, unnamedLabel)
+ *     The user's dropped pins as rows (SNOW-1264), listed under "Pinned
+ *     places" and matched by name. Each carries the favourite's ``uuid``.
  *   runSearch(index, query, maxResults)
  *     The matching rows, ranked and capped.
  *   groupResults(results)
@@ -190,6 +193,8 @@
    * @property {string} regionID The EAWS id this row selects.
    * @property {string} searchable Every matchable word, normalised.
    * @property {string} [slug] A pinned resort's slug — the row opens it.
+   * @property {string} [uuid] A dropped pin's favourite uuid — the row
+   *   flies to it and opens its sheet (SNOW-1264).
    */
 
   /**
@@ -256,6 +261,68 @@
   }
 
   /**
+   * The user's dropped pins as search rows (SNOW-1264).
+   *
+   * A favourite is a shortcut to somewhere on the map (Hugo, 28 Oct), so a
+   * dropped pin is a searchable place like a resort is. SNOW-1229 declined
+   * this because typing could never find a pin; it still cannot find an
+   * UNNAMED one, and that is deliberate — a pin's name is the user's own
+   * text and Snowdesk does not invent one ("this is UGC — they decide").
+   * So an unnamed pin is a row with an empty ``primaryKey`` and
+   * ``searchable``: an empty field lists it, under the label the pins
+   * panel uses, and ``runSearch`` skips it because there is nothing typed
+   * that could mean it.
+   *
+   * A pin matches on its name only. Its region is shown ("in …") but not
+   * matched: typing a region's name is a question about the region, and a
+   * list of every pin in it would push the region's own row down.
+   *
+   * Named pins come first, by name; unnamed ones after them, newest first,
+   * since without a name the only thing that tells two apart is when they
+   * were saved. A resort favourite contributes none (it is a "Pinned
+   * resort"), and neither does a feature with no ``uuid`` — an offline pin
+   * not yet saved has nothing to open.
+   *
+   * @param {Array<{uuid?: string|null, name?: string|null,
+   *   created_at?: string|null, resort_slug?: string|null,
+   *   region_id?: string|null, region_name?: string|null}>} favourites
+   *   Properties of the favourites feed's features.
+   * @param {string} unnamedLabel What an unnamed pin's row says.
+   * @returns {SearchEntry[]} Possibly empty.
+   */
+  function buildPinEntries(favourites, unnamedLabel) {
+    /** @type {Array<{entry: SearchEntry, createdAt: string}>} */
+    var rows = [];
+    (favourites || []).forEach(function (props) {
+      if (!props || !props.uuid || props.resort_slug) return;
+      var name = String(props.name || '').trim();
+      var regionID = props.region_id || '';
+      rows.push({
+        entry: {
+          type: 'pin',
+          primary: name || unnamedLabel,
+          secondary: props.region_name || '',
+          primaryKey: normalise(name),
+          regionID: regionID,
+          searchable: normalise(name),
+          uuid: props.uuid,
+        },
+        createdAt: props.created_at || '',
+      });
+    });
+    rows.sort(function (a, b) {
+      var aNamed = a.entry.primaryKey ? 0 : 1;
+      var bNamed = b.entry.primaryKey ? 0 : 1;
+      if (aNamed !== bNamed) return aNamed - bNamed;
+      if (aNamed === 0) return a.entry.primary.localeCompare(b.entry.primary);
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+    return rows.map(function (row) {
+      return row.entry;
+    });
+  }
+
+  /**
    * How well ``entry`` answers ``q``: lower is better, -1 is no match.
    *
    * Three bands, and the gaps between them are what the ranking is for:
@@ -314,7 +381,8 @@
       return (
         a.score - b.score ||
         a.item.primary.localeCompare(b.item.primary) ||
-        a.item.regionID.localeCompare(b.item.regionID)
+        a.item.regionID.localeCompare(b.item.regionID) ||
+        String(a.item.uuid || '').localeCompare(String(b.item.uuid || ''))
       );
     });
     return scored.slice(0, cap).map(function (scoredItem) {
@@ -362,6 +430,7 @@
     buildResortEntries: buildResortEntries,
     buildEntries: buildEntries,
     buildPinnedResortEntries: buildPinnedResortEntries,
+    buildPinEntries: buildPinEntries,
     runSearch: runSearch,
   });
 })();

@@ -87,13 +87,18 @@ holding the best match leads, so "verb" opens on Verbier and "bagn" on the
 Bagnes regions — and draws them differently: a resort row has a round pin
 tile and "in <region>", and no code; a region row has a square danger tile
 with the displayed day's level and keeps the flag and code. An empty field
-lists the signed-in reader's favourited resorts as resort rows under
+lists the signed-in reader's dropped pins under "Pinned places" (SNOW-1264
+— a round tile with the blue star; a named pin by name, an unnamed one as
+"Unnamed pin"), then their favourited resorts as resort rows under
 "Pinned resorts", then the pinned regions as region rows under "Pinned
 regions", the selected region marked with a bar at its left edge. A pinned
 resort row opens that resort, as a typed resort match does. A pinned
 resort is not in the Favourites panel, which lists dropped pins, and is
 drawn on the map as a blue resort dot rather than a star
-([why](decisions/a-pinned-resort-is-found-in-search.md)).
+([why](decisions/a-pinned-resort-is-found-in-search.md)). Typing matches a
+dropped pin by its name, under "Pinned places", and never an unnamed one;
+picking a pin flies to it and opens its sheet, as the
+`/map/?favourite=<uuid>` link does.
 
 Tapping the selected region again deselects it, as does tapping empty
 map area outside any region; the ribbon greys out and the readout drops

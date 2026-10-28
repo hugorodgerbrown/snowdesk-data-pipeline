@@ -347,3 +347,66 @@ describe('buildPinnedResortEntries', () => {
     expect(core.buildPinnedResortEntries(null)).toEqual([]);
   });
 });
+
+describe('buildPinEntries (SNOW-1264)', () => {
+  const pin = (over) => ({
+    uuid: 'u1', name: 'Col de Mille', created_at: '2026-10-01T10:00:00+00:00',
+    resort_slug: null, region_id: 'CH-4115', region_name: 'Martigny-Verbier', ...over,
+  });
+
+  it('builds a pin row carrying the uuid it opens', () => {
+    const [row] = core.buildPinEntries([pin()], 'Unnamed pin');
+    expect(row).toMatchObject({
+      type: 'pin', primary: 'Col de Mille', secondary: 'Martigny-Verbier',
+      regionID: 'CH-4115', uuid: 'u1',
+    });
+  });
+
+  it('labels an unnamed pin and leaves it nothing to match on', () => {
+    const [row] = core.buildPinEntries([pin({ name: '' })], 'Unnamed pin');
+    expect(row.primary).toBe('Unnamed pin');
+    expect(row.primaryKey).toBe('');
+    expect(row.searchable).toBe('');
+  });
+
+  it('ignores a resort favourite and a pin not yet saved', () => {
+    const rows = core.buildPinEntries(
+      [pin({ resort_slug: 'verbier' }), pin({ uuid: null }), pin({ uuid: 'u2' })],
+      'Unnamed pin',
+    );
+    expect(rows.map((r) => r.uuid)).toEqual(['u2']);
+  });
+
+  it('lists named pins by name, then unnamed ones newest first', () => {
+    const rows = core.buildPinEntries([
+      pin({ uuid: 'old', name: '', created_at: '2026-01-01T00:00:00+00:00' }),
+      pin({ uuid: 'z', name: 'Zinal hut' }),
+      pin({ uuid: 'new', name: '', created_at: '2026-10-01T00:00:00+00:00' }),
+      pin({ uuid: 'a', name: 'Arolla car park' }),
+    ], 'Unnamed pin');
+    expect(rows.map((r) => r.uuid)).toEqual(['a', 'z', 'new', 'old']);
+  });
+
+  it('is found by its name, accents folded, and not by its region', () => {
+    const index = core.buildPinEntries([pin({ name: 'Évolène bus stop' })], 'Unnamed pin');
+    expect(core.runSearch(index, 'evol').map((r) => r.uuid)).toEqual(['u1']);
+    expect(core.runSearch(index, 'martigny')).toEqual([]);
+  });
+
+  it('is never found by typing when unnamed, even by its label', () => {
+    const index = core.buildPinEntries([pin({ name: '' })], 'Unnamed pin');
+    expect(core.runSearch(index, 'unnamed')).toEqual([]);
+  });
+
+  it('ranks beside regions and resorts and groups as its own kind', () => {
+    const index = buildIndex([[{ regionID: 'CH-4115', name: 'Verbier' }, []]])
+      .concat(core.buildPinEntries([pin({ name: 'Verbier chalet' })], 'Unnamed pin'));
+    const results = core.runSearch(index, 'verbier');
+    expect(results.map((r) => r.type)).toEqual(['region', 'pin']);
+    expect(core.groupResults(results).map((g) => g.type)).toEqual(['region', 'pin']);
+  });
+
+  it('is empty for no feed', () => {
+    expect(core.buildPinEntries(null, 'Unnamed pin')).toEqual([]);
+  });
+});

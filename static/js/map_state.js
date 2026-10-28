@@ -426,6 +426,11 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'search-group-pinned': 'Pinned regions',
   'search-group-pinned-resorts': 'Pinned resorts',
   'search-resort-in': 'in %(region)s',
+  // SNOW-1264: a dropped pin's row — its screen-reader type word, its
+  // group heading, and the label for a pin the user has not named.
+  'search-type-pin': 'Pin',
+  'search-group-pinned-places': 'Pinned places',
+  'search-pin-unnamed': 'Unnamed pin',
   // SNOW-658 removed 'custom-control-idle'/'custom-control-done' — the
   // custom-area roundel's two labels for a state it no longer has (see
   // map_custom_download.js's header). Its label is server-rendered now,
