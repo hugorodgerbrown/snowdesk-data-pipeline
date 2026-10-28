@@ -2,7 +2,7 @@
 name: mcp-server
 description: MCP JSON-RPC at POST /api/mcp/ and staff /api/ops/mcp/ (ops_tools) — mcp-auth bearer auth, tools, MCP Apps view
 status: current
-last-reviewed: 2026-10-26
+last-reviewed: 2026-10-28
 ---
 
 # MCP server
@@ -628,7 +628,8 @@ around from this server.
 the same protocol code: `protocol.dispatch(payload, server)` takes a
 `ToolServer` (name, tools, views), and the ops one is `snowdesk-ops` with
 `OPS_TOOLS` and no views. The public endpoint cannot call an ops tool.
-Every tool is read-only and answers about the environment it runs on.
+Every tool answers about the environment it runs on, and every one is
+read-only except the two waffle setters below.
 
 | Tool | Answers |
 |------|---------|
@@ -643,7 +644,36 @@ Every tool is read-only and answers about the environment it runs on.
 | `task_queue_health` | `django_tasks_db` backlog by status, oldest waiting task, 24 h of failures (inline backends report no queue) |
 | `weather_freshness` | Active locations with today's `Weather` row, the last fetch time and the last `fetch_weather` run |
 | `location_estate_health` | Location count by kind, and rows without elevation, without what3words, and orphaned (`LocationQuerySet.orphaned()`) |
-| `feature_flags` | Each waffle flag's live targeting, switches, and drift from `apps/core/fixtures/waffle_flags.json` |
+| `feature_flags` | Each waffle flag's live targeting, each switch's state and note, each sample's percent, drift from `apps/core/fixtures/waffle_flags.json`, and the last ten waffle changes from the admin log (`recent_changes`: who, when, why) |
+| `set_switch` | **Writes.** Turns an existing switch `on` or `off` — e.g. a `schedule_<job>` switch to pause a scheduled job |
+| `set_flag` | **Writes.** Sets an existing flag's `everyone` override `on` or `off`, or `targeted` to clear it so percent, staff, groups and users decide again |
+
+### The waffle setters
+
+`set_switch` and `set_flag` are the only ops tools that change anything,
+so each is made deliberate rather than convenient:
+
+- **Every argument is required** — `name`, `state` and a `reason` (at most
+  500 characters). There is no default state and no toggle.
+- **Existing rows only.** An unknown name is an error; the manifests
+  (`sync_waffle_flags`, the switch manifest) own creating and deleting rows.
+  Neither manifest re-applies state to an existing row, so a change made
+  here sticks across deploys.
+- **No-op when already in that state** — nothing is saved and nothing is
+  logged; the summary says so.
+- **Audited** as an admin `LogEntry` (action CHANGE) against the staff
+  account the token belongs to, with the old state, new state and reason in
+  the change message — so it shows on the row's admin History page next to
+  admin edits — plus a `WARNING` line from `apps.mcp_server.ops_tools`.
+  `feature_flags` returns the latest of these as `recent_changes`.
+- **Attributed or refused.** A tool marked `writes=True` on its `ToolSpec`
+  is called with the request's user, which `ops_mcp_endpoint` binds per
+  request with `OPS_SERVER._replace(actor=request.user)`; a server with no
+  actor bound refuses the call. `tools/list` advertises the setters with
+  MCP `annotations` (`readOnlyHint: false`, `destructiveHint: true`) so the
+  client asks before it calls one.
+- **Immediate.** waffle flushes its cache when the save commits, so the
+  next request — and the next scheduled-job firing — reads the new state.
 
 **Served at `POST /api/ops/mcp/`** (and `/api/ops/mcp`), by
 `apps.mcp_server.views.ops_mcp_endpoint`: the same `@mcp_endpoint`
