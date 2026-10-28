@@ -43,11 +43,15 @@ def _all() -> list[dict]:
 
 @pytest.mark.django_db
 def test_an_item_is_the_stored_caaml_and_pdf() -> None:
-    """The CAAML is served exactly as ingest stored it, with its PDF link."""
+    """The CAAML is served exactly as ingest stored it, with its PDF link.
+
+    And the service's render model beside it (SNOW-1270).
+    """
     row = SourceBulletinFactory.create(
         bulletin_id="b-1",
         pdf_url="https://example.org/b-1.pdf",
         caaml={"bulletinID": "b-1"},
+        render_model={"version": 9},
     )
     (item,) = _all()
     assert item == {
@@ -55,6 +59,7 @@ def test_an_item_is_the_stored_caaml_and_pdf() -> None:
         "updated_at": row.updated_at.isoformat(),
         "pdf_url": "https://example.org/b-1.pdf",
         "caaml": {"bulletinID": "b-1"},
+        "render_model": {"version": 9},
     }
 
 

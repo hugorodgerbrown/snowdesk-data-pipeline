@@ -39,7 +39,8 @@ The names are grouped by what they are for:
   Storing bulletins
       ``SourceBulletin``, ingest's own table, and ``store_bulletin``, which
       writes a fetched bulletin only when its content hash changes
-      (SNOW-1250).
+      (SNOW-1250), building its render model as it does (SNOW-1270);
+      ``rebuild_render_model`` rebuilds one stored row's model.
   The weather service
       ``SourceLocation``, the reference places the service fetches, and
       ``SourceWeather``, its account of each day (SNOW-1253).
@@ -218,7 +219,13 @@ from apps.ingest.sources.open_meteo import (
 )
 from apps.ingest.sources.slf import PAGE_SIZE as SLF_PAGE_SIZE
 from apps.ingest.sources.what3words import convert_to_3wa, fake_address
-from apps.ingest.store import OUTCOME_UNCHANGED, store_bulletin
+from apps.ingest.store import (
+    OUTCOME_UNCHANGED,
+    REBUILD_FAILED,
+    REBUILT,
+    rebuild_render_model,
+    store_bulletin,
+)
 from apps.ingest.weather import (
     FORECAST_DAYS,
     HOURLY_DAYS,
@@ -234,6 +241,8 @@ __all__ = [
     "DRY_PROBLEM_TYPES",
     "KNOWN_PROBLEM_TYPES",
     "PROBLEM_TYPE_TO_CATEGORY",
+    "REBUILD_FAILED",
+    "REBUILT",
     "RENDER_MODEL_VERSION",
     "WET_PROBLEM_TYPES",
     "ParsedScope",
@@ -352,6 +361,7 @@ __all__ = [
     "parse_feed_since",
     "pdf_session",
     "read_slf_archive",
+    "rebuild_render_model",
     "resolve_issued_at",
     "serialise_source_bulletin",
     "slf_pdf_url",

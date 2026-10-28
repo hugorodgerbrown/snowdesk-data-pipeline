@@ -1083,6 +1083,76 @@ class TestStoreThenApply:
         assert apply_feed_item(item, None, existing=None, commit=False) == "created"
         assert not Bulletin.objects.exists()
 
+    def test_the_services_render_model_is_copied(self) -> None:
+        """apply_bulletin stores the model the service built (SNOW-1270)."""
+        raw = _make_raw_bulletin("b-1")
+        apply_bulletin(self._record(raw), PipelineRunFactory.create())
+        source = SourceBulletin.objects.get(bulletin_id="b-1")
+        bulletin = Bulletin.objects.get(bulletin_id="b-1")
+        assert source.render_model_version == RENDER_MODEL_VERSION
+        assert bulletin.render_model == source.render_model
+
+    def test_a_current_served_model_is_copied_not_built(self) -> None:
+        """A model at this code's version is stored as served."""
+        served = {"version": RENDER_MODEL_VERSION, "marker": "served"}
+        item = {
+            "bulletin_id": "b-1",
+            "caaml": _make_raw_bulletin("b-1"),
+            "render_model": served,
+        }
+        with patch("apps.bulletins.services.apply.build_render_model") as build:
+            apply_feed_item(item, PipelineRunFactory.create(), existing=None)
+        build.assert_not_called()
+        bulletin = Bulletin.objects.get(bulletin_id="b-1")
+        assert bulletin.render_model == served
+        assert bulletin.render_model_version == RENDER_MODEL_VERSION
+
+    def test_a_served_model_at_another_version_is_built_here(self) -> None:
+        """An older (or newer) service's model is ignored; this code builds its own."""
+        item = {
+            "bulletin_id": "b-1",
+            "caaml": _make_raw_bulletin("b-1"),
+            "render_model": {"version": 1, "marker": "served"},
+        }
+        apply_feed_item(item, PipelineRunFactory.create(), existing=None)
+        bulletin = Bulletin.objects.get(bulletin_id="b-1")
+        assert "marker" not in bulletin.render_model
+        assert bulletin.render_model["version"] == RENDER_MODEL_VERSION
+
+    def test_a_rebuilt_served_model_updates_an_unchanged_bulletin(self) -> None:
+        """Same CAAML, a different current model: the service rebuilt it."""
+        raw = _make_raw_bulletin("b-1")
+        apply_bulletin(self._record(raw), PipelineRunFactory.create())
+        existing = Bulletin.objects.get(bulletin_id="b-1")
+        item = {
+            "bulletin_id": "b-1",
+            "pdf_url": existing.pdf_url,
+            "caaml": raw,
+            "render_model": {"version": RENDER_MODEL_VERSION, "marker": "new"},
+        }
+        assert (
+            apply_feed_item(item, PipelineRunFactory.create(), existing=existing)
+            == "updated"
+        )
+        existing.refresh_from_db()
+        assert existing.render_model["marker"] == "new"
+
+    def test_a_stale_served_model_leaves_an_unchanged_bulletin(self) -> None:
+        """Same CAAML, an old-version model: nothing to copy, nothing to do."""
+        raw = _make_raw_bulletin("b-1")
+        apply_bulletin(self._record(raw), PipelineRunFactory.create())
+        existing = Bulletin.objects.get(bulletin_id="b-1")
+        item = {
+            "bulletin_id": "b-1",
+            "pdf_url": existing.pdf_url,
+            "caaml": raw,
+            "render_model": {"version": 1},
+        }
+        assert (
+            apply_feed_item(item, PipelineRunFactory.create(), existing=existing)
+            == "unchanged"
+        )
+
     def test_committing_needs_a_run(self) -> None:
         """A write must be attributed to a PipelineRun."""
         item = {"bulletin_id": "b-1", "caaml": _make_raw_bulletin("b-1")}

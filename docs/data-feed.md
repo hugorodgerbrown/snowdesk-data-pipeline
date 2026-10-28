@@ -66,7 +66,7 @@ filters on `updated_at`), `cursor` (the previous page's `next_cursor`) and
   "feed": "bulletins",
   "version": 1,
   "count": 412,
-  "results": [{"bulletin_id": "…", "updated_at": "…", "pdf_url": "…", "caaml": {…}}],
+  "results": [{"bulletin_id": "…", "updated_at": "…", "pdf_url": "…", "caaml": {…}, "render_model": {…}}],
   "next_cursor": "MjAyNi0xMC0yM1QwNjo…"
 }
 ```
@@ -246,9 +246,14 @@ re-running is free. Each feed is written through the code that owns the
 table:
 
 - **Bulletins** are replayed through `upsert_bulletin`, so region links,
-  day ratings, grouping outlines and render models are rebuilt by
-  *staging's* code. Staging therefore tests its own code against real
-  input rather than showing production's output.
+  day ratings and grouping outlines are rebuilt by *staging's* code.
+  The render model is the service's (SNOW-1270): each item carries the
+  one production's service built, and staging copies it when it was built
+  at staging's own `RENDER_MODEL_VERSION`. When the versions differ —
+  staging is testing a builder change — staging builds its own, so a
+  branch is never held to production's output. An item whose CAAML is
+  unchanged but whose current-version model differs from the stored one
+  is a service rebuild, and is applied.
 - **Weather** goes through `upsert_weather`. A past day already recorded is
   `kept` and never rewritten.
 - **Locations and resorts** are written field by field. A resort's pin is

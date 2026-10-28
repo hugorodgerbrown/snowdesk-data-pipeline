@@ -31,7 +31,10 @@ which holds the current ticket list):
    the app applies each row and copied its existing history in once.
 7. SNOW-1270 moves the render model builder, its prose parser, the period
    transition and the day-character cascade into `apps/ingest/normalise/`;
-   the instance keeps the labels and copy.
+   the instance keeps the labels and copy. Its second step stores each
+   bulletin's render model on `SourceBulletin` and serves it in the
+   bulletins feed; an instance copies it when it was built at its own
+   `RENDER_MODEL_VERSION` and builds its own otherwise.
 8. SNOW-1252 (the `lookup_point` facade) is under review.
 
 **Why.**

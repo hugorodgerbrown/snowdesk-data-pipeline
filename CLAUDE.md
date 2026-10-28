@@ -46,7 +46,8 @@ apps/            Parent package for the seventeen Django apps (SNOW-557 — move
                  (SLF shape detection, the Météo-France translator, Open-Meteo
                  parsing, and since SNOW-1270 the render model builder, its
                  prose parser, the period transition and the day-character
-                 cascade); sources/ the HTTP (the three bulletin providers,
+                 cascade — store_bulletin builds each bulletin's model onto
+                 SourceBulletin and the feed serves it); sources/ the HTTP (the three bulletin providers,
                  Open-Meteo forecast + elevation, what3words), settings read
                  only via conf.py; runs.py walks a provider and yields
                  NormalisedBulletin / FetchOutcome — the app decides what to

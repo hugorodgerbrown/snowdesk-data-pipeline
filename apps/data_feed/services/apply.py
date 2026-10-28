@@ -201,7 +201,7 @@ def lookups_for(
             bulletin.bulletin_id: bulletin
             for bulletin in Bulletin.objects.filter(
                 bulletin_id__in={item["bulletin_id"] for item in items}
-            ).only("pk", "bulletin_id", "raw_data", "pdf_url")
+            ).only("pk", "bulletin_id", "raw_data", "pdf_url", "render_model")
         }
     elif feed == "weather":
         lookups.locations = _locations(item.get("location") for item in items)

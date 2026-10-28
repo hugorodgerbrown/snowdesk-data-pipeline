@@ -1345,6 +1345,10 @@ incident that invalidates derived state:
 
 - `rebuild_render_models --commit` — after bumping `RENDER_MODEL_VERSION`.
   Re-runs the render-model derivation for every stale `Bulletin`.
+- `rebuild_source_render_models --commit` — the same, for the render
+  models the weather service stores on `SourceBulletin` and serves in the
+  bulletins feed (SNOW-1270). Run on production after a version bump, and
+  once when SNOW-1270 first deploys: rows stored before it carry no model.
 - `reformat_mf_comments --commit` — one-off retroactive formatter for FR bulletins
   ingested before SNOW-207 added the HTML formatter (plain-text prose fields only;
   already-HTML rows are skipped). Filters to `bulletin_id__startswith='FR'`.
@@ -1871,6 +1875,14 @@ uv run python manage.py rebuild_render_models --commit  # persist
 # Flags: --commit, --all (every row), --bulletin-id <id> (single row),
 #   --batch-size N (streamed-queryset iterator chunk size, default 500, SNOW-602),
 #   --skip-day-ratings (persist render models without refreshing RegionDayRating)
+
+# Rebuild the service's stored render models (SourceBulletin, SNOW-1270): the
+# rows whose render_model_version predates RENDER_MODEL_VERSION, failed builds
+# included, or every row with --all. A rebuilt row moves its updated_at, so the
+# bulletins feed serves it again. Tallies rebuilt / unchanged / failed and exits
+# non-zero when a build fails. Read-only by default.
+uv run python manage.py rebuild_source_render_models           # read-only
+uv run python manage.py rebuild_source_render_models --commit  # persist
 
 # Re-derive every RegionDayRating row under the current v9 policy: min/max
 # come from an elevation-band split (distinct all_day band keys) or, failing

@@ -7,7 +7,9 @@ Five models:
   published, holding its CAAML as normalised, the link to its PDF and a
   hash of the CAAML. It is the record the data feed's ``bulletins``
   endpoint serves and the source the app's ``Bulletin`` rows are applied
-  from.
+  from. Since SNOW-1270 it also holds the bulletin's render model, built
+  by the service whenever the row is written, so a client copies the
+  service's reading of the bulletin rather than making its own.
 * ``SourceLocation`` (SNOW-1253): one reference place — a resort's
   village, mid-station, peak or pin, a region centre — that the service
   fetches weather for. Its ``uuid`` is the identity every instance keys its
@@ -80,6 +82,19 @@ class SourceBulletinQuerySet(models.QuerySet["SourceBulletin"]):
         """
         return self.filter(provider=provider)
 
+    def stale_render_model(self, version: int) -> SourceBulletinQuerySet:
+        """Return the bulletins whose render model predates ``version``.
+
+        Args:
+            version: The builder's current ``RENDER_MODEL_VERSION``.
+
+        Returns:
+            The filtered queryset. A failed build (version 0) counts as
+            stale, so a builder fix reaches it on the next rebuild.
+
+        """
+        return self.filter(render_model_version__lt=version)
+
 
 class SourceBulletin(models.Model):
     """One bulletin as a provider published it, normalised to CAAML."""
@@ -109,6 +124,18 @@ class SourceBulletin(models.Model):
     )
     fetched_at = models.DateTimeField(
         help_text="When this content was fetched — the last time it changed."
+    )
+    render_model = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="The service's reading of the CAAML (SNOW-1270), rebuilt "
+        "whenever the row is written; {'version': 0, 'error': …} when the "
+        "build failed, {} when never built.",
+    )
+    render_model_version = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="RENDER_MODEL_VERSION the render model was built at; 0 "
+        "when it failed or was never built.",
     )
 
     objects = SourceBulletinQuerySet.as_manager()
