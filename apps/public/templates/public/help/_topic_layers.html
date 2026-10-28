@@ -6,8 +6,8 @@ parameter of includes/_collapsible_panel.html.
 
 Documents the layers menu (#basemap-menu in
 public/partials/_map_embed.html) row by row, in the order the menu
-renders them: "The map" (bulletins, steep terrain, weather, resorts,
-boundaries, basemap), then "Yours" (favourites, routes, field
+renders them: "Reference data" (bulletins, steep terrain, weather, resorts,
+boundaries, basemap), then "Your data" (favourites, routes, field
 observations, downloaded areas). Three of those rows have a panel of their
 own on this page — Weather, Slope angle and Downloads — so they get a
 sentence and a pointer rather than a second copy of the detail.
@@ -33,7 +33,7 @@ headings (help-layers-sections) now explains the two kinds of row.
             set to, and the count at the top of the menu says how many layers are on altogether.
         {% endblocktrans %}
     </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "The map" %}</h3>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Reference data" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-layers-bulletins">
         {% blocktrans trimmed %}
             Avalanche bulletins paints each region in its danger colour. Its options have one row per bulletin provider
@@ -94,7 +94,7 @@ headings (help-layers-sections) now explains the two kinds of row.
             switching to one is a choice to look closely at one place.
         {% endblocktrans %}
     </p>
-    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Yours" %}</h3>
+    <h3 class="text-summary font-semibold text-text-1 mt-4 mb-2">{% trans "Your data" %}</h3>
     <p class="mb-3 last:mb-0" data-testid="help-layers-ugc">
         {% blocktrans trimmed %}
             Favourites draws your own saved places, and Routes draws every track you have uploaded. Both need an

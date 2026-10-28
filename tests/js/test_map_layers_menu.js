@@ -121,7 +121,7 @@ function buildFixture({
           <button type="button" class="basemap-menu-close" data-layers-close></button>
         </div>
         <ul class="basemap-menu-list" role="menu" data-layers-page="main">
-          <li role="presentation" class="basemap-menu-group-label">The map</li>
+          <li role="presentation" class="basemap-menu-group-label">Reference data</li>
           ${optionsRow('bulletins', 'Avalanche bulletins')}
           ${switchRow('weather', 'Weather')}
           ${switchRow('resorts', 'Resorts')}
@@ -133,7 +133,7 @@ function buildFixture({
               <span data-page-summary="basemap"></span>
             </button>
           </li>
-          <li role="presentation" class="basemap-menu-group-label">Yours</li>
+          <li role="presentation" class="basemap-menu-group-label">Your data</li>
           ${switchRow('favourites', 'Favourites')}
           ${switchRow('routes', 'Routes')}
           ${switchRow('community_reports', 'Field observations')}

@@ -10,9 +10,9 @@ last-reviewed: 2026-10-28
 **Decision.** The map's layers menu (`#basemap-menu`, SNOW-1266) has two
 levels. Level one has one row per layer, in two groups:
 
-- **The map**: Avalanche bulletins, Steep terrain, Weather, Resorts,
+- **Reference data**: Avalanche bulletins, Steep terrain, Weather, Resorts,
   Boundaries, Basemap.
-- **Yours**: Favourites, Routes, Field observations, Downloaded areas.
+- **Your data**: Favourites, Routes, Field observations, Downloaded areas.
 
 Every row has the same shape. A switch on the right says whether the layer
 is drawn. A layer with options has an opener on the left (icon, name, a
@@ -49,7 +49,7 @@ the on/off question first, once per layer, answers "what is on my map" in
 one screen. The options live one tap down, where they cannot be confused
 with a second layer. The groups follow the map's own model: what Snowdesk
 draws from providers and its own reference data, and what the reader made.
-Field observations are user-generated content, so they belong in Yours.
+Field observations are user-generated content, so they belong in Your data.
 
 **Consequences.**
 

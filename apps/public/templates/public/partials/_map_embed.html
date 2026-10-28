@@ -581,8 +581,8 @@ Optional context:
         >
             {# Layers menu (SNOW-1266, Hugo 28 Oct 2026): on/off first,       #}
             {# options one level down. Level one is one row per layer, in two #}
-            {# groups: "The map" (external and Snowdesk layers) and "Yours"   #}
-            {# (what a user made). A row's switch says whether the layer is   #}
+            {# groups: "Reference data" (external and Snowdesk layers) and   #}
+            {# "Your data" (what a user made). A row's switch says whether the layer is   #}
             {# drawn; a row with options has a second control on its left     #}
             {# half that opens them, on a page of its own with a back arrow.  #}
             {# Basemap has no switch: there is always one. Rows and their     #}
@@ -606,7 +606,7 @@ Optional context:
                 </button>
             </div>
             <ul class="basemap-menu-list" role="menu" data-layers-page="main">
-                <li role="presentation" class="basemap-menu-group-label">{% trans "The map" %}</li>
+                <li role="presentation" class="basemap-menu-group-label">{% trans "Reference data" %}</li>
                 {% trans "Avalanche bulletins" as layer_bulletins %}
                 <li role="none" class="basemap-menu-layer">
                     <button
@@ -739,11 +739,11 @@ Optional context:
                         </span>
                         {% include "includes/_icon_chevron_right.html" with size=16 svg_class="basemap-menu-layer-chevron" only %}
                     </button>
-                    {# No switch: there is always one basemap. The slot says so, #}
-                    {# and keeps the chevron in line with the rows above it.      #}
-                    <span class="basemap-menu-switch basemap-menu-switch--always">{% trans "Always" %}</span>
+                    {# No switch: there is always one basemap. The empty slot    #}
+                    {# keeps the chevron in line with the rows above it.          #}
+                    <span class="basemap-menu-switch" aria-hidden="true"></span>
                 </li>
-                <li role="presentation" class="basemap-menu-group-label">{% trans "Yours" %}</li>
+                <li role="presentation" class="basemap-menu-group-label">{% trans "Your data" %}</li>
                 {# Each is the same setting as its own panel's "Show on the map" #}
                 {# switch (static/js/map_panel_overlay_switch.js). Favourites and #}
                 {# routes hand an anonymous visitor to sign-in; field            #}

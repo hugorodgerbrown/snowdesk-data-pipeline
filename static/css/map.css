@@ -949,7 +949,7 @@
     background: var(--color-border);
 }
 
-/* SNOW-1266: the group labels on level one ("The map", "Yours") and the
+/* SNOW-1266: the group labels on level one ("Reference data", "Your data") and the
    section labels on an options page ("Providers", "Bulletin opacity"). Not
    controls — a reader scans them, nobody taps them. */
 .basemap-menu-group-label,
@@ -1062,13 +1062,6 @@
     display: inline-flex;
     flex: 0 0 60px;
     justify-content: center;
-}
-
-/* Basemap's slot: no switch, because there is always one. */
-.basemap-menu-switch--always {
-    cursor: default;
-    font-size: 12px;
-    color: var(--color-text-3, var(--color-text-2));
 }
 
 /* An options page's first row: back, then the layer's name. */

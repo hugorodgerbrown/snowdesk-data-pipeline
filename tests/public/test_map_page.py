@@ -942,8 +942,8 @@ def _layers_page(content: str, slug: str) -> str:
 def test_map_layer_menu_level_one_order() -> None:
     """SNOW-1266: one row per layer, in two groups, in one fixed order.
 
-    Hugo's design F (28 Oct 2026): "The map" — the layers Snowdesk draws
-    from the providers and its own reference data — then "Yours", what the
+    Hugo's design F (28 Oct 2026): "Reference data" — the layers Snowdesk draws
+    from the providers and its own reference data — then "Your data", what the
     reader made. Each row is a switch; bulletins, boundaries and basemap
     also open a page of options. SNOW-904's four collapsible sections
     (Places, Conditions, Boundaries, Basemap) are asserted gone, because a
@@ -954,13 +954,13 @@ def test_map_layer_menu_level_one_order() -> None:
 
     main = _layers_page(content, "main")
     markers = [
-        ">The map<",
+        ">Reference data<",
         'data-layers-open="bulletins"',
         'data-overlay-key="weather"',
         'data-overlay-key="resorts"',
         'data-layers-open="boundaries"',
         'data-layers-open="basemap"',
-        ">Yours<",
+        ">Your data<",
         'data-overlay-key="favourites"',
         'data-overlay-key="routes"',
         'data-overlay-key="community_reports"',

@@ -691,13 +691,13 @@ full width with its own ×; on a desktop it sits beside the roundels.
 
 | Group | Row | Switch | Options |
 |-------|-----|--------|---------|
-| **The map** | Avalanche bulletins | Master: on while an opacity step above 0 is checked; remembers the step it was switched off at | SLF bulletins (CH), MétéoFrance (FR), ALBINA (AT, IT); Bulletin opacity (four steps); Highlight problem terrain |
+| **Reference data** | Avalanche bulletins | Master: on while an opacity step above 0 is checked; remembers the step it was switched off at | SLF bulletins (CH), MétéoFrance (FR), ALBINA (AT, IT); Bulletin opacity (four steps); Highlight problem terrain |
 | | Steep terrain (absent without `TERRAIN_CLASS_TILE_URL`) | The terrain filter | The terrain filter's own sheet (§3.5a–b) |
 | | Weather | Yes | None |
 | | Resorts | Yes | None |
 | | Boundaries | Master: on while any tier is; remembers which | Major / Minor / Micro regions (EAWS L1, L2, L4), drawn for the countries the ACTIVE BASEMAP covers ([why](decisions/boundaries-follow-the-basemap.md)); Show unsupported regions |
 | | Basemap | None, because there is always one | One radio per basemap |
-| **Yours** | Favourites, Routes, Field observations, Downloaded areas | Yes, the same setting as each panel's "Show on the map" switch | None |
+| **Your data** | Favourites, Routes, Field observations, Downloaded areas | Yes, the same setting as each panel's "Show on the map" switch | None |
 
 A row with options carries a derived second line naming what is on inside
 them. It reads "None selected" when nothing is on, the row names when they
