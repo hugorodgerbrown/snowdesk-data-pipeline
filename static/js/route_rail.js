@@ -424,7 +424,8 @@
       }
     }
     fillMenu();
-    fillClaim(props.pending ? opts.claim || null : null);
+    // SNOW-1278: a SAC tour not yet saved has a Save of its own too.
+    fillClaim(props.pending || props.tour ? opts.claim || null : null);
     paintState(cursor ? cursor.state() : null);
 
     rail.hidden = false;

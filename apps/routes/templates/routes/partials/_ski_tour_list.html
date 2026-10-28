@@ -1,0 +1,88 @@
+{% load i18n %}
+{% comment %}
+routes/partials/_ski_tour_list.html — the tours under a tap, or the tours to
+one summit (SNOW-1278).
+
+Rendered by apps.routes.views.ski_tour_list into #ski-tours-sheet, the
+object sheet static/js/ski_tours.js opens. A TAP NEVER PICKS A TOUR ON ITS
+OWN: more than one tour in reach lists them here, which near a hut is
+nearly always.
+
+Two shapes, one row:
+
+  * ``rows`` — "6 routes pass here": every tour within reach of the tap,
+    each row named by its summit (the handle a reader chooses by) and
+    sorted by it.
+  * ``summit`` with ``up_rows`` / ``down_rows`` — every tour to one summit
+    or hut, the ways up and the ways down apart, each row named by SAC's
+    own name for the way ("Von der Silvrettahütte SAC"). A way down is
+    drawn dashed in its swatch, as on the map.
+
+Each row is a button carrying ``data-ski-tour``; ski_tours.js opens the
+tour's panel on a press. The figures are SAC's: its grade, its height gain
+(↑, or ↓ for a way down) and its guide time.
+
+Vocabulary (Hugo, 28 Oct 2026): titles say ROUTE, SAC lines included;
+"tour" only in a sentence.
+
+Context:
+  rows      — list of row dicts (apps.routes.views._tour_rows), or
+  summit    — apps.routes.services.ski_tours.Summit, with
+  count     — how many tours go to it,
+  up_rows   — its ways up, and
+  down_rows — its ways down.
+{% endcomment %}
+<div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+    <div data-sheet-peek data-sheet-drag>
+        {% if summit %}
+            {% if summit.altitude_m %}
+                {% blocktrans with name=summit.name altitude=summit.altitude_m asvar summit_title %}{{ name }} · {{ altitude }} m{% endblocktrans %}
+            {% else %}
+                {% firstof summit.name as summit_title %}
+            {% endif %}
+            {% include "includes/_sheet_header.html" with title=summit_title close_action="dismiss" title_class="text-lg font-semibold" %}
+            <p class="-mt-1.5 px-2 text-summary text-text-3">
+                {% blocktrans count counter=count %}{{ counter }} SAC route{% plural %}{{ counter }} SAC routes{% endblocktrans %}
+                ·
+                {% blocktrans with up=up_rows|length down=down_rows|length %}{{ up }} up, {{ down }} down{% endblocktrans %}
+            </p>
+        {% else %}
+            {% blocktrans count counter=rows|length asvar pass_title %}{{ counter }} route passes here{% plural %}{{ counter }} routes pass here{% endblocktrans %}
+            {% include "includes/_sheet_header.html" with title=pass_title close_action="dismiss" title_class="text-lg font-semibold" %}
+            <p class="-mt-1.5 px-2 text-summary text-text-3">
+                {% trans "Pick one by where it goes." %}
+            </p>
+        {% endif %}
+    </div>
+    {% if summit %}
+        {% if up_rows %}
+            <div class="flex flex-col gap-1">
+                {% trans "Up" as up_label %}
+                {% include "includes/_eyebrow.html" with tag="p" text=up_label class_extra="px-2 pb-1 font-medium" %}
+                <ul class="flex flex-col">
+                    {% for row in up_rows %}
+                        {% include "routes/partials/_ski_tour_row.html" with row=row by_name=True %}
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+        {% if down_rows %}
+            <div class="flex flex-col gap-1">
+                {% trans "Down" as down_label %}
+                {% include "includes/_eyebrow.html" with tag="p" text=down_label class_extra="px-2 pb-1 font-medium" %}
+                <ul class="flex flex-col">
+                    {% for row in down_rows %}
+                        {% include "routes/partials/_ski_tour_row.html" with row=row by_name=True %}
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+    {% else %}
+        <ul class="flex flex-col">
+            {% for row in rows %}
+                {% include "routes/partials/_ski_tour_row.html" with row=row by_name=False %}
+            {% endfor %}
+        </ul>
+    {% endif %}
+    <p class="px-2 text-meta text-text-3">{% trans "SAC ski tours © swisstopo" %}</p>
+</div>

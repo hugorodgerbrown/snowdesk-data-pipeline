@@ -1,0 +1,45 @@
+{% load i18n %}
+{% comment %}
+public/partials/_route_add_row.html — one of the routes panel's ways to add
+a route (SNOW-1278).
+
+Included only by public/partials/_route_add_rows.html, three times. A
+button, so the whole row is the target: an icon in a round tile, the title,
+one line saying what it starts from, and a chevron. The emphasised row (the
+first, the least work) has an ink border and an ink tile; the others a
+hairline and a muted tile.
+
+Parameters:
+  hook       — which way in: "find" (data-ski-tour-find, ski_tours.js),
+               "create" (data-route-draw-start, route_draw.js) or
+               "upload" (data-panel-add, the UGC panel). A fixed choice
+               rather than an attribute passed in, so no template value is
+               ever written into the tag unquoted.
+  title      — the row's title.
+  subtitle   — one line under it.
+  icon       — template path of the tile's stroke icon.
+  emphasised — bool: the row to start from.
+{% endcomment %}
+<button
+    type="button"
+    {% if hook == "find" %}
+        data-ski-tour-find
+    {% elif hook == "create" %}
+        data-route-draw-start
+    {% else %}
+        data-panel-add
+    {% endif %}
+    class="hover-affordance flex w-full items-center gap-3 rounded-card border {% if emphasised %}border-text-1{% else %}border-border{% endif %} px-3 py-2.5 text-left"
+>
+    <span
+        class="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full {% if emphasised %}bg-text-1 text-card{% else %}bg-card-hover text-text-2{% endif %}"
+        aria-hidden="true"
+    >
+        {% include icon with size=16 %}
+    </span>
+    <span class="flex min-w-0 flex-1 flex-col">
+        <span class="text-label font-semibold text-text-1">{{ title }}</span>
+        <span class="text-sm text-text-3">{{ subtitle }}</span>
+    </span>
+    {% include "includes/_icon_chevron_right.html" with size=16 %}
+</button>

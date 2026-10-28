@@ -274,6 +274,8 @@ in addition to the shared map assets.
     {# holds the "Draw on the map" CTA that opens it.                      #}
     {% if route_drawing_enabled %}
         {% include "public/partials/_route_draw_surface.html" %}
+        {# SNOW-1278: "Find a route" — SAC's tours on the map, tapped.     #}
+        {% include "public/partials/_ski_tours_surface.html" %}
     {% endif %}
     {# SNOW-1239: the weather, place and region sheets pause while the     #}
     {# timeline plays — no request per frame, one when it stops — and say  #}

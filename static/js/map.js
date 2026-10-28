@@ -2633,7 +2633,7 @@
     routeCursorPointData = point
       ? { type: 'FeatureCollection', features: segment ? [point, segment] : [point] }
       : EMPTY_ROUTE_CURSOR_FC;
-    for (const id of [ROUTE_CURSOR_SOURCE, TRIP_ROUTE_CURSOR_SOURCE]) {
+    for (const id of [ROUTE_CURSOR_SOURCE, TRIP_ROUTE_CURSOR_SOURCE, TOUR_ROUTE_CURSOR_SOURCE]) {
       const pointSource = map.getSource(id);
       if (pointSource) pointSource.setData(routeCursorDataFor(id));
     }
@@ -2647,13 +2647,14 @@
    * so a saved route's point written there too would stay on the map after
    * the routes overlay is switched off.
    *
-   * @param {string} sourceId ROUTE_CURSOR_SOURCE or TRIP_ROUTE_CURSOR_SOURCE.
+   * @param {string} sourceId ROUTE_CURSOR_SOURCE, TRIP_ROUTE_CURSOR_SOURCE
+   *   or TOUR_ROUTE_CURSOR_SOURCE.
    * @returns {Object} A FeatureCollection.
    */
   const routeCursorDataFor = (sourceId) => {
-    const active = routeCursorTarget && routeCursorTarget.trip
-      ? TRIP_ROUTE_CURSOR_SOURCE
-      : ROUTE_CURSOR_SOURCE;
+    let active = ROUTE_CURSOR_SOURCE;
+    if (routeCursorTarget && routeCursorTarget.trip) active = TRIP_ROUTE_CURSOR_SOURCE;
+    if (routeCursorTarget && routeCursorTarget.tour) active = TOUR_ROUTE_CURSOR_SOURCE;
     return sourceId === active ? routeCursorPointData : EMPTY_ROUTE_CURSOR_FC;
   };
 
@@ -2690,8 +2691,13 @@
    * never touches it again, so it emits nothing more, and the listener
    * left on it is inert until this function replaces it.
    *
-   * @param {{uuid: ?string, token: ?string}} identity The opened route's
-   *   uuid, or a pending share's token.
+   * SNOW-1278: a SAC tour opened from "Find a route" is identified as
+   * `{tour: true}`, like a trip: it is the one tour the map is drawing.
+   * Binding anything else stops drawing that tour.
+   *
+   * @param {{uuid?: ?string, token?: ?string, trip?: boolean, tour?: boolean}} identity
+   *   The opened route's uuid, a pending share's token, or the trip or tour
+   *   slot.
    * @returns {void}
    */
   const bindRouteCursor = (identity) => {
@@ -2700,12 +2706,14 @@
     routeCursorTarget = null;
     const cursor = window.pwaRouteRail?.cursor ? window.pwaRouteRail.cursor() : null;
     const trip = identity.trip === true;
-    const uuid = trip ? null : identity.uuid || null;
-    const token = trip || uuid ? null : identity.token || null;
-    if (cursor && (trip || uuid || token)) {
+    const tour = !trip && identity.tour === true;
+    if (!tour) clearTourRoute();
+    const uuid = trip || tour ? null : identity.uuid || null;
+    const token = trip || tour || uuid ? null : identity.token || null;
+    if (cursor && (trip || tour || uuid || token)) {
       // SNOW-1213: a trip's route is not in the routes overlay; it is the
-      // one feature a trip arrival drew.
-      const feature = trip ? tripRouteFeature() : (
+      // one feature a trip arrival drew. A tour is the same (SNOW-1278).
+      const feature = trip ? tripRouteFeature() : tour ? tourRouteFeature : (
         (routesGeojsonCache && routesGeojsonCache.features) || []
       ).find(
         (f) => f && f.properties
@@ -2734,6 +2742,7 @@
         uuid: uuid,
         token: token,
         trip: trip,
+        tour: tour,
         cursor: cursor,
         slope: slope,
         legs: legList,
@@ -3376,6 +3385,125 @@
       (f) => f && f.properties && f.properties.kind === 'route',
     ) || null
   );
+
+  // ==== SNOW-1278: the SAC tour a reader opened ====
+  //
+  // "Find a route" (static/js/ski_tours.js) opens a tour in the route panel
+  // before anyone has saved it. Like a trip's route it is in no overlay and
+  // has no uuid: one feature, drawn by the shared drawing under a prefix of
+  // its own, with a cursor of its own, so the panel's point lands on it as
+  // on a saved route. Opening another route, or closing the panel, stops
+  // drawing it.
+  const TOUR_ROUTE_SOURCE = 'ski-tour-route';
+  const TOUR_ROUTE_CURSOR_SOURCE = 'ski-tour-route-cursor-point';
+  const TOUR_ROUTE_TAP_LAYERS = Object.freeze([
+    'ski-tour-route-line',
+    'ski-tour-route-leg-climb',
+    'ski-tour-route-leg-descent',
+    'ski-tour-route-slope-line',
+    'ski-tour-route-slope-unknown',
+  ]);
+  // The open tour's Feature, as routes:ski_tour_feature answered it, or null.
+  let tourRouteFeature = null;
+
+  /**
+   * Draw the open tour, installing its layers the first time (and after a
+   * basemap swap) and replacing their data after that.
+   *
+   * @returns {void}
+   */
+  const paintTourRoute = () => {
+    const core = self.pwaRouteDrawingCore;
+    if (!core || !map.isStyleLoaded()) return;
+    const collection = {
+      type: 'FeatureCollection',
+      features: tourRouteFeature ? [tourRouteFeature] : [],
+    };
+    const ids = core.sourceIds(TOUR_ROUTE_SOURCE);
+    if (!map.getSource(ids.route)) {
+      if (!tourRouteFeature) return;
+      core.install(map, collection, { prefix: TOUR_ROUTE_SOURCE, textFont: overlayTextFont });
+      installRouteCursorLayers(TOUR_ROUTE_CURSOR_SOURCE, TOUR_ROUTE_SOURCE, true);
+      raiseMarkerLayers();
+      return;
+    }
+    const data = core.sourceData(collection);
+    for (const key of Object.keys(ids)) {
+      const source = map.getSource(ids[key]);
+      if (source) source.setData(data[key]);
+    }
+  };
+
+  /**
+   * Stop drawing the open tour, if there is one.
+   *
+   * @returns {void}
+   */
+  const clearTourRoute = () => {
+    if (!tourRouteFeature) return;
+    tourRouteFeature = null;
+    paintTourRoute();
+    document.dispatchEvent(new CustomEvent('snowdesk:ski-tour-closed', { detail: null }));
+  };
+
+  /**
+   * Open a tour in the route panel and draw it.
+   *
+   * @returns {void}
+   */
+  const activateTourRoute = () => {
+    if (!tourRouteFeature) return;
+    window.pwaRouteRail?.open(tourRouteFeature, { claim: tourRouteClaim });
+    bindRouteCursor({ tour: true });
+  };
+  // The tour's Save control, seated in the panel's claim slot.
+  let tourRouteClaim = null;
+
+  window.pwaSkiTourRoute = Object.freeze({
+    /**
+     * Open a tour's Feature in the route panel and draw it on the map.
+     * Called again with the sampled Feature, it refills the open panel.
+     *
+     * @param {Object} feature From routes:ski_tour_feature.
+     * @param {{claim?: ?Node, frame?: boolean}} [options] `claim` is the
+     *   Save control; `frame` fits the map to the tour.
+     * @returns {boolean} Whether the panel opened.
+     */
+    open(feature, options) {
+      if (!feature || !window.pwaRouteRail) return false;
+      const opts = options || {};
+      const index = routeCursorTarget && routeCursorTarget.tour
+        ? routeCursorTarget.cursor.state().index
+        : null;
+      tourRouteFeature = feature;
+      tourRouteClaim = opts.claim || null;
+      paintTourRoute();
+      activateTourRoute();
+      // A refill keeps the point the reader had placed.
+      if (index !== null && routeCursorTarget && routeCursorTarget.tour) {
+        routeCursorTarget.cursor.setIndex(index);
+      }
+      const bounds = parseRouteProperty(feature.properties && feature.properties.bounds);
+      if (opts.frame && Array.isArray(bounds) && bounds.length === 4) {
+        map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
+          padding: paddingClearingRail(),
+          duration: 400,
+        });
+      }
+      return true;
+    },
+    /** @returns {?string} The open tour's uuid, or null. */
+    openUuid: () => (
+      tourRouteFeature && tourRouteFeature.properties
+        ? tourRouteFeature.properties.tour_uuid || null
+        : null
+    ),
+  });
+
+  // The panel closing — its ×, Escape, a tap on the map — ends the tour.
+  document.addEventListener('snowdesk:route-rail-changed', () => {
+    if (window.pwaRouteRail && !window.pwaRouteRail.isOpen()) clearTourRoute();
+  });
 
   /**
    * Honour a ``/?trip=<uuid>`` or ``/?trip_share=<token>`` arrival
@@ -4441,9 +4569,17 @@
     'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo-karto.skitouren/default/current/3857/{z}/{x}/{y}.png';
   const SKI_ROUTES_BOUNDS = [5.9, 45.8, 10.5, 47.85];
   const SKI_ROUTES_MINZOOM = 10;
+  // SNOW-1278: from here the tours are ski_tours.js's own vector lines,
+  // which can be tapped, and the raster steps aside so the map draws the
+  // tours once.
+  const SKI_ROUTES_VECTOR_MINZOOM = 12;
   // Draw mode shows the routes whatever the switch says — they are its
   // guide — and hands them back on exit. window.pwaSkiRoutes.hold().
   let skiRoutesHeld = false;
+  // While draw mode follows the vector network it draws those same lines
+  // itself, as a faint shadow, so the raster steps aside (SNOW-1277).
+  // Outranks the hold and the switch alike. window.pwaSkiRoutes.hide().
+  let skiRoutesHidden = false;
 
   /**
    * Install the ski-touring routes' raster source and layer, hidden unless
@@ -4479,8 +4615,9 @@
         type: 'raster',
         source: SKI_ROUTES_SOURCE_ID,
         minzoom: SKI_ROUTES_MINZOOM,
+        maxzoom: SKI_ROUTES_VECTOR_MINZOOM,
         layout: {
-          visibility: overlayState.ski_routes || skiRoutesHeld ? 'visible' : 'none',
+          visibility: skiRoutesShown() ? 'visible' : 'none',
         },
         paint: { 'raster-opacity': 0.9 },
       },
@@ -4490,6 +4627,25 @@
     attributionSourceIds = null;
     updateMapAttribution();
   };
+
+  /**
+   * Show or hide the raster as the hold, the hide and the switch decide.
+   *
+   * @returns {void}
+   */
+  const applySkiRoutesVisibility = () => {
+    // Storage, not overlayState: the picker writes the live layer and
+    // localStorage only (see the SNOW-473 note in the styledata handler).
+    const on = skiRoutesShown();
+    // SNOW-1278: the raster and the vector tours ski_tours.js draws from
+    // z12 are one overlay, OVERLAY_LAYERS.ski_routes.
+    for (const id of OVERLAY_LAYERS.ski_routes) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+    }
+  };
+
+  /** @returns {boolean} Whether the ski-touring routes should be drawn now. */
+  const skiRoutesShown = () => !skiRoutesHidden && (skiRoutesHeld || readSkiRoutesPreference());
 
   window.pwaSkiRoutes = Object.freeze({
     /**
@@ -4501,14 +4657,40 @@
      */
     hold(held) {
       skiRoutesHeld = !!held;
-      if (!map.getLayer(SKI_ROUTES_LAYER_ID)) return;
-      // Storage, not overlayState: the picker writes the live layer and
-      // localStorage only (see the SNOW-473 note in the styledata handler).
-      const on = skiRoutesHeld || readSkiRoutesPreference();
-      map.setLayoutProperty(SKI_ROUTES_LAYER_ID, 'visibility', on ? 'visible' : 'none');
+      applySkiRoutesVisibility();
     },
+    /**
+     * Hide the routes whatever holds them (true), or stop hiding them
+     * (false): draw mode, while it draws the network as a shadow itself.
+     *
+     * @param {boolean} hidden
+     * @returns {void}
+     */
+    hide(hidden) {
+      skiRoutesHidden = !!hidden;
+      applySkiRoutesVisibility();
+    },
+    /**
+     * Turn the overlay on, as its layers-menu row would: "Find a route"
+     * (SNOW-1278).
+     *
+     * @returns {void}
+     */
+    show() {
+      if (!SKI_ROUTES_ELIGIBLE) return;
+      writeStorage(OVERLAY_STORAGE_KEY.ski_routes, 'true');
+      overlayState.ski_routes = true;
+      applySkiRoutesVisibility();
+      announceOverlayVisibility();
+    },
+    /** @returns {boolean} Whether the routes are drawn now. */
+    isShown: () => SKI_ROUTES_ELIGIBLE && skiRoutesShown(),
     /** @returns {boolean} Whether this page has the layer at all. */
     isEligible: () => SKI_ROUTES_ELIGIBLE,
+    /** @returns {Array<string>} The font stack the map's own overlay labels use. */
+    textFont: () => overlayTextFont,
+    /** The zoom swisstopo's raster hands over to ski_tours.js's lines. */
+    VECTOR_MINZOOM: SKI_ROUTES_VECTOR_MINZOOM,
   });
 
   /**
@@ -9046,6 +9228,8 @@
       // SNOW-1213: the trip an arrival drew, under the routes: a saved
       // route over it is the one with actions.
       ...TRIP_ROUTE_TAP_LAYERS,
+      // SNOW-1278: the SAC tour open in the panel.
+      ...TOUR_ROUTE_TAP_LAYERS,
     ];
 
     // The route line's tap tolerance, in pixels either side of the touch.
@@ -9071,6 +9255,7 @@
       'routes-slope-line',
       'routes-slope-unknown',
       ...TRIP_ROUTE_TAP_LAYERS,
+      ...TOUR_ROUTE_TAP_LAYERS,
     ];
 
     // Return the highest-priority marker whose rendered glyph is under the tap
@@ -9920,9 +10105,12 @@
       // A pending share is matched by its token: it has no uuid. A trip's
       // line carries neither, and is matched by the layer it is drawn in
       // (SNOW-1213).
+      const layerId = feature.layer && feature.layer.id;
       const same = routeCursorTarget.trip
-        ? TRIP_ROUTE_TAP_LAYERS.includes(feature.layer && feature.layer.id)
-        : routeCursorTarget.uuid
+        ? TRIP_ROUTE_TAP_LAYERS.includes(layerId)
+        : routeCursorTarget.tour
+          ? TOUR_ROUTE_TAP_LAYERS.includes(layerId)
+          : routeCursorTarget.uuid
           ? props.uuid === routeCursorTarget.uuid
           : !!props.token && props.token === routeCursorTarget.token;
       if (!same) return false;
@@ -9984,6 +10172,13 @@
           break;
         }
         default:
+          // SNOW-1278: the open tour, the same way.
+          if (TOUR_ROUTE_TAP_LAYERS.includes(feature.layer.id)) {
+            if (tapOpenRoute(feature, point)) break;
+            activateTourRoute();
+            tapOpenRoute(feature, point);
+            break;
+          }
           // SNOW-1213: the trip an arrival drew opens the same panel, with
           // the point placed where the tap landed.
           if (!TRIP_ROUTE_TAP_LAYERS.includes(feature.layer.id)) break;
@@ -10185,6 +10380,12 @@
       // map like a marker or a weather symbol, which already take their
       // tap with a route open, so a tap on one opens it there and then
       // rather than spending the first tap on closing the route.
+      // SNOW-1278: with "Find a route"'s tours on the map, a tap on a tour
+      // line or a summit opens it — a list, or the tour — and nothing
+      // under it. Before the open-route close below, so a reader looking
+      // at one tour can tap the next.
+      if (window.pwaSkiTours?.tap?.(e.point)) return;
+
       if (window.pwaRouteRail?.isOpen?.()) {
         const resortHit = resortFromWeather || (map.getLayer('resorts-pin')
           ? map.queryRenderedFeatures(e.point, { layers: ['resorts-pin'] })[0]
@@ -11186,6 +11387,8 @@
       if (tripRouteGeojsonCache) {
         installTripRouteLayers(tripRouteGeojsonCache);
       }
+      // SNOW-1278: and the open tour's.
+      paintTourRoute();
 
       // SNOW-172 / SNOW-493 finding 3: re-apply country filters for the
       // freshly-installed layers. geojsonCache/majorGeojsonCache/

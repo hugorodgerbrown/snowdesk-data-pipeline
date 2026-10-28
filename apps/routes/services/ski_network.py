@@ -127,6 +127,9 @@ def _tour_values(document: dict[str, Any]) -> dict[str, Any]:
         "target_altitude_m": document.get("target_altitude_m"),
         "urls": document.get("urls") or {},
         "source": str(document.get("source") or "")[:64],
+        # A rewritten tour may have a new line: the terrain under the old
+        # one is sampled afresh the next time it is opened (SNOW-1278).
+        "slope_samples": None,
     }
 
 

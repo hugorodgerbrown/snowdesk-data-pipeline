@@ -355,14 +355,32 @@ Prerequisite: sign in as `admin@snowdesk.dev`.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | Open http://localhost:8000/map/, open the routes panel | The foot has "Draw on the map" (filled) above "Upload a GPX" (outlined) |
-| 2 | Click "Draw on the map" and zoom to Verbier (z12+) | The routes panel closes and "Draw a route" opens; the danger colours and pins step aside; swisstopo's ski-touring routes are drawn in blue; the panel's foot credits swisstopo. On a phone a cross sits above the panel |
+| 1 | Open http://localhost:8000/map/, open the routes panel | The foot has three rows: "Find a route" (emphasised), "Create a route" and "Upload a GPX" |
+| 2 | Click "Create a route" and zoom to Verbier (z12+) | The routes panel closes and "Draw a route" opens; the danger colours and pins step aside; swisstopo's ski-touring routes are drawn in blue; the panel's foot credits swisstopo. On a phone a cross sits above the panel |
 | 3 | Add three points (click the map; on a phone, move the map and tap "Add point") | A dot per point and a dashed line between them; within a second the line is drawn as legs, the profile appears and the figures read "km · ↑ m · ↓ m · ≈ h" |
 | 4 | Click "Undo" | The last point goes, and the profile and figures follow |
-| 5 | Close the panel with ×, reopen the routes panel and click "Draw on the map" | The same points come back |
+| 5 | Close the panel with ×, reopen the routes panel and click "Create a route" | The same points come back |
 | 6 | Draw a line in Chamonix (France) | The line is drawn; the panel says there is no terrain data there, with no profile, climb or time |
 | 7 | Type a name and click "Save" | The panel closes, a toast says "Route saved.", the routes layer comes on and the map frames the new route; it is listed in the routes panel, whose row menu has "Download GPX" |
-| 8 | Turn the flag on for everyone (`/admin/waffle/flag/`), sign out, repeat steps 1–3 and click "Sign in to save" | The sign-in page; after signing in, "Draw on the map" picks the draft up again |
+| 8 | Turn the flag on for everyone (`/admin/waffle/flag/`), sign out, repeat steps 1–3 and click "Sign in to save" | The sign-in page; after signing in, "Create a route" picks the draft up again |
+
+### Scenario MS7d: Find an SAC route
+
+**Goal**: Verify "Find a route" (SNOW-1278, behind the `route_drawing`
+flag): the tours are chosen by their summit, a tap never picks one of
+several, and Save copies a tour into an ordinary route.
+Prerequisite: sign in as `admin@snowdesk.dev`, with the ski tours synced
+(`pull_reference_data --commit` or `import_ski_tours --commit`).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Open the routes panel and click "Find a route" | The panel closes; a dark hint says "Zoom in, then tap a summit or a route" (or "Tap a summit or a route" from z12) |
+| 2 | Zoom to the Silvretta (z12+) | swisstopo's raster gives way to blue lines, with a labelled dot per summit and a ring per hut |
+| 3 | Tap the Signalhorn's dot | A sheet "Signalhorn (GR) · 3207 m", "4 SAC routes · 2 up, 2 down", the ways up and the ways down apart; the four lines turn fuchsia on the map, the ways down dashed |
+| 4 | Tap a line just outside the Silvrettahütte, where several meet | A sheet "N routes pass here", each row titled by its summit |
+| 5 | Tap a row | The route panel opens on the tour, framed: its title, figures, and the line "SAC route · PD+ · ↑ 960 m · 3 h 30 (SAC guide time)"; the profile follows within seconds the first time any reader opens it |
+| 6 | Click "SAC guide" | SAC's page for the tour opens in a new tab |
+| 7 | Click "Save to my routes" | A toast says "Route saved."; the routes layer frames the new route, listed in the routes panel under the same title |
 
 ### Scenario MS7b: Find a resort
 

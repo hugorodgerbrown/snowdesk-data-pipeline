@@ -1,0 +1,116 @@
+{% load i18n static components %}
+{% comment %}
+public/partials/_ski_tours_surface.html — "Find a route": choosing an SAC
+ski tour from the map (SNOW-1278, behind the ``route_drawing`` flag).
+
+The routes panel's "Find a route" (public/partials/_route_add_rows.html)
+closes that panel, turns the ski-touring routes on and shows the hint
+below. From z12 the tours are drawn as lines and their summits and huts as
+labelled marks (static/js/ski_tours.js), and they can be tapped:
+
+  * a summit or hut lists every tour to it, the ways up and the ways down
+    apart — in #ski-tours-sheet, from routes:ski_tour_list;
+  * a line lists the tours within reach, or opens the one tour in reach.
+    A TAP NEVER PICKS A TOUR ON ITS OWN when there is more than one.
+
+A tour opens in the route panel (static/js/route_rail.js) exactly as a
+saved route does — profile, legs, estimate — from routes:ski_tour_feature,
+with this file's claim block in its claim slot: SAC's own figures, "Save to
+my routes" (a sign-in link when signed out) and SAC's guide.
+
+The list sheet is an OBJECT SHEET in the design system's three kinds: a
+thing tapped on the map, so peek, half and full on a phone, docked left on
+a desktop beside the search it answers (rule 7).
+
+Context expected:
+  route_draw_signin_url  — str: the sign-in page, returning to the map.
+  routes_upload_eligible — bool: may this request save a route.
+{% endcomment %}
+{% trans "SAC routes" as ski_tours_sheet_label %}
+{% include "includes/_overlay_sheet.html" with id="ski-tours-sheet" aria_label=ski_tours_sheet_label detents="peek,half,full" initial="half" side="left" %}
+{# The endpoints. The feature and save URLs carry the nil uuid, which      #}
+{# ski_tours.js replaces with the tour's own.                              #}
+{% url 'routes:ski_tour_feature' '00000000-0000-0000-0000-000000000000' as ski_tour_feature_url %}
+{% url 'routes:ski_tour_save' '00000000-0000-0000-0000-000000000000' as ski_tour_save_url %}
+<form
+    id="ski-tours-config"
+    hidden
+    data-geojson-url="{% url 'api:ski_tours_geojson' %}"
+    data-list-url="{% url 'routes:ski_tour_list' %}"
+    data-feature-url="{{ ski_tour_feature_url }}"
+    data-save-url="{{ ski_tour_save_url }}"
+    data-signin-url="{{ route_draw_signin_url }}"
+    data-save-eligible="{{ routes_upload_eligible|yesno:'true,false' }}"
+>
+    {% csrf_token %}
+</form>
+{# The hint "Find a route" shows over the map until the reader taps a tour #}
+{# or dismisses it. ski_tours.js moves it into the map's container.        #}
+<div
+    id="ski-tours-hint"
+    role="status"
+    hidden
+    class="pointer-events-auto absolute top-28 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-text-1 py-2 pr-2 pl-4 text-sm font-medium text-card shadow-lg"
+>
+    <span data-ski-tours-hint-text class="whitespace-nowrap"></span>
+    <button
+        type="button"
+        data-ski-tours-hint-close
+        class="hover-affordance inline-flex h-7 w-7 flex-none items-center justify-center rounded-full"
+        aria-label="{% trans 'Dismiss' %}"
+    >
+        {% include "includes/_icon_close.html" with size=14 %}
+    </button>
+</div>
+{# A tour's block in the route panel's claim slot, cloned per tour.        #}
+<template id="ski-tour-claim-template">
+    <div class="flex flex-col gap-2 pt-1">
+        <p data-ski-tour-sac class="font-mono text-meta text-text-2"></p>
+        <div class="flex gap-2">
+            {% if routes_upload_eligible %}
+                <button
+                    type="button"
+                    data-ski-tour-save
+                    class='{% button_classes variant="primary" size="compact" %} hover-affordance h-11 flex-1 disabled:opacity-50'
+                >
+                    {% trans "Save to my routes" %}
+                </button>
+            {% else %}
+                <a
+                    href="{{ route_draw_signin_url }}"
+                    class='{% button_classes variant="primary" size="compact" is_anchor=True %} hover-affordance inline-flex h-11 flex-1 items-center justify-center'
+                >{% trans "Sign in to save" %}</a>
+            {% endif %}
+            <a
+                data-ski-tour-guide
+                href="#"
+                target="_blank"
+                rel="noopener"
+                class='{% button_classes variant="secondary" size="compact" is_anchor=True %} hover-affordance inline-flex h-11 items-center justify-center gap-1'
+            >
+                {% trans "SAC guide" %}
+                {% include "includes/_icon_external_link.html" with size=14 %}
+            </a>
+        </div>
+        <p class="text-meta text-text-3">{% trans "SAC ski tours © swisstopo" %}</p>
+    </div>
+</template>
+{# Every user-facing string ski_tours.js writes (docs/i18n.md).            #}
+<template id="ski-tours-strings-template">
+    <span data-string="hint">{% trans "Tap a summit or a route" %}</span>
+    <span data-string="hint-zoom">{% trans "Zoom in, then tap a summit or a route" %}</span>
+    <span data-string="loading">{% trans "Loading routes…" %}</span>
+    <span data-string="failed">{% trans "The routes couldn't be loaded. Check your connection." %}</span>
+    <span data-string="sac-route">{% trans "SAC route" %}</span>
+    <span data-string="climb">{% blocktrans %}↑ %(value)s m{% endblocktrans %}</span>
+    <span data-string="descent">{% blocktrans %}↓ %(value)s m{% endblocktrans %}</span>
+    <span data-string="guide-time">{% blocktrans %}%(time)s (SAC guide time){% endblocktrans %}</span>
+    <span data-string="saved">{% trans "Route saved." %}</span>
+    <span data-string="save-failed">{% trans "That route couldn't be saved. Try again." %}</span>
+    <span
+        data-string="save-limit"
+    >{% trans "You've reached your saved-route limit. Delete one to save another." %}</span>
+    <span data-string="save-offline">{% trans "You need to be online to save a route." %}</span>
+</template>
+<script defer src="{% static 'js/ski_tours_core.js' %}"></script>
+<script defer src="{% static 'js/ski_tours.js' %}"></script>

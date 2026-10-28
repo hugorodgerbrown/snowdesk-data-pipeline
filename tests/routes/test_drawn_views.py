@@ -305,9 +305,22 @@ class TestMapPageDrawSurface:
         assert 'id="route-draw-sheet"' in body
         assert "js/route_draw.js" in body
         assert "Upload a GPX" in body
+        # Draw mode follows the ski-touring network (SNOW-1277).
+        assert "js/ski_snap_core.js" in body
+        assert f'data-network-url="{reverse("api:ski_network_geojson")}"' in body
+        assert "data-route-draw-follow" in body
         # swisstopo's ski-touring routes ride on the same flag.
         assert 'data-overlay-key="ski_routes"' in body
         assert 'data-ski-routes-eligible="true"' in body
+        # SNOW-1278: three ways to add a route, replacing the add button,
+        # and "Find a route"'s surface.
+        assert "data-ski-tour-find" in body
+        assert "Find a route" in body
+        assert "Create a route" in body
+        assert 'id="ski-tours-sheet"' in body
+        assert "js/ski_tours.js" in body
+        assert f'data-geojson-url="{reverse("api:ski_tours_geojson")}"' in body
+        assert "Add a route" not in body
 
     def test_absent_for_an_anonymous_visitor(self, client: Client) -> None:
         """No waffle read and no surface for a visitor with no session."""
@@ -326,5 +339,7 @@ class TestMapPageDrawSurface:
 
         assert "data-route-draw-start" not in body
         assert 'id="route-draw-sheet"' not in body
+        assert "data-ski-tour-find" not in body
+        assert 'id="ski-tours-sheet"' not in body
         assert "Add a route" in body
         assert 'data-overlay-key="ski_routes"' not in body

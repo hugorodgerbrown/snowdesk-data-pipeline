@@ -1,0 +1,92 @@
+---
+name: an-sac-tour-is-a-template-for-a-route
+description: An SAC ski tour (SkiTour) is found by its summit, opened unsaved in the route panel, saved as a copy (Route.source SKI_TOUR)
+status: current
+last-reviewed: 2026-10-28
+---
+
+# An SAC tour is a template for a route
+
+## Decision
+
+**A `SkiTour` is reference data that nobody owns. It becomes a `Route` only
+when a reader saves it, and then as a copy.** "Save to my routes"
+(`routes:ski_tour_save`) calls `save_ski_tour`, which goes through
+`write_route_copy`, the same path a claimed share and a saved trip take, so
+the per-account cap applies the same way. The copy is an ordinary `Route`
+with `source = Route.Source.SKI_TOUR` and `ski_tour_uuid` set to the tour's
+`source_uuid`. Its points are the tour's line, `[lon, lat, None]`, its
+heights come from the terrain model, and its name is the summit and SAC's
+name for the way: "Signalhorn (GR) · Von der Chamonna Tuoi CAS". After
+saving, the reader can rename it, share it or plan a trip with it like any
+other route, and later imports never change it.
+
+**The summit is the handle.** Drawn together, the tours form one web, and
+a tap near a hut can land on six of them. Each target (the summit or hut a
+tour climbs to or comes down from) gets a labelled mark, and readers pick
+a tour by where it goes. swisstopo names the target but gives no
+coordinate, so `build_summits` places it at the median of its tours'
+target ends. A tour's target end is the last point going up or the first
+coming down. After that first guess, each tour is re-read by whichever end
+is nearer, so a tour drawn the wrong way round is still placed correctly.
+
+**A tap never picks a tour for the reader when more than one is in
+reach.**
+
+- A summit tap opens the list of every way up and every way down
+  (`routes:ski_tour_list?summit=`).
+- A line tap with one tour in reach opens that tour's panel.
+- A line tap with more than one opens "N routes pass here"
+  (`?tours=`), with each row named by its summit.
+
+The listed tours are drawn in the route colour, and a way down is drawn
+dashed.
+
+**An unsaved tour opens in the same route panel as a saved route.**
+`routes:ski_tour_feature` builds the tour as an unsaved `Route`
+(`draft_tour_route`) and answers with `_route_feature`. The profile, legs
+and estimate therefore come from the code that will show them once the
+tour is saved. The Feature has no `uuid` and no `token`, so the panel
+offers none of a route's own actions. Its claim slot holds SAC's line
+(grade, gain and guide time, labelled as SAC's), the Save button and SAC's
+guide link. On the map, the tour is drawn in a slot of its own (map.js
+`window.pwaSkiTourRoute`), as a trip's route is, with its own cursor.
+
+**The terrain is sampled once per tour and kept on the tour.** Walking the
+terrain grid under a 10 km line takes several seconds, which is too long
+for a tap. The first answer is sent at once without the terrain and is
+flagged `terrain_pending`. The panel then asks again with `?sample=1`,
+which samples the line and stores the result in `SkiTour.slope_samples`.
+Every later reader gets it straight away, and every saved copy inherits it
+without sampling again. A sync that rewrites the tour clears it.
+
+**The tours belong to the ski-touring routes overlay.** Below z12 the
+overlay is swisstopo's raster. From z12 it is ski_tours.js's vector lines
+and summits, in blue at full strength. The raster stops at z12, so the
+tours are only ever drawn once on screen. All of these layers are listed
+in `OVERLAY_LAYERS.ski_routes`, so the layers menu switches them together,
+and draw mode's `hold` and `hide` apply to them too.
+
+## Why
+
+- **A copy, not a reference.** A saved route is the reader's to rename,
+  share and plan with. Linking it to a record that the weekly import can
+  rewrite would let swisstopo change someone's plan under them. Keeping
+  `ski_tour_uuid` is enough to say where the copy came from.
+- **Summits, not lines.** People choose a tour by its objective. The
+  data shows the overlap is the normal case: 6 tours pass one point just
+  outside the Silvrettahütte, and 4 tours reach the Signalhorn.
+- **One panel.** A second panel for tours would be a second set of
+  figures that could disagree with the saved route's.
+
+## Consequences
+
+- `Route.Source` gains `SKI_TOUR` ("SAC route"), and the GPX export
+  credits SAC and swisstopo for it. Like a drawn route, it exports the
+  terrain track, because no heights were recorded.
+- The routes panel offers three ways to add a route while `route_drawing`
+  is on: Find a route, Create a route and Upload a GPX
+  (`public/partials/_route_add_rows.html`). The rows replace the panel's
+  own add button, and the empty-state sentence names all three.
+- The tour panel has no terrain rows (the "terrain data" fold). Those rows
+  are fetched by uuid or token, and an unsaved tour has neither.

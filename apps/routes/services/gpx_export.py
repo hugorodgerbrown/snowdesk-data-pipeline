@@ -107,6 +107,14 @@ def _describe(route: "Route") -> str:
         The description text, unescaped.
 
     """
+    if route.source == "SKI_TOUR":
+        # SNOW-1278: a copy of an SAC tour's line, credited to its source.
+        return (
+            f"Copied in Snowdesk (route {route.uuid}) from SAC ski tour "
+            f"{route.ski_tour_uuid}, as swisstopo publishes it (© swisstopo). "
+            "Heights are the terrain model's wherever it covers the route; "
+            "there are no recorded heights or timestamps."
+        )
     if route.source == "DRAWN":
         # SNOW-1255: there was never a file, so the upload's three claims do
         # not apply. What a reader needs instead is where the heights came
@@ -158,7 +166,8 @@ def _export_points(route: "Route") -> list[list[float | None]]:
         ``[lon, lat, ele]`` points, ``ele`` possibly None.
 
     """
-    if route.source != "DRAWN":
+    # A tour's copy has no recorded heights either (SNOW-1278).
+    if route.source not in ("DRAWN", "SKI_TOUR"):
         stored: list[list[float | None]] = route.points
         return stored
     # Imported here: terrain_heights imports the slope sampler, which

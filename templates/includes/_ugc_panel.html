@@ -107,10 +107,12 @@ Parameters (passed via {% include … with … %}):
                   Required.
   foot_template   (string, optional) — template path rendered in the CTA's
                   strip, ABOVE the add button. The routes panel is the only
-                  user (SNOW-1256): with route drawing on it has two ways to
-                  add, "Draw on the map" and "Upload a GPX", and the second
-                  stays this partial's own button so its chrome is not
-                  restated.
+                  user: with route drawing on it has three ways to add
+                  (SNOW-1278: find, create, upload).
+  foot_replaces_add (bool, optional) — the foot template renders the
+                  panel's ways to add itself, the add button's
+                  ``data-panel-add`` hook included, so the button is not
+                  rendered. The routes panel's three rows do.
   toggle_id       (string, optional) — DOM id for the "Show on the map"
                   switch. Omit it and the switch is not rendered at all.
                   Every real panel passes one of the four ids
@@ -180,35 +182,37 @@ state should not have to remember to bring its own.
     {# list load replaces wholesale.                                        #}
     <div data-panel-foot class="flex flex-col gap-2 border-t border-border pt-3">
         {% if foot_template %}{% include foot_template %}{% endif %}
-        <button
-            type="button"
-            data-panel-add
-            {# `h-11.5` is the design's own 46px — stated as a height       #}
-            {# rather than more padding, so the CTA is the same size on     #}
-            {# every panel whatever its label wraps to.                     #}
-            {# `hover-affordance` (src/css/main.css) is the one hover        #}
-            {# treatment every clickable control on the map and in these     #}
-            {# panels carries — pointer plus a translucent infill. The       #}
-            {# shared button chrome brings only an opacity shift, which on   #}
-            {# an outlined CTA is close to invisible, and no cursor at all.  #}
-            class='{% button_classes variant="secondary" size="compact" full_width=True %} hover-affordance inline-flex h-11.5 items-center justify-center gap-1.5 disabled:opacity-50'
-        >
-            {# A stroked SVG plus, not a literal "+" glyph — the same        #}
-            {# stroke-based idiom every other icon in this design uses.      #}
-            <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                aria-hidden="true"
+        {% if not foot_replaces_add %}
+            <button
+                type="button"
+                data-panel-add
+                {# `h-11.5` is the design's own 46px — stated as a height       #}
+                {# rather than more padding, so the CTA is the same size on     #}
+                {# every panel whatever its label wraps to.                     #}
+                {# `hover-affordance` (src/css/main.css) is the one hover        #}
+                {# treatment every clickable control on the map and in these     #}
+                {# panels carries — pointer plus a translucent infill. The       #}
+                {# shared button chrome brings only an opacity shift, which on   #}
+                {# an outlined CTA is close to invisible, and no cursor at all.  #}
+                class='{% button_classes variant="secondary" size="compact" full_width=True %} hover-affordance inline-flex h-11.5 items-center justify-center gap-1.5 disabled:opacity-50'
             >
-                <path d="M12 5v14M5 12h14" />
-            </svg>
-            {{ cta_label }}
-        </button>
+                {# A stroked SVG plus, not a literal "+" glyph — the same        #}
+                {# stroke-based idiom every other icon in this design uses.      #}
+                <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    aria-hidden="true"
+                >
+                    <path d="M12 5v14M5 12h14" />
+                </svg>
+                {{ cta_label }}
+            </button>
+        {% endif %}
     </div>
     {# One string for every panel that HAS this switch — see the note above  #}
     {# the parameter list for why the label is not a parameter, and why      #}

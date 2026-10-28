@@ -6,11 +6,11 @@
  * its figures, the guide line, the stored draft) is route_draw_core.js.
  * The surface is public/partials/_route_draw_surface.html, which explains
  * the interaction: a still cross and "Add point" on a phone, a click with a
- * mouse, waypoints joined by straight lines.
+ * mouse, legs snapped to the ski-touring network or straight.
  *
  * THE LIFE OF A DRAFT
  *
- *   1. "Draw on the map" in the routes panel ([data-route-draw-start])
+ *   1. "Create a route" in the routes panel ([data-route-draw-start])
  *      closes that panel and opens #route-draw-sheet, a form panel.
  *   2. Every app overlay steps aside (window.PlacementFocus, which hides
  *      every GeoJSON layer that exists AT THAT MOMENT — so the draft's own
@@ -28,6 +28,17 @@
  *      does: `snowdesk:routes-changed` with `uploaded: true` (the map
  *      re-reads the layer once the terrain task has run), and the routes
  *      layer revealed and framed on the new route (window.pwaRowFocus).
+ *
+ * FOLLOWING THE SKI ROUTES (SNOW-1277). While "Follow ski routes" is on
+ * and the map is at z12 or closer, the panel loads swisstopo's ski-touring
+ * network for the view (/api/ski-network.geojson) and draws it as a faint
+ * shadow under the draft; swisstopo's raster steps aside, since the shadow
+ * is the same lines. A tap within 24 px of a line snaps to it, and a ring
+ * shows where it would land before it is placed. When the last point is on
+ * the network too, the new leg is routed along it (ski_snap_core.js, the
+ * shortest way, straight instead when that is over three times as far).
+ * One tap is one leg, however many points it adds: Undo takes back the
+ * whole leg, and the draft stores which points were taps.
  *
  * Closing the panel by any route — the ×, Escape, another panel opening —
  * ends draw mode and keeps the draft, so an anonymous drawer who signs in
@@ -52,12 +63,14 @@
   const config = document.getElementById('route-draw-config');
   const crosshair = document.getElementById('route-draw-crosshair');
   const core = self.pwaRouteDrawCore;
+  const snapCore = self.pwaSkiSnapCore || null;
   if (!sheet || !template || !config || !crosshair || !core || !window.MapSheet) return;
 
   const PREVIEW_URL = config.dataset.previewUrl || '';
   const CREATE_URL = config.dataset.createUrl || '';
   const SIGNIN_URL = config.dataset.signinUrl || '';
   const SAVE_ELIGIBLE = config.dataset.saveEligible === 'true';
+  const NETWORK_URL = (snapCore && config.dataset.networkUrl) || '';
 
   const PREFIX = 'route-draft';
   const GUIDE_SOURCE = PREFIX + '-guide';
@@ -67,10 +80,23 @@
     (self.pwaRouteDrawingCore && self.pwaRouteDrawingCore.ROUTE_LINE_COLOUR) || '#c026d3';
   const HALO_COLOUR = '#ffffff';
   const PREVIEW_DEBOUNCE_MS = 350;
+  const NETWORK_SOURCE = PREFIX + '-network';
+  // The network is a shadow to snap to, fainter than anything drawn on it
+  // (Hugo, 28 Oct 2026): a dark neutral, thin and mostly transparent.
+  const NETWORK_COLOUR = '#1e293b';
+  // The network is loaded and snapped to from this zoom: a view wider than
+  // /api/ski-network.geojson's half-degree cap is refused, and a snap
+  // reach of 24 px is over a kilometre further out.
+  const NETWORK_MINZOOM = 12;
+  // Just inside the endpoint's 0.5° cap, after rounding to 3 places.
+  const NETWORK_MAX_HALF_SPAN = 0.249;
+  const NETWORK_DEBOUNCE_MS = 250;
+  // Whether the drawer turned following off; on unless they did.
+  const FOLLOW_KEY = 'snowdesk.route-draw-follow';
 
   const STRINGS = self.pwaStrings.read('route-draw-strings-template', {
     'hint-coarse': 'Move the map to put the cross where you want the next point, then tap Add point.',
-    'hint-fine': 'Click the map to add a point. Points are joined by straight lines.',
+    'hint-fine': 'Click the map to add a point. Near a ski route it snaps to the route.',
     'stats-empty': 'No points yet.',
     'stats-one': 'One point — add another to start the line.',
     'unit-km': '%(value)s km',
@@ -102,7 +128,24 @@
     active: false,
     /** @type {Array<[number, number]>} */
     points: [],
+    /** The index of each tap's last point (route_draw_core.js). */
+    /** @type {Array<number>} */
+    taps: [],
     name: '',
+    /** Whether a tap near a ski route snaps to it. */
+    follow: readFollow(),
+    /** The network segments loaded so far, by id. */
+    /** @type {Map<string, any>} */
+    network: new Map(),
+    /** @type {?ReturnType<NonNullable<typeof snapCore>['buildGraph']>} */
+    graph: null,
+    /** The rectangles already loaded, [w, s, e, n]. */
+    /** @type {Array<Array<number>>} */
+    loaded: [],
+    /** @type {?AbortController} */
+    networkInflight: null,
+    /** @type {?number} */
+    networkTimer: null,
     /** The last preview Feature, matching `previewFor`, or null. */
     feature: null,
     /** The waypoints `feature` describes, serialised. */
@@ -127,6 +170,15 @@
   // The map
   // ---------------------------------------------------------------------------
 
+  /** @returns {boolean} The stored follow preference; on unless turned off. */
+  function readFollow() {
+    try {
+      return localStorage.getItem(FOLLOW_KEY) !== 'off';
+    } catch (_err) {
+      return true;
+    }
+  }
+
   /** @returns {any} The MapLibre map, or null before it exists. */
   function getMap() {
     return (window.snowdeskMapState && window.snowdeskMapState.map) || null;
@@ -145,6 +197,17 @@
    * @param {any} map
    */
   function installLayers(map) {
+    if (NETWORK_URL && !map.getSource(NETWORK_SOURCE)) {
+      map.addSource(NETWORK_SOURCE, { type: 'geojson', data: networkCollection() });
+      map.addLayer({
+        id: NETWORK_SOURCE + '-line',
+        type: 'line',
+        source: NETWORK_SOURCE,
+        minzoom: NETWORK_MINZOOM,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': NETWORK_COLOUR, 'line-width': 1.5, 'line-opacity': 0.3 },
+      });
+    }
     if (self.pwaRouteDrawingCore) {
       self.pwaRouteDrawingCore.install(map, null, { prefix: PREFIX });
     }
@@ -169,6 +232,20 @@
           'line-width': 2,
           'line-opacity': 0.6,
           'line-dasharray': [1, 2],
+        },
+      });
+      map.addLayer({
+        id: GUIDE_SOURCE + '-snap',
+        type: 'circle',
+        source: GUIDE_SOURCE,
+        filter: ['==', ['get', 'role'], 'snap'],
+        // Wider than the phone's cross (a 9 px ring of its own), so it
+        // still reads when the cross sits right on the line.
+        paint: {
+          'circle-radius': 14,
+          'circle-color': 'rgba(0, 0, 0, 0)',
+          'circle-stroke-color': LINE_COLOUR,
+          'circle-stroke-width': 2,
         },
       });
       map.addLayer({
@@ -215,13 +292,162 @@
       });
   }
 
-  /** Redraw the waypoints and the straight guide through them. */
+  /** Redraw the taps, the line through the points and the snap ring. */
   function drawGuide() {
     const map = getMap();
     const source = map && map.getSource(GUIDE_SOURCE);
     if (!source) return;
     const cursor = usesCrosshair() ? crosshairLngLat() : state.hover;
-    source.setData(core.guideCollection(state.points, cursor));
+    const snap = cursor ? snapFor(cursor) : null;
+    source.setData(
+      core.guideCollection(state.points, cursor, {
+        taps: state.taps,
+        snap: snap ? snap.point : null,
+      }),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // The ski-touring network
+  // ---------------------------------------------------------------------------
+
+  /** @returns {boolean} Whether a tap now snaps: on, loaded and zoomed in. */
+  function following() {
+    const map = getMap();
+    return Boolean(
+      state.follow && state.graph && snapCore && map && map.getZoom() >= NETWORK_MINZOOM,
+    );
+  }
+
+  /** @returns {number} The snap reach in metres at the map's middle and zoom. */
+  function snapReach() {
+    const map = getMap();
+    if (!map || !snapCore) return 0;
+    return snapCore.SNAP_PX * snapCore.metresPerPixel(map.getCenter().lat, map.getZoom());
+  }
+
+  /**
+   * Where a tap at `point` would land on the network, or null.
+   *
+   * @param {[number, number]} point
+   * @returns {?{point: [number, number]}}
+   */
+  function snapFor(point) {
+    if (!following() || !snapCore || !state.graph) return null;
+    return snapCore.nearestOnNetwork(state.graph, point, snapReach());
+  }
+
+  /** @returns {Object} The loaded network, or nothing while following is off. */
+  function networkCollection() {
+    return {
+      type: 'FeatureCollection',
+      features: state.follow ? Array.from(state.network.values()) : [],
+    };
+  }
+
+  /**
+   * Whether the network loaded so far covers the whole view.
+   *
+   * @param {any} map
+   * @returns {boolean}
+   */
+  function networkCoversView(map) {
+    const b = map.getBounds();
+    return state.loaded.some(function (done) {
+      return done[0] <= b.getWest() && done[1] <= b.getSouth()
+        && done[2] >= b.getEast() && done[3] >= b.getNorth();
+    });
+  }
+
+  /**
+   * Redraw the network, and let swisstopo's raster step aside under it —
+   * only once the shadow covers the view, so a failed or refused load
+   * (offline, with the raster's tiles cached) leaves the raster as the guide.
+   */
+  function drawNetwork() {
+    const map = getMap();
+    const source = map && map.getSource(NETWORK_SOURCE);
+    if (source) source.setData(networkCollection());
+    const shadow = Boolean(
+      NETWORK_URL && state.follow && map && map.getZoom() >= NETWORK_MINZOOM
+        && networkCoversView(map),
+    );
+    window.pwaSkiRoutes?.hide(shadow);
+  }
+
+  /** Load the network for the view once the map has stopped moving. */
+  function scheduleNetwork() {
+    if (state.networkTimer !== null) clearTimeout(state.networkTimer);
+    state.networkTimer = window.setTimeout(loadNetwork, NETWORK_DEBOUNCE_MS);
+  }
+
+  /**
+   * Fetch the segments crossing the view, padded by a quarter and held to
+   * the endpoint's cap, unless a rectangle already loaded covers it.
+   */
+  function loadNetwork() {
+    state.networkTimer = null;
+    const map = getMap();
+    if (!map || !state.active || !state.follow || !NETWORK_URL || !snapCore) return;
+    if (map.getZoom() < NETWORK_MINZOOM || !online()) return;
+    const bounds = map.getBounds();
+    const centre = map.getCenter();
+    const padX = (bounds.getEast() - bounds.getWest()) / 4;
+    const padY = (bounds.getNorth() - bounds.getSouth()) / 4;
+    const box = [
+      Math.max(bounds.getWest() - padX, centre.lng - NETWORK_MAX_HALF_SPAN),
+      Math.max(bounds.getSouth() - padY, centre.lat - NETWORK_MAX_HALF_SPAN),
+      Math.min(bounds.getEast() + padX, centre.lng + NETWORK_MAX_HALF_SPAN),
+      Math.min(bounds.getNorth() + padY, centre.lat + NETWORK_MAX_HALF_SPAN),
+    ].map(function (value) {
+      return Math.round(value * 1000) / 1000;
+    });
+    const covered = state.loaded.some(function (done) {
+      return done[0] <= box[0] && done[1] <= box[1] && done[2] >= box[2] && done[3] >= box[3];
+    });
+    if (covered) return;
+    if (state.networkInflight) state.networkInflight.abort();
+    const abort = new AbortController();
+    state.networkInflight = abort;
+    fetch(NETWORK_URL + '?bbox=' + box.join(','), { signal: abort.signal })
+      .then(function (resp) {
+        return resp.ok ? resp.json() : null;
+      })
+      .then(function (body) {
+        if (!body || !Array.isArray(body.features) || !state.active) return;
+        body.features.forEach(function (/** @type {any} */ feature) {
+          state.network.set(String(feature.id), feature);
+        });
+        state.graph = snapCore.buildGraph(Array.from(state.network.values()));
+        if (!body.truncated) state.loaded.push(box);
+        drawNetwork();
+        drawGuide();
+      })
+      .catch(function () {
+        // Offline or refused: the drawer draws straight lines meanwhile.
+      })
+      .finally(function () {
+        if (state.networkInflight === abort) state.networkInflight = null;
+      });
+  }
+
+  /**
+   * Turn following on or off, remember it, and redraw what reads it.
+   *
+   * @param {boolean} on
+   */
+  function setFollow(on) {
+    state.follow = on;
+    try {
+      localStorage.setItem(FOLLOW_KEY, on ? 'on' : 'off');
+    } catch (_err) {
+      // Private mode: the choice lasts for this visit.
+    }
+    const toggle = find('[data-route-draw-follow]');
+    if (toggle) toggle.setAttribute('aria-checked', on ? 'true' : 'false');
+    drawNetwork();
+    drawGuide();
+    if (on) scheduleNetwork();
   }
 
   /** Draw the last preview Feature, or nothing, through the shared drawing. */
@@ -293,6 +519,11 @@
     if (hint) hint.textContent = STRINGS[usesCrosshair() ? 'hint-coarse' : 'hint-fine'];
     const add = find('[data-route-draw-add]');
     if (add) add.hidden = !usesCrosshair();
+    const toggle = find('[data-route-draw-follow]');
+    if (toggle) {
+      toggle.hidden = !NETWORK_URL;
+      toggle.setAttribute('aria-checked', state.follow ? 'true' : 'false');
+    }
     const name = find('#route-draw-name');
     if (name) {
       name.value = state.name;
@@ -376,7 +607,12 @@
   function storeDraft() {
     try {
       if (state.points.length === 0) localStorage.removeItem(core.DRAFT_KEY);
-      else localStorage.setItem(core.DRAFT_KEY, core.serialiseDraft(state.points, state.name));
+      else {
+        localStorage.setItem(
+          core.DRAFT_KEY,
+          core.serialiseDraft(state.points, state.name, state.taps),
+        );
+      }
     } catch (_err) {
       // Private mode or a full store: the draft lives for this visit only.
     }
@@ -392,17 +628,19 @@
     }
     const draft = core.parseDraft(raw);
     state.points = draft ? draft.points : [];
+    state.taps = draft ? draft.taps : [];
     state.name = draft ? draft.name : '';
   }
 
   /**
-   * Replace the waypoints and redraw everything that reads them.
+   * Replace the line and its taps and redraw everything that reads them.
    *
-   * @param {Array<[number, number]>} next
+   * @param {{points: Array<[number, number]>, taps: Array<number>}} next
    */
-  function setPoints(next) {
-    if (next === state.points) return;
-    state.points = next;
+  function setLine(next) {
+    if (next.points === state.points) return;
+    state.points = next.points;
+    state.taps = next.taps;
     storeDraft();
     drawGuide();
     renderFigures();
@@ -527,6 +765,7 @@
           return;
         }
         state.points = [];
+        state.taps = [];
         state.name = '';
         state.feature = null;
         storeDraft();
@@ -549,10 +788,24 @@
   // Entering and leaving
   // ---------------------------------------------------------------------------
 
+  /**
+   * Add one tap at `point`: snapped and routed along the network when
+   * following, a straight leg otherwise.
+   *
+   * @param {[number, number]} point
+   */
+  function addTap(point) {
+    const last = state.points.length ? state.points[state.points.length - 1] : null;
+    const leg = following() && snapCore && state.graph
+      ? snapCore.legFor(state.graph, last, point, snapReach())
+      : { points: [point] };
+    setLine(core.addLeg(state.points, state.taps, leg.points));
+  }
+
   /** @param {any} event A MapLibre click. */
   function onMapClick(event) {
     if (!state.active || usesCrosshair()) return;
-    setPoints(core.addPoint(state.points, event.lngLat.lng, event.lngLat.lat));
+    addTap([event.lngLat.lng, event.lngLat.lat]);
   }
 
   /** @param {any} event A MapLibre mousemove. */
@@ -565,6 +818,13 @@
   /** While the map moves under the cross, the next leg follows it. */
   function onMapMove() {
     if (state.active && usesCrosshair()) drawGuide();
+  }
+
+  /** Once the map stops, load the network for where it stopped. */
+  function onMapMoveEnd() {
+    if (!state.active) return;
+    drawNetwork();
+    scheduleNetwork();
   }
 
   function onResize() {
@@ -591,6 +851,7 @@
     window.PlacementFocus?.enter();
     installLayers(map);
     window.pwaSkiRoutes?.hold(true);
+    drawNetwork();
 
     const container = map.getContainer();
     if (crosshair.parentElement !== container) container.appendChild(crosshair);
@@ -600,10 +861,12 @@
     map.on('click', onMapClick);
     map.on('mousemove', onMapHover);
     map.on('move', onMapMove);
+    map.on('moveend', onMapMoveEnd);
     window.addEventListener('resize', onResize);
 
     drawGuide();
     schedulePreview();
+    scheduleNetwork();
     document.dispatchEvent(new CustomEvent('snowdesk:route-draw', { detail: { active: true } }));
   }
 
@@ -616,6 +879,10 @@
     state.timer = null;
     if (state.inflight) state.inflight.abort();
     state.inflight = null;
+    if (state.networkTimer !== null) clearTimeout(state.networkTimer);
+    state.networkTimer = null;
+    if (state.networkInflight) state.networkInflight.abort();
+    state.networkInflight = null;
     state.profile = null;
     crosshair.hidden = true;
     window.removeEventListener('resize', onResize);
@@ -624,8 +891,10 @@
       map.off('click', onMapClick);
       map.off('mousemove', onMapHover);
       map.off('move', onMapMove);
+      map.off('moveend', onMapMoveEnd);
       removeLayers(map);
     }
+    window.pwaSkiRoutes?.hide(false);
     window.pwaSkiRoutes?.hold(false);
     window.PlacementFocus?.exit();
     document.dispatchEvent(new CustomEvent('snowdesk:route-draw', { detail: { active: false } }));
@@ -644,18 +913,22 @@
     if (!sheet.contains(target)) return;
     if (target.closest('[data-route-draw-add]')) {
       const point = crosshairLngLat();
-      if (point) setPoints(core.addPoint(state.points, point[0], point[1]));
+      if (point) addTap(point);
+      return;
+    }
+    if (target.closest('[data-route-draw-follow]')) {
+      setFollow(!state.follow);
       return;
     }
     if (target.closest('[data-route-draw-undo]')) {
-      setPoints(core.undo(state.points));
+      setLine(core.undoLeg(state.points, state.taps));
       return;
     }
     if (target.closest('[data-route-draw-clear]')) {
       state.name = '';
       const name = find('#route-draw-name');
       if (name) name.value = '';
-      setPoints([]);
+      setLine({ points: [], taps: [] });
     }
   });
 
