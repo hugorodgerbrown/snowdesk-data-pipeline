@@ -1,7 +1,7 @@
 /*
  * tests/js/test_map_ski_routes_layer.js — swisstopo's ski-touring routes as
  * a map layer: the layers menu's "Ski-touring routes" row, the zoom
- * control's gate, and draw mode's hold.
+ * control's gate, draw mode's hold, and the dimming a tour list asks for.
  *
  * The layer is a raster installed eagerly by installSkiRoutesLayer, ON by
  * default from z10 (Hugo, 28 Oct 2026), and only on a page that carries
@@ -247,6 +247,26 @@ describe('on an eligible page', () => {
     expect(visibility()).toBe('visible');
     window.pwaSkiRoutes.hold(false);
     expect(visibility()).toBe('none');
+  });
+
+  it('stays at every zoom under the vector tours (SNOW-1283)', async () => {
+    await boot();
+
+    // The raster is swisstopo's whole network; SAC's tours are only part.
+    expect(mapStub.defs.get(LAYER).maxzoom).toBeUndefined();
+  });
+
+  it('dims while a tour list is open, through a basemap swap', async () => {
+    await boot();
+    const opacity = () => mapStub.getPaintProperty(LAYER, 'raster-opacity');
+
+    expect(opacity()).toBe(0.9);
+    window.pwaSkiRoutes.dim(true);
+    expect(opacity()).toBe(0.3);
+    await swapBasemap();
+    expect(opacity()).toBe(0.3);
+    window.pwaSkiRoutes.dim(false);
+    expect(opacity()).toBe(0.9);
   });
 
   it('is named in the zoom control at z10', async () => {
