@@ -327,6 +327,13 @@ class LocationAdmin(admin.ModelAdmin):
         for line in lines:
             self.message_user(request, line, level=messages.INFO)
 
+        if counts["replayed"]:
+            self.message_user(
+                request,
+                f"{counts['replayed']} day(s) copied from the weather service, "
+                "which already held them.",
+                level=messages.INFO,
+            )
         if counts["failed"]:
             self.message_user(
                 request,
