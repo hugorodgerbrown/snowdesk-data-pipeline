@@ -220,6 +220,8 @@
   // terrain data for any route someone was sent, the example route among
   // them. routes:share_terrain answers only for a token this session holds.
   var SHARE_TERRAIN_URL_TEMPLATE = rail.dataset.routeShareTerrainUrlTemplate || '';
+  // SNOW-1278: and for an SAC tour not yet saved, by the tour's uuid.
+  var TOUR_TERRAIN_URL_TEMPLATE = rail.dataset.routeTourTerrainUrlTemplate || '';
   var NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
   // SNOW-1099: on a phone the rail is a bottom sheet with detents
@@ -245,7 +247,7 @@
   /** The open route's readProfile result, for the cursor's point on it. */
   var currentProfile = null;
   /** @type {{uuid: ?string, name: string}} */
-  var current = { uuid: null, token: null, name: '' };
+  var current = { uuid: null, token: null, tour: null, name: '' };
   /** The open route's own meta line. */
   var routeMeta = '';
 
@@ -375,6 +377,7 @@
     current = {
       uuid: props.uuid ? String(props.uuid) : null,
       token: props.token ? String(props.token) : null,
+      tour: props.tour && props.tour_uuid ? String(props.tour_uuid) : null,
       name: props.name || STRINGS.untitled,
     };
     // A pending share carries the same slope record as an owned route
@@ -581,7 +584,8 @@
   /**
    * Where the open route's terrain rows come from: routes:terrain for an
    * owned route (by uuid), routes:share_terrain for a pending share (by
-   * token, SNOW-1230), or '' when neither applies.
+   * token, SNOW-1230), routes:ski_tour_terrain for an SAC tour (by the
+   * tour's uuid, SNOW-1278), or '' when none applies.
    *
    * @returns {string}
    */
@@ -591,6 +595,9 @@
     }
     if (current.token && SHARE_TERRAIN_URL_TEMPLATE) {
       return SHARE_TERRAIN_URL_TEMPLATE.replace('__TOKEN__', encodeURIComponent(current.token));
+    }
+    if (current.tour && TOUR_TERRAIN_URL_TEMPLATE) {
+      return TOUR_TERRAIN_URL_TEMPLATE.replace(NIL_UUID, encodeURIComponent(current.tour));
     }
     return '';
   }

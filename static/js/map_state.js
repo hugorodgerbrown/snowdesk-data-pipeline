@@ -214,9 +214,9 @@ const OVERLAY_LAYERS = Object.freeze({
   // SNOW-761: one symbol layer, not a pin+label pair — the condition glyph
   // is an inline `image` section inside `text-field`.
   weather: ['weather-point'],
-  // swisstopo's raster to z12, installed by map.js's installSkiRoutesLayer,
-  // and from z12 SAC's tours as lines and summits, which can be tapped
-  // (SNOW-1278, static/js/ski_tours.js). The raster stays first: the first
+  // swisstopo's raster at every zoom, installed by map.js's
+  // installSkiRoutesLayer, and over it from z12 SAC's tours as lines and
+  // summits, which can be tapped (SNOW-1278, SNOW-1283, static/js/ski_tours.js). The raster stays first: the first
   // id is the one whose visibility says whether the overlay is painted.
   ski_routes: [
     'ski-routes',
@@ -225,6 +225,7 @@ const OVERLAY_LAYERS = Object.freeze({
     'ski-tours-highlight-down',
     'ski-tours-summit',
     'ski-tours-summit-label',
+    'ski-tours-far-end',
   ],
   // SNOW-687: the coloured line FIRST and the casing second — deliberately
   // the inverse of the order installRoutesLayer adds them in, where the

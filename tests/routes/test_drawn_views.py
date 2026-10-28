@@ -320,6 +320,10 @@ class TestMapPageDrawSurface:
         assert 'id="ski-tours-sheet"' in body
         assert "js/ski_tours.js" in body
         assert f'data-geojson-url="{reverse("api:ski_tours_geojson")}"' in body
+        # SNOW-1282: the route panel reads a tour's terrain rows too.
+        nil = "00000000-0000-0000-0000-000000000000"
+        tour_terrain = reverse("routes:ski_tour_terrain", args=[nil])
+        assert f'data-route-tour-terrain-url-template="{tour_terrain}"' in body
         assert "Add a route" not in body
 
     def test_absent_for_an_anonymous_visitor(self, client: Client) -> None:

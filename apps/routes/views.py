@@ -147,6 +147,7 @@ from apps.routes.services.ski_tours import (
     save_ski_tour,
     summits,
     tour_key,
+    tour_points,
     tour_properties,
     tour_slope_samples,
 )
@@ -1389,6 +1390,39 @@ def ski_tour_feature(request: HttpRequest, uuid: UUID) -> JsonResponse:
     if draft.slope_samples is None and not sample:
         identity["terrain_pending"] = True
     return JsonResponse({"feature": _route_feature(draft, identity)})
+
+
+@require_GET
+# Never held, as route_terrain: a tour opened before its first sampling
+# answers no rows, and a cached empty answer would outlive the sampling
+# the panel's ?sample=1 refill triggers moments later.
+@cache_control(private=True, no_store=True)
+def ski_tour_terrain(request: HttpRequest, uuid: UUID) -> JsonResponse:
+    """Return one SAC tour's terrain rows as JSON (SNOW-1278).
+
+    The tour twin of ``route_terrain``, so the terrain data behind the point
+    card opens for a tour before it is saved, as it does for a route. A
+    tour is reference data, so there is no owner to check. The rows come
+    from the tour's held record only (``tour_slope_samples`` without
+    ``sample``): the panel's ``?sample=1`` refill builds that record, and
+    a tour never sampled answers no rows rather than walking the grid here.
+
+    Errors:
+        404 — no such tour, or the ``route_drawing`` flag is off.
+
+    Args:
+        request: The incoming GET request.
+        uuid: The tour's swisstopo uuid (``SkiTour.source_uuid``).
+
+    Returns:
+        ``{"rows": [...]}``, empty for a tour never sampled.
+
+    """
+    if not flag_is_active(request, ROUTE_DRAWING_FLAG):
+        raise Http404("Not found.")
+    tour = _ski_tour_or_404(uuid)
+    samples = tour_slope_samples(tour, sample=False)
+    return JsonResponse({"rows": terrain_detail(samples, tour_points(tour)) or []})
 
 
 @require_POST

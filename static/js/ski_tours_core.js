@@ -24,6 +24,8 @@
  *   loadBox(bounds)            — the rectangle to load for a view
  *   covers(box, bounds)        — whether a loaded rectangle holds a view
  *   highlightFilter(uuids)     — the filter that draws only those tours
+ *   farEnds(features, uuids)   — where each of these tours starts or ends
+ *   fitsView(corners, size, padding) — whether a tour already shows whole
  *   listUrl(base, choice)      — the list sheet's URL for a tap
  *   featureUrl(template, uuid, sample) — a tour's Feature URL
  */
@@ -127,6 +129,25 @@
   }
 
   /**
+   * Whether a tour's box, as drawn on screen, sits wholly inside the view
+   * clear of its padding: when it does, opening the tour leaves the camera
+   * where the reader put it (SNOW-1284). All four corners, projected: on a
+   * rotated map two opposite ones are not the box's screen extremes.
+   *
+   * @param {Array<{x: number, y: number}>} corners The box's corners, in px.
+   * @param {{width: number, height: number}} size The map's canvas.
+   * @param {{top: number, right: number, bottom: number, left: number}} padding
+   *   What the panels and the fit's margins cover, in px.
+   * @returns {boolean}
+   */
+  function fitsView(corners, size, padding) {
+    return corners.length > 0 && corners.every(function (c) {
+      return c.x >= padding.left && c.x <= size.width - padding.right
+        && c.y >= padding.top && c.y <= size.height - padding.bottom;
+    });
+  }
+
+  /**
    * The MapLibre filter that keeps only these tours.
    *
    * @param {Array<string>} uuids
@@ -134,6 +155,69 @@
    */
   function highlightFilter(uuids) {
     return ['in', ['get', 'uuid'], ['literal', (uuids || []).slice()]];
+  }
+
+  /**
+   * The far end of each of these tours: where it starts, for a way up, or
+   * where it finishes, for a way down. The end of any of its parts farthest
+   * from the tour's own summit, so a line drawn the other way round, or in
+   * parts stored out of order, is still read right; with its summit not
+   * loaded, a way up's first point and a way down's last.
+   *
+   * @param {Array<any>} features A loaded collection's features, summits
+   *   and tours together.
+   * @param {Array<string>} uuids The tours to mark.
+   * @returns {{type: string, features: Array<any>}} One Point per tour.
+   */
+  function farEnds(features, uuids) {
+    const wanted = new Set(uuids || []);
+    /** @type {Map<string, Array<number>>} */
+    const summits = new Map();
+    for (const f of features || []) {
+      const p = f && f.properties;
+      if (p && (p.kind === 'summit' || p.kind === 'hut') && f.geometry) {
+        summits.set(p.key, f.geometry.coordinates);
+      }
+    }
+    /** @type {Array<any>} */
+    const ends = [];
+    const seen = new Set();
+    for (const f of features || []) {
+      const p = f && f.properties;
+      if (!p || p.kind !== 'tour' || !wanted.has(p.uuid) || seen.has(p.uuid)) continue;
+      const g = f.geometry;
+      const parts = !g ? [] : g.type === 'MultiLineString' ? g.coordinates : [g.coordinates];
+      const line = parts.filter((/** @type {any} */ part) => part && part.length);
+      if (!line.length) continue;
+      seen.add(p.uuid);
+      const first = line[0][0];
+      const last = line[line.length - 1][line[line.length - 1].length - 1];
+      const summit = summits.get(p.summit);
+      let end;
+      if (summit) {
+        // The part ends farthest from the summit: swisstopo stores a tour's
+        // parts in no particular order, so its first point need not be where
+        // it starts. Degrees, the longitude scaled by the latitude: only
+        // which end is farther matters.
+        const k = Math.cos((summit[1] * Math.PI) / 180);
+        const d = (/** @type {Array<number>} */ c) =>
+          ((c[0] - summit[0]) * k) ** 2 + (c[1] - summit[1]) ** 2;
+        end = first;
+        for (const part of line) {
+          for (const c of [part[0], part[part.length - 1]]) {
+            if (d(c) > d(end)) end = c;
+          }
+        }
+      } else {
+        end = p.down ? last : first;
+      }
+      ends.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [end[0], end[1]] },
+        properties: { uuid: p.uuid },
+      });
+    }
+    return { type: 'FeatureCollection', features: ends };
   }
 
   /**
@@ -172,6 +256,8 @@
     loadBox: loadBox,
     covers: covers,
     highlightFilter: highlightFilter,
+    farEnds: farEnds,
+    fitsView: fitsView,
     listUrl: listUrl,
     featureUrl: featureUrl,
   });

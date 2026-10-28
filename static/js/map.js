@@ -3459,14 +3459,44 @@
   // The tour's Save control, seated in the panel's claim slot.
   let tourRouteClaim = null;
 
+  /**
+   * Bring a tour into view only when part of it is hidden, and never by
+   * zooming in (SNOW-1284). The reader reached the tour from a summit at
+   * a scale they chose; a fit to every tour's own extent changed that
+   * scale on each pick, in and out.
+   *
+   * @param {number[]} bounds The tour's [west, south, east, north].
+   * @param {?function(...any): boolean} shows Whether a box already shows
+   *   whole (ski_tours_core.fitsView, passed in by ski_tours.js); without
+   *   one the tour is always fitted.
+   * @returns {void}
+   */
+  const frameTour = (bounds, shows) => {
+    const padding = paddingClearingRail();
+    const canvas = map.getContainer().getBoundingClientRect();
+    const [west, south, east, north] = bounds;
+    const shown = typeof shows === 'function' && shows(
+      [[west, north], [east, north], [east, south], [west, south]].map((c) => map.project(c)),
+      { width: canvas.width, height: canvas.height },
+      padding,
+    );
+    if (shown) return;
+    map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
+      padding: padding,
+      duration: 400,
+      maxZoom: map.getZoom(),
+    });
+  };
+
   window.pwaSkiTourRoute = Object.freeze({
     /**
      * Open a tour's Feature in the route panel and draw it on the map.
      * Called again with the sampled Feature, it refills the open panel.
      *
      * @param {Object} feature From routes:ski_tour_feature.
-     * @param {{claim?: ?Node, frame?: boolean}} [options] `claim` is the
-     *   Save control; `frame` fits the map to the tour.
+     * @param {{claim?: ?Node, frame?: boolean, shows?: function(...any): boolean}} [options]
+     *   `claim` is the Save control; `frame` brings the tour into view if
+     *   `shows` says it is not (frameTour).
      * @returns {boolean} Whether the panel opened.
      */
     open(feature, options) {
@@ -3485,10 +3515,7 @@
       }
       const bounds = parseRouteProperty(feature.properties && feature.properties.bounds);
       if (opts.frame && Array.isArray(bounds) && bounds.length === 4) {
-        map.fitBounds([[bounds[0], bounds[1]], [bounds[2], bounds[3]]], {
-          padding: paddingClearingRail(),
-          duration: 400,
-        });
+        frameTour(bounds, opts.shows || null);
       }
       return true;
     },
@@ -4569,10 +4596,15 @@
     'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo-karto.skitouren/default/current/3857/{z}/{x}/{y}.png';
   const SKI_ROUTES_BOUNDS = [5.9, 45.8, 10.5, 47.85];
   const SKI_ROUTES_MINZOOM = 10;
-  // SNOW-1278: from here the tours are ski_tours.js's own vector lines,
-  // which can be tapped, and the raster steps aside so the map draws the
-  // tours once.
+  // SNOW-1278: from here ski_tours.js draws SAC's tours as vector lines,
+  // which can be tapped, over the raster. The raster stays at every zoom:
+  // it draws swisstopo's whole network, and SAC's tours are only part of
+  // it (SNOW-1283: 19 tours against 111 segments round the Wildhorn).
   const SKI_ROUTES_VECTOR_MINZOOM = 12;
+  // The raster's strength, and its strength while a tour list dims every
+  // line it does not name (ski_tours.js, window.pwaSkiRoutes.dim()).
+  const SKI_ROUTES_OPACITY = 0.9;
+  const SKI_ROUTES_DIMMED_OPACITY = 0.3;
   // Draw mode shows the routes whatever the switch says — they are its
   // guide — and hands them back on exit. window.pwaSkiRoutes.hold().
   let skiRoutesHeld = false;
@@ -4580,6 +4612,12 @@
   // itself, as a faint shadow, so the raster steps aside (SNOW-1277).
   // Outranks the hold and the switch alike. window.pwaSkiRoutes.hide().
   let skiRoutesHidden = false;
+  // While a tour list is open, SNOW-1283. Kept here so a basemap swap's
+  // re-install comes back dimmed.
+  let skiRoutesDimmed = false;
+
+  /** @returns {number} The raster's opacity, dimmed or not. */
+  const skiRoutesOpacity = () => (skiRoutesDimmed ? SKI_ROUTES_DIMMED_OPACITY : SKI_ROUTES_OPACITY);
 
   /**
    * Install the ski-touring routes' raster source and layer, hidden unless
@@ -4615,11 +4653,10 @@
         type: 'raster',
         source: SKI_ROUTES_SOURCE_ID,
         minzoom: SKI_ROUTES_MINZOOM,
-        maxzoom: SKI_ROUTES_VECTOR_MINZOOM,
         layout: {
           visibility: skiRoutesShown() ? 'visible' : 'none',
         },
-        paint: { 'raster-opacity': 0.9 },
+        paint: { 'raster-opacity': skiRoutesOpacity() },
       },
       beforeId,
     );
@@ -4683,13 +4720,26 @@
       applySkiRoutesVisibility();
       announceOverlayVisibility();
     },
+    /**
+     * Dim the raster (true), or bring it back (false): ski_tours.js, while
+     * a list names the tours it draws in the route colour (SNOW-1283).
+     *
+     * @param {boolean} dimmed
+     * @returns {void}
+     */
+    dim(dimmed) {
+      skiRoutesDimmed = !!dimmed;
+      if (map.getLayer(SKI_ROUTES_LAYER_ID)) {
+        map.setPaintProperty(SKI_ROUTES_LAYER_ID, 'raster-opacity', skiRoutesOpacity());
+      }
+    },
     /** @returns {boolean} Whether the routes are drawn now. */
     isShown: () => SKI_ROUTES_ELIGIBLE && skiRoutesShown(),
     /** @returns {boolean} Whether this page has the layer at all. */
     isEligible: () => SKI_ROUTES_ELIGIBLE,
     /** @returns {Array<string>} The font stack the map's own overlay labels use. */
     textFont: () => overlayTextFont,
-    /** The zoom swisstopo's raster hands over to ski_tours.js's lines. */
+    /** The zoom ski_tours.js's lines are drawn from, over the raster. */
     VECTOR_MINZOOM: SKI_ROUTES_VECTOR_MINZOOM,
   });
 

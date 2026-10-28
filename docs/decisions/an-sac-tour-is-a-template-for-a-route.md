@@ -61,9 +61,12 @@ Every later reader gets it straight away, and every saved copy inherits it
 without sampling again. A sync that rewrites the tour clears it.
 
 **The tours belong to the ski-touring routes overlay.** Below z12 the
-overlay is swisstopo's raster. From z12 it is ski_tours.js's vector lines
-and summits, in blue at full strength. The raster stops at z12, so the
-tours are only ever drawn once on screen. All of these layers are listed
+overlay is swisstopo's raster alone. From z12, ski_tours.js's vector lines
+and summits, in blue at full strength, are drawn on top of it. The raster
+stays at every zoom because it draws swisstopo's whole network, and SAC's
+tours are only part of it: round the Wildhorn, 19 tours against 111
+network segments (SNOW-1283). Stopping it at z12, as SNOW-1278 first did,
+made most of the lines vanish on zooming in. All of these layers are listed
 in `OVERLAY_LAYERS.ski_routes`, so the layers menu switches them together,
 and draw mode's `hold` and `hide` apply to them too.
 
@@ -88,5 +91,25 @@ and draw mode's `hold` and `hide` apply to them too.
   is on: Find a route, Create a route and Upload a GPX
   (`public/partials/_route_add_rows.html`). The rows replace the panel's
   own add button, and the empty-state sentence names all three.
-- The tour panel has no terrain rows (the "terrain data" fold). Those rows
-  are fetched by uuid or token, and an unsaved tour has neither.
+- The tour panel has the route panel's terrain rows (the "terrain data"
+  fold) too, from `routes:ski_tour_terrain` by the tour's uuid
+  (SNOW-1282). It reads only the record the tour already holds, so a tour
+  never sampled answers no rows until the panel's `?sample=1` refill has
+  built one.
+- A tour stored in several parts is read as one line from start to
+  finish (`ski_tours._chained`, SNOW-1282). swisstopo stores 258 of the
+  SAC tours as parts out of order, a tree of the way and a short spur, and
+  joining them in stored order doubled the line back on itself. The way is
+  the longest path between two loose ends, run in the direction swisstopo
+  drew most of it. The map still draws every part, spur included.
+- Opening a tour brings it into view only when part of it is hidden,
+  and never by zooming in (map.js `frameTour`, `ski_tours_core.fitsView`,
+  SNOW-1284). The reader reached it from a summit at a scale they chose,
+  and the original fit to each tour's own extent zoomed in and out on
+  every pick.
+- While a list is open, the tours it names are drawn in the route colour,
+  a green dot marks each one's far end (`ski_tours_core.farEnds`: the end
+  away from its summit, where a way up starts and a way down finishes),
+  and every other tour is dimmed (SNOW-1282), the raster with them
+  (`window.pwaSkiRoutes.dim`, SNOW-1283). The mockup labels the dot
+  with a place name, which the data does not carry, so it is a dot alone.

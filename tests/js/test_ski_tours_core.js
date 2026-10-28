@@ -103,3 +103,94 @@ describe('URLs and the highlight', () => {
     expect(core.highlightFilter(['a'])).toEqual(['in', ['get', 'uuid'], ['literal', ['a']]]);
   });
 });
+
+describe('fitsView', () => {
+  const size = { width: 400, height: 800 };
+  const padding = { top: 60, right: 40, bottom: 350, left: 40 };
+  /** The four corners of a screen box, as map.js projects them. */
+  const box = (l, t, r, b) => [{ x: l, y: t }, { x: r, y: t }, { x: r, y: b }, { x: l, y: b }];
+
+  it('says a tour clear of the panels already shows (SNOW-1284)', () => {
+    expect(core.fitsView(box(50, 100, 300, 400), size, padding)).toBe(true);
+  });
+
+  it('says a tour under the sheet, or off an edge, does not', () => {
+    expect(core.fitsView(box(50, 100, 300, 500), size, padding)).toBe(false);
+    expect(core.fitsView(box(20, 100, 300, 400), size, padding)).toBe(false);
+    expect(core.fitsView(box(50, 40, 300, 400), size, padding)).toBe(false);
+    expect(core.fitsView(box(50, 100, 380, 400), size, padding)).toBe(false);
+  });
+
+  it('reads every corner, so a rotated map cannot hide one', () => {
+    // North-west, north-east and south-west clear; south-east under the sheet.
+    const rotated = [{ x: 200, y: 100 }, { x: 350, y: 250 }, { x: 200, y: 500 }, { x: 60, y: 300 }];
+    expect(core.fitsView(rotated, size, padding)).toBe(false);
+  });
+});
+
+describe('farEnds', () => {
+  const summit = {
+    geometry: { type: 'Point', coordinates: [10.1, 46.85] },
+    properties: { kind: 'summit', key: 'top' },
+  };
+  /**
+   * @param {string} uuid
+   * @param {Array<Array<number>>} coords
+   * @param {boolean} down
+   * @param {string} [key]
+   */
+  const line = (uuid, coords, down, key = 'top') => ({
+    geometry: { type: 'LineString', coordinates: coords },
+    properties: { kind: 'tour', uuid: uuid, summit: key, down: down },
+  });
+  const ends = (/** @type {any} */ fc) =>
+    fc.features.map((/** @type {any} */ f) => [f.properties.uuid, f.geometry.coordinates]);
+
+  it('marks the end away from the summit, whichever way the line is drawn', () => {
+    const up = line('up', [[10.08, 46.83], [10.1, 46.85]], false);
+    const backwards = line('back', [[10.1, 46.85], [10.12, 46.86]], false);
+    expect(ends(core.farEnds([summit, up, backwards], ['up', 'back']))).toEqual([
+      ['up', [10.08, 46.83]],
+      ['back', [10.12, 46.86]],
+    ]);
+  });
+
+  it('reads a MultiLineString by its first and last points', () => {
+    const multi = {
+      geometry: {
+        type: 'MultiLineString',
+        coordinates: [[[10.1, 46.85], [10.09, 46.84]], [[10.09, 46.84], [10.0, 46.8]]],
+      },
+      properties: { kind: 'tour', uuid: 'm', summit: 'top', down: true },
+    };
+    expect(ends(core.farEnds([summit, multi], ['m']))).toEqual([['m', [10.0, 46.8]]]);
+  });
+
+  it('finds the start among parts stored out of order', () => {
+    // The Silvrettahütte way up to the Signalhorn, as swisstopo stores it:
+    // the hut's part comes last.
+    const parts = {
+      geometry: {
+        type: 'MultiLineString',
+        coordinates: [
+          [[10.0863, 46.8499], [10.0969, 46.8488]],
+          [[10.0863, 46.8499], [10.0918, 46.8514]],
+          [[10.0415, 46.8544], [10.0863, 46.8499]],
+        ],
+      },
+      properties: { kind: 'tour', uuid: 's', summit: 'top', down: false },
+    };
+    expect(ends(core.farEnds([summit, parts], ['s']))).toEqual([['s', [10.0415, 46.8544]]]);
+  });
+
+  it('falls back to the direction without its summit, and marks only the listed', () => {
+    const up = line('up', [[1, 1], [2, 2]], false, 'elsewhere');
+    const down = line('down', [[2, 2], [3, 3]], true, 'elsewhere');
+    const other = line('other', [[5, 5], [6, 6]], false);
+    expect(ends(core.farEnds([up, down, other, up], ['up', 'down']))).toEqual([
+      ['up', [1, 1]],
+      ['down', [3, 3]],
+    ]);
+    expect(core.farEnds([up], []).features).toEqual([]);
+  });
+});

@@ -7,15 +7,19 @@
  * public/partials/_ski_tours_surface.html, which explains the interaction.
  *
  * THE TOURS ARE PART OF THE SKI-TOURING ROUTES OVERLAY. Below z12 that
- * overlay is swisstopo's raster (map.js); from z12 it is the lines and
- * summits drawn here, loaded per view from /api/ski-tours.geojson, and the
- * raster steps aside so the tours are drawn once. The layer ids are in
+ * overlay is swisstopo's raster (map.js) alone; from z12 the lines and
+ * summits drawn here, loaded per view from /api/ski-tours.geojson, sit on
+ * top of it. The raster stays because it draws swisstopo's whole network,
+ * of which SAC's tours are only part (SNOW-1283). The layer ids are in
  * OVERLAY_LAYERS.ski_routes, so the layers menu and window.pwaSkiRoutes
  * (draw mode's hold and hide) switch them with the raster.
  *
  * Lines are blue at full strength, as the mockup decided (28 Oct 2026):
- * this is the mode where the tours are the thing tapped. The tours a list
- * names are drawn over them in the route colour, a way down dashed.
+ * this is the mode where the tours are the thing tapped. While a list is
+ * open the tours it names are drawn over them in the route colour, a way
+ * down dashed, each with a green dot at its far end (where a way up starts
+ * and a way down finishes), and every other tour is dimmed, the raster
+ * with them (window.pwaSkiRoutes.dim).
  *
  * A TAP (map.js's dispatcher calls `tap(point)` after the markers and the
  * weather symbols) on a summit lists every tour to it; on a line it opens
@@ -59,7 +63,11 @@
   const HIGHLIGHT_DOWN = 'ski-tours-highlight-down';
   const SUMMIT = 'ski-tours-summit';
   const LABEL = 'ski-tours-summit-label';
-  const LAYERS = [LINE, HIGHLIGHT, HIGHLIGHT_DOWN, SUMMIT, LABEL];
+  // The listed tours' far ends, from a source of their own: points worked
+  // out here (ski_tours_core.farEnds), not features the server sends.
+  const ENDS_SOURCE = 'ski-tours-ends';
+  const FAR_END = 'ski-tours-far-end';
+  const LAYERS = [LINE, HIGHLIGHT, HIGHLIGHT_DOWN, SUMMIT, FAR_END, LABEL];
   // MapLibre paint cannot read a CSS custom property. The tours' blue is
   // swisstopo's own for its ski routes (blue-600); the highlight is the
   // route colour (--color-route-line); the marks are the ink and the card.
@@ -67,6 +75,10 @@
   const HIGHLIGHT_COLOUR =
     (self.pwaRouteDrawingCore && self.pwaRouteDrawingCore.ROUTE_LINE_COLOUR) || '#c026d3';
   const INK_COLOUR = '#1a1916';
+  // The mockup's green dot at a tour's far end: --color-sync-ok (green-600).
+  const FAR_END_COLOUR = '#16a34a';
+  // While a list is open the tours it does not name step back.
+  const DIMMED_OPACITY = 0.3;
   const HALO_COLOUR = '#ffffff';
   // A summit is a smaller target than a line: reached only close to it.
   const SUMMIT_TAP_PX = 12;
@@ -163,7 +175,11 @@
       minzoom: minzoom,
       filter: isTour,
       layout: { visibility: visibility, 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': TOUR_COLOUR, 'line-width': width },
+      paint: {
+        'line-color': TOUR_COLOUR,
+        'line-width': width,
+        'line-opacity': state.highlight.length ? DIMMED_OPACITY : 1,
+      },
     }, before);
     const highlightWidth = ['interpolate', ['linear'], ['zoom'], 12, 3, 15, 5];
     map.addLayer({
@@ -205,6 +221,25 @@
         'circle-stroke-width': 1.5,
       },
     }, before);
+    // Over the summit and hut marks: a tour that starts at a hut is named
+    // by its green dot, not hidden under the hut's ring.
+    map.addSource(ENDS_SOURCE, {
+      type: 'geojson',
+      data: core.farEnds(state.data.features, state.highlight),
+    });
+    map.addLayer({
+      id: FAR_END,
+      type: 'circle',
+      source: ENDS_SOURCE,
+      minzoom: minzoom,
+      layout: { visibility: visibility },
+      paint: {
+        'circle-radius': 5,
+        'circle-color': FAR_END_COLOUR,
+        'circle-stroke-color': HALO_COLOUR,
+        'circle-stroke-width': 2,
+      },
+    }, before);
     // The map's own overlay font (SNOW-478), not the style's commonest,
     // which on some basemaps is the water labels' italic.
     const font = window.pwaSkiRoutes && window.pwaSkiRoutes.textFont
@@ -239,7 +274,8 @@
   }
 
   /**
-   * Draw these tours in the route colour.
+   * Draw these tours in the route colour with their far ends, and dim the
+   * rest; an empty list puts every tour back at full strength.
    *
    * @param {Array<string>} uuids
    */
@@ -251,6 +287,20 @@
     const highlight = core.highlightFilter(state.highlight);
     map.setFilter(HIGHLIGHT, ['all', isTour, ['!', ['get', 'down']], highlight]);
     map.setFilter(HIGHLIGHT_DOWN, ['all', isTour, ['get', 'down'], highlight]);
+    map.setPaintProperty(LINE, 'line-opacity', state.highlight.length ? DIMMED_OPACITY : 1);
+    // The raster under the tours draws the rest of the network: it dims too.
+    window.pwaSkiRoutes?.dim(state.highlight.length > 0);
+    paintFarEnds(map);
+  }
+
+  /**
+   * Re-place the listed tours' far ends, from the collection now loaded.
+   *
+   * @param {any} map
+   */
+  function paintFarEnds(map) {
+    const source = map && map.getSource(ENDS_SOURCE);
+    if (source) source.setData(core.farEnds(state.data.features, state.highlight));
   }
 
   // ---------------------------------------------------------------------------
@@ -289,6 +339,8 @@
         const source = map.getSource(SOURCE);
         if (source) source.setData(body);
         else installLayers(map);
+        // A pan that reloads while a list is open keeps its dots in place.
+        paintFarEnds(map);
       })
       .catch(function () {
         if (state.inflight === inflight) state.inflight = null;
@@ -455,7 +507,7 @@
   }
 
   /**
-   * Open a tour in the route panel, framed, and follow with its terrain
+   * Open a tour in the route panel, brought into view, and follow with its terrain
    * when the server has not sampled it before.
    *
    * @param {string} uuid
@@ -472,7 +524,7 @@
         return;
       }
       const claim = buildClaim(feature.properties || {});
-      window.pwaSkiTourRoute.open(feature, { claim: claim, frame: true });
+      window.pwaSkiTourRoute.open(feature, { claim: claim, frame: true, shows: core.fitsView });
       if (!(feature.properties && feature.properties.terrain_pending)) return;
       fetchFeature(uuid, true).then(function (sampled) {
         if (!sampled || state.opening !== uuid) return;

@@ -28,8 +28,8 @@ from typing import Any
 
 import pytest
 
-from apps.routes.models import Route
-from tests.factories import RouteFactory, UserFactory
+from apps.routes.models import Route, SkiTour
+from tests.factories import RouteFactory, SkiTourFactory, UserFactory
 
 # ``import_module`` rather than a plain import: the module name starts with
 # a digit, so it is not a legal Python identifier and cannot be written as
@@ -196,3 +196,52 @@ class TestBackfillDescent:
         route.refresh_from_db()
 
         assert route.descent_m == first == pytest.approx(300.0)
+
+
+# routes.0012_forget_unchained_tour_terrain (SNOW-1282): the terrain kept
+# under a multi-part tour's old stored-order join is cleared; a one-part
+# tour's is kept.
+_FORGET = import_module("apps.routes.migrations.0012_forget_unchained_tour_terrain")
+
+
+class _TourApps:
+    """The registry stand-in for 0012, which asks only for ``SkiTour``."""
+
+    def get_model(self, app_label: str, model_name: str) -> Any:
+        """Return the concrete ``SkiTour`` model.
+
+        Args:
+            app_label: The app label being asked for.
+            model_name: The model name being asked for.
+
+        Returns:
+            The ``SkiTour`` model.
+
+        """
+        assert (app_label, model_name) == ("routes", "SkiTour")
+        return SkiTour
+
+
+@pytest.mark.django_db
+class TestForgetUnchainedTourTerrain:
+    """``forget_unchained_terrain``."""
+
+    def test_a_multi_part_tour_forgets_its_terrain_and_a_one_part_keeps_it(
+        self,
+    ) -> None:
+        """Only the tours whose line the chaining changes are cleared."""
+        record = {"v": 1, "segments": []}
+        two = {
+            "type": "MultiLineString",
+            "coordinates": [[[10.0, 46.0], [10.1, 46.1]], [[10.1, 46.1], [10.2, 46.2]]],
+        }
+        one = {"type": "MultiLineString", "coordinates": [[[10.0, 46.0], [10.1, 46.1]]]}
+        multi = SkiTourFactory.create(geometry=two, slope_samples=record)
+        single = SkiTourFactory.create(geometry=one, slope_samples=record)
+
+        _FORGET.forget_unchained_terrain(_TourApps(), None)
+
+        multi.refresh_from_db()
+        single.refresh_from_db()
+        assert multi.slope_samples is None
+        assert single.slope_samples == record
