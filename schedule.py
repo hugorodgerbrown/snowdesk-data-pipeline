@@ -24,6 +24,11 @@ pre-loaded with the recurring data-pipeline jobs:
   feeds serve (SNOW-1271). Hourly because an edit in the resort sheet or
   the map-admin overlays should reach the feed the same hour; a run with
   nothing changed writes nothing. At :40, clear of every other hourly job.
+- **import_ski_tours** — fires on Mondays at 02:30 UTC, running
+  ``import_ski_tours --commit``. Imports swisstopo's ski-touring network
+  and SAC's tours into the reference-data service and applies them here
+  (SNOW-1276). Weekly because swisstopo releases the data about once a
+  year; a run against an unchanged release writes nothing.
 - **purge_request_logs** — fires at 03:30 UTC, running
   ``purge_request_logs --commit``. Enforces the ``RequestLog`` retention
   window the Privacy Policy states (SNOW-775); until this job existed
@@ -206,6 +211,16 @@ def _run_mirror_reference_data() -> None:
     call_command("mirror_reference_data", "--commit")
 
 
+def _run_import_ski_tours() -> None:
+    """Invoke ``import_ski_tours``: swisstopo's lines into the service (SNOW-1276)."""
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing import_ski_tours")
+    call_command("import_ski_tours", "--commit")
+
+
 def _run_purge_request_logs() -> None:
     """Invoke ``purge_request_logs`` to enforce the RequestLog retention window."""
     from django.core.management import (
@@ -297,7 +312,7 @@ def build_scheduler() -> BlockingScheduler:
     Returns
     -------
     BlockingScheduler
-        A scheduler with ten jobs pre-registered:
+        A scheduler with eleven jobs pre-registered:
 
         ``fetch_bulletins``
             Cron: ``minute=0,5`` (every hour at :00 and :05 UTC).
@@ -307,6 +322,8 @@ def build_scheduler() -> BlockingScheduler:
             Cron: ``minute=20`` (every hour, SNOW-1245).
         ``mirror_reference_data``
             Cron: ``minute=40`` (every hour, SNOW-1271).
+        ``import_ski_tours``
+            Cron: ``day_of_week=mon, hour=2, minute=30`` (weekly, SNOW-1276).
         ``purge_request_logs``
             Cron: ``hour=3, minute=30`` (once a day, off the fetch hours).
         ``fill_what3words``
@@ -360,6 +377,15 @@ def build_scheduler() -> BlockingScheduler:
         switched("mirror_reference_data", _run_mirror_reference_data),
         trigger=CronTrigger(minute=40, timezone="UTC"),
         id="mirror_reference_data",
+        **_common,
+    )
+
+    # SNOW-1276: weekly, on the quiet stretch before the 03:xx purges. One
+    # 17 MB download and a database reconcile; nothing else competes.
+    scheduler.add_job(
+        switched("import_ski_tours", _run_import_ski_tours),
+        trigger=CronTrigger(day_of_week="mon", hour=2, minute=30, timezone="UTC"),
+        id="import_ski_tours",
         **_common,
     )
 

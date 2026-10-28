@@ -21,7 +21,7 @@ from the service; if only a signed-in user does, it stays in the instance.
 
 | Bucket | Tables | Where it lives |
 |---|---|---|
-| Source of truth | bulletins, weather, reference `Location` rows and resort roles, `Resort`, `Pass` | Written only in the service; synced |
+| Source of truth | bulletins, weather, reference `Location` rows and resort roles, `Resort`, `Pass`, swisstopo's ski-touring network and SAC's tours (`SkiSegment`, `SkiTour`, SNOW-1276) | Written only in the service; synced |
 | Code-held | the EAWS region tables (`apps/regions/fixtures/eaws_*.json`), the glossary | Ships with the code; every side loads the same commit |
 | Bulletin interpretation | the render model (`Bulletin.render_model`), day character, period transition | Built once in the service; synced with each bulletin |
 | Domain derivations | `RegionDayRating`, problem-terrain rules | Computed once in the service from the render model; synced (`SourceDayRating`), or read from the synced model by the service's code (the rules) |

@@ -16,6 +16,11 @@
       "active": true
     },
     {
+      "name": "schedule_import_ski_tours",
+      "note": "SNOW-1276: the scheduled job import_ski_tours, Mondays at 02:30 UTC (schedule.py) — imports swisstopo's ski-touring network and SAC tours into the reference-data service. Off skips its runs from the next firing; on resumes them.",
+      "active": true
+    },
+    {
       "name": "schedule_backfill_weather",
       "note": "SNOW-1245: the scheduled job backfill_weather, hourly at :20 (schedule.py) — one budgeted sweep of missing past weather days. Off skips its runs from the next firing; on resumes them.",
       "active": true

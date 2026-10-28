@@ -26,11 +26,13 @@ from datetime import UTC, timedelta
 import pytest
 from django.utils import timezone
 
-from apps.routes.models import Route, RouteShare
+from apps.routes.models import Route, RouteShare, SkiSegment, SkiTour
 from tests.factories import (
     DRIFTING_TRACK,
     RouteFactory,
     RouteShareFactory,
+    SkiSegmentFactory,
+    SkiTourFactory,
     UserFactory,
     drifting_track_record,
 )
@@ -412,3 +414,34 @@ class TestRouteClimb:
         )
 
         assert route.climb == (850.0, 1100.0)
+
+
+@pytest.mark.django_db
+class TestSkiLines:
+    """SNOW-1276: the synced ski-touring segments and tours."""
+
+    def test_to_string(self) -> None:
+        """A segment by id and discipline; a tour by name and grade."""
+        segment = SkiSegmentFactory.create(segment_id=42)
+        assert segment.to_string() == str(segment) == "segment 42 (ski_tour)"
+        tour = SkiTourFactory.create(name="Piz Buin", grade="PD")
+        assert str(tour) == "Piz Buin (PD)"
+        tour.grade = ""
+        assert tour.to_string() == "Piz Buin"
+
+    def test_intersecting_is_an_edge_inclusive_box_overlap(self) -> None:
+        """Overlapping or touching boxes are in; disjoint ones are out."""
+        inside = SkiSegmentFactory.create(west=10.0, south=46.0, east=10.1, north=46.1)
+        touching = SkiSegmentFactory.create(
+            west=10.2, south=46.0, east=10.3, north=46.1
+        )
+        SkiSegmentFactory.create(west=11.0, south=46.0, east=11.1, north=46.1)
+        found = SkiSegment.objects.intersecting(10.05, 46.05, 10.2, 46.2)
+        assert set(found) == {inside, touching}
+
+    def test_skiable_leaves_out_snowshoe_lines(self) -> None:
+        """The snowshoe-only segments are neither snapped to nor drawn."""
+        ski = SkiSegmentFactory.create()
+        SkiSegmentFactory.create(discipline="ski_snowshoe_tour")
+        assert list(SkiSegment.objects.skiable()) == [ski]
+        assert SkiTour.objects.intersecting(0, 0, 1, 1).count() == 0

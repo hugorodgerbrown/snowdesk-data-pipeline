@@ -4,7 +4,7 @@ tests/ingest/test_reference.py — Tests for apps.ingest.reference (SNOW-1271).
 ``sync_source_documents`` makes the stored passes or resorts equal the list
 a host hands over: created, rewritten only on a changed hash, tombstoned
 when absent and revived when back. Run once per table, since both tables
-share the one function.
+share the one function. The ski tables (SNOW-1276) share it too.
 """
 
 from __future__ import annotations
@@ -14,12 +14,20 @@ from typing import Any
 
 import pytest
 
-from apps.ingest.models import SourcePass, SourceResort, content_hash
+from apps.ingest.models import (
+    SourcePass,
+    SourceResort,
+    SourceSkiSegment,
+    SourceSkiTour,
+    content_hash,
+)
 from apps.ingest.reference import DocumentRecord, sync_source_documents
 
 pytestmark = pytest.mark.django_db
 
-MODELS = pytest.mark.parametrize("model", [SourcePass, SourceResort])
+MODELS = pytest.mark.parametrize(
+    "model", [SourcePass, SourceResort, SourceSkiSegment, SourceSkiTour]
+)
 
 
 def _record(**overrides: Any) -> DocumentRecord:
@@ -70,6 +78,19 @@ def test_a_changed_document_or_slug_is_rewritten(model: Any) -> None:
     )
     assert model.objects.get().slug == "magic"
     assert counts["updated"] == 1
+
+
+@MODELS
+def test_a_rewrite_moves_updated_at_and_saves_the_document(model: Any) -> None:
+    """The rows are read slim (SNOW-1276); a rewrite must still save both."""
+    record = _record()
+    sync_source_documents(model, [record])
+    before = model.objects.get().updated_at
+    sync_source_documents(model, [_record(uuid=record.uuid, document={"name": "M"})])
+    row = model.objects.get()
+    assert row.updated_at > before
+    assert row.document == {"name": "M"}
+    assert row.content_hash == content_hash({"name": "M"})
 
 
 @MODELS

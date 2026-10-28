@@ -1,7 +1,7 @@
 """
 apps/ingest/admin.py — Django admin registration for the ingest app.
 
-Five registrations, all read-only windows: nothing can be added, edited
+Seven registrations, all read-only windows: nothing can be added, edited
 or deleted here.
 
 * ``SourceBulletinAdmin`` — a ``SourceBulletin`` is what a provider
@@ -17,6 +17,9 @@ or deleted here.
 * ``SourcePassAdmin`` and ``SourceResortAdmin`` — the curated passes and
   resorts (SNOW-1271), mirrored from production's ``Pass`` and ``Resort``
   by ``mirror_reference_data``; corrected there, for the same reason.
+* ``SourceSkiSegmentAdmin`` and ``SourceSkiTourAdmin`` — swisstopo's
+  ski-touring network and SAC's tours (SNOW-1276), imported weekly by
+  ``import_ski_tours``; a wrong line is swisstopo's to correct.
 * ``SourceDayRatingAdmin`` — the service's day ratings (SNOW-1270),
   computed from its bulletins; a wrong one is fixed by fixing the rule.
 """
@@ -35,6 +38,8 @@ from .models import (
     SourceLocation,
     SourcePass,
     SourceResort,
+    SourceSkiSegment,
+    SourceSkiTour,
     SourceWeather,
 )
 
@@ -184,6 +189,16 @@ class SourcePassAdmin(_SourceDocumentAdmin):
 @admin.register(SourceResort)
 class SourceResortAdmin(_SourceDocumentAdmin):
     """Read-only admin for the service's resorts."""
+
+
+@admin.register(SourceSkiSegment)
+class SourceSkiSegmentAdmin(_SourceDocumentAdmin):
+    """Read-only admin for swisstopo's ski-touring segments (SNOW-1276)."""
+
+
+@admin.register(SourceSkiTour)
+class SourceSkiTourAdmin(_SourceDocumentAdmin):
+    """Read-only admin for SAC's ski tours (SNOW-1276)."""
 
 
 @admin.register(SourceDayRating)

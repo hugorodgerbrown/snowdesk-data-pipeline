@@ -134,6 +134,7 @@ from apps.regions.services.area_content import (
 )
 from apps.regions.services.basemap_tiles import blob_summary
 from apps.regions.services.resort_pin import set_resort_pin
+from apps.routes.models import SkiSegment
 from apps.weather.models import Weather
 from apps.weather.services.weather_display import build_point_weather_days
 
@@ -1334,6 +1335,80 @@ def _parse_bbox_param(raw: str) -> list[float] | None:
     if west > east or south > north:
         return None
     return [west, south, east, north]
+
+
+# SNOW-1276: the widest rectangle /api/ski-network.geojson answers, in
+# degrees each way — a little more than a phone's view at z11. A wider ask
+# is refused rather than truncated: the network is drawn and snapped to
+# only when zoomed in, and a country's worth of lines is megabytes.
+SKI_NETWORK_MAX_SPAN_DEG = 0.5
+# The most segments one answer carries; a dense half-degree of the Valais
+# holds about two thousand. Past it the answer says ``truncated``.
+SKI_NETWORK_MAX_FEATURES = 4000
+
+
+@vary_on_headers("Accept-Encoding")
+@require_GET
+def ski_network_geojson(request: HttpRequest) -> HttpResponse:
+    """
+    Return swisstopo's ski-touring segments that cross one rectangle.
+
+    SNOW-1276. The vector network a drawn route snaps to (SNOW-1277) —
+    ``SkiSegment.objects.skiable()``, so the snowshoe-only lines are left
+    out — selected by each segment's bounding box, edge-inclusive and
+    over-inclusive, as ``area_content`` selects regions.
+
+    ``?bbox=west,south,east,north`` in degrees, at most
+    ``SKI_NETWORK_MAX_SPAN_DEG`` each way. Response shape::
+
+        {"type": "FeatureCollection",
+         "truncated": false,
+         "features": [{"type": "Feature", "id": "<service uuid>",
+                       "geometry": {"type": "MultiLineString", ...},
+                       "properties": {"segment_id": 123}}, ...]}
+
+    Reference data, the same for everyone and changed about once a year,
+    so it takes ``_geojson_response``'s ETag and revalidatable policy. The
+    licence is swisstopo's OGD; the map credits "© swisstopo".
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with the payload above, or 400 for a bbox that is
+        missing, malformed or wider than the cap.
+
+    """
+    bbox = _parse_bbox_param(request.GET.get("bbox", ""))
+    if bbox is None:
+        return JsonResponse({"error": "invalid_bbox"}, status=400)
+    west, south, east, north = bbox
+    if (
+        east - west > SKI_NETWORK_MAX_SPAN_DEG
+        or north - south > SKI_NETWORK_MAX_SPAN_DEG
+    ):
+        return JsonResponse({"error": "bbox_too_large"}, status=400)
+    rows = list(
+        SkiSegment.objects.skiable()
+        .intersecting(west, south, east, north)
+        .order_by("segment_id")
+        .only("source_uuid", "segment_id", "geometry")[: SKI_NETWORK_MAX_FEATURES + 1]
+    )
+    features = [
+        {
+            "type": "Feature",
+            "id": str(row.source_uuid),
+            "geometry": row.geometry,
+            "properties": {"segment_id": row.segment_id},
+        }
+        for row in rows[:SKI_NETWORK_MAX_FEATURES]
+    ]
+    payload = {
+        "type": "FeatureCollection",
+        "truncated": len(rows) > SKI_NETWORK_MAX_FEATURES,
+        "features": features,
+    }
+    return _geojson_response(request, payload, empty=not features)
 
 
 @vary_on_headers("Accept-Encoding")

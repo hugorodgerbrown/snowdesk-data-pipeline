@@ -16,11 +16,16 @@ instance loads with its migrations, so the pull starts after them:
    this instance's user data points at it (a favourite, a trip, a field
    report) — detaches it from the estate and leaves the user's row its
    target (``apps/data_feed/services/reference.py``).
-2. ``bulletins`` — each bulletin's CAAML with the service's render model,
+2. ``ski-network`` and ``ski-tours`` — swisstopo's ski-touring segments
+   and SAC's tours (SNOW-1276), copied into ``SkiSegment`` and ``SkiTour``
+   (``apps/routes/services/ski_network.py``). Incremental: only what
+   changed since the newest line held, tombstones deleting theirs, since
+   the whole network is tens of megabytes and changes about once a year.
+3. ``bulletins`` — each bulletin's CAAML with the service's render model,
    replayed through ``upsert_bulletin``.
-3. ``day-ratings`` — the service's ``SourceDayRating``, copied over
+4. ``day-ratings`` — the service's ``SourceDayRating``, copied over
    ``RegionDayRating``.
-4. ``weather`` — each place's days, through ``upsert_weather``; a past day
+5. ``weather`` — each place's days, through ``upsert_weather``; a past day
    already recorded here is kept.
 
 The time series are a subset, by the day each row is about: ``--recent N``
@@ -84,6 +89,12 @@ from apps.data_feed.services.reference import (
     apply_tombstone,
     reference_weather_lookups,
 )
+from apps.routes.services.ski_network import (
+    OUTCOMES as SKI_OUTCOMES,
+    SKI_KINDS,
+    apply_ski_items,
+    synced_since,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +128,7 @@ OUTCOMES: dict[str, tuple[str, ...]] = {
     "bulletins": (CREATED, UPDATED, UNCHANGED, FAILED),
     "day-ratings": (CREATED, UPDATED, UNCHANGED, RECOMPUTED, SKIPPED, FAILED),
     "weather": (CREATED, UPDATED, UNCHANGED, KEPT, SKIPPED, FAILED),
+    **dict.fromkeys(SKI_KINDS, SKI_OUTCOMES),
 }
 
 DEFAULT_RECENT_DAYS = 14
@@ -136,7 +148,7 @@ def describe_item(feed: str) -> Callable[[dict[str, Any]], str]:
     """
     if feed == "locations":
         return lambda item: (item.get("fields") or {}).get("name") or item["uuid"]
-    if feed in ("passes", "resorts"):
+    if feed in ("passes", "resorts", *SKI_KINDS):
         return lambda item: str(item.get("slug") or item["uuid"])
     if feed == "bulletins":
         return lambda item: f"{item['bulletin_id']} {item.get('target_date') or ''}"
@@ -249,6 +261,19 @@ class Command(RegisteredCommand):
             day_to: Their last day, or None for no bound.
 
         """
+        self._pull_estate(client)
+        for feed in SKI_KINDS:
+            self._pull_ski(client, feed)
+        for feed in SERIES_FEEDS:
+            self._pull_series(client, feed, day_from=day_from, day_to=day_to)
+
+    def _pull_estate(self, client: FeedClient) -> None:
+        """Pull places, passes and resorts whole, then apply their tombstones.
+
+        Args:
+            client: The feed client.
+
+        """
         tombstones: dict[str, list[dict[str, Any]]] = {f: [] for f in REFERENCE_FEEDS}
         deferred: dict[str, list[dict[str, Any]]] = {f: [] for f in REFERENCE_FEEDS}
         for feed in REFERENCE_FEEDS:
@@ -265,8 +290,6 @@ class Command(RegisteredCommand):
                 self.stdout.write(
                     f"{feed}: {len(deferred[feed])} retried after the tombstones"
                 )
-        for feed in SERIES_FEEDS:
-            self._pull_series(client, feed, day_from=day_from, day_to=day_to)
 
     def _applier(self, feed: str) -> Callable[[dict[str, Any]], str]:
         """Return the live-item apply for ``feed``, bound to this run."""
@@ -480,6 +503,25 @@ class Command(RegisteredCommand):
                 )
                 if feed == "locations" and outcome == CREATED and not self._commit:
                     self._planned.add(str(item["uuid"]))
+        self._report(feed)
+
+    def _pull_ski(self, client: FeedClient, feed: str) -> None:
+        """Apply what changed in one ski-touring feed since the newest line held.
+
+        A page is applied in one go (one read of the rows it names, one
+        bulk insert), after its items have been counted down.
+
+        Args:
+            client: The feed client.
+            feed: ``ski-network`` or ``ski-tours``.
+
+        """
+        since = synced_since(feed)
+        for _page, items in self._walk(
+            client, feed, since=since.isoformat() if since else None
+        ):
+            outcomes = apply_ski_items(feed, list(items), commit=self._commit)
+            self._outcomes[feed].update(outcomes)
         self._report(feed)
 
     def _pull_series(

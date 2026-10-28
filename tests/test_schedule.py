@@ -3,7 +3,7 @@ tests/test_schedule.py — Unit tests for schedule.py.
 
 Covers:
   - ``build_scheduler()`` returns a :class:`BlockingScheduler` with exactly
-    ten jobs.
+    eleven jobs.
   - The jobs have the expected IDs, one per wrapped command in
     ``schedule.py``.
   - Their ``CronTrigger``s have the correct non-default field expressions.
@@ -50,9 +50,9 @@ def test_build_scheduler_returns_blocking_scheduler(
     assert isinstance(scheduler, BlockingScheduler)
 
 
-def test_scheduler_has_exactly_ten_jobs(scheduler: BlockingScheduler) -> None:
-    """The scheduler has exactly ten registered jobs."""
-    assert len(scheduler.get_jobs()) == 10
+def test_scheduler_has_exactly_eleven_jobs(scheduler: BlockingScheduler) -> None:
+    """The scheduler has exactly eleven registered jobs."""
+    assert len(scheduler.get_jobs()) == 11
 
 
 def test_job_ids(jobs: dict) -> None:
@@ -62,6 +62,7 @@ def test_job_ids(jobs: dict) -> None:
         "fetch_weather",
         "backfill_weather",
         "mirror_reference_data",
+        "import_ski_tours",
         "purge_request_logs",
         "fill_what3words",
         "check_resort_locations",
@@ -97,6 +98,21 @@ def test_mirror_reference_data_commits() -> None:
     with mock.patch("django.core.management.call_command") as mock_cc:
         schedule_module._run_mirror_reference_data()
     mock_cc.assert_called_once_with("mirror_reference_data", "--commit")
+
+
+def test_import_ski_tours_runs_weekly_on_monday_morning(jobs: dict) -> None:
+    """Mondays at 02:30 UTC — weekly, before the purges (SNOW-1276)."""
+    trigger = jobs["import_ski_tours"].trigger
+    assert str(_get_field(trigger, "day_of_week")) == "mon"
+    assert str(_get_field(trigger, "hour")) == "2"
+    assert str(_get_field(trigger, "minute")) == "30"
+
+
+def test_import_ski_tours_commits() -> None:
+    """Firing the job runs the import with --commit."""
+    with mock.patch("django.core.management.call_command") as mock_cc:
+        schedule_module._run_import_ski_tours()
+    mock_cc.assert_called_once_with("import_ski_tours", "--commit")
 
 
 def test_purge_expired_oauth_tokens_runs_daily_off_the_fetch_hours(jobs: dict) -> None:
@@ -342,6 +358,7 @@ def test_purge_runs_clear_of_the_fetch_hours(jobs: dict) -> None:
         "fetch_weather",
         "backfill_weather",
         "mirror_reference_data",
+        "import_ski_tours",
         "purge_request_logs",
         "fill_what3words",
         "check_resort_locations",
