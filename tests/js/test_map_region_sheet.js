@@ -637,6 +637,21 @@ describe('during playback', () => {
     expect(sheet.querySelector('[data-testid="region-sheet-bulletin"]')).not.toBeNull();
   });
 
+  it('a report tapped during playback waits for it to stop (SNOW-1295)', async () => {
+    select('CH-4115', 'tap');
+    await settle();
+    fetchMock.mockClear();
+    announceState(true);
+    document.dispatchEvent(new CustomEvent('snowdesk:observation-focus', {
+      detail: { submission: 'not-in-the-body', region_id: 'CH-4115' },
+    }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(band()).not.toBeNull();
+    announceState(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(band()).toBeNull();
+  });
+
   it('paints a kept body under the band for a region picked during playback', async () => {
     select('CH-4115', 'tap');
     await settle();

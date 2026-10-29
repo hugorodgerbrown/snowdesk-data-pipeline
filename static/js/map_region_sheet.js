@@ -384,8 +384,12 @@
     // The body for the region may already be up (its sheet was open). If it
     // lacks the row, read it again: the open sheet is otherwise left as it
     // was, which read as the tap doing nothing.
+    // During playback the read waits, as on every other open path; the
+    // focus is applied when the body lands after playback stops.
     applyObservationFocus();
-    if (observationFocus && controller.isOpen() && detail.region_id === regionId) load();
+    if (observationFocus && controller.isOpen() && detail.region_id === regionId) {
+      load({ paused: playback.isPlaying() });
+    }
   });
 
   document.addEventListener('snowdesk:reports-changed', () => {
