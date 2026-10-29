@@ -16,15 +16,24 @@ policy, and neither looks wrong in a diff.
 Asserting against ``_SNAPSHOT_FIELDS`` rather than a hand-written list is
 the point: the next field added to the snapshot fails here until it is
 made read-only, so the invariant maintains itself.
+
+It also checks that both ``TripAdmin`` deletes erase the meeting-point
+Location a trip minted (SNOW-1293).
 """
 
 from __future__ import annotations
 
+import pytest
 from django.contrib import admin
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
+from django.test import Client, RequestFactory
+from django.urls import reverse
 
+from apps.locations.models import Location
 from apps.trips.admin import TripAdmin, TripParticipantAdmin
 from apps.trips.models import Trip, TripParticipant
 from apps.trips.services.trips import _SNAPSHOT_FIELDS
+from tests.factories import LocationFactory, TripFactory
 
 
 class TestTripAdminRegistration:
@@ -84,3 +93,63 @@ class TestEverySnapshotFieldIsReadOnly:
             f"snapshot fields editable in TripAdmin: {missing}. "
             "Add them to TripAdmin.readonly_fields."
         )
+
+
+def _trip_admin() -> TripAdmin:
+    """Return the registered TripAdmin instance."""
+    registered = admin.site._registry[Trip]
+    assert isinstance(registered, TripAdmin)
+    return registered
+
+
+@pytest.mark.django_db
+class TestTripAdminDeletion:
+    """Staff deletes sweep the meeting point a trip minted (SNOW-1293)."""
+
+    def test_delete_model_erases_the_meeting_point(self) -> None:
+        """The single-object delete goes through the service."""
+        trip = TripFactory.create()
+        trip_pk = trip.pk
+        location_pk = trip.meeting_point_id
+
+        _trip_admin().delete_model(RequestFactory().post("/"), trip)
+
+        assert not Trip.objects.filter(pk=trip_pk).exists()
+        assert not TripParticipant.objects.filter(trip_id=trip_pk).exists()
+        assert not Location.objects.filter(pk=location_pk).exists()
+
+    def test_delete_queryset_erases_every_anonymous_meeting_point(self) -> None:
+        """The bulk delete sweeps each meeting point, leaving a named one."""
+        anonymous = [LocationFactory.create(anonymous=True) for _ in range(2)]
+        mont_fort = LocationFactory.create(name="Mont Fort")
+        for location in [*anonymous, mont_fort]:
+            TripFactory.create(meeting_point=location)
+
+        _trip_admin().delete_queryset(RequestFactory().post("/"), Trip.objects.all())
+
+        assert not Trip.objects.exists()
+        assert not TripParticipant.objects.exists()
+        assert not Location.objects.filter(
+            pk__in=[location.pk for location in anonymous]
+        ).exists()
+        assert Location.objects.filter(pk=mont_fort.pk).exists()
+
+    def test_the_delete_selected_action_erases_the_meeting_points(
+        self, admin_client: Client
+    ) -> None:
+        """The changelist's "delete selected" action reaches delete_queryset."""
+        trips = [TripFactory.create() for _ in range(2)]
+        location_pks = [trip.meeting_point_id for trip in trips]
+
+        response = admin_client.post(
+            reverse("admin:trips_trip_changelist"),
+            {
+                "action": "delete_selected",
+                ACTION_CHECKBOX_NAME: [str(t.pk) for t in trips],
+                "post": "yes",
+            },
+        )
+
+        assert response.status_code == 302
+        assert not Trip.objects.exists()
+        assert not Location.objects.filter(pk__in=location_pks).exists()

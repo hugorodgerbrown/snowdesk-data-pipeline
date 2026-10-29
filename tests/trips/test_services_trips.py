@@ -39,6 +39,7 @@ from apps.trips.services.trips import (
     TripLimitReached,
     create_trip,
     delete_trip,
+    delete_trip_instance,
     delete_trips_for_user,
     update_trip,
 )
@@ -499,3 +500,21 @@ class TestEnqueueFailuresAfterCommit:
         assert Trip.objects.filter(created_by=route.user).count() == 1
         trip.refresh_from_db()
         assert trip.slope_samples is None
+
+
+@pytest.mark.django_db
+class TestDeleteTripInstance:
+    """The one-row delete every path shares sweeps the meeting point."""
+
+    def test_deletes_the_trip_its_participants_and_its_meeting_point(self) -> None:
+        """The trip, its participant rows and its meeting point all go."""
+        trip = TripFactory.create()
+        trip_pk = trip.pk
+        location_pk = trip.meeting_point_id
+        assert TripParticipant.objects.filter(trip_id=trip_pk).exists()
+
+        delete_trip_instance(trip)
+
+        assert not Trip.objects.filter(pk=trip_pk).exists()
+        assert not TripParticipant.objects.filter(trip_id=trip_pk).exists()
+        assert not Location.objects.filter(pk=location_pk).exists()

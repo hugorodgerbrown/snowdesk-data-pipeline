@@ -37,6 +37,7 @@ from apps.favourites.services import (
     create_favourite,
     create_resort_favourite,
     delete_favourite,
+    delete_favourite_instance,
     delete_favourites_for_user,
 )
 from apps.locations.models import Location
@@ -730,3 +731,20 @@ class TestFavouriteThreeWordAddress:
 
         assert favourite.location is not None
         assert favourite.location.what3words == "filled.count.soap"
+
+
+@pytest.mark.django_db
+class TestDeleteFavouriteInstance:
+    """The one-row delete every path shares sweeps the minted location."""
+
+    def test_deletes_the_row_and_its_anonymous_location(self) -> None:
+        """The favourite and its anonymous location both go."""
+        favourite = FavouriteFactory.create()
+        favourite_pk = favourite.pk
+        location_pk = favourite.location_id
+        assert location_pk is not None
+
+        delete_favourite_instance(favourite)
+
+        assert not Favourite.objects.filter(pk=favourite_pk).exists()
+        assert not Location.objects.filter(pk=location_pk).exists()

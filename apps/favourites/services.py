@@ -4,7 +4,9 @@ apps/favourites/services.py — Business logic for creating and deleting Favouri
 Provides ``create_favourite``, ``create_resort_favourite`` and
 ``delete_favourite`` — the mutating entry points used by
 ``apps/favourites/views.py`` — plus ``delete_favourites_for_user``, the
-whole-roster variant account erasure calls.
+whole-roster variant account erasure calls, and
+``delete_favourite_instance``, the one-row delete all of them and
+``FavouriteAdmin`` share.
 
 Coordinate-argument convention: every function in this module takes
 latitude/longitude in that order — ``(latitude, longitude)`` — matching
@@ -343,6 +345,27 @@ def delete_region_favourite(user: "User", region: "MicroRegion") -> bool:
     return bool(deleted)
 
 
+def delete_favourite_instance(favourite: Favourite) -> None:
+    """Delete one favourite and sweep the location it minted.
+
+    The one-row delete every path shares: the owner's ``delete_favourite``,
+    account erasure's ``delete_favourites_for_user`` and the admin's
+    ``FavouriteAdmin``. The row and the sweep share one atomic block, so a
+    failed sweep leaves the favourite in place rather than deleting it and
+    stranding its coordinate. A region pin has no location and deletes
+    cleanly.
+
+    Args:
+        favourite: The favourite to delete.
+
+    """
+    with transaction.atomic():
+        location = favourite.location
+        favourite.delete()
+        if location is not None:
+            delete_location_if_orphaned(location)
+
+
 def delete_favourite(user: "User", uuid: UUID) -> None:
     """Delete the given user's favourite by uuid.
 
@@ -363,11 +386,7 @@ def delete_favourite(user: "User", uuid: UUID) -> None:
 
     """
     favourite = Favourite.objects.for_user(user).get(uuid=uuid)
-    location = favourite.location
-    with transaction.atomic():
-        favourite.delete()
-        if location is not None:
-            delete_location_if_orphaned(location)
+    delete_favourite_instance(favourite)
     logger.info("Favourite deleted: user=%s uuid=%s", user.pk, uuid)
 
 
@@ -397,10 +416,7 @@ def delete_favourites_for_user(user: "User") -> int:
     deleted = 0
     with transaction.atomic():
         for favourite in Favourite.objects.for_user(user).select_related("location"):
-            location = favourite.location
-            favourite.delete()
-            if location is not None:
-                delete_location_if_orphaned(location)
+            delete_favourite_instance(favourite)
             deleted += 1
     if deleted:
         logger.info("Favourites deleted for user=%s: %s row(s)", user.pk, deleted)

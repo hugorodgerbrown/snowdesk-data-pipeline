@@ -3,7 +3,8 @@ apps/trips/services/trips.py — creating, editing and deleting a Trip.
 
 The mutating entry points ``apps/trips/views.py`` calls: ``create_trip``,
 ``update_trip``, ``delete_trip``, and the account-erasure counterpart
-``delete_trips_for_user``.
+``delete_trips_for_user``, both built on ``delete_trip_instance``, the
+one-row delete ``TripAdmin`` shares.
 
 **The snapshot is copied here and nowhere else.** ``create_trip`` reads the
 source ``Route``'s geometry and derived figures once, writes them onto the
@@ -403,6 +404,25 @@ def update_trip(
 # ---------------------------------------------------------------------------
 
 
+def delete_trip_instance(trip: Trip) -> None:
+    """Delete one trip and sweep the meeting point it minted.
+
+    The one-row delete every path shares: the organiser's ``delete_trip``,
+    account erasure's ``delete_trips_for_user`` and the admin's
+    ``TripAdmin``. Its ``TripParticipant`` rows cascade with it. The row and
+    the sweep share one atomic block, so a failed sweep leaves the trip in
+    place rather than deleting it and stranding its coordinate.
+
+    Args:
+        trip: The trip to delete.
+
+    """
+    with transaction.atomic():
+        location = trip.meeting_point
+        trip.delete()
+        delete_location_if_orphaned(location)
+
+
 def delete_trip(user: "User", uuid: UUID) -> None:
     """Delete one of the organiser's own trips, meeting point included.
 
@@ -421,10 +441,7 @@ def delete_trip(user: "User", uuid: UUID) -> None:
 
     """
     trip = Trip.objects.select_related("meeting_point").get(uuid=uuid, created_by=user)
-    location = trip.meeting_point
-    with transaction.atomic():
-        trip.delete()
-        delete_location_if_orphaned(location)
+    delete_trip_instance(trip)
     logger.info("Trip deleted: user=%s uuid=%s", user.pk, uuid)
 
 
@@ -455,9 +472,7 @@ def delete_trips_for_user(user: "User") -> int:
         for trip in Trip.objects.filter(created_by=user).select_related(
             "meeting_point"
         ):
-            location = trip.meeting_point
-            trip.delete()
-            delete_location_if_orphaned(location)
+            delete_trip_instance(trip)
             deleted += 1
     if deleted:
         logger.info("Trips deleted for user=%s: %s row(s)", user.pk, deleted)
