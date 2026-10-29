@@ -5862,7 +5862,11 @@ class TestOnTheGround:
     """The region's field reports, at the top of the bulletin page's body."""
 
     def test_today_lists_live_and_recent_reports(self, client: Client) -> None:
-        """Today shows "Live today" and "Recent", one row per submission."""
+        """Today shows today's reports, then "Recent", one row per submission.
+
+        No "Live today" over today's (Hugo, 29 Oct 2026): the page's title
+        card names the day, and in the map the eyebrow says "Today".
+        """
         region = MicroRegionFactory.create(
             region_id="CH-9100", name="Test Region", slug="test-counts"
         )
@@ -5886,7 +5890,7 @@ class TestOnTheGround:
         content = client.get(url).content.decode()
 
         assert 'data-testid="on-the-ground"' in content
-        assert "Live today" in content
+        assert "Live today" not in content
         assert "Recent" in content
         assert content.count('data-testid="on-the-ground-row"') == 2
         # Human labels, joined, in declaration order (cracks before striations).

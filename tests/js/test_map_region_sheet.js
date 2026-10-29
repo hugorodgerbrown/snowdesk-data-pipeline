@@ -51,10 +51,6 @@ document.body.innerHTML = `
     <h2 data-region-sheet-slot="name"></h2>
     <button type="button" data-region-sheet-proxy="map-region-pin-control" aria-label="Pin this region"></button>
     <button type="button" data-region-sheet-proxy="map-download-control" aria-label="Download this region"></button>
-    <div class="sheet-date-row" data-testid="sheet-date-row">
-      Data from <span data-sheet-date-day></span>
-      <button type="button" data-back-to-today>Back to today</button>
-    </div>
   </div></template>
 `;
 await import('../../static/js/i18n_strings.js');
@@ -135,28 +131,6 @@ describe('the peek painted from the page', () => {
     expect(slot('name').textContent).toBe('Martigny-Verbier');
     expect(slot('rating').textContent).toBe('3');
     expect(slot('rating').getAttribute('data-level')).toBe('considerable');
-  });
-
-  it("names another day in the date row, as the server writes it, and marks it", async () => {
-    fetchMock.mockImplementation(() => new Promise(() => {}));
-    const sheet = await boot();
-    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', {
-      detail: { date: '2026-02-03' },
-    }));
-    select('CH-4115', 'tap', { region_name: 'Martigny-Verbier' });
-    expect(sheet.querySelector('[data-sheet-date-day]').textContent).toBe('3 Feb 2026');
-    expect(sheet.querySelector('.sheet-date-row').hasAttribute('data-another-day')).toBe(true);
-  });
-
-  it('names today in the date row, unmarked, when the map is on today', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date(2026, 1, 3, 9, 0));
-    fetchMock.mockImplementation(() => new Promise(() => {}));
-    const sheet = await boot();
-    select('CH-4115', 'tap', { region_name: 'Martigny-Verbier' });
-    expect(sheet.querySelector('[data-sheet-date-day]').textContent).toBe('3 Feb 2026');
-    expect(sheet.querySelector('.sheet-date-row').hasAttribute('data-another-day')).toBe(false);
-    vi.useRealTimers();
   });
 
   it("keeps the tile's dash when the map has no level for the day", async () => {

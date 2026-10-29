@@ -9,12 +9,15 @@ into ``#place-sheet``, an ``includes/_overlay_sheet.html`` that declares the
 detents peek, half and full. One fragment serves both kinds and all three
 detents, ordered so that each detent shows the next part of it:
 
-  1. PEEK (``data-sheet-peek``) — the header ROW, then the day: the round
-     pin tile (``includes/_resort_tile.html``, a place's shape in search;
-     the square danger tile is a region's), the place's name, the actions
-     and the ×; under them, full width, "Data from <day>"
-     (``includes/_sheet_date_row.html``). Nothing else — no level, code or
-     region in the header (Hugo, 21 Oct: it could not be told from the
+  1. PEEK (``data-sheet-peek``) — the header ROW: the round pin tile
+     (``includes/_resort_tile.html``, a place's shape in search; the square
+     danger tile is a region's), the place's name, the actions and the ×.
+     The day is not in the peek: a resort's dated eyebrows name it
+     ("Avalanche bulletin • SLF … Today", includes/_dated_eyebrow.html), a
+     saved pin's weather line and bulletin link already did, and the
+     full-width "Data from <day>" row that sat here went (Hugo, 29 Oct
+     2026: "Date is everywhere on the page"). Nothing else — no level, code
+     or region in the header (Hugo, 21 Oct: it could not be told from the
      region sheet, and had too much squeezed in). A resort's action is the Save star; a
      saved pin's are the panel row's own "…" menu
      (``_favourite_row_menu_items.html``: Share → Rename → Delete). The
@@ -164,8 +167,6 @@ Context:
                 {% include "includes/_icon_close.html" only %}
             </button>
         </div>
-        {# The day, on its own full-width row under the header (Hugo, 21 Oct). #}
-        {% include "includes/_sheet_date_row.html" with day=target_date another_day=another_day only %}
     </div>
 
     {% if kind == "resort" %}

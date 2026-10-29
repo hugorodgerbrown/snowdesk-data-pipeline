@@ -96,9 +96,8 @@ def _peek_context(region: MicroRegion | None, target_date: date) -> dict[str, An
         target_date: The day the map is showing.
 
     Returns:
-        ``region``, ``day_rating`` (a RegionDayRating or None),
-        ``level_label`` (the level's name, or "") and ``another_day``
-        (whether the day is not today, for the sheet's strip, SNOW-1165).
+        ``region``, ``day_rating`` (a RegionDayRating or None) and
+        ``level_label`` (the level's name, or "").
 
     """
     day_rating = (
@@ -111,7 +110,6 @@ def _peek_context(region: MicroRegion | None, target_date: date) -> dict[str, An
         "region": region,
         "day_rating": day_rating,
         "level_label": level_meta["label"] if level_meta else "",
-        "another_day": target_date != timezone.localdate(),
     }
 
 
@@ -226,9 +224,11 @@ def resort_sheet_partial(request: HttpRequest, slug: str) -> HttpResponse:
     # SNOW-1164: under the peek row, the resort page's own body for the
     # map's day — built by the page's own builder, so the two cannot drift.
     context = {
-        # The body states the region's level itself (its bulletin callout),
-        # so only the date row's "another day" comes from the peek context.
+        # The body states the region's level itself (its bulletin callout).
         **build_resort_body(request, resort, target_date),
+        # The day the body's dated eyebrows name (includes/_dated_eyebrow.html;
+        # Hugo, 29 Oct 2026) — the sheet's only, since the page's title names it.
+        "section_day": target_date,
         "another_day": target_date != timezone.localdate(),
         "kind": "resort",
         "name": resort.name,

@@ -2,7 +2,7 @@
 name: the-sheet-is-the-page
 description: Region and resort pages and map sheets share one body (_region_body.html, _resort_body.html, in_map); resort_date URL
 status: current
-last-reviewed: 2026-10-25
+last-reviewed: 2026-10-29
 ---
 
 # The sheet is the page
@@ -71,11 +71,11 @@ split.
   it. A "you are not on today" marker is SNOW-1165: a "Showing … · Back to
   today" strip (`includes/_another_day_strip.html`) that the page renders
   full width under the nav, as a link to its bare URL. In a sheet the
-  same fact is the peek's own date row (`includes/_sheet_date_row.html`,
-  Hugo, 21 Oct 2026: "Data from 21 Oct 2026", highlighted on another day,
-  with a button `static/js/map_today.js` turns into a scrubber move); it
-  names the day once for every section, so the body's eyebrows drop their
-  dates in the map (`in_map`). It is deliberately NOT in the shared body, because
+  day is named by the body's dated section eyebrows
+  (`includes/_dated_eyebrow.html`, given `section_day` by the sheet views
+  only; Hugo, 29 Oct 2026, replacing the peek's "Data from" date row —
+  [a-sheet-names-its-day-in-its-section-headers](a-sheet-names-its-day-in-its-section-headers.md)),
+  and the way back is the date control's "Today". The strip is deliberately NOT in the shared body, because
   the way back differs by container: a page navigates, the map moves its
   day. The map itself carries an always-shown "Today" half on its date
   control, disabled on today.

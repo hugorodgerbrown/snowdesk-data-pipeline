@@ -3,15 +3,15 @@
 public/partials/_region_sheet_peek.html — the region sheet's PEEK row: the
 danger tile, the name, the pin and download proxies and
 the ×, over the region's breadcrumb (SNOW-1098; its own partial since
-2026-10-19). The full-width "Data from <day>" row follows, just below the
-peek (SNOW-1234).
+2026-10-19).
 
-SNOW-1234 swapped the breadcrumb and the date row (Hugo, 25 Oct: "I want
-the peek to be meaningful"). At its lowest the sheet now says what was
-tapped and where it is: the level, the name, and Switzerland › Valais ›
-Lower Valais. The day moved out of the peek, one row down, where half
-shows it. The breadcrumb is one truncated line so a long sub-region name
-cannot grow the peek.
+SNOW-1234 put the breadcrumb in the peek (Hugo, 25 Oct: "I want the peek
+to be meaningful"). At its lowest the sheet says what was tapped and where
+it is: the level, the name, and Switzerland › Valais › Lower Valais. The
+breadcrumb is one truncated line so a long sub-region name cannot grow the
+peek. The full-width "Data from <day>" row that followed it went on
+29 Oct 2026 (Hugo: "Date is everywhere on the page"); the body's dated
+section headers name the day (includes/_dated_eyebrow.html).
 
 Rendered twice, so the row the reader first sees and the row the body
 brings are the same markup and the sheet does not change height when the
@@ -32,8 +32,6 @@ Context:
   region       — MicroRegion, with subregion__major select_related (absent
                  when blank).
   day_rating   — RegionDayRating for the day, or None.
-  target_date  — The day the map is showing (absent when blank).
-  another_day  — Whether that day is not today.
   covered      — Whether any provider ever rates this region (SNOW-1196).
   country_name — "Switzerland" and so on (absent when blank).
   blank        — True for the template copy. Its breadcrumb is a blank
@@ -116,6 +114,4 @@ Context:
             {% endif %}
         </p>
     </div>
-    {# The day, on its own full-width row under the peek (Hugo, 21 Oct; below the peek since SNOW-1234). #}
-    {% include "includes/_sheet_date_row.html" with day=target_date another_day=another_day only %}
 </div>

@@ -177,45 +177,9 @@
   };
 
   /**
-   * Today as ``YYYY-MM-DD``, on the device's calendar.
-   *
-   * @returns {string}
-   */
-  const todayKey = () => {
-    const now = new Date();
-    const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
-    return now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
-  };
-
-  /**
-   * A day as the date control and the server's date line write it,
-   * "21 Oct 2026" (Django's ``j M Y``) — in that order whatever the
-   * locale's own, since an "en" Intl puts the month first. Formatted in UTC
-   * so the calendar day never shifts with the device's zone.
-   *
-   * @param {string} isoDay ``YYYY-MM-DD``.
-   * @returns {string}
-   */
-  const formatDay = (isoDay) => {
-    try {
-      const parts = new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        timeZone: 'UTC',
-      }).formatToParts(new Date(isoDay + 'T00:00:00Z'));
-      const part = (/** @type {string} */ type) =>
-        (parts.find((p) => p.type === type)?.value || '').replace(/\.$/, '');
-      return [part('day'), part('month'), part('year')].filter(Boolean).join(' ');
-    } catch (_err) {
-      return isoDay;
-    }
-  };
-
-  /**
-   * Fill a blank peek row from the page: the selection's name, the level
-   * the map is painting for the day, and the day itself — highlighted, as
-   * the server's line is, when it is not today.
+   * Fill a blank peek row from the page: the selection's name and the
+   * level the map is painting for the day. The day itself is named by the
+   * body's dated section headers, which arrive with it (Hugo, 29 Oct 2026).
    *
    * @param {Element} row A clone of the template's row.
    * @returns {void}
@@ -233,11 +197,6 @@
       name.textContent = regionName || regionId || '';
       name.setAttribute('title', regionName || regionId || '');
     }
-    const today = todayKey();
-    const day = dateKey || today;
-    const dayEl = row.querySelector('[data-sheet-date-day]');
-    if (dayEl) dayEl.textContent = formatDay(day);
-    row.querySelector('.sheet-date-row')?.toggleAttribute('data-another-day', day !== today);
   };
 
   /**

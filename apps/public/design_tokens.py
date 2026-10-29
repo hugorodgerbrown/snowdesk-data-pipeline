@@ -45,6 +45,7 @@ from apps.public._component_fixtures import (
     CHIP_VARIANTS,
     COLLAPSIBLE_PANEL_VARIANTS,
     DANGER_TILE_EMPTY_VARIANTS,
+    DATED_EYEBROW_VARIANTS,
     DAY_CHARACTER_VARIANTS,
     DAY_FIGURES_VARIANTS,
     DAY_STRIPS_VARIANTS,
@@ -84,7 +85,6 @@ from apps.public._component_fixtures import (
     SEASON_CELL_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
     SEGMENTED_OPTION_VARIANTS,
-    SHEET_DATE_ROW_VARIANTS,
     SHEET_HEADER_VARIANTS,
     SITE_FOOTER_VARIANTS,
     STATUS_PAGE_VARIANTS,
@@ -1461,18 +1461,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
-        slug="sheet-date-row",
-        label="Sheet date row",
+        slug="dated-eyebrow",
+        label="Dated eyebrow",
         description=(
-            '"Data from 21 Oct 2026", full width under a map sheet\'s '
-            "header (region, place and weather alike), so every sheet names "
-            "the day it is for once and its sections need not. On a day "
-            "that is not today it turns to the info colours and offers "
-            "Back to today."
+            "A section eyebrow that names the day its section is for, at the "
+            'right of the row: a quiet "Today", or on another day the date '
+            "in the info colours. Used by a map sheet's DATED sections — the "
+            'bulletin, the weather, "On the ground" — in place of the '
+            'full-width "Data from" row the sheets carried until 29 Oct '
+            "2026. Without a day it is the plain eyebrow, so a body shared "
+            "with a page passes one only in the sheet."
         ),
         kind="components",
-        partial="includes/_sheet_date_row.html",
-        variants=SHEET_DATE_ROW_VARIANTS,
+        partial="includes/_dated_eyebrow.html",
+        variants=DATED_EYEBROW_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
