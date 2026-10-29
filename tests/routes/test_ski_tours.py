@@ -116,47 +116,42 @@ class TestPureRules:
         assert is_descent(tour) is False
 
     def test_a_tour_is_one_leg_in_its_direction(self) -> None:
-        """The detected legs' whole span, climbing for a way up, not for a way down."""
-        legs = [
-            {
-                "i": 1,
-                "from": 0,
-                "to": 9,
-                "climbing": True,
-                "point_from": 0,
-                "point_to": 20,
-            },
-            {
-                "i": 2,
-                "from": 10,
-                "to": 12,
-                "climbing": False,
-                "point_from": 20,
-                "point_to": 26,
-            },
-            {
-                "i": 3,
-                "from": 13,
-                "to": 40,
-                "climbing": True,
-                "point_from": 26,
-                "point_to": 80,
-            },
+        """The whole line, climbing for a way up, not for a way down."""
+        points: list[list[float | None]] = [
+            [10.0, 46.0, None],
+            [10.0, 46.001, None],
+            [10.0, 46.002, None],
         ]
-        up = one_leg(legs, _tour())
-        down = one_leg(legs, _tour(ascent_m=None, descent_m=1000))
+        up = one_leg(points, None, _tour())
+        down = one_leg(points, None, _tour(ascent_m=None, descent_m=1000))
+        # ~222 m of line: nine 25 m strides, the walk an unsampled route's
+        # legs index.
         assert up == [
             {
                 "i": 1,
                 "from": 0,
-                "to": 40,
+                "to": 8,
                 "climbing": True,
                 "point_from": 0,
-                "point_to": 80,
+                "point_to": 2,
             }
         ]
         assert down is not None and down[0]["climbing"] is False
-        assert one_leg(None, _tour()) is None
+
+    def test_a_sampled_tour_leg_spans_the_angles_it_was_sent(self) -> None:
+        """The client indexes ``slope.angles``, so the leg does too."""
+        points: list[list[float | None]] = [
+            [10.0, 46.0, 1800.0],
+            [10.0, 46.002, 2000.0],
+        ]
+        legs = one_leg(points, {"angles": [12.0, None, 30.0, 31.0]}, _tour())
+        assert legs is not None
+        assert (legs[0]["from"], legs[0]["to"]) == (0, 3)
+
+    def test_a_line_too_short_for_a_segment_has_no_leg(self) -> None:
+        """One point, or no stride to walk."""
+        assert one_leg([[10.0, 46.0, None]], None, _tour()) is None
+        assert one_leg([[10.0, 46.0, None], [10.0, 46.0, None]], None, _tour()) is None
 
     def test_the_summit_key_keeps_two_summits_of_one_name_apart(self) -> None:
         """Name and height."""

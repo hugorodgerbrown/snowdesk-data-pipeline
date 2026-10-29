@@ -69,8 +69,11 @@ from apps.routes.models import Route, SkiTour
 from apps.routes.services.drawn import draft_route
 from apps.routes.services.shares import write_route_copy
 from apps.routes.services.slope_segments import (
+    SAMPLE_STRIDE_M,
     build_slope_samples,
+    cumulative_distances,
     enqueue_route_slope_sampling,
+    stride_distances,
 )
 
 if TYPE_CHECKING:
@@ -154,33 +157,46 @@ def is_descent(tour: SkiTour) -> bool:
 
 
 def one_leg(
-    legs: list[dict[str, Any]] | None, tour: SkiTour
+    points: list[list[float | None]], slope: dict[str, Any] | None, tour: SkiTour
 ) -> list[dict[str, Any]] | None:
-    """Return a tour's legs as the one leg it is (SNOW-1304).
+    """Return a tour as the one leg it is (SNOW-1304).
 
     A tour is a way up or a way down, never both, so it is drawn and
     profiled as one leg in that direction: the line's own rises and dips
-    are not legs of it. The span is the detected legs' whole span, so the
-    indices stay those the slope record and the geometry share.
+    are not legs of it. The leg needs no heights, so it is built from the
+    geometry alone and an unsampled tour, or one off the terrain grid,
+    still gets one. Its segment indices are those the client reads: the
+    ``slope.angles`` it was sent, or the stride walk an unsampled route's
+    legs index (leg_wire).
 
     Args:
-        legs: ``wire_legs``' answer for the tour's line, or None.
+        points: The feature's geometry, ``[lon, lat, ele]`` in line order.
+        slope: The feature's ``slope`` (``compact_slope``), or None.
         tour: The tour.
 
     Returns:
-        One leg covering them all, or None when there were none.
+        One leg spanning the whole line, or None for a line too short to
+        hold a segment.
 
     """
-    if not legs:
+    if len(points) < 2:
+        return None
+    angles = (slope or {}).get("angles")
+    if angles:
+        segment_count = len(angles)
+    else:
+        total_m = cumulative_distances(points)[-1]
+        segment_count = len(stride_distances(total_m, SAMPLE_STRIDE_M)) - 1
+    if segment_count < 1:
         return None
     return [
         {
             "i": 1,
-            "from": legs[0]["from"],
-            "to": legs[-1]["to"],
+            "from": 0,
+            "to": segment_count - 1,
             "climbing": not is_descent(tour),
-            "point_from": legs[0]["point_from"],
-            "point_to": legs[-1]["point_to"],
+            "point_from": 0,
+            "point_to": len(points) - 1,
         }
     ]
 

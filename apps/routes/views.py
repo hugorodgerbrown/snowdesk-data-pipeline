@@ -1393,9 +1393,12 @@ def ski_tour_feature(request: HttpRequest, uuid: UUID) -> JsonResponse:
     feature = _route_feature(draft, identity)
     # SNOW-1304: a tour is one leg, a way up or a way down, drawn whole in
     # that direction's colour, as its list row and its highlight are.
-    legs = one_leg(feature["properties"].get("legs"), tour)
+    # Built from the geometry, not the detected legs: those need heights,
+    # and an unsampled tour has none.
+    props = feature["properties"]
+    legs = one_leg(feature["geometry"]["coordinates"], props.get("slope"), tour)
     if legs:
-        feature["properties"]["legs"] = legs
+        props["legs"] = legs
     return JsonResponse({"feature": feature})
 
 
