@@ -48,13 +48,18 @@ stop — that's the `implement` skill's job.
 ### Mode 1 — Single ticket, scoped in one pass
 
 Conversation has produced a single, clear piece of work. Create the issue
-*and* post the scoping comment *and* hand it to Codex, in that order:
-create the issue in `Backlog` with no delegate, post the scoping comment,
-and only once the comment is posted call `save_issue` with state `Todo`
-and `delegate: "Codex"`, then read it back to check the delegate took.
-Delegating first would let Codex start on a ticket with no scope to
-review. Every scoped ticket goes through Codex's one
-review — there is no direct route to `Ready for dev`.
+*and* post the scoping comment *and* ask Codex to review it, in that order:
+create the issue in `Backlog`, post the scoping comment, move it to `Todo`,
+and only then post **the review request** from `docs/linear-workflow.md` →
+"The review request", verbatim, as a new comment. Requesting the review
+first would start Codex on a ticket with no scope to review. **Never set a
+delegate**: delegating an issue tells Codex to implement it. Every scoped
+ticket goes through Codex's one review — there is no direct route to
+`Ready for dev`.
+
+Before creating anything, apply `scope`'s Step 1b to the idea itself. If it
+duplicates an open ticket, is already done or rests on a premise the code no
+longer holds, say so instead of creating the ticket.
 
 ### Mode 2 — Multiple tickets from one discussion
 
@@ -64,7 +69,7 @@ piece:
 - Create the issue with title, label, priority, and a one-paragraph
   description.
 - If the approach is settled in the discussion → post the scoping comment,
-  move to `Todo` and delegate to Codex, as in Mode 1.
+  move to `Todo` and post the review request, as in Mode 1.
 - If the approach is still fuzzy → leave at `Backlog` and add a note naming
   the open question. `scope` picks it up from there.
 
@@ -159,7 +164,7 @@ integration (see docs/linear-workflow.md).
 | Status          | When this skill sets it                                     |
 |-----------------|-------------------------------------------------------------|
 | `Backlog`       | Ticket created, not yet scoped (or approach still fuzzy)    |
-| `Todo`          | Scoping comment posted, delegated to Codex for review       |
+| `Todo`          | Scoping comment posted, Codex's review requested            |
 
 ## Linear MCP tool gotchas
 

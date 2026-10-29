@@ -2,9 +2,11 @@
 name: scope
 description: |
   Scope a Linear ticket: read the description, explore the codebase, produce a
-  written scope, post it as a Linear comment, move the ticket from Backlog to
-  Todo and delegate it to Codex for its one scope review (the
-  `resolve-scope-review` skill takes it on from there). Use when the user asks to "scope SNOW-NN", "let's
+  written scope, post it as a Linear comment (or update the scope the ticket
+  already carries), move the ticket from Backlog to Todo and ask Codex for its
+  one scope review with an @Codex review request (the `resolve-scope-review`
+  skill takes it on from there). Parks a ticket that is redundant, out of date
+  or low value in Deferred instead of scoping it. Use when the user asks to "scope SNOW-NN", "let's
   scope SNOW-NN", "work out SNOW-NN", "spec SNOW-NN", or any phrasing where
   they want a Linear ticket turned from a sentence into a proper scope. Do NOT
   use for: starting work on an already-scoped ticket, asking questions about a
@@ -30,6 +32,25 @@ dev`, `In Progress`, `In Review`, or `Done`, tell the user it has already
 been scoped and stop. Do not proceed past this step on a wrong-state
 ticket.
 
+## Step 1b — Is it worth scoping at all?
+
+Be rigorous before spending a scope on a ticket. Read it against the current
+code, `docs/decisions/` and the rest of the backlog, and ask three questions:
+
+- **Redundant?** The work is already done, has been superseded by another
+  ticket or design, or duplicates an open ticket.
+- **Out of date?** The ticket's premise no longer holds: the code it names has
+  moved or gone, or the decision it rests on was reversed.
+- **Low value?** What it buys is small for what it costs, or it serves a need
+  nobody has yet (built for volume, scale or users that do not exist).
+
+If any answer is yes, **propose parking it instead of scoping it**: state
+`Deferred` (or `Duplicate` / `Done` where that is the true answer), plus a
+one-line comment giving the reason, so a later reader can reopen it knowing
+why it stopped. In interactive use the proposal goes through plan mode for
+Hugo's approval, as a scope would. A ticket only partly out of date is still
+scoped, trimmed to what remains, and the scope says what was dropped and why.
+
 ## Step 2 — Delegate scoping to the scoper agent
 
 Invoke the `scoper` subagent via the Agent tool. Pass it:
@@ -38,6 +59,9 @@ Invoke the `scoper` subagent via the Agent tool. Pass it:
 - The ticket title and description as fetched
 - A clear instruction to produce a scope document and return it as the final
   message
+- **Any scope the ticket already carries**, whether a scoping comment or an
+  Approach / Touch list / Tests section in the description, as the starting
+  point to verify and update rather than to replace
 
 The scoper runs in an isolated context. It will explore the codebase to ground
 the scope in what actually exists. Its working tokens stay in its own context —
@@ -72,22 +96,30 @@ user has approved the scope via the sidebar.
 
 When the sidebar approval comes through:
 
-1. Post the scope as a comment on the Linear ticket using `save_comment` (the
-   comment's `issueId` is the internal `id` from `get_issue`, NOT the `SNOW-NN`
-   identifier).
+1. **One scope per ticket.** If the ticket has no scope yet, post it as a
+   comment with `save_comment` (the comment's `issueId` is the internal `id`
+   from `get_issue`, NOT the `SNOW-NN` identifier). If it already has a scope,
+   **update that one and post no second**:
+   - a scoping comment → `save_comment` with that comment's `id`;
+   - a scope written into the description → rewrite those sections in place
+     with `save_issue` (`patch`), leaving the rest of the description alone.
 2. Check the ticket carries exactly one `Type` and one `Area` label. If either
    is missing or wrong now the scope has settled what the work actually is, fix
    it with `addLabels` / `removeLabels` in the same `save_issue` call. The
    tables in `.claude/skills/create-ticket/SKILL.md` decide them.
-3. Hand the ticket to Codex in the same `save_issue` call: state `Todo` and
-   `delegate: "Codex"`. Read it back with `get_issue` and check the delegate
-   took. If it did not (Codex for Linear is not installed, or the name does
-   not resolve), leave the state at `Todo`, and tell the user the review
-   has to be requested by hand with an `@Codex` comment. Never skip the
-   review by moving the ticket on.
-4. Confirm to the user: "Scope posted, SNOW-$1 in Todo and delegated to Codex
-   for review." The ticket goes no further in this skill — `Ready for dev`
-   is set only by `resolve-scope-review`, after Codex has replied.
+3. Move it to `Todo` in the same `save_issue` call. **Do not set a
+   delegate.** Delegating an issue tells Codex to *implement* it, and in the
+   test that framing overrode `AGENTS.md`.
+4. Ask Codex for the review: post **the review request** from
+   `docs/linear-workflow.md` → "The review request", verbatim, as a new
+   top-level comment. The `@Codex` mention is what starts the Codex task.
+   Then read the comments back: a "This thread is for an agent session with
+   Codex" entry means it started. If none has appeared, tell the user. The
+   ticket stays in `Todo`, and the review can be re-requested by posting the
+   same comment again.
+5. Confirm to the user: "Scope posted, SNOW-$1 in Todo, review requested from
+   Codex." The ticket goes no further in this skill — `Ready for dev` is set
+   only by `resolve-scope-review`, after Codex has replied.
 
 Open questions in the scope do not change this. They go to Codex with the
 rest, and Codex may answer some from the code. `resolve-scope-review` sends

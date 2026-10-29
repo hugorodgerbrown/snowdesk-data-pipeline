@@ -667,9 +667,11 @@ from inside a worktree they might delete.
 ## Linear workflow
 
 Linear (team prefix `SNOW-`) is the issue source of truth. Claude scopes a
-ticket from `Backlog` into `Todo` and delegates it to Codex, which posts one
-`## Codex scope review`; `resolve-scope-review` answers it and moves the
-ticket to `Ready for dev`, or to `Requires input` for a question only Hugo
+ticket from `Backlog` into `Todo` and asks Codex for a review in an
+`@Codex` comment (never by delegating the issue, which Codex reads as
+"implement it"). Codex posts one `## Codex scope review`.
+`resolve-scope-review` answers it, revising the one scoping comment in place,
+and moves the ticket to `Ready for dev`, or to `Requires input` for a question only Hugo
 can answer — one round, never a second (`AGENTS.md` holds Codex's brief;
 [why](docs/decisions/codex-reviews-every-scope-once.md)). Code moves the ticket to
 `In Progress` via the Linear MCP immediately after creating the local branch
@@ -855,7 +857,7 @@ Read these when working in the relevant area:
 | Path to live (staging/production branch split, releases) | [`docs/deployment.md`](docs/deployment.md) |
 | Why pip-audit and npm audit run daily and on dependency changes, not on every PR (dependency-audit.yml, the required `Security audit` check as a skip, VERSION in the filter, the `dependency-audit` issue) | [`docs/decisions/dependency-audits-run-on-a-schedule-not-on-every-pr.md`](docs/decisions/dependency-audits-run-on-a-schedule-not-on-every-pr.md) |
 | Linear workflow (full lifecycle) | [`docs/linear-workflow.md`](docs/linear-workflow.md) |
-| Why every scope gets one Codex review before Ready for dev (AGENTS.md "Scope review", delegate to Codex, ## Codex scope review, resolve-scope-review, ## Scope revision, Requires input, the scheduled sweep) | [`docs/decisions/codex-reviews-every-scope-once.md`](docs/decisions/codex-reviews-every-scope-once.md) |
+| Why every scope gets one Codex review before Ready for dev (AGENTS.md "Scope review", the @Codex review request and why not delegation, ## Codex scope review, resolve-scope-review, one scope edited in place, Requires input, the legacy Codex environment, the scheduled sweep) | [`docs/decisions/codex-reviews-every-scope-once.md`](docs/decisions/codex-reviews-every-scope-once.md) |
 | Code review cycles | [`docs/code-reviews/README.md`](docs/code-reviews/README.md) |
 | Page audits (what each public page says, does and promises) | [`docs/page-audits/README.md`](docs/page-audits/README.md) |
 | Map reviews (the map subsystem explained, plus its findings and their tickets) | [`docs/map-reviews/README.md`](docs/map-reviews/README.md) |
