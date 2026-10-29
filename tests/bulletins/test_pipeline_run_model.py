@@ -9,6 +9,8 @@ stores SUCCESS.
 
 from __future__ import annotations
 
+import datetime
+
 import pytest
 
 from apps.bulletins.models import PipelineRun
@@ -72,3 +74,24 @@ class TestPipelineRunTerminalState:
         run.refresh_from_db()
         assert run.status == PipelineRun.Status.SUCCESS
         assert run.records_created == 2
+
+
+@pytest.mark.django_db
+class TestPipelineRunToString:
+    """Tests for PipelineRun.to_string and its __str__ delegation."""
+
+    def test_to_string_format(self) -> None:
+        """to_string() gives the pk, the status and the start minute."""
+        started_at = datetime.datetime(2026, 1, 15, 7, 30, tzinfo=datetime.UTC)
+        run = PipelineRunFactory.create(
+            status=PipelineRun.Status.SUCCESS, started_at=started_at
+        )
+        run.refresh_from_db()
+
+        assert run.to_string() == f"PipelineRun({run.pk}, SUCCESS, 2026-01-15 07:30)"
+
+    def test_str_delegates_to_to_string(self) -> None:
+        """str(run) is exactly to_string()."""
+        run = PipelineRunFactory.create()
+
+        assert str(run) == run.to_string()
