@@ -39,7 +39,7 @@
   'use strict';
 
   /** Days before today a report is still drawn, as recent. Mirrors
-   * ``_COMMUNITY_RECENT_DAYS`` in apps/public/api.py. */
+   * ``RECENT_DAYS`` in apps/observations/services/ground.py. */
   const RECENT_DAYS = 3;
 
   /** OBSERVATION_FAMILY, most serious first — the server's order. */

@@ -9702,8 +9702,10 @@
     // reaches exists. Nothing about the timing changes: it is the same
     // synchronous run of the same handler.
 
-    // SNOW-419/SNOW-472: tapping an unclustered community-report pin opens a
-    // small popup with the observation type and a relative time — built via
+    // SNOW-1291: tapping an unclustered community-report pin opens the
+    // report's region at its row (below). Only a report with no region to
+    // open keeps SNOW-419/SNOW-472's popup: the report's types and a
+    // relative time — built via
     // DOM methods (not setHTML) since these values, though server-controlled,
     // don't need string-interpolated HTML.
     //
@@ -9729,6 +9731,22 @@
       window.pwaTelemetry?.emit('map.community_reports.marker_tapped', {
         observation_type: types[0] || null,
       });
+
+      // SNOW-1291: a report opens its region, at its row in the region's
+      // "On the ground" section — the panel a tap on the map already opens,
+      // rather than a popup of its own over the terrain. The focus request
+      // goes first, so map_region_sheet.js holds it before the selection
+      // paints the body. A report outside every region, or in one whose
+      // geometry has not loaded, keeps the popup below.
+      const regionFeature = props.region_id ? FEATURE_BY_REGION_ID[props.region_id] : null;
+      if (regionFeature && regionFeature.id != null && props.submission) {
+        document.dispatchEvent(new CustomEvent('snowdesk:observation-focus', {
+          detail: { submission: props.submission, region_id: props.region_id },
+        }));
+        if (regionFeature.id === selectedId) window.pwaRegionSheet?.reopen();
+        else selectFeature(regionFeature.id, { via: 'observation' });
+        return;
+      }
 
       const container = document.createElement('div');
       container.className = 'community-report-popup';

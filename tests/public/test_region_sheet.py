@@ -15,6 +15,8 @@ Covers:
     with the tiles configured, on a day with a bulletin. Since SNOW-1194
     the rules come from /api/problem-terrain/ (tests/public/
     test_problem_terrain.py), not the body.
+  - SNOW-1291: "On the ground" — signed out, a sign-in link; signed in,
+    the button static/js/report.js opens; each row keyed by submission.
   - HALF and FULL: the breadcrumb, then the bulletin page's own body for
     the day (SNOW-1164) — the same sections the page renders, without the
     page's chrome or its superuser debug block — and the region's resorts
@@ -37,6 +39,7 @@ from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.regions.models import Resort
 from tests.factories import (
     BulletinFactory,
+    FieldObservationFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
@@ -550,3 +553,36 @@ class TestProblemTerrainSwitch:
         region = MicroRegionFactory.create()
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-terrain"' not in content
+
+
+@pytest.mark.django_db
+class TestOnTheGround:
+    """SNOW-1291: the sheet's "On the ground" section and its call to report."""
+
+    def test_signed_out_reader_is_asked_to_sign_in(self, client: Client) -> None:
+        region = MicroRegionFactory.create()
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="on-the-ground"' in content
+        assert "Sign in to report" in content
+        assert reverse("accounts:sign_in") in content
+        assert 'data-action="open-report"' not in content
+
+    def test_signed_in_reader_gets_the_report_button(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        region = MicroRegionFactory.create()
+        client.force_login(django_user_model.objects.create_user("u", "u@example.com"))
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-action="open-report"' in content
+        assert "Report what you see" in content
+        assert "Sign in to report" not in content
+        # The sheet IS the map: no link back to it.
+        assert "Report on the map" not in content
+
+    def test_a_report_row_carries_its_submission(self, client: Client) -> None:
+        region = MicroRegionFactory.create()
+        report = FieldObservationFactory.create(
+            region=region, observed_at=timezone.now()
+        )
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert f'data-observation-submission="{report.submission}"' in content

@@ -1,6 +1,6 @@
 ---
 name: an-observation-is-live-today-and-recent-for-three-days
-description: Field reports live today, recent 3 days, one day when scrubbed (community_reports_geojson ?d=, observed_on, reportState)
+description: Field reports live today, recent 3 days, one day when scrubbed (report_window, ground_for_region, observed_on, reportState)
 status: current
 last-reviewed: 2026-10-29
 ---
@@ -62,3 +62,17 @@ type it ticked and its most serious family, and stamped with `observed_on`.
   `--color-obs-*` tokens replace it, mirrored in `FAMILY_COLOURS`, and
   `tests/observations/test_family_colour_parity.py` holds the two copies
   together.
+- **SNOW-1291** put the same reading in the region panel, as "On the
+  ground" at the top of `_region_body.html` (so the bulletin page and the
+  map's sheet say the same thing). `apps/observations/services/ground.py`
+  holds the one window, `report_window`, for both the map's feed and the
+  panel's `ground_for_region`. Today is an open section, "Live today" then
+  "Recent"; another day is a closed "Observed on 28 Oct 2026 · 2" panel,
+  and nothing at all when that day has no reports. It replaced SNOW-324's
+  "Reported today" counts and their "placed manually" footnote.
+- A tap on a pin in a region the map has loaded selects that region and
+  opens its sheet at the report's row (`snowdesk:observation-focus`, read
+  by `map_region_sheet.js`). The popup stays only for a pin whose region is
+  not on the map. The sheet's body is privately cached for up to ten
+  minutes, so a report just filed can take that long to reach the panel;
+  the pin appears at once.

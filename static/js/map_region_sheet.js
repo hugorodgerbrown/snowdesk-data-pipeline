@@ -304,7 +304,55 @@
     sheet.innerHTML = html;
     mirrorAll();
     syncTerrainControls();
+    applyObservationFocus();
   };
+
+  // SNOW-1291: A TAP ON A REPORT'S PIN. map.js selects the report's region
+  // and asks, with `snowdesk:observation-focus`, for that report's row in
+  // the body's "On the ground" section. The body is usually not painted
+  // yet — the peek paints first and the body lands later — so the request
+  // is KEPT and applied after the paint that carries the row: open the
+  // section if it is a closed past-day panel, mark the row
+  // (`data-focused`), raise a phone sheet to half and scroll the row into
+  // view. It applies once, and is dropped when another region is selected,
+  // so a later visit to the region does not jump to a stale report. It is
+  // applied only to an OPEN sheet: a kept body paints before the sheet
+  // opens, and a closed sheet's detent call is a no-op.
+  /** @type {{submission: string, regionId: string}|null} */
+  let observationFocus = null;
+  // The sheet's detent height transition, plus a frame.
+  const DETENT_SETTLE_MS = 320;
+
+  /** @returns {void} */
+  const applyObservationFocus = () => {
+    if (!observationFocus || observationFocus.regionId !== regionId) return;
+    // A closed sheet ignores a detent, and may still hold a body the open
+    // is about to repaint: wait for the open (called again just after it).
+    if (!controller.isOpen()) return;
+    // A uuid from our own feed; quotes and backslashes stripped all the same,
+    // so nothing in it can break out of the attribute selector.
+    const submission = observationFocus.submission.replace(/["\\]/g, '');
+    const row = sheet.querySelector(`[data-observation-submission="${submission}"]`);
+    if (!row) return;
+    observationFocus = null;
+    const panel = row.closest('details');
+    if (panel) panel.open = true;
+    for (const el of sheet.querySelectorAll('[data-focused]')) el.removeAttribute('data-focused');
+    row.setAttribute('data-focused', '');
+    controller.detent('half');
+    // A phone sheet rising from peek is still mid-transition (300ms of height
+    // in static/css/map.css), so a scroll now measures the old height and
+    // leaves the row below the fold. Scroll once the height has settled.
+    setTimeout(() => row.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), DETENT_SETTLE_MS);
+  };
+
+  document.addEventListener('snowdesk:observation-focus', (ev) => {
+    const detail = ev.detail || {};
+    if (!detail.submission || !detail.region_id) return;
+    observationFocus = { submission: String(detail.submission), regionId: String(detail.region_id) };
+    // The body for the region may already be up (its sheet was open).
+    applyObservationFocus();
+  });
 
   // SNOW-979: THE PROBLEM-TERRAIN SWITCH. A body for a region inside the
   // terrain tiles, on a day with a bulletin, carries the "Highlight
@@ -511,6 +559,7 @@
     const detail = ev.detail || {};
     regionId = detail.region_id || null;
     regionName = detail.region_name || '';
+    if (observationFocus && observationFocus.regionId !== regionId) observationFocus = null;
     if (!regionId) {
       close();
       return;
@@ -531,6 +580,7 @@
     // empty-sheet fallback, and the sheet does not open tall and drop.
     load({ paused });
     controller.open({ awaiting });
+    applyObservationFocus();
   });
 
   // REOPENING (2026-10-19). The sheet can close while the region stays
@@ -551,6 +601,7 @@
       if (!regionId || controller.isOpen()) return false;
       load({ paused: playback.isPlaying() });
       controller.open({ awaiting });
+      applyObservationFocus();
       return true;
     },
   });

@@ -11,6 +11,12 @@
  * server had floored to a quarter hour, so the two also disagreed on the
  * number.
  *
+ * Since SNOW-1291 a pin in a region the map has loaded selects that region
+ * instead, and its sheet opens at the report's row
+ * (tests/js/test_map_region_sheet.js). The popup is the fallback for a pin
+ * whose region is not on the map, which is what this fixture is: no
+ * region_id, and no regions loaded.
+ *
  * Booting map.js in jsdom follows tests/js/test_map_detail_popup_exclusivity.js's
  * pattern — see its header for the rationale.
  */

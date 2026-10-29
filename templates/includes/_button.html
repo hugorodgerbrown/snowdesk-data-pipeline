@@ -21,6 +21,10 @@ Context:
     full_width    : bool — when truthy, adds ``w-full`` (default False).
     extra_classes : str  — additional Tailwind classes appended after the
                            standard button classes (e.g. ``"whitespace-nowrap"``).
+    data_action   : str  — optional ``data-action`` attribute VALUE for a
+                           ``<button>``, the hook a JS module delegates a
+                           click on (e.g. ``"open-report"``, SNOW-1291). A
+                           value on a fixed attribute, never a name.
 {% endcomment %}
 {% if href %}
     <a
@@ -33,6 +37,7 @@ Context:
         type="{{ button_type|default:'submit' }}"
         class="{% button_classes variant=variant size=size full_width=full_width %}{% if extra_classes %} {{ extra_classes }}{% endif %}"
         {% if button_id %}id="{{ button_id }}"{% endif %}
+        {% if data_action %}data-action="{{ data_action }}"{% endif %}
     >
         {{ label }}
     </button>

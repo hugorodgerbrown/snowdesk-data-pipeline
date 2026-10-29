@@ -74,10 +74,15 @@ Context:
             {% include "public/partials/_region_body.html" %}
         </div>
     {% else %}
-        <p class="text-sm text-text-2" data-testid="region-sheet-uncovered">
-            {% blocktrans with p=provider_name trimmed %}Avalanche data is not published by {{ p }} for this
-                area{% endblocktrans %}
-        </p>
+        {# No bulletin here, but people still report from it (SNOW-1291): a tap #}
+        {# on one of its pins lands on that report's row.                      #}
+        <div>
+            {% include "observations/partials/_on_the_ground.html" %}
+            <p class="text-sm text-text-2" data-testid="region-sheet-uncovered">
+                {% blocktrans with p=provider_name trimmed %}Avalanche data is not published by {{ p }} for this
+                    area{% endblocktrans %}
+            </p>
+        </div>
     {% endif %}
 
     {# SNOW-979: under the bulletin it paints (Hugo, 23 Oct: the bulletin  #}

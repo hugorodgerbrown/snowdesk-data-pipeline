@@ -604,6 +604,23 @@
     openSheet();
   });
 
+  // SNOW-1291: "Report what you see" in a region's "On the ground" section
+  // (observations/partials/_on_the_ground.html) goes straight to the
+  // report form — the reader has said what they want, so the panel's list
+  // of their own reports would be a step in the way. Delegated on the
+  // document because the button lives in the region sheet, whose body is
+  // repainted on every region and day. MapSheet's click-outside listener
+  // for this sheet was registered at attach, so it has already run (and
+  // found the sheet shut) by the time this opens it.
+  document.addEventListener('click', function (event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest) return;
+    if (!target.closest('[data-action="open-report"]')) return;
+    controller.open();
+    if (IS_ELIGIBLE) startReportFlow();
+    else sheet.innerHTML = gateHtml();
+  });
+
   // SNOW-803: the sheet-level bridge, read by static/js/map.js to honour a
   // ``/?panel=reports`` arrival — what /account/observations/ (and, since
   // SNOW-804, /observations/) redirects to. ``open`` is the roundel's own
