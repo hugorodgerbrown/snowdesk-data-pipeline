@@ -12,18 +12,26 @@ appears both as a standalone admin and as an inline on the custom User admin.
 ``PasskeyCredential`` has a FK to ``auth.User``, so its inline appears on a
 custom ``UserAdmin``.  This module unregisters the default ``User`` admin and
 registers a custom subclass with ``PasskeyCredentialInline`` attached.
+
+Deleting an ``Account`` or an ``auth.User`` here goes through
+``apps.accounts.services.deletion.erase_account`` (SNOW-1174 for the User).
 """
 
 import logging
+from typing import TYPE_CHECKING
 
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as _BaseUserAdmin
+from django.db import transaction
 from django.db.models import QuerySet
 from django.http import HttpRequest
 
 from .models import Account, PasskeyCredential, PushSubscription
 from .services.deletion import erase_account
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User as UserType
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +77,57 @@ class PasskeyCredentialInline(admin.TabularInline):
 
 
 class SnowdeskUserAdmin(_BaseUserAdmin):
-    """Custom UserAdmin that exposes registered passkeys as an inline.
+    """Custom UserAdmin that exposes passkeys and erases through the service.
 
     Passkeys and the Account identity profile are both keyed to auth.User,
-    so both inlines belong here. All other UserAdmin behaviour is inherited
-    unchanged.
+    so both inlines belong here.
+
+    Deleting a user from here erases the person exactly as ``AccountAdmin``
+    and ``accounts.views.delete_account`` do: both delete hooks route through
+    ``apps.accounts.services.deletion.erase_account`` (SNOW-1174). Without
+    the overrides the inherited delete let the ``CASCADE`` take the user's
+    favourites, trips and field reports in bulk and strand the anonymous
+    ``Location`` each one minted — exact coordinates referenced by nothing —
+    along with the sign-up ``RequestLog`` row.
     """
 
     inlines = [AccountInline, PasskeyCredentialInline]
+
+    def delete_model(self, request: HttpRequest, obj: "UserType") -> None:
+        """Erase the user through the shared deletion service.
+
+        A user with no ``Account`` profile (a staff superuser) is erased
+        too; ``getattr`` returns None because Django's
+        ``RelatedObjectDoesNotExist`` subclasses ``AttributeError``.
+
+        Args:
+            request: The admin request performing the delete.
+            obj: The User being deleted.
+
+        """
+        logger.info("Admin erasing user pk=%s", obj.pk)
+        erase_account(obj, getattr(obj, "account", None))
+
+    def delete_queryset(
+        self, request: HttpRequest, queryset: "QuerySet[UserType]"
+    ) -> None:
+        """Erase each selected user through the shared deletion service.
+
+        The admin's bulk delete action calls this instead of ``delete_model``,
+        and a ``queryset.delete()`` here would skip the cleanup for every row
+        at once — the same gap as the single-object path, multiplied. The
+        loop runs in one transaction so a failure part-way leaves every
+        selected user in place rather than some erased and some not.
+
+        Args:
+            request: The admin request performing the delete.
+            queryset: The selected User rows.
+
+        """
+        with transaction.atomic():
+            for user in queryset.select_related("account"):
+                logger.info("Admin erasing user pk=%s (bulk)", user.pk)
+                erase_account(user, getattr(user, "account", None))
 
 
 # Replace the default UserAdmin with our custom one so passkeys are visible.

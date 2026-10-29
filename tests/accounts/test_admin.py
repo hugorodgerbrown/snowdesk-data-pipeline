@@ -11,19 +11,24 @@ Covers:
   - AccountAdmin surfaces acquisition_request (SNOW-514).
   - AccountAdmin's delete hooks erase through the shared deletion service,
     so an admin delete removes as much as /account/ deletion does.
+  - SnowdeskUserAdmin's delete hooks do the same for an auth.User delete
+    (SNOW-1174), including a user with no Account profile.
 """
 
 from typing import Any
 
 import pytest
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import User
-from django.test import RequestFactory
+from django.test import Client, RequestFactory
+from django.urls import reverse
 
 from apps.accounts.admin import (
     AccountAdmin,
     PasskeyCredentialAdmin,
     PushSubscriptionAdmin,
+    SnowdeskUserAdmin,
 )
 from apps.accounts.models import Account, PasskeyCredential, PushSubscription
 from apps.core.models import RequestLog
@@ -31,9 +36,12 @@ from apps.locations.models import Location
 from tests.factories import (
     AccountFactory,
     FavouriteFactory,
+    FieldObservationFactory,
     LocationFactory,
     PasskeyCredentialFactory,
     RequestLogFactory,
+    RouteFactory,
+    TripFactory,
     UserFactory,
 )
 
@@ -199,6 +207,126 @@ class TestAccountAdminDeletion:
         assert Account.objects.filter(pk=bystander.pk).exists()
         assert RequestLog.objects.filter(pk=bystander_log.pk).exists()
         assert Location.objects.filter(pk=bystander_location.pk).exists()
+
+
+@pytest.mark.django_db
+class TestSnowdeskUserAdminDeletion:
+    """Deleting an auth.User through the admin erases the person (SNOW-1174).
+
+    ``SnowdeskUserAdmin`` inherited ``UserAdmin``'s deletes, so an operator
+    deleting a user let the ``CASCADE`` take the favourites, trips and field
+    reports in bulk and strand the anonymous ``Location`` each one minted,
+    plus the sign-up ``RequestLog`` row. Both hooks now route through
+    ``erase_account``. Every pk is read before the delete, because Django
+    clears an instance's pk when it deletes it.
+    """
+
+    def _admin(self) -> SnowdeskUserAdmin:
+        """Return a SnowdeskUserAdmin bound to a fresh admin site."""
+        return SnowdeskUserAdmin(User, AdminSite())
+
+    def _loaded_user(self) -> tuple[User, RequestLog, list[Location]]:
+        """Return a user with an account, a sign-up log and three minted places.
+
+        Returns:
+            The user, the RequestLog its account's ``acquisition_request``
+            points at, and the anonymous Locations its favourite, trip and
+            field observation are each the only referent of.
+
+        """
+        signup = RequestLogFactory.create(account=None, ip_address="203.0.113.21")
+        account = AccountFactory.create(acquisition_request=signup)
+        user = account.user
+        favourite_location = LocationFactory.create(anonymous=True)
+        trip_location = LocationFactory.create(anonymous=True)
+        observation_location = LocationFactory.create(anonymous=True)
+        FavouriteFactory.create(user=user, location=favourite_location)
+        TripFactory.create(
+            created_by=user,
+            route=RouteFactory.create(user=user),
+            meeting_point=trip_location,
+        )
+        FieldObservationFactory.create(user=user, location=observation_location)
+        return user, signup, [favourite_location, trip_location, observation_location]
+
+    def test_delete_model_erases_everything(self) -> None:
+        """Single-object delete takes the user, account, log row and places."""
+        user, signup, locations = self._loaded_user()
+        mont_fort = LocationFactory.create(name="Mont Fort")
+        user_pk = user.pk
+        account_pk = user.account.pk
+        signup_pk = signup.pk
+        location_pks = [location.pk for location in locations]
+
+        self._admin().delete_model(_get_request(), user)
+
+        assert not User.objects.filter(pk=user_pk).exists()
+        assert not Account.objects.filter(pk=account_pk).exists()
+        assert not RequestLog.objects.filter(pk=signup_pk).exists()
+        assert not Location.objects.filter(pk__in=location_pks).exists()
+        assert Location.objects.filter(pk=mont_fort.pk).exists()
+
+    def test_delete_queryset_leaves_unselected_users_alone(self) -> None:
+        """A bulk delete scoped to one user erases that user and no other."""
+        target, target_log, target_locations = self._loaded_user()
+        bystander, bystander_log, bystander_locations = self._loaded_user()
+        target_pk = target.pk
+        target_log_pk = target_log.pk
+        target_location_pks = [location.pk for location in target_locations]
+
+        self._admin().delete_queryset(_get_request(), User.objects.filter(pk=target_pk))
+
+        assert not User.objects.filter(pk=target_pk).exists()
+        assert not RequestLog.objects.filter(pk=target_log_pk).exists()
+        assert not Location.objects.filter(pk__in=target_location_pks).exists()
+        assert User.objects.filter(pk=bystander.pk).exists()
+        assert RequestLog.objects.filter(pk=bystander_log.pk).exists()
+        assert Location.objects.filter(
+            pk__in=[location.pk for location in bystander_locations]
+        ).count() == len(bystander_locations)
+
+    @pytest.mark.parametrize("hook", ["delete_model", "delete_queryset"])
+    def test_user_without_account_is_erased(self, hook: str) -> None:
+        """A user with no Account profile (a staff user) is erased cleanly."""
+        user = UserFactory.create()
+        assert not Account.objects.filter(user=user).exists()
+        location = LocationFactory.create(anonymous=True)
+        FavouriteFactory.create(user=user, location=location)
+        user_pk = user.pk
+        location_pk = location.pk
+
+        if hook == "delete_model":
+            self._admin().delete_model(_get_request(), user)
+        else:
+            self._admin().delete_queryset(
+                _get_request(), User.objects.filter(pk=user_pk)
+            )
+
+        assert not User.objects.filter(pk=user_pk).exists()
+        assert not Location.objects.filter(pk=location_pk).exists()
+
+    def test_delete_selected_action_erases_the_locations(
+        self, admin_client: Client
+    ) -> None:
+        """The changelist's "delete selected" action reaches delete_queryset."""
+        loaded = [self._loaded_user() for _ in range(2)]
+        user_pks = [user.pk for user, _, _ in loaded]
+        location_pks = [
+            location.pk for _, _, locations in loaded for location in locations
+        ]
+
+        response = admin_client.post(
+            reverse("admin:auth_user_changelist"),
+            {
+                "action": "delete_selected",
+                ACTION_CHECKBOX_NAME: [str(pk) for pk in user_pks],
+                "post": "yes",
+            },
+        )
+
+        assert response.status_code == 302
+        assert not User.objects.filter(pk__in=user_pks).exists()
+        assert not Location.objects.filter(pk__in=location_pks).exists()
 
 
 @pytest.mark.django_db
