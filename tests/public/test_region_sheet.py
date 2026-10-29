@@ -110,10 +110,9 @@ def _render_model() -> dict[str, Any]:
     }
 
 
-def _date_row(content: str) -> str:
-    """Return the peek's date row (``sheet-date-row``), to its button."""
-    start = content.index('data-testid="sheet-date-row"')
-    return content[start - 60 : content.index("</button>", start)]
+def _section_days(content: str) -> list[str]:
+    """Return each dated eyebrow's day tag (``section-day``), as markup."""
+    return re.findall(r'<span[^>]*data-testid="section-day"[^>]*>[^<]*</span>', content)
 
 
 def _text(markup: str) -> str:
@@ -123,9 +122,13 @@ def _text(markup: str) -> str:
 
 def _rated_today(region: Any) -> None:
     """Give ``region`` today's rating and a bulletin valid all of today."""
-    today = timezone.localdate()
-    RegionDayRatingFactory.create(region=region, date=today, max_rating="considerable")
-    start = datetime.datetime.combine(today, datetime.time.min, tzinfo=datetime.UTC)
+    _rated_on(region, timezone.localdate())
+
+
+def _rated_on(region: Any, day: datetime.date) -> None:
+    """Give ``region`` a rating and a bulletin valid all of ``day``."""
+    RegionDayRatingFactory.create(region=region, date=day, max_rating="considerable")
+    start = datetime.datetime.combine(day, datetime.time.min, tzinfo=datetime.UTC)
     bulletin = BulletinFactory.create(
         issued_at=start,
         valid_from=start,
@@ -174,38 +177,44 @@ class TestPeek:
         start = content.index('data-testid="sheet-kind"')
         assert "Avalanche region" in content[start : content.index("</p>", start)]
 
-    def test_another_day_highlights_the_date_row(self, client: Client) -> None:
-        """Hugo, 21 Oct: the peek's date row took over SNOW-1165's strip."""
+    def test_another_day_dates_the_bulletin_heading(self, client: Client) -> None:
+        """Hugo, 29 Oct 2026: no "Data from" row, and no "Back to today" in
+        the sheet — the bulletin's first heading names the day, in the info
+        colours, and the date control is the way back.
+        """
         region = MicroRegionFactory.create()
+        _rated_on(region, datetime.date(2026, 2, 3))
         content = _get(
             client, _url(region.region_id.lower(), "2026-02-03")
         ).content.decode()
         assert 'data-testid="another-day-strip"' not in content
-        row = _date_row(content)
-        assert "data-another-day" in row
-        assert "Data from 3 Feb 2026" in _text(row)
-        assert "data-back-to-today" in row
+        assert "Data from" not in content
+        assert "data-back-to-today" not in content
+        (day,) = _section_days(content)
+        assert "data-another-day" in day
+        assert _text(day) == "Tue 3 Feb"
+
+    def test_today_dates_the_bulletin_heading_quietly(self, client: Client) -> None:
+        region = MicroRegionFactory.create()
+        _rated_today(region)
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        (day,) = _section_days(content)
+        assert "data-another-day" not in day
+        assert _text(day) == "Today"
 
     def test_today_shows_no_strip(self, client: Client) -> None:
         region = MicroRegionFactory.create()
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="another-day-strip"' not in content
 
-    def test_header_is_the_tile_and_the_name_then_the_date(
-        self, client: Client
-    ) -> None:
+    def test_header_is_the_tile_and_the_name(self, client: Client) -> None:
         """Hugo, 21 Oct: no code, level or area squeezed under the name."""
         region = MicroRegionFactory.create()
         _rated_today(region)
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-meta"' not in content
-        assert "search-result-badge" not in content[: content.index("sheet-date-row")]
-        row = _date_row(content)
-        assert "data-another-day" not in row
-        assert f"Data from {timezone.localdate():%-d %b %Y}" in _text(row)
-        assert content.index('data-region-sheet-slot="name"') < content.index(
-            "sheet-date-row"
-        )
+        assert "search-result-badge" not in content
+        assert "Data from" not in content
 
     def test_header_carries_the_two_proxies_and_a_close(self, client: Client) -> None:
         region = MicroRegionFactory.create()
@@ -337,20 +346,22 @@ class TestHalf:
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="region-sheet-breadcrumb"' in content
 
-    def test_breadcrumb_is_in_the_peek_and_the_date_below_it(
+    def test_breadcrumb_is_in_the_peek_and_the_day_below_it(
         self, client: Client
     ) -> None:
-        """SNOW-1234: the peek says where the region is; the day follows it."""
+        """SNOW-1234: the peek says where the region is; the bulletin's
+        dated heading, below the peek, names the day (29 Oct 2026).
+        """
         region = MicroRegionFactory.create()
         _rated_today(region)
         content = _get(client, _url(region.region_id.lower())).content.decode()
         peek_at = content.index("data-sheet-peek")
         crumb_at = content.index('data-testid="region-sheet-breadcrumb"')
-        date_at = content.index('data-testid="sheet-date-row"')
-        assert peek_at < crumb_at < date_at
-        # The peek's element closes between the breadcrumb and the date row.
-        assert "</div>" in content[crumb_at:date_at]
-        assert region.subregion.name_en in _text(content[crumb_at:date_at])
+        day_at = content.index('data-testid="section-day"')
+        assert peek_at < crumb_at < day_at
+        # The peek's element closes between the breadcrumb and the day.
+        assert "</div>" in content[crumb_at:day_at]
+        assert region.subregion.name_en in _text(content[crumb_at:day_at])
 
 
 @pytest.mark.django_db
@@ -398,7 +409,8 @@ class TestMapPage:
         for slot in ("rating", "name"):
             assert f'data-region-sheet-slot="{slot}"' in row
         assert 'data-region-sheet-proxy="map-region-pin-control"' in row
-        assert "data-sheet-date-day" in row
+        # No day to fill: the body's dated headings name it (29 Oct 2026).
+        assert "data-sheet-date-day" not in row
         # A blank line holds the breadcrumb's place, so the peek keeps its
         # height when the body lands (SNOW-1234).
         crumb = row[row.index('data-testid="region-sheet-breadcrumb"') :]

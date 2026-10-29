@@ -874,14 +874,26 @@ DANGER_TILE_EMPTY_VARIANTS: tuple[dict[str, Any], ...] = (
     {"caption": "No rating", "context": {}},
 )
 
-SHEET_DATE_ROW_VARIANTS: tuple[dict[str, Any], ...] = (
+DATED_EYEBROW_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "caption": "Today",
-        "context": {"day": datetime.date(2026, 10, 21), "another_day": False},
+        "caption": "Today — a quiet day at the right",
+        "context": {
+            "text": "Avalanche bulletin • SLF",
+            "day": datetime.date(2026, 10, 21),
+            "another_day": False,
+        },
     },
     {
-        "caption": "Another day — highlighted, with Back to today",
-        "context": {"day": datetime.date(2026, 10, 17), "another_day": True},
+        "caption": "Another day — the date in the info colours",
+        "context": {
+            "text": "Weather • Open-Meteo 06:00",
+            "day": datetime.date(2026, 10, 17),
+            "another_day": True,
+        },
+    },
+    {
+        "caption": "No day (a page): the plain eyebrow",
+        "context": {"text": "On the ground"},
     },
 )
 

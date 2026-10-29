@@ -1229,34 +1229,6 @@ input[type="time"]::-webkit-date-and-time-value {
   font-size: var(--text-meta);
 }
 
-/* —— A map sheet's date row (Hugo, 21 Oct) ——
-   "Data from 21 Oct 2026", full width under the sheet's header
-   (includes/_sheet_date_row.html). Quiet on today; on another day the info
-   colours the another-day strip uses — information about what is on
-   screen, never an EAWS yellow — and its "Back to today" shows. The state
-   is one attribute so the script filling the region sheet's blank peek
-   sets that and nothing else.
-   ————————————————————————————————————————— */
-.sheet-date-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 1rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: var(--radius-tag);
-  background: var(--color-bg);
-  color: var(--color-text-2);
-  font-size: 0.875rem;
-}
-.sheet-date-row[data-another-day] {
-  background: var(--color-status-info-bg);
-  color: var(--color-status-info-text);
-  font-weight: 500;
-}
-.sheet-date-row:not([data-another-day]) [data-back-to-today] {
-  display: none;
-}
-
 /* —— Problem tag used as <summary> —————————
    Removes the native disclosure triangle when
    a .problem-tag is also a <summary>.

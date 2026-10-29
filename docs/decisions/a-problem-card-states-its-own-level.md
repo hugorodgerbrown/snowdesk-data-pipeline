@@ -2,7 +2,7 @@
 name: a-problem-card-states-its-own-level
 description: panel-title-level "Considerable (3-)"; _day_risk_profile_adds_to_cards; region sheet peek holds the breadcrumb
 status: current
-last-reviewed: 2026-10-25
+last-reviewed: 2026-10-29
 ---
 
 # A problem card states its own level
@@ -17,7 +17,7 @@ words after it for a screen reader. The Day Risk Profile renders only where
 it says what no card can: an elevation split (ALBINA, Météo-France), or a
 day with no problem cards (`views._day_risk_profile_adds_to_cards`). On the
 map's region sheet the peek holds the tile, the name and the breadcrumb; the
-"Data from" date row sits just below it.
+bulletin's first heading names the day (a-sheet-names-its-day-in-its-section-headers.md).
 
 ## Why
 

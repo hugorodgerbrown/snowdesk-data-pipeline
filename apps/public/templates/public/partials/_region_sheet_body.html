@@ -14,14 +14,15 @@ next part of it:
      the surface renders it a second time, empty, for the page to fill
      before this body arrives) — the header ROW: the danger tile, the
      region's name, the pin and download controls and the ×; then where
-     the region is, the breadcrumb. The day's full-width "Data from <day>"
-     row follows just below the peek (SNOW-1234 swapped the two; Hugo,
-     21 Oct, had taken the code, level and area out of the header). The name truncates rather
+     the region is, the breadcrumb (Hugo, 21 Oct, had taken the code,
+     level and area out of the header). The day has no row of its own:
+     the body's dated section headers name it (includes/_dated_eyebrow.html;
+     Hugo, 29 Oct 2026, retiring the "Data from <day>" row). The name truncates rather
      than wraps, because a peek that grows a line for a long name stops
      being a peek (Hugo's review, 16 Oct). The header is also
      ``data-sheet-drag``, so the reader can drag the sheet by it as well as
      by the handle; its buttons keep their own press.
-  2. HALF and FULL — the day's date row, then the region's bulletin for the
+  2. HALF and FULL — the region's bulletin for the
      day: the bulletin page's own body, ``public/partials/_region_body.html``
      (SNOW-1164). On a phone the sheet at full height covers the screen, so
      the sheet IS the page rather than a summary with a link on to it. FULL

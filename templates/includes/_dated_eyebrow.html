@@ -1,0 +1,44 @@
+{% load i18n %}
+{% comment %}
+templates/includes/_dated_eyebrow.html — a section eyebrow that names the day
+its section is for, at the right of the row (Hugo, 29 Oct 2026).
+
+The map's sheets carried a full-width "Data from 29 Oct 2026" row under
+their headers (includes/_sheet_date_row.html, 21 Oct). On today it said
+what the date control already said, in the tallest row of the peek; on
+another day it said it once, far from the sections it was about. So the
+row went, and each DATED section — the bulletin, the weather, "On the
+ground" — names its own day: a quiet "Today", or on another day the date
+in the info colours ("Mon 27 Oct"). Lists that are not about a day (the
+resorts in a region, "Where this is") carry none. There is no "Back to
+today" here: the date control's "Today" is the way back.
+
+Without ``day`` it is the plain eyebrow, so a body shared by a page and a
+sheet passes ``day`` only in the sheet (the page's title card names the day).
+
+Context:
+  text        — heading copy (required).
+  day         — the date the section is for, or None for a plain eyebrow.
+  another_day — True when ``day`` is not today.
+  tag, heading_id, data_testid — passed to includes/_eyebrow.html.
+  class_extra — extra classes for the row (or the plain eyebrow), e.g. "mb-3".
+{% endcomment %}
+{% if day %}
+    <div class="flex items-baseline gap-2{% if class_extra %} {{ class_extra }}{% endif %}" data-testid="dated-eyebrow">
+        {% include "includes/_eyebrow.html" with text=text tag=tag heading_id=heading_id data_testid=data_testid class_extra="min-w-0 truncate" only %}
+        {% if another_day %}
+            <span
+                class="ml-auto shrink-0 rounded-sm bg-status-info-bg px-2 py-0.5 text-xs font-semibold text-status-info-text"
+                data-testid="section-day"
+                data-another-day
+            >{{ day|date:"D j M" }}</span>
+        {% else %}
+            <span
+                class="ml-auto shrink-0 text-xs font-medium text-text-3"
+                data-testid="section-day"
+            >{% trans "Today" %}</span>
+        {% endif %}
+    </div>
+{% else %}
+    {% include "includes/_eyebrow.html" with text=text tag=tag heading_id=heading_id data_testid=data_testid class_extra=class_extra only %}
+{% endif %}

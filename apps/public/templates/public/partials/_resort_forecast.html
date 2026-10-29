@@ -66,6 +66,8 @@ Context:
   forecast_updated_at — datetime or None: the latest fetch among the
                     points, named in the eyebrow.
   in_map          — bool, optional: rendered in the map's place sheet.
+  section_day, another_day — optional, the place sheet only: the day the
+                    eyebrow names (includes/_dated_eyebrow.html).
   is_today        — bool: the first tile is today, so it says "Today";
                     on another day it names its date (SNOW-1164).
   selector_name   — str, optional: the radio group's ``name`` and id
@@ -93,7 +95,7 @@ Context:
     >
         {# "Weather • Open-Meteo 06:01": the source and when it was last   #}
         {# fetched head the section, so no footer line repeats them (Hugo, #}
-        {# 27 Oct 2026). In the map the sheet's date row names the day.    #}
+        {# 27 Oct 2026). In the map the eyebrow names the day too.        #}
         {% if forecast_updated_at %}
             {% blocktrans with updated=forecast_updated_at|time:"H:i" trimmed asvar forecast_eyebrow %}
                 Weather • Open-Meteo {{ updated }}
@@ -101,7 +103,7 @@ Context:
         {% else %}
             {% trans "Weather" as forecast_eyebrow %}
         {% endif %}
-        {% include "includes/_eyebrow.html" with tag="h2" heading_id=group_name|add:"-heading" text=forecast_eyebrow class_extra="mb-3" only %}
+        {% include "includes/_dated_eyebrow.html" with tag="h2" heading_id=group_name|add:"-heading" text=forecast_eyebrow class_extra="mb-3" day=section_day another_day=another_day only %}
         {# SNOW-1164: the strip lays itself out by its card's width, not the  #}
         {# viewport's (@container, @md: = 28rem), because the same body sits  #}
         {# in the map's ~350px inset panel on a desktop as well as the page.  #}

@@ -43,6 +43,9 @@ Context (beyond what each included partial documents):
   target_date     — the day shown; ``is_today`` — whether it is today.
   forecast_points — the forecast's (``_resort_forecast.html``).
   in_map          — bool: rendered inside the map's place sheet.
+  section_day, another_day — the place sheet only: the day the bulletin
+                    and weather eyebrows name (includes/_dated_eyebrow.html,
+                    Hugo, 29 Oct 2026). Absent on the page.
 {% endcomment %}
 <div class="flex flex-col gap-8{% if not in_map %} lg:flex-row lg:items-start lg:gap-10{% endif %}">
     <div class="flex min-w-0 flex-col {% if in_map %}gap-6{% else %}gap-12 lg:flex-1{% endif %}">
@@ -55,7 +58,7 @@ Context (beyond what each included partial documents):
             {% else %}
                 {% translate "Avalanche bulletin" as region_eyebrow %}
             {% endif %}
-            {% include "includes/_eyebrow.html" with tag="h2" heading_id="resort-region-heading" text=region_eyebrow class_extra="mb-3" only %}
+            {% include "includes/_dated_eyebrow.html" with tag="h2" heading_id="resort-region-heading" text=region_eyebrow class_extra="mb-3" day=section_day another_day=another_day only %}
             {# data-place-link-card: the onboarding guide rings this card, not the row it clips. #}
             <div class="overflow-hidden rounded-card border border-border bg-card" data-place-link-card>
                 {% if day_rating %}
