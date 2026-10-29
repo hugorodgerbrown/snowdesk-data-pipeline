@@ -1722,6 +1722,32 @@ html:has(> body.map-fullscreen) > body {
     height: 100%;
 }
 
+/* iOS and iPadOS 26 draw a Liquid Glass "scroll edge" blur over the top
+   ~40pt of a web view, in Safari and the home-screen app alike, and
+   there is no meta tag or CSS property that turns it off. On the map the
+   page fits the screen exactly, so nothing ever scrolls under it — yet
+   the blur still lands on the nav, smearing the wordmark and Sign in.
+
+   WebKit skips the blur when it finds a fixed or sticky, opaque,
+   full-width box at the top edge, and extends that box's colour into
+   the status bar instead (its "fixed container edges" sampling). So the
+   map page's nav is made sticky at the top with the page's own
+   background. The body never scrolls (see .map-fullscreen above), so
+   sticky changes nothing about where the nav sits; it only lets WebKit
+   see it.
+
+   Sticky makes the nav a stacking context, which would trap its account
+   and season menus (z-50) beneath the map's own overlays (the 0-8 band,
+   see the stacking note above .map-legend). z-index 9 keeps the nav, and
+   the menus inside it, above that band and below every shell surface
+   (--z-banner and up). */
+body.map-fullscreen > nav {
+    position: sticky;
+    top: 0;
+    z-index: 9;
+    background-color: var(--color-bg);
+}
+
 #map {
     flex: 1 1 auto;
     min-height: 0;
