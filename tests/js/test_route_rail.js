@@ -342,6 +342,42 @@ describe('open', () => {
     expect(slot.children).toHaveLength(0);
   });
 
+  describe('a copy of an SAC tour (SNOW-1303)', () => {
+    const sacBlock = () => {
+      const node = document.createElement('div');
+      node.setAttribute('data-sac-block', '');
+      return node;
+    };
+    beforeEach(() => {
+      window.pwaSkiTours = { savedBlock: vi.fn(sacBlock) };
+    });
+    afterEach(() => {
+      delete window.pwaSkiTours;
+    });
+
+    it('seats the SAC block for a saved copy', () => {
+      window.pwaRouteRail.open(feature({ sac: { grade: 'AD' } }));
+
+      const slot = rail.querySelector('[data-route-rail-claim]');
+      expect(slot.hidden).toBe(false);
+      expect(slot.querySelector('[data-sac-block]')).not.toBeNull();
+      expect(window.pwaSkiTours.savedBlock).toHaveBeenCalledWith({ grade: 'AD' });
+    });
+
+    it('seats the SAC block above a shared copy\'s Save', () => {
+      const save = document.createElement('button');
+      window.pwaRouteRail.open(
+        feature({ uuid: undefined, token: 'abc', pending: true, sac: { grade: 'AD' } }),
+        { claim: save },
+      );
+
+      const slot = rail.querySelector('[data-route-rail-claim]');
+      expect(slot.children).toHaveLength(2);
+      expect(slot.children[0].hasAttribute('data-sac-block')).toBe(true);
+      expect(slot.children[1]).toBe(save);
+    });
+  });
+
   it('omits an unknown ascent rather than showing zero', () => {
     window.pwaRouteRail.open(feature({ ascent_m: null }));
 

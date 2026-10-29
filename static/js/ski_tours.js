@@ -506,9 +506,11 @@
    * Build the tour's block for the panel's claim slot.
    *
    * @param {Object<string, any>} props The tour Feature's properties.
+   * @param {{saved?: boolean}} [options] `saved`: the block for a copy the
+   *   reader already holds (SNOW-1303) — SAC's facts and guide, no Save.
    * @returns {HTMLElement}
    */
-  function buildClaim(props) {
+  function buildClaim(props, options) {
     const node = /** @type {HTMLElement} */ (
       /** @type {DocumentFragment} */ (claimTemplate.content.cloneNode(true)).firstElementChild
     );
@@ -526,6 +528,12 @@
         node.querySelector('[data-ski-tour-guide-note]')?.remove();
         node.querySelector('[data-ski-tour-guide-see]')?.remove();
       }
+    }
+    if (options && options.saved) {
+      node.querySelectorAll('[data-ski-tour-save-slot]').forEach((el) => el.remove());
+      const actions = node.querySelector('[data-ski-tour-actions]');
+      if (actions && !actions.children.length) actions.remove();
+      return node;
     }
     const save = /** @type {HTMLButtonElement|null} */ (node.querySelector('[data-ski-tour-save]'));
     if (save) {
@@ -825,5 +833,13 @@
     tap: tap,
     find: find,
     openSummit: openSummit,
+    /**
+     * SNOW-1303: the SAC block for a saved copy's panel — the route rail
+     * calls this with a copy's `sac` property.
+     *
+     * @param {Object<string, any>} props The tour's properties.
+     * @returns {?HTMLElement}
+     */
+    savedBlock: (props) => (claimTemplate ? buildClaim(props, { saved: true }) : null),
   });
 })();

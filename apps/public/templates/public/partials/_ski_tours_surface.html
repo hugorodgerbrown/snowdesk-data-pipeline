@@ -72,17 +72,20 @@ Context expected:
             <span data-ski-tour-shows></span>
             <span data-ski-tour-guide-see>{% trans "See the SAC guide for details." %}</span>
         </p>
-        <div class="flex gap-2">
+        {# SNOW-1303: a saved copy shows this block without its Save.     #}
+        <div data-ski-tour-actions class="flex gap-2">
             {% if routes_upload_eligible %}
                 <button
                     type="button"
                     data-ski-tour-save
+                    data-ski-tour-save-slot
                     class='{% button_classes variant="primary" size="compact" %} hover-affordance h-11 flex-1 disabled:opacity-50'
                 >
                     {% trans "Save to my routes" %}
                 </button>
             {% else %}
                 <a
+                    data-ski-tour-save-slot
                     href="{{ route_draw_signin_url }}"
                     class='{% button_classes variant="primary" size="compact" is_anchor=True %} hover-affordance inline-flex h-11 flex-1 items-center justify-center'
                 >{% trans "Sign in to save" %}</a>
