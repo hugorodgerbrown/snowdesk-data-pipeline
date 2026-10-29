@@ -207,6 +207,11 @@ top-level comment, once the scope is on the ticket:
 Follow the "Scope review (Linear)" section of `AGENTS.md` in the repo: review this ticket's scope (the scoping comment, or the Approach / Touch list / Tests / Open questions sections of the description) against the code, then reply with a single comment in exactly the shape that section gives, starting with the heading `## Codex scope review` and a `**Verdict:**` line. Leave the product questions you cannot answer from the code as Questions — do not decide them. Your reply is the whole deliverable.
 ```
 
+**Write `@Codex` only where you mean to start a task.** A mention starts
+a Codex task on Linear and on GitHub alike, even inside backticks. Quoting
+this request in a PR description started an unrequested Codex task on that
+PR. Elsewhere, refer to it as "the review request".
+
 **Never delegate the issue to Codex instead.** Linear's delegation hands
 Codex the ticket's title and description as a task to *do*. In the
 2026-10-29 test that framing beat `AGENTS.md`: Codex implemented the
