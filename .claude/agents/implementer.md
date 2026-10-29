@@ -109,7 +109,8 @@ pushing — you don't need to run the full gate yourself.
   `upsert_bulletin()`. Follow existing patterns for new parsing; the
   per-provider details are in `apps/bulletins/CLAUDE.md`.
 - Linear MCP quirks: `save_issue` uses internal `id`, not `SNOW-NN`. State names
-  are `Todo`, `In Progress`, `In Review`, `Done`, `Ready for dev`, `Backlog`.
+  are `Backlog`, `Todo`, `Requires input`, `Ready for dev`, `In Progress`,
+  `In Review`, `Done`, `Deferred`.
 
 ## What to avoid
 

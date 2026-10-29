@@ -7,8 +7,9 @@ description: >
   discussion into tickets" — and whenever creating a follow-up ticket mid-task.
   Covers the two creation modes (one ticket vs many from one discussion), the
   decomposition rule (one ticket per independently-shippable unit), the
-  four-section scoping comment contract, the rule that only a clean scoping
-  comment promotes a ticket to `Ready for dev`, and the Linear MCP parameter
+  four-section scoping comment contract, the hand to Codex for its one scope
+  review (a scoped ticket goes to `Todo`, never straight to `Ready for dev`),
+  and the Linear MCP parameter
   traps (priority/estimate enums, exact state names, how to set blocks /
   blockedBy / relatedTo / parentId). Do NOT use to scope a ticket that already
   exists (`scope`) or to implement one that is already scoped (`implement`).
@@ -22,7 +23,9 @@ Linear workspace (team prefix `SNOW-`). The full narrative lives in
 `docs/linear-workflow.md`; this skill is the agent-facing rulebook.
 
 It is the front of the lifecycle: this skill makes the ticket, `scope` takes
-an existing ticket from `Todo` to `Ready for dev`, and `implement` builds it.
+an existing ticket from `Backlog` to `Todo` and hands it to Codex,
+`resolve-scope-review` answers Codex and moves it to `Ready for dev` (or
+`Requires input`), and `implement` builds it.
 
 Linear is the source of truth. Nothing of substance lives only in a chat
 window — if it matters, it goes on the ticket.
@@ -31,8 +34,7 @@ window — if it matters, it goes on the ticket.
 
 - Creating a new ticket (from a planning conversation, a bug just noticed,
   a discussion that decomposed into work).
-- Posting a scoping comment on an existing ticket to move it to
-  `Ready for dev`.
+- Posting a scoping comment on an existing ticket and handing it to Codex.
 - Updating a ticket's description, labels, priority, or estimate.
 
 Posting a **project** status update is a different job — that's the
@@ -46,8 +48,13 @@ stop — that's the `implement` skill's job.
 ### Mode 1 — Single ticket, scoped in one pass
 
 Conversation has produced a single, clear piece of work. Create the issue
-*and* post the scoping comment *and* move to `Ready for dev` in one
-sequence. No intermediate `Todo` stop.
+*and* post the scoping comment *and* hand it to Codex, in that order:
+create the issue in `Backlog` with no delegate, post the scoping comment,
+and only once the comment is posted call `save_issue` with state `Todo`
+and `delegate: "Codex"`, then read it back to check the delegate took.
+Delegating first would let Codex start on a ticket with no scope to
+review. Every scoped ticket goes through Codex's one
+review — there is no direct route to `Ready for dev`.
 
 ### Mode 2 — Multiple tickets from one discussion
 
@@ -56,22 +63,22 @@ piece:
 
 - Create the issue with title, label, priority, and a one-paragraph
   description.
-- If the approach is settled in the discussion → post the scoping comment
-  and move to `Ready for dev`.
-- If the approach is still fuzzy → leave at `Todo` and add a note naming
-  the open question.
+- If the approach is settled in the discussion → post the scoping comment,
+  move to `Todo` and delegate to Codex, as in Mode 1.
+- If the approach is still fuzzy → leave at `Backlog` and add a note naming
+  the open question. `scope` picks it up from there.
 
 After creation, report back a summary like:
 
-> Created SNOW-102 (Ready for dev), SNOW-103 (Ready for dev),
-> SNOW-104 (Todo — needs decision on cache strategy).
+> Created SNOW-102 (Todo, with Codex), SNOW-103 (Todo, with Codex),
+> SNOW-104 (Backlog — needs decision on cache strategy).
 
 ## Decomposition rules
 
 - **One ticket per independently-shippable unit.** "Add feature X + refactor
   the surrounding module" is two tickets, not one.
 - **Don't promote underspecified work.** If the approach for a ticket isn't
-  settled, it stays at `Todo` with a note on what's missing — even if the
+  settled, it stays at `Backlog` with a note on what's missing — even if the
   adjacent tickets are ready. Underspecified tickets leaking into
   implementation is the failure mode this rule prevents.
 - **Title, Type + Area labels, priority, one-paragraph description are
@@ -135,22 +142,24 @@ inherits full context. Every scoping comment has these four sections:
 - **Tests** — what will be covered.
 - **Open questions** — anything still undecided.
 
-**Promotion rule:** if `Open questions` is non-empty, the ticket stays at
-`Todo`. Only a clean scoping comment (no open questions) moves a ticket to
-`Ready for dev`.
+**Promotion rule:** a scoped ticket goes to `Todo` and to Codex, whatever
+its Open questions say — Codex may answer some from the code. Only
+`resolve-scope-review` moves a ticket to `Ready for dev`, and only when the
+scope that survives Codex's review has no open questions; otherwise it goes
+to `Requires input` for Hugo.
 
 ## Status transitions this skill owns
 
-This skill writes to Linear up to `Ready for dev`. The later states are not
-this skill's concern: `In Progress` is moved by Code via the Linear MCP when
+This skill writes to Linear up to `Todo`. `Ready for dev` and `Requires
+input` belong to `resolve-scope-review`. The later states are not this
+skill's concern: `In Progress` is moved by Code via the Linear MCP when
 the branch is created, and `In Review` / `Done` by the GitHub–Linear
 integration (see docs/linear-workflow.md).
 
 | Status          | When this skill sets it                                     |
 |-----------------|-------------------------------------------------------------|
-| `Backlog`       | Ticket created but not yet triaged                          |
-| `Todo`          | Ready to be picked up, approach not yet settled             |
-| `Ready for dev` | Clean scoping comment posted (no open questions)            |
+| `Backlog`       | Ticket created, not yet scoped (or approach still fuzzy)    |
+| `Todo`          | Scoping comment posted, delegated to Codex for review       |
 
 ## Linear MCP tool gotchas
 
@@ -262,10 +271,11 @@ before the implementer picks up a malformed ticket.
 ## When to stop and ask
 
 - The user asks for a ticket but the approach in the discussion is genuinely
-  unclear → propose a `Todo` ticket with the open question called out,
+  unclear → propose a `Backlog` ticket with the open question called out,
   rather than guessing the approach.
-- The user asks to promote a ticket to `Ready for dev` but there are open
-  questions in the scoping comment → refuse the promotion and name the
-  open questions.
+- The user asks to move a ticket straight to `Ready for dev` → explain that
+  it goes through Codex's review first, and ask whether to skip the review
+  for this one ticket. Skip it only on an explicit yes, and say on the
+  ticket that the review was skipped and who decided.
 - Priority is ambiguous from context → ask once, don't guess. Labels are
   not ambiguous: the Type and Area tables above decide them.

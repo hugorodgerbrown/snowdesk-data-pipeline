@@ -2,8 +2,9 @@
 name: scope
 description: |
   Scope a Linear ticket: read the description, explore the codebase, produce a
-  written scope, post it as a Linear comment, and transition the ticket from
-  Todo to Ready for dev. Use when the user asks to "scope SNOW-NN", "let's
+  written scope, post it as a Linear comment, move the ticket from Backlog to
+  Todo and delegate it to Codex for its one scope review (the
+  `resolve-scope-review` skill takes it on from there). Use when the user asks to "scope SNOW-NN", "let's
   scope SNOW-NN", "work out SNOW-NN", "spec SNOW-NN", or any phrasing where
   they want a Linear ticket turned from a sentence into a proper scope. Do NOT
   use for: starting work on an already-scoped ticket, asking questions about a
@@ -20,11 +21,14 @@ You are scoping Linear ticket SNOW-$1 in the Snowdesk codebase.
 
 Use the Linear MCP `get_issue` tool to fetch SNOW-$1.
 
-**Hard precondition:** the ticket must be in `Todo` state. If it is in
-`Backlog`, tell the user it needs to be prioritised first and stop. If it
-is in `Ready for dev`, `In Progress`, `In Review`, or `Done`, tell the user
-it has already been scoped and stop. Do not proceed past this step on a
-wrong-state ticket.
+**Hard precondition:** the ticket must be in `Backlog` state — that is
+where every unscoped ticket lives. If it is in `Deferred`, tell the user it
+has been parked and needs moving to `Backlog` first, and stop. If it is in
+`Todo`, it is already scoped and waiting on Codex's review — point at
+`resolve-scope-review` and stop. If it is in `Requires input`, `Ready for
+dev`, `In Progress`, `In Review`, or `Done`, tell the user it has already
+been scoped and stop. Do not proceed past this step on a wrong-state
+ticket.
 
 ## Step 2 — Delegate scoping to the scoper agent
 
@@ -75,6 +79,16 @@ When the sidebar approval comes through:
    is missing or wrong now the scope has settled what the work actually is, fix
    it with `addLabels` / `removeLabels` in the same `save_issue` call. The
    tables in `.claude/skills/create-ticket/SKILL.md` decide them.
-3. Transition the ticket to `Ready for dev` using `save_issue` with the existing
-   `id` and the new `stateId`.
-4. Confirm to the user: "Scope posted, SNOW-$1 moved to Ready for dev."
+3. Hand the ticket to Codex in the same `save_issue` call: state `Todo` and
+   `delegate: "Codex"`. Read it back with `get_issue` and check the delegate
+   took. If it did not (Codex for Linear is not installed, or the name does
+   not resolve), leave the state at `Todo`, and tell the user the review
+   has to be requested by hand with an `@Codex` comment. Never skip the
+   review by moving the ticket on.
+4. Confirm to the user: "Scope posted, SNOW-$1 in Todo and delegated to Codex
+   for review." The ticket goes no further in this skill — `Ready for dev`
+   is set only by `resolve-scope-review`, after Codex has replied.
+
+Open questions in the scope do not change this. They go to Codex with the
+rest, and Codex may answer some from the code. `resolve-scope-review` sends
+the rest to Hugo as `Requires input`.
