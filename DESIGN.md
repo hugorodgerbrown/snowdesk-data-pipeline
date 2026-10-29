@@ -37,7 +37,9 @@ colors:
   basemap-ign-plan: "#9333ea"
   basemap-basemap-at: "#0d9488"
   marker-favourite: "#1a73e8"
-  marker-observation: "#e8711a"
+  obs-warning: "#1a1916"
+  obs-surface: "#0369a1"
+  obs-trail: "#0f766e"
   route-line: "#c026d3"
   route-line-casing: "#1a1916"
   card-hover: "#eeeae2"
@@ -330,7 +332,7 @@ Snowdesk shows the avalanche bulletin as the provider published it — every fie
 - **EAWS danger scale — a regulated standard, not a palette:** `eaws-low` #ccff66, `eaws-moderate` #ffff00, `eaws-considerable` #ff9900, `eaws-high` #ff0000, `eaws-very-high` #820100. Theme-invariant; never re-tint or reuse. Ink on the fill is `eaws-*-fg` (near-black 1–3, white 4–5). Pale bands use `eaws-*-tint` with `eaws-*-text`.
 - **Status** pairs (`status-*-bg` / `status-*-text`) only by meaning. **Offline availability** is its own family: `sync-ok`, `sync-off`, `sync-partial`, `sync-blocked`.
 - **Accent** `accent` #2563eb is an interactive blue with no severity: switch ON, the "overlay shown" ring. Not decoration.
-- **Map hues are owned:** EAWS yellow→red; favourites `marker-favourite` #1a73e8; observations `marker-observation` #e8711a; routes `route-line` #c026d3 (legs: climb `route-rail-climb` #64748b dashed, descent `route-rail-descent` #c026d3) — a shared route is drawn the same; basemap identity colours per basemap. A new mark takes a hue nobody owns.
+- **Map hues are owned:** EAWS yellow→red; favourites `marker-favourite` #1a73e8; field reports by family — warning signs `obs-warning` #1a1916, snow surface `obs-surface` #0369a1, on the trail `obs-trail` #0f766e; routes `route-line` #c026d3 (legs: climb `route-rail-climb` #64748b dashed, descent `route-rail-descent` #c026d3) — a shared route is drawn the same; basemap identity colours per basemap. A new mark takes a hue nobody owns.
 
 ### Dark theme
 

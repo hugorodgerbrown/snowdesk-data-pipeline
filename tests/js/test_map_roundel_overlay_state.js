@@ -223,6 +223,9 @@ let mapStub;
 
 beforeAll(async () => {
   localStorage.clear();
+  // Community reports are on by default (SNOW-1290); this suite boots with
+  // them switched off so its first enable still reaches the network.
+  localStorage.setItem('snowdesk.map.overlay.community_reports', 'false');
   buildFixture();
   Object.defineProperty(navigator, 'storage', {
     value: { estimate: async () => ({ quota: 1e10, usage: 0 }) },
@@ -287,8 +290,8 @@ beforeEach(async () => {
   if (!mapStub.getLayer('favourites-pin')) await installFavouritesLayers();
 });
 
-// FIRST in the file on purpose: community reports are off by default, so
-// this is the only point at which nothing has fetched them yet and an
+// FIRST in the file on purpose: the suite boots with community reports
+// switched off, so this is the only point at which nothing has fetched them yet and an
 // enable genuinely reaches the network. map.js loads each lazy overlay once
 // per session, so a later test could only ever exercise the short-circuit.
 describe('an overlay whose data never arrives', () => {

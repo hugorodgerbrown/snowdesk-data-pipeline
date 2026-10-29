@@ -964,11 +964,14 @@ def test_map_layer_menu_level_one_order() -> None:
         ">Your data<",
         'data-overlay-key="favourites"',
         'data-overlay-key="routes"',
-        'data-overlay-key="community_reports"',
         'data-overlay-key="downloads"',
     ]
     positions = [main.index(marker) for marker in markers]
     assert positions == sorted(positions), markers
+    # SNOW-1290: field reports are read beside the bulletin, as "On the
+    # ground" on the Bulletins page, not among the reader's own data.
+    assert 'data-overlay-key="community_reports"' not in main
+    assert 'data-overlay-key="community_reports"' in _layers_page(content, "bulletins")
     assert ">Map layers<" in content
     assert "data-section-toggle" not in content
     assert "Map display options" not in content
@@ -1077,7 +1080,7 @@ def test_map_layer_menu_options_pages() -> None:
         "SLF bulletins (CH)",
         "MétéoFrance (FR)",
         "ALBINA (AT, IT)",
-        "Field observations",
+        "On the ground",
         "Major regions (EAWS L1)",
         "Downloaded areas",
     ):

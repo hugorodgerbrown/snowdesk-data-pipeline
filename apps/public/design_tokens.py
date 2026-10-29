@@ -648,7 +648,6 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-route-line", "Saved route", "#c026d3", None),
             Token("--color-route-line-casing", "Saved route (casing)", "#1a1916", None),
             Token("--color-marker-favourite", "Favourite star", "#1a73e8", None),
-            Token("--color-marker-observation", "Community report", "#e8711a", None),
             # SNOW-1289: the three observation families.
             Token(
                 "--color-obs-warning",

@@ -131,6 +131,8 @@ interface Window {
   pwaTerrainFilterCore: any;
   /** static/js/bulletin_terrain_core.js — the problem-terrain layer's rules, states and clipping (SNOW-979, SNOW-1194). */
   pwaBulletinTerrainCore: any;
+  /** static/js/community_reports_core.js — the "On the ground" layer's live / recent / day states (SNOW-1290). */
+  pwaCommunityReportsCore: any;
   /** static/js/map_weather_core.js — WMO code to icon, cluster collapse. */
   pwaWeatherCore: any;
   /** map.js — the weather payload's forecast window, for map_weather_window.js (SNOW-1196). */

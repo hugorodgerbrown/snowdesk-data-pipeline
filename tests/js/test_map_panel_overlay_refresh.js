@@ -342,14 +342,74 @@ describe('a panel announces a write, so the map re-reads its layer', () => {
       expect(lastSetData(mapStub, 'community-reports').features).toEqual([]);
     });
 
-    it('caches the pristine payload, not the age-faded copy it draws', async () => {
-      // The drawn collection carries the age-opacity property this map adds
-      // client-side; the cached one must be the server's, so an offline
-      // read-back re-derives the fade against the time it is READ.
+    it('caches the pristine payload, not the stamped copy it draws', async () => {
+      // The drawn collection carries the live / recent state this map adds
+      // client-side (SNOW-1290); the cached one must be the server's, so an
+      // offline read-back re-derives the states against the day it is READ.
       document.dispatchEvent(new CustomEvent('snowdesk:reports-changed'));
 
       await waitFor(() => putOverlay.mock.calls.length > 0);
       expect(putOverlay).toHaveBeenCalledWith('community_reports', REPORTS_BEFORE);
+    });
+
+    it('re-reads the layer for the day a scrub lands on (SNOW-1290)', async () => {
+      // A scrubbed map shows only that day's reports, so the date row moving
+      // is a fetch with ?d= — and that answer is drawn, never cached: the
+      // offline read-back is today's live-and-recent window.
+      globalThis.fetch.mockClear();
+      responses['community-reports'] = REPORTS_AFTER;
+
+      document.dispatchEvent(
+        new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-01-14' } }),
+      );
+
+      await waitFor(() => globalThis.fetch.mock.calls.some(
+        ([url]) => String(url).includes('community-reports.geojson?d=2026-01-14'),
+      ));
+      await waitFor(() => lastSetData(mapStub, 'community-reports') !== undefined);
+      expect(putOverlay).not.toHaveBeenCalledWith('community_reports', expect.anything());
+    });
+
+    it('keeps today\'s reports for the way back when the network drops on a scrub', async () => {
+      // Scrub to a past day while online (its answer replaces the held
+      // payload), lose the network, come back to today: today's live and
+      // recent pins must come back from what the map already held.
+      const scrubber = document.createElement('div');
+      scrubber.id = 'season-scrubber';
+      scrubber.dataset.today = '2026-01-15';
+      document.body.appendChild(scrubber);
+      const report = (observedOn) => ({
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [7.5, 46.1] },
+          properties: { family: 'WARNING', observed_on: observedOn, observed_at: `${observedOn}T09:00:00Z` },
+        }],
+      });
+      const fetchImpl = globalThis.fetch.getMockImplementation();
+      try {
+        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-01-15' } }));
+        responses['community-reports'] = report('2026-01-15');
+        document.dispatchEvent(new CustomEvent('snowdesk:reports-changed'));
+        await waitFor(() => lastSetData(mapStub, 'community-reports')?.features[0]?.properties._state === 'live');
+
+        responses['community-reports'] = report('2026-01-10');
+        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-01-10' } }));
+        await waitFor(() => lastSetData(mapStub, 'community-reports')?.features[0]?.properties._state === 'day');
+
+        globalThis.fetch.mockImplementation(() => Promise.reject(new Error('offline')));
+        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-01-15' } }));
+        await new Promise((resolve) => { setTimeout(resolve, 400); });
+
+        const drawn = lastSetData(mapStub, 'community-reports').features;
+        expect(drawn).toHaveLength(1);
+        expect(drawn[0].properties.observed_on).toBe('2026-01-15');
+        expect(drawn[0].properties._state).toBe('live');
+      } finally {
+        globalThis.fetch.mockImplementation(fetchImpl);
+        scrubber.remove();
+        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: null } }));
+      }
     });
   });
 
