@@ -18,13 +18,20 @@ explicit list and does not grow on its own; ``duration`` and
 ``slope_samples`` were each added to the snapshot without it.
 ``tests/trips/test_admin.py`` asserts the pairing against the tuple itself,
 so the next one fails a test rather than shipping editable.
+
+Both ``TripAdmin`` deletes go through ``delete_trip_instance`` so a deleted
+trip's meeting-point ``Location`` goes with it (SNOW-1293).
 """
 
 import logging
 
 from django.contrib import admin
+from django.db import transaction
+from django.db.models import QuerySet
+from django.http import HttpRequest
 
 from .models import Trip, TripParticipant
+from .services.trips import delete_trip_instance
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +80,31 @@ class TripAdmin(admin.ModelAdmin):
         "updated_at",
     ]
     ordering = ["-created_at"]
+
+    def delete_model(self, request: HttpRequest, obj: Trip) -> None:
+        """Delete one trip through the service, sweeping its meeting point.
+
+        Args:
+            request: The admin request.
+            obj: The trip being deleted.
+
+        """
+        delete_trip_instance(obj)
+
+    def delete_queryset(self, request: HttpRequest, queryset: QuerySet[Trip]) -> None:
+        """Delete the selected trips one at a time, sweeping each meeting point.
+
+        Per-row rather than one SQL delete, so each anonymous location is
+        probed as its last referent goes; all rows commit together.
+
+        Args:
+            request: The admin request.
+            queryset: The trips selected for deletion.
+
+        """
+        with transaction.atomic():
+            for trip in queryset.select_related("meeting_point"):
+                delete_trip_instance(trip)
 
 
 @admin.register(TripParticipant)
