@@ -1,0 +1,52 @@
+{% load humanize i18n %}
+{% comment %}
+observations/partials/_on_the_ground_row.html — one report in the region
+body's "On the ground" section (SNOW-1291).
+
+The mark is the pin's: the family's colour and drawing
+(includes/_icon_observation_family.html), solid for a live or past-day
+report and a ring for a recent one — the two states the map draws, so a
+row and its pin are recognisably one thing. Then every type the report
+ticked, most serious first, and when.
+
+The age is relative and lives in a ``<time data-relative-time>``, which
+static/js/relative_time.js keeps current on the map, where a cached sheet
+can be read hours after it was rendered. A past day reads the time of day
+instead: "2 days ago" says less than "14:10" on a page that already names
+the day.
+
+``data-observation-submission`` is the handle a tap on the report's pin
+reaches this row by (static/js/map_region_sheet.js); ``data-focused`` is
+what it sets on it.
+
+Context:
+  report — apps.observations.services.ground.GroundReport.
+  state  — "live", "recent" or "day".
+{% endcomment %}
+<li
+    class="flex items-center gap-3 px-4 py-2.5 transition-colors data-focused:bg-card-hover"
+    data-observation-submission="{{ report.submission }}"
+    data-testid="on-the-ground-row"
+>
+    <span
+        class="flex size-8 shrink-0 items-center justify-center rounded-pill {% if report.family == "SURFACE" %}text-obs-surface{% elif report.family == "TRAIL" %}text-obs-trail{% else %}text-obs-warning{% endif %} {% if state == "recent" %}border-2 border-current bg-card{% else %}bg-current{% endif %}"
+        aria-hidden="true"
+    >
+        <span
+            class="{% if state != "recent" %}text-card{% endif %}"
+        >{% include "includes/_icon_observation_family.html" with family=report.family size=16 only %}</span>
+    </span>
+    <span class="min-w-0 flex-1">
+        <span class="block text-sm font-medium text-text-1">{{ report.labels|join:", " }}</span>
+        <span class="block text-meta text-text-3">
+            {% if state == "day" %}
+                <time datetime="{{ report.observed_at|date:'c' }}">{{ report.observed_at|time:"H:i" }}</time>
+            {% else %}
+                <time
+                    datetime="{{ report.observed_at|date:'c' }}"
+                    data-relative-time
+                >{{ report.observed_at|naturaltime }}</time>
+            {% endif %}
+        </span>
+    </span>
+</li>

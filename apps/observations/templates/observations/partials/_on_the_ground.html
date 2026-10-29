@@ -1,0 +1,81 @@
+{% load humanize i18n %}
+{% comment %}
+observations/partials/_on_the_ground.html — "On the ground": what people
+found in this region, at the top of the region's body (SNOW-1291).
+
+Rendered by public/partials/_region_body.html, so the bulletin page and the
+map's region sheet say the same thing. The reports come from
+``apps.observations.services.ground.ground_for_region`` — the same window
+the map's pins are drawn from — one row per report, coloured and marked by
+its most serious family.
+
+Two shapes, by the day on screen (Hugo, 29 Oct 2026):
+
+  - TODAY: an open section. "Live today" (solid marks) then "Recent" (the
+    three days before; hollow marks), the same two states the pins carry.
+    Empty, it still renders: one line and the call to report, because a
+    crowd layer needs a first report before it is worth anything.
+  - ANOTHER DAY: a closed ``<details>``, "Observed on 28 Oct 2026 · 2",
+    and nothing at all when the day has no reports. Live and recent mean
+    nothing on a day that is over.
+
+Each row carries ``data-observation-submission``: a tap on a pin selects
+the region and static/js/map_region_sheet.js opens the section, marks that
+row and scrolls it into view.
+
+The call to report: in the map's sheet a button static/js/report.js picks
+up (``data-action="open-report"``) when signed in, a sign-in link when
+not; on the bulletin page a link to the map, where reporting happens.
+
+Context:
+  ground   — apps.observations.services.ground.Ground.
+  in_map   — True inside the map's sheet.
+  map_url  — The bulletin page's link to this region on the map (page only).
+  user     — The reader, for the call to report.
+{% endcomment %}
+{% trans "On the ground" as on_the_ground_label %}
+{% if ground.is_today %}
+    <section class="mb-4" data-testid="on-the-ground" data-on-the-ground>
+        {% include "includes/_eyebrow.html" with text=on_the_ground_label data_testid="on-the-ground-heading" class_extra="mb-2" %}
+        {% if ground.live %}
+            <h3 class="mb-1 text-meta font-semibold text-text-2">{% trans "Live today" %}</h3>
+            <ul class="mb-3 divide-y divide-border overflow-hidden rounded-card border border-border bg-card">
+                {% for report in ground.live %}
+                    {% include "observations/partials/_on_the_ground_row.html" with report=report state="live" only %}
+                {% endfor %}
+            </ul>
+        {% endif %}
+        {% if ground.recent %}
+            <h3 class="mb-1 text-meta font-semibold text-text-2">{% trans "Recent" %}</h3>
+            <ul class="mb-3 divide-y divide-border overflow-hidden rounded-card border border-border bg-card">
+                {% for report in ground.recent %}
+                    {% include "observations/partials/_on_the_ground_row.html" with report=report state="recent" only %}
+                {% endfor %}
+            </ul>
+        {% endif %}
+        {% if not ground.count %}
+            <p class="mb-3 text-sm text-text-2" data-testid="on-the-ground-empty">
+                {% trans "No reports from the last few days. Been out? Say what you found." %}
+            </p>
+        {% endif %}
+        {% if in_map %}
+            {% if user.is_authenticated %}
+                {% include "includes/_button.html" with label=_("Report what you see") button_type="button" variant="secondary" size="compact" data_action="open-report" only %}
+            {% else %}
+                {% url 'accounts:sign_in' as sign_in_url %}
+                {% include "includes/_button.html" with label=_("Sign in to report") href=sign_in_url variant="secondary" size="compact" only %}
+            {% endif %}
+        {% elif map_url %}
+            {% include "includes/_button.html" with label=_("Report on the map") href=map_url variant="secondary" size="compact" only %}
+        {% endif %}
+    </section>
+{% elif ground.day %}
+    {% blocktrans with day=ground.page_date|date:"j M Y" n=ground.count trimmed asvar observed_title %}
+        Observed on {{ day }} · {{ n }}
+    {% endblocktrans %}
+    {# The bulletin page's own collapsible, closed: on a day that is over #}
+    {# the reports are a footnote to the bulletin, not its lead.          #}
+    <div class="mb-4" data-testid="on-the-ground" data-on-the-ground>
+        {% include "includes/_collapsible_panel.html" with title=observed_title data_testid="on-the-ground-day" body_template="observations/partials/_on_the_ground_day.html" ground=ground only %}
+    </div>
+{% endif %}

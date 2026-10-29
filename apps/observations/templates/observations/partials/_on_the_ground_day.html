@@ -1,0 +1,14 @@
+{% comment %}
+observations/partials/_on_the_ground_day.html — the rows inside the closed
+"Observed on dd mmm yyyy" panel a past day's region body carries (SNOW-1291).
+The body_template of includes/_collapsible_panel.html, which is included
+``only``, so the reports arrive as the panel's own context: ``ground``.
+
+Context:
+  ground — apps.observations.services.ground.Ground, a past day.
+{% endcomment %}
+<ul class="-my-1 divide-y divide-border">
+    {% for report in ground.day %}
+        {% include "observations/partials/_on_the_ground_row.html" with report=report state="day" only %}
+    {% endfor %}
+</ul>

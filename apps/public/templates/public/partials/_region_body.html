@@ -20,11 +20,19 @@ builder both containers call.
 Context:
   bulletin, panel, page_date, is_today, day_windows,
   show_day_risk_profile, day_movement,
-  bulletin_source_label, bulletin_source_url, observation_counts,
-  observation_has_user_located — from ``build_bulletin_body``.
+  bulletin_source_label, bulletin_source_url, ground — from
+  ``build_bulletin_body``.
+  map_url — the bulletin page's link to this region on the map (page only;
+            "On the ground"'s call to report on the page goes there).
   in_map — True inside the map's sheet: the superuser debug block, which
            reads a raw-data script only the page embeds, is left out.
 {% endcomment %}
+{# ── On the ground (SNOW-1291) ───────────────────────────────── #}
+{# What people found in this region: first, because it is what a   #}
+{# tap on a report's pin opened the panel for, and it is short.    #}
+{# Above the no-bulletin callout too — reports are worth more on a #}
+{# day without a bulletin, not less.                                #}
+{% include "observations/partials/_on_the_ground.html" %}
 {% if not bulletin %}
     {# ── Empty state ─────────────────────────────────────────── #}
     {% include "includes/_callout.html" with kind="info" heading=_("No bulletin available") body=_("There is no bulletin published for this region on this date.") only %}
@@ -401,33 +409,7 @@ Context:
        SNOW-806: the tail used to carry adjoining regions, resorts in
        the region, the reader's favourites here and the subscribe form
        — four map affordances stapled to a document, ordered outside-in.
-       They are map objects (docs/decisions/two-documents-and-a-map.md);
-       the tail is now the observation counts and one link back to the
-       map, focused on this region and this day.
+       They are map objects (docs/decisions/two-documents-and-a-map.md).
+       Its last occupant, SNOW-324's "Reported today" counts, became the
+       "On the ground" section at the top of the body (SNOW-1291).
 {% endcomment %}
-{# ── Field-observation counts (SNOW-324) ────────────────────── #}
-{# Shown only on today's page when at least one report has been   #}
-{# submitted for this region today.                               #}
-{% if is_today and observation_counts %}
-    <section class="mt-6" aria-labelledby="obs-counts-heading">
-        <h2
-            id="obs-counts-heading"
-            class="mb-2 text-xs font-semibold uppercase tracking-wide text-text-3"
-        >
-            {% trans "Reported today" %}
-        </h2>
-        <ul class="flex flex-wrap gap-2">
-            {% for label, count in observation_counts %}
-                <li class="flex items-center gap-1.5 rounded-pill bg-status-info-bg px-3 py-1 text-sm text-status-info-text">
-                    <span class="font-medium">{{ count }}</span>
-                    <span>{{ label }}</span>
-                </li>
-            {% endfor %}
-        </ul>
-        {% if observation_has_user_located %}
-            <p class="mt-2 rounded-tag bg-status-warning-bg px-3 py-1.5 text-xs text-status-warning-text">
-                {% trans "Some reports were placed manually" %}
-            </p>
-        {% endif %}
-    </section>
-{% endif %}

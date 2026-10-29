@@ -79,7 +79,7 @@ import secrets
 import uuid
 from collections import Counter
 from collections.abc import Callable, Iterable
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime
 from typing import Any, cast
 
 from django.conf import settings
@@ -118,6 +118,7 @@ from apps.core.sw_shell import served_cache_version
 from apps.locations.models import Location, LocationQuerySet, ResortLocation
 from apps.locations.services.prime import enqueue_location_prime
 from apps.observations.models import FieldObservation, leading_family
+from apps.observations.services.ground import report_window
 from apps.regions.forms import RESORT_DETAIL_FIELDS, ResortDetailsForm
 from apps.regions.models import (
     MajorRegion,
@@ -274,14 +275,6 @@ _SETTLED_THRESHOLD_CACHE_TIMEOUT = 60
 # Shorter than _DYNAMIC_CACHE_MAX_AGE because a new report should surface
 # promptly.
 _COMMUNITY_CACHE_MAX_AGE = 120
-
-# How many local days before today the "On the ground" layer still shows a
-# report, as "recent" (SNOW-1290). Today's reports are "live"; conditions
-# change overnight, so the day boundary is the reset, not a rolling hour
-# count. Anything older drops off the map — the overlay is a recent signal,
-# never a durable map of where reports have clustered. Read
-# docs/decisions/an-observation-is-live-today-and-recent-for-three-days.md.
-_COMMUNITY_RECENT_DAYS = 3
 
 logger = logging.getLogger(__name__)
 
@@ -2012,50 +2005,6 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
 # to 3 dp (~80-110 m), and no identity, GPS fix or accuracy on the wire.
 
 
-def _local_midnight(day: date) -> datetime:
-    """Return the start of ``day`` in ``settings.TIME_ZONE``, timezone-aware.
-
-    Args:
-        day: The local calendar day.
-
-    Returns:
-        Aware datetime at 00:00 local time on ``day``.
-
-    """
-    return timezone.make_aware(datetime.combine(day, time.min))
-
-
-def _community_reports_window(
-    day: date, today: date
-) -> tuple[datetime, datetime] | None:
-    """Return the ``[start, end)`` window the "On the ground" layer reads.
-
-    * ``day`` is today — from local midnight ``_COMMUNITY_RECENT_DAYS`` days
-      back to the end of today: today's reports are live, the three days
-      before are recent (SNOW-1290). The end is tomorrow's midnight rather
-      than ``now`` so a report whose device clock runs a few seconds fast
-      is not hidden until the server catches up.
-    * ``day`` is in the past — that one local day, and nothing either side:
-      a scrubbed map shows what was observed on the day it shows.
-    * ``day`` is in the future — ``None``: nothing has been observed yet.
-
-    Args:
-        day: The map's display date.
-        today: Today's local date.
-
-    Returns:
-        The aware ``(start, end)`` pair, or ``None`` for a future day.
-
-    """
-    if day > today:
-        return None
-    if day == today:
-        start = _local_midnight(today - timedelta(days=_COMMUNITY_RECENT_DAYS))
-    else:
-        start = _local_midnight(day)
-    return start, _local_midnight(day + timedelta(days=1))
-
-
 # SNOW-459: private/no-store, NOT public — CDN/proxy caching of this
 # response is left for SNOW-469 (tracked separately, out of scope here).
 @cache_control(private=True, no_store=True)
@@ -2065,10 +2014,12 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
 
     The map's "On the ground" layer (SNOW-419, reshaped by SNOW-1290) — a
     Waze-like shared layer of what people found out there. ``?d=YYYY-MM-DD``
-    picks the map's day (default today); ``_community_reports_window`` turns
-    it into the window read. One feature per *report*: the rows one
-    ``submission`` wrote (SNOW-1289) share a location and a time, so they
-    are one pin listing every type, coloured by the most serious family.
+    picks the map's day (default today);
+    ``apps.observations.services.ground.report_window`` turns it into the
+    window read — the same window the region panel reads. One feature per
+    *report*: the rows one ``submission`` wrote (SNOW-1289) share a
+    location and a time, so they are one pin listing every type, coloured
+    by the most serious family.
 
     Anonymisation is applied server-side, once, here — the client never
     receives full-precision coordinates or anything that identifies the
@@ -2128,7 +2079,7 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
         except ValueError:
             return JsonResponse({"error": "malformed date"}, status=400)
 
-    window = _community_reports_window(day, today)
+    window = report_window(day, today)
     rows = (
         FieldObservation.objects.in_window(*window)
         .select_related("region")

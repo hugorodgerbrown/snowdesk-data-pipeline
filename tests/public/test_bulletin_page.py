@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ import pytest
 from django.conf import settings
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import override as language_override
 from pytest_django.fixtures import Settings
 
@@ -32,6 +34,7 @@ from apps.regions.models import MicroRegion
 from tests.factories import (
     AccountFactory,
     BulletinFactory,
+    FieldObservationFactory,
     MajorRegionFactory,
     MicroRegionFactory,
     RegionBulletinFactory,
@@ -5850,134 +5853,88 @@ class TestSnow291FlatButSplit:
 
 
 # ---------------------------------------------------------------------------
-# Observation counts strip (SNOW-324)
+# "On the ground" (SNOW-1291) — replaced SNOW-324's "Reported today" counts
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestObservationCountsStrip:
-    """Counts strip shows human-readable labels, not raw enum keys."""
+class TestOnTheGround:
+    """The region's field reports, at the top of the bulletin page's body."""
 
-    def test_counts_strip_shows_human_labels(self, client: Client) -> None:
-        """Observation counts strip renders OBSERVATION_TYPE labels, not raw keys.
-
-        WIND_STRIATIONS / SHOOTING_CRACKS are the most illustrative because their
-        raw key contains an underscore that ``lower|title`` would preserve as
-        "Wind_Striations" — the bug the fix addresses.  The view must pass
-        ``(label, count)`` pairs so the template can render "Wind striations"
-        directly.
-        """
-        from datetime import date as _date
-
+    def test_today_lists_live_and_recent_reports(self, client: Client) -> None:
+        """Today shows "Live today" and "Recent", one row per submission."""
         region = MicroRegionFactory.create(
             region_id="CH-9100", name="Test Region", slug="test-counts"
         )
-        today = _date.today()
+        today = timezone.localdate()
         _make_am_bulletin(region, today)
-
-        # Fake counts: two types with underscores in their raw keys.
-        fake_counts = [
-            ("Wind striations", 3),
-            ("Shooting cracks", 1),
-        ]
+        submission = uuid.uuid4()
+        for kind in ("WIND_STRIATIONS", "SHOOTING_CRACKS"):
+            FieldObservationFactory.create(
+                region=region,
+                submission=submission,
+                observation_type=kind,
+                observed_at=timezone.now(),
+            )
+        FieldObservationFactory.create(
+            region=region,
+            observation_type="POWDER",
+            observed_at=timezone.now() - timedelta(days=2),
+        )
 
         url = reverse("public:region_root", kwargs={"region_id": "ch-9100"})
-        with patch(
-            "apps.public.views._get_observation_counts", return_value=fake_counts
-        ):
-            response = client.get(url)
+        content = client.get(url).content.decode()
 
-        assert response.status_code == 200
-        content = response.content.decode()
-
-        # Human labels must appear.
-        assert "Wind striations" in content
-        assert "Shooting cracks" in content
-        # Raw underscore-joined enum keys must NOT appear.
+        assert 'data-testid="on-the-ground"' in content
+        assert "Live today" in content
+        assert "Recent" in content
+        assert content.count('data-testid="on-the-ground-row"') == 2
+        # Human labels, joined, in declaration order (cracks before striations).
+        assert "Shooting cracks, Wind striations" in content
         assert "WIND_STRIATIONS" not in content
-        assert "SHOOTING_CRACKS" not in content
-        # The underscored form the old lower|title filter produced must not appear.
-        assert "Wind_Striations" not in content
-        assert "Shooting_Cracks" not in content
-        # Counts themselves must appear.
-        assert ">3<" in content or "3" in content
-        assert ">1<" in content or "1" in content
+        assert f'data-observation-submission="{submission}"' in content
+        # On the page the call to report goes to the map.
+        assert "Report on the map" in content
 
-    def test_counts_strip_absent_on_historic_page(self, client: Client) -> None:
-        """Counts strip is absent on non-today pages (observation_counts is [])."""
+    def test_empty_today_still_invites_a_report(self, client: Client) -> None:
+        """No reports today: one line and the call to report."""
         region = MicroRegionFactory.create(
-            region_id="CH-9101", name="Historic Region", slug="historic-region"
+            region_id="CH-9101", name="Quiet Region", slug="quiet-region"
+        )
+        _make_am_bulletin(region, timezone.localdate())
+        url = reverse("public:region_root", kwargs={"region_id": "ch-9101"})
+        content = client.get(url).content.decode()
+        assert 'data-testid="on-the-ground-empty"' in content
+        assert "Report on the map" in content
+
+    def test_past_day_is_a_closed_observed_on_panel(self, client: Client) -> None:
+        """A past day's reports sit in a closed "Observed on" panel."""
+        region = MicroRegionFactory.create(
+            region_id="CH-9102", name="Historic Region", slug="historic-region"
         )
         past_day = date(2026, 3, 1)
         _make_am_bulletin(region, past_day)
-
-        url = _url("ch-9101", "historic-region", "2026-03-01")
-        response = client.get(url)
-        assert response.status_code == 200
-        content = response.content.decode()
-        # The section heading must not appear for historic pages.
-        assert "Reported today" not in content
-
-    def test_user_located_footnote_shown_when_manual_report_exists(
-        self, client: Client
-    ) -> None:
-        """Footnote 'Some reports were placed manually' appears when a user-located
-        report exists for this region today.
-        """
-        from datetime import date as _date
-
-        region = MicroRegionFactory.create(
-            region_id="CH-9102", name="Footnote Region", slug="footnote-region"
+        FieldObservationFactory.create(
+            region=region,
+            observed_at=datetime(2026, 3, 1, 10, 30, tzinfo=UTC),
         )
-        today = _date.today()
-        _make_am_bulletin(region, today)
+        content = client.get(_url("ch-9102", "historic-region", "2026-03-01"))
+        html = content.content.decode()
+        assert "Observed on 1 Mar 2026 · 1" in " ".join(html.split())
+        assert 'data-testid="on-the-ground-day"' in html
+        assert "Live today" not in html
+        assert "10:30" in html
+        panel = re.search(r'<details[^>]*data-testid="on-the-ground-day"[^>]*>', html)
+        assert panel is not None and " open" not in panel.group(0)
 
-        fake_counts = [("Whumpfing", 2)]
-
-        url = reverse("public:region_root", kwargs={"region_id": "ch-9102"})
-        with (
-            patch(
-                "apps.public.views._get_observation_counts", return_value=fake_counts
-            ),
-            patch(
-                "apps.public.views._get_observation_has_user_located", return_value=True
-            ),
-        ):
-            response = client.get(url)
-
-        assert response.status_code == 200
-        assert "Some reports were placed manually" in response.content.decode()
-
-    def test_user_located_footnote_absent_when_no_manual_reports(
-        self, client: Client
-    ) -> None:
-        """Footnote is absent when no user-located (MANUAL/GPS_REFINED) reports
-        exist for this region today.
-        """
-        from datetime import date as _date
-
+    def test_past_day_without_reports_says_nothing(self, client: Client) -> None:
+        """A past day with no reports renders no section at all."""
         region = MicroRegionFactory.create(
-            region_id="CH-9103", name="GPS Only Region", slug="gps-only-region"
+            region_id="CH-9103", name="Empty Region", slug="empty-region"
         )
-        today = _date.today()
-        _make_am_bulletin(region, today)
-
-        fake_counts = [("Whumpfing", 1)]
-
-        url = reverse("public:region_root", kwargs={"region_id": "ch-9103"})
-        with (
-            patch(
-                "apps.public.views._get_observation_counts", return_value=fake_counts
-            ),
-            patch(
-                "apps.public.views._get_observation_has_user_located",
-                return_value=False,
-            ),
-        ):
-            response = client.get(url)
-
-        assert response.status_code == 200
-        assert "Some reports were placed manually" not in response.content.decode()
+        _make_am_bulletin(region, date(2026, 3, 1))
+        html = client.get(_url("ch-9103", "empty-region", "2026-03-01")).content
+        assert b'data-testid="on-the-ground"' not in html
 
 
 # ---------------------------------------------------------------------------

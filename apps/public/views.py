@@ -121,6 +121,7 @@ from apps.core.utils import html_to_markdown
 from apps.favourites.models import Favourite
 from apps.locations.models import Location, ResortLocation
 from apps.observations.models import FieldObservation
+from apps.observations.services.ground import ground_for_region
 from apps.regions.cantons import canton_label
 from apps.regions.models import MicroRegion, Resort
 from apps.routes.models import Route, RouteShare
@@ -2134,85 +2135,6 @@ def _terrain_filter_context() -> dict[str, Any]:
         "terrain_class_tile_url": settings.TERRAIN_CLASS_TILE_URL if eligible else "",
         "bulletin_terrain_key": problem_terrain_key(None),
     }
-
-
-def _labelled_counts(raw: "dict[str, int]") -> "list[tuple[str, int]]":
-    """Map raw ``OBSERVATION_TYPE`` counts to sorted, human-readable pairs.
-
-    Used by ``_get_observation_counts`` (region-wide); it was shared with
-    the resort page's point-local counts until SNOW-807 turned that panel
-    into a link to the map. The key→label mapping still lives in exactly
-    one place.
-
-    Args:
-        raw: Mapping from ``OBSERVATION_TYPE`` value string to count, as
-            returned by ``counts_for_region_day`` / ``counts_near_point_for_day``.
-
-    Returns:
-        List of ``(label, count)`` pairs sorted by label, where ``label`` is
-        the human-readable ``OBSERVATION_TYPE`` label (e.g. "Wind striations").
-        An unrecognised key falls back to a title-cased rendering rather than
-        raising, so a future observation type doesn't break the page.
-
-    """
-    result: list[tuple[str, int]] = []
-    for key, count in raw.items():
-        try:
-            label = FieldObservation.OBSERVATION_TYPE(key).label
-        except ValueError:
-            label = key.replace("_", " ").title()
-        result.append((label, count))
-    result.sort(key=lambda pair: pair[0])
-    return result
-
-
-def _get_observation_counts(
-    request: HttpRequest,
-    region: "MicroRegion",
-    day: datetime.date,
-) -> "list[tuple[str, int]]":
-    """Return per-type field-observation counts for a region on a calendar day.
-
-    Args:
-        request: The current HTTP request.
-        region: The MicroRegion to count observations for.
-        day: The calendar day to count observations on.
-
-    Returns:
-        List of ``(label, count)`` pairs sorted by label, where ``label`` is
-        the human-readable ``OBSERVATION_TYPE`` label (e.g. "Wind striations").
-        Returns an empty list when no observations exist.
-
-    """
-    from apps.observations.models import FieldObservation  # noqa: PLC0415
-
-    raw: dict[str, int] = FieldObservation.objects.counts_for_region_day(region, day)
-    return _labelled_counts(raw)
-
-
-def _get_observation_has_user_located(
-    request: HttpRequest,
-    region: "MicroRegion",
-    day: datetime.date,
-) -> bool:
-    """Return True if any user-located report exists for region on day.
-
-    Guarded behind ``is_today`` at the calling site (only invoked on
-    today's bulletin page).
-
-    Args:
-        request: The current HTTP request.
-        region: The MicroRegion to check.
-        day: The calendar day to check.
-
-    Returns:
-        True when at least one MANUAL or GPS_REFINED report exists for the
-        region on the given day.
-
-    """
-    from apps.observations.models import FieldObservation  # noqa: PLC0415
-
-    return FieldObservation.objects.user_located_exists_for_region_day(region, day)
 
 
 def _serve_sw_file(static_relative_path: str) -> HttpResponse:
@@ -4360,26 +4282,31 @@ def build_bulletin_body(
     sheet) around it; the sheet adds its peek row.
 
     Args:
-        request: The incoming request (the observation counts read the
-            reader's flags).
+        request: The incoming request.
         region: The region the body describes.
         page_date: The calendar day the body describes.
         selected: The bulletin chosen for that day, or ``None`` when no
             issue covers it.
 
     Returns:
-        ``bulletin``, ``page_date`` and ``is_today`` always; with a bulletin,
-        also ``panel``, ``day_windows``, ``day_movement``, the source label
-        and URL, the observation counts, ``next_update_time`` and the hero
+        ``bulletin``, ``page_date``, ``is_today`` and ``ground`` (the
+        region's field reports, ``ground_for_region``) always; with a
+        bulletin, also ``panel``, ``day_windows``, ``day_movement``, the
+        source label and URL, ``next_update_time`` and the hero
         fields the page's masthead reads (``morning_rating``,
         ``period_transition``, ``period_transition_chip``, ``headline``).
 
     """
+    # SNOW-1291: what people found on the ground, in both shapes of the
+    # body — a region with no bulletin today (off season, say) can still
+    # have reports, and they are worth more then, not less.
+    ground = ground_for_region(region, page_date)
     if selected is None:
         return {
             "bulletin": None,
             "page_date": page_date,
             "is_today": page_date == timezone.now().date(),
+            "ground": ground,
         }
 
     today = timezone.now().date()
@@ -4410,22 +4337,6 @@ def build_bulletin_body(
     source_key = (panel.get("render_model") or {}).get("source", "")
     bulletin_source_label, bulletin_source_url = BULLETIN_SOURCE_LINKS.get(
         source_key, ("", "")
-    )
-
-    # SNOW-324: per-type field-observation counts for the current-day bulletin
-    # page.  Only fetched when the flag is active; zero-overhead on historic
-    # pages because the ``is_today`` guard short-circuits the query.
-    observation_counts: list[tuple[str, int]] = (
-        _get_observation_counts(request, region, page_date) if is_today else []
-    )
-
-    # SNOW-330: whether any user-located (MANUAL or GPS_REFINED) report exists
-    # for this region today.  Drives the public footnote under the counts strip.
-    # Only fetched when flag is active and page is today.
-    observation_has_user_located: bool = (
-        _get_observation_has_user_located(request, region, page_date)
-        if is_today
-        else False
     )
 
     # Morning rating badge context (SNOW-246). Projected from the panel's
@@ -4473,8 +4384,7 @@ def build_bulletin_body(
         "day_movement": day_movement,
         "bulletin_source_label": bulletin_source_label,
         "bulletin_source_url": bulletin_source_url,
-        "observation_counts": observation_counts,
-        "observation_has_user_located": observation_has_user_located,
+        "ground": ground,
         "morning_rating": morning_rating,
         "period_transition": period_transition,
         "period_transition_chip": period_transition_chip,

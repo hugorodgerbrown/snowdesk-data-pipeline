@@ -690,3 +690,74 @@ describe('during playback', () => {
     expect(band()).not.toBeNull();
   });
 });
+
+describe('a tap on a report\'s pin (SNOW-1291)', () => {
+  const SUBMISSION = '0b6f2c1e-0000-4000-8000-000000000001';
+  const GROUND_BODY = `
+    <div data-sheet-peek><h2>Martigny-Verbier</h2></div>
+    <div data-on-the-ground>
+      <details data-testid="on-the-ground-day">
+        <summary>Observed on 28 Oct 2026 · 2</summary>
+        <ul>
+          <li data-observation-submission="0b6f2c1e-0000-4000-8000-000000000002">Powder</li>
+          <li data-observation-submission="${SUBMISSION}">Whumpfing</li>
+        </ul>
+      </details>
+    </div>
+  `;
+
+  /** Ask for a report's row, the way map.js does. */
+  function focus(regionId, submission = SUBMISSION) {
+    document.dispatchEvent(new CustomEvent('snowdesk:observation-focus', {
+      detail: { submission, region_id: regionId },
+    }));
+  }
+
+  const row = () => sheet.querySelector(`[data-observation-submission="${SUBMISSION}"]`);
+
+  beforeEach(() => {
+    fetchMock.mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve(GROUND_BODY) }));
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it('opens the panel at the report\'s row once the body paints', async () => {
+    focus('CH-4115');
+    select('CH-4115', 'observation');
+    // The peek paints first: the request waits for the body.
+    expect(row()).toBeNull();
+    await settle();
+    expect(row().hasAttribute('data-focused')).toBe(true);
+    expect(row().closest('details').open).toBe(true);
+    // Scrolled once the phone sheet's rise to half has settled.
+    await vi.waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1));
+  });
+
+  it('applies once: the next paint of the region does not jump back', async () => {
+    focus('CH-4115');
+    select('CH-4115', 'observation');
+    await settle();
+    await vi.waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
+    Element.prototype.scrollIntoView.mockClear();
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-10-28' } }));
+    await settle();
+    await new Promise((resolve) => { setTimeout(resolve, 400); });
+    expect(row().hasAttribute('data-focused')).toBe(false);
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('is dropped when another region is selected first', async () => {
+    focus('CH-4115');
+    select('CH-4116', 'tap');
+    await settle();
+    select('CH-4115', 'tap');
+    await settle();
+    expect(row().hasAttribute('data-focused')).toBe(false);
+  });
+
+  it('marks the row at once when the region\'s body is already up', async () => {
+    select('CH-4115', 'tap');
+    await settle();
+    focus('CH-4115');
+    expect(row().hasAttribute('data-focused')).toBe(true);
+  });
+});
