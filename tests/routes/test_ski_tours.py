@@ -27,6 +27,7 @@ from apps.routes.services.ski_tours import (
     is_descent,
     is_hut,
     localised,
+    one_leg,
     overview_geometry,
     sac_time,
     save_ski_tour,
@@ -91,6 +92,67 @@ class TestPureRules:
         assert is_descent(_tour(ascent_m=None, descent_m=1800)) is True
         assert is_descent(_tour(ascent_m=900, descent_m=900)) is False
 
+    @pytest.mark.parametrize(
+        ("name", "names"),
+        [
+            ("Descente à la cabane de Chanrion par le versant SE", {}),
+            ("Zur Cabane de Chanrion", {"fr": "Descente à la cabane de Chanrion"}),
+            ("Abfahrt nach Lavin", {}),
+            ("Discesa a Bivio", {}),
+        ],
+    )
+    def test_a_way_down_is_what_sac_names_one_whatever_its_figures(
+        self, name: str, names: dict[str, str]
+    ) -> None:
+        """A named descent with an ascent figure too is still a way down (SNOW-1304)."""
+        tour = _tour(name=name, names=names, ascent_m=420, descent_m=1660)
+        assert is_descent(tour) is True
+
+    def test_a_way_up_whose_name_mentions_a_descent_later_is_not_one(self) -> None:
+        """Only the word that opens the name counts."""
+        tour = _tour(
+            name="Von der Hütte, Abfahrt wie Aufstieg", ascent_m=900, descent_m=900
+        )
+        assert is_descent(tour) is False
+
+    def test_a_tour_is_one_leg_in_its_direction(self) -> None:
+        """The whole line, climbing for a way up, not for a way down."""
+        points: list[list[float | None]] = [
+            [10.0, 46.0, None],
+            [10.0, 46.001, None],
+            [10.0, 46.002, None],
+        ]
+        up = one_leg(points, None, _tour())
+        down = one_leg(points, None, _tour(ascent_m=None, descent_m=1000))
+        # ~222 m of line: nine 25 m strides, the walk an unsampled route's
+        # legs index.
+        assert up == [
+            {
+                "i": 1,
+                "from": 0,
+                "to": 8,
+                "climbing": True,
+                "point_from": 0,
+                "point_to": 2,
+            }
+        ]
+        assert down is not None and down[0]["climbing"] is False
+
+    def test_a_sampled_tour_leg_spans_the_angles_it_was_sent(self) -> None:
+        """The client indexes ``slope.angles``, so the leg does too."""
+        points: list[list[float | None]] = [
+            [10.0, 46.0, 1800.0],
+            [10.0, 46.002, 2000.0],
+        ]
+        legs = one_leg(points, {"angles": [12.0, None, 30.0, 31.0]}, _tour())
+        assert legs is not None
+        assert (legs[0]["from"], legs[0]["to"]) == (0, 3)
+
+    def test_a_line_too_short_for_a_segment_has_no_leg(self) -> None:
+        """One point, or no stride to walk."""
+        assert one_leg([[10.0, 46.0, None]], None, _tour()) is None
+        assert one_leg([[10.0, 46.0, None], [10.0, 46.0, None]], None, _tour()) is None
+
     def test_the_summit_key_keeps_two_summits_of_one_name_apart(self) -> None:
         """Name and height."""
         assert summit_key("Piz Buin", 3312) == "piz-buin-3312"
@@ -113,10 +175,12 @@ class TestPureRules:
         """Write "03:30 h" as "3 h 30", and anything else as SAC wrote it."""
         assert sac_time(label) == expected
 
-    def test_the_target_end_is_the_top_of_a_way_up_and_of_a_way_down(self) -> None:
-        """The last point going up, the first coming down."""
+    def test_the_target_end_is_the_last_point_whichever_way_the_tour_goes(
+        self,
+    ) -> None:
+        """SAC draws its lines valley to summit, ways down too (SNOW-1304)."""
         up = _tour()
-        down = _tour(ascent_m=None, descent_m=1000, geometry=_line(TOP, VALLEY))
+        down = _tour(ascent_m=None, descent_m=1000)
         assert target_end(up) == tuple(TOP)
         assert target_end(down) == tuple(TOP)
         assert far_end(up, (TOP[0], TOP[1])) == tuple(VALLEY)

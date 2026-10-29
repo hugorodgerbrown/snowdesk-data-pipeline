@@ -67,8 +67,23 @@ guide time. The panel then says plainly which half of the tour the line
 is ("Route shows the ascent only." / "…the descent only.") and points at
 the SAC guide for the rest (Hugo, 2026-10-29: "instead of inferring
 anything"). "↓ via ascent" and `descends_via_ascent` are gone with it.
-Whether a way down whose points run uphill (193 of the 294) should be
-read top-down is still open.
+Whether a way down should be read from the summit down is still open.
+SNOW-1304 below shows that most ways down have points that run uphill.
+
+**A tour is one leg, and a way down is what SAC calls one (SNOW-1304).**
+SAC publishes the ways up and the ways down to a summit separately, so a
+reader can climb by one and ski down another (Hugo, 2026-10-29). The open
+panel and the map draw each tour as one leg, in its direction's colour:
+up is dashed grey, down is solid fuchsia, the same as its list swatch
+and its highlight (`one_leg`). Before this, the panel cut the line into
+legs by the order of its points, and that order is no guide: SAC draws
+2,743 of its 2,941 lines from the valley to the summit, ways down
+included. A tour is a way down when SAC names it one in any of its
+languages ("Abfahrt", "Descente", "Discesa", "Descent" at the start of
+the name), or gives it a descent figure and no ascent. That is 403
+tours. The figures alone missed 104 named descents that carry an ascent
+figure too, such as the re-climb on "Descente à la cabane de Chanrion"
+(↑420 ↓1,660).
 
 **A saved copy keeps what SAC adds (SNOW-1303).** A copy's panel shows the
 same SAC block as the tour's, without the Save button: grade, guide time,

@@ -70,6 +70,24 @@ class TestFeature:
         assert "uuid" not in props
         assert "token" not in props
 
+    def test_a_tour_is_drawn_as_one_leg_in_its_direction(self, client: Client) -> None:
+        """A named way down is one descending leg, sampled or not (SNOW-1304).
+
+        Unsampled, its points carry no heights and no leg can be detected
+        in them; the leg is the whole line all the same.
+        """
+        tour = SkiTourFactory.create(
+            name="Descente à la cabane de Chanrion", ascent_m=420, descent_m=1660
+        )
+        feature = client.get(_feature_url(tour)).json()["feature"]
+        props = feature["properties"]
+        assert props["terrain_pending"] is True
+        assert props["down"] is True
+        [leg] = props["legs"]
+        assert leg["climbing"] is False
+        assert (leg["from"], leg["point_from"]) == (0, 0)
+        assert leg["point_to"] == len(feature["geometry"]["coordinates"]) - 1
+
     def test_sample_walks_the_grid_and_keeps_the_record(self, client: Client) -> None:
         """``?sample=1`` answers with the terrain and stores it."""
         tour = SkiTourFactory.create()
