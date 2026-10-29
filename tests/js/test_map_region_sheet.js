@@ -765,9 +765,39 @@ describe('a tap on a report\'s pin (SNOW-1291)', () => {
     focus('CH-4115');
     expect(stale.hasAttribute('data-focused')).toBe(false);
     window.pwaRegionSheet.reopen();
+    // SNOW-1295: a tap reads the region afresh, so the row lands with the body.
+    await settle();
     expect(row().hasAttribute('data-focused')).toBe(true);
     expect(row().closest('details').open).toBe(true);
     expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
+  it('reads an open sheet again when its body lacks the tapped report (SNOW-1295)', async () => {
+    // The open body predates the report: the tap must not leave it as it is.
+    fetchMock.mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve(BODY) }));
+    select('CH-4115', 'tap');
+    await settle();
+    expect(row()).toBeNull();
+    fetchMock.mockClear();
+    fetchMock.mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve(GROUND_BODY) }));
+    focus('CH-4115');
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(row().hasAttribute('data-focused')).toBe(true);
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
+  it('raises the sheet to the section when a fresh body still lacks the row (SNOW-1295)', async () => {
+    const other = GROUND_BODY.replace(SUBMISSION, '0b6f2c1e-0000-4000-8000-00000000000f');
+    fetchMock.mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve(other) }));
+    focus('CH-4115');
+    select('CH-4115', 'observation');
+    await settle();
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+    // Scrolled to the section, not to a row.
+    await vi.waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith(
+      expect.objectContaining({ block: 'start' }),
+    ));
   });
 
   it('marks the row at once when the region\'s body is already up', async () => {
@@ -775,5 +805,32 @@ describe('a tap on a report\'s pin (SNOW-1291)', () => {
     await settle();
     focus('CH-4115');
     expect(row().hasAttribute('data-focused')).toBe(true);
+  });
+});
+
+
+// Last in the file: a report change stamps every later body URL with `r=`.
+describe('a report filed or removed (SNOW-1295)', () => {
+  afterEach(() => {
+    localStorage.removeItem('snowdesk.reports.epoch');
+  });
+
+  it('drops kept bodies and asks again past the HTTP cache', async () => {
+    select('CH-4116', 'tap');
+    await settle();
+    select('CH-4115', 'tap');
+    await settle();
+    fetchMock.mockClear();
+    document.dispatchEvent(new CustomEvent('snowdesk:reports-changed'));
+    await settle();
+    // The open sheet reads its region again, with a URL the cache has not seen.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/^\/partials\/region-sheet\/ch-4115\/\?r=\d+$/);
+    expect(localStorage.getItem('snowdesk.reports.epoch')).toMatch(/^\d+$/);
+    // And a region visited before the change is not served from memory.
+    fetchMock.mockClear();
+    select('CH-4116', 'tap');
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -31,6 +31,7 @@ Covers:
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from typing import Any
 from unittest.mock import patch
@@ -172,6 +173,25 @@ class TestReportFormNoCoords:
         assert response.status_code == 200
         content = response.content.decode()
         assert "move the map to set your location" in content
+
+
+@pytest.mark.django_db
+class TestReportFormPlacing:
+    """SNOW-1295: the form places the pin first, in a row the tiles step aside for."""
+
+    def test_gps_form_offers_move_pin_and_hides_the_placing_row(
+        self, client: Client
+    ) -> None:
+        """A fix shows Move pin; the placing row waits, hidden, for report.js."""
+        client.force_login(_verified_user())
+        content = client.get(
+            FORM_URL, {"lat": "46.1", "lon": "7.1"}, **HTMX_HEADERS
+        ).content.decode()
+        assert 'data-action="refine-location"' in content
+        assert "Move pin" in content
+        assert re.search(r"<div[^>]*data-report-placing[^>]*hidden", content)
+        assert 'data-action="place-done"' in content
+        assert "data-report-what" in content
 
 
 @pytest.mark.django_db
