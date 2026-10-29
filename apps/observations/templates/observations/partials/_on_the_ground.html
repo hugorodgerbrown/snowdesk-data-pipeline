@@ -11,8 +11,11 @@ its most serious family.
 
 Two shapes, by the day on screen (Hugo, 29 Oct 2026):
 
-  - TODAY: an open section. "Live today" (solid marks) then "Recent" (the
-    three days before; hollow marks), the same two states the pins carry.
+  - TODAY: an open section. Today's reports (solid marks) then "Recent"
+    (the three days before; hollow marks), the same two states the pins
+    carry. Today's need no "Live today" over them: in the map the eyebrow
+    says "Today" (includes/_dated_eyebrow.html), and the bulletin page's
+    title card names the day (Hugo, 29 Oct 2026).
     Empty, it still renders, as ONE row — the eyebrow, "No reports in 3
     days" and a ghost call to report — because a crowd layer needs a first
     report before it is worth anything, but an empty section should not
@@ -30,6 +33,8 @@ The call to report is observations/partials/_on_the_ground_cta.html.
 Context:
   ground   — apps.observations.services.ground.Ground.
   in_map   — True inside the map's sheet.
+  section_day, another_day — the map's sheet only: the day the eyebrow
+             names (includes/_dated_eyebrow.html).
   map_url  — The bulletin page's link to this region on the map (page only).
   user     — The reader, for the call to report.
 {% endcomment %}
@@ -45,9 +50,10 @@ Context:
     </section>
 {% elif ground.is_today %}
     <section class="mb-4" data-testid="on-the-ground" data-on-the-ground>
-        {% include "includes/_eyebrow.html" with text=on_the_ground_label data_testid="on-the-ground-heading" class_extra="mb-2" %}
+        {# In the map the eyebrow names the day, so today's reports need no #}
+        {# "Live today" over them (Hugo, 29 Oct 2026).                       #}
+        {% include "includes/_dated_eyebrow.html" with text=on_the_ground_label data_testid="on-the-ground-heading" class_extra="mb-2" day=section_day another_day=another_day only %}
         {% if ground.live %}
-            <h3 class="mb-1 text-meta font-semibold text-text-2">{% trans "Live today" %}</h3>
             <ul class="mb-3 divide-y divide-border overflow-hidden rounded-card border border-border bg-card">
                 {% for report in ground.live %}
                     {% include "observations/partials/_on_the_ground_row.html" with report=report state="live" only %}

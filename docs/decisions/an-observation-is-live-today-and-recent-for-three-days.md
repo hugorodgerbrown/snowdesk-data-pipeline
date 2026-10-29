@@ -66,8 +66,9 @@ type it ticked and its most serious family, and stamped with `observed_on`.
   ground" at the top of `_region_body.html` (so the bulletin page and the
   map's sheet say the same thing). `apps/observations/services/ground.py`
   holds the one window, `report_window`, for both the map's feed and the
-  panel's `ground_for_region`. Today is an open section, "Live today" then
-  "Recent"; another day is a closed "Observed on 28 Oct 2026 · 2" panel,
+  panel's `ground_for_region`. Today is an open section, today's reports
+  then "Recent" (a "Live today" label over today's went on 29 Oct 2026: in
+  the map the eyebrow says "Today"); another day is a closed "Observed on 28 Oct 2026 · 2" panel,
   and nothing at all when that day has no reports. It replaced SNOW-324's
   "Reported today" counts and their "placed manually" footnote.
 - **SNOW-1296**: today with no reports is one row, "On the ground · No

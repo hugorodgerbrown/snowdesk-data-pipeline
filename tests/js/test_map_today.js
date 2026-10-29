@@ -1,17 +1,16 @@
 /*
- * tests/js/test_map_today.js — the map's ways back to today (SNOW-1165).
+ * tests/js/test_map_today.js — the map's way back to today (SNOW-1165).
  *
  * static/js/today_core.js decides whether "Today" has anywhere to go;
  * static/js/map_today.js enables the date control's "Today" half on any
- * other day and, from it or a sheet strip's ``[data-back-to-today]``, asks
- * the scrubber to move to today.
+ * other day and, from it, asks the scrubber to move to today. (The sheets'
+ * own "Back to today" went with their date row, 29 Oct 2026.)
  *
  * What is pinned, because each is the way this goes wrong:
  *   - "Today" is disabled on today and enabled on any other day, including
  *     from a boot ``?d=`` before the scrubber has committed anything;
  *   - a press asks the scrubber (``snowdesk:scrub-to``) rather than
- *     committing a day itself;
- *   - a sheet's strip button, swapped in after load, works the same way.
+ *     committing a day itself.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -104,36 +103,5 @@ describe('the "Today" control', () => {
     await load();
     control().click();
     expect(scrubs).toEqual([{ date: '2026-10-21', source: 'today' }]);
-  });
-});
-
-describe("a sheet's strip", () => {
-  it('asks the scrubber for today from a button swapped in after load', async () => {
-    history.replaceState(null, '', '/map/?d=2026-04-08');
-    await load();
-    document.getElementById('sheet').innerHTML =
-      '<div><button type="button" data-back-to-today><span>Back to today</span></button></div>';
-    document.querySelector('[data-back-to-today] span').click();
-    expect(scrubs).toEqual([{ date: '2026-10-21', source: 'today' }]);
-  });
-
-  it("reloads the shell when the map is already on its own today", async () => {
-    // A cached shell past midnight: the server says another day, the shell's
-    // data-today is the map's day, and scrubbing to it would change nothing.
-    const reload = vi.fn(async () => {});
-    window.pwaVersionInfo = { reload };
-    await load();
-    document.getElementById('sheet').innerHTML =
-      '<button type="button" data-back-to-today>Back to today</button>';
-    document.querySelector('[data-back-to-today]').click();
-    expect(reload).toHaveBeenCalledTimes(1);
-    expect(scrubs).toEqual([]);
-    delete window.pwaVersionInfo;
-  });
-
-  it('ignores clicks anywhere else', async () => {
-    await load();
-    document.getElementById('sheet').click();
-    expect(scrubs).toEqual([]);
   });
 });

@@ -26,6 +26,9 @@ Context:
             "On the ground"'s call to report on the page goes there).
   in_map — True inside the map's sheet: the superuser debug block, which
            reads a raw-data script only the page embeds, is left out.
+  section_day, another_day — the map's sheet only: the day its dated
+           section headers name (includes/_dated_eyebrow.html; Hugo,
+           29 Oct 2026). Absent on the page, whose title card names it.
 {% endcomment %}
 {# ── On the ground (SNOW-1291) ───────────────────────────────── #}
 {# What people found in this region: first, because it is what a   #}
@@ -126,7 +129,8 @@ Context:
             {% endcomment %}
             {% if show_day_risk_profile %}
                 {% translate "Day Risk Profile" as day_risk_label %}
-                {% include "includes/_eyebrow.html" with text=day_risk_label data_testid="day-risk-profile-heading" class_extra="mb-1" %}
+                {# The first heading of the bulletin names its day in the map (Hugo, 29 Oct 2026). #}
+                {% include "includes/_dated_eyebrow.html" with text=day_risk_label data_testid="day-risk-profile-heading" class_extra="mb-1" day=section_day another_day=another_day only %}
                 {% if day_movement == "shifting" %}
                     <p
                         class="text-xs text-text-3 mb-3"
@@ -146,7 +150,11 @@ Context:
                    aspect/elevation row, and problem rows.
             {% endcomment %}
             {% translate "Avalanche Problems" as avalanche_problems_label %}
-            {% include "includes/_eyebrow.html" with text=avalanche_problems_label data_testid="avalanche-problems-heading" class_extra="mb-3" %}
+            {% if show_day_risk_profile %}
+                {% include "includes/_eyebrow.html" with text=avalanche_problems_label data_testid="avalanche-problems-heading" class_extra="mb-3" %}
+            {% else %}
+                {% include "includes/_dated_eyebrow.html" with text=avalanche_problems_label data_testid="avalanche-problems-heading" class_extra="mb-3" day=section_day another_day=another_day only %}
+            {% endif %}
             {% if not panel.problem_cards %}
                 <div class="rounded-card border border-border bg-card px-4 py-5 text-center mb-4">
                     <p class="text-sm font-medium text-text-1 mb-0.5">

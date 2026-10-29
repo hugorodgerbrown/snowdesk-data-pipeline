@@ -18,9 +18,11 @@ masthead, with its onward links, stays in the page's frame.
 
 Split across the phone detents
 (SNOW-1101; docs/decisions/sheet-detents-are-phone-only.md):
-  PEEK — the symbol, "<name> · <height>" and the ×; the map's day on its
-         full-width "Data from" row; then the high/low, new snow and wind
-         of that day (Hugo, 21 Oct). The block is ``data-sheet-peek`` and
+  PEEK — the symbol, "<name> · <height>" and the ×; the "Weather •
+         Open-Meteo HH:MM" eyebrow, which names the map's day at its right
+         (includes/_dated_eyebrow.html; the full-width "Data from" row it
+         replaced went on 29 Oct 2026); then the high/low, new snow and
+         wind of that day (Hugo, 21 Oct). The block is ``data-sheet-peek`` and
          ``data-sheet-drag``.
   HALF — down to the end of the week (``data-sheet-half`` on the picker).
   FULL — the selected day: its line, its meteogram when it has hours, and
@@ -74,8 +76,18 @@ Context:
     {# the reader drags by. Each figure renders only when given.          #}
     <div data-sheet-peek data-sheet-drag>
         {% include "includes/_weather_masthead.html" with heading=heading location=location day=day in_map=True testid_prefix="weather-detail" only %}
-        {% include "includes/_sheet_date_row.html" with day=target_date another_day=another_day only %}
-        {% include "includes/_weather_day_summary.html" with day=day is_forecast=is_forecast testid_prefix="weather-detail" only %}
+        {# The day is named by this eyebrow, at its right ("Today", or the #}
+        {# date in the info colours), not a "Data from" row (Hugo, 29 Oct #}
+        {# 2026) — the same heading the resort sheet's weather carries.     #}
+        {% if issued_at %}
+            {% blocktrans with updated=issued_at|time:"H:i" trimmed asvar weather_eyebrow %}
+                Weather • Open-Meteo {{ updated }}
+            {% endblocktrans %}
+        {% else %}
+            {% trans "Weather" as weather_eyebrow %}
+        {% endif %}
+        {% include "includes/_dated_eyebrow.html" with text=weather_eyebrow tag="h3" day=target_date another_day=another_day class_extra="mt-4" data_testid="weather-detail-eyebrow" only %}
+        {% include "includes/_weather_day_summary.html" with day=day is_forecast=is_forecast testid_prefix="weather-detail" class_extra="mt-1.5" only %}
     </div>
 
     {# The rest is the forecast page's own body (the sheet is the page, #}

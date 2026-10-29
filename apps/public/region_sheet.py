@@ -156,7 +156,10 @@ def region_sheet_partial(request: HttpRequest, region_id: str) -> HttpResponse:
         "day_rating": day_rating,
         "level_label": level_meta["label"] if level_meta else "",
         "target_date": target_date,
-        # SNOW-1165: the sheet's "Showing … · Back to today" strip.
+        # The day the body's dated section headers name, and whether it is
+        # another day (includes/_dated_eyebrow.html; Hugo, 29 Oct 2026) —
+        # the sheet's only, since the bulletin page's title card names it.
+        "section_day": target_date,
         "another_day": target_date != timezone.localdate(),
         "country_name": COUNTRY_NAMES.get(country, country),
         "covered": region.region_id in covered_region_ids(),

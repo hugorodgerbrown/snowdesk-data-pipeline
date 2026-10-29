@@ -293,20 +293,40 @@ class TestCard:
         assert "1800" in html  # freezing level
         assert "22" in html  # wind
 
-    def test_header_names_the_height_and_the_day_row_follows(
+    @freeze_time("2026-01-12T11:00:00+00:00")
+    def test_header_names_the_height_and_the_eyebrow_the_day(
         self, client: Client, resort_location: Location
     ) -> None:
-        """Hugo, 21 Oct: "Belalp · 1934 m", then "Data from <day>"."""
+        """Hugo, 21 Oct: "Belalp · 1934 m"; 29 Oct 2026: then the weather
+        eyebrow, naming the day at its right, where "Data from" was.
+        """
         response = client.get(_card_url(resort_location), {"date": TODAY.isoformat()})
         html = response.json()["html"]
         start = html.index('data-testid="weather-detail-heading"')
         heading = html[start : html.index("</h2>", start)]
         assert "1450" in heading
-        row_at = html.index('data-testid="sheet-date-row"')
-        assert start < row_at < html.index('data-testid="weather-detail-line"')
-        row = html[row_at : html.index("</button>", row_at)]
-        assert "Data from" in row
-        assert TODAY.strftime("%b %Y") in row
+        assert "Data from" not in html
+        eyebrow_at = html.index('data-testid="weather-detail-eyebrow"')
+        assert start < eyebrow_at < html.index('data-testid="weather-detail-line"')
+        day_at = html.index('data-testid="section-day"', eyebrow_at)
+        day = html[day_at : html.index("</span>", day_at)]
+        assert "Today" in day
+        assert "data-another-day" not in day
+
+    @freeze_time("2026-01-12T11:00:00+00:00")
+    def test_another_day_is_named_in_the_eyebrow(
+        self, client: Client, resort_location: Location
+    ) -> None:
+        """The date, in the info colours; no "Back to today" in the sheet."""
+        past = TODAY - datetime.timedelta(days=2)
+        html = client.get(
+            _card_url(resort_location), {"date": past.isoformat()}
+        ).json()["html"]
+        day_at = html.index('data-testid="section-day"')
+        day = html[day_at - 200 : html.index("</span>", day_at)]
+        assert "data-another-day" in day
+        assert f"{past:%a} {past.day} {past:%b}" in day
+        assert "data-back-to-today" not in html
 
     def test_names_an_anonymous_location_by_its_resort(
         self, client: Client, resort_location: Location

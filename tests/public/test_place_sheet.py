@@ -93,18 +93,21 @@ def _resort(**kwargs: Any) -> Resort:
 
 
 def _peek(content: str) -> str:
-    """Return the sheet's peek block, up to the end of its date row."""
+    """Return the sheet's peek block, up to where the body starts."""
     start = content.index("data-sheet-peek")
-    return content[
-        start : content.index(
-            "</button>", content.index('data-testid="sheet-date-row"')
+    ends = [
+        content.find(marker, start)
+        for marker in (
+            'data-testid="place-sheet-resort-body"',
+            'data-testid="place-sheet-level"',
         )
     ]
+    return content[start : min(end for end in ends if end != -1)]
 
 
-def _date_row(peek: str) -> str:
-    """Return the date row's markup from a peek block."""
-    return peek[peek.index('data-testid="sheet-date-row"') - 60 :]
+def _section_days(content: str) -> list[str]:
+    """Return each dated eyebrow's day tag (``section-day``), as markup."""
+    return re.findall(r'<span[^>]*data-testid="section-day"[^>]*>[^<]*</span>', content)
 
 
 def _text(markup: str | bytes) -> str:
@@ -160,7 +163,7 @@ class TestGuards:
 class TestResortPeek:
     """A resort's peek row: name, rating, region and the Save star."""
 
-    def test_header_is_the_pin_tile_the_name_and_the_date(self, client: Client) -> None:
+    def test_header_is_the_pin_tile_and_the_name(self, client: Client) -> None:
         """Hugo, 21 Oct: no level, code or region in the header."""
         resort = _resort()
         RegionDayRatingFactory.create(
@@ -174,9 +177,8 @@ class TestResortPeek:
         assert "danger-tile" not in peek
         assert "search-result-badge" not in peek
         assert "Considerable" not in peek
-        row = _date_row(peek)
-        assert f"Data from {timezone.localdate():%-d %b %Y}" in _text(row)
-        assert "data-another-day" not in row
+        # Hugo, 29 Oct 2026: no "Data from" row; the eyebrows name the day.
+        assert "Data from" not in content
 
     def test_the_tile_draws_the_gondola_cabin(self, client: Client) -> None:
         """SNOW-1177: a resort's tile is the cabin, not the placemark."""
@@ -185,15 +187,28 @@ class TestResortPeek:
         assert 'd="M3 6.5 21 3"' in peek
         assert "a7 7 0 1 0-14 0" not in peek
 
-    def test_another_day_highlights_the_date_row(self, client: Client) -> None:
-        """The row takes over from SNOW-1165's strip, button and all."""
+    def test_another_day_dates_each_dated_section(self, client: Client) -> None:
+        """Hugo, 29 Oct 2026: the day is at the right of each dated eyebrow,
+        in the info colours, and the sheet has no "Back to today" of its own.
+        """
         resort = _resort()
         content = _get(client, _resort_url(resort.slug, "2026-02-03")).content.decode()
         assert 'data-testid="another-day-strip"' not in content
-        row = _date_row(_peek(content))
-        assert "data-another-day" in row
-        assert "Data from 3 Feb 2026" in _text(row)
-        assert "data-back-to-today" in row
+        assert "data-back-to-today" not in content
+        days = _section_days(content)
+        assert days
+        for day in days:
+            assert "data-another-day" in day
+            assert _text(day) == "Tue 3 Feb"
+
+    def test_today_dates_each_dated_section_quietly(self, client: Client) -> None:
+        resort = _resort()
+        content = _get(client, _resort_url(resort.slug)).content.decode()
+        days = _section_days(content)
+        assert days
+        for day in days:
+            assert "data-another-day" not in day
+            assert _text(day) == "Today"
 
     def test_today_shows_no_strip(self, client: Client) -> None:
         resort = _resort()
@@ -491,14 +506,16 @@ class TestResortBody:
         content = _get(client, _resort_url(resort.slug, day.isoformat())).content
         assert f'href="{resort.region.get_absolute_url(day)}"'.encode() in content
 
-    def test_section_eyebrows_leave_the_day_to_the_date_row(
-        self, client: Client
-    ) -> None:
-        """Hugo, 21 Oct: every section follows the map's day, named once."""
+    def test_the_bulletin_eyebrow_names_the_day(self, client: Client) -> None:
+        """Hugo, 29 Oct 2026: the bulletin's eyebrow carries the map's day
+        at its right — short, as the date control writes it.
+        """
         resort = _resort()
-        content = _get(client, _resort_url(resort.slug, "2026-02-03")).content
-        assert "Data from 3 Feb 2026" in _text(content)
-        assert b"Tuesday 3 February" not in content
+        content = _get(client, _resort_url(resort.slug, "2026-02-03")).content.decode()
+        start = content.index('id="resort-region-heading"')
+        row = content[start : content.index("</div>", start)]
+        assert "Tue 3 Feb" in _text(row)
+        assert "Tuesday 3 February" not in content
 
     def test_forecast_links_carry_the_maps_day(self, client: Client) -> None:
         resort = _resort(latitude=46.1, longitude=7.4)
