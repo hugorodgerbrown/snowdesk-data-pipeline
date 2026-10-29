@@ -66,7 +66,7 @@
   const STRINGS = self.pwaStrings.read('map-zoom-strings-template', {
     'toggle-label': 'Zoom level %(zoom)s',
     'gate-region_select': 'Region selector',
-    'gate-ski_routes': 'Ski touring',
+    'gate-ski_routes': 'SAC ski touring',
     'gate-terrain_filter': 'Steep terrain',
     'gate-route_slopes': 'Route slope angle',
     'threshold-from': '≥%(zoom)s',

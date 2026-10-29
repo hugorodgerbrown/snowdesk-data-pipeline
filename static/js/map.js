@@ -2775,9 +2775,10 @@
    *   is drawn without it) or no slope record.
    */
   const routeCursorRawPoint = () => {
-    // A trip's route is drawn with the routes overlay off (SNOW-1213).
+    // A trip's route is drawn with the routes overlay off (SNOW-1213), and
+    // so is an SAC tour (SNOW-1286).
     if (!map || !routeCursorTarget) return null;
-    if (!routeCursorTarget.trip && !overlayState.routes) return null;
+    if (!routeCursorTarget.trip && !routeCursorTarget.tour && !overlayState.routes) return null;
     const point = routeCursorFeature(routeCursorTarget.cursor.state().index);
     if (!point) return null;
     const px = map.project(point.geometry.coordinates);
@@ -3020,7 +3021,9 @@
   const routeCursorLive = () => !!(
     routeCursorTarget
     // SNOW-1213: a trip's line has no overlay switch; it is always drawn.
-    && (routeCursorTarget.trip || overlayState.routes)
+    // SNOW-1286: nor has an SAC tour's, so a tap on the open tour placed no
+    // point with the routes overlay off — it opened the tour again.
+    && (routeCursorTarget.trip || routeCursorTarget.tour || overlayState.routes)
     && window.pwaRouteRail?.isOpen?.()
     && window.pwaRouteRail.cursor?.() === routeCursorTarget.cursor
   );
@@ -4578,7 +4581,7 @@
 
   // ==== Ski touring: SAC's summits and tours ====
   //
-  // SNOW-1285: two layers under the layers menu's "Ski touring" row, each
+  // SNOW-1285: two layers under the layers menu's "SAC ski touring" row, each
   // with its own switch, both drawn by ski_tours.js and both tappable at
   // every zoom they are drawn at. swisstopo's raster of its whole network
   // (ch.swisstopo-karto.skitouren) is gone from the map: it drew lines

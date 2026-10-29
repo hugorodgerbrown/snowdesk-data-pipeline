@@ -15,8 +15,9 @@
  * view's own rectangle at full detail. swisstopo's raster of its whole
  * network is no longer drawn: nothing in it could be tapped.
  *
- * While a list is open the tours it names are drawn over the rest in the
- * route colour, a way down dashed, each with a green dot at its far end
+ * While a list is open the tours it names are drawn over the rest as a
+ * saved route's legs are (SNOW-1286): a way up in the climb's dashed grey,
+ * a way down in the descent's solid fuchsia, each with a green dot at its far end
  * (where a way up starts and a way down finishes), and every other tour is
  * dimmed.
  *
@@ -68,11 +69,9 @@
   const FAR_END = 'ski-tours-far-end';
   const LAYERS = [LINE, HIGHLIGHT, HIGHLIGHT_DOWN, SUMMIT, FAR_END, LABEL];
   // MapLibre paint cannot read a CSS custom property. The tours' blue is
-  // swisstopo's own for its ski routes (blue-600); the highlight is the
-  // route colour (--color-route-line); the marks are the ink and the card.
+  // swisstopo's own for its ski routes (blue-600); the highlight is a
+  // route's two leg colours (legColours); the marks are the ink and the card.
   const TOUR_COLOUR = '#2563eb';
-  const HIGHLIGHT_COLOUR =
-    (self.pwaRouteDrawingCore && self.pwaRouteDrawingCore.ROUTE_LINE_COLOUR) || '#c026d3';
   const INK_COLOUR = '#1a1916';
   // The mockup's green dot at a tour's far end: --color-sync-ok (green-600).
   const FAR_END_COLOUR = '#16a34a';
@@ -91,6 +90,7 @@
     'sac-route': 'SAC route',
     climb: '↑ %(value)s m',
     descent: '↓ %(value)s m',
+    'same-way': '↓ same way',
     'guide-time': '%(time)s (SAC guide time)',
     saved: 'Route saved.',
     'save-failed': "That route couldn't be saved. Try again.",
@@ -188,6 +188,21 @@
   // ---------------------------------------------------------------------------
 
   /**
+   * A saved route's two leg colours, off the legs core, read when the
+   * layers are added. The literals mirror `--color-route-rail-climb` and
+   * `--color-route-rail-descent`.
+   *
+   * @returns {{climb: string, descent: string}}
+   */
+  function legColours() {
+    const legs = self.pwaRouteLegsCore || {};
+    return {
+      climb: legs.LEG_CLIMB_COLOUR || '#64748b',
+      descent: legs.LEG_DESCENT_COLOUR || '#c026d3',
+    };
+  }
+
+  /**
    * Add the tours' source and layers, once per style.
    *
    * Under the boundaries and every pin, over the danger colours. Each
@@ -225,14 +240,22 @@
       },
     }, before);
     const highlightWidth = ['interpolate', ['linear'], ['zoom'], 9, 3, 12, 5, 15, 7];
+    // SNOW-1286: a lit tour is drawn as a saved route's legs are — a way up
+    // in the climb's grey, dashed, a way down in the descent's solid
+    // fuchsia — so a tour reads the same before and after it is saved.
+    const legs = legColours();
     map.addLayer({
       id: HIGHLIGHT,
       type: 'line',
       source: SOURCE,
       minzoom: minzoom,
       filter: ['all', isTour, ['!', ['get', 'down']], highlight],
-      layout: { visibility: visibility, 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': HIGHLIGHT_COLOUR, 'line-width': highlightWidth },
+      layout: { visibility: visibility, 'line-cap': 'butt', 'line-join': 'round' },
+      paint: {
+        'line-color': legs.climb,
+        'line-width': highlightWidth,
+        'line-dasharray': [2, 1.5],
+      },
     }, before);
     map.addLayer({
       id: HIGHLIGHT_DOWN,
@@ -240,12 +263,8 @@
       source: SOURCE,
       minzoom: minzoom,
       filter: ['all', isTour, ['get', 'down'], highlight],
-      layout: { visibility: visibility, 'line-join': 'round' },
-      paint: {
-        'line-color': HIGHLIGHT_COLOUR,
-        'line-width': highlightWidth,
-        'line-dasharray': [1.2, 1.2],
-      },
+      layout: { visibility: visibility, 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': legs.descent, 'line-width': highlightWidth },
     }, before);
     const isMark = ['in', ['get', 'kind'], ['literal', ['summit', 'hut']]];
     map.addLayer({
@@ -460,7 +479,8 @@
 
   /**
    * The SAC line under the panel's title: "SAC route · PD+ · ↑ 960 m ·
-   * 3 h 30 (SAC guide time)".
+   * ↓ same way · 3 h 30 (SAC guide time)". "↓ same way" marks an
+   * up-and-back tour, skied down the line it climbed (SNOW-1286).
    *
    * @param {Object<string, any>} props The tour Feature's properties.
    * @returns {string}
@@ -472,6 +492,7 @@
       parts.push(interpolate(STRINGS.descent, { value: props.sac_descent_m }));
     } else if (props.sac_ascent_m) {
       parts.push(interpolate(STRINGS.climb, { value: props.sac_ascent_m }));
+      if (props.same_way) parts.push(STRINGS['same-way']);
     }
     if (props.sac_time) parts.push(interpolate(STRINGS['guide-time'], { time: props.sac_time }));
     return parts.join(' · ');
@@ -491,8 +512,12 @@
     if (sac) sac.textContent = sacLine(props);
     const guide = /** @type {HTMLAnchorElement|null} */ (node.querySelector('[data-ski-tour-guide]'));
     if (guide) {
-      if (props.sac_url) guide.href = String(props.sac_url);
-      else guide.remove();
+      if (props.sac_url) {
+        guide.href = String(props.sac_url);
+      } else {
+        guide.remove();
+        node.querySelector('[data-ski-tour-guide-note]')?.remove();
+      }
     }
     const save = /** @type {HTMLButtonElement|null} */ (node.querySelector('[data-ski-tour-save]'));
     if (save) {

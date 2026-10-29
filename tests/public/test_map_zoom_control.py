@@ -73,7 +73,7 @@ def test_a_filled_variant_names_the_zoom_and_draws_its_ticks() -> None:
     assert "Some features are only available at certain zoom levels." in html
     for name in (
         "Region selector",
-        "Ski touring",
+        "SAC ski touring",
         "Steep terrain",
         "Route slope angle",
     ):

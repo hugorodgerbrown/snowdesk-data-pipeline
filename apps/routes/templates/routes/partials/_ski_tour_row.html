@@ -6,8 +6,10 @@ Included only by routes/partials/_ski_tour_list.html. A button, so the whole
 row is the target; static/js/ski_tours.js opens the tour on a press of
 ``data-ski-tour``.
 
-The swatch is the route's line as the map draws a highlighted tour, dashed
-for a way down. The title is the tour's summit and height in a "passes here"
+The swatch is the line as the map draws a highlighted tour, which is a
+saved route's legs (SNOW-1286): a way up dashed in the climb's grey, a way
+down solid in the descent's fuchsia. An up-and-back way up adds "↓ same
+way" to its figures. The title is the tour's summit and height in a "passes here"
 list (``by_name`` false), where the summit is how a reader tells the rows
 apart, and SAC's name for the way in a summit's list (``by_name`` true),
 where every row shares the summit.
@@ -22,14 +24,19 @@ Parameters:
         data-ski-tour="{{ row.uuid }}"
         class="hover-affordance flex w-full items-center gap-3 rounded-tag px-2 py-2.5 text-left"
     >
-        <svg width="20" height="8" viewBox="0 0 20 8" fill="none" aria-hidden="true" class="shrink-0 text-route-line">
-            <path
-                d="M1 4h18"
-                stroke="currentColor"
-                stroke-width="3"
-                stroke-linecap="round"
-                {% if row.down %}stroke-dasharray="3 4"{% endif %}
-            />
+        <svg
+            width="20"
+            height="8"
+            viewBox="0 0 20 8"
+            fill="none"
+            aria-hidden="true"
+            class="shrink-0 {% if row.down %}text-route-rail-descent{% else %}text-route-rail-climb{% endif %}"
+        >
+            {% if row.down %}
+                <path d="M1 4h18" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+            {% else %}
+                <path d="M1 4h18" stroke="currentColor" stroke-width="3" stroke-dasharray="6 4.5" />
+            {% endif %}
         </svg>
         <span class="flex min-w-0 flex-1 flex-col">
             <span class="truncate text-sm font-medium text-text-1">
@@ -47,6 +54,9 @@ Parameters:
                     {% if row.descent_m %}↓ {{ row.descent_m }} m{% endif %}
                 {% elif row.ascent_m %}
                     ↑ {{ row.ascent_m }} m
+                    {% if row.same_way %}
+                        · {% trans "↓ same way" %}
+                    {% endif %}
                 {% endif %}
                 {% if row.time %}· {{ row.time }}{% endif %}
             </span>

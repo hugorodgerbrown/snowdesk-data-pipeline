@@ -19,7 +19,12 @@ Measured on the 2,941 tours: half the summits with two or more tours have
 their target ends within 30 m of each other.
 
 A WAY DOWN is a tour with a descent and no ascent: SAC's "Abfahrt …",
-"Descente …" and "Discesa …" lines, about one in eight.
+"Descente …" and "Discesa …" lines, about one in ten. An UP-AND-BACK tour
+is a way up with a descent figure too, skied back down the way it climbed:
+SAC's "as ascent", 2,503 of the 2,941 (SNOW-1286). Its line is published
+one way only, so ``tour_points`` returns it there and back — the panel's
+profile, legs, distance and estimate then include the descent, as the
+tour does.
 
 THE TERRAIN IS SAMPLED ONCE PER TOUR. Walking the terrain grid under a
 10 km line takes seconds, too long for a tap. So the panel opens at once on
@@ -80,6 +85,7 @@ _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
 # five places (about a metre): at z9-z11 a pixel is 20-150 m, so nothing
 # drawn moves, and the whole set is ~2.3 MB, ~0.6 MB gzipped.
 _OVERVIEW_CACHE_KEY = "routes:ski-overview:v1:{count}:{stamp}"
+_THERE_AND_BACK = "there_and_back"
 _OVERVIEW_TOLERANCE_DEG = 0.0002
 _OVERVIEW_PLACES = 5
 
@@ -119,6 +125,15 @@ def is_hut(name: str) -> bool:
 def is_descent(tour: SkiTour) -> bool:
     """Return whether a tour is a way down: a descent and no ascent."""
     return tour.ascent_m is None and tour.descent_m is not None
+
+
+def is_up_and_back(tour: SkiTour) -> bool:
+    """Return whether a tour is skied back down the way it climbed (SNOW-1286).
+
+    SAC gives such a tour both figures and one line: a way up with a
+    descent, which its guide describes as "as ascent".
+    """
+    return tour.ascent_m is not None and tour.descent_m is not None
 
 
 def summit_key(name: str, altitude_m: int | None) -> str:
@@ -482,7 +497,8 @@ def tour_points(tour: SkiTour) -> list[list[float | None]]:
 
     A tour in several parts (swisstopo breaks one where it crosses a gap in
     its own data) is joined end to end; a point repeating the last is
-    dropped.
+    dropped. An up-and-back tour comes back down its own line, so the line
+    is followed by itself reversed (SNOW-1286).
 
     Args:
         tour: The tour.
@@ -498,6 +514,8 @@ def tour_points(tour: SkiTour) -> list[list[float | None]]:
             if points and points[-1][:2] == point[:2]:
                 continue
             points.append(point)
+    if is_up_and_back(tour) and len(points) > 1:
+        points += [list(point) for point in reversed(points[:-1])]
     return points
 
 
@@ -546,11 +564,17 @@ def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
         the terrain model).
 
     """
-    if tour.slope_samples is not None or not sample:
-        held: dict[str, Any] | None = tour.slope_samples
+    held: dict[str, Any] | None = tour.slope_samples
+    # A record walked before SNOW-1286 covers an up-and-back tour's way up
+    # alone, so it no longer matches the line: it is not held.
+    if held is not None and is_up_and_back(tour) and not held.get(_THERE_AND_BACK):
+        held = None
+    if held is not None or not sample:
         return held
     record = build_slope_samples(tour_points(tour), f"ski tour {tour.sac_id}")
     if record is not None:
+        if is_up_and_back(tour):
+            record[_THERE_AND_BACK] = True
         tour.slope_samples = record
         SkiTour.objects.filter(pk=tour.pk).update(slope_samples=record)
     return record
@@ -573,6 +597,7 @@ def tour_properties(tour: SkiTour) -> dict[str, Any]:
         "sac_time": sac_time(tour.ascent_time_label),
         "sac_url": localised(tour.urls, tour.urls.get("de", "")),
         "down": is_descent(tour),
+        "same_way": is_up_and_back(tour),
     }
 
 
@@ -607,7 +632,9 @@ def save_ski_tour(user: User, tour: SkiTour) -> Route:
             "bounds",
         )
     }
-    fields["slope_samples"] = tour.slope_samples
+    # What the tour holds for its line: a one-way record on an up-and-back
+    # tour is not held (SNOW-1286), so the copy is sampled after the commit.
+    fields["slope_samples"] = tour_slope_samples(tour, sample=False)
     route = write_route_copy(user, fields)
     logger.info(
         "Ski tour saved: user=%s uuid=%s tour=%s", user.pk, route.uuid, tour.source_uuid

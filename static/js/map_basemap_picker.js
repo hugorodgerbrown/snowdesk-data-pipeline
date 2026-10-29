@@ -140,7 +140,7 @@
     // SNOW-1185: "Show unsupported regions" — a re-filter of the micro
     // regions that only map.js's applyCountryFilters can compose.
     unsupported: () => window.pwaUnsupportedRegions,
-    // SNOW-1285: ski touring's two parts, under the "Ski touring" master.
+    // SNOW-1285: ski touring's two parts, under the "SAC ski touring" master.
     ski_tours: () => window.pwaSkiRoutes && window.pwaSkiRoutes.tours,
     ski_summits: () => window.pwaSkiRoutes && window.pwaSkiRoutes.summits,
   };

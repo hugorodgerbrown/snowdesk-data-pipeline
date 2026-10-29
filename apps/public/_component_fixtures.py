@@ -3164,7 +3164,7 @@ def _zoom_variant(
     ticks = [
         _zoom_tick(
             "ski_routes",
-            "Ski touring",
+            "SAC ski touring",
             9,
             camera,
         ),

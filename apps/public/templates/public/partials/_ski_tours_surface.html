@@ -92,7 +92,12 @@ Context expected:
                 {% include "includes/_icon_external_link.html" with size=14 %}
             </a>
         </div>
-        <p class="text-meta text-text-3">{% trans "SAC ski tours © swisstopo" %}</p>
+        {# SNOW-1286: SAC's route portal is for its members and its       #}
+        {# subscribers; anyone else lands on a login page, so say so.     #}
+        <p class="text-meta text-text-3">
+            <span data-ski-tour-guide-note>{% trans "The SAC guide is for SAC members or subscribers." %}</span>
+            {% trans "SAC ski tours © swisstopo" %}
+        </p>
     </div>
 </template>
 {# Every user-facing string ski_tours.js writes (docs/i18n.md).            #}
@@ -104,6 +109,7 @@ Context expected:
     <span data-string="sac-route">{% trans "SAC route" %}</span>
     <span data-string="climb">{% blocktrans %}↑ %(value)s m{% endblocktrans %}</span>
     <span data-string="descent">{% blocktrans %}↓ %(value)s m{% endblocktrans %}</span>
+    <span data-string="same-way">{% trans "↓ same way" %}</span>
     <span data-string="guide-time">{% blocktrans %}%(time)s (SAC guide time){% endblocktrans %}</span>
     <span data-string="saved">{% trans "Route saved." %}</span>
     <span data-string="save-failed">{% trans "That route couldn't be saved. Try again." %}</span>
