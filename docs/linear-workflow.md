@@ -259,7 +259,23 @@ would otherwise have to reverse-engineer from the diff.
 ## Screenshots / Lighthouse
 For any change touching a public page: before/after screenshots and a
 note on the latest `npm run lh` scores.
+
+## Agreed scope
+The latest `## Scope revision` (or the original scoping comment, if Codex
+approved it unchanged), verbatim — Approach, Touch list, Tests, Open
+questions. A link to the Linear comment, and the Notes from Codex's scope
+review.
+
+## Deviations from scope
+Every way the diff departs from the agreed scope, and why. `None.` if
+there are none.
 ```
+
+The **Agreed scope** section is what Codex's PR review checks the diff
+against (`AGENTS.md` → "Review guidelines"). Copying it in rather than
+linking it means the review does not depend on Codex reaching Linear, and
+the text it checks against is exactly the text it approved. A departure
+from the scope that is not listed under **Deviations** is a finding.
 
 The `Closes SNOW-42` magic comment in the PR body is what closes the
 Linear ticket on merge — do not omit it. The `In Review` transition is

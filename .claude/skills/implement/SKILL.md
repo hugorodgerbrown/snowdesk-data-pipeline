@@ -309,6 +309,18 @@ Produce:
   - **Why** — link to the Linear ticket, brief context
   - **How** — bullet list of the main changes
   - **Testing** — what tests cover this, anything to verify manually
+  - **Agreed scope** — the scope Codex reviewed, so its PR review can check
+    the diff against it without reaching Linear (`AGENTS.md` → "Review
+    guidelines"). Copy the latest `## Scope revision`, or the original
+    scoping comment when there was none, **verbatim** — Approach, Touch
+    list, Tests, Open questions — under a `## Agreed scope` heading. Under
+    it, link the Linear comment it came from, and copy the Notes from
+    Codex's `## Codex scope review`.
+  - **Deviations from scope** — every way the diff departs from the agreed
+    scope (a file outside the touch list, a promised test not written, a
+    changed approach) and why. Write `None.` when there are none. An
+    unlisted deviation is something Codex is told to flag. A follow-up
+    commit that departs further updates this list in the PR body.
   - `Closes SNOW-NN` (Linear's GitHub integration auto-transitions on merge)
 
 Print the title and body to the transcript before opening the PR — purely

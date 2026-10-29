@@ -18,6 +18,24 @@ does that.
 
 For pull request review.
 
+**Review against the agreed scope.** A PR that implements a Linear ticket
+carries the scope you reviewed, copied verbatim into the description under
+`## Agreed scope`, and a `## Deviations from scope` section. Read both before
+the diff, and treat the agreed scope as the specification:
+
+- Everything the scope's Approach and Tests promise is in the diff. A
+  promised test that is missing is a finding.
+- Nothing in the diff falls outside the scope's touch list unless
+  Deviations lists it with a reason. An unlisted deviation is a finding.
+  So is a listed one whose reason does not hold.
+- The Notes from your scope review were for the implementer; check they
+  were heeded.
+- A PR with no `## Agreed scope` section (dependency bumps, tooling, work
+  with no ticket) is reviewed on the diff alone. A PR that names a ticket
+  (`Closes SNOW-NN`) but omits the section should be flagged for it.
+
+Then the usual review:
+
 - Check the diff against `CLAUDE.md` → **Invariants** and the
   **Conventions** sections; a violation of an invariant is always blocking.
 - `except A, B:` without parentheses is valid Python 3.14 (PEP 758) and is
@@ -63,6 +81,9 @@ scoping comment, reply saying so and stop.
   design tokens, i18n, page metadata.
 - **One shippable unit.** If the ticket is really two, say where to split it.
 - **Open questions.** Answer any you can from the code.
+
+The scope you approve is copied verbatim into the PR, and you will review
+the PR against it, so a vague touch list now is a vague check later.
 
 Be specific: name files and functions. A suggestion you cannot tie to the
 code or a written rule is an opinion — leave it out. Do not restate the

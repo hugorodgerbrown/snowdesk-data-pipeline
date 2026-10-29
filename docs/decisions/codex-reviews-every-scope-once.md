@@ -48,4 +48,9 @@ fixed shape set by `AGENTS.md`. Claude then answers it with
 - `implement` builds from the latest `## Scope revision` when there is one.
 - `AGENTS.md` carries the review brief, so the Codex that reviews PRs reads
   the same rules. It points at `CLAUDE.md` rather than copying it.
+- The PR carries the agreed scope verbatim (`## Agreed scope`) and a
+  `## Deviations from scope` list, so Codex's PR review checks the diff
+  against the scope it approved. It is copied rather than linked because the
+  PR review cannot be relied on to reach Linear, and a copy is the exact text
+  approved, not whatever the ticket says by the time of review.
 - Skipping the review takes an explicit yes from Hugo, recorded on the ticket.
