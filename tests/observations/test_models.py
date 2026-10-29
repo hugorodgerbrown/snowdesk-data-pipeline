@@ -26,7 +26,12 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.core.geo import haversine_km
-from apps.observations.models import FieldObservation
+from apps.observations.models import (
+    TYPE_FAMILY,
+    FieldObservation,
+    family_for,
+    leading_family,
+)
 from tests.factories import (
     FieldObservationFactory,
     LocationFactory,
@@ -465,6 +470,58 @@ class TestObservationTypeChoices:
         """All OBSERVATION_TYPE values are UPPER_CASE strings."""
         for value in FieldObservation.OBSERVATION_TYPE.values:
             assert value == value.upper(), f"{value!r} is not UPPER_CASE"
+
+
+class TestObservationFamilies:
+    """SNOW-1289: every type belongs to exactly one family."""
+
+    def test_every_type_has_a_family(self) -> None:
+        """A type missing from TYPE_FAMILY would ship with no colour on the map."""
+        assert set(TYPE_FAMILY) == set(FieldObservation.OBSERVATION_TYPE.values)
+
+    def test_every_family_has_types(self) -> None:
+        """No family is an empty group on the report form."""
+        assert set(TYPE_FAMILY.values()) == set(
+            FieldObservation.OBSERVATION_FAMILY.values
+        )
+
+    def test_family_for_a_known_type(self) -> None:
+        """Each family is reachable from one of its own types."""
+        assert family_for("WHUMPFING") == "WARNING"
+        assert family_for("POWDER") == "SURFACE"
+        assert family_for("BUSY") == "TRAIL"
+
+    def test_an_unknown_type_reads_as_a_warning_sign(self) -> None:
+        """A retired value errs on the safe side."""
+        assert family_for("RETIRED_TYPE") == "WARNING"
+
+    @pytest.mark.parametrize(
+        ("types", "expected"),
+        [
+            (["BUSY", "POWDER", "WHUMPFING"], "WARNING"),
+            (["BUSY", "POWDER"], "SURFACE"),
+            (["QUIET"], "TRAIL"),
+            ([], "WARNING"),
+        ],
+    )
+    def test_leading_family_is_the_most_serious(
+        self, types: list[str], expected: str
+    ) -> None:
+        """Warning signs lead, then the snow surface, then the trail."""
+        assert leading_family(types) == expected
+
+    @pytest.mark.django_db
+    def test_row_family_property(self) -> None:
+        """The row reads its family off its type."""
+        obs = FieldObservationFactory.create(observation_type="CRUST")
+        assert obs.family == "SURFACE"
+
+    @pytest.mark.django_db
+    def test_each_row_gets_its_own_submission_by_default(self) -> None:
+        """Two rows made separately are two reports."""
+        a = FieldObservationFactory.create()
+        b = FieldObservationFactory.create()
+        assert a.submission != b.submission
 
 
 @pytest.mark.django_db

@@ -65,8 +65,7 @@ await import('../../static/js/report.js');
 const sheet = document.getElementById('report-sheet');
 
 /**
- * Submit the report form the way a problem button does — the submitter
- * carries the observation type, which the handler patches into the body.
+ * Submit the report form with one type tile ticked (SNOW-1289).
  *
  * @returns {void}
  */
@@ -78,16 +77,11 @@ function fileReport() {
       <input type="hidden" name="lon" value="7.2">
       <input type="hidden" name="location_source" value="GPS">
       <input type="hidden" name="observed_at" value="">
-      <button type="submit" name="observation_type" value="AVALANCHE">Avalanche</button>
+      <input type="checkbox" name="observation_type" value="WHUMPFING" checked>
+      <button type="submit">Share</button>
     </form>`;
   const form = sheet.querySelector('#report-form');
-  const event = new Event('submit', { bubbles: true, cancelable: true });
-  // jsdom does not populate `submitter` on a hand-built submit event, and the
-  // handler refuses a submission without one.
-  Object.defineProperty(event, 'submitter', {
-    value: form.querySelector('button[name="observation_type"]'),
-  });
-  form.dispatchEvent(event);
+  form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 }
 
 /** True while the confirmation card's "will sync" line is on screen. */

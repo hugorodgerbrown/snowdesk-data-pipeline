@@ -5,9 +5,11 @@ observations/partials/_report_form.html — Field-report form partial.
 Rendered by ``apps.observations.views.report_form`` (GET) and loaded into the
 report sheet on the map page by report.js.
 
-One-tap UX: each problem button is a submit button with its own value.
-Tapping a button immediately submits the form with that single
-observation_type — no multi-select, no separate "Submit" button.
+SNOW-1289: the types come in three families (warning signs, snow surface,
+on the trail), each a group of toggle tiles. The reporter ticks as many as
+are true and taps Share once; every ticked type is a repeated
+observation_type in the body, and report_submit writes one row per type
+under one submission.
 
 SNOW-420: the form no longer submits via HTMX (``hx-post``). A document-
 delegated ``submit`` handler in ``report.js`` intercepts the tap, stamps
@@ -26,7 +28,8 @@ Context:
     location_source : str — one of GPS, GPS_REFINED, MANUAL.
     gps_lat         : float | None — raw device GPS latitude (None on MANUAL path).
     gps_lon         : float | None — raw device GPS longitude (None on MANUAL path).
-    problems        : list[tuple[str, str]] — (value, label) pairs from OBSERVATION_TYPE.
+    families        : list[dict] — one per OBSERVATION_FAMILY: value, label and
+                      types, a list of (value, label) pairs (views._form_families).
     submit_url      : str — URL for the POST endpoint.
 {% endcomment %}
 <form
@@ -81,20 +84,38 @@ Context:
         {% endif %}
     </div>
 
-    <p class="text-sm font-medium text-text-1">{% trans "What did you observe?" %}</p>
-    <div class="grid grid-cols-2 gap-2">
-        {% for value, label in problems %}
-            <button
-                type="submit"
-                name="observation_type"
-                value="{{ value }}"
-                {% if not has_coords %}disabled{% endif %}
-                class="rounded-tag border border-border bg-card px-3 py-2 text-sm text-text-1 text-left hover:border-status-info-text hover:bg-status-info-bg transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-            >
-                {{ label }}
-            </button>
-        {% endfor %}
-    </div>
+    {# SNOW-1289: three families of toggle tiles, as many as are true, then #}
+    {# one Share. Each tile is a checkbox, so FormData carries every ticked  #}
+    {# type as a repeated observation_type key; report.js no longer reads    #}
+    {# the submitter. The tile takes its family's colour when ticked.        #}
+    <p class="text-sm font-medium text-text-1">{% trans "What's it like?" %}</p>
+    {% for family in families %}
+        <fieldset class="flex flex-col gap-2" data-report-family="{{ family.value }}">
+            <legend class="mb-2">
+                {% include "includes/_eyebrow.html" with text=family.label tag="span" only %}
+            </legend>
+            <div class="grid grid-cols-3 gap-2">
+                {% for value, label in family.types %}
+                    <label
+                        class="{% if family.value == "SURFACE" %}text-obs-surface{% elif family.value == "TRAIL" %}text-obs-trail{% else %}text-obs-warning{% endif %} flex min-h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-tag border-2 border-transparent bg-card-subtle px-1 py-2 text-center text-meta leading-tight has-checked:border-current has-checked:bg-card has-checked:font-semibold has-disabled:cursor-not-allowed has-disabled:opacity-50"
+                    >
+                        <input
+                            type="checkbox"
+                            name="observation_type"
+                            value="{{ value }}"
+                            class="sr-only"
+                            {% if not has_coords %}disabled{% endif %}
+                        >
+                        {% include "includes/_icon_observation_family.html" with family=family.value size=20 only %}
+                        <span class="text-text-1">{{ label }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+        </fieldset>
+    {% endfor %}
+
+    {% trans "Share with everyone here" as report_share_label %}
+    {% include "includes/_button.html" with label=report_share_label button_type="submit" full_width=True only %}
 
     <button
         type="button"

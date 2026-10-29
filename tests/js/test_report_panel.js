@@ -469,11 +469,7 @@ describe('the sheet-level bridge (SNOW-803)', () => {
 
 describe('filing a report shows it on the map (SNOW-886)', () => {
   /**
-   * Submit the report form, exactly as a problem button does.
-   *
-   * The submitter carries the observation type — FormData does not capture
-   * a submit button's value once the default submission is prevented, so
-   * report.js sets it explicitly and this fixture has to press a real one.
+   * Submit the report form with one type tile ticked (SNOW-1289).
    *
    * @param {?string} lat The form's latitude, or '' for a MANUAL report
    *   filed before the place-picker wrote one.
@@ -487,18 +483,14 @@ describe('filing a report shows it on the map (SNOW-886)', () => {
         <input type="hidden" name="observed_at">
         <input type="hidden" name="lat" value="${lat}">
         <input type="hidden" name="lon" value="${lon}">
-        <button type="submit" name="observation_type" value="WHUMPFING">Whumpfing</button>
+        <input type="checkbox" name="observation_type" value="WHUMPFING" checked>
+        <button type="submit">Share</button>
       </form>
       <template id="report-confirmation-template">
         <div><p>Report filed!</p></div>
       </template>`;
     const form = sheet.querySelector('#report-form');
-    const submitter = form.querySelector('button[type="submit"]');
-    const event = new Event('submit', { bubbles: true, cancelable: true });
-    // jsdom does not populate `submitter` on a synthetic submit, and the
-    // handler toasts without one — this is the tap it stands in for.
-    Object.defineProperty(event, 'submitter', { value: submitter });
-    form.dispatchEvent(event);
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   }
 
   beforeEach(() => {
@@ -513,6 +505,41 @@ describe('filing a report shows it on the map (SNOW-886)', () => {
     delete window.pwaDb;
     delete window.pwaTelemetry;
     delete window.pwaMapFocus;
+  });
+
+  it('queues every ticked type as its own observation_type (SNOW-1289)', () => {
+    // Two tiles ticked and a third left unticked: the body carries the two
+    // that are true and not the third.
+    sheet.innerHTML = `
+      <form id="report-form" action="/partials/report/submit/">
+        <input type="hidden" name="lat" value="46.1">
+        <input type="hidden" name="lon" value="7.2">
+        <input type="checkbox" name="observation_type" value="WHUMPFING" checked>
+        <input type="checkbox" name="observation_type" value="BUSY" checked>
+        <input type="checkbox" name="observation_type" value="ICY">
+        <button type="submit">Share</button>
+      </form>`;
+    sheet
+      .querySelector('#report-form')
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    const body = new URLSearchParams(window.pwaMutationQueue.enqueue.mock.calls[0][0].body);
+    expect(body.getAll('observation_type')).toEqual(['WHUMPFING', 'BUSY']);
+  });
+
+  it('queues nothing when no tile is ticked (SNOW-1289)', () => {
+    sheet.innerHTML = `
+      <form id="report-form" action="/partials/report/submit/">
+        <input type="hidden" name="lat" value="46.1">
+        <input type="hidden" name="lon" value="7.2">
+        <input type="checkbox" name="observation_type" value="WHUMPFING">
+        <button type="submit">Share</button>
+      </form>`;
+    sheet
+      .querySelector('#report-form')
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(window.pwaMutationQueue.enqueue).not.toHaveBeenCalled();
   });
 
   it('flies to the report it just filed', () => {
