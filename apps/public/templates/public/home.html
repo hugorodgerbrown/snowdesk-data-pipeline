@@ -2,9 +2,9 @@
 {% comment %}
 apps/public/templates/public/home.html — the marketing homepage at /.
 
-A static page: the headline, then three cards — current conditions, route
-planning, weather — each a screenshot of the app above a short description,
-then two supporting lines (trips, offline), the authority caveat, the links
+A static page: the headline, then four cards — current conditions, route
+planning, weather, trips — each a screenshot of the app above a short
+description, then a supporting line (offline), the authority caveat, the links
 out and one button into the app at /map/. Cross-border coverage is a
 footnote, not the lead: a reader is in one place.
 
@@ -76,12 +76,12 @@ parameters never reaches this template — views.home 301s it to /map/.
         </section>
 
         {# ---------------------------------------------------------------- #}
-        {# Three cards, one per thing Snowdesk does: conditions, the route, #}
-        {# the weather. Side by side on desktop, stacked on a phone. Each   #}
-        {# image box holds a fixed ratio (3:4 phone, 4:3 desktop) so a new  #}
-        {# capture at that ratio drops in unchanged.                        #}
+        {# Four cards, one per thing Snowdesk does: conditions, the route,  #}
+        {# the weather, the trip. Two rows of two on desktop, stacked on a  #}
+        {# phone. Each image box holds a fixed ratio (3:4 phone, 4:3        #}
+        {# desktop) so a new capture at that ratio drops in unchanged.      #}
         {# ---------------------------------------------------------------- #}
-        <div class="grid gap-8 md:grid-cols-3 md:gap-6 items-stretch mb-12" data-testid="home-features">
+        <div class="grid gap-8 md:grid-cols-2 md:gap-6 items-stretch mb-12" data-testid="home-features">
             <section
                 class="{% card_classes padding='p-4 md:p-5' extra='flex flex-col gap-5' %}"
                 aria-labelledby="home-conditions-heading"
@@ -198,23 +198,47 @@ parameters never reaches this template — views.home 301s it to /map/.
                     </p>
                 </div>
             </section>
+            <section
+                class="{% card_classes padding='p-4 md:p-5' extra='flex flex-col gap-5' %}"
+                aria-labelledby="home-trip-heading"
+                data-testid="home-feature-trip"
+            >
+                <a
+                    href="{% url 'trips:list' %}"
+                    class="block rounded-card overflow-hidden border border-border max-w-72 md:max-w-none mx-auto w-full"
+                >
+                    <picture>
+                        <source media="(min-width: 768px)" srcset="{% static 'img/home/trip-desktop.jpg' %}">
+                        <img
+                            src="{% static 'img/home/trip-mobile.jpg' %}"
+                            width="780"
+                            height="1040"
+                            loading="lazy"
+                            class="block w-full h-auto aspect-[3/4] md:aspect-[4/3] object-cover object-top"
+                            alt="{% trans 'A Snowdesk trip: the route, the day, the meeting point, and the forecast and danger level for each day you might go.' %}"
+                        >
+                    </picture>
+                </a>
+                <div>
+                    {% trans "Trips" as trip_eyebrow %}
+                    {% include "includes/_eyebrow.html" with text=trip_eyebrow tag="p" class_extra="mb-2" %}
+                    <h2 id="home-trip-heading" class="text-xl font-semibold text-text-1 mb-3">
+                        {% trans "One link for the group" %}
+                    </h2>
+                    <p class="text-sm leading-prose text-text-2">
+                        {% blocktrans trimmed %}
+                            Pick the route, the day and a meeting point. The trip carries the forecast and the danger
+                            level for each day you might go, and anyone you send the link to can save it.
+                        {% endblocktrans %}
+                    </p>
+                </div>
+            </section>
         </div>
 
         {# ---------------------------------------------------------------- #}
         {# Supporting features: compact, no screenshots                     #}
         {# ---------------------------------------------------------------- #}
-        <div class="grid gap-6 sm:grid-cols-2 max-w-wide mx-auto mb-12" data-testid="home-sections">
-            <div>
-                <h2 class="text-sheet-subhead font-semibold text-text-1 mb-1">
-                    {% trans "Trips: one link for the group" %}
-                </h2>
-                <p class="text-sm leading-prose text-text-2">
-                    {% blocktrans trimmed %}
-                        The route, the date and meeting point, with the forecast and the danger level for each day you
-                        might go, in one link.
-                    {% endblocktrans %}
-                </p>
-            </div>
+        <div class="max-w-wide mx-auto mb-12" data-testid="home-sections">
             <div>
                 <h2 class="text-sheet-subhead font-semibold text-text-1 mb-1">
                     {% trans "It still opens without signal" %}
