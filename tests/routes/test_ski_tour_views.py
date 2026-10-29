@@ -70,6 +70,43 @@ class TestFeature:
         assert "uuid" not in props
         assert "token" not in props
 
+    def test_a_tour_is_drawn_as_one_leg_in_its_direction(self, client: Client) -> None:
+        """A named way down is one descending leg, whatever its line's dips (SNOW-1304)."""
+        tour = SkiTourFactory.create(
+            name="Descente à la cabane de Chanrion", ascent_m=420, descent_m=1660
+        )
+        legs = [
+            {
+                "i": 1,
+                "from": 0,
+                "to": 4,
+                "climbing": True,
+                "point_from": 0,
+                "point_to": 5,
+            },
+            {
+                "i": 2,
+                "from": 5,
+                "to": 9,
+                "climbing": False,
+                "point_from": 5,
+                "point_to": 11,
+            },
+        ]
+        with patch("apps.routes.views.wire_legs", return_value=legs):
+            props = client.get(_feature_url(tour)).json()["feature"]["properties"]
+        assert props["down"] is True
+        assert props["legs"] == [
+            {
+                "i": 1,
+                "from": 0,
+                "to": 9,
+                "climbing": False,
+                "point_from": 0,
+                "point_to": 11,
+            }
+        ]
+
     def test_sample_walks_the_grid_and_keeps_the_record(self, client: Client) -> None:
         """``?sample=1`` answers with the terrain and stores it."""
         tour = SkiTourFactory.create()

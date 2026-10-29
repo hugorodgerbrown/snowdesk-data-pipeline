@@ -143,6 +143,7 @@ from apps.routes.services.ski_tours import (
     draft_tour_route,
     is_descent,
     localised,
+    one_leg,
     sac_time,
     save_ski_tour,
     summits,
@@ -1389,7 +1390,13 @@ def ski_tour_feature(request: HttpRequest, uuid: UUID) -> JsonResponse:
     identity: dict[str, Any] = {"tour": True, **tour_properties(tour)}
     if draft.slope_samples is None and not sample:
         identity["terrain_pending"] = True
-    return JsonResponse({"feature": _route_feature(draft, identity)})
+    feature = _route_feature(draft, identity)
+    # SNOW-1304: a tour is one leg, a way up or a way down, drawn whole in
+    # that direction's colour, as its list row and its highlight are.
+    legs = one_leg(feature["properties"].get("legs"), tour)
+    if legs:
+        feature["properties"]["legs"] = legs
+    return JsonResponse({"feature": feature})
 
 
 @require_GET

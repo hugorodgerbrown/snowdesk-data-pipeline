@@ -18,8 +18,15 @@ caught by taking, for each tour, whichever end lies nearer that median.
 Measured on the 2,941 tours: half the summits with two or more tours have
 their target ends within 30 m of each other.
 
-A WAY DOWN is a tour with a descent and no ascent: SAC's "Abfahrt …",
-"Descente …" and "Discesa …" lines, about one in ten. The panel infers
+A TOUR IS ONE LEG (Hugo, SNOW-1304): SAC publishes the ways up and the
+ways down to a summit separately, so a reader can climb one and ski
+another. A WAY DOWN is a tour SAC itself calls one: named "Abfahrt …",
+"Descente …", "Discesa …" or "Descent …" in any of its languages, or given
+a descent figure and no ascent — 403 of the 2,941. The figures alone are
+not enough: SAC gives some named descents an ascent too (the re-climb on
+the way down, "Descente à la cabane de Chanrion", ↑420 ↓1,660). The
+order of SAC's points is no guide at all: it draws 2,743 of its lines
+from the valley to the summit, whichever way the tour goes. The panel infers
 nothing beyond that (Hugo, SNOW-1302): it says the line shows the ascent
 only or the descent only, and points at SAC's guide for the rest. SAC's own
 height figures are not shown; the panel's figures are the line's own.
@@ -82,14 +89,14 @@ _HUT_RE = re.compile(
 _M_PER_DEG = 111_320.0
 
 # v2: SNOW-1282 chains a tour's parts, which moves some summits.
-_SUMMITS_CACHE_KEY = "routes:ski-summits:v2:{count}:{stamp}"
+_SUMMITS_CACHE_KEY = "routes:ski-summits:v3:{count}:{stamp}"
 _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
 
 # SNOW-1285: every tour at once, for a map zoomed out past the per-view
 # load. Thinned to about 20 m (Douglas-Peucker in degrees) and rounded to
 # five places (about a metre): at z9-z11 a pixel is 20-150 m, so nothing
 # drawn moves, and the whole set is ~2.3 MB, ~0.6 MB gzipped.
-_OVERVIEW_CACHE_KEY = "routes:ski-overview:v1:{count}:{stamp}"
+_OVERVIEW_CACHE_KEY = "routes:ski-overview:v2:{count}:{stamp}"
 # The mark SNOW-1286 put on a record walked there and back (SNOW-1287).
 _THERE_AND_BACK = "there_and_back"
 _OVERVIEW_TOLERANCE_DEG = 0.0002
@@ -128,9 +135,54 @@ def is_hut(name: str) -> bool:
     return bool(_HUT_RE.search(name or ""))
 
 
+# SAC's own word for a way down, at the start of its name in any language.
+_DESCENT_NAME_RE = re.compile(
+    r"^\s*(abfahrt|descente|discesa|descent)\b", re.IGNORECASE
+)
+
+
 def is_descent(tour: SkiTour) -> bool:
-    """Return whether a tour is a way down: a descent and no ascent."""
-    return tour.ascent_m is None and tour.descent_m is not None
+    """Return whether a tour is a way down, as SAC itself says (SNOW-1304).
+
+    SAC names it one in any of its languages, or gives it a descent figure
+    and no ascent. Reads ``name``, ``names``, ``ascent_m`` and ``descent_m``.
+    """
+    if tour.ascent_m is None and tour.descent_m is not None:
+        return True
+    names = [tour.name, *(tour.names or {}).values()]
+    return any(_DESCENT_NAME_RE.match(name or "") for name in names)
+
+
+def one_leg(
+    legs: list[dict[str, Any]] | None, tour: SkiTour
+) -> list[dict[str, Any]] | None:
+    """Return a tour's legs as the one leg it is (SNOW-1304).
+
+    A tour is a way up or a way down, never both, so it is drawn and
+    profiled as one leg in that direction: the line's own rises and dips
+    are not legs of it. The span is the detected legs' whole span, so the
+    indices stay those the slope record and the geometry share.
+
+    Args:
+        legs: ``wire_legs``' answer for the tour's line, or None.
+        tour: The tour.
+
+    Returns:
+        One leg covering them all, or None when there were none.
+
+    """
+    if not legs:
+        return None
+    return [
+        {
+            "i": 1,
+            "from": legs[0]["from"],
+            "to": legs[-1]["to"],
+            "climbing": not is_descent(tour),
+            "point_from": legs[0]["point_from"],
+            "point_to": legs[-1]["point_to"],
+        }
+    ]
 
 
 def summit_key(name: str, altitude_m: int | None) -> str:
@@ -286,6 +338,8 @@ def target_end(tour: SkiTour, near: Point | None = None) -> Point:
         tour: The tour.
         near: Where its summit stands, when known: the end nearer it wins,
             so a tour drawn the other way round is still read right.
+            Without it, the last point: SAC draws 2,743 of its 2,941 lines
+            from the valley to the summit, ways down included (SNOW-1304).
 
     Returns:
         ``(lon, lat)``.
@@ -294,7 +348,7 @@ def target_end(tour: SkiTour, near: Point | None = None) -> Point:
     first, last = ends(tour)
     if near is not None:
         return first if _metres(first, near) < _metres(last, near) else last
-    return first if is_descent(tour) else last
+    return last
 
 
 def far_end(tour: SkiTour, summit: Point) -> Point:
@@ -372,6 +426,8 @@ def summits() -> dict[str, Summit]:
                     SkiTour.objects.only(
                         "id",
                         "geometry",
+                        "name",
+                        "names",
                         "target_name",
                         "target_altitude_m",
                         "ascent_m",
@@ -438,6 +494,8 @@ def tour_overview() -> list[dict[str, Any]]:
         tours = SkiTour.objects.order_by("sac_id").only(
             "source_uuid",
             "geometry",
+            "name",
+            "names",
             "target_name",
             "target_altitude_m",
             "ascent_m",
