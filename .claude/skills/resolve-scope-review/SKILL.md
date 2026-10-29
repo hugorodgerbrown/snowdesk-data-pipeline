@@ -55,7 +55,11 @@ Finish with a one-line report per ticket processed, e.g.:
 **State:**
 
 - `Todo` → continue.
-- `Requires input` → interactive only. Hugo's answers are the comments Hugo
+- `Requires input` → interactive only. First, the recovery check: if a
+  `## Scope revision` is newer than every comment from Hugo and its Open
+  questions is `None.`, an earlier run posted the final revision and then
+  failed to move the ticket — move it to `Ready for dev` with
+  `delegate: null` and stop. Otherwise Hugo's answers are the comments Hugo
   wrote after the latest `## Scope revision`. If there are none, say the
   ticket is still waiting on Hugo and stop. Otherwise go to Step 3 with those
   answers in place of Codex's review — there is no Codex step here.

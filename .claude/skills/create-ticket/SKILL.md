@@ -48,9 +48,12 @@ stop — that's the `implement` skill's job.
 ### Mode 1 — Single ticket, scoped in one pass
 
 Conversation has produced a single, clear piece of work. Create the issue
-*and* post the scoping comment *and* hand it to Codex in one sequence:
-`save_issue` with state `Todo` and `delegate: "Codex"`, then read it back
-to check the delegate took. Every scoped ticket goes through Codex's one
+*and* post the scoping comment *and* hand it to Codex, in that order:
+create the issue in `Backlog` with no delegate, post the scoping comment,
+and only once the comment is posted call `save_issue` with state `Todo`
+and `delegate: "Codex"`, then read it back to check the delegate took.
+Delegating first would let Codex start on a ticket with no scope to
+review. Every scoped ticket goes through Codex's one
 review — there is no direct route to `Ready for dev`.
 
 ### Mode 2 — Multiple tickets from one discussion
