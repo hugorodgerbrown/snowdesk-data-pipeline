@@ -649,6 +649,15 @@ FOUNDATION_CATEGORIES: tuple[FoundationCategory, ...] = (
             Token("--color-route-line-casing", "Saved route (casing)", "#1a1916", None),
             Token("--color-marker-favourite", "Favourite star", "#1a73e8", None),
             Token("--color-marker-observation", "Community report", "#e8711a", None),
+            # SNOW-1289: the three observation families.
+            Token(
+                "--color-obs-warning",
+                "Observation — warning signs",
+                "#1a1916",
+                "#edece8",
+            ),
+            Token("--color-obs-surface", "Observation — snow surface", "#0369a1", None),
+            Token("--color-obs-trail", "Observation — on the trail", "#0f766e", None),
             # SNOW-1018: not drawn on the map but under the route's profile
             # on rail one, and listed here beside the route line because
             # the descent fill IS the route's colour (SNOW-1019 swapped

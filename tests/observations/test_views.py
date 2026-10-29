@@ -268,7 +268,7 @@ class TestReportFormSuccess:
         assert "couldn" in response.content.decode()
 
     def test_form_contains_problem_buttons(self, client: Client) -> None:
-        """Each OBSERVATION_TYPE value appears as a submit button in the form."""
+        """Each OBSERVATION_TYPE value appears as a tile, under its family."""
         user = _verified_user()
         client.force_login(user)
 
@@ -280,7 +280,13 @@ class TestReportFormSuccess:
             )
         content = response.content.decode()
         for value in FieldObservation.OBSERVATION_TYPE.values:
-            assert value in content
+            assert f'value="{value}"' in content
+        # SNOW-1289: one group per family, in seriousness order.
+        positions = [
+            content.index(f'data-report-family="{family}"')
+            for family in FieldObservation.OBSERVATION_FAMILY.values
+        ]
+        assert positions == sorted(positions)
 
     def test_gps_status_text_with_coords(self, client: Client) -> None:
         """Form with GPS coords shows 'Using current GPS location' status."""
@@ -562,6 +568,78 @@ class TestReportSubmitObservationTypeGate:
                 **HTMX_HEADERS,
             )
         assert response.status_code == 400
+
+
+@pytest.mark.django_db
+class TestReportSubmitSeveralTypes:
+    """SNOW-1289: one report, several types — one row each, tied together."""
+
+    def _post(self, client: Client, types: list[str]) -> Any:
+        """POST a GPS report carrying ``types`` as repeated observation_type keys."""
+        with patch("apps.observations.views.region_for_point", return_value=None):
+            return client.post(
+                SUBMIT_URL,
+                {
+                    "lat": "46.1",
+                    "lon": "7.1",
+                    "location_source": FieldObservation.LOCATION_SOURCE.GPS,
+                    "observation_type": types,
+                },
+                **HTMX_HEADERS,
+            )
+
+    def test_one_row_per_type_sharing_submission_location_and_time(
+        self, client: Client
+    ) -> None:
+        """Three types make three rows with one submission, Location and instant."""
+        user = _verified_user()
+        client.force_login(user)
+        types = ["WHUMPFING", "WIND_PACKED", "BUSY"]
+
+        response = self._post(client, types)
+
+        assert response.status_code == 200
+        rows = list(FieldObservation.objects.filter(user=user))
+        assert sorted(r.observation_type for r in rows) == sorted(types)
+        assert len({r.submission for r in rows}) == 1
+        assert len({r.location_id for r in rows}) == 1
+        assert len({r.observed_at for r in rows}) == 1
+        assert Location.objects.count() == 1
+
+    def test_a_type_ticked_twice_counts_once(self, client: Client) -> None:
+        """A repeated value (a replayed form) writes one row, not two."""
+        user = _verified_user()
+        client.force_login(user)
+
+        self._post(client, ["POWDER", "POWDER"])
+
+        assert FieldObservation.objects.filter(user=user).count() == 1
+
+    def test_one_unknown_type_rejects_the_whole_report(self, client: Client) -> None:
+        """A bad value among good ones is a 400 and writes nothing at all."""
+        user = _verified_user()
+        client.force_login(user)
+
+        response = self._post(client, ["POWDER", "NOT_A_TYPE"])
+
+        assert response.status_code == 400
+        assert not FieldObservation.objects.exists()
+        assert not Location.objects.exists()
+
+    def test_two_reports_get_two_submissions(self, client: Client) -> None:
+        """Each POST is its own report, however alike the two are."""
+        user = _verified_user()
+        client.force_login(user)
+
+        self._post(client, ["ICY"])
+        self._post(client, ["ICY"])
+
+        submissions = set(
+            FieldObservation.objects.filter(user=user).values_list(
+                "submission", flat=True
+            )
+        )
+        assert len(submissions) == 2
 
 
 @pytest.mark.django_db

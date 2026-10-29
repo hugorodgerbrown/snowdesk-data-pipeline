@@ -8,17 +8,19 @@ location flow directly):
 
 - ``report_form`` (GET)   — reads optional GPS fix and location_source from
   query params, resolves the point to a MicroRegion when coords are present,
-  returns the one-tap problem-selection form.  No coords are required: when
-  absent the form renders in "choose on map" state (MANUAL path).
+  returns the report form: three families of toggle tiles (SNOW-1289).
+  No coords are required: when absent the form renders in "choose on map"
+  state (MANUAL path).
 - ``observation_list`` (GET) — the requesting user's own reports, newest
   first, rendered as the row list inside the map's field-observation panel
   (SNOW-658).
 - ``observation_delete`` (POST) — deletes one of the requesting user's own
   reports and returns an empty body, so the row's ``hx-swap="outerHTML"``
   removes it.
-- ``report_submit`` (POST) — validates lat/lon, location_source, and
-  observation_type; creates a FieldObservation row; returns the thank-you
-  confirmation fragment.  Also accepts an optional client-supplied
+- ``report_submit`` (POST) — validates lat/lon, location_source, and one
+  or more observation_type values; creates one FieldObservation row per
+  type, sharing a submission, a Location and an instant (SNOW-1289);
+  returns the thank-you confirmation fragment.  Also accepts an optional client-supplied
   ``observed_at`` (SNOW-420) — the tap-time instant, stamped client-side by
   ``report.js`` before the request is handed to the offline mutation queue,
   so a report submitted while offline records when the user actually
@@ -49,7 +51,7 @@ from __future__ import annotations
 import datetime
 import logging
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import waffle
 from django.contrib.auth.models import User
@@ -66,7 +68,7 @@ from apps.accounts.models import user_is_verified
 from apps.core.coordinates import validate_accuracy_radius_km, validate_coordinates
 from apps.core.decorators import require_htmx
 from apps.locations.models import Location
-from apps.observations.models import FieldObservation
+from apps.observations.models import TYPE_FAMILY, FieldObservation
 from apps.observations.services.observations import delete_observation
 from apps.regions.services.point_match import region_for_point
 
@@ -88,6 +90,28 @@ _OBSERVED_AT_MAX_AGE = datetime.timedelta(days=30)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _form_families() -> list[dict[str, object]]:
+    """Return the report form's tile groups, one per family (SNOW-1289).
+
+    Families come in ``OBSERVATION_FAMILY`` order and each lists its types
+    in ``OBSERVATION_TYPE`` declaration order, so the form reads warning
+    signs first, the way the families are ranked on the map.
+
+    Returns:
+        A list of ``{"value", "label", "types": [(value, label), ...]}``.
+
+    """
+    groups: list[dict[str, object]] = []
+    for family_value, family_label in FieldObservation.OBSERVATION_FAMILY.choices:
+        types = [
+            (value, label)
+            for value, label in FieldObservation.OBSERVATION_TYPE.choices
+            if TYPE_FAMILY.get(value) == family_value
+        ]
+        groups.append({"value": family_value, "label": family_label, "types": types})
+    return groups
 
 
 def _auth_gate(request: HttpRequest) -> HttpResponse | None:
@@ -207,7 +231,7 @@ def _parse_accuracy_radius_km(accuracy_m_str: str | None) -> float | None:
 
 @require_htmx
 def report_form(request: HttpRequest) -> HttpResponse:
-    """Return the one-tap problem-selection form for a field report.
+    """Return the report form: one toggle tile per type, grouped by family.
 
     Reads ``lat``, ``lon``, ``accuracy``, ``location_source``, ``gps_lat``,
     and ``gps_lon`` query parameters (set by ``report.js``).  All are optional:
@@ -262,7 +286,7 @@ def report_form(request: HttpRequest) -> HttpResponse:
             "location_source": location_source,
             "gps_lat": gps_lat,
             "gps_lon": gps_lon,
-            "problems": FieldObservation.OBSERVATION_TYPE.choices,
+            "families": _form_families(),
             "submit_url": reverse("observations:report_submit"),
         },
     )
@@ -272,17 +296,19 @@ def report_form(request: HttpRequest) -> HttpResponse:
 @require_POST
 @ratelimit(key="ip", rate="5/m", block=False)
 def report_submit(request: HttpRequest) -> HttpResponse:
-    """Create a FieldObservation row and return the confirmation fragment.
+    """Create one FieldObservation row per reported type; return the confirmation.
 
     Validates the POST body:
     - ``lat`` / ``lon`` must be present and parseable (400 otherwise).
     - ``location_source`` must be a value from ``LOCATION_SOURCE.values``
       (400 when missing or not recognised).
-    - ``observation_type`` must be a value from ``OBSERVATION_TYPE.values``
-      (400 when missing or not recognised).
+    - ``observation_type`` is one or more values from
+      ``OBSERVATION_TYPE.values`` (400 when none, or when any is not
+      recognised — the report is rejected whole, never half saved).
     - Rate-limited to 5 submissions per minute per IP (429 on excess).
 
-    On success, creates the row and returns ``_report_confirmation.html``.
+    On success, creates one row per type — one submission, one Location,
+    one ``observed_at`` — and returns ``_report_confirmation.html``.
     Region is best-effort — a pin outside every known boundary is accepted
     with ``region=None``; there is no region-required rejection.
 
@@ -320,12 +346,15 @@ def report_submit(request: HttpRequest) -> HttpResponse:
             status=400,
         )
 
-    # Validate the single observation type.
+    # SNOW-1289: a report is one or more types. Every value must be known —
+    # one bad value rejects the whole report rather than saving the rest,
+    # which would record something the reporter never sent. A type ticked
+    # twice (a replayed form) counts once; the order is kept.
     valid_values = set(FieldObservation.OBSERVATION_TYPE.values)
-    observation_type = request.POST.get("observation_type")
-    if not observation_type or observation_type not in valid_values:
+    observation_types = list(dict.fromkeys(request.POST.getlist("observation_type")))
+    if not observation_types or any(t not in valid_values for t in observation_types):
         return HttpResponse(
-            "A valid observation_type is required.",
+            "At least one valid observation_type is required.",
             status=400,
         )
 
@@ -368,12 +397,15 @@ def report_submit(request: HttpRequest) -> HttpResponse:
         "gps_latitude": gps_lat,
         "gps_longitude": gps_lon,
         "location_source": location_source,
-        "observation_type": observation_type,
+        # One submission and one instant for every row of the report, so the
+        # map and the region panel can put it back together (SNOW-1289).
+        "submission": uuid4(),
+        "observed_at": (
+            observed_at
+            if isinstance(observed_at, datetime.datetime)
+            else timezone.now()
+        ),
     }
-    # Only set observed_at when the client supplied a valid instant — when
-    # absent, omitting the key lets the model's timezone.now default fire.
-    if isinstance(observed_at, datetime.datetime):
-        create_kwargs["observed_at"] = observed_at
 
     # The Location and its observation are one write (SNOW-1228): a failed
     # observation insert must not leave an orphan Location behind, which
@@ -381,13 +413,16 @@ def report_submit(request: HttpRequest) -> HttpResponse:
     # the block does I/O — the region was resolved above.
     with transaction.atomic():
         create_kwargs["location"] = Location.objects.create(latitude=lat, longitude=lon)
-        FieldObservation.objects.create(**create_kwargs)
+        for observation_type in observation_types:
+            FieldObservation.objects.create(
+                observation_type=observation_type, **create_kwargs
+            )
 
     logger.info(
-        "FieldObservation created: user=%s region=%s type=%s source=%s",
+        "FieldObservation created: user=%s region=%s types=%s source=%s",
         request.user.pk,
         region.region_id if region else None,
-        observation_type,
+        ",".join(observation_types),
         location_source,
     )
 

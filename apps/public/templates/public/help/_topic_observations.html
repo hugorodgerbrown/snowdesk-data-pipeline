@@ -6,17 +6,18 @@ body_template parameter of includes/_collapsible_panel.html.
 
 Rewritten to describe the panel the triangle roundel opens (SNOW-658) —
 the user's own reports, the report action, and the "Show on the map"
-switch bound to the layers menu's "Field observations" row — and to name
-the five signal
-types the form actually offers (FieldObservation.OBSERVATION_TYPE).
+switch bound to the layers menu's "Field observations" row. SNOW-1289
+widened the report to the three families the form offers
+(FieldObservation.OBSERVATION_FAMILY), any number of types per report.
 {% endcomment %}
 {% load i18n %}
 <div class="text-sm leading-prose text-text-2">
     <p class="mb-3 last:mb-0">
         {% blocktrans trimmed %}
-            Field observations are quick, one-tap reports of what you have actually seen out on the snow. You pick one
-            signal &mdash; whumpfing, shooting cracks, fractures, wind striations or pinwheels &mdash; and that, with
-            where and when you saw it, is the whole report.
+            Field observations are quick reports of what the ground is like, from anyone who has been out on it. Tick
+            whatever is true &mdash; warning signs such as whumpfing or shooting cracks, the snow surface (powder,
+            crust, icy) or the trail (busy, quiet, a skin track in) &mdash; and share it. That, with where and when you
+            saw it, is the whole report. You see everyone else's; they see yours.
         {% endblocktrans %}
     </p>
     <p class="mb-3 last:mb-0" data-testid="help-observations-panel">

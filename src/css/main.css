@@ -243,6 +243,17 @@
   --color-marker-favourite:   #1a73e8;   /* Snowdesk blue — favourite star   */
   --color-marker-observation: #e8711a;   /* amber — community-report flag    */
 
+  /* Field-observation families (SNOW-1289). A report says one or more of
+     three kinds of thing, and the family's colour carries that on every
+     surface — the report tiles, the map pins, the region panel's rows.
+     None is an EAWS colour, the favourite blue or the route magenta: ink
+     for warning signs, a sky blue for the snow surface (deeper than the
+     favourite star so the two never read as one), teal for the trail.
+     map.js keeps the same literals for MapLibre. */
+  --color-obs-warning:        #1a1916;   /* ink — warning signs              */
+  --color-obs-surface:        #0369a1;   /* sky-700 — snow surface           */
+  --color-obs-trail:          #0f766e;   /* teal-700 — on the trail          */
+
   /* Saved-route line (SNOW-687) — the MapLibre line layer that draws a
      user's imported GPX track, plus the darker casing painted underneath
      it so the line stays readable over a pale satellite basemap and over
@@ -809,6 +820,8 @@
        text-3 #9a968e on bg-subtle-dark #23211f → 5.45:1   PASS
      Previous value #8a867e failed on bg-card (4.05:1) and bg-tag (3.74:1). */
   --color-text-1:       #edece8;
+  /* SNOW-1289: the warning family's ink would vanish on a dark card. */
+  --color-obs-warning:  #edece8;
   --color-text-2:       #a8a49c;
   --color-text-3:       #9a968e;   /* was #8a867e — brightened for WCAG AA (SNOW-253) */
 

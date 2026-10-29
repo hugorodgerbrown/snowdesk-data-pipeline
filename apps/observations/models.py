@@ -17,6 +17,7 @@ from __future__ import annotations
 import collections
 import datetime
 import logging
+import uuid
 from typing import TYPE_CHECKING
 
 from django.conf import settings
@@ -378,11 +379,42 @@ class FieldObservation(BaseModel):
         adding new choices does not require a migration.
         """
 
+        # Warning signs — the snowpack telling you something (the original
+        # five, SNOW-324, plus two SNOW-1289 added).
         WHUMPFING = "WHUMPFING", "Whumpfing"
+        SHOOTING_CRACKS = "SHOOTING_CRACKS", "Shooting cracks"
+        RECENT_AVALANCHE = "RECENT_AVALANCHE", "Recent avalanche"
+        WIND_SLAB = "WIND_SLAB", "Fresh wind slab"
         PINWHEELS = "PINWHEELS", "Pinwheels"
         WIND_STRIATIONS = "WIND_STRIATIONS", "Wind striations"
         FRACTURES = "FRACTURES", "Fractures"
-        SHOOTING_CRACKS = "SHOOTING_CRACKS", "Shooting cracks"
+        # Snow surface — what the skiing is like (SNOW-1289).
+        POWDER = "POWDER", "Powder"
+        WIND_PACKED = "WIND_PACKED", "Wind-packed"
+        CRUST = "CRUST", "Crust"
+        SPRING_SNOW = "SPRING_SNOW", "Spring snow"
+        ICY = "ICY", "Icy"
+        HEAVY_WET = "HEAVY_WET", "Heavy / wet"
+        # On the trail — crowds and the track (SNOW-1289).
+        BUSY = "BUSY", "Busy"
+        QUIET = "QUIET", "Quiet"
+        SKIN_TRACK = "SKIN_TRACK", "Skin track in"
+        BOOTPACK = "BOOTPACK", "Bootpack"
+        TRACK_ICY = "TRACK_ICY", "Track icy"
+        CLOSED = "CLOSED", "Lift or road shut"
+
+    class OBSERVATION_FAMILY(models.TextChoices):
+        """The three kinds of thing a report can say (SNOW-1289).
+
+        Code-held, never stored: a row's family follows from its type
+        through ``TYPE_FAMILY``. Declared in order of seriousness, which is
+        the order a mixed report is drawn by — a report with a warning sign
+        in it is a warning-sign report on the map, whatever else it says.
+        """
+
+        WARNING = "WARNING", "Warning signs"
+        SURFACE = "SURFACE", "Snow surface"
+        TRAIL = "TRAIL", "On the trail"
 
     class LOCATION_SOURCE(models.TextChoices):
         """How the report coordinate was determined.
@@ -494,7 +526,19 @@ class FieldObservation(BaseModel):
         choices=OBSERVATION_TYPE.choices,
         help_text=(
             "Single OBSERVATION_TYPE value reported by the user "
-            "(e.g. WHUMPFING).  To report two problems, submit two reports."
+            "(e.g. WHUMPFING). A report of several types is several rows "
+            "sharing one submission."
+        ),
+    )
+    # SNOW-1289: one report, several types. Each type stays its own row, so
+    # every count, list and erasure path reads exactly as it did; the rows
+    # of one report share this, one Location and one observed_at.
+    submission = models.UUIDField(
+        default=uuid.uuid4,
+        db_index=True,
+        help_text=(
+            "Groups the rows of one report: a report of three types is "
+            "three rows with the same submission."
         ),
     )
 
@@ -546,3 +590,77 @@ class FieldObservation(BaseModel):
     def __str__(self) -> str:
         """Return a human-readable representation."""
         return self.to_string()
+
+    @property
+    def family(self) -> str:
+        """Return this row's ``OBSERVATION_FAMILY`` value (SNOW-1289)."""
+        return family_for(self.observation_type)
+
+
+# Which family each type belongs to (SNOW-1289). A test fails a type that is
+# missing from it, so a new type cannot ship without a colour on the map.
+_TYPE = FieldObservation.OBSERVATION_TYPE
+_FAMILY = FieldObservation.OBSERVATION_FAMILY
+TYPE_FAMILY: dict[str, str] = {
+    _TYPE.WHUMPFING: _FAMILY.WARNING,
+    _TYPE.SHOOTING_CRACKS: _FAMILY.WARNING,
+    _TYPE.RECENT_AVALANCHE: _FAMILY.WARNING,
+    _TYPE.WIND_SLAB: _FAMILY.WARNING,
+    _TYPE.PINWHEELS: _FAMILY.WARNING,
+    _TYPE.WIND_STRIATIONS: _FAMILY.WARNING,
+    _TYPE.FRACTURES: _FAMILY.WARNING,
+    _TYPE.POWDER: _FAMILY.SURFACE,
+    _TYPE.WIND_PACKED: _FAMILY.SURFACE,
+    _TYPE.CRUST: _FAMILY.SURFACE,
+    _TYPE.SPRING_SNOW: _FAMILY.SURFACE,
+    _TYPE.ICY: _FAMILY.SURFACE,
+    _TYPE.HEAVY_WET: _FAMILY.SURFACE,
+    _TYPE.BUSY: _FAMILY.TRAIL,
+    _TYPE.QUIET: _FAMILY.TRAIL,
+    _TYPE.SKIN_TRACK: _FAMILY.TRAIL,
+    _TYPE.BOOTPACK: _FAMILY.TRAIL,
+    _TYPE.TRACK_ICY: _FAMILY.TRAIL,
+    _TYPE.CLOSED: _FAMILY.TRAIL,
+}
+
+
+def family_for(observation_type: str) -> str:
+    """Return the family of one ``OBSERVATION_TYPE`` value (SNOW-1289).
+
+    A value outside ``TYPE_FAMILY`` — a type retired after rows carried
+    it — reads as a warning sign, the safe side to err on for a report
+    nobody can classify any more.
+
+    Args:
+        observation_type: An ``OBSERVATION_TYPE`` value.
+
+    Returns:
+        The ``OBSERVATION_FAMILY`` value it belongs to.
+
+    """
+    return TYPE_FAMILY.get(
+        observation_type, FieldObservation.OBSERVATION_FAMILY.WARNING
+    )
+
+
+def leading_family(observation_types: "list[str]") -> str:
+    """Return the most serious family among a report's types (SNOW-1289).
+
+    Seriousness is ``OBSERVATION_FAMILY``'s declared order: warning signs,
+    then the snow surface, then the trail. A report that mentions a
+    warning sign is drawn as one, whatever else it says.
+
+    Args:
+        observation_types: The ``OBSERVATION_TYPE`` values of one report.
+
+    Returns:
+        The leading ``OBSERVATION_FAMILY`` value; ``WARNING`` for an empty
+        list, which no submitted report can be.
+
+    """
+    order = list(FieldObservation.OBSERVATION_FAMILY.values)
+    families = {family_for(t) for t in observation_types}
+    for family in order:
+        if family in families:
+            return family
+    return FieldObservation.OBSERVATION_FAMILY.WARNING

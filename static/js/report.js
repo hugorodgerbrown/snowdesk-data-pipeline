@@ -83,9 +83,9 @@
  *   POST changed. A document-delegated ``submit`` listener on #report-form
  *   intercepts the tap (preventDefault — the browser never submits the
  *   form directly), stamps the hidden observed_at input with the tap-time
- *   instant, builds the urlencoded body (including observation_type from
- *   event.submitter, which FormData does not capture once the default
- *   submission is prevented), and hands it to
+ *   instant, builds the urlencoded body from the form (SNOW-1289: every ticked
+ *   type tile is a checkbox, so each arrives as a repeated
+ *   observation_type), and hands it to
  *   window.pwaMutationQueue.enqueue() (SNOW-376) — captured immediately,
  *   persisted to IndexedDB, and replayed with a stable Idempotency-Key on
  *   reconnect. The sheet renders the confirmation partial optimistically
@@ -126,7 +126,7 @@
   // _report_surface.html renders. The literals are the English fallback —
   // see static/js/i18n_strings.js.
   const STRINGS = self.pwaStrings.read('report-strings-template', {
-    'no-signal-type': 'Could not submit your report — please tap a signal type.',
+    'no-signal-type': 'Pick at least one thing you saw, then share.',
     'cannot-queue': 'Could not save your report on this device — please try again.',
     generic: 'Something went wrong — please try again.',
     // SNOW-658: 'sheet-title' and 'close' went with SHEET_HEADER_HTML — every
@@ -232,14 +232,14 @@
   }
 
   /**
-   * Enable all problem-type submit buttons in the report form.
+   * Enable every type tile in the report form (SNOW-1289: checkboxes).
    * Called after a MANUAL pin is placed to unblock submission.
    */
   function enableProblemButtons() {
     const form = document.getElementById('report-form');
     if (!form) return;
-    form.querySelectorAll('button[name="observation_type"]').forEach(function (btn) {
-      btn.removeAttribute('disabled');
+    form.querySelectorAll('input[name="observation_type"]').forEach(function (input) {
+      input.removeAttribute('disabled');
     });
   }
 
@@ -286,13 +286,11 @@
     event.preventDefault();
 
     const form = /** @type {HTMLFormElement} */ (event.target);
-    const submitter = event.submitter;
-    // One-tap UX: every submit is triggered by a problem button carrying
-    // its own observation_type value. No submitter (or no value) means
-    // this wasn't a real problem-button tap — surface a toast rather than
-    // silently dropping a bodyless mutation. preventDefault above has
-    // already cancelled the native submit, so there is no fallback path.
-    if (!submitter || !submitter.value) {
+    // SNOW-1289: a report is whatever tiles are ticked. Nothing ticked is
+    // not a report — say so rather than queue a bodyless mutation.
+    // preventDefault above has already cancelled the native submit, so
+    // there is no fallback path.
+    if (!form.querySelector('input[name="observation_type"]:checked')) {
       showToast(STRINGS['no-signal-type']);
       return;
     }
@@ -303,14 +301,11 @@
     const observedAtInput = form.querySelector('input[name="observed_at"]');
     if (observedAtInput) observedAtInput.value = new Date().toISOString();
 
-    // FormData does not include submit-button name/value pairs once the
-    // default submission is prevented (submitter is not a "successful
-    // control" in that case), so observation_type is set explicitly.
-    // Every other field (csrfmiddlewaretoken, lat, lon, location_source,
-    // gps_*, accuracy_m, observed_at) is a plain hidden input FormData
-    // already captures.
-    const params = new URLSearchParams(new FormData(form));
-    params.set('observation_type', submitter.value);
+    // Every field is a plain input FormData captures: the ticked
+    // observation_type checkboxes (one repeated key per type, which
+    // URLSearchParams keeps), csrfmiddlewaretoken, lat, lon,
+    // location_source, gps_*, accuracy_m and observed_at.
+    const params = new URLSearchParams(/** @type {any} */ (new FormData(form)));
     const body = params.toString();
 
     const operation = {

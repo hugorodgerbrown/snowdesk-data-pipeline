@@ -46,7 +46,9 @@ class FieldObservationAdmin(admin.ModelAdmin):
         "created_at",
     ]
     list_filter = ["region", "observation_type", "location_source", "observed_at"]
-    search_fields = ["user__email", "region__name", "region__region_id"]
+    # SNOW-1289: a report of several types is several rows; searching the
+    # submission uuid brings one report's rows back together.
+    search_fields = ["user__email", "region__name", "region__region_id", "submission"]
     ordering = ["-observed_at"]
     readonly_fields = [
         "id",
@@ -61,6 +63,7 @@ class FieldObservationAdmin(admin.ModelAdmin):
         "location_source",
         "observed_at",
         "observation_type",
+        "submission",
         "created_at",
         "updated_at",
     ]

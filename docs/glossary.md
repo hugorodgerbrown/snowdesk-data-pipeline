@@ -95,7 +95,9 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 
 | Term | Meaning | Code |
 |------|---------|------|
-| FieldObservation | A GPS-gated avalanche-signal report submitted by an account from the map page (SNOW-324); stores observation types, coordinates, and region match | `apps/observations/models.py` |
+| FieldObservation | A field report submitted by an account from the map page (SNOW-324); one row per observation type, with coordinates and region match | `apps/observations/models.py` |
+| Observation family | One of the three kinds of thing a report can say (SNOW-1289): **warning signs** (whumpfing, shooting cracks, a recent avalanche…), the **snow surface** (powder, crust, icy…) and **on the trail** (busy, quiet, skin track in…). Code-held, never stored; ranked in that order, and a mixed report is drawn as its most serious family. Each has a colour token | `FieldObservation.OBSERVATION_FAMILY`, `TYPE_FAMILY`, `family_for`, `leading_family` in `apps/observations/models.py`; `--color-obs-warning` / `-surface` / `-trail`; `includes/_icon_observation_family.html` |
+| Submission | One report as the reporter sent it: every type they ticked, written as one row each sharing a `submission` uuid, one `Location` and one `observed_at` (SNOW-1289) | `FieldObservation.submission` |
 | Community reports | The public map feed of every account's field observations, each at a rounded coordinate — the owner-only address never travels on it | `api:community_reports_geojson` (`community_reports_geojson` in `apps/public/api.py`); `window.pwaCommunityReportsOverlay`; [an-address-is-owner-only-on-observations.md](decisions/an-address-is-owner-only-on-observations.md) |
 
 ## Routes
