@@ -5897,7 +5897,7 @@ class TestOnTheGround:
         assert "Report on the map" in content
 
     def test_empty_today_still_invites_a_report(self, client: Client) -> None:
-        """No reports today: one line and the call to report."""
+        """No reports today: one row and a short call to report (SNOW-1296)."""
         region = MicroRegionFactory.create(
             region_id="CH-9101", name="Quiet Region", slug="quiet-region"
         )
@@ -5905,7 +5905,42 @@ class TestOnTheGround:
         url = reverse("public:region_root", kwargs={"region_id": "ch-9101"})
         content = client.get(url).content.decode()
         assert 'data-testid="on-the-ground-empty"' in content
-        assert "Report on the map" in content
+        assert "No reports in 3 days" in content
+        assert "Report on the map" not in content
+
+    def test_empty_today_waits_below_a_bulletin(self, client: Client) -> None:
+        """SNOW-1296: with a bulletin, the empty row follows it, not leads it."""
+        region = MicroRegionFactory.create(
+            region_id="CH-9104", name="Bulletin Region", slug="bulletin-region"
+        )
+        _make_am_bulletin(
+            region,
+            timezone.localdate(),
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        url = reverse("public:region_root", kwargs={"region_id": "ch-9104"})
+        content = client.get(url).content.decode()
+        assert content.count('data-testid="on-the-ground"') == 1
+        problems = content.index('data-testid="avalanche-problems-heading"')
+        assert content.index('data-testid="on-the-ground-empty"') > problems
+
+    def test_today_with_reports_leads_the_bulletin(self, client: Client) -> None:
+        """SNOW-1296: reports keep the section at the top."""
+        region = MicroRegionFactory.create(
+            region_id="CH-9105", name="Busy Region", slug="busy-region"
+        )
+        _make_am_bulletin(
+            region,
+            timezone.localdate(),
+            render_model=_render_model_with_traits([_dry_trait_problems([_problem()])]),
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        FieldObservationFactory.create(region=region, observed_at=timezone.now())
+        url = reverse("public:region_root", kwargs={"region_id": "ch-9105"})
+        content = client.get(url).content.decode()
+        problems = content.index('data-testid="avalanche-problems-heading"')
+        assert content.index('data-testid="on-the-ground"') < problems
 
     def test_past_day_is_a_closed_observed_on_panel(self, client: Client) -> None:
         """A past day's reports sit in a closed "Observed on" panel."""

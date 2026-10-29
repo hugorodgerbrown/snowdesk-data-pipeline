@@ -561,6 +561,7 @@ class TestOnTheGround:
 
     def test_signed_out_reader_is_asked_to_sign_in(self, client: Client) -> None:
         region = MicroRegionFactory.create()
+        FieldObservationFactory.create(region=region, observed_at=timezone.now())
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="on-the-ground"' in content
         assert "Sign in to report" in content
@@ -571,6 +572,7 @@ class TestOnTheGround:
         self, client: Client, django_user_model: Any
     ) -> None:
         region = MicroRegionFactory.create()
+        FieldObservationFactory.create(region=region, observed_at=timezone.now())
         client.force_login(django_user_model.objects.create_user("u", "u@example.com"))
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-action="open-report"' in content
@@ -578,6 +580,21 @@ class TestOnTheGround:
         assert "Sign in to report" not in content
         # The sheet IS the map: no link back to it.
         assert "Report on the map" not in content
+
+    def test_empty_today_is_one_row_with_short_calls(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        """SNOW-1296: no reports is one row, not a sentence and a button."""
+        region = MicroRegionFactory.create()
+        signed_out = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="on-the-ground-empty"' in signed_out
+        assert "No reports in 3 days" in signed_out
+        assert re.search(r">\s*Sign in\s*<", signed_out)
+        assert "Sign in to report" not in signed_out
+        client.force_login(django_user_model.objects.create_user("u", "u@example.com"))
+        signed_in = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-action="open-report"' in signed_in
+        assert "Report what you see" not in signed_in
 
     def test_a_report_row_carries_its_submission(self, client: Client) -> None:
         region = MicroRegionFactory.create()

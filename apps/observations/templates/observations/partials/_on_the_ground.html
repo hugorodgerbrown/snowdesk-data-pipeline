@@ -13,8 +13,10 @@ Two shapes, by the day on screen (Hugo, 29 Oct 2026):
 
   - TODAY: an open section. "Live today" (solid marks) then "Recent" (the
     three days before; hollow marks), the same two states the pins carry.
-    Empty, it still renders: one line and the call to report, because a
-    crowd layer needs a first report before it is worth anything.
+    Empty, it still renders, as ONE row — the eyebrow, "No reports in 3
+    days" and a ghost call to report — because a crowd layer needs a first
+    report before it is worth anything, but an empty section should not
+    push the bulletin down (Hugo, 29 Oct 2026, SNOW-1296).
   - ANOTHER DAY: a closed ``<details>``, "Observed on 28 Oct 2026 · 2",
     and nothing at all when the day has no reports. Live and recent mean
     nothing on a day that is over.
@@ -23,9 +25,7 @@ Each row carries ``data-observation-submission``: a tap on a pin selects
 the region and static/js/map_region_sheet.js opens the section, marks that
 row and scrolls it into view.
 
-The call to report: in the map's sheet a button static/js/report.js picks
-up (``data-action="open-report"``) when signed in, a sign-in link when
-not; on the bulletin page a link to the map, where reporting happens.
+The call to report is observations/partials/_on_the_ground_cta.html.
 
 Context:
   ground   — apps.observations.services.ground.Ground.
@@ -34,7 +34,16 @@ Context:
   user     — The reader, for the call to report.
 {% endcomment %}
 {% trans "On the ground" as on_the_ground_label %}
-{% if ground.is_today %}
+{% if ground.is_today and not ground.count %}
+    {# Empty today: one row, so the section costs a line, not three. #}
+    <section class="mb-4 flex items-center gap-2" data-testid="on-the-ground" data-on-the-ground>
+        {% include "includes/_eyebrow.html" with text=on_the_ground_label data_testid="on-the-ground-heading" class_extra="shrink-0" %}
+        <p class="min-w-0 flex-1 truncate text-meta text-text-3" data-testid="on-the-ground-empty">
+            <span aria-hidden="true">·</span> {% trans "No reports in 3 days" %}
+        </p>
+        {% include "observations/partials/_on_the_ground_cta.html" with in_map=in_map map_url=map_url user=user variant="ghost" short=True only %}
+    </section>
+{% elif ground.is_today %}
     <section class="mb-4" data-testid="on-the-ground" data-on-the-ground>
         {% include "includes/_eyebrow.html" with text=on_the_ground_label data_testid="on-the-ground-heading" class_extra="mb-2" %}
         {% if ground.live %}
@@ -53,21 +62,7 @@ Context:
                 {% endfor %}
             </ul>
         {% endif %}
-        {% if not ground.count %}
-            <p class="mb-3 text-sm text-text-2" data-testid="on-the-ground-empty">
-                {% trans "No reports from the last few days. Been out? Say what you found." %}
-            </p>
-        {% endif %}
-        {% if in_map %}
-            {% if user.is_authenticated %}
-                {% include "includes/_button.html" with label=_("Report what you see") button_type="button" variant="secondary" size="compact" data_action="open-report" only %}
-            {% else %}
-                {% url 'accounts:sign_in' as sign_in_url %}
-                {% include "includes/_button.html" with label=_("Sign in to report") href=sign_in_url variant="secondary" size="compact" only %}
-            {% endif %}
-        {% elif map_url %}
-            {% include "includes/_button.html" with label=_("Report on the map") href=map_url variant="secondary" size="compact" only %}
-        {% endif %}
+        {% include "observations/partials/_on_the_ground_cta.html" with in_map=in_map map_url=map_url user=user variant="secondary" only %}
     </section>
 {% elif ground.day %}
     {% blocktrans with day=ground.page_date|date:"j M Y" n=ground.count trimmed asvar observed_title %}

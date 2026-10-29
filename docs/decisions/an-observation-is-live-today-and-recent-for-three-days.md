@@ -70,6 +70,12 @@ type it ticked and its most serious family, and stamped with `observed_on`.
   "Recent"; another day is a closed "Observed on 28 Oct 2026 · 2" panel,
   and nothing at all when that day has no reports. It replaced SNOW-324's
   "Reported today" counts and their "placed manually" footnote.
+- **SNOW-1296**: today with no reports is one row, "On the ground · No
+  reports in 3 days" plus a ghost "Report" (`_on_the_ground_cta.html`),
+  and when the region has a bulletin that row sits after it, before the
+  metadata strip, so an empty section never pushes the bulletin down.
+  With reports, or with no bulletin, the section stays at the top. A pin
+  tap always has a report to land on, so it always finds it at the top.
 - A tap on a pin in a region the map has loaded selects that region and
   opens its sheet at the report's row (`snowdesk:observation-focus`, read
   by `map_region_sheet.js`). The popup stays only for a pin whose region is
