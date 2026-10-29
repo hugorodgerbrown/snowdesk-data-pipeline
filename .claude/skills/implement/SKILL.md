@@ -107,15 +107,20 @@ Two entry modes:
 
 Use Linear MCP `get_issue` to fetch SNOW-$1.
 
-**Hard precondition:** state must be `Ready for dev`. If it is `Todo` or
-`Backlog`, tell the user the ticket needs scoping first and stop. If it is
+**Hard precondition:** state must be `Ready for dev`. If it is `Backlog`,
+tell the user the ticket needs scoping first and stop. If it is `Todo`, it
+is waiting on Codex's scope review — point at `resolve-scope-review` and
+stop. If it is `Requires input`, a question is waiting on Hugo; name it and
+stop. If it is
 `In Progress`, ask whether they want to resume existing work (in which case
 they should switch branches manually, not run this skill). If `In Review`
 or `Done`, stop.
 
 Read the ticket description AND comments — the scope lives in a comment
-posted by the `scope` skill. If there is no scoping comment, stop and tell
-the user to scope first. Store the Linear-supplied git branch name.
+posted by the `scope` skill. The **latest** `## Scope revision` (posted by
+`resolve-scope-review` after Codex's review) supersedes it; build from that,
+and read the Notes in Codex's `## Codex scope review` as context. If there
+is no scoping comment, stop and tell the user to scope first. Store the Linear-supplied git branch name.
 
 ### 2b. Create local branch
 

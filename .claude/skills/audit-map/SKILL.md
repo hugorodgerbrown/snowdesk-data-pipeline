@@ -224,10 +224,10 @@ Then, if there is at least one new finding:
    spin-off / watching rule from the README — not every finding earns a
    ticket, and saying why in the doc is part of the job.
 3. **Scope each child**: post the four-section comment (Approach, Touch list,
-   Tests, Open questions) from the `create-ticket` skill, then move to
-   `Ready for dev` **only** if Open questions is empty. A child with a real
-   open question stays at `Todo` with the question named. Do not manufacture
-   "None" to promote a ticket.
+   Tests, Open questions) from the `create-ticket` skill, then move it to
+   `Todo` and delegate it to Codex for its scope review, as `create-ticket`
+   does — never straight to `Ready for dev`. Name any real open question in
+   the comment. Do not manufacture "None" to tidy a scope.
 
 If there are **no** new findings, create no parent ticket. Write the cycle doc
 recording the re-verifications and say so. A cycle that finds nothing is a
