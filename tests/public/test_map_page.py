@@ -2305,6 +2305,25 @@ class TestTheMapPageFitsTheScreen:
         assert "min-height" not in body
         assert re.search(r"(^|;|\s)height:\s*100dvh", body)
 
+    def test_the_nav_is_an_opaque_sticky_top_edge(self) -> None:
+        """iOS 26 blurs the top edge unless a sticky, opaque box sits there.
+
+        The nav is sticky at the top with the page's background, so WebKit
+        extends its colour into the status bar instead of blurring it, and
+        its z-index clears the map's 0-8 overlay band.
+        """
+        body = self._body("body.map-fullscreen > nav")
+        assert re.search(r"(^|;|\s)position:\s*sticky", body)
+        assert re.search(r"(^|;|\s)top:\s*0", body)
+        assert re.search(r"(^|;|\s)z-index:\s*9", body)
+        assert re.search(r"(^|;|\s)background-color:\s*var\(--color-bg\)", body)
+
+    @pytest.mark.django_db
+    def test_the_nav_is_a_direct_child_of_the_body(self) -> None:
+        """The sticky rule's child combinator reaches the rendered nav."""
+        content = Client().get(reverse("public:map")).content.decode()
+        assert re.search(r"<body[^>]*>\s*<nav[\s>]", content)
+
 
 @pytest.mark.django_db
 @override_settings(TERRAIN_CLASS_TILE_URL=TERRAIN_CLASS_URL)
