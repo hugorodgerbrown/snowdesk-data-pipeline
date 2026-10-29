@@ -120,6 +120,10 @@
   // of the SAC/swisstopo winter routes, drawn from z10 inside Switzerland.
   // Gated with draw mode behind the route_drawing flag, whose guide it is.
   const SKI_ROUTES_ELIGIBLE = mapEl.dataset.skiRoutesEligible === 'true';
+  // SNOW-1294: SAC's summits and huts as search rows, read once on the
+  // first focus of search. Emitted only for an eligible page: picking one
+  // opens the ski-touring layer's tours list, which no other page has.
+  const SKI_SUMMITS_URL = (SKI_ROUTES_ELIGIBLE && mapEl.dataset.skiSummitsUrl) || null;
 
   // SNOW-672: marker tints, in one place. MapLibre paint properties cannot
   // reference a CSS custom property, so this literal is the JS side of
@@ -10669,7 +10673,41 @@
       MAP_STRINGS['search-pin-unnamed'],
     );
 
-    const runSearch = (query) => searchCore.runSearch(SEARCH_INDEX.concat(pinEntries()), query);
+    // SNOW-1294: SAC's summits and huts, as rows. Not on map load — the
+    // list is read the first time search is focused (loadSummits), so it
+    // never adds to first paint, and once: it changes only when an import
+    // does. Empty until then, and for good when the read fails, which
+    // leaves search as it was before.
+    let summitEntries = [];
+    /** @type {?Promise<void>} */
+    let summitsLoading = null;
+    const loadSummits = () => {
+      if (!SKI_SUMMITS_URL) return Promise.resolve();
+      if (!summitsLoading) {
+        summitsLoading = fetch(SKI_SUMMITS_URL, { credentials: 'same-origin' })
+          .then((resp) => (resp.ok ? resp.json() : null))
+          .then((body) => {
+            summitEntries = searchCore.buildSummitEntries(
+              (body && body.summits) || [],
+              {
+                summit: MAP_STRINGS['search-type-summit'],
+                hut: MAP_STRINGS['search-type-hut'],
+                altitude: MAP_STRINGS['search-summit-altitude'],
+                'tours-one': MAP_STRINGS['search-summit-tours-one'],
+                'tours-other': MAP_STRINGS['search-summit-tours-other'],
+              },
+              document.documentElement.lang || undefined,
+            );
+          })
+          .catch(() => {});
+      }
+      return summitsLoading;
+    };
+
+    const runSearch = (query) => searchCore.runSearch(
+      SEARCH_INDEX.concat(pinEntries(), summitEntries),
+      query,
+    );
 
     const inputEl = document.getElementById('search-input');
     const resultsEl = document.getElementById('search-results');
@@ -10819,6 +10857,15 @@
           }
         });
       }
+      // So are the summits (SNOW-1294), read on the first focus; a query
+      // typed before they arrive is answered again when they do.
+      if (SKI_SUMMITS_URL && !summitEntries.length) {
+        loadSummits().then(() => {
+          if (inputEl.value && document.activeElement === inputEl) {
+            renderResults(runSearch(inputEl.value));
+          }
+        });
+      }
     };
 
     const openSearch = () => {
@@ -10827,6 +10874,7 @@
       // Defer focus one frame so the width transition starts before the
       // caret appears — avoids a flash of the input at width 0.
       window.requestAnimationFrame(() => inputEl.focus());
+      loadSummits();
       if (inputEl.value) showMatches();
       else showEmptyState();
     };
@@ -10883,8 +10931,9 @@
       // on the first pinned region read as a second selection.
       const previewItem = currentResults[idx >= 0 ? idx : (previewTop ? 0 : -1)];
       // A pin row previews nothing (SNOW-1264): it goes to a point, not to
-      // the region it happens to sit in.
-      setPreview(previewItem && previewItem.type !== 'pin' ? previewItem.regionID : null);
+      // the region it happens to sit in. Nor does a summit (SNOW-1294).
+      const pointRow = previewItem && (previewItem.type === 'pin' || previewItem.type === 'summit');
+      setPreview(previewItem && !pointRow ? previewItem.regionID : null);
     };
 
     // The day's level as a .danger-tile digit, keyed as the feature-state
@@ -10915,6 +10964,17 @@
      * @returns {Element} The tile, decorative (aria-hidden).
      */
     const resultTile = (r) => {
+      // SNOW-1294: a summit is a place, so round, and marked as the Summits
+      // layer marks it — a dot of ink for a peak, a ring for a hut.
+      if (r.type === 'summit') {
+        const tile = document.createElement('span');
+        tile.className = 'search-result-tile search-result-tile--summit';
+        tile.setAttribute('aria-hidden', 'true');
+        const mark = document.createElement('span');
+        mark.className = r.hut ? 'search-result-summit search-result-summit--hut' : 'search-result-summit';
+        tile.append(mark);
+        return tile;
+      }
       // SNOW-1264: a dropped pin is a place, so it is round like a resort,
       // and carries the star the map draws it with, in the favourites blue.
       if (r.type === 'pin') {
@@ -10988,6 +11048,7 @@
         pin: MAP_STRINGS['search-group-pinned-places'],
         resort: MAP_STRINGS['search-group-resorts'],
         region: MAP_STRINGS['search-group-regions'],
+        summit: MAP_STRINGS['search-group-summits'],
       };
       const groups = pinned
         ? pinned.map((g) => ({ heading: g.heading, items: g.items }))
@@ -11035,7 +11096,10 @@
             resort: MAP_STRINGS['search-type-resort'],
             region: MAP_STRINGS['search-type-region'],
           };
-          typeLabel.textContent = (TYPE_LABELS[r.type] || '') + ' ';
+          const typeWord = r.type === 'summit'
+            ? MAP_STRINGS[r.hut ? 'search-type-hut' : 'search-type-summit']
+            : TYPE_LABELS[r.type];
+          typeLabel.textContent = (typeWord || '') + ' ';
           primary.append(typeLabel, document.createTextNode(r.primary));
 
           const secondary = document.createElement('div');
@@ -11046,6 +11110,7 @@
           // apart and the region it opens on is named in words.
           // A pin row: "in" the region it was dropped in, or nothing for a
           // pin outside every region (SNOW-1264).
+          // A summit row's line is already its own words (SNOW-1294).
           const placed = r.type === 'resort' || r.type === 'pin';
           secondary.textContent = placed && r.secondary
             ? self.pwaStrings.interpolate(MAP_STRINGS['search-resort-in'], { region: r.secondary })
@@ -11123,6 +11188,15 @@
     };
 
     const chooseResult = (item) => {
+      // SNOW-1294: a summit row does what a tap on the summit's dot does —
+      // its tours list opens, the map goes to it, and the ski-touring layer
+      // comes on if it was off (ski_tours.js openSummit).
+      if (item.type === 'summit') {
+        inputEl.value = '';
+        collapseSearch();
+        window.pwaSkiTours?.openSummit?.({ key: item.key, lon: item.lon, lat: item.lat });
+        return;
+      }
       // SNOW-1264: a pin row goes to the pin and opens what a tap on it
       // opens — the same path as the ?favourite= deep link.
       if (item.type === 'pin') {
@@ -11182,6 +11256,7 @@
         pillEl.setAttribute('data-state', 'expanded');
         toggleEl.setAttribute('aria-expanded', 'true');
       }
+      loadSummits();
       if (inputEl.value) showMatches();
       else showEmptyState();
     });

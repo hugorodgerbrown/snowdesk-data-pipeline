@@ -1540,6 +1540,49 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
 
 
 @vary_on_headers("Accept-Encoding")
+@require_GET
+def ski_summits_json(request: HttpRequest) -> HttpResponse:
+    """
+    Return every SAC summit and hut as a row for the map's search.
+
+    SNOW-1294. What search matches a typed name against: the summits the
+    Summits layer draws (``summits()``, cached until an import changes the
+    tours), without their tours' lines, so the whole list is a few tens of
+    kilobytes and is read once, the first time search is focused. A summit
+    is not a Location and buys no forecast fetch
+    (docs/decisions/snowdesk-decides-where-a-forecast-is-fetched.md).
+    Response shape::
+
+        {"summits": [{"key": "piz-buin-3312", "name": "Piz Buin",
+                      "altitude_m": 3312, "kind": "summit" | "hut",
+                      "lon": 10.12, "lat": 46.84, "tours": 4}, ...]}
+
+    Names are SAC's own and not localised, so the answer varies on nothing
+    but its encoding. Anonymous and read-only, like the layer's own feed.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with the payload above, ETagged.
+
+    """
+    rows = [
+        {
+            "key": summit.key,
+            "name": summit.name,
+            "altitude_m": summit.altitude_m,
+            "kind": "hut" if summit.hut else "summit",
+            "lon": summit.lon,
+            "lat": summit.lat,
+            "tours": summit.up + summit.down,
+        }
+        for summit in summits().values()
+    ]
+    return _geojson_response(request, {"summits": rows}, empty=not rows)
+
+
+@vary_on_headers("Accept-Encoding")
 def bulletin_groupings_geojson(request: HttpRequest) -> JsonResponse:
     """
     Return a single date's FeatureCollection of dissolved bulletin boundaries.

@@ -1599,6 +1599,31 @@
     color: var(--color-marker-favourite);
 }
 
+/* SNOW-1294: an SAC summit's or hut's tile — round, because it is a place,
+   and carrying the mark the Summits layer draws it with: a dot of ink for a
+   peak, a ring for a hut. */
+.search-result-tile--summit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #ece8dc;
+}
+
+.search-result-summit {
+    display: block;
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--ink);
+    box-shadow: 0 0 0 2px #fff;
+}
+
+.search-result-summit--hut {
+    background: #fff;
+    border: 2.5px solid var(--ink);
+}
+
 /* The gondola cabin inside the resort tile (SNOW-1177). `display` is explicit because the global
    reset sets `svg { display: block }`; the tile centres it either way. */
 .search-result-pin {

@@ -410,3 +410,87 @@ describe('buildPinEntries (SNOW-1264)', () => {
     expect(core.buildPinEntries(null, 'Unnamed pin')).toEqual([]);
   });
 });
+
+describe('buildSummitEntries (SNOW-1294)', () => {
+  const STRINGS = {
+    summit: 'Summit',
+    hut: 'Hut',
+    altitude: '%(value)s m',
+    'tours-one': '1 SAC tour',
+    'tours-other': '%(count)s SAC tours',
+  };
+  /** @param {object} [over] */
+  const summit = (over = {}) => ({
+    key: 'piz-bernina-4049',
+    name: 'Piz Bernina',
+    altitude_m: 4049,
+    kind: 'summit',
+    lon: 9.908,
+    lat: 46.382,
+    tours: 4,
+    ...over,
+  });
+
+  it('builds a summit row carrying its key and place', () => {
+    const [row] = core.buildSummitEntries([summit()], STRINGS, 'en');
+    expect(row).toEqual({
+      type: 'summit',
+      primary: 'Piz Bernina',
+      secondary: 'Summit · 4,049 m · 4 SAC tours',
+      primaryKey: 'piz bernina',
+      regionID: '',
+      searchable: 'piz bernina',
+      key: 'piz-bernina-4049',
+      hut: false,
+      lon: 9.908,
+      lat: 46.382,
+    });
+  });
+
+  it('says hut for a hut, and one tour in the singular', () => {
+    const [row] = core.buildSummitEntries(
+      [summit({ name: 'Chamonna Tuoi CAS', kind: 'hut', altitude_m: 2250, tours: 1 })],
+      STRINGS,
+      'en',
+    );
+    expect(row.hut).toBe(true);
+    expect(row.secondary).toBe('Hut · 2,250 m · 1 SAC tour');
+  });
+
+  it('leaves out an altitude or tour count it does not have', () => {
+    const [row] = core.buildSummitEntries([summit({ altitude_m: null, tours: 0 })], STRINGS, 'en');
+    expect(row.secondary).toBe('Summit');
+  });
+
+  it('drops a row with no key, name or place', () => {
+    expect(core.buildSummitEntries([
+      summit({ key: '' }),
+      summit({ name: '' }),
+      summit({ lon: undefined }),
+      null,
+    ], STRINGS, 'en')).toEqual([]);
+  });
+
+  it('is found by a partial name, accents folded', () => {
+    const index = core.buildSummitEntries([
+      summit(),
+      summit({ key: 'piz-palu-3901', name: 'Piz Palü', altitude_m: 3901 }),
+    ], STRINGS, 'en');
+    expect(core.runSearch(index, 'piz bern').map((r) => r.key)).toEqual(['piz-bernina-4049']);
+    expect(core.runSearch(index, 'piz palu').map((r) => r.key)).toEqual(['piz-palu-3901']);
+  });
+
+  it('ranks under a region and a resort that match as well, over a weaker match', () => {
+    const index = buildIndex([
+      [{ regionID: 'CH-5123', name: 'Bernina' }, ['Bernina Diavolezza']],
+      [{ regionID: 'CH-5124', name: 'Upper Engadine Bernina' }, []],
+    ]).concat(core.buildSummitEntries([summit({ name: 'Bernina' })], STRINGS, 'en'));
+    const results = core.runSearch(index, 'bernina');
+    expect(results.map((r) => r.type)).toEqual(['region', 'resort', 'summit', 'region']);
+    expect(core.groupResults(results).map((g) => g.type)).toEqual(['region', 'resort', 'summit']);
+  });
+
+  it('is empty for no feed', () => {
+    expect(core.buildSummitEntries(null, STRINGS, 'en')).toEqual([]);
+  });
+});

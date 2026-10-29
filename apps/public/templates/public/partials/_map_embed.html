@@ -130,6 +130,9 @@ Optional context:
     {# with draw mode, whose guide it is                                     #}
     {# (docs/decisions/a-drawn-route-is-a-route.md).                         #}
     data-ski-routes-eligible="{{ route_drawing_enabled|yesno:'true,false' }}"
+    {# SNOW-1294: SAC's summits and huts as search rows, under the same    #}
+    {# flag — picking one opens the ski-touring layer's tours list.        #}
+    {% if route_drawing_enabled %}data-ski-summits-url="{% url 'api:ski_summits_json' %}"{% endif %}
     {# HACK MODE (feature discovery): may this request spoof its position   #}
     {# with ?loc=? Superusers and local development only — see              #}
     {# apps.public.views._fake_location_allowed for why the field report is #}
@@ -192,13 +195,20 @@ Optional context:
         {% url 'public:help' as map_unavailable_cta_href %}
         {% include "includes/_callout.html" with kind="warning" heading=map_unavailable_heading body=map_unavailable_body cta_label=map_unavailable_cta cta_href=map_unavailable_cta_href %}
     </div>
+    {# SNOW-1294: search also finds SAC's summits and huts where the      #}
+    {# ski-touring layer exists (the route_drawing flag), so it says so.  #}
+    {% if route_drawing_enabled %}
+        {% trans "Find a region, resort or summit" as search_prompt %}
+    {% else %}
+        {% trans "Find a region or resort" as search_prompt %}
+    {% endif %}
     <div class="map-utility-cluster" id="map-utility-cluster">
         <div class="map-utility-pill map-utility-pill--search" id="search-pill" data-state="collapsed">
             <button
                 id="search-toggle"
                 type="button"
                 class="map-utility-button hover-affordance"
-                aria-label='{% trans "Find a region or resort" %}'
+                aria-label="{{ search_prompt }}"
                 aria-expanded="false"
                 aria-controls="search-input"
             >
@@ -229,22 +239,22 @@ Optional context:
                 class="search-region-label hover-affordance"
                 aria-controls="search-input"
                 aria-live="polite"
-                data-prompt='{% trans "Find a region or resort" %}'
+                data-prompt="{{ search_prompt }}"
             >
                 <span class="region-readout-swatch" data-search-region-swatch hidden aria-hidden="true"></span>
                 <span
                     class="search-region-label-name"
                     data-search-region-name
-                >{% trans "Find a region or resort" %}</span>
+                >{{ search_prompt }}</span>
             </button>
             <input
                 id="search-input"
                 class="search-input"
                 type="search"
-                placeholder='{% trans "Find a region or resort" %}'
+                placeholder="{{ search_prompt }}"
                 autocomplete="off"
                 spellcheck="false"
-                aria-label='{% trans "Find a region or resort" %}'
+                aria-label="{{ search_prompt }}"
                 aria-autocomplete="list"
                 aria-controls="search-results"
                 aria-expanded="false"
@@ -2636,6 +2646,14 @@ Optional context:
     <span data-string="search-group-regions">{% trans "Regions" %}</span>
     <span data-string="search-group-pinned">{% trans "Pinned regions" %}</span>
     <span data-string="search-group-pinned-resorts">{% trans "Pinned resorts" %}</span>
+    {# SNOW-1294: an SAC summit or hut row — its kind, its group, and its   #}
+    {# line, "Summit · 3,159 m · 4 SAC tours".                              #}
+    <span data-string="search-type-summit">{% trans "Summit" %}</span>
+    <span data-string="search-type-hut">{% trans "Hut" %}</span>
+    <span data-string="search-group-summits">{% trans "Summits and huts" %}</span>
+    <span data-string="search-summit-altitude">{% blocktrans %}%(value)s m{% endblocktrans %}</span>
+    <span data-string="search-summit-tours-one">{% trans "1 SAC tour" %}</span>
+    <span data-string="search-summit-tours-other">{% blocktrans %}%(count)s SAC tours{% endblocktrans %}</span>
     <span data-string="search-resort-in">{% blocktrans %}in %(region)s{% endblocktrans %}</span>
     {# SNOW-658 removed "custom-control-idle"/"custom-control-done" —      #}
     {# #map-custom-download-control's two labels for a downloads state it  #}
