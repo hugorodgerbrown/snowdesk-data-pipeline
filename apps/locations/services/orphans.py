@@ -48,6 +48,8 @@ def delete_location_if_orphaned(location: Location) -> None:
         # savepoint keeps the failed delete from poisoning the surrounding
         # atomic block.
         with transaction.atomic():
+            location_id = location.pk
             location.delete()
+        logger.info("Location id=%s erased (no referents left).", location_id)
     except ProtectedError:
         logger.debug("Location id=%s still referenced; left in place.", location.pk)
