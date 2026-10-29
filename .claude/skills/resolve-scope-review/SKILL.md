@@ -57,9 +57,17 @@ marker instead:
 | **Hugo's answers** | Hugo's account | anything without one of the markers above or below |
 | **Claude's answers note** | Hugo's account, a reply under Hugo's answer | `### Answers folded in` |
 
-The review is the latest `## Codex scope review` comment **authored by
-Codex**. Any other Codex comment is ignored, in particular the summary of a
-run that implemented the ticket by mistake, which is not a review.
+**Everything is read from the thread of the latest review request.** A
+ticket can carry more than one request: a re-request when the first never
+started Codex, or a ticket parked and scoped again later. The review is the
+`## Codex scope review` comment **authored by Codex** that replies to the
+**latest** review request, and Claude's response counts only as a reply to
+that review. A review or response in an older thread belongs to an earlier
+scope and is ignored. Without this rule, an old response would read as "round
+done" and the new scope would never be resolved.
+
+Any other Codex comment is ignored, in particular the summary of a run that
+implemented the ticket by mistake, which is not a review.
 
 ## Step 0 — Sweep (routine mode with no ticket only)
 
@@ -68,8 +76,8 @@ holds only tickets that are waiting on Codex or have just been reviewed, so
 the list is short. If it is not, narrow it with `updatedAt: "-P2D"`: a Codex
 reply updates the ticket, and a run that has been missing for days is caught
 by the next one by hand. For each ticket, read
-its comments and skip it without writing anything if no review authored by
-Codex is there yet. Run Steps 1–5 on the rest. Keep going on a failure: one
+its comments and skip it without writing anything if the latest review
+request has no reply from Codex yet. Run Steps 1–5 on the rest. Keep going on a failure: one
 bad ticket does not stop the sweep.
 
 Finish with a one-line report per ticket processed, e.g.:
@@ -91,9 +99,9 @@ table above.
 
 **In `Todo`:**
 
-- No review authored by Codex → Codex has not replied. Say so and stop (in a
+- No Codex review under the latest review request → Codex has not replied. Say so and stop (in a
   sweep, skip). Do not post a second review request.
-- **Claude's response already exists in the review's thread** → this ticket
+- **Claude's response already exists under that review** → this ticket
   has had its round. Never respond twice: that guard is what keeps the loop
   to one round. The ticket still being in `Todo` means an earlier run
   responded and then failed to move it, so finish Step 5.2 from the scope's

@@ -224,7 +224,10 @@ reviewed ticket:
 **What keeps it to one round.** Once Claude's `### Response to Codex's
 review` reply exists under the review, the round is done.
 `resolve-scope-review` never responds twice, and nothing asks Codex
-again.
+again. All of this is read from the thread of the **latest** review
+request. A ticket that is parked and scoped again gets a fresh request,
+and its old review and response are ignored, so they cannot pass for the
+new scope's round.
 
 **Setup this depends on** (one-off, in Linear and Codex):
 - Codex for Linear installed in the workspace.
