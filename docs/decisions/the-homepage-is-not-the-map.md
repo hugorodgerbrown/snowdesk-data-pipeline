@@ -60,5 +60,7 @@ every existing install a different app, so only `start_url` moves.
 - A cached `/` shell from before the move is the old map page; the next
   activation's `_rewarmShell` warms `/map/` instead, and the old entry is
   dropped with its cache generation.
-- The homepage image (`static/img/home/map.jpg`) is a still and goes stale
-  as the map changes. Re-capture it when the map's appearance changes.
+- The homepage images (`static/img/home/`, a 4:3 desktop and a 3:4 phone
+  capture for each of its three cards) are stills and go stale as the app
+  changes. Re-capture them at the same ratios when the app's appearance
+  changes.
