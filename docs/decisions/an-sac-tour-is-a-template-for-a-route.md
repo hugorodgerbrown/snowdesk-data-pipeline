@@ -72,13 +72,19 @@ offers none of a route's own actions. Its claim slot holds SAC's line
 guide link. On the map, the tour is drawn in a slot of its own (map.js
 `window.pwaSkiTourRoute`), as a trip's route is, with its own cursor.
 
-**The terrain is sampled once per tour and kept on the tour.** Walking the
-terrain grid under a 10 km line takes several seconds, which is too long
-for a tap. The first answer is sent at once without the terrain and is
-flagged `terrain_pending`. The panel then asks again with `?sample=1`,
-which samples the line and stores the result in `SkiTour.slope_samples`.
-Every later reader gets it straight away, and every saved copy inherits it
-without sampling again. A sync that rewrites the tour clears it.
+**The terrain is sampled once per tour, ahead of time, and kept on the
+tour.** Walking the terrain grid under a 10 km line takes several seconds,
+which is too long for a tap. Since SNOW-1288 every tour is walked before
+anyone opens it: `backfill_ski_tour_slope_samples` runs nightly as the
+third pass of `reconcile_slope_samples` and walks every tour in
+`tours_to_sample()`, storing the result in `SkiTour.slope_samples`. So a
+tour opens with its profile at once, as a saved route does, and every
+saved copy inherits the record without sampling again. A sync that
+rewrites the tour clears it, and the next night's run walks it again. A
+tour the job has not reached yet falls back to the first reader's open:
+the first answer is sent at once without the terrain, flagged
+`terrain_pending`, and the panel asks again with `?sample=1`, which
+samples the line and stores the result.
 
 **The tours and their summits are the map's ski-touring layer, and
 everything it draws can be tapped** (SNOW-1285). The layers menu's "Ski

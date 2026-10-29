@@ -42,8 +42,11 @@ pre-loaded with the recurring data-pipeline jobs:
   and an address that arrives a few hours late costs nothing — the surface
   renders a coordinate pair until it does.
 - **reconcile_slope_samples** — fires at 04:30 UTC, running
-  ``backfill_route_slope_samples --commit`` and then
-  ``backfill_trip_slope_samples --commit``. The safety net for
+  ``backfill_route_slope_samples --commit``, then
+  ``backfill_trip_slope_samples --commit``, then
+  ``backfill_ski_tour_slope_samples --commit`` (SNOW-1288: every SAC tour
+  walked ahead of time, so its profile opens at once — after a weekly
+  import, only the tours it rewrote). The safety net for
   a sampling task whose enqueue failed after its route or trip had
   committed (SNOW-1228): the enqueue helpers log such a failure rather
   than raise it, which leaves ``slope_samples`` null, and both commands
@@ -244,10 +247,10 @@ def _run_fill_what3words() -> None:
 def _run_reconcile_slope_samples() -> None:
     """Sample any route or trip whose terrain sampling never ran (SNOW-1228).
 
-    Runs both slope backfill commands, route first. Each raises
-    ``CommandError`` when any row failed; the trip pass must still run
-    after a failed route pass, so the first error is held and re-raised
-    once both have run.
+    Runs the three slope backfill commands — routes, trips, then SAC's
+    tours (SNOW-1288). Each raises ``CommandError`` when any row failed;
+    every later pass must still run after a failed one, so the first error
+    is held and re-raised once all have run.
     """
     from django.core.management import (
         call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
@@ -255,7 +258,11 @@ def _run_reconcile_slope_samples() -> None:
 
     logger.info("schedule: firing reconcile_slope_samples")
     first_error: Exception | None = None
-    for command in ("backfill_route_slope_samples", "backfill_trip_slope_samples"):
+    for command in (
+        "backfill_route_slope_samples",
+        "backfill_trip_slope_samples",
+        "backfill_ski_tour_slope_samples",
+    ):
         try:
             call_command(command, "--commit")
         except Exception as exc:  # noqa: BLE001 — broad catch intentional: one pass failing must not skip the other; re-raised below

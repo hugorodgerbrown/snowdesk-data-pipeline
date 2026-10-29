@@ -27,12 +27,15 @@ SAC'S POINTS ARE NEVER EDITED (Hugo, SNOW-1287). A tour that stops at the
 top stops there here too: nothing is added for the way back down, though
 SNOW-1286 briefly drew such a tour there and back.
 
-THE TERRAIN IS SAMPLED ONCE PER TOUR. Walking the terrain grid under a
-10 km line takes seconds, too long for a tap. So the panel opens at once on
-the line and SAC's figures, and the profile follows: the first reader to
-open a tour samples it (``tour_slope_samples``) and the record is kept on
-the tour, for every later reader and for every saved copy, until a sync
-rewrites the tour and clears it.
+THE TERRAIN IS SAMPLED ONCE PER TOUR, AHEAD OF TIME. Walking the terrain
+grid under a 10 km line takes seconds, too long for a tap. So every tour is
+walked in advance by ``backfill_ski_tour_slope_samples`` (SNOW-1288, the
+nightly ``reconcile_slope_samples`` job; ``tours_to_sample`` names the
+rows) and the record is kept on the tour, for every reader and every saved
+copy, until a sync rewrites the tour and clears it. A tour opened before
+the job reaches it falls back to the first reader's open: the panel shows
+the line and SAC's figures at once and the profile follows
+(``tour_slope_samples`` with ``sample``).
 
 The pure helpers take plain values; ``summits`` and ``tour_overview`` each
 read every tour once and are cached until the tours change (a weekly
@@ -50,7 +53,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from django.core.cache import cache
-from django.db.models import Count, Max
+from django.db.models import Count, Max, Q, QuerySet
 from django.utils.text import slugify
 from django.utils.translation import get_language
 
@@ -549,6 +552,17 @@ def sac_time(label: str) -> str:
     if minutes == "00":
         return f"{hours} h"
     return f"{hours} h {minutes}" if hours else f"{int(minutes)} min"
+
+
+def tours_to_sample() -> QuerySet[SkiTour]:
+    """Return the tours with no current terrain record (SNOW-1288).
+
+    Never walked, or walked over SNOW-1286's doubled line (the record
+    ``tour_slope_samples`` does not hold).
+    """
+    return SkiTour.objects.filter(
+        Q(slope_samples__isnull=True) | Q(slope_samples__has_key=_THERE_AND_BACK)
+    )
 
 
 def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
