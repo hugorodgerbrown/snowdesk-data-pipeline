@@ -754,8 +754,8 @@
 
   /**
    * A summit picked in search (SNOW-1294): what a tap on its dot does, from
-   * anywhere on the map. The ski-touring layer comes on, as "Find a route"
-   * turns it on; the map flies to the summit, close enough for its tours'
+   * anywhere on the map. Both parts of the ski-touring layer come on, as
+   * "Find a route" turns them on; the map flies to the summit, close enough for its tours'
    * own detail; and its list opens. The tours it names are lit up once the
    * flight's load has them.
    *
@@ -764,7 +764,9 @@
   function openSummit(summit) {
     const map = getMap();
     if (!summit || !summit.key || !map) return;
-    if (!shown()) window.pwaSkiRoutes?.show();
+    // Both parts, as find() turns on: a summit with its tours hidden, or
+    // tours with their summit hidden, is half an answer.
+    window.pwaSkiRoutes?.show();
     const url = core.listUrl(LIST_URL, { kind: 'summit', key: summit.key });
     if (url) openList(url, toursTo(summit.key));
     state.summitKey = summit.key;
