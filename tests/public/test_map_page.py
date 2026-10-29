@@ -1022,7 +1022,7 @@ def test_layers_menu_marks_its_zoom_limited_rows() -> None:
     assert main.count("data-zoom-gate=") == 2
     for key, label in (
         ("terrain_filter", "Steep terrain"),
-        ("ski_routes", "Ski touring"),
+        ("ski_routes", "SAC ski touring"),
     ):
         start = main.index(f'data-zoom-gate="{key}"')
         row = main[start : main.index("</li>", start)]

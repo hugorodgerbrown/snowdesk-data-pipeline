@@ -1,7 +1,7 @@
 /*
  * tests/js/test_map_ski_routes_layer.js — the ski-touring layer's switches
  * (SNOW-1285): its two parts, Tours and Summits, each a row on the layers
- * menu's "Ski touring" page under a master switch, and the zoom control's
+ * menu's "SAC ski touring" page under a master switch, and the zoom control's
  * gate.
  *
  * ski_tours.js draws both parts; map.js keeps their switches

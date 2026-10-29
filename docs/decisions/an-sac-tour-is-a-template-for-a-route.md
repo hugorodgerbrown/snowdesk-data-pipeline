@@ -2,7 +2,7 @@
 name: an-sac-tour-is-a-template-for-a-route
 description: An SAC ski tour (SkiTour) is found by its summit, opened unsaved in the route panel, saved as a copy (Route.source SKI_TOUR)
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-10-29
 ---
 
 # An SAC tour is a template for a route
@@ -39,8 +39,24 @@ reach.**
 - A line tap with more than one opens "N routes pass here"
   (`?tours=`), with each row named by its summit.
 
-The listed tours are drawn in the route colour, and a way down is drawn
-dashed.
+The listed tours are drawn as a saved route's legs are (SNOW-1286): a way
+up in the climb's dashed grey, a way down in the descent's solid fuchsia.
+They had been drawn the other way round — a way up solid, a way down
+dashed — which on one map gave the same dash two opposite meanings.
+
+**An up-and-back tour is drawn there and back.** SAC publishes most of
+its tours as a way up with a descent figure and the guide's "as ascent":
+skied back down the line it climbed. That is 2,503 of the 2,941.
+`tour_points` returns such a tour's line followed by itself reversed, so
+the panel's profile, legs, distance and estimate include the descent, and
+a saved copy is the whole day. The panel's SAC line says "↓ same way". A
+terrain record walked before the change covers the way up only; it is not
+held (`tour_slope_samples` checks its `there_and_back` mark) and the next
+reader to open the tour walks it again.
+
+**The SAC guide is for members or subscribers.** SAC's route portal asks
+anyone else to sign in and subscribe, so the panel says so under the
+link rather than letting the link land on a login page unannounced.
 
 **An unsaved tour opens in the same route panel as a saved route.**
 `routes:ski_tour_feature` builds the tour as an unsaved `Route`

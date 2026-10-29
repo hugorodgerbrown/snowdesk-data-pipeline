@@ -98,7 +98,7 @@ const OVERLAY_STORAGE_KEY = {
   // condition symbol at every station is a second layer of information over
   // the danger ratings someone opened the map to read.
   weather: 'snowdesk.map.overlay.weather',
-  // SAC's ski tours and their summits, the two parts of the "Ski touring"
+  // SAC's ski tours and their summits, the two parts of the "SAC ski touring"
   // layer (SNOW-1285). Both default ON, unlike every other opt-in overlay
   // here: they are what a reader planning a tour wants under the map, and
   // Hugo judged the lines uncrowded on a phone (28 Oct 2026). Eligible only

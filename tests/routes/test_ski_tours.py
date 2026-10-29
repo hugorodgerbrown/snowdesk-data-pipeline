@@ -26,6 +26,7 @@ from apps.routes.services.ski_tours import (
     far_end,
     is_descent,
     is_hut,
+    is_up_and_back,
     localised,
     overview_geometry,
     sac_time,
@@ -90,6 +91,12 @@ class TestPureRules:
         """SAC's "Abfahrt" lines."""
         assert is_descent(_tour(ascent_m=None, descent_m=1800)) is True
         assert is_descent(_tour(ascent_m=900, descent_m=900)) is False
+
+    def test_an_up_and_back_tour_has_both_figures(self) -> None:
+        """SAC's "as ascent": a way up with a descent too (SNOW-1286)."""
+        assert is_up_and_back(_tour(ascent_m=900, descent_m=900)) is True
+        assert is_up_and_back(_tour(ascent_m=900, descent_m=None)) is False
+        assert is_up_and_back(_tour(ascent_m=None, descent_m=1800)) is False
 
     def test_the_summit_key_keeps_two_summits_of_one_name_apart(self) -> None:
         """Name and height."""
@@ -272,6 +279,22 @@ class TestTheTourAsARoute:
             [10.085, 46.835],
         ]
 
+    def test_an_up_and_back_tour_comes_back_down_its_own_line(self) -> None:
+        """Up to the summit and back to the start, the top point once."""
+        middle = [10.09, 46.84]
+        tour = _tour(ascent_m=900, descent_m=900, geometry=_line(VALLEY, middle, TOP))
+        assert [p[:2] for p in tour_points(tour)] == [
+            VALLEY,
+            middle,
+            TOP,
+            middle,
+            VALLEY,
+        ]
+        one_way = draft_tour_route(_tour(geometry=_line(VALLEY, middle, TOP)))
+        assert draft_tour_route(tour).distance_m == pytest.approx(
+            2 * one_way.distance_m, rel=0.01
+        )
+
     def test_the_draft_is_titled_by_the_summit_and_marked_a_tour(self) -> None:
         """Title it "Signalhorn (GR) · <name>", source SKI_TOUR, the tour's uuid."""
         tour = _tour(name="Von der Silvrettahütte SAC")
@@ -295,6 +318,8 @@ class TestTheTourAsARoute:
         assert (props["sac_ascent_m"], props["sac_time"]) == (960, "3 h 30")
         assert props["sac_url"] == "https://www.sac-cas.ch/de/"
         assert props["down"] is False
+        assert props["same_way"] is False
+        assert tour_properties(_tour(ascent_m=900, descent_m=900))["same_way"] is True
 
 
 class TestTheTerrain:
@@ -318,6 +343,33 @@ class TestTheTerrain:
             assert tour.slope_samples == RECORD
             assert tour_slope_samples(tour, sample=True) == RECORD
         build.assert_called_once()
+
+    def test_an_up_and_back_record_is_marked_and_read_back(self) -> None:
+        """Walked there and back, and kept with its mark (SNOW-1286)."""
+        tour = _tour(ascent_m=900, descent_m=900)
+        with patch(
+            "apps.routes.services.ski_tours.build_slope_samples",
+            return_value=dict(RECORD),
+        ) as build:
+            record = tour_slope_samples(tour, sample=True)
+            assert record is not None
+            assert record["there_and_back"] is True
+            tour.refresh_from_db()
+            assert tour_slope_samples(tour, sample=True) == record
+        build.assert_called_once()
+        assert len(build.call_args.args[0]) == 3
+
+    def test_a_one_way_record_on_an_up_and_back_tour_is_not_held(self) -> None:
+        """Walked before SNOW-1286, it covers the way up alone: walk it again."""
+        tour = _tour(ascent_m=900, descent_m=900, slope_samples=RECORD)
+        assert tour_slope_samples(tour, sample=False) is None
+        with patch(
+            "apps.routes.services.ski_tours.build_slope_samples",
+            return_value=dict(RECORD),
+        ):
+            record = tour_slope_samples(tour, sample=True)
+        assert record is not None
+        assert record["there_and_back"] is True
 
     def test_a_line_off_the_terrain_model_keeps_nothing(self) -> None:
         """None from the grid stores nothing."""

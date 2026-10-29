@@ -215,6 +215,20 @@ class TestList:
         assert "↓ 1800 m" in body
         assert body.count("data-ski-tour=") == 2
 
+    def test_a_row_is_drawn_as_a_saved_routes_leg(self, client: Client) -> None:
+        """A way up dashed grey, a way down solid fuchsia (SNOW-1286).
+
+        An up-and-back way up says "↓ same way"; a one-way way up does not.
+        """
+        SkiTourFactory.create(name="Von der Hütte", descent_m=1100)
+        SkiTourFactory.create(name="Abfahrt nach Lavin", ascent_m=None, descent_m=1800)
+        response = client.get(LIST_URL, {"summit": "piz-buin-3312"}, headers=HTMX)
+        body = response.content.decode()
+        assert body.count("text-route-rail-climb") == 1
+        assert body.count("text-route-rail-descent") == 1
+        assert body.count("stroke-dasharray") == 1
+        assert body.count("↓ same way") == 1
+
     def test_a_tap_lists_its_tours_by_summit(self, client: Client) -> None:
         """List them as "2 routes pass here", each row titled by its summit."""
         one = SkiTourFactory.create()
