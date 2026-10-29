@@ -632,7 +632,9 @@ def save_ski_tour(user: User, tour: SkiTour) -> Route:
             "bounds",
         )
     }
-    fields["slope_samples"] = tour.slope_samples
+    # What the tour holds for its line: a one-way record on an up-and-back
+    # tour is not held (SNOW-1286), so the copy is sampled after the commit.
+    fields["slope_samples"] = tour_slope_samples(tour, sample=False)
     route = write_route_copy(user, fields)
     logger.info(
         "Ski tour saved: user=%s uuid=%s tour=%s", user.pk, route.uuid, tour.source_uuid

@@ -408,6 +408,19 @@ class TestSave:
             route = save_ski_tour(user, _tour())
         enqueue.assert_called_once_with(route)
 
+    def test_a_one_way_record_is_not_copied_onto_an_up_and_back_route(
+        self,
+    ) -> None:
+        """Walked before SNOW-1286: the copy is sampled afresh, there and back."""
+        user = UserFactory.create()
+        tour = _tour(ascent_m=900, descent_m=900, slope_samples=RECORD)
+        with patch(
+            "apps.routes.services.ski_tours.enqueue_route_slope_sampling"
+        ) as enqueue:
+            route = save_ski_tour(user, tour)
+        assert route.slope_samples is None
+        enqueue.assert_called_once_with(route)
+
     @override_settings(ROUTES_MAX_PER_USER=1)
     def test_the_cap_holds(self) -> None:
         """As for any copy."""
