@@ -24,7 +24,7 @@ SNOW-252 — peak semantics:
 * ``api:region_summary`` tooltip chip shows peak, not morning, on split days.
 
 SNOW-419:
-* ``api:community_reports_geojson`` — anonymised, 48h-windowed
+* ``api:community_reports_geojson`` — anonymised, day-windowed
   ``FieldObservation`` overlay.
 
 """
@@ -2217,9 +2217,22 @@ def test_region_summary_covered_no_rating_shows_no_bulletin_tooltip() -> None:
 # ---------------------------------------------------------------------------
 
 
+# Everything a community-report feature may carry — anything else is a leak.
+PROPERTY_KEYS = {
+    "submission",
+    "types",
+    "type_labels",
+    "family",
+    "observed_at",
+    "observed_on",
+    "region_id",
+    "region_name",
+}
+
+
 @pytest.mark.django_db
 class TestCommunityReportsGeojson:
-    """community_reports_geojson — anonymised 48h FieldObservation overlay."""
+    """community_reports_geojson — the anonymised "On the ground" layer."""
 
     def test_feature_collection_shape(self) -> None:
         """Returns a FeatureCollection of Point features."""
@@ -2239,8 +2252,10 @@ class TestCommunityReportsGeojson:
         feature = data["features"][0]
         assert feature["type"] == "Feature"
         assert feature["geometry"]["type"] == "Point"
-        assert feature["properties"]["type"] == "WHUMPFING"
-        assert feature["properties"]["type_label"] == "Whumpfing"
+        assert feature["properties"]["types"] == ["WHUMPFING"]
+        assert feature["properties"]["type_labels"] == ["Whumpfing"]
+        assert feature["properties"]["family"] == "WARNING"
+        assert feature["properties"]["region_id"] == region.region_id
         assert feature["properties"]["region_name"] == "Martigny-Verbier"
 
     def test_no_three_word_address_ever_reaches_the_payload(self) -> None:
@@ -2272,12 +2287,7 @@ class TestCommunityReportsGeojson:
         assert "filled.count.soap" not in body
         assert "what3words" not in body
         properties = response.json()["features"][0]["properties"]
-        assert set(properties) == {
-            "type",
-            "type_label",
-            "observed_at",
-            "region_name",
-        }
+        assert set(properties) == PROPERTY_KEYS
 
     def test_region_name_is_null_when_region_unset(self) -> None:
         """A report with no resolved region carries region_name: null."""
@@ -2285,22 +2295,130 @@ class TestCommunityReportsGeojson:
         response = Client().get(reverse("api:community_reports_geojson"))
         data = response.json()
         assert data["features"][0]["properties"]["region_name"] is None
+        assert data["features"][0]["properties"]["region_id"] is None
 
-    def test_includes_report_just_inside_48h_window(self) -> None:
-        """A report 47h59m old is included."""
-        FieldObservationFactory.create(
-            observed_at=timezone.now() - dt.timedelta(hours=47, minutes=59),
-        )
-        response = Client().get(reverse("api:community_reports_geojson"))
-        assert len(response.json()["features"]) == 1
+    # Today is Thursday 29 October 2026; settings.TIME_ZONE is the boundary.
+    TODAY = "2026-10-29T15:00:00Z"
 
-    def test_excludes_report_just_outside_48h_window(self) -> None:
-        """A report 48h01m old is excluded."""
+    def _features(self, query: str = "") -> list[dict]:
+        """GET the endpoint with an optional query string; return features."""
+        url = reverse("api:community_reports_geojson") + query
+        response = Client().get(url)
+        assert response.status_code == 200
+        features: list[dict] = response.json()["features"]
+        return features
+
+    def test_today_includes_midnight_three_days_back(self) -> None:
+        """Today's window opens at local midnight three days back (SNOW-1290)."""
+        with freeze_time(self.TODAY):
+            FieldObservationFactory.create(
+                observed_at=dt.datetime(2026, 10, 26, 0, 0, tzinfo=dt.UTC),
+            )
+            assert len(self._features()) == 1
+
+    def test_today_excludes_the_fourth_day_back(self) -> None:
+        """A report one second before that midnight has dropped off."""
+        with freeze_time(self.TODAY):
+            FieldObservationFactory.create(
+                observed_at=dt.datetime(2026, 10, 25, 23, 59, 59, tzinfo=dt.UTC),
+            )
+            assert self._features() == []
+
+    def test_today_by_date_matches_no_date(self) -> None:
+        """?d=<today> reads the same live-and-recent window as no ?d=."""
+        with freeze_time(self.TODAY):
+            FieldObservationFactory.create(
+                observed_at=dt.datetime(2026, 10, 27, 9, 0, tzinfo=dt.UTC),
+            )
+            assert len(self._features("?d=2026-10-29")) == 1
+
+    def test_today_includes_a_report_a_little_ahead_of_the_server(self) -> None:
+        """A device clock a few seconds fast does not hide its report."""
+        with freeze_time(self.TODAY):
+            FieldObservationFactory.create(
+                observed_at=timezone.now() + dt.timedelta(seconds=30),
+            )
+            assert len(self._features()) == 1
+
+    def test_past_date_returns_that_day_only(self) -> None:
+        """A scrubbed map shows only what was observed on the day it shows."""
+        with freeze_time(self.TODAY):
+            on_the_day = FieldObservationFactory.create(
+                observed_at=dt.datetime(2026, 10, 20, 11, 0, tzinfo=dt.UTC),
+            )
+            FieldObservationFactory.create(
+                observed_at=dt.datetime(2026, 10, 19, 23, 59, tzinfo=dt.UTC),
+            )
+            FieldObservationFactory.create(
+                observed_at=dt.datetime(2026, 10, 21, 0, 0, tzinfo=dt.UTC),
+            )
+            features = self._features("?d=2026-10-20")
+        assert [f["properties"]["submission"] for f in features] == [
+            str(on_the_day.submission)
+        ]
+        assert features[0]["properties"]["observed_on"] == "2026-10-20"
+
+    def test_future_date_is_empty(self) -> None:
+        """Nothing has been observed on a day that has not happened."""
+        with freeze_time(self.TODAY):
+            FieldObservationFactory.create(observed_at=timezone.now())
+            assert self._features("?d=2026-10-30") == []
+
+    @pytest.mark.parametrize("raw", ["yesterday", "20261029", "2026-13-01"])
+    def test_malformed_date_is_400(self, raw: str) -> None:
+        """A ?d= that is not a real YYYY-MM-DD date is a 400."""
+        response = Client().get(reverse("api:community_reports_geojson") + f"?d={raw}")
+        assert response.status_code == 400
+
+    def test_one_feature_per_submission(self) -> None:
+        """The rows one report wrote are one pin listing every type (SNOW-1289)."""
+        observed_at = timezone.now()
+        location = LocationFactory.create()
+        submission = FieldObservationFactory.create(
+            observed_at=observed_at,
+            location=location,
+            observation_type=FieldObservation.OBSERVATION_TYPE.BUSY,
+        ).submission
         FieldObservationFactory.create(
-            observed_at=timezone.now() - dt.timedelta(hours=48, minutes=1),
+            observed_at=observed_at,
+            location=location,
+            submission=submission,
+            observation_type=FieldObservation.OBSERVATION_TYPE.POWDER,
         )
-        response = Client().get(reverse("api:community_reports_geojson"))
-        assert response.json()["features"] == []
+        FieldObservationFactory.create(observed_at=observed_at)
+        features = self._features()
+        assert len(features) == 2
+        report = next(
+            f for f in features if f["properties"]["submission"] == str(submission)
+        )
+        # Most serious family first, and the pin takes its colour.
+        assert report["properties"]["types"] == ["POWDER", "BUSY"]
+        assert report["properties"]["type_labels"] == ["Powder", "Busy"]
+        assert report["properties"]["family"] == "SURFACE"
+
+    def test_warning_sign_outranks_every_other_family(self) -> None:
+        """A report with any warning sign is a warning pin."""
+        observed_at = timezone.now()
+        submission = FieldObservationFactory.create(
+            observed_at=observed_at,
+            observation_type=FieldObservation.OBSERVATION_TYPE.QUIET,
+        ).submission
+        FieldObservationFactory.create(
+            observed_at=observed_at,
+            submission=submission,
+            observation_type=FieldObservation.OBSERVATION_TYPE.SHOOTING_CRACKS,
+        )
+        (feature,) = self._features()
+        assert feature["properties"]["family"] == "WARNING"
+
+    def test_a_trail_only_report_is_a_trail_pin(self) -> None:
+        """Busy on its own colours the pin by the trail family."""
+        FieldObservationFactory.create(
+            observed_at=timezone.now(),
+            observation_type=FieldObservation.OBSERVATION_TYPE.BUSY,
+        )
+        (feature,) = self._features()
+        assert feature["properties"]["family"] == "TRAIL"
 
     def test_coordinates_rounded_to_three_decimal_places(self) -> None:
         """Coordinates are [lon, lat] rounded to 3 dp — never full precision."""
@@ -2327,7 +2445,7 @@ class TestCommunityReportsGeojson:
         """
         observed_at = dt.datetime(2026, 7, 19, 10, 37, 42, tzinfo=dt.UTC)
         # Freeze "now" alongside the fixed observed_at so the report stays
-        # inside the endpoint's 48h window regardless of the wall-clock date
+        # inside the endpoint's window regardless of the wall-clock date
         # the suite runs on (otherwise this assertion rots and features empties).
         with freeze_time("2026-07-19T11:00:00Z"):
             FieldObservationFactory.create(observed_at=observed_at)
@@ -2366,7 +2484,7 @@ class TestCommunityReportsGeojson:
             assert forbidden_key not in body
         data = response.json()
         properties = data["features"][0]["properties"]
-        assert set(properties) == {"type", "type_label", "observed_at", "region_name"}
+        assert set(properties) == PROPERTY_KEYS
 
     def test_freshness_headers_present(self) -> None:
         """X-Data-Generated-At / X-Data-Max-Age headers are set from the newest row."""

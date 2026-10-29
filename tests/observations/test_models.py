@@ -375,47 +375,35 @@ class TestNearPointForDay:
 
 
 @pytest.mark.django_db
-class TestRecent:
-    """recent(since) — filter on observed_at >= since (SNOW-419)."""
+class TestInWindow:
+    """in_window(start, end) — observed_at in [start, end) (SNOW-1290)."""
 
-    def test_includes_row_at_cutoff(self) -> None:
-        """A row observed exactly at the cutoff is included (>=, not >)."""
-        cutoff = datetime.datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
-        obs = FieldObservationFactory.create(observed_at=cutoff)
-        result = FieldObservation.objects.recent(cutoff)
-        assert obs in result
+    START = datetime.datetime(2026, 1, 15, 0, 0, tzinfo=UTC)
+    END = datetime.datetime(2026, 1, 16, 0, 0, tzinfo=UTC)
 
-    def test_includes_row_just_inside_window(self) -> None:
-        """A row one second after the cutoff is included."""
-        cutoff = datetime.datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
+    def test_includes_row_at_start(self) -> None:
+        """A row observed exactly at the start is included (>=, not >)."""
+        obs = FieldObservationFactory.create(observed_at=self.START)
+        assert obs in FieldObservation.objects.in_window(self.START, self.END)
+
+    def test_excludes_row_just_before_start(self) -> None:
+        """A row one second before the start is excluded."""
         obs = FieldObservationFactory.create(
-            observed_at=cutoff + datetime.timedelta(seconds=1),
+            observed_at=self.START - datetime.timedelta(seconds=1),
         )
-        result = FieldObservation.objects.recent(cutoff)
-        assert obs in result
+        assert obs not in FieldObservation.objects.in_window(self.START, self.END)
 
-    def test_excludes_row_just_outside_window(self) -> None:
-        """A row one second before the cutoff is excluded."""
-        cutoff = datetime.datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
+    def test_includes_row_just_before_end(self) -> None:
+        """A row one second before the end is included."""
         obs = FieldObservationFactory.create(
-            observed_at=cutoff - datetime.timedelta(seconds=1),
+            observed_at=self.END - datetime.timedelta(seconds=1),
         )
-        result = FieldObservation.objects.recent(cutoff)
-        assert obs not in result
+        assert obs in FieldObservation.objects.in_window(self.START, self.END)
 
-    def test_48h_window_boundary(self) -> None:
-        """The 48h window used by the map overlay includes/excludes correctly."""
-        now = datetime.datetime(2026, 1, 17, 12, 0, tzinfo=UTC)
-        since = now - datetime.timedelta(hours=48)
-        just_inside = FieldObservationFactory.create(
-            observed_at=since + datetime.timedelta(minutes=1),
-        )
-        just_outside = FieldObservationFactory.create(
-            observed_at=since - datetime.timedelta(minutes=1),
-        )
-        result = FieldObservation.objects.recent(since)
-        assert just_inside in result
-        assert just_outside not in result
+    def test_excludes_row_at_end(self) -> None:
+        """The end is exclusive, so adjacent days never share a row."""
+        obs = FieldObservationFactory.create(observed_at=self.END)
+        assert obs not in FieldObservation.objects.in_window(self.START, self.END)
 
 
 @pytest.mark.django_db
@@ -448,7 +436,9 @@ class TestForUser:
             user=user, observed_at=cutoff - datetime.timedelta(days=1)
         )
 
-        result = FieldObservation.objects.for_user(user).recent(cutoff)
+        result = FieldObservation.objects.for_user(user).in_window(
+            cutoff, cutoff + datetime.timedelta(days=1)
+        )
 
         assert list(result) == [recent]
 

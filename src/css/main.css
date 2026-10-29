@@ -228,8 +228,9 @@
   --color-basemap-ign-plan:            #9333ea;  /* purple-600 */
   --color-basemap-basemap-at:          #0d9488;  /* teal-600   */
 
-  /* Map markers (SNOW-672) — the two point markers the map draws over the
-     choropleth: the favourite star and the community-report flag. They had
+  /* Map markers (SNOW-672) — the favourite star the map draws over the
+     choropleth. (The community-report flag beside it went with SNOW-1290;
+     a report's pin takes its family colour, below.) Both markers had
      no token for the project's whole life, which meant the same two hexes
      were typed into map.js's paint properties and again into the legend
      SVGs in _map_embed.html, where they needed a ds-lint-allow apiece whose
@@ -241,7 +242,6 @@
      template markup — uses the fill-marker-* utilities Tailwind generates
      from these names, and carries no allow comment. */
   --color-marker-favourite:   #1a73e8;   /* Snowdesk blue — favourite star   */
-  --color-marker-observation: #e8711a;   /* amber — community-report flag    */
 
   /* Field-observation families (SNOW-1289). A report says one or more of
      three kinds of thing, and the family's colour carries that on every
@@ -249,7 +249,8 @@
      None is an EAWS colour, the favourite blue or the route magenta: ink
      for warning signs, a sky blue for the snow surface (deeper than the
      favourite star so the two never read as one), teal for the trail.
-     map.js keeps the same literals for MapLibre. */
+     static/js/community_reports_core.js keeps the same literals for
+     MapLibre (FAMILY_COLOURS); they replaced SNOW-419's amber flag. */
   --color-obs-warning:        #1a1916;   /* ink — warning signs              */
   --color-obs-surface:        #0369a1;   /* sky-700 — snow surface           */
   --color-obs-trail:          #0f766e;   /* teal-700 — on the trail          */

@@ -103,6 +103,11 @@ const PARSE_TIME_CORES = [
   // SNOW-1212: `map.js` reads ROUTE_SLOPE_MINZOOM off the shared route
   // drawing at parse time, and builds its route layers from it.
   'route_drawing_core.js',
+  // SNOW-1290: not a parse-time read — `map.js` reaches
+  // `pwaCommunityReportsCore` when it fetches and installs the "On the
+  // ground" layer. Here because that layer is on by default, so the fetch
+  // is on the `load` path of every suite that fires the load handler.
+  'community_reports_core.js',
 ];
 
 /** home.html's script order for the map bundle. */

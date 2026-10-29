@@ -224,22 +224,27 @@ class FieldObservationQuerySet(models.QuerySet["FieldObservation"]):
             location_source__in=user_located_sources,
         ).exists()
 
-    def recent(self, since: datetime.datetime) -> "FieldObservationQuerySet":
-        """Return observations reported at or after ``since``.
+    def in_window(
+        self,
+        start: datetime.datetime,
+        end: datetime.datetime,
+    ) -> "FieldObservationQuerySet":
+        """Return observations made in ``[start, end)``.
 
-        Filters on ``observed_at``, which is ``db_index=True``. Used by the
-        SNOW-419 community-reports map overlay to fetch the last 48 hours
-        of reports.
+        Filters on ``observed_at``, which is ``db_index=True``. The window
+        behind the map's "On the ground" layer (SNOW-1290): from local
+        midnight three days back up to now for today, or one local day for
+        any past date. Half-open, so two adjacent days never share a row.
 
         Args:
-            since: Timezone-aware cutoff — rows with ``observed_at`` before
-                this instant are excluded.
+            start: Timezone-aware lower bound, inclusive.
+            end: Timezone-aware upper bound, exclusive.
 
         Returns:
             Filtered queryset.
 
         """
-        return self.filter(observed_at__gte=since)
+        return self.filter(observed_at__gte=start, observed_at__lt=end)
 
 
 class FieldObservationManager(models.Manager["FieldObservation"]):
@@ -320,18 +325,22 @@ class FieldObservationManager(models.Manager["FieldObservation"]):
         """
         return self.get_queryset().user_located_exists_for_region_day(region, day)
 
-    def recent(self, since: datetime.datetime) -> FieldObservationQuerySet:
-        """Delegate to the queryset's recent method.
+    def in_window(
+        self,
+        start: datetime.datetime,
+        end: datetime.datetime,
+    ) -> FieldObservationQuerySet:
+        """Delegate to the queryset's in_window method.
 
         Args:
-            since: Timezone-aware cutoff — rows with ``observed_at`` before
-                this instant are excluded.
+            start: Timezone-aware lower bound, inclusive.
+            end: Timezone-aware upper bound, exclusive.
 
         Returns:
             Filtered queryset.
 
         """
-        return self.get_queryset().recent(since)
+        return self.get_queryset().in_window(start, end)
 
 
 # ---------------------------------------------------------------------------

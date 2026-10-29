@@ -79,7 +79,7 @@ import secrets
 import uuid
 from collections import Counter
 from collections.abc import Callable, Iterable
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any, cast
 
 from django.conf import settings
@@ -117,7 +117,7 @@ from apps.core.freshness import apply_freshness_headers
 from apps.core.sw_shell import served_cache_version
 from apps.locations.models import Location, LocationQuerySet, ResortLocation
 from apps.locations.services.prime import enqueue_location_prime
-from apps.observations.models import FieldObservation
+from apps.observations.models import FieldObservation, leading_family
 from apps.regions.forms import RESORT_DETAIL_FIELDS, ResortDetailsForm
 from apps.regions.models import (
     MajorRegion,
@@ -271,16 +271,17 @@ _SETTLED_THRESHOLD_CACHE_TIMEOUT = 60
 # Client-side freshness window for the community-reports overlay (SNOW-419).
 # The endpoint itself is no-store (per-user flag-gated, SNOW-459), so this is
 # not a shared-cache lifetime — it drives only the client's freshness dot.
-# Shorter than _DYNAMIC_CACHE_MAX_AGE because the 48h inclusion window moves
-# minute-to-minute — a new report should surface promptly and the oldest
-# report drop out without a long stale tail.
+# Shorter than _DYNAMIC_CACHE_MAX_AGE because a new report should surface
+# promptly.
 _COMMUNITY_CACHE_MAX_AGE = 120
 
-# Rolling lookback window for the community-reports overlay. Reports older
-# than this are anonymous-by-attrition rather than anonymous-by-design — the
-# overlay only ever shows a recent, ephemeral signal, never a durable map of
-# where reports have historically clustered.
-_COMMUNITY_REPORTS_WINDOW_HOURS = 48
+# How many local days before today the "On the ground" layer still shows a
+# report, as "recent" (SNOW-1290). Today's reports are "live"; conditions
+# change overnight, so the day boundary is the reset, not a rolling hour
+# count. Anything older drops off the map — the overlay is a recent signal,
+# never a durable map of where reports have clustered. Read
+# docs/decisions/an-observation-is-live-today-and-recent-for-three-days.md.
+_COMMUNITY_RECENT_DAYS = 3
 
 logger = logging.getLogger(__name__)
 
@@ -2011,6 +2012,50 @@ def weather_detail(request: HttpRequest, short_id: str) -> JsonResponse:
 # to 3 dp (~80-110 m), and no identity, GPS fix or accuracy on the wire.
 
 
+def _local_midnight(day: date) -> datetime:
+    """Return the start of ``day`` in ``settings.TIME_ZONE``, timezone-aware.
+
+    Args:
+        day: The local calendar day.
+
+    Returns:
+        Aware datetime at 00:00 local time on ``day``.
+
+    """
+    return timezone.make_aware(datetime.combine(day, time.min))
+
+
+def _community_reports_window(
+    day: date, today: date
+) -> tuple[datetime, datetime] | None:
+    """Return the ``[start, end)`` window the "On the ground" layer reads.
+
+    * ``day`` is today — from local midnight ``_COMMUNITY_RECENT_DAYS`` days
+      back to the end of today: today's reports are live, the three days
+      before are recent (SNOW-1290). The end is tomorrow's midnight rather
+      than ``now`` so a report whose device clock runs a few seconds fast
+      is not hidden until the server catches up.
+    * ``day`` is in the past — that one local day, and nothing either side:
+      a scrubbed map shows what was observed on the day it shows.
+    * ``day`` is in the future — ``None``: nothing has been observed yet.
+
+    Args:
+        day: The map's display date.
+        today: Today's local date.
+
+    Returns:
+        The aware ``(start, end)`` pair, or ``None`` for a future day.
+
+    """
+    if day > today:
+        return None
+    if day == today:
+        start = _local_midnight(today - timedelta(days=_COMMUNITY_RECENT_DAYS))
+    else:
+        start = _local_midnight(day)
+    return start, _local_midnight(day + timedelta(days=1))
+
+
 # SNOW-459: private/no-store, NOT public — CDN/proxy caching of this
 # response is left for SNOW-469 (tracked separately, out of scope here).
 @cache_control(private=True, no_store=True)
@@ -2018,10 +2063,12 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
     """
     Return a FeatureCollection of anonymised community field reports.
 
-    Covers ``FieldObservation`` rows from the last 48 hours
-    (``_COMMUNITY_REPORTS_WINDOW_HOURS``), rendered as a "Community
-    reports" overlay on ``/map/`` (SNOW-419) — a Waze-like shared layer of
-    clustered pins.
+    The map's "On the ground" layer (SNOW-419, reshaped by SNOW-1290) — a
+    Waze-like shared layer of what people found out there. ``?d=YYYY-MM-DD``
+    picks the map's day (default today); ``_community_reports_window`` turns
+    it into the window read. One feature per *report*: the rows one
+    ``submission`` wrote (SNOW-1289) share a location and a time, so they
+    are one pin listing every type, coloured by the most serious family.
 
     Anonymisation is applied server-side, once, here — the client never
     receives full-precision coordinates or anything that identifies the
@@ -2030,12 +2077,12 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
     * ``coordinates`` are ``[longitude, latitude]`` rounded to 3 decimal
       places (~80-110 m), never the raw ``latitude``/``longitude`` fields.
     * ``gps_latitude``/``gps_longitude``/``accuracy_radius_km``/``user``/
-      the row's primary key are never serialised.
+      the row's primary key are never serialised. ``submission`` is a
+      random uuid minted per report; it names the report, never the
+      reporter, and lets the region panel point at the pin (SNOW-1291).
 
-    ``observed_at`` is sent as recorded. It was floored to a quarter hour
-    until the note above this function — with no name anywhere in the
-    payload there is nothing for a precise time to identify, and the floor
-    only made the map disagree with the reporter's own panel.
+    ``observed_at`` is sent as recorded — with no name anywhere in the
+    payload there is nothing for a precise time to identify.
 
     Response shape::
 
@@ -2046,9 +2093,13 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
               "type": "Feature",
               "geometry": {"type": "Point", "coordinates": [7.123, 46.456]},
               "properties": {
-                "type": "WHUMPFING",
-                "type_label": "Whumpfing",
+                "submission": "0b6f…",
+                "types": ["WHUMPFING", "POWDER"],
+                "type_labels": ["Whumpfing", "Powder"],
+                "family": "WARNING",
                 "observed_at": "2026-07-19T10:15:00+00:00",
+                "observed_on": "2026-07-19",
+                "region_id": "CH-4115",
                 "region_name": "Martigny-Verbier"
               }
             },
@@ -2060,19 +2111,44 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
         request: The incoming HTTP request.
 
     Returns:
-        A JsonResponse with a FeatureCollection payload.
+        A JsonResponse with a FeatureCollection payload, or a 400 for a
+        malformed ``?d=``.
 
     """
-    since = timezone.now() - timedelta(hours=_COMMUNITY_REPORTS_WINDOW_HOURS)
-    features: list[dict[str, Any]] = []
+    today = timezone.localdate()
+    raw_date = request.GET.get("d")
+    day = today
+    if raw_date:
+        # Strict YYYY-MM-DD, as the region-ratings endpoint: fromisoformat
+        # alone also accepts the separator-less form.
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_date):
+            return JsonResponse({"error": "malformed date"}, status=400)
+        try:
+            day = date.fromisoformat(raw_date)
+        except ValueError:
+            return JsonResponse({"error": "malformed date"}, status=400)
+
+    window = _community_reports_window(day, today)
+    rows = (
+        FieldObservation.objects.in_window(*window)
+        .select_related("region")
+        .order_by("-observed_at", "pk")
+        if window is not None
+        else FieldObservation.objects.none()
+    )
+    # Declaration order of OBSERVATION_TYPE is family order, most serious
+    # first, so a report's types list reads warning signs before the trail.
+    type_rank = {
+        value: i for i, value in enumerate(FieldObservation.OBSERVATION_TYPE.values)
+    }
+    reports: dict[uuid.UUID, dict[str, Any]] = {}
     newest: datetime | None = None
-    for obs in (
-        FieldObservation.objects.recent(since).select_related("region").iterator()
-    ):
+    for obs in rows.iterator():
         if newest is None or obs.observed_at > newest:
             newest = obs.observed_at
-        features.append(
-            {
+        report = reports.get(obs.submission)
+        if report is None:
+            report = reports[obs.submission] = {
                 "type": "Feature",
                 "geometry": {
                     "type": "Point",
@@ -2081,13 +2157,30 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
                     "coordinates": [round(obs.longitude, 3), round(obs.latitude, 3)],
                 },
                 "properties": {
-                    "type": obs.observation_type,
-                    "type_label": obs.get_observation_type_display(),
+                    "submission": str(obs.submission),
+                    "types": [],
                     "observed_at": obs.observed_at.isoformat(),
-                    "region_name": obs.region.name if obs.region is not None else None,
+                    # The local day — settings.TIME_ZONE, the bulletins'
+                    # boundary — so the client draws live / recent / day
+                    # without working out a timezone (SNOW-1290).
+                    "observed_on": timezone.localdate(obs.observed_at).isoformat(),
+                    "region_id": obs.region.region_id if obs.region else None,
+                    "region_name": obs.region.name if obs.region else None,
                 },
             }
+        report["properties"]["types"].append(obs.observation_type)
+
+    labels = dict(FieldObservation.OBSERVATION_TYPE.choices)
+    features: list[dict[str, Any]] = []
+    for report in reports.values():
+        properties = report["properties"]
+        types = sorted(
+            properties["types"], key=lambda t: type_rank.get(t, len(type_rank))
         )
+        properties["types"] = types
+        properties["type_labels"] = [str(labels.get(t, t)) for t in types]
+        properties["family"] = leading_family(types)
+        features.append(report)
 
     response = JsonResponse(
         {
@@ -2097,13 +2190,12 @@ def community_reports_geojson(request: HttpRequest) -> JsonResponse:
     )
     # Observations are non-safety-critical (unlike ratings) — unsafe_after=None
     # so the freshness state saturates at "stale" and never escalates to
-    # "unsafe". Empty result set (no recent reports) falls back to "now".
-    # max_age is pinned to _COMMUNITY_CACHE_MAX_AGE rather than the
+    # "unsafe". Empty result set (no reports in the window) falls back to
+    # "now". max_age is pinned to _COMMUNITY_CACHE_MAX_AGE rather than the
     # apply_freshness_headers default (24h): it is the client-side freshness
-    # window for the overlay (the dot flips to "stale" after 120s), matching
-    # the cadence at which the 48h inclusion window turns over. The response
-    # itself is no-store (see the decorator) — this window drives only the
-    # client freshness dot, not any shared cache.
+    # window for the overlay (the dot flips to "stale" after 120s). The
+    # response itself is no-store (see the decorator) — this window drives
+    # only the client freshness dot, not any shared cache.
     apply_freshness_headers(
         response,
         generated_at=newest or timezone.now(),

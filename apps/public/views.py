@@ -2077,10 +2077,15 @@ def _community_reports_context(request: HttpRequest) -> dict[str, Any]:
         request: The current HTTP request.
 
     Returns:
-        Dict with ``community_reports_geojson_url``.
+        Dict with ``community_reports_geojson_url`` and
+        ``observation_families`` — the ``(value, label)`` pairs the map
+        legend's "On the ground" key lists, most serious first (SNOW-1290).
 
     """
-    return {"community_reports_geojson_url": reverse("api:community_reports_geojson")}
+    return {
+        "community_reports_geojson_url": reverse("api:community_reports_geojson"),
+        "observation_families": FieldObservation.OBSERVATION_FAMILY.choices,
+    }
 
 
 def _weather_overlay_context() -> dict[str, Any]:

@@ -342,14 +342,32 @@ describe('a panel announces a write, so the map re-reads its layer', () => {
       expect(lastSetData(mapStub, 'community-reports').features).toEqual([]);
     });
 
-    it('caches the pristine payload, not the age-faded copy it draws', async () => {
-      // The drawn collection carries the age-opacity property this map adds
-      // client-side; the cached one must be the server's, so an offline
-      // read-back re-derives the fade against the time it is READ.
+    it('caches the pristine payload, not the stamped copy it draws', async () => {
+      // The drawn collection carries the live / recent state this map adds
+      // client-side (SNOW-1290); the cached one must be the server's, so an
+      // offline read-back re-derives the states against the day it is READ.
       document.dispatchEvent(new CustomEvent('snowdesk:reports-changed'));
 
       await waitFor(() => putOverlay.mock.calls.length > 0);
       expect(putOverlay).toHaveBeenCalledWith('community_reports', REPORTS_BEFORE);
+    });
+
+    it('re-reads the layer for the day a scrub lands on (SNOW-1290)', async () => {
+      // A scrubbed map shows only that day's reports, so the date row moving
+      // is a fetch with ?d= — and that answer is drawn, never cached: the
+      // offline read-back is today's live-and-recent window.
+      globalThis.fetch.mockClear();
+      responses['community-reports'] = REPORTS_AFTER;
+
+      document.dispatchEvent(
+        new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-01-14' } }),
+      );
+
+      await waitFor(() => globalThis.fetch.mock.calls.some(
+        ([url]) => String(url).includes('community-reports.geojson?d=2026-01-14'),
+      ));
+      await waitFor(() => lastSetData(mapStub, 'community-reports') !== undefined);
+      expect(putOverlay).not.toHaveBeenCalledWith('community_reports', expect.anything());
     });
   });
 

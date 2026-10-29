@@ -409,6 +409,12 @@ in addition to the shared map assets.
     {# time, so it has no place in the temporal-dead-zone ordering the       #}
     {# bundle exists to protect.                                             #}
     <script defer src="{% static 'js/map_weather_core.js' %}"></script>
+    {# SNOW-1290: the "On the ground" layer's pure half                     #}
+    {# (window.pwaCommunityReportsCore) — live / recent / day states, the   #}
+    {# window, the pin's age and the family glyphs. Read by map.js at       #}
+    {# install and fetch time only, never at parse time, so like the        #}
+    {# weather core it sits outside the bundle's contiguous run.            #}
+    <script defer src="{% static 'js/community_reports_core.js' %}"></script>
     {# The saved-route elevation profile's maths and SVG                     #}
     {# (window.pwaElevationProfileCore) — the picture the route popup's      #}
     {# distance/ascent/descent figures summarise, derived from the elevation #}

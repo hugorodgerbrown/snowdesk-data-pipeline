@@ -122,9 +122,9 @@
   const SKI_ROUTES_ELIGIBLE = mapEl.dataset.skiRoutesEligible === 'true';
 
   // SNOW-672: marker tints, in one place. MapLibre paint properties cannot
-  // reference a CSS custom property, so these two literals are the JS side
-  // of --color-marker-favourite / --color-marker-observation in
-  // src/css/main.css. Change one, change the other — the map legend in
+  // reference a CSS custom property, so this literal is the JS side of
+  // --color-marker-favourite in src/css/main.css (a field report's family
+  // colours live in community_reports_core.js, SNOW-1290). Change one, change the other — the map legend in
   // _map_embed.html reads the tokens, so a drift shows up as a legend that
   // disagrees with the map.
   const MARKER_FAVOURITE_COLOUR = '#1a73e8';
@@ -132,7 +132,6 @@
   // _map_embed.html. A pinned resort's dot takes MARKER_FAVOURITE_COLOUR
   // instead (SNOW-1229).
   const RESORT_PIN_COLOUR = '#1a1a1a';
-  const MARKER_OBSERVATION_COLOUR = '#e8711a';
   // Hoist to module scope so fetchBulletinGroupingsForDate() (defined before
   // the IIFE) can reach the URL that was read from the DOM here.
   BULLETIN_GROUPINGS_URL_MODULE = BULLETIN_GROUPINGS_URL;
@@ -407,8 +406,9 @@
   // so the map opens uncluttered.
   // SNOW-414: favourites defaults ON — a user's own saved pins should be
   // visible without an extra toggle-hunt, unlike resorts (a public dataset).
-  // SNOW-419: community_reports defaults OFF — a shared layer of other
-  // people's reports is an opt-in, unlike a user's own favourites.
+  // SNOW-1290: community_reports defaults ON ("On the ground") — the
+  // layer is only worth anything if people see it, and with the day-based
+  // window it is a few pins, not a pile. SNOW-419 had it off.
   // SNOW-687: routes defaults OFF too, and deliberately NOT like
   // favourites even though both are the signed-in user's own data: a GPX
   // track is visually far heavier than a pin, so it is opt-in.
@@ -434,8 +434,8 @@
   // AND-ed with any active suppression, held in bulletinsVisibility below.
   const overlayState = {
     l1: false, l2: false, l4: true, bulletins: true, resorts: false,
-    favourites: true, community_reports: false,
-    // SNOW-761: weather defaults OFF, like community_reports — a layer of
+    favourites: true, community_reports: true,
+    // SNOW-761: weather defaults OFF — a layer of
     // condition symbols over every station is an opt-in, not the state the
     // map should open in for someone who came to read danger ratings.
     weather: false,
@@ -558,9 +558,11 @@
   // SNOW-473: this seed is re-run inside the ``styledata`` handler after a
   // basemap swap (search "SNOW-473") — keep the two blocks in sync when adding
   // an overlay key.
-  for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
+  for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
     overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
   }
+  // SNOW-1290: on unless switched off.
+  overlayState.community_reports = readBoolStorage(OVERLAY_STORAGE_KEY.community_reports, true);
   // SNOW-1285: the two ski-touring parts, on unless switched off.
   overlayState.ski_tours = SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.ski_tours, true);
   overlayState.ski_summits = SKI_ROUTES_ELIGIBLE && readBoolStorage(OVERLAY_STORAGE_KEY.ski_summits, true);
@@ -1153,12 +1155,15 @@
   const ALWAYS_ON_TOP_MARKER_LAYERS = [
     // SNOW-761: weather symbols sit above region fills and boundaries but
     // below the more personal pin layers, so a favourite star or a
-    // community-report flag at the same point is never hidden behind a
+    // community-report pin at the same point is never hidden behind a
     // weather icon.
     'weather-point',
     'community-reports-clusters',
     'community-reports-cluster-count',
+    'community-reports-halo',
     'community-reports-point',
+    'community-reports-glyph',
+    'community-reports-age',
     'favourites-label',
     'favourites-pin',
   ];
@@ -2193,7 +2198,7 @@
     '-25.7-21.7L385.1 150.3 316.9 18z';
 
   // SNOW-478: build the favourites star as an SDF alpha mask, same technique as
-  // buildCommunityReportFlagImageData — a synchronous canvas fill so the image
+  // the community-report flag it was modelled on — a synchronous canvas fill so the image
   // id exists before addLayer references it (an async map.loadImage would race).
   // The star is centred in a square ``size`` footprint so the default
   // ``icon-anchor: 'center'`` plants it on the feature coordinate, matching the
@@ -3254,7 +3259,7 @@
     // nothing: the reader already chose the scale.
     for (const layer of drawing.markLayers(drawingOptions)) map.addLayer(layer);
     // The lines were just added on top of everything, so lift the pin
-    // layers back over them — a favourite star or a report flag sitting on
+    // layers back over them — a favourite star or a report pin sitting on
     // a route must stay visible and stay tappable (MARKER_EXCLUSION_LAYERS
     // gives them the tap, and burying them would make that invisible).
     raiseMarkerLayers();
@@ -3624,188 +3629,116 @@
     banner.classList.remove('hidden');
   };
 
-  // SNOW-472: shared flag-icon id for every unclustered community-report
-  // pin, regardless of OBSERVATION_TYPE. Replaced the earlier SNOW-419
-  // per-type text glyphs (a unicode zoo that read as inconsistent
-  // weight/size across types) with one SDF flag icon — see
-  // buildCommunityReportFlagImageData for the canvas build + registration.
-  const COMMUNITY_REPORT_ICON_ID = 'community-report-flag';
+  // SNOW-1290: the "On the ground" layer. A field report is a pin in its
+  // family's colour carrying its family's mark — a crack for warning signs,
+  // a snowflake for the snow surface, two figures for the trail — and its
+  // state says how fresh it is: LIVE (made today: solid, with a halo and its
+  // age beside it), RECENT (the three days before: a hollow ring) or DAY
+  // (the one day a scrubbed map shows: solid, no halo, no age). The states
+  // and the window are community_reports_core.js's (Vitest-covered); what
+  // is here needs a real MapLibre map. Replaced SNOW-472's amber flag and
+  // SNOW-419's 48-hour fade. Read
+  // docs/decisions/an-observation-is-live-today-and-recent-for-three-days.md.
 
-  // SNOW-472: Font Awesome Free v7.3.1 "flag" (solid) path and its viewBox.
-  // Licensed CC BY 4.0 (https://fontawesome.com/license/free), Copyright
-  // 2026 Fonticons, Inc. — attribution retained here to satisfy the licence.
-  //
-  // This is the solid fill: the outer pole-plus-cloth contour of Font
-  // Awesome's flag glyph, with the regular variant's inner cloth cutout
-  // (its second subpath) omitted so the cloth fills solid. A solid
-  // silhouette reads boldly at the ~18px on-map icon size where the
-  // outline variant washes out to thin strokes. Rendered as a single
-  // colour because the icon is registered `sdf: true` (below): SDF discards
-  // colour and keeps only the alpha mask, which is what lets `icon-color`
-  // recolour the flag to the amber layer tint per-layer (a multi-colour
-  // asset could not be an SDF).
-  const COMMUNITY_REPORT_FLAG_VIEWBOX = { width: 448, height: 512 };
-  const COMMUNITY_REPORT_FLAG_PATH =
-    'M48 24C48 10.7 37.3 0 24 0S0 10.7 0 24L0 488c0 13.3 10.7 24 24 24s24-10.7 ' +
-    '24-24l0-100 80.3-20.1c41.1-10.3 84.6-5.5 122.5 13.4 44.2 22.1 95.5 24.8 ' +
-    '141.7 7.4l34.7-13c12.5-4.7 20.8-16.6 20.8-30l0-279.7c0-23-24.2-38-44.8-27.7' +
-    'l-9.6 4.8c-46.3 23.2-100.8 23.2-147.1 0-35.1-17.6-75.4-22-113.5-12.5L48 52 ' +
-    '48 24z';
+  // One SDF image per family, so `icon-color` can paint the mark white on
+  // a solid pin and in the family colour inside a hollow one.
+  const COMMUNITY_REPORT_GLYPH_PREFIX = 'community-report-glyph-';
 
-  // SNOW-419: age-fade constants. A report's opacity decays linearly from
-  // 1 (just filed) to a floor at the edge of the 48h server-side window,
-  // so the overlay reads as a "heat" of recency rather than an
-  // undifferentiated pile of pins.
-  const COMMUNITY_REPORTS_WINDOW_MS = 48 * 60 * 60 * 1000;
-  const COMMUNITY_REPORTS_MIN_OPACITY = 0.35;
+  // The raw payload as last fetched for the map's day — kept pristine
+  // (never stamped) so a date change or a basemap swap can re-stamp it
+  // without a refetch.
+  let communityReportsPayload = null;
 
-  // SNOW-419: bake a per-feature `_ageOpacity` property into the fetched
-  // FeatureCollection. MapLibre paint expressions have no "now" primitive,
-  // so age-based fade can't be expressed as a live paint expression the
-  // way e.g. zoom-based fades can — computing it once client-side against
-  // Date.now() and reading it back via ['get', '_ageOpacity'] is the
-  // simplest correct approach. Mutates and returns the same object.
-  const withCommunityReportsAgeOpacity = (geojson) => {
-    if (!geojson || !Array.isArray(geojson.features)) return geojson;
-    const now = Date.now();
-    for (const feature of geojson.features) {
-      const observedAt = feature.properties && feature.properties.observed_at;
-      const ageMs = observedAt ? now - new Date(observedAt).getTime() : 0;
-      const fraction = Math.min(Math.max(ageMs / COMMUNITY_REPORTS_WINDOW_MS, 0), 1);
-      feature.properties._ageOpacity = 1 - fraction * (1 - COMMUNITY_REPORTS_MIN_OPACITY);
-    }
-    return geojson;
-  };
+  // Stamp a payload with each report's state against the day on screen.
+  const stampCommunityReports = (payload) => window.pwaCommunityReportsCore.withStates(
+    payload, currentDisplayedDate, readTodayDateParam(), Date.now(),
+  );
 
-  // SNOW-492: the server only ever returns reports inside the 48h window,
-  // so the live fetch path never needs to drop anything — the age-fade
-  // above is the only "expiry" it applies. A cached (offline read-back)
-  // copy can be older than the whole window has moved by the time it's
-  // reinstalled, so filter out features whose `observed_at` has aged past
-  // COMMUNITY_REPORTS_WINDOW_MS *before* re-applying the same age-opacity
-  // fade, so cached reports expire visually at 48h exactly as they do
-  // online rather than sitting at the opacity floor forever.
-  const dropExpiredCommunityReports = (geojson) => {
-    if (!geojson || !Array.isArray(geojson.features)) return geojson;
-    const now = Date.now();
-    const features = geojson.features.filter((feature) => {
-      const observedAt = feature.properties && feature.properties.observed_at;
-      if (!observedAt) return true;
-      return now - new Date(observedAt).getTime() < COMMUNITY_REPORTS_WINDOW_MS;
-    });
-    return { ...geojson, features };
-  };
-
-  // SNOW-472: draw the shared community-report flag icon on an offscreen
-  // canvas and hand MapLibre its alpha mask as an SDF image. The shape is
-  // the Font Awesome "flag" path (COMMUNITY_REPORT_FLAG_PATH above), filled
-  // in opaque black on a transparent canvas — the solid colour is
-  // irrelevant since `sdf: true` reads only the alpha channel and recolours
-  // it per-layer via `icon-color`. `Path2D` fills the SVG path string
-  // synchronously (no `Image`/data-URI round-trip), which keeps the whole
-  // build synchronous — an async decode would let `addLayer` run before the
-  // image id exists (see installCommunityReportsLayer).
-  //
-  // `size` is the LOGICAL (CSS-pixel) icon footprint; the canvas backing
-  // store is scaled up by `pixelRatio` so the mask supersamples cleanly
-  // on Retina/HiDPI displays instead of blurring when MapLibre upscales
-  // a 1x bitmap. `ctx.scale(pixelRatio, pixelRatio)` lets the drawing
-  // calls below stay in logical-pixel coordinates regardless of ratio —
-  // the caller passes the matching `pixelRatio` to `map.addImage` so
-  // MapLibre knows how to map the (now larger) physical bitmap back to
-  // the logical icon size.
-  //
-  // The 448x512 viewBox is fitted preserving aspect ratio, flush to the
-  // left and bottom edges with a little top/right padding: the flag's pole
-  // runs down the left edge to y=512, so drawing it flush-left-and-bottom
-  // lets `icon-anchor: 'bottom-left'` on the layer plant the pole's base on
-  // the feature coordinate ("the flag is here"), with the cloth flying up
-  // and to the right the way a real planted flag does.
-  const buildCommunityReportFlagImageData = (pixelRatio) => {
-    const size = 34;
-    const padTop = 2;
-    const padRight = 3;
+  // Draw one family's mark on an offscreen canvas and hand MapLibre its
+  // alpha mask. Stroked, like the template partial it copies
+  // (includes/_icon_observation_family.html), with Path2D so the build is
+  // synchronous: an async decode would let `addLayer` run before the image
+  // id exists. The backing store is scaled by `pixelRatio` so the mask
+  // stays sharp on a HiDPI screen.
+  const buildCommunityReportGlyphImageData = (family, pixelRatio) => {
+    const size = 24;
     const canvas = document.createElement('canvas');
     canvas.width = size * pixelRatio;
     canvas.height = size * pixelRatio;
     const ctx = canvas.getContext('2d');
     ctx.scale(pixelRatio, pixelRatio);
-    // Uniform scale that fits both the padded width and the padded height,
-    // so neither the cloth (width) nor the pole (height) is clipped.
-    const scale = Math.min(
-      (size - padRight) / COMMUNITY_REPORT_FLAG_VIEWBOX.width,
-      (size - padTop) / COMMUNITY_REPORT_FLAG_VIEWBOX.height,
-    );
-    // Bottom-align the pole base to the canvas bottom edge; keep it flush
-    // left so 'bottom-left' anchoring lands on the pole rather than dead
-    // space to its left.
-    ctx.translate(0, size - COMMUNITY_REPORT_FLAG_VIEWBOX.height * scale);
-    ctx.scale(scale, scale);
-    ctx.fillStyle = '#000000';
-    ctx.fill(new Path2D(COMMUNITY_REPORT_FLAG_PATH));
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const d of window.pwaCommunityReportsCore.FAMILY_PATHS[family]) {
+      ctx.stroke(new Path2D(d));
+    }
     return ctx.getImageData(0, 0, canvas.width, canvas.height);
   };
 
+  // A paint expression: the report's family colour.
+  const communityFamilyColour = () => {
+    const colours = window.pwaCommunityReportsCore.FAMILY_COLOURS;
+    return ['match', ['get', 'family'],
+      'SURFACE', colours.SURFACE,
+      'TRAIL', colours.TRAIL,
+      colours.WARNING,
+    ];
+  };
+
   // SNOW-419: install the community-reports (shared, anonymised) overlay.
-  // Unlike favourites/resorts, this source is clustered (`cluster: true`)
-  // — MapLibre computes clusters client-side from the fetched
-  // FeatureCollection as the map zooms, so a busy region doesn't paint as
-  // an unreadable pile of pins at low zoom. Three layers: cluster
-  // circles + cluster-count labels (shown while `point_count` is present)
-  // and an unclustered point layer (shown once a cluster has broken apart
-  // enough that a feature stands alone). Idempotent, like
-  // installFavouritesLayer/installResortsLayer — early-returns if the
-  // source already exists, so the styledata re-install handler can call
-  // this safely on every basemap swap.
-  //
-  // SNOW-472: `map.addImage` is registered here too, guarded by
-  // `hasImage` (addImage, unlike addSource, throws on a duplicate id
-  // rather than silently no-opping). This has to live inside this
-  // function rather than run once at boot: `map.setStyle()` on a basemap
-  // swap wipes every registered image along with sources and layers, and
-  // this is the one function re-invoked on every fresh style (from the
-  // `styledata` handler below) — so the icon re-registers in lockstep
-  // with the layer that references it. The mask is built synchronously
-  // from canvas paths (see buildCommunityReportFlagImageData) rather than
-  // via `map.loadImage(url)` — an async fetch would let `addLayer` below
-  // run before the image id exists, throwing.
+  // The source is clustered (`cluster: true`) so a busy valley does not
+  // paint as an unreadable pile at low zoom. A cluster takes the colour of
+  // the most serious family inside it (SNOW-1290, via clusterProperties):
+  // a warning sign anywhere in a cluster is not averaged away.
+  // Idempotent — early-returns if the source already exists, so the
+  // styledata re-install handler can call this safely on every basemap
+  // swap. The images are registered here too, guarded by `hasImage`
+  // (addImage throws on a duplicate id): `map.setStyle()` wipes them with
+  // the sources and layers, and this is the function re-run on every
+  // fresh style.
   const installCommunityReportsLayer = (geojson) => {
     if (!geojson || map.getSource('community-reports')) return;
-    if (!map.hasImage(COMMUNITY_REPORT_ICON_ID)) {
-      const pixelRatio = window.devicePixelRatio || 1;
-      map.addImage(
-        COMMUNITY_REPORT_ICON_ID,
-        buildCommunityReportFlagImageData(pixelRatio),
-        { sdf: true, pixelRatio },
-      );
+    const core = window.pwaCommunityReportsCore;
+    const pixelRatio = window.devicePixelRatio || 1;
+    for (const family of core.FAMILIES) {
+      const id = COMMUNITY_REPORT_GLYPH_PREFIX + family;
+      if (!map.hasImage(id)) {
+        map.addImage(id, buildCommunityReportGlyphImageData(family, pixelRatio), { sdf: true, pixelRatio });
+      }
     }
+    const visibility = overlayState.community_reports ? 'visible' : 'none';
+    const familyColour = communityFamilyColour();
     map.addSource('community-reports', {
       type: 'geojson',
       data: geojson,
       cluster: true,
       clusterRadius: 50,
       clusterMaxZoom: 11,
+      clusterProperties: {
+        warning: ['+', ['case', ['==', ['get', 'family'], 'WARNING'], 1, 0]],
+        surface: ['+', ['case', ['==', ['get', 'family'], 'SURFACE'], 1, 0]],
+      },
     });
     map.addLayer({
       id: 'community-reports-clusters',
       type: 'circle',
       source: 'community-reports',
       filter: ['has', 'point_count'],
-      layout: {
-        visibility: overlayState.community_reports ? 'visible' : 'none',
-      },
+      layout: { visibility },
       paint: {
-        // Amber — distinct from the favourites blue and the resorts
-        // near-black so the three pin layers read as different kinds of
-        // marker at a glance.
-        'circle-color': MARKER_OBSERVATION_COLOUR,
+        'circle-color': ['case',
+          ['>', ['get', 'warning'], 0], core.FAMILY_COLOURS.WARNING,
+          ['>', ['get', 'surface'], 0], core.FAMILY_COLOURS.SURFACE,
+          core.FAMILY_COLOURS.TRAIL,
+        ],
         'circle-radius': [
           'step', ['get', 'point_count'],
           14, 5, 18, 20, 24,
         ],
         'circle-stroke-color': '#ffffff',
-        'circle-stroke-width': 1.5,
-        'circle-opacity': 0.85,
+        'circle-stroke-width': 2,
       },
     });
     map.addLayer({
@@ -3814,7 +3747,7 @@
       source: 'community-reports',
       filter: ['has', 'point_count'],
       layout: {
-        visibility: overlayState.community_reports ? 'visible' : 'none',
+        visibility,
         'text-field': ['get', 'point_count_abbreviated'],
         'text-font': overlayTextFont,
         'text-size': 12,
@@ -3823,41 +3756,114 @@
         'text-color': '#ffffff',
       },
     });
+    // A live report's halo: today's pins announce themselves.
+    map.addLayer({
+      id: 'community-reports-halo',
+      type: 'circle',
+      source: 'community-reports',
+      filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', '_state'], 'live']],
+      layout: { visibility },
+      paint: {
+        'circle-color': familyColour,
+        'circle-radius': 18,
+        'circle-opacity': 0.22,
+      },
+    });
+    // The pin itself — and the layer a tap is dispatched on (activateMarker).
     map.addLayer({
       id: 'community-reports-point',
+      type: 'circle',
+      source: 'community-reports',
+      filter: ['!', ['has', 'point_count']],
+      layout: { visibility },
+      paint: {
+        'circle-radius': 12,
+        'circle-color': ['case', ['==', ['get', '_state'], 'recent'], '#ffffff', familyColour],
+        'circle-stroke-color': ['case', ['==', ['get', '_state'], 'recent'], familyColour, '#ffffff'],
+        'circle-stroke-width': ['case', ['==', ['get', '_state'], 'recent'], 2.5, 2],
+      },
+    });
+    map.addLayer({
+      id: 'community-reports-glyph',
       type: 'symbol',
       source: 'community-reports',
       filter: ['!', ['has', 'point_count']],
       layout: {
-        visibility: overlayState.community_reports ? 'visible' : 'none',
-        // SNOW-472: one shared flag icon for every OBSERVATION_TYPE —
-        // replaced the earlier per-type text glyphs. The type itself is
-        // still read from `props.type`/`type_label` by the click-popup
-        // handler below; only the pin's visual mark is unified.
-        'icon-image': COMMUNITY_REPORT_ICON_ID,
-        'icon-size': 0.6,
+        visibility,
+        'icon-image': ['concat', COMMUNITY_REPORT_GLYPH_PREFIX, ['get', 'family']],
+        'icon-size': 0.62,
         'icon-allow-overlap': true,
-        // The mask is drawn flush left-and-bottom with the pole down the
-        // left edge (see buildCommunityReportFlagImageData) — anchoring at
-        // the pole's base (bottom-left) rather than the icon's visual centre
-        // (the default) makes the feature's coordinate read as "the flag is
-        // planted here", matching the usual pin affordance.
-        'icon-anchor': 'bottom-left',
+        'icon-ignore-placement': true,
       },
       paint: {
-        // Amber — same as the cluster circles, so a lone flag reads as
-        // the same "kind" of marker as a broken-apart cluster.
-        'icon-color': MARKER_OBSERVATION_COLOUR,
-        // SNOW-419: age fade — baked into each feature by
-        // withCommunityReportsAgeOpacity before install/setData.
-        'icon-opacity': ['get', '_ageOpacity'],
+        'icon-color': ['case', ['==', ['get', '_state'], 'recent'], familyColour, '#ffffff'],
+      },
+    });
+    // The age of a live report ("12m", "3h"), stamped at fetch and on every
+    // re-stamp. Recent pins carry none: "yesterday" is what the ring says.
+    map.addLayer({
+      id: 'community-reports-age',
+      type: 'symbol',
+      source: 'community-reports',
+      filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', '_state'], 'live']],
+      layout: {
+        visibility,
+        'text-field': ['get', '_age'],
+        'text-font': overlayTextFont,
+        'text-size': 11,
+        'text-anchor': 'left',
+        'text-offset': [1.5, 0],
+        'text-allow-overlap': true,
+      },
+      paint: {
+        'text-color': familyColour,
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1.5,
       },
     });
     raiseMarkerLayers();
-    // SNOW-658 review: as for the favourites install above — the flags are
+    // SNOW-658 review: as for the favourites install above — the pins are
     // on the map only as of this line, and the roundel's overlay state reads
     // paint.
     announceOverlayVisibility();
+  };
+
+  // SNOW-1290: fetch the reports for the day on screen and draw them —
+  // installing the layer on the first answer, re-pointing its source on
+  // every later one. Today's answer (the bare URL, the live-and-recent
+  // window) is the one the offline cache keeps; a past day's is drawn and
+  // never cached. A response for a day the map has left while it was in
+  // flight is not drawn: the fetch is re-asked for the day now on screen,
+  // so a scrub that outruns the network still lands on the right pins.
+  //
+  // Resolves to whether fresh data was applied, like refreshPanelOverlay —
+  // false is what sends the first load to the offline cache.
+  const fetchCommunityReports = () => {
+    if (!COMMUNITY_REPORTS_URL) return Promise.resolve(false);
+    const core = window.pwaCommunityReportsCore;
+    const dayAsked = () => {
+      const today = readTodayDateParam();
+      return currentDisplayedDate && currentDisplayedDate !== today ? currentDisplayedDate : null;
+    };
+    const day = dayAsked();
+    const url = core.fetchUrl(COMMUNITY_REPORTS_URL, currentDisplayedDate, readTodayDateParam());
+    return fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(`community reports: ${r.status}`);
+        return r.json();
+      })
+      .then((data) => {
+        if (!data || !Array.isArray(data.features)) return false;
+        if (dayAsked() !== day) return fetchCommunityReports();
+        if (day === null) window.pwaMapOverlayCache?.putOverlay('community_reports', data);
+        communityReportsPayload = data;
+        communityReportsGeojsonCache = stampCommunityReports(data);
+        const source = map.getSource('community-reports');
+        if (source) source.setData(communityReportsGeojsonCache);
+        else installCommunityReportsLayer(communityReportsGeojsonCache);
+        return true;
+      })
+      .catch(() => false);
   };
 
   // ---------------------------------------------------------------------
@@ -3877,7 +3883,7 @@
   let weatherGeojsonCache = null;
 
   // The weather icons are multi-path, image-shaded SVGs. Unlike the favourite
-  // star and the community-report flag (single-colour Path2D fills,
+  // star and the community-report glyphs (single-colour Path2D drawings,
   // registered `sdf: true`), SDF discards colour and keeps only the alpha
   // mask, which cannot carry that — so these are rasterised full-colour via
   // an <img> decode. Decoded once per filename into this module-level
@@ -6190,35 +6196,21 @@
       // in case this is ever reached some other way (e.g. the eager
       // boot-time restore below).
       if (!COMMUNITY_REPORTS_ELIGIBLE || !COMMUNITY_REPORTS_URL) return;
-      const data = await fetch(COMMUNITY_REPORTS_URL)
-        .then(r => r.json()).catch(() => null);
-      if (data) {
-        // SNOW-492: write-through, cached before the age-opacity mutation
-        // below so the stored copy is the pristine server payload.
-        window.pwaMapOverlayCache?.putOverlay('community_reports', data);
-        communityReportsGeojsonCache = withCommunityReportsAgeOpacity(data);
-        installCommunityReportsLayer(communityReportsGeojsonCache);
-      } else {
+      if (!(await fetchCommunityReports())) {
+        // SNOW-492: offline, read back the last live-and-recent payload and
+        // re-stamp it against today — reports that have aged out of the
+        // window since it was cached drop out here, as they would online.
         const cached = await window.pwaMapOverlayCache?.getOverlay('community_reports');
         // SNOW-493 finding 8: no cached copy at all is genuinely
-        // unavailable offline.
-        if (!cached) {
+        // unavailable offline. So is a malformed one (``.features`` not an
+        // array). A valid but EMPTY collection is a successful answer and
+        // installs as zero pins.
+        if (!cached || !Array.isArray(cached.features)) {
           revealOfflineToast('map-offline-toast-community_reports');
           return;
         }
-        const fresh = dropExpiredCommunityReports(cached);
-        // A cached, valid, but EMPTY FeatureCollection (no reports right
-        // now, or every cached report has since aged past the 48h window)
-        // is a successful cached response, not a failure — install it as
-        // zero markers rather than showing the "unavailable offline"
-        // warning. Only a malformed/non-FeatureCollection cached payload
-        // (``.features`` isn't an array at all — dropExpiredCommunityReports
-        // returns such input unchanged) still counts as unavailable.
-        if (!Array.isArray(fresh.features)) {
-          revealOfflineToast('map-offline-toast-community_reports');
-          return;
-        }
-        communityReportsGeojsonCache = withCommunityReportsAgeOpacity(fresh);
+        communityReportsPayload = cached;
+        communityReportsGeojsonCache = stampCommunityReports(cached);
         installCommunityReportsLayer(communityReportsGeojsonCache);
       }
     } else if (key === 'weather') {
@@ -7232,12 +7224,16 @@
    * clears an unconfirmed write only on a true here, and a false is what
    * keeps the signal up for a later retry.
    *
+   * Community reports take their own path (``fetchCommunityReports``),
+   * because their URL depends on the map's day (SNOW-1290).
+   *
    * @param {string} key - ``'routes'`` or ``'community_reports'``.
    * @returns {Promise<boolean>} True when fresh data was applied.
    */
   const refreshPanelOverlay = (key) => {
     if (!overlayLoaded[key]) return Promise.resolve(false);
-    const url = key === 'routes' ? ROUTES_URL : COMMUNITY_REPORTS_URL;
+    if (key === 'community_reports') return fetchCommunityReports();
+    const url = ROUTES_URL;
     if (!url) return Promise.resolve(false);
     return fetch(url)
       .then((r) => {
@@ -7276,12 +7272,6 @@
           // SNOW-1077: the same reason, for the zoom control's route-slopes
           // tick — the first route landing turns its gate on.
           document.dispatchEvent(new CustomEvent('snowdesk:zoom-gates-changed'));
-        } else {
-          // Cached pristine above, mutated here — the same order
-          // ``_loadOverlay`` uses, so the stored copy is the server's
-          // payload and the drawn copy carries the age fade.
-          communityReportsGeojsonCache = withCommunityReportsAgeOpacity(data);
-          map.getSource('community-reports')?.setData(communityReportsGeojsonCache);
         }
         return true;
       })
@@ -7556,6 +7546,27 @@
     refreshPanelOverlay('community_reports');
   });
 
+  // SNOW-1290: the layer follows the map's day. Two steps, both deferred
+  // past this event so ``currentDisplayedDate`` is already the new day
+  // whatever order the listeners were registered in:
+  //   1. at once, re-stamp what is held against the new day — the pins
+  //      never show one day's states on another, and a day inside the
+  //      held window is right immediately;
+  //   2. after the scrub settles, fetch that day. Playback commits several
+  //      days a second, and the debounce collapses a run into one request.
+  const COMMUNITY_REPORTS_DAY_DELAY_MS = 300;
+  let communityReportsDayTimer = null;
+  document.addEventListener('snowdesk:date-changed', () => {
+    if (!overlayLoaded.community_reports) return;
+    setTimeout(() => {
+      if (!communityReportsPayload) return;
+      communityReportsGeojsonCache = stampCommunityReports(communityReportsPayload);
+      map.getSource('community-reports')?.setData(communityReportsGeojsonCache);
+    }, 0);
+    clearTimeout(communityReportsDayTimer);
+    communityReportsDayTimer = setTimeout(fetchCommunityReports, COMMUNITY_REPORTS_DAY_DELAY_MS);
+  });
+
   // ==== SNOW-658 review: isVisible() means PAINT, isEnabled() means INTENT ====
   //
   // All four bridges (SNOW-687 added routes) answer two different questions,
@@ -7777,10 +7788,11 @@
   // WHY IT TAKES A COORDINATE AND NOT A UUID. The obvious alternative is
   // ``focus(uuid)`` per overlay, looking the feature up in the collection
   // the layer was installed from, the way ``openFavouriteDeepLink`` does.
-  // Two things rule it out. The community-reports feed carries no uuid at
-  // all — it is anonymised server-side (apps/public/api.py), and adding an
-  // identifier to a public payload to serve the owner's own panel is the
-  // wrong trade. And a uuid lookup can only answer once the overlay's
+  // Two things rule it out. The community-reports feed carries no row
+  // uuid — it is anonymised server-side (apps/public/api.py), and adding
+  // the owner's identifier to a public payload to serve their own panel is
+  // the wrong trade. (Its ``submission`` (SNOW-1290) names a report, not a
+  // row the owner's panel holds.) And a uuid lookup can only answer once the overlay's
   // source has loaded, so every caller would need the deep link's
   // wait-for-``sourcedata`` dance for a camera move that does not depend on
   // it. The rows are server-rendered from the owner's own data and already
@@ -8617,9 +8629,8 @@
       restoreOverlay('favourites');
     }
 
-    // SNOW-419: restore the community-reports overlay if the user had it
-    // enabled in a prior session. Off by default (unlike favourites), so
-    // this only fires for a returning user who opted in.
+    // SNOW-419: restore the community-reports overlay. On by default since
+    // SNOW-1290, so this fires for everyone who has not switched it off.
     if (COMMUNITY_REPORTS_ELIGIBLE && overlayState.community_reports) {
       restoreOverlay('community_reports');
     }
@@ -9170,7 +9181,7 @@
     //
     // SNOW-687: 'routes-line' joins the set LAST, and last means lowest
     // priority. A route is a long thin thing that runs UNDER other markers
-    // for most of its length, so a favourite star or a report flag sitting
+    // for most of its length, so a favourite star or a report pin sitting
     // on top of one still wins the tap; the route only claims taps nothing
     // else wanted. It is still in the set rather than out of it, because a
     // tap on a track has to open that track rather than select the region
@@ -9250,7 +9261,7 @@
     // ROUTE_TAP_SLOP_PX above.
     //
     // The pins are queried FIRST and win outright, which preserves the
-    // priority order the array encodes: a favourite star or a report flag
+    // priority order the array encodes: a favourite star or a report pin
     // sitting on a route still takes the tap, and the wider box can never
     // let the line outrank one. A route only claims taps nothing else
     // wanted — it is just now able to claim them at all.
@@ -9690,9 +9701,15 @@
     const activateCommunityReport = (feature) => {
       const props = feature.properties;
       const coordinates = feature.geometry.coordinates.slice();
+      // SNOW-1290: one pin per report, listing every type it ticked —
+      // most serious first, as the server orders them. Arrays arrive as
+      // JSON text from queryRenderedFeatures (asList).
+      const core = window.pwaCommunityReportsCore;
+      const types = core.asList(props.types);
+      const labels = core.asList(props.type_labels);
 
       window.pwaTelemetry?.emit('map.community_reports.marker_tapped', {
-        observation_type: props.type,
+        observation_type: types[0] || null,
       });
 
       const container = document.createElement('div');
@@ -9700,13 +9717,15 @@
 
       const typeEl = document.createElement('div');
       typeEl.className = 'community-report-popup__type';
-      typeEl.textContent = props.type_label;
+      // Server-translated labels joined by punctuation, so no English
+      // reaches the popup from here.
+      typeEl.textContent = labels.join(', ');
       container.appendChild(typeEl);
 
       // Relative time is computed live from the absolute observed_at against
       // Date.now() (formatRelativeTime), so it stays accurate even when the
-      // overlay is served from the offline cache — only the age-fade opacity
-      // is baked at fetch time, not this text. observed_at is the instant as
+      // overlay is served from the offline cache — only the pin's short age
+      // label is stamped, not this text. observed_at is the instant as
       // recorded, so this reads identically to the same report's row in the
       // field-observation panel.
       //
@@ -9737,14 +9756,11 @@
         closeOnClick: true,
         maxWidth: '240px',
         className: 'community-report-popup-wrapper',
-        // SNOW-472: pin the popup ABOVE the flag. The flag icon is anchored
-        // bottom-left at the coordinate, so it occupies the space up and to
-        // the right of the point; a default-anchored popup sits over it.
-        // Fixing anchor to 'bottom' and lifting the popup by roughly the
-        // flag's rendered height (icon-size 0.6 × 34px ≈ 20px) plus a small
-        // gap puts the popup's tip just above the flag, pointing down at it.
+        // Pinned ABOVE the pin: it is a 12px-radius circle centred on the
+        // coordinate (SNOW-1290), so lifting the tip by its radius plus a
+        // small gap points it down at the pin's edge.
         anchor: 'bottom',
-        offset: [8, -24],
+        offset: [0, -16],
       })
         .setLngLat(coordinates)
         .setDOMContent(container)
@@ -11258,9 +11274,10 @@
       // downloadedOverlayVisible instead, which this handler must not touch
       // — a basemap swap must not silently close the downloads overlay out
       // from under an open "Manage downloads" sheet.
-      for (const key of ['resorts', 'community_reports', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
+      for (const key of ['resorts', 'weather', 'routes', 'terrain_filter', 'problem_terrain', 'unsupported']) {
         overlayState[key] = readBoolStorage(OVERLAY_STORAGE_KEY[key], false);
       }
+      overlayState.community_reports = readBoolStorage(OVERLAY_STORAGE_KEY.community_reports, true);
       overlayState.ski_tours = readSkiTouringPart('ski_tours');
       overlayState.ski_summits = readSkiTouringPart('ski_summits');
       // l1, l2, l4 and bulletins are re-seeded before any install fn runs: the

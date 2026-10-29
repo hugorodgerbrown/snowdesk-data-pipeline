@@ -796,11 +796,11 @@ Optional context:
                 <li role="presentation" class="basemap-menu-group-label">{% trans "Your data" %}</li>
                 {# Each is the same setting as its own panel's "Show on the map" #}
                 {# switch (static/js/map_panel_overlay_switch.js). Favourites and #}
-                {# routes hand an anonymous visitor to sign-in; field            #}
-                {# observations are public and work signed out.                  #}
+                {# routes hand an anonymous visitor to sign-in. Field            #}
+                {# observations moved to the bulletins page as "On the ground"   #}
+                {# (SNOW-1290): everyone's reports, read beside the bulletin.    #}
                 {% include "public/partials/_map_layers_switch_row.html" with key="favourites" label=_("Favourites") icon="favourite" sync=True only %}
                 {% include "public/partials/_map_layers_switch_row.html" with key="routes" label=_("Routes") icon="route" sync=True only %}
-                {% include "public/partials/_map_layers_switch_row.html" with key="community_reports" label=_("Field observations") icon="observation" sync=True only %}
                 {# Downloaded areas: no sync dot (the list is local-only), and  #}
                 {# aria-checked is NOT server-renderable — SNOW-857's tri-state #}
                 {# preference is seeded by map.js from pwaDownloadedOverlay.    #}
@@ -919,6 +919,29 @@ Optional context:
                             <span class="map-fill-step-swatch" data-step="1" aria-hidden="true"></span>
                         </button>
                     </div>
+                </li>
+                {# "On the ground" (SNOW-1290): field reports from anyone who has  #}
+                {# been out — live today, recent for three days, or the day a      #}
+                {# scrubbed map shows. Read beside the bulletin, so it lives with  #}
+                {# it; on by default. The same setting as the reports panel's      #}
+                {# "Show on the map" switch, through window.pwaCommunityReportsOverlay. #}
+                <li role="separator" class="basemap-menu-separator"></li>
+                <li role="none">
+                    <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        class="basemap-menu-item basemap-menu-item--overlay hover-affordance"
+                        data-overlay-key="community_reports"
+                        aria-checked="false"
+                    >
+                        <span class="sync-dot" data-sync-state="unknown" aria-hidden="true"></span>
+                        <span class="basemap-menu-item-text">
+                            <span data-row-label>{% trans "On the ground" %}</span>
+                            <span
+                                class="basemap-menu-item-detail"
+                            >{% trans "Field reports: live today, recent for three days" %}</span>
+                        </span>
+                    </button>
                 </li>
                 {# "Highlight problem terrain" (2026-10-23): the bulletin drawn   #}
                 {# another way, so it stays with the bulletins while the steep-  #}
@@ -1213,13 +1236,10 @@ Optional context:
                         aria-hidden="true"
                     ></span>{% trans "Pinned resorts" %}
                 </div>
-                {# Favourites + observations keys — the solid star and flag    #}
-                {# reproduce the on-map markers (favourite-star / community-    #}
-                {# report-flag in map.js), in their icon-color tints, so the    #}
-                {# legend is a complete key for every marker the map can show.  #}
-                {# Font Awesome Free v7 paths, CC BY 4.0 — see map.js for the   #}
-                {# retained attribution. Fills come from the --color-marker-*   #}
-                {# tokens map.js paints the markers with (SNOW-672).            #}
+                {# Favourites key — the solid star reproduces the on-map marker  #}
+                {# (favourite-star in map.js) in its icon-color tint. Font       #}
+                {# Awesome Free v7 path, CC BY 4.0 — see map.js for the retained #}
+                {# attribution. Fill from --color-marker-favourite (SNOW-672).   #}
                 <div class="map-legend-row" data-testid="map-legend-favourites">
                     <span class="map-legend-icon" aria-hidden="true">
                         <svg width="12" height="12" viewBox="0 0 576 512" class="fill-marker-favourite">
@@ -1227,12 +1247,34 @@ Optional context:
                         </svg>
                     </span>{% trans "Favourites" %}
                 </div>
-                <div class="map-legend-row" data-testid="map-legend-observations">
-                    <span class="map-legend-icon" aria-hidden="true">
-                        <svg width="12" height="12" viewBox="0 0 448 512" class="fill-marker-observation">
-                            <path d="M48 24C48 10.7 37.3 0 24 0S0 10.7 0 24L0 488c0 13.3 10.7 24 24 24s24-10.7 24-24l0-100 80.3-20.1c41.1-10.3 84.6-5.5 122.5 13.4 44.2 22.1 95.5 24.8 141.7 7.4l34.7-13c12.5-4.7 20.8-16.6 20.8-30l0-279.7c0-23-24.2-38-44.8-27.7l-9.6 4.8c-46.3 23.2-100.8 23.2-147.1 0-35.1-17.6-75.4-22-113.5-12.5L48 52 48 24z" />
+            </section>
+            {# SNOW-1290: the "On the ground" key — one row per family (its  #}
+            {# colour and mark, as map.js draws the pin) and one per state,   #}
+            {# so a hollow ring reads as "a few days old" without a tap.      #}
+            <section class="map-legend-section" data-testid="map-legend-observations">
+                <div class="map-legend-title">{% trans "On the ground" %}</div>
+                {% for family, label in observation_families %}
+                    <div class="map-legend-row" data-testid="map-legend-observations-{{ family|lower }}">
+                        <span
+                            class="map-legend-icon {% if family == "SURFACE" %}text-obs-surface{% elif family == "TRAIL" %}text-obs-trail{% else %}text-obs-warning{% endif %}"
+                            aria-hidden="true"
+                        >{% include "includes/_icon_observation_family.html" with family=family size=12 only %}</span>{{ label }}
+                    </div>
+                {% endfor %}
+                <div class="map-legend-row" data-testid="map-legend-observations-live">
+                    <span class="map-legend-icon text-obs-warning" aria-hidden="true">
+                        <svg width="12" height="12" viewBox="0 0 12 12">
+                            <circle cx="6" cy="6" r="6" fill="currentColor" opacity="0.25" />
+                            <circle cx="6" cy="6" r="3.5" fill="currentColor" />
                         </svg>
-                    </span>{% trans "Observations" %}
+                    </span>{% trans "Live: reported today" %}
+                </div>
+                <div class="map-legend-row" data-testid="map-legend-observations-recent">
+                    <span class="map-legend-icon text-obs-warning" aria-hidden="true">
+                        <svg width="12" height="12" viewBox="0 0 12 12">
+                            <circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.5" />
+                        </svg>
+                    </span>{% trans "Recent: the three days before" %}
                 </div>
             </section>
             {# SNOW-978: the terrain filter's key. Gated with the filter, and  #}

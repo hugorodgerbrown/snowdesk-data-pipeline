@@ -2,8 +2,8 @@
  * tests/js/test_map_community_report_popup.js — what a community-report pin
  * says when you tap it.
  *
- * The popup is the field-observation panel's row in popup form: the type as
- * a bold label, then "<region> · <age>" — the same two fields, in the same
+ * The popup is the field-observation panel's row in popup form: the report's
+ * types as a bold label (every type it ticked, SNOW-1290), then "<region> · <age>" — the same two fields, in the same
  * order, worded the same way. It got there by being wrong twice. It carried
  * no region at all (the pin's position was held to say where the report
  * was), and its age came from a formatter of its own that said "5 h ago"
@@ -31,8 +31,12 @@ const REPORT_FEATURE = {
   layer: { id: 'community-reports-point' },
   geometry: { type: 'Point', coordinates: [8.29, 46.65] },
   properties: {
-    type: 'WHUMPFING',
-    type_label: 'Whumpfing',
+    // SNOW-1290: one pin per report, listing every type it ticked. MapLibre
+    // hands arrays back from queryRenderedFeatures as JSON text, which is
+    // how they arrive here.
+    types: '["WHUMPFING","POWDER"]',
+    type_labels: '["Whumpfing","Powder"]',
+    family: 'WARNING',
     // 29 seconds before NOW — the case that exposed the old formatter.
     observed_at: '2026-08-11T11:19:31+00:00',
     region_name: 'Guttannen',
@@ -181,13 +185,13 @@ beforeAll(async () => {
 });
 
 describe('the community-report pin popup', () => {
-  it('reads "<region> · <age>" under the observation type', () => {
+  it('reads "<region> · <age>" under the report\'s types', () => {
     vi.setSystemTime(NOW);
 
     const node = tapTheReportPin();
 
     expect(node.querySelector('.community-report-popup__type').textContent).toBe(
-      'Whumpfing',
+      'Whumpfing, Powder',
     );
     // The panel row's format, to the separator.
     expect(node.querySelector('.community-report-popup__meta').textContent).toBe(

@@ -209,10 +209,15 @@ const OVERLAY_LAYERS = Object.freeze({
   l4: ['regions-line', 'regions-label', 'regions-line-unsupported'],
   resorts: ['resorts-pin', 'resorts-label'],
   favourites: ['favourites-pin', 'favourites-label'],
+  // SNOW-1290: the pin is a circle with its family glyph over it, a halo
+  // under a live one and its age beside it.
   community_reports: [
     'community-reports-clusters',
     'community-reports-cluster-count',
+    'community-reports-halo',
     'community-reports-point',
+    'community-reports-glyph',
+    'community-reports-age',
   ],
   // SNOW-761: one symbol layer, not a pin+label pair — the condition glyph
   // is an inline `image` section inside `text-field`.
