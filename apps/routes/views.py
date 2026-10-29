@@ -140,9 +140,9 @@ from apps.routes.services.shares import (
     pending_tokens,
 )
 from apps.routes.services.ski_tours import (
+    descends_via_ascent,
     draft_tour_route,
     is_descent,
-    is_up_and_back,
     localised,
     sac_time,
     save_ski_tour,
@@ -1477,7 +1477,7 @@ def _tour_rows(tours: list[SkiTour]) -> list[dict[str, Any]]:
             "descent_m": tour.descent_m,
             "time": sac_time(tour.ascent_time_label),
             "down": is_descent(tour),
-            "same_way": is_up_and_back(tour),
+            "via_ascent": descends_via_ascent(tour),
         }
         for tour in tours
     ]

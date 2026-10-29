@@ -44,15 +44,19 @@ up in the climb's dashed grey, a way down in the descent's solid fuchsia.
 They had been drawn the other way round — a way up solid, a way down
 dashed — which on one map gave the same dash two opposite meanings.
 
-**An up-and-back tour is drawn there and back.** SAC publishes most of
-its tours as a way up with a descent figure and the guide's "as ascent":
-skied back down the line it climbed. That is 2,503 of the 2,941.
-`tour_points` returns such a tour's line followed by itself reversed, so
-the panel's profile, legs, distance and estimate include the descent, and
-a saved copy is the whole day. The panel's SAC line says "↓ same way". A
-terrain record walked before the change covers the way up only; it is not
-held (`tour_slope_samples` checks its `there_and_back` mark) and the next
-reader to open the tour walks it again.
+**SAC's points are never edited (SNOW-1287).** A tour is drawn, measured
+and saved on exactly the points swisstopo publishes for it: if SAC's tour
+stops at the top, so does ours. SAC publishes most of its tours as a way
+up with a descent figure and the guide's "as ascent", skied back down the
+line it climbed (2,503 of the 2,941). The panel says so in words ("↓ via
+ascent", `descends_via_ascent`) and adds no point for it. SNOW-1286 had
+drawn such a tour there and back, the line followed by itself reversed,
+so its profile, distance and estimate would cover the day; Hugo reversed
+that the same day, because a line we made up is not SAC's. A terrain
+record walked over that doubled line carries a `there_and_back` mark;
+`tour_slope_samples` does not hold one, so the next reader to open the
+tour walks it again one way, and `save_ski_tour` never copies one. A copy
+saved while the doubled line was live (staging only) keeps it.
 
 **The SAC guide is for members or subscribers.** SAC's route portal asks
 anyone else to sign in and subscribe, so the panel says so under the
