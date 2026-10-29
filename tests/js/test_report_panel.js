@@ -594,3 +594,84 @@ describe('filing a report shows it on the map (SNOW-886)', () => {
     expect(sheet.textContent).toContain('Report filed!');
   });
 });
+
+describe('placing the pin before saying what it was (SNOW-1295)', () => {
+  /** The rendered form's three blocks, in the shape _report_form.html gives them. */
+  function renderForm(source = 'GPS', lat = '46.1', lon = '7.2') {
+    sheet.hidden = false;
+    sheet.innerHTML = `
+      <form id="report-form" action="/partials/report/submit/">
+        <input type="hidden" name="lat" value="${lat}">
+        <input type="hidden" name="lon" value="${lon}">
+        <input type="hidden" name="location_source" value="${source}">
+        <div data-report-where>
+          <span data-report-where-text data-placed-label="Placed where you put the pin.">Using current GPS location</span>
+          <button type="button" data-action="refine-location">Move pin</button>
+        </div>
+        <div data-report-placing hidden><button type="button" data-action="place-done">Done</button></div>
+        <div data-report-what>
+          <input type="checkbox" name="observation_type" value="WHUMPFING" ${lat ? '' : 'disabled'}>
+        </div>
+      </form>`;
+    return {
+      where: sheet.querySelector('[data-report-where]'),
+      placing: sheet.querySelector('[data-report-placing]'),
+      what: sheet.querySelector('[data-report-what]'),
+    };
+  }
+
+  it('Move pin swaps the tiles for the placing row, so the map shows', () => {
+    const { where, placing, what } = renderForm();
+    sheet.querySelector('[data-action="refine-location"]').click();
+
+    expect(placing.hidden).toBe(false);
+    expect(where.hidden).toBe(true);
+    expect(what.hidden).toBe(true);
+    const options = window.PlacePicker.activate.mock.calls[0][0];
+    expect(options.recenterTo).toEqual([7.2, 46.1]);
+    expect(options.occludedBy).toBe(sheet);
+    // A pan from a GPS fix is a refinement of it.
+    options.onChange(46.2, 7.3);
+    expect(sheet.querySelector('input[name="lat"]').value).toBe('46.2');
+    expect(sheet.querySelector('input[name="location_source"]').value).toBe('GPS_REFINED');
+  });
+
+  it('Done brings the tiles back, keeps the coords and gives the map its layers back', () => {
+    const { where, placing, what } = renderForm('MANUAL', '', '');
+    sheet.querySelector('[data-action="refine-location"]').click();
+    window.PlacePicker.activate.mock.calls[0][0].onChange(46.3, 7.4);
+    sheet.querySelector('[data-action="place-done"]').click();
+
+    expect(placing.hidden).toBe(true);
+    expect(where.hidden).toBe(false);
+    expect(what.hidden).toBe(false);
+    expect(window.PlacePicker.deactivate).toHaveBeenCalled();
+    expect(sheet.querySelector('input[name="lat"]').value).toBe('46.3');
+    // A report that never had a fix stays MANUAL, and can now be shared.
+    expect(sheet.querySelector('input[name="location_source"]').value).toBe('MANUAL');
+    expect(sheet.querySelector('input[name="observation_type"]').disabled).toBe(false);
+  });
+
+  it('Done after a move says the point is where the reader put the pin', () => {
+    const { where } = renderForm();
+    sheet.querySelector('[data-action="refine-location"]').click();
+    window.PlacePicker.activate.mock.calls[0][0].onChange(46.2, 7.3);
+    sheet.querySelector('[data-action="place-done"]').click();
+
+    expect(where.querySelector('[data-report-where-text]').textContent).toBe(
+      'Placed where you put the pin.',
+    );
+  });
+
+  it('Done without a move keeps the GPS wording', () => {
+    const { where } = renderForm();
+    sheet.querySelector('[data-action="refine-location"]').click();
+    // The picker's immediate call writes the centre, which is the fix itself.
+    window.PlacePicker.activate.mock.calls[0][0].onChange(46.1, 7.2);
+    sheet.querySelector('[data-action="place-done"]').click();
+
+    expect(where.querySelector('[data-report-where-text]').textContent).toBe(
+      'Using current GPS location',
+    );
+  });
+});

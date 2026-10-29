@@ -57,8 +57,19 @@ Context:
     {% trans "Report" as report_form_title %}
     {% include "includes/_sheet_header.html" with title=report_form_title close_action="dismiss" %}
 
-    <div class="flex items-start justify-between gap-2 text-sm">
-        <span class="text-text-2">
+    {# SNOW-1295: WHERE, then WHAT. The tiles fill most of a phone, so  #}
+    {# while the reporter places the pin (Move pin, or straight away     #}
+    {# with no GPS) the "what" block steps aside and the sheet shrinks   #}
+    {# to the placing row, leaving the map and the pin in view.          #}
+    {# report.js toggles the two blocks' `hidden`; nothing else moves.   #}
+    <div class="flex items-center gap-3 text-sm" data-report-where>
+        {# report.js swaps this text for data-placed-label after Done once #}
+        {# the pin has moved — the GPS wording and region no longer hold.  #}
+        <span
+            class="min-w-0 flex-1 text-text-2"
+            data-report-where-text
+            data-placed-label="{% trans 'Placed where you put the pin.' %}"
+        >
             {% if has_coords %}
                 {% if location_source == "GPS" or location_source == "GPS_REFINED" %}
                     {% trans "Using current GPS location" %}
@@ -73,57 +84,57 @@ Context:
                 {% trans "GPS not available — move the map to set your location" %}
             {% endif %}
         </span>
-        {% if has_coords %}
-            <button
-                type="button"
-                class="shrink-0 text-xs font-medium text-text-3 underline hover:text-text-1"
-                data-action="refine-location"
-            >
-                {% trans "Refine location" %}
-            </button>
-        {% endif %}
+        {% trans "Move pin" as move_pin_label %}
+        {% include "includes/_button.html" with label=move_pin_label button_type="button" variant="secondary" size="compact" data_action="refine-location" only %}
+    </div>
+    <div class="flex flex-col gap-3" data-report-placing hidden>
+        <p class="text-sm text-text-1">{% trans "Move the map so the pin sits where you saw it." %}</p>
+        {% trans "Done" as place_done_label %}
+        {% include "includes/_button.html" with label=place_done_label button_type="button" full_width=True data_action="place-done" only %}
     </div>
 
-    {# SNOW-1289: three families of toggle tiles, as many as are true, then #}
-    {# one Share. Each tile is a checkbox, so FormData carries every ticked  #}
-    {# type as a repeated observation_type key; report.js no longer reads    #}
-    {# the submitter. The tile takes its family's colour when ticked.        #}
-    <p class="text-sm font-medium text-text-1">{% trans "What's it like?" %}</p>
-    {% for family in families %}
-        <fieldset class="flex flex-col gap-2" data-report-family="{{ family.value }}">
-            <legend class="mb-2">
-                {% include "includes/_eyebrow.html" with text=family.label tag="span" only %}
-            </legend>
-            <div class="grid grid-cols-3 gap-2">
-                {% for value, label in family.types %}
-                    <label
-                        class="{% if family.value == "SURFACE" %}text-obs-surface{% elif family.value == "TRAIL" %}text-obs-trail{% else %}text-obs-warning{% endif %} flex min-h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-tag border-2 border-transparent bg-card-subtle px-1 py-2 text-center text-meta leading-tight has-checked:border-current has-checked:bg-card has-checked:font-semibold has-disabled:cursor-not-allowed has-disabled:opacity-50"
-                    >
-                        <input
-                            type="checkbox"
-                            name="observation_type"
-                            value="{{ value }}"
-                            class="sr-only"
-                            {% if not has_coords %}disabled{% endif %}
+    <div class="flex flex-col gap-4" data-report-what>
+        {# SNOW-1289: three families of toggle tiles, as many as are true, then #}
+        {# one Share. Each tile is a checkbox, so FormData carries every ticked  #}
+        {# type as a repeated observation_type key; report.js no longer reads    #}
+        {# the submitter. The tile takes its family's colour when ticked.        #}
+        <p class="text-sm font-medium text-text-1">{% trans "What's it like?" %}</p>
+        {% for family in families %}
+            <fieldset class="flex flex-col gap-2" data-report-family="{{ family.value }}">
+                <legend class="mb-2">
+                    {% include "includes/_eyebrow.html" with text=family.label tag="span" only %}
+                </legend>
+                <div class="grid grid-cols-3 gap-2">
+                    {% for value, label in family.types %}
+                        <label
+                            class="{% if family.value == "SURFACE" %}text-obs-surface{% elif family.value == "TRAIL" %}text-obs-trail{% else %}text-obs-warning{% endif %} flex min-h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-tag border-2 border-transparent bg-card-subtle px-1 py-2 text-center text-meta leading-tight has-checked:border-current has-checked:bg-card has-checked:font-semibold has-disabled:cursor-not-allowed has-disabled:opacity-50"
                         >
-                        {% include "includes/_icon_observation_family.html" with family=family.value size=20 only %}
-                        <span class="text-text-1">{{ label }}</span>
-                    </label>
-                {% endfor %}
-            </div>
-        </fieldset>
-    {% endfor %}
+                            <input
+                                type="checkbox"
+                                name="observation_type"
+                                value="{{ value }}"
+                                class="sr-only"
+                                {% if not has_coords %}disabled{% endif %}
+                            >
+                            {% include "includes/_icon_observation_family.html" with family=family.value size=20 only %}
+                            <span class="text-text-1">{{ label }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+            </fieldset>
+        {% endfor %}
 
-    {% trans "Share with everyone here" as report_share_label %}
-    {% include "includes/_button.html" with label=report_share_label button_type="submit" full_width=True only %}
+        {% trans "Share with everyone here" as report_share_label %}
+        {% include "includes/_button.html" with label=report_share_label button_type="submit" full_width=True only %}
 
-    <button
-        type="button"
-        class="text-sm font-medium rounded-tag text-text-2 border border-text-3/30 hover:text-text-1 hover:border-text-2 transition-colors px-4 py-2"
-        data-action="dismiss"
-    >
-        {% trans "Cancel" %}
-    </button>
+        <button
+            type="button"
+            class="text-sm font-medium rounded-tag text-text-2 border border-text-3/30 hover:text-text-1 hover:border-text-2 transition-colors px-4 py-2"
+            data-action="dismiss"
+        >
+            {% trans "Cancel" %}
+        </button>
+    </div>
 </form>
 {# Inert clone source for the optimistic confirmation (SNOW-420) — report.js  #}
 {# clones this into #report-sheet immediately on tap, before the queued      #}

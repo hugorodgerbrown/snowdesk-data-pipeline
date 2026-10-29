@@ -109,6 +109,20 @@
   /** @type {Map<string, {html: string, at: number}>} Bodies by URL. */
   const bodies = new Map();
 
+  // SNOW-1295: WHEN THE READER'S OWN REPORTS CHANGE. A body carries the
+  // region's "On the ground" section, so one kept from before a report was
+  // filed (or removed) says "No reports" beside a pin that says otherwise.
+  // A change drops every kept body and stamps the time into the URL as
+  // `r=`, which the browser's HTTP cache (ten minutes, private) has never
+  // seen. The stamp is kept in localStorage so a reload asks fresh too.
+  const REPORTS_EPOCH_KEY = 'snowdesk.reports.epoch';
+  let reportsEpoch = '';
+  try {
+    reportsEpoch = localStorage.getItem(REPORTS_EPOCH_KEY) || '';
+  } catch (_) {
+    // Storage blocked: the stamp holds for this page only.
+  }
+
   // Invalidates a fetch when a newer one starts, so a slow answer for the
   // region the reader has already moved on from never paints over the new
   // one, and aborts it on a close by any route (onTeardown).
@@ -300,11 +314,11 @@
    * @param {string} html
    * @returns {void}
    */
-  const paintBody = (html) => {
+  const paintBody = (html, fresh = false) => {
     sheet.innerHTML = html;
     mirrorAll();
     syncTerrainControls();
-    applyObservationFocus();
+    applyObservationFocus(fresh);
   };
 
   // SNOW-1291: A TAP ON A REPORT'S PIN. map.js selects the report's region
@@ -323,8 +337,12 @@
   // The sheet's detent height transition, plus a frame.
   const DETENT_SETTLE_MS = 320;
 
-  /** @returns {void} */
-  const applyObservationFocus = () => {
+  /**
+   * @param {boolean} [fresh] - The body was just fetched, so a row it lacks
+   *   is not coming: show the section instead (SNOW-1295).
+   * @returns {void}
+   */
+  const applyObservationFocus = (fresh = false) => {
     if (!observationFocus || observationFocus.regionId !== regionId) return;
     // A closed sheet ignores a detent, and may still hold a body the open
     // is about to repaint: wait for the open (called again just after it).
@@ -333,7 +351,17 @@
     // so nothing in it can break out of the attribute selector.
     const submission = observationFocus.submission.replace(/["\\]/g, '');
     const row = sheet.querySelector(`[data-observation-submission="${submission}"]`);
-    if (!row) return;
+    if (!row) {
+      if (!fresh) return;
+      // The report is not in the region's window (filed a moment ago on a
+      // device whose clock is ahead, say): the tap still lands somewhere,
+      // on the section, at half, rather than on nothing.
+      observationFocus = null;
+      const section = sheet.querySelector('[data-on-the-ground]');
+      controller.detent('half');
+      if (section) setTimeout(() => section.scrollIntoView({ block: 'start', behavior: 'smooth' }), DETENT_SETTLE_MS);
+      return;
+    }
     observationFocus = null;
     const panel = row.closest('details');
     if (panel) panel.open = true;
@@ -350,8 +378,29 @@
     const detail = ev.detail || {};
     if (!detail.submission || !detail.region_id) return;
     observationFocus = { submission: String(detail.submission), regionId: String(detail.region_id) };
-    // The body for the region may already be up (its sheet was open).
+    // SNOW-1295: a pin can be newer than any body kept for its region, so a
+    // tap always reads the region afresh.
+    bodies.clear();
+    // The body for the region may already be up (its sheet was open). If it
+    // lacks the row, read it again: the open sheet is otherwise left as it
+    // was, which read as the tap doing nothing.
+    // During playback the read waits, as on every other open path; the
+    // focus is applied when the body lands after playback stops.
     applyObservationFocus();
+    if (observationFocus && controller.isOpen() && detail.region_id === regionId) {
+      load({ paused: playback.isPlaying() });
+    }
+  });
+
+  document.addEventListener('snowdesk:reports-changed', () => {
+    bodies.clear();
+    reportsEpoch = String(Date.now());
+    try {
+      localStorage.setItem(REPORTS_EPOCH_KEY, reportsEpoch);
+    } catch (_) {
+      // Storage blocked: the stamp holds for this page only.
+    }
+    if (controller.isOpen() && regionId && !playback.isPlaying()) load();
   });
 
   // SNOW-979: THE PROBLEM-TERRAIN SWITCH. A body for a region inside the
@@ -499,7 +548,10 @@
     // Lowercased here: the view's canonical URL is lowercase and answers
     // anything else with a redirect, which would cost a second round trip.
     let url = URL_TEMPLATE.replace('XX-0000', encodeURIComponent(regionId.toLowerCase()));
-    if (dateKey) url += '?d=' + encodeURIComponent(dateKey);
+    const params = new URLSearchParams();
+    if (dateKey) params.set('d', dateKey);
+    if (reportsEpoch) params.set('r', reportsEpoch);
+    if (params.toString()) url += '?' + params.toString();
     const kept = cachedBody(url);
     if (opts.paused) pendingRefresh = true;
     awaiting = false;
@@ -529,7 +581,7 @@
         // Kept even when superseded: it landed, and it is that region's day.
         keepBody(url, html);
         if (!ask.isCurrent() || !controller.isOpen()) return;
-        paintBody(html);
+        paintBody(html, true);
       })
       .catch((err) => {
         if (!ask.isCurrent() || !controller.isOpen() || playback.isAbort(err)) return;

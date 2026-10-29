@@ -47,8 +47,9 @@
  *
  *   GPS path (fix obtained):
  *     snowdesk:geolocate → loadForm(lat, lon, accuracy, 'GPS', gpsLat, gpsLon)
- *     Form renders with "Using current GPS location" + Refine button.
- *     Refine click → PlacePicker.activate({ recenterTo: [lon, lat], onChange })
+ *     Form renders with "Using current GPS location" + Move pin button.
+ *     Move pin → the placing row replaces the tiles (SNOW-1295) and
+ *       PlacePicker.activate({ recenterTo: [lon, lat], onChange })
  *       re-centres the map on the current point and writes hidden lat/lon +
  *       location_source=GPS_REFINED on every pan (keep gps_*).
  *
@@ -408,9 +409,66 @@
   // Refine-location handler (delegated so it survives HTMX form swaps).
   // ---------------------------------------------------------------------------
 
+  /**
+   * SNOW-1295: show the form's placing row in place of its "where" row and
+   * its tiles, or the other way round. The tiles fill most of a phone, so
+   * while the reporter moves the map the sheet shrinks to one line and a
+   * Done button, and place_picker.js's ResizeObserver lifts the pin into
+   * the map left in view.
+   *
+   * @param {boolean} placing
+   * @returns {void}
+   */
+  function showPlacing(placing) {
+    const form = document.getElementById('report-form');
+    if (!form) return;
+    form.querySelector('[data-report-placing]')?.toggleAttribute('hidden', !placing);
+    form.querySelector('[data-report-where]')?.toggleAttribute('hidden', placing);
+    form.querySelector('[data-report-what]')?.toggleAttribute('hidden', placing);
+  }
+
+  /** Note where placing started, so Done can tell whether the pin moved.
+   * @param {string} from - "lat,lon" before placing, or '' with no point yet.
+   */
+  function notePlaceFrom(from) {
+    const form = document.getElementById('report-form');
+    if (form) form.dataset.placeFrom = from;
+  }
+
+  /** After Done, say the point is the reader's own once the pin has moved:
+   * the GPS wording and the matched region described where placing began.
+   */
+  function markPlaced() {
+    const form = document.getElementById('report-form');
+    if (!form) return;
+    const lat = /** @type {HTMLInputElement|null} */ (form.querySelector('input[name="lat"]'));
+    const lon = /** @type {HTMLInputElement|null} */ (form.querySelector('input[name="lon"]'));
+    if (!lat || !lon || !lat.value || !lon.value) return;
+    // About a metre: the picker's first call writes the map centre back,
+    // which can differ from the fix in its last digits without a pan.
+    const [fromLat, fromLon] = (form.dataset.placeFrom || '').split(',').map(parseFloat);
+    if (
+      Math.abs(parseFloat(lat.value) - fromLat) < 1e-5 &&
+      Math.abs(parseFloat(lon.value) - fromLon) < 1e-5
+    ) return;
+    const text = /** @type {HTMLElement|null} */ (form.querySelector('[data-report-where-text]'));
+    if (text && text.dataset.placedLabel) text.textContent = text.dataset.placedLabel;
+  }
+
   document.addEventListener('click', function (event) {
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
+
+    // Done: the pin is where it should be. The coords the picker wrote stay
+    // in the form; the map gets its layers back and the tiles return.
+    if (target.closest('[data-action="place-done"]')) {
+      markPlaced();
+      window.PlacePicker?.deactivate();
+      enableProblemButtons();
+      showPlacing(false);
+      return;
+    }
+
     const refineBtn = target.closest('[data-action="refine-location"]');
     if (!refineBtn) return;
 
@@ -422,18 +480,23 @@
 
     const lat = parseFloat(latInput.value);
     const lon = parseFloat(lonInput.value);
-    if (isNaN(lat) || isNaN(lon)) return;
+    const fixed = !isNaN(lat) && !isNaN(lon);
+    const wasGps = /** @type {HTMLInputElement|null} */ (
+      form.querySelector('input[name="location_source"]')
+    )?.value !== 'MANUAL';
 
-    // Re-centre the map on the current GPS fix and arm the place-picker; the
-    // pin starts on that point, and every subsequent pan writes updated
-    // coords with location_source=GPS_REFINED (the raw gps_lat/gps_lon
-    // hidden inputs stay unchanged).
+    // Re-centre the map on the current point (a GPS fix, or a pin placed
+    // before) and arm the place-picker; every pan writes updated coords —
+    // GPS_REFINED when they started from a fix (the raw gps_lat/gps_lon
+    // hidden inputs stay unchanged), MANUAL when they never had one.
+    notePlaceFrom(fixed ? latInput.value + ',' + lonInput.value : '');
+    showPlacing(true);
     window.PlacePicker?.activate({
-      recenterTo: [lon, lat],
+      recenterTo: fixed ? [lon, lat] : undefined,
       occludedBy: sheet,
       onChange: function (la, lo) {
         writeFormCoords(la, lo);
-        writeFormLocationSource('GPS_REFINED');
+        writeFormLocationSource(wasGps ? 'GPS_REFINED' : 'MANUAL');
       },
     });
   });
@@ -835,6 +898,10 @@
       // straight away, and enableProblemButtons() unblocks submission —
       // no separate "tap to place" step, unlike the old marker flow.
       loadForm(null, null, null, 'MANUAL', null, null).then(function () {
+        // SNOW-1295: no fix, so placing comes first — the tiles wait behind
+        // Done, with the map and the pin in view.
+        notePlaceFrom('');
+        showPlacing(true);
         window.PlacePicker?.activate({
           occludedBy: sheet,
           onChange: function (la, lo) {
