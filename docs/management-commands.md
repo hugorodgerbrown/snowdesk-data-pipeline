@@ -2,7 +2,7 @@
 name: management-commands
 description: Commands — RegisteredCommand / CommandRun register, fetch_bulletins, fetch_weather, purge_*, prune_command_runs, backfill_*
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-10-29
 ---
 
 # Management commands
@@ -195,7 +195,7 @@ worker logs.
 | OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes expired MCP OAuth tokens and authorization codes with django-oauth-toolkit's `clear_expired()` (SNOW-1193). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
 | Run-register prune | `prune_command_runs --commit` | `50 3 * * *` (daily, 03:50 UTC) | Marks `CommandRun` rows a killed process left `RUNNING` for over six hours as `INTERRUPTED`, and deletes `SCHEDULER` runs older than 90 days (SNOW-1189). Every other run is kept for good. |
 | what3words fill | `fill_what3words --commit` | `0 4 * * *` (daily, 04:00 UTC) | Converts each `Location` still without a three word address (SNOW-881). Sweeps up rows no mint-time fill covers — a field observation's location, and any row where a conversion failed. A clean no-op when `WHAT3WORDS_API_KEY` is unset, which is what lets it be registered unconditionally. Daily because the estate grows with user activity rather than the clock. |
-| Slope-sample reconcile | `backfill_route_slope_samples --commit`, then `backfill_trip_slope_samples --commit` | `30 4 * * *` (daily, 04:30 UTC) | The safety net for a terrain-sampling task that was never queued (SNOW-1228). Upload, trip creation and trip edits enqueue sampling after their row has committed, and an enqueue failure there is logged rather than raised — the user's route or trip exists, so a 500 would be a lie — which leaves `slope_samples` null. Both commands select exactly those rows. Deliberately uncapped (SNOW-1243): the commands walk newest-first and leave an unsampleable row (a route outside terrain coverage) eligible, so a `--limit` would let those rows crowd out older ones whose enqueue really failed; the commands' own delay paces tile requests. The trip pass still runs when the route pass fails, and the first failure is re-raised afterwards. |
+| Slope-sample reconcile | `backfill_route_slope_samples --commit`, then `backfill_trip_slope_samples --commit`, then `backfill_ski_tour_slope_samples --commit` | `30 4 * * *` (daily, 04:30 UTC) | The safety net for a terrain-sampling task that was never queued (SNOW-1228). Upload, trip creation and trip edits enqueue sampling after their row has committed, and an enqueue failure there is logged rather than raised — the user's route or trip exists, so a 500 would be a lie — which leaves `slope_samples` null. Both commands select exactly those rows. Deliberately uncapped (SNOW-1243): the commands walk newest-first and leave an unsampleable row (a route outside terrain coverage) eligible, so a `--limit` would let those rows crowd out older ones whose enqueue really failed; the commands' own delay paces tile requests. The trip pass still runs when the route pass fails, and the first failure is re-raised afterwards. The SAC tour pass (SNOW-1288) walks every tour with no current record, so a tour's profile opens at once; on a normal night it finds only the tours a weekly import rewrote. |
 | Resort-link detector | `link_resort_locations --check` | `0 5 * * *` (daily, 05:00 UTC) | The only scheduled job that writes nothing (SNOW-885). Reports resorts with a coordinate but no pin `Location` (`Resort.location`, SNOW-1144) — each one a resort whose weather is not fetched, still on the map only through the transitional fallback to its mirrored coordinates (removed by SNOW-1147), with nothing else saying so — and exits NON-ZERO when there are any, so the worker log carries the alarm. Since SNOW-1144 every pin writer goes through `set_resort_pin`, so after the one-time backfill this should never fire; if it does, an operator runs `link_resort_locations --commit` by hand. |
 
 Each job checks a waffle switch, `schedule_<job id>` (for example
@@ -1215,6 +1215,29 @@ candidate.
 uv run python manage.py backfill_trip_slope_samples                  # preview
 uv run python manage.py backfill_trip_slope_samples --commit         # apply
 uv run python manage.py backfill_trip_slope_samples --commit --limit 20
+```
+
+### `backfill_ski_tour_slope_samples` — walk SAC's tours ahead of their first open
+
+SNOW-1288. A `SkiTour`'s `slope_samples` is what its panel's profile,
+legs and point card read. It used to be walked by the first reader to
+open the tour (`routes:ski_tour_feature?sample=1`), seconds on a long
+tour; this walks every tour with no current record ahead of time, so the
+panel opens with its profile, as a saved route's does. Candidates are
+`tours_to_sample()`: never walked (a fresh import, or a tour the weekly
+sync rewrote, which clears the record), or walked over SNOW-1286's doubled
+line (a `there_and_back` record, SNOW-1287). The walk is
+`tour_slope_samples(tour, sample=True)` over SAC's own points. A tour the
+terrain model cannot answer for stays null and is tried next run; that is
+not a failure. Paced by `--delay` (a second by default); a run over the
+whole estate (2,941 tours) takes about five hours. Runs nightly as the
+third pass of `reconcile_slope_samples`; the panel's on-open walk stays
+as the fallback for a tour the job has not reached.
+
+```bash
+uv run python manage.py backfill_ski_tour_slope_samples                  # preview
+uv run python manage.py backfill_ski_tour_slope_samples --commit         # apply
+uv run python manage.py backfill_ski_tour_slope_samples --commit --limit 20
 ```
 
 ### `sync_waffle_switches` — reconcile waffle.Switch rows to the manifest

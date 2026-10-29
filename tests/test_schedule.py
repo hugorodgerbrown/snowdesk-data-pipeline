@@ -184,8 +184,10 @@ def test_reconcile_slope_samples_runs_after_fill_what3words(jobs: dict) -> None:
     assert str(_get_field(trigger, "minute")) == "30"
 
 
-def test_reconcile_slope_samples_commits_both_backfills_uncapped() -> None:
-    """Route pass then trip pass, each --commit and no --limit (SNOW-1243).
+def test_reconcile_slope_samples_commits_every_backfill_uncapped() -> None:
+    """Routes, trips, then SAC's tours, each --commit, no --limit (SNOW-1243).
+
+    The tour pass (SNOW-1288) walks every tour ahead of its first open.
 
     A cap would let unsampleable newest rows starve older candidates.
     """
@@ -194,6 +196,7 @@ def test_reconcile_slope_samples_commits_both_backfills_uncapped() -> None:
     assert mock_cc.call_args_list == [
         mock.call("backfill_route_slope_samples", "--commit"),
         mock.call("backfill_trip_slope_samples", "--commit"),
+        mock.call("backfill_ski_tour_slope_samples", "--commit"),
     ]
 
 
@@ -204,12 +207,13 @@ def test_reconcile_slope_samples_runs_the_trip_pass_after_a_route_failure() -> N
     with mock.patch(
         "django.core.management.call_command",
         autospec=True,
-        side_effect=[CommandError("route pass failed"), None],
+        side_effect=[CommandError("route pass failed"), None, None],
     ) as mock_cc:
         with pytest.raises(CommandError, match="route pass failed"):
             schedule_module._run_reconcile_slope_samples()
-    assert mock_cc.call_count == 2
+    assert mock_cc.call_count == 3
     assert mock_cc.call_args_list[1].args[0] == "backfill_trip_slope_samples"
+    assert mock_cc.call_args_list[2].args[0] == "backfill_ski_tour_slope_samples"
 
 
 # ---------------------------------------------------------------------------
