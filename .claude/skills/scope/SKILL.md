@@ -113,10 +113,13 @@ When the sidebar approval comes through:
 4. Ask Codex for the review: post **the review request** from
    `docs/linear-workflow.md` → "The review request", verbatim, as a new
    top-level comment. The `@Codex` mention is what starts the Codex task.
-   Then read the comments back: a "This thread is for an agent session with
-   Codex" entry means it started. If none has appeared, tell the user. The
-   ticket stays in `Todo`, and the review can be re-requested by posting the
-   same comment again.
+   A mention-started run posts no comment when it starts: "Codex started"
+   appears only in the ticket's activity log, which the API does not
+   return, so do not wait for a start signal. The only evidence is Codex's
+   `## Codex scope review` reply under the request, usually within a few
+   minutes. If none has arrived by the next `resolve-scope-review` sweep,
+   the review can be re-requested by posting the same comment again; the
+   ticket stays in `Todo` either way.
 5. Confirm to the user: "Scope posted, SNOW-$1 in Todo, review requested from
    Codex." The ticket goes no further in this skill — `Ready for dev` is set
    only by `resolve-scope-review`, after Codex has replied.
