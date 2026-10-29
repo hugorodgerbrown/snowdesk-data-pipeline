@@ -48,10 +48,16 @@ Then the usual review:
 
 ## Scope review (Linear)
 
-You are handed a Linear ticket by **delegation**, in the `Todo` state, after
-Claude has posted a scoping comment on it. Your job is to review that scope
-**once** and reply. You are the second pair of eyes before implementation,
-not the implementer.
+You are asked for a review by an **`@Codex` comment** on a Linear ticket in
+the `Todo` state, after Claude has posted a scoping comment on it. The
+comment opens "This is a **scope review only**". Your job is to review that
+scope **once** and reply. You are the second pair of eyes before
+implementation, not the implementer.
+
+If a Linear issue is **delegated** to you, or you are mentioned without that
+review request, do not implement it. Reply that on this repository you only
+review scopes and pull requests, and stop. Claude Code implements every
+ticket.
 
 **Do not** write code, open a pull request, create a branch, change the
 ticket's status, labels or assignee, or open follow-up tickets. Reply with
@@ -61,7 +67,8 @@ scoping comment, reply saying so and stop.
 ### What to read
 
 1. The ticket's title and description.
-2. The **most recent scoping comment** — it has four sections: Approach,
+2. **The scope**: the scoping comment, or the same sections written into
+   the description. There is only ever one. It has four sections: Approach,
    Touch list, Tests, Open questions (contract in
    `docs/linear-workflow.md` → "Scoping comment contract").
 3. The code the touch list names, and whatever it would reach.

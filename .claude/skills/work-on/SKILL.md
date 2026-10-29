@@ -44,8 +44,9 @@ steps from here; invoke the skill and follow it.
 Fetch the ticket with the Linear MCP `get_issue` tool and branch on state:
 
 - **Backlog** → step 2 (scope), then stop: the ticket is with Codex.
-- **Todo** with a `## Codex scope review` newer than the scope → step 2b
-  (resolve the review), then step 3 if it reached `Ready for dev`.
+- **Todo** with a `## Codex scope review` from Codex and no response from
+  Claude under it yet → step 2b (resolve the review), then step 3 if it
+  reached `Ready for dev`.
 - **Todo** with no review yet → stop: Codex has not replied. Say so; run
   `/work-on` again once it has.
 - **Requires input** → stop: a question is waiting on Hugo. Once it is
@@ -67,7 +68,7 @@ and follow the scope skill in full — including presenting the scope via
 plan mode and waiting for sidebar approval.
 
 - If the user approves: the scope is posted to Linear and the ticket is in
-  `Todo`, delegated to Codex. **Stop here** and say so: "Scope posted and
+  `Todo`, with Codex's review requested. **Stop here** and say so: "Scope posted and
   with Codex. Run `/work-on NN` again once Codex has replied." Do not wait
   or poll for the review.
 - If the user rejects and asks for revisions: stay in the scope phase
@@ -96,9 +97,9 @@ hard gate, implementer/reviewer loop, query-count check, push, PR, ticket
 to In Review.
 
 The implement skill re-fetches the ticket and its comments, so it will
-find the latest scope — the `## Scope revision` from step 2b if there is
-one, otherwise the original scoping comment. If it cannot find a scoping
-comment on a `Ready for dev` ticket, stop and surface that — something went wrong with the Linear
+find the scoping comment, which step 2b revised in place if Codex asked
+for changes. If it cannot find a scoping comment on a `Ready for dev`
+ticket, stop and surface that — something went wrong with the Linear
 write; do not improvise a scope.
 
 ## Step 4 — Report

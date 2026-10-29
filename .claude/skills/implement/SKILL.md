@@ -117,9 +117,11 @@ they should switch branches manually, not run this skill). If `In Review`
 or `Done`, stop.
 
 Read the ticket description AND comments — the scope lives in a comment
-posted by the `scope` skill. The **latest** `## Scope revision` (posted by
-`resolve-scope-review` after Codex's review) supersedes it; build from that,
-and read the Notes in Codex's `## Codex scope review` as context. If there
+posted by the `scope` skill. There is only ever one scope:
+`resolve-scope-review` revises that comment in place after Codex's review
+and Hugo's answers, so build from it as it stands. Read the Notes in Codex's
+`## Codex scope review`, and Claude's `### Response to Codex's review`
+beneath it, as context. If there
 is no scoping comment, stop and tell the user to scope first. Store the Linear-supplied git branch name.
 
 ### 2b. Create local branch
@@ -311,8 +313,8 @@ Produce:
   - **Testing** — what tests cover this, anything to verify manually
   - **Agreed scope** — the scope Codex reviewed, so its PR review can check
     the diff against it without reaching Linear (`AGENTS.md` → "Review
-    guidelines"). Copy the latest `## Scope revision`, or the original
-    scoping comment when there was none, **verbatim** — Approach, Touch
+    guidelines"). Copy the scoping comment as it now stands **verbatim** —
+    Approach, Touch
     list, Tests, Open questions — under a `## Agreed scope` heading. Under
     it, link the Linear comment it came from, and copy the Notes from
     Codex's `## Codex scope review`.

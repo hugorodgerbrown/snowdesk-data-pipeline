@@ -24,7 +24,7 @@ status reflects reality without manual nudging:
 | Status          | Transition trigger                                            | Who moves it |
 |-----------------|---------------------------------------------------------------|--------------|
 | `Backlog`       | Issue created, not yet scoped                                 | Human / Claude (MCP) |
-| `Todo`          | Scoping comment posted; delegated to Codex for review         | Claude — `scope` / `create-ticket` |
+| `Todo`          | Scoping comment posted; Codex's review requested               | Claude — `scope` / `create-ticket` |
 | `Requires input`| Codex's review left a question only Hugo can answer           | Claude — `resolve-scope-review` |
 | `Ready for dev` | Codex approved, or Claude answered every point in its review  | Claude — `resolve-scope-review` |
 | `In Progress`   | Local branch created at start of implementation               | Code (MCP)   |
@@ -71,8 +71,11 @@ approach is settled:
 > "Post the scope as a comment on SNOW-42."
 
 Claude appends the scoping comment via MCP (see **Scoping comment
-contract** below), moves the ticket to `Todo` and delegates it to
-Codex. The `scope` skill does this.
+contract** below), moves the ticket to `Todo` and posts the review
+request for Codex. The `scope` skill does this. If the ticket already
+carries a scope, `scope` updates that one instead of posting a second,
+and if the ticket is redundant, out of date or low value it proposes
+parking it in `Deferred` instead of scoping it.
 
 ### Path B — Chat first, then tickets
 
@@ -92,7 +95,7 @@ Two sub-patterns:
    > autocomplete'. Scope it using what we've just discussed."
 
    Claude creates the issue *and* posts the scoping comment in one go,
-   then moves it to `Todo` and delegates it to Codex. No `Backlog` stop.
+   then moves it to `Todo` and posts the review request. No `Backlog` stop.
 
 2. **Multiple tickets from one discussion.** When the conversation
    decomposes into several pieces of work:
@@ -146,7 +149,7 @@ Codex → Claude, once.** At the end the ticket is in `Ready for dev` or
 `Requires input` — never back with Codex for a second round.
 
 ```
- Backlog ──scope──▶ Todo, delegated to Codex
+ Backlog ──scope──▶ Todo + "@Codex This is a scope review only…"
                       │
                       ▼
             ## Codex scope review   (AGENTS.md → "Scope review")
@@ -155,7 +158,8 @@ Codex → Claude, once.** At the end the ticket is in `Ready for dev` or
    Approved                     Changes requested
        │                              │
        │                  resolve-scope-review: answer every point,
-       │                  post ## Scope revision
+       │                  revise the scoping comment IN PLACE,
+       │                  reply "### Response to Codex's review"
        │                              │
        │               ┌──────────────┴──────────────┐
        │        nothing left open          a question for Hugo
@@ -166,40 +170,89 @@ Codex → Claude, once.** At the end the ticket is in `Ready for dev` or
 ```
 
 1. **Claude scopes.** `scope` (or `create-ticket`) posts the four-section
-   comment, moves the ticket to `Todo` and sets Codex as its **delegate**
-   — Linear's mechanism for handing an issue to an agent.
+   comment, moves the ticket to `Todo`, and posts **the review request**
+   below as a new comment. The `@Codex` mention starts a Codex task, and
+   the comment is that task's prompt.
 2. **Codex reviews.** Codex runs a cloud task on the repo, reads
-   `AGENTS.md`, and replies with one `## Codex scope review` comment:
-   `**Verdict:** Approved` or `Changes requested`, then Suggestions,
-   Questions and non-blocking Notes. It writes no code and moves nothing.
-3. **Claude resolves.** `resolve-scope-review` reads the review. On
-   Approved it moves the ticket to `Ready for dev`. On Changes requested
-   it accepts or declines each suggestion with a reason, answers each
-   question from the code or marks it for Hugo, and posts a
-   `## Scope revision` — the full revised scope, which supersedes the
-   original and is what `implement` builds from. No questions left →
-   `Ready for dev`; otherwise → `Requires input`, assigned to Hugo.
+   `AGENTS.md`, and replies under the request with one `## Codex scope
+   review` comment: `**Verdict:** Approved` or `Changes requested`, then
+   Suggestions, Questions and non-blocking Notes. It writes no code and
+   moves nothing.
+3. **Claude resolves.** `resolve-scope-review` reads the review.
+   - On Approved, it moves the ticket to `Ready for dev`.
+   - On Changes requested, it accepts or declines each suggestion with a
+     reason, and answers each question from the code or marks it for Hugo.
+     It then **edits the scoping comment in place**, so the ticket keeps
+     exactly one scope and `implement` builds from it. It replies under the
+     review with `### Response to Codex's review`, one line per point.
+   - If no questions are left, the ticket goes to `Ready for dev`.
+     Otherwise it goes to `Requires input`, assigned to Hugo.
 4. **Hugo answers** (`Requires input` only) in a comment on the ticket,
-   then runs `/resolve-scope-review NN`, which folds the answers into a
-   final revision and moves the ticket to `Ready for dev`. Codex is not
-   asked again.
+   then runs `/resolve-scope-review NN`. That folds the answers into the
+   same scoping comment, replies `### Answers folded in`, and moves the
+   ticket to `Ready for dev`. Codex is not asked again.
 
-**What starts step 3.** Codex cannot hand a ticket back: there is no
-first-party Claude agent in Linear to delegate to. So two things pick
-up a reviewed ticket: a scheduled Claude task that runs
-`resolve-scope-review routine` a few times a day and sweeps every `Todo`
-ticket with a review newer than its scope, and the same command run by
-hand for any ticket wanted sooner. The sweep never touches a
-`Requires input` ticket.
+**There is one scope per ticket.** Nothing posts a second scoping
+comment. Every revision, whether after Codex's review or after Hugo's
+answers, edits the original in place and says so in its first line.
 
-**What keeps it to one round.** A `## Scope revision` newer than the
-review means the round is done; `resolve-scope-review` never writes a
-second, and nothing re-delegates to Codex.
+### The review request
 
-**Setup this depends on** (one-off, in Linear and Codex): Codex for
-Linear installed in the workspace and linked to a Codex environment for
-this repo, and a `Requires input` state on the SNOW team in the
-Unstarted group. Why it is built this way:
+`scope`, `create-ticket` and `audit-map` post this verbatim, as a new
+top-level comment, once the scope is on the ticket:
+
+```markdown
+@Codex This is a **scope review only — do not implement this ticket.** Do not edit any file, commit, create a branch or open a pull request.
+
+Follow the "Scope review (Linear)" section of `AGENTS.md` in the repo: review this ticket's scope (the scoping comment, or the Approach / Touch list / Tests / Open questions sections of the description) against the code, then reply with a single comment in exactly the shape that section gives, starting with the heading `## Codex scope review` and a `**Verdict:**` line. Leave the product questions you cannot answer from the code as Questions — do not decide them. Your reply is the whole deliverable.
+```
+
+**Write `@Codex` only where you mean to start a task.** A mention starts
+a Codex task on Linear and on GitHub alike, even inside backticks. Quoting
+this request in a PR description started an unrequested Codex task on that
+PR. Elsewhere, refer to it as "the review request".
+
+**Never delegate the issue to Codex instead.** Linear's delegation hands
+Codex the ticket's title and description as a task to *do*. In the
+2026-10-29 test that framing beat `AGENTS.md`: Codex implemented the
+ticket and settled a product question on its own. The comment above
+worked first time on both tickets.
+
+**What starts step 3.** Codex cannot hand a ticket back, because there
+is no first-party Claude agent in Linear. So two things pick up a
+reviewed ticket:
+- a scheduled Claude task that runs `resolve-scope-review routine`. It
+  acts only on `Todo` tickets Codex has reviewed, and
+  never touches a `Requires input` ticket;
+- the same command, run by hand, for any ticket wanted sooner.
+
+**What keeps it to one round.** Once Claude's `### Response to Codex's
+review` reply exists under the review, the round is done.
+`resolve-scope-review` never responds twice, and nothing asks Codex
+again. All of this is read from the thread of the **latest** review
+request. A ticket that is parked and scoped again gets a fresh request,
+and its old review and response are ignored, so they cannot pass for the
+new scope's round.
+
+**Setup this depends on** (one-off, in Linear and Codex):
+- Codex for Linear installed in the workspace.
+- A `Requires input` state on the SNOW team, in the Unstarted group.
+- **The Codex Cloud (Legacy) environment for this repo**, which is the one
+  Linear's integration uses. GitHub PR review uses the other environment
+  system. Configure the legacy one like this:
+  - an **empty setup script**. `bin/build.sh` is Render's deploy build:
+    it migrates, fetches GeoIP data with the MaxMind key and syncs flags,
+    and must never run in a review container. The stale `./build.sh`
+    script failed both of the first test runs;
+  - **no secrets**, and no environment variables are needed. A review
+    reads code and runs nothing
+    ([why no provider keys](decisions/cloud-sessions-hold-no-provider-credentials.md));
+  - the review itself needs no internet access from the container, since
+    it only reads the checked-out code. It has only been tested with
+    access on. If you turn it off and a review then completes without
+    posting a reply, turn it back on, restricted to `linear.app`.
+
+Why it is built this way:
 [`decisions/codex-reviews-every-scope-once.md`](decisions/codex-reviews-every-scope-once.md).
 
 ## Implement in Claude Code
@@ -211,8 +264,8 @@ In the Snowdesk repo, open Claude Code and say:
 Code's expected sequence:
 
 1. **Fetch** the issue and all comments via the Linear MCP server —
-   including the scoping comment, and the `## Scope revision` that
-   supersedes it if there is one. Do not start work without reading
+   including the scoping comment (revised in place after Codex's review,
+   when it asked for changes). Do not start work without reading
    the scope; if it's missing, stop and ask the user to scope first.
 2. **Create a branch** named `feature/SNOW-42-short-kebab-description`
    off the latest `main`. Keep the slug under ~40 chars; it appears in
@@ -261,9 +314,8 @@ For any change touching a public page: before/after screenshots and a
 note on the latest `npm run lh` scores.
 
 ## Agreed scope
-The latest `## Scope revision` (or the original scoping comment, if Codex
-approved it unchanged), verbatim — Approach, Touch list, Tests, Open
-questions. A link to the Linear comment, and the Notes from Codex's scope
+The scoping comment as it stands, verbatim — Approach, Touch list,
+Tests, Open questions. A link to the Linear comment, and the Notes from Codex's scope
 review.
 
 ## Deviations from scope
