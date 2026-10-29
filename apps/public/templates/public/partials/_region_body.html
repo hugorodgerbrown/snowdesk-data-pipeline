@@ -32,7 +32,12 @@ Context:
 {# tap on a report's pin opened the panel for, and it is short.    #}
 {# Above the no-bulletin callout too — reports are worth more on a #}
 {# day without a bulletin, not less.                                #}
-{% include "observations/partials/_on_the_ground.html" %}
+{# SNOW-1296: except when it is only the one empty row and there IS a #}
+{# bulletin — then it waits below it, before the metadata strip, so  #}
+{# an empty section never pushes the bulletin down (Hugo, 29 Oct).    #}
+{% if not bulletin or panel.render_model.version == 0 or ground.count or not ground.is_today %}
+    {% include "observations/partials/_on_the_ground.html" %}
+{% endif %}
 {% if not bulletin %}
     {# ── Empty state ─────────────────────────────────────────── #}
     {% include "includes/_callout.html" with kind="info" heading=_("No bulletin available") body=_("There is no bulletin published for this region on this date.") only %}
@@ -262,6 +267,11 @@ Context:
                 {% endif %}
             {% endwith %}
 
+            {# SNOW-1296: today's empty "On the ground" row, held back from #}
+            {# the top (see above) so the bulletin leads.                    #}
+            {% if ground.is_today and not ground.count %}
+                <div class="mt-6">{% include "observations/partials/_on_the_ground.html" %}</div>
+            {% endif %}
             {% comment %}
                    SECTION 5 — Metadata strip
                    Three fields: Issued / Valid until / Next update.
