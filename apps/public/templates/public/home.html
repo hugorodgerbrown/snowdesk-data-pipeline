@@ -83,7 +83,7 @@ parameters never reaches this template — views.home 301s it to /map/.
         {# ---------------------------------------------------------------- #}
         <div class="grid gap-8 md:grid-cols-3 md:gap-6 items-stretch mb-12" data-testid="home-features">
             <section
-                class="flex flex-col gap-5 rounded-card border border-border bg-card p-4 md:p-5"
+                class="{% card_classes padding='p-4 md:p-5' extra='flex flex-col gap-5' %}"
                 aria-labelledby="home-conditions-heading"
                 data-testid="home-feature-conditions"
             >
@@ -121,7 +121,7 @@ parameters never reaches this template — views.home 301s it to /map/.
             </section>
 
             <section
-                class="flex flex-col gap-5 rounded-card border border-border bg-card p-4 md:p-5"
+                class="{% card_classes padding='p-4 md:p-5' extra='flex flex-col gap-5' %}"
                 aria-labelledby="home-route-heading"
                 data-testid="home-feature-route"
             >
@@ -164,7 +164,7 @@ parameters never reaches this template — views.home 301s it to /map/.
             </section>
 
             <section
-                class="flex flex-col gap-5 rounded-card border border-border bg-card p-4 md:p-5"
+                class="{% card_classes padding='p-4 md:p-5' extra='flex flex-col gap-5' %}"
                 aria-labelledby="home-weather-heading"
                 data-testid="home-feature-weather"
             >
