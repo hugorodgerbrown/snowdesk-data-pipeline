@@ -21,7 +21,6 @@ from apps.routes.models import Route, SkiTour
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.ski_tours import (
     build_summits,
-    descends_via_ascent,
     draft_tour_route,
     ends,
     far_end,
@@ -91,12 +90,6 @@ class TestPureRules:
         """SAC's "Abfahrt" lines."""
         assert is_descent(_tour(ascent_m=None, descent_m=1800)) is True
         assert is_descent(_tour(ascent_m=900, descent_m=900)) is False
-
-    def test_a_way_up_with_a_descent_descends_via_its_ascent(self) -> None:
-        """SAC's "as ascent": a way up with a descent figure too (SNOW-1286)."""
-        assert descends_via_ascent(_tour(ascent_m=900, descent_m=900)) is True
-        assert descends_via_ascent(_tour(ascent_m=900, descent_m=None)) is False
-        assert descends_via_ascent(_tour(ascent_m=None, descent_m=1800)) is False
 
     def test_the_summit_key_keeps_two_summits_of_one_name_apart(self) -> None:
         """Name and height."""
@@ -296,8 +289,8 @@ class TestTheTourAsARoute:
         assert draft.ski_tour_uuid == tour.source_uuid
         assert draft.distance_m > 0
 
-    def test_the_properties_carry_sacs_figures(self) -> None:
-        """Grade, gain, time and the guide's page."""
+    def test_the_properties_carry_sacs_grade_and_time_not_its_heights(self) -> None:
+        """Grade, time and the guide's page; never SAC's height figures (SNOW-1302)."""
         tour = _tour(
             ascent_m=960,
             ascent_time_label="03:30 h",
@@ -305,11 +298,11 @@ class TestTheTourAsARoute:
         )
         props = tour_properties(tour)
         assert props["tour_uuid"] == str(tour.source_uuid)
-        assert (props["sac_ascent_m"], props["sac_time"]) == (960, "3 h 30")
+        assert props["sac_time"] == "3 h 30"
         assert props["sac_url"] == "https://www.sac-cas.ch/de/"
         assert props["down"] is False
-        assert props["via_ascent"] is False
-        assert tour_properties(_tour(ascent_m=900, descent_m=900))["via_ascent"]
+        assert not {"sac_ascent_m", "sac_descent_m", "via_ascent"} & props.keys()
+        assert tour_properties(_tour(ascent_m=None, descent_m=1800))["down"] is True
 
 
 class TestTheTerrain:

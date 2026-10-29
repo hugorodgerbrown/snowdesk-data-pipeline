@@ -19,9 +19,10 @@ Measured on the 2,941 tours: half the summits with two or more tours have
 their target ends within 30 m of each other.
 
 A WAY DOWN is a tour with a descent and no ascent: SAC's "Abfahrt …",
-"Descente …" and "Discesa …" lines, about one in ten. A way up with a
-descent figure too is skied back down the way it climbed — SAC's "as
-ascent", 2,503 of the 2,941 — and says so ("↓ via ascent").
+"Descente …" and "Discesa …" lines, about one in ten. The panel infers
+nothing beyond that (Hugo, SNOW-1302): it says the line shows the ascent
+only or the descent only, and points at SAC's guide for the rest. SAC's own
+height figures are not shown; the panel's figures are the line's own.
 
 SAC'S POINTS ARE NEVER EDITED (Hugo, SNOW-1287). A tour that stops at the
 top stops there here too: nothing is added for the way back down, though
@@ -130,16 +131,6 @@ def is_hut(name: str) -> bool:
 def is_descent(tour: SkiTour) -> bool:
     """Return whether a tour is a way down: a descent and no ascent."""
     return tour.ascent_m is None and tour.descent_m is not None
-
-
-def descends_via_ascent(tour: SkiTour) -> bool:
-    """Return whether a tour is skied back down the way it climbed (SNOW-1286).
-
-    SAC gives such a tour both figures and one line, the way up: its guide
-    says the descent is "as ascent". The line is never extended for it
-    (SNOW-1287); the panel says it in words.
-    """
-    return tour.ascent_m is not None and tour.descent_m is not None
 
 
 def summit_key(name: str, altitude_m: int | None) -> str:
@@ -596,8 +587,10 @@ def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
 def tour_properties(tour: SkiTour) -> dict[str, Any]:
     """Return what the tour panel says about a tour beyond its line's figures.
 
-    SAC's own figures — its grade, height gain and time — are kept apart
-    from the profile's: they are the guide's, and the panel names them so.
+    SAC's grade and time are kept apart from the profile's figures: they
+    are the guide's, and the panel names them so. SAC's height figures are
+    not passed on (SNOW-1302): the panel shows the line's own, and ``down``
+    says which half of the tour the line is.
     """
     return {
         "tour_uuid": str(tour.source_uuid),
@@ -605,12 +598,9 @@ def tour_properties(tour: SkiTour) -> dict[str, Any]:
         "target_name": tour.target_name,
         "target_altitude_m": tour.target_altitude_m,
         "grade": localised(tour.grades, tour.grade) or tour.grade,
-        "sac_ascent_m": tour.ascent_m,
-        "sac_descent_m": tour.descent_m,
         "sac_time": sac_time(tour.ascent_time_label),
         "sac_url": localised(tour.urls, tour.urls.get("de", "")),
         "down": is_descent(tour),
-        "via_ascent": descends_via_ascent(tour),
     }
 
 

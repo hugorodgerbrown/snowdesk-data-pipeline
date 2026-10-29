@@ -48,8 +48,7 @@ dashed — which on one map gave the same dash two opposite meanings.
 and saved on exactly the points swisstopo publishes for it: if SAC's tour
 stops at the top, so does ours. SAC publishes most of its tours as a way
 up with a descent figure and the guide's "as ascent", skied back down the
-line it climbed (2,503 of the 2,941). The panel says so in words ("↓ via
-ascent", `descends_via_ascent`) and adds no point for it. SNOW-1286 had
+line it climbed (2,503 of the 2,941). We add no point for it. SNOW-1286 had
 drawn such a tour there and back, the line followed by itself reversed,
 so its profile, distance and estimate would cover the day; Hugo reversed
 that the same day, because a line we made up is not SAC's. A terrain
@@ -57,6 +56,19 @@ record walked over that doubled line carries a `there_and_back` mark;
 `tour_slope_samples` does not hold one, so the next reader to open the
 tour walks it again one way, and `save_ski_tour` never copies one. A copy
 saved while the doubled line was live (staging only) keeps it.
+
+**The panel infers nothing about the half it does not draw, and shows
+only our figures (SNOW-1302).** SAC's height figures measure something
+different from ours. SAC's is summit minus start; ours is the cumulative
+climb along the line. Shown side by side, the two read as a contradiction,
+and on a way down SAC's "↓ 1860 m" sat beside our "2359 m ↑". So the panel
+and the tour list show only the line's own figures, plus SAC's grade and
+guide time. The panel then says plainly which half of the tour the line
+is ("Route shows the ascent only." / "…the descent only.") and points at
+the SAC guide for the rest (Hugo, 2026-10-29: "instead of inferring
+anything"). "↓ via ascent" and `descends_via_ascent` are gone with it.
+Whether a way down whose points run uphill (193 of the 294) should be
+read top-down is still open.
 
 **The SAC guide is for members or subscribers.** SAC's route portal asks
 anyone else to sign in and subscribe, so the panel says so under the

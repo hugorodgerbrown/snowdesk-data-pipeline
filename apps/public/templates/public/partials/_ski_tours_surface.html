@@ -66,6 +66,12 @@ Context expected:
 <template id="ski-tour-claim-template">
     <div class="flex flex-col gap-2 pt-1">
         <p data-ski-tour-sac class="font-mono text-meta text-text-2"></p>
+        {# SNOW-1302: which half of the tour SAC's line is, inferring     #}
+        {# nothing more; the guide has the rest.                          #}
+        <p class="text-meta text-text-2">
+            <span data-ski-tour-shows></span>
+            <span data-ski-tour-guide-see>{% trans "See the SAC guide for details." %}</span>
+        </p>
         <div class="flex gap-2">
             {% if routes_upload_eligible %}
                 <button
@@ -107,9 +113,8 @@ Context expected:
     <span data-string="loading">{% trans "Loading routes…" %}</span>
     <span data-string="failed">{% trans "The routes couldn't be loaded. Check your connection." %}</span>
     <span data-string="sac-route">{% trans "SAC route" %}</span>
-    <span data-string="climb">{% blocktrans %}↑ %(value)s m{% endblocktrans %}</span>
-    <span data-string="descent">{% blocktrans %}↓ %(value)s m{% endblocktrans %}</span>
-    <span data-string="via-ascent">{% trans "↓ via ascent" %}</span>
+    <span data-string="shows-ascent">{% trans "Route shows the ascent only." %}</span>
+    <span data-string="shows-descent">{% trans "Route shows the descent only." %}</span>
     <span data-string="guide-time">{% blocktrans %}%(time)s (SAC guide time){% endblocktrans %}</span>
     <span data-string="saved">{% trans "Route saved." %}</span>
     <span data-string="save-failed">{% trans "That route couldn't be saved. Try again." %}</span>
