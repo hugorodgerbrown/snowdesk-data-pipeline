@@ -439,6 +439,13 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'search-type-pin': 'Pin',
   'search-group-pinned-places': 'Pinned places',
   'search-pin-unnamed': 'Unnamed pin',
+  // SNOW-1294: an SAC summit or hut row.
+  'search-type-summit': 'Summit',
+  'search-type-hut': 'Hut',
+  'search-group-summits': 'Summits and huts',
+  'search-summit-altitude': '%(value)s m',
+  'search-summit-tours-one': '1 SAC tour',
+  'search-summit-tours-other': '%(count)s SAC tours',
   // SNOW-658 removed 'custom-control-idle'/'custom-control-done' — the
   // custom-area roundel's two labels for a state it no longer has (see
   // map_custom_download.js's header). Its label is server-rendered now,

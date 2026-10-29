@@ -106,6 +106,28 @@ went. The network is still drawn where it is used: in draw mode, as the
 vector shadow a leg snaps to (`/api/ski-network.geojson`). The map no
 longer calls swisstopo's tile server for it.
 
+### A summit is found by search too (SNOW-1294)
+
+Hugo, 29 Oct 2026: "Would be good to have summits in the search." The map's
+search lists SAC's 1,799 targets (1,663 peaks and 136 huts) under "Summits
+and huts", from the same `summits()` list the Summits layer draws, served
+whole by `/api/ski-summits.json` (`api:ski_summits_json`) and read once,
+the first time search is focused, never on map load. A row reads
+"Summit · 3,159 m · 4 SAC tours" or "Hut · …"
+(`search_core.buildSummitEntries`), matches on its name, and ranks under a
+region or resort that matches as well (`TYPE_RANK`). Picking one does what
+a tap on the summit's dot does (`window.pwaSkiTours.openSummit`): the
+ski-touring layer comes on, the map flies to the summit and its tours list
+opens. Behind the `route_drawing` flag with the layer, whose list it opens;
+while the flag is on the field says "Find a region, resort or summit".
+
+**A summit is not a Location.** Curated Locations are the set Snowdesk pays
+to forecast (four fetches a day at 2.4 weighted calls each); adding every
+summit would cost about 18,900 calls a day against a 10,000-call free tier
+([why](snowdesk-decides-where-a-forecast-is-fetched.md)). The tours list
+shows no forecast, so nothing borrows one either. A generic "searchable, no
+forecast" Location waits for a second, non-SAC source of places.
+
 ## Why
 
 - **A copy, not a reference.** A saved route is the reader's to rename,

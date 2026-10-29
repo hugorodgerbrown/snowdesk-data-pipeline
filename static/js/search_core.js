@@ -1,5 +1,6 @@
 /*
- * static/js/search_core.js — Pure region/resort search helpers (SNOW-618).
+ * static/js/search_core.js — Pure region/resort search helpers (SNOW-618);
+ * since SNOW-1294 SAC summits and huts too.
  *
  * The map's search box is in-memory autocomplete over region names, EAWS
  * ids, parent sub-region names and resort names — every one of which is
@@ -55,6 +56,11 @@
  *   buildPinEntries(favourites, unnamedLabel)
  *     The user's dropped pins as rows (SNOW-1264), listed under "Pinned
  *     places" and matched by name. Each carries the favourite's ``uuid``.
+ *   buildSummitEntries(summits, strings, locale)
+ *     SAC's summits and huts as rows (SNOW-1294), from /api/ski-summits.json,
+ *     listed under "Summits" and matched by name. Each carries the summit's
+ *     ``key``, ``lon`` and ``lat``. Ranked under a region or resort that
+ *     matches as well (TYPE_RANK).
  *   runSearch(index, query, maxResults)
  *     The matching rows, ranked and capped.
  *   groupResults(results)
@@ -195,6 +201,11 @@
    * @property {string} [slug] A pinned resort's slug — the row opens it.
    * @property {string} [uuid] A dropped pin's favourite uuid — the row
    *   flies to it and opens its sheet (SNOW-1264).
+   * @property {string} [key] A summit's key — the row opens its tours list
+   *   (SNOW-1294).
+   * @property {boolean} [hut] Whether a summit row is a hut.
+   * @property {number} [lon] A summit's longitude.
+   * @property {number} [lat] A summit's latitude.
    */
 
   /**
@@ -323,6 +334,92 @@
   }
 
   /**
+   * Fill ``%(name)s`` placeholders, as ``pwaStrings.interpolate`` does —
+   * kept here so this module stays a pure function of its arguments.
+   *
+   * @param {string} template
+   * @param {Object<string, string>} values
+   * @returns {string}
+   */
+  function fill(template, values) {
+    return String(template || '').replace(/%\((\w+)\)s/g, function (whole, name) {
+      return Object.prototype.hasOwnProperty.call(values, name) ? values[name] : whole;
+    });
+  }
+
+  /**
+   * SAC's summits and huts as search rows (SNOW-1294).
+   *
+   * Hugo, 29 Oct: "Would be good to have summits in the search." They come
+   * from the list the Summits layer draws (/api/ski-summits.json), not from
+   * Location: a summit is somewhere to go, not somewhere Snowdesk fetches a
+   * forecast for. The primary line is the name; the secondary says what it
+   * is, how high, and how many SAC tours go there — "Summit · 3,159 m ·
+   * 4 SAC tours", or "Hut · …". A row matches on its name only.
+   *
+   * ``regionID`` is empty: a summit is not a bulletin region and selects
+   * none. The row carries what opening it needs instead — its key and its
+   * place.
+   *
+   * @param {Array<{key?: string, name?: string, altitude_m?: ?number,
+   *   kind?: string, lon?: number, lat?: number, tours?: number}>} summits
+   *   The feed's rows.
+   * @param {{summit: string, hut: string, altitude: string,
+   *   'tours-one': string, 'tours-other': string}} strings The words, each
+   *   from the surface's strings template; ``altitude`` carries
+   *   ``%(value)s`` and ``tours-other`` ``%(count)s``.
+   * @param {string} [locale] For the thousands separator ("3,159").
+   * @returns {SearchEntry[]} Possibly empty; a row with no key, name or
+   *   place is dropped.
+   */
+  function buildSummitEntries(summits, strings, locale) {
+    /** @type {SearchEntry[]} */
+    var entries = [];
+    var words = strings || /** @type {any} */ ({});
+    (summits || []).forEach(function (row) {
+      if (!row || !row.key || !row.name) return;
+      if (typeof row.lon !== 'number' || typeof row.lat !== 'number') return;
+      var hut = row.kind === 'hut';
+      var parts = [hut ? words.hut : words.summit];
+      if (typeof row.altitude_m === 'number') {
+        parts.push(fill(words.altitude, { value: row.altitude_m.toLocaleString(locale || 'en') }));
+      }
+      var tours = typeof row.tours === 'number' ? row.tours : 0;
+      if (tours > 0) {
+        parts.push(tours === 1
+          ? fill(words['tours-one'], { count: '1' })
+          : fill(words['tours-other'], { count: tours.toLocaleString(locale || 'en') }));
+      }
+      var primaryKey = normalise(row.name);
+      entries.push({
+        type: 'summit',
+        primary: row.name,
+        secondary: parts.filter(Boolean).join(' · '),
+        primaryKey: primaryKey,
+        regionID: '',
+        searchable: primaryKey,
+        key: row.key,
+        hut: hut,
+        lon: row.lon,
+        lat: row.lat,
+      });
+    });
+    return entries;
+  }
+
+  /**
+   * Where a row's kind falls among rows that match equally well: lower
+   * first. SNOW-1294: there are ~1,800 summits against a few hundred
+   * regions and resorts, so a summit is listed under a region or resort
+   * scored the same — "Davos" is first the region, then any summit named
+   * for it. A summit still beats a weaker match of any kind: a typed peak's
+   * name is not pushed below a region that merely contains the letters.
+   *
+   * @type {Object<string, number>}
+   */
+  var TYPE_RANK = { summit: 1 };
+
+  /**
    * How well ``entry`` answers ``q``: lower is better, -1 is no match.
    *
    * Three bands, and the gaps between them are what the ranking is for:
@@ -380,9 +477,11 @@
     scored.sort(function (a, b) {
       return (
         a.score - b.score ||
+        (TYPE_RANK[a.item.type] || 0) - (TYPE_RANK[b.item.type] || 0) ||
         a.item.primary.localeCompare(b.item.primary) ||
         a.item.regionID.localeCompare(b.item.regionID) ||
-        String(a.item.uuid || '').localeCompare(String(b.item.uuid || ''))
+        String(a.item.uuid || '').localeCompare(String(b.item.uuid || '')) ||
+        String(a.item.key || '').localeCompare(String(b.item.key || ''))
       );
     });
     return scored.slice(0, cap).map(function (scoredItem) {
@@ -431,6 +530,7 @@
     buildEntries: buildEntries,
     buildPinnedResortEntries: buildPinnedResortEntries,
     buildPinEntries: buildPinEntries,
+    buildSummitEntries: buildSummitEntries,
     runSearch: runSearch,
   });
 })();

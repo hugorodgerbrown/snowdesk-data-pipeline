@@ -30,8 +30,10 @@
  * the panel is refilled with the profile.
  *
  * Publishes (frozen `window.pwaSkiTours`):
- *   tap(point) — handle a map tap at a screen point; true when taken
- *   find()     — "Find a route": the overlay on, and the hint
+ *   tap(point)          — handle a map tap at a screen point; true when taken
+ *   find()              — "Find a route": the overlay on, and the hint
+ *   openSummit(summit)  — a summit picked in search (SNOW-1294): the layer
+ *                         on, the map at the summit, its tours listed
  */
 
 // @ts-check
@@ -124,12 +126,19 @@
     opening: null,
     /** @type {?AbortController} */
     listInflight: null,
+    /**
+     * The summit whose list is open when it was opened from search, so the
+     * collection the flight there loads lights its tours up (SNOW-1294).
+     */
+    /** @type {?string} */
+    summitKey: null,
   };
 
   const controller = window.MapSheet.attach(sheet, {
     onTeardown: function () {
       if (state.listInflight) state.listInflight.abort();
       state.listInflight = null;
+      state.summitKey = null;
       setHighlight([]);
     },
   });
@@ -378,6 +387,8 @@
     const source = map.getSource(SOURCE);
     if (source) source.setData(body);
     else installLayers(map);
+    // A list opened from search before its summit's tours were loaded.
+    if (state.summitKey) setHighlight(toursTo(state.summitKey));
     // A pan that reloads while a list is open keeps its dots in place.
     paintFarEnds(map);
   }
@@ -671,6 +682,7 @@
    */
   function openList(url, uuids) {
     state.opening = null;
+    state.summitKey = null;
     showHint(false);
     if (window.pwaRouteRail?.isOpen?.()) window.pwaRouteRail.close();
     if (state.listInflight) state.listInflight.abort();
@@ -740,6 +752,32 @@
     return true;
   }
 
+  /**
+   * A summit picked in search (SNOW-1294): what a tap on its dot does, from
+   * anywhere on the map. Both parts of the ski-touring layer come on, as
+   * "Find a route" turns them on; the map flies to the summit, close enough for its tours'
+   * own detail; and its list opens. The tours it names are lit up once the
+   * flight's load has them.
+   *
+   * @param {{key: string, lon: number, lat: number}} summit
+   */
+  function openSummit(summit) {
+    const map = getMap();
+    if (!summit || !summit.key || !map) return;
+    // Both parts, as find() turns on: a summit with its tours hidden, or
+    // tours with their summit hidden, is half an answer.
+    window.pwaSkiRoutes?.show();
+    const url = core.listUrl(LIST_URL, { kind: 'summit', key: summit.key });
+    if (url) openList(url, toursTo(summit.key));
+    state.summitKey = summit.key;
+    if (Number.isFinite(summit.lon) && Number.isFinite(summit.lat)) {
+      map.flyTo({
+        center: [summit.lon, summit.lat],
+        zoom: Math.max(map.getZoom(), core.DETAIL_MINZOOM + 1),
+      });
+    }
+  }
+
   /** "Find a route": the routes panel closes, the tours come on, the hint shows. */
   function find() {
     window.pwaMapOverlays?.closeAll();
@@ -790,5 +828,6 @@
   window.pwaSkiTours = Object.freeze({
     tap: tap,
     find: find,
+    openSummit: openSummit,
   });
 })();
