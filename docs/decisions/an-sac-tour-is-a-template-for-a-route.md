@@ -70,6 +70,15 @@ anything"). "↓ via ascent" and `descends_via_ascent` are gone with it.
 Whether a way down whose points run uphill (193 of the 294) should be
 read top-down is still open.
 
+**A saved copy keeps what SAC adds (SNOW-1303).** A copy's panel shows the
+same SAC block as the tour's, without the Save button: grade, guide time,
+which half of the tour the line is, and the guide link (Hugo, 2026-10-29:
+"Yes to keeping the SAC data with the route"). Nothing SAC-specific is
+copied onto `Route`. `routes_geojson` looks the tour up by
+`ski_tour_uuid`, in one query for every copy, and adds its
+`tour_properties` as `sac`. A copy whose tour a later sync removed reads
+like any other route.
+
 **The SAC guide is for members or subscribers.** SAC's route portal asks
 anyone else to sign in and subscribe, so the panel says so under the
 link rather than letting the link land on a login page unannounced.

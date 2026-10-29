@@ -65,6 +65,7 @@ from tests.factories import (
     DRIFTING_TRACK,
     RouteFactory,
     RouteShareFactory,
+    SkiTourFactory,
     UserFactory,
     drifting_track_record,
 )
@@ -2175,6 +2176,72 @@ class TestRoutesGeojsonQueryCount:
 
         assert len(response.json()["features"]) == 5
         assert len(five_routes) == len(one_route)
+
+
+@pytest.mark.django_db
+class TestRoutesGeojsonSacTour:
+    """A saved copy of an SAC tour keeps SAC's facts (SNOW-1303)."""
+
+    def test_a_copy_carries_its_tours_properties(self, client: Client) -> None:
+        """Grade, time, guide and which half the line is; no Save to offer."""
+        user = UserFactory.create()
+        client.force_login(user)
+        tour = SkiTourFactory.create(
+            grade="AD",
+            ascent_time_label="03:30 h",
+            urls={"de": "https://www.sac-cas.ch/de/"},
+        )
+        RouteFactory.create(
+            user=user, source=Route.Source.SKI_TOUR, ski_tour_uuid=tour.source_uuid
+        )
+        RouteFactory.create(user=user)
+
+        features = client.get(GEOJSON_URL).json()["features"]
+
+        sac = [f["properties"].get("sac") for f in features]
+        held = [s for s in sac if s]
+        assert len(held) == 1
+        assert held[0]["tour_uuid"] == str(tour.source_uuid)
+        assert held[0]["grade"] == "AD"
+        assert held[0]["sac_time"] == "3 h 30"
+        assert held[0]["sac_url"] == "https://www.sac-cas.ch/de/"
+        assert held[0]["down"] is False
+
+    def test_a_copy_of_a_tour_since_removed_reads_as_any_route(
+        self, client: Client
+    ) -> None:
+        """No ``sac`` once the sync has dropped the tour."""
+        user = UserFactory.create()
+        client.force_login(user)
+        RouteFactory.create(
+            user=user, source=Route.Source.SKI_TOUR, ski_tour_uuid=uuid4()
+        )
+
+        feature = client.get(GEOJSON_URL).json()["features"][0]
+
+        assert "sac" not in feature["properties"]
+
+    def test_the_tours_cost_one_query_however_many_copies(self, client: Client) -> None:
+        """One copy and three copies cost the same number of queries."""
+        user = UserFactory.create()
+        client.force_login(user)
+
+        def copy() -> None:
+            tour = SkiTourFactory.create()
+            RouteFactory.create(
+                user=user, source=Route.Source.SKI_TOUR, ski_tour_uuid=tour.source_uuid
+            )
+
+        copy()
+        with CaptureQueriesContext(connection) as one:
+            client.get(GEOJSON_URL)
+        copy()
+        copy()
+        with CaptureQueriesContext(connection) as three:
+            response = client.get(GEOJSON_URL)
+
+        assert sum("sac" in f["properties"] for f in response.json()["features"]) == 3
+        assert len(three) == len(one)
 
 
 # ---------------------------------------------------------------------------

@@ -301,6 +301,49 @@ def _pending_shares_for(request: HttpRequest) -> list[RouteShare]:
     return pending_shares(request.session)
 
 
+def _sac_tours_for(routes: list[Route]) -> dict[Any, SkiTour]:
+    """Return the SAC tours ``routes`` were saved from, by uuid, in one query.
+
+    SNOW-1303: a saved SAC tour keeps SAC's grade, time and guide link in
+    its panel. A tour a later sync removed is simply absent, and its copy
+    reads as any other route.
+
+    Args:
+        routes: The routes about to be described.
+
+    Returns:
+        ``{source_uuid: SkiTour}`` for every tour still held.
+
+    """
+    uuids = {route.ski_tour_uuid for route in routes if route.ski_tour_uuid}
+    if not uuids:
+        return {}
+    return {
+        tour.source_uuid: tour for tour in SkiTour.objects.filter(source_uuid__in=uuids)
+    }
+
+
+def _with_sac(
+    feature: dict[str, Any], route: Route, tours: dict[Any, SkiTour]
+) -> dict[str, Any]:
+    """Add ``sac`` — what the tour panel says beyond the line — to a copy's Feature.
+
+    Args:
+        feature: The route's Feature, from ``_route_feature``.
+        route: The route it describes.
+        tours: ``_sac_tours_for``'s answer.
+
+    Returns:
+        ``feature``, with ``properties.sac`` when the route came from a
+        tour still held.
+
+    """
+    tour = tours.get(route.ski_tour_uuid) if route.ski_tour_uuid else None
+    if tour is not None:
+        feature["properties"]["sac"] = tour_properties(tour)
+    return feature
+
+
 def _route_feature(route: Route, identity: dict[str, Any]) -> dict[str, Any]:
     """Build one GeoJSON LineString Feature for a route.
 
@@ -686,7 +729,9 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
     not change, and the legs' ``point_from``/``point_to`` index this list.
 
     Properties per feature: ``uuid``, ``name``, ``distance_m``,
-    ``ascent_m``, ``descent_m``, ``duration_s`` and ``bounds``.
+    ``ascent_m``, ``descent_m``, ``duration_s`` and ``bounds``; a copy of
+    an SAC tour adds ``sac``, the tour's ``tour_properties`` (SNOW-1303),
+    from one query for every copy.
     ``ascent_m`` and ``descent_m`` are summed over those same coordinates
     when the record has model heights, and passed through **as stored**
     otherwise, including ``None`` — ``Route``'s own docstring is explicit
@@ -763,12 +808,17 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
         else []
     )
 
+    tours = _sac_tours_for(
+        routes + [share.route for share in pending if share.route is not None]
+    )
     newest: datetime | None = None
     features: list[dict[str, Any]] = []
     for route in routes:
         if newest is None or route.updated_at > newest:
             newest = route.updated_at
-        features.append(_route_feature(route, {"uuid": str(route.uuid)}))
+        features.append(
+            _with_sac(_route_feature(route, {"uuid": str(route.uuid)}), route, tours)
+        )
 
     for share in pending:
         # ``pending_shares`` only ever returns active shares, so the route
@@ -784,7 +834,7 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
             identity["example_date"] = (
                 share.example_date.isoformat() if share.example_date else None
             )
-        features.append(_route_feature(shared, identity))
+        features.append(_with_sac(_route_feature(shared, identity), shared, tours))
 
     response = JsonResponse(
         {

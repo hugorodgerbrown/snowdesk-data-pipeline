@@ -343,6 +343,18 @@
   }
 
   /**
+   * The SAC block for a saved copy of an SAC tour (SNOW-1303), or null:
+   * built by ski_tours.js, which is on the page only with the tours.
+   *
+   * @param {?Object} sac The copy's `sac` property, or nothing.
+   * @returns {?Node}
+   */
+  function sacBlock(sac) {
+    if (!sac || !window.pwaSkiTours || !window.pwaSkiTours.savedBlock) return null;
+    return window.pwaSkiTours.savedBlock(sac);
+  }
+
+  /**
    * Seat a pending share's Save control, or empty the slot.
    *
    * @param {?Node} node The control map.js built, or null.
@@ -428,7 +440,8 @@
     }
     fillMenu();
     // SNOW-1278: a SAC tour not yet saved has a Save of its own too.
-    fillClaim(props.pending || props.tour ? opts.claim || null : null);
+    // SNOW-1303: a saved copy of one keeps SAC's facts and guide, no Save.
+    fillClaim(props.pending || props.tour ? opts.claim || null : sacBlock(props.sac));
     paintState(cursor ? cursor.state() : null);
 
     rail.hidden = false;
