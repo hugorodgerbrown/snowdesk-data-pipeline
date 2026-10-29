@@ -65,8 +65,8 @@ Context:
     data-panel-key="region:{{ region.region_id }}"
     data-panel-label="{{ region.name }}"
 >
-    {# Another day says so in the peek's own date row (Hugo, 21 Oct), #}
-    {# which took over from SNOW-1165's strip above it.              #}
+    {# The day is named by the body's dated section headers           #}
+    {# (docs/decisions/a-sheet-names-its-day-in-its-section-headers.md). #}
     {% include "public/partials/_region_sheet_peek.html" %}
 
     {% if bulletin or covered %}
