@@ -118,11 +118,18 @@ class PipelineRun(BaseModel):
 
         ordering = ["-started_at"]
 
-    def __str__(self) -> str:
-        """Return a human-readable representation."""
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this run.
+
+        Format: ``PipelineRun(<pk>, <status>, <YYYY-MM-DD HH:MM>)``
+        """
         return (
             f"PipelineRun({self.pk}, {self.status}, {self.started_at:%Y-%m-%d %H:%M})"
         )
+
+    def __str__(self) -> str:
+        """Return a human-readable representation."""
+        return self.to_string()
 
     def mark_running(self) -> None:
         """Transition the run to the RUNNING state and persist."""
@@ -537,9 +544,16 @@ class RegionBulletin(BaseModel):
         unique_together = [("bulletin", "region")]
         ordering = ["region__region_id"]
 
+    def to_string(self) -> str:
+        """Return a concise human-readable description of this link.
+
+        Format: ``<bulletin_id> ↔ <region_id>``
+        """
+        return f"{self.bulletin.bulletin_id} ↔ {self.region.region_id}"
+
     def __str__(self) -> str:
         """Return a human-readable representation."""
-        return f"{self.bulletin.bulletin_id} ↔ {self.region.region_id}"
+        return self.to_string()
 
 
 # ---------------------------------------------------------------------------
