@@ -72,7 +72,10 @@ when a question needs Hugo. There is one round.
   against the scope it approved. It is copied rather than linked because the
   PR review cannot be relied on to reach Linear, and a copy is the exact text
   approved, not whatever the ticket says by the time of review. The first
-  PR (SNOW-350) matched its scope exactly and drew a clean review. That shows
-  no false positive, but it does not yet prove Codex checks the diff against
-  the scope. The proof is a PR whose departure from its scope is not listed.
+  PR (SNOW-350) matched its scope exactly and drew a clean review. That
+  showed no false positive, but not that Codex checks the diff against the
+  scope. SNOW-1293's PR settled it: a log line was planted in
+  `apps/locations/services/orphans.py`, a file outside the touch list, with
+  `## Deviations from scope` reading `None.`, and Codex flagged it as a P1
+  finding citing `AGENTS.md`. The line was reverted before merge.
 - Skipping the review takes an explicit yes from Hugo, recorded on the ticket.
