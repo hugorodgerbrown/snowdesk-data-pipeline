@@ -90,9 +90,8 @@
     loading: 'Loading routes…',
     failed: "The routes couldn't be loaded. Check your connection.",
     'sac-route': 'SAC route',
-    climb: '↑ %(value)s m',
-    descent: '↓ %(value)s m',
-    'via-ascent': '↓ via ascent',
+    'shows-ascent': 'Route shows the ascent only.',
+    'shows-descent': 'Route shows the descent only.',
     'guide-time': '%(time)s (SAC guide time)',
     saved: 'Route saved.',
     'save-failed': "That route couldn't be saved. Try again.",
@@ -489,10 +488,9 @@
   // ---------------------------------------------------------------------------
 
   /**
-   * The SAC line under the panel's title: "SAC route · PD+ · ↑ 960 m ·
-   * ↓ via ascent · 3 h 30 (SAC guide time)". "↓ via ascent" marks a tour
-   * skied down the line it climbed, which is drawn one way only, as SAC
-   * publishes it (SNOW-1287).
+   * The SAC line under the panel's title: "SAC route · PD+ · 3 h 30 (SAC
+   * guide time)". SAC's height figures are left out (SNOW-1302): the panel's
+   * figures line is the line's own, as a saved route's is.
    *
    * @param {Object<string, any>} props The tour Feature's properties.
    * @returns {string}
@@ -500,12 +498,6 @@
   function sacLine(props) {
     const parts = [STRINGS['sac-route']];
     if (props.grade) parts.push(String(props.grade));
-    if (props.down && props.sac_descent_m) {
-      parts.push(interpolate(STRINGS.descent, { value: props.sac_descent_m }));
-    } else if (props.sac_ascent_m) {
-      parts.push(interpolate(STRINGS.climb, { value: props.sac_ascent_m }));
-      if (props.via_ascent) parts.push(STRINGS['via-ascent']);
-    }
     if (props.sac_time) parts.push(interpolate(STRINGS['guide-time'], { time: props.sac_time }));
     return parts.join(' · ');
   }
@@ -522,6 +514,9 @@
     );
     const sac = node.querySelector('[data-ski-tour-sac]');
     if (sac) sac.textContent = sacLine(props);
+    // Which half of the tour SAC's line is, and nothing inferred beyond it.
+    const shows = node.querySelector('[data-ski-tour-shows]');
+    if (shows) shows.textContent = STRINGS[props.down ? 'shows-descent' : 'shows-ascent'];
     const guide = /** @type {HTMLAnchorElement|null} */ (node.querySelector('[data-ski-tour-guide]'));
     if (guide) {
       if (props.sac_url) {
@@ -529,6 +524,7 @@
       } else {
         guide.remove();
         node.querySelector('[data-ski-tour-guide-note]')?.remove();
+        node.querySelector('[data-ski-tour-guide-see]')?.remove();
       }
     }
     const save = /** @type {HTMLButtonElement|null} */ (node.querySelector('[data-ski-tour-save]'));
