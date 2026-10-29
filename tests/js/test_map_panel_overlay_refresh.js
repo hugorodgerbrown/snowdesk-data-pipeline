@@ -369,6 +369,48 @@ describe('a panel announces a write, so the map re-reads its layer', () => {
       await waitFor(() => lastSetData(mapStub, 'community-reports') !== undefined);
       expect(putOverlay).not.toHaveBeenCalledWith('community_reports', expect.anything());
     });
+
+    it('keeps today\'s reports for the way back when the network drops on a scrub', async () => {
+      // Scrub to a past day while online (its answer replaces the held
+      // payload), lose the network, come back to today: today's live and
+      // recent pins must come back from what the map already held.
+      const scrubber = document.createElement('div');
+      scrubber.id = 'season-scrubber';
+      scrubber.dataset.today = '2026-01-15';
+      document.body.appendChild(scrubber);
+      const report = (observedOn) => ({
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [7.5, 46.1] },
+          properties: { family: 'WARNING', observed_on: observedOn, observed_at: `${observedOn}T09:00:00Z` },
+        }],
+      });
+      const fetchImpl = globalThis.fetch.getMockImplementation();
+      try {
+        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-01-15' } }));
+        responses['community-reports'] = report('2026-01-15');
+        document.dispatchEvent(new CustomEvent('snowdesk:reports-changed'));
+        await waitFor(() => lastSetData(mapStub, 'community-reports')?.features[0]?.properties._state === 'live');
+
+        responses['community-reports'] = report('2026-01-10');
+        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-01-10' } }));
+        await waitFor(() => lastSetData(mapStub, 'community-reports')?.features[0]?.properties._state === 'day');
+
+        globalThis.fetch.mockImplementation(() => Promise.reject(new Error('offline')));
+        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-01-15' } }));
+        await new Promise((resolve) => { setTimeout(resolve, 400); });
+
+        const drawn = lastSetData(mapStub, 'community-reports').features;
+        expect(drawn).toHaveLength(1);
+        expect(drawn[0].properties.observed_on).toBe('2026-01-15');
+        expect(drawn[0].properties._state).toBe('live');
+      } finally {
+        globalThis.fetch.mockImplementation(fetchImpl);
+        scrubber.remove();
+        document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: null } }));
+      }
+    });
   });
 
 });

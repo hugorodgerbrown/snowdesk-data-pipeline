@@ -3648,6 +3648,19 @@
   // (never stamped) so a date change or a basemap swap can re-stamp it
   // without a refetch.
   let communityReportsPayload = null;
+  // Today's live-and-recent payload, held apart from the above: a scrub to
+  // a past day replaces ``communityReportsPayload`` with that day's answer,
+  // and if the network drops before the map comes back to today, the
+  // re-stamp on the way back has to have today's window to draw from.
+  let communityReportsToday = null;
+
+  // The payload the day on screen re-stamps: today's own when the map is
+  // on today and holds it, else whatever was last fetched.
+  const communityReportsForDay = () => {
+    const today = readTodayDateParam();
+    const onToday = !currentDisplayedDate || currentDisplayedDate === today;
+    return (onToday && communityReportsToday) || communityReportsPayload;
+  };
 
   // Stamp a payload with each report's state against the day on screen.
   const stampCommunityReports = (payload) => window.pwaCommunityReportsCore.withStates(
@@ -3855,7 +3868,10 @@
       .then((data) => {
         if (!data || !Array.isArray(data.features)) return false;
         if (dayAsked() !== day) return fetchCommunityReports();
-        if (day === null) window.pwaMapOverlayCache?.putOverlay('community_reports', data);
+        if (day === null) {
+          window.pwaMapOverlayCache?.putOverlay('community_reports', data);
+          communityReportsToday = data;
+        }
         communityReportsPayload = data;
         communityReportsGeojsonCache = stampCommunityReports(data);
         const source = map.getSource('community-reports');
@@ -6210,6 +6226,7 @@
           return;
         }
         communityReportsPayload = cached;
+        communityReportsToday = cached;
         communityReportsGeojsonCache = stampCommunityReports(cached);
         installCommunityReportsLayer(communityReportsGeojsonCache);
       }
@@ -7559,8 +7576,9 @@
   document.addEventListener('snowdesk:date-changed', () => {
     if (!overlayLoaded.community_reports) return;
     setTimeout(() => {
-      if (!communityReportsPayload) return;
-      communityReportsGeojsonCache = stampCommunityReports(communityReportsPayload);
+      const payload = communityReportsForDay();
+      if (!payload) return;
+      communityReportsGeojsonCache = stampCommunityReports(payload);
       map.getSource('community-reports')?.setData(communityReportsGeojsonCache);
     }, 0);
     clearTimeout(communityReportsDayTimer);
