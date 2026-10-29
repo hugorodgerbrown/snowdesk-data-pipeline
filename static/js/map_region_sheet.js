@@ -315,7 +315,9 @@
   // section if it is a closed past-day panel, mark the row
   // (`data-focused`), raise a phone sheet to half and scroll the row into
   // view. It applies once, and is dropped when another region is selected,
-  // so a later visit to the region does not jump to a stale report.
+  // so a later visit to the region does not jump to a stale report. It is
+  // applied only to an OPEN sheet: a kept body paints before the sheet
+  // opens, and a closed sheet's detent call is a no-op.
   /** @type {{submission: string, regionId: string}|null} */
   let observationFocus = null;
   // The sheet's detent height transition, plus a frame.
@@ -324,6 +326,9 @@
   /** @returns {void} */
   const applyObservationFocus = () => {
     if (!observationFocus || observationFocus.regionId !== regionId) return;
+    // A closed sheet ignores a detent, and may still hold a body the open
+    // is about to repaint: wait for the open (called again just after it).
+    if (!controller.isOpen()) return;
     // A uuid from our own feed; quotes and backslashes stripped all the same,
     // so nothing in it can break out of the attribute selector.
     const submission = observationFocus.submission.replace(/["\\]/g, '');
@@ -575,6 +580,7 @@
     // empty-sheet fallback, and the sheet does not open tall and drop.
     load({ paused });
     controller.open({ awaiting });
+    applyObservationFocus();
   });
 
   // REOPENING (2026-10-19). The sheet can close while the region stays
@@ -595,6 +601,7 @@
       if (!regionId || controller.isOpen()) return false;
       load({ paused: playback.isPlaying() });
       controller.open({ awaiting });
+      applyObservationFocus();
       return true;
     },
   });

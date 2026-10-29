@@ -754,6 +754,22 @@ describe('a tap on a report\'s pin (SNOW-1291)', () => {
     expect(row().hasAttribute('data-focused')).toBe(false);
   });
 
+  it('waits for a closed sheet to open, then raises it to half at the row', async () => {
+    // A phone sheet closed over the selected region: its kept body paints
+    // before the open, and a closed sheet ignores a detent. The request is
+    // applied once the sheet is open, to the body the open painted.
+    select('CH-4115', 'tap');
+    await settle();
+    sheet.setAttribute('hidden', '');
+    const stale = row();
+    focus('CH-4115');
+    expect(stale.hasAttribute('data-focused')).toBe(false);
+    window.pwaRegionSheet.reopen();
+    expect(row().hasAttribute('data-focused')).toBe(true);
+    expect(row().closest('details').open).toBe(true);
+    expect(sheet.getAttribute('data-detent')).toBe('half');
+  });
+
   it('marks the row at once when the region\'s body is already up', async () => {
     select('CH-4115', 'tap');
     await settle();
