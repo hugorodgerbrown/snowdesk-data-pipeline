@@ -90,7 +90,7 @@
     'sac-route': 'SAC route',
     climb: '↑ %(value)s m',
     descent: '↓ %(value)s m',
-    'same-way': '↓ same way',
+    'via-ascent': '↓ via ascent',
     'guide-time': '%(time)s (SAC guide time)',
     saved: 'Route saved.',
     'save-failed': "That route couldn't be saved. Try again.",
@@ -479,8 +479,9 @@
 
   /**
    * The SAC line under the panel's title: "SAC route · PD+ · ↑ 960 m ·
-   * ↓ same way · 3 h 30 (SAC guide time)". "↓ same way" marks an
-   * up-and-back tour, skied down the line it climbed (SNOW-1286).
+   * ↓ via ascent · 3 h 30 (SAC guide time)". "↓ via ascent" marks a tour
+   * skied down the line it climbed, which is drawn one way only, as SAC
+   * publishes it (SNOW-1287).
    *
    * @param {Object<string, any>} props The tour Feature's properties.
    * @returns {string}
@@ -492,7 +493,7 @@
       parts.push(interpolate(STRINGS.descent, { value: props.sac_descent_m }));
     } else if (props.sac_ascent_m) {
       parts.push(interpolate(STRINGS.climb, { value: props.sac_ascent_m }));
-      if (props.same_way) parts.push(STRINGS['same-way']);
+      if (props.via_ascent) parts.push(STRINGS['via-ascent']);
     }
     if (props.sac_time) parts.push(interpolate(STRINGS['guide-time'], { time: props.sac_time }));
     return parts.join(' · ');

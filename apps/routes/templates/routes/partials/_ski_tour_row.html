@@ -8,8 +8,8 @@ row is the target; static/js/ski_tours.js opens the tour on a press of
 
 The swatch is the line as the map draws a highlighted tour, which is a
 saved route's legs (SNOW-1286): a way up dashed in the climb's grey, a way
-down solid in the descent's fuchsia. An up-and-back way up adds "↓ same
-way" to its figures. The title is the tour's summit and height in a "passes here"
+down solid in the descent's fuchsia. A way up skied down the same way adds
+"↓ via ascent" to its figures. The title is the tour's summit and height in a "passes here"
 list (``by_name`` false), where the summit is how a reader tells the rows
 apart, and SAC's name for the way in a summit's list (``by_name`` true),
 where every row shares the summit.
@@ -54,8 +54,8 @@ Parameters:
                     {% if row.descent_m %}↓ {{ row.descent_m }} m{% endif %}
                 {% elif row.ascent_m %}
                     ↑ {{ row.ascent_m }} m
-                    {% if row.same_way %}
-                        · {% trans "↓ same way" %}
+                    {% if row.via_ascent %}
+                        · {% trans "↓ via ascent" %}
                     {% endif %}
                 {% endif %}
                 {% if row.time %}· {{ row.time }}{% endif %}
