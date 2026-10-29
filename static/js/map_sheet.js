@@ -496,8 +496,8 @@
     var declared = core.parseDetents(el.getAttribute('data-detents'));
     if (!declared.length) return null;
     // The detents in force: the declared ones, narrowed by the content when
-    // it marks an element `data-sheet-detents` (the region sheet drops FULL
-    // for a day with no bulletin — there is nothing to reveal; Hugo, 16 Oct).
+    // it marks an element `data-sheet-detents` (a bare map pin's sheet drops
+    // FULL — there is nothing to reveal).
     var detents = declared;
     var opts = options || {};
     var handle = /** @type {HTMLElement|null} */ (el.querySelector('[data-sheet-handle]'));

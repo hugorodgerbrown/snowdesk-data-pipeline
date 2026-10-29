@@ -8,8 +8,9 @@ Covers:
   - PEEK: the region's name, the danger tile and level, the search row's
     flag-and-code badge and area name (not the date), the two proxy
     controls and the ×, inside the ``data-sheet-peek`` header.
-  - The detents the body allows: all three on a rated day, peek and half
-    otherwise (``data-sheet-detents``, read by static/js/map_sheet.js).
+  - The detents: the body narrows none, so all three on every day — a
+    day with no bulletin still has "On the ground" and the resorts to
+    reach (``data-sheet-detents``, read by static/js/map_sheet.js).
   - SNOW-979: the "Highlight problem terrain" switch above the
     bulletin and its key — only for a region inside the terrain tiles,
     with the tiles configured, on a day with a bulletin. Since SNOW-1194
@@ -250,18 +251,22 @@ class TestPeek:
 
 @pytest.mark.django_db
 class TestDetents:
-    """FULL only reveals a bulletin, so a day without one stops at half."""
+    """All three detents on every day; FULL fits the content (map_sheet.js)."""
 
-    def test_rated_day_allows_all_three(self, client: Client) -> None:
+    def test_rated_day_narrows_nothing(self, client: Client) -> None:
         region = MicroRegionFactory.create()
         _rated_today(region)
         content = _get(client, _url(region.region_id.lower())).content.decode()
-        assert 'data-sheet-detents="peek,half,full"' in content
+        assert "data-sheet-detents" not in content
 
-    def test_unrated_day_stops_at_half(self, client: Client) -> None:
+    def test_unrated_day_can_still_reach_full(self, client: Client) -> None:
+        """Hugo, 29 Oct: with no bulletin the resorts sat below a half-only
+        sheet, out of reach. FULL fits the content, so nothing is lost by
+        offering it on a short body.
+        """
         region = MicroRegionFactory.create()
         content = _get(client, _url(region.region_id.lower())).content.decode()
-        assert 'data-sheet-detents="peek,half"' in content
+        assert "data-sheet-detents" not in content
 
 
 @pytest.mark.django_db

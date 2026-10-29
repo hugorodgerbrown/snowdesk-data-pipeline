@@ -26,8 +26,10 @@ next part of it:
      day: the bulletin page's own body, ``public/partials/_region_body.html``
      (SNOW-1164). On a phone the sheet at full height covers the screen, so
      the sheet IS the page rather than a summary with a link on to it. FULL
-     only when there is a bulletin for the day: the body's
-     ``data-sheet-detents`` drops it otherwise. Last, the resorts in the
+     on every day, bulletin or not: FULL fits its content (map_sheet.js),
+     so a short body stops where it ends, and a day with no bulletin still
+     has "On the ground" and the resorts below half (Hugo, 29 Oct,
+     reversing 16 Oct's half-only). Last, the resorts in the
      region, which are map objects and so the sheet's alone. Each is a link
      to its resort page that, on the map, opens the resort's own sheet
      instead (SNOW-1161, map_region_sheet.js).
@@ -62,8 +64,6 @@ Context:
     data-region-id="{{ region.region_id }}"
     data-panel-key="region:{{ region.region_id }}"
     data-panel-label="{{ region.name }}"
-    {# No bulletin for the day: nothing for FULL to reveal, so the sheet stops at half (map_sheet.js reads this). #}
-    data-sheet-detents="{% if bulletin %}peek,half,full{% else %}peek,half{% endif %}"
 >
     {# Another day says so in the peek's own date row (Hugo, 21 Oct), #}
     {# which took over from SNOW-1165's strip above it.              #}

@@ -2,7 +2,7 @@
 name: sheet-detents-are-phone-only
 description: Phone sheet detents (_overlay_sheet.html detents, data-sheet-detents, bindDetents); forms take none; sheet covers, never moves, map controls
 status: current
-last-reviewed: 2026-10-21
+last-reviewed: 2026-10-29
 ---
 
 # Sheet detents are phone-only, and forms take none
@@ -97,8 +97,12 @@ only binds it to pointer events. Without the core on the page,
 - Content marks the end of its peek summary with `data-sheet-peek`, and a
   header the reader may drag by with `data-sheet-drag`. Controls inside a
   draggable header keep their own press. Content may also narrow the
-  declared detents with `data-sheet-detents`; the region sheet drops FULL
-  on a day with no bulletin, since FULL exists to reveal one.
+  declared detents with `data-sheet-detents`; a bare pin's sheet drops
+  FULL, having nothing to reveal. The region sheet used to drop it on a
+  day with no bulletin too, until "On the ground" and the resorts list
+  made that body run past half with no way to reach them (Hugo, 29 Oct
+  2026): it now keeps all three, and FULL fitting the content stops a
+  short body where it ends.
 - Nothing on the map is repositioned for a sheet. `data-map-sheet` on the
   root says a sheet is up; do not reintroduce a lift or a fold without
   reading the paragraph above.
