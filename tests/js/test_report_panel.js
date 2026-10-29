@@ -41,6 +41,7 @@ document.body.innerHTML = `
           data-report-list-url="${LIST_URL}"
           data-report-form-url="${FORM_URL}"></button>
   <div id="report-sheet" hidden></div>
+  <div id="map-sheet-toast" class="hidden"><span data-toast-body></span></div>
   <template id="report-list-template">
     <div>
       <div data-report-gate></div>
@@ -527,7 +528,7 @@ describe('filing a report shows it on the map (SNOW-886)', () => {
     expect(body.getAll('observation_type')).toEqual(['WHUMPFING', 'BUSY']);
   });
 
-  it('queues nothing when no tile is ticked (SNOW-1289)', () => {
+  it('queues nothing when no tile is ticked, and says why (SNOW-1289)', () => {
     sheet.innerHTML = `
       <form id="report-form" action="/partials/report/submit/">
         <input type="hidden" name="lat" value="46.1">
@@ -540,6 +541,12 @@ describe('filing a report shows it on the map (SNOW-886)', () => {
       .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
     expect(window.pwaMutationQueue.enqueue).not.toHaveBeenCalled();
+    // Share is never silently dead: the shared toast explains.
+    const toast = document.getElementById('map-sheet-toast');
+    expect(toast.classList.contains('hidden')).toBe(false);
+    expect(toast.querySelector('[data-toast-body]').textContent).toBe(
+      'Pick at least one thing you saw, then share.',
+    );
   });
 
   it('flies to the report it just filed', () => {
