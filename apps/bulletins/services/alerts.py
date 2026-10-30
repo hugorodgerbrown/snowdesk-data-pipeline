@@ -406,6 +406,9 @@ def deliver(run: AccountRun) -> AccountRun:
     """
     Write an account's rows and queue its message, in one transaction.
 
+    The rows and the queued task commit together, so a failed enqueue
+    leaves no PENDING row behind to count as told.
+
     The rows that send are written ``PENDING``; the worker settles them as
     ``SENT`` or ``FAILED`` once it knows what reached the person. With no
     possible channel (no active push, and email off or unverified) they are
@@ -462,15 +465,19 @@ def deliver(run: AccountRun) -> AccountRun:
             )
             if sends:
                 pending.append(alert.pk)
-    if message is not None and pending:
-        _worker_deliver_alert.enqueue(
-            account.pk,
-            pending,
-            message.as_push(),
-            message.title,
-            message.body,
-            message.url,
-        )
+        # Inside the transaction: the DatabaseBackend writes its task row on
+        # this connection, so the PENDING rows and the work that settles them
+        # commit together. An enqueue that raises rolls the rows back, and
+        # the next run sees the day as untold and tries again.
+        if message is not None and pending:
+            _worker_deliver_alert.enqueue(
+                account.pk,
+                pending,
+                message.as_push(),
+                message.title,
+                message.body,
+                message.url,
+            )
     return run
 
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -298,6 +298,22 @@ class TestEvaluateAndDeliver:
         row.refresh_from_db()
         assert row.outcome == BulletinAlert.Outcome.SENT and row.sent_push
         assert evaluate_account(account, NOW).rows == []
+
+    def test_failed_enqueue_leaves_no_pending_row(self, follower: tuple) -> None:
+        """An enqueue that raises rolls the rows back, so the day stays untold."""
+        account, region = follower
+        publish(region, TOMORROW, render())
+        PushSubscriptionFactory.create(account=account)
+        run = evaluate_account(account, NOW)
+        worker = MagicMock()
+        worker.enqueue.side_effect = RuntimeError
+        with (
+            patch.object(alerts, "_worker_deliver_alert", worker),
+            pytest.raises(RuntimeError),
+        ):
+            deliver(run)
+        assert not BulletinAlert.objects.filter(account=account).exists()
+        assert evaluate_account(account, NOW).message is not None
 
     def test_worker_settles_only_pending_rows(self, follower: tuple) -> None:
         """A replayed delivery task never rewrites a row already settled."""
