@@ -410,15 +410,24 @@ class TestPageMeta:
 
 @pytest.mark.django_db
 class TestDiscovery:
-    """The index is linked from the footer, every resort page and llms.txt."""
+    """The index is linked from the homepage, every resort page and llms.txt."""
 
     @freeze_time(OFF_SEASON)
-    def test_the_footer_links_to_the_index(self) -> None:
-        """The site footer carries a Resorts link on every page."""
+    def test_the_homepage_weather_card_links_to_the_index(self) -> None:
+        """The homepage's weather card links to the resorts index."""
+        content = Client().get(reverse("public:home")).content.decode()
+
+        card = content[content.index('data-testid="home-feature-weather"') :]
+        card = card[: card.index("</section>")]
+        assert f'href="{reverse("public:resorts")}"' in card
+
+    @freeze_time(OFF_SEASON)
+    def test_the_footer_does_not_link_to_the_index(self) -> None:
+        """The footer's Resorts link was removed."""
         content = Client().get(reverse("public:help")).content.decode()
 
         footer = content[content.index('data-testid="site-footer"') :]
-        assert f'href="{reverse("public:resorts")}">Resorts</a>' in footer
+        assert f'href="{reverse("public:resorts")}"' not in footer
 
     @freeze_time(OFF_SEASON)
     def test_a_resort_page_links_back_to_the_index(self) -> None:
