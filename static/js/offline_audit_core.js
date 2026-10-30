@@ -2406,8 +2406,11 @@
     // tile one because it answers a different question about the same
     // area and because SNOW-928's staleness line asks it too.
     areaContentState: areaContentState,
-    // SNOW-925: the gate on the per-row control.
+    // SNOW-925: the gate on the per-area Sync now control — on the
+    // `/offline/` panels since SNOW-1308.
     completableArea: completableArea,
+    // SNOW-1308: the areas the panels are drawn for.
+    chosenAreas: chosenAreas,
     joinList: joinList,
     quantify: quantify,
   });
