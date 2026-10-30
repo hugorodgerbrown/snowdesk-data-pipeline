@@ -178,6 +178,8 @@ const SW_EXPORTS = [
   // SNOW-1312: the map's region sheet, read offline on path + `d`.
   '_publicPartialNetworkFirst',
   '_publicPartialKey',
+  // SNOW-1313: a saved pin's place sheet, kept for its owner on path + `d`.
+  '_privatePartialNetworkFirst',
   // SNOW-1311: the activation-time carry of the user's content out of the
   // old shell caches, and its budget.
   '_carryShellContent',
@@ -4530,6 +4532,181 @@ describe("the map's region sheet is read offline on its day (SNOW-1312)", () => 
 });
 
 // ---------------------------------------------------------------------------
+// SNOW-1313 — a saved pin's place sheet, kept for its owner
+// ---------------------------------------------------------------------------
+
+describe("a saved pin's place sheet is read offline by its owner (SNOW-1313)", () => {
+  const SHELL = 'snowdesk-shell-UNSUBSTITUTED';
+  const UUID = '2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11';
+  const SHEET = `${ORIGIN}/partials/place-sheet/favourite/${UUID}/`;
+  const TODAY = '2026-10-30';
+  const KEY = `${SHEET}?d=${TODAY}`;
+  const WARM = `/partials/place-sheet/favourite/${UUID}/?d=${TODAY}`;
+
+  /** The sheet's own request — map_place_sheet.js sends `HX-Request`. */
+  function sheetRequest(url) {
+    return {
+      url,
+      method: 'GET',
+      mode: 'cors',
+      destination: '',
+      headers: new Headers({ 'HX-Request': 'true' }),
+    };
+  }
+
+  /** The owner's fragment, as `favourite_sheet_partial` answers it. */
+  function sheetFor(who, opts = {}) {
+    const headers = {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': opts.cacheControl || 'private, no-cache',
+    };
+    if (who) headers['X-Snowdesk-Principal'] = who;
+    return basicResponse(opts.body || '<p>pin</p>', { status: opts.status || 200, headers });
+  }
+
+  /** Dispatch one fetch event at the real listener; resolve its answer. */
+  async function dispatchFetch(sw, request) {
+    let promise = null;
+    sw.__listeners.fetch({
+      request,
+      clientId: '',
+      respondWith(value) {
+        promise = value;
+      },
+    });
+    return promise;
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it('classifies the favourite sheet alone, never the resort sheet, with and without the core', () => {
+    for (const withCore of [true, false]) {
+      const sw = loadSw(withCore ? { core } : {});
+      const classify = (url) => sw._classifySync(sheetRequest(url), new URL(url));
+
+      expect(classify(KEY)).toBe('private-partial');
+      expect(classify(`${ORIGIN}/partials/place-sheet/resort/verbier/?d=${TODAY}`)).toBe('network');
+      expect(classify(`${ORIGIN}/partials/place-sheet/favourite/not-a-uuid/`)).toBe('network');
+      expect(classify(`${ORIGIN}/partials/region-sheet/ch-4115/`)).toBe('public-partial');
+    }
+  });
+
+  it('warms with `HX-Request` and keeps the sheet stamped for its owner', async () => {
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    const fetchSpy = vi.fn(async () => sheetFor('acct-a'));
+    const sw = loadSw({ caches, fetch: fetchSpy });
+
+    const result = await sw._warmCache([WARM]);
+
+    expect(result).toMatchObject({ ok: 1, failed: 0 });
+    expect(fetchSpy.mock.calls[0][1]).toEqual({ headers: { 'HX-Request': 'true' } });
+    const stored = await (await caches.open(SHELL)).match(KEY);
+    expect(await stored.text()).toBe('<p>pin</p>');
+    expect(stored.headers.get(sw.PRINCIPAL_HEADER)).toBe('acct-a');
+    // A fragment is not a page: nothing it names is warmed after it.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails a warm it cannot keep: unattested, another viewer, no-store, undated or nobody signed in', async () => {
+    const cases = [
+      { principal: 'acct-a', answer: () => sheetFor(null), url: WARM },
+      { principal: 'acct-a', answer: () => sheetFor('acct-b'), url: WARM },
+      { principal: 'acct-a', answer: () => sheetFor('acct-a', { cacheControl: 'private, no-store' }), url: WARM },
+      { principal: 'acct-a', answer: () => sheetFor('acct-a'), url: `/partials/place-sheet/favourite/${UUID}/` },
+      { principal: null, answer: () => sheetFor('acct-a'), url: WARM },
+      { principal: 'acct-a', answer: () => sheetFor('acct-a', { status: 404 }), url: WARM },
+    ];
+    for (const { principal, answer, url } of cases) {
+      await setStoredPrincipal(principal);
+      const caches = makeCaches();
+      const sw = loadSw({ caches, fetch: async () => answer() });
+
+      expect(await sw._warmCache([url])).toMatchObject({ ok: 0, failed: 1 });
+      expect(caches.size(SHELL)).toBe(0);
+    }
+  });
+
+  it('serves the warmed sheet offline to its owner on its day, and to nobody else', async () => {
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    const state = { online: true };
+    const fetchSpy = vi.fn(async () => {
+      if (!state.online) throw new TypeError('Failed to fetch');
+      return sheetFor('acct-a', { body: '<p>warm</p>' });
+    });
+    const sw = loadSw({ caches, fetch: fetchSpy });
+    await sw._warmCache([WARM]);
+    state.online = false;
+    await settleHydration(sw);
+    sw._forceOffline();
+    fetchSpy.mockClear();
+
+    const forA = await dispatchFetch(sw, sheetRequest(KEY));
+    expect(forA.status).toBe(200);
+    expect(await forA.text()).toBe('<p>warm</p>');
+    expect(forA.headers.get('X-SW-Cache')).toBe('hit');
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    // Another day, or no day: never the downloaded one.
+    for (const url of [`${SHEET}?d=2026-10-31`, SHEET]) {
+      const miss = await sw._privatePartialNetworkFirst(sheetRequest(url));
+      expect(miss.status).toBe(504);
+      expect(miss.headers.get('X-SW-Offline-Miss')).toBe('1');
+    }
+
+    // An account swap, or signing out.
+    await setStoredPrincipal('acct-b');
+    expect((await sw._privatePartialNetworkFirst(sheetRequest(KEY))).status).toBe(504);
+    await setStoredPrincipal(null);
+    expect((await sw._privatePartialNetworkFirst(sheetRequest(KEY))).status).toBe(504);
+  });
+
+  it('keeps an attested sheet fetched online, and not one naming another viewer', async () => {
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    let answer = () => sheetFor('acct-a', { body: '<p>live</p>' });
+    const sw = loadSw({ caches, fetch: async () => answer() });
+
+    const live = await sw._privatePartialNetworkFirst(sheetRequest(KEY));
+    await flush();
+    expect(await live.text()).toBe('<p>live</p>');
+    const stored = await (await caches.open(SHELL)).match(KEY);
+    expect(stored.headers.get(sw.PRINCIPAL_HEADER)).toBe('acct-a');
+
+    answer = () => sheetFor('acct-b');
+    const other = await sw._privatePartialNetworkFirst(sheetRequest(`${SHEET}?d=2026-10-31`));
+    await flush();
+    expect(other.status).toBe(200);
+    expect(caches.size(SHELL)).toBe(1);
+  });
+
+  it('drops every kept day of a sheet the server answers 403 or 404', async () => {
+    for (const status of [403, 404]) {
+      await setStoredPrincipal('acct-a');
+      const caches = makeCaches();
+      const stamp = { [loadSw().PRINCIPAL_HEADER]: 'acct-a' };
+      caches.seed(SHELL, KEY, new Response('<p>a</p>', { headers: stamp }));
+      caches.seed(SHELL, `${SHEET}?d=2026-10-31`, new Response('<p>b</p>', { headers: stamp }));
+      const other = `${ORIGIN}/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000001/?d=${TODAY}`;
+      caches.seed(SHELL, other, new Response('<p>c</p>', { headers: stamp }));
+      const sw = loadSw({ caches, fetch: async () => sheetFor(null, { status }) });
+
+      const response = await sw._privatePartialNetworkFirst(sheetRequest(KEY));
+      await flush();
+
+      expect(response.status).toBe(status);
+      const shell = await caches.open(SHELL);
+      expect(await shell.match(KEY)).toBeUndefined();
+      expect(await shell.match(`${SHEET}?d=2026-10-31`)).toBeUndefined();
+      expect(await shell.match(other)).toBeTruthy();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // SNOW-1311 — an update carries your downloaded content across
 // ---------------------------------------------------------------------------
 
@@ -4670,6 +4847,25 @@ describe('activate carries the old shell caches into the new one (SNOW-1311)', (
     const carried = await (await caches.open(SHELL)).match(regionSheet);
     expect(await carried.text()).toBe('<p>sheet</p>');
     expect(carried.headers.get('X-SW-Principal')).toBeNull();
+    expect(caches.has(OLD)).toBe(false);
+  });
+
+  it('carries a kept place sheet with its principal stamp (SNOW-1313)', async () => {
+    const pinSheet = `${ORIGIN}/partials/place-sheet/favourite/2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11/?d=2026-10-30`;
+    const caches = makeCaches();
+    caches.seed(
+      OLD,
+      pinSheet,
+      stored('<p>pin</p>', { 'Content-Type': 'text/html', 'X-SW-Principal': 'acct-a' }),
+    );
+    const sw = await offlineSw(caches);
+
+    await activate(sw);
+    await flush();
+
+    const carried = await (await caches.open(SHELL)).match(pinSheet);
+    expect(await carried.text()).toBe('<p>pin</p>');
+    expect(carried.headers.get('X-SW-Principal')).toBe('acct-a');
     expect(caches.has(OLD)).toBe(false);
   });
 

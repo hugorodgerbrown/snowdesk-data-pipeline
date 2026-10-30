@@ -287,7 +287,11 @@
  *     answer ``/api/area-items/`` gives — each trip's page and its
  *     ``route.geojson``, and the weather sheet each pin borrows its
  *     forecast from. De-duplicated against what the area-content plan
- *     already holds.
+ *     already holds. SNOW-1313 adds each pin's own place sheet, dated
+ *     with the download's day.
+ *   favouriteSheetURL(template, uuid, day)
+ *     SNOW-1313: one saved pin's place-sheet url,
+ *     `/partials/place-sheet/favourite/<uuid>/?d=<day>`.
  *   weatherDetailURL(template, shortId, day)
  *     SNOW-965: one weather sheet's url, dated with ``?date=`` when a day
  *     is given — the exact url the map's sheet asks for on that day.
@@ -2777,6 +2781,31 @@
     return day ? url + '?date=' + encodeURIComponent(day) : url;
   }
 
+  // SNOW-1313: the placeholder `#map`'s `data-favourite-sheet-url` carries
+  // (`_map_embed.html` reverses the route with the nil uuid), the same one
+  // `map_place_sheet.js` replaces.
+  const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+  /**
+   * One saved pin's place-sheet url for one day (SNOW-1313).
+   *
+   * The map's own request, as `map_place_sheet.js` makes it: the uuid in
+   * place of the template's nil uuid, then `?d=<day>`. The worker keeps
+   * the sheet under its path and `d` ('private-partial'), so the day is
+   * required — an undated url could never be found offline, and gives
+   * ``null``.
+   *
+   * @param {string} template A url carrying the nil uuid, as `#map`'s
+   *   `data-favourite-sheet-url` does.
+   * @param {string} uuid The pin's uuid.
+   * @param {string} [day] An ISO date key.
+   * @returns {?string}
+   */
+  function favouriteSheetURL(template, uuid, day) {
+    if (!template || !uuid || !day || template.indexOf(NIL_UUID) === -1) return null;
+    return template.replace(NIL_UUID, encodeURIComponent(uuid)) + '?d=' + encodeURIComponent(day);
+  }
+
   /**
    * The urls for the reader's own things inside an area (SNOW-965).
    *
@@ -2788,16 +2817,24 @@
    * the route is principal-stamped JSON (`'private-json'` in
    * `basemap_cache_core.js`); the sheet is public.
    *
+   * SNOW-1313: and each pin's own place sheet, for the day the weather
+   * sheet is taken for — the sheet a pin tapped offline opens, whose
+   * "Full forecast" opens that borrowed weather sheet. It is the reader's
+   * own HTML, stamped by the worker with the principal the answer names
+   * ('private-partial'). A pin's sheet is asked for whether or not it
+   * borrows a forecast.
+   *
    * A missing template drops its group rather than the whole answer: a
    * page that cannot compose a trip's page can still carry its route.
    *
    * @param {{trips?: Array<{uuid?: string}>,
-   *   pins?: Array<{forecast?: {short_id?: string}|null}>}|null} items The
+   *   pins?: Array<{uuid?: string, forecast?: {short_id?: string}|null}>}|null} items The
    *   endpoint's answer.
    * @param {{tripPage?: string, tripRoute?: string, weatherDetail?: string,
-   *   weatherDay?: string}} templates ``__UUID__`` templates for the two
-   *   trip urls, the ``__SHORTID__`` weather template, and the day each
-   *   sheet is taken for.
+   *   weatherDay?: string, favouriteSheet?: string}} templates ``__UUID__``
+   *   templates for the two trip urls, the ``__SHORTID__`` weather
+   *   template, the day each sheet is taken for, and (SNOW-1313) the
+   *   nil-uuid place-sheet template.
    * @param {Iterable<string>} [alreadyPlanned] Urls the area-content plan
    *   already holds; none of them is repeated.
    * @returns {string[]} Deduplicated, in the answer's order.
@@ -2819,12 +2856,13 @@
       if (tpl.tripRoute) add(tpl.tripRoute.replace('__UUID__', uuid));
     }
     const pins = (items && Array.isArray(items.pins) && items.pins) || [];
-    if (tpl.weatherDetail) {
-      for (const pin of pins) {
-        const shortId = pin && pin.forecast && pin.forecast.short_id;
-        if (!shortId) continue;
-        add(weatherDetailURL(tpl.weatherDetail, shortId, tpl.weatherDay));
-      }
+    for (const pin of pins) {
+      // SNOW-1313: the pin's own sheet, then the forecast it borrows.
+      const sheet = favouriteSheetURL(tpl.favouriteSheet || '', pin && pin.uuid, tpl.weatherDay);
+      if (sheet) add(sheet);
+      const shortId = pin && pin.forecast && pin.forecast.short_id;
+      if (!tpl.weatherDetail || !shortId) continue;
+      add(weatherDetailURL(tpl.weatherDetail, shortId, tpl.weatherDay));
     }
     return out;
   }
@@ -3290,6 +3328,7 @@
     forwardContentDays: forwardContentDays,
     regionSheetURL: regionSheetURL,
     areaItemURLs: areaItemURLs,
+    favouriteSheetURL: favouriteSheetURL,
     weatherDetailURL: weatherDetailURL,
     cachedTilesFromURLs: cachedTilesFromURLs,
     gridZoomFor: gridZoomFor,

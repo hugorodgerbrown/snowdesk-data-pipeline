@@ -882,6 +882,9 @@ async function assembleAreaContentURLs(blob) {
           tripRoute: mapEl.dataset.tripRouteUrlTemplate || '',
           weatherDetail: weatherDetail,
           weatherDay: weatherDay,
+          // SNOW-1313: each pin's own place sheet, dated as the weather
+          // sheet is — the day the map's place sheet asks with on boot.
+          favouriteSheet: mapEl.dataset.favouriteSheetUrl || '',
         },
         planned,
       )

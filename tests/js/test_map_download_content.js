@@ -323,6 +323,7 @@ function buildFixture() {
          data-weather-url="/api/weather.geojson"
          data-weather-detail-url="/api/weather/__SHORTID__/detail/"
          data-region-sheet-url="/partials/region-sheet/XX-0000/"
+         data-favourite-sheet-url="/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/"
          data-community-reports-url="/api/community-reports.geojson"
          data-community-reports-eligible="true"
          data-favourites-url="/api/favourites.geojson"
@@ -591,6 +592,10 @@ describe('a download takes the content inside its boundary', () => {
       (url) => url === `/api/weather/INSIDEaaaaa/detail/?date=${TODAY}`,
     );
     expect(inside).toHaveLength(1);
+  });
+
+  it("posts each pin's own place sheet for the map's day (SNOW-1313)", () => {
+    expect(posted).toContain(`/partials/place-sheet/favourite/pin-1/?d=${TODAY}`);
   });
 
   it('puts content ahead of the tiles in the posted list', () => {

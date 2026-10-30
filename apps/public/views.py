@@ -1435,6 +1435,16 @@ def offline_page(request: HttpRequest) -> HttpResponse:
                 "region_sheet": reverse(
                     "public:region_sheet_partial", kwargs={"region_id": "XX-0000"}
                 ),
+                # SNOW-1313: a saved pin's place sheet, warmed per pin the
+                # area-items answer names — the nil-uuid template
+                # `_map_embed.html` renders onto `#map`. Account-only, as
+                # area_items is.
+                "favourite_sheet": reverse(
+                    "public:favourite_sheet_partial",
+                    kwargs={"uuid": "00000000-0000-0000-0000-000000000000"},
+                )
+                if request.user.is_authenticated
+                else "",
             },
             # The countries whose region geometry a boundary may overlap.
             # SNOW-931's lesson, applied where there is no

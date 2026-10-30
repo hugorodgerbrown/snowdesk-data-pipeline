@@ -1782,6 +1782,10 @@
               tripRoute: data.tripRouteUrlTemplate || '',
               weatherDetail: data.weatherDetailUrl || '',
               weatherDay: weatherDay,
+              // SNOW-1313: each pin's own place sheet, dated with the
+              // server's day as the weather sheet is — the day the map's
+              // place sheet asks with on boot.
+              favouriteSheet: data.favouriteSheetUrl || '',
             },
             planned,
           )
