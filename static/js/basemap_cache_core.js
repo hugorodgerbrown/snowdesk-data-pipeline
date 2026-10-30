@@ -28,10 +28,12 @@
  *     Synchronous portion of fetch-strategy classification: the
  *     ``method !== GET`` short-circuit, and every same-origin case.
  *     Returns ``'static' | 'navigate' | 'private-json' | 'public-json' |
- *     'network' | null`` — ``null`` means "a cross-origin GET; the caller
- *     must decide separately" (deciding that case needs the async
- *     basemap-origin hydration, which stays in sw.js). SNOW-965 added the
- *     two JSON classes — see ``PRIVATE_JSON_PATH`` / ``PUBLIC_JSON_PATH``.
+ *     'public-partial' | 'network' | null`` — ``null`` means "a
+ *     cross-origin GET; the caller must decide separately" (deciding that
+ *     case needs the async basemap-origin hydration, which stays in
+ *     sw.js). SNOW-965 added the two JSON classes — see
+ *     ``PRIVATE_JSON_PATH`` / ``PUBLIC_JSON_PATH`` — and SNOW-1312 the map's
+ *     region sheet, ``PUBLIC_PARTIAL_PATH``.
  *   isBasemapOrigin(url, originsSet)
  *     True when ``url.origin`` is a member of ``originsSet`` — the allowlist
  *     check half of ``_classifyCrossOriginGet``; the async hydration that
@@ -92,6 +94,15 @@
   // integer form, a 301, and stays network-only.
   const PUBLIC_JSON_PATH = /^\/api\/weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail\/$/;
 
+  // SNOW-1312: the map's region sheet, ``/partials/region-sheet/<id>/``.
+  // Public — its body reads no ``request.user`` — and warmed by every area
+  // download for its regions and forward days, so it is read offline
+  // through ``_publicPartialNetworkFirst`` in sw.js, keyed on path and
+  // ``d`` alone. The region id is the converter's shape
+  // (``apps/regions/converters.py``). Only this partial: the place sheet
+  // and every other HTMX fragment stay network-only.
+  const PUBLIC_PARTIAL_PATH = /^\/partials\/region-sheet\/[a-z]{2}-(?=[a-z0-9-]*\d)[a-z0-9]+(?:-[a-z0-9]+)*\/$/i;
+
   /**
    * Synchronous portion of fetch-strategy classification.
    *
@@ -102,7 +113,7 @@
    *   stale-while-revalidate regardless of extension.
    * @param {Set<string>} staticShellExtensions Same-origin file extensions
    *   (lowercased, with leading dot) that count as static shell assets.
-   * @returns {'static'|'navigate'|'private-json'|'public-json'|'network'|null}
+   * @returns {'static'|'navigate'|'private-json'|'public-json'|'public-partial'|'network'|null}
    *   ``null`` means "cross-origin GET — the caller must decide separately".
    */
   function classifySync(request, url, selfOrigin, staticPaths, staticShellExtensions) {
@@ -117,6 +128,7 @@
     // the static set could never claim a private route.
     if (PRIVATE_JSON_PATH.test(url.pathname)) return 'private-json';
     if (PUBLIC_JSON_PATH.test(url.pathname)) return 'public-json';
+    if (PUBLIC_PARTIAL_PATH.test(url.pathname)) return 'public-partial';
 
     if (staticPaths.has(url.pathname)) return 'static';
 

@@ -36,6 +36,11 @@
  *     → network-first, kept unstamped, served offline on an exact url
  *     match only (_publicJsonNetworkFirst).
  *
+ *   - The map's region sheet    (SNOW-1312: /partials/region-sheet/<id>/)
+ *     → network-first, kept unstamped under path + ``d`` alone, served
+ *     offline on that key; a miss is a 504 carrying
+ *     ``X-SW-Offline-Miss: 1`` (_publicPartialNetworkFirst).
+ *
  *   - Everything else          (most /api/* endpoints, and third-party
  *                                origins not registered as the active
  *                                basemap)
@@ -1188,6 +1193,14 @@ const STATIC_PATHS = new Set([
 // both paths over the same urls).
 const PRIVATE_JSON_PATH = /^\/trips\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/route\.geojson$/i;
 const PUBLIC_JSON_PATH = /^\/api\/weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail\/$/;
+// SNOW-1312: the map's region sheet — the third copy-pair, held to the
+// core's by the same tests.
+const PUBLIC_PARTIAL_PATH = /^\/partials\/region-sheet\/[a-z]{2}-(?=[a-z0-9-]*\d)[a-z0-9]+(?:-[a-z0-9]+)*\/$/i;
+
+// SNOW-1312: the header a region-sheet miss carries, so the sheet can say
+// "this day isn't downloaded" rather than "unavailable". Read by
+// map_region_sheet.js; the other copy of this literal.
+const OFFLINE_MISS_HEADER = 'X-SW-Offline-Miss';
 
 // SNOW-965: what `_warmCache` hands `_classifySync` to ask a url's class.
 // A plain same-origin GET — not a navigation, whatever the url is.
@@ -1494,7 +1507,7 @@ function _debugLogAs(src, evt, detail) {
  * @param {Request} request
  * @param {string} strategy Which router branch ran: 'static' | 'navigate' |
  *   'private-json' | 'public-json' (SNOW-965's two network-first JSON
- *   classes) | 'basemap' | 'probe' (the SNOW-722 read-only cache probe for an
+ *   classes) | 'public-partial' (SNOW-1312's region sheet) | 'basemap' | 'probe' (the SNOW-722 read-only cache probe for an
  *   unclassified cross-origin GET) | 'network' (not intercepted at all) |
  *   'guard' (``_guardedRespond``'s re-fetch, after a strategy resolved to
  *   something that was not a Response).
@@ -1789,7 +1802,10 @@ function _hydrateDevShellCacheOptIn() {
  *
  * @param {Request} request
  * @param {URL} url
- * @returns {'static' | 'navigate' | 'private-json' | 'public-json' | 'network' | null}
+ * SNOW-1312: and ``'public-partial'`` — the map's region sheet, read by
+ * ``_publicPartialNetworkFirst``.
+ *
+ * @returns {'static' | 'navigate' | 'private-json' | 'public-json' | 'public-partial' | 'network' | null}
  */
 function _classifySync(request, url) {
   // SNOW-496: thin delegator — see basemap_cache_core.js's module header.
@@ -1816,6 +1832,7 @@ function _classifySync(request, url) {
   // the extension checks as there.
   if (PRIVATE_JSON_PATH.test(url.pathname)) return 'private-json';
   if (PUBLIC_JSON_PATH.test(url.pathname)) return 'public-json';
+  if (PUBLIC_PARTIAL_PATH.test(url.pathname)) return 'public-partial';
 
   if (STATIC_PATHS.has(url.pathname)) return 'static';
 
@@ -2446,8 +2463,14 @@ async function _warmCache(urls, options) {
       return 'other';
     }
     const sameOrigin = url.origin === self.location.origin;
+    // SNOW-1312: the region sheet is an HTMX fragment, and `require_htmx`
+    // answers a request without `HX-Request` with a 400 — so this family,
+    // and only this one, is fetched with the header the sheet sends.
+    const partial = sameOrigin && _classifySync(WARM_CLASSIFY_REQUEST, url) === 'public-partial';
     try {
-      const response = await fetch(url.toString());
+      const response = partial
+        ? await fetch(url.toString(), { headers: { 'HX-Request': 'true' } })
+        : await fetch(url.toString());
       const validType = sameOrigin ? response.type === 'basic' : response.type === 'cors';
       if (!response || !response.ok || !validType) {
         // A reachable server that answered with the wrong thing (404,
@@ -2457,6 +2480,19 @@ async function _warmCache(urls, options) {
         return 'other';
       }
       const cache = sameOrigin ? shellCache : basemapCache;
+      // SNOW-1312: a region sheet is public — no principal stamp — and is
+      // kept under its path and `d` alone (`_publicPartialKey`), the key
+      // the offline read looks up whatever `r` the sheet sends. A url with
+      // no readable day has no key, and a sheet that cannot be found
+      // offline is a failure rather than a write. Not the HTML branch
+      // below: a fragment names no viewer and boots no scripts.
+      if (partial) {
+        const key = _publicPartialKey(url);
+        if (!key || _isNoStore(response)) return 'other';
+        await cache.put(key, response.clone());
+        bytes += await _warmCacheResponseBytes(response);
+        return null;
+      }
       // SNOW-965: a trip's route is the reader's own JSON, and its offline
       // read (`_privateJsonNetworkFirst`) refuses an entry without their
       // principal stamp — so it is stamped here as it is there, from the
@@ -3637,6 +3673,103 @@ async function _publicJsonNetworkFirst(request) {
 }
 
 /**
+ * The key a region sheet is kept under: its path and ``d``, nothing else
+ * (SNOW-1312).
+ *
+ * The sheet adds ``r=`` — the reports cache-buster SNOW-1295 stamps into
+ * the url when the reader files or removes a report — so the url it asks
+ * with changes after any report, while the body it wants (that region on
+ * that day) does not. Keyed on the full url, a sheet warmed by a download
+ * would never be found again by a reader who has filed a report. ``d`` is
+ * REQUIRED: an undated sheet means "today", and the worker does not know
+ * which day that was when the entry was written, so it is never kept or
+ * answered offline.
+ *
+ * This normalisation is the region sheet's alone. The weather sheet keeps
+ * its exact-url match (``_publicJsonNetworkFirst``), because its body
+ * names its day relatively.
+ *
+ * @param {URL} url
+ * @returns {string|null} ``origin + path + '?d=' + day``, or ``null``.
+ */
+function _publicPartialKey(url) {
+  const day = url.searchParams.get('d') || '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  return url.origin + url.pathname + '?d=' + day;
+}
+
+/**
+ * The synthesized 504 for a region sheet the device does not hold
+ * (SNOW-1312): ``_synthesizedGatewayTimeout`` plus ``X-SW-Offline-Miss``,
+ * so the sheet can tell "this day was not downloaded" apart from any
+ * other failure.
+ *
+ * @returns {Response}
+ */
+function _offlineMissResponse() {
+  return new Response('', {
+    status: 504,
+    statusText: 'Gateway Timeout',
+    headers: { 'X-SW-Cache': 'miss', [OFFLINE_MISS_HEADER]: '1' },
+  });
+}
+
+/**
+ * Network-first for the map's region sheet (SNOW-1312).
+ *
+ * The sheet a downloaded region opens offline. Every area download warms
+ * it for the area's regions on today and each forward day
+ * (``areaContentURLs`` in basemap_download_core.js); until this ticket it
+ * was classified ``'network'``, so a region tapped offline said its
+ * details were unavailable over a device that could have held them.
+ *
+ * Public, so unstamped: the body reads no ``request.user``
+ * (``region_sheet_partial``; ``tests/public/test_region_sheet.py`` holds
+ * it identical for an anonymous and a signed-in reader). It is rendered
+ * in the reader's language and kept in the one it was saved in.
+ *
+ * Online, an ok, ``basic``, non-``no-store`` answer is kept under
+ * ``_publicPartialKey`` — path and ``d`` — and anything else (a 400 for a
+ * bad date, a 404 for an unknown region, a 5xx) is passed through and
+ * never kept. Offline, or when the fetch fails or runs out of budget, the
+ * kept entry for that key is served; a miss is ``_offlineMissResponse``.
+ *
+ * @param {Request} request
+ * @returns {Promise<Response>}
+ */
+async function _publicPartialNetworkFirst(request) {
+  const startedAt = Date.now();
+  const key = _publicPartialKey(new URL(request.url));
+  const cache = await caches.open(CACHE_VERSION);
+  const fromCache = async () => {
+    // `ignoreVary`: the entry is keyed on a bare url, and the sheet's own
+    // request carries `HX-Request`, which a `Vary` on the answer could
+    // otherwise hold against it.
+    const cached = key ? await cache.match(key, { ignoreVary: true }) : null;
+    if (cached) {
+      const hit = _stampCacheHit(cached);
+      _debugServe(request, 'public-partial', 'shell', hit, startedAt);
+      return hit;
+    }
+    const miss = _offlineMissResponse();
+    _debugServe(request, 'public-partial', 'timeout-504', miss, startedAt);
+    return miss;
+  };
+  if (!(await _shouldUseNetwork())) return fromCache();
+  let response;
+  try {
+    response = await _boundedFetch(request, SHELL_FETCH_BUDGET_MS);
+  } catch (_err) {
+    return fromCache();
+  }
+  if (key && response && response.ok && response.type === 'basic' && !_isNoStore(response)) {
+    cache.put(key, response.clone()).catch(() => {});
+  }
+  _debugServe(request, 'public-partial', 'network', response, startedAt);
+  return response;
+}
+
+/**
  * True when ``response`` is page HTML rather than data (SNOW-624).
  *
  * The discriminator for "would `_networkFirst` have cached this, and so
@@ -4157,6 +4290,12 @@ self.addEventListener('fetch', (event) => {
   if (sync === 'public-json') {
     event.respondWith(
       _guardedRespond(_publicJsonNetworkFirst(request), request, event.clientId),
+    );
+    return;
+  }
+  if (sync === 'public-partial') {
+    event.respondWith(
+      _guardedRespond(_publicPartialNetworkFirst(request), request, event.clientId),
     );
     return;
   }
