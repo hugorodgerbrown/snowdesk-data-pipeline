@@ -1,6 +1,6 @@
 ---
 name: offline-audit
-description: Offline report — offline_audit.js, offline_audit_core.js, bounded reads, X-SW-Principal, AUDIT_SCRIPTS, snowdesk-basemap-v1 browsedState
+description: Offline report and area panels — offline_audit.js, offline_journey.js, bounded reads, X-SW-Principal, AUDIT_SCRIPTS, browsedState
 status: current
 last-reviewed: 2026-10-30
 ---
@@ -62,6 +62,11 @@ report into both:
   page a stuck user *can always* open is the one that has to carry this.
   It links to `/offline/` for a reader who does have a connection.
 
+**Above the report, one panel per downloaded area (SNOW-1308).**
+`static/js/offline_journey.js` paints them on both hosts from the
+collection this module takes — see [The area panels](#the-area-panels)
+below. They replaced the report's "Map downloads" section.
+
 The app-side markup and its `{% trans %}` strings are
 `templates/includes/_offline_audit_panel.html`; the offline page carries
 the same markup contract inline, and English copy comes from the
@@ -78,7 +83,6 @@ stored, how many saved places there are is not a question anyone has.
 |---|---|
 | Getting in | Offline support is installed · The app may use the network · The app opens · The app looks right |
 | The map | Danger ratings · Region outlines · one row per basemap the device holds anything for |
-| Map downloads | one row per download, by name — its answer is about the TILES, with the content age riding in the summary (SNOW-926) |
 | Your content | Bulletins you have opened · Region details for downloaded days · Your saved places · Your routes · Community reports · Weather |
 
 **Region details for downloaded days** (SNOW-1312) is Yes when the shell
@@ -114,13 +118,12 @@ device whose app is saved is working exactly as asked; it is a fault only
 in combination with `app-opens` answering No, and `verdictFor` is the one
 place those two meet.
 
-**The downloads are the exception, deliberately.** One row saying the map
-draws is no use to someone whose Verbier download is the broken one, so
-every download gets its own named row — under one heading, with the kind
-in the label where it is not obvious ("La Chaux (drop zone)"). Three
-headings for three kinds put an empty-looking section between every pair
-of rows on a device with one of each. A device with nothing downloaded
-gets a single "Anything downloaded at all — No".
+**The downloads are not rows any more (SNOW-1308).** They were the one
+exception to the fixed list — a named row per download under "Map
+downloads" — and they moved, whole, to their own panels above the report
+([The area panels](#the-area-panels)). The report's verdict still reads
+the areas for "there is no map to show" and "none of your downloads will
+draw"; nothing else in it names an area.
 
 **A basemap gets its own row, in The Map.** Every download is made under
 a basemap and records which, and the shared low-zoom layer is stored per
@@ -273,8 +276,8 @@ stored, because a reader looking at a style their device cannot draw is
 exactly who needs telling.
 
 Two questions, then, and each already has a home: *can I see anything at
-all* is this row, and *can I see detail where I am going* is the
-per-download rows under Map downloads.
+all* is this row, and *can I see detail where I am going* is each
+area's own panel (SNOW-1308).
 
 Two more rows are answered from more than one reading:
 
@@ -446,6 +449,12 @@ being given.
 
 ### And a Yes is sometimes a Yes with a caveat (SNOW-926)
 
+> **SNOW-1308:** the per-area rows this section describes are the area
+> panels now, where the content age is a stage of its own — "Bulletins
+> and weather", Yes only when `fresh` — beside the map stage, which keeps
+> the tiles' answer. The reading below is unchanged and is what the
+> stage reads.
+
 A download has two halves. The tiles are a fixed grid over fixed ground
 and never go stale; the bulletins, weather and ratings inside the same
 boundary are new every day. That second half introduces a state the panel
@@ -480,10 +489,11 @@ three-clause cap with the same fact restated over rows the table already
 lists. A row still never carries its own explanation. An unparseable
 stamp reads as `none`: a corrupt field is not evidence of anything.
 
-### The remedy is on the row (SNOW-925)
+### The remedy is on the panel (SNOW-925; moved by SNOW-1308)
 
-Every row whose tiles verify carries one control, **Sync now**, which
-fetches that row's content and then **re-runs the report**. The panel
+Every area whose tiles verify carries one control, **Sync now**, on its
+panel, which fetches that area's content and then **re-reads storage**
+and repaints the panels (and the report, if it is on screen). The panel
 already refuses to claim a green it has not verified, and the one place
 the report is allowed to say a fetch worked is after checking.
 
@@ -688,14 +698,14 @@ reading is `terrainTiles: null` and the report makes no claim about class
 tiles — the sheet's own answer when it has no template.
 
 **It lists what the sheet lists (SNOW-1138).** A pinned bucket no record
-accounts for is a row: an ORPHAN (a download that never finished) reads
-No, with a note naming the sheet's Remove — its only action there — and
-no Sync control. An unrecorded `base-<basemapKey>` bucket reads as that
+accounts for is an area: an ORPHAN (a download that never finished) gets
+a panel whose map stage reads No, with Remove — its only action, now on
+the panel itself (SNOW-1308) — and no Sync control. An unrecorded `base-<basemapKey>` bucket reads as that
 basemap's base layer, as the shared reader names it (SNOW-863). Before
 this the orphans were collected and never shown, so a device holding one
 read clean here and "Incomplete" on the sheet.
 
-**It never writes.** Every read is read-only, `caches.has` gates every
+**It never writes** — the report. Every read is read-only, `caches.has` gates every
 bucket read (`caches.open` *creates* on miss, which would turn "this
 area is gone" into "this area is empty" for every run after the first),
 and IndexedDB is opened with no version so it cannot trigger an upgrade.
@@ -756,12 +766,46 @@ whether it worked.
 same reason `debug_log_panel.js` has a Copy: a phone with no devtools is
 the only place this data exists.
 
+## The area panels
+
+SNOW-1308. One panel per downloaded area, above the report, on both
+hosts, answering *will this area work without a signal?* The rules, the
+verdict table and why they are what they are are in
+[an-area-is-answered-by-its-own-panel.md](decisions/an-area-is-answered-by-its-own-panel.md);
+what follows is how they meet this module.
+
+- **One collection.** The panels take no storage walk of their own.
+  `bind` publishes each collection as `snowdesk:offline-readings` and
+  answers `pwaOfflineAudit.latest()`; `offline_journey.js` asks for one
+  read on load (`refresh`, which collects without painting the report)
+  so the panels are answered before anyone presses Run the check.
+- **What the collector keeps for them.** Each record's tile `template`,
+  its `items` expectation and its `principal`, beside the `z` / `bbox` /
+  `band` SNOW-1138 already kept.
+- **The one reading that is not storage.** Whether every basemap tile the
+  ground implies is in the bucket — `blobFullyCached` over the bucket's
+  listed entries, asked by `offline_journey_core.js`'s `tileReading` of
+  `pwaBasemapDownloadCore` when the page has it. `static/offline.html`
+  does not, so its map stage reads "Can't tell".
+- **The controls.** Sync now and a "tap to fix" verdict call
+  `pwaOfflineAudit.syncArea` (or `syncAll` on a `?sync=all` page) —
+  `fetchAreaContent` below, unchanged, which now also stamps the items
+  expectation through `stampContentRecord`. Remove calls
+  `pwaBasemapAreaRemoval.evict` — the map's own removal — and then
+  `refresh`.
+- **Located.** "Your things" are the trips and pins `/api/area-items/`
+  places inside the area's rectangle (see the glossary), as the last sync
+  recorded them.
+
 ## Precaching
 
-`sw.js` warms both modules onto the device on install, by their unhashed
+`sw.js` warms the modules onto the device on install, by their unhashed
 `/static/` paths — the ones `offline.html` requests, since production
 serves hashed static URLs and ordinary browsing never puts these in the
 shell cache.
+
+SNOW-1308 added the panels' two files and the shared removal to the
+same list, so downloaded areas never vanish from the fallback page.
 
 They are in `AUDIT_SCRIPTS` and **not** in `PRECACHE_URLS`, which goes
 through one atomic `cache.addAll` where a single failed entry fails
@@ -779,6 +823,11 @@ guards on `window.pwaResetLocalData`.
 | The collector and the rendered DOM | `tests/js/test_offline_audit.js` |
 | The browsing-cache reading — `pageBasemaps` URLs, `tileTemplatesForStyle`, `browsedState`, the row and verdict (SNOW-1058) | `tests/js/test_offline_audit_core.js` ("the passive browsing cache"); the probe that never creates the cache is `tests/js/test_offline_audit.js` ("the browsing-cache probe") |
 | Storage that hangs rather than rejecting — the bounds, the latch, the throw | `tests/js/test_offline_audit.js` ("a device whose storage stops answering") |
+| The area panels — stages, verdicts, the tile reading, your things | `tests/js/test_offline_journey_core.js` |
+| The panels' DOM on the fallback page's own templates, Sync now and Remove wiring | `tests/js/test_offline_journey.js`; Sync now's payload is still `tests/js/test_offline_audit.js` ("Sync now, on the area panels") |
+| The shared removal | `tests/js/test_basemap_area_removal.js` |
+| The items expectation stamped by the map's syncs | `tests/js/test_map_download_content.js` (SNOW-1308 block) |
+| The panels' host, templates and precache on both pages | `tests/public/test_offline_journey.py` |
 | Both hosts' markup, the strings-template drift check, the precache | `tests/public/test_offline_audit_panel.py` (SNOW-930 moved it out of `tests/accounts/test_settings_offline_audit.py`); the `/offline/` page itself, its endpoints and its activation warm are `tests/public/test_offline_page.py` |
 
 No Playwright test. Everything here is either arithmetic or a DOM
