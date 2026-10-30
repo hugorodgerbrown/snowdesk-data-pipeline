@@ -5,7 +5,7 @@ Covers ``render_ski_tours`` (SNOW-1316):
   - Read-only by default: no request, no write.
   - ``--commit`` walks and draws a tour on the service and applies it here.
   - A second ``--commit`` is a no-op: nothing walked, nothing written.
-  - No terrain grid, or the origin down three tours in a row, exits non-zero.
+  - No terrain grid, or any tour unanswered, exits non-zero; three in a row stop it.
   - One failing tour does not abort the batch; the command exits non-zero.
   - ``--limit`` stops where it says.
 
@@ -113,12 +113,24 @@ def test_the_origin_down_stops_the_run() -> None:
     SourceSkiTourFactory.create_batch(4)
     with (
         patch(_BUILDER, return_value=None) as build,
-        pytest.raises(CommandError, match="1 failure"),
+        pytest.raises(CommandError, match="3 unavailable"),
     ):
         _run("--commit")
-    # Each tour is walked once in each direction it could run.
+    # Stopped at the third; each tour is walked once in each direction it could run.
     assert build.call_count <= 3 * 2
     assert not SourceSkiTour.objects.filter(track_render__isnull=False).exists()
+
+
+def test_one_unanswered_tour_still_fails_the_run() -> None:
+    """A partial outage is retried next run, but exits non-zero now."""
+    SourceSkiTourFactory.create_batch(2)
+    records = iter([None, dict(RECORD), dict(RECORD)])
+    with (
+        patch(_BUILDER, side_effect=lambda *a, **k: next(records)),
+        pytest.raises(CommandError, match="1 unavailable"),
+    ):
+        _run("--commit")
+    assert SourceSkiTour.objects.filter(track_render__isnull=False).count() == 1
 
 
 def test_one_failing_tour_does_not_abort_the_batch() -> None:

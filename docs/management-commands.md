@@ -1234,9 +1234,9 @@ the current one, or whose drawing is below `TRACK_RENDER_VERSION`. A stale
 drawing is redrawn from the walk it holds, with no request. **Idempotent**:
 a second run finds no candidate and writes nothing; a drawing whose `fp`
 matches is never rewritten. **An outage writes nothing**: a tour the tile
-origin does not answer for is counted `unavailable` and tried next run;
-three in a row stops the run with a non-zero exit, as does no terrain
-grid. A line too short to walk is `no_terrain`, stored, and settled. The
+origin does not answer for is counted `unavailable`, tried next run, and
+fails the run (non-zero exit); three in a row stops it early. No terrain
+grid fails it too. A line too short to walk is `no_terrain`, stored, and settled. The
 weekly `import_ski_tours` sync clears all three fields on a tour whose
 document changed. On `--commit` the host's own `SkiTour` rows then take
 what changed (`apply_from_service`). Paced by `--delay` (a second between

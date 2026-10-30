@@ -18,9 +18,9 @@ from and its drawing the fingerprint of what it was drawn from; a tour
 whose both match is not even a candidate, so a second run writes nothing.
 
 **An outage stores nothing.** A tour the tile origin does not answer for is
-counted ``unavailable`` and tried again next run; three in a row is the
-origin down, and the run stops and exits non-zero. No terrain grid at all
-is the same. A line too short to walk is ``no_terrain``, settled.
+counted ``unavailable`` and tried again next run, and the run exits
+non-zero; three in a row is the origin down, and the run stops there.
+No terrain grid at all is the same. A line too short to walk is ``no_terrain``, settled.
 
 **It makes real outbound requests, so it paces itself** — a second between
 walked tours by default, politeness towards the tile origin.
@@ -167,7 +167,6 @@ class Command(RegisteredCommand):
                 unavailable_run + 1 if outcome == RenderOutcome.UNAVAILABLE else 0
             )
             if unavailable_run >= _UNAVAILABLE_RUN_LIMIT:
-                counts["failed"] += 1
                 self.stderr.write(
                     f"{unavailable_run} tours in a row unanswered: the terrain "
                     "origin is down. Stopping."
@@ -182,10 +181,15 @@ class Command(RegisteredCommand):
         if commit:
             self._apply_here(counts)
         self._report(counts, commit=commit)
-        if counts["failed"]:
+        # An unanswered tour is a partial failure: it is retried next run,
+        # but the scheduler and the register must see this run fell short.
+        failures = counts["failed"] + counts[RenderOutcome.UNAVAILABLE.value]
+        if failures:
             raise CommandError(
-                f"render_ski_tours completed with {counts['failed']} "
-                "failure(s). Check logs for details."
+                f"render_ski_tours completed with {failures} failure(s) "
+                f"({counts['failed']} failed, "
+                f"{counts[RenderOutcome.UNAVAILABLE.value]} unavailable). "
+                "Check logs for details."
             )
 
     def _render_one(
