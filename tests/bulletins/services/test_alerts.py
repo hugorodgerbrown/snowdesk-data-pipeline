@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -44,6 +44,10 @@ TOMORROW = TODAY + datetime.timedelta(days=1)
 NOW = datetime.datetime(2026, 1, 16, 18, 0, tzinfo=ALERT_TZ)
 
 WIND = ProblemState("wind_slab", ("N",), lower=2400)
+
+# dispatch_push's result for an accepted push, and for a refused one.
+OK = {"ok": True, "status": 201}
+GONE = {"ok": False, "status": 410, "error": "Gone"}
 
 
 def render(key: str = "moderate", problems: list[dict[str, Any]] | None = None) -> dict:
@@ -197,7 +201,7 @@ class TestEvaluateAndDeliver:
         publish(region, TOMORROW, render("considerable", [WIND_RM]))
         PushSubscriptionFactory.create(account=account)
 
-        with patch.object(alerts, "enqueue_push") as push:
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
             run = deliver(evaluate_account(account, NOW))
         assert run.message is not None
         assert run.message.title == "Verbier · Saturday: Considerable (3)"
@@ -235,7 +239,7 @@ class TestEvaluateAndDeliver:
         account, region = follower
         PushSubscriptionFactory.create(account=account)
         bulletin = publish(region, TOMORROW, render())
-        with patch.object(alerts, "enqueue_push") as push:
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
             deliver(evaluate_account(account, NOW))  # A
             bulletin.render_model = render("considerable")
             bulletin.save()
@@ -260,13 +264,81 @@ class TestEvaluateAndDeliver:
         assert row.sent_email and not row.sent_push
         assert row.outcome == BulletinAlert.Outcome.SENT
 
+    def test_failed_push_falls_back_to_email(self, follower: tuple) -> None:
+        """Every push refused (an expired device): FALLBACK emails instead."""
+        account, region = follower
+        publish(region, TOMORROW, render())
+        PushSubscriptionFactory.create(account=account)
+        with (
+            patch.object(alerts, "dispatch_push", return_value=GONE),
+            patch.object(alerts, "send_alert_email") as email,
+        ):
+            deliver(evaluate_account(account, NOW))
+        email.assert_called_once()
+        row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+        assert row.outcome == BulletinAlert.Outcome.SENT
+        assert row.sent_email and not row.sent_push
+
+    def test_unreached_alert_is_retried(self, follower: tuple) -> None:
+        """Push refused and email off: FAILED, and the next run sends again."""
+        account, region = follower
+        account.alert_email = Account.AlertEmail.NEVER
+        account.save()
+        publish(region, TOMORROW, render())
+        PushSubscriptionFactory.create(account=account)
+        with patch.object(alerts, "dispatch_push", return_value=GONE):
+            deliver(evaluate_account(account, NOW))
+        row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+        assert row.outcome == BulletinAlert.Outcome.FAILED
+
+        retry = evaluate_account(account, NOW)
+        assert retry.message is not None
+        with patch.object(alerts, "dispatch_push", return_value=OK):
+            deliver(retry)
+        row.refresh_from_db()
+        assert row.outcome == BulletinAlert.Outcome.SENT and row.sent_push
+        assert evaluate_account(account, NOW).rows == []
+
+    def test_failed_enqueue_leaves_no_pending_row(self, follower: tuple) -> None:
+        """An enqueue that raises rolls the rows back, so the day stays untold."""
+        account, region = follower
+        publish(region, TOMORROW, render())
+        PushSubscriptionFactory.create(account=account)
+        run = evaluate_account(account, NOW)
+        worker = MagicMock()
+        worker.enqueue.side_effect = RuntimeError
+        with (
+            patch.object(alerts, "_worker_deliver_alert", worker),
+            pytest.raises(RuntimeError),
+        ):
+            deliver(run)
+        assert not BulletinAlert.objects.filter(account=account).exists()
+        assert evaluate_account(account, NOW).message is not None
+
+    def test_worker_settles_only_pending_rows(self, follower: tuple) -> None:
+        """A replayed delivery task never rewrites a row already settled."""
+        account, region = follower
+        settled = BulletinAlertFactory.create(
+            account=account,
+            region=region,
+            target_date=TOMORROW,
+            outcome=BulletinAlert.Outcome.SENT,
+            sent_push=True,
+        )
+        with patch.object(alerts, "dispatch_push", return_value=GONE):
+            alerts._worker_deliver_alert.call(
+                account.pk, [settled.pk], {}, "t", "b", "/"
+            )
+        settled.refresh_from_db()
+        assert settled.outcome == BulletinAlert.Outcome.SENT and settled.sent_push
+
     def test_no_email_when_push_reaches(self, follower: tuple) -> None:
         """FALLBACK with a live device sends push only."""
         account, region = follower
         publish(region, TOMORROW, render())
         PushSubscriptionFactory.create(account=account)
         with (
-            patch.object(alerts, "enqueue_push"),
+            patch.object(alerts, "dispatch_push", return_value=OK),
             patch.object(alerts, "send_alert_email") as email,
         ):
             deliver(evaluate_account(account, NOW))
@@ -280,7 +352,7 @@ class TestEvaluateAndDeliver:
         publish(region, TOMORROW, render())
         PushSubscriptionFactory.create(account=account)
         with (
-            patch.object(alerts, "enqueue_push"),
+            patch.object(alerts, "dispatch_push", return_value=OK),
             patch.object(alerts, "send_alert_email") as email,
         ):
             deliver(evaluate_account(account, NOW))

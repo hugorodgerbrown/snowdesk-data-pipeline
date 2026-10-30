@@ -55,3 +55,17 @@ describe('urlBase64ToUint8Array', () => {
     expect(Array.from(core.urlBase64ToUint8Array('AQID_-8'))).toEqual([1, 2, 3, 255, 239]);
   });
 });
+
+describe('testOutcome', () => {
+  it('says sent when a device took it', () => {
+    expect(core.testOutcome({ ok: true, devices: 2, delivered: 1 })).toBe('test-sent');
+  });
+
+  it('says no device when the account has none', () => {
+    expect(core.testOutcome({ ok: false, devices: 0, delivered: 0 })).toBe('test-no-device');
+  });
+
+  it('says failed when every send failed', () => {
+    expect(core.testOutcome({ ok: false, devices: 1, delivered: 0 })).toBe('test-failed');
+  });
+});

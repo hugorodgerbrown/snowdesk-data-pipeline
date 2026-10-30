@@ -156,13 +156,35 @@ def test_alert_place_of_another_user_is_404(client_for: Client) -> None:
 
 @pytest.mark.usefixtures("alerts_flag")
 def test_alert_test_pushes_every_device(client_for: Client, account: Account) -> None:
-    """The test alert goes to each active subscription."""
+    """The test alert goes to each active subscription and says what landed."""
     PushSubscriptionFactory.create(account=account)
     PushSubscriptionFactory.create(account=account)
-    with patch("apps.accounts.alert_views.enqueue_push") as push:
+    with patch(
+        "apps.accounts.alert_views.dispatch_push",
+        side_effect=[{"ok": True, "status": 201}, {"ok": False, "status": 410}],
+    ) as push:
         response = client_for.post("/account/alerts/test/")
-    assert response.json() == {"ok": True, "enqueued": 2}
+    assert response.json() == {"ok": True, "devices": 2, "delivered": 1}
     assert push.call_count == 2
+
+
+@pytest.mark.usefixtures("alerts_flag")
+def test_alert_test_reports_a_failed_send(client_for: Client, account: Account) -> None:
+    """A send the push service refused is not reported as on its way."""
+    PushSubscriptionFactory.create(account=account)
+    with patch(
+        "apps.accounts.alert_views.dispatch_push",
+        return_value={"ok": False, "status": None, "error": "bad key"},
+    ):
+        response = client_for.post("/account/alerts/test/")
+    assert response.json() == {"ok": False, "devices": 1, "delivered": 0}
+
+
+@pytest.mark.usefixtures("alerts_flag")
+def test_alert_test_with_no_device(client_for: Client) -> None:
+    """An account with no subscription is told so."""
+    response = client_for.post("/account/alerts/test/")
+    assert response.json() == {"ok": False, "devices": 0, "delivered": 0}
 
 
 class TestUnsubscribe:

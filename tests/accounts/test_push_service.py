@@ -18,6 +18,7 @@ Also tests _worker_dispatch_push (SNOW-319):
 
 from __future__ import annotations
 
+import binascii
 import json
 import logging
 from unittest.mock import MagicMock, patch
@@ -119,6 +120,23 @@ class TestDispatchPush:
         assert result["ok"] is False
         assert result["status"] is None
         # Row survives when status is None (unknown error).
+        assert PushSubscription.objects.filter(pk=sub.pk).exists()
+
+    def test_unusable_vapid_key_returns_failure(self) -> None:
+        """A key pywebpush cannot decode is a failed send, not a raised error.
+
+        Staging's misread secret file raised binascii.Error from inside
+        webpush on every send; the alert worker needs an outcome to settle on.
+        """
+        sub = PushSubscriptionFactory.create()
+        exc = binascii.Error("Invalid base64-encoded string")
+        with patch("apps.accounts.push_service.webpush", side_effect=exc):
+            result = dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
+        assert result == {
+            "ok": False,
+            "status": None,
+            "error": "Invalid base64-encoded string",
+        }
         assert PushSubscription.objects.filter(pk=sub.pk).exists()
 
     def test_webpush_called_with_correct_subscription_info(self) -> None:

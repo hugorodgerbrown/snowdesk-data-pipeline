@@ -144,6 +144,16 @@ def dispatch_push(
             exc,
         )
         return {"ok": False, "status": status, "error": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — a bad VAPID key or a malformed
+        # subscription raises from inside pywebpush before any request is made
+        # (staging's misread secret file raised binascii.Error on every send).
+        # The caller needs an outcome, not a traceback: the alert worker
+        # settles its rows on it, and the test button reports it.
+        logger.exception(
+            "webpush could not be attempted for push subscription pk=%s",
+            sub.pk,
+        )
+        return {"ok": False, "status": None, "error": str(exc)}
     # SNOW-874: say so on the way out. ``webpush`` raises for any status
     # above 202, so reaching this line already means the push service
     # accepted the message — but "no warning was logged" is a much harder
@@ -190,9 +200,8 @@ def _worker_dispatch_push(
     handler between enqueue and execution), the worker exits silently after
     logging at INFO — this is an expected race and not a failure.
 
-    ``dispatch_push`` handles all pywebpush errors internally and never
-    raises; unexpected errors surface as a failed ``DbTaskResult`` in the
-    django-tasks admin.
+    ``dispatch_push`` handles every send error internally and never
+    raises; a failure is logged and returned as ``ok: False``.
 
     Args:
         sub_pk: Primary key of the ``PushSubscription`` to deliver to.

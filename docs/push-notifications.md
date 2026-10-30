@@ -348,6 +348,16 @@ You uploaded a PEM as the secret file. See
 `mint_vapid_keypair --commit` (after deleting the old secret), upload the
 **raw scalar** output instead, and update `VAPID_PUBLIC_KEY` to match.
 
+### `binascii.Error: Invalid base64-encoded string` from py_vapid
+
+The secret file does not hold the 43-character raw scalar: a pasted
+fragment, two lines, or a key from somewhere else. Staging shipped this way
+in October 2026 (57 characters), and every send failed before reaching the
+push service. `dispatch_push` now returns it as `ok: False` rather than
+raising, so the alert worker records the alert FAILED and retries it, and
+the settings page's Send a test says "could not be sent". Re-mint and
+upload both halves together, as below.
+
 ### Push notification doesn't arrive even though subscribe succeeded
 
 Most common cause: the public key in `VAPID_PUBLIC_KEY` and the private key in

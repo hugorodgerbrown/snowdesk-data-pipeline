@@ -76,6 +76,8 @@
           unsupported: 'This browser cannot show notifications. Alerts will come by email.',
           failed: 'That did not work. Try again.',
           'test-sent': 'A test alert is on its way.',
+          'test-no-device': 'This device is not registered for alerts. Turn notifications off and on again.',
+          'test-failed': 'The test alert could not be sent.',
         })
       : {};
 
@@ -145,8 +147,10 @@
           credentials: 'same-origin',
         })
           .then(function (resp) {
-            say(resp.ok ? 'test-sent' : 'failed');
+            if (!resp.ok) return 'failed';
+            return resp.json().then(core.testOutcome);
           })
+          .then(say)
           .catch(function () {
             say('failed');
           });

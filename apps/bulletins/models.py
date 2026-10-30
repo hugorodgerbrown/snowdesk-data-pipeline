@@ -1154,17 +1154,21 @@ class BulletinAlert(BaseModel):
 
     ``outcome`` records why the row exists:
 
+    - ``PENDING``: queued; the delivery worker has not settled it yet.
+      Counts as told, so a second run does not queue it again.
     - ``SENT``: the account was told, by push, email or both.
     - ``SKIPPED``: a CHANGES-mode account's establishing issue that moved
       nothing; logged so the next issue compares against it.
     - ``BASELINE``: a day already under way when alerts were turned on;
       recorded silently so the first message is about the next change.
-    - ``FAILED``: every channel failed; the next run tries again.
+    - ``FAILED``: every channel failed (an expired device, say, with email
+      off); not counted as told, so the next run tries again.
     """
 
     class Outcome(models.TextChoices):
         """Why the row exists."""
 
+        PENDING = "PENDING", "Queued"
         SENT = "SENT", "Sent"
         SKIPPED = "SKIPPED", "Skipped (no change)"
         BASELINE = "BASELINE", "Baseline (day under way)"
