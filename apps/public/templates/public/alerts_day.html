@@ -6,7 +6,8 @@ alert lands (SNOW-1328).
 One card per followed place: its name, that day's level, what moved since
 the day before (the alert's own sentences, so the page and the message
 agree word for word) and "Open on the map", which opens the place's region
-panel on that day. Places that moved come first, as in the alert.
+panel on that day. A saved trip's row opens the trip instead (SNOW-947).
+Places that moved come first, as in the alert.
 
 Context: ``rows``, ``heading``, ``since_heading``, ``target_date``
 (apps/public/alert_views.py::alerts_day).
@@ -44,8 +45,13 @@ Context: ``rows``, ``heading``, ``since_heading``, ``target_date``
                 {% elif row.has_previous %}
                     <p class="mt-1 text-sm text-text-2">{% trans "No change to the level or the problems." %}</p>
                 {% endif %}
-                {% trans "Open on the map" as open_label %}
-                {% include "includes/_button.html" with label=open_label href=row.url variant="ghost" size="compact" extra_classes="mt-2" %}
+                {% if row.trip_url %}
+                    {% trans "Open the trip" as open_label %}
+                    {% include "includes/_button.html" with label=open_label href=row.trip_url variant="ghost" size="compact" extra_classes="mt-2" %}
+                {% else %}
+                    {% trans "Open on the map" as open_label %}
+                    {% include "includes/_button.html" with label=open_label href=row.url variant="ghost" size="compact" extra_classes="mt-2" %}
+                {% endif %}
                 {% endcard %}
             {% empty %}
                 <p class="text-sm text-text-2">

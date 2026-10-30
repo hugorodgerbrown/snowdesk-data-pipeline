@@ -2,10 +2,11 @@
 apps/bulletins/services/alerts.py — Who is told what, and when (SNOW-942).
 
 The send step of bulletin alerts. For each account with alerts on, for each
-of its alert places (region pins and saved resorts), for today and
-tomorrow, it compares the authoritative bulletin's state (A1) against what
-the send log last recorded, decides, bundles every place that fired into
-one message (A3) and delivers it by push and, as the fallback, email.
+of its alert places (region pins and saved resorts, every day; a saved trip,
+on its own day only — SNOW-947), for today and tomorrow, it compares the
+authoritative bulletin's state (A1) against what the send log last recorded,
+decides, bundles every place that fired into one message (A3) and delivers
+it by push and, as the fallback, email.
 
 **The decision** (:func:`decide`, pure, shared with the replay harness):
 
@@ -22,6 +23,10 @@ one message (A3) and delivers it by push and, as the fallback, email.
   nothing a reader would notice moved, which logs ``SKIPPED``.
 - Today and tomorrow both firing for one place → only tomorrow is in the
   message; today is logged ``SKIPPED``.
+- **A trip's day always gets its establishing issue**, in ``CHANGES`` mode
+  too (Hugo, 2026-10-30): the evening before a saved trip, the person is
+  told the day's level and problems whether or not they moved. Updates on
+  the day itself still need a change.
 
 **Night hold.** Nothing is evaluated 22:00–06:30 Europe/Zurich, so an
 issue landing overnight is picked up by the first run of the morning.
@@ -50,6 +55,7 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
+from django.urls import reverse
 from django_tasks import task
 
 from apps.accounts.models import Account
@@ -69,6 +75,8 @@ from apps.bulletins.services.bulletin_change import (
     summarise_change,
 )
 from apps.favourites.models import Favourite
+from apps.trips.models import Trip
+from apps.trips.services.plan_days import start_region
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -115,10 +123,15 @@ def in_night_hold(now: datetime.datetime) -> bool:
 
 @dataclass
 class AlertPlace:
-    """One region an account follows, with the name it knows it by."""
+    """One region an account follows, with the name it knows it by.
+
+    ``trip_url`` is set when a saved trip is (one of) the reasons: the
+    alert then links to the trip page rather than the map.
+    """
 
     region: MicroRegion
     labels: list[str] = field(default_factory=list)
+    trip_url: str = ""
 
     @property
     def label(self) -> str:
@@ -158,6 +171,66 @@ def account_places(user: User) -> list[AlertPlace]:
         place = by_region.setdefault(region.pk, AlertPlace(region=region))
         if label not in place.labels:
             place.labels.append(label)
+    return sorted(by_region.values(), key=lambda p: p.label)
+
+
+def trip_places(user: User, day: datetime.date) -> list[AlertPlace]:
+    """
+    Return the regions a user's saved trips on one day start in (SNOW-947).
+
+    The region is the route's start, the rule the trip page and the Plan
+    page already use (``plan_days.start_region``), so the alert names the
+    region and level the trip page shows. A start outside every region
+    adds nothing. Every account that saved the trip counts, organiser or
+    not; nobody is told who else holds it.
+
+    Args:
+        user: The account's user.
+        day: The day the trips are dated.
+
+    Returns:
+        One place per region, labelled by trip name, ordered by label.
+
+    """
+    by_region: dict[int, AlertPlace] = {}
+    trips = Trip.objects.for_user(user).filter(date=day).order_by("start_time")
+    for trip in trips.only("uuid", "name", "route_name", "points"):
+        region = start_region(trip.points)
+        if region is None:
+            continue
+        place = by_region.setdefault(region.pk, AlertPlace(region=region))
+        if trip.display_name and trip.display_name not in place.labels:
+            place.labels.append(trip.display_name)
+        place.trip_url = place.trip_url or reverse(
+            "trips:detail", kwargs={"uuid": trip.uuid}
+        )
+    return sorted(by_region.values(), key=lambda p: p.label)
+
+
+def places_on(pins: list[AlertPlace], trips: list[AlertPlace]) -> list[AlertPlace]:
+    """
+    Return one day's places: every pin, with that day's trips folded in.
+
+    A trip in a region the person already pins is one place with both
+    names, so the send log (one row per account, region and day) and the
+    message carry it once.
+
+    Args:
+        pins: ``account_places`` — the every-day places.
+        trips: ``trip_places`` for the day.
+
+    Returns:
+        The day's places, ordered by label.
+
+    """
+    by_region = {p.region.pk: replace(p, labels=list(p.labels)) for p in pins}
+    for trip in trips:
+        place = by_region.get(trip.region.pk)
+        if place is None:
+            by_region[trip.region.pk] = trip
+            continue
+        place.labels.extend(lbl for lbl in trip.labels if lbl not in place.labels)
+        place.trip_url = trip.trip_url
     return sorted(by_region.values(), key=lambda p: p.label)
 
 
@@ -234,6 +307,7 @@ def decide(
     has_row: bool,
     previous_day: BulletinState | None,
     enabled_before_day: bool,
+    trip_day: bool = False,
 ) -> Decision:
     """
     Decide what one new state for one region and day means for one account.
@@ -250,6 +324,8 @@ def decide(
         has_row: Whether the log holds any row for this day.
         previous_day: The state authoritative for the day before ``day``.
         enabled_before_day: Whether alerts were on before ``day`` began.
+        trip_day: Whether the person has a saved trip on ``day``; its
+            establishing issue then sends in ``CHANGES`` mode too.
 
     Returns:
         The decision.
@@ -272,7 +348,7 @@ def decide(
     if previous_day is None:
         return Decision(sent, "season_start", summarise_change(None, current), None)
     change = summarise_change(previous_day, current)
-    if mode == Account.NotifyWhen.CHANGES and change.is_empty:
+    if mode == Account.NotifyWhen.CHANGES and change.is_empty and not trip_day:
         return Decision(skipped, "new", change, compared_to)
     return Decision(sent, "new", change, compared_to)
 
@@ -347,8 +423,9 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
     local = local_now(now)
     today = local.date()
     day_start = datetime.datetime.combine(today, datetime.time(0), tzinfo=ALERT_TZ)
-    for place in account_places(account.user):
-        for day in (today, today + datetime.timedelta(days=1)):
+    pins = account_places(account.user)
+    for day in (today, today + datetime.timedelta(days=1)):
+        for place in places_on(pins, trip_places(account.user, day)):
             bulletin = authoritative_bulletin(place.region, day)
             if bulletin is None or not bulletin.render_model:
                 continue
@@ -380,6 +457,7 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                     else day_state(place.region, day - datetime.timedelta(days=1))
                 ),
                 enabled_before_day=enabled_at is not None and enabled_at < day_began,
+                trip_day=bool(place.trip_url),
             )
             run.rows.append(PendingRow(place, day, bulletin, current, decision))
     _one_day_per_place(run.rows)
@@ -394,6 +472,7 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
                     kind=r.decision.kind,
                     change=r.decision.change,
                     compared_to=r.decision.compared_to,
+                    url=r.place.trip_url,
                 )
                 for r in sending
             ],

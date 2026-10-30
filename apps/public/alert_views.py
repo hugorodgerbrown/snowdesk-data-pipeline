@@ -4,8 +4,9 @@ apps/public/alert_views.py — The bulletin alert landing page (SNOW-1328).
 ``/alerts/<date>/`` is where a bundled alert lands: one row per place the
 signed-in person follows, each with that day's level, what moved since the
 day before in the alert's own words, and a link that opens the place's
-region panel on the map for that day. A single-place alert skips this page
-and opens the map directly.
+region panel on the map for that day. A saved trip on that day is a row too
+(SNOW-947), its region the route's start, and its link opens the trip. A
+single-place alert skips this page and opens the map, or the trip, directly.
 
 Sign-in required, not flag-gated: an account that opted in keeps its alerts
 if the rollout flag narrows, so the page they open must keep working too.
@@ -54,7 +55,12 @@ def alerts_day(request: HttpRequest, day: str) -> HttpResponse:
     previous_date = target - datetime.timedelta(days=1)
     map_url = reverse("public:map")
     rows = []
-    for place in alerts_service.account_places(request.user):  # type: ignore[arg-type]  # login_required guarantees a User
+    user = request.user
+    places = alerts_service.places_on(
+        alerts_service.account_places(user),  # type: ignore[arg-type]  # login_required guarantees a User
+        alerts_service.trip_places(user, target),  # type: ignore[arg-type]  # as above
+    )
+    for place in places:
         current = alerts_service.day_state(place.region, target)
         previous = alerts_service.day_state(place.region, previous_date)
         sentences: list[str] = []
@@ -68,6 +74,7 @@ def alerts_day(request: HttpRequest, day: str) -> HttpResponse:
                 "sentences": sentences,
                 "has_previous": previous is not None,
                 "url": f"{map_url}?d={target.isoformat()}#{place.region.region_id}",
+                "trip_url": place.trip_url,
             }
         )
     # Places that moved first, as in the alert itself.

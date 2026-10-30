@@ -65,6 +65,9 @@ class PlaceAlert:
     # The day the comparison was made against (yesterday for a new day,
     # the same day for an update), for "Same as Friday".
     compared_to: datetime.date | None = None
+    # Where a one-place alert opens, when not the map: a saved trip's own
+    # page (SNOW-947).
+    url: str = ""
 
 
 @dataclass(frozen=True)
@@ -475,15 +478,18 @@ def place_title(place: PlaceAlert, today: datetime.date) -> str:
 
 def place_url(place: PlaceAlert) -> str:
     """
-    Return the map link that opens this place's region panel on its day.
+    Return the link a one-place alert opens.
 
     Args:
         place: The place that fired.
 
     Returns:
-        ``/map/?d=YYYY-MM-DD#<region_id>``.
+        The place's own ``url`` (a trip page) when it has one, otherwise
+        ``/map/?d=YYYY-MM-DD#<region_id>``, its region panel on its day.
 
     """
+    if place.url:
+        return place.url
     return (
         f"{reverse('public:map')}?d={place.target_date.isoformat()}#{place.region_id}"
     )

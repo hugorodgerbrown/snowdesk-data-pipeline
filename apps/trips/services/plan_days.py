@@ -163,7 +163,7 @@ def _rated_days(
     }
 
 
-def _start_region(points: list[list[float]]) -> MicroRegion | None:
+def start_region(points: list[list[float]]) -> MicroRegion | None:
     """Return the region a track starts in, or None (see the module note)."""
     return region_for_point(points[0][1], points[0][0]) if points else None
 
@@ -205,7 +205,7 @@ def trip_danger(day: datetime.date, points: list[list[float]]) -> TripDanger | N
         The level and its region, or None.
 
     """
-    region = _start_region(points)
+    region = start_region(points)
     if region is None:
         return None
     rated = _rated_days(region, day, day).get(day)
@@ -248,7 +248,7 @@ def plan_week(today: datetime.date, points: list[list[float]]) -> PlanWeek:
 
     """
     dates = [today + datetime.timedelta(days=n) for n in range(PLAN_DAYS)]
-    region = _start_region(points)
+    region = start_region(points)
     if region is None:
         return PlanWeek([PlanDay(day) for day in dates], None)
     rated = _rated_days(region, dates[0], dates[-1])
