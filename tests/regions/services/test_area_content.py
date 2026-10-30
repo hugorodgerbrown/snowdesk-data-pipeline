@@ -22,11 +22,13 @@ from typing import Any
 import pytest
 
 from apps.locations.models import Location
+from apps.regions.models import Resort
 from apps.regions.services.area_content import (
     area_content,
     bboxes_overlap,
     micro_region_index,
     point_in_bbox,
+    resort_index,
     weather_location_index,
 )
 from tests.factories import (
@@ -34,6 +36,7 @@ from tests.factories import (
     LocationFactory,
     MajorRegionFactory,
     MicroRegionFactory,
+    ResortFactory,
     ResortLocationFactory,
     SubRegionFactory,
 )
@@ -294,7 +297,7 @@ def test_area_content_is_empty_for_a_box_touching_nothing(
     """A box over open sea names no region and no location."""
     payload = area_content([1.0, 41.0, 1.1, 41.1])
 
-    assert payload == {"regions": [], "weather": []}
+    assert payload == {"regions": [], "weather": [], "resorts": []}
 
 
 @pytest.mark.django_db
@@ -308,6 +311,50 @@ def test_area_content_names_the_locations_inside_the_box() -> None:
     payload = area_content([7.1, 46.1, 7.2, 46.2])
 
     assert payload["weather"] == [{"short_id": inside.short_id}]
+
+
+@pytest.mark.django_db
+def test_area_content_names_the_resorts_inside_the_box() -> None:
+    """SNOW-1318: a resort is a pin, so a point test, as weather is."""
+    ResortFactory.create(name="Inside", latitude=46.15, longitude=7.15)
+    ResortFactory.create(name="Outside", latitude=47.2, longitude=9.2)
+
+    payload = area_content([7.1, 46.1, 7.2, 46.2])
+
+    assert payload["resorts"] == [{"slug": "inside"}]
+
+
+# ---------------------------------------------------------------------------
+# resort_index (SNOW-1318)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_resort_index_is_the_resorts_the_map_pins_in_slug_order() -> None:
+    """resorts.geojson's filter: kind RESORT, with a pin."""
+    ResortFactory.create(name="Zinal", latitude=46.13, longitude=7.62)
+    ResortFactory.create(name="Arolla", latitude=46.02, longitude=7.48)
+    ResortFactory.create(
+        name="Touring",
+        latitude=46.0,
+        longitude=7.0,
+        kind=Resort.Kind.TOURING_TERRAIN,
+    )
+    ResortFactory.create(name="Unpinned")
+
+    points = resort_index()
+
+    assert [point.slug for point in points] == ["arolla", "zinal"]
+    assert (points[0].lon, points[0].lat) == (7.48, 46.02)
+
+
+@pytest.mark.django_db
+def test_resort_index_reads_the_pin_location() -> None:
+    """The coordinate is the pin ``Location``'s, through pin_coordinates."""
+    pin = LocationFactory.create(latitude=46.5, longitude=7.5)
+    ResortFactory.create(name="Pinned", location=pin)
+
+    assert [(p.slug, p.lon, p.lat) for p in resort_index()] == [("pinned", 7.5, 46.5)]
 
 
 @pytest.fixture

@@ -35,6 +35,7 @@ from tests.factories import (
     LocationFactory,
     MajorRegionFactory,
     MicroRegionFactory,
+    ResortFactory,
     ResortLocationFactory,
     SubRegionFactory,
 )
@@ -80,9 +81,9 @@ def _square(bbox: list[float]) -> dict[str, Any]:
 
 
 def _seed_estate() -> None:
-    """Put one mapped region and one curated location on the map.
+    """Put one mapped region, one curated location and one resort on the map.
 
-    Enough for both indexes to come back non-empty, which is what the
+    Enough for every index to come back non-empty, which is what the
     response policy and the memo lifetime turn on.
     """
     sub = SubRegionFactory.create(
@@ -97,6 +98,8 @@ def _seed_estate() -> None:
     ResortLocationFactory.create(
         location=LocationFactory.create(latitude=46.5, longitude=7.5)
     )
+    # SNOW-1318: and one pinned resort, for the third index.
+    ResortFactory.create(name="Seeded Resort", latitude=46.6, longitude=7.6)
 
 
 @pytest.fixture(autouse=True)
@@ -205,7 +208,7 @@ def test_a_box_inside_no_region_answers_with_nothing() -> None:
     response = Client().get(_url("1.0,41.0,1.1,41.1"))
 
     assert response.status_code == 200
-    assert response.json() == {"regions": [], "weather": []}
+    assert response.json() == {"regions": [], "weather": [], "resorts": []}
 
 
 @pytest.mark.django_db
@@ -223,6 +226,17 @@ def test_a_favourite_only_location_is_never_named() -> None:
     payload = Client().get(_url("7.1,46.1,7.2,46.2")).json()
 
     assert payload["weather"] == [{"short_id": curated.short_id}]
+
+
+@pytest.mark.django_db
+def test_the_resorts_inside_the_box_are_named() -> None:
+    """SNOW-1318: each resort's place sheet is warmed from this list."""
+    ResortFactory.create(name="Verbier", latitude=46.1, longitude=7.2)
+    ResortFactory.create(name="Davos", latitude=46.8, longitude=9.8)
+
+    payload = Client().get(_url("7.1,46.0,7.3,46.2")).json()
+
+    assert payload["resorts"] == [{"slug": "verbier"}]
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +310,7 @@ def test_an_estate_with_no_geometry_gets_no_stale_window() -> None:
     response = Client().get(_url("7.0,46.0,8.0,47.0"))
 
     assert response.status_code == 200
-    assert response.json() == {"regions": [], "weather": []}
+    assert response.json() == {"regions": [], "weather": [], "resorts": []}
     assert "stale-while-revalidate" not in response["Cache-Control"]
 
 
@@ -324,7 +338,7 @@ def test_the_index_memo_is_short_only_when_it_came_back_empty(
 
     Client().get(_url("7.0,46.0,8.0,47.0"))
 
-    assert timeouts == [expected, expected]
+    assert timeouts == [expected, expected, expected]
 
 
 @pytest.mark.django_db
