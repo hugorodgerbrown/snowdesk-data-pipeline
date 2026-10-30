@@ -87,6 +87,11 @@ const PARSE_TIME_CORES = [
   // without it answers "nothing downloaded" to every such call — which no
   // suite would be asserting on purpose.
   'basemap_downloaded_areas.js',
+  // SNOW-1308: not a parse-time read — `evictBasemapAreas` delegates to
+  // `window.pwaBasemapAreaRemoval` at call time. Here for the same reason
+  // as the line above: a bundle booted without it removes nothing, which
+  // no suite would be asserting on purpose.
+  'basemap_area_removal.js',
   // SNOW-898: not a parse-time read either — `map.js` reaches
   // `pwaCountryLoadCore` from inside `ensureCountryLoaded`. It is here for
   // the other reason this list exists: that function is on the `load` path

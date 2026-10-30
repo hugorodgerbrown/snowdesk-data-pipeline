@@ -873,23 +873,32 @@ async function assembleAreaContentURLs(blob) {
     ...(plan.ratingsUrls || []),
     ...plan.weatherDetailUrls,
   ];
+  const itemTemplates = {
+    tripPage: mapEl.dataset.tripPageUrlTemplate || '',
+    tripRoute: mapEl.dataset.tripRouteUrlTemplate || '',
+    weatherDetail: weatherDetail,
+    weatherDay: weatherDay,
+    // SNOW-1313: each pin's own place sheet, dated as the weather
+    // sheet is — the day the map's place sheet asks with on boot.
+    favouriteSheet: mapEl.dataset.favouriteSheetUrl || '',
+  };
   const itemUrls =
     items && typeof core.areaItemURLs === 'function'
-      ? core.areaItemURLs(
-        items,
-        {
-          tripPage: mapEl.dataset.tripPageUrlTemplate || '',
-          tripRoute: mapEl.dataset.tripRouteUrlTemplate || '',
-          weatherDetail: weatherDetail,
-          weatherDay: weatherDay,
-          // SNOW-1313: each pin's own place sheet, dated as the weather
-          // sheet is — the day the map's place sheet asks with on boot.
-          favouriteSheet: mapEl.dataset.favouriteSheetUrl || '',
-        },
-        planned,
-      )
+      ? core.areaItemURLs(items, itemTemplates, planned)
       : [];
-  return { urls: [...planned, ...itemUrls], short: !content || itemsShort };
+  // SNOW-1308: and what the reader's own things in this area are, by
+  // name with their urls, for a sync to stamp onto the record — the same
+  // composition the urls above were fetched from. Null when the endpoint
+  // was not asked (signed out) or did not answer, which stamps nothing.
+  const expectation =
+    items && typeof core.areaItemExpectation === 'function'
+      ? core.areaItemExpectation(items, itemTemplates)
+      : null;
+  return {
+    urls: [...planned, ...itemUrls],
+    short: !content || itemsShort,
+    items: expectation,
+  };
 }
 
 /**
@@ -2041,108 +2050,33 @@ async function planBasemapDownloadBudget(areaId, mb) {
 /**
  * SNOW-586: delete whole areas — each one's pinned Cache Storage bucket
  * AND its meta:app record — so an eviction can never leave a stale
- * "downloaded" ring or a budget entry with nothing behind it. Best-effort
- * per area: one failure doesn't abort the rest, and a record whose bucket
- * is already gone (or vice versa) still gets its other half cleaned up.
+ * "downloaded" ring or a budget entry with nothing behind it.
  *
- * The bucket deletes are independent per id and still run in parallel.
- * The RECORD writes do NOT — SNOW-635 review: `basemap.customAreas` (and,
- * latently, `basemap.regions`) is one shared row, so a per-id
- * read-filter-write run inside `Promise.all` is a read-modify-write race
- * the moment two ids of the SAME record type are evicted in one call.
- * Both tasks read the identical snapshot, each writes back a record
- * missing only its OWN id, and whichever write lands last wins — leaving
- * the other "evicted" id's entry alive in the record with no bucket
- * behind it. This was unreachable before this ticket (there was only
- * ever one custom area, so `planEviction` could never return two custom
- * ids); it is reachable now. Read once per record type, filter out every
- * targeted id from THAT type in one pass, write once.
+ * SNOW-1308: the removal itself moved to `basemap_area_removal.js`
+ * (`window.pwaBasemapAreaRemoval.evict`), which the `/offline/` panels
+ * load too, so Remove has one implementation on both surfaces. What stays
+ * here is what only the map has: forgetting its byte measurement of each
+ * bucket, the downloaded-areas overlay, and the page event the region
+ * roundel listens for. Behaviour on the map is unchanged.
+ *
+ * SNOW-856 / SNOW-867: a base layer is not cascaded away with the last
+ * area — it is the app's own map data now, fetched when a basemap is
+ * SHOWN, and goes with a full reset rather than with a removal. What this
+ * leaves on disk is the near half (z8-9) of areas since deleted: a few MB
+ * per part of the map, in the same bucket, with nothing to prune it
+ * individually.
  *
  * @param {string[]} areaIds
  * @returns {Promise<void>}
  */
 async function evictBasemapAreas(areaIds) {
-  const core = self.pwaBasemapDownloadCore;
-  const ids = Array.isArray(areaIds) ? areaIds : [];
-  if (!core || !ids.length) return;
-
-  await Promise.all(
-    ids.map(async (areaId) => {
-      try {
-        await caches.delete(core.pinnedCacheName(areaId));
-      } catch (_e) {
-        // Best-effort.
-      }
-      // SNOW-612: the bucket is gone, so any measurement of it is too.
-      forgetPinnedBucketMeasurement(areaId);
-    }),
-  );
-
-  // SNOW-635: `core.isCustomAreaId` — a custom area's own bucket-id
-  // FAMILY, not the single legacy `CUSTOM_AREA_ID` — see that predicate's
-  // own comment.
-  const customIds = new Set(ids.filter((id) => core.isCustomAreaId(id)));
-  const regionIds = new Set(ids.filter((id) => !core.isCustomAreaId(id)));
-
-  try {
-    if (customIds.size) {
-      const existing = await _readCustomAreas();
-      const next = existing.filter((entry) => !entry || !customIds.has(entry.id));
-      if (next.length !== existing.length) {
-        // Always a `put`, even when `next` is `[]` — see
-        // `_writeCustomAreas`'s docstring for why deleting the LAST
-        // custom area must not delete the key itself.
-        await _writeCustomAreas(next);
-      }
-    }
-  } catch (_e) {
-    // Best-effort — a stale record with no bucket behind it is treated as
-    // evictable-first the next time budget planning runs (see the "byte
-    // totals are page-recorded" risk note in
-    // docs/decisions/per-area-pinned-basemap-caches.md).
-  }
-
-  try {
-    if (regionIds.size) {
-      const row = await window.pwaDb?.get('meta:app', 'basemap.regions');
-      const existing = Array.isArray(row && row.value) ? row.value : [];
-      const next = existing.filter(
-        (entry) => !(entry && regionIds.has(core.areaIdForRegion(entry.region_id))),
-      );
-      if (next.length !== existing.length) {
-        await window.pwaDb?.put('meta:app', { key: 'basemap.regions', value: next });
-      }
-    }
-  } catch (_e) {
-    // Best-effort — see the comment above.
-  }
-
-  // SNOW-856: a base layer outlives the area that fetched it, but not the
-  // LAST one. Cascaded here rather than exposed as its own control,
-  // because "delete the overview map" is not a thing the user should have
-  // to think about — it appears when their first download does and leaves
-  // with their last.
-  // SNOW-867 removed an `evictOrphanedBaseLayers()` call here. The base
-  // layer used to be deleted once no downloaded area was left to need it,
-  // which followed from its being a cost the user's downloads incurred.
-  // It is the app's own map data now — fetched when a basemap is SHOWN,
-  // and the reason opening the app offline gets you a map at all — so
-  // deleting the last area is no longer a reason to take it. It goes with
-  // a full reset from account settings, which is where the app's own
-  // storage is stated and cleared.
-  //
-  // What this does keep on disk is the near half (z8-9) of areas since
-  // deleted: a few MB per part of the map, in the same bucket, with
-  // nothing to prune it individually. Named here rather than left for a
-  // reader to find.
-
-  // SNOW-613: tell the worker its memoised pinned-bucket list is stale.
-  // It has no other way to learn about a page-side deletion, and a stale
-  // name there would be handed to `caches.open`, recreating the bucket the
-  // user just deleted as an empty one.
-  navigator.serviceWorker?.controller?.postMessage({
-    type: 'pinned-buckets-changed',
+  const removal = window.pwaBasemapAreaRemoval;
+  if (!removal) return;
+  const removed = await removal.evict(areaIds, {
+    // SNOW-612: the bucket is gone, so any measurement of it is too.
+    onBucketDeleted: forgetPinnedBucketMeasurement,
   });
+  if (!removed) return;
   // SNOW-570: an evicted area's ring must disappear immediately, not at
   // the next refresh trigger.
   window.pwaDownloadedOverlay?.refresh();
@@ -3595,15 +3529,18 @@ async function _areaRecordById(areaId) {
  * @param {string} areaId
  * @param {string} regionId `''` for a custom area — see `_areaRecordById`.
  * @param {boolean} complete Whether the content half landed in full.
+ * @param {Object|null} [expectation] SNOW-1308: the reader's own things
+ *   the sync expected, stamped on success.
  * @returns {Promise<void>} Best-effort: a failed stamp costs a stale
  *   reading on the sheet, not a download.
  */
-async function _stampAreaContent(areaId, regionId, complete) {
-  const stamp = (entry) => {
-    if (!complete) return { ...entry, contentIncomplete: true };
-    const { contentIncomplete: _cleared, ...rest } = entry;
-    return { ...rest, contentAt: new Date().toISOString() };
-  };
+async function _stampAreaContent(areaId, regionId, complete, expectation) {
+  // SNOW-1308: the one stamping rule, shared with the region roundel and
+  // `/offline/` — and with it the reader's own things this sync expected
+  // (`expectation`, from `assembleAreaContentURLs`), so the `/offline/`
+  // panels can name them whichever surface synced the area.
+  const core = self.pwaBasemapDownloadCore;
+  const stamp = (entry) => core.stampContentRecord(entry, complete, expectation || null);
   try {
     if (!window.pwaDb) return;
     // SNOW-959: one transaction per stamp, not a `get` and a later `put`.
@@ -3714,7 +3651,7 @@ async function refreshAreaContent(areaId) {
       await _stampAreaContent(areaId, found.regionId, false);
       return false;
     }
-    await _stampAreaContent(areaId, found.regionId, true);
+    await _stampAreaContent(areaId, found.regionId, true, content.items);
     return true;
   }
 
@@ -3729,7 +3666,7 @@ async function refreshAreaContent(areaId) {
       finish: async (result, extras) => {
         const runCore = extras && extras.core;
         const ok = !!(runCore && runCore.downloadSucceeded(result)) && !content.short;
-        await _stampAreaContent(areaId, found.regionId, ok);
+        await _stampAreaContent(areaId, found.regionId, ok, content.items);
         resolve(ok);
       },
     });

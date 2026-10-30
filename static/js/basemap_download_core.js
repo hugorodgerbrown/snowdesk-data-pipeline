@@ -289,6 +289,14 @@
  *     forecast from. De-duplicated against what the area-content plan
  *     already holds. SNOW-1313 adds each pin's own place sheet, dated
  *     with the download's day.
+ *   areaItemExpectation(items, templates)
+ *     SNOW-1308: the same composition as ``areaItemURLs``, kept per item
+ *     with its name — what a sync stamps onto the area record so the
+ *     ``/offline/`` panels can ask, offline, whether each thing is cached.
+ *   stampContentRecord(entry, complete, expectation, nowIso)
+ *     SNOW-1308: the one rule every content sync writes back with —
+ *     ``contentAt`` / ``contentIncomplete`` (SNOW-932) and the ``items``
+ *     expectation.
  *   favouriteSheetURL(template, uuid, day)
  *     SNOW-1313: one saved pin's place-sheet url,
  *     `/partials/place-sheet/favourite/<uuid>/?d=<day>`.
@@ -2840,31 +2848,108 @@
    * @returns {string[]} Deduplicated, in the answer's order.
    */
   function areaItemURLs(items, templates, alreadyPlanned) {
-    const tpl = templates || {};
     const seen = new Set(alreadyPlanned || []);
     const out = [];
-    const add = (url) => {
-      if (seen.has(url)) return;
-      seen.add(url);
-      out.push(url);
-    };
-    const trips = (items && Array.isArray(items.trips) && items.trips) || [];
-    for (const trip of trips) {
-      const uuid = trip && trip.uuid;
-      if (!uuid) continue;
-      if (tpl.tripPage) add(tpl.tripPage.replace('__UUID__', uuid));
-      if (tpl.tripRoute) add(tpl.tripRoute.replace('__UUID__', uuid));
-    }
-    const pins = (items && Array.isArray(items.pins) && items.pins) || [];
-    for (const pin of pins) {
-      // SNOW-1313: the pin's own sheet, then the forecast it borrows.
-      const sheet = favouriteSheetURL(tpl.favouriteSheet || '', pin && pin.uuid, tpl.weatherDay);
-      if (sheet) add(sheet);
-      const shortId = pin && pin.forecast && pin.forecast.short_id;
-      if (!tpl.weatherDetail || !shortId) continue;
-      add(weatherDetailURL(tpl.weatherDetail, shortId, tpl.weatherDay));
+    // SNOW-1308: composed per item by `areaItemExpectation`, so the urls a
+    // download fetches and the urls the `/offline/` panels expect to find
+    // are one composition and cannot drift.
+    const expected = areaItemExpectation(items, templates);
+    for (const item of expected.trips.concat(expected.pins)) {
+      for (const url of item.urls) {
+        if (seen.has(url)) continue;
+        seen.add(url);
+        out.push(url);
+      }
     }
     return out;
+  }
+
+  /**
+   * The reader's own things inside an area, each by name with its urls
+   * (SNOW-1308).
+   *
+   * The same composition `areaItemURLs` flattens — a trip's page then its
+   * `route.geojson`; a pin's own place sheet then the weather sheet it
+   * borrows — kept per item, so a sync can STAMP it onto the area record
+   * and the `/offline/` panels can later ask, by name, whether each one is
+   * in Cache Storage. `/api/area-items/` is never cached, so without the
+   * stamp the page could not know offline what it should expect.
+   *
+   * @param {{trips?: Array<{uuid?: string, name?: string}>,
+   *   pins?: Array<{uuid?: string, name?: string,
+   *   forecast?: {short_id?: string}|null}>}|null} items The endpoint's
+   *   answer.
+   * @param {{tripPage?: string, tripRoute?: string, weatherDetail?: string,
+   *   weatherDay?: string, favouriteSheet?: string}} templates As
+   *   `areaItemURLs`.
+   * @returns {{trips: Array<{uuid: string, name: string, urls: string[]}>,
+   *   pins: Array<{uuid: string, name: string, urls: string[]}>}} In the
+   *   answer's order; an item with no uuid is dropped. A missing template
+   *   drops that url, never the item.
+   */
+  function areaItemExpectation(items, templates) {
+    const tpl = templates || {};
+    const name = (item) => (item && typeof item.name === 'string' ? item.name : '');
+    const trips = [];
+    for (const trip of (items && Array.isArray(items.trips) && items.trips) || []) {
+      const uuid = trip && trip.uuid;
+      if (!uuid) continue;
+      const urls = [];
+      if (tpl.tripPage) urls.push(tpl.tripPage.replace('__UUID__', uuid));
+      if (tpl.tripRoute) urls.push(tpl.tripRoute.replace('__UUID__', uuid));
+      trips.push({ uuid: uuid, name: name(trip), urls: urls });
+    }
+    const pins = [];
+    for (const pin of (items && Array.isArray(items.pins) && items.pins) || []) {
+      const uuid = pin && pin.uuid;
+      if (!uuid) continue;
+      const urls = [];
+      // SNOW-1313: the pin's own sheet, then the forecast it borrows.
+      const sheet = favouriteSheetURL(tpl.favouriteSheet || '', uuid, tpl.weatherDay);
+      if (sheet) urls.push(sheet);
+      const shortId = pin.forecast && pin.forecast.short_id;
+      if (tpl.weatherDetail && shortId) {
+        urls.push(weatherDetailURL(tpl.weatherDetail, shortId, tpl.weatherDay));
+      }
+      pins.push({ uuid: uuid, name: name(pin), urls: urls });
+    }
+    return { trips: trips, pins: pins };
+  }
+
+  /**
+   * One area record after a content sync — the ONE stamping rule
+   * (SNOW-1308).
+   *
+   * Every writer of a content outcome goes through this: the map's region
+   * roundel (`_stampRegionContent`), the map's Manage downloads sheet
+   * (`_stampAreaContent`) and `/offline/`'s Sync now (`stampAreaContent`).
+   * The rule is SNOW-932's: success SETS `contentAt` and DELETES
+   * `contentIncomplete`; failure sets `contentIncomplete` and leaves
+   * `contentAt` alone. SNOW-1308 adds the third field: a successful sync
+   * that asked `/api/area-items/` stamps what it expects of the reader's
+   * own things (`areaItemExpectation`) as `items`. A sync that did not ask
+   * (signed out) or fell short leaves `items` as it was.
+   *
+   * Synchronous, because every caller runs it inside a `readModifyWrite`
+   * mutator, which must not await.
+   *
+   * @param {Object} entry The stored record.
+   * @param {boolean} complete Whether the content half landed in full.
+   * @param {{trips: Array<Object>, pins: Array<Object>}|null} [expectation]
+   * @param {string} [nowIso] The stamp; the clock when absent.
+   * @returns {Object} A new record.
+   */
+  function stampContentRecord(entry, complete, expectation, nowIso) {
+    if (!complete) return Object.assign({}, entry, { contentIncomplete: true });
+    const next = Object.assign({}, entry);
+    // Deleted rather than set false: absence is the one representation of
+    // "nothing wrong" every reader shares.
+    delete next.contentIncomplete;
+    next.contentAt = nowIso || new Date().toISOString();
+    if (expectation && Array.isArray(expectation.trips) && Array.isArray(expectation.pins)) {
+      next.items = { trips: expectation.trips, pins: expectation.pins };
+    }
+    return next;
   }
 
   /**
@@ -3328,6 +3413,8 @@
     forwardContentDays: forwardContentDays,
     regionSheetURL: regionSheetURL,
     areaItemURLs: areaItemURLs,
+    areaItemExpectation: areaItemExpectation,
+    stampContentRecord: stampContentRecord,
     favouriteSheetURL: favouriteSheetURL,
     weatherDetailURL: weatherDetailURL,
     cachedTilesFromURLs: cachedTilesFromURLs,

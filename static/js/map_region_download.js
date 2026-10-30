@@ -311,6 +311,9 @@
    *   data. Stored as `terrain: true` or not at all, and synced to the
    *   account either way, so a record without it reads as an area with no
    *   class tiles to check — which every record before the ticket is.
+   * @param {Object|null} [items] SNOW-1308: the reader's own things the
+   *   run's content plan expected (`finish`'s `content.items`), recorded
+   *   with a complete content run.
    * @returns {Promise<void>}
    */
   async function _recordRegionDownload(
@@ -325,6 +328,7 @@
     contentAt,
     contentIncomplete,
     terrain,
+    items,
   ) {
     if (!z || !window.pwaDb) return;
     try {
@@ -376,6 +380,10 @@
         // SNOW-1072: the terrain-data opt-in this run carried. The class
         // tiles it implies are derived from `z`, never stored here.
         ...(terrain ? { terrain: true } : {}),
+        // SNOW-1308: what the reader's own things in this region are, by
+        // name with their urls — written with a complete content run only,
+        // the rule `stampContentRecord` applies to every later sync.
+        ...(contentAt && items ? { items: items } : {}),
         bytes: Number(bytes) || 0,
         savedAt: new Date().toISOString(),
       };
@@ -1715,11 +1723,18 @@
    *   `false` sets `contentIncomplete` and leaves `contentAt` ALONE: it
    *   records the last time this area's content was fetched in full, and a
    *   run that fell short did not change that.
+   * @param {Object|null} [expectation] SNOW-1308: the reader's own things
+   *   the sync expected, stamped on success.
    * @returns {Promise<void>} Best-effort, like every other write here: a
    *   failed stamp costs a stale timestamp, not a download.
    */
-  async function _stampRegionContent(regionId, complete) {
+  async function _stampRegionContent(regionId, complete, expectation) {
     if (!window.pwaDb) return;
+    // SNOW-1308: the one stamping rule every content sync shares — the
+    // Manage downloads sheet's and `/offline/`'s too — which also stamps
+    // the reader's own things this sync expected (`expectation`, from
+    // `assembleAreaContentURLs`) so the `/offline/` panels can name them.
+    const core = self.pwaBasemapDownloadCore;
     try {
       // SNOW-959: read and write on ONE transaction. This row is a whole
       // ARRAY rewritten to change one entry, and it now has three writers
@@ -1733,15 +1748,11 @@
         const next = existing.map((entry) => {
           if (!entry || entry.region_id !== regionId) return entry;
           touched = true;
-          if (!complete) return { ...entry, contentIncomplete: true };
-          // Destructured out rather than assigned `undefined`: this record
-          // is serialised into IndexedDB, and an explicit `undefined` would
-          // survive as a present key on some paths. The readers are spread
-          // across four modules and all of them ask `!!record.contentIncomplete`,
-          // so either would work today — the delete is what keeps the
-          // invariant true for the next reader, who may not.
-          const { contentIncomplete: _cleared, ...rest } = entry;
-          return { ...rest, contentAt: new Date().toISOString() };
+          // `contentIncomplete` is deleted rather than assigned `undefined`
+          // inside the helper: this record is serialised into IndexedDB,
+          // and an explicit `undefined` would survive as a present key on
+          // some paths.
+          return core.stampContentRecord(entry, complete, expectation || null);
         });
         // `undefined` commits nothing, which is what the old early return
         // did — and now does it without having opened a write at all.
@@ -1834,7 +1845,7 @@
       // the record alone would let the `renderControl` below read whole
       // tiles off the probe and paint 'done' over a shortfall that is
       // still there — the exact repaint SNOW-932 closed.
-      await _stampRegionContent(data.regionId, !content.short);
+      await _stampRegionContent(data.regionId, !content.short, content.items);
       _endRun(data);
       await renderControl();
       return;
@@ -1849,7 +1860,7 @@
         // asks about the list it was handed, and that list is the thing
         // that was wrong.
         if (runCore && runCore.downloadSucceeded(result) && !content.short) {
-          await _stampRegionContent(data.regionId, true);
+          await _stampRegionContent(data.regionId, true, content.items);
           // End the run before re-rendering, exactly as `handleRepair`
           // does and for the same reason — see its comment.
           _endRun(data);
@@ -2182,6 +2193,7 @@
             outcome.complete ? new Date().toISOString() : null,
             outcome.incomplete,
             terrain,
+            content && content.items,
           );
           // SNOW-871: and only NOW is the copy this run replaced safe to
           // take. A failed or cancelled run reaches neither line, so the
