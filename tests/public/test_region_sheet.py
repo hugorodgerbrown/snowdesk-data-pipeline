@@ -28,14 +28,17 @@ from __future__ import annotations
 
 import datetime
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts.models import Account
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.regions.models import Resort
 from tests.factories import (
@@ -576,42 +579,31 @@ class TestProblemTerrainSwitch:
 class TestOnTheGround:
     """SNOW-1291: the sheet's "On the ground" section and its call to report."""
 
-    def test_signed_out_reader_is_asked_to_sign_in(self, client: Client) -> None:
+    def test_the_sheet_carries_both_calls_to_report(self, client: Client) -> None:
+        """SNOW-1317: the body renders both forms; the map page picks one."""
         region = MicroRegionFactory.create()
         FieldObservationFactory.create(region=region, observed_at=timezone.now())
         content = _get(client, _url(region.region_id.lower())).content.decode()
         assert 'data-testid="on-the-ground"' in content
-        assert "Sign in to report" in content
-        assert reverse("accounts:sign_in") in content
-        assert 'data-action="open-report"' not in content
-
-    def test_signed_in_reader_gets_the_report_button(
-        self, client: Client, django_user_model: Any
-    ) -> None:
-        region = MicroRegionFactory.create()
-        FieldObservationFactory.create(region=region, observed_at=timezone.now())
-        client.force_login(django_user_model.objects.create_user("u", "u@example.com"))
-        content = _get(client, _url(region.region_id.lower())).content.decode()
-        assert 'data-action="open-report"' in content
-        assert "Report what you see" in content
-        assert "Sign in to report" not in content
+        signed_in = _cta(content, "signed-in")
+        assert 'data-action="open-report"' in signed_in
+        assert "Report what you see" in signed_in
+        signed_out = _cta(content, "signed-out")
+        assert "Sign in to report" in signed_out
+        assert reverse("accounts:sign_in") in signed_out
         # The sheet IS the map: no link back to it.
         assert "Report on the map" not in content
 
-    def test_empty_today_is_one_row_with_short_calls(
-        self, client: Client, django_user_model: Any
-    ) -> None:
+    def test_empty_today_is_one_row_with_short_calls(self, client: Client) -> None:
         """SNOW-1296: no reports is one row, not a sentence and a button."""
         region = MicroRegionFactory.create()
-        signed_out = _get(client, _url(region.region_id.lower())).content.decode()
-        assert 'data-testid="on-the-ground-empty"' in signed_out
-        assert "No reports in 3 days" in signed_out
-        assert re.search(r">\s*Sign in\s*<", signed_out)
-        assert "Sign in to report" not in signed_out
-        client.force_login(django_user_model.objects.create_user("u", "u@example.com"))
-        signed_in = _get(client, _url(region.region_id.lower())).content.decode()
-        assert 'data-action="open-report"' in signed_in
-        assert "Report what you see" not in signed_in
+        content = _get(client, _url(region.region_id.lower())).content.decode()
+        assert 'data-testid="on-the-ground-empty"' in content
+        assert "No reports in 3 days" in content
+        assert re.search(r">\s*Sign in\s*<", _cta(content, "signed-out"))
+        assert re.search(r">\s*Report\s*<", _cta(content, "signed-in"))
+        assert "Sign in to report" not in content
+        assert "Report what you see" not in content
 
     def test_a_report_row_carries_its_submission(self, client: Client) -> None:
         region = MicroRegionFactory.create()
@@ -622,13 +614,18 @@ class TestOnTheGround:
         assert f'data-observation-submission="{report.submission}"' in content
 
 
-# SNOW-1312: the call to report, as the sheet renders it for each kind of
-# reader — the one element of the body that depends on who is asking.
-_REPORT_CTA = re.compile(
-    r'<a\b[^>]*href="[^"]*/sign-in/[^"]*"[^>]*>.*?</a>'
-    r'|<button\b[^>]*data-action="open-report"[^>]*>.*?</button>',
-    re.DOTALL,
-)
+# SNOW-1317: one call to report's wrapper — the report button for a
+# signed-in reader, the sign-in link for anyone else.
+def _cta(body: str, reader: str) -> str:
+    """Return the ``data-reader-cta="<reader>"`` wrapper in ``body``."""
+    # Up to the call's closing tag, so a span inside the button cannot cut it.
+    match = re.search(
+        rf'<span\b[^>]*data-reader-cta="{reader}"[^>]*>.*?</(?:a|button)>',
+        body,
+        re.DOTALL,
+    )
+    assert match, f"no {reader} call to report"
+    return match.group(0)
 
 
 # The EAWS glossary popovers number their ids from a counter that runs on
@@ -638,8 +635,8 @@ _GLOSSARY_ID = re.compile(r"\b(g-[a-z0-9-]+?)-\d+\b")
 
 
 def _comparable(body: str) -> str:
-    """Return ``body`` without its call to report, ids and spacing evened."""
-    return " ".join(_GLOSSARY_ID.sub(r"\1-N", _REPORT_CTA.sub("", body)).split())
+    """Return ``body`` with the glossary's run-on ids evened out."""
+    return _GLOSSARY_ID.sub(r"\1-N", body)
 
 
 @pytest.mark.django_db
@@ -648,11 +645,10 @@ class TestOfflineCopy:
     serves the copy it saved to whoever opens the sheet offline. That is
     sound only while the body carries nothing about the reader.
 
-    It is not byte-identical: "On the ground"'s call to report is a report
-    button for a signed-in reader and a sign-in link otherwise (SNOW-1291),
-    so a copy saved under one serves the other's button. These pin that
-    this button is the ONLY difference, so anything else about the reader
-    reaching the body fails here.
+    Since SNOW-1317 it is byte-identical for every reader but the glossary
+    popovers' run-on ids: "On the ground"'s call to report carries both its
+    forms, and the map page's ``data-reader`` picks one. Anything about the
+    reader reaching the body fails here.
     """
 
     def _bodies(self, client: Client, django_user_model: Any) -> tuple[str, str]:
@@ -669,13 +665,14 @@ class TestOfflineCopy:
         signed_in = _get(client, url).content.decode()
         return anonymous, signed_in
 
-    def test_the_body_is_the_same_for_every_reader_but_the_call_to_report(
+    def test_the_body_is_the_same_for_every_reader(
         self, client: Client, django_user_model: Any
     ) -> None:
         anonymous, signed_in = self._bodies(client, django_user_model)
 
-        assert len(_REPORT_CTA.findall(anonymous)) == 1
-        assert len(_REPORT_CTA.findall(signed_in)) == 1
+        for body in (anonymous, signed_in):
+            assert 'data-action="open-report"' in _cta(body, "signed-in")
+            assert reverse("accounts:sign_in") in _cta(body, "signed-out")
         assert _comparable(anonymous) == _comparable(signed_in)
 
     def test_the_body_names_nothing_about_the_reader(
@@ -728,3 +725,46 @@ class TestOfflineCopy:
 
         assert "Synthetic processing error" not in response.content.decode()
         assert "no-store" not in response["Cache-Control"]
+
+
+@pytest.mark.django_db
+class TestReaderPicksTheCall:
+    """SNOW-1317: the map page, not the body, says who is reading."""
+
+    def test_a_signed_out_map_marks_the_sheet_signed_out(self, client: Client) -> None:
+        content = client.get(reverse("public:map")).content.decode()
+        assert re.search(r'id="region-sheet"[^>]*data-reader="signed-out"', content)
+
+    def test_a_signed_in_map_marks_the_sheet_signed_in(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        client.force_login(django_user_model.objects.create_user("u", "u@example.com"))
+        content = client.get(reverse("public:map")).content.decode()
+        assert re.search(r'id="region-sheet"[^>]*data-reader="signed-in"', content)
+
+    def test_a_signed_in_reader_with_no_account_is_marked_signed_in(
+        self, client: Client, django_user_model: Any
+    ) -> None:
+        """The no-Account case: the mark follows ``is_authenticated``.
+
+        A user with no ``Account`` row (an operator made by
+        ``createsuperuser``) is marked signed in, so online they see Report
+        and the report sheet's verify gate, as before SNOW-1317. Offline they
+        share the anonymous worker partition — the accepted limit in
+        docs/decisions/a-download-looks-forward-and-carries-the-region-sheet.md.
+        """
+        user = django_user_model.objects.create_user("op", "op@example.com")
+        assert not Account.objects.filter(user=user).exists()
+        client.force_login(user)
+        content = client.get(reverse("public:map")).content.decode()
+        assert re.search(r'id="region-sheet"[^>]*data-reader="signed-in"', content)
+
+    def test_one_css_rule_hides_the_call_that_is_not_the_readers(self) -> None:
+        css = (Path(settings.BASE_DIR) / "src" / "css" / "main.css").read_text()
+        rule = re.search(
+            r'\[data-reader="signed-in"\] \[data-reader-cta="signed-out"\],\s*'
+            r'\[data-reader="signed-out"\] \[data-reader-cta="signed-in"\]\s*'
+            r"\{\s*display: none;\s*\}",
+            css,
+        )
+        assert rule
