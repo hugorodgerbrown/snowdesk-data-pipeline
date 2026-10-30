@@ -1233,10 +1233,10 @@ const STATIC_PATHS = new Set([
 const PRIVATE_JSON_PATH = /^\/trips\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/route\.geojson$/i;
 const PUBLIC_JSON_PATH = /^\/api\/weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail\/$/;
 // SNOW-1312: the map's region sheet — the third copy-pair, held to the
-// core's by the same tests.
-const PUBLIC_PARTIAL_PATH = /^\/partials\/region-sheet\/[a-z]{2}-(?=[a-z0-9-]*\d)[a-z0-9]+(?:-[a-z0-9]+)*\/$/i;
+// core's by the same tests. SNOW-1318: and a resort's place sheet.
+const PUBLIC_PARTIAL_PATH = /^\/partials\/(?:region-sheet\/[a-z]{2}-(?=[a-z0-9-]*\d)[a-z0-9]+(?:-[a-z0-9]+)*|place-sheet\/resort\/[a-z0-9_-]+)\/$/i;
 // SNOW-1313: a saved pin's place sheet — the fourth copy-pair, held to the
-// core's by the same tests. The resort place sheet does not match.
+// core's by the same tests. The resort place sheet is public (above).
 const PRIVATE_PARTIAL_PATH = /^\/partials\/place-sheet\/favourite\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/$/i;
 
 // SNOW-1312: the header a region-sheet miss carries, so the sheet can say
@@ -2541,7 +2541,8 @@ async function _warmCache(urls, options) {
         return 'other';
       }
       const cache = sameOrigin ? shellCache : basemapCache;
-      // SNOW-1312: a region sheet is public — no principal stamp — and is
+      // SNOW-1312: a region sheet (SNOW-1318: or a resort's place sheet)
+      // is public — no principal stamp — and is
       // kept under its path and `d` alone (`_publicPartialKey`), the key
       // the offline read looks up whatever `r` the sheet sends. A url with
       // no readable day has no key, and a sheet that cannot be found
@@ -3803,6 +3804,11 @@ function _offlineMissResponse() {
  * (``areaContentURLs`` in basemap_download_core.js); until this ticket it
  * was classified ``'network'``, so a region tapped offline said its
  * details were unavailable over a device that could have held them.
+ *
+ * SNOW-1318: a resort's place sheet takes this path too — warmed per
+ * resort and forward day, keyed the same, and public because its body
+ * reads no ``request.user`` at all (the Save star is painted on the
+ * device). What follows about the reader is the region sheet's.
  *
  * Public, so unstamped: the body names nothing about the reader. One
  * element does depend on who asks — "On the ground"'s call to report is

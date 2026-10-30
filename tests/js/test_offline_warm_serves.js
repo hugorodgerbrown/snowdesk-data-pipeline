@@ -353,6 +353,11 @@ const MAP_DATA_URLS = {
     sample: `/partials/region-sheet/ch-4115/?d=${TODAY}`,
     swClass: 'public-partial',
   },
+  'data-resort-sheet-url': {
+    kind: 'worker-cache',
+    sample: `/partials/place-sheet/resort/verbier/?d=${TODAY}`,
+    swClass: 'public-partial',
+  },
   'data-favourite-sheet-url': {
     kind: 'worker-cache',
     sample: `/partials/place-sheet/favourite/${PIN}/?d=${TODAY}`,
@@ -451,13 +456,6 @@ const MAP_DATA_URLS = {
     swClass: 'navigate',
     request: 'navigate',
     reason: 'signing in needs the server',
-  },
-  'data-resort-sheet-url': {
-    kind: 'hole',
-    sample: `/partials/place-sheet/resort/verbier/?d=${TODAY}`,
-    swClass: 'network',
-    ticket: 'SNOW-1318',
-    hole: 'a resort tapped offline says "Place details are unavailable offline" over a downloaded area',
   },
   'data-ski-summits-url': {
     kind: 'hole',
