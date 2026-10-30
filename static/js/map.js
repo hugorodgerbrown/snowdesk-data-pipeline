@@ -3439,7 +3439,9 @@
       core.install(map, collection, {
         prefix: TOUR_ROUTE_SOURCE,
         textFont: overlayTextFont,
-        colours: legs ? { climb: legs.SAC_CLIMB_COLOUR, descent: legs.SAC_DESCENT_COLOUR } : undefined,
+        colours: legs
+          ? { climb: legs.SAC_CLIMB_COLOUR, descent: legs.SAC_DESCENT_COLOUR, line: legs.SAC_CLIMB_COLOUR }
+          : undefined,
         solidClimb: true,
       });
       installRouteCursorLayers(TOUR_ROUTE_CURSOR_SOURCE, TOUR_ROUTE_SOURCE, true);

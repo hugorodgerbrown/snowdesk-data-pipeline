@@ -56,10 +56,12 @@ def test_the_tours_and_their_summits_in_the_box_are_served(client: Client) -> No
     tours = [f for f in body["features"] if f["properties"]["kind"] == "tour"]
     marks = [f for f in body["features"] if f["properties"]["kind"] != "tour"]
     (tour,) = tours
-    assert tour["id"] == str(inside.source_uuid)
+    assert tour["properties"]["uuid"] == str(inside.source_uuid)
     assert tour["properties"]["summit"] == "piz-buin-3312"
     assert tour["properties"]["time"] == "3 h 30"
-    assert tour["properties"]["down"] is False
+    # No terrain yet: one line, in no direction (SNOW-1307).
+    assert tour["properties"]["climbing"] is None
+    assert tour["geometry"]["type"] == "LineString"
     (summit,) = marks
     assert summit["id"] == "summit:piz-buin-3312"
     assert summit["properties"]["kind"] == "summit"
@@ -114,19 +116,42 @@ def test_the_overview_serves_every_tour_thinned(client: Client) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["truncated"] is False
-    tours = {f["id"]: f for f in body["features"] if f["properties"]["kind"] == "tour"}
+    tours = {
+        f["properties"]["uuid"]: f
+        for f in body["features"]
+        if f["properties"]["kind"] == "tour"
+    }
     assert set(tours) == {str(near.source_uuid), str(far.source_uuid)}
     line = tours[str(far.source_uuid)]
     assert line["properties"] == {
         "kind": "tour",
         "uuid": str(far.source_uuid),
         "summit": "far-3312",
-        "down": True,
+        "climbing": None,
     }
-    # The middle point is on the line, so the thinning drops it.
+    # The middle point is on the line, so the thinning drops it. No legs
+    # yet: SAC's line as it is, in no direction (SNOW-1307).
     assert line["geometry"] == {
         "type": "MultiLineString",
         "coordinates": [[[7.0, 46.0], [7.1, 46.1]]],
     }
     summits = {f["id"] for f in body["features"] if f["properties"]["kind"] != "tour"}
     assert summits == {"summit:piz-buin-3312", "summit:far-3312"}
+
+
+def test_a_tour_with_terrain_is_served_as_its_legs(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SNOW-1307: one Feature per leg, climbing or not, as a route is drawn."""
+    tour = SkiTourFactory.create()
+    parts = [
+        (True, [[10.0, 46.0], [10.01, 46.01]]),
+        (False, [[10.01, 46.01], [10.02, 46.0]]),
+    ]
+    monkeypatch.setattr(api, "leg_parts", lambda row: parts)
+    tours = [
+        f for f in _get(client).json()["features"] if f["properties"]["kind"] == "tour"
+    ]
+    assert [f["properties"]["climbing"] for f in tours] == [True, False]
+    assert {f["properties"]["uuid"] for f in tours} == {str(tour.source_uuid)}
+    assert [f["geometry"]["coordinates"] for f in tours] == [line for _, line in parts]

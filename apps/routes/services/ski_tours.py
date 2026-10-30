@@ -18,8 +18,8 @@ caught by taking, for each tour, whichever end lies nearer that median.
 Measured on the 2,941 tours: half the summits with two or more tours have
 their target ends within 30 m of each other.
 
-A TOUR IS A WAY UP OR A WAY DOWN (Hugo, SNOW-1304): SAC publishes the ways up and the
-ways down to a summit separately, so a reader can climb one and ski
+A TOUR IS A WAY UP OR A WAY DOWN (Hugo, SNOW-1304): SAC publishes the
+ways up and the ways down to a summit separately, so a reader can climb one and ski
 another. A WAY DOWN is a tour SAC itself calls one: named "Abfahrt …",
 "Descente …", "Discesa …" or "Descent …" in any of its languages, or given
 a descent figure and no ascent — 403 of the 2,941. The figures alone are
@@ -30,8 +30,11 @@ from the valley to the summit, whichever way the tour goes. The panel infers
 nothing beyond that (Hugo, SNOW-1302): it says the line shows the ascent
 only or the descent only, and points at SAC's guide for the rest. SAC's own
 height figures are not shown; the panel's figures are the line's own.
-Once sampled, the open tour splits into legs where the ground turns, as a
-route does (SNOW-1307); ``one_leg`` stands in only until it has heights.
+That label orders the line and names the panel's half; it is never drawn.
+EACH TOUR IS DRAWN AS ITS LEGS (Hugo, SNOW-1307: "The SAC routes should
+behave the same as user routes, but in a blue colour scheme"): cut from
+its terrain where the ground turns, on the map at rest (``leg_parts``) and
+in the panel alike. A tour with no terrain yet is one line in no direction.
 
 SAC'S POINTS ARE NEVER EDITED (Hugo, SNOW-1287). A tour that stops at the
 top stops there here too: nothing is added for the way back down, though
@@ -64,19 +67,19 @@ from typing import TYPE_CHECKING, Any
 
 from django.core.cache import cache
 from django.db.models import Count, Max, Q, QuerySet
+from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.translation import get_language
 
 from apps.routes.models import Route, SkiTour
 from apps.routes.services.drawn import draft_route
+from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.shares import write_route_copy
 from apps.routes.services.slope_segments import (
-    SAMPLE_STRIDE_M,
     build_slope_samples,
-    cumulative_distances,
     enqueue_route_slope_sampling,
-    stride_distances,
 )
+from apps.routes.services.terrain_heights import terrain_points
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -101,7 +104,8 @@ _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
 # load. Thinned to about 20 m (Douglas-Peucker in degrees) and rounded to
 # five places (about a metre): at z9-z11 a pixel is 20-150 m, so nothing
 # drawn moves, and the whole set is ~2.3 MB, ~0.6 MB gzipped.
-_OVERVIEW_CACHE_KEY = "routes:ski-overview:v2:{count}:{stamp}"
+# v3: SNOW-1307 cuts each tour into its legs.
+_OVERVIEW_CACHE_KEY = "routes:ski-overview:v3:{count}:{stamp}"
 # The mark SNOW-1286 put on a record walked there and back (SNOW-1287).
 _THERE_AND_BACK = "there_and_back"
 # SNOW-1306: on a terrain record, whether its walk ran SAC's line in
@@ -160,51 +164,6 @@ def is_descent(tour: SkiTour) -> bool:
         return True
     names = [tour.name, *(tour.names or {}).values()]
     return any(_DESCENT_NAME_RE.match(name or "") for name in names)
-
-
-def one_leg(
-    points: list[list[float | None]], slope: dict[str, Any] | None, tour: SkiTour
-) -> list[dict[str, Any]] | None:
-    """Return a tour as one leg in its direction (SNOW-1304).
-
-    The stand-in for a tour with no heights yet: a sampled tour's legs are
-    detected from its terrain, as a route's are (SNOW-1307). The leg
-    needs no heights, so it is built from the
-    geometry alone and an unsampled tour, or one off the terrain grid,
-    still gets one. Its segment indices are those the client reads: the
-    ``slope.angles`` it was sent, or the stride walk an unsampled route's
-    legs index (leg_wire).
-
-    Args:
-        points: The feature's geometry, ``[lon, lat, ele]`` in line order.
-        slope: The feature's ``slope`` (``compact_slope``), or None.
-        tour: The tour.
-
-    Returns:
-        One leg spanning the whole line, or None for a line too short to
-        hold a segment.
-
-    """
-    if len(points) < 2:
-        return None
-    angles = (slope or {}).get("angles")
-    if angles:
-        segment_count = len(angles)
-    else:
-        total_m = cumulative_distances(points)[-1]
-        segment_count = len(stride_distances(total_m, SAMPLE_STRIDE_M)) - 1
-    if segment_count < 1:
-        return None
-    return [
-        {
-            "i": 1,
-            "from": 0,
-            "to": segment_count - 1,
-            "climbing": not is_descent(tour),
-            "point_from": 0,
-            "point_to": len(points) - 1,
-        }
-    ]
 
 
 def summit_key(name: str, altitude_m: int | None) -> str:
@@ -500,8 +459,9 @@ def tour_overview() -> list[dict[str, Any]]:
     """Return every tour as a thinned line Feature, cached until they change.
 
     SNOW-1285. What a map zoomed out past the per-view load draws, and is
-    tapped on: the line and only what a tap and the highlight read (its
-    uuid, its summit's key, whether it is a way down). The panel and the
+    tapped on: the line, cut into its legs (``leg_parts``, SNOW-1307), and
+    only what a tap reads (its uuid, its summit's key) and the leg's
+    ``climbing``. The panel and the
     list ask the server for the rest. Not localised, so one copy serves
     every language.
 
@@ -516,6 +476,7 @@ def tour_overview() -> list[dict[str, Any]]:
         tours = SkiTour.objects.order_by("sac_id").only(
             "source_uuid",
             "geometry",
+            "legs",
             "name",
             "names",
             "target_name",
@@ -523,23 +484,26 @@ def tour_overview() -> list[dict[str, Any]]:
             "ascent_m",
             "descent_m",
         )
-        for tour in tours.iterator():
-            geometry = overview_geometry(tour.geometry)
-            if geometry is None:
-                continue
-            cached.append(
-                {
-                    "type": "Feature",
-                    "id": str(tour.source_uuid),
-                    "geometry": geometry,
-                    "properties": {
-                        "kind": "tour",
-                        "uuid": str(tour.source_uuid),
-                        "summit": tour_key(tour),
-                        "down": is_descent(tour),
-                    },
-                }
-            )
+        for tour in tours.iterator(chunk_size=200):
+            # SNOW-1307: a Feature per leg, each thinned on its own.
+            for climbing, line in leg_parts(tour):
+                geometry = overview_geometry(
+                    {"type": "LineString", "coordinates": line}
+                )
+                if geometry is None:
+                    continue
+                cached.append(
+                    {
+                        "type": "Feature",
+                        "geometry": geometry,
+                        "properties": {
+                            "kind": "tour",
+                            "uuid": str(tour.source_uuid),
+                            "summit": tour_key(tour),
+                            "climbing": climbing,
+                        },
+                    }
+                )
         cache.set(key, cached, _SUMMITS_CACHE_SECONDS)
     return cached
 
@@ -698,24 +662,31 @@ def tours_to_sample() -> QuerySet[SkiTour]:
 
     Never walked, walked over SNOW-1286's doubled line (the record
     ``tour_slope_samples`` does not hold), or walked before SNOW-1306 and
-    not yet known to match the line's order.
+    not yet known to match the line's order, or with its legs not yet cut
+    (SNOW-1307).
     """
     return SkiTour.objects.filter(
         Q(slope_samples__isnull=True)
         | Q(slope_samples__has_key=_THERE_AND_BACK)
         | ~Q(slope_samples__has_key=_WALKED_REVERSED)
+        | Q(legs__isnull=True)
     )
 
 
 def needs_only_marking(tour: SkiTour) -> bool:
-    """Return whether ``tour``'s record is current but for SNOW-1306's mark.
+    """Return whether ``tour``'s record is current but for a mark or its legs.
 
     Walked in SAC's order before a way down ran from its top, on a tour
-    whose order does not change: ``tour_slope_samples(sample=True)`` marks
-    it without walking again, so the nightly backfill need not pause for it.
+    whose order does not change, or walked before SNOW-1307 stored legs:
+    ``tour_slope_samples(sample=True)`` marks it and cuts its legs without
+    walking again, so the nightly backfill need not pause for it.
     """
     held = _usable(tour.slope_samples)
-    return held is not None and _WALKED_REVERSED not in held and not runs_reversed(tour)
+    return (
+        held is not None
+        and bool(held.get(_WALKED_REVERSED, False)) == runs_reversed(tour)
+        and (_WALKED_REVERSED not in held or tour.legs is None)
+    )
 
 
 def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
@@ -745,7 +716,8 @@ def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
         if bool(held.get(_WALKED_REVERSED, False)) != reverse:
             # Walked in the other order: its indices are not the line's.
             held = None
-        elif _WALKED_REVERSED not in held and sample:
+        elif sample and (_WALKED_REVERSED not in held or tour.legs is None):
+            # Marked, and its legs cut (SNOW-1307), without a walk.
             held = {**held, _WALKED_REVERSED: reverse}
             _keep(tour, held)
     if held is not None or not sample:
@@ -766,7 +738,70 @@ def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
 def _keep(tour: SkiTour, record: dict[str, Any]) -> None:
     """Store ``record`` on ``tour``, in memory and in the row."""
     tour.slope_samples = record
-    SkiTour.objects.filter(pk=tour.pk).update(slope_samples=record)
+    # SNOW-1307: its legs are cut with it, and updated_at moves so the
+    # overview's cache key reads them.
+    tour.legs = cut_legs(tour)
+    SkiTour.objects.filter(pk=tour.pk).update(
+        slope_samples=record, legs=tour.legs, updated_at=timezone.now()
+    )
+
+
+def cut_legs(tour: SkiTour) -> list[dict[str, Any]]:
+    """Return ``tour``'s line cut into its legs, as a route's is (SNOW-1307).
+
+    Hugo, 2026-10-30: "The SAC routes should behave the same as user
+    routes, but in a blue colour scheme". So the tours layer draws what
+    the terrain says, climb by climb and descent by descent, not a label
+    on the whole tour. The legs are those the open panel shows: cut from
+    the held terrain record along the line in the order the tour goes.
+    Stored on the tour by ``_keep`` with every record, so no request cuts.
+
+    Args:
+        tour: The tour, holding the record to cut from.
+
+    Returns:
+        ``[{"climbing": bool, "line": [[lon, lat], …]}, …]`` in line
+        order; empty when no record is held or no leg is found in it.
+
+    """
+    record = tour_slope_samples(tour, sample=False)
+    points = tour_points(tour)
+    if record is None or len(points) < 2:
+        return []
+    track = terrain_points(points, record)
+    return [
+        {
+            "climbing": bool(leg["climbing"]),
+            "line": [
+                [float(lon), float(lat)]  # type: ignore[arg-type]
+                for lon, lat, *_ in track[leg["point_from"] : leg["point_to"] + 1]
+            ],
+        }
+        for leg in wire_legs(track, record) or []
+    ]
+
+
+def leg_parts(tour: SkiTour) -> list[tuple[bool | None, list[list[float]]]]:
+    """Return what the tours layer draws of ``tour``: its legs (SNOW-1307).
+
+    The legs stored on it (``cut_legs``); a tour with none, its terrain
+    not walked yet, is SAC's line as it is, ``climbing`` None: no
+    direction is claimed for it.
+
+    Args:
+        tour: The tour, with ``legs`` and ``geometry`` loaded.
+
+    Returns:
+        ``[(climbing, [[lon, lat], …]), …]``.
+
+    """
+    if tour.legs:
+        return [(bool(leg["climbing"]), leg["line"]) for leg in tour.legs]
+    return [
+        (None, [[float(lon), float(lat)] for lon, lat, *_ in line])
+        for line in _lines(tour)
+        if len(line) >= 2
+    ]
 
 
 def tour_properties(tour: SkiTour) -> dict[str, Any]:

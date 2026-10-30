@@ -138,7 +138,7 @@ from apps.regions.services.resort_pin import set_resort_pin
 from apps.routes.models import SkiSegment, SkiTour
 from apps.routes.services.ski_tours import (
     Summit,
-    is_descent,
+    leg_parts,
     localised,
     sac_time,
     summits,
@@ -1454,14 +1454,14 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
         {"type": "FeatureCollection",
          "truncated": false,
          "features": [
-           {"type": "Feature", "id": "<tour uuid>",
-            "geometry": {"type": "MultiLineString", ...},
+           {"type": "Feature",
+            "geometry": {"type": "LineString", ...},
             "properties": {"kind": "tour", "uuid": "…", "summit": "<key>",
                            "name": "Von der Silvrettahütte SAC",
                            "target_name": "Signalhorn (GR)",
                            "target_altitude_m": 3207, "grade": "PD+",
                            "ascent_m": 870, "descent_m": 870,
-                           "time": "3 h 30", "down": false}},
+                           "time": "3 h 30", "climbing": true}},
            {"type": "Feature", "id": "summit:<key>",
             "geometry": {"type": "Point", ...},
             "properties": {"kind": "summit" | "hut", "key": "…",
@@ -1473,7 +1473,11 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
     ``?overview=1`` instead of a bbox answers every tour at once, for a map
     zoomed out past the per-view load (SNOW-1285): each line thinned
     (``tour_overview``) and carrying only ``kind``, ``uuid``, ``summit`` and
-    ``down``, with every summit as above. ``truncated`` is always false.
+    ``climbing``, with every summit as above. ``truncated`` is always false.
+
+    A tour is one Feature per leg (SNOW-1307, ``leg_parts``): ``climbing``
+    is the leg's direction, cut from the tour's held terrain as a route's
+    legs are, and null for a tour with no terrain yet, drawn as one line.
 
     Args:
         request: The incoming HTTP request.
@@ -1503,11 +1507,11 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
             : SKI_TOURS_MAX_FEATURES + 1
         ]
     )
+    # SNOW-1307: a Feature per leg, as a route is drawn.
     features: list[dict[str, Any]] = [
         {
             "type": "Feature",
-            "id": str(row.source_uuid),
-            "geometry": row.geometry,
+            "geometry": {"type": "LineString", "coordinates": line},
             "properties": {
                 "kind": "tour",
                 "uuid": str(row.source_uuid),
@@ -1519,10 +1523,11 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
                 "ascent_m": row.ascent_m,
                 "descent_m": row.descent_m,
                 "time": sac_time(row.ascent_time_label),
-                "down": is_descent(row),
+                "climbing": climbing,
             },
         }
         for row in rows[:SKI_TOURS_MAX_FEATURES]
+        for climbing, line in leg_parts(row)
     ]
     features.extend(
         _summit_features(

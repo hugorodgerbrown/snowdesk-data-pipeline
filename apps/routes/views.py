@@ -140,7 +140,6 @@ from apps.routes.services.shares import (
 )
 from apps.routes.services.ski_tours import (
     draft_tour_route,
-    one_leg,
     save_ski_tour,
     tour_points,
     tour_properties,
@@ -1424,22 +1423,20 @@ def ski_tour_feature(request: HttpRequest, uuid: UUID) -> JsonResponse:
         return JsonResponse({"error": "rate_limit_exceeded"}, status=429)
     tour = _ski_tour_or_404(uuid)
     sample = request.GET.get("sample") == "1"
+    # The terrain first: a first walk can turn the line round (its heights
+    # settle which end is the top, runs_reversed), and the draft must take
+    # its points in the order the record was walked, or the terrain track
+    # interleaves two orders and the legs fan across the map.
+    samples = tour_slope_samples(tour, sample=sample)
     draft = draft_tour_route(tour)
-    draft.slope_samples = tour_slope_samples(tour, sample=sample)
+    draft.slope_samples = samples
     identity: dict[str, Any] = {"tour": True, **tour_properties(tour)}
     if draft.slope_samples is None and not sample:
         identity["terrain_pending"] = True
     feature = _route_feature(draft, identity)
-    # SNOW-1307: a tour splits into legs where the ground turns, as a
-    # route does (Hugo, 2026-10-30: "display up and down as a user route
-    # does"); the panel draws them in SAC's colours. Detecting legs needs
-    # heights, so a tour not yet sampled is the one leg its direction
-    # gives it (SNOW-1304) until the refill brings the terrain.
-    props = feature["properties"]
-    if "legs" not in props and (
-        legs := one_leg(feature["geometry"]["coordinates"], props.get("slope"), tour)
-    ):
-        props["legs"] = legs
+    # SNOW-1307: a tour's legs are a route's, cut from its terrain where
+    # the ground turns. A tour with no terrain yet has none: one line, in
+    # no direction, until the panel's refill brings it.
     return JsonResponse({"feature": feature})
 
 

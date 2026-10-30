@@ -120,9 +120,9 @@
    * @property {?Array<any>} [lineFilter] The flat line's filter; defaults
    *   to `flatFilter()`.
    * @property {Array<string>} [textFont] The transition labels' font.
-   * @property {{climb: string, descent: string}} [colours] The leg
-   *   colours; a route's own when omitted. An SAC tour not yet saved
-   *   passes SAC's (SNOW-1307).
+   * @property {{climb: string, descent: string, line?: string}} [colours]
+   *   The leg colours, and the flat line's; a route's own when omitted.
+   *   An SAC tour not yet saved passes SAC's (SNOW-1307).
    * @property {boolean} [solidClimb] True draws a climb solid, without
    *   its dash: an SAC tour, because a dash on SAC's own maps means a leg
    *   needing extra care (SNOW-1307).
@@ -144,7 +144,7 @@
    * `--color-route-rail-descent`; the fallback is only for a page where
    * the core has not loaded, where no leg is drawn and nothing reads them.
    *
-   * @param {{climb: string, descent: string}} [override] Colours that
+   * @param {{climb: string, descent: string, line?: string}} [override] Colours that
    *   win over the route's own (LayerOptions.colours).
    * @returns {{climb: string, descent: string}}
    */
@@ -302,7 +302,7 @@
         source: s.route,
         layout: layoutFor(options, { 'line-cap': 'round', 'line-join': 'round' }),
         paint: {
-          'line-color': ROUTE_LINE_COLOUR,
+          'line-color': (options.colours && options.colours.line) || ROUTE_LINE_COLOUR,
           'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 4, 16, 7],
         },
       }, options.lineFilter === undefined ? flat : options.lineFilter),
@@ -519,7 +519,7 @@
    *
    * @param {any} map A MapLibre map.
    * @param {?FeatureCollection} collection The routes to draw.
-   * @param {{prefix: string, textFont?: Array<string>, colours?: {climb: string, descent: string}, solidClimb?: boolean}} options
+   * @param {{prefix: string, textFont?: Array<string>, colours?: {climb: string, descent: string, line?: string}, solidClimb?: boolean}} options
    *   `textFont` is the transition labels' font; the style's own when
    *   omitted. `colours` and `solidClimb` as LayerOptions.
    * @returns {SourceIds}
