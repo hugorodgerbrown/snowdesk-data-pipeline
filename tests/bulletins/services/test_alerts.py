@@ -337,6 +337,30 @@ class TestEvaluateAndDeliver:
         settled.refresh_from_db()
         assert settled.outcome == BulletinAlert.Outcome.SENT and settled.sent_push
 
+    def test_worker_stamps_one_send_time_on_every_row(self, follower: tuple) -> None:
+        """A bundle's rows share one updated_at, so the bell folds them."""
+        account, region = follower
+        rows = [
+            BulletinAlertFactory.create(
+                account=account,
+                region=region,
+                target_date=TOMORROW,
+                outcome=BulletinAlert.Outcome.PENDING,
+            )
+            for _ in range(3)
+        ]
+        PushSubscriptionFactory.create(account=account)
+        with patch.object(alerts, "dispatch_push", return_value=OK):
+            alerts._worker_deliver_alert.call(
+                account.pk, [r.pk for r in rows], {}, "t", "b", "/"
+            )
+        stamps = set(
+            BulletinAlert.objects.filter(pk__in=[r.pk for r in rows]).values_list(
+                "updated_at", flat=True
+            )
+        )
+        assert len(stamps) == 1
+
     def test_no_email_when_push_reaches(self, follower: tuple) -> None:
         """FALLBACK with a live device sends push only."""
         account, region = follower
@@ -589,6 +613,14 @@ class TestRecentAlerts:
         for _ in range(3):
             self._row(account, title="Bulletins for your 3 places", when=now)
         assert len(recent_alerts(account, now)) == 1
+
+    def test_two_sends_with_the_same_words_stay_two(self, db: Any) -> None:
+        """A second update in one validity window is its own entry."""
+        account = AccountFactory.create()
+        now = datetime.datetime(2026, 10, 30, 18, tzinfo=datetime.UTC)
+        self._row(account, when=now - datetime.timedelta(hours=3))
+        self._row(account, when=now)
+        assert len(recent_alerts(account, now)) == 2
 
     def test_only_sent_messages_of_this_account(self, db: Any) -> None:
         """Skipped rows, wordless rows and other accounts' rows are left out."""

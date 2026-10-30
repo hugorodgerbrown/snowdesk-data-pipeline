@@ -24,8 +24,10 @@ notes (SNOW-1206).
   later than the value under `localStorage['snowdesk:alerts-seen']`, and
   opening the list writes it. No server state, no migration.
 - **One message, one entry.** A bundle writes one `BulletinAlert` row per
-  place with the same words; `recent_alerts` folds consecutive identical
-  messages into one.
+  place with the same words, and the delivery task stamps them all with one
+  `updated_at` (the send time). `recent_alerts` folds rows with the same
+  words *and* the same send time, so two sends with the same words — a
+  second update in one validity window — stay two entries.
 
 ## Why
 
