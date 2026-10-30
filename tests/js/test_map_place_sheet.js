@@ -610,11 +610,27 @@ describe("the resort star, painted from the map's favourites (SNOW-1318)", () =>
     expect(star().hasAttribute('aria-busy')).toBe(false);
   });
 
-  it('does not re-read a resort body when the favourites change', async () => {
-    stubResorts({ state: { favourited: false, uuid: '' } });
+  it('repaints, and does not re-read a resort body, when the favourites change', async () => {
+    const resorts = stubResorts({ state: { favourited: false, uuid: '' } });
     await openVerbier();
     fetchMock.mockClear();
+    resorts.stateFor.mockReturnValue({ favourited: true, uuid: 'fav-2' });
     document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(star().getAttribute('data-favourite-uuid')).toBe('fav-2');
+  });
+
+  it("says a resort's day the device does not hold is not downloaded", async () => {
+    stubResorts({ state: null });
+    fetchMock.mockImplementation(() => Promise.resolve({
+      ok: false,
+      status: 504,
+      headers: new Headers({ 'X-SW-Offline-Miss': '1' }),
+    }));
+    window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier', name: 'Verbier' });
+    await settle();
+    expect(sheet.textContent).toContain('Verbier');
+    expect(sheet.querySelector('[data-testid="place-sheet-not-downloaded"]').textContent)
+      .toBe("This day isn't downloaded for offline use.");
   });
 });

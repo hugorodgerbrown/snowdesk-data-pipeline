@@ -152,6 +152,10 @@ Context:
                 <a
                     href="{{ signin_url }}"
                     data-resort-star-signin
+                    data-resort-slug="{{ resort.slug }}"
+                    data-resort-name="{{ resort.name }}"
+                    data-resort-lat="{{ resort.pin_coordinates.0|default:'' }}"
+                    data-resort-lon="{{ resort.pin_coordinates.1|default:'' }}"
                     hidden
                     aria-label="{{ signin_label }}"
                     title="{{ signin_label }}"

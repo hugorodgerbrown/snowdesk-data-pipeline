@@ -833,11 +833,14 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
     expect(record.contentIncomplete).toBe(true);
   });
 
-  it('counts an answer without `resorts` as a short plan (SNOW-1318)', async () => {
+  it.each([
+    ['missing', undefined],
+    ['malformed', 'verbier'],
+  ])('counts an answer with `resorts` %s as a short plan (SNOW-1318)', async (_label, resorts) => {
     // An answer from before the field — a stale cached copy — would plan
     // no resort sheets while every url it does name lands.
     const btn = document.getElementById('map-download-control');
-    areaContentAnswer = () => ({ regions: AREA_CONTENT.regions, weather: AREA_CONTENT.weather });
+    areaContentAnswer = () => ({ regions: AREA_CONTENT.regions, weather: AREA_CONTENT.weather, resorts });
     try {
       btn.click();
       await new Promise((resolve) => setTimeout(resolve, 80));

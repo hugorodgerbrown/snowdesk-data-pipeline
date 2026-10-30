@@ -334,6 +334,9 @@ class TestResortPeek:
         assert link is not None
         assert " hidden" in link.group(0)
         assert f'href="{reverse("accounts:sign_in")}"' in link.group(0)
+        # It keeps the resort's slug, name and pin, as the star does.
+        assert f'data-resort-slug="{resort.slug}"' in link.group(0)
+        assert 'data-resort-name="Verbier"' in link.group(0)
 
     def test_a_saved_resort_still_renders_the_neutral_star(
         self, client: Client

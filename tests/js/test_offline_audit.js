@@ -1854,6 +1854,35 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
     expect(stored.value[0].contentAt).toBe('2026-09-01T10:00:00.000Z');
   });
 
+  it.each([
+    ['missing', undefined],
+    ['malformed', { slug: 'verbier' }],
+  ])('treats an answer with `resorts` %s as a shortfall (SNOW-1318)', async (_label, resorts) => {
+    // An answer from before the field would plan no resort sheets while
+    // every url it does name lands.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    window.fetch.mockImplementation(async (url) => {
+      const href = String(url);
+      if (href.includes('area-content')) {
+        return { ok: true, json: async () => ({ ...AREA_CONTENT, resorts }) };
+      }
+      if (href.includes('weather.geojson')) return { ok: true, json: async () => WEATHER };
+      return { ok: true, json: async () => ({ type: 'FeatureCollection', features: [] }) };
+    });
+
+    row.querySelector('[data-journey-sync]').click();
+    await vi.waitUntil(
+      async () => {
+        const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+        return stored.value[0].contentIncomplete === true;
+      },
+      { timeout: 5000 },
+    );
+
+    const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(stored.value[0].contentAt).toBe('2026-09-01T10:00:00.000Z');
+  });
+
   it('bounds the manifest fetches, so a stalled connection cannot hang it', async () => {
     // SNOW-925 review: unlike `pwaWarmCache` these preliminary requests
     // went through no budget at all, so a connection that stalls without

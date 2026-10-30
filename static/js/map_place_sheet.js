@@ -35,8 +35,10 @@
  * overlay cache): a reader who cannot save gets the link; a signed-in one
  * gets the star, filled or not, once the feed is read — until then it
  * stays the disabled outline. It is repainted whenever map.js announces
- * `snowdesk:favourited-resorts-changed`, so a resort's body is no longer
- * re-read when the favourites change; a saved pin's still is. A saved pin's "…" menu carries the panel row's items: Share hands
+ * `snowdesk:favourited-resorts-changed` and on `snowdesk:favourites-changed`,
+ * so a resort's body is no longer re-read when the favourites change; a
+ * saved pin's still is. OFFLINE, a resort's sheet is the one a download
+ * kept for that day ('public-partial'); a day it did not take says so. A saved pin's "…" menu carries the panel row's items: Share hands
  * the server-composed "<name> - <what3words link>" to window.pwaShare, as
  * the panel does; Rename edits the name in place through
  * window.pwaRowRenameCommit, as the panel does; Delete confirms and posts,
@@ -254,6 +256,12 @@
           paintLines(current.name || '', saved || (note ? '' : STRINGS.failed), note);
           return;
         }
+        // SNOW-1318: a resort's sheet is kept by a download for each day it
+        // took; a day it did not take says so, under the resort's name.
+        if (current && current.kind === 'resort' && err && err.notDownloaded) {
+          paintLines(current.name || '', '', STRINGS.notDownloaded);
+          return;
+        }
         paintLines('', STRINGS.failed);
       });
   };
@@ -442,10 +450,15 @@
   });
 
   // A pin changes elsewhere: re-read — when the timeline stops, if it is
-  // playing. A resort's body says nothing about the favourites (SNOW-1318);
-  // its star is repainted when map.js has read the change, below.
+  // playing. A resort's body says nothing about the favourites (SNOW-1318),
+  // so its star is repainted instead — now, and again when map.js has read
+  // the change (`snowdesk:favourited-resorts-changed`, below).
   document.addEventListener('snowdesk:favourites-changed', () => {
-    if (!controller.isOpen() || !place || place.kind === 'resort') return;
+    if (!controller.isOpen() || !place) return;
+    if (place.kind === 'resort') {
+      paintStar();
+      return;
+    }
     if (playback.isPlaying()) {
       pendingRefresh = true;
       return;

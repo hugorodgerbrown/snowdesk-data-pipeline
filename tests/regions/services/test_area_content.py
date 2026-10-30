@@ -319,9 +319,12 @@ def test_area_content_names_the_resorts_inside_the_box() -> None:
     ResortFactory.create(name="Inside", latitude=46.15, longitude=7.15)
     ResortFactory.create(name="Outside", latitude=47.2, longitude=9.2)
 
+    ResortFactory.create(name="On The Edge", latitude=46.2, longitude=7.1)
+
     payload = area_content([7.1, 46.1, 7.2, 46.2])
 
-    assert payload["resorts"] == [{"slug": "inside"}]
+    # Edge-inclusive, as every point test here is.
+    assert payload["resorts"] == [{"slug": "inside"}, {"slug": "on-the-edge"}]
 
 
 # ---------------------------------------------------------------------------
