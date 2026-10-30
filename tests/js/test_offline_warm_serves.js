@@ -759,8 +759,9 @@ describe.each(VARIANTS)('a warmed url is served offline (%s)', (_label, options)
         const sw = loadSw({ ...options, caches, fetch: network.fetch });
         const urls = familyUrls(family);
 
-        const result = await sw._warmCache(warmList(family));
-        expect(result).toMatchObject({ failed: 0, cancelled: false });
+        const list = warmList(family);
+        const result = await sw._warmCache(list);
+        expect(result).toMatchObject({ ok: list.length, failed: 0, cancelled: false });
         await flush();
         await goOffline(network, sw);
         network.fetch.mockClear();
