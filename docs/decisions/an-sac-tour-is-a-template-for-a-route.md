@@ -158,7 +158,7 @@ network is bigger than SAC's tours (round the Wildhorn, 19 tours against
 111 segments), and SNOW-1285 first faded it under bold tours. Hugo found
 lines that could be seen but not tapped confusing (28 Oct 2026), so it
 went. The network is still drawn where it is used: in draw mode, as the
-vector shadow a leg snaps to (`/api/ski-network.geojson`). The map no
+amber line a leg snaps to (`/api/ski-network.geojson`, SNOW-1319). The map no
 longer calls swisstopo's tile server for it.
 
 ### A summit is found by search too (SNOW-1294)

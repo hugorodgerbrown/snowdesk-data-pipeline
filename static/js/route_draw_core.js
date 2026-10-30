@@ -36,6 +36,8 @@
  *                                     next leg and snap ring
  *   serialiseDraft(points, name, taps) — the draft as a string to store
  *   parseDraft(raw)                 — a stored draft back, or null
+ *   NETWORK_COLOUR                  — the snap-to network's own colour
+ *   networkPaint(follow)            — the network's core and halo paint
  */
 
 // @ts-check
@@ -53,6 +55,14 @@
   const COINCIDENT_M = 0.5;
 
   const EARTH_RADIUS_M = 6371008.8;
+
+  // SNOW-1319: the snap-to network has a colour nothing else in draw mode
+  // uses — the draft is magenta, SAC's tours blue, lifts red, the
+  // basemap's paths black and its streams light blue — and is solid, so
+  // it never reads as one of the basemap's dashed trails. Hugo,
+  // 30 Oct 2026: "It's only by seeing the snap-to circle that you can tell."
+  const NETWORK_COLOUR = '#d97706';
+  const NETWORK_HALO_COLOUR = '#ffffff';
 
   /**
    * @typedef {[number, number]} Waypoint
@@ -368,6 +378,31 @@
     };
   }
 
+  /**
+   * The paint of swisstopo's network under a draft (SNOW-1319).
+   *
+   * With following on it is a line to aim at: a solid amber core on a
+   * white halo. With following off nothing snaps to it, so the halo goes
+   * and the core is thin and faint — still there, no longer competing.
+   *
+   * @param {boolean} follow - Whether "Follow ski routes" is on.
+   * @returns {{core: Object<string, number|string>, halo: Object<string, number|string>}}
+   */
+  function networkPaint(follow) {
+    return {
+      core: {
+        'line-color': NETWORK_COLOUR,
+        'line-width': follow ? 2.5 : 1.5,
+        'line-opacity': follow ? 1 : 0.35,
+      },
+      halo: {
+        'line-color': NETWORK_HALO_COLOUR,
+        'line-width': 5,
+        'line-opacity': follow ? 0.9 : 0,
+      },
+    };
+  }
+
   self.pwaRouteDrawCore = Object.freeze({
     DRAFT_KEY: DRAFT_KEY,
     MAX_WAYPOINTS: MAX_WAYPOINTS,
@@ -382,5 +417,7 @@
     guideCollection: guideCollection,
     serialiseDraft: serialiseDraft,
     parseDraft: parseDraft,
+    NETWORK_COLOUR: NETWORK_COLOUR,
+    networkPaint: networkPaint,
   });
 })();

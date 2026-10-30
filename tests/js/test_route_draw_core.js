@@ -3,7 +3,8 @@
  * (static/js/route_draw_core.js, SNOW-1256; taps and legs, SNOW-1277).
  *
  * The waypoint list and its edits, a tap's whole leg and its undo, the figures the panel shows, the
- * guide the map draws, and the draft stored on the device.
+ * guide the map draws, the draft stored on the device, and the network's
+ * paint (SNOW-1319).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -187,5 +188,34 @@ describe('the stored draft', () => {
 
   it('keeps a draft whose name is missing', () => {
     expect(core.parseDraft('{"v":1,"points":[[7,46]]}')).toEqual({ points: [[7, 46]], name: '', taps: [0] });
+  });
+});
+
+describe('networkPaint', () => {
+  it('draws the network as a solid amber line on a halo while following', () => {
+    expect(core.networkPaint(true)).toEqual({
+      core: { 'line-color': core.NETWORK_COLOUR, 'line-width': 2.5, 'line-opacity': 1 },
+      halo: { 'line-color': '#ffffff', 'line-width': 5, 'line-opacity': 0.9 },
+    });
+  });
+
+  it('quietens the network and drops the halo when not following', () => {
+    expect(core.networkPaint(false)).toEqual({
+      core: { 'line-color': core.NETWORK_COLOUR, 'line-width': 1.5, 'line-opacity': 0.35 },
+      halo: { 'line-color': '#ffffff', 'line-width': 5, 'line-opacity': 0 },
+    });
+  });
+
+  it('never dashes the network, so it cannot read as a basemap trail', () => {
+    [true, false].forEach((follow) => {
+      const paint = core.networkPaint(follow);
+      expect(paint.core).not.toHaveProperty('line-dasharray');
+      expect(paint.halo).not.toHaveProperty('line-dasharray');
+    });
+  });
+
+  it('gives the network a colour the draft does not use', () => {
+    expect(core.NETWORK_COLOUR).toBe('#d97706');
+    expect(core.NETWORK_COLOUR).not.toBe('#c026d3');
   });
 });
