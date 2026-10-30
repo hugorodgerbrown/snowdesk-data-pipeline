@@ -174,7 +174,6 @@
   var TOAST_AUTO_DISMISS_MS = 10 * 1000;
 
   var TOAST_ID = 'mutation-queue-toast';
-  var STRINGS_TEMPLATE_ID = 'mutation-queue-strings-template';
   // The event every change to the set of rows raises (SNOW-1262).
   var CHANGED_EVENT = 'pwa:mutation-queue-changed';
   var BADGE_SELECTOR = '[data-sync-badge]';
@@ -297,22 +296,28 @@
     }
   }
 
+  // The toast's English copy (SNOW-1262): the fallback for the strings
+  // ``<template>`` ``includes/_toast_banner.html`` renders, and the copy
+  // itself on a page that loads no ``i18n_strings.js``.
+  var TOAST_FALLBACKS = {
+    failed: "Some changes couldn't be saved and won't be retried.",
+    'route-discarded': 'A route drawn offline under another account was discarded.',
+  };
+
   /**
-   * The toast's translated copy, read from the strings ``<template>``
-   * ``includes/_toast_banner.html`` renders (SNOW-1262). Read on use, not
-   * at load: ``i18n_strings.js`` is a deferred script like this one.
+   * The toast's translated copy, read on use rather than at load —
+   * ``i18n_strings.js`` is a deferred script like this one.
    * @returns {{failed: string, 'route-discarded': string}}
    */
   function _strings() {
-    var fallback = {
-      failed: "Some changes couldn't be saved and won't be retried.",
-      'route-discarded': 'A route drawn offline under another account was discarded.',
-    };
     try {
-      return self.pwaStrings ? self.pwaStrings.read(STRINGS_TEMPLATE_ID, fallback) : fallback;
+      if (self.pwaStrings) {
+        return self.pwaStrings.read('mutation-queue-strings-template', TOAST_FALLBACKS);
+      }
     } catch (_e) {
-      return fallback;
+      // Fall through to the English copy.
     }
+    return TOAST_FALLBACKS;
   }
 
   // -------------------------------------------------------------------
