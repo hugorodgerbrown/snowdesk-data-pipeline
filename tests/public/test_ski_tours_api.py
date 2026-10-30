@@ -18,8 +18,8 @@ from django.urls import reverse
 
 from apps.public import api
 from apps.routes.models import SkiTour
-from apps.routes.services.track_render import TRACK_RENDER_VERSION
 from tests.factories import SkiTourFactory
+from track.render import TRACK_RENDER_VERSION
 
 pytestmark = pytest.mark.django_db
 

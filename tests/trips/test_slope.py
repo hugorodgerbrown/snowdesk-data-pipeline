@@ -32,9 +32,6 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.locations.services.terrain import TerrainSlope
-from apps.locations.services.terrain_grid import TerrainGrid, grid_from_payload
-from apps.routes.services.track_render import build_track_render
 from apps.trips.models import Trip
 from apps.trips.services.shares import mint_trip_share
 from apps.trips.services.slope import (
@@ -43,9 +40,12 @@ from apps.trips.services.slope import (
 )
 from apps.trips.views import _picker_payload, _trip_map_payload
 from tests.factories import RouteFactory, TripFactory, UserFactory
+from track.render import build_track_render
+from track.terrain import TerrainSlope
+from track.terrain_grid import TerrainGrid, grid_from_payload
 
 _GRID_FIXTURE = (
-    Path(__file__).parent.parent / "locations" / "fixtures" / "terrain" / "grid.json"
+    Path(__file__).parent.parent / "track" / "fixtures" / "terrain" / "grid.json"
 )
 
 # A short meridian track: two coordinates about 1.1 km apart, which is
@@ -214,7 +214,7 @@ class TestWorkerSampleTripSlopes:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(34.25),
             ),
         ):

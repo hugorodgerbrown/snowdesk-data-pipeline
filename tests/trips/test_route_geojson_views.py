@@ -45,12 +45,12 @@ from freezegun import freeze_time
 from apps.accounts.identity import PRINCIPAL_RESPONSE_HEADER
 from apps.routes.services.canonical import CANONICAL_DIR
 from apps.routes.services.gpx import parse_gpx
-from apps.routes.services.terrain_heights import climb_totals, terrain_points
 from apps.trips.models import Trip
 from apps.trips.services.participants import join_trip
 from apps.trips.services.shares import mint_trip_share, revoke_trip_share
 from apps.trips.views import _trip_map_payload
 from tests.factories import AccountFactory, TripFactory, UserFactory
+from track.terrain_heights import climb_totals, terrain_points
 
 # Well before TripFactory's default date, so a minted link is live.
 _NOW = "2026-01-10T09:00:00+00:00"

@@ -51,7 +51,7 @@ from defusedxml.ElementTree import ParseError, fromstring
 from django.utils.dateparse import parse_datetime
 
 from apps.core.coordinates import InvalidCoordinatesError, validate_coordinates
-from apps.core.geo import haversine_m
+from track.geo import haversine_m
 
 if TYPE_CHECKING:
     # The ``Element`` type lives in the stdlib; defusedxml.fromstring returns
@@ -361,7 +361,7 @@ def _total_distance_m(points: list[tuple[float, float, float | None]]) -> float:
     """
     # Points are ``(lon, lat, ele)`` — GeoJSON order — while ``haversine_m``
     # takes latitude first, per the project convention. Swap here rather than
-    # keeping a second argument order in ``apps/core/geo.py``.
+    # keeping a second argument order in ``track/geo.py``.
     return sum(
         haversine_m(first[1], first[0], second[1], second[0])
         for first, second in zip(points, points[1:], strict=False)

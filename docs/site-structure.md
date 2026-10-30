@@ -100,7 +100,7 @@ a `DEBUG` check, so they exist in production and must stay staff-only.
 | `/_push-demo/` | Web Push smoke test ([`docs/push-notifications.md`](push-notifications.md)). |
 | `/_icon-sets/` | The candidate weather icon sets side by side, kept for comparison ([`docs/weather-surfaces.md`](weather-surfaces.md)). |
 | `/_errors/<kind>/` | Each error page (`400`, `403`, `csrf`, `404`, `500`) as its handler renders it, with the real status. The handlers never run with `DEBUG` on, so this is the only way to see them in development ([`docs/error-pages.md`](error-pages.md), SNOW-1151). |
-| `/_route-terrain/<uuid>/` | One route's slope angle, aspect, track bearing, boundary heights and signed along-track gradient per 25 m segment, with the segments each gradient was smoothed over. The same rows as a CSV (`?format=csv`) and as JSON (`?format=json`, kept for scripts; the route panel's terrain data reads the owner-scoped `routes:terrain` instead, SNOW-1146). Linked from the Route admin. Service: `apps/routes/services/terrain_detail.py` (SNOW-1020). |
+| `/_route-terrain/<uuid>/` | One route's slope angle, aspect, track bearing, boundary heights and signed along-track gradient per 25 m segment, with the segments each gradient was smoothed over. The same rows as a CSV (`?format=csv`) and as JSON (`?format=json`, kept for scripts; the route panel's terrain data reads the owner-scoped `routes:terrain` instead, SNOW-1146). Linked from the Route admin. Service: `track/terrain_detail.py` (SNOW-1020). |
 
 ## HTMX partial routes
 

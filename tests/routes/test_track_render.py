@@ -22,20 +22,11 @@ from django.test import Client
 from apps.routes.models import Route
 from apps.routes.services.canonical import CANONICAL_DIR
 from apps.routes.services.gpx import parse_gpx
-from apps.routes.services.leg_wire import wire_legs
 from apps.routes.services.routes import create_drawn_route, create_route
 from apps.routes.services.shares import write_route_copy
-from apps.routes.services.slope_summary import summarise_record
-from apps.routes.services.slope_wire import compact_slope
-from apps.routes.services.terrain_detail import terrain_detail
-from apps.routes.services.terrain_heights import climb_figures, terrain_points
 from apps.routes.services.track_render import (
-    TRACK_RENDER_VERSION,
-    build_track_render,
     cleared_terrain,
     current_render,
-    is_current,
-    leg_lines,
     stamped_fields,
     store_terrain,
 )
@@ -43,6 +34,18 @@ from apps.trips.models import Trip
 from apps.trips.services.trips import create_trip
 from apps.trips.views import _trip_map_payload
 from tests.factories import RouteFactory, TripFactory, UserFactory
+from track.leg_wire import wire_legs
+from track.render import (
+    TRACK_RENDER_VERSION,
+    build_track_render,
+    is_current,
+    leg_lines,
+    render_fingerprint,
+)
+from track.slope_summary import summarise_record
+from track.slope_wire import compact_slope
+from track.terrain_detail import terrain_detail
+from track.terrain_heights import climb_figures, terrain_points
 
 pytestmark = pytest.mark.django_db
 
@@ -102,6 +105,12 @@ class TestBuilderParity:
         )
         assert built == {
             "v": TRACK_RENDER_VERSION,
+            "fp": render_fingerprint(
+                parsed.points,
+                samples,
+                ascent_m=parsed.ascent_m,
+                descent_m=parsed.descent_m,
+            ),
             **_per_request(parsed.points, samples, parsed.ascent_m, parsed.descent_m),
         }
 
@@ -146,6 +155,20 @@ class TestTheWriter:
         assert _stored(trip)["slope"] == compact_slope(
             record, coordinates=_stored(trip)["geometry"]
         )
+
+    def test_storing_the_same_record_twice_writes_once(
+        self, django_assert_num_queries: Any
+    ) -> None:
+        """SNOW-1316: the second call is a no-op — no UPDATE at all."""
+        parsed, record = _canonical(_STEMS[0])
+        route = RouteFactory.create(points=parsed.points)
+        store_terrain(route, record)
+        route.refresh_from_db()
+        stamp = route.updated_at
+        with django_assert_num_queries(0):
+            store_terrain(route, record)
+        route.refresh_from_db()
+        assert route.updated_at == stamp
 
     def test_a_sync_clears_both_fields(self) -> None:
         assert cleared_terrain() == {"slope_samples": None, "track_render": None}

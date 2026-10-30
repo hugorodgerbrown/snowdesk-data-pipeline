@@ -18,7 +18,7 @@ the colour is made in the browser:
 - **Pixel contract.** Opaque 256 px PNG, alpha always 255.
   R,G = height in whole metres, uint16 big-endian. B = `octant << 5 | band`
   — octant N=0, NE=1 … NW=7 with N covering 337.5–22.5° (the split
-  `apps/core/geo.py`'s `octant_for` uses), band = `floor(slope / 5)` in
+  `track/geo.py`'s `octant_for` uses), band = `floor(slope / 5)` in
   0..17. **B = 254** is level ground (no aspect; R,G still the height).
   **B = 255** is no data (R = G = 0). A tile with no data, or a zoom
   outside 12–14, answers **HTTP 204**.

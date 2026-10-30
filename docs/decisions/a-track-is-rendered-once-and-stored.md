@@ -69,3 +69,9 @@ route showed its legs.
 - The row's own columns (`distance_m`, `bounds`, `duration`) stay read
   from the row. They are already stored, and a copy in the record would
   be a second place for them to disagree.
+- Since SNOW-1316 the builder is `track.render.build_track_render`, a
+  pure package, and a render carries `fp`; `store_terrain` writes nothing
+  when the new `fp` equals the stored one. A SAC tour's render is made by
+  the reference-data service (`render_ski_tours`, on `SourceSkiTour`) and
+  copied into `SkiTour` from the feed; see
+  [pure-track-maths-is-a-package](pure-track-maths-is-a-package.md).

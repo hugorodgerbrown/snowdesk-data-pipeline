@@ -46,7 +46,7 @@ from apps.core.models import BaseModel
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
-    from apps.routes.services.terrain_heights import ClimbFigures
+    from track.terrain_heights import ClimbFigures
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ class Route(BaseModel):
     terrain was asked and had no answer there, and the two must never
     render alike: one is a route nothing has looked at yet, the other is
     ground no survey covers. All three of
-    ``apps.locations.services.terrain.TerrainUnknown``'s reasons are kept
+    ``track.terrain.TerrainUnknown``'s reasons are kept
     per segment even though the map collapses them to one treatment,
     because the module's contract is that a reason is never reduced to a
     null and SNOW-911 and SNOW-839 read the same record.
@@ -299,7 +299,7 @@ class Route(BaseModel):
             "the same fact as a segment whose unknown reason is set (that "
             "is ground the survey does not cover); the two must never "
             "render alike. Carries a 'summary' key holding the same walk "
-            "in figures (apps/routes/services/slope_summary.py), written "
+            "in figures (track/slope_summary.py), written "
             "by the sampler and recomputed on read when a record predates "
             "it."
         ),
@@ -388,11 +388,11 @@ class Route(BaseModel):
         """
         # Imported here rather than at module scope: the service imports
         # the slope sampler, which imports ``apps.routes.models``.
-        from apps.routes.services.terrain_heights import (  # noqa: PLC0415
+        from track.render import is_current  # noqa: PLC0415
+        from track.terrain_heights import (  # noqa: PLC0415
             ClimbFigures,
             climb_figures,
         )
-        from apps.routes.services.track_render import is_current  # noqa: PLC0415
 
         # SNOW-1309: the stored render's figures, which the map reads too.
         if is_current(self.track_render):

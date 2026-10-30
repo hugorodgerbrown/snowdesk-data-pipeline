@@ -46,6 +46,8 @@ import pytest
 import sentry_sdk
 from pytest_django.fixtures import Settings
 
+from track.terrain_grid import clear_grid_cache
+
 # Test-only password hashing. MD5 is unusable for storing a real credential;
 # it is used here because the suite never stores one — every password in the
 # test process is a literal written a few lines above the assertion that
@@ -182,14 +184,17 @@ def _no_live_terrain_origin(settings: Settings) -> None:
 
     Pointed at a closed local port rather than patched out, because the
     behaviour under test is then the real one:
-    ``apps.locations.services.terrain`` promises that an unreachable
+    ``track.terrain`` promises that an unreachable
     origin is a ``TerrainUnknown.UNAVAILABLE`` result and never an
     exception, and a refused connection is exactly the path that promise
     covers. A test that wants real answers mocks the transport itself
-    (``tests/locations/services/test_terrain.py``) or overrides this
+    (``tests/track/test_terrain.py``) or overrides this
     setting, and either wins over an autouse fixture.
 
     Port 9 is the discard port and is closed on every machine this runs
     on, so the refusal is immediate — no DNS, no timeout, no wait.
     """
     settings.TERRAIN_TILE_BASE_URL = "http://127.0.0.1:9/terrain/v1"
+    # SNOW-1316: track.terrain_grid memoises a loaded grid in-process; one
+    # test's mocked grid must not answer the next.
+    clear_grid_cache()

@@ -1,26 +1,17 @@
 """
 apps/routes/services/track_render.py — a track's drawing, built once and stored.
 
+The builder is ``track.render`` (SNOW-1316), pure of Django; this module
+is its Django half: reading a row's fields into it, and the one writer.
+
 SNOW-1309. Hugo, 2026-10-30: "Tours and routes don't change. All of the
 render data should be precalculated. Both should store the same shape of
 data. Only the source changes." So a Route, a SkiTour and a Trip each hold
 one ``track_render`` record: everything the map, the route panel, the
-point card and the trip page draw a line from. It is built here, by one
-pure function, written here, by one writer, and every reader only reads it.
+point card and the trip page draw a line from. It is built by one pure
+function (``track.render.build_track_render``, whose header documents the
+record), written here, by one writer, and every reader only reads it.
 
-## The record
-
-``{"v": TRACK_RENDER_VERSION,
-   "geometry": [[lon, lat, ele], …],   # terrain_points
-   "ascent_m": …, "descent_m": …,      # climb_figures
-   "slope": {…},                        # compact_slope — omitted when None
-   "legs": [{…}, …],                   # wire_legs — omitted when none
-   "terrain": {…},                      # summarise_record — omitted when None
-   "rows": [{…}, …]}                   # terrain_detail — [] when none``
-
-The keys a Feature reads by their PRESENCE (``slope``, ``legs``,
-``terrain``) are omitted rather than nulled, exactly as ``_route_feature``
-has always sent them, so a reader spreads them straight onto the wire.
 The row's own stored columns (``distance_m``, ``bounds``, ``duration``)
 are not copied in: they are already stored, and a second copy is a
 second place for them to disagree.
@@ -46,24 +37,20 @@ GET never writes one.
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol, TypeGuard
+from typing import Any, Protocol
 
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.routes.services.leg_wire import wire_legs
-from apps.routes.services.slope_summary import summarise_record
-from apps.routes.services.slope_wire import compact_slope
-from apps.routes.services.terrain_detail import terrain_detail
-from apps.routes.services.terrain_heights import climb_figures, terrain_points
+from track.render import (
+    TRACK_RENDER_VERSION,
+    build_track_render,
+    is_current,
+    same_render,
+)
 
 logger = logging.getLogger(__name__)
-
-# Raise whenever the record's shape or any of its builders changes what it
-# answers; ``rebuild_track_renders --commit`` then rebuilds every row below
-# it, and readers build in memory until it has.
-TRACK_RENDER_VERSION = 1
 
 
 class Tracked(Protocol):
@@ -75,51 +62,6 @@ class Tracked(Protocol):
     ascent_m: Any
     descent_m: Any
     track_render: dict[str, Any] | None
-
-
-def build_track_render(
-    points: list[list[float | None]],
-    slope_samples: dict[str, Any] | None,
-    *,
-    ascent_m: float | None,
-    descent_m: float | None,
-) -> dict[str, Any]:
-    """Return the render record for one track.
-
-    Exactly what ``_route_feature`` and the trip page built per request
-    before SNOW-1309, in one place.
-
-    Args:
-        points: The stored track, ``[[lon, lat, ele], …]``.
-        slope_samples: Its slope record, or None if never sampled.
-        ascent_m: The row's stored ascent — shown when the record carries
-            no model height (``climb_figures``).
-        descent_m: The row's stored descent, on the same rule.
-
-    Returns:
-        The record described in this module's header.
-
-    """
-    # SNOW-1043: the heights are the terrain model's wherever the record
-    # has them; the geometry, the legs and the totals all read THESE points.
-    geometry = terrain_points(points, slope_samples)
-    # SNOW-1053: the slope's ``seams`` index into this geometry.
-    slope = compact_slope(slope_samples, coordinates=geometry)
-    # The record is passed to the legs only when ``slope`` is sent: with
-    # no ``angles`` on the wire the legs must index the stride walk.
-    legs = wire_legs(geometry, slope_samples if slope is not None else None)
-    terrain = summarise_record(slope_samples)
-    climb = climb_figures(points, slope_samples, ascent_m, descent_m)
-    return {
-        "v": TRACK_RENDER_VERSION,
-        "geometry": geometry,
-        "ascent_m": climb.ascent_m,
-        "descent_m": climb.descent_m,
-        **({"slope": slope} if slope is not None else {}),
-        **({"legs": legs} if legs else {}),
-        **({"terrain": terrain} if terrain is not None else {}),
-        "rows": terrain_detail(slope_samples, points) or [],
-    }
 
 
 def render_of(
@@ -147,11 +89,6 @@ def render_of(
         ascent_m=obj.ascent_m,
         descent_m=obj.descent_m,
     )
-
-
-def is_current(record: dict[str, Any] | None) -> TypeGuard[dict[str, Any]]:
-    """Return whether a stored record was built by the current builder."""
-    return bool(record) and record.get("v") == TRACK_RENDER_VERSION  # type: ignore[union-attr]
 
 
 def stale_q() -> Q:
@@ -232,7 +169,9 @@ def store_terrain(
     """Write ``record`` as ``obj``'s terrain, and its render with it.
 
     The one writer of ``slope_samples`` (SNOW-1309). ``updated_at`` moves
-    too, which is what the tours overview's cache key reads.
+    too, which is what the tours overview's cache key reads. Nothing is
+    written when the stored render's fingerprint equals the new one
+    (SNOW-1316): the record and the render are already these.
 
     Args:
         obj: A saved Route, Trip or SkiTour.
@@ -240,8 +179,13 @@ def store_terrain(
         points: As ``render_of``'s; a SkiTour passes its ordered line.
 
     """
+    stored = obj.track_render  # type: ignore[attr-defined]
     obj.slope_samples = record  # type: ignore[attr-defined]
     obj.track_render = render_of(obj, points=points)  # type: ignore[arg-type, attr-defined]
+    if same_render(stored, obj.track_render):  # type: ignore[attr-defined]
+        # SNOW-1316: built from exactly what the stored one was, so there
+        # is nothing to write — a second call is a no-op.
+        return
     type(obj)._default_manager.filter(pk=obj.pk).update(
         slope_samples=record,
         track_render=obj.track_render,  # type: ignore[attr-defined]
@@ -257,34 +201,3 @@ def cleared_terrain() -> dict[str, None]:
     instances, so this is its half of ``store_terrain``'s rule.
     """
     return {"slope_samples": None, "track_render": None}
-
-
-def leg_lines(
-    render: dict[str, Any] | None,
-) -> list[tuple[bool, list[list[float]]]]:
-    """Return a stored record's legs as ``(climbing, [[lon, lat], …])`` lines.
-
-    The record's own geometry sliced at each leg's ``point_from`` and
-    ``point_to``: a read, no computation. Empty when the record is not
-    current or holds no leg.
-
-    Args:
-        render: A ``track_render`` value, or the two keys of one.
-
-    Returns:
-        The lines, in track order.
-
-    """
-    if not is_current(render):
-        return []
-    geometry = render.get("geometry") or []
-    return [
-        (
-            bool(leg["climbing"]),
-            [
-                [float(lon), float(lat)]
-                for lon, lat, *_ in geometry[leg["point_from"] : leg["point_to"] + 1]
-            ],
-        )
-        for leg in render.get("legs") or []
-    ]

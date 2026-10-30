@@ -42,9 +42,9 @@ django.setup()
 
 from apps.routes.services.canonical import canonical_paths
 from apps.routes.services.gpx import parse_gpx
-from apps.routes.services.leg_wire import wire_legs
-from apps.routes.services.slope_wire import compact_slope
-from apps.routes.services.terrain_heights import terrain_points
+from track.leg_wire import wire_legs
+from track.slope_wire import compact_slope
+from track.terrain_heights import terrain_points
 
 RECORDS_DIR = REPO / "tests" / "routes" / "fixtures" / "slope_records"
 OUTPUT_DIR = REPO / "tests" / "js" / "fixtures"
