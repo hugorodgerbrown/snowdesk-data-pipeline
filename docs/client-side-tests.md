@@ -276,6 +276,7 @@ is delegated to CI. Runs `npm ci && npm run test:js` (`vitest run`).
   that real MapLibre/service-worker constraints made hard (or impossible)
   to exercise in Playwright gets direct unit coverage
   (`test_scrubber_core.js`, `test_basemap_cache_core.js`).
+- `sw.js` offline reads (SNOW-1314) — every url family a download, the shell re-warm or `install` warms is served offline by the real fetch listener, principal-scoped where its class requires, and every `#map` `data-*-url` is classified (`test_offline_warm_serves.js`, on the shared `helpers/sw_harness.js`).
 
 The e2e suite (`tox -e e2e`) is left holding real-SW/offline journeys
 (install, update, kill switch, push, offline map/favourites, the mutation

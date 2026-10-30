@@ -14,7 +14,7 @@ that none of the other three can answer:
 > If a user downloads a region, switches the network off and opens the map
 > on a mountain, do they see a map?
 
-It runs weekly, off the merge path, with a fuzzed subject.
+It runs weekly, off the merge path, with a fuzzed subject. Its per-PR complement is `tests/js/test_offline_warm_serves.js` (SNOW-1314): every url family a download warms must be served offline by the worker's real fetch listener — no tiles, no browser, in the default `js` env.
 
 ```bash
 uv run tox -e offline                                  # this ISO week's draw
