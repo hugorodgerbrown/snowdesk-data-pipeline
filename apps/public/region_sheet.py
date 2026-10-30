@@ -23,6 +23,15 @@ The body is ``public/partials/_region_body.html`` with its context from
 page's own rule (``_resolve_selected_issue``), so the sheet and the page
 cannot show different issues or describe them differently.
 
+The body is the same for every reader but staff (SNOW-1317), so the copy
+an area download keeps unstamped (SNOW-1312) is sound to serve to whoever
+opens the sheet offline. "On the ground"'s call to report renders both its
+forms — the report button and the sign-in link — and the sheet's
+``data-reader``, rendered with the map page from ``user.is_authenticated``
+(public/partials/_region_sheet_surface.html), shows the reader's own by one
+CSS rule. The one exception is the staff callout; see
+``_renders_staff_callout``.
+
 The sheet opens on every width since SNOW-1173: a bottom sheet on a phone,
 the inset panel on a desktop. That ticket retired the chip's region panel,
 which had kept a smaller copy of the region's summary for the desktop
@@ -194,7 +203,9 @@ def _renders_staff_callout(request: HttpRequest, panel: dict[str, Any] | None) -
 
     Mirrors ``_region_body.html``'s ``user.is_staff`` branch inside the
     ``render_model.version == 0`` error state — the one part of the sheet
-    beyond the call to report that differs by reader.
+    that differs by reader. The call to report used to be a second; since
+    SNOW-1317 the body carries both its forms and the map page's
+    ``data-reader`` on the sheet picks one, so it is the same for everyone.
 
     Args:
         request: The incoming request, whose user is checked.
