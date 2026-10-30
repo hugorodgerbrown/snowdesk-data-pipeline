@@ -34,7 +34,8 @@
  *   tap(point)          — handle a map tap at a screen point; true when taken
  *   find()              — "Find a route": the overlay on, and the hint
  *   openSummit(summit)  — a summit picked in search (SNOW-1294): the layer
- *                         on, the map at the summit
+ *                         on, the map at the summit, and a "Tours need
+ *                         signal" toast when they cannot load (SNOW-1320)
  */
 
 // @ts-check
@@ -82,6 +83,7 @@
     'save-failed': "That route couldn't be saved. Try again.",
     'save-limit': "You've reached your saved-route limit. Delete one to save another.",
     'save-offline': 'You need to be online to save a route.',
+    'tours-offline': 'Tours need signal',
   });
   const interpolate = self.pwaStrings.interpolate;
 
@@ -105,6 +107,11 @@
     /** The tour the panel was asked for last, so a late answer is dropped. */
     /** @type {?string} */
     opening: null,
+    /**
+     * SNOW-1320: a summit was picked in search, so the next tours fetch to
+     * settle says so if it fails. One-shot: that fetch consumes it.
+     */
+    summitPending: false,
   };
 
   /** @returns {any} The MapLibre map, or null before it exists. */
@@ -291,6 +298,19 @@
   }
 
   /**
+   * Consume the summit mark (SNOW-1320): the reader picked a summit and
+   * the tours it was for could not be fetched, so say why the map shows
+   * none. Any other way of turning the layer on never sets the mark.
+   *
+   * @param {boolean} ok Whether the fetch that settled brought tours.
+   */
+  function settleSummit(ok) {
+    if (!state.summitPending) return;
+    state.summitPending = false;
+    if (!ok) window.MapSheet.toast(STRINGS['tours-offline']);
+  }
+
+  /**
    * Fetch one collection, the one in flight before it dropped.
    *
    * @param {string} url
@@ -307,10 +327,16 @@
       .then(function (body) {
         if (state.inflight !== inflight) return;
         state.inflight = null;
-        if (body && Array.isArray(body.features)) done(body);
+        const ok = !!(body && Array.isArray(body.features));
+        settleSummit(ok);
+        if (ok) done(body);
       })
       .catch(function () {
-        if (state.inflight === inflight) state.inflight = null;
+        // A fetch another replaced was aborted for it, not failed: the
+        // mark waits for the one that replaced it.
+        if (state.inflight !== inflight) return;
+        state.inflight = null;
+        settleSummit(false);
       });
   }
 
@@ -580,11 +606,22 @@
    * the summit, close enough for its tours' own detail. The reader then
    * picks a tour by its line (SNOW-1306).
    *
+   * SNOW-1320: the summit list reads offline, the tours do not, so a
+   * summit picked without signal would land on a map with no tours and no
+   * reason. Known to be offline, say so now; otherwise mark the pick, and
+   * the next tours fetch says so if it fails (settleSummit).
+   *
    * @param {{key: string, lon: number, lat: number}} summit
    */
   function openSummit(summit) {
     const map = getMap();
     if (!summit || !summit.key || !map) return;
+    if (navigator.onLine === false) {
+      state.summitPending = false;
+      window.MapSheet.toast(STRINGS['tours-offline']);
+    } else {
+      state.summitPending = true;
+    }
     window.pwaSkiRoutes?.show();
     if (Number.isFinite(summit.lon) && Number.isFinite(summit.lat)) {
       map.flyTo({
