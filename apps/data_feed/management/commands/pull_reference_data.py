@@ -28,6 +28,14 @@ instance loads with its migrations, so the pull starts after them:
 5. ``weather`` — each place's days, through ``upsert_weather``; a past day
    already recorded here is kept.
 
+One feed that cannot be read — refused, unreachable, or not served yet
+by the service's release — costs only itself: the feeds after it are
+still pulled and the run then exits non-zero naming it. Only the estate
+is fatal, since every series after it resolves its places against it.
+(An instance on ``main`` pulling from a production on an older release
+asked for ``ski-network`` before production served it, and that 404 cut
+off every day of weather after it.)
+
 The time series are a subset, by the day each row is about: ``--recent N``
 (the default, 14) pulls from N days ago onwards, forecasts included;
 ``--golden-week`` pulls the seven days ``seed_test_week`` covers, for
@@ -264,6 +272,8 @@ class Command(RegisteredCommand):
         # Every place's label by service uuid, filled from the estate (pulled
         # whole), so the weather countdown names a place without a query.
         self._places: dict[str, str] = {}
+        # Feeds that could not be read, each with why; the run fails on any.
+        self._unread: dict[str, str] = {}
         self._index = ReferenceIndex.load()
         try:
             self._pull_all(client, day_from=day_from, day_to=day_to)
@@ -273,6 +283,13 @@ class Command(RegisteredCommand):
             self._tally_all()
 
         failed = sum(c[FAILED] for c in self._outcomes.values())
+        if self._unread:
+            raise CommandError(
+                f"{COMMAND_NAME} could not read "
+                + "; ".join(f"{feed} ({why})" for feed, why in self._unread.items())
+                + (f", and {failed} item(s) failed" if failed else "")
+                + "."
+            )
         if failed:
             raise CommandError(
                 f"{COMMAND_NAME} finished with {failed} failed item(s). "
@@ -298,9 +315,29 @@ class Command(RegisteredCommand):
         """
         self._pull_estate(client)
         for feed in SKI_KINDS:
-            self._pull_ski(client, feed)
+            self._isolated(feed, lambda f: self._pull_ski(client, f))
         for feed in SERIES_FEEDS:
-            self._pull_series(client, feed, day_from=day_from, day_to=day_to)
+            self._isolated(
+                feed,
+                lambda f: self._pull_series(
+                    client, f, day_from=day_from, day_to=day_to
+                ),
+            )
+
+    def _isolated(self, feed: str, pull: Callable[[str], None]) -> None:
+        """Pull one feed, so that failing to read it stops only that feed.
+
+        Args:
+            feed: The feed's name.
+            pull: Pulls it.
+
+        """
+        try:
+            pull(feed)
+        except FeedError as exc:
+            logger.error("%s: %s could not be read: %s", COMMAND_NAME, feed, exc)
+            self.stderr.write(f"{feed}: could not be read: {exc}")
+            self._unread[feed] = str(exc)
 
     def _pull_estate(self, client: FeedClient) -> None:
         """Pull places, passes and resorts whole, then apply their tombstones.
@@ -348,12 +385,14 @@ class Command(RegisteredCommand):
         """Record every feed's outcomes in the run register, zeros included.
 
         ``failed`` is tallied under its bare name too, which is what marks
-        the run PARTIAL in the register.
+        the run PARTIAL in the register; ``feeds_unread`` counts the feeds
+        that could not be read at all.
         """
         for feed, counts in self._outcomes.items():
             for outcome in OUTCOMES[feed]:
                 self.tally(f"{feed}_{outcome}", counts[outcome])
         self.tally("failed", sum(c[FAILED] for c in self._outcomes.values()))
+        self.tally("feeds_unread", len(self._unread))
 
     def _window(self, options: dict[str, Any]) -> tuple[dt.date, dt.date | None]:
         """Return the first and last day of the time series to pull.
