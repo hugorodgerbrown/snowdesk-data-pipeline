@@ -223,6 +223,14 @@
  * open; SNOW-463 is the server-side backstop that makes it hold
  * regardless.
  *
+ * SNOW-1262 adds three records to the same pass, so a route drawn offline
+ * resolves whether or not a tab sees it replay: a row with a ``kind`` that
+ * succeeds leaves an acknowledgement in ``meta:app``
+ * (``mutations.ack:<key>``) before it is deleted; every failed or
+ * rescheduled row keeps the response's ``last_status`` / ``last_error``;
+ * and a ``kind`` row the guard above discards leaves
+ * ``mutations.discard-notice`` for the next page load to show.
+ *
  * i18n: this worker never renders UI, so there are no translatable
  * strings.
  */
@@ -5144,33 +5152,88 @@ const _INLINE_MUTATION_QUEUE_CORE = {
   },
   isRowEligible: (row, now) =>
     !!row && row.status !== 'failed' && (row.next_attempt_at || 0) <= now,
-  nextRowState: (row, outcome, now) => {
+  nextRowState: (row, outcome, now, detail) => {
     if (outcome === 'success') return { action: 'delete' };
     const attempts = (row && row.attempts ? row.attempts : 0) + 1;
+    // SNOW-1262: the response's status and error, when given.
+    const recorded = {};
+    if (detail) {
+      recorded.last_status = detail.status == null ? null : detail.status;
+      recorded.last_error = detail.error == null ? null : detail.error;
+    }
     if (outcome === 'permanent') {
       return {
         action: 'fail',
-        row: Object.assign({}, row, { attempts, status: 'failed' }),
+        row: Object.assign({}, row, recorded, { attempts, status: 'failed' }),
         reason: 'permanent_4xx',
       };
     }
     if (attempts >= _INLINE_MUTATION_QUEUE_CORE.MAX_ATTEMPTS) {
       return {
         action: 'fail',
-        row: Object.assign({}, row, { attempts, status: 'failed' }),
+        row: Object.assign({}, row, recorded, { attempts, status: 'failed' }),
         reason: 'max_attempts',
       };
     }
     return {
       action: 'reschedule',
-      row: Object.assign({}, row, {
+      row: Object.assign({}, row, recorded, {
         attempts,
         status: 'retry-scheduled',
         next_attempt_at: now + _INLINE_MUTATION_QUEUE_CORE.backoffDelayMs(attempts),
       }),
     };
   },
+  // SNOW-1262: the acknowledgement and failure-detail helpers, mirrored for
+  // the same no-core case. test_sw.js holds both copies to core's answers.
+  ACK_KEY_PREFIX: 'mutations.ack:',
+  DISCARD_NOTICE_KEY: 'mutations.discard-notice',
+  failureDetail: (status, body) => ({
+    status: typeof status === 'number' ? status : null,
+    error: body && typeof body.error === 'string' ? body.error.slice(0, 200) : null,
+  }),
+  ackRecord: (row, body, now) => {
+    if (!row || !row.kind || !row.idempotency_key) return null;
+    return {
+      key: 'mutations.ack:' + row.idempotency_key,
+      value: { kind: row.kind, uuid: body && typeof body.uuid === 'string' ? body.uuid : null, at: now },
+    };
+  },
 };
+
+/**
+ * The JSON body of a replay's response, or null (SNOW-1262). Read only to
+ * record a route's uuid in its acknowledgement or a refusal's ``error`` on
+ * its row; a body that is not JSON costs nothing but those two fields.
+ *
+ * @param {Response} response
+ * @returns {Promise<*>}
+ */
+async function _replayBody(response) {
+  try {
+    return await response.json();
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * Put one ``meta:app`` record, best effort (SNOW-1262). A worker-created DB
+ * may have no ``meta:app`` store (see ``_openMutationsDb()``), and a write
+ * that cannot land must never fail the drain around it.
+ *
+ * @param {IDBDatabase} db
+ * @param {object} record
+ * @returns {Promise<boolean>} Whether it was written.
+ */
+async function _putMetaRecord(db, record) {
+  try {
+    await _idbPut(db, 'meta:app', record);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
 
 async function _selfDrainMutations() {
   // SNOW-852: not one row is replayed while an offline mode is in force.
@@ -5240,6 +5303,15 @@ async function _selfDrainMutations() {
       } catch (_e) {
         // Non-fatal.
       }
+      // SNOW-1262: a row with a ``kind`` is something the user is waiting
+      // on (a route drawn offline), and this path has no page to tell. The
+      // notice is what the next page load shows them.
+      if (row.kind) {
+        await _putMetaRecord(db, {
+          key: core.DISCARD_NOTICE_KEY || _INLINE_MUTATION_QUEUE_CORE.DISCARD_NOTICE_KEY,
+          value: { kinds: [row.kind], at: now },
+        });
+      }
       continue;
     }
 
@@ -5249,6 +5321,8 @@ async function _selfDrainMutations() {
     }
 
     let outcome;
+    let status = null;
+    let body = null;
     try {
       const headers = Object.assign({}, row.headers || {}, {
         'Idempotency-Key': row.idempotency_key,
@@ -5262,6 +5336,8 @@ async function _selfDrainMutations() {
       // page drain does — a forget queued offline and replayed by
       // Background Sync after every tab has closed comes through here.
       outcome = core.classifyStatus(response.status, row.done_statuses);
+      status = response.status;
+      body = await _replayBody(response);
     } catch (_networkErr) {
       outcome = 'retry';
     }
@@ -5269,10 +5345,18 @@ async function _selfDrainMutations() {
     // SNOW-617: the transition is core's. This loop used to spell it out
     // by hand, in parallel with `mutation_queue.js`'s own copy — including
     // a `max_attempts` telemetry payload that, unlike the page's, omitted
-    // `attempts` entirely.
-    const transition = core.nextRowState(row, outcome, now);
+    // `attempts` entirely. SNOW-1262: with the response's status and
+    // error, so the page can say WHY a row was refused.
+    const failureDetail = core.failureDetail || _INLINE_MUTATION_QUEUE_CORE.failureDetail;
+    const transition = core.nextRowState(row, outcome, now, failureDetail(status, body));
 
     if (transition.action === 'delete') {
+      // SNOW-1262: the acknowledgement goes down BEFORE the row comes out,
+      // so there is no moment at which a reader finds neither — which it
+      // would read as "never sent".
+      const ackRecord = core.ackRecord || _INLINE_MUTATION_QUEUE_CORE.ackRecord;
+      const ack = ackRecord(row, body, now);
+      if (ack) await _putMetaRecord(db, ack);
       await _idbDelete(db, 'queue:mutations', row.id);
       successCount += 1;
       continue;

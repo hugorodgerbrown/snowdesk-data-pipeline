@@ -3323,6 +3323,120 @@ describe('the Background-Sync drain respects offline mode (SNOW-852)', () => {
   });
 });
 
+/**
+ * Run one transaction against the test DB and resolve with its result.
+ *
+ * @param {string} store
+ * @param {'readonly'|'readwrite'} mode
+ * @param {(store: IDBObjectStore) => IDBRequest} op
+ * @returns {Promise<*>}
+ */
+function idb(store, mode, op) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      const inner = op(db.transaction(store, mode).objectStore(store));
+      inner.onsuccess = () => {
+        db.close();
+        resolve(inner.result);
+      };
+      inner.onerror = () => reject(inner.error);
+    };
+  });
+}
+
+/** One queued route-create row, as route_draw.js queues it. */
+function routeRow(overrides) {
+  return {
+    method: 'POST',
+    url: `${ORIGIN}/routes/drawn/`,
+    headers: {},
+    body: '{"points": [[7, 46], [7, 46.001]], "name": "Mont Fort"}',
+    idempotency_key: 'k-route',
+    kind: 'route-create',
+    attempts: 0,
+    status: 'queued',
+    next_attempt_at: 0,
+    principal: 'user-a',
+    ...overrides,
+  };
+}
+
+describe('the Background-Sync drain completes a route drawn offline (SNOW-1262)', () => {
+  beforeEach(async () => {
+    await resetDb();
+    await setStoredPrincipal('user-a');
+  });
+
+  afterEach(async () => {
+    await resetDb();
+  });
+
+  it('acknowledges the key with the route uuid, then deletes the row', async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    const fetchSpy = vi.fn(async () => new Response('{"uuid": "route-uuid"}', { status: 200 }));
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(fetchSpy.mock.calls[0][1].headers['Idempotency-Key']).toBe('k-route');
+    expect(await idb('queue:mutations', 'readonly', (store) => store.getAll())).toEqual([]);
+    const ack = await idb('meta:app', 'readonly', (store) => store.get('mutations.ack:k-route'));
+    expect(ack.value).toMatchObject({ kind: 'route-create', uuid: 'route-uuid' });
+  });
+
+  it("keeps a refusal's status and error on the row", async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    const fetchSpy = vi.fn(
+      async () => new Response('{"error": "route_limit_reached"}', { status: 409 }),
+    );
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    const [row] = await idb('queue:mutations', 'readonly', (store) => store.getAll());
+    expect(row).toMatchObject({ status: 'failed', last_status: 409, last_error: 'route_limit_reached' });
+  });
+
+  it('leaves a notice when its guard discards a route of another account', async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow({ principal: 'user-b' })));
+    const fetchSpy = vi.fn();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const notice = await idb('meta:app', 'readonly', (store) => store.get('mutations.discard-notice'));
+    expect(notice.value.kinds).toEqual(['route-create']);
+  });
+
+  it('agrees with the real core on the acknowledgement and the failure detail', () => {
+    const inline = loadSw()._INLINE_MUTATION_QUEUE_CORE;
+    const row = routeRow();
+
+    expect(inline.ackRecord(row, { uuid: 'u' }, 5)).toEqual(coreQueue.ackRecord(row, { uuid: 'u' }, 5));
+    expect(inline.ackRecord({ idempotency_key: 'k' }, null, 5)).toEqual(
+      coreQueue.ackRecord({ idempotency_key: 'k' }, null, 5),
+    );
+    for (const [status, body] of [[400, { error: 'x'.repeat(300) }], [404, null], [null, null]]) {
+      expect(inline.failureDetail(status, body)).toEqual(coreQueue.failureDetail(status, body));
+    }
+    expect(inline.ACK_KEY_PREFIX).toBe(coreQueue.ACK_KEY_PREFIX);
+    expect(inline.DISCARD_NOTICE_KEY).toBe(coreQueue.DISCARD_NOTICE_KEY);
+    const detail = { status: 409, error: 'route_limit_reached' };
+    for (const outcome of ['permanent', 'retry']) {
+      expect(inline.nextRowState(row, outcome, 5, detail)).toEqual(
+        coreQueue.nextRowState(row, outcome, 5, detail),
+      );
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // SNOW-874 — the push handler's notification options
 // ---------------------------------------------------------------------------

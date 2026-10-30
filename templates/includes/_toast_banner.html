@@ -44,6 +44,15 @@
   hiding immediately. mutation_queue.js keeps its own direct listener on
   the "×". Shares the --z-toast token with _toast.html by numeric value
   (both were z-50) even though its dismiss isn't shared-handler-driven.
+
+  SNOW-1262: the banner carries a second message. When an account change
+  discards a route drawn offline (the mutation queue's principal guard),
+  mutation_queue.js writes "A route drawn offline under another account
+  was discarded." into [data-toast-body] and reveals the same banner; a
+  permanent failure writes the default line back. Both lines are rendered
+  in #mutation-queue-strings-template below, because makemessages never
+  scans static/js. Not rendered for the static component-library variant,
+  which would put a second template with the same id on that page.
 {% endcomment %}
 {% with toast_id=id|default:"mutation-queue-toast" %}
     <div
@@ -53,7 +62,7 @@
         data-testid="mutation-queue-toast"
         class="{% if static %}flex{% else %}hidden fixed inset-x-0 top-0 z-[var(--z-toast)] -translate-y-full opacity-0{% endif %} w-full items-center justify-center gap-3 transition-all duration-300 ease-out bg-status-error-bg px-4 py-3 text-sm text-status-error-text shadow-md"
     >
-        <span>
+        <span data-toast-body>
             {% if body %}
                 {{ body }}
             {% else %}
@@ -69,4 +78,12 @@
             ×
         </button>
     </div>
+    {% if not static %}
+        <template id="mutation-queue-strings-template">
+            <span data-string="failed">{% trans "Some changes couldn't be saved and won't be retried." %}</span>
+            <span
+                data-string="route-discarded"
+            >{% trans "A route drawn offline under another account was discarded." %}</span>
+        </template>
+    {% endif %}
 {% endwith %}
