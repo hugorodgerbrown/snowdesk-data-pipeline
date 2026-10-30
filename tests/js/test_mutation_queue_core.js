@@ -292,3 +292,16 @@ describe('acknowledgements (SNOW-1262)', () => {
     expect(core.ackExpired(other, NOW + core.ACK_TTL_MS * 2)).toBe(false);
   });
 });
+
+describe("the idempotency middleware's two 409s (SNOW-1262)", () => {
+  it('retries the in-flight 409: the original request is still in the view', () => {
+    expect(core.classifyStatus(409, [], core.IN_FLIGHT_ERROR)).toBe('retry');
+    expect(core.IN_FLIGHT_ERROR).toBe('idempotency_in_flight');
+  });
+
+  it('fails the reused-key 409, a bare 409 and the route cap for good', () => {
+    expect(core.classifyStatus(409, [], core.KEY_REUSED_ERROR)).toBe('permanent');
+    expect(core.classifyStatus(409, [], null)).toBe('permanent');
+    expect(core.classifyStatus(409, [], 'route_limit_reached')).toBe('permanent');
+  });
+});

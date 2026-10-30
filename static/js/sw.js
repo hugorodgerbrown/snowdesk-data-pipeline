@@ -5270,11 +5270,13 @@ function _idbDelete(db, storeName, key) {
 const _INLINE_MUTATION_QUEUE_CORE = {
   MAX_ATTEMPTS: 20,
   backoffDelayMs: (attempts) => Math.min(Math.pow(2, attempts), 300) * 1000,
-  classifyStatus: (status, doneStatuses) => {
+  classifyStatus: (status, doneStatuses, error) => {
     // SNOW-1132: a status the mutation declared as "already applied".
     if (Array.isArray(doneStatuses) && doneStatuses.indexOf(status) !== -1) return 'success';
     if (status >= 200 && status < 300) return 'success';
     if (status === 408 || status === 429) return 'retry';
+    // SNOW-1262: core/idempotency.py's in-flight 409 is transient.
+    if (status === 409 && error === 'idempotency_in_flight') return 'retry';
     if (status >= 500) return 'retry';
     if (status >= 400) return 'permanent';
     return 'retry';
@@ -5344,6 +5346,52 @@ async function _replayBody(response) {
   } catch (_e) {
     return null;
   }
+}
+
+/**
+ * Write a replayed row back unless it has gone meanwhile (SNOW-1262) — the
+ * worker's half of ``mutation_queue.js``'s ``_writeBack``, for the same
+ * race: a page drain that replayed and deleted this row while the worker
+ * waited on its answer must not see it re-created by the worker's stale
+ * ``put``. The acknowledgement is checked first (the winner writes it
+ * before deleting); then the row is re-read and written in one readwrite
+ * transaction, which the browser serialises against the page's.
+ *
+ * @param {IDBDatabase} db
+ * @param {object} row
+ * @returns {Promise<boolean>} Whether it was written.
+ */
+async function _writeBackMutation(db, row) {
+  if (row.idempotency_key) {
+    try {
+      const ack = await new Promise((resolve, reject) => {
+        const req = db
+          .transaction('meta:app', 'readonly')
+          .objectStore('meta:app')
+          .get('mutations.ack:' + row.idempotency_key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      if (ack) return false;
+    } catch (_e) {
+      // No meta:app on a worker-created DB: no acknowledgement either.
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('queue:mutations', 'readwrite');
+    const store = tx.objectStore('queue:mutations');
+    const read = store.get(row.id);
+    read.onerror = () => reject(read.error || new Error('get failed'));
+    read.onsuccess = () => {
+      if (read.result === undefined) {
+        resolve(false);
+        return;
+      }
+      const write = store.put(row);
+      write.onerror = () => reject(write.error || new Error('put failed'));
+      write.onsuccess = () => resolve(true);
+    };
+  });
 }
 
 /**
@@ -5464,9 +5512,15 @@ async function _selfDrainMutations() {
       // SNOW-1132: with the row's declared done statuses, exactly as the
       // page drain does — a forget queued offline and replayed by
       // Background Sync after every tab has closed comes through here.
-      outcome = core.classifyStatus(response.status, row.done_statuses);
       status = response.status;
       body = await _replayBody(response);
+      // SNOW-1262: with the body's error, so the idempotency middleware's
+      // in-flight 409 is retried rather than failed.
+      outcome = core.classifyStatus(
+        response.status,
+        row.done_statuses,
+        body && typeof body.error === 'string' ? body.error : null,
+      );
     } catch (_networkErr) {
       outcome = 'retry';
     }
@@ -5491,7 +5545,8 @@ async function _selfDrainMutations() {
       continue;
     }
 
-    await _idbPut(db, 'queue:mutations', transition.row);
+    // SNOW-1262: not if a page drain landed (and deleted) it meanwhile.
+    if (!(await _writeBackMutation(db, transition.row))) continue;
 
     if (transition.action === 'fail') {
       _postTelemetry('pwa.mutation.failed_permanent', {

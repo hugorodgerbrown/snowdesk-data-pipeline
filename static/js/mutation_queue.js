@@ -538,7 +538,9 @@
     // through it.
     var updated = Object.assign({}, row, { status: 'failed' });
     try {
-      await window.pwaDb.put(STORE, updated);
+      // SNOW-1262: not if the other drain has already landed it — then
+      // there is no failure to report.
+      if (!(await _writeBack(updated))) return false;
     } catch (_e) {
       // Non-fatal — still surface the failure below even if the write
       // itself couldn't be persisted.
@@ -574,16 +576,48 @@
     }
     _revealToast();
     _updateBadge().catch(function () {});
+    return true;
+  }
+
+  /**
+   * Write a replayed row back — rescheduled or failed — unless it has gone
+   * meanwhile (SNOW-1262).
+   *
+   * Two drains can hold the same row: this page's and the service worker's
+   * (or another tab's). A ``put`` is an upsert by id, so a drain that read
+   * the row, lost the race and wrote its stale answer back RE-CREATED a row
+   * the winner had already replayed and deleted — a ghost "failed" or
+   * "waiting" route the server already has. So the acknowledgement is
+   * checked first (the winner writes it before deleting), and then the row
+   * is re-read and written in ONE readwrite transaction (``readModifyWrite``),
+   * which the browser serialises against every other connection: absent
+   * means gone, and nothing is written.
+   *
+   * @param {object} row The row to write.
+   * @returns {Promise<boolean>} Whether it was written.
+   */
+  async function _writeBack(row) {
+    if (row.idempotency_key && (await acknowledged(row.idempotency_key))) return false;
+    var written = false;
+    await window.pwaDb.readModifyWrite(STORE, row.id, function (current) {
+      if (current === undefined) return undefined;
+      written = true;
+      return row;
+    });
+    return written;
   }
 
   /**
    * Replay one eligible row. Returns
-   * ``'success' | 'failed' | 'retry' | 'discarded'`` describing the
+   * ``'success' | 'failed' | 'retry' | 'discarded' | 'gone'`` describing the
    * outcome so ``drain()`` can count real successes — a ``'discarded'``
    * row never left this device, so it must not count as either.
    *
+   * ``'gone'`` (SNOW-1262): another drain replayed and deleted the row
+   * while this one was waiting on its answer; nothing was written back.
+   *
    * @param {object} row
-   * @returns {Promise<'success'|'failed'|'retry'|'discarded'>}
+   * @returns {Promise<'success'|'failed'|'retry'|'discarded'|'gone'>}
    */
   async function _processRow(row) {
     // SNOW-462 drain-guard: the row's enqueue-time principal must still
@@ -630,13 +664,18 @@
         headers: headers,
         body: row.body != null ? row.body : undefined,
       });
-      outcome = core.classifyStatus(response.status, row.done_statuses);
       status = response.status;
-      // SNOW-1262: read for two fields only — a created route's uuid (the
-      // acknowledgement below) and a refusal's ``error`` (kept on the row).
+      // SNOW-1262: read for three things — a created route's uuid (the
+      // acknowledgement below), a refusal's ``error`` (kept on the row),
+      // and the idempotency middleware's in-flight 409, which is a retry.
       body = await response.json().catch(function () {
         return null;
       });
+      outcome = core.classifyStatus(
+        response.status,
+        row.done_statuses,
+        body && typeof body.error === 'string' ? body.error : null,
+      );
     } catch (_networkErr) {
       outcome = 'retry';
     }
@@ -669,11 +708,10 @@
       return 'success';
     }
     if (transition.action === 'fail') {
-      await _markRowFailed(transition.row, transition.reason);
-      return 'failed';
+      // SNOW-1262: a row the other drain landed meanwhile is neither.
+      return (await _markRowFailed(transition.row, transition.reason)) ? 'failed' : 'gone';
     }
-    await window.pwaDb.put(STORE, transition.row);
-    return 'retry';
+    return (await _writeBack(transition.row)) ? 'retry' : 'gone';
   }
 
   // -------------------------------------------------------------------

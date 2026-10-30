@@ -285,3 +285,61 @@ describe('principal()', () => {
     expect(window.pwaMutationQueue.principal()).toBe(null);
   });
 });
+
+describe("the idempotency middleware's in-flight 409", () => {
+  it('reschedules the row: the original post is still landing', async () => {
+    answer(409, { error: 'idempotency_in_flight' });
+    await enqueueRoute('k-inflight');
+    setOnline(true);
+
+    await window.pwaMutationQueue.drain();
+
+    const [row] = await window.pwaMutationQueue.list({ kind: 'route-create' });
+    expect(row.status).toBe('retry-scheduled');
+    expect(document.getElementById('mutation-queue-toast').classList.contains('hidden')).toBe(true);
+  });
+
+  it('fails the reused-key 409 for good', async () => {
+    answer(409, { error: 'idempotency_key_reused' });
+    await enqueueRoute('k-reused');
+    setOnline(true);
+
+    await window.pwaMutationQueue.drain();
+
+    const [row] = await window.pwaMutationQueue.list({ kind: 'route-create' });
+    expect(row).toMatchObject({ status: 'failed', last_error: 'idempotency_key_reused' });
+  });
+});
+
+describe('a race with the worker drain', () => {
+  it.each([
+    ['a refusal', 400],
+    ['a retry', 503],
+  ])('never re-creates a row the worker landed while the page waited (%s)', async (_label, status) => {
+    await enqueueRoute('k-race');
+    const [stored] = await window.pwaDb.getAll('queue:mutations');
+    const failed = vi.fn();
+    document.addEventListener('pwa:mutation-failed-permanent', failed);
+    // The worker wins: it acknowledges and deletes the row while the page
+    // is still waiting on its own answer.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (url !== CREATE_URL) return new Response(null, { status: 204 });
+        await window.pwaDb.put('meta:app', {
+          key: 'mutations.ack:k-race',
+          value: { kind: 'route-create', uuid: 'u', at: Date.now() },
+        });
+        await window.pwaDb.delete('queue:mutations', stored.id);
+        return new Response('{"error": "x"}', { status });
+      }),
+    );
+    setOnline(true);
+
+    await window.pwaMutationQueue.drain();
+
+    expect(await window.pwaDb.getAll('queue:mutations')).toEqual([]);
+    expect(failed).not.toHaveBeenCalled();
+    document.removeEventListener('pwa:mutation-failed-permanent', failed);
+  });
+});

@@ -289,6 +289,20 @@ class TestCreateDrawnReplay:
         assert second.json() == first.json() == {"error": "route_limit_reached"}
         assert Route.objects.filter(user=user).count() == 1
 
+    def test_the_same_key_with_a_different_body_is_refused_for_good(
+        self, client: Client
+    ) -> None:
+        """An edited draft re-sent under its old key: the reused-key 409."""
+        user = UserFactory.create()
+        client.force_login(user)
+
+        _replay(client, {"points": WAYPOINTS, "name": "First"}, "draft-key-5")
+        second = _replay(client, {"points": WAYPOINTS, "name": "Edited"}, "draft-key-5")
+
+        assert second.status_code == 409
+        assert second.json() == {"error": "idempotency_key_reused"}
+        assert Route.objects.filter(user=user).count() == 1
+
     def test_a_new_key_is_a_new_route(self, client: Client) -> None:
         """The key, not the body, is what makes a save a replay."""
         user = UserFactory.create()

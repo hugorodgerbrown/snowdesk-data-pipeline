@@ -31,7 +31,8 @@
  *                                milliseconds: ``min(2**attempts, 300)`` —
  *                                2/4/8/16/32/64/128/256s, capped at 300s
  *                                from attempt 9 on.
- *   classifyStatus(status)      Classifies an HTTP response status into
+ *   classifyStatus(status, doneStatuses, error)
+ *                                Classifies an HTTP response status into
  *                                ``'success' | 'permanent' | 'retry'``.
  *                                Network errors have no status code to
  *                                classify — callers treat a thrown
@@ -115,6 +116,10 @@
   // stops an unexpected body from bloating a row that may sit for days.
   var ERROR_MAX_LENGTH = 200;
 
+  // SNOW-1262: core/idempotency.py's two 409s — see classifyStatus.
+  var IN_FLIGHT_ERROR = 'idempotency_in_flight';
+  var KEY_REUSED_ERROR = 'idempotency_key_reused';
+
   /**
    * Exponential backoff schedule for a given attempt count.
    *
@@ -148,16 +153,26 @@
    * there left a red badge that could never clear for an outcome that was
    * exactly what the user asked for.
    *
+   * SNOW-1262: ``error`` is the response's JSON ``error``. A 409 whose
+   * error is ``IN_FLIGHT_ERROR`` is core/idempotency.py saying the
+   * ORIGINAL request with this key is still inside the view — a post that
+   * timed out on the device but reached the server, or the other drain's
+   * replay of the same row. That answer is transient: the retry replays
+   * the original's response. Failing the row instead told the user it
+   * "couldn't sync" and offered an Edit that saved a second route.
+   *
    * @param {number} status
    * @param {number[]} [doneStatuses] Codes the caller declared as done.
+   * @param {?string} [error] The response's JSON ``error``, if any.
    * @returns {'success'|'permanent'|'retry'}
    */
-  function classifyStatus(status, doneStatuses) {
+  function classifyStatus(status, doneStatuses, error) {
     if (Array.isArray(doneStatuses) && doneStatuses.indexOf(status) !== -1) {
       return 'success';
     }
     if (status >= 200 && status < 300) return 'success';
     if (status === 408 || status === 429) return 'retry';
+    if (status === 409 && error === IN_FLIGHT_ERROR) return 'retry';
     if (status >= 500) return 'retry';
     if (status >= 400) return 'permanent';
     return 'retry';
@@ -338,5 +353,7 @@
     ACK_TTL_MS: ACK_TTL_MS,
     DISCARD_NOTICE_KEY: DISCARD_NOTICE_KEY,
     ERROR_MAX_LENGTH: ERROR_MAX_LENGTH,
+    IN_FLIGHT_ERROR: IN_FLIGHT_ERROR,
+    KEY_REUSED_ERROR: KEY_REUSED_ERROR,
   });
 })();

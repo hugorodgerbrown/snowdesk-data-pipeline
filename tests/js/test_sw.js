@@ -1172,6 +1172,12 @@ describe('inline mutation-queue core agrees with the real one (SNOW-617)', () =>
         );
       }
     }
+    // SNOW-1262: the idempotency middleware's in-flight 409 is a retry.
+    for (const error of [null, 'idempotency_in_flight', 'idempotency_key_reused']) {
+      expect(inline.classifyStatus(409, [], error), `409 / ${error}`).toBe(
+        coreQueue.classifyStatus(409, [], error),
+      );
+    }
   });
 
   it('agrees on MAX_ATTEMPTS and the backoff schedule', () => {
@@ -3402,6 +3408,56 @@ describe('the Background-Sync drain completes a route drawn offline (SNOW-1262)'
 
     const [row] = await idb('queue:mutations', 'readonly', (store) => store.getAll());
     expect(row).toMatchObject({ status: 'failed', last_status: 409, last_error: 'route_limit_reached' });
+  });
+
+  it("retries the middleware's in-flight 409 rather than failing the row", async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    const sw = loadSw({
+      caches: makeCaches(),
+      fetch: vi.fn(async () => new Response('{"error": "idempotency_in_flight"}', { status: 409 })),
+    });
+    await sw._hydrateNetworkMode();
+
+    await expect(sw._selfDrainMutations()).rejects.toThrow('mutation_queue_retry_pending');
+
+    const [row] = await idb('queue:mutations', 'readonly', (store) => store.getAll());
+    expect(row.status).toBe('retry-scheduled');
+  });
+
+  it.each([
+    ['a refusal', 400],
+    ['a retry', 503],
+  ])('never re-creates a row a page drain landed while it waited (%s)', async (_label, status) => {
+    const id = await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    // The page wins the race: it acknowledges and deletes the row while the
+    // worker is still waiting on its own answer.
+    const fetchSpy = vi.fn(async () => {
+      await idb('meta:app', 'readwrite', (store) =>
+        store.put({ key: 'mutations.ack:k-route', value: { kind: 'route-create', uuid: 'u', at: 1 } }),
+      );
+      await idb('queue:mutations', 'readwrite', (store) => store.delete(id));
+      return new Response('{"error": "x"}', { status });
+    });
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(await idb('queue:mutations', 'readonly', (store) => store.getAll())).toEqual([]);
+  });
+
+  it('never re-creates a row deleted with no acknowledgement either', async () => {
+    const id = await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow({ kind: null })));
+    const fetchSpy = vi.fn(async () => {
+      await idb('queue:mutations', 'readwrite', (store) => store.delete(id));
+      return new Response('', { status: 503 });
+    });
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(await idb('queue:mutations', 'readonly', (store) => store.getAll())).toEqual([]);
   });
 
   it('leaves a notice when its guard discards a route of another account', async () => {
