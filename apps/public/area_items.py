@@ -30,6 +30,11 @@ Query cost is flat: an anonymous caller costs nothing, a signed-in one
 costs one query for trips, one for pins and — only when at least one pin
 was kept — one for the day's forecast candidates, however many pins there
 are.
+
+SNOW-1308 adds a ``name`` to every trip and pin, so the ``/offline/``
+panels can list each one by what the reader called it. The name rides on
+the same two queries (a trip's own label or its route's; a pin's own label
+or its resort's) and costs nothing more.
 """
 
 from __future__ import annotations
@@ -65,8 +70,10 @@ def area_items(
             pin's own sheet reads.
 
     Returns:
-        ``{"trips": [{"uuid"}, …], "pins": [{"uuid", "forecast"}, …]}``,
-        where ``forecast`` is ``{"short_id"}`` for the curated point the
+        ``{"trips": [{"uuid", "name"}, …], "pins": [{"uuid", "name",
+        "forecast"}, …]}``, where ``name`` is the label the reader sees
+        (SNOW-1308; ``""`` for an unnamed pin, which the client words
+        itself), and ``forecast`` is ``{"short_id"}`` for the curated point the
         pin borrows from, or ``None`` when no public point has a row for
         ``today``. Each list is in the queryset's own ordering.
 
@@ -76,19 +83,26 @@ def area_items(
     # Authenticated, so the concrete user every ``for_user`` takes.
     owner = cast("User", user)
 
+    # SNOW-1308: the name a trip displays — its own label, or the route's
+    # (``Trip.display_name``), read in the same query.
     trips = [
-        {"uuid": str(trip_uuid)}
-        for trip_uuid, bounds in Trip.objects.for_user(owner).values_list(
-            "uuid", "bounds"
-        )
+        {"uuid": str(trip_uuid), "name": name or route_name or ""}
+        for trip_uuid, bounds, name, route_name in Trip.objects.for_user(
+            owner
+        ).values_list("uuid", "bounds", "name", "route_name")
         if bboxes_overlap(bbox, bounds)
     ]
 
-    placed = [
-        (pin_uuid, latitude, longitude)
-        for pin_uuid, latitude, longitude in Favourite.objects.for_user(owner)
+    # SNOW-1308: and each pin's label — its own, or its resort's for a
+    # saved resort — joined into the same query.
+    rows = (
+        Favourite.objects.for_user(owner)
         .placed()
-        .values_list("uuid", "latitude", "longitude")
+        .values_list("uuid", "latitude", "longitude", "name", "resort__name")
+    )
+    placed = [
+        (pin_uuid, latitude, longitude, name or resort_name or "")
+        for pin_uuid, latitude, longitude, name, resort_name in rows
         # ``placed()`` excludes a null latitude; the longitude test is
         # the type checker's, the database's own constraint pairs them.
         if latitude is not None
@@ -100,11 +114,12 @@ def area_items(
     # whose cost grows with the estate.
     candidates = forecast_candidates(today) if placed else []
     pins = []
-    for pin_uuid, latitude, longitude in placed:
+    for pin_uuid, latitude, longitude, label in placed:
         best = nearest_candidate(latitude, longitude, candidates)
         pins.append(
             {
                 "uuid": str(pin_uuid),
+                "name": label,
                 "forecast": {"short_id": best[0].short_id} if best else None,
             }
         )

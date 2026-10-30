@@ -1294,8 +1294,13 @@ def area_items(request: HttpRequest) -> HttpResponse:
 
     Response shape::
 
-        {"trips": [{"uuid": "…"}, ...],
-         "pins": [{"uuid": "…", "forecast": {"short_id": "…"} | null}, ...]}
+        {"trips": [{"uuid": "…", "name": "…"}, ...],
+         "pins": [{"uuid": "…", "name": "…",
+                   "forecast": {"short_id": "…"} | null}, ...]}
+
+    SNOW-1308: ``name`` is the label each thing is listed under on the
+    ``/offline/`` panels — a trip's own or its route's, a pin's own or its
+    resort's, ``""`` for an unnamed pin.
 
     An anonymous caller gets ``200`` with both lists empty and costs no
     query: someone signed out has nothing of their own to carry, and a
