@@ -30,14 +30,19 @@ and missed three things someone heading out needs.
    that was asked and failed makes the run short (`contentIncomplete`), so
    the area is never painted done over it. A page without
    `data-area-items-url` was not asked, which is not a shortfall.
-3. **A trip's route is principal-stamped JSON.** The worker classifies
-   `/trips/<uuid>/route.geojson` as `'private-json'`. It is fetched
-   network-first, kept in the shell cache stamped with the signed-in
-   principal (`_signedInPrincipal`, from `mutations.principal`), and
-   served offline only when the stamp matches. No principal means no
-   write and no read. A 403 or 404 online drops the kept copy. The warm
-   stamps it the same way, and fails a url it cannot stamp, so the tally
-   comes up short. The share-token route matches neither class and stays
+3. **A trip's route is principal-stamped JSON, and the response names its
+   own viewer.** The worker classifies `/trips/<uuid>/route.geojson` as
+   `'private-json'` and fetches it network-first. The uuid endpoint sends
+   `X-Snowdesk-Principal` (`attest_principal` in
+   `apps/accounts/identity.py`), the same `request_identity` value the
+   page's `pwa-user-id` meta carries, so the two cannot diverge. The
+   worker keeps the route, stamped with that value, only when the header
+   is present AND equals the principal signed in on the device
+   (`_attestedPrincipal`). It serves the route offline only when the stamp
+   matches. A missing header, or one that disagrees, means it is not kept.
+   A 403 or 404 online drops the kept copy. The warm applies the same rule
+   and fails a url it cannot keep, so the tally comes up short. The
+   share-token route attests nobody, matches neither class, and stays
    network-only.
 4. **The uuid route answers `private, no-cache`**, not `no-store`, which
    is what lets the worker keep it. `private` still keeps it out of every
@@ -47,9 +52,12 @@ and missed three things someone heading out needs.
    download warmed since SNOW-924 was unservable. It is now
    `'public-json'`: network-first, kept unstamped, served offline on an
    **exact url match only**.
-6. **Every warmed sheet is dated** (`?date=<today>`, `weatherDetailURL`),
-   because the map's sheet always asks with the map's day and the worker
-   matches exactly.
+6. **Every warmed sheet is dated with the server's day**
+   (`?date=<today>`, `weatherDetailURL`). The map's sheet always asks with
+   the map's rendered `data-today`, and the worker matches exactly. So
+   `/offline/`'s Update dates sheets with its own rendered `data-today`,
+   not the device clock, which would miss across a timezone or a midnight.
+   Bulletins keep the press-time day.
 
 ## Why exact match, and no query-less fallback
 
@@ -66,12 +74,12 @@ That is the honest answer for a forecast that has aged.
 
 - The scope's weather criterion is **today's sheet opens offline**: the
   sheet for the day the area was downloaded or updated, not a later day.
-- The stamp comes from `mutations.principal`, which the page reconciles at
-  boot, not from the response (a JSON body names no principal). The map
-  fetches a trip route inside `map.on('load')`, well after that reconcile
-  has started, and a download runs later still on a press. The ordering is
-  timing rather than an awaited handshake, so a mismatch fails closed: a
-  stale stamp is never served to anyone else.
+- The stamp never comes from a principal the worker read on its own.
+  `mutations.principal` is reconciled by the page asynchronously, so an
+  account swap could leave it naming the previous account. If it does, it
+  disagrees with the response's attestation and the route is not kept. It
+  is never stamped with the wrong name. The cost is one lost keep, which
+  the next fetch repairs.
 - Kept routes and sheets live in the shell cache (`CACHE_VERSION`), like
   the bulletins and pages a download warms. Each deploy reaps them with
   the rest.

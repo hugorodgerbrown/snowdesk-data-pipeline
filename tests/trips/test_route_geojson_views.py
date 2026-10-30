@@ -42,6 +42,7 @@ from django.test import Client
 from django.urls import reverse
 from freezegun import freeze_time
 
+from apps.accounts.identity import PRINCIPAL_RESPONSE_HEADER
 from apps.routes.services.canonical import CANONICAL_DIR
 from apps.routes.services.gpx import parse_gpx
 from apps.routes.services.terrain_heights import climb_totals, terrain_points
@@ -49,7 +50,7 @@ from apps.trips.models import Trip
 from apps.trips.services.participants import join_trip
 from apps.trips.services.shares import mint_trip_share, revoke_trip_share
 from apps.trips.views import _trip_map_payload
-from tests.factories import TripFactory, UserFactory
+from tests.factories import AccountFactory, TripFactory, UserFactory
 
 # Well before TripFactory's default date, so a minted link is live.
 _NOW = "2026-01-10T09:00:00+00:00"
@@ -136,6 +137,32 @@ class TestTripRouteGeojson:
 
         assert response["Cache-Control"] == "private, no-cache"
 
+    def test_it_names_its_viewer_as_the_page_meta_does(self, client: Client) -> None:
+        """SNOW-965: the worker stamps a kept copy from this header.
+
+        The same ``Account.uuid`` the ``pwa-user-id`` meta carries, so a
+        route is stamped for the viewer it was rendered for and never from
+        a principal the worker read asynchronously.
+        """
+        account = AccountFactory.create()
+        trip = TripFactory.create(created_by=account.user)
+        client.force_login(account.user)
+
+        response = client.get(reverse("trips:route_geojson", args=[trip.uuid]))
+
+        assert response[PRINCIPAL_RESPONSE_HEADER] == str(account.uuid)
+
+    def test_a_viewer_with_no_account_is_named_by_no_header(
+        self, client: Client
+    ) -> None:
+        """No identity, no header — which the worker reads as "do not keep"."""
+        trip = TripFactory.create()
+        client.force_login(trip.created_by)
+
+        response = client.get(reverse("trips:route_geojson", args=[trip.uuid]))
+
+        assert not response.has_header(PRINCIPAL_RESPONSE_HEADER)
+
 
 @freeze_time(_NOW)
 @pytest.mark.django_db
@@ -175,6 +202,20 @@ class TestTripShareRouteGeojson:
         )
 
         assert response["Cache-Control"] == "no-store"
+
+    def test_it_names_no_viewer(self, client: Client) -> None:
+        """SNOW-965: never kept, so it never attests a principal — even signed in."""
+        account = AccountFactory.create()
+        trip = TripFactory.create()
+        mint_trip_share(trip.created_by, trip.uuid)
+        trip.refresh_from_db()
+        client.force_login(account.user)
+
+        response = client.get(
+            reverse("trips:share_route_geojson", args=[trip.share_token])
+        )
+
+        assert not response.has_header(PRINCIPAL_RESPONSE_HEADER)
 
     def test_somebody_without_the_link_cannot_guess_it(self, client: Client) -> None:
         """An unknown token is a 404, like every other dead link."""

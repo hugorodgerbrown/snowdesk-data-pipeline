@@ -90,6 +90,7 @@ from django.views.decorators.http import (
 )
 from django_ratelimit.decorators import ratelimit
 
+from apps.accounts.identity import attest_principal
 from apps.core.decorators import require_htmx
 from apps.core.http import client_ip
 from apps.ingest.public import convert_to_3wa
@@ -1603,10 +1604,16 @@ def trip_route_geojson(request: HttpRequest, uuid: UUID) -> JsonResponse:
     # them alone. ``private`` still keeps it out of every shared cache, and
     # ``no-cache`` makes an online read revalidate, so a trip someone has
     # left stops drawing the moment the network can say so.
-    return _trip_route_response(
-        trip,
-        reverse("trips:detail", args=[trip.uuid]),
-        cache_control="private, no-cache",
+    # And it names its viewer (``attest_principal``), so the worker stamps
+    # the kept copy from the answer itself rather than from a principal it
+    # read asynchronously, and keeps nothing when the two disagree.
+    return attest_principal(
+        _trip_route_response(
+            trip,
+            reverse("trips:detail", args=[trip.uuid]),
+            cache_control="private, no-cache",
+        ),
+        request,
     )
 
 

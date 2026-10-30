@@ -2419,13 +2419,6 @@ async function _warmCache(urls, options) {
     // a caller can show live on-disk MB, not just a done/total fraction.
     onProgress(done, total, settled, bytes);
   };
-  // SNOW-965: the principal a private-json entry is stamped with, read at
-  // most once per run rather than once per url.
-  let runPrincipal = null;
-  const principalForRun = () => {
-    if (!runPrincipal) runPrincipal = _signedInPrincipal();
-    return runPrincipal;
-  };
   // SNOW-568: the most actionable failure seen so far, or null.
   let reason = null;
   const noteFailure = (why) => {
@@ -2466,13 +2459,17 @@ async function _warmCache(urls, options) {
       const cache = sameOrigin ? shellCache : basemapCache;
       // SNOW-965: a trip's route is the reader's own JSON, and its offline
       // read (`_privateJsonNetworkFirst`) refuses an entry without their
-      // principal stamp — so it is stamped here as it is there. A
-      // `no-store` answer, or nobody signed in to stamp it for, is a
-      // failure rather than a silent unservable write, so the run's tally
-      // comes up short and the area is never painted complete over it.
+      // principal stamp — so it is stamped here as it is there, from the
+      // principal the response itself names (`_attestedPrincipal`). A
+      // `no-store` answer, a missing attestation, or one that disagrees
+      // with who is signed in is a failure rather than a silent unservable
+      // write, so the run's tally comes up short and the area is never
+      // painted complete over it.
       if (sameOrigin && _classifySync(WARM_CLASSIFY_REQUEST, url) === 'private-json') {
         if (_isNoStore(response)) return 'other';
-        const principal = await principalForRun();
+        // Read per url, not once per run: an account swap mid-run must not
+        // stamp a later route with a principal that has since changed.
+        const principal = await _attestedPrincipal(response);
         if (!principal) return 'other';
         await cache.put(url.toString(), _stampPrincipal(response.clone(), principal));
         bytes += await _warmCacheResponseBytes(response);
@@ -3501,24 +3498,49 @@ async function _signedInPrincipal() {
   return current;
 }
 
+// SNOW-965: the header a private JSON answer names its viewer in —
+// ``apps.accounts.identity.PRINCIPAL_RESPONSE_HEADER``, the same value the
+// page's ``pwa-user-id`` meta carries. The other copy of this literal.
+const RESPONSE_PRINCIPAL_HEADER = 'X-Snowdesk-Principal';
+
+/**
+ * The principal a private JSON answer may be kept for, or ``null``
+ * (SNOW-965).
+ *
+ * The response names the viewer it was rendered for
+ * (``RESPONSE_PRINCIPAL_HEADER``), exactly as a page names its viewer in
+ * its ``pwa-user-id`` meta — so the stamp comes from the answer itself,
+ * never from a principal read asynchronously that an account swap could
+ * have left behind. It is kept only when that name ALSO equals the
+ * principal signed in on this device now: a missing header, an empty one,
+ * or one that disagrees means nobody can be sure whose copy it is, and the
+ * answer is not kept at all.
+ *
+ * @param {Response} response
+ * @returns {Promise<string|null>}
+ */
+async function _attestedPrincipal(response) {
+  const attested = (response.headers && response.headers.get(RESPONSE_PRINCIPAL_HEADER)) || '';
+  if (!attested) return null;
+  const current = await _signedInPrincipal();
+  return current && current === attested ? attested : null;
+}
+
 /**
  * Network-first for a participant's own JSON — a trip's route (SNOW-965).
  *
  * The route is what a downloaded area carries for a trip inside it, and
  * it is per-person: ``/trips/<uuid>/route.geojson`` answers only someone
  * on the trip. So it is cached the way a navigation is — stamped with the
- * principal it was fetched for, served offline only to that principal —
- * with one difference: there is no HTML to read a ``pwa-user-id`` from,
- * so the stamp is the worker's own ``mutations.principal``
- * (``_signedInPrincipal``). That row is reconciled by the page at boot
- * (``mutation_queue.js``'s ``_reconcilePrincipal``, started at script
- * load); the map fetches a trip's route inside ``map.on('load')``, after
- * its style has loaded, and a download's warm runs later still, on a
- * press. The ordering is one of timing rather than an awaited handshake,
- * which is why a mismatch fails closed: a stale stamp is never served to
- * anyone but the principal it names.
+ * principal it was rendered for, served offline only to that principal.
+ * A navigation names its viewer in its ``pwa-user-id`` meta; this JSON
+ * names it in a response header, from the same server-side identity
+ * (``_attestedPrincipal``). The copy is kept only when that header is
+ * present AND agrees with ``mutations.principal``, so an account swap the
+ * page has not reconciled yet can never stamp one account's route with
+ * another's name — it simply is not kept.
  *
- * Online, a ``basic``, ok, non-``no-store`` answer is kept; a 403 or 404
+ * Online, a ``basic``, ok, non-``no-store``, attested answer is kept; a 403 or 404
  * DROPS any copy, because it is the server saying this reader is no
  * longer on the trip, and an offline read must not keep drawing a route
  * they have left. Offline — or when the fetch fails or runs out of budget
@@ -3554,7 +3576,7 @@ async function _privateJsonNetworkFirst(request) {
     // Cloned now, while the body is unread: the page consumes the
     // original as soon as this returns.
     const toStore = response.clone();
-    _signedInPrincipal()
+    _attestedPrincipal(toStore)
       .then((principal) => {
         if (principal) return cache.put(request, _stampPrincipal(toStore, principal));
         return undefined;

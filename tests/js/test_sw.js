@@ -4071,11 +4071,21 @@ describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
     return { url, method: 'GET', mode: 'cors', destination: '' };
   }
 
-  /** A same-origin JSON answer, optionally with a Cache-Control header. */
-  function jsonResponse(body, cacheControl, status) {
+  /**
+   * A same-origin JSON answer, optionally with a Cache-Control header and
+   * the viewer it names (`X-Snowdesk-Principal`, as `attest_principal`
+   * sends it on a trip's route).
+   */
+  function jsonResponse(body, cacheControl, status, principal) {
     const headers = { 'Content-Type': 'application/json' };
     if (cacheControl) headers['Cache-Control'] = cacheControl;
+    if (principal) headers['X-Snowdesk-Principal'] = principal;
     return basicResponse(body, { headers, status });
+  }
+
+  /** A trip route as the uuid endpoint answers it, attested for `who`. */
+  function routeFor(who, body) {
+    return jsonResponse(body || '{"route":"a"}', 'private, no-cache', 200, who);
   }
 
   /** Dispatch one fetch event at the real listener; resolve its answer. */
@@ -4121,7 +4131,7 @@ describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
   it('routes a trip route through the network-first strategy', async () => {
     await setStoredPrincipal('acct-a');
     const caches = makeCaches();
-    const { sw } = switchableSw(caches, () => jsonResponse('{"route":"a"}', 'private, no-cache'));
+    const { sw } = switchableSw(caches, () => routeFor('acct-a'));
     await settleHydration(sw);
 
     const response = await dispatchFetch(sw, jsonRequest(ROUTE));
@@ -4135,9 +4145,7 @@ describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
   it("serves A's route to A offline, and refuses it to B and to nobody", async () => {
     await setStoredPrincipal('acct-a');
     const caches = makeCaches();
-    const { sw, state } = switchableSw(caches, () =>
-      jsonResponse('{"route":"a"}', 'private, no-cache'),
-    );
+    const { sw, state } = switchableSw(caches, () => routeFor('acct-a'));
     await sw._privateJsonNetworkFirst(jsonRequest(ROUTE));
     await flush();
     state.online = false;
@@ -4161,17 +4169,14 @@ describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
     await setStoredPrincipal('acct-a');
     const noStore = loadSw({
       caches,
-      fetch: async () => jsonResponse('{}', 'no-store'),
+      fetch: async () => jsonResponse('{}', 'no-store', 200, 'acct-a'),
     });
     await noStore._privateJsonNetworkFirst(jsonRequest(ROUTE));
     await flush();
     expect(caches.size(SHELL)).toBe(0);
 
     await setStoredPrincipal(null);
-    const anonymous = loadSw({
-      caches,
-      fetch: async () => jsonResponse('{}', 'private, no-cache'),
-    });
+    const anonymous = loadSw({ caches, fetch: async () => routeFor('acct-a') });
     await anonymous._privateJsonNetworkFirst(jsonRequest(ROUTE));
     await flush();
     expect(caches.size(SHELL)).toBe(0);
@@ -4206,7 +4211,7 @@ describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
   it("_warmCache stamps a route with the reader's principal", async () => {
     await setStoredPrincipal('acct-a');
     const caches = makeCaches();
-    const sw = loadSw({ caches, fetch: async () => jsonResponse('{}', 'private, no-cache') });
+    const sw = loadSw({ caches, fetch: async () => routeFor('acct-a') });
 
     const result = await sw._warmCache([ROUTE]);
 
@@ -4219,16 +4224,64 @@ describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
     // A failure, not a silent unservable write: the run's tally comes up
     // short and the area is never painted complete over it.
     const caches = makeCaches();
-    const anonymous = loadSw({
-      caches,
-      fetch: async () => jsonResponse('{}', 'private, no-cache'),
-    });
+    const anonymous = loadSw({ caches, fetch: async () => routeFor('acct-a') });
     expect(await anonymous._warmCache([ROUTE])).toMatchObject({ ok: 0, failed: 1 });
 
     await setStoredPrincipal('acct-a');
-    const noStore = loadSw({ caches, fetch: async () => jsonResponse('{}', 'no-store') });
+    const noStore = loadSw({
+      caches,
+      fetch: async () => jsonResponse('{}', 'no-store', 200, 'acct-a'),
+    });
     expect(await noStore._warmCache([ROUTE])).toMatchObject({ ok: 0, failed: 1 });
     expect(caches.size(SHELL)).toBe(0);
+  });
+
+  it('keeps no route whose attested viewer is not the one signed in', async () => {
+    // The account-swap race: the page has not reconciled yet, so the device
+    // still says A while the server rendered B's route. Not kept at all —
+    // never stamped A over B's answer.
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    const sw = loadSw({ caches, fetch: async () => routeFor('acct-b') });
+
+    const response = await sw._privateJsonNetworkFirst(jsonRequest(ROUTE));
+    await flush();
+
+    expect(response.status).toBe(200);
+    expect(caches.size(SHELL)).toBe(0);
+    expect(await sw._warmCache([ROUTE])).toMatchObject({ ok: 0, failed: 1 });
+    expect(caches.size(SHELL)).toBe(0);
+  });
+
+  it('keeps no route that names no viewer at all', async () => {
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    const sw = loadSw({
+      caches,
+      fetch: async () => jsonResponse('{"route":"a"}', 'private, no-cache'),
+    });
+
+    await sw._privateJsonNetworkFirst(jsonRequest(ROUTE));
+    await flush();
+
+    expect(caches.size(SHELL)).toBe(0);
+    expect(await sw._warmCache([ROUTE])).toMatchObject({ ok: 0, failed: 1 });
+    expect(caches.size(SHELL)).toBe(0);
+  });
+
+  it('answers a sheet from the network while online, not from the cache', async () => {
+    // Network-first: a kept sheet is the offline answer, never a stand-in
+    // for a fresh one.
+    const caches = makeCaches();
+    const dated = `${SHEET}?date=${TODAY}`;
+    caches.seed(SHELL, dated, new Response('{"html":"stale"}'));
+    const sw = loadSw({ caches, fetch: async () => jsonResponse('{"html":"fresh"}') });
+
+    const response = await sw._publicJsonNetworkFirst(jsonRequest(dated));
+
+    expect(await response.text()).toBe('{"html":"fresh"}');
+    expect(response.headers.get('X-SW-Cache')).toBeNull();
+    expect(caches.counters.matchedNames).not.toContain(SHELL);
   });
 
   it('serves a warmed weather sheet offline on its exact url', async () => {
