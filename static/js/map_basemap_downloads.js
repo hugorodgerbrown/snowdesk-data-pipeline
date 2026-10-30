@@ -667,7 +667,8 @@ function assembleBasemapDownloadFeedURLs() {
  * -------------------------------------------------------------------- */
 
 /**
- * The four overlay feeds, fetched whole and written to the offline cache.
+ * The overlay feeds, and search's summit list (SNOW-1320), fetched whole
+ * and written to the offline cache.
  *
  * WHOLE and unfiltered, deliberately. Each is a single small request that
  * already covers everything, so narrowing one to the area would save
@@ -711,6 +712,9 @@ async function cacheOverlayFeedsForDownload() {
       mapEl.dataset.favouritesEligible === 'true' ? mapEl.dataset.favouritesUrl : null,
     ],
     ['routes', mapEl.dataset.routesEligible === 'true' ? mapEl.dataset.routesUrl : null],
+    // SNOW-1320: search's SAC summit rows, read back by map.js's
+    // loadSummits. The attribute is on `#map` only where they are listed.
+    ['ski_summits', mapEl.dataset.skiSummitsUrl],
   ];
 
   await Promise.all(

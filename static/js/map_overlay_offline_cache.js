@@ -15,8 +15,9 @@
  * Storage shape
  * -------------
  * One row per resource: ``{ key, geojson, cached_at, principal }``, keyed by
- * ``resource`` (``'favourites'``, ``'community_reports'``, ``'weather'`` or
- * ``'routes'``). Expiry is a caller concern, not enforced here — favourites
+ * ``resource`` (``'favourites'``, ``'community_reports'``, ``'weather'``,
+ * ``'routes'`` or, since SNOW-1320, ``'ski_summits'`` — search's SAC summit
+ * list, which is not GeoJSON but rides in the same ``geojson`` field). Expiry is a caller concern, not enforced here — favourites
  * and routes never expire (both are the user's own stored data, changed only
  * by the user); community reports apply the existing 48h age-opacity horizon
  * at read-back time (see ``withCommunityReportsAgeOpacity`` in map.js), so
@@ -30,7 +31,7 @@
  * same browser. Only resources in ``PRINCIPAL_SCOPED`` (``favourites`` and,
  * since SNOW-687, ``routes``) carry and validate a ``principal``.
  * ``community_reports`` and ``weather`` are public data with no account
- * binding, so neither is partitioned: a report cached while signed in must stay
+ * binding, so neither is partitioned (nor is ``ski_summits``): a report cached while signed in must stay
  * readable after logout, and an anonymous report after login — tying it to a
  * principal would wrongly hide public data across an account change.
  *

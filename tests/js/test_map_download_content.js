@@ -147,6 +147,8 @@ const AREA_ITEMS = {
 const FAVOURITES_GEOJSON = { type: 'FeatureCollection', features: [] };
 const ROUTES_GEOJSON = { type: 'FeatureCollection', features: [] };
 const REPORTS_GEOJSON = { type: 'FeatureCollection', features: [] };
+// SNOW-1320: search's SAC summit list, which a download stores too.
+const SUMMITS = { summits: [{ key: 'mont-fort', name: 'Mont Fort', lon: 7.3, lat: 46.08 }] };
 
 /** Minimal MapLibre stub — as test_map_region_download_cancelled.js's. */
 function stubMapLibre() {
@@ -330,6 +332,7 @@ function buildFixture() {
          data-favourites-eligible="true"
          data-routes-url="/api/routes.geojson"
          data-routes-eligible="true"
+         data-ski-summits-url="/api/ski-summits.json"
          data-default-basemap-key="openfreemap_liberty"
          data-terrain-class-tile-url="${TERRAIN_TEMPLATE}"
          data-season-end="2026-05-31"></div>
@@ -504,6 +507,7 @@ beforeAll(async () => {
       if (href.includes('favourites.geojson')) body = FAVOURITES_GEOJSON;
       if (href.includes('routes.geojson')) body = ROUTES_GEOJSON;
       if (href.includes('community-reports.geojson')) body = REPORTS_GEOJSON;
+      if (href.includes('ski-summits.json')) body = SUMMITS;
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     }),
   );
@@ -621,15 +625,18 @@ describe('a download takes the content inside its boundary', () => {
     expect(firstTile).toBeGreaterThan(bulletin);
   });
 
-  it('caches all four overlay feeds on the way past', () => {
+  it('caches all four overlay feeds, and the summit list, on the way past', () => {
     // Whole and unfiltered — the boundary decides what must VERIFY
     // present, not what gets stored.
     expect([...overlayStore.keys()].sort()).toEqual([
       'community_reports',
       'favourites',
       'routes',
+      'ski_summits',
       'weather',
     ]);
+    // SNOW-1320: stored as the server sent it, for loadSummits to read back.
+    expect(overlayStore.get('ski_summits')).toEqual(SUMMITS);
   });
 
   it('stamps the record with when its content was fetched', async () => {

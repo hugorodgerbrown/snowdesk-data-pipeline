@@ -460,11 +460,11 @@ const MAP_DATA_URLS = {
     hole: 'a resort tapped offline says "Place details are unavailable offline" over a downloaded area',
   },
   'data-ski-summits-url': {
-    kind: 'hole',
+    kind: 'indexeddb',
     sample: '/api/ski-summits.json',
     swClass: 'network',
-    ticket: 'SNOW-1320',
-    hole: "search's SAC summit rows are absent offline: the feed is neither worker-cached nor in IndexedDB",
+    reader: 'pwaMapOverlayCache',
+    resource: 'ski_summits',
   },
 };
 
