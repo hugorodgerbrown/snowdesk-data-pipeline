@@ -40,15 +40,20 @@ SAC'S POINTS ARE NEVER EDITED (Hugo, SNOW-1287). A tour that stops at the
 top stops there here too: nothing is added for the way back down, though
 SNOW-1286 briefly drew such a tour there and back.
 
-THE TERRAIN IS SAMPLED ONCE PER TOUR, AHEAD OF TIME. Walking the terrain
-grid under a 10 km line takes seconds, too long for a tap. So every tour is
-walked in advance by ``backfill_ski_tour_slope_samples`` (SNOW-1288, the
-nightly ``reconcile_slope_samples`` job; ``tours_to_sample`` names the
-rows) and the record is kept on the tour, for every reader and every saved
-copy, until a sync rewrites the tour and clears it. A tour opened before
-the job reaches it falls back to the first reader's open: the panel shows
-the line and SAC's figures at once and the profile follows
+THE TERRAIN IS SAMPLED ONCE PER TOUR, AHEAD OF TIME, BY THE SERVICE.
+Walking the terrain grid under a 10 km line takes seconds, too long for a
+tap. Since SNOW-1316 the reference-data service walks every tour once
+(``render_ski_tours``, daily) and stores the record and its drawing beside
+SAC's document; this instance copies both from the v2 ``ski-tours`` feed
+(``apps.routes.services.ski_network``) and keeps them, for every reader and
+every saved copy, until a sync rewrites the tour. A tour opened before the
+service has walked it falls back to the first reader's open: the panel
+shows the line and SAC's figures at once and the profile follows
 (``tour_slope_samples`` with ``sample``).
+
+The order a line runs in, the summits and the walk itself are
+``track.sac`` — pure, shared with the service — so a tour walked here
+matches one walked there.
 
 The pure helpers take plain values; ``summits`` and ``tour_overview`` each
 read every tour once and are cached until the tours change (a weekly
@@ -58,17 +63,12 @@ import at most).
 from __future__ import annotations
 
 import logging
-import math
 import re
-import statistics
-from collections import defaultdict
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from django.core.cache import cache
-from django.db.models import Count, F, Max, Q, QuerySet
+from django.db.models import Count, F, Max, QuerySet
 from django.db.models.fields.json import KT
-from django.utils.text import slugify
 from django.utils.translation import get_language
 
 from apps.routes.models import Route, SkiTour
@@ -78,27 +78,23 @@ from apps.routes.services.slope_segments import (
     build_slope_samples,
     enqueue_route_slope_sampling,
 )
-from apps.routes.services.track_render import (
-    is_current,
-    leg_lines,
-    stale_q,
-    store_terrain,
+from apps.routes.services.track_render import store_terrain
+from track import sac
+from track.render import is_current, leg_lines
+from track.sac import (
+    WALKED_REVERSED,
+    Summit,
+    build_summits,
+    is_descent,
+    tour_key,
+    usable,
+    walk_tour,
 )
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
-
-# A target named like this is a hut, drawn with a hut glyph, not a summit's.
-_HUT_RE = re.compile(
-    r"h(ü|ue|u)tte|cabane|capanna|rifugio|chamanna|chamonna|camona|biwak|"
-    r"bivacco|bivouac|refuge|\bhut\b",
-    re.IGNORECASE,
-)
-
-# Metres in a degree of latitude, for the short distances compared here.
-_M_PER_DEG = 111_320.0
 
 # v2: SNOW-1282 chains a tour's parts, which moves some summits.
 _SUMMITS_CACHE_KEY = "routes:ski-summits:v3:{count}:{stamp}"
@@ -110,280 +106,8 @@ _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
 # drawn moves, and the whole set is ~2.3 MB, ~0.6 MB gzipped.
 # v3: SNOW-1310 cuts each tour into its legs.
 _OVERVIEW_CACHE_KEY = "routes:ski-overview:v3:{count}:{stamp}"
-# The mark SNOW-1286 put on a record walked there and back (SNOW-1287).
-_THERE_AND_BACK = "there_and_back"
-# SNOW-1306: on a terrain record, whether its walk ran SAC's line in
-# reverse. A record without it was walked in SAC's own order. Its heights
-# then say which way SAC's line really runs (``runs_reversed``).
-_WALKED_REVERSED = "walked_reversed"
 _OVERVIEW_TOLERANCE_DEG = 0.0002
 _OVERVIEW_PLACES = 5
-
-Point = tuple[float, float]
-
-
-@dataclass(frozen=True)
-class Summit:
-    """Where tours go: one target, with the tours up to it and down from it."""
-
-    key: str
-    name: str
-    altitude_m: int | None
-    hut: bool
-    lon: float
-    lat: float
-    up: int
-    down: int
-
-    def as_properties(self) -> dict[str, Any]:
-        """Return the summit as GeoJSON properties."""
-        return {
-            "key": self.key,
-            "name": self.name,
-            "altitude_m": self.altitude_m,
-            "kind": "hut" if self.hut else "summit",
-            "up": self.up,
-            "down": self.down,
-        }
-
-
-def is_hut(name: str) -> bool:
-    """Return whether a target is a hut rather than a summit, by its name."""
-    return bool(_HUT_RE.search(name or ""))
-
-
-# SAC's own word for a way down, at the start of its name in any language.
-_DESCENT_NAME_RE = re.compile(
-    r"^\s*(abfahrt|descente|discesa|descent)\b", re.IGNORECASE
-)
-
-
-def is_descent(tour: SkiTour) -> bool:
-    """Return whether a tour is a way down, as SAC itself says (SNOW-1304).
-
-    SAC names it one in any of its languages, or gives it a descent figure
-    and no ascent. Reads ``name``, ``names``, ``ascent_m`` and ``descent_m``.
-    """
-    if tour.ascent_m is None and tour.descent_m is not None:
-        return True
-    names = [tour.name, *(tour.names or {}).values()]
-    return any(_DESCENT_NAME_RE.match(name or "") for name in names)
-
-
-def summit_key(name: str, altitude_m: int | None) -> str:
-    """Return a target's key: its name and height, so two Piz Buins stay two."""
-    return f"{slugify(name) or 'target'}-{altitude_m or 0}"
-
-
-def tour_key(tour: SkiTour) -> str:
-    """Return the key of the summit ``tour`` goes to."""
-    return summit_key(tour.target_name, tour.target_altitude_m)
-
-
-def _lines(tour: SkiTour) -> list[list[list[float]]]:
-    """Return the tour's lines, skipping any too short to draw, chained.
-
-    A tour in several parts is read as one line (``_chained``), so its ends,
-    its points and the route saved from it run from start to finish.
-    """
-    geometry = tour.geometry or {}
-    coordinates = geometry.get("coordinates") or []
-    if geometry.get("type") == "LineString":
-        coordinates = [coordinates]
-    lines = [line for line in coordinates if isinstance(line, list) and len(line) >= 2]
-    return _chained(lines)
-
-
-# The most parts a tour is chained from; the archive's most is 7. Past it
-# the stored order stands rather than an exhaustive search.
-_MAX_CHAIN_PARTS = 12
-
-
-_Node = tuple[float, float]
-# One part of a tour as the chaining sees it: its two ends and its length.
-_Edge = tuple[_Node, _Node, float]
-# A path through the parts: each part's index, and whether it is walked the
-# way it was drawn.
-_Path = list[tuple[int, bool]]
-
-
-def _node(point: list[float]) -> _Node:
-    """Return a part end as a graph node: the point to the micro-degree."""
-    return (round(float(point[0]), 6), round(float(point[1]), 6))
-
-
-def _line_metres(line: list[list[float]]) -> float:
-    """Return a line's length in metres."""
-    return sum(_metres((a[0], a[1]), (b[0], b[1])) for a, b in zip(line, line[1:]))
-
-
-def _all_joined(edges: list[_Edge], graph: dict[_Node, list[int]]) -> bool:
-    """Return whether every part can be reached from the first."""
-    reached, stack = {edges[0][0]}, [edges[0][0]]
-    while stack:
-        node = stack.pop()
-        for index in graph[node]:
-            for other in edges[index][:2]:
-                if other not in reached:
-                    reached.add(other)
-                    stack.append(other)
-    return len(reached) == len(graph)
-
-
-def _longest_path(edges: list[_Edge], graph: dict[_Node, list[int]]) -> _Path:
-    """Return the longest path through the parts, starting at a loose end."""
-    best: tuple[float, _Path] = (-1.0, [])
-
-    def walk(node: _Node, used: _Path, metres: float) -> None:
-        nonlocal best
-        if metres > best[0]:
-            best = (metres, list(used))
-        for index in graph[node]:
-            if any(index == u for u, _ in used):
-                continue
-            start, end, part_metres = edges[index]
-            forward = start == node
-            used.append((index, forward))
-            walk(end if forward else start, used, metres + part_metres)
-            used.pop()
-
-    leaves = [node for node, parts in graph.items() if len(parts) == 1]
-    for node in leaves or list(graph):
-        walk(node, [], 0.0)
-    return best[1]
-
-
-def _chained(lines: list[list[list[float]]]) -> list[list[list[float]]]:
-    """Return a tour's parts as one line from start to finish, when they join.
-
-    SNOW-1282. swisstopo stores 258 of the SAC tours in parts, out of order,
-    and as a tree: the way itself plus a short spur (a variant, or the last
-    metres to a ski depot) meeting it at a shared point. Joined in stored
-    order they made a line that doubled back on itself. The way is taken
-    to be the longest path between two loose ends, and it runs in the
-    direction swisstopo drew most of it, each part being drawn the way the
-    tour goes.
-
-    Parts that do not all join (two tours cross a gap in swisstopo's own
-    data) and one-part tours pass through as stored.
-
-    Args:
-        lines: The tour's parts, each two points or more.
-
-    Returns:
-        ``[line]``, or ``lines`` unchanged when they do not form one tree.
-
-    """
-    if len(lines) < 2 or len(lines) > _MAX_CHAIN_PARTS:
-        return lines
-    edges = [(_node(line[0]), _node(line[-1]), _line_metres(line)) for line in lines]
-    graph: dict[_Node, list[int]] = defaultdict(list)
-    for index, (start, end, _part_metres) in enumerate(edges):
-        graph[start].append(index)
-        graph[end].append(index)
-    if not _all_joined(edges, graph):
-        return lines
-
-    path = _longest_path(edges, graph)
-    total = sum(edges[i][2] for i, _ in path)
-    with_the_drawing = sum(edges[i][2] for i, forward in path if forward)
-    if with_the_drawing * 2 < total:
-        path = [(i, not forward) for i, forward in reversed(path)]
-    line: list[list[float]] = []
-    for index, forward in path:
-        part = lines[index] if forward else lines[index][::-1]
-        line.extend(part[1:] if line else part)
-    return [line]
-
-
-def ends(tour: SkiTour) -> tuple[Point, Point]:
-    """Return the tour's ``(first, last)`` points.
-
-    Raises:
-        ValueError: The tour has no line.
-
-    """
-    lines = _lines(tour)
-    if not lines:
-        raise ValueError(f"tour {tour.pk} has no line")
-    first, last = lines[0][0], lines[-1][-1]
-    return (float(first[0]), float(first[1])), (float(last[0]), float(last[1]))
-
-
-def _metres(a: Point, b: Point) -> float:
-    """Return the flat-earth distance between two nearby points, in metres."""
-    kx = math.cos(math.radians((a[1] + b[1]) / 2))
-    return math.hypot((a[0] - b[0]) * kx, a[1] - b[1]) * _M_PER_DEG
-
-
-def target_end(tour: SkiTour, near: Point | None = None) -> Point:
-    """Return the end of ``tour`` at its target.
-
-    Args:
-        tour: The tour.
-        near: Where its summit stands, when known: the end nearer it wins,
-            so a tour drawn the other way round is still read right.
-            Without it, the last point: SAC draws 2,743 of its 2,941 lines
-            from the valley to the summit, ways down included (SNOW-1304).
-
-    Returns:
-        ``(lon, lat)``.
-
-    """
-    first, last = ends(tour)
-    if near is not None:
-        return first if _metres(first, near) < _metres(last, near) else last
-    return last
-
-
-def far_end(tour: SkiTour, summit: Point) -> Point:
-    """Return the end of ``tour`` away from its summit: where it starts or finishes."""
-    first, last = ends(tour)
-    return last if _metres(first, summit) < _metres(last, summit) else first
-
-
-def _median(points: list[Point]) -> Point:
-    """Return the per-axis median of ``points``."""
-    return (
-        statistics.median(p[0] for p in points),
-        statistics.median(p[1] for p in points),
-    )
-
-
-def build_summits(tours: list[SkiTour]) -> list[Summit]:
-    """Return every target the tours go to, placed at its tours' target ends.
-
-    Args:
-        tours: The tours, with their geometry loaded.
-
-    Returns:
-        One summit per target, in key order.
-
-    """
-    groups: dict[str, list[SkiTour]] = defaultdict(list)
-    for tour in tours:
-        if tour.target_name and _lines(tour):
-            groups[tour_key(tour)].append(tour)
-    summits = []
-    for key in sorted(groups):
-        members = groups[key]
-        first_guess = _median([target_end(tour) for tour in members])
-        lon, lat = _median([target_end(tour, first_guess) for tour in members])
-        down = sum(1 for tour in members if is_descent(tour))
-        sample = members[0]
-        summits.append(
-            Summit(
-                key=key,
-                name=sample.target_name,
-                altitude_m=sample.target_altitude_m,
-                hut=is_hut(sample.target_name),
-                lon=round(lon, 6),
-                lat=round(lat, 6),
-                up=len(members) - down,
-                down=down,
-            )
-        )
-    return summits
 
 
 def _tours_stamp(template: str) -> str:
@@ -536,97 +260,22 @@ def tour_title(tour: SkiTour) -> str:
     return f"{tour.target_name} · {name}" if tour.target_name else name
 
 
-def _usable(record: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Return ``record`` unless it was walked there and back (SNOW-1287)."""
-    if record is None or record.get(_THERE_AND_BACK):
-        return None
-    return record
-
-
-def _runs_up(record: dict[str, Any]) -> bool | None:
-    """Return whether a record's walk climbed, by its first and last heights.
-
-    None when it holds fewer than two heights, or they are level.
-    """
-    heights = [h for h in record.get("heights") or [] if h is not None]
-    if len(heights) < 2 or heights[0] == heights[-1]:
-        return None
-    return bool(heights[-1] > heights[0])
-
-
-def _guess_reversed(tour: SkiTour) -> bool:
-    """Return whether to turn SAC's line round, from the summit alone.
-
-    The top is the end nearer the summit, when other tours to it place it.
-    A summit with one tour is placed at that tour's own last point, so it
-    says nothing: SAC's line is then taken to run up, as 2,743 of its
-    2,941 do, and a way down is turned round.
-    """
-    _, last = ends(tour)
-    summit = summits().get(tour_key(tour))
-    near = (summit.lon, summit.lat) if summit and summit.up + summit.down > 1 else None
-    top_is_last = target_end(tour, near) == last
-    return top_is_last if is_descent(tour) else not top_is_last
-
-
 def runs_reversed(tour: SkiTour) -> bool:
     """Return whether ``tour_points`` turns SAC's line round (SNOW-1306).
 
-    A way down starts at its summit and a way up ends there, whichever way
-    SAC drew it. The terrain says which way that is once the tour has been
-    walked: its record's first and last heights, in the order it was
-    walked. Before that, the summit's position is the guess
-    (``_guess_reversed``), and the first walk corrects it
-    (``tour_slope_samples``).
-
-    Args:
-        tour: The tour, with its geometry loaded.
-
-    Returns:
-        True when the line's last point is where it should start.
-
+    ``track.sac.runs_reversed`` against every summit (``summits``).
     """
-    if not _lines(tour):
-        return False
-    record = _usable(tour.slope_samples)
-    up = _runs_up(record) if record is not None else None
-    if record is not None and up is not None:
-        sac_runs_up = up != bool(record.get(_WALKED_REVERSED, False))
-        return sac_runs_up == is_descent(tour)
-    return _guess_reversed(tour)
+    return sac.runs_reversed(tour, summits())
 
 
 def tour_points(
     tour: SkiTour, *, reverse: bool | None = None
 ) -> list[list[float | None]]:
-    """Return the tour's line as stored route points, ``[[lon, lat, None], …]``.
+    """Return the tour's line as stored route points, in the tour's order.
 
-    A tour in several parts (swisstopo breaks one where it crosses a gap in
-    its own data) is joined end to end; a point repeating the last is
-    dropped. The line then runs the way the tour goes: a way down from its
-    summit, a way up to it (Hugo, SNOW-1306, ``runs_reversed``). Nothing
-    else: no point is added or moved (SNOW-1287), so a tour that stops at
-    the top stops there.
-
-    Args:
-        tour: The tour.
-        reverse: Turn SAC's line round or not, in place of
-            ``runs_reversed``: the walk that settles it asks for both.
-
-    Returns:
-        The points.
-
+    ``track.sac.tour_points`` against every summit (``summits``).
     """
-    points: list[list[float | None]] = []
-    for line in _lines(tour):
-        for lon, lat, *_ in line:
-            point: list[float | None] = [float(lon), float(lat), None]
-            if points and points[-1][:2] == point[:2]:
-                continue
-            points.append(point)
-    if runs_reversed(tour) if reverse is None else reverse:
-        points.reverse()
-    return points
+    return sac.tour_points(tour, summits(), reverse=reverse)
 
 
 def draft_tour_route(tour: SkiTour, user: User | None = None) -> Route:
@@ -660,38 +309,6 @@ def sac_time(label: str) -> str:
     return f"{hours} h {minutes}" if hours else f"{int(minutes)} min"
 
 
-def tours_to_sample() -> QuerySet[SkiTour]:
-    """Return the tours with no current terrain record (SNOW-1288).
-
-    Never walked, walked over SNOW-1286's doubled line (the record
-    ``tour_slope_samples`` does not hold), or walked before SNOW-1306 and
-    not yet known to match the line's order, or with no current render
-    (SNOW-1309).
-    """
-    return SkiTour.objects.filter(
-        Q(slope_samples__isnull=True)
-        | Q(slope_samples__has_key=_THERE_AND_BACK)
-        | ~Q(slope_samples__has_key=_WALKED_REVERSED)
-        | stale_q()
-    )
-
-
-def needs_only_marking(tour: SkiTour) -> bool:
-    """Return whether ``tour``'s record is current but for a mark or its render.
-
-    Walked in SAC's order before a way down ran from its top, on a tour
-    whose order does not change, or with no current render (SNOW-1309):
-    ``tour_slope_samples(sample=True)`` marks it and builds its render
-    without walking again, so the nightly backfill need not pause for it.
-    """
-    held = _usable(tour.slope_samples)
-    return (
-        held is not None
-        and bool(held.get(_WALKED_REVERSED, False)) == runs_reversed(tour)
-        and (_WALKED_REVERSED not in held or not is_current(tour.track_render))
-    )
-
-
 def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
     """Return the terrain under ``tour``'s line, sampling it when asked to.
 
@@ -713,29 +330,22 @@ def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
     """
     # A record SNOW-1286 walked over the line there and back no longer
     # matches the line, which is SAC's own again (SNOW-1287): not held.
-    held = _usable(tour.slope_samples)
+    held = usable(tour.slope_samples)
     if held is not None:
         reverse = runs_reversed(tour)
-        if bool(held.get(_WALKED_REVERSED, False)) != reverse:
+        if bool(held.get(WALKED_REVERSED, False)) != reverse:
             # Walked in the other order: its indices are not the line's.
             held = None
         elif sample and (
-            _WALKED_REVERSED not in held or not is_current(tour.track_render)
+            WALKED_REVERSED not in held or not is_current(tour.track_render)
         ):
             # Marked, and its render built (SNOW-1309), without a walk.
-            held = {**held, _WALKED_REVERSED: reverse}
+            held = {**held, WALKED_REVERSED: reverse}
             _keep(tour, held)
     if held is not None or not sample:
         return held
-    reverse = runs_reversed(tour)
-    label = f"ski tour {tour.sac_id}"
-    record = build_slope_samples(tour_points(tour, reverse=reverse), label)
-    up = _runs_up(record) if record is not None else None
-    if up is not None and up == is_descent(tour):
-        reverse = not reverse
-        record = build_slope_samples(tour_points(tour, reverse=reverse), label)
+    record = walk_tour(tour, summits(), build_slope_samples, f"ski tour {tour.sac_id}")
     if record is not None:
-        record = {**record, _WALKED_REVERSED: reverse}
         _keep(tour, record)
     return record
 

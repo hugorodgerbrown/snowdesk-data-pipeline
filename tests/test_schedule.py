@@ -52,7 +52,7 @@ def test_build_scheduler_returns_blocking_scheduler(
 
 def test_scheduler_has_exactly_eleven_jobs(scheduler: BlockingScheduler) -> None:
     """The scheduler has exactly eleven registered jobs."""
-    assert len(scheduler.get_jobs()) == 11
+    assert len(scheduler.get_jobs()) == 12
 
 
 def test_job_ids(jobs: dict) -> None:
@@ -69,6 +69,7 @@ def test_job_ids(jobs: dict) -> None:
         "purge_expired_oauth_tokens",
         "prune_command_runs",
         "reconcile_slope_samples",
+        "render_ski_tours",
     }
 
 
@@ -185,9 +186,10 @@ def test_reconcile_slope_samples_runs_after_fill_what3words(jobs: dict) -> None:
 
 
 def test_reconcile_slope_samples_commits_every_backfill_uncapped() -> None:
-    """Routes, trips, then SAC's tours, each --commit, no --limit (SNOW-1243).
+    """Routes then trips, each --commit, no --limit (SNOW-1243).
 
-    The tour pass (SNOW-1288) walks every tour ahead of its first open.
+    SAC's tours are not walked here since SNOW-1316: the service renders
+    them (``render_ski_tours``) and every instance copies the result.
 
     A cap would let unsampleable newest rows starve older candidates.
     """
@@ -196,8 +198,21 @@ def test_reconcile_slope_samples_commits_every_backfill_uncapped() -> None:
     assert mock_cc.call_args_list == [
         mock.call("backfill_route_slope_samples", "--commit"),
         mock.call("backfill_trip_slope_samples", "--commit"),
-        mock.call("backfill_ski_tour_slope_samples", "--commit"),
     ]
+
+
+def test_render_ski_tours_runs_after_the_detector(jobs: dict) -> None:
+    """05:30 UTC — after the 04:30 reconcile and 05:00 detector (SNOW-1316)."""
+    trigger = jobs["render_ski_tours"].trigger
+    assert str(_get_field(trigger, "hour")) == "5"
+    assert str(_get_field(trigger, "minute")) == "30"
+
+
+def test_render_ski_tours_commits() -> None:
+    """The service's tour render runs with --commit and no cap."""
+    with mock.patch("django.core.management.call_command", autospec=True) as mock_cc:
+        schedule_module._run_render_ski_tours()
+    mock_cc.assert_called_once_with("render_ski_tours", "--commit")
 
 
 def test_reconcile_slope_samples_runs_the_trip_pass_after_a_route_failure() -> None:
@@ -207,13 +222,12 @@ def test_reconcile_slope_samples_runs_the_trip_pass_after_a_route_failure() -> N
     with mock.patch(
         "django.core.management.call_command",
         autospec=True,
-        side_effect=[CommandError("route pass failed"), None, None],
+        side_effect=[CommandError("route pass failed"), None],
     ) as mock_cc:
         with pytest.raises(CommandError, match="route pass failed"):
             schedule_module._run_reconcile_slope_samples()
-    assert mock_cc.call_count == 3
+    assert mock_cc.call_count == 2
     assert mock_cc.call_args_list[1].args[0] == "backfill_trip_slope_samples"
-    assert mock_cc.call_args_list[2].args[0] == "backfill_ski_tour_slope_samples"
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +383,7 @@ def test_purge_runs_clear_of_the_fetch_hours(jobs: dict) -> None:
         "purge_expired_oauth_tokens",
         "prune_command_runs",
         "reconcile_slope_samples",
+        "render_ski_tours",
     ],
 )
 def test_each_job_obeys_its_own_switch(jobs: dict, job_id: str) -> None:

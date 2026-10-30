@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 # The CAAML aspect enum in octant order, N=0 … NW=7 — the indices the tiles'
 # octant bits use. Ingest imports no other apps.* package, so this is its own
-# copy of ``apps.core.geo.OCTANTS``; tests/ingest/normalise/
+# copy of ``track.geo.OCTANTS``; tests/ingest/normalise/
 # test_problem_terrain.py checks the two agree.
 OCTANTS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
 

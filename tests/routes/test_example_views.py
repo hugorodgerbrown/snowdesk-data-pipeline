@@ -22,7 +22,6 @@ from django.test import Client
 from django.utils import timezone
 
 from apps.routes.services.shares import PENDING_SESSION_KEY
-from apps.routes.services.terrain_detail import terrain_detail
 from tests.factories import (
     DRIFTING_TRACK,
     RouteFactory,
@@ -30,6 +29,7 @@ from tests.factories import (
     UserFactory,
     drifting_track_record,
 )
+from track.terrain_detail import terrain_detail
 
 HTMX_HEADERS: dict[str, Any] = {"HTTP_HX_REQUEST": "true"}
 EXAMPLE_URL = "/routes/example/"

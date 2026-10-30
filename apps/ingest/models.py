@@ -353,6 +353,15 @@ class SourceDocument(models.Model):
 
     objects = SourceDocumentQuerySet.as_manager()
 
+    @classmethod
+    def changed_document_resets(cls) -> dict[str, Any]:
+        """Return the fields to reset when a row's document changes.
+
+        None for a pass, a resort or a segment: the document is the whole
+        row. ``SourceSkiTour`` clears what it derived from the old line.
+        """
+        return {}
+
     class Meta:
         """Model metadata."""
 
@@ -431,7 +440,40 @@ class SourceSkiTour(SourceDocument):
     languages, the grade, the height gain and time, the summit and the SAC
     links, and the line as a WGS84 ``MultiLineString``. The ``uuid`` is
     swisstopo's own ``route_uuid``.
+
+    SNOW-1316: the service also walks the terrain under the line and holds
+    the result beside the document, ``slope_samples`` and ``track_render``,
+    so every instance copies one drawing rather than walking 2,941 tours
+    itself. ``render_input_fp`` names what the walk was made from (the
+    document and the terrain model), so a tour already walked from these
+    inputs is never walked again. All three are cleared when the document
+    changes (``changed_document_resets``).
     """
+
+    slope_samples = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The terrain under the line, walked in the tour's order "
+        "(track.sac.walk_tour). Null until rendered.",
+    )
+    track_render = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="The line's drawing (track.render.build_track_render). "
+        "Null until rendered, or when it could not be.",
+    )
+    render_input_fp = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="What the walk was made from: the document's hash and the "
+        "terrain model's identity. Blank until rendered.",
+    )
+
+    @classmethod
+    def changed_document_resets(cls) -> dict[str, Any]:
+        """Return the fields a rewritten document clears: its line may have moved."""
+        return {"slope_samples": None, "track_render": None, "render_input_fp": ""}
 
     class Meta(SourceDocument.Meta):
         """Model metadata."""

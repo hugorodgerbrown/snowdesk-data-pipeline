@@ -105,3 +105,8 @@ from the service; if only a signed-in user does, it stays in the instance.
   (the weather backfill), SNOW-1272 (bootstrap and tombstones) and
   SNOW-1273 (example route). Deploying it is
   [`runbooks/reference-data-cut-over.md`](../runbooks/reference-data-cut-over.md).
+- A derivation that is deterministic from synced data travels with it.
+  SNOW-1316 made the first for tracks: the service walks and draws each
+  SAC tour (`SourceSkiTour.slope_samples` / `track_render`) and the
+  `ski-tours` feed carries both, using the pure `track/` package so ingest
+  imports no app ([pure-track-maths-is-a-package](pure-track-maths-is-a-package.md)).

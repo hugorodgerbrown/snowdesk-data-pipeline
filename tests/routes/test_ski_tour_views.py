@@ -22,8 +22,8 @@ from django.urls import reverse
 from waffle.testutils import override_flag
 
 from apps.routes.models import Route, SkiTour
-from apps.routes.services.track_render import TRACK_RENDER_VERSION
 from tests.factories import RouteFactory, SkiTourFactory, UserFactory
+from track.render import TRACK_RENDER_VERSION
 
 pytestmark = pytest.mark.django_db
 
@@ -119,9 +119,7 @@ class TestFeature:
             {"i": 1, "from": 0, "to": 0, "climbing": False},
             {"i": 2, "from": 1, "to": 1, "climbing": True},
         ]
-        with patch(
-            "apps.routes.services.track_render.wire_legs", return_value=detected
-        ):
+        with patch("track.render.wire_legs", return_value=detected):
             props = client.get(_feature_url(tour)).json()["feature"]["properties"]
         assert props["legs"] == detected
 
@@ -197,9 +195,7 @@ class TestTerrain:
         """The held record and the tour's own points make the rows."""
         tour = SkiTourFactory.create(slope_samples=RECORD)
         rows = [{"index": 0, "ground_deg": 31.0}]
-        with patch(
-            "apps.routes.services.track_render.terrain_detail", return_value=rows
-        ) as detail:
+        with patch("track.render.terrain_detail", return_value=rows) as detail:
             response = client.get(_terrain_url(tour))
         assert response.status_code == 200
         assert response.json() == {"rows": rows}
@@ -215,7 +211,7 @@ class TestTerrain:
             track_render={"v": TRACK_RENDER_VERSION, "geometry": [], "rows": rows}
         )
         with patch(
-            "apps.routes.services.track_render.terrain_detail",
+            "track.render.terrain_detail",
             side_effect=AssertionError("computed per request"),
         ):
             response = client.get(_terrain_url(tour))

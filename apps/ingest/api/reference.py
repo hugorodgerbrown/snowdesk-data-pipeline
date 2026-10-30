@@ -92,6 +92,28 @@ def serialise_source_document(row: SourceDocument) -> dict[str, Any]:
     }
 
 
+def serialise_source_ski_tour(row: SourceSkiTour) -> dict[str, Any]:
+    """Return one SAC tour, with the walk and drawing the service made of it.
+
+    SNOW-1316: ``slope_samples`` and ``track_render`` sit beside the
+    document, not in it, so the document's ``content_hash`` — and with it
+    the sync's "changed" — is SAC's line alone. Both are null until the
+    service has rendered the tour, and a client then draws SAC's own line.
+
+    Args:
+        row: A ``SourceSkiTour``.
+
+    Returns:
+        The wire item.
+
+    """
+    return {
+        **serialise_source_document(row),
+        "slope_samples": row.slope_samples,
+        "track_render": row.track_render,
+    }
+
+
 def _locations() -> QuerySet[SourceLocation]:
     """Return every reference place, tombstones included."""
     return SourceLocation.objects.all()
@@ -144,6 +166,6 @@ SKI_NETWORK_FEED = Feed(
 SKI_TOURS_FEED = Feed(
     "ski-tours",
     _ski_tours,
-    serialise_source_document,
+    serialise_source_ski_tour,
     version=REFERENCE_FEED_VERSION,
 )

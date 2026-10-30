@@ -1,6 +1,6 @@
 """report_route_passages — what the no-fall gates would mark, at each setting.
 
-SNOW-964. ``apps.routes.services.passages`` decides four numbers — the
+SNOW-964. ``track.passages`` decides four numbers — the
 gate a passage seeds at, the floor it grows through, the shortest one
 reported, and how far off the fall line still counts as with it — and
 those numbers were chosen from reasoning about the terrain rather than
@@ -60,7 +60,7 @@ from typing import Any
 from apps.core.command_iteration import iterate_rows
 from apps.core.command_register import RegisteredCommand
 from apps.routes.models import Route
-from apps.routes.services.passages import (
+from track.passages import (
     CLIMBING,
     CROSSING,
     DESCENDING,

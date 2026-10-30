@@ -970,7 +970,7 @@ OPENFREEMAP_ORIGIN = basemap_origin(OPENFREEMAP_STYLE_URL)
 # NO CSP ENTRY, and it must not go through ``basemap_origin`` or
 # ``csp_defaults``: nothing in a browser fetches this. Every request to it
 # is a server-side ``requests.get`` from
-# ``apps.locations.services.terrain``, which a page policy does not govern.
+# ``track.terrain``, which a page policy does not govern.
 TERRAIN_TILE_BASE_URL = config(
     "TERRAIN_TILE_BASE_URL",
     default="https://tiles.snowdesk-data.info/terrain/v1",

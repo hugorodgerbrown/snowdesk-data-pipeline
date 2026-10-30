@@ -14,6 +14,7 @@ below (SNOW-1249):
   WEATHER_BACKFILL_FLOOR (the earliest day the backfill asks for)
   WHAT3WORDS_API_BASE_URL, WHAT3WORDS_API_KEY, WHAT3WORDS_FAKE
   SWISSTOPO_STAC_URL (the ski-touring GeoPackage's STAC host)
+  TERRAIN_TILE_BASE_URL (the terrain model a tour is walked against)
   DEBUG (only to gate the what3words fake)
 
 Each accessor reads the setting at call time, not import time, so a test's

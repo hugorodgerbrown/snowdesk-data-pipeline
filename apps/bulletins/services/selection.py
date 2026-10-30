@@ -11,7 +11,7 @@ surface that is not the bulletin page.
 it would eventually show a different issue from the bulletin page for the
 same region on the same day, and neither would be wrong on its own terms
 — which is the worst kind of disagreement, because nothing fails. Same
-move ``apps/routes/services/slope_wire.py`` made one ticket earlier, for
+move ``track/slope_wire.py`` made one ticket earlier, for
 the same reason: a second caller in another app is what promotes a
 private helper to a service.
 

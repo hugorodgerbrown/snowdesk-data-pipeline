@@ -23,31 +23,25 @@ from apps.routes.services.ski_tours import (
     build_summits,
     draft_tour_route,
     drawn_tours,
-    ends,
-    far_end,
     is_descent,
-    is_hut,
     layer_render,
     leg_parts,
     localised,
-    needs_only_marking,
     overview_geometry,
     rebuild_tour_render,
     runs_reversed,
     sac_time,
     save_ski_tour,
-    summit_key,
     summits,
-    target_end,
     tour_overview,
     tour_points,
     tour_properties,
     tour_slope_samples,
     tour_title,
-    tours_to_sample,
 )
-from apps.routes.services.track_render import TRACK_RENDER_VERSION
 from tests.factories import RouteFactory, SkiTourFactory, UserFactory
+from track.render import TRACK_RENDER_VERSION
+from track.sac import ends, far_end, is_hut, summit_key, target_end
 
 pytestmark = pytest.mark.django_db
 
@@ -374,7 +368,6 @@ class TestTheOrder:
         )
         assert runs_reversed(tour) is False
         assert tour_points(tour)[0][:2] == TOP
-        assert needs_only_marking(tour) is True
 
     def test_a_walk_the_wrong_way_is_walked_again_the_other_way(self) -> None:
         """A lone way down drawn downwards: the guess turns it, the heights turn it back."""
@@ -451,19 +444,16 @@ class TestTheTerrain:
     ) -> None:
         """Walked before SNOW-1306 on a way up drawn upwards: marked, not walked."""
         tour = _tour(slope_samples=RECORD)
-        assert needs_only_marking(tour) is True
         assert tour_slope_samples(tour, sample=False) == RECORD
         with patch("apps.routes.services.ski_tours.build_slope_samples") as build:
             assert tour_slope_samples(tour, sample=True) == KEPT
         build.assert_not_called()
         tour.refresh_from_db()
         assert tour.slope_samples == KEPT
-        assert needs_only_marking(tour) is False
 
     def test_an_unmarked_record_is_not_held_when_the_order_flips(self) -> None:
         """A way down drawn upwards now runs from its top: walked again."""
         tour = _tour(ascent_m=None, descent_m=900, slope_samples=RECORD)
-        assert needs_only_marking(tour) is False
         assert tour_slope_samples(tour, sample=False) is None
         with patch(
             "apps.routes.services.ski_tours.build_slope_samples",
@@ -549,8 +539,6 @@ class TestTheLegs:
     def test_a_held_record_with_no_render_is_built_without_a_walk(self) -> None:
         """Walked before renders were stored: built, nothing walked again."""
         tour = _tour(slope_samples=KEPT)
-        assert needs_only_marking(tour) is True
-        assert tours_to_sample().filter(pk=tour.pk).exists()
         with (
             self._patched(),
             patch("apps.routes.services.ski_tours.build_slope_samples") as build,
@@ -559,14 +547,6 @@ class TestTheLegs:
         build.assert_not_called()
         tour.refresh_from_db()
         assert tour.track_render == self.RENDER
-        assert not tours_to_sample().filter(pk=tour.pk).exists()
-        assert needs_only_marking(tour) is False
-
-    def test_a_stale_render_is_a_candidate_again(self) -> None:
-        """A render from an older builder is rebuilt by the nightly backfill."""
-        tour = _tour(slope_samples=KEPT, track_render={**self.RENDER, "v": 0})
-        assert tours_to_sample().filter(pk=tour.pk).exists()
-        assert needs_only_marking(tour) is True
 
     def test_the_layer_draws_the_stored_legs(self) -> None:
         """Sliced out of the stored geometry: read, never cut, per request."""
