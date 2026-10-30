@@ -10789,16 +10789,36 @@
     // SNOW-1294: SAC's summits and huts, as rows. Not on map load — the
     // list is read the first time search is focused (loadSummits), so it
     // never adds to first paint, and once: it changes only when an import
-    // does. Empty until then, and for good when the read fails, which
-    // leaves search as it was before.
+    // does. Empty until then, and for good when the read fails with
+    // nothing stored, which leaves search as it was before.
+    //
+    // SNOW-1320: and offline. A read that lands is written through to the
+    // overlay cache as `ski_summits` (public, so not partitioned by
+    // account), as an area download also writes it; a read that rejects
+    // or answers non-OK falls back to that stored list.
     let summitEntries = [];
     /** @type {?Promise<void>} */
     let summitsLoading = null;
+    // A stored row of any other shape is read as nothing stored.
+    const storedSummits = async () => {
+      const row = await window.pwaMapOverlayCache?.getOverlay('ski_summits');
+      return row && Array.isArray(row.summits) ? row : null;
+    };
     const loadSummits = () => {
       if (!SKI_SUMMITS_URL) return Promise.resolve();
       if (!summitsLoading) {
         summitsLoading = fetch(SKI_SUMMITS_URL, { credentials: 'same-origin' })
           .then((resp) => (resp.ok ? resp.json() : null))
+          .then(
+            (body) => {
+              if (body && Array.isArray(body.summits)) {
+                window.pwaMapOverlayCache?.putOverlay('ski_summits', body);
+                return body;
+              }
+              return storedSummits();
+            },
+            () => storedSummits(),
+          )
           .then((body) => {
             summitEntries = searchCore.buildSummitEntries(
               (body && body.summits) || [],

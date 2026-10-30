@@ -149,6 +149,10 @@ const AREA_ITEMS = {
 const FAVOURITES_GEOJSON = { type: 'FeatureCollection', features: [] };
 const ROUTES_GEOJSON = { type: 'FeatureCollection', features: [] };
 const REPORTS_GEOJSON = { type: 'FeatureCollection', features: [] };
+// SNOW-1320: search's SAC summit list, which a download stores too.
+const SUMMITS = { summits: [{ key: 'mont-fort', name: 'Mont Fort', lon: 7.3, lat: 46.08 }] };
+/** What /api/ski-summits.json answers on the next call. */
+let summitsAnswer = () => SUMMITS;
 
 /** Minimal MapLibre stub — as test_map_region_download_cancelled.js's. */
 function stubMapLibre() {
@@ -333,6 +337,7 @@ function buildFixture() {
          data-favourites-eligible="true"
          data-routes-url="/api/routes.geojson"
          data-routes-eligible="true"
+         data-ski-summits-url="/api/ski-summits.json"
          data-default-basemap-key="openfreemap_liberty"
          data-terrain-class-tile-url="${TERRAIN_TEMPLATE}"
          data-season-end="2026-05-31"></div>
@@ -507,6 +512,7 @@ beforeAll(async () => {
       if (href.includes('favourites.geojson')) body = FAVOURITES_GEOJSON;
       if (href.includes('routes.geojson')) body = ROUTES_GEOJSON;
       if (href.includes('community-reports.geojson')) body = REPORTS_GEOJSON;
+      if (href.includes('ski-summits.json')) body = summitsAnswer();
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     }),
   );
@@ -630,15 +636,18 @@ describe('a download takes the content inside its boundary', () => {
     expect(firstTile).toBeGreaterThan(bulletin);
   });
 
-  it('caches all four overlay feeds on the way past', () => {
+  it('caches all four overlay feeds, and the summit list, on the way past', () => {
     // Whole and unfiltered — the boundary decides what must VERIFY
     // present, not what gets stored.
     expect([...overlayStore.keys()].sort()).toEqual([
       'community_reports',
       'favourites',
       'routes',
+      'ski_summits',
       'weather',
     ]);
+    // SNOW-1320: stored as the server sent it, for loadSummits to read back.
+    expect(overlayStore.get('ski_summits')).toEqual(SUMMITS);
   });
 
   it('stamps the record with when its content was fetched', async () => {
@@ -668,6 +677,51 @@ describe('a downloaded area refreshes rather than re-downloads', () => {
     const urls = warmedUrls(0);
     expect(urls).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/${TODAY}/`);
     expect(urls.some((url) => url.includes('tiles.example.invalid'))).toBe(false);
+  });
+
+  it('neither fetches nor stores the summit list on a page without it (SNOW-1320)', async () => {
+    // `data-ski-summits-url` is on `#map` only where search lists summits
+    // (the route_drawing flag). Without it there is nothing to ask for.
+    const mapEl = document.getElementById('map');
+    const btn = document.getElementById('map-download-control');
+    await waitFor(() => btn.dataset.downloadState === 'done');
+    delete mapEl.dataset.skiSummitsUrl;
+    overlayStore.clear();
+    window.fetch.mockClear();
+    window.pwaWarmCache.mockClear();
+    try {
+      btn.click();
+      await waitFor(() => window.pwaWarmCache.mock.calls.length > 0);
+
+      expect(overlayStore.has('weather')).toBe(true);
+      expect(overlayStore.has('ski_summits')).toBe(false);
+      expect(window.fetch.mock.calls.some(([url]) => String(url).includes('ski-summits'))).toBe(
+        false,
+      );
+    } finally {
+      mapEl.dataset.skiSummitsUrl = '/api/ski-summits.json';
+      await waitFor(() => btn.dataset.downloadState !== 'busy');
+    }
+  });
+});
+
+describe('a summit list of the wrong shape (SNOW-1320)', () => {
+  it('is not stored, so it cannot replace a good row', async () => {
+    const btn = document.getElementById('map-download-control');
+    await waitFor(() => btn.dataset.downloadState === 'done');
+    overlayStore.clear();
+    window.pwaWarmCache.mockClear();
+    summitsAnswer = () => ({ type: 'FeatureCollection', features: [] });
+    try {
+      btn.click();
+      await waitFor(() => window.pwaWarmCache.mock.calls.length > 0);
+
+      expect(overlayStore.has('weather')).toBe(true);
+      expect(overlayStore.has('ski_summits')).toBe(false);
+    } finally {
+      summitsAnswer = () => SUMMITS;
+      await waitFor(() => btn.dataset.downloadState !== 'busy');
+    }
   });
 });
 

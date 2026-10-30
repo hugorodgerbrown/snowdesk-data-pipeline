@@ -469,11 +469,11 @@ const MAP_DATA_URLS = {
     reason: 'signing in needs the server',
   },
   'data-ski-summits-url': {
-    kind: 'hole',
+    kind: 'indexeddb',
     sample: '/api/ski-summits.json',
     swClass: 'network',
-    ticket: 'SNOW-1320',
-    hole: "search's SAC summit rows are absent offline: the feed is neither worker-cached nor in IndexedDB",
+    reader: 'pwaMapOverlayCache',
+    resource: 'ski_summits',
   },
 };
 

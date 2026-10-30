@@ -178,6 +178,9 @@ ski-touring layer on and flies the map to the summit
 It no longer opens a list (SNOW-1306). Behind the `route_drawing` flag
 with the layer; while the flag is on the field says "Find a region, resort
 or summit".
+Offline (SNOW-1320), the list reads from the overlay cache (`ski_summits`,
+public), stored by every read that lands and by an area download; the tours
+do not, so a summit picked without signal toasts "Tours need signal".
 
 **A summit is not a Location.** Curated Locations are the set Snowdesk pays
 to forecast (four fetches a day at 2.4 weighted calls each); adding every
