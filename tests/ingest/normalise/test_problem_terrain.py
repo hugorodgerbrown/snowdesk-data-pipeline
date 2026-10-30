@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.core.geo import OCTANTS as CORE_OCTANTS
 from apps.ingest.normalise.problem_terrain import OCTANTS, terrain_rules
+from track.geo import OCTANTS as CORE_OCTANTS
 
 
 def _problem(**overrides: Any) -> dict[str, Any]:
@@ -155,5 +155,5 @@ class TestTerrainRules:
 
 
 def test_the_octants_match_the_cores() -> None:
-    """Ingest's copy of the octant order is the same as apps.core.geo's."""
+    """Ingest's copy of the octant order is the same as track.geo's."""
     assert OCTANTS == CORE_OCTANTS

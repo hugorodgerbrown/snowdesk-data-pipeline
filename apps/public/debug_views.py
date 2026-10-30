@@ -40,7 +40,6 @@ from apps.core.sw_shell import cache_version
 from apps.public.design_tokens import LIBRARY_GROUPS, get_category
 from apps.public.errors import ERROR_PAGES, error_response
 from apps.routes.models import Route
-from apps.routes.services.terrain_detail import COLUMNS, terrain_detail
 from apps.weather.icon_sets import (
     ICON_SETS,
     LOCAL_SET_SOURCES,
@@ -52,6 +51,7 @@ from apps.weather.services.weather_display import (
     WEATHER_ICON_BUCKETS,
     weather_icon_filename,
 )
+from track.terrain_detail import COLUMNS, terrain_detail
 
 DEFAULT_SLUG = "typography"
 
@@ -257,7 +257,7 @@ def route_terrain(request: HttpRequest, route_uuid: uuid.UUID) -> HttpResponse:
     """One route's slope angle, aspect, bearing and track gradient per segment.
 
     SNOW-1020. The rows come from
-    ``apps.routes.services.terrain_detail.terrain_detail`` and nothing here
+    ``track.terrain_detail.terrain_detail`` and nothing here
     derives a figure of its own. ``?format=csv`` returns the same rows as
     a download, so the table and the file cannot disagree, and
     ``?format=json`` returns them as JSON, for scripts. The map's route

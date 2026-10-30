@@ -18,8 +18,8 @@ from typing import Any
 import pytest
 from django.test import Client
 
-from apps.core.geo import OCTANTS, octant_for
 from apps.public import dev_terrain_class as dev
+from track.geo import OCTANTS, octant_for
 
 # Some middleware on the response path reads the database for a 204.
 pytestmark = pytest.mark.django_db
@@ -112,7 +112,7 @@ def test_no_tile_answers_204(tile: tuple[int, int, int]) -> None:
 
 @pytest.mark.parametrize("bearing", [0.0, 22.4, 22.5, 67.5, 180.0, 337.4, 337.5, 359.9])
 def test_octant_split_matches_core_geo(bearing: float) -> None:
-    """The fixture splits octants exactly as apps.core.geo.octant_for does."""
+    """The fixture splits octants exactly as track.geo.octant_for does."""
     assert OCTANTS[dev.octant_index(bearing)] == octant_for(bearing)
 
 

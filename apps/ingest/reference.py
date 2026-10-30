@@ -99,6 +99,9 @@ def sync_source_documents(
                 counts["unchanged"] += 1
                 continue
             row.slug = record.slug
+            if row.content_hash != digest:
+                for field, value in model.changed_document_resets().items():
+                    setattr(row, field, value)
             row.document = record.document
             row.content_hash = digest
             row.deleted_at = None

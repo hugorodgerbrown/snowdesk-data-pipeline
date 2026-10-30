@@ -9,7 +9,7 @@ last-reviewed: 2026-10-01
 
 ## Decision
 
-`detect_legs` (`apps/routes/services/legs.py`) finds a route's
+`detect_legs` (`track/legs.py`) finds a route's
 transitions as the turning points of elevation smoothed over 100 m either
 side (`SMOOTHING_WINDOW_M`). Since 2026-09-30 each transition is then
 **snapped** onto the highest raw elevation within that window where a

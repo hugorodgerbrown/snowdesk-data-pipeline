@@ -52,13 +52,20 @@ WHAT THIS SURFACE DOES NOT HAVE, and why each absence is deliberate:
   there is nothing to place on the map and window.PlacePicker is never
   armed. This is the biggest single difference from the favourites surface.
 
-  No mutation queue. Upload is ONLINE-ONLY and posts straight to
-  routes:create rather than through window.pwaMutationQueue: the queue
+  No mutation queue for an UPLOAD. Upload is ONLINE-ONLY and posts straight
+  to routes:create rather than through window.pwaMutationQueue: the queue
   persists JSON bodies in IndexedDB and a multipart file is a different
   shape, so making an upload replayable is real scope of its own.
   SNOW-504's resort-favourite toggle is the precedent for a UGC action that
   is deliberately online-only. Rename and delete are online-only too,
   matching every other panel's edits.
+
+  A route DRAWN on the map is the exception (SNOW-1262): its save is a JSON
+  body, so it goes through the queue when there is no signal, and this
+  panel lists it from the queue until it lands — "Waiting to sync" with no
+  menu, or "Couldn't sync", the reason, and Edit / Discard. The two row
+  templates below are cloned by routes.js into [data-routes-pending]
+  (_routes_panel_rows.html), above the server's rows.
 
   No offline cache SIDECAR, but the panel does read offline. SNOW-950 gave
   it static/js/routes_offline.js, which stores each list response's rendered
@@ -142,6 +149,19 @@ Context expected:
 {# `data-action="dismiss"` on Close, matching the other two confirmations:  #}
 {# static/js/overlays.js closes the sheet on it, so this template needs no  #}
 {# handler of its own.                                                      #}
+{# SNOW-1262: the two rows of a route drawn offline, cloned by routes.js   #}
+{# for each route-create row in window.pwaMutationQueue. The shared row   #}
+{# (includes/_ugc_panel_row.html), filled in by the script: the label is  #}
+{# the route's name, and a refused row's meta line is the reason, picked  #}
+{# from the strings template below by its status and error.               #}
+{% trans "Drawn route" as pending_route_label %}
+<template id="route-pending-row-template">
+    {% include "includes/_ugc_panel_row.html" with label=pending_route_label label_testid="route-pending-row-label" actions_template="public/partials/_route_pending_row_actions.html" only %}
+</template>
+{% trans "This route couldn't be saved." as failed_route_meta %}
+<template id="route-failed-row-template">
+    {% include "includes/_ugc_panel_row.html" with label=pending_route_label label_testid="route-pending-row-label" meta=failed_route_meta actions_template="public/partials/_route_failed_row_actions.html" only %}
+</template>
 <template id="route-confirmation-template">
     {# `min-h-0 flex-1 overflow-y-auto` — the sheet is scroll_body=True, so #}
     {# every body rendered into it owns its own scroll region rather than   #}
@@ -208,6 +228,13 @@ Context expected:
 {# observations_offline.js and unlike favourites_offline.js, which        #}
 {# base.html loads site-wide.                                             #}
 <script defer src="{% static 'js/routes_offline.js' %}"></script>
+{# SNOW-1262: the pure half of route drawing, loaded here rather than by  #}
+{# _route_draw_surface.html so it is on the page with the route_drawing   #}
+{# flag off too: a route queued while it was on can still be discarded    #}
+{# here, and its stored draft has to go with it (forgetDraftFor). This    #}
+{# partial is included before the draw surface, so route_draw.js still    #}
+{# finds it.                                                              #}
+<script defer src="{% static 'js/route_draw_core.js' %}"></script>
 <script defer src="{% static 'js/routes.js' %}"></script>
 {# Every user-facing string routes.js writes into the DOM. makemessages     #}
 {# never scans static/js, so a literal there ships as English to every      #}
@@ -253,6 +280,31 @@ Context expected:
     {# "link copied" would contradict them. See static/js/share.js.         #}
     <span data-string="share-copied">{% trans "Link copied." %}</span>
     <span data-string="share-failed">{% trans "That link couldn't be created. Try again." %}</span>
+    {# SNOW-1262: why a route drawn offline couldn't sync — one line per   #}
+    {# refusal routes:create_drawn can give, because each has a different  #}
+    {# next step (Edit and save it again, delete a route, sign in).        #}
+    <span
+        data-string="failed-invalid"
+    >{% trans "The line couldn't be saved as a route. Edit it and try again." %}</span>
+    <span
+        data-string="failed-limit"
+    >{% trans "You've reached your saved-route limit. Delete one, then edit this to save it." %}</span>
+    <span
+        data-string="failed-conflict"
+    >{% trans "This clashed with an earlier save. Edit it and save it again." %}</span>
+    <span
+        data-string="failed-signed-out"
+    >{% trans "You were signed out when it synced. Edit it to save it again." %}</span>
+    <span
+        data-string="failed-session"
+    >{% trans "Your session had expired when it synced. Edit it to save it again." %}</span>
+    <span data-string="failed-unavailable">{% trans "Saving a drawn route isn't available right now." %}</span>
+    <span data-string="failed-other">{% trans "This route couldn't be saved." %}</span>
+    {# Discard is destructive — the drawn line is lost — so it confirms,   #}
+    {# as a saved route's Delete does.                                      #}
+    <span
+        data-string="discard-confirm"
+    >{% blocktrans %}Discard %(name)s? The line you drew will be lost.{% endblocktrans %}</span>
     {# SNOW-830's Delete confirm is NOT here. It is `hx-confirm` on the    #}
     {# form itself (routes/partials/_route_row_menu_items.html) — the       #}
     {# string is rendered into the attribute by Django, so it needs no      #}

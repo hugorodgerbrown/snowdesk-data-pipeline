@@ -397,7 +397,7 @@ catalogue and flag reference.
   `S101` (asserts), password-related `S1xx` rules, and `S113` so tests
   can use short literal fixtures freely.
 - `tests/` is type-checked with the same `disallow_untyped_defs` as the
-  apps (`tox -e mypy` runs `mypy apps/ tests/ config/ schedule.py`), so a
+  apps (`tox -e mypy` runs `mypy apps/ tests/ config/ track/ schedule.py`), so a
   test function ends with `-> None` like any other.
 
 ### 5.2 Test structure
@@ -512,7 +512,7 @@ workers pays the cost eight times. Group the module by what it caches.
 - `gitleaks` for committed secrets
 - Local `djangofmt` hook via `.venv/bin/djangofmt`
 - Local `mypy` hook via `.venv/bin/mypy …` — the hook must cover the same
-  tree as `tox.ini`'s `[testenv:mypy]` (`mypy apps/ tests/ config/
+  tree as `tox.ini`'s `[testenv:mypy]` (`mypy apps/ tests/ config/ track/
   schedule.py`), so a local commit can't pass while CI mypy fails on a
   package the hook skipped. Change both together.
 - Local `ds-lint`, `i18n-lint`, `js-globals-lint`, `docs-lint` and

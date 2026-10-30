@@ -184,7 +184,7 @@ interface Window {
   pwaRouteDrawCore: any;
   /** SNOW-1277: static/js/ski_snap_core.js — snapping and routing on the ski network. */
   pwaSkiSnapCore: any;
-  /** SNOW-1256: route_draw.js — whether the map is in route draw mode. */
+  /** SNOW-1256: route_draw.js — isActive, start; SNOW-1262: edit(key), discard(key) for a refused offline save. */
   pwaRouteDraw: any;
   /** map.js: the ski-touring layer's switches — tours, summits, show, isShown, isPartShown (SNOW-1285). */
   pwaSkiRoutes: any;

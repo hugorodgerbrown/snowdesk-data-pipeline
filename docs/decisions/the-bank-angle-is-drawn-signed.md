@@ -25,7 +25,7 @@ gradient the profile already draws, and `tan²(pitch) + tan²(roll) =
 tan²(slope)`.
 
 - **Signed.** Positive where the ground falls away on the skier's right,
-  negative on the left. `apps/routes/services/bank.py` never takes the
+  negative on the left. `track/bank.py` never takes the
   absolute value, and the drawing (`static/js/bank_ribbon_core.js`) puts
   each level-ski wedge's pale half on the downhill side (SNOW-1031; until
   then it leaned each tick's top toward the downhill shoulder).

@@ -1,6 +1,6 @@
 ---
 name: locations
-description: Coordinate reference — Location, Favourite, Resort, FieldObservation, MicroRegion.centre, Route.points, GeoIP; apps/core/geo haversine
+description: Coordinate reference — Location, Favourite, Resort, FieldObservation, MicroRegion.centre, Route.points, GeoIP; track/geo haversine
 status: current
 last-reviewed: 2026-10-27
 ---
@@ -264,10 +264,10 @@ must not be modelled as one.
 
 ## Distance
 
-One implementation, `apps/core/geo.py`:
+One implementation, `track/geo.py`:
 
 ```python
-from apps.core.geo import haversine_km, haversine_m
+from track.geo import haversine_km, haversine_m
 ```
 
 Pure Python — no Shapely, no PostGIS — because the observations and MCP

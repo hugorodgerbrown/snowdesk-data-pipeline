@@ -40,6 +40,11 @@ Design notes
   values stored at cache-write time. A mismatch — reusing a key across a
   different path, body, or user — returns ``409`` instead of serving the
   wrong cached response or running the view again.
+* The two 409s say which they are (SNOW-1262): ``{"error":
+  "idempotency_in_flight"}`` while the original request is still in the
+  view, or the claim could not be settled (transient — retry);
+  ``{"error": "idempotency_key_reused"}`` for a fingerprint mismatch
+  (permanent). The mutation queue classifies on it.
 * Machine endpoints are exempt (SNOW-1169). ``IDEMPOTENCY_EXEMPT_PATHS``
   — the MCP endpoint and the OAuth token / register / revoke endpoints —
   pass straight through: no reservation, no replay, no
@@ -63,7 +68,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import Resolver404, resolve
 
 if TYPE_CHECKING:
@@ -80,6 +85,16 @@ _KEY_HEADER_META: str = "HTTP_IDEMPOTENCY_KEY"
 # short prevents pathological indexes and matches the practical range
 # used by uuid4 (36 chars) plus a small prefix.
 MAX_KEY_LENGTH: int = 128
+
+# SNOW-1262: the two kinds of 409 this middleware answers, told apart by a
+# JSON ``error`` so a client can classify them. IN_FLIGHT is TRANSIENT —
+# the original request is still inside the view (or the claim could not be
+# settled), and a retry with the same key will replay its answer; the
+# mutation queue retries it. KEY_REUSED is PERMANENT — the key was already
+# used for a different method, path, principal or body, and no retry with
+# it can ever succeed.
+IN_FLIGHT_ERROR: str = "idempotency_in_flight"
+KEY_REUSED_ERROR: str = "idempotency_key_reused"
 
 # Retention window — one day. Matches spec §5.5 ("default 24h").
 IDEMPOTENCY_RECORD_TTL_SECONDS: int = 24 * 60 * 60
@@ -228,13 +243,14 @@ class IdempotencyMiddleware:
         if reservation is None:
             # reserve() exhausted its attempts. Failing closed risks a
             # spurious 409; running the view risks a duplicate mutation.
+            # Transient either way, so it reads as in flight (SNOW-1262).
             logger.warning(
                 "pwa.idempotency.unclaimable method=%s view=%s key=%s",
                 request.method,
                 _view_name(request),
                 _redact_key(key),
             )
-            return HttpResponse(status=409)
+            return JsonResponse({"error": IN_FLIGHT_ERROR}, status=409)
 
         if not reservation.matches_fingerprint(
             method=request.method or "",
@@ -248,7 +264,7 @@ class IdempotencyMiddleware:
                 _view_name(request),
                 _redact_key(key),
             )
-            return HttpResponse(status=409)
+            return JsonResponse({"error": KEY_REUSED_ERROR}, status=409)
 
         if not reservation.is_completed():
             logger.info(
@@ -257,7 +273,7 @@ class IdempotencyMiddleware:
                 _view_name(request),
                 _redact_key(key),
             )
-            return HttpResponse(status=409)
+            return JsonResponse({"error": IN_FLIGHT_ERROR}, status=409)
 
         logger.info(
             "pwa.idempotency.hit method=%s view=%s key=%s status=%d",

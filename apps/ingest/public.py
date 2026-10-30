@@ -74,6 +74,11 @@ The names are grouped by what they are for:
       SAC's tours over it, and ``import_ski_archive``, which makes both
       equal one GeoPackage zip, downloaded by ``download_ski_archive``
       (SNOW-1276). ``SKI_NETWORK`` and ``SKI_TOURS`` name the two kinds.
+      Each tour's walk and drawing, made once, offline, by the service
+      (SNOW-1316): ``tours_to_render`` names the tours with a walk or a
+      drawing to make, ``render_source_tour`` makes it — idempotent by
+      fingerprint — with ``tour_summits`` and ``terrain_grid`` loaded once
+      per run; ``RenderOutcome`` names what it did.
   The data feed
       ``WEATHER_FEED_V2`` (``/api/data/v2/weather/``, keyed by the
       service's place uuid, SNOW-1253), the v2 ``LOCATIONS_FEED``,
@@ -116,6 +121,7 @@ from apps.ingest.api.reference import (
     SKI_NETWORK_FEED,
     SKI_TOURS_FEED,
     serialise_source_document,
+    serialise_source_ski_tour,
     serialise_source_location,
 )
 from apps.ingest.api.weather import (
@@ -258,6 +264,13 @@ from apps.ingest.ski import (
     SkiArchiveError,
     import_ski_archive,
 )
+from apps.ingest.ski_render import (
+    RenderOutcome,
+    render_source_tour,
+    terrain_grid,
+    tour_summits,
+    tours_to_render,
+)
 from apps.ingest.sources.slf import PAGE_SIZE as SLF_PAGE_SIZE
 from apps.ingest.sources.swisstopo import SwisstopoError, download_ski_archive
 from apps.ingest.sources.what3words import convert_to_3wa, fake_address
@@ -280,6 +293,11 @@ from apps.ingest.weather import (
 )
 
 __all__ = [
+    "RenderOutcome",
+    "render_source_tour",
+    "terrain_grid",
+    "tour_summits",
+    "tours_to_render",
     "parse_feed_day",
     "BULLETINS_FEED_V2",
     "ADMIN_MAX_LOCATIONS",
@@ -422,6 +440,7 @@ __all__ = [
     "serialise_source_bulletin",
     "serialise_source_day_rating",
     "serialise_source_document",
+    "serialise_source_ski_tour",
     "serialise_source_location",
     "serialise_source_weather",
     "slf_pdf_url",

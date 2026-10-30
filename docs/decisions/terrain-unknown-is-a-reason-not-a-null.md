@@ -9,7 +9,7 @@ last-reviewed: 2026-10-16
 
 ## Decision
 
-`sample_height` and `sample_slope` (`apps/locations/services/terrain.py`)
+`sample_height` and `sample_slope` (`track/terrain.py`)
 return a `TerrainHeight` or `TerrainSlope` carrying **either** a figure and
 the `TerrainSource` it came from **or** one of three named reasons:
 `OUTSIDE_COVERAGE`, `NO_DATA`, `UNAVAILABLE`. There is no code path

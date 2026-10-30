@@ -58,9 +58,6 @@ from apps.core.freshness import DEFAULT_MAX_AGE_SECONDS
 from apps.routes.models import Route
 from apps.routes.services.canonical import CANONICAL_DIR
 from apps.routes.services.gpx import parse_gpx
-from apps.routes.services.leg_wire import wire_legs
-from apps.routes.services.terrain_detail import terrain_detail
-from apps.routes.services.terrain_heights import climb_totals, terrain_points
 from tests.factories import (
     DRIFTING_TRACK,
     RouteFactory,
@@ -69,6 +66,9 @@ from tests.factories import (
     UserFactory,
     drifting_track_record,
 )
+from track.leg_wire import wire_legs
+from track.terrain_detail import terrain_detail
+from track.terrain_heights import climb_totals, terrain_points
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

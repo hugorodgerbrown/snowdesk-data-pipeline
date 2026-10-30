@@ -25,7 +25,7 @@ or deleted here.
 """
 
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 from django.contrib import admin
 from django.http import HttpRequest
@@ -170,7 +170,7 @@ class _SourceDocumentAdmin(_ReadOnly, admin.ModelAdmin[Any]):
     list_filter = (("deleted_at", admin.EmptyFieldListFilter),)
     search_fields = ("slug", "uuid")
     ordering = ("slug",)
-    readonly_fields = (
+    readonly_fields: ClassVar[tuple[str, ...]] = (
         "uuid",
         "slug",
         "document",
@@ -198,7 +198,14 @@ class SourceSkiSegmentAdmin(_SourceDocumentAdmin):
 
 @admin.register(SourceSkiTour)
 class SourceSkiTourAdmin(_SourceDocumentAdmin):
-    """Read-only admin for SAC's ski tours (SNOW-1276)."""
+    """Read-only admin for SAC's ski tours (SNOW-1276) and their render (SNOW-1316)."""
+
+    readonly_fields = (
+        *_SourceDocumentAdmin.readonly_fields,
+        "render_input_fp",
+        "slope_samples",
+        "track_render",
+    )
 
 
 @admin.register(SourceDayRating)

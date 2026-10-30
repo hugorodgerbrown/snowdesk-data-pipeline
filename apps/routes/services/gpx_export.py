@@ -172,7 +172,7 @@ def _export_points(route: "Route") -> list[list[float | None]]:
         return stored
     # Imported here: terrain_heights imports the slope sampler, which
     # imports the models this module is imported beside.
-    from apps.routes.services.terrain_heights import terrain_points  # noqa: PLC0415
+    from track.terrain_heights import terrain_points  # noqa: PLC0415
 
     return terrain_points(route.points, route.slope_samples)
 

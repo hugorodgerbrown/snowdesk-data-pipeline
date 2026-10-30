@@ -23,7 +23,7 @@ Covers ``apps.routes.services.slope_segments``:
     because a trip's snapshot deliberately carries none to inherit.
 
 ``sample_slope`` is patched here rather than the transport: this module's
-job is the walk and the record, and ``tests/locations/services/test_terrain.py``
+job is the walk and the record, and ``tests/track/test_terrain.py``
 is where the sampler's own answers are established. ``load_grid`` is
 patched with the committed fixture definition, so the ``grid`` and
 ``window_m`` the record carries are the real ones.
@@ -43,27 +43,29 @@ from unittest.mock import patch
 import pytest
 from django.db import connection
 
-from apps.locations.services.terrain import TerrainHeight, TerrainSlope, TerrainUnknown
-from apps.locations.services.terrain_grid import TerrainGrid, grid_from_payload
 from apps.routes.models import Route
 from apps.routes.services.routes import create_route
 from apps.routes.services.slope_segments import (
-    _UNAVAILABLE_RUN_LIMIT,
-    SAMPLE_STRIDE_M,
     _worker_sample_route_slopes,
     build_slope_samples,
+)
+from tests.factories import RouteFactory, TripFactory, UserFactory
+from track.slope_samples import (
+    _UNAVAILABLE_RUN_LIMIT,
+    SAMPLE_STRIDE_M,
     stride_coordinates,
     stride_distances,
 )
-from tests.factories import RouteFactory, TripFactory, UserFactory
+from track.terrain import TerrainHeight, TerrainSlope, TerrainUnknown
+from track.terrain_grid import TerrainGrid, grid_from_payload
 
 _GRID_FIXTURE = (
-    Path(__file__).parent.parent / "locations" / "fixtures" / "terrain" / "grid.json"
+    Path(__file__).parent.parent / "track" / "fixtures" / "terrain" / "grid.json"
 )
 
 # One 0.01° step along a meridian, in metres. The same constant
 # tests/routes/test_services.py works its distances against, and it comes
-# from apps.core.geo.haversine_m over (46.00, 7.0) → (46.01, 7.0).
+# from track.geo.haversine_m over (46.00, 7.0) → (46.01, 7.0).
 LEG_M = 1111.9508023352598
 
 # A straight meridian track: two stored points, 0.03° apart, no elevation.
@@ -77,14 +79,14 @@ MERIDIAN_LENGTH_M = 3 * LEG_M
 def _flat_terrain_heights() -> Any:
     """Answer every SNOW-1043 height sample with one fixed height.
 
-    ``sample_height`` is imported into ``slope_segments`` by name, so this
+    ``sample_height`` is imported into ``track.slope_samples`` by name, so this
     patches that copy. Unpatched it would reach the closed port the
     ``_no_live_terrain_origin`` fixture installs and answer UNAVAILABLE,
     which omits ``heights`` — harmless to the tests that do not read it,
     but a fixed answer keeps every record here the same shape.
     """
     with patch(
-        "apps.routes.services.slope_segments.sample_height",
+        "track.slope_samples.sample_height",
         return_value=_height(2000.04),
     ):
         yield
@@ -252,7 +254,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(34.25),
             ),
         ):
@@ -268,7 +270,7 @@ class TestBuildSlopeSamples:
         with (
             patch("apps.routes.services.slope_segments.load_grid", return_value=grid),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(34.25),
             ),
         ):
@@ -293,7 +295,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(41.0),
             ),
         ):
@@ -311,7 +313,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(12.0),
             ),
         ):
@@ -329,11 +331,11 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(12.0),
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_height",
+                "track.slope_samples.sample_height",
                 return_value=_height(1500.0),
             ) as sampler,
         ):
@@ -341,7 +343,7 @@ class TestBuildSlopeSamples:
 
         assert record is not None
         asked = [
-            [round(call.args[1], 6), round(call.args[0], 6)]
+            [round(call.args[2], 6), round(call.args[1], 6)]
             for call in sampler.call_args_list
         ]
         assert asked == record["points"]
@@ -364,11 +366,11 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(12.0),
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_height",
+                "track.slope_samples.sample_height",
                 side_effect=_answer,
             ),
         ):
@@ -395,11 +397,11 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(12.0),
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_height",
+                "track.slope_samples.sample_height",
                 side_effect=_answer,
             ),
         ):
@@ -417,11 +419,11 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(12.0),
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_height",
+                "track.slope_samples.sample_height",
                 return_value=_height(None, TerrainUnknown.UNAVAILABLE),
             ) as sampler,
         ):
@@ -444,7 +446,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(34.25),
             ),
         ):
@@ -471,7 +473,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(34.248, 105.34),
             ),
         ):
@@ -490,9 +492,7 @@ class TestBuildSlopeSamples:
             patch(
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
-            patch(
-                "apps.routes.services.slope_segments.sample_slope", return_value=flat
-            ),
+            patch("track.slope_samples.sample_slope", return_value=flat),
         ):
             record = build_slope_samples(route.points, f"route pk={route.pk}")
 
@@ -508,7 +508,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_unknown(TerrainUnknown.OUTSIDE_COVERAGE),
             ),
         ):
@@ -527,7 +527,7 @@ class TestBuildSlopeSamples:
         ]
         calls = {"count": 0}
 
-        def _next_answer(latitude: float, longitude: float) -> TerrainSlope:
+        def _next_answer(grid: Any, latitude: float, longitude: float) -> TerrainSlope:
             """Answer in a fixed cycle so each segment gets a known result."""
             answer = answers[calls["count"] % len(answers)]
             calls["count"] += 1
@@ -538,7 +538,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 side_effect=_next_answer,
             ),
         ):
@@ -557,7 +557,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_unknown(TerrainUnknown.UNAVAILABLE),
             ),
         ):
@@ -577,7 +577,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_unknown(TerrainUnknown.UNAVAILABLE),
             ) as sampler,
         ):
@@ -598,7 +598,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_unknown(TerrainUnknown.UNAVAILABLE),
             ) as sampler,
         ):
@@ -615,7 +615,7 @@ class TestBuildSlopeSamples:
         route = RouteFactory.create(points=MERIDIAN_TRACK)
         calls = {"count": 0}
 
-        def _one_bad_tile(latitude: float, longitude: float) -> TerrainSlope:
+        def _one_bad_tile(grid: Any, latitude: float, longitude: float) -> TerrainSlope:
             """Fail on the sixth sample only, answer every other one."""
             calls["count"] += 1
             if calls["count"] == 6:
@@ -627,7 +627,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 side_effect=_one_bad_tile,
             ) as sampler,
         ):
@@ -644,7 +644,7 @@ class TestBuildSlopeSamples:
         good_samples = 10
         calls = {"count": 0}
 
-        def _origin_dies(latitude: float, longitude: float) -> TerrainSlope:
+        def _origin_dies(grid: Any, latitude: float, longitude: float) -> TerrainSlope:
             """Answer ten samples, then fail for the rest of the track."""
             calls["count"] += 1
             if calls["count"] <= good_samples:
@@ -656,7 +656,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 side_effect=_origin_dies,
             ) as sampler,
         ):
@@ -675,7 +675,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_unknown(TerrainUnknown.OUTSIDE_COVERAGE),
             ),
         ):
@@ -691,7 +691,7 @@ class TestBuildSlopeSamples:
         route = RouteFactory.create(points=MERIDIAN_TRACK)
         with (
             patch("apps.routes.services.slope_segments.load_grid", return_value=None),
-            patch("apps.routes.services.slope_segments.sample_slope") as sampler,
+            patch("track.slope_samples.sample_slope") as sampler,
         ):
             assert build_slope_samples(route.points, f"route pk={route.pk}") is None
         sampler.assert_not_called()
@@ -705,7 +705,7 @@ class TestBuildSlopeSamples:
             patch(
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
-            patch("apps.routes.services.slope_segments.sample_slope") as sampler,
+            patch("track.slope_samples.sample_slope") as sampler,
         ):
             assert build_slope_samples(route.points, f"route pk={route.pk}") is None
         sampler.assert_not_called()
@@ -725,7 +725,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(41.0),
             ),
         ):
@@ -742,7 +742,7 @@ class TestBuildSlopeSamples:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(34.0),
             ) as sampler,
         ):
@@ -768,7 +768,7 @@ class TestSampleRouteSlopesWorker:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(34.0),
             ),
         ):
@@ -787,7 +787,7 @@ class TestSampleRouteSlopesWorker:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(34.0),
             ),
         ):
@@ -807,7 +807,7 @@ class TestSampleRouteSlopesWorker:
                 "apps.routes.services.slope_segments.load_grid", return_value=_grid()
             ),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_unknown(TerrainUnknown.UNAVAILABLE),
             ),
         ):
@@ -818,7 +818,7 @@ class TestSampleRouteSlopesWorker:
 
     def test_a_deleted_route_is_an_expected_race(self) -> None:
         """Deleted between the enqueue and the run: log and return, never raise."""
-        with patch("apps.routes.services.slope_segments.sample_slope") as sampler:
+        with patch("track.slope_samples.sample_slope") as sampler:
             _worker_sample_route_slopes.call(999_999)
         sampler.assert_not_called()
 
@@ -1022,7 +1022,7 @@ class TestTripSavedRoutesAreSampled:
         with (
             patch("apps.routes.services.slope_segments.load_grid", return_value=grid),
             patch(
-                "apps.routes.services.slope_segments.sample_slope",
+                "track.slope_samples.sample_slope",
                 return_value=_known(34.25),
             ),
         ):
@@ -1071,7 +1071,7 @@ class TestTripSavedRoutesAreSampled:
         )
 
         with patch(
-            "apps.routes.services.slope_segments.sample_slope",
+            "track.slope_samples.sample_slope",
             side_effect=AssertionError("the origin must not be asked again"),
         ):
             route = save_trip_route(UserFactory.create(), trip)

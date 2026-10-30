@@ -21,7 +21,6 @@ import math
 import pytest
 from defusedxml.ElementTree import fromstring
 
-from apps.core.geo import haversine_m
 from apps.routes.services.canonical import (
     CANONICAL_DIR,
     RECORDING_DIR,
@@ -37,6 +36,7 @@ from apps.routes.services.gpx import (
     _point_time,
     parse_gpx,
 )
+from track.geo import haversine_m
 
 # What each file is expected to hold. Spelled out rather than derived so a
 # track that is replaced or re-exported fails here loudly, instead of the

@@ -40,7 +40,8 @@ from apps.routes.models import Route
 from apps.routes.services.drawn import draft_route
 from apps.routes.services.gpx import parse_gpx
 from apps.routes.services.slope_segments import enqueue_route_slope_sampling
-from apps.routes.services.track_render import build_track_render, stamp_render
+from apps.routes.services.track_render import stamp_render
+from track.render import build_track_render
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User

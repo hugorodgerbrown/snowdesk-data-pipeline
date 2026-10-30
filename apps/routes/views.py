@@ -694,7 +694,7 @@ def routes_geojson(request: HttpRequest) -> JsonResponse:
     the slope record's 25 m boundary points when the record carries model
     heights, every point on the terrain model's height and any run the
     model does not cover rebased onto its datum (SNOW-1043,
-    ``apps.routes.services.terrain_heights``). A barometric altimeter
+    ``track.terrain_heights``). A barometric altimeter
     drifts, and the profile drawn from it drew climbs that never happened.
     The boundary points lie on the stored line, so the drawn line does
     not change, and the legs' ``point_from``/``point_to`` index this list.

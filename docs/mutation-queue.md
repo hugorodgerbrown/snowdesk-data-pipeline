@@ -1,8 +1,8 @@
 ---
 name: mutation-queue
-description: Client mutation queue — window.pwaMutationQueue, queue:mutations, Idempotency-Key, backoff, offline drain guard, Background Sync, principal
+description: window.pwaMutationQueue, queue:mutations, Idempotency-Key, backoff, Background Sync, principal, mutations.ack, offline route save
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-30
 ---
 
 # Client mutation queue
@@ -57,6 +57,12 @@ queue with no call-site changes for any adopter.
   cap failure and the queued-save copy. (SNOW-649 retired the Playwright
   journey that used to sit here.)
 
+- **`static/js/route_draw.js`** (SNOW-1262) — the third consumer, and the
+  first whose caller needs to know on a LATER load what became of the row.
+  Saving a route drawn on the map (`apps.routes.views.route_create_drawn`,
+  a JSON body) goes through `enqueue()` when there is no signal. See
+  "Saving a drawn route offline" below.
+
 ### Drain → favourites refresh (SNOW-479)
 
 `drain()` dispatches a `snowdesk:favourites-changed` DOM event whenever a
@@ -67,6 +73,168 @@ replacing the whole feature set. The event is deliberately queue-neutral —
 it fires for *any* successful drain, not just favourite rows — so a
 report-only drain harmlessly triggers one cheap, eligible-gated favourites
 refetch rather than the queue needing to know which consumer owned each row.
+
+## Saving a drawn route offline (SNOW-1262)
+
+**Online stays the direct post.** The choice was between "enqueue, then
+drain at once" and "post directly online, enqueue only when the post gets
+no answer". The second keeps the online path exactly as it was — the same
+response in hand, so the panel closes, the map frames `bounds` and the
+toast says "Route saved." — and needs nothing from the queue but a key.
+The first would have had the caller wait on a drain it does not own (the
+in-flight guard can hand it a pass already running for other rows) and
+then read its own row's fate back out of IndexedDB. So:
+
+1. `route_draw.js` mints the key (`route_draw_core.js`'s `mintKey`) and
+   **tags the stored draft with it before anything is sent**, so the
+   draft and any row can never name different saves.
+2. Online, it posts to `routes:create_drawn` with that key as the
+   `Idempotency-Key` header. A 2xx clears the draft; any other answer
+   clears the tag (the server caches a 4xx against the key for 24 h, so the
+   next save must not send it again) and toasts as before.
+3. Offline, or when the post throws (no answer at all), it calls
+   `enqueue({…, idempotencyKey: key, kind: 'route-create'})` — the same
+   key, so a post that DID land is answered from the server's cache on
+   replay rather than creating a second route. The panel closes, the
+   routes panel lists "Waiting to sync" and the map draws the plain line.
+
+**The key is the caller's.** `enqueue()` takes an optional
+`idempotencyKey` (a non-empty string of at most 128 characters, the
+server's `MAX_KEY_LENGTH`; anything else is ignored and a key minted as
+before) and resolves to the row's key, or null when nothing was queued. A
+row with that key already in the store is not queued twice.
+
+**Durable completion, tab or no tab.** A row with a `kind` that replays
+successfully leaves an acknowledgement in `meta:app` **before** the row is
+deleted — written by both the page's `_processRow()` and the worker's
+`_selfDrainMutations()`:
+
+```js
+{ key: 'mutations.ack:<idempotency_key>', value: { kind, uuid, at } }
+```
+
+`uuid` is the response's `uuid` (the new route's). Acknowledgements are
+pruned after seven days (`ACK_TTL_MS`) by the page's load-time reconcile.
+On every load, and on every `pwa:mutation-queue-changed`, `route_draw.js`
+reads a tagged draft against the queue (`route_draw_core.js`'s
+`draftState`): acknowledged → clear the draft; row queued → still waiting
+(draw mode reopens locked, so no second copy can be queued); row failed →
+move the key to `failed` and make the draft editable; neither → keep the
+draft and its key, editable.
+
+**A re-save reuses the key only for the same body.** Beside the key the
+draft keeps `sent`, a fingerprint of the body sent under it
+(`route_draw_core.js`'s `bodyFingerprint`: FNV-1a over the
+`{points, name}` JSON). An unchanged draft re-saves under the same key, so
+inside the server's 24 h window it returns the route already made. A draft
+edited since — points or name — gets a new key at the next save, because
+`IdempotencyMiddleware` answers an old key with a different body with its
+reused-key 409. If the first post did land, the user ends up with the
+edited version as a second route, which is accepted (decided 30 Oct 2026).
+The panel's "This clashed with an earlier save" copy for that 409 stays as
+a fallback only.
+
+**The middleware's two 409s.** `apps/core/idempotency.py` answers a key it
+cannot run the view for in two ways, and they used to be the same bare
+`409`, so the client could not tell them apart:
+
+| Body | When | Queue |
+|------|------|-------|
+| `{"error": "idempotency_in_flight"}` | The key is RESERVED — the original request is still in the view (or the claim could not be settled). A post that timed out on the device but reached the server, or the other drain's replay of the same row. | **Retry** — `classifyStatus(409, …, 'idempotency_in_flight')`, in both drains. The next replay gets the original's cached answer. |
+| `{"error": "idempotency_key_reused"}` | The key was used for a different method, path, principal or body. | Permanent. |
+
+Failing the in-flight 409 showed "Couldn't sync" for a save that was in
+fact landing, and Edit's new key then saved it a second time. As a second
+guard, Edit (`route_draw.js`) and the routes panel both check for an
+acknowledgement before treating a failed row as failed: an acknowledged
+key is a route that exists, so the row is cleared rather than re-saved.
+
+**A drain never writes back a row that has gone.** The page's drain and
+the worker's (or two tabs') can hold the same row at once. A `put` is an
+upsert by id, so the loser's stale write-back used to re-create a row the
+winner had replayed and deleted — a ghost "Couldn't sync" or "Waiting to
+sync" for a route the server has. Both drains now check for an
+acknowledgement first (the winner writes it before deleting), then re-read
+the row and write it in ONE readwrite transaction (`pwaDb.readModifyWrite`
+on the page, the same get-then-put in `sw.js`'s `_writeBackMutation`),
+which the browser serialises across connections: absent means gone, and
+nothing is written, toasted or reported.
+
+**The 24 h window (accepted limit).** The server deduplicates a key for
+24 hours (`IDEMPOTENCY_RECORD_TTL_SECONDS`); a replay after that runs the
+view again. A duplicate is therefore possible only when an ONLINE post
+timed out on the device but did land, and the device then stayed offline
+for more than 24 hours before the queue replayed it. A save made entirely
+offline never reached the server, so its first replay is its only
+delivery and cannot duplicate. Accepted as a limit (30 Oct 2026); there is
+no age cap or UI for it.
+
+**Two more accepted edges.** A row whose key the server holds RESERVED
+(`idempotency_in_flight`) is retried with the queue's ordinary backoff, up
+to its attempt cap, before it fails — so such a row can read "Waiting to
+sync" for a long while. And while a stamped draft is hidden (no one signed
+in), a new line drawn in its place lives in memory only: it is lost if the
+visitor leaves to sign in before saving, because writing it would overwrite
+the hidden draft that belongs to someone else.
+
+**One draft slot.** Draw mode holds one draft, so while its save is queued
+the drawer cannot start another route — the panel opens on the queued line
+with every edit, Start over and Save disabled. Accepted (30 Oct 2026); a
+second slot would mean moving the draft out of `localStorage`, which this
+ticket left out of scope.
+
+**Failure detail is kept.** `nextRowState(row, outcome, now, detail)` takes
+the response's `{status, error}` (`failureDetail`: the endpoint's JSON
+`error`, bounded to 200 characters) and stamps `last_status` /
+`last_error` on a failed or rescheduled row, in both drains. The routes
+panel's "Couldn't sync" row reads them to tell a 400, a 409 at the cap
+(`route_limit_reached`), the reused-key 409 (`idempotency_key_reused`),
+a 403 — and a CSRF 403 (`csrf_failed`, read as an expired session; the
+save sends `Accept: application/json` so Django's failure view answers in
+JSON) — and a 404 apart. Edit takes the
+save back into the draft (`window.pwaRouteDraw.edit`, deleting the row);
+Discard deletes the row and its draft (`…discard`). A failed row otherwise
+waits for the user.
+
+**Account.** The draft is stamped with the signed-in account
+(`<meta name="pwa-user-id">`) and DESTROYED only when a different account
+is signed in. Signed out, a session that expired, or an account not yet
+known (IndexedDB missing or awaiting a reset, which `route_draw.js`'s
+`principal()` reads as `undefined`) leaves it stored untouched and hidden
+— not shown, not editable, not overwritten by a new drawing — and the
+load-time reconcile does nothing until the account is known
+(`draftState` → `'hidden'`). A draft stamped with no account (drawn signed
+out, or stored before this ticket) is adopted. A queued row is still cleared by the reconcile below
+on an account change; that reconcile now also **reports** a discarded
+route-create row by writing "A route drawn offline under another account
+was discarded." into `#mutation-queue-toast`. The worker's drain guard,
+which has no page to tell, writes `meta:app`
+`{key: 'mutations.discard-notice', value: {kinds, at}}` instead, and the
+next page load shows the same line and deletes the notice.
+
+## Reading the queue (SNOW-1262)
+
+Four additions to the frozen surface, nothing removed or changed:
+
+| Method | Returns |
+|--------|---------|
+| `list({kind})` | The CURRENT principal's rows (optionally of one `kind`), oldest first, as copies without `headers`: `{idempotency_key, kind, status, created_at, body, attempts, last_status, last_error}`. |
+| `acknowledged(key)` | The acknowledgement for that key (`{kind, uuid, at}`), or null. |
+| `discard(key)` | Deletes the current principal's row with that key; refreshes the badge. |
+| `principal()` | The principal a row is stamped with now (`null` when anonymous). |
+
+Every change to the set of rows — `enqueue`, a drain pass that touched a
+row, `discard`, `clear` — dispatches `pwa:mutation-queue-changed` on
+`document`. A drain that synced ≥1 row also dispatches
+`snowdesk:routes-changed` beside the favourites and reports events, with
+`{uploaded: true}` when a `route-create` row landed (map.js re-reads the
+layer later for the terrain, as after an upload). The
+`pwa:mutation-failed-permanent` event's detail gained `kind`,
+`idempotency_key`, `status` and `error`. The `pwa.mutation.enqueued`
+telemetry event no longer carries the operation's `body`, `headers` or
+`idempotencyKey`: a drawn route's body runs to thousands of points, past
+the telemetry receiver's 32 KiB batch cap, and the headers carry a CSRF
+token.
 
 ## Row shape (`queue:mutations`)
 
@@ -97,6 +265,15 @@ autoIncrement; no indexes — rows are filtered/ordered in memory over
   principal,             // <meta name="pwa-user-id"> value (or null for
                         // anonymous) at ENQUEUE time — see "Account-change
                         // partitioning" below (SNOW-462)
+  done_statuses,         // SNOW-1132 — codes that mean "already applied"
+  kind,                  // SNOW-1262 — a reader's name for the row
+                        // ('route-create'), or null; a successful replay
+                        // of a row with a kind leaves an acknowledgement
+  last_status,           // SNOW-1262 — the last response's HTTP status
+                        // (null for a network error); absent until the
+                        // first attempt
+  last_error,            // SNOW-1262 — the last response's JSON `error`,
+                        // at most 200 characters, or null
 }
 ```
 
@@ -106,6 +283,7 @@ autoIncrement; no indexes — rows are filtered/ordered in memory over
 |------------------------------------|-------------------------------------------------------------------|
 | 2xx                                | Success — row deleted; counts toward the drain's reported count. |
 | `{408, 429}`, any 5xx, network error | Retry — `attempts += 1`, `next_attempt_at = now + backoff(attempts)`, `status = 'retry-scheduled'`. |
+| 409 `{"error": "idempotency_in_flight"}` (SNOW-1262) | Retry, as above — `core/idempotency.py`'s original request with this key is still in the view. |
 | Any other 4xx (400/401/403/404/409/410/422/…) | Permanent failure on the FIRST attempt — `attempts += 1` (the attempt that just failed), `status = 'failed'`, no further retry. |
 | A code the mutation declared in `doneStatuses` (SNOW-1132) | Success — delete the row, ahead of every rule above. The downloads `forget` and `rename` writes declare 404: the account row is already gone, which is the outcome asked for. |
 | Retry count reaches `MAX_ATTEMPTS` (20) without a 2xx | Permanent failure — `status = 'failed'`, same as above. |
@@ -354,7 +532,10 @@ relying entirely on the page-lifecycle drain triggers above instead.
 |------|------|
 | `static/js/mutation_queue_core.js` | Pure backoff/classification/eligibility helpers, shared by the page and the SW (`self.pwaMutationQueueCore`). |
 | `static/js/mutation_queue.js` | `window.pwaMutationQueue` — enqueue/drain/markFailed/clear, principal reconcile-on-load + drain-guard, lifecycle triggers, toast + badge wiring, Background Sync registration. |
-| `static/js/sw.js` | `sync` event listener — delegate-to-tab or self-drain, plus the best-effort principal discard guard. |
+| `static/js/sw.js` | `sync` event listener — delegate-to-tab or self-drain, plus the best-effort principal discard guard; writes the acknowledgement and the discard notice (SNOW-1262). |
+| `static/js/route_draw.js` / `route_draw_core.js` | SNOW-1262 — the drawn-route save, the draft's key tag and account stamp, the load-time reconcile. |
+| `static/js/routes.js` | SNOW-1262 — the "Waiting to sync" / "Couldn't sync" rows (`paintPending`). |
+| `static/js/map.js` | SNOW-1262 — the queued route's plain line, merged into the `routes` source. |
 | `static/js/sw_register.js` | `drain-mutations` message bridge (tab-open fast path). |
 | `templates/includes/_toast_banner.html` | Full-width top-of-page permanent-failure toast. |
 | `templates/includes/nav.html` | `[data-sync-badge]` pill. |
@@ -385,7 +566,17 @@ live in their own files —
 whichever `#mutation-queue-toast` element is in the DOM at that moment, so
 the fixture has to be built before the import.
 `tests/templates/includes/test_toast_banner.py`
-covers the toast partial's render contract. `tests/js/test_report_panel.js` +
+covers the toast partial's render contract.
+SNOW-1262's additions: `test_mutation_queue_route_create.js` (caller key,
+`list`, the page drain's acknowledgement, persisted status/error, `discard`,
+the events), `test_mutation_queue_route_discarded.js` and
+`test_mutation_queue_route_discard_notice.js` (the discard toast, from the
+reconcile and from the worker's notice), `test_sw.js` (the worker drain's
+acknowledgement, status/error and notice), `test_route_draw_offline.js`
+(the draft tag and the row sharing one key, one enqueue, re-entry locked,
+the reconciles, Edit/Discard, the online path), `test_routes_panel_pending.js`
+and `test_map_routes_queued_line.js`; server-side,
+`tests/routes/test_drawn_views.py::TestCreateDrawnReplay`. `tests/js/test_report_panel.js` +
 `test_report_forced_offline.js` (SNOW-420) and `tests/js/test_favourites.js` +
 `test_favourites_forced_offline.js` (SNOW-479) cover the
 real consumers: an offline tap enqueues with no network

@@ -130,9 +130,10 @@ guide link. On the map, the tour is drawn in a slot of its own (map.js
 **The terrain is sampled once per tour, ahead of time, and kept on the
 tour.** Walking the terrain grid under a 10 km line takes several seconds,
 which is too long for a tap. Since SNOW-1288 every tour is walked before
-anyone opens it: `backfill_ski_tour_slope_samples` runs nightly as the
-third pass of `reconcile_slope_samples` and walks every tour in
-`tours_to_sample()`, storing the result in `SkiTour.slope_samples`. So a
+anyone opens it. Since SNOW-1316 the reference-data service walks and
+draws each tour once, on `SourceSkiTour` (`render_ski_tours`, daily), and
+every instance copies the walk and the drawing into `SkiTour` from the v2
+`ski-tours` feed ([pure-track-maths-is-a-package](pure-track-maths-is-a-package.md)). So a
 tour opens with its profile at once, as a saved route does, and every
 saved copy inherits the record without sampling again. A sync that
 rewrites the tour clears it, and the next night's run walks it again. A

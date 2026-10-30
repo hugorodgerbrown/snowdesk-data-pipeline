@@ -86,6 +86,31 @@
  *                                  available to any other caller that
  *                                  needs to discard the whole queue.
  *
+ * SNOW-1262 added four, without changing any of the above (the surface is
+ * frozen — additive changes only):
+ *
+ *   list({kind})                  The current principal's rows, optionally
+ *                                  of one ``kind``, as plain copies (no
+ *                                  headers): ``{idempotency_key, kind,
+ *                                  status, created_at, body, attempts,
+ *                                  last_status, last_error}``.
+ *   acknowledged(key)             The acknowledgement a successful replay
+ *                                  of the row with this Idempotency-Key
+ *                                  left (``{kind, uuid, at}``), or null.
+ *   discard(key)                  Delete the current principal's row with
+ *                                  this Idempotency-Key, refresh the badge.
+ *   principal()                   The current principal, as stamped on a
+ *                                  row (``null`` for anonymous).
+ *
+ * and ``enqueue`` takes two optional fields and resolves to the key:
+ * ``idempotencyKey`` (the caller's own key, used instead of a minted one,
+ * so a caller can tag its own state with it BEFORE the row exists) and
+ * ``kind`` (a short name — ``'route-create'`` — a reader filters on, and
+ * which makes a successful replay leave an acknowledgement in ``meta:app``;
+ * see docs/mutation-queue.md). Every change to the set of rows — enqueue,
+ * a drain pass, discard, clear — dispatches ``pwa:mutation-queue-changed``
+ * on ``document``, so a surface listing rows can re-read them.
+ *
  * ``operation`` is caller-supplied metadata describing the mutation (e.g.
  * ``{method: 'POST', url: '/account/', headers: {...}, body: '...'}``).
  * Callers must not include any of the PII keys the server-side telemetry
@@ -149,6 +174,8 @@
   var TOAST_AUTO_DISMISS_MS = 10 * 1000;
 
   var TOAST_ID = 'mutation-queue-toast';
+  // The event every change to the set of rows raises (SNOW-1262).
+  var CHANGED_EVENT = 'pwa:mutation-queue-changed';
   var BADGE_SELECTOR = '[data-sync-badge]';
 
   // Matches _toast_banner.html's `duration-300` Tailwind class. The
@@ -246,6 +273,53 @@
     }
   }
 
+  /**
+   * SNOW-1262: whether a caller-supplied key is one the server will take —
+   * a non-empty string no longer than core/idempotency.py's
+   * ``MAX_KEY_LENGTH`` (128). Anything else is ignored and a key minted.
+   * @param {*} key
+   * @returns {boolean}
+   */
+  function _isUsableKey(key) {
+    return typeof key === 'string' && key.length > 0 && key.length <= 128;
+  }
+
+  /**
+   * SNOW-1262: tell any surface listing rows that the set has changed.
+   * Queue-neutral, like the drain's own announcements: the reader filters.
+   */
+  function _announceChanged() {
+    try {
+      document.dispatchEvent(new CustomEvent(CHANGED_EVENT));
+    } catch (_e) {
+      // Non-fatal.
+    }
+  }
+
+  // The toast's English copy (SNOW-1262): the fallback for the strings
+  // ``<template>`` ``includes/_toast_banner.html`` renders, and the copy
+  // itself on a page that loads no ``i18n_strings.js``.
+  var TOAST_FALLBACKS = {
+    failed: "Some changes couldn't be saved and won't be retried.",
+    'route-discarded': 'A route drawn offline under another account was discarded.',
+  };
+
+  /**
+   * The toast's translated copy, read on use rather than at load —
+   * ``i18n_strings.js`` is a deferred script like this one.
+   * @returns {{failed: string, 'route-discarded': string}}
+   */
+  function _strings() {
+    try {
+      if (self.pwaStrings) {
+        return self.pwaStrings.read('mutation-queue-strings-template', TOAST_FALLBACKS);
+      }
+    } catch (_e) {
+      // Fall through to the English copy.
+    }
+    return TOAST_FALLBACKS;
+  }
+
   // -------------------------------------------------------------------
   // Toast (full-width, top-of-page — templates/includes/_toast_banner.html)
   // -------------------------------------------------------------------
@@ -286,11 +360,19 @@
    * the browser doesn't collapse the ``hidden``-removal and the
    * transform/opacity flip into the same frame (which would skip the
    * transition entirely), then flip the transform/opacity classes.
+   *
+   * SNOW-1262: the same banner carries a second message — a route drawn
+   * offline under another account was discarded — so the body is written
+   * on every reveal, the failure line by default.
+   *
+   * @param {string} [message] The line to show; the failure line if omitted.
    */
-  function _revealToast() {
+  function _revealToast(message) {
     try {
       var el = _toastEl();
       if (!el) return;
+      var body = el.querySelector('[data-toast-body]');
+      if (body) body.textContent = message || _strings().failed;
       // A reveal always wins over an in-progress dismiss.
       _cancelToastHideTransition(el);
       el.classList.remove('hidden');
@@ -456,7 +538,9 @@
     // through it.
     var updated = Object.assign({}, row, { status: 'failed' });
     try {
-      await window.pwaDb.put(STORE, updated);
+      // SNOW-1262: not if the other drain has already landed it — then
+      // there is no failure to report.
+      if (!(await _writeBack(updated))) return false;
     } catch (_e) {
       // Non-fatal — still surface the failure below even if the write
       // itself couldn't be persisted.
@@ -475,7 +559,16 @@
     try {
       document.dispatchEvent(
         new CustomEvent('pwa:mutation-failed-permanent', {
-          detail: { method: row.method, url: row.url, reason: reason },
+          // SNOW-1262 added the row's kind, key and what the server said.
+          detail: {
+            method: row.method,
+            url: row.url,
+            reason: reason,
+            kind: row.kind || null,
+            idempotency_key: row.idempotency_key,
+            status: updated.last_status === undefined ? null : updated.last_status,
+            error: updated.last_error === undefined ? null : updated.last_error,
+          },
         }),
       );
     } catch (_e) {
@@ -483,16 +576,48 @@
     }
     _revealToast();
     _updateBadge().catch(function () {});
+    return true;
+  }
+
+  /**
+   * Write a replayed row back — rescheduled or failed — unless it has gone
+   * meanwhile (SNOW-1262).
+   *
+   * Two drains can hold the same row: this page's and the service worker's
+   * (or another tab's). A ``put`` is an upsert by id, so a drain that read
+   * the row, lost the race and wrote its stale answer back RE-CREATED a row
+   * the winner had already replayed and deleted — a ghost "failed" or
+   * "waiting" route the server already has. So the acknowledgement is
+   * checked first (the winner writes it before deleting), and then the row
+   * is re-read and written in ONE readwrite transaction (``readModifyWrite``),
+   * which the browser serialises against every other connection: absent
+   * means gone, and nothing is written.
+   *
+   * @param {object} row The row to write.
+   * @returns {Promise<boolean>} Whether it was written.
+   */
+  async function _writeBack(row) {
+    if (row.idempotency_key && (await acknowledged(row.idempotency_key))) return false;
+    var written = false;
+    await window.pwaDb.readModifyWrite(STORE, row.id, function (current) {
+      if (current === undefined) return undefined;
+      written = true;
+      return row;
+    });
+    return written;
   }
 
   /**
    * Replay one eligible row. Returns
-   * ``'success' | 'failed' | 'retry' | 'discarded'`` describing the
+   * ``'success' | 'failed' | 'retry' | 'discarded' | 'gone'`` describing the
    * outcome so ``drain()`` can count real successes — a ``'discarded'``
    * row never left this device, so it must not count as either.
    *
+   * ``'gone'`` (SNOW-1262): another drain replayed and deleted the row
+   * while this one was waiting on its answer; nothing was written back.
+   *
    * @param {object} row
-   * @returns {Promise<'success'|'failed'|'retry'|'discarded'>}
+   * @returns {Promise<'success'|'failed'|'retry'|'discarded'|'gone'>}
    */
   async function _processRow(row) {
     // SNOW-462 drain-guard: the row's enqueue-time principal must still
@@ -512,6 +637,8 @@
         idempotency_key: row.idempotency_key,
         reason: 'principal_mismatch',
       });
+      // SNOW-1262: a discarded route is work the user believes they did.
+      _tellDiscarded([row]);
       return 'discarded';
     }
 
@@ -529,31 +656,62 @@
     });
 
     var outcome;
+    var status = null;
+    var body = null;
     try {
       var response = await fetch(row.url, {
         method: row.method,
         headers: headers,
         body: row.body != null ? row.body : undefined,
       });
-      outcome = core.classifyStatus(response.status, row.done_statuses);
+      status = response.status;
+      // SNOW-1262: read for three things — a created route's uuid (the
+      // acknowledgement below), a refusal's ``error`` (kept on the row),
+      // and the idempotency middleware's in-flight 409, which is a retry.
+      body = await response.json().catch(function () {
+        return null;
+      });
+      outcome = core.classifyStatus(
+        response.status,
+        row.done_statuses,
+        body && typeof body.error === 'string' ? body.error : null,
+      );
     } catch (_networkErr) {
       outcome = 'retry';
     }
 
     // SNOW-617: the transition itself is core's, not this file's — see
     // `nextRowState`. This function keeps only the IO around it.
-    var transition = core.nextRowState(row, outcome, Date.now());
+    // SNOW-1262: with the response's status and error recorded on the row.
+    var now = Date.now();
+    var transition = core.nextRowState(
+      row,
+      outcome,
+      now,
+      core.failureDetail ? core.failureDetail(status, body) : undefined,
+    );
 
     if (transition.action === 'delete') {
+      // SNOW-1262: acknowledge BEFORE deleting, so no reader ever finds
+      // neither the row nor its acknowledgement — "never sent" — for a
+      // mutation that landed. The worker's drain does the same.
+      var ack = core.ackRecord ? core.ackRecord(row, body, now) : null;
+      if (ack) {
+        try {
+          await window.pwaDb.put('meta:app', ack);
+        } catch (_e) {
+          // Non-fatal: the reader falls back to "keep the draft and its
+          // key", and the server's 24 h replay window covers a re-save.
+        }
+      }
       await window.pwaDb.delete(STORE, row.id);
       return 'success';
     }
     if (transition.action === 'fail') {
-      await _markRowFailed(transition.row, transition.reason);
-      return 'failed';
+      // SNOW-1262: a row the other drain landed meanwhile is neither.
+      return (await _markRowFailed(transition.row, transition.reason)) ? 'failed' : 'gone';
     }
-    await window.pwaDb.put(STORE, transition.row);
-    return 'retry';
+    return (await _writeBack(transition.row)) ? 'retry' : 'gone';
   }
 
   // -------------------------------------------------------------------
@@ -566,21 +724,38 @@
    * Sync registration for the offline/tab-closed case.
    *
    * @param {object} [operation] Caller-supplied mutation descriptor:
-   *   ``{method, url, headers, body, doneStatuses}``. ``method`` defaults
-   *   to ``'POST'``. SNOW-1132: ``doneStatuses`` is an optional list of
-   *   response codes that mean the mutation is already applied (a 404 on
-   *   a delete); the drain treats them as success.
-   * @returns {Promise<void>}
+   *   ``{method, url, headers, body, doneStatuses, idempotencyKey, kind}``.
+   *   ``method`` defaults to ``'POST'``. SNOW-1132: ``doneStatuses`` is an
+   *   optional list of response codes that mean the mutation is already
+   *   applied (a 404 on a delete); the drain treats them as success.
+   *   SNOW-1262: ``idempotencyKey`` is the caller's own key (minted here
+   *   when absent or unusable); a row with that key already queued is not
+   *   queued twice. ``kind`` names what the row is for a reader of
+   *   ``list()``, and makes a successful replay leave an acknowledgement.
+   * @returns {Promise<?string>} The row's Idempotency-Key, or null when
+   *   nothing was queued (no IndexedDB, or Reset Required). Callers from
+   *   before SNOW-1262 ignore it.
    */
   async function enqueue(operation) {
     var op = operation || {};
-    emitTelemetry('pwa.mutation.enqueued', op);
+    // SNOW-1262: the body and headers stay out of the event. A drawn
+    // route's body runs to thousands of points — past the telemetry
+    // receiver's 32 KiB batch cap — and the headers carry a CSRF token.
+    emitTelemetry('pwa.mutation.enqueued', _telemetryProps(op));
     try {
       if (typeof window.pwaDb !== 'object' || window.pwaDb.isResetRequired()) {
-        return;
+        return null;
+      }
+      var key = _isUsableKey(op.idempotencyKey) ? op.idempotencyKey : _mintIdempotencyKey();
+      if (_isUsableKey(op.idempotencyKey)) {
+        var existing = (await window.pwaDb.getAll(STORE)) || [];
+        var already = existing.some(function (r) {
+          return r.idempotency_key === key;
+        });
+        if (already) return key;
       }
       var row = {
-        idempotency_key: _mintIdempotencyKey(),
+        idempotency_key: key,
         method: (op.method || 'POST').toUpperCase(),
         url: op.url,
         headers: op.headers || {},
@@ -591,16 +766,35 @@
         next_attempt_at: Date.now(),
         principal: _currentPrincipal(),
         done_statuses: Array.isArray(op.doneStatuses) ? op.doneStatuses.slice() : [],
+        kind: typeof op.kind === 'string' && op.kind ? op.kind : null,
       };
       await window.pwaDb.put(STORE, row);
       await _updateBadge();
+      _announceChanged();
       if (_networkInUse()) {
         drain().catch(function () {});
       }
       _registerBackgroundSync();
+      return key;
     } catch (_e) {
       // Non-fatal — enqueue must never throw for the caller.
+      return null;
     }
+  }
+
+  /**
+   * The enqueue event's properties: the operation minus its body, headers
+   * and key (SNOW-1262 — see ``enqueue``).
+   * @param {object} op
+   * @returns {object}
+   */
+  function _telemetryProps(op) {
+    var props = {};
+    Object.keys(op).forEach(function (name) {
+      if (name === 'body' || name === 'headers' || name === 'idempotencyKey') return;
+      props[name] = op[name];
+    });
+    return props;
   }
 
   /**
@@ -623,6 +817,8 @@
     if (_drainInFlight) return _drainInFlight;
     _drainInFlight = (async () => {
       var drained = 0;
+      var touched = 0;
+      var routesLanded = false;
       try {
         if (typeof window.pwaDb !== 'object' || window.pwaDb.isResetRequired()) {
           return;
@@ -648,7 +844,11 @@
           // Sequential, not parallel — keeps replay order stable and
           // avoids concurrent writes to the same store racing each other.
           var result = await _processRow(row);
-          if (result === 'success') drained += 1;
+          touched += 1;
+          if (result === 'success') {
+            drained += 1;
+            if (row.kind === 'route-create') routesLanded = true;
+          }
         }
       } catch (_e) {
         // Non-fatal — a drain failure must never break the caller.
@@ -670,13 +870,22 @@
         // cheap refetch and never a wrong picture. Matching would mean
         // teaching the queue what its rows mean, which is the coupling the
         // queue exists to avoid.
+        //
+        // SNOW-1262: and the routes one, so a route drawn offline turns from
+        // the panel's "Waiting to sync" row and the map's plain line into
+        // the route itself. Fired, like the other two, for any successful
+        // drain; flagged as an upload only when a route-create row landed,
+        // because that is the one write map.js re-reads later for its
+        // terrain (see routes.js's announceRoutesChanged).
         if (drained > 0) {
           for (const name of [
             'snowdesk:favourites-changed',
             'snowdesk:reports-changed',
+            'snowdesk:routes-changed',
           ]) {
             try {
-              document.dispatchEvent(new CustomEvent(name));
+              var detail = name === 'snowdesk:routes-changed' && routesLanded ? { uploaded: true } : null;
+              document.dispatchEvent(new CustomEvent(name, { detail: detail }));
             } catch (_e2) {
               // Non-fatal — the drain itself already succeeded.
             }
@@ -684,6 +893,7 @@
         }
         _drainInFlight = null;
         _updateBadge().catch(function () {});
+        if (touched > 0) _announceChanged();
       }
     })();
     return _drainInFlight;
@@ -723,8 +933,137 @@
       }
       await window.pwaDb.clear(STORE);
       await _updateBadge();
+      _announceChanged();
     } catch (_e) {
       // Non-fatal — clear() must never throw for the caller.
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // SNOW-1262: reading the queue, and the acknowledgements it leaves.
+  // -------------------------------------------------------------------
+
+  /**
+   * The current principal's rows, optionally of one kind, as plain copies
+   * without their headers (which carry a CSRF token no reader needs).
+   * Principal-scoped like every other read of user data on the device: a
+   * row another account queued is never listed, even in the moment before
+   * the reconcile discards it.
+   *
+   * @param {{kind?: string}} [filter]
+   * @returns {Promise<Array<object>>} Oldest first; empty on any failure.
+   */
+  async function list(filter) {
+    try {
+      if (typeof window.pwaDb !== 'object' || window.pwaDb.isResetRequired()) return [];
+      var kind = filter && filter.kind;
+      var principal = _currentPrincipal();
+      var rows = (await window.pwaDb.getAll(STORE)) || [];
+      return rows
+        .filter(function (r) {
+          return r.principal === principal && (!kind || r.kind === kind);
+        })
+        .map(function (r) {
+          return {
+            idempotency_key: r.idempotency_key,
+            kind: r.kind || null,
+            status: r.status,
+            created_at: r.created_at,
+            body: r.body,
+            attempts: r.attempts,
+            last_status: r.last_status === undefined ? null : r.last_status,
+            last_error: r.last_error === undefined ? null : r.last_error,
+          };
+        });
+    } catch (_e) {
+      return [];
+    }
+  }
+
+  /**
+   * The acknowledgement the successful replay of ``key``'s row left, or
+   * null — never replayed, not a ``kind`` row, pruned, or unreadable.
+   *
+   * @param {string} key An Idempotency-Key.
+   * @returns {Promise<?{kind: string, uuid: ?string, at: number}>}
+   */
+  async function acknowledged(key) {
+    try {
+      if (!key || typeof window.pwaDb !== 'object' || window.pwaDb.isResetRequired()) return null;
+      var prefix = window.pwaMutationQueueCore ? window.pwaMutationQueueCore.ACK_KEY_PREFIX : 'mutations.ack:';
+      var record = await window.pwaDb.get('meta:app', prefix + key);
+      return record && record.value ? record.value : null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  /**
+   * Delete the current principal's row with this key — the user throwing
+   * away a mutation that failed for good — and refresh the badge.
+   *
+   * @param {string} key An Idempotency-Key.
+   * @returns {Promise<boolean>} Whether a row was deleted.
+   */
+  async function discard(key) {
+    try {
+      if (!key || typeof window.pwaDb !== 'object' || window.pwaDb.isResetRequired()) return false;
+      var principal = _currentPrincipal();
+      var rows = (await window.pwaDb.getAll(STORE)) || [];
+      var gone = false;
+      for (const r of rows) {
+        if (r.idempotency_key !== key || r.principal !== principal) continue;
+        await window.pwaDb.delete(STORE, r.id);
+        gone = true;
+      }
+      if (gone) {
+        await _updateBadge();
+        _announceChanged();
+      }
+      return gone;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  /**
+   * Tell the user that rows they were waiting on were discarded because
+   * the account changed (SNOW-1262). Only a route drawn offline has a line
+   * of its own today; any other kind is the queue's business alone.
+   *
+   * @param {Array<object>} rows The discarded rows (or ``{kind}`` stubs).
+   */
+  function _tellDiscarded(rows) {
+    var routes = rows.some(function (r) {
+      return r && r.kind === 'route-create';
+    });
+    if (routes) _revealToast(_strings()['route-discarded']);
+  }
+
+  /**
+   * Show, then delete, the notice the worker's drain guard leaves when it
+   * discards a ``kind`` row with no page open (SNOW-1262), and prune every
+   * acknowledgement past its week.
+   *
+   * @returns {Promise<void>}
+   */
+  async function _readNoticesAndPrune() {
+    var core = window.pwaMutationQueueCore;
+    if (!core) return;
+    var records = (await window.pwaDb.getAll('meta:app')) || [];
+    var now = Date.now();
+    for (const record of records) {
+      if (record.key === core.DISCARD_NOTICE_KEY) {
+        var kinds = (record.value && record.value.kinds) || [];
+        _tellDiscarded(
+          kinds.map(function (k) {
+            return { kind: k };
+          }),
+        );
+        await window.pwaDb.delete('meta:app', record.key);
+      } else if (core.ackExpired(record, now)) {
+        await window.pwaDb.delete('meta:app', record.key);
+      }
     }
   }
 
@@ -762,6 +1101,10 @@
       if (typeof window.pwaDb !== 'object' || window.pwaDb.isResetRequired()) {
         return;
       }
+      // SNOW-1262: the worker's discard notice and the week-old
+      // acknowledgements first — independent of whether the principal
+      // moved, and best effort.
+      await _readNoticesAndPrune().catch(function () {});
       var current = _currentPrincipal();
       var stored = await window.pwaDb.get('meta:app', 'mutations.principal');
       var wasUninitialised = stored === undefined;
@@ -776,6 +1119,9 @@
           count: rows.length,
           reason: wasUninitialised ? 'principal_uninitialised' : 'account_change',
         });
+        // SNOW-1262: an account change always involves a page load, so this
+        // is where the user hears that a route they drew offline went.
+        _tellDiscarded(rows);
       }
       await window.pwaDb.put('meta:app', { key: 'mutations.principal', value: current });
     } catch (_e) {
@@ -861,7 +1207,17 @@
   }
 
   Object.defineProperty(window, 'pwaMutationQueue', {
-    value: Object.freeze({ enqueue, drain, markFailed, clear }),
+    value: Object.freeze({
+      enqueue,
+      drain,
+      markFailed,
+      clear,
+      // SNOW-1262 — additive.
+      list,
+      acknowledged,
+      discard,
+      principal: _currentPrincipal,
+    }),
     writable: false,
     configurable: false,
   });

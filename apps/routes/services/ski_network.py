@@ -32,7 +32,7 @@ import datetime as dt
 import logging
 import uuid
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
 from django.db import transaction
@@ -45,6 +45,7 @@ from apps.ingest.public import (
     SourceSkiSegment,
     SourceSkiTour,
     serialise_source_document,
+    serialise_source_ski_tour,
 )
 from apps.routes.models import SkiSegment, SkiTour
 from apps.routes.services.track_render import cleared_terrain
@@ -69,6 +70,12 @@ _MODELS: dict[str, type[SkiSegment] | type[SkiTour]] = {
 _SOURCE_MODELS: dict[str, type[SourceSkiSegment] | type[SourceSkiTour]] = {
     SKI_NETWORK: SourceSkiSegment,
     SKI_TOURS: SourceSkiTour,
+}
+# How the host's own apply reads a service row: as the v2 feed serves it,
+# so a tour carries its walk and drawing (SNOW-1316).
+_SERIALISERS: dict[str, Callable[[Any], dict[str, Any]]] = {
+    SKI_NETWORK: serialise_source_document,
+    SKI_TOURS: serialise_source_ski_tour,
 }
 
 # How many service rows the host's own apply reads at a time.
@@ -128,11 +135,23 @@ def _tour_values(document: dict[str, Any]) -> dict[str, Any]:
         "target_altitude_m": document.get("target_altitude_m"),
         "urls": document.get("urls") or {},
         "source": str(document.get("source") or "")[:64],
-        # A rewritten tour may have a new line: the terrain under the old
-        # one is sampled afresh the next time it is opened (SNOW-1278).
-        # Both together, through the one rule (SNOW-1309).
-        **cleared_terrain(),
     }
+
+
+def _tour_terrain(item: dict[str, Any]) -> dict[str, Any]:
+    """Return the walk and drawing the service made of a tour (SNOW-1316).
+
+    Copied as served, never computed here: the service walks every tour
+    once and this instance draws what it was given. An item without them
+    — a tour the service has not rendered yet, or one whose line has just
+    changed — clears both, through the one rule (SNOW-1309), and the tour
+    is drawn as SAC's own line until the service has walked it.
+    """
+    render = item.get("track_render")
+    record = item.get("slope_samples")
+    if not isinstance(render, dict) or not isinstance(record, dict):
+        return cleared_terrain()
+    return {"slope_samples": record, "track_render": render}
 
 
 def _values(kind: str, item: dict[str, Any]) -> dict[str, Any]:
@@ -150,7 +169,9 @@ def _values(kind: str, item: dict[str, Any]) -> dict[str, Any]:
     west, south, east, north = bbox_of(geometry)
     try:
         values = (
-            _segment_values(document) if kind == SKI_NETWORK else _tour_values(document)
+            _segment_values(document)
+            if kind == SKI_NETWORK
+            else {**_tour_values(document), **_tour_terrain(item)}
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise SkiItemError(f"malformed document: {exc}") from exc
@@ -286,7 +307,7 @@ def _service_pages(
         rows = rows.filter(updated_at__gte=since)
     chunk: list[dict[str, Any]] = []
     for row in rows.iterator(chunk_size=APPLY_CHUNK):
-        chunk.append(serialise_source_document(row))
+        chunk.append(_SERIALISERS[kind](row))
         if len(chunk) == APPLY_CHUNK:
             yield chunk
             chunk = []

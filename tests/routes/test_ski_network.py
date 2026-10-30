@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 from django.utils import timezone
 
-from apps.ingest.public import serialise_source_document
+from apps.ingest.public import serialise_source_document, serialise_source_ski_tour
 from apps.routes.models import SkiSegment, SkiTour
 from apps.routes.services.ski_network import (
     ABSENT,
@@ -229,3 +229,36 @@ def test_a_rewritten_tour_forgets_its_terrain() -> None:
     tour = SkiTour.objects.get()
     assert tour.slope_samples is None
     assert tour.track_render is None
+
+
+def test_a_tour_takes_the_walk_and_drawing_the_service_made() -> None:
+    """SNOW-1316: copied as served, on create and on an incremental pull."""
+    source = SourceSkiTourFactory.create(
+        slope_samples={"segments": []}, track_render={"v": 1, "legs": []}
+    )
+    apply_ski_items("ski-tours", [serialise_source_ski_tour(source)], commit=True)
+    tour = SkiTour.objects.get()
+    assert tour.slope_samples == {"segments": []}
+    assert tour.track_render == {"v": 1, "legs": []}
+
+    item = serialise_source_ski_tour(source)
+    item["track_render"] = {"v": 1, "legs": [{"climbing": True}]}
+    item["updated_at"] = (timezone.now() + dt.timedelta(days=1)).isoformat()
+    assert apply_ski_items("ski-tours", [item], commit=True)[UPDATED] == 1
+    tour.refresh_from_db()
+    assert tour.track_render == {"v": 1, "legs": [{"climbing": True}]}
+
+
+def test_a_tour_the_service_has_not_drawn_holds_neither() -> None:
+    """A drawing without its walk is not taken: both or neither (SNOW-1309)."""
+    source = SourceSkiTourFactory.create(track_render={"v": 1})
+    apply_ski_items("ski-tours", [serialise_source_ski_tour(source)], commit=True)
+    tour = SkiTour.objects.get()
+    assert (tour.slope_samples, tour.track_render) == (None, None)
+
+
+def test_the_service_host_applies_its_own_tours_drawing() -> None:
+    """The host's own apply reads a tour as the feed serves it."""
+    SourceSkiTourFactory.create(slope_samples={"segments": []}, track_render={"v": 1})
+    apply_from_service(commit=True)
+    assert SkiTour.objects.get().track_render == {"v": 1}

@@ -164,6 +164,10 @@ describe('the stored draft', () => {
       points: [[7, 46], [7, 46.001], [7, 46.002]],
       name: 'Mont Fort',
       taps: [0, 2],
+      key: null,
+      failed: null,
+      principal: null,
+      sent: null,
     });
   });
 
@@ -186,6 +190,150 @@ describe('the stored draft', () => {
   });
 
   it('keeps a draft whose name is missing', () => {
-    expect(core.parseDraft('{"v":1,"points":[[7,46]]}')).toEqual({ points: [[7, 46]], name: '', taps: [0] });
+    expect(core.parseDraft('{"v":1,"points":[[7,46]]}')).toEqual({
+      points: [[7, 46]],
+      name: '',
+      taps: [0],
+      key: null,
+      failed: null,
+      principal: null,
+      sent: null,
+    });
+  });
+});
+
+describe('the draft tag and the account stamp (SNOW-1262)', () => {
+  const POINTS = [[7, 46], [7, 46.001]];
+
+  it('round-trips the save key, a failed key and the account', () => {
+    const raw = core.serialiseDraft(POINTS, 'Mont Fort', [0, 1], {
+      key: 'k-1',
+      failed: 'k-0',
+      principal: 'account-uuid',
+    });
+
+    expect(core.parseDraft(raw)).toMatchObject({ key: 'k-1', failed: 'k-0', principal: 'account-uuid' });
+  });
+
+  it('stores no tag for an untagged, anonymous draft', () => {
+    const value = JSON.parse(core.serialiseDraft(POINTS, '', [0, 1], { key: null, principal: null }));
+
+    expect(Object.keys(value).sort()).toEqual(['name', 'points', 'taps', 'v']);
+  });
+});
+
+describe('the save as a queued operation (SNOW-1262)', () => {
+  it('posts the points and name as JSON, with the CSRF token and the draft key', () => {
+    const op = core.createOperation('/routes/drawn/', 'csrf', [[7, 46], [7, 46.001]], 'Mont Fort', 'k-1');
+
+    expect(op).toEqual({
+      method: 'POST',
+      url: '/routes/drawn/',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRFToken': 'csrf' },
+      body: JSON.stringify({ points: [[7, 46], [7, 46.001]], name: 'Mont Fort' }),
+      idempotencyKey: 'k-1',
+      kind: core.ROUTE_CREATE_KIND,
+    });
+    expect(core.ROUTE_CREATE_KIND).toBe('route-create');
+  });
+
+  it('mints a different key every time', () => {
+    const a = core.mintKey();
+
+    expect(typeof a).toBe('string');
+    expect(a).not.toBe(core.mintKey());
+  });
+
+  it('frames a list of points', () => {
+    expect(core.pointsBounds([[7, 46.1], [7.2, 46], [7.1, 46.3]])).toEqual([7, 46, 7.2, 46.3]);
+    expect(core.pointsBounds([])).toBeNull();
+  });
+});
+
+describe('what a stored draft is now (SNOW-1262)', () => {
+  const tagged = { key: 'k', principal: 'me' };
+
+  it('is nothing without a draft', () => {
+    expect(core.draftState(null, 'me', null, null)).toBe('none');
+  });
+
+  it("is another account's only when a DIFFERENT account is signed in", () => {
+    expect(core.draftState(tagged, 'someone-else', null, null)).toBe('foreign');
+  });
+
+  it('is hidden, not discarded, signed out or before the account is known', () => {
+    expect(core.draftState(tagged, null, null, null)).toBe('hidden');
+    expect(core.draftState(tagged, undefined, null, { uuid: 'u' })).toBe('hidden');
+  });
+
+  it("is the signed-in account's when stamped for no one", () => {
+    expect(core.draftState({ key: null, principal: null }, 'me', null, null)).toBe('draft');
+  });
+
+  it('has landed once its key is acknowledged, row or no row', () => {
+    expect(core.draftState(tagged, 'me', null, { uuid: 'u' })).toBe('landed');
+  });
+
+  it('is queued while its row waits, and failed once the row is refused', () => {
+    expect(core.draftState(tagged, 'me', { status: 'queued' }, null)).toBe('queued');
+    expect(core.draftState(tagged, 'me', { status: 'retry-scheduled' }, null)).toBe('queued');
+    expect(core.draftState(tagged, 'me', { status: 'failed' }, null)).toBe('failed');
+  });
+
+  it('is unsent — kept, with its key — when there is neither row nor acknowledgement', () => {
+    expect(core.draftState(tagged, 'me', null, null)).toBe('unsent');
+  });
+});
+
+describe('the body fingerprint (SNOW-1262)', () => {
+  const POINTS = [[7, 46], [7, 46.001]];
+
+  it('is the same for the same body and differs once the points or name change', () => {
+    const fp = core.bodyFingerprint(POINTS, 'Mont Fort');
+
+    expect(core.bodyFingerprint([[7, 46], [7, 46.001]], 'Mont Fort')).toBe(fp);
+    expect(core.bodyFingerprint([[7, 46], [7, 46.002]], 'Mont Fort')).not.toBe(fp);
+    expect(core.bodyFingerprint(POINTS, 'Mont Fort II')).not.toBe(fp);
+  });
+
+  it('is stored beside the key, and only with one', () => {
+    const tagged = core.serialiseDraft(POINTS, 'n', [0, 1], { key: 'k', sent: 'abc' });
+    const untagged = core.serialiseDraft(POINTS, 'n', [0, 1], { key: null, sent: 'abc' });
+
+    expect(core.parseDraft(tagged).sent).toBe('abc');
+    expect(core.parseDraft(untagged).sent).toBe(null);
+  });
+});
+
+describe('forgetDraftFor (SNOW-1262)', () => {
+  const POINTS = [[7, 46], [7, 46.001]];
+
+  function storage(value) {
+    const items = new Map(value ? [[core.DRAFT_KEY, value]] : []);
+    return {
+      getItem: (k) => (items.has(k) ? items.get(k) : null),
+      removeItem: (k) => items.delete(k),
+      has: () => items.has(core.DRAFT_KEY),
+    };
+  }
+
+  it("removes the draft tagged with the discarded save's key, in flight or refused", () => {
+    const inFlight = storage(core.serialiseDraft(POINTS, 'n', [0, 1], { key: 'k-1' }));
+    const refused = storage(core.serialiseDraft(POINTS, 'n', [0, 1], { failed: 'k-1' }));
+
+    expect(core.forgetDraftFor('k-1', inFlight)).toBe(true);
+    expect(inFlight.has()).toBe(false);
+    expect(core.forgetDraftFor('k-1', refused)).toBe(true);
+    expect(refused.has()).toBe(false);
+  });
+
+  it('leaves a draft with another key, or none, alone', () => {
+    const other = storage(core.serialiseDraft(POINTS, 'n', [0, 1], { key: 'k-2' }));
+    const untagged = storage(core.serialiseDraft(POINTS, 'n', [0, 1]));
+
+    expect(core.forgetDraftFor('k-1', other)).toBe(false);
+    expect(other.has()).toBe(true);
+    expect(core.forgetDraftFor('k-1', untagged)).toBe(false);
+    expect(untagged.has()).toBe(true);
   });
 });

@@ -37,6 +37,13 @@ panel opening all close it, and closing keeps the draft on this device.
 Drawing needs no account; saving does. An anonymous drawer's Save button is
 a sign-in link, and the draft waits in localStorage for them to come back.
 
+SAVING OFFLINE (SNOW-1262). Save works without a signal: the route is put in
+the mutation queue under a key the draft is tagged with, the routes panel
+lists it as "Waiting to sync" and it replays on reconnect, with or without
+a tab open. Reopened while it waits, this panel shows the line with every
+edit and Save disabled and the "save-queued" line below, so the same route
+cannot be queued twice. See static/js/route_draw.js's header.
+
 Included from map.html only while the flag is active for the request.
 
 Context expected:
@@ -200,9 +207,18 @@ Context expected:
     <span
         data-string="save-limit"
     >{% trans "You've reached your saved-route limit. Delete one to save another." %}</span>
+    {# SNOW-1262: Save offline queues the route rather than refusing it.  #}
+    {# "save-offline" is left for a device with no queue (IndexedDB gone).  #}
     <span data-string="save-offline">{% trans "You need to be online to save a route." %}</span>
+    <span data-string="saved-offline">{% trans "Saved on this device. It will sync when you're back online." %}</span>
+    {# Draw mode reopened on a draft whose save is still queued: the line   #}
+    {# is shown, every edit is off, and this says why.                      #}
+    <span
+        data-string="save-queued"
+    >{% trans "This route is waiting to sync. It will be saved when you're back online." %}</span>
     <span data-string="default-name">{% trans "Drawn route" %}</span>
 </template>
-<script defer src="{% static 'js/route_draw_core.js' %}"></script>
+{# route_draw_core.js is loaded by _routes_surface.html, flag or no flag  #}
+{# (SNOW-1262): the routes panel's Discard needs it to clear a draft.     #}
 <script defer src="{% static 'js/ski_snap_core.js' %}"></script>
 <script defer src="{% static 'js/route_draw.js' %}"></script>

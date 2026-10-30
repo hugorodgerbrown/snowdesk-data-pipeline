@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Any
 
 from apps.routes.models import Route
 from apps.routes.services.gpx import MAX_POINTS
-from apps.routes.services.slope_segments import cumulative_distances
+from track.slope_samples import cumulative_distances
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User

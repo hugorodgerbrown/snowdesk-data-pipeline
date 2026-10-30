@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance — §12 non-negotiables → code; version, freshness, idempotency, X-SW-Principal, reset, install, sync log
 status: current
-last-reviewed: 2026-10-01
+last-reviewed: 2026-10-30
 ---
 
 # Offline-first PWA compliance
@@ -37,7 +37,7 @@ Every row must have a code home. Any gap is a compliance regression.
 | 12.2 | Update banner gated on the device's shell, not the build | SNOW-952 | `apps.public.api.version` also returns `shell` (`apps.core.sw_shell.cached_cache_version`), and the worker reports its own `CACHE_VERSION` in its `shell-identity` reply. `shellIsStale()` in `static/js/sw_register.js` compares them, behind `window.pwaUpdateBanner.reveal()`, so a deploy that changed no shell source raises no banner — see [`decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md`](decisions/the-update-banner-is-gated-on-the-shell-not-the-build.md) |
 | 12.2 | Updates apply silently; banner only for a stuck worker | SNOW-1025 | A waiting worker gets `SKIP_WAITING` on `visibilitychange` → `hidden` (not during a `warmCache` run) and its `controllerchange` does not reload. `workerIsStuck()` in `static/js/sw_register.js` is the banner's second gate: stale shell **and** no worker that can install. See [`decisions/service-worker-updates-apply-silently.md`](decisions/service-worker-updates-apply-silently.md) |
 | 12.3 | `Idempotency-Key` deduplication                    | SNOW-371      | `apps.core.idempotency.IdempotencyMiddleware`; `core.IdempotencyRecord` model                          |
-| 12.4 | Mutation queue with exponential backoff + Background Sync | SNOW-376 / SNOW-420 / SNOW-479 | `static/js/mutation_queue.js` (`window.pwaMutationQueue`); backoff/classification shared with `static/js/sw.js` via `static/js/mutation_queue_core.js`. Consumers: offline field-report submission (`static/js/report.js` → `apps.observations.views.report_submit`, SNOW-420) and offline favourite creation (`static/js/favourites.js` → `apps.favourites.views.favourite_create`, SNOW-479 — optimistic pending pin, 409 at the cap). See [`mutation-queue.md`](mutation-queue.md). |
+| 12.4 | Mutation queue with exponential backoff + Background Sync | SNOW-376 / SNOW-420 / SNOW-479 | `static/js/mutation_queue.js` (`window.pwaMutationQueue`); backoff/classification shared with `static/js/sw.js` via `static/js/mutation_queue_core.js`. Consumers: offline field-report submission (`static/js/report.js` → `apps.observations.views.report_submit`, SNOW-420) and offline favourite creation (`static/js/favourites.js` → `apps.favourites.views.favourite_create`, SNOW-479 — optimistic pending pin, 409 at the cap) and saving a drawn route offline (`static/js/route_draw.js` → `apps.routes.views.route_create_drawn`, SNOW-1262 — caller-minted key tagged on the draft, an acknowledgement in `meta:app` from either drain, "Waiting to sync" / "Couldn't sync" rows, the plain line on the map). See [`mutation-queue.md`](mutation-queue.md). |
 | 12.6 | `X-Data-Generated-At` freshness header             | SNOW-370      | `apps.core.freshness.apply_freshness_headers`; applied by data-bearing views in `apps/public/api.py`        |
 | 12.6 | `X-Data-Max-Age` freshness header                  | SNOW-370      | Same helper                                                                                       |
 | 12.6 | `X-Data-Unsafe-After` on safety-critical resources | SNOW-370      | Same helper (default 48h on rating endpoints)                                                     |
@@ -618,6 +618,13 @@ Shipped from the observability + IndexedDB track:
   `observed_at` before enqueuing so an offline report records when the
   user actually observed the problem rather than whenever the queued
   mutation replays. See [`mutation-queue.md`](mutation-queue.md#consumers).
+- **SNOW-1262** — Saving a route drawn on the map offline. `route_draw.js`
+  posts directly while online and queues the same save, under the same
+  device-minted Idempotency-Key the draft is tagged with, when offline or
+  unanswered; either drain leaves a `meta:app` acknowledgement
+  (`mutations.ack:<key>`, seven days) so the draft resolves on the next
+  load whether or not a tab saw the replay. See
+  [`mutation-queue.md`](mutation-queue.md#saving-a-drawn-route-offline-snow-1262).
 - **SNOW-381 (server-side)** — `/api/telemetry` receiver,
   `apps/analytics/schema.py` envelope validation, and the five §16.2
   server-side signals (`pwa.version.endpoint.hit`, `pwa.sw_config.hit`,

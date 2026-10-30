@@ -32,7 +32,7 @@ descent. Four constraints:
   per-segment aspect the record stores. (Since SNOW-976 a binned
   per-segment `aspects` array travels beside it for another reader — see
   the next section. The marks do not read it.)
-- **Derived at read time**, in `apps/routes/services/fall_line.py`, with
+- **Derived at read time**, in `track/fall_line.py`, with
   both thresholds as keyword arguments. Nothing new is stored.
 - **Steep ground only.** `FALL_LINE_GATE_DEG` is 30°, the number
   `STEEP_THRESHOLD_DEG` already is. Below it no arrow is drawn at all.

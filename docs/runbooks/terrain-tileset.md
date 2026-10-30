@@ -39,7 +39,7 @@ one model:
 | What it is | 256 px PNGs of height, octant and slope band, z12–14 | Our own Int16 height grid |
 | Who consumes it | The browser — the terrain filter and the slope layer | Django, server-side |
 | Answers | "paint this pixel for this filter" | "this coordinate is 2,417.25 m" |
-| Lives in | `TERRAIN_CLASS_TILE_URL`; `static/js/terrain_filter_core.js` | Served from `snowdesk-tiles`; read by `apps/locations/services/terrain.py` (SNOW-917) |
+| Lives in | `TERRAIN_CLASS_TILE_URL`; `static/js/terrain_filter_core.js` | Served from `snowdesk-tiles`; read by `track/terrain.py` (SNOW-917) |
 
 ## Where the build lives
 
@@ -58,7 +58,7 @@ The build, the grid definition and the publish path are in
 
 Every path in that table is a path in `snowdesk-tiles`, not here. Nothing
 in *this* repo builds or serves the tileset; what this repo owns is the
-sampling side — SNOW-917, landed as `apps/locations/services/terrain.py`,
+sampling side — SNOW-917, landed as `track/terrain.py`,
 `terrain_grid.py` and `terrain_sources.py` (see "What this repo owns",
 below).
 

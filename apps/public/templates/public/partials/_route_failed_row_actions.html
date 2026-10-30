@@ -1,0 +1,23 @@
+{% load i18n %}
+{% comment %}
+public/partials/_route_failed_row_actions.html — the actions slot of a
+route drawn offline that the server refused for good (SNOW-1262).
+
+A "Couldn't sync" badge in the status-error tokens the nav badge turns to
+when a queued change has failed, then the row's two actions: Edit (open
+the line in draw mode again) and Discard (throw it away). Two actions in a
+restricted area collapse into a "…" menu (design rule 5), the routes row's
+own menu pattern (routes/partials/_route_row_actions.html), and the
+destructive one is last (rule 4).
+
+The trigger and menu ids are rewritten per clone by static/js/routes.js,
+as _overflow_menu.html's header asks of any caller that clones it.
+{% endcomment %}
+<span class="flex items-center gap-1">
+    <span
+        data-route-failed-badge
+        class="inline-flex items-center rounded-pill border border-status-error-text bg-status-error-bg px-2 py-0.5 font-mono text-caption whitespace-nowrap text-status-error-text"
+    >{% trans "Couldn't sync" %}</span>
+    {% trans "Actions for this route" as failed_actions_label %}
+    {% include "includes/_overflow_menu.html" with trigger_id="route-failed-actions" menu_id="route-failed-actions-menu" trigger_label=failed_actions_label items_template="public/partials/_route_failed_row_menu_items.html" %}
+</span>

@@ -19,7 +19,7 @@ docs/decisions/terrain-filter-is-class-tiles-filtered-on-device.md):
 * Opaque RGBA PNG, 256 px, alpha always 255.
 * R, G — height in whole metres, uint16 big-endian.
 * B — ``octant << 5 | band``: octant N=0 … NW=7 with N covering 337.5–22.5°
-  (``apps.core.geo.octant_for``'s split), band ``floor(slope / 5)`` in 0..17.
+  (``track.geo.octant_for``'s split), band ``floor(slope / 5)`` in 0..17.
 * B = 254 — level ground (no aspect; R, G still hold the height).
 * B = 255 — no data (R = G = 0).
 * A tile with no data, or a zoom outside 12–14, answers HTTP 204.
@@ -155,7 +155,7 @@ def _local_metres(
 def octant_index(bearing_deg: float) -> int:
     """Return the octant 0 (N) … 7 (NW) a bearing falls in.
 
-    The same split as ``apps.core.geo.octant_for``: N covers 337.5–22.5°.
+    The same split as ``track.geo.octant_for``: N covers 337.5–22.5°.
     """
     return int(((bearing_deg % 360.0) + 22.5) // 45.0) % 8
 

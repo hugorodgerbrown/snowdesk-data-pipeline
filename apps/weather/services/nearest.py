@@ -39,9 +39,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import NamedTuple, cast
 
-from apps.core.geo import haversine_km
 from apps.locations.models import Location
 from apps.weather.models import Weather
+from track.geo import haversine_km
 
 logger = logging.getLogger(__name__)
 
