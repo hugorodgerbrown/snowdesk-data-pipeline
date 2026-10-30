@@ -1,0 +1,18 @@
+{% load i18n %}
+{% comment %}
+public/partials/_route_pending_row_actions.html — the actions slot of a
+route drawn offline that is still waiting to sync (SNOW-1262).
+
+No menu: there is nothing to do with a route the server has not got yet —
+it cannot be shared, renamed, planned or deleted until it exists. The slot
+holds the sync badge instead, in the nav badge's own tokens
+(includes/nav.html's [data-sync-badge]), so the row says what the badge in
+the header is counting.
+
+Rendered once into #route-pending-row-template (_routes_surface.html) and
+cloned by static/js/routes.js for each queued route.
+{% endcomment %}
+<span
+    data-route-pending-badge
+    class="inline-flex items-center rounded-pill border border-border bg-tag px-2 py-0.5 font-mono text-caption whitespace-nowrap text-text-3"
+>{% trans "Waiting to sync" %}</span>

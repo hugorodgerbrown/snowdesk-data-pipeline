@@ -82,7 +82,11 @@ anyone.
   would otherwise draw a flat line between two dots kilometres apart.
 - The draft waits in `localStorage` (`snowdesk.route-draft`) across a
   close and across a sign-in. Only "Start over" or a successful save
-  discards it.
+  discards it — and since SNOW-1262, a refused offline save's Discard, or
+  a load under an account other than the one it is stamped with.
+- Saving works offline (SNOW-1262): the same save goes through the
+  mutation queue under an Idempotency-Key the draft is tagged with, so a
+  replay never makes a second route. See docs/mutation-queue.md.
 - A leg can follow swisstopo's ski-touring network (SNOW-1277). From z12
   draw mode loads `/api/ski-network.geojson` for the view and draws it as
   a faint shadow, followed or not (SNOW-1285). While following, a tap

@@ -1172,6 +1172,12 @@ describe('inline mutation-queue core agrees with the real one (SNOW-617)', () =>
         );
       }
     }
+    // SNOW-1262: the idempotency middleware's in-flight 409 is a retry.
+    for (const error of [null, 'idempotency_in_flight', 'idempotency_key_reused']) {
+      expect(inline.classifyStatus(409, [], error), `409 / ${error}`).toBe(
+        coreQueue.classifyStatus(409, [], error),
+      );
+    }
   });
 
   it('agrees on MAX_ATTEMPTS and the backoff schedule', () => {
@@ -3322,6 +3328,170 @@ describe('the Background-Sync drain respects offline mode (SNOW-852)', () => {
     // gets past the guard at all is the point here — the replay itself is
     // covered by the existing Background-Sync tests above.
     await expect(sw._selfDrainMutations()).resolves.not.toThrow();
+  });
+});
+
+/**
+ * Run one transaction against the test DB and resolve with its result.
+ *
+ * @param {string} store
+ * @param {'readonly'|'readwrite'} mode
+ * @param {(store: IDBObjectStore) => IDBRequest} op
+ * @returns {Promise<*>}
+ */
+function idb(store, mode, op) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      const inner = op(db.transaction(store, mode).objectStore(store));
+      inner.onsuccess = () => {
+        db.close();
+        resolve(inner.result);
+      };
+      inner.onerror = () => reject(inner.error);
+    };
+  });
+}
+
+/** One queued route-create row, as route_draw.js queues it. */
+function routeRow(overrides) {
+  return {
+    method: 'POST',
+    url: `${ORIGIN}/routes/drawn/`,
+    headers: {},
+    body: '{"points": [[7, 46], [7, 46.001]], "name": "Mont Fort"}',
+    idempotency_key: 'k-route',
+    kind: 'route-create',
+    attempts: 0,
+    status: 'queued',
+    next_attempt_at: 0,
+    principal: 'user-a',
+    ...overrides,
+  };
+}
+
+describe('the Background-Sync drain completes a route drawn offline (SNOW-1262)', () => {
+  beforeEach(async () => {
+    await resetDb();
+    await setStoredPrincipal('user-a');
+  });
+
+  afterEach(async () => {
+    await resetDb();
+  });
+
+  it('acknowledges the key with the route uuid, then deletes the row', async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    const fetchSpy = vi.fn(async () => new Response('{"uuid": "route-uuid"}', { status: 200 }));
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(fetchSpy.mock.calls[0][1].headers['Idempotency-Key']).toBe('k-route');
+    expect(await idb('queue:mutations', 'readonly', (store) => store.getAll())).toEqual([]);
+    const ack = await idb('meta:app', 'readonly', (store) => store.get('mutations.ack:k-route'));
+    expect(ack.value).toMatchObject({ kind: 'route-create', uuid: 'route-uuid' });
+  });
+
+  it("keeps a refusal's status and error on the row", async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    const fetchSpy = vi.fn(
+      async () => new Response('{"error": "route_limit_reached"}', { status: 409 }),
+    );
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    const [row] = await idb('queue:mutations', 'readonly', (store) => store.getAll());
+    expect(row).toMatchObject({ status: 'failed', last_status: 409, last_error: 'route_limit_reached' });
+  });
+
+  it("retries the middleware's in-flight 409 rather than failing the row", async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    const sw = loadSw({
+      caches: makeCaches(),
+      fetch: vi.fn(async () => new Response('{"error": "idempotency_in_flight"}', { status: 409 })),
+    });
+    await sw._hydrateNetworkMode();
+
+    await expect(sw._selfDrainMutations()).rejects.toThrow('mutation_queue_retry_pending');
+
+    const [row] = await idb('queue:mutations', 'readonly', (store) => store.getAll());
+    expect(row.status).toBe('retry-scheduled');
+  });
+
+  it.each([
+    ['a refusal', 400],
+    ['a retry', 503],
+  ])('never re-creates a row a page drain landed while it waited (%s)', async (_label, status) => {
+    const id = await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    // The page wins the race: it acknowledges and deletes the row while the
+    // worker is still waiting on its own answer.
+    const fetchSpy = vi.fn(async () => {
+      await idb('meta:app', 'readwrite', (store) =>
+        store.put({ key: 'mutations.ack:k-route', value: { kind: 'route-create', uuid: 'u', at: 1 } }),
+      );
+      await idb('queue:mutations', 'readwrite', (store) => store.delete(id));
+      return new Response('{"error": "x"}', { status });
+    });
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(await idb('queue:mutations', 'readonly', (store) => store.getAll())).toEqual([]);
+  });
+
+  it('never re-creates a row deleted with no acknowledgement either', async () => {
+    const id = await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow({ kind: null })));
+    const fetchSpy = vi.fn(async () => {
+      await idb('queue:mutations', 'readwrite', (store) => store.delete(id));
+      return new Response('', { status: 503 });
+    });
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(await idb('queue:mutations', 'readonly', (store) => store.getAll())).toEqual([]);
+  });
+
+  it('leaves a notice when its guard discards a route of another account', async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow({ principal: 'user-b' })));
+    const fetchSpy = vi.fn();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const notice = await idb('meta:app', 'readonly', (store) => store.get('mutations.discard-notice'));
+    expect(notice.value.kinds).toEqual(['route-create']);
+  });
+
+  it('agrees with the real core on the acknowledgement and the failure detail', () => {
+    const inline = loadSw()._INLINE_MUTATION_QUEUE_CORE;
+    const row = routeRow();
+
+    expect(inline.ackRecord(row, { uuid: 'u' }, 5)).toEqual(coreQueue.ackRecord(row, { uuid: 'u' }, 5));
+    expect(inline.ackRecord({ idempotency_key: 'k' }, null, 5)).toEqual(
+      coreQueue.ackRecord({ idempotency_key: 'k' }, null, 5),
+    );
+    for (const [status, body] of [[400, { error: 'x'.repeat(300) }], [404, null], [null, null]]) {
+      expect(inline.failureDetail(status, body)).toEqual(coreQueue.failureDetail(status, body));
+    }
+    expect(inline.ACK_KEY_PREFIX).toBe(coreQueue.ACK_KEY_PREFIX);
+    expect(inline.DISCARD_NOTICE_KEY).toBe(coreQueue.DISCARD_NOTICE_KEY);
+    const detail = { status: 409, error: 'route_limit_reached' };
+    for (const outcome of ['permanent', 'retry']) {
+      expect(inline.nextRowState(row, outcome, 5, detail)).toEqual(
+        coreQueue.nextRowState(row, outcome, 5, detail),
+      );
+    }
   });
 });
 

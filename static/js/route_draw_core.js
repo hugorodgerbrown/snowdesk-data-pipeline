@@ -34,8 +34,46 @@
  *   statsParts(props, points)       — the figures the panel shows, as data
  *   guideCollection(points, cursor, options) — the map's taps, guide line,
  *                                     next leg and snap ring
- *   serialiseDraft(points, name, taps) — the draft as a string to store
+ *   serialiseDraft(points, name, taps, tag) — the draft as a string to store
  *   parseDraft(raw)                 — a stored draft back, or null
+ *   ROUTE_CREATE_KIND               — the mutation-queue `kind` of a save
+ *   mintKey()                       — a fresh Idempotency-Key
+ *   createOperation(url, csrf, points, name, key) — the save, as the
+ *                                     mutation queue takes it
+ *   draftState(draft, principal, row, ack) — what a stored draft is now
+ *   pointsBounds(points)            — [w, s, e, n] of a list of points
+ *   bodyFingerprint(points, name)   — a short hash of the body a save sends
+ *   forgetDraftFor(key, storage)    — remove the stored draft if it is the
+ *                                     save with this key
+ *
+ * SAVING OFFLINE (SNOW-1262). A save carries an Idempotency-Key the device
+ * mints, and the draft is TAGGED with it before the request goes out, so
+ * the draft and the queued row can never disagree about which save they
+ * are. The draft also carries the account it was drawn under. On every
+ * load `draftState` reads the draft against the queue and its
+ * acknowledgements:
+ *
+ *   'none'     — no draft;
+ *   'foreign'  — drawn under ANOTHER SIGNED-IN account: discard it;
+ *   'hidden'   — stamped with an account, and no account is signed in
+ *                (signed out, session expired) or it is not known yet
+ *                (IndexedDB not ready): keep it untouched, but neither
+ *                show it nor let it be edited — it is someone's, and that
+ *                someone may be back;
+ *   'landed'   — its save was acknowledged: the route exists, clear it;
+ *   'queued'   — its save is still in the queue: show it, not editable;
+ *   'failed'   — its save was refused for good: untag it (the key moves to
+ *                `failed`, so Edit and Discard can find it) and let the
+ *                drawer edit it again;
+ *   'unsent'   — tagged, but neither row nor acknowledgement: the request
+ *                may or may not have reached the server. Keep the draft and
+ *                its key, editable. A re-save of the UNCHANGED draft sends
+ *                the same key, so within the server's 24 h window it answers
+ *                with the route it made rather than making a second; a
+ *                re-save after an edit mints a new key (the tag's `sent`
+ *                fingerprint no longer matches the body), because the server
+ *                refuses an old key with a different body;
+ *   'draft'    — an ordinary untagged draft.
  */
 
 // @ts-check
@@ -304,21 +342,179 @@
     return { type: 'FeatureCollection', features: features };
   }
 
+  /** The `kind` route_draw.js queues a save under (SNOW-1262). */
+  const ROUTE_CREATE_KIND = 'route-create';
+
+  /**
+   * @typedef {{key?: ?string, failed?: ?string, principal?: ?string, sent?: ?string}} DraftTag
+   */
+
   /**
    * The draft as the string kept in localStorage.
    *
    * @param {Array<Waypoint>} points
    * @param {string} name
    * @param {Array<number>} [taps] The taps; every point when not given.
+   * @param {DraftTag} [tag] SNOW-1262: the save's Idempotency-Key while it
+   *   may be in flight (`key`), the fingerprint of the body sent under it
+   *   (`sent`, kept only with a key), the key of a save refused for good
+   *   (`failed`), and the account the draft was drawn under (`principal`).
    * @returns {string}
    */
-  function serialiseDraft(points, name, taps) {
-    return JSON.stringify({
+  function serialiseDraft(points, name, taps, tag) {
+    /** @type {Object<string, any>} */
+    const value = {
       v: 1,
       points: points,
       name: name || '',
       taps: taps || everyIndex(points),
+    };
+    if (tag && typeof tag.key === 'string' && tag.key) value.key = tag.key;
+    if (tag && typeof tag.failed === 'string' && tag.failed) value.failed = tag.failed;
+    if (tag && typeof tag.principal === 'string' && tag.principal) value.principal = tag.principal;
+    if (tag && typeof tag.sent === 'string' && tag.sent && value.key) value.sent = tag.sent;
+    return JSON.stringify(value);
+  }
+
+  /**
+   * A fresh Idempotency-Key: a UUID where the browser has one, a random hex
+   * string where it does not (the mutation queue's own fallback).
+   *
+   * @returns {string}
+   */
+  function mintKey() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    let out = 'draw-';
+    for (let i = 0; i < 32; i += 1) out += Math.floor(Math.random() * 16).toString(16);
+    return out;
+  }
+
+  /**
+   * A save, as window.pwaMutationQueue.enqueue takes it — and, online, as
+   * route_draw.js posts it directly (the same url, headers and body, plus
+   * the key as the Idempotency-Key header).
+   *
+   * @param {string} url routes:create_drawn.
+   * @param {string} csrf The page's CSRF token.
+   * @param {Array<Waypoint>} points
+   * @param {string} name
+   * @param {string} key The Idempotency-Key the draft is tagged with.
+   * @returns {{method: string, url: string, headers: Object<string, string>,
+   *   body: string, idempotencyKey: string, kind: string}}
+   */
+  function createOperation(url, csrf, points, name, key) {
+    return {
+      method: 'POST',
+      url: url,
+      // Accept: JSON, so a refusal Django answers outside the view (a CSRF
+      // failure) says which it is in a body the queue can keep.
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRFToken': csrf },
+      body: JSON.stringify({ points: points, name: name }),
+      idempotencyKey: key,
+      kind: ROUTE_CREATE_KIND,
+    };
+  }
+
+  /**
+   * What a stored draft is now, read against the queue (SNOW-1262). See
+   * the module header for the seven answers.
+   *
+   * A draft with no account on it — drawn signed out, or stored before
+   * SNOW-1262 — belongs to whoever is signed in now, so a drawer who signs
+   * in to save keeps the line they drew. A draft stamped with an account is
+   * never shown to anyone else, signed in or not — but it is DESTROYED only
+   * when a different account is signed in. Signed out, an expired session
+   * or a principal not yet known leaves it stored and hidden ('hidden'):
+   * a session that lapsed must not cost the owner the line they drew.
+   *
+   * @param {?{key?: ?string, principal?: ?string}} draft A parsed draft.
+   * @param {?string|undefined} principal The account signed in now: null
+   *   for none, undefined when it cannot be known yet.
+   * @param {?{status: string}} row The queued row with the draft's key.
+   * @param {?Object} ack The acknowledgement for the draft's key.
+   * @returns {'none'|'foreign'|'hidden'|'landed'|'queued'|'failed'|'unsent'|'draft'}
+   */
+  function draftState(draft, principal, row, ack) {
+    if (!draft) return 'none';
+    if (draft.principal && !principal) return 'hidden';
+    if (draft.principal && draft.principal !== principal) return 'foreign';
+    if (!draft.key) return 'draft';
+    if (ack) return 'landed';
+    if (row) return row.status === 'failed' ? 'failed' : 'queued';
+    return 'unsent';
+  }
+
+  /**
+   * A short fingerprint of the body a save sends — the points and the name
+   * exactly as createOperation encodes them (SNOW-1262). The draft keeps it
+   * beside its key: core/idempotency.py refuses an old key with a different
+   * body (a bare 409), so a draft edited since its key was sent needs a new
+   * key, and an unchanged one must keep the old key to be deduplicated. A
+   * 32-bit FNV-1a over the JSON: it only has to tell "the same body" from
+   * "an edited one" on one device.
+   *
+   * @param {Array<Waypoint>} points
+   * @param {string} name
+   * @returns {string}
+   */
+  function bodyFingerprint(points, name) {
+    const text = JSON.stringify({ points: points, name: name });
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash.toString(16).padStart(8, '0') + ':' + text.length;
+  }
+
+  /**
+   * Remove the stored draft when it is the save with this Idempotency-Key —
+   * tagged with it as in flight (`key`) or as refused (`failed`) — and
+   * leave any other draft alone (SNOW-1262). The one place that knows the
+   * draft's storage key and shape, for the two Discards: route_draw.js's,
+   * and routes.js's when draw mode is not on the page (the route_drawing
+   * flag off), which used to delete the queued row and leave its draft to
+   * come back once drawing was switched on again.
+   *
+   * @param {string} key The discarded save's Idempotency-Key.
+   * @param {?Storage} [storage] Where the draft is kept; localStorage.
+   * @returns {boolean} Whether a draft was removed.
+   */
+  function forgetDraftFor(key, storage) {
+    try {
+      const store = storage || localStorage;
+      const draft = parseDraft(store.getItem(DRAFT_KEY));
+      if (!key || !draft || (draft.key !== key && draft.failed !== key)) return false;
+      store.removeItem(DRAFT_KEY);
+      return true;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  /**
+   * The bounding box of a list of points, `[west, south, east, north]` —
+   * the shape `Route.bounds` has, so a route still waiting to sync can be
+   * framed as a saved one is. Null for an empty list.
+   *
+   * @param {Array<Waypoint>} points
+   * @returns {?Array<number>}
+   */
+  function pointsBounds(points) {
+    if (!points || points.length === 0) return null;
+    let west = Infinity;
+    let south = Infinity;
+    let east = -Infinity;
+    let north = -Infinity;
+    points.forEach(function (point) {
+      west = Math.min(west, point[0]);
+      east = Math.max(east, point[0]);
+      south = Math.min(south, point[1]);
+      north = Math.max(north, point[1]);
     });
+    return [west, south, east, north];
   }
 
   /**
@@ -344,7 +540,8 @@
    * tap list that does not fit, has a tap at every point.
    *
    * @param {?string} raw
-   * @returns {?{points: Array<Waypoint>, name: string, taps: Array<number>}}
+   * @returns {?{points: Array<Waypoint>, name: string, taps: Array<number>,
+   *   key: ?string, failed: ?string, principal: ?string, sent: ?string}}
    */
   function parseDraft(raw) {
     if (typeof raw !== 'string' || !raw) return null;
@@ -361,10 +558,18 @@
     const points = value.points.map(function (/** @type {Array<number>} */ point) {
       return /** @type {Waypoint} */ ([point[0], point[1]]);
     });
+    /** @param {any} field */
+    const text = function (field) {
+      return typeof field === 'string' && field ? field : null;
+    };
     return {
       points: points,
       name: typeof value.name === 'string' ? value.name : '',
       taps: tapsFit(value.taps, points.length) ? value.taps.slice() : everyIndex(points),
+      key: text(value.key),
+      failed: text(value.failed),
+      principal: text(value.principal),
+      sent: text(value.sent),
     };
   }
 
@@ -382,5 +587,12 @@
     guideCollection: guideCollection,
     serialiseDraft: serialiseDraft,
     parseDraft: parseDraft,
+    ROUTE_CREATE_KIND: ROUTE_CREATE_KIND,
+    mintKey: mintKey,
+    createOperation: createOperation,
+    draftState: draftState,
+    pointsBounds: pointsBounds,
+    bodyFingerprint: bodyFingerprint,
+    forgetDraftFor: forgetDraftFor,
   });
 })();

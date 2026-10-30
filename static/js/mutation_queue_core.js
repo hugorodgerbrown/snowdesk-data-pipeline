@@ -31,7 +31,8 @@
  *                                milliseconds: ``min(2**attempts, 300)`` —
  *                                2/4/8/16/32/64/128/256s, capped at 300s
  *                                from attempt 9 on.
- *   classifyStatus(status)      Classifies an HTTP response status into
+ *   classifyStatus(status, doneStatuses, error)
+ *                                Classifies an HTTP response status into
  *                                ``'success' | 'permanent' | 'retry'``.
  *                                Network errors have no status code to
  *                                classify — callers treat a thrown
@@ -45,10 +46,29 @@
  *                                eligible ones FIRST, then capped at
  *                                ``batchSize``. Doing it the other way
  *                                round starves the queue (SNOW-617).
- *   nextRowState(row, outcome, now)
+ *   nextRowState(row, outcome, now, detail)
  *                                The whole post-attempt transition, as a
  *                                pure function: what to do with the row
  *                                and what it should look like afterwards.
+ *                                SNOW-1262: ``detail`` (optional) is the
+ *                                response's ``{status, error}``, recorded
+ *                                on a failed or rescheduled row as
+ *                                ``last_status`` / ``last_error``.
+ *   failureDetail(status, body)  The ``{status, error}`` a response leaves
+ *                                on its row: the HTTP status and the
+ *                                endpoint's JSON ``error``, bounded to
+ *                                ``ERROR_MAX_LENGTH`` characters.
+ *   ackRecord(row, body, now)    The ``meta:app`` record a successful replay
+ *                                of a row with a ``kind`` leaves behind
+ *                                (SNOW-1262), or null for a row without
+ *                                one: ``{key: ACK_KEY_PREFIX + key,
+ *                                value: {kind, uuid, at}}``.
+ *   ackExpired(record, now)      Whether an acknowledgement is past
+ *                                ``ACK_TTL_MS`` and can be pruned.
+ *   ACK_KEY_PREFIX, ACK_TTL_MS, DISCARD_NOTICE_KEY, ERROR_MAX_LENGTH
+ *                                The constants behind the three above,
+ *                                shared so the page and the worker write
+ *                                the same records.
  *
  * SNOW-617: ``selectDrainBatch`` and ``nextRowState`` were the two pieces
  * of the state machine that lived OUTSIDE this module, spelled out once in
@@ -74,6 +94,31 @@
   // rather than a tag per operation type, per the ticket's resolved design
   // decision.
   var SYNC_TAG = 'mutation-queue';
+
+  // SNOW-1262: a replayed row that names its ``kind`` leaves an
+  // acknowledgement in ``meta:app`` before it is deleted, keyed on its
+  // Idempotency-Key, so a consumer holding that key (route_draw.js's
+  // draft) can tell "it landed" from "it was never sent" on a later load —
+  // whether the page or the service worker did the replay. Kept a week:
+  // long enough to outlast any realistic gap between a Background Sync
+  // replay and the next time the map is opened, short enough that the
+  // store never grows.
+  var ACK_KEY_PREFIX = 'mutations.ack:';
+  var ACK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+  // SNOW-1262: written by the worker's principal guard when it discards a
+  // row with a ``kind`` — a worker has no page to tell — and read (then
+  // deleted) by the page on its next load.
+  var DISCARD_NOTICE_KEY = 'mutations.discard-notice';
+
+  // The longest endpoint ``error`` string a row keeps. Every first-party
+  // endpoint answers a short machine code or one sentence; the bound only
+  // stops an unexpected body from bloating a row that may sit for days.
+  var ERROR_MAX_LENGTH = 200;
+
+  // SNOW-1262: core/idempotency.py's two 409s — see classifyStatus.
+  var IN_FLIGHT_ERROR = 'idempotency_in_flight';
+  var KEY_REUSED_ERROR = 'idempotency_key_reused';
 
   /**
    * Exponential backoff schedule for a given attempt count.
@@ -108,16 +153,26 @@
    * there left a red badge that could never clear for an outcome that was
    * exactly what the user asked for.
    *
+   * SNOW-1262: ``error`` is the response's JSON ``error``. A 409 whose
+   * error is ``IN_FLIGHT_ERROR`` is core/idempotency.py saying the
+   * ORIGINAL request with this key is still inside the view — a post that
+   * timed out on the device but reached the server, or the other drain's
+   * replay of the same row. That answer is transient: the retry replays
+   * the original's response. Failing the row instead told the user it
+   * "couldn't sync" and offered an Edit that saved a second route.
+   *
    * @param {number} status
    * @param {number[]} [doneStatuses] Codes the caller declared as done.
+   * @param {?string} [error] The response's JSON ``error``, if any.
    * @returns {'success'|'permanent'|'retry'}
    */
-  function classifyStatus(status, doneStatuses) {
+  function classifyStatus(status, doneStatuses, error) {
     if (Array.isArray(doneStatuses) && doneStatuses.indexOf(status) !== -1) {
       return 'success';
     }
     if (status >= 200 && status < 300) return 'success';
     if (status === 408 || status === 429) return 'retry';
+    if (status === 409 && error === IN_FLIGHT_ERROR) return 'retry';
     if (status >= 500) return 'retry';
     if (status >= 400) return 'permanent';
     return 'retry';
@@ -186,20 +241,31 @@
    *   verdict, or ``'retry'`` for a thrown ``fetch()`` (a network error
    *   has no status to classify).
    * @param {number} now epoch milliseconds
+   * @param {{status: ?number, error: ?string}} [detail] SNOW-1262: what
+   *   the response said, from ``failureDetail``. When given it is stamped
+   *   on a failed or rescheduled row as ``last_status`` / ``last_error``,
+   *   so a reader can tell a validation refusal from the route cap, a
+   *   sign-out or a missing endpoint. Omitted, the row is unchanged in
+   *   shape — every caller from before SNOW-1262 gets what it always got.
    * @returns {{action: 'delete'|'fail'|'reschedule', row?: object,
    *   reason?: string}} ``delete`` — it succeeded, drop it. ``fail`` —
    *   persist ``row`` (already stamped ``status: 'failed'``) and report
    *   ``reason``. ``reschedule`` — persist ``row`` with its new backoff.
    */
-  function nextRowState(row, outcome, now) {
+  function nextRowState(row, outcome, now, detail) {
     if (outcome === 'success') return { action: 'delete' };
 
     var attempts = (row && row.attempts ? row.attempts : 0) + 1;
+    var recorded = {};
+    if (detail) {
+      recorded.last_status = detail.status == null ? null : detail.status;
+      recorded.last_error = detail.error == null ? null : detail.error;
+    }
 
     if (outcome === 'permanent') {
       return {
         action: 'fail',
-        row: Object.assign({}, row, { attempts: attempts, status: 'failed' }),
+        row: Object.assign({}, row, recorded, { attempts: attempts, status: 'failed' }),
         reason: 'permanent_4xx',
       };
     }
@@ -208,19 +274,68 @@
     if (attempts >= MAX_ATTEMPTS) {
       return {
         action: 'fail',
-        row: Object.assign({}, row, { attempts: attempts, status: 'failed' }),
+        row: Object.assign({}, row, recorded, { attempts: attempts, status: 'failed' }),
         reason: 'max_attempts',
       };
     }
 
     return {
       action: 'reschedule',
-      row: Object.assign({}, row, {
+      row: Object.assign({}, row, recorded, {
         attempts: attempts,
         status: 'retry-scheduled',
         next_attempt_at: now + backoffDelayMs(attempts),
       }),
     };
+  }
+
+  /**
+   * What a response leaves on its row (SNOW-1262): its status and the
+   * endpoint's JSON ``error``, bounded. A body that is not JSON, or has no
+   * string ``error``, leaves ``error: null`` — the status alone still says
+   * which kind of refusal it was.
+   *
+   * @param {?number} status The HTTP status, or null for a network error.
+   * @param {*} body The parsed JSON body, or null.
+   * @returns {{status: ?number, error: ?string}}
+   */
+  function failureDetail(status, body) {
+    var error = body && typeof body.error === 'string' ? body.error.slice(0, ERROR_MAX_LENGTH) : null;
+    return { status: typeof status === 'number' ? status : null, error: error };
+  }
+
+  /**
+   * The acknowledgement a successful replay of ``row`` leaves in
+   * ``meta:app`` (SNOW-1262), or null when the row names no ``kind`` —
+   * nothing is waiting to hear about it, so nothing is written.
+   *
+   * @param {object} row The replayed row.
+   * @param {*} body The parsed JSON response body, or null.
+   * @param {number} now epoch milliseconds
+   * @returns {?{key: string, value: {kind: string, uuid: ?string, at: number}}}
+   */
+  function ackRecord(row, body, now) {
+    if (!row || !row.kind || !row.idempotency_key) return null;
+    var uuid = body && typeof body.uuid === 'string' ? body.uuid : null;
+    return {
+      key: ACK_KEY_PREFIX + row.idempotency_key,
+      value: { kind: row.kind, uuid: uuid, at: now },
+    };
+  }
+
+  /**
+   * Whether a ``meta:app`` record is an acknowledgement past its week.
+   *
+   * @param {*} record A ``meta:app`` row.
+   * @param {number} now epoch milliseconds
+   * @returns {boolean}
+   */
+  function ackExpired(record, now) {
+    if (!record || typeof record.key !== 'string' || record.key.indexOf(ACK_KEY_PREFIX) !== 0) {
+      return false;
+    }
+    var at = record.value && typeof record.value.at === 'number' ? record.value.at : 0;
+    return now - at > ACK_TTL_MS;
   }
 
   self.pwaMutationQueueCore = Object.freeze({
@@ -231,5 +346,14 @@
     isRowEligible: isRowEligible,
     selectDrainBatch: selectDrainBatch,
     nextRowState: nextRowState,
+    failureDetail: failureDetail,
+    ackRecord: ackRecord,
+    ackExpired: ackExpired,
+    ACK_KEY_PREFIX: ACK_KEY_PREFIX,
+    ACK_TTL_MS: ACK_TTL_MS,
+    DISCARD_NOTICE_KEY: DISCARD_NOTICE_KEY,
+    ERROR_MAX_LENGTH: ERROR_MAX_LENGTH,
+    IN_FLIGHT_ERROR: IN_FLIGHT_ERROR,
+    KEY_REUSED_ERROR: KEY_REUSED_ERROR,
   });
 })();
