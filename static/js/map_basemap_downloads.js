@@ -806,11 +806,19 @@ async function downloadContentDays() {
  * list assembled from an answer that never arrived are different facts,
  * and only the second is a shortfall — see `short` below.
  *
+ * SNOW-965: and the reader's OWN things inside the rectangle, from
+ * `/api/area-items/`, asked in parallel — each trip's page and route, and
+ * the weather sheet each pin borrows (which can sit outside the box). The
+ * public plan is still taken when that endpoint fails, but the run is
+ * short; a page carrying no `data-area-items-url` was not asked, which is
+ * not a shortfall. Every weather sheet is dated with today, the url the
+ * map's sheet asks for and the only one the worker answers offline.
+ *
  * @param {Object} blob The run's download blob, for its tile ranges.
  * @returns {Promise<{urls: string[], short: boolean}>} `urls` is possibly
  *   empty, which every caller reads as "nothing to add" rather than as a
- *   failure. `short` is true when the endpoint could not be read, so the
- *   list is missing bulletins it should have named — a shortfall no tally
+ *   failure. `short` is true when either endpoint could not be read, so the
+ *   list is missing urls it should have named — a shortfall no tally
  *   over that list can detect, because every url in it can land.
  */
 async function assembleAreaContentURLs(blob) {
@@ -823,7 +831,19 @@ async function assembleAreaContentURLs(blob) {
   const bbox = core.areaBBox(blob);
   if (!bbox) return { urls: [], short: false };
 
-  const content = await fetchAreaContent(mapEl.dataset.areaContentUrl, bbox);
+  // SNOW-965: the reader's own trips and pins ride alongside, asked in
+  // parallel. A page with no `data-area-items-url` was not asked for
+  // them, which is not a shortfall; an endpoint that was asked and did
+  // not answer is.
+  const itemsUrl = mapEl.dataset.areaItemsUrl || '';
+  const [content, items] = await Promise.all([
+    fetchAreaJson(mapEl.dataset.areaContentUrl, bbox, isAreaContent),
+    itemsUrl ? fetchAreaJson(itemsUrl, bbox, isAreaItems) : Promise.resolve(null),
+  ]);
+  const itemsShort = !!itemsUrl && !items;
+  if (itemsShort) {
+    window.pwaDebugLog?.record('net', 'download.areaItems.failed', { bbox: bbox });
+  }
   if (!content) {
     // A short plan, never a confidently empty one. The endpoint failing is
     // exactly the shortfall SNOW-931 closed and SNOW-932 made reportable:
@@ -833,16 +853,58 @@ async function assembleAreaContentURLs(blob) {
     window.pwaDebugLog?.record('net', 'download.areaContent.failed', {
       bbox: bbox,
     });
-    return { urls: [], short: true };
   }
 
-  const plan = core.areaContentURLs({
-    regions: content.regions,
-    weather: content.weather,
-    days: await downloadContentDays(),
-    weatherDetailTemplate: mapEl.dataset.weatherDetailUrl || '',
-  });
-  return { urls: [...plan.bulletinUrls, ...plan.weatherDetailUrls], short: false };
+  // SNOW-965: today, the day a weather sheet is dated with — the exact
+  // url the map's sheet asks for on that day, which is the only url the
+  // worker answers offline.
+  const weatherDay = readTodayDateParam() || '';
+  const weatherDetail = mapEl.dataset.weatherDetailUrl || '';
+  const plan = content
+    ? core.areaContentURLs({
+      regions: content.regions,
+      weather: content.weather,
+      days: await downloadContentDays(),
+      weatherDetailTemplate: weatherDetail,
+      weatherDay: weatherDay,
+    })
+    : { bulletinUrls: [], weatherDetailUrls: [] };
+  const planned = [...plan.bulletinUrls, ...plan.weatherDetailUrls];
+  const itemUrls =
+    items && typeof core.areaItemURLs === 'function'
+      ? core.areaItemURLs(
+        items,
+        {
+          tripPage: mapEl.dataset.tripPageUrlTemplate || '',
+          tripRoute: mapEl.dataset.tripRouteUrlTemplate || '',
+          weatherDetail: weatherDetail,
+          weatherDay: weatherDay,
+        },
+        planned,
+      )
+      : [];
+  return { urls: [...planned, ...itemUrls], short: !content || itemsShort };
+}
+
+/**
+ * Whether a parsed `/api/area-content/` answer has its documented shape.
+ *
+ * @param {*} data
+ * @returns {boolean}
+ */
+function isAreaContent(data) {
+  return !!data && Array.isArray(data.regions) && Array.isArray(data.weather);
+}
+
+/**
+ * Whether a parsed `/api/area-items/` answer has its documented shape
+ * (SNOW-965).
+ *
+ * @param {*} data
+ * @returns {boolean}
+ */
+function isAreaItems(data) {
+  return !!data && Array.isArray(data.trips) && Array.isArray(data.pins);
 }
 
 // SNOW-958: the bound on the `/api/area-content/` request below. TWO
@@ -870,7 +932,9 @@ async function assembleAreaContentURLs(blob) {
 const AREA_CONTENT_FETCH_BUDGET_MS = 15000;
 
 /**
- * Ask the server what one rectangle contains.
+ * Ask the server what one rectangle contains — `/api/area-content/`, or
+ * (SNOW-965) the reader's own `/api/area-items/`. Both are bbox-keyed GETs
+ * answering JSON, so they share one bounded reader.
  *
  * BOUNDED (SNOW-958), for the reason
  * `docs/decisions/bounded-offline-read-paths.md` gives and SNOW-918
@@ -888,15 +952,17 @@ const AREA_CONTENT_FETCH_BUDGET_MS = 15000;
  * and the run reports a shortfall, which is the honest outcome and the
  * one every other read on this path degrades to.
  *
- * @param {string|undefined} endpoint `#map`'s `data-area-content-url`.
+ * @param {string|undefined} endpoint `#map`'s `data-area-content-url` or
+ *   `data-area-items-url`.
  * @param {number[]} bbox The area's rectangle, `[west, south, east, north]`.
- * @returns {Promise<{regions: Array<Object>, weather: Array<Object>}|null>}
- *   ``null`` for a missing endpoint, a failed request, a request that ran
- *   out of budget, or an answer that is not the documented shape — all
- *   four are "cannot say", which the caller reports as a shortfall rather
- *   than as an empty area.
+ * @param {(data: *) => boolean} isValid Whether the parsed answer has the
+ *   endpoint's documented shape.
+ * @returns {Promise<Object|null>} The answer, or ``null`` for a missing
+ *   endpoint, a failed request, a request that ran out of budget, or an
+ *   answer that is not the documented shape — all four are "cannot say",
+ *   which the caller reports as a shortfall rather than as an empty area.
  */
-async function fetchAreaContent(endpoint, bbox) {
+async function fetchAreaJson(endpoint, bbox, isValid) {
   if (!endpoint) return null;
   // Absent AbortController is not a reason to skip the request — it is a
   // reason to run it unbounded, exactly as before this ticket. Every
@@ -913,10 +979,7 @@ async function fetchAreaContent(endpoint, bbox) {
     const response = await fetch(url, controller ? { signal: controller.signal } : {});
     if (!response || !response.ok) return null;
     const data = await response.json();
-    if (!data || !Array.isArray(data.regions) || !Array.isArray(data.weather)) {
-      return null;
-    }
-    return data;
+    return isValid(data) ? data : null;
   } catch (_e) {
     return null;
   } finally {

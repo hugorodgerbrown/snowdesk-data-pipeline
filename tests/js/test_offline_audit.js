@@ -1434,6 +1434,9 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
          data-routes-url="/api/routes.geojson"
          data-community-reports-url="/api/community-reports.geojson"
          data-area-content-url="/api/area-content/"
+         data-area-items-url="/api/area-items/"
+         data-trip-page-url-template="/trips/__UUID__/"
+         data-trip-route-url-template="/trips/__UUID__/route.geojson"
          data-content-countries="ch fr"
          data-content-past-days="2"
          data-today="${RENDERED_DAY}">
@@ -1455,6 +1458,15 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
   const AREA_CONTENT = {
     regions: [{ id: REGION_ID, slug: 'martigny-verbier' }],
     weather: [{ short_id: 'INSIDEaaaaa' }],
+  };
+
+  /**
+   * The reader's own things in the same rectangle (SNOW-965): a trip, and
+   * a pin borrowing a forecast from outside the box.
+   */
+  const AREA_ITEMS = {
+    trips: [{ uuid: 'trip-uuid-1' }],
+    pins: [{ uuid: 'pin-1', forecast: { short_id: 'BORROWEDccc' } }],
   };
 
   /** One region whose polygon is the ground the area's tiles cover. */
@@ -1516,6 +1528,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
         const href = String(url);
         let body = { type: 'FeatureCollection', features: [] };
         if (href.includes('area-content')) body = AREA_CONTENT;
+        if (href.includes('area-items')) body = AREA_ITEMS;
         if (href.includes('regions.geojson') && href.includes('country=ch')) {
           body = REGIONS_CH;
         }
@@ -1605,11 +1618,46 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
 
     const urls = warmed.flat();
     expect(urls).toContain('/ch-4115/martigny-verbier/' + clientDay() + '/');
-    expect(urls).toContain('/api/weather/INSIDEaaaaa/detail/');
+    // SNOW-965: dated with the press day, the url the map's sheet asks for.
+    expect(urls).toContain('/api/weather/INSIDEaaaaa/detail/?date=' + clientDay());
     // Narrowed by the boundary: there are ~550 weather locations across
     // the estate and this area contains one of them.
-    expect(urls).not.toContain('/api/weather/OUTSIDEbbbb/detail/');
+    expect(urls.some((url) => url.includes('OUTSIDEbbbb'))).toBe(false);
     expect(urls.some((url) => url.includes('.pbf'))).toBe(false);
+  });
+
+  it("fetches the reader's trips and borrowed forecasts too (SNOW-965)", async () => {
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const urls = warmed.flat();
+    expect(urls).toContain('/trips/trip-uuid-1/');
+    expect(urls).toContain('/trips/trip-uuid-1/route.geojson');
+    expect(urls).toContain('/api/weather/BORROWEDccc/detail/?date=' + clientDay());
+  });
+
+  it('treats an unanswered area-items request as a shortfall (SNOW-965)', async () => {
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    window.fetch.mockImplementation(async (url) => {
+      const href = String(url);
+      if (href.includes('area-items')) return { ok: false, json: async () => null };
+      if (href.includes('area-content')) return { ok: true, json: async () => AREA_CONTENT };
+      return { ok: true, json: async () => ({ type: 'FeatureCollection', features: [] }) };
+    });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(
+      async () => {
+        const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+        return stored.value[0].contentIncomplete === true;
+      },
+      { timeout: 5000 },
+    );
+
+    const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(stored.value[0].contentAt).toBe('2026-09-01T10:00:00.000Z');
   });
 
   it('resolves the bulletin day at press time, not from the rendered page', async () => {

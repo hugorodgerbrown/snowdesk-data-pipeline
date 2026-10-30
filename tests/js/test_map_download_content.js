@@ -119,6 +119,21 @@ const AREA_CONTENT = {
   weather: [{ short_id: 'INSIDEaaaaa' }],
 };
 
+/**
+ * The reader's own things inside the same rectangle (SNOW-965): one trip,
+ * and one pin whose borrowed forecast sits OUTSIDE the box — the case the
+ * endpoint exists for — plus one borrowing the sheet the area-content plan
+ * already names, which must not be posted twice.
+ */
+const TRIP_UUID = '2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11';
+const AREA_ITEMS = {
+  trips: [{ uuid: TRIP_UUID }],
+  pins: [
+    { uuid: 'pin-1', forecast: { short_id: 'BORROWEDccc' } },
+    { uuid: 'pin-2', forecast: { short_id: 'INSIDEaaaaa' } },
+  ],
+};
+
 const FAVOURITES_GEOJSON = { type: 'FeatureCollection', features: [] };
 const ROUTES_GEOJSON = { type: 'FeatureCollection', features: [] };
 const REPORTS_GEOJSON = { type: 'FeatureCollection', features: [] };
@@ -290,6 +305,9 @@ function buildFixture() {
     <div id="map"
          data-regions-url="/api/regions.geojson"
          data-area-content-url="/api/area-content/"
+         data-area-items-url="/api/area-items/"
+         data-trip-page-url-template="/trips/__UUID__/"
+         data-trip-route-url-template="/trips/__UUID__/route.geojson"
          data-ratings-url="/api/ratings.json"
          data-resorts-url="/api/resorts.json"
          data-weather-url="/api/weather.geojson"
@@ -383,6 +401,12 @@ let areaContentAnswer = () => AREA_CONTENT;
  */
 let areaContentStalls = false;
 
+/**
+ * What `/api/area-items/` answers on the next call (SNOW-965). ``null``
+ * stands for an endpoint that could not be read, as for area-content.
+ */
+let areaItemsAnswer = () => AREA_ITEMS;
+
 /** The `AbortSignal` the last `/api/area-content/` request carried, if any. */
 let lastAreaContentSignal = null;
 
@@ -436,6 +460,14 @@ beforeAll(async () => {
           answer
             ? { ok: true, json: () => Promise.resolve(answer) }
             : { ok: false, json: () => Promise.resolve({}) },
+        );
+      }
+      if (href.includes('area-items')) {
+        const items = areaItemsAnswer();
+        return Promise.resolve(
+          items
+            ? { ok: true, json: () => Promise.resolve(items) }
+            : { ok: false, status: 500, json: () => Promise.resolve({}) },
         );
       }
       if (href.includes('region-basemap-tiles')) body = REGION_BLOB;
@@ -518,8 +550,23 @@ describe('a download takes the content inside its boundary', () => {
     // ~550 across the estate. Since SNOW-953 the narrowing is the
     // server's, so what this asserts is that the client asks for exactly
     // what it was told and invents nothing from the feed it also holds.
-    expect(posted).toContain('/api/weather/INSIDEaaaaa/detail/');
-    expect(posted).not.toContain('/api/weather/OUTSIDEbbbb/detail/');
+    //
+    // SNOW-965: dated with today, the url the map's sheet asks for and the
+    // only one the worker answers offline.
+    expect(posted).toContain(`/api/weather/INSIDEaaaaa/detail/?date=${TODAY}`);
+    expect(posted.some((url) => url.includes('OUTSIDEbbbb'))).toBe(false);
+  });
+
+  it("posts the reader's trip and the forecast a pin borrows (SNOW-965)", () => {
+    expect(posted).toContain(`/trips/${TRIP_UUID}/`);
+    expect(posted).toContain(`/trips/${TRIP_UUID}/route.geojson`);
+    // Outside the box, and here only because a pin inside borrows it.
+    expect(posted).toContain(`/api/weather/BORROWEDccc/detail/?date=${TODAY}`);
+    // A sheet the area-content plan already names is not posted twice.
+    const inside = posted.filter(
+      (url) => url === `/api/weather/INSIDEaaaaa/detail/?date=${TODAY}`,
+    );
+    expect(inside).toHaveLength(1);
   });
 
   it('puts content ahead of the tiles in the posted list', () => {
@@ -733,6 +780,30 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
     expect(record.contentIncomplete).toBe(true);
   });
 
+  it('counts an area-items failure as a shortfall too (SNOW-965)', async () => {
+    // The reader's trips and borrowed forecasts are part of the plan. An
+    // endpoint that was asked and answered 500 leaves them unnamed, and
+    // no tally over the urls that DID land can see that — so the area is
+    // recorded short and never painted done.
+    const btn = document.getElementById('map-download-control');
+    await tapAndSettle();
+    expect(btn.dataset.downloadState).toBe('done');
+
+    areaItemsAnswer = () => null;
+    try {
+      expect(await tapAndSettle()).toBe('partial');
+      const posted = warmedUrls(0);
+      // What could be named still went: the area's own content.
+      expect(posted).toContain(`/api/weather/INSIDEaaaaa/detail/?date=${TODAY}`);
+      expect(posted.some((url) => url.startsWith('/trips/'))).toBe(false);
+    } finally {
+      areaItemsAnswer = () => AREA_ITEMS;
+    }
+
+    // Left flagged: the next test clears it through an empty plan.
+    expect((await recordedRegion()).contentIncomplete).toBe(true);
+  });
+
   /**
    * Run `body` with this area's boundary resolving to NOTHING to fetch.
    *
@@ -743,6 +814,8 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
    */
   async function withEmptyPlan(body) {
     areaContentAnswer = () => ({ regions: [], weather: [] });
+    // SNOW-965: and no items of the reader's own, or they would be urls.
+    areaItemsAnswer = () => ({ trips: [], pins: [] });
     try {
       const btn = document.getElementById('map-download-control');
       btn.click();
@@ -752,6 +825,7 @@ describe('a content shortfall survives the next render (SNOW-932)', () => {
       await body(btn);
     } finally {
       areaContentAnswer = () => AREA_CONTENT;
+      areaItemsAnswer = () => AREA_ITEMS;
     }
   }
 
@@ -912,7 +986,7 @@ describe('a custom area catches up through the sheet (SNOW-932)', () => {
     expect(ok).toBe(true);
     const urls = warmedUrls(0);
     expect(urls).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/${TODAY}/`);
-    expect(urls).toContain('/api/weather/INSIDEaaaaa/detail/');
+    expect(urls).toContain(`/api/weather/INSIDEaaaaa/detail/?date=${TODAY}`);
     expect(urls.some((url) => url.includes('tiles.example.invalid'))).toBe(false);
   });
 

@@ -1584,6 +1584,23 @@
   }
 
   /**
+   * Ask the server for the reader's own things in one rectangle (SNOW-965).
+   *
+   * Through ``fetchJson`` and its bound, as ``fetchAreaContentPlan`` is.
+   *
+   * @param {string|undefined} endpoint The panel's ``data-area-items-url``.
+   * @param {number[]} bbox ``[west, south, east, north]``.
+   * @returns {Promise<{trips: Array<Object>, pins: Array<Object>}|null>}
+   *   ``null`` for a failed request or an answer that is not the
+   *   documented shape — "cannot say".
+   */
+  async function fetchAreaItems(endpoint, bbox) {
+    var data = await fetchJson(endpoint + '?bbox=' + encodeURIComponent(bbox.join(',')));
+    if (!data || !Array.isArray(data.trips) || !Array.isArray(data.pins)) return null;
+    return data;
+  }
+
+  /**
    * How many days behind today this deployment carries bulletins for.
    *
    * @param {Object} data The panel root's dataset.
@@ -1680,12 +1697,20 @@
     var regionUrls = countries.map(function (code) {
       return data.regionsUrl + '?country=' + encodeURIComponent(code);
     });
-    var content = await fetchAreaContentPlan(data.areaContentUrl, bbox);
+    // SNOW-965: the reader's own trips and pins, asked alongside. Signed
+    // out, the page renders no endpoint — nothing to ask, not a shortfall.
+    var itemsUrl = data.areaItemsUrl || '';
+    var answers = await Promise.all([
+      fetchAreaContentPlan(data.areaContentUrl, bbox),
+      itemsUrl ? fetchAreaItems(itemsUrl, bbox) : Promise.resolve(null),
+    ]);
+    var content = answers[0];
+    var items = answers[1];
     // An endpoint that cannot be read is a short plan, never a
     // confidently empty one: every url the warm does fetch can still
     // land, so no tally over the list could tell that the area's
-    // bulletins were never named.
-    var short = !content;
+    // bulletins — or the reader's trips — were never named.
+    var short = !content || (!!itemsUrl && !items);
 
     var plan = core.areaContentURLs({
       regions: (content && content.regions) || [],
@@ -1705,12 +1730,28 @@
       // with today's bulletins never saved.
       days: contentDays(day, readPastDays(data)),
       weatherDetailTemplate: data.weatherDetailUrl || '',
+      // SNOW-965: dated, the url the map's sheet asks for today and the
+      // only one the worker answers offline.
+      weatherDay: day,
     });
+    var planned = plan.bulletinUrls.concat(plan.weatherDetailUrls);
+    // SNOW-965: each trip's page and route, and the sheet each pin
+    // borrows — composed by the same core the map's download uses.
+    var itemUrls =
+      items && typeof core.areaItemURLs === 'function'
+        ? core.areaItemURLs(
+            items,
+            {
+              tripPage: data.tripPageUrlTemplate || '',
+              tripRoute: data.tripRouteUrlTemplate || '',
+              weatherDetail: data.weatherDetailUrl || '',
+              weatherDay: day,
+            },
+            planned,
+          )
+        : [];
 
-    var urls = regionUrls
-      .concat(feedUrls)
-      .concat(plan.bulletinUrls)
-      .concat(plan.weatherDetailUrls);
+    var urls = regionUrls.concat(feedUrls).concat(planned).concat(itemUrls);
     if (urls.length === 0) return false;
 
     var result = await warm(urls);
