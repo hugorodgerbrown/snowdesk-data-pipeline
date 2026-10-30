@@ -780,8 +780,13 @@ what follows is how they meet this module.
   read on load (`refresh`, which collects without painting the report)
   so the panels are answered before anyone presses Run the check.
 - **What the collector keeps for them.** Each record's tile `template`,
-  its `items` expectation and its `principal`, beside the `z` / `bbox` /
-  `band` SNOW-1138 already kept.
+  its `items` expectation — stamped with the principal of the session
+  that synced it, which is what decides whose names may be shown — and
+  its `principal`, beside the `z` / `bbox` / `band` SNOW-1138 already
+  kept.
+- **A refresh is never dropped.** One asked for while a run or a sync
+  holds the panel is queued and runs after it, so a Remove always ends in
+  a repaint from storage.
 - **The one reading that is not storage.** Whether every basemap tile the
   ground implies is in the bucket — `blobFullyCached` over the bucket's
   listed entries, asked by `offline_journey_core.js`'s `tileReading` of
@@ -791,8 +796,8 @@ what follows is how they meet this module.
   `pwaOfflineAudit.syncArea` (or `syncAll` on a `?sync=all` page) —
   `fetchAreaContent` below, unchanged, which now also stamps the items
   expectation through `stampContentRecord`. Remove calls
-  `pwaBasemapAreaRemoval.evict` — the map's own removal — and then
-  `refresh`.
+  `pwaBasemapAreaRemoval.evict` — the map's own removal, after the
+  sheet's own confirmation — and then `refresh`.
 - **Located.** "Your things" are the trips and pins `/api/area-items/`
   places inside the area's rectangle (see the glossary), as the last sync
   recorded them.

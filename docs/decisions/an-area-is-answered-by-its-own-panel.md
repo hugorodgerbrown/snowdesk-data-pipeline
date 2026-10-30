@@ -71,6 +71,13 @@ storage through the audit afterwards rather than trusting the attempt.
   no Remove (no IndexedDB layer or download core there); its "tap to fix"
   links to `/offline/?sync=<id>`, and its map stage reads "Can't tell"
   because the tile reading needs the download core.
-- An area synced by another account never names its things
-  (`principal` on the record, SNOW-1142).
+- Names are shown only to the account that SYNCED them. Each stamp
+  carries the syncing session's `pwa-user-id` as `items.principal` —
+  not the area's own `principal` (SNOW-1142), which is its downloader's:
+  another account signed in on the same device can press Sync now, and
+  the downloader must not then see that account's trips and pins. A
+  missing, empty or different stamp reads "Can't tell" with no names.
+- "Tap to fix" is promised only where Sync now can run (an area whose
+  tiles verify); otherwise the verdict is "Can't tell".
+- Remove asks the Manage downloads sheet's own confirmation first.
 - Saved routes are not in "your things" yet — a later ticket.

@@ -890,9 +890,15 @@ async function assembleAreaContentURLs(blob) {
   // name with their urls, for a sync to stamp onto the record — the same
   // composition the urls above were fetched from. Null when the endpoint
   // was not asked (signed out) or did not answer, which stamps nothing.
+  // SNOW-1308 review: with the principal of the session that synced, so
+  // the names are shown back only to the account they belong to — the
+  // area's own `principal` is its downloader's, not the syncer's.
   const expectation =
     items && typeof core.areaItemExpectation === 'function'
-      ? core.areaItemExpectation(items, itemTemplates)
+      ? {
+        ...core.areaItemExpectation(items, itemTemplates),
+        principal: document.querySelector('meta[name="pwa-user-id"]')?.getAttribute('content') || '',
+      }
       : null;
   return {
     urls: [...planned, ...itemUrls],

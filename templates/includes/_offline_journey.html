@@ -148,5 +148,13 @@ A caller must load, after offline_audit.js:
         <span data-string="sync-label">{% translate "Sync the bulletins and weather saved inside %(name)s" %}</span>
         <span data-string="remove">{% translate "Remove" %}</span>
         <span data-string="remove-label">{% translate "Remove %(name)s from this device" %}</span>
+        {# The Manage downloads sheet's own confirmation, word for word, so #}
+        {# the one removal asks the same question on both surfaces.         #}
+        <span
+            data-string="confirm-remove"
+        >{% translate "Remove the offline map for %(name)s? This frees %(size)s on this device. You can download it again whenever you like." %}</span>
+        <span
+            data-string="confirm-remove-unsized"
+        >{% translate "Remove the offline map for %(name)s? You can download it again whenever you like." %}</span>
     </template>
 </div>

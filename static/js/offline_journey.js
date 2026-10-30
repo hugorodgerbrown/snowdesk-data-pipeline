@@ -78,6 +78,15 @@
     'sync-label': 'Sync the bulletins and weather saved inside %(name)s',
     remove: 'Remove',
     'remove-label': 'Remove %(name)s from this device',
+    // SNOW-1308 review: the Manage downloads sheet's own confirmation
+    // (map_downloads_manager.js `confirm-remove`), word for word, so the
+    // one removal asks the same question on both surfaces. The unsized form
+    // is for an area with no recorded size — an unfinished download.
+    'confirm-remove':
+      'Remove the offline map for %(name)s? This frees %(size)s on this ' +
+      'device. You can download it again whenever you like.',
+    'confirm-remove-unsized':
+      'Remove the offline map for %(name)s? You can download it again whenever you like.',
   };
 
   // Which note a stage's reason reads as.
@@ -304,8 +313,26 @@
       remove.textContent = say(t, 'remove');
       remove.setAttribute('aria-label', say(t, 'remove-label', { name: label }));
       remove.setAttribute('data-journey-remove', panel.id);
+      remove.setAttribute('data-journey-confirm', confirmText(panel, label, t));
     }
     return el;
+  }
+
+  /**
+   * The question Remove asks before it deletes anything — the Manage
+   * downloads sheet's, naming the area and what it frees.
+   *
+   * @param {Object} panel
+   * @param {string} label
+   * @param {Record<string, string>} t
+   * @returns {string}
+   */
+  function confirmText(panel, label, t) {
+    var audit = self.pwaOfflineAuditCore;
+    var size = panel.bytes > 0 && audit ? audit.formatBytes(panel.bytes) : '';
+    return size
+      ? say(t, 'confirm-remove', { name: label, size: size })
+      : say(t, 'confirm-remove-unsized', { name: label });
   }
 
   /**
@@ -441,7 +468,14 @@
       var removeButton = target.closest('[data-journey-remove]');
       if (removeButton) {
         var removeId = removeButton.getAttribute('data-journey-remove');
-        if (removeId) removeArea(removeId);
+        if (!removeId) return;
+        // window.confirm, as the Manage downloads sheet asks it: the copy
+        // names what goes and what it frees, so the choice is judged first.
+        var question = removeButton.getAttribute('data-journey-confirm') || '';
+        if (question && typeof window.confirm === 'function' && !window.confirm(question)) {
+          return;
+        }
+        removeArea(removeId);
       }
     });
 

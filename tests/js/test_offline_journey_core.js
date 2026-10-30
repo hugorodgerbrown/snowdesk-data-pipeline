@@ -33,6 +33,8 @@ function area(overrides) {
     items: {
       trips: [{ uuid: 't1', name: 'Saturday tour', urls: ['/trips/t1/', '/trips/t1/route.geojson'] }],
       pins: [{ uuid: 'p1', name: 'Hut', urls: ['/partials/place-sheet/favourite/p1/?d=2026-09-11'] }],
+      // The account whose sync wrote these names (SNOW-1308 review).
+      principal: 'acct-1',
     },
     ...(overrides || {}),
   };
@@ -116,6 +118,18 @@ describe('the verdict', () => {
     const p = panel(readings(), null);
 
     expect(p.stages.map).toEqual({ status: 'unknown', reason: 'tiles-unread' });
+    expect(p.verdict).toBe('unknown');
+  });
+
+  it("promises no tap where Sync now cannot run — it can't tell instead", () => {
+    // A bucket that did not answer is not completable, so no Sync is
+    // offered; a missing thing beside it must not read "tap to fix".
+    const r = readings([area({ bucketReadable: false, bucketPresent: false, entries: [] })]);
+    r.shellEntries = [];
+    const p = panel(r);
+
+    expect(p.stages.things.status).toBe('no');
+    expect(p.canSync).toBe(false);
     expect(p.verdict).toBe('unknown');
   });
 
@@ -227,7 +241,7 @@ describe('your things', () => {
   });
 
   it('is Yes with nothing to list when the area holds none of your things', () => {
-    const p = panel(readings([area({ items: { trips: [], pins: [] } })]));
+    const p = panel(readings([area({ items: { trips: [], pins: [], principal: 'acct-1' } })]));
 
     expect(p.stages.things).toEqual({ status: 'yes', reason: 'none-here', rows: [] });
   });
@@ -247,14 +261,42 @@ describe('your things', () => {
   });
 
   it("never names another account's things", () => {
-    const p = panel(readings([area({ principal: 'acct-2' })]));
+    const p = panel(
+      readings([area({ items: { ...area().items, principal: 'acct-2' } })]),
+    );
 
     expect(p.stages.things).toEqual({ status: 'unknown', reason: 'other-account', rows: [] });
   });
 
+  it('never shows A the names B synced into an area A downloaded (SNOW-1308 review)', () => {
+    // A downloaded the area; B signed in on this device and pressed Sync
+    // now, so the record holds B's names under A's `principal`. The guard
+    // is the principal stamped WITH the names, not the area's own.
+    const synced = area({ principal: 'acct-A', items: { ...area().items, principal: 'acct-B' } });
+
+    const asA = panel(readings([synced], { currentPrincipal: 'acct-A' }));
+    const asB = panel(readings([synced], { currentPrincipal: 'acct-B' }));
+
+    expect(asA.stages.things).toEqual({ status: 'unknown', reason: 'other-account', rows: [] });
+    expect(asB.stages.things.rows.map((row) => row.name)).toEqual(['Saturday tour', 'Hut']);
+  });
+
+  it('names nothing from an expectation stamped with no principal, or an empty one', () => {
+    // An anonymous ('') download, or a record stamped before the syncing
+    // principal was recorded: nobody can be shown to own these names.
+    const { principal: _gone, ...unstamped } = area().items;
+    for (const items of [unstamped, { ...unstamped, principal: '' }]) {
+      const p = panel(readings([area({ principal: '', items })]));
+
+      expect(p.stages.things).toEqual({ status: 'unknown', reason: 'other-account', rows: [] });
+    }
+  });
+
   it('lists an item with no urls as unknown', () => {
     const p = panel(
-      readings([area({ items: { trips: [{ uuid: 't9', name: 'X', urls: [] }], pins: [] } })]),
+      readings([
+        area({ items: { trips: [{ uuid: 't9', name: 'X', urls: [] }], pins: [], principal: 'acct-1' } }),
+      ]),
     );
 
     expect(p.stages.things.rows).toEqual([{ kind: 'trip', name: 'X', status: 'unknown' }]);

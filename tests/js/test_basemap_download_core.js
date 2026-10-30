@@ -2130,9 +2130,20 @@ describe('areaItemExpectation and stampContentRecord (SNOW-1308)', () => {
     expect(next).toEqual({
       id: 'custom-a',
       contentAt: '2026-01-06T08:00:00.000Z',
-      items: expectation,
+      // No principal on the expectation, so none on the stamp.
+      items: { ...expectation, principal: null },
     });
     expect('contentIncomplete' in next).toBe(false);
+  });
+
+  it("stamps the syncing session's principal with the names (SNOW-1308 review)", () => {
+    // Not the area's own: an area A downloaded can be synced by B, and the
+    // names written are B's.
+    const expectation = { ...core.areaItemExpectation(ITEMS, TEMPLATES), principal: 'acct-B' };
+    const next = core.stampContentRecord({ id: 'a', principal: 'acct-A' }, true, expectation, 'x');
+
+    expect(next.principal).toBe('acct-A');
+    expect(next.items.principal).toBe('acct-B');
   });
 
   it('a sync that did not ask for items leaves the old expectation alone', () => {

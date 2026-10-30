@@ -1438,13 +1438,19 @@ describe('a region record carries its principal (SNOW-1142)', () => {
 describe("the map's syncs stamp what they expected of your things (SNOW-1308)", () => {
   /** What the map's templates compose `AREA_ITEMS` into. */
   function expected() {
-    return window.pwaBasemapDownloadCore.areaItemExpectation(AREA_ITEMS, {
+    // With the principal of the session that synced (SNOW-1308 review) —
+    // the page's `pwa-user-id`.
+    const principal = document.querySelector('meta[name="pwa-user-id"]').getAttribute('content');
+    return {
+      principal,
+      ...window.pwaBasemapDownloadCore.areaItemExpectation(AREA_ITEMS, {
       tripPage: '/trips/__UUID__/',
       tripRoute: '/trips/__UUID__/route.geojson',
       weatherDetail: '/api/weather/__SHORTID__/detail/',
       weatherDay: TODAY,
       favouriteSheet: '/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/',
-    });
+      }),
+    };
   }
 
   it('stamps it on the first download', async () => {

@@ -2930,12 +2930,21 @@
    * own things (`areaItemExpectation`) as `items`. A sync that did not ask
    * (signed out) or fell short leaves `items` as it was.
    *
+   * The expectation carries the SYNCING session's principal
+   * (`expectation.principal`, the `pwa-user-id` the caller read), stamped
+   * as `items.principal`. It is not the area's own `principal`: an area
+   * one account downloaded can be synced by another signed in on the same
+   * device, and the names written are the syncing account's. The
+   * `/offline/` panels show them only to that account (SNOW-1308 review).
+   *
    * Synchronous, because every caller runs it inside a `readModifyWrite`
    * mutator, which must not await.
    *
    * @param {Object} entry The stored record.
    * @param {boolean} complete Whether the content half landed in full.
-   * @param {{trips: Array<Object>, pins: Array<Object>}|null} [expectation]
+   * @param {{trips: Array<Object>, pins: Array<Object>,
+   *   principal?: string}|null} [expectation] With the syncing session's
+   *   principal.
    * @param {string} [nowIso] The stamp; the clock when absent.
    * @returns {Object} A new record.
    */
@@ -2947,7 +2956,11 @@
     delete next.contentIncomplete;
     next.contentAt = nowIso || new Date().toISOString();
     if (expectation && Array.isArray(expectation.trips) && Array.isArray(expectation.pins)) {
-      next.items = { trips: expectation.trips, pins: expectation.pins };
+      next.items = {
+        trips: expectation.trips,
+        pins: expectation.pins,
+        principal: typeof expectation.principal === 'string' ? expectation.principal : null,
+      };
     }
     return next;
   }

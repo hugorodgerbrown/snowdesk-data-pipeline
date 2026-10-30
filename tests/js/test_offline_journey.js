@@ -45,6 +45,7 @@ function area(overrides) {
     items: {
       trips: [{ uuid: 't1', name: 'Saturday tour', urls: ['/trips/t1/'] }],
       pins: [{ uuid: 'p1', name: '', urls: ['/partials/place-sheet/favourite/p1/?d=x'] }],
+      principal: 'acct-1',
     },
     ...(overrides || {}),
   };
@@ -299,7 +300,23 @@ describe('the controls', () => {
     expect(api.syncArea).not.toHaveBeenCalled();
   });
 
+  it('asks the Manage downloads sheet’s question before removing', () => {
+    window.confirm = vi.fn(() => false);
+    mount();
+    announce(readings([area({ bytes: 12 * 1024 * 1024 })]));
+
+    panelFor('region-CH-4115').querySelector('[data-journey-remove]').click();
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Remove the offline map for Martigny? This frees 12 MB on this device. ' +
+        'You can download it again whenever you like.',
+    );
+    expect(window.pwaBasemapAreaRemoval.evict).not.toHaveBeenCalled();
+    delete window.confirm;
+  });
+
   it('removes through the shared removal, then re-reads storage', async () => {
+    window.confirm = vi.fn(() => true);
     mount();
     announce(readings());
     api.refresh.mockClear();
@@ -311,6 +328,10 @@ describe('the controls', () => {
     expect(window.pwaBasemapAreaRemoval.evict.mock.invocationCallOrder[0]).toBeLessThan(
       api.refresh.mock.invocationCallOrder[0],
     );
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Remove the offline map for Martigny? You can download it again whenever you like.',
+    );
+    delete window.confirm;
   });
 
   it('offers no Remove where the removal cannot run', () => {

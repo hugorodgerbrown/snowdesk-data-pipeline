@@ -1752,9 +1752,14 @@
     // SNOW-1308: the same things by name, for the stamp — the composition
     // the map's own syncs stamp, so a panel names them whichever surface
     // synced the area.
+    // SNOW-1308 review: stamped with the principal of the session that
+    // synced, so another account's names are never shown back to the
+    // area's downloader (`thingsStage`).
     var expectation =
       items && typeof core.areaItemExpectation === 'function'
-        ? core.areaItemExpectation(items, itemTemplates)
+        ? Object.assign(core.areaItemExpectation(items, itemTemplates), {
+            principal: sessionPrincipal(),
+          })
         : null;
 
     var urls = regionUrls
@@ -1769,6 +1774,21 @@
     var complete = shellOk && landed && !short;
     await stampAreaContent(areaId, complete, expectation);
     return complete;
+  }
+
+  /**
+   * The account this page was rendered for — base.html's `pwa-user-id`,
+   * the value `db.js` and the area records stamp with. `''` signed out.
+   *
+   * @returns {string}
+   */
+  function sessionPrincipal() {
+    try {
+      var meta = document.querySelector('meta[name="pwa-user-id"]');
+      return (meta && meta.getAttribute('content')) || '';
+    } catch (_err) {
+      return '';
+    }
   }
 
   /**
@@ -2683,6 +2703,21 @@
         running = false;
       }
       publish();
+      drainQueued();
+    };
+
+    // SNOW-1308 review: a refresh asked for while something else holds
+    // `running` (a run, a Sync now, a read) is QUEUED, not dropped — a
+    // Remove pressed mid-run must still end in a repaint from storage. At
+    // most one is held; every caller asking meanwhile shares it.
+    var queued = null;
+    var resolveQueued = null;
+    var drainQueued = function () {
+      if (!queued || running) return;
+      var resolve = resolveQueued;
+      queued = null;
+      resolveQueued = null;
+      refreshNow().then(resolve, resolve);
     };
 
     /**
@@ -2692,8 +2727,19 @@
      * already on screen is re-run instead, so it never sits answering from
      * readings older than the panels above it.
      */
-    var refresh = async function () {
-      if (running) return;
+    var refresh = function () {
+      if (running) {
+        if (!queued) {
+          queued = new Promise(function (resolve) {
+            resolveQueued = resolve;
+          });
+        }
+        return queued;
+      }
+      return refreshNow();
+    };
+
+    var refreshNow = async function () {
       if (!output.hidden) {
         await run();
         return;
@@ -2709,6 +2755,7 @@
       })();
       await reading;
       publish();
+      drainQueued();
     };
 
     var runOnce = async function () {

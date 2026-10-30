@@ -78,6 +78,7 @@
    * @property {{map: Stage, conditions: Stage, things: Stage|null}} stages
    * @property {'ready'|'open-map'|'refresh'|'unknown'} verdict
    * @property {boolean} canSync Whether this host can run Sync now for it.
+   * @property {number} bytes The recorded size, 0 where none landed.
    */
 
   // Regions first: a region is what most people download, and the ones
@@ -281,15 +282,18 @@
    */
   function thingsStage(area, ctx) {
     if (!ctx.signedIn) return null;
-    // SNOW-1142: an area stamped for another account. Its expectation names
-    // that account's trips and pins, which are not this reader's to see.
-    // An anonymous ('') or legacy (absent) stamp claims no account.
-    if (typeof area.principal === 'string' && area.principal && area.principal !== ctx.principal) {
-      return { status: 'unknown', reason: 'other-account', rows: [] };
-    }
     var items = area.items;
     if (!items || !Array.isArray(items.trips) || !Array.isArray(items.pins)) {
       return { status: 'unknown', reason: 'unrecorded', rows: [] };
+    }
+    // SNOW-1308 review: the names were written by whoever SYNCED, which
+    // need not be the area's downloader (`area.principal`) — another
+    // account signed in on this device can press Sync now. So the guard is
+    // the principal stamped with the items, and nothing is named unless it
+    // is this reader's: a missing, empty or different stamp is unknown.
+    var stamped = typeof items.principal === 'string' ? items.principal : '';
+    if (!stamped || stamped !== ctx.principal) {
+      return { status: 'unknown', reason: 'other-account', rows: [] };
     }
     /** @type {ThingRow[]} */
     var rows = [];
@@ -352,6 +356,22 @@
   }
 
   /**
+   * A "tap to fix" verdict only where a tap can fix it.
+   *
+   * Sync now needs an area whose tiles verify (`completableArea`); one
+   * whose map stage could not be read, with another stage No, would
+   * otherwise promise a tap that is never offered. It reads "Can't tell"
+   * instead (SNOW-1308 review).
+   *
+   * @param {'ready'|'open-map'|'refresh'|'unknown'} verdict
+   * @param {boolean} completable
+   * @returns {'ready'|'open-map'|'refresh'|'unknown'}
+   */
+  function tapCanFix(verdict, completable) {
+    return verdict === 'refresh' && !completable ? 'unknown' : verdict;
+  }
+
+  /**
    * Every panel, in paint order.
    *
    * @param {any} readings What `offline_audit.js` collected.
@@ -404,8 +424,9 @@
             orphaned: !!area.orphaned,
             contentAt: typeof area.contentAt === 'string' ? area.contentAt : null,
             stages: stages,
-            verdict: verdictFor(stages),
+            verdict: tapCanFix(verdictFor(stages), !failed && core.completableArea(area, r.now)),
             canSync: !!opts.canFetch && !failed && core.completableArea(area, r.now),
+            bytes: typeof area.bytes === 'number' ? area.bytes : 0,
           });
         });
     });

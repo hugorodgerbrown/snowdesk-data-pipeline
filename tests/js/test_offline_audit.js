@@ -21,7 +21,7 @@
  * test_map_download_eviction.js makes.
  */
 
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -1977,7 +1977,18 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
   it('stamps the record and re-checks, so the report is the receipt', async () => {
     // Nothing else on the site claims a download succeeded without
     // verifying it, and this is not going to be the first thing that does.
-    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    //
+    // SNOW-1308 review: the area is A's, and B is the one signed in and
+    // syncing — so the names stamped are B's, and say so.
+    const meta = document.createElement('meta');
+    meta.name = 'pwa-user-id';
+    meta.content = 'acct-B';
+    document.head.appendChild(meta);
+    onTestFinished(() => meta.remove());
+    const row = await runPanelWithArea({
+      contentAt: '2026-09-01T10:00:00.000Z',
+      principal: 'acct-A',
+    });
 
     row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
@@ -1994,7 +2005,11 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
     // SNOW-1308: the reader's things the sync expected, stamped by the
     // shared rule — the same `areaItemExpectation` the map's syncs stamp
     // (tests/js/test_map_download_content.js), over this page's templates.
-    expect(stored.value[0].items).toEqual(
+    const { principal, ...names } = stored.value[0].items;
+    // Stamped with the syncing session's principal (SNOW-1308 review) —
+    // this page's `pwa-user-id`, set to 'acct-B' below.
+    expect(principal).toBe('acct-B');
+    expect(names).toEqual(
       window.pwaBasemapDownloadCore.areaItemExpectation(AREA_ITEMS, {
         tripPage: '/trips/__UUID__/',
         tripRoute: '/trips/__UUID__/route.geojson',
@@ -2063,6 +2078,44 @@ describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
 
     expect(areaPanel().querySelector('[data-journey-sync]').hidden).toBe(false);
     expect(document.querySelector('[data-audit-summary]')).toBeNull();
+  });
+
+  it('queues a refresh asked for mid-run, so a Remove still repaints (SNOW-1308 review)', async () => {
+    // A refresh used to be dropped while a run held the panel. The run
+    // below has read the area and is waiting on its last reading when the
+    // area is removed and a refresh asked for; the run then paints what it
+    // read, and only the queued refresh can take the panel away.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    expect(row).not.toBeNull();
+    const storage = navigator.storage;
+    let release;
+    let reached = false;
+    Object.defineProperty(navigator, 'storage', {
+      configurable: true,
+      value: {
+        estimate: () =>
+          new Promise((resolve) => {
+            reached = true;
+            release = () => resolve({ usage: 1, quota: 2 });
+          }),
+      },
+    });
+    try {
+      document.querySelector('[data-offline-audit-run]').click();
+      await vi.waitUntil(() => reached, { timeout: 5000 });
+
+      await window.pwaDb.put('meta:app', { key: 'basemap.regions', value: [] });
+      installCachesStub({ [SHELL]: [] });
+      const refreshed = window.pwaOfflineAudit.refresh();
+      Object.defineProperty(navigator, 'storage', { configurable: true, value: storage });
+      release();
+      await refreshed;
+
+      expect(areaPanel()).toBeNull();
+      expect(document.querySelector('[data-journey-empty]').hidden).toBe(false);
+    } finally {
+      Object.defineProperty(navigator, 'storage', { configurable: true, value: storage });
+    }
   });
 
   it('is not offered on a host with no endpoints rendered', async () => {
