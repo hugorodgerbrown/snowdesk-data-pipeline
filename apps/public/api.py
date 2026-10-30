@@ -106,6 +106,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.vary import vary_on_headers
 from django_ratelimit.decorators import ratelimit
 
+from apps.accounts.identity import attest_principal
 from apps.analytics.signals import emit_server_signal
 from apps.bulletins.models import (
     Bulletin,
@@ -1294,8 +1295,13 @@ def area_items(request: HttpRequest) -> HttpResponse:
 
     Response shape::
 
-        {"trips": [{"uuid": "…"}, ...],
-         "pins": [{"uuid": "…", "forecast": {"short_id": "…"} | null}, ...]}
+        {"trips": [{"uuid": "…", "name": "…"}, ...],
+         "pins": [{"uuid": "…", "name": "…",
+                   "forecast": {"short_id": "…"} | null}, ...]}
+
+    SNOW-1308: ``name`` is the label each thing is listed under on the
+    ``/offline/`` panels — a trip's own or its route's, a pin's own or its
+    resort's, ``""`` for an unnamed pin.
 
     An anonymous caller gets ``200`` with both lists empty and costs no
     query: someone signed out has nothing of their own to carry, and a
@@ -1319,8 +1325,16 @@ def area_items(request: HttpRequest) -> HttpResponse:
     if bbox is None:
         response = JsonResponse({"error": "invalid_bbox"}, status=400)
     else:
-        response = JsonResponse(
-            build_area_items(request.user, bbox, today=timezone.localdate())
+        # SNOW-1308: and it names its viewer (``X-Snowdesk-Principal``), so
+        # a client stamps the names it records with the account the server
+        # answered for — not with a page's render-time ``pwa-user-id``,
+        # which a sign-in in another tab can leave stale. Anonymous sends
+        # no header.
+        response = attest_principal(
+            JsonResponse(
+                build_area_items(request.user, bbox, today=timezone.localdate())
+            ),
+            request,
         )
     patch_vary_headers(response, ["Cookie"])
     return response

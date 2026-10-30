@@ -279,8 +279,6 @@
   var FALLBACKS = {
     'section-access': 'Getting in',
     'section-map': 'The map',
-    'section-downloads': 'Map downloads',
-    'default-custom-name': 'Custom area %(n)s',
     'section-content': 'Your content',
 
     'row-offline-support': 'Offline support is installed',
@@ -291,9 +289,6 @@
     'row-region-shapes': 'Region outlines',
     'row-basemap': '%(name)s map',
     'row-basemap-current': '%(name)s map (on screen)',
-    'row-no-downloads': 'Anything downloaded at all',
-    'label-dropzone': '%(name)s (drop zone)',
-    'label-custom': '%(name)s (area you drew)',
     'row-bulletins': 'Bulletins you have opened',
     'row-region-sheets': 'Region details for downloaded days',
     'row-saved-places': 'Your saved places',
@@ -323,7 +318,6 @@
     'note-network-latched':
       'the app stopped calling the server after it went unanswered, and will try again on its own',
     'note-other-account': 'the saved copy belongs to %(stamped)s',
-    'note-no-areas': 'no map area is downloaded, so there is no ground to draw',
     'note-basemap-unstyled':
       'the %(name)s map style is not saved, so nothing drawn on it will appear',
     // SNOW-1058: the passive cache is trimmed by Snowdesk's own count cap
@@ -335,18 +329,6 @@
       'the %(name)s map is only what you have browsed — it is not saved, and older areas drop out as you look at new ones',
     'note-basemap-style-only':
       'only the %(name)s map style is saved, not the map itself — download the map to see it offline',
-    'note-area-incomplete':
-      '%(name)s will not draw until you sync it from the map’s Manage downloads sheet',
-    // SNOW-1138: a pinned bucket no record accounts for. Remove is the
-    // only action the sheet gives one, so that is the remedy named.
-    'note-area-orphaned':
-      '%(name)s is an unfinished download taking up space, so remove it from the map’s Manage downloads sheet',
-    'note-area-missing':
-      '%(name)s is recorded as downloaded but nothing is stored, so download it again',
-    'note-area-unverifiable':
-      '%(name)s was downloaded before the app recorded what an area needs, so it cannot be checked',
-    'note-area-unreadable':
-      '%(name)s could not be checked because this device’s storage did not answer',
     'note-no-bulletins': 'no bulletin has been opened on this device yet',
     'note-no-region-sheets': 'no downloaded area has saved its region details yet',
     'note-empty-region-sheets': 'no area is downloaded, so there are no region details to save',
@@ -366,30 +348,9 @@
     'effect-shapes': 'will draw no region outlines',
     'group-open-map-lead': 'Without a signal the app %(effects)s.',
     'group-open-map-remedy': 'Opening the map once while connected fixes %(count)s.',
-    // SNOW-926: the perishable half. A caveat on a Yes, never a No — the
-    // map draws, and what is behind is what it draws on. Grouped so any
-    // number of areas fold into one sentence with one shared remedy.
-    //
-    // The remedy names the SHEET rather than "tap the download again",
-    // which was true for a region roundel and for nothing else: a custom
-    // area or drop zone opens the downloads manager on a tap, and the
-    // sheet's control is the one gesture every area kind actually has.
-    // Naming a gesture two of the three kinds do not have left those
-    // caveats with no way to clear them but deleting and recreating the
-    // area. Same surface `note-area-incomplete` already points at.
-    //
-    // SNOW-951: the verb follows the control. That sheet offered Repair
-    // and Refresh; it offers one "Sync now" that does both, so a remedy
-    // naming either of the old two would send the reader looking for a
-    // control that is not there.
-    'group-content-stale-lead':
-      'The bulletins and weather saved inside %(effects)s are from an earlier day.',
-    'group-content-stale-remedy':
-      'Syncing the download from the map’s Manage downloads sheet brings %(count)s up to date.',
-    'group-content-never-lead':
-      'No bulletins or weather are saved inside %(effects)s — the map will draw, with nothing on it.',
-    'group-content-never-remedy':
-      'Syncing the download from the map’s Manage downloads sheet fills %(count)s in.',
+    // SNOW-1308: the area notes and the content-age group sentences
+    // (SNOW-926/1138) moved with the download rows to the `/offline/`
+    // panels, which say the same per area (offline_journey.js).
 
     'principal-anonymous': 'a signed-out visitor',
     'principal-account': 'account %(id)s…',
@@ -434,20 +395,8 @@
     saved: 'Saved. Re-checking…',
     'save-failed': 'That could not be saved. Try again while connected.',
     'check-failed': 'The check could not run. Copy the report and send it in.',
-    // SNOW-925: the per-row control and its status line. Not "Download":
-    // the tiles are already here and are not touched — what this fetches
-    // is the day's bulletins and weather inside the boundary.
-    //
-    // SNOW-951: "Sync now" rather than "Update", because this is now the
-    // same action under two roofs. The network menu's per-area button
-    // says "Sync", runs `syncArea` on the map page and NAVIGATES HERE
-    // everywhere else, landing the user on this row — so a second name
-    // for it would read as a second thing to do. The key keeps its
-    // `row-complete` name: it is the completion the report is talking
-    // about, and renaming the key would churn every call site for no
-    // reader's benefit.
-    'row-complete': 'Sync now',
-    'row-complete-label': 'Sync the bulletins and weather saved inside %(name)s',
+    // SNOW-925: Sync now's status line. The control itself is on the
+    // `/offline/` panels since SNOW-1308, and carries its own label there.
     completing: 'Saving this area’s bulletins and weather…',
     completed: 'Saved. Re-checking…',
     'complete-failed':
@@ -698,7 +647,17 @@
         var url = requests[j].url;
         var isPage = looksLikePage(url);
         var principal = null;
-        if (isPage) {
+        // SNOW-1308: a trip's route.geojson and a pin's place sheet are
+        // served offline only under the stamp of the account they were
+        // cached for, as a page is — so the area panels need their stamp
+        // too. Read in the same pass: one walk, one bounded `match` each.
+        var scopedCore = self.pwaOfflineAuditCore;
+        var scoped =
+          isPage ||
+          !!(scopedCore && typeof scopedCore.isPrincipalScoped === 'function' &&
+            scopedCore.isPrincipalScoped(url));
+        var stampUnread = false;
+        if (scoped) {
           // One bounded `match` per page. This is the loop that made the
           // panel unusable on the reported device: a shell cache holds
           // every page the user has visited, and an unbounded `match`
@@ -720,7 +679,12 @@
           // timed-out `match` read as an unstamped page would tell the
           // user "the saved copy belongs to another account" about a page
           // stamped for them all along.
-          if (response === null) pagesComplete = false;
+          if (response === null) {
+            stampUnread = true;
+            // Only a PAGE's unread stamp costs the report's page rows; a
+            // route's or a sheet's costs that one item its answer.
+            if (isPage) pagesComplete = false;
+          }
           // The same header ``sw.js``'s ``_principalMatches`` reads.
           try {
             principal = response ? response.headers.get('X-SW-Principal') : null;
@@ -774,7 +738,13 @@
             }
           }
         }
-        entries.push({ url: url, isPage: isPage, principal: principal });
+        entries.push(
+          scoped && !isPage
+            ? { url: url, isPage: false, principal: principal, scoped: true, stampUnread: stampUnread }
+            : isPage
+              ? { url: url, isPage: true, principal: principal, stampUnread: stampUnread }
+              : { url: url, isPage: false, principal: principal },
+        );
         // The latch, checked inside the hot loop rather than only between
         // caches: a shell cache can hold hundreds of pages, and a device
         // whose Cache Storage has stopped answering must not pay
@@ -1351,6 +1321,15 @@
           // the class tiles this area should hold (`terrainTiles`).
           terrain: !!record.terrain,
           z: record.z || null,
+          // SNOW-1308: the tile template the run fetched under, so the
+          // `/offline/` panels can check every basemap tile the ground
+          // implies is in the bucket (`blobFullyCached`); the reader's
+          // own things the last sync expected (`stampContentRecord`); and
+          // the account the area was stamped for (SNOW-1142), so those
+          // things are never named to another account.
+          template: record.template || null,
+          items: record.items || null,
+          principal: typeof record.principal === 'string' ? record.principal : null,
         });
       });
     }
@@ -1382,6 +1361,10 @@
           terrain: !!record.terrain,
           bbox: Array.isArray(record.bbox) ? record.bbox : null,
           band: Array.isArray(record.band) ? record.band : null,
+          // SNOW-1308: see the region branch above.
+          template: record.template || null,
+          items: record.items || null,
+          principal: typeof record.principal === 'string' ? record.principal : null,
         });
       });
     }
@@ -1598,9 +1581,12 @@
    *   documented shape — "cannot say".
    */
   async function fetchAreaItems(endpoint, bbox) {
-    var data = await fetchJson(endpoint + '?bbox=' + encodeURIComponent(bbox.join(',')));
+    // SNOW-1308: `meta` collects the answer's `X-Snowdesk-Principal` —
+    // whose things these are, as the server answered — for the stamp.
+    var meta = {};
+    var data = await fetchJson(endpoint + '?bbox=' + encodeURIComponent(bbox.join(',')), meta);
     if (!data || !Array.isArray(data.trips) || !Array.isArray(data.pins)) return null;
-    return data;
+    return Object.assign({}, data, { attestedPrincipal: meta.principal || '' });
   }
 
   /**
@@ -1773,23 +1759,37 @@
       .concat(plan.weatherDetailUrls);
     // SNOW-965: each trip's page and route, and the sheet each pin
     // borrows — composed by the same core the map's download uses.
+    var itemTemplates = {
+      tripPage: data.tripPageUrlTemplate || '',
+      tripRoute: data.tripRouteUrlTemplate || '',
+      weatherDetail: data.weatherDetailUrl || '',
+      weatherDay: weatherDay,
+      // SNOW-1313: each pin's own place sheet, dated with the server's day
+      // as the weather sheet is — the day the map's place sheet asks with
+      // on boot.
+      favouriteSheet: data.favouriteSheetUrl || '',
+    };
     var itemUrls =
       items && typeof core.areaItemURLs === 'function'
-        ? core.areaItemURLs(
-            items,
-            {
-              tripPage: data.tripPageUrlTemplate || '',
-              tripRoute: data.tripRouteUrlTemplate || '',
-              weatherDetail: data.weatherDetailUrl || '',
-              weatherDay: weatherDay,
-              // SNOW-1313: each pin's own place sheet, dated with the
-              // server's day as the weather sheet is — the day the map's
-              // place sheet asks with on boot.
-              favouriteSheet: data.favouriteSheetUrl || '',
-            },
-            planned,
-          )
+        ? core.areaItemURLs(items, itemTemplates, planned)
         : [];
+    // SNOW-1308: the same things by name, for the stamp — the composition
+    // the map's own syncs stamp, so a panel names them whichever surface
+    // synced the area.
+    // SNOW-1308 review: stamped with the account the SERVER answered for
+    // (`X-Snowdesk-Principal`), and only where that is the account this
+    // page was rendered for — so another account's names are never shown
+    // back as this one's (`attestedExpectation`, `thingsStage`).
+    var expectation =
+      items &&
+      typeof core.areaItemExpectation === 'function' &&
+      typeof core.attestedExpectation === 'function'
+        ? core.attestedExpectation(
+            core.areaItemExpectation(items, itemTemplates),
+            items.attestedPrincipal,
+            sessionPrincipal(),
+          )
+        : null;
 
     var urls = regionUrls
       .concat(seasonRatingsUrls)
@@ -1801,8 +1801,23 @@
     var result = await warm(urls);
     var landed = !!(result && result.ok > 0 && result.failed === 0);
     var complete = shellOk && landed && !short;
-    await stampAreaContent(areaId, complete);
+    await stampAreaContent(areaId, complete, expectation);
     return complete;
+  }
+
+  /**
+   * The account this page was rendered for — base.html's `pwa-user-id`,
+   * the value `db.js` and the area records stamp with. `''` signed out.
+   *
+   * @returns {string}
+   */
+  function sessionPrincipal() {
+    try {
+      var meta = document.querySelector('meta[name="pwa-user-id"]');
+      return (meta && meta.getAttribute('content')) || '';
+    } catch (_err) {
+      return '';
+    }
   }
 
   /**
@@ -1872,16 +1887,18 @@
    *
    * @param {string} areaId
    * @param {boolean} complete
+   * @param {Object|null} [expectation] SNOW-1308: the reader's own things
+   *   the sync expected (`areaItemExpectation`), stamped on success.
    * @returns {Promise<void>} Best-effort: a failed stamp costs a stale
-   *   verdict on one row, never the fetch that just landed.
+   *   verdict on one panel, never the fetch that just landed.
    */
-  async function stampAreaContent(areaId, complete) {
+  async function stampAreaContent(areaId, complete, expectation) {
+    // SNOW-1308: the one stamping rule, shared with the map's region
+    // roundel and Manage downloads sheet — `contentAt` /
+    // `contentIncomplete`, and the reader's own things this sync expected.
+    var downloadCore = self.pwaBasemapDownloadCore;
     var apply = function (entry) {
-      var next = Object.assign({}, entry);
-      delete next.contentIncomplete;
-      if (complete) next.contentAt = new Date().toISOString();
-      else next.contentIncomplete = true;
-      return next;
+      return downloadCore.stampContentRecord(entry, complete, expectation || null);
     };
     try {
       var db = self.pwaDb;
@@ -1983,9 +2000,11 @@
    * (SNOW-918).
    *
    * @param {string} url
+   * @param {{principal?: string}} [meta] SNOW-1308: filled with the
+   *   answer's `X-Snowdesk-Principal`, where the caller asks.
    * @returns {Promise<Object|null>}
    */
-  async function fetchJson(url) {
+  async function fetchJson(url, meta) {
     var controller =
       typeof AbortController === 'function' ? new AbortController() : null;
     var timer = null;
@@ -1997,6 +2016,15 @@
       }
       var response = await fetch(url, controller ? { signal: controller.signal } : {});
       if (!response || !response.ok) return null;
+      if (meta) {
+        // SNOW-1308: the viewer a private answer names (`attest_principal`).
+        try {
+          meta.principal =
+            (response.headers && response.headers.get('X-Snowdesk-Principal')) || '';
+        } catch (_err) {
+          meta.principal = '';
+        }
+      }
       return await response.json();
     } catch (_err) {
       return null;
@@ -2342,11 +2370,14 @@
    * growing back. ``data-audit-row`` is the handle the reveal uses to
    * find this row again once its answer is known.
    *
+   * SNOW-1308: the third cell SNOW-925 added — the per-area Sync now —
+   * went with the download rows to the `/offline/` panels.
+   *
    * @param {Object} check
    * @param {Document} doc
    * @returns {HTMLElement}
    */
-  function renderRow(check, doc, t, canFetch) {
+  function renderRow(check, doc) {
     var row = doc.createElement('li');
     row.setAttribute('data-audit-check', '');
     row.setAttribute('data-audit-row', check.id);
@@ -2355,9 +2386,8 @@
     var label = doc.createElement('span');
     label.setAttribute('data-audit-label', '');
     label.textContent = check.label;
-    // The label is the one field with no length bound (a region name, an
-    // area the user named themselves), and the row must stay one line —
-    // so CSS truncates and the full text goes in the title.
+    // The label is the one field with no length bound, and the row must
+    // stay one line — so CSS truncates and the full text goes in the title.
     label.title = check.label;
 
     var value = doc.createElement('span');
@@ -2366,64 +2396,7 @@
 
     row.appendChild(label);
     row.appendChild(value);
-    applyRowAction(row, check, t, canFetch);
     return row;
-  }
-
-  /**
-   * Put the "Sync now" control on a row that has something to fetch, or take
-   * it off one that no longer has (SNOW-925).
-   *
-   * A THIRD cell, and the two-cell rule above survives it. That rule is
-   * about per-row EXPLANATION — the prose that kept growing back and that
-   * the summary exists to hold once — and a control is not prose. The
-   * row's answer is unchanged and why the area is behind is still said
-   * once, in the summary.
-   *
-   * One action, so a bare control rather than a menu: the same threshold
-   * the Manage downloads sheet applies. The label comes from ``strings()``
-   * rather than a literal, because ``makemessages`` does not scan
-   * ``static/js``. No class strings: this module paints two hosts with
-   * different stylesheets, so ``src/css/main.css``'s ``[data-offline-audit]``
-   * block styles it by attribute.
-   *
-   * Applied here rather than only at first paint because a row is painted
-   * BLANK and answered afterwards (``revealRow``) — a control added only
-   * in ``renderRow`` would never appear on the animated path.
-   *
-   * @param {HTMLElement} row
-   * @param {Object} check
-   * @param {Record<string, string>} [t]
-   * @param {boolean} [canFetch] Whether this HOST can fetch at all — see
-   *   ``hostCanFetch``. Passed in rather than read off the row, because a
-   *   row is BUILT DETACHED and only appended afterwards: a ``closest``
-   *   from in here answered null on the reduced-motion path and the
-   *   control silently never appeared, which is the whole reason this is
-   *   a parameter.
-   * @returns {void}
-   */
-  function applyRowAction(row, check, t, canFetch) {
-    var strs = t || {};
-    var existing = row.querySelector('[data-audit-complete]');
-    var offerable = !!canFetch && !!check.completable && !!check.areaId;
-    if (!offerable) {
-      if (existing) existing.remove();
-      return;
-    }
-    if (existing) return;
-    var doc = row.ownerDocument;
-    var action = doc.createElement('button');
-    action.type = 'button';
-    action.setAttribute('data-audit-complete', check.areaId);
-    action.textContent = strs['row-complete'] || FALLBACKS['row-complete'];
-    action.setAttribute(
-      'aria-label',
-      String(strs['row-complete-label'] || FALLBACKS['row-complete-label']).replace(
-        '%(name)s',
-        check.label,
-      ),
-    );
-    row.appendChild(action);
   }
 
   /**
@@ -2436,12 +2409,9 @@
    *
    * @param {HTMLElement} target
    * @param {Object} report
-   * @param {Record<string, string>} [t] SNOW-925: for the per-row control's
-   *   own label. Absent on the blank first paint, where no row has one.
    */
-  function renderLog(target, report, t) {
+  function renderLog(target, report) {
     var doc = target.ownerDocument;
-    var canFetch = hostCanFetch(target);
     target.textContent = '';
     var log = doc.createElement('div');
     log.setAttribute('data-audit-log', '');
@@ -2454,7 +2424,7 @@
       el.appendChild(heading);
       var list = doc.createElement('ol');
       section.checks.forEach(function (check) {
-        list.appendChild(renderRow(check, doc, t, canFetch));
+        list.appendChild(renderRow(check, doc));
       });
       el.appendChild(list);
       log.appendChild(el);
@@ -2467,29 +2437,26 @@
    *
    * @param {HTMLElement} target
    * @param {Object} check
-   * @param {Record<string, string>} [t] SNOW-925: for the control this row
-   *   may now have earned — the answer is what decides whether it has.
    */
-  function revealRow(target, check, t) {
+  function revealRow(target, check) {
     var row = target.querySelector('[data-audit-row="' + cssEscape(check.id) + '"]');
     if (!row) return;
     row.setAttribute('data-audit-status', check.status);
     var value = row.querySelector('[data-audit-value]');
     if (value) value.textContent = check.value;
-    applyRowAction(row, check, t, hostCanFetch(target));
   }
 
   /**
    * Whether this panel's host can fetch anything at all (SNOW-925).
    *
-   * The endpoints the per-row control needs are rendered onto the panel
-   * root by a Django view. ``static/offline.html`` has no server to render
+   * The endpoints Sync now needs are rendered onto the panel root by a
+   * Django view. ``static/offline.html`` has no server to render
    * them — and no connection either, which is the whole reason that page
    * exists — so a control there would offer a fetch that cannot arrive.
    * One endpoint stands for all of them: they are written together or not
    * at all.
    *
-   * @param {HTMLElement} target The output element, which IS attached.
+   * @param {HTMLElement} target The panel root, or anything inside it.
    * @returns {boolean}
    */
   function hostCanFetch(target) {
@@ -2565,7 +2532,7 @@
    * @param {Record<string, string>} t
    */
   function render(target, report, t) {
-    renderLog(target, report, t);
+    renderLog(target, report);
     if (!report.pending) renderSummary(target, report, t);
   }
 
@@ -2636,7 +2603,7 @@
       var checks = report.sections[i].checks;
       for (var j = 0; j < checks.length; j += 1) {
         await wait(ROW_INTERVAL_MS);
-        revealRow(target, checks[j], t);
+        revealRow(target, checks[j]);
       }
     }
     renderSummary(target, report, t);
@@ -2706,6 +2673,14 @@
     if (!output) return;
 
     var lastReport = null;
+    // SNOW-1308: the readings the last run or read collected, shared with
+    // the `/offline/` panels (`offline_journey.js`) — one storage walk
+    // answers both the report and the panels.
+    var lastReadings = null;
+    // SNOW-1308: whether this page was opened with `?sync=all`, so a
+    // panel's "tap to fix" runs the whole "Get ready for offline" rather
+    // than one area.
+    var syncAllRequested = false;
     // One run at a time. Two interleaved collections paint the same
     // output element, and the loser's reveal finishes last — so a second
     // press part way through the first run could leave rows answered from
@@ -2716,7 +2691,50 @@
       if (statusEl) statusEl.textContent = message || '';
     };
 
+    /**
+     * SNOW-1308: hand the readings to whoever paints from them — the
+     * panels — with what they need to offer controls. An event rather than
+     * a call, because the panels are a separate module that may not be on
+     * the page at all.
+     */
+    var publish = function () {
+      var detail = latest();
+      try {
+        root.ownerDocument.dispatchEvent(
+          new CustomEvent('snowdesk:offline-readings', { detail: detail }),
+        );
+      } catch (_err) {
+        // A host with no CustomEvent has no panels to tell.
+      }
+    };
+
+    var latest = function () {
+      return {
+        root: root,
+        readings: lastReadings,
+        report: lastReport,
+        canFetch: hostCanFetch(root),
+        syncAllRequested: syncAllRequested,
+        running: running,
+      };
+    };
+
+    var collectSafely = async function () {
+      try {
+        return await collect(root);
+      } catch (err) {
+        // A report that cannot be taken is itself a finding, and it gets
+        // painted like any other.
+        return { now: new Date().toISOString(), failure: describeError(err) };
+      }
+    };
+
+    // SNOW-1308: the read `refresh` is taking, if one is. A press on Run
+    // the check during it waits for it rather than being dropped.
+    var reading = null;
+
     var run = async function () {
+      if (reading) await reading;
       if (running) return;
       running = true;
       try {
@@ -2724,6 +2742,60 @@
       } finally {
         running = false;
       }
+      publish();
+      drainQueued();
+    };
+
+    // SNOW-1308 review: a refresh asked for while something else holds
+    // `running` (a run, a Sync now, a read) is QUEUED, not dropped — a
+    // Remove pressed mid-run must still end in a repaint from storage. At
+    // most one is held; every caller asking meanwhile shares it.
+    var queued = null;
+    var resolveQueued = null;
+    var drainQueued = function () {
+      if (!queued || running) return;
+      var resolve = resolveQueued;
+      queued = null;
+      resolveQueued = null;
+      refreshNow().then(resolve, resolve);
+    };
+
+    /**
+     * SNOW-1308: take the readings and hand them to the panels without
+     * painting the report — what the page does on load, so every area's
+     * panel is answered before anyone presses Run the check. A report
+     * already on screen is re-run instead, so it never sits answering from
+     * readings older than the panels above it.
+     */
+    var refresh = function () {
+      if (running) {
+        if (!queued) {
+          queued = new Promise(function (resolve) {
+            resolveQueued = resolve;
+          });
+        }
+        return queued;
+      }
+      return refreshNow();
+    };
+
+    var refreshNow = async function () {
+      if (!output.hidden) {
+        await run();
+        return;
+      }
+      running = true;
+      reading = (async function () {
+        try {
+          lastReadings = await collectSafely();
+        } finally {
+          running = false;
+          reading = null;
+        }
+      })();
+      await reading;
+      publish();
+      drainQueued();
     };
 
     var runOnce = async function () {
@@ -2737,10 +2809,7 @@
         return;
       }
       say(t.running || FALLBACKS.running);
-      // The fixed questions, unanswered, before anything is read. The
-      // downloads are not among them yet — nothing knows what this device
-      // holds — so the list grows once by however many areas there are,
-      // and then stops moving.
+      // The fixed questions, unanswered, before anything is read.
       output.hidden = false;
       renderLog(output, core.pendingReport(t));
 
@@ -2749,14 +2818,9 @@
       // get here — but a THROW could, and did nothing visible when it
       // did: `run()` is called unawaited from a click handler, so a
       // rejection became an unhandled promise nobody on a phone can see,
-      // and the panel sat on its skeleton for ever. A report that cannot
-      // be taken is itself a finding, and it gets painted like any other.
-      var readings;
-      try {
-        readings = await collect(root);
-      } catch (err) {
-        readings = { now: new Date().toISOString(), failure: describeError(err) };
-      }
+      // and the panel sat on its skeleton for ever.
+      var readings = await collectSafely();
+      lastReadings = readings;
 
       try {
         lastReport = core.buildReport(readings, t);
@@ -2779,9 +2843,7 @@
       }
 
       // The status line carries only what the report itself cannot: that
-      // it is a report about a failure. A degraded run needs no line here
-      // — its unknown rows and its summary already say so, in the place
-      // the reader is looking.
+      // it is a report about a failure.
       say(readings.failure ? t['check-failed'] || FALLBACKS['check-failed'] : '');
 
       // Copy is offered for any report at all, including a failed one.
@@ -2796,23 +2858,12 @@
         // The id and the status are the core's, not this module's
         // vocabulary. Both were once invented here — a row called
         // `map-page` and a status of `ok`, neither of which the core has
-        // ever produced — so the lookup found nothing, the gate read
-        // `hidden = true` on every device, and the one control that fixes
-        // the verdict it is sitting under could not be reached. The real
-        // names are `app-opens` (offline_audit_core.js's ROWS) and the
-        // AuditStatus union, whose pass value is `yes` and whose failing
-        // value on a critical row is `blocked`.
+        // ever produced — so the lookup found nothing and the control was
+        // hidden on every device. The real names are `app-opens` and the
+        // AuditStatus union, whose pass value is `yes`.
         //
-        // Every failing state, with no exceptions — because SNOW-912 made
-        // the warm repair every one of them. `_warmCache(['/map/'])` re-fetches
-        // the page (restamping it for whoever is signed in now, which
-        // answers 'principal', and overwriting an unreadable body), and
-        // `_warmShellSubresources` then fetches the modules that page names
-        // and the cache is missing, which answers 'scripts'. An earlier cut
-        // of this gate excluded 'scripts' on the reasoning that warming
-        // fetched only HTML. It has not fetched only HTML since the commit
-        // that introduced the gate, and the exclusion left the one state
-        // the repair was built for with no way to reach the repair.
+        // Every failing state, with no exceptions — SNOW-912 made the warm
+        // repair every one of them.
         var pageCheck = null;
         if (lastReport) {
           lastReport.sections.forEach(function (section) {
@@ -2854,60 +2905,52 @@
       });
     }
 
-    // SNOW-925: the per-row "Sync now" control. Delegated on the output
-    // element, because every row is repainted on each run and a listener
-    // bound to a button would go with the button it was bound to.
-    //
-    // One run at a time across the whole panel, sharing `running` with the
-    // report itself: the operation ENDS by re-running the report, so a
-    // second press part way through would race two collections onto one
-    // output element — the same reason `run` guards itself.
-    output.addEventListener('click', function (event) {
-      var target = /** @type {HTMLElement} */ (event.target);
-      if (!target || !target.closest) return;
-      var button = target.closest('[data-audit-complete]');
-      if (!button) return;
-      var areaId = button.getAttribute('data-audit-complete');
-      if (!areaId || running) return;
-      completeArea(areaId, button);
-    });
+    /**
+     * Whether this host can run Sync now for one area, by the readings it
+     * last took (SNOW-925's gate, read here since SNOW-1308 moved the
+     * control onto the panels).
+     *
+     * @param {string} areaId
+     * @returns {boolean}
+     */
+    var syncable = function (areaId) {
+      var core = self.pwaOfflineAuditCore;
+      if (!core || !lastReadings || !hostCanFetch(root)) return false;
+      return core.chosenAreas(lastReadings).some(function (area) {
+        return area.id === areaId && core.completableArea(area, lastReadings.now);
+      });
+    };
 
     /**
      * Fetch everything this page can fetch for one area, then re-check it.
      *
-     * The order is cheapest first, and the last step is the point: the
-     * report re-runs and proves the result. Nothing else on the site
-     * claims a download succeeded without verifying it, and this is not
-     * going to be the first thing that does.
+     * The payload behind each panel's Sync now (SNOW-925; on the panels
+     * since SNOW-1308). The order is cheapest first, and the last step is
+     * the point: storage is re-read and the panels repainted from what is
+     * there. Nothing else on the site claims a download succeeded without
+     * verifying it, and this is not going to be the first thing that does.
      *
-     *   1. the map shell, if the report just said it is not saved — not
-     *      per-area, cheap, and an area's content is no use inside an app
-     *      that will not open;
-     *   2. the four overlay feeds, whole and unfiltered, which is how the
-     *      map draws favourites, routes, reports and weather offline;
-     *   3. the bulletins and weather sheets inside THIS area's boundary.
+     *   1. the map shell, if the report just said it is not saved;
+     *   2. the four overlay feeds, whole and unfiltered;
+     *   3. the bulletins and weather sheets inside THIS area's boundary,
+     *      and the reader's own things in it.
      *
      * What it deliberately does NOT do is fetch tiles. The tile half needs
-     * the loaded basemap style — its sources, its sprite, its TileJSON —
-     * and that exists only on the map. Re-deriving it here would be a
-     * second copy of the whole basemap pipeline on a page with no map,
-     * which is exactly the drift `basemap_downloaded_areas.js` was
-     * extracted to prevent. A row whose tiles do not verify is not
-     * offered this control at all (`completableArea`); it keeps the Repair
-     * remedy the report already names.
+     * the loaded basemap style, which exists only on the map — so an area
+     * whose tiles do not verify is not offered this at all
+     * (`completableArea`), and its panel names the map instead.
      *
      * @param {string} areaId
-     * @param {HTMLElement} button
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>} Whether it ran and everything landed.
      */
-    async function completeArea(areaId, button) {
-      if (running) return;
+    async function completeArea(areaId) {
+      if (running || !syncable(areaId)) return false;
       running = true;
-      button.disabled = true;
+      publish();
       say(t.completing || FALLBACKS.completing);
       var ok = false;
       try {
-        ok = await fetchAreaContent(root, areaId, lastReport);
+        ok = await fetchAreaContent(root, areaId, lastReport || reportFor(lastReadings));
       } catch (_err) {
         ok = false;
       }
@@ -2918,34 +2961,42 @@
       );
       running = false;
       // Always, success or not: a run that half landed has still changed
-      // what is on disk, and the report must say what is true now rather
-      // than what it said before the press.
-      await run();
+      // what is on disk, and the panels must say what is true now rather
+      // than what they said before the press.
+      await refresh();
+      return ok;
+    }
+
+    /**
+     * The report for a set of readings, built without painting — what
+     * `fetchAreaContent` reads its `app-opens` row from when Sync now is
+     * pressed before anyone ran the check.
+     *
+     * @param {Object|null} readings
+     * @returns {Object|null}
+     */
+    function reportFor(readings) {
+      var core = self.pwaOfflineAuditCore;
+      if (!core || !readings) return null;
+      try {
+        return core.buildReport(readings, t);
+      } catch (_err) {
+        return null;
+      }
     }
 
     /**
      * SNOW-951: run the report, then update the area the URL named.
      *
-     * The report FIRST, and not merely because the control is painted by
-     * it. The report is what the page answers with either way: if the area
-     * can be updated this proves the result afterwards (the last step of
-     * `completeArea` is another run), and if it cannot — its tiles do not
-     * verify, so no control is painted for it — the reader gets the
-     * finding and the named remedy instead of a press that silently did
-     * nothing. Nothing is said about the request itself; the report is the
-     * honest answer to it in both cases.
+     * The report FIRST: it is what the page answers with either way. If
+     * the area can be updated, Sync now runs and the panels re-read
+     * storage; if it cannot — its tiles do not verify — its panel names
+     * the remedy instead of a press that silently did nothing.
      *
-     * Both id forms resolve HERE rather than in the menu that sent them:
-     * this module already reaches `pwaBasemapDownloadCore` (it is what
-     * `fetchAreaContent` plans against), and `areaIdForRegion` owns the
-     * bucket-id format, which is deliberately never assembled by hand. The
-     * menu reads its rows straight out of two IndexedDB stores where a
-     * region carries `region_id` and a custom area carries `id`, so the
-     * ambiguity starts there and is settled here.
-     *
-     * The button is matched by walking the painted controls rather than
-     * by interpolating the id into a selector — the value is a URL
-     * parameter, and it is never trusted with a selector grammar.
+     * Both id forms resolve HERE: the bucket id as minted, or a bare region
+     * id through `pwaBasemapDownloadCore.areaIdForRegion`, which owns the
+     * bucket-id format. The value is a URL parameter, so it is compared,
+     * never interpolated into a selector.
      *
      * @param {string} requested The `?sync=` value.
      * @returns {Promise<void>}
@@ -2961,14 +3012,12 @@
       if (core && typeof core.areaIdForRegion === 'function') {
         candidates.push(core.areaIdForRegion(requested));
       }
-      var match = null;
-      var controls = output.querySelectorAll('[data-audit-complete]');
-      for (var i = 0; i < controls.length && !match; i += 1) {
-        var areaId = controls[i].getAttribute('data-audit-complete');
-        if (areaId && candidates.indexOf(areaId) !== -1) match = controls[i];
+      for (var i = 0; i < candidates.length; i += 1) {
+        if (syncable(candidates[i])) {
+          await completeArea(candidates[i]);
+          return;
+        }
       }
-      if (!match) return;
-      await completeArea(match.getAttribute('data-audit-complete'), match);
     }
 
     /**
@@ -2976,39 +3025,35 @@
      * run here because this page is not the map.
      *
      * The SAME runner as the menu's (`offline_ready_core.js`): the queue
-     * drains first, then every downloaded area in the report in turn.
-     * What differs is only what "one area" means on this page — its own
-     * content fetch (`fetchAreaContent`, as the row's Sync now control
-     * uses), and nothing at all for an area whose tiles do not verify:
-     * this page cannot mend tiles, so such an area counts as not ready and
-     * its row keeps the remedy the report already names.
+     * drains first, then every downloaded area in turn. What differs is
+     * only what "one area" means on this page — its own content fetch
+     * (`fetchAreaContent`, as Sync now uses), and nothing at all for an
+     * area whose tiles do not verify: this page cannot mend tiles, so such
+     * an area counts as not ready.
      *
-     * The report runs FIRST, to learn which areas there are and which can
-     * be fetched, and AGAIN LAST, which is the proof: nothing on the site
-     * claims a download succeeded without re-reading it. The outcome line
-     * goes in the status line under the report, after that last run.
+     * The report runs FIRST, to learn which areas there are, and the
+     * readings are taken AGAIN LAST, which is the proof. The outcome line
+     * goes in the status line after that.
      *
      * @returns {Promise<void>}
      */
     async function syncAllAreas() {
+      syncAllRequested = true;
       await run();
       var ready = self.pwaOfflineReadyCore;
-      if (!ready || !lastReport || running) return;
-      var areas = [];
-      lastReport.sections.forEach(function (section) {
-        section.checks.forEach(function (check) {
-          if (check.areaId) areas.push(check.areaId);
-        });
+      var core = self.pwaOfflineAuditCore;
+      if (!ready || !core || !lastReadings || running) return;
+      var areas = core.chosenAreas(lastReadings).map(function (area) {
+        return area.id;
       });
       var fetchable = {};
-      var controls = output.querySelectorAll('[data-audit-complete]');
-      for (var i = 0; i < controls.length; i += 1) {
-        var id = controls[i].getAttribute('data-audit-complete');
-        if (id) fetchable[id] = true;
-      }
-      var report = lastReport;
+      areas.forEach(function (id) {
+        if (syncable(id)) fetchable[id] = true;
+      });
+      var report = lastReport || reportFor(lastReadings);
       var shell = {};
       running = true;
+      publish();
       var result;
       try {
         result = await ready.run({
@@ -3033,7 +3078,7 @@
       } finally {
         running = false;
       }
-      await run();
+      await refresh();
       var described = ready.describe(result, t);
       say([described.summary, described.queue].filter(Boolean).join(' · '));
     }
@@ -3046,8 +3091,7 @@
           // The worker's own warm path, not a `fetch` from here. SNOW-624
           // made it stamp a same-origin HTML response with the principal
           // its body declares — which is the whole reason the entry will
-          // be servable offline. A `cache.put` from this page would write
-          // an unstamped entry that the worker refuses for ever.
+          // be servable offline.
           var result =
             typeof self.pwaWarmCache === 'function'
               ? await self.pwaWarmCache(['/map/'])
@@ -3066,12 +3110,43 @@
       });
     }
 
+    controllers.push({
+      root: root,
+      latest: latest,
+      refresh: refresh,
+      syncArea: completeArea,
+      syncAll: syncAllAreas,
+    });
+
     // SNOW-951/1141: the handover from the network menu on a page that is
-    // not the map — one area by id, or `all` for "Get ready for offline". Last in `bind`, because it runs the report
-    // and everything above it has to be listening by then.
+    // not the map — one area by id, or `all` for "Get ready for offline".
+    // Last in `bind`, because it runs the report and everything above it
+    // has to be listening by then.
     var requestedSync = takeRequestedSyncArea();
+    if (requestedSync === 'all') syncAllRequested = true;
     if (requestedSync) syncRequestedArea(requestedSync);
   }
+
+  // SNOW-1308: one controller per bound host, for the panels to ask.
+  var controllers = [];
+
+  /**
+   * The controller for one host, or the first on the page.
+   *
+   * @param {HTMLElement} [root]
+   * @returns {Object|null}
+   */
+  function controllerFor(root) {
+    // The most recent binding first, and only one still in the document:
+    // a host that was replaced (a re-render, a test) must not answer for
+    // the one on the page now.
+    for (var i = controllers.length - 1; i >= 0; i -= 1) {
+      var c = controllers[i];
+      if (root ? c.root === root : c.root.isConnected !== false) return c;
+    }
+    return null;
+  }
+
 
   /**
    * One line naming what went wrong, for the failure report.
@@ -3118,6 +3193,29 @@
     render: render,
     build: build,
     init: init,
+    // SNOW-1308: the `/offline/` panels read the same collection the
+    // report does, and act through the same Sync now and re-read. Each
+    // takes an optional host root and defaults to the first on the page.
+    // `latest` answers `{root, readings, report, canFetch,
+    // syncAllRequested, running}` (readings null until the first read);
+    // every change is also announced as `snowdesk:offline-readings` on the
+    // document, carrying the same object.
+    latest: function (root) {
+      var c = controllerFor(root);
+      return c ? c.latest() : null;
+    },
+    refresh: function (root) {
+      var c = controllerFor(root);
+      return c ? c.refresh() : Promise.resolve();
+    },
+    syncArea: function (areaId, root) {
+      var c = controllerFor(root);
+      return c ? c.syncArea(areaId) : Promise.resolve(false);
+    },
+    syncAll: function (root) {
+      var c = controllerFor(root);
+      return c ? c.syncAll() : Promise.resolve();
+    },
   });
 
   if (document.readyState === 'loading') {

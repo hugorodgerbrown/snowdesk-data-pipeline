@@ -2,7 +2,7 @@
 name: a-drawn-route-is-a-route
 description: A route drawn on the map is a Route (source DRAWN), previewed by routes:draw_preview with the routes layer's Feature
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-10-30
 ---
 
 # A drawn route is a route
@@ -66,8 +66,8 @@ anyone.
   under the layers menu's "Ski-touring routes" row, held on by draw mode
   (`window.pwaSkiRoutes.hold`). SNOW-1285 took the raster off the map: the
   map's ski-touring layer is SAC's tours and summits, every one of them
-  tappable, and draw mode draws swisstopo's network itself as the vector
-  shadow below, whether or not a leg follows it.
+  tappable, and draw mode draws swisstopo's network itself below the
+  draft, whether or not a leg follows it.
 
 ## Consequences
 
@@ -88,8 +88,13 @@ anyone.
   mutation queue under an Idempotency-Key the draft is tagged with, so a
   replay never makes a second route. See docs/mutation-queue.md.
 - A leg can follow swisstopo's ski-touring network (SNOW-1277). From z12
-  draw mode loads `/api/ski-network.geojson` for the view and draws it as
-  a faint shadow, followed or not (SNOW-1285). While following, a tap
+  draw mode loads `/api/ski-network.geojson` for the view and draws it,
+  followed or not (SNOW-1285). Since SNOW-1319 it is a solid amber line
+  on a white halo while following, and thin and faint when not
+  (`route_draw_core.js` `networkPaint`). The faint dark shadow it was
+  before vanished among the winter basemap's own black paths (Hugo,
+  30 Oct 2026: "It's only by seeing the snap-to circle that you can
+  tell"). Amber is used by nothing else in draw mode. While following, a tap
   within 24 px of a line snaps to it. When the last point is on the
   network too, the leg is the shortest path along it
   (`static/js/ski_snap_core.js`, Dijkstra on the device, with no server

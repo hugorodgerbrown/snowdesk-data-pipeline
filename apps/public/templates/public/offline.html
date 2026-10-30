@@ -93,6 +93,19 @@ it gains is somewhere to send a reader who does have a connection.
                 has no way to tell which. This row names the fault; the one
                 below is what you reach for when it cannot be named.
             {% endcomment %}
+            {% comment %}
+                SNOW-1308: one panel per downloaded area, above the report —
+                "will THIS area work without a signal?", answered in three
+                stages under one verdict. It replaced the report's "Map
+                downloads" section, and carries every control that section
+                had (Sync now, and Remove for an unfinished download). It
+                reads the report's own collection; see
+                templates/includes/_offline_journey.html.
+            {% endcomment %}
+            <div class="p-4" data-testid="offline-journey">
+                {% include "includes/_offline_journey.html" %}
+            </div>
+
             <div class="p-4" data-testid="offline-audit-panel">
                 {% include "includes/_offline_audit_panel.html" %}
             </div>
@@ -190,6 +203,14 @@ it gains is somewhere to send a reader who does have a connection.
     <script src="{% static 'js/calendar_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     <script src="{% static 'js/offline_audit_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     <script src="{% static 'js/offline_audit.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    {# SNOW-1308: the per-area panels. The removal module is the one the    #}
+    {# map's Manage downloads sheet uses (it reaches basemap_download_core   #}
+    {# and basemap_downloaded_areas above, and db.js from base.html); the    #}
+    {# journey paints from offline_audit.js's collection, so it loads after  #}
+    {# it.                                                                   #}
+    <script src="{% static 'js/basemap_area_removal.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    <script src="{% static 'js/offline_journey_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    <script src="{% static 'js/offline_journey.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     {% if sync_log_visible %}
         {# SNOW-482: paints #sync-log-list from window.pwaDb.getSyncLog(). #}
         <script src="{% static 'js/sync_log.js' %}" defer nonce="{{ request.csp_nonce }}"></script>

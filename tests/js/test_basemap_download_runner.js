@@ -869,7 +869,7 @@ describe('the content phase', () => {
     // SNOW-932: `short: false` rides along — a bare array from the
     // resolver says nothing about the plan's own wholeness, so it
     // normalises to "not short", which is the pre-ticket reading.
-    expect(extras.content).toEqual({ ok: 1, total: 2, short: false });
+    expect(extras.content).toEqual({ ok: 1, total: 2, short: false, items: null });
   });
 
   it('reports total 0 when the area contains nothing, not a failure', async () => {
@@ -879,7 +879,7 @@ describe('the content phase', () => {
     await runAndSettle(d, o);
 
     const [, , extras] = o.finish.mock.calls[0];
-    expect(extras.content).toEqual({ ok: 0, total: 0, short: false });
+    expect(extras.content).toEqual({ ok: 0, total: 0, short: false, items: null });
   });
 
   it('never reaches the eviction machinery', async () => {
@@ -907,7 +907,7 @@ describe('the content phase', () => {
     expect(d.warmCache.mock.calls[0][0]).toEqual(['/api/feed', '/tile/1', '/tile/2']);
     expect(d.progressGrid.mock.calls[0][1]).toBe(1);
     const [, , extras] = o.finish.mock.calls[0];
-    expect(extras.content).toEqual({ ok: 0, total: 0, short: false });
+    expect(extras.content).toEqual({ ok: 0, total: 0, short: false, items: null });
   });
 
   it('treats a content resolver that yields nothing usable as empty', async () => {
@@ -944,7 +944,23 @@ describe('the content phase', () => {
       '/tile/2',
     ]);
     const [, , extras] = o.finish.mock.calls[0];
-    expect(extras.content).toEqual({ ok: 1, total: 1, short: true });
+    expect(extras.content).toEqual({ ok: 1, total: 1, short: true, items: null });
+  });
+
+  it("carries the plan's expected items through for the record (SNOW-1308)", async () => {
+    // An area fresh from its first download names the reader's own things
+    // on `/offline/`, as one synced later does — so the expectation the
+    // plan composed travels to `finish` beside the tally.
+    const expectation = { trips: [{ uuid: 't', name: 'Tour', urls: ['/trips/t/'] }], pins: [] };
+    const d = deps({
+      contentUrls: vi.fn(async () => ({ urls: ['/a/'], short: false, items: expectation })),
+    });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    const [, , extras] = o.finish.mock.calls[0];
+    expect(extras.content.items).toBe(expectation);
   });
 });
 

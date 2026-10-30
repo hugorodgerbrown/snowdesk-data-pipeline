@@ -27,10 +27,13 @@ A caller must load both scripts:
     {% templatetag openblock %} static 'js/offline_audit_core.js' {% templatetag closeblock %}
     {% templatetag openblock %} static 'js/offline_audit.js' {% templatetag closeblock %}
 
-Nothing here runs on load. The report is taken when the user asks for it:
-it walks every Cache Storage bucket and opens IndexedDB, which is cheap
-but not free, and a device is in no state to be doing it on every render
-of a page nobody came here to audit.
+Nothing here paints on load. The report is drawn when the user asks for
+it: it walks every Cache Storage bucket and opens IndexedDB, which is
+cheap but not free. SNOW-1308: the area panels above it
+(_offline_journey.html) ask this module for ONE read on load — on
+/offline/ and the fallback page they are the first answer the reader
+came for — and the report reuses that collection's machinery rather than
+taking a second walk of its own.
 {% endcomment %}
 {% load i18n components %}
 
@@ -164,7 +167,6 @@ of a page nobody came here to audit.
     <template id="offline-audit-strings-template">
         <span data-string="section-access">{% translate "Getting in" %}</span>
         <span data-string="section-map">{% translate "The map" %}</span>
-        <span data-string="section-downloads">{% translate "Map downloads" %}</span>
         <span data-string="section-content">{% translate "Your content" %}</span>
 
         {# SNOW-922: "Offline support is installed" was "Offline mode is on", #}
@@ -183,10 +185,6 @@ of a page nobody came here to audit.
         {# holds bytes for. A reader on Swisstopo being answered about #}
         {# OpenFreeMap is the report disagreeing with what they can see. #}
         <span data-string="row-basemap-current">{% translate "%(name)s map (on screen)" %}</span>
-        <span data-string="row-no-downloads">{% translate "Anything downloaded at all" %}</span>
-        <span data-string="label-dropzone">{% translate "%(name)s (drop zone)" %}</span>
-        <span data-string="label-custom">{% translate "%(name)s (area you drew)" %}</span>
-        <span data-string="default-custom-name">{% blocktrans %}Custom area %(n)s{% endblocktrans %}</span>
         <span data-string="row-bulletins">{% translate "Bulletins you have opened" %}</span>
         <span data-string="row-region-sheets">{% translate "Region details for downloaded days" %}</span>
         <span data-string="row-saved-places">{% translate "Your saved places" %}</span>
@@ -221,9 +219,6 @@ of a page nobody came here to audit.
         >{% translate "the app stopped calling the server after it went unanswered, and will try again on its own" %}</span>
         <span data-string="note-other-account">{% translate "the saved copy belongs to %(stamped)s" %}</span>
         <span
-            data-string="note-no-areas"
-        >{% translate "no map area is downloaded, so there is no ground to draw" %}</span>
-        <span
             data-string="note-basemap-unstyled"
         >{% translate "the %(name)s map style is not saved, so nothing drawn on it will appear" %}</span>
         {# A caveat on a Yes, not a No. The map DOES draw outside a #}
@@ -245,26 +240,6 @@ of a page nobody came here to audit.
         <span
             data-string="note-basemap-style-only"
         >{% translate "only the %(name)s map style is saved, not the map itself — download the map to see it offline" %}</span>
-        <span
-            data-string="note-area-incomplete"
-        >{% translate "%(name)s will not draw until you sync it from the map’s Manage downloads sheet" %}</span>
-        {# SNOW-1138: a pinned bucket with no record — a download that never #}
-        {# finished. The sheet's only action for one is Remove. #}
-        <span
-            data-string="note-area-orphaned"
-        >{% translate "%(name)s is an unfinished download taking up space, so remove it from the map’s Manage downloads sheet" %}</span>
-        <span
-            data-string="note-area-missing"
-        >{% translate "%(name)s is recorded as downloaded but nothing is stored, so download it again" %}</span>
-        <span
-            data-string="note-area-unverifiable"
-        >{% translate "%(name)s was downloaded before the app recorded what an area needs, so it cannot be checked" %}</span>
-        {# A read that never came back. NOT "nothing is stored, download it #}
-        {# again" — that is a serious thing to say about an area the user #}
-        {# chose, and an unanswered read is no evidence for it. #}
-        <span
-            data-string="note-area-unreadable"
-        >{% translate "%(name)s could not be checked because this device’s storage did not answer" %}</span>
         <span data-string="note-no-bulletins">{% translate "no bulletin has been opened on this device yet" %}</span>
         <span
             data-string="note-no-region-sheets"
@@ -299,32 +274,6 @@ of a page nobody came here to audit.
         <span
             data-string="group-open-map-remedy"
         >{% translate "Opening the map once while connected fixes %(count)s." %}</span>
-
-        {# SNOW-926: the perishable half of a download. A caveat on a Yes,   #}
-        {# and the remedy names the SHEET rather than "tap the download        #}
-        {# again" — that was true for a region roundel and for nothing else,   #}
-        {# and the sheet's own control is the one gesture every area kind      #}
-        {# has. Same surface note-area-incomplete already points at.           #}
-        {# SNOW-951: that control is "Sync now" — one item in place of the     #}
-        {# sheet's former Repair and Refresh — so the verb here follows it     #}
-        {# rather than sending a reader after a control that is gone.          #}
-        {# never a No — an area whose tiles verify still draws, and what is  #}
-        {# behind is what it draws ON. Grouped rather than noted per row, so #}
-        {# any number of stale areas fold into one sentence with one shared  #}
-        {# remedy instead of filling the three-clause notes cap with the     #}
-        {# same fact restated.                                               #}
-        <span
-            data-string="group-content-stale-lead"
-        >{% translate "The bulletins and weather saved inside %(effects)s are from an earlier day." %}</span>
-        <span
-            data-string="group-content-stale-remedy"
-        >{% translate "Syncing the download from the map’s Manage downloads sheet brings %(count)s up to date." %}</span>
-        <span
-            data-string="group-content-never-lead"
-        >{% translate "No bulletins or weather are saved inside %(effects)s — the map will draw, with nothing on it." %}</span>
-        <span
-            data-string="group-content-never-remedy"
-        >{% translate "Syncing the download from the map’s Manage downloads sheet fills %(count)s in." %}</span>
 
         <span data-string="principal-anonymous">{% translate "a signed-out visitor" %}</span>
         <span data-string="principal-account">{% translate "account %(id)s…" %}</span>
@@ -390,17 +339,8 @@ of a page nobody came here to audit.
             data-string="check-failed"
         >{% translate "The check could not run. Copy the report and send it in." %}</span>
 
-        {# SNOW-925: the per-row control. Not "Download" — the tiles are     #}
-        {# already here and are not touched; what this fetches is the day's  #}
-        {# bulletins and weather inside the boundary.                        #}
-        {# SNOW-951: "Sync now", the same words the network menu and the     #}
-        {# map's Manage downloads sheet use for the same action. That menu   #}
-        {# NAVIGATES HERE off the map page and presses this very control, so #}
-        {# a second name for it would read as a second thing to do.          #}
-        <span data-string="row-complete">{% translate "Sync now" %}</span>
-        <span
-            data-string="row-complete-label"
-        >{% translate "Sync the bulletins and weather saved inside %(name)s" %}</span>
+        {# SNOW-925: Sync now's status line. The control itself is on the  #}
+        {# /offline/ panels since SNOW-1308 (_offline_journey.html).        #}
         <span data-string="completing">{% translate "Saving this area’s bulletins and weather…" %}</span>
         <span data-string="completed">{% translate "Saved. Re-checking…" %}</span>
         <span
