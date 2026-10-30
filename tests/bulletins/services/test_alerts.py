@@ -24,7 +24,9 @@ from apps.bulletins.services.alerts import (
     deliver,
     evaluate_account,
     in_night_hold,
+    places_on,
     since_previous_day,
+    trip_places,
 )
 from apps.bulletins.services.bulletin_change import BulletinState, ProblemState
 from tests.factories import (
@@ -36,6 +38,8 @@ from tests.factories import (
     PushSubscriptionFactory,
     RegionDayRatingFactory,
     ResortFactory,
+    TripFactory,
+    TripParticipantFactory,
 )
 
 TODAY = datetime.date(2026, 1, 16)
@@ -397,6 +401,144 @@ class TestEvaluateAndDeliver:
         account, region = follower
         publish(region, TOMORROW, {})
         assert evaluate_account(account, NOW).rows == []
+
+
+@pytest.mark.django_db
+class TestTripDay:
+    """A saved trip alerts for its start region on its own day (SNOW-947)."""
+
+    @pytest.fixture()
+    def traveller(self, db: Any) -> tuple[Account, Any]:
+        """Return an account with alerts on and no pins, and a region."""
+        account = AccountFactory.create(
+            notify_when=Account.NotifyWhen.CHANGES,
+            alerts_enabled_at=NOW - datetime.timedelta(days=7),
+        )
+        return account, MicroRegionFactory.create(region_id="CH-4115", name="Verbier")
+
+    def test_trip_tomorrow_sends_in_changes_mode(self, traveller: tuple) -> None:
+        """The evening before, the trip's day sends even when nothing moved."""
+        account, region = traveller
+        trip = TripFactory.create(
+            created_by=account.user, date=TOMORROW, name="Mont Fort loop"
+        )
+        BulletinAlertFactory.create(
+            account=account,
+            region=region,
+            target_date=TODAY,
+            fingerprint=state("considerable").fingerprint(),
+            state=state("considerable").to_json(),
+        )
+        publish(region, TODAY, render("considerable"))
+        publish(region, TOMORROW, render("considerable"))
+        PushSubscriptionFactory.create(account=account)
+        with (
+            patch.object(alerts, "start_region", return_value=region),
+            patch.object(alerts, "dispatch_push", return_value=OK),
+        ):
+            run = deliver(evaluate_account(account, NOW))
+        assert run.message is not None
+        assert run.message.title.startswith("Mont Fort loop")
+        assert run.message.url == f"/trips/{trip.uuid}/"
+        row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+        assert row.outcome == BulletinAlert.Outcome.SENT
+
+    def test_trip_saved_after_a_quiet_skip_still_sends(self, traveller: tuple) -> None:
+        """A pin's SKIPPED quiet day does not swallow a trip saved after it."""
+        account, region = traveller
+        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
+        for day in (TODAY, TOMORROW):
+            BulletinAlertFactory.create(
+                account=account,
+                region=region,
+                target_date=day,
+                fingerprint=state("considerable").fingerprint(),
+                state=state("considerable").to_json(),
+                outcome=(
+                    BulletinAlert.Outcome.SENT
+                    if day == TODAY
+                    else BulletinAlert.Outcome.SKIPPED
+                ),
+            )
+        publish(region, TODAY, render("considerable"))
+        publish(region, TOMORROW, render("considerable"))
+        assert evaluate_account(account, NOW).message is None
+
+        TripFactory.create(created_by=account.user, date=TOMORROW, name="Mont Fort")
+        PushSubscriptionFactory.create(account=account)
+        with (
+            patch.object(alerts, "start_region", return_value=region),
+            patch.object(alerts, "dispatch_push", return_value=OK),
+        ):
+            run = deliver(evaluate_account(account, NOW))
+            assert run.message is not None
+            row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+            assert row.outcome == BulletinAlert.Outcome.SENT
+            # Told now: the next run is quiet.
+            assert evaluate_account(account, NOW).message is None
+
+    def test_pinned_place_in_changes_mode_stays_quiet(self, traveller: tuple) -> None:
+        """Without the trip the same quiet day sends nothing."""
+        account, region = traveller
+        FavouriteFactory.create(user=account.user, region=region, region_pin=True)
+        # Today is already logged, so only tomorrow is in question.
+        BulletinAlertFactory.create(
+            account=account,
+            region=region,
+            target_date=TODAY,
+            fingerprint=state("considerable").fingerprint(),
+            state=state("considerable").to_json(),
+        )
+        publish(region, TODAY, render("considerable"))
+        publish(region, TOMORROW, render("considerable"))
+        assert evaluate_account(account, NOW).message is None
+
+    def test_trip_on_another_day_is_not_a_place(self, traveller: tuple) -> None:
+        """A trip dated next week adds nothing today or tomorrow."""
+        account, region = traveller
+        TripFactory.create(
+            created_by=account.user, date=TODAY + datetime.timedelta(days=7)
+        )
+        publish(region, TOMORROW, render())
+        with patch.object(alerts, "start_region", return_value=region):
+            assert evaluate_account(account, NOW).rows == []
+
+    def test_trip_and_pin_in_one_region_are_one_place(self, traveller: tuple) -> None:
+        """A pin and a trip in one region make one row, both named."""
+        account, region = traveller
+        FavouriteFactory.create(
+            user=account.user, region=region, region_pin=True, name="Verbier"
+        )
+        TripFactory.create(created_by=account.user, date=TOMORROW, name="Mont Fort")
+        with patch.object(alerts, "start_region", return_value=region):
+            (place,) = places_on(
+                account_places(account.user), trip_places(account.user, TOMORROW)
+            )
+        assert place.label == "Verbier, Mont Fort"
+        assert place.trip_url
+
+    def test_joined_trip_alerts_the_joiner(self, traveller: tuple) -> None:
+        """Anyone who saved the trip is told, not only its organiser."""
+        account, region = traveller
+        trip = TripFactory.create(date=TOMORROW)
+        TripParticipantFactory.create(trip=trip, user=account.user)
+        with patch.object(alerts, "start_region", return_value=region):
+            (place,) = trip_places(account.user, TOMORROW)
+        assert place.region == region
+
+    def test_start_outside_every_region_adds_nothing(self, traveller: tuple) -> None:
+        """No region for the start is no place, and no error."""
+        account, _region = traveller
+        TripFactory.create(created_by=account.user, date=TOMORROW)
+        with patch.object(alerts, "start_region", return_value=None):
+            assert trip_places(account.user, TOMORROW) == []
+
+    def test_someone_elses_trip_is_not_a_place(self, traveller: tuple) -> None:
+        """A trip the account never saved is not its place."""
+        account, region = traveller
+        TripFactory.create(date=TOMORROW)
+        with patch.object(alerts, "start_region", return_value=region):
+            assert trip_places(account.user, TOMORROW) == []
 
 
 @pytest.mark.django_db

@@ -8,7 +8,8 @@ Covers:
     bulletin the day before.
   - The region body's one-line alerts prompt: an offer while alerts are
     off, a note when the region is followed.
-  - /alerts/<date>/: sign-in required, one row per followed place.
+  - /alerts/<date>/: sign-in required, one row per followed place, and a
+    row for a saved trip that day linking to the trip (SNOW-947).
   - /_alerts-replay/: staff only, a season grouped by week.
 """
 
@@ -34,6 +35,7 @@ from tests.factories import (
     MicroRegionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
+    TripFactory,
     UserFactory,
 )
 from tests.public.test_region_sheet import _render_model
@@ -181,6 +183,42 @@ class TestAlertsDay:
         assert "Up from Moderate (2)." in content
         assert f"/map/?d={today}#{region.region_id}" in content
         assert "No bulletin for this day." in content
+
+    def test_trip_that_day_is_a_row(self, client: Client, region: Any) -> None:
+        """A saved trip on the day is a row that opens the trip."""
+        account = AccountFactory.create()
+        today = timezone.localdate()
+        trip = TripFactory.create(
+            created_by=account.user, date=today, name="Mont Fort loop"
+        )
+        client.force_login(account.user)
+        with patch("apps.bulletins.services.alerts.start_region", return_value=region):
+            content = client.get(f"/alerts/{today.isoformat()}/").content.decode()
+        assert content.count('data-testid="alerts-day-row"') == 1
+        assert "Mont Fort loop" in content
+        assert f"/trips/{trip.uuid}/" in content
+        assert "Open the trip" in content
+
+    def test_todays_trip_stays_on_tomorrows_page(
+        self, client: Client, region: Any
+    ) -> None:
+        """A bundle links to tomorrow; today's trip keeps a row of its own day."""
+        account = AccountFactory.create()
+        today = timezone.localdate()
+        tomorrow = today + datetime.timedelta(days=1)
+        TripFactory.create(created_by=account.user, date=today, name="Mont Fort")
+        client.force_login(account.user)
+        with patch("apps.bulletins.services.alerts.start_region", return_value=region):
+            content = client.get(f"/alerts/{tomorrow.isoformat()}/").content.decode()
+            past = client.get(
+                f"/alerts/{(tomorrow + datetime.timedelta(days=1)).isoformat()}/"
+            ).content.decode()
+        assert content.count('data-testid="alerts-day-row"') == 1
+        assert "Mont Fort ·" in content
+        assert f"/map/?d={today.isoformat()}#{region.region_id}" not in content
+        assert "Up from Moderate (2)." in content
+        # Once the trip's day is past, it is not carried onto later pages.
+        assert "Mont Fort" not in past
 
     def test_empty(self, client: Client, db: Any) -> None:
         """No places: how to get some."""

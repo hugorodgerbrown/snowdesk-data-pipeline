@@ -1,6 +1,6 @@
 ---
 name: alerts
-description: Bulletin alerts — send_bulletin_alerts, BulletinAlert, BulletinState, notify_when, /alerts/<day>/, since strip, bulletin_alerts flag
+description: Bulletin alerts — send_bulletin_alerts, BulletinAlert, notify_when, trip_places (a trip's day), /alerts/<day>/, bulletin_alerts flag
 status: current
 last-reviewed: 2026-10-30
 ---
@@ -40,10 +40,24 @@ See "Going public" before turning either on.
 - **Which places.** Region pins and saved resorts, each with
   `Favourite.alerts` (default on). A dropped pin never alerts. Places in
   one region are one place, named "Martigny-Verbier, Verbier".
+- **Saved trips (SNOW-947).** A trip the account has saved (organiser or
+  not, `Trip.objects.for_user`) is a place on its own day only, for the
+  region its route starts in — `plan_days.start_region`, the rule the trip
+  page and the Plan page use, so the alert names the level the trip page
+  shows. `trip_places` builds them and `places_on` folds them into the
+  day's pins: a trip in a pinned region is one place and one row, with
+  both names. A one-place trip alert, and the trip's row on
+  `/alerts/<day>/`, open the trip page. A start outside every region adds
+  nothing. Trips follow the account's alert setting; there is no per-trip
+  switch.
 - **Which bulletin.** `RegionDayRating.source_bulletin` — the same issue
   the map shows for that day.
 - **Modes.** `NEW_BULLETIN` restates the establishing issue every day;
-  `CHANGES` sends only when the state moved from the day before. A changed
+  `CHANGES` sends only when the state moved from the day before — except
+  on a saved trip's day, whose establishing issue always sends (Hugo,
+  2026-10-30: the night before you go, you want the bulletin). A pin's
+  quiet day logged `SKIPPED` before the trip was saved does not count as
+  the trip's alert. A changed
   update to a day already told sends in either mode. A reissue a reader
   could not tell apart (same fingerprint) never sends.
 - **One day per place.** If today and tomorrow both fire for one place,
