@@ -667,6 +667,31 @@ describe('a downloaded area refreshes rather than re-downloads', () => {
     expect(urls).toContain(`/${REGION_ID.toLowerCase()}/${REGION_SLUG}/${TODAY}/`);
     expect(urls.some((url) => url.includes('tiles.example.invalid'))).toBe(false);
   });
+
+  it('neither fetches nor stores the summit list on a page without it (SNOW-1320)', async () => {
+    // `data-ski-summits-url` is on `#map` only where search lists summits
+    // (the route_drawing flag). Without it there is nothing to ask for.
+    const mapEl = document.getElementById('map');
+    const btn = document.getElementById('map-download-control');
+    await waitFor(() => btn.dataset.downloadState === 'done');
+    delete mapEl.dataset.skiSummitsUrl;
+    overlayStore.clear();
+    window.fetch.mockClear();
+    window.pwaWarmCache.mockClear();
+    try {
+      btn.click();
+      await waitFor(() => window.pwaWarmCache.mock.calls.length > 0);
+
+      expect(overlayStore.has('weather')).toBe(true);
+      expect(overlayStore.has('ski_summits')).toBe(false);
+      expect(window.fetch.mock.calls.some(([url]) => String(url).includes('ski-summits'))).toBe(
+        false,
+      );
+    } finally {
+      mapEl.dataset.skiSummitsUrl = '/api/ski-summits.json';
+      await waitFor(() => btn.dataset.downloadState !== 'busy');
+    }
+  });
 });
 
 describe('a content shortfall survives the next render (SNOW-932)', () => {

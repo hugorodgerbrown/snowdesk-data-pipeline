@@ -1,5 +1,5 @@
 /*
- * tests/js/test_ski_tours_summit_toast.js — a summit picked in search says
+ * tests/js/test_ski_tours.js — a summit picked in search says
  * when its tours need signal (SNOW-1320).
  *
  * Search's summit rows read offline (map.js loadSummits); the tours do not.

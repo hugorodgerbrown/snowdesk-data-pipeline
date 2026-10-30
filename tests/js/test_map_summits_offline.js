@@ -1,5 +1,5 @@
 /*
- * tests/js/test_map_search_summits_offline.js — search's SAC summit rows
+ * tests/js/test_map_summits_offline.js — search's SAC summit rows
  * read offline (SNOW-1320).
  *
  * map.js's `loadSummits` reads /api/ski-summits.json the first time search
