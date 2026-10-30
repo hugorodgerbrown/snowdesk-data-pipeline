@@ -1,11 +1,16 @@
 ---
 name: notes-about-the-day-sit-behind-a-bell
-description: Why facts about the map's day sit behind one date-row bell, not pills (map_day_notes.js, window.pwaDayNotes, #map-day-notes, the dot)
-status: current
-last-reviewed: 2026-10-23
+description: HISTORICAL — why facts about the map's day sat behind the date-row bell (map_day_notes.js, window.pwaDayNotes)
+status: historical
+last-reviewed: 2026-10-30
 ---
 
 # Notes about the day sit behind a bell
+
+> **Superseded by SNOW-1333** ([the bell lists your alerts](the-bell-lists-your-alerts.md)).
+> The day's notes were dropped and the bell lists the account's bulletin
+> alerts and nothing else. `map_day_notes.js` and `window.pwaDayNotes` are
+> gone; the layers menu's Weather row keeps its "Forecast only" line.
 
 **SNOW-1206.** Things that are true of the day on the map, rather than of
 anything drawn on it, go in the day's notes: one bell in the date row

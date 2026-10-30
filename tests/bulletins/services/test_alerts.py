@@ -25,6 +25,7 @@ from apps.bulletins.services.alerts import (
     evaluate_account,
     in_night_hold,
     places_on,
+    recent_alerts,
     since_previous_day,
     trip_places,
 )
@@ -336,6 +337,30 @@ class TestEvaluateAndDeliver:
         settled.refresh_from_db()
         assert settled.outcome == BulletinAlert.Outcome.SENT and settled.sent_push
 
+    def test_worker_stamps_one_send_time_on_every_row(self, follower: tuple) -> None:
+        """A bundle's rows share one updated_at, so the bell folds them."""
+        account, region = follower
+        rows = [
+            BulletinAlertFactory.create(
+                account=account,
+                region=region,
+                target_date=TOMORROW,
+                outcome=BulletinAlert.Outcome.PENDING,
+            )
+            for _ in range(3)
+        ]
+        PushSubscriptionFactory.create(account=account)
+        with patch.object(alerts, "dispatch_push", return_value=OK):
+            alerts._worker_deliver_alert.call(
+                account.pk, [r.pk for r in rows], {}, "t", "b", "/"
+            )
+        stamps = set(
+            BulletinAlert.objects.filter(pk__in=[r.pk for r in rows]).values_list(
+                "updated_at", flat=True
+            )
+        )
+        assert len(stamps) == 1
+
     def test_no_email_when_push_reaches(self, follower: tuple) -> None:
         """FALLBACK with a live device sends push only."""
         account, region = follower
@@ -553,3 +578,55 @@ def test_since_previous_day() -> None:
     change, previous = result
     assert change.rating_direction == 1
     assert previous == TODAY
+
+
+class TestRecentAlerts:
+    """SNOW-1333: what the map's bell lists."""
+
+    def _row(self, account: Account, **kwargs: Any) -> BulletinAlert:
+        """Write one sent row with a message, then backdate it if asked."""
+        when = kwargs.pop("when", None)
+        row = BulletinAlertFactory.create(
+            account=account,
+            title=kwargs.pop("title", "Verbier bulletin"),
+            body=kwargs.pop("body", "Valid from Friday at 5 pm to Saturday at 5 pm."),
+            url=kwargs.pop("url", "/alerts/2026-10-31/"),
+            **kwargs,
+        )
+        if when is not None:
+            BulletinAlert.objects.filter(pk=row.pk).update(updated_at=when)
+        return row
+
+    def test_newest_first_within_the_week(self, db: Any) -> None:
+        """A week back, newest first; older rows drop off."""
+        account = AccountFactory.create()
+        now = datetime.datetime(2026, 10, 30, 18, tzinfo=datetime.UTC)
+        self._row(account, title="Old", when=now - datetime.timedelta(days=8))
+        self._row(account, title="Thursday", when=now - datetime.timedelta(days=1))
+        self._row(account, title="Friday", when=now - datetime.timedelta(hours=1))
+        assert [a.title for a in recent_alerts(account, now)] == ["Friday", "Thursday"]
+
+    def test_a_bundle_is_one_message(self, db: Any) -> None:
+        """A bundle's one row per place collapses into its one message."""
+        account = AccountFactory.create()
+        now = datetime.datetime(2026, 10, 30, 18, tzinfo=datetime.UTC)
+        for _ in range(3):
+            self._row(account, title="Bulletins for your 3 places", when=now)
+        assert len(recent_alerts(account, now)) == 1
+
+    def test_two_sends_with_the_same_words_stay_two(self, db: Any) -> None:
+        """A second update in one validity window is its own entry."""
+        account = AccountFactory.create()
+        now = datetime.datetime(2026, 10, 30, 18, tzinfo=datetime.UTC)
+        self._row(account, when=now - datetime.timedelta(hours=3))
+        self._row(account, when=now)
+        assert len(recent_alerts(account, now)) == 2
+
+    def test_only_sent_messages_of_this_account(self, db: Any) -> None:
+        """Skipped rows, wordless rows and other accounts' rows are left out."""
+        account = AccountFactory.create()
+        now = datetime.datetime(2026, 10, 30, 18, tzinfo=datetime.UTC)
+        self._row(account, outcome=BulletinAlert.Outcome.SKIPPED, when=now)
+        self._row(account, title="", when=now)
+        self._row(AccountFactory.create(), when=now)
+        assert recent_alerts(account, now) == []

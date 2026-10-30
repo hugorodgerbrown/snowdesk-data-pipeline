@@ -55,6 +55,7 @@ from typing import TYPE_CHECKING
 
 from django.db import transaction
 from django.urls import reverse
+from django.utils import timezone
 from django_tasks import task
 
 from apps.accounts.models import Account
@@ -624,6 +625,8 @@ def _worker_deliver_alert(
             "Bulletin alert for account %s reached no channel; retrying next run",
             account_id,
         )
+    # One updated_at for every row of the message: it is when it went, and
+    # what tells one delivery's rows from another's in recent_alerts.
     BulletinAlert.objects.filter(
         pk__in=alert_ids, outcome=BulletinAlert.Outcome.PENDING
     ).update(
@@ -632,6 +635,7 @@ def _worker_deliver_alert(
         ),
         sent_push=pushed,
         sent_email=emailed,
+        updated_at=timezone.now(),
     )
 
 
@@ -660,3 +664,62 @@ def since_previous_day(
     if current is None or previous is None:
         return None
     return summarise_change(previous, current), previous_date
+
+
+# ---------------------------------------------------------------------------
+# The bell: what an account was sent (SNOW-1333)
+# ---------------------------------------------------------------------------
+
+# How far back the map's bell lists alerts (Hugo, 2026-10-30: one week).
+RECENT_ALERT_DAYS: int = 7
+
+
+@dataclass(frozen=True)
+class SentAlert:
+    """One message an account was sent, as the map's bell lists it."""
+
+    title: str
+    body: str
+    url: str
+    sent_at: datetime.datetime
+
+
+def recent_alerts(account: Account, now: datetime.datetime) -> list[SentAlert]:
+    """
+    Return the messages an account was sent in the past week, newest first.
+
+    A bundle writes one row per place, each carrying the whole message, and
+    ``_worker_deliver_alert`` stamps them all with one ``updated_at``, so
+    rows with the same words and the same send time are one message. Two
+    sends with the same words (a second update in one validity window) stay
+    two entries.
+
+    Args:
+        account: The account.
+        now: The current time.
+
+    Returns:
+        One entry per message.
+
+    """
+    rows = (
+        BulletinAlert.objects.filter(
+            account=account,
+            updated_at__gte=now - datetime.timedelta(days=RECENT_ALERT_DAYS),
+        )
+        .sent()
+        .exclude(title="")
+        .order_by("-updated_at", "-id")
+        .only("title", "body", "url", "updated_at")
+    )
+    out: list[SentAlert] = []
+    for row in rows:
+        if out and (
+            out[-1].title,
+            out[-1].body,
+            out[-1].url,
+            out[-1].sent_at,
+        ) == (row.title, row.body, row.url, row.updated_at):
+            continue
+        out.append(SentAlert(row.title, row.body, row.url, row.updated_at))
+    return out

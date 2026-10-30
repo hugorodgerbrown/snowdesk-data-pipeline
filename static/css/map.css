@@ -2138,7 +2138,7 @@ html[data-route-drawing] #map-tour-offer {
     #map-date-row > #map-calendar-toggle,
     #map-date-row > #map-today-control,
     #map-date-row > .map-day-step,
-    #map-date-row > .map-day-notes {
+    #map-date-row > .map-alerts {
         display: none;
     }
 }
@@ -2274,25 +2274,25 @@ html[data-route-drawing] #map-tour-offer {
     border-bottom-right-radius: 0;
 }
 
-/* SNOW-1206: the day's notes — a bell that shows only while the day has a
-   note (map_day_notes.js), carrying a dot while one is new, and the card it
-   opens. Replaced the empty-day and weather pills (SNOW-1195, SNOW-1196)
-   and the problem-terrain chip, which on a tablet ran the row under the
-   bottom-right roundel. The bell is the legend toggle's roundel; the card
-   opens upward from it, as the calendar does from the date control. */
-.map-day-notes {
+/* SNOW-1333: the bell — the account's bulletin alerts from the past week
+   (map_alerts.js), drawn only for an account with alerts on and shown only
+   while there is one to list, carrying a dot while one is new, and the card
+   it opens. SNOW-1206 put the day's notes here; the bell now lists alerts
+   and nothing else. The bell is the legend toggle's roundel; the card opens
+   upward from it, as the calendar does from the date control. */
+.map-alerts {
     position: relative;
     display: inline-flex;
     flex: none;
 }
 
-.map-day-notes[hidden],
-.map-day-notes-dot[hidden],
-.map-day-notes-card[hidden] {
+.map-alerts[hidden],
+.map-alerts-dot[hidden],
+.map-alerts-card[hidden] {
     display: none;
 }
 
-.map-day-notes-toggle {
+.map-alerts-toggle {
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -2310,10 +2310,10 @@ html[data-route-drawing] #map-tour-offer {
     cursor: pointer;
 }
 
-/* The dot: something about the day the visitor has not opened yet. The
+/* The dot: an alert sent since this device last opened the list. The
    high-danger red is the map's one "look here" colour, ringed in the card
    colour so it reads on the glass at either theme. */
-.map-day-notes-dot {
+.map-alerts-dot {
     position: absolute;
     top: 5px;
     right: 6px;
@@ -2325,9 +2325,9 @@ html[data-route-drawing] #map-tour-offer {
 }
 
 /* Opens upward from the bell, on the stack's own bound so it cannot run off
-   the top of the map. map_day_notes.js shifts `left` clear of a left-hand
+   the top of the map. map_alerts.js shifts `left` clear of a left-hand
    sheet on a desktop. */
-.map-day-notes-card {
+.map-alerts-card {
     position: absolute;
     left: 0;
     bottom: calc(var(--map-control-sm) + 8px);
@@ -2347,8 +2347,8 @@ html[data-route-drawing] #map-tour-offer {
     white-space: normal;
 }
 
-/* The day the notes are about, in the eyebrow's face. */
-.map-day-notes-heading {
+/* "Your alerts", in the eyebrow's face. */
+.map-alerts-heading {
     margin: 4px 14px 2px;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 10px;
@@ -2358,45 +2358,44 @@ html[data-route-drawing] #map-tour-offer {
     color: var(--color-text-3);
 }
 
-.map-day-notes-list {
+.map-alerts-list {
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
-.map-day-notes-item {
-    padding: 8px 14px;
-}
-
-.map-day-notes-item + .map-day-notes-item {
+.map-alerts-item + .map-alerts-item {
     border-top: 0.5px solid var(--color-border);
 }
 
-.map-day-notes-item-title {
+.map-alerts-item-title {
     margin: 0;
     font-weight: 600;
 }
 
-.map-day-notes-item-detail {
+.map-alerts-item-detail {
     margin: 2px 0 0;
     font-size: 12px;
     color: var(--color-text-2);
 }
 
-.map-day-notes-action {
-    display: inline-flex;
-    align-items: center;
-    height: 26px;
-    margin-top: 8px;
-    padding: 0 12px;
-    border: 0;
-    border-radius: 999px;
-    background: var(--color-text-1);
-    color: var(--color-card);
-    font: inherit;
+.map-alerts-item-sent {
+    margin: 2px 0 0;
     font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
+    color: var(--color-text-3);
+}
+
+/* Each alert is the link its push opened. */
+.map-alerts-link {
+    display: block;
+    padding: 8px 14px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.map-alerts-link:hover,
+.map-alerts-link:focus-visible {
+    background: var(--color-chip);
 }
 
 /* SNOW-794: the date control — one pill that both SAYS the day and OPENS
@@ -6584,20 +6583,20 @@ body.map-framing #map-legend {
         width: 34px;
     }
 
-    /* SNOW-1206: the notes bell takes the top row's height, and its card
+    /* SNOW-1206: the bell takes the top row's height, and its card
        drops under the row, where the calendar card drops, so a peeking
        sheet never covers it. The wrapper stops being the card's anchor so
        the card spans from the cluster's own left edge. */
-    .map-utility-cluster > .map-day-notes {
+    .map-utility-cluster > .map-alerts {
         position: static;
     }
 
-    .map-utility-cluster > .map-day-notes > .map-day-notes-toggle {
+    .map-utility-cluster > .map-alerts > .map-alerts-toggle {
         width: var(--map-control-lg);
         height: var(--map-control-lg);
     }
 
-    .map-utility-cluster > .map-day-notes > .map-day-notes-card {
+    .map-utility-cluster > .map-alerts > .map-alerts-card {
         top: calc(var(--map-control-lg) + 8px);
         left: 0;
         bottom: auto;

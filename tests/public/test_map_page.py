@@ -530,28 +530,43 @@ def test_the_date_control_has_day_steps_either_side() -> None:
 
 
 @pytest.mark.django_db
-def test_the_day_notes_bell_ships_hidden_with_its_card() -> None:
-    """SNOW-1206: the day's notes sit behind one bell, hidden until there is one.
+def test_the_alert_bell_ships_hidden_for_an_account_with_alerts_on() -> None:
+    """SNOW-1333: the bell lists alerts, hidden until map_alerts.js has one.
 
-    The bell follows "Today" in the date row; its card is a closed dialog
-    the bell controls. map_day_notes.js publishes the notes channel, so it
-    loads before the two modules that write to it.
+    The bell follows "Today" in the date row and names where it reads its
+    list; its card is a closed dialog the bell controls.
     """
-    content = Client().get(reverse("public:map")).content.decode()
-    start = content.index('id="map-day-notes"')
+    account = AccountFactory.create(notify_when="NEW_BULLETIN")
+    client = Client()
+    client.force_login(account.user)
+    with override_flag("bulletin_alerts", active=True):
+        content = client.get(reverse("public:map")).content.decode()
+    start = content.index('id="map-alerts"')
     tag = content[content.rindex("<div", 0, start) : content.index(">", start)]
     assert "hidden" in tag
+    assert 'data-alerts-url="/account/alerts/recent/"' in tag
     assert content.index('id="map-today-control"') < start
-    assert 'aria-controls="map-day-notes-card"' in content
-    assert "aria-label='Notes about this day'" in content
-    card = content.index('id="map-day-notes-card"')
+    assert 'aria-controls="map-alerts-card"' in content
+    assert "aria-label='Your alerts'" in content
+    card = content.index('id="map-alerts-card"')
     tag = content[content.rindex("<div", 0, card) : content.index(">", card)]
     assert "hidden" in tag
     assert 'role="dialog"' in tag
-    assert '<template id="map-day-notes-strings-template">' in content
-    notes = content.index("/static/js/map_day_notes.js")
-    assert notes < content.index("/static/js/map_day_nav.js")
-    assert notes < content.index("/static/js/map_weather_window.js")
+    assert "/static/js/map_alerts.js" in content
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("case", ["anonymous", "flag_off", "alerts_off"])
+def test_no_alert_bell_without_alerts(case: str) -> None:
+    """SNOW-1333: no bell signed out, with the flag off, or with alerts off."""
+    client = Client()
+    if case != "anonymous":
+        notify = "OFF" if case == "alerts_off" else "NEW_BULLETIN"
+        client.force_login(AccountFactory.create(notify_when=notify).user)
+    with override_flag("bulletin_alerts", active=case != "flag_off"):
+        content = client.get(reverse("public:map")).content.decode()
+    assert 'id="map-alerts"' not in content
+    assert "map-day-notes" not in content
 
 
 @pytest.mark.django_db
@@ -565,17 +580,14 @@ def test_the_date_row_has_no_standing_pills() -> None:
     assert 'id="map-day-empty"' not in content
     assert 'id="map-weather-window"' not in content
     assert "map-date-notice" not in content
-    assert '<template id="map-day-nav-strings-template">' in content
-    for key in ("day-empty", "day-last-issued", "day-next-issued", "day-show"):
-        assert f'data-string="{key}"' in content
+    assert '<template id="map-day-nav-strings-template">' not in content
 
 
 @pytest.mark.django_db
 def test_the_weather_row_ships_hidden_with_its_strings() -> None:
     """SNOW-1196: "Forecast only" waits for map_weather_window.js to judge the day.
 
-    The row's detail line sits inside the weather row; the same fact goes
-    to the day's notes (SNOW-1206). The module loads after map.js, which
+    The row's detail line sits inside the weather row. The module loads after map.js, which
     publishes the window it reads.
     """
     content = Client().get(reverse("public:map")).content.decode()
@@ -583,8 +595,7 @@ def test_the_weather_row_ships_hidden_with_its_strings() -> None:
     tag = content[content.rindex("<span", 0, summary) : content.index(">", summary)]
     assert "hidden" in tag
     assert '<template id="map-weather-window-strings-template">' in content
-    for key in ("forecast-only", "note-title", "note-detail"):
-        assert f'data-string="{key}"' in content
+    assert 'data-string="forecast-only"' in content
     assert content.index("/static/js/map.js") < content.index(
         "/static/js/map_weather_window.js"
     )

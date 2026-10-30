@@ -38,6 +38,7 @@ URL map
 /account/partials/alerts/             alert_settings         POST HTMX (SNOW-939)
 /account/partials/alerts/<uuid>/      alert_place            POST HTMX, one place
 /account/alerts/test/                 alert_test             POST (SNOW-1325)
+/account/alerts/recent/               alert_recent           GET JSON (SNOW-1333)
 /account/alerts/unsubscribe/<token>/  alert_unsubscribe      GET/POST — stop alert email
 """
 
@@ -156,6 +157,7 @@ urlpatterns = [
         name="alert_place",
     ),
     path("alerts/test/", alert_views.alert_test, name="alert_test"),
+    path("alerts/recent/", alert_views.alert_recent, name="alert_recent"),
     path(
         "alerts/unsubscribe/<str:token>/",
         alert_views.alert_unsubscribe,
