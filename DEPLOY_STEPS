@@ -1,10 +1,5 @@
-# Deploy steps for release v53: run each once after production deploys.
+# Deploy steps for release v54: run each once after production deploys.
 # Written by bin/cut-release from the Deploy-Step: trailers in the release.
 # Read by the ops MCP tool deploy_steps_status (SNOW-1192).
-# Added by hand from docs/runbooks/reference-data-cut-over.md: the stack
-# carried no Deploy-Step: trailers. Switch schedule_backfill_weather OFF
-# before the deploy, run these in order (each bare first), then switch it
-# back ON.
-mirror_reference_data --commit
-copy_weather_to_service --commit
-rebuild_source_render_models --commit
+rebuild_track_renders --commit
+import_ski_tours --commit
