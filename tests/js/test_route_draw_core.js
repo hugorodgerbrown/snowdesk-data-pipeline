@@ -361,6 +361,14 @@ describe('networkMode', () => {
   });
 });
 
+describe('snapAvailable', () => {
+  it('snaps from z12 and not below it', () => {
+    expect(core.snapAvailable(11.9)).toBe(false);
+    expect(core.snapAvailable(12)).toBe(true);
+    expect(core.snapAvailable(15)).toBe(true);
+  });
+});
+
 describe('networkPaint', () => {
   it('is faint with no halo below z12 and an amber line on a halo from it', () => {
     expect(core.networkPaint()).toEqual({

@@ -131,6 +131,8 @@
   const STRINGS = self.pwaStrings.read('route-draw-strings-template', {
     'hint-coarse': 'Move the map to put the cross where you want to start, then tap Set start location.',
     'hint-fine': 'Click the map to set the start location. Near a ski route it snaps to the route.',
+    follow: 'Snap to known ski routes',
+    'follow-zoom': 'Zoom in to enable snap-to-route',
     'add-start': 'Set start location',
     'add-point': 'Add point',
     'stats-empty': 'No points yet.',
@@ -438,6 +440,21 @@
     });
   }
 
+  /**
+   * Disable the snap switch below z12, where nothing snaps, and say why
+   * in its own label (SNOW-1324; Hugo: "Zoom in to enable snap-to-route").
+   * It keeps its value, so the z9-z11 overview still follows the
+   * drawer's choice.
+   */
+  function renderSnapAvailability() {
+    const map = getMap();
+    const toggle = /** @type {?HTMLButtonElement} */ (find('[data-route-draw-follow]'));
+    const label = find('[data-route-draw-follow-label]');
+    const available = !map || core.snapAvailable(map.getZoom());
+    if (toggle) toggle.disabled = !available;
+    if (label) label.textContent = STRINGS[available ? 'follow' : 'follow-zoom'];
+  }
+
   /** Stop every network load: the debounce, and the overview and detail fetches. */
   function stopNetwork() {
     if (state.networkTimer !== null) clearTimeout(state.networkTimer);
@@ -636,6 +653,7 @@
       toggle.hidden = !NETWORK_URL;
       toggle.setAttribute('aria-checked', state.follow ? 'true' : 'false');
     }
+    renderSnapAvailability();
     const name = find('#route-draw-name');
     if (name) {
       name.value = state.name;
@@ -1267,6 +1285,7 @@
   /** Once the map stops, load the network for where it stopped. */
   function onMapMoveEnd() {
     if (!state.active) return;
+    renderSnapAvailability();
     drawNetwork();
     scheduleNetwork();
   }
@@ -1357,8 +1376,10 @@
       if (point) addTap(point);
       return;
     }
-    if (target.closest('[data-route-draw-follow]')) {
-      setFollow(!state.follow);
+    const follow = target.closest('[data-route-draw-follow]');
+    if (follow) {
+      // SNOW-1324: a disabled button fires no click; a guard all the same.
+      if (!(/** @type {HTMLButtonElement} */ (follow).disabled)) setFollow(!state.follow);
       return;
     }
     if (target.closest('[data-route-draw-undo]')) {

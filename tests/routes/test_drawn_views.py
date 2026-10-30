@@ -398,6 +398,9 @@ class TestMapPageDrawSurface:
         assert "js/ski_snap_core.js" in body
         assert f'data-network-url="{reverse("api:ski_network_geojson")}"' in body
         assert "data-route-draw-follow" in body
+        # SNOW-1324: the label the switch takes below z12, where it is off.
+        assert "data-route-draw-follow-label" in body
+        assert 'data-string="follow-zoom">Zoom in to enable snap-to-route<' in body
         # SNOW-1285: the ski-touring layer's two parts ride on the same flag.
         assert 'data-layer-master="ski_touring"' in body
         assert 'data-overlay-key="ski_tours"' in body
