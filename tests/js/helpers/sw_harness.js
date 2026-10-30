@@ -164,6 +164,12 @@ export const SW_EXPORTS = [
   // old shell caches, and its budget.
   '_carryShellContent',
   'SHELL_CARRY_BUDGET_MS',
+  // SNOW-1314: the two install-time lists, so the offline guard can hold
+  // each to its own install semantics, and the fallback the first of them
+  // is read through.
+  'PRECACHE_URLS',
+  'AUDIT_SCRIPTS',
+  'OFFLINE_FALLBACK',
 ];
 
 /**
@@ -258,9 +264,17 @@ export function basicResponse(body, init = {}) {
  * ``put`` buffers the body so a stored entry can be matched more than
  * once, mirroring a real Cache.
  *
+ * SNOW-1314: ``add`` and ``addAll`` too, for the ``install`` handler. A
+ * real Cache fetches through the global ``fetch``, which inside the
+ * sandbox is the stub handed to ``loadSw`` — so pass the same one here.
+ * ``addAll`` is atomic, as the real one is: one answer that is not ok
+ * rejects the call and writes nothing.
+ *
+ * @param {object} [options]
+ * @param {Function} [options.fetch] - what ``add`` / ``addAll`` fetch with.
  * @returns {object}
  */
-export function makeCaches() {
+export function makeCaches(options = {}) {
   const buckets = new Map();
   // SNOW-722: ``open`` and ``match`` are counted per bucket name as well,
   // because the read-only cross-origin probe's cost bound is a claim about
@@ -277,12 +291,24 @@ export function makeCaches() {
       counters.open += 1;
       counters.openedNames.push(name);
       const entries = entriesFor(name);
-      return {
+      const fetchFor = async (request) => {
+        const url = new URL(typeof request === 'string' ? request : request.url, ORIGIN).toString();
+        if (!options.fetch) throw new TypeError('Failed to fetch');
+        const response = await options.fetch(url);
+        if (!response || !response.ok) throw new TypeError(`Bad response for ${url}`);
+        return [url, response];
+      };
+      const cache = {
         async match(request, matchOptions) {
           counters.match += 1;
           counters.matchedNames.push(name);
           const url = typeof request === 'string' ? request : request.url;
           if (entries.has(url)) return entries.get(url).clone();
+          // SNOW-1314: a real Cache resolves a relative url against the
+          // worker's location — ``cache.match(OFFLINE_FALLBACK)`` finds the
+          // entry ``install``'s ``addAll`` wrote under the absolute one.
+          const absolute = new URL(url, ORIGIN).toString();
+          if (entries.has(absolute)) return entries.get(absolute).clone();
           if (matchOptions && matchOptions.ignoreSearch) {
             const bare = url.split('?')[0];
             for (const [key, value] of entries) {
@@ -316,7 +342,17 @@ export function makeCaches() {
             }),
           );
         },
+        // SNOW-1314: the install handler's two writes.
+        async add(request) {
+          const [url, response] = await fetchFor(request);
+          await cache.put(url, response);
+        },
+        async addAll(requests) {
+          const fetched = await Promise.all(requests.map(fetchFor));
+          for (const [url, response] of fetched) await cache.put(url, response);
+        },
       };
+      return cache;
     },
     // SNOW-613: counted, because "how many times was the bucket list
     // enumerated?" is the property the memo exists to change.
@@ -338,6 +374,44 @@ export function makeCaches() {
       return buckets.has(name);
     },
   };
+}
+
+/**
+ * Dispatch one ``fetch`` event at the real listener and resolve what it
+ * answered with — ``null`` when it did not call ``respondWith`` at all
+ * (the browser would then fetch it natively).
+ *
+ * @param {object} sw - a ``loadSw`` sandbox.
+ * @param {object} request
+ * @returns {Promise<Response|null>}
+ */
+export async function dispatchFetch(sw, request) {
+  let promise = null;
+  sw.__listeners.fetch({
+    request,
+    clientId: '',
+    respondWith(value) {
+      promise = value;
+    },
+  });
+  return promise;
+}
+
+/**
+ * Dispatch the ``install`` event at the real listener; resolve (or reject)
+ * with what it handed ``waitUntil``.
+ *
+ * @param {object} sw - a ``loadSw`` sandbox.
+ * @returns {Promise<void>}
+ */
+export function dispatchInstall(sw) {
+  let promise = Promise.resolve();
+  sw.__listeners.install({
+    waitUntil(value) {
+      promise = value;
+    },
+  });
+  return promise;
 }
 
 /** A navigation request, as the fetch listener hands one to _networkFirst. */
