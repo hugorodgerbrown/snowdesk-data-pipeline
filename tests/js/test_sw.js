@@ -169,6 +169,12 @@ const SW_EXPORTS = [
   'OFFLINE_LATCH_THRESHOLD',
   'OFFLINE_PROBE_URL',
   'OFFLINE_PROBE_BACKOFF_MS',
+  // SNOW-965: the two network-first JSON classes and the principal read
+  // the private one stamps with.
+  '_classifySync',
+  '_signedInPrincipal',
+  '_privateJsonNetworkFirst',
+  '_publicJsonNetworkFirst',
 ];
 
 /**
@@ -293,6 +299,12 @@ function makeCaches() {
             }
           }
           return undefined;
+        },
+        // SNOW-965: a trip route the server says is no longer yours is
+        // dropped from the shell cache.
+        async delete(request) {
+          const url = typeof request === 'string' ? request : request.url;
+          return entries.delete(url);
         },
         async put(request, response) {
           const url = typeof request === 'string' ? request : request.url;
@@ -4040,5 +4052,226 @@ describe('terrain-class tiles pinned by a download (SNOW-1072)', () => {
 
     expect(response.status).toBe(204);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-965 — a downloaded area carries your trips and borrowed forecasts
+// ---------------------------------------------------------------------------
+
+describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
+  const SHELL = 'snowdesk-shell-UNSUBSTITUTED';
+  const ROUTE = `${ORIGIN}/trips/2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11/route.geojson`;
+  const SHARE_ROUTE = `${ORIGIN}/trips/s/some-token/route.geojson`;
+  const SHEET = `${ORIGIN}/api/weather/Ab3dE_fGh1J/detail/`;
+  const TODAY = '2026-01-06';
+
+  /** A plain same-origin fetch, as map.js and map_weather_detail.js make. */
+  function jsonRequest(url) {
+    return { url, method: 'GET', mode: 'cors', destination: '' };
+  }
+
+  /** A same-origin JSON answer, optionally with a Cache-Control header. */
+  function jsonResponse(body, cacheControl, status) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (cacheControl) headers['Cache-Control'] = cacheControl;
+    return basicResponse(body, { headers, status });
+  }
+
+  /** Dispatch one fetch event at the real listener; resolve its answer. */
+  async function dispatchFetch(sw, request) {
+    let promise = null;
+    sw.__listeners.fetch({
+      request,
+      clientId: '',
+      respondWith(value) {
+        promise = value;
+      },
+    });
+    return promise === null ? null : promise;
+  }
+
+  /** A sandbox whose network answers `online()` until it is switched off. */
+  function switchableSw(caches, online) {
+    const state = { online: true };
+    const fetchSpy = vi.fn(async () => {
+      if (!state.online) throw new TypeError('Failed to fetch');
+      return online();
+    });
+    const sw = loadSw({ caches, fetch: fetchSpy });
+    return { sw, state, fetchSpy };
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it('classifies both, with and without the core, and nothing else', () => {
+    for (const withCore of [true, false]) {
+      const sw = loadSw(withCore ? { core } : {});
+      const classify = (url) => sw._classifySync(jsonRequest(url), new URL(url));
+
+      expect(classify(ROUTE)).toBe('private-json');
+      expect(classify(`${SHEET}?date=${TODAY}`)).toBe('public-json');
+      expect(classify(SHARE_ROUTE)).toBe('network');
+      expect(classify(`${ORIGIN}/api/area-items/?bbox=7,46,8,47`)).toBe('network');
+    }
+  });
+
+  it('routes a trip route through the network-first strategy', async () => {
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    const { sw } = switchableSw(caches, () => jsonResponse('{"route":"a"}', 'private, no-cache'));
+    await settleHydration(sw);
+
+    const response = await dispatchFetch(sw, jsonRequest(ROUTE));
+    await flush();
+
+    expect(response.status).toBe(200);
+    const stored = await (await caches.open(SHELL)).match(ROUTE);
+    expect(stored.headers.get(sw.PRINCIPAL_HEADER)).toBe('acct-a');
+  });
+
+  it("serves A's route to A offline, and refuses it to B and to nobody", async () => {
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    const { sw, state } = switchableSw(caches, () =>
+      jsonResponse('{"route":"a"}', 'private, no-cache'),
+    );
+    await sw._privateJsonNetworkFirst(jsonRequest(ROUTE));
+    await flush();
+    state.online = false;
+
+    const forA = await sw._privateJsonNetworkFirst(jsonRequest(ROUTE));
+    expect(forA.status).toBe(200);
+    expect(await forA.text()).toBe('{"route":"a"}');
+    expect(forA.headers.get('X-SW-Cache')).toBe('hit');
+
+    await setStoredPrincipal('acct-b');
+    const forB = await sw._privateJsonNetworkFirst(jsonRequest(ROUTE));
+    expect(forB.status).toBe(504);
+
+    await setStoredPrincipal(null);
+    const forNobody = await sw._privateJsonNetworkFirst(jsonRequest(ROUTE));
+    expect(forNobody.status).toBe(504);
+  });
+
+  it('keeps nothing for a no-store route, or with nobody signed in', async () => {
+    const caches = makeCaches();
+    await setStoredPrincipal('acct-a');
+    const noStore = loadSw({
+      caches,
+      fetch: async () => jsonResponse('{}', 'no-store'),
+    });
+    await noStore._privateJsonNetworkFirst(jsonRequest(ROUTE));
+    await flush();
+    expect(caches.size(SHELL)).toBe(0);
+
+    await setStoredPrincipal(null);
+    const anonymous = loadSw({
+      caches,
+      fetch: async () => jsonResponse('{}', 'private, no-cache'),
+    });
+    await anonymous._privateJsonNetworkFirst(jsonRequest(ROUTE));
+    await flush();
+    expect(caches.size(SHELL)).toBe(0);
+  });
+
+  it('drops a kept route when the server says the reader is off the trip', async () => {
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    caches.seed(
+      SHELL,
+      ROUTE,
+      new Response('{"route":"a"}', { headers: { [loadSw().PRINCIPAL_HEADER]: 'acct-a' } }),
+    );
+    const sw = loadSw({ caches, fetch: async () => jsonResponse('{}', 'no-store', 404) });
+
+    const response = await sw._privateJsonNetworkFirst(jsonRequest(ROUTE));
+    await flush();
+
+    expect(response.status).toBe(404);
+    expect(caches.size(SHELL)).toBe(0);
+  });
+
+  it('_signedInPrincipal is null for an anonymous or missing principal', async () => {
+    const sw = loadSw();
+    expect(await sw._signedInPrincipal()).toBeNull();
+    await setStoredPrincipal(null);
+    expect(await sw._signedInPrincipal()).toBeNull();
+    await setStoredPrincipal('acct-a');
+    expect(await sw._signedInPrincipal()).toBe('acct-a');
+  });
+
+  it("_warmCache stamps a route with the reader's principal", async () => {
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    const sw = loadSw({ caches, fetch: async () => jsonResponse('{}', 'private, no-cache') });
+
+    const result = await sw._warmCache([ROUTE]);
+
+    expect(result).toMatchObject({ ok: 1, failed: 0 });
+    const stored = await (await caches.open(SHELL)).match(ROUTE);
+    expect(stored.headers.get(sw.PRINCIPAL_HEADER)).toBe('acct-a');
+  });
+
+  it('_warmCache fails a route with nobody signed in, or one marked no-store', async () => {
+    // A failure, not a silent unservable write: the run's tally comes up
+    // short and the area is never painted complete over it.
+    const caches = makeCaches();
+    const anonymous = loadSw({
+      caches,
+      fetch: async () => jsonResponse('{}', 'private, no-cache'),
+    });
+    expect(await anonymous._warmCache([ROUTE])).toMatchObject({ ok: 0, failed: 1 });
+
+    await setStoredPrincipal('acct-a');
+    const noStore = loadSw({ caches, fetch: async () => jsonResponse('{}', 'no-store') });
+    expect(await noStore._warmCache([ROUTE])).toMatchObject({ ok: 0, failed: 1 });
+    expect(caches.size(SHELL)).toBe(0);
+  });
+
+  it('serves a warmed weather sheet offline on its exact url', async () => {
+    const caches = makeCaches();
+    const dated = `${SHEET}?date=${TODAY}`;
+    const { sw, state, fetchSpy } = switchableSw(caches, () => jsonResponse('{"html":"x"}'));
+    await sw._warmCache([dated]);
+    state.online = false;
+    fetchSpy.mockClear();
+    await settleHydration(sw);
+    sw._forceOffline();
+
+    const response = await dispatchFetch(sw, jsonRequest(dated));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('{"html":"x"}');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('never answers another day from the warmed one', async () => {
+    // The sheet names its day relatively ("Today"), so yesterday's warmed
+    // sheet served for today would claim to be today's forecast.
+    const caches = makeCaches();
+    caches.seed(SHELL, `${SHEET}?date=2026-01-05`, new Response('{"html":"old"}'));
+    caches.seed(SHELL, SHEET, new Response('{"html":"undated"}'));
+    const sw = loadSw({ caches });
+
+    const response = await sw._publicJsonNetworkFirst(jsonRequest(`${SHEET}?date=${TODAY}`));
+
+    expect(response.status).toBe(504);
+  });
+
+  it('keeps a sheet fetched online, for the next offline read', async () => {
+    const caches = makeCaches();
+    const dated = `${SHEET}?date=${TODAY}`;
+    const { sw, state } = switchableSw(caches, () => jsonResponse('{"html":"live"}'));
+
+    await sw._publicJsonNetworkFirst(jsonRequest(dated));
+    await flush();
+    state.online = false;
+    const offline = await sw._publicJsonNetworkFirst(jsonRequest(dated));
+
+    expect(await offline.text()).toBe('{"html":"live"}');
+    expect(offline.headers.get(sw.PRINCIPAL_HEADER)).toBeNull();
   });
 });

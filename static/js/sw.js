@@ -28,7 +28,15 @@
  *                                (SNOW-118). Every cache-fallback branch
  *                                also gets ``X-SW-Cache: hit`` (SNOW-482).
  *
- *   - Everything else           (most /api/* endpoints, and third-party
+ *   - A trip's own route        (SNOW-965: /trips/<uuid>/route.geojson)
+ *     → network-first, kept stamped with the signed-in principal and
+ *     served offline to that principal only (_privateJsonNetworkFirst).
+ *
+ *   - A weather sheet           (SNOW-965: /api/weather/<id>/detail/)
+ *     → network-first, kept unstamped, served offline on an exact url
+ *     match only (_publicJsonNetworkFirst).
+ *
+ *   - Everything else          (most /api/* endpoints, and third-party
  *                                origins not registered as the active
  *                                basemap)
  *     → network-only. Bulletin JSON, calendar partials, and map tiles
@@ -1174,6 +1182,17 @@ const STATIC_PATHS = new Set([
   '/api/bulletin-groupings.geojson',
 ]);
 
+// SNOW-965: the two JSON classes, for ``_classifySync``'s inline fallback.
+// basemap_cache_core.js holds the same two literals and the reasoning;
+// changing one copy means changing the other (tests/js/test_sw.js runs
+// both paths over the same urls).
+const PRIVATE_JSON_PATH = /^\/trips\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/route\.geojson$/i;
+const PUBLIC_JSON_PATH = /^\/api\/weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail\/$/;
+
+// SNOW-965: what `_warmCache` hands `_classifySync` to ask a url's class.
+// A plain same-origin GET — not a navigation, whatever the url is.
+const WARM_CLASSIFY_REQUEST = Object.freeze({ method: 'GET', mode: 'cors', destination: '' });
+
 // SNOW-526: STATIC_PATHS entries that must only be persisted to the shell
 // cache when the response declares itself ``immutable`` via Cache-Control
 // — see the STATIC_PATHS comment above and shouldPersist() in
@@ -1474,7 +1493,8 @@ function _debugLogAs(src, evt, detail) {
  *
  * @param {Request} request
  * @param {string} strategy Which router branch ran: 'static' | 'navigate' |
- *   'basemap' | 'probe' (the SNOW-722 read-only cache probe for an
+ *   'private-json' | 'public-json' (SNOW-965's two network-first JSON
+ *   classes) | 'basemap' | 'probe' (the SNOW-722 read-only cache probe for an
  *   unclassified cross-origin GET) | 'network' (not intercepted at all) |
  *   'guard' (``_guardedRespond``'s re-fetch, after a strategy resolved to
  *   something that was not a Response).
@@ -1762,9 +1782,14 @@ function _hydrateDevShellCacheOptIn() {
  * cross-origin GET request because deciding that case may require the
  * async ``_basemapOrigins`` rehydration (SNOW-487) — see ``_classify()``.
  *
+ * SNOW-965: two JSON classes join it — ``'private-json'`` (a trip's
+ * uuid-addressed route) and ``'public-json'`` (a weather sheet). Both are
+ * network-first with a cache fallback; see ``_privateJsonNetworkFirst``
+ * and ``_publicJsonNetworkFirst``.
+ *
  * @param {Request} request
  * @param {URL} url
- * @returns {'static' | 'navigate' | 'network' | null}
+ * @returns {'static' | 'navigate' | 'private-json' | 'public-json' | 'network' | null}
  */
 function _classifySync(request, url) {
   // SNOW-496: thin delegator — see basemap_cache_core.js's module header.
@@ -1786,6 +1811,11 @@ function _classifySync(request, url) {
   if (request.mode === 'navigate' || request.destination === 'document') {
     return 'navigate';
   }
+
+  // SNOW-965: the same two patterns basemap_cache_core.js holds, ahead of
+  // the extension checks as there.
+  if (PRIVATE_JSON_PATH.test(url.pathname)) return 'private-json';
+  if (PUBLIC_JSON_PATH.test(url.pathname)) return 'public-json';
 
   if (STATIC_PATHS.has(url.pathname)) return 'static';
 
@@ -2389,6 +2419,13 @@ async function _warmCache(urls, options) {
     // a caller can show live on-disk MB, not just a done/total fraction.
     onProgress(done, total, settled, bytes);
   };
+  // SNOW-965: the principal a private-json entry is stamped with, read at
+  // most once per run rather than once per url.
+  let runPrincipal = null;
+  const principalForRun = () => {
+    if (!runPrincipal) runPrincipal = _signedInPrincipal();
+    return runPrincipal;
+  };
   // SNOW-568: the most actionable failure seen so far, or null.
   let reason = null;
   const noteFailure = (why) => {
@@ -2427,6 +2464,20 @@ async function _warmCache(urls, options) {
         return 'other';
       }
       const cache = sameOrigin ? shellCache : basemapCache;
+      // SNOW-965: a trip's route is the reader's own JSON, and its offline
+      // read (`_privateJsonNetworkFirst`) refuses an entry without their
+      // principal stamp — so it is stamped here as it is there. A
+      // `no-store` answer, or nobody signed in to stamp it for, is a
+      // failure rather than a silent unservable write, so the run's tally
+      // comes up short and the area is never painted complete over it.
+      if (sameOrigin && _classifySync(WARM_CLASSIFY_REQUEST, url) === 'private-json') {
+        if (_isNoStore(response)) return 'other';
+        const principal = await principalForRun();
+        if (!principal) return 'other';
+        await cache.put(url.toString(), _stampPrincipal(response.clone(), principal));
+        bytes += await _warmCacheResponseBytes(response);
+        return null;
+      }
       // SNOW-624: a same-origin response that is page HTML goes into the
       // shell cache alongside the ones `_networkFirst` writes, and the
       // offline read refuses any shell entry without a matching
@@ -3430,6 +3481,140 @@ function _principalMatches(cached, current) {
 }
 
 /**
+ * The principal signed in now, or ``null`` when nobody is (SNOW-965).
+ *
+ * ``_currentPrincipal`` answers ``PRINCIPAL_ANONYMOUS`` for a signed-out
+ * reader AND for a row it cannot read, which is right for a navigation —
+ * a public page is stamped anonymous too, so it still matches. Private
+ * JSON has no anonymous form: a trip's route answers a signed-out request
+ * with a 403, so an anonymous stamp could only ever be a misattribution.
+ * Both "nobody" answers become ``null`` here, and a ``null`` principal
+ * neither writes nor reads a private entry.
+ *
+ * @returns {Promise<string|null>}
+ */
+async function _signedInPrincipal() {
+  const current = await _currentPrincipal();
+  if (!current || current === PRINCIPAL_ANONYMOUS || current === PRINCIPAL_UNKNOWN) {
+    return null;
+  }
+  return current;
+}
+
+/**
+ * Network-first for a participant's own JSON — a trip's route (SNOW-965).
+ *
+ * The route is what a downloaded area carries for a trip inside it, and
+ * it is per-person: ``/trips/<uuid>/route.geojson`` answers only someone
+ * on the trip. So it is cached the way a navigation is — stamped with the
+ * principal it was fetched for, served offline only to that principal —
+ * with one difference: there is no HTML to read a ``pwa-user-id`` from,
+ * so the stamp is the worker's own ``mutations.principal``
+ * (``_signedInPrincipal``). That row is reconciled by the page at boot
+ * (``mutation_queue.js``'s ``_reconcilePrincipal``, started at script
+ * load); the map fetches a trip's route inside ``map.on('load')``, after
+ * its style has loaded, and a download's warm runs later still, on a
+ * press. The ordering is one of timing rather than an awaited handshake,
+ * which is why a mismatch fails closed: a stale stamp is never served to
+ * anyone but the principal it names.
+ *
+ * Online, a ``basic``, ok, non-``no-store`` answer is kept; a 403 or 404
+ * DROPS any copy, because it is the server saying this reader is no
+ * longer on the trip, and an offline read must not keep drawing a route
+ * they have left. Offline — or when the fetch fails or runs out of budget
+ * — the cached copy is served only when its stamp matches; anything else
+ * is the synthesized 504 every read path answers with.
+ *
+ * @param {Request} request
+ * @returns {Promise<Response>}
+ */
+async function _privateJsonNetworkFirst(request) {
+  const startedAt = Date.now();
+  const cache = await caches.open(CACHE_VERSION);
+  const fromCache = async () => {
+    const principal = await _signedInPrincipal();
+    const cached = principal ? await cache.match(request) : null;
+    if (cached && _principalMatches(cached, principal)) {
+      const hit = _stampCacheHit(cached);
+      _debugServe(request, 'private-json', 'shell', hit, startedAt);
+      return hit;
+    }
+    const miss = _synthesizedGatewayTimeout();
+    _debugServe(request, 'private-json', 'timeout-504', miss, startedAt);
+    return miss;
+  };
+  if (!(await _shouldUseNetwork())) return fromCache();
+  let response;
+  try {
+    response = await _boundedFetch(request, SHELL_FETCH_BUDGET_MS);
+  } catch (_err) {
+    return fromCache();
+  }
+  if (response && response.ok && response.type === 'basic' && !_isNoStore(response)) {
+    // Cloned now, while the body is unread: the page consumes the
+    // original as soon as this returns.
+    const toStore = response.clone();
+    _signedInPrincipal()
+      .then((principal) => {
+        if (principal) return cache.put(request, _stampPrincipal(toStore, principal));
+        return undefined;
+      })
+      .catch(() => {});
+  } else if (response && (response.status === 403 || response.status === 404)) {
+    cache.delete(request).catch(() => {});
+  }
+  _debugServe(request, 'private-json', 'network', response, startedAt);
+  return response;
+}
+
+/**
+ * Network-first for a public weather sheet (SNOW-965).
+ *
+ * Every area download has warmed the weather sheets inside it since
+ * SNOW-924, and none was ever served offline: the sheet was classified
+ * ``'network'``, a branch that never reads a cache. This is the read.
+ *
+ * Public, so unstamped. Online, an ok answer is kept under its own url.
+ * Offline, the EXACT url only — never the query-less entry. The sheet's
+ * body names its day relatively ("Today", from its dated eyebrow) and
+ * carries no date of its own on the day it was rendered, so a sheet
+ * warmed yesterday served for today would claim to be today's forecast.
+ * The download warms the url the map asks for on the day it runs
+ * (``?date=<today>``, ``weatherDetailURL`` in basemap_download_core.js),
+ * which is what makes the exact match land.
+ *
+ * @param {Request} request
+ * @returns {Promise<Response>}
+ */
+async function _publicJsonNetworkFirst(request) {
+  const startedAt = Date.now();
+  const cache = await caches.open(CACHE_VERSION);
+  const fromCache = async () => {
+    const cached = await cache.match(request);
+    if (cached) {
+      const hit = _stampCacheHit(cached);
+      _debugServe(request, 'public-json', 'shell', hit, startedAt);
+      return hit;
+    }
+    const miss = _synthesizedGatewayTimeout();
+    _debugServe(request, 'public-json', 'timeout-504', miss, startedAt);
+    return miss;
+  };
+  if (!(await _shouldUseNetwork())) return fromCache();
+  let response;
+  try {
+    response = await _boundedFetch(request, SHELL_FETCH_BUDGET_MS);
+  } catch (_err) {
+    return fromCache();
+  }
+  if (response && response.ok && response.type === 'basic' && !_isNoStore(response)) {
+    cache.put(request, response.clone()).catch(() => {});
+  }
+  _debugServe(request, 'public-json', 'network', response, startedAt);
+  return response;
+}
+
+/**
  * True when ``response`` is page HTML rather than data (SNOW-624).
  *
  * The discriminator for "would `_networkFirst` have cached this, and so
@@ -3939,6 +4124,18 @@ self.addEventListener('fetch', (event) => {
 
   if (sync === 'static') {
     event.respondWith(_guardedRespond(_staleWhileRevalidate(request), request, event.clientId));
+    return;
+  }
+  if (sync === 'private-json') {
+    event.respondWith(
+      _guardedRespond(_privateJsonNetworkFirst(request), request, event.clientId),
+    );
+    return;
+  }
+  if (sync === 'public-json') {
+    event.respondWith(
+      _guardedRespond(_publicJsonNetworkFirst(request), request, event.clientId),
+    );
     return;
   }
   if (sync === 'navigate') {
