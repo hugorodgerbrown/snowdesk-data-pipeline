@@ -515,9 +515,11 @@ bulletins and weather sheets inside this area's boundary; then (SNOW-965)
 the reader's own things in it, from `/api/area-items/` — each trip's page
 and `route.geojson`, and the weather sheet each pin borrows its forecast
 from, which can sit outside the boundary. The same core composes them as
-on the map (`areaItemURLs`), weather sheets are dated with the press day
-(`?date=`, the url the map's sheet asks for and the only one the worker
-answers offline), and an items endpoint that was asked and did not answer
+on the map (`areaItemURLs`), weather sheets are dated with the SERVER's
+day, the panel's `data-today` (`?date=`, the url the map's sheet asks for
+and the only one the worker answers offline; the device clock would miss it
+across a timezone or a midnight, so bulletins alone keep the press-time
+rule below), and an items endpoint that was asked and did not answer
 makes the run short. A signed-out reader is rendered no items endpoint
 and asks for nothing. See
 [an-area-download-carries-your-trips-and-borrowed-forecasts.md](decisions/an-area-download-carries-your-trips-and-borrowed-forecasts.md). Everything goes

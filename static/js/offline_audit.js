@@ -1659,6 +1659,12 @@
     // which is the ordinary case — nothing changes.
     var day = localDay() || data.today || '';
     if (!day) return false;
+    // SNOW-965: a weather sheet is dated with the SERVER's day instead —
+    // the map's sheet asks with its rendered `data-today`, and the worker
+    // answers a sheet offline on an exact url only. Dated by this device's
+    // clock, a reader in another timezone or near midnight would warm
+    // sheets under a date the map never asks for.
+    var weatherDay = data.today || day;
 
     // Step 1: the map shell, when the report just said it is not saved.
     // Not per-area and not this control's subject, but an area's content
@@ -1731,8 +1737,8 @@
       days: contentDays(day, readPastDays(data)),
       weatherDetailTemplate: data.weatherDetailUrl || '',
       // SNOW-965: dated, the url the map's sheet asks for today and the
-      // only one the worker answers offline.
-      weatherDay: day,
+      // only one the worker answers offline — see `weatherDay` above.
+      weatherDay: weatherDay,
     });
     var planned = plan.bulletinUrls.concat(plan.weatherDetailUrls);
     // SNOW-965: each trip's page and route, and the sheet each pin
@@ -1745,7 +1751,7 @@
               tripPage: data.tripPageUrlTemplate || '',
               tripRoute: data.tripRouteUrlTemplate || '',
               weatherDetail: data.weatherDetailUrl || '',
-              weatherDay: day,
+              weatherDay: weatherDay,
             },
             planned,
           )

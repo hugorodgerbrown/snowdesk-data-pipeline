@@ -1618,8 +1618,11 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
 
     const urls = warmed.flat();
     expect(urls).toContain('/ch-4115/martigny-verbier/' + clientDay() + '/');
-    // SNOW-965: dated with the press day, the url the map's sheet asks for.
-    expect(urls).toContain('/api/weather/INSIDEaaaaa/detail/?date=' + clientDay());
+    // SNOW-965: dated, the url the map's sheet asks for — see the
+    // server-day test below for which day.
+    expect(urls.some((url) => url.startsWith('/api/weather/INSIDEaaaaa/detail/?date='))).toBe(
+      true,
+    );
     // Narrowed by the boundary: there are ~550 weather locations across
     // the estate and this area contains one of them.
     expect(urls.some((url) => url.includes('OUTSIDEbbbb'))).toBe(false);
@@ -1635,7 +1638,26 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     const urls = warmed.flat();
     expect(urls).toContain('/trips/trip-uuid-1/');
     expect(urls).toContain('/trips/trip-uuid-1/route.geojson');
-    expect(urls).toContain('/api/weather/BORROWEDccc/detail/?date=' + clientDay());
+    expect(urls).toContain('/api/weather/BORROWEDccc/detail/?date=' + RENDERED_DAY);
+  });
+
+  it("dates weather sheets with the server's day, not this device's (SNOW-965)", async () => {
+    // The map's sheet asks with its rendered `data-today`, and the worker
+    // answers a sheet offline on an exact url only. The fixture's
+    // `data-today` is a month away from the device clock — a timezone or a
+    // midnight in miniature — and the sheets must still carry the server's
+    // day, while the bulletins keep the press-time rule above.
+    expect(RENDERED_DAY).not.toBe(clientDay());
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const urls = warmed.flat();
+    expect(urls).toContain('/api/weather/INSIDEaaaaa/detail/?date=' + RENDERED_DAY);
+    expect(urls).toContain('/api/weather/BORROWEDccc/detail/?date=' + RENDERED_DAY);
+    expect(urls.some((url) => url.includes('?date=' + clientDay()))).toBe(false);
+    expect(urls).toContain('/ch-4115/martigny-verbier/' + clientDay() + '/');
   });
 
   it('treats an unanswered area-items request as a shortfall (SNOW-965)', async () => {
