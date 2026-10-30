@@ -23,9 +23,22 @@
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import '../../static/js/offline_audit_core.js';
 import '../../static/js/offline_ready_core.js';
 import '../../static/js/offline_audit.js';
+import '../../static/js/offline_journey_core.js';
+import '../../static/js/offline_journey.js';
+
+// SNOW-1308: the per-area panels' host, as static/offline.html carries it
+// (the same templates as templates/includes/_offline_journey.html, without
+// classes). Sync now lives on these panels since the report's "Map
+// downloads" section moved there, so the tests that press it mount both.
+const JOURNEY_HOST = /<div\s+class="audit"\s+id="offline-journey-panel"[\s\S]*?<\/template>\s*<\/div>/
+  .exec(readFileSync(join(process.cwd(), 'static', 'offline.html'), 'utf8'))[0]
+  .replace(/\shidden>/, '>');
 
 const MB = 1024 * 1024;
 
@@ -648,12 +661,18 @@ describe('the area records', () => {
       bucketPresent: true,
       entries: ['https://t/1.pbf'],
     });
+    // SNOW-1308: shown on its own panel above the report now, not as a
+    // report row — answered No with the Remove the sheet gives it.
     const report = window.pwaOfflineAuditCore.buildReport(readings, {});
-    const check = report.sections
-      .flatMap((section) => section.checks)
-      .find((c) => c.id === 'area:region-CH-9999');
-    expect(check.status).toBe('no');
-    expect(check.reason).toBe('orphaned');
+    expect(report.sections.flatMap((section) => section.checks).map((c) => c.id)).not.toContain(
+      'area:region-CH-9999',
+    );
+    await import('../../static/js/offline_journey_core.js');
+    const panel = window.pwaOfflineJourneyCore
+      .buildPanels(readings, {})
+      .find((p) => p.id === 'region-CH-9999');
+    expect(panel.orphaned).toBe(true);
+    expect(panel.stages.map).toEqual({ status: 'no', reason: 'orphaned' });
   });
 
   it('reads an unrecorded base-layer bucket as a base layer, not an orphan', async () => {
@@ -854,10 +873,11 @@ describe('rendering', () => {
     );
   });
 
-  it('writes every value with textContent, never innerHTML', async () => {
+  it('names no downloaded area at all — the panels above it do (SNOW-1308)', async () => {
     // An area's name comes from the regions GeoJSON or from whatever the
-    // user typed when renaming it — neither is markup, and neither should
-    // be able to become markup.
+    // user typed when renaming it. The report used to print it on a row
+    // under "Map downloads"; that section moved to the `/offline/` panels
+    // (offline_journey.js, whose own test holds the textContent rule).
     const target = document.createElement('div');
     const report = window.pwaOfflineAuditCore.buildReport(
       {
@@ -878,7 +898,8 @@ describe('rendering', () => {
     audit.render(target, report, {});
 
     expect(target.querySelector('img')).toBeNull();
-    expect(target.textContent).toContain('<img src=x onerror=alert(1)>');
+    expect(target.textContent).not.toContain('<img src=x onerror=alert(1)>');
+    expect(report.sections.map((section) => section.id)).not.toContain('downloads');
   });
 });
 
@@ -914,8 +935,9 @@ describe('the build', () => {
   });
 
   it('finds a row whose id carries a colon', async () => {
-    // Area rows are keyed `area:region-CH-4115`, and a colon in a
-    // selector is a pseudo-class — an unescaped lookup throws and the
+    // Basemap rows are keyed `basemap:openfreemap` (area rows were keyed
+    // `area:…` until SNOW-1308 moved them to the panels), and a colon in
+    // a selector is a pseudo-class — an unescaped lookup throws and the
     // answer never lands.
     const target = document.createElement('div');
     const t = { 'answer-pending': '…', 'answer-yes': 'Yes' };
@@ -927,6 +949,7 @@ describe('the build', () => {
             id: 'region-CH-4115',
             kind: 'region',
             name: 'Martigny',
+            basemapKey: 'openfreemap',
             deps: ['https://t/a.json'],
             bucketPresent: true,
             entries: ['https://t/a.json', 'https://t/1.pbf'],
@@ -938,7 +961,7 @@ describe('the build', () => {
 
     await audit.build(target, report, t);
 
-    const row = target.querySelector('[data-audit-row="area:region-CH-4115"]');
+    const row = target.querySelector('[data-audit-row="basemap:openfreemap"]');
     expect(row.getAttribute('data-audit-status')).toBe('yes');
     expect(row.querySelector('[data-audit-value]').textContent).toBe('Yes');
   });
@@ -1403,7 +1426,7 @@ describe('canOpenMap — the offline page’s one way forward', () => {
   });
 });
 
-describe('the per-row "Sync now" control (SNOW-925/951)', () => {
+describe('Sync now, on the area panels (SNOW-925/951, SNOW-1308)', () => {
   const SHELL = 'snowdesk-shell-abc';
   const REGION_ID = 'CH-4115';
   const AREA_ID = 'region-' + REGION_ID;
@@ -1575,7 +1598,15 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     delete window.pwaWarmCache;
   });
 
-  /** Mount, run, and hand back the area row. */
+  /** The area's panel, as painted now. */
+  function areaPanel() {
+    return document.querySelector('[data-journey-panel="' + AREA_ID + '"]');
+  }
+
+  /**
+   * Mount the report and the panels, run the check, and hand back the
+   * area's panel — where Sync now lives since SNOW-1308.
+   */
   async function runPanelWithArea(overrides) {
     installCachesStub({
       [SHELL]: [],
@@ -1585,22 +1616,31 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
       ],
     });
     await seedMeta({ 'basemap.regions': [record(overrides)] });
-    document.body.innerHTML = PANEL;
+    document.body.innerHTML = PANEL + JOURNEY_HOST;
     audit.init();
+    window.pwaOfflineJourney.init();
     document.querySelector('[data-offline-audit-run]').click();
     await vi.waitUntil(
       () => document.querySelector('[data-offline-audit-output] [data-audit-summary]'),
       { timeout: 5000 },
     );
-    return document.querySelector('[data-audit-row="area:' + AREA_ID + '"]');
+    await vi.waitUntil(
+      () => {
+        const panel = areaPanel();
+        const sync = panel && panel.querySelector('[data-journey-sync]');
+        return sync && !sync.disabled ? panel : null;
+      },
+      { timeout: 5000 },
+    );
+    return areaPanel();
   }
 
   it('offers the control on an area whose content is behind', async () => {
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    const button = row.querySelector('[data-audit-complete]');
-    expect(button).not.toBeNull();
-    expect(button.getAttribute('data-audit-complete')).toBe(AREA_ID);
+    const button = row.querySelector('[data-journey-sync]');
+    expect(button.hidden).toBe(false);
+    expect(button.getAttribute('data-journey-sync')).toBe(AREA_ID);
   });
 
   it('offers it on an area that is already fresh too (SNOW-951)', async () => {
@@ -1614,16 +1654,24 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
       contentAt: new Date().toISOString(),
     });
 
-    expect(row.querySelector('[data-audit-complete]')).not.toBeNull();
+    expect(row.querySelector('[data-journey-sync]').hidden).toBe(false);
   });
 
-  it('leaves the row readout exactly as it was', async () => {
-    // The control is a third cell, not a third answer. The row still says
-    // Yes, and why the area is behind is still said once, in the summary.
+  it('is on the panel, and the report carries no area row (SNOW-1308)', async () => {
+    // The report's "Map downloads" section moved to the panels whole —
+    // its rows, its control and its notes — so the report is about the
+    // app and the map, and the area is answered once, above it.
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    expect(row.getAttribute('data-audit-status')).toBe('yes');
-    expect(row.querySelectorAll('[data-audit-value]')).toHaveLength(1);
+    expect(document.querySelector('[data-audit-row^="area:"]')).toBeNull();
+    expect(document.querySelector('[data-offline-audit-output]').textContent).not.toContain(
+      'Map downloads',
+    );
+    // A stale area's panel names the remedy on its verdict line.
+    expect(row.getAttribute('data-journey-verdict-state')).toBe('refresh');
+    expect(row.querySelector('button[data-journey-fix]').getAttribute('data-journey-fix')).toBe(
+      AREA_ID,
+    );
   });
 
   it('warms the map shell at /map/ first when the app would not open', async () => {
@@ -1632,7 +1680,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     // record a completion with the app still unopenable offline.
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     expect(warmed[0]).toEqual(['/map/']);
@@ -1645,7 +1693,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     // removed.
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const urls = warmed.flat();
@@ -1664,7 +1712,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
   it("fetches the reader's trips and borrowed forecasts too (SNOW-965)", async () => {
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const urls = warmed.flat();
@@ -1676,7 +1724,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
   it("adds each pin's own place sheet, dated with the server's day (SNOW-1313)", async () => {
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const urls = warmed.flat();
@@ -1692,7 +1740,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     expect(RENDERED_DAY).not.toBe(clientDay());
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const urls = warmed.flat();
@@ -1711,7 +1759,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
       return { ok: true, json: async () => ({ type: 'FeatureCollection', features: [] }) };
     });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(
       async () => {
         const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
@@ -1734,7 +1782,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     // bulletins never saved.
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const urls = warmed.flat();
@@ -1757,7 +1805,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
       return { ok: true, json: async () => ({ type: 'FeatureCollection', features: [] }) };
     });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(
       async () => {
         const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
@@ -1784,7 +1832,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
     window.fetch.mockClear();
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => window.fetch.mock.calls.length > 0, { timeout: 5000 });
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
@@ -1800,7 +1848,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
   it('takes the four overlay feeds along with it', async () => {
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const urls = warmed.flat();
@@ -1824,7 +1872,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     // tally and nothing else depends on it.
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const urls = warmed.flat();
@@ -1844,7 +1892,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     // the season payload and is still not taken, for any kind of content.
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const urls = warmed.flat();
@@ -1859,7 +1907,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     frAhead = true;
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     expect(warmed.flat()).toContain('/partials/region-sheet/ch-4115/?d=' + dayFrom(2));
@@ -1869,7 +1917,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     // One window, two entry points: the shared core over the same ceiling.
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const days = warmed
@@ -1889,7 +1937,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
   it('takes the region sheets and dated ratings for those days (SNOW-1312)', async () => {
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const urls = warmed.flat();
@@ -1913,7 +1961,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
       return { ok: urls.length - failed, failed, bytes: 10 };
     });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(
       async () => {
         const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
@@ -1931,7 +1979,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     // verifying it, and this is not going to be the first thing that does.
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
     await vi.waitUntil(
       async () => {
@@ -1943,16 +1991,33 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
 
     const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
     expect(stored.value[0].contentIncomplete).toBeUndefined();
-    // And the row is Yes. SNOW-951: it keeps its control, because the
-    // control is no longer a claim that something is missing — it is the
-    // way to ask for this area again, whatever the report just found.
+    // SNOW-1308: the reader's things the sync expected, stamped by the
+    // shared rule — the same `areaItemExpectation` the map's syncs stamp
+    // (tests/js/test_map_download_content.js), over this page's templates.
+    expect(stored.value[0].items).toEqual(
+      window.pwaBasemapDownloadCore.areaItemExpectation(AREA_ITEMS, {
+        tripPage: '/trips/__UUID__/',
+        tripRoute: '/trips/__UUID__/route.geojson',
+        weatherDetail: '/api/weather/__SHORTID__/detail/',
+        weatherDay: RENDERED_DAY,
+        favouriteSheet: '/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/',
+      }),
+    );
+    expect(stored.value[0].items.trips[0].urls).toEqual([
+      '/trips/trip-uuid-1/',
+      '/trips/trip-uuid-1/route.geojson',
+    ]);
+    // And the panel re-reads storage: its bulletins stage is Yes. SNOW-951:
+    // it keeps its control, because the control is the way to ask for
+    // this area again, whatever the reading just found.
     await vi.waitUntil(
       () =>
-        document.querySelector('[data-audit-row="area:' + AREA_ID + '"]')?.getAttribute(
-          'data-audit-status',
-        ) === 'yes',
+        areaPanel()
+          ?.querySelector('[data-journey-stage="conditions"]')
+          ?.getAttribute('data-journey-status') === 'yes',
       { timeout: 5000 },
     );
+    expect(areaPanel().querySelector('[data-journey-sync]').hidden).toBe(false);
   });
 
   it('records the shortfall when the warm falls short', async () => {
@@ -1965,7 +2030,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
       return { ok: 1, failed: 2, bytes: 10 };
     });
 
-    row.querySelector('[data-audit-complete]').click();
+    row.querySelector('[data-journey-sync]').click();
     await vi.waitUntil(
       async () => {
         const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
@@ -1978,28 +2043,39 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     expect(stored.value[0].contentAt).toBe('2026-09-01T10:00:00.000Z');
   });
 
-  it('appears on BOTH paint paths, animated and reduced-motion', async () => {
-    // The reduced-motion path nearly shipped without it. A row is BUILT
-    // DETACHED and appended afterwards, so the gate could not be a
-    // `closest` from inside the row — it answered null there, and the
-    // control silently never appeared for anyone with reduced motion on.
-    for (const reduced of [true, false]) {
-      Object.defineProperty(window, 'matchMedia', {
-        configurable: true,
-        value: () => ({ matches: reduced }),
-      });
+  it('is offered before anyone runs the check (SNOW-1308)', async () => {
+    // The panels are answered on load from one read of storage, so the
+    // control is there without pressing Run the check — and the report
+    // stays unpainted until someone does.
+    installCachesStub({
+      [SHELL]: [],
+      'snowdesk-basemap-pinned-region-CH-4115': [
+        { url: 'https://t/style.json' },
+        { url: 'https://t/14/8515/5822.pbf' },
+      ],
+    });
+    await seedMeta({ 'basemap.regions': [record({ contentAt: '2026-09-01T10:00:00.000Z' })] });
+    document.body.innerHTML = PANEL + JOURNEY_HOST;
+    audit.init();
+    window.pwaOfflineJourney.init();
 
-      const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    await vi.waitUntil(() => areaPanel(), { timeout: 5000 });
 
-      expect(row.querySelector('[data-audit-complete]'), String(reduced)).not.toBeNull();
-    }
+    expect(areaPanel().querySelector('[data-journey-sync]').hidden).toBe(false);
+    expect(document.querySelector('[data-audit-summary]')).toBeNull();
   });
 
   it('is not offered on a host with no endpoints rendered', async () => {
     // static/offline.html has no server to render them — and no
     // connection either, which is the whole reason it exists. A control
     // there would offer a fetch that cannot arrive.
-    installCachesStub({ [SHELL]: [] });
+    installCachesStub({
+      [SHELL]: [],
+      'snowdesk-basemap-pinned-region-CH-4115': [
+        { url: 'https://t/style.json' },
+        { url: 'https://t/14/8515/5822.pbf' },
+      ],
+    });
     await seedMeta({
       'basemap.regions': [record({ contentAt: '2026-09-01T10:00:00.000Z' })],
     });
@@ -2009,15 +2085,21 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
         <div data-offline-audit-output hidden></div>
         <p data-offline-audit-status></p>
       </div>
-    `;
+    ` + JOURNEY_HOST;
     audit.init();
+    window.pwaOfflineJourney.init();
     document.querySelector('[data-offline-audit-run]').click();
     await vi.waitUntil(
       () => document.querySelector('[data-offline-audit-output] [data-audit-summary]'),
       { timeout: 5000 },
     );
+    await vi.waitUntil(() => areaPanel(), { timeout: 5000 });
 
-    expect(document.querySelector('[data-audit-complete]')).toBeNull();
+    expect(areaPanel().querySelector('[data-journey-sync]').hidden).toBe(true);
+    // Its "tap to fix" goes to the page that can fetch, and runs there.
+    expect(areaPanel().querySelector('[data-journey-fix-link]').getAttribute('href')).toBe(
+      '/offline/?sync=' + AREA_ID,
+    );
   });
 
   describe('?sync= — the handover from the network menu (SNOW-951)', () => {
@@ -2101,7 +2183,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
         { timeout: 5000 },
       );
 
-      expect(document.querySelector('[data-audit-complete]')).toBeNull();
+      expect(document.querySelector('[data-audit-row^="area:"]')).toBeNull();
       expect(warmed).toHaveLength(0);
     });
 

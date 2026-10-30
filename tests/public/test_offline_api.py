@@ -110,7 +110,9 @@ def test_offline_fallback_page_loads_only_precached_scripts() -> None:
     the strongest version of that ground — the state it recovers from is
     one the worker itself creates, since under ``'offline-forced'`` every
     navigation is answered from cache and a device with no cached shell
-    page reaches this page and nothing else, across restarts.
+    page reaches this page and nothing else, across restarts. SNOW-1308's
+    three are the per-area panels that replaced the report's Map downloads
+    section, which must not vanish from this page.
 
     The list is asserted exhaustively, because the rule is not "few
     scripts" but "no script this page cannot fetch when it is doing its
@@ -125,6 +127,11 @@ def test_offline_fallback_page_loads_only_precached_scripts() -> None:
         "/static/js/pwa_network_mode.js",
         "/static/js/offline_audit_core.js",
         "/static/js/offline_audit.js",
+        # SNOW-1308: the per-area panels above the report, and the
+        # removal they offer, so downloaded areas never vanish from here.
+        "/static/js/basemap_area_removal.js",
+        "/static/js/offline_journey_core.js",
+        "/static/js/offline_journey.js",
     ]
 
     worker = (Path(settings.BASE_DIR) / "static" / "js" / "sw.js").read_text()

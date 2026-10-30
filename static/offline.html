@@ -402,6 +402,93 @@
             [data-offline-audit-output][hidden] {
                 display: none;
             }
+            /* SNOW-1308: one panel per downloaded area, above the
+               report. Same markup contract as the app side
+               (templates/includes/_offline_journey.html), without its
+               classes — this page loads no stylesheet — so it is
+               styled here by attribute, quietly, like the log. */
+            [data-offline-journey] h3 {
+                margin: 0;
+                font-size: 0.875rem;
+            }
+            [data-offline-journey] [hidden] {
+                display: none;
+            }
+            [data-journey-empty],
+            [data-journey-waiting] {
+                margin: 0.5rem 0 0;
+                font-size: 0.8125rem;
+                opacity: 0.6;
+            }
+            [data-journey-panel] {
+                margin-top: 0.75rem;
+                padding: 0.75rem 1rem;
+                border: 1px solid rgb(0 0 0 / 0.12);
+                border-radius: 0.75rem;
+                font-size: 0.8125rem;
+            }
+            [data-journey-panel] h4 {
+                margin: 0;
+                font-size: 0.875rem;
+            }
+            [data-journey-verdict] {
+                margin: 0.25rem 0 0;
+                font-weight: 600;
+            }
+            [data-journey-verdict] a,
+            [data-journey-verdict] button {
+                padding: 0;
+                border: 0;
+                background: none;
+                color: inherit;
+                font: inherit;
+                text-decoration: underline;
+            }
+            [data-journey-stages],
+            [data-journey-things] {
+                margin: 0.5rem 0 0;
+                padding: 0;
+                list-style: none;
+            }
+            [data-journey-things] {
+                margin: 0.25rem 0 0 0.75rem;
+                font-size: 0.75rem;
+            }
+            [data-journey-stage] > div,
+            [data-journey-thing] {
+                display: flex;
+                justify-content: space-between;
+                gap: 0.75rem;
+            }
+            [data-journey-stage-note] {
+                margin: 0;
+                font-size: 0.75rem;
+                opacity: 0.6;
+            }
+            [data-journey-actions] {
+                display: flex;
+                margin-top: 0.5rem;
+                gap: 1rem;
+            }
+            [data-journey-actions] button {
+                padding: 0;
+                border: 0;
+                background: none;
+                color: inherit;
+                font: inherit;
+                text-decoration: underline;
+            }
+            [data-journey-status='yes'] > div > [data-journey-stage-value],
+            [data-journey-thing][data-journey-status='yes'] [data-journey-thing-value],
+            [data-journey-verdict-state='ready'] [data-journey-verdict] {
+                color: #2f7a3f;
+            }
+            [data-journey-status='no'] > div > [data-journey-stage-value],
+            [data-journey-thing][data-journey-status='no'] [data-journey-thing-value],
+            [data-journey-verdict-state='refresh'] [data-journey-verdict],
+            [data-journey-verdict-state='open-map'] [data-journey-verdict] {
+                color: #a86a00;
+            }
             [data-audit-log] {
                 margin-top: 1.25rem;
                 padding: 0.75rem 1rem;
@@ -612,6 +699,60 @@
                 <span class="switch-thumb" aria-hidden="true"></span>
             </label>
         </div>
+        <!--
+          SNOW-1308: one panel per downloaded area, above the report, so
+          downloaded areas never vanish from this page. The same templates
+          as templates/includes/_offline_journey.html, without classes —
+          tests/public/test_offline_journey.py holds the two together.
+          Revealed only once offline_journey.js and the audit it reads
+          from have arrived, like every panel here.
+        -->
+        <div
+            class="audit"
+            id="offline-journey-panel"
+            data-offline-journey
+            data-map-downloads-url="/map/?panel=downloads"
+            data-offline-url="/offline/"
+            hidden
+        >
+            <h3>Your downloaded areas</h3>
+            <p data-journey-empty hidden>Nothing is downloaded on this device.</p>
+            <p data-journey-waiting>Checking…</p>
+            <div data-journey-output></div>
+            <template id="offline-journey-panel-template">
+                <section data-journey-panel>
+                    <h4 data-journey-name></h4>
+                    <p data-journey-verdict></p>
+                    <ol data-journey-stages></ol>
+                    <div data-journey-actions>
+                        <button type="button" data-journey-sync hidden></button>
+                        <button type="button" data-journey-remove hidden></button>
+                    </div>
+                </section>
+            </template>
+            <template id="offline-journey-stage-template">
+                <li data-journey-stage>
+                    <div>
+                        <span data-journey-stage-label></span>
+                        <span data-journey-stage-value></span>
+                    </div>
+                    <p data-journey-stage-note hidden></p>
+                    <ul data-journey-things hidden></ul>
+                </li>
+            </template>
+            <template id="offline-journey-thing-template">
+                <li data-journey-thing>
+                    <span data-journey-thing-name></span>
+                    <span data-journey-thing-value></span>
+                </li>
+            </template>
+            <template id="offline-journey-fix-button-template">
+                <button type="button" data-journey-fix></button>
+            </template>
+            <template id="offline-journey-fix-link-template">
+                <a data-journey-fix-link></a>
+            </template>
+        </div>
         <div class="audit" id="offline-audit-panel" data-offline-audit hidden>
             <div class="audit-controls">
                 <button type="button" data-offline-audit-run>Check what's saved on this device</button>
@@ -643,6 +784,9 @@
         <script src="/static/js/pwa_network_mode.js" defer></script>
         <script src="/static/js/offline_audit_core.js" defer></script>
         <script src="/static/js/offline_audit.js" defer></script>
+        <script src="/static/js/basemap_area_removal.js" defer></script>
+        <script src="/static/js/offline_journey_core.js" defer></script>
+        <script src="/static/js/offline_journey.js" defer></script>
         <script>
             /*
              * Reveal each panel only once its own script has run. These
@@ -665,6 +809,15 @@
                     if (panel) panel.hidden = false;
                 };
                 reveal('offline-audit-panel', !!window.pwaOfflineAudit && !!window.pwaOfflineAuditCore);
+                // SNOW-1308: the per-area panels paint from the audit's
+                // collection, so they need it as well as their own pair.
+                reveal(
+                    'offline-journey-panel',
+                    !!window.pwaOfflineAudit &&
+                        !!window.pwaOfflineAuditCore &&
+                        !!window.pwaOfflineJourney &&
+                        !!window.pwaOfflineJourneyCore,
+                );
                 reveal('pwa-reset-panel', typeof window.pwaResetLocalData === 'function');
 
                 /*

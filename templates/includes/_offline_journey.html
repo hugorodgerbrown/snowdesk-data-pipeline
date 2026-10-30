@@ -1,0 +1,152 @@
+{% comment %}
+templates/includes/_offline_journey.html — one panel per downloaded area,
+above the offline report (SNOW-1308).
+
+Each area this device holds gets a panel answering "will this area work
+without a signal?" in three stages — the map, the bulletins and weather,
+and your things in it — under one plain verdict line. The panels replaced
+the report's "Map downloads" section: every control that section offered
+(Sync now, and Remove for an unfinished download) is on the panel, and
+Remove goes through the same removal the map's Manage downloads sheet
+uses (``basemap_area_removal.js``).
+
+The module (static/js/offline_journey.js) emits no class strings and no
+``innerHTML``: it clones the ``<template>``s below and fills their
+``data-journey-*`` slots, so every class on a panel is in this file and
+ds-lint reads it here. static/offline.html carries the same templates
+inline, without classes — that page loads no stylesheet — and the same
+module paints both. A drift test holds the two template sets together
+(tests/public/test_offline_journey.py).
+
+``data-map-downloads-url`` is where a "Needs a refresh — open the map"
+verdict links: the map's Manage downloads sheet, by the ``?panel=``
+deep link map.js already honours. ``data-offline-url`` is this page, for
+a host that cannot fetch (the fallback page) to send a "tap to fix" to.
+
+A caller must load, after offline_audit.js:
+
+    {% templatetag openblock %} static 'js/basemap_area_removal.js' {% templatetag closeblock %}
+    {% templatetag openblock %} static 'js/offline_journey_core.js' {% templatetag closeblock %}
+    {% templatetag openblock %} static 'js/offline_journey.js' {% templatetag closeblock %}
+{% endcomment %}
+{% load i18n %}
+<div
+    data-offline-journey
+    data-map-downloads-url="{% url 'public:map' %}?panel=downloads"
+    data-offline-url="{% url 'public:offline_page' %}"
+>
+    <h3 class="text-sm font-semibold text-text-1">{% translate "Your downloaded areas" %}</h3>
+    <p class="text-sm text-text-2">{% translate "Whether each area will work without a signal." %}</p>
+    <p class="mt-3 text-sm text-text-3" data-journey-empty hidden>
+        {% translate "Nothing is downloaded on this device." %}
+    </p>
+    <p class="mt-3 text-sm text-text-3" data-journey-waiting>{% translate "Checking…" %}</p>
+    <div class="mt-3 flex flex-col gap-3" data-journey-output></div>
+
+    {% comment %}
+        One panel. The verdict line holds either plain text (ready, can't
+        tell) or the one control that fixes it — Sync now's button, or the
+        link to the map — cloned from the two templates further down.
+    {% endcomment %}
+    <template id="offline-journey-panel-template">
+        <section class="rounded-card border border-border p-3" data-journey-panel>
+            <h4 class="text-sm font-semibold text-text-1" data-journey-name></h4>
+            <p class="mt-1 text-sm font-semibold" data-journey-verdict></p>
+            <ol class="mt-2 flex flex-col gap-1 text-sm" data-journey-stages></ol>
+            <div class="mt-2 flex flex-wrap items-center gap-4" data-journey-actions>
+                <button
+                    type="button"
+                    class="text-sm text-text-2 underline underline-offset-2"
+                    data-journey-sync
+                    hidden
+                >
+                </button>
+                <button
+                    type="button"
+                    class="text-sm text-text-2 underline underline-offset-2"
+                    data-journey-remove
+                    hidden
+                >
+                </button>
+            </div>
+        </section>
+    </template>
+    <template id="offline-journey-stage-template">
+        <li data-journey-stage>
+            <div class="flex items-baseline justify-between gap-3">
+                <span class="text-text-2" data-journey-stage-label></span>
+                <span class="text-text-1" data-journey-stage-value></span>
+            </div>
+            <p class="text-xs text-text-3" data-journey-stage-note hidden></p>
+            <ul class="mt-1 flex flex-col gap-0.5 pl-3" data-journey-things hidden></ul>
+        </li>
+    </template>
+    <template id="offline-journey-thing-template">
+        <li class="flex items-baseline justify-between gap-3 text-xs" data-journey-thing>
+            <span class="text-text-2" data-journey-thing-name></span>
+            <span class="text-text-1" data-journey-thing-value></span>
+        </li>
+    </template>
+    <template id="offline-journey-fix-button-template">
+        <button type="button" class="underline underline-offset-2" data-journey-fix></button>
+    </template>
+    <template id="offline-journey-fix-link-template">
+        <a class="underline underline-offset-2" data-journey-fix-link></a>
+    </template>
+
+    {# Server-translated copy, read back by offline_journey.js through   #}
+    {# pwaStrings. Every key has an English literal in that module's     #}
+    {# FALLBACKS, which is what static/offline.html renders;              #}
+    {# tests/public/test_offline_journey.py fails if the two key sets     #}
+    {# drift.                                                             #}
+    <template id="offline-journey-strings-template">
+        <span data-string="verdict-ready">{% translate "Ready for offline" %}</span>
+        <span data-string="verdict-refresh">{% translate "Needs a refresh — tap to fix" %}</span>
+        <span data-string="verdict-open-map">{% translate "Needs a refresh — open the map" %}</span>
+        <span data-string="verdict-unknown">{% translate "Can’t tell" %}</span>
+
+        <span data-string="stage-map">{% translate "The map" %}</span>
+        <span data-string="stage-conditions">{% translate "Bulletins and weather" %}</span>
+        <span data-string="stage-things">{% translate "Your things" %}</span>
+
+        <span data-string="answer-yes">{% translate "Yes" %}</span>
+        <span data-string="answer-no">{% translate "No" %}</span>
+        <span data-string="answer-unknown">{% translate "—" %}</span>
+
+        {# What a No or a dash on a stage means, one clause each. The map  #}
+        {# notes are the old report's per-area notes (SNOW-843/1138),       #}
+        {# without the remedy — the verdict line carries that.              #}
+        <span data-string="note-map-tiles">{% translate "some of its map tiles are missing" %}</span>
+        <span data-string="note-map-incomplete">{% translate "what the map needs to draw it is incomplete" %}</span>
+        <span data-string="note-map-missing">{% translate "recorded as downloaded, but nothing is stored" %}</span>
+        <span
+            data-string="note-map-orphaned"
+        >{% translate "an unfinished download taking up space — remove it" %}</span>
+        <span data-string="note-map-unreadable">{% translate "this device’s storage did not answer" %}</span>
+        <span
+            data-string="note-map-unverifiable"
+        >{% translate "downloaded before the app recorded what an area needs" %}</span>
+        <span data-string="note-map-tiles-unread">{% translate "its map tiles could not be checked here" %}</span>
+        {# SNOW-1139: the day the bulletins were fetched, dated. #}
+        <span data-string="note-conditions-stale">{% translate "from %(day)s, an earlier day" %}</span>
+        <span data-string="note-conditions-never">{% translate "never saved" %}</span>
+        <span
+            data-string="note-things-unrecorded"
+        >{% translate "not recorded yet — sync this area to list them" %}</span>
+        <span data-string="note-things-none">{% translate "none of your trips or pins are in this area" %}</span>
+        <span data-string="note-things-other-account">{% translate "saved by another account" %}</span>
+
+        <span data-string="unnamed-trip">{% translate "Unnamed trip" %}</span>
+        <span data-string="unnamed-pin">{% translate "Unnamed pin" %}</span>
+        <span data-string="label-dropzone">{% translate "%(name)s (drop zone)" %}</span>
+        <span data-string="label-custom">{% translate "%(name)s (area you drew)" %}</span>
+        <span data-string="default-custom-name">{% blocktrans %}Custom area %(n)s{% endblocktrans %}</span>
+
+        {# The two per-area controls. "Sync now" is the network menu's and #}
+        {# the Manage downloads sheet's word for the same action (SNOW-951). #}
+        <span data-string="sync">{% translate "Sync now" %}</span>
+        <span data-string="sync-label">{% translate "Sync the bulletins and weather saved inside %(name)s" %}</span>
+        <span data-string="remove">{% translate "Remove" %}</span>
+        <span data-string="remove-label">{% translate "Remove %(name)s from this device" %}</span>
+    </template>
+</div>

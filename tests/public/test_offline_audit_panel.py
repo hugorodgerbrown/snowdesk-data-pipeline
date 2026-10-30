@@ -178,7 +178,7 @@ class TestStringsTemplate:
         itself.
         """
         html = render_to_string(PARTIAL, {})
-        assert "%(name)s (drop zone)" in html
+        assert "%(name)s map (on screen)" in html
         assert "%s " not in html.replace("%(", "")
 
     def test_the_browsing_cache_copy_never_blames_the_device(self) -> None:

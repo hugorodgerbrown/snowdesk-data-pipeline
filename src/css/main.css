@@ -2462,36 +2462,6 @@ a.season-day:focus-visible {
   align-items: baseline;
 }
 
-/* SNOW-925: a download row with something to fetch gets a third column
-   for its "Update" control. Only that row — every other one keeps the
-   two-column grid above, so nothing shifts on a report where no area is
-   behind. The control is styled here rather than by class because this
-   module paints two hosts with different stylesheets and emits no class
-   strings at all. */
-[data-offline-audit] [data-audit-check]:has([data-audit-complete]) {
-  grid-template-columns: minmax(0, 1fr) auto auto;
-}
-
-[data-offline-audit] [data-audit-complete] {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-text-2);
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-[data-offline-audit] [data-audit-complete]:hover {
-  color: var(--color-text-1);
-}
-
-[data-offline-audit] [data-audit-complete][disabled] {
-  color: var(--color-text-3);
-  cursor: default;
-}
-
 [data-offline-audit] [data-audit-label] {
   overflow: hidden;
   color: var(--color-text-2);
@@ -2576,6 +2546,41 @@ a.season-day:focus-visible {
   margin: 0.5rem 0 0;
   font-family: var(--font-mono);
   font-size: 0.75rem;
+  color: var(--color-text-3);
+}
+
+/* SNOW-1308: the /offline/ panels, one per downloaded area
+   (static/js/offline_journey.js). Their layout classes are in their
+   templates (templates/includes/_offline_journey.html); what a class
+   cannot say is the state, which arrives at runtime as
+   [data-journey-status] and [data-journey-verdict-state]. Coloured on the
+   ANSWER only, as the report's rows are, and from the same sync-status
+   family — it is the same question about a narrower subject. */
+[data-offline-journey] [data-journey-status='yes'] > div > [data-journey-stage-value],
+[data-offline-journey] [data-journey-thing][data-journey-status='yes'] [data-journey-thing-value] {
+  color: var(--color-sync-ok);
+}
+
+[data-offline-journey] [data-journey-status='no'] > div > [data-journey-stage-value],
+[data-offline-journey] [data-journey-thing][data-journey-status='no'] [data-journey-thing-value] {
+  color: var(--color-sync-partial);
+}
+
+[data-offline-journey] [data-journey-status='unknown'] > div > [data-journey-stage-value],
+[data-offline-journey] [data-journey-thing][data-journey-status='unknown'] [data-journey-thing-value] {
+  color: var(--color-text-3);
+}
+
+[data-offline-journey] [data-journey-verdict-state='ready'] [data-journey-verdict] {
+  color: var(--color-sync-ok);
+}
+
+[data-offline-journey] [data-journey-verdict-state='refresh'] [data-journey-verdict],
+[data-offline-journey] [data-journey-verdict-state='open-map'] [data-journey-verdict] {
+  color: var(--color-sync-partial);
+}
+
+[data-offline-journey] [data-journey-verdict-state='unknown'] [data-journey-verdict] {
   color: var(--color-text-3);
 }
 

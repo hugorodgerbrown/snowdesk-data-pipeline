@@ -275,27 +275,14 @@
     { id: 'weather', section: 'content', critical: false },
   ];
 
-  // The download rows are NOT fixed, and they are the one place that
-  // exception is right: "will the map draw" is not a question about the
-  // map, it is a question about the particular ground this user chose to
-  // take with them. One row that says Yes because SOME area draws is no
-  // use to someone whose Verbier download is the broken one — so every
-  // download gets its own named row.
-  //
-  // All of them under ONE heading, whatever kind they are. Three headings
-  // for three kinds put an empty-looking section between every pair of
-  // rows on a device with one of each, and the kind is a property of the
-  // row rather than a place to file it — so it rides along in the label
-  // instead, where a drop zone reads as one.
-  //
-  // Ordered regions first, because a region is what most people download
-  // and the ones they drew themselves are the exceptions.
-  var DOWNLOAD_KIND_ORDER = ['region', 'dropzone', 'custom'];
-
+  // SNOW-1308: there were download rows here too — one named row per area
+  // under "Map downloads". They moved to the `/offline/` panels
+  // (`offline_journey_core.js`), one panel per area above this report,
+  // which read the same collected readings; the report keeps the rows
+  // about the app and the map as a whole.
   var SECTIONS = [
     { id: 'access', key: 'section-access' },
     { id: 'map', key: 'section-map' },
-    { id: 'downloads', key: 'section-downloads' },
     { id: 'content', key: 'section-content' },
   ];
 
@@ -1449,10 +1436,6 @@
         : { status: 'no', group: 'open-map', effect: s(t, 'effect-styles') };
     }
 
-    if (id === 'no-downloads') {
-      return { status: 'no', reason: 'none', note: s(t, 'note-no-areas') };
-    }
-
     if (id === 'danger-ratings') {
       // The feed for the day the cached page will OPEN ON — its own
       // ``data-today``, which is the date its boot fetch will put in the
@@ -1567,118 +1550,6 @@
     }
 
     return { status: 'unknown' };
-  }
-
-  /**
-   * The name an area is spoken of by in the report.
-   *
-   * SNOW-1133: a stored name when the user gave one; otherwise the same
-   * translatable "Custom area N" default the Manage downloads sheet shows,
-   * built from the record's ordinal and never stored. The raw id is the
-   * last resort, for a record that has neither.
-   *
-   * @param {AreaReading} area
-   * @param {Record<string, string>} t
-   * @returns {string}
-   */
-  function areaName(area, t) {
-    if (area.name) return area.name;
-    if (typeof area.ordinal === 'number' && Number.isFinite(area.ordinal)) {
-      return fill(s(t, 'default-custom-name'), { n: String(area.ordinal) });
-    }
-    return area.id;
-  }
-
-  /**
-   * Answer one downloaded area — the row the whole feature exists for.
-   *
-   * Four outcomes, and the distinction between them is the point: an area
-   * whose tiles are all present and whose TileJSON is missing draws
-   * nothing, and every surface before this one called it downloaded
-   * (SNOW-843).
-   *
-   * SNOW-926: a ready area whose CONTENT is behind keeps its Yes and
-   * carries a caveat, following the shared base layer's treatment exactly
-   * (see ``answerBasemap``'s ``downloads-only`` branch). The row asks
-   * whether the map draws, and it does — what is behind is what the map
-   * draws ON. Grouped rather than noted, so any number of stale areas fold
-   * into one sentence with one shared remedy instead of filling the
-   * three-clause notes cap with the same fact restated.
-   *
-   * @param {AreaReading} area
-   * @param {Record<string, string>} t
-   * @param {string} [now] The report's own clock — see ``areaContentState``.
-   * @returns {{status: AuditStatus, reason?: string, note?: string,
-   *   group?: string, effect?: string}}
-   */
-  function answerArea(area, t, now) {
-    var state = areaState(area);
-    var name = areaName(area, t);
-    if (state.status === 'ready') {
-      var content = areaContentState(area, now);
-      if (content === 'stale' || content === 'never') {
-        return {
-          status: 'yes',
-          reason: content === 'never' ? 'content-never' : 'content-stale',
-          group: 'content-' + (content === 'never' ? 'never' : 'stale'),
-          effect: name,
-        };
-      }
-      return { status: 'yes' };
-    }
-    if (state.status === 'orphaned') {
-      // SNOW-1138: a download that never finished. A No, with the one
-      // remedy the sheet offers it — Remove — rather than Sync, which an
-      // orphan does not get: there is no record to sync from.
-      return {
-        status: 'no',
-        reason: 'orphaned',
-        note: fill(s(t, 'note-area-orphaned'), { name: name }),
-      };
-    }
-    if (state.status === 'incomplete') {
-      return {
-        status: 'no',
-        reason: 'incomplete',
-        note: fill(s(t, 'note-area-incomplete'), { name: name }),
-      };
-    }
-    if (state.status === 'missing') {
-      return {
-        status: 'no',
-        reason: 'missing',
-        note: fill(s(t, 'note-area-missing'), { name: name }),
-      };
-    }
-    if (state.status === 'unreadable') {
-      return {
-        status: 'unknown',
-        reason: 'unreadable',
-        note: fill(s(t, 'note-area-unreadable'), { name: name }),
-      };
-    }
-    return {
-      status: 'unknown',
-      reason: 'unverifiable',
-      note: fill(s(t, 'note-area-unverifiable'), { name: name }),
-    };
-  }
-
-  /**
-   * Which download kind an area record belongs to.
-   *
-   * Mirrors ``basemap_manage_core.js``'s ``manageRows``: a drop zone is
-   * its own kind rather than a custom area with a particular name, and an
-   * older record that predates the ``type`` field falls back to the shape
-   * it was.
-   *
-   * @param {AreaReading & {type?: string}} area
-   * @returns {'region'|'dropzone'|'custom'|'base'}
-   */
-  function areaKind(area) {
-    if (area.kind === 'base') return 'base';
-    if (area.kind === 'region') return 'region';
-    return area.type === 'dropzone' ? 'dropzone' : 'custom';
   }
 
   /**
@@ -1864,41 +1735,19 @@
   }
 
   /**
-   * A download's row label — its name, and what kind of thing it is where
-   * that is not obvious.
-   *
-   * A region is labelled by name alone: "Martigny — Verbier" is a place
-   * and reads as one. The two kinds the user made themselves are not, so
-   * they say which they are — the alternative was three section headings
-   * for three kinds, which on a device with one of each put an
-   * empty-looking heading between every pair of rows.
-   *
-   * @param {AreaReading & {type?: string}} area
-   * @param {Record<string, string>} t
-   * @returns {string}
-   */
-  function areaLabel(area, t) {
-    var name = areaName(area, t);
-    var kind = areaKind(area);
-    if (kind === 'dropzone') return fill(s(t, 'label-dropzone'), { name: name });
-    if (kind === 'custom') return fill(s(t, 'label-custom'), { name: name });
-    return name;
-  }
-
-  /**
    * Every row of the report, in paint order — the fixed capabilities plus
-   * one per downloaded area.
+   * one per basemap. SNOW-1308 took the per-area rows to the `/offline/`
+   * panels.
    *
    * @param {AuditReadings|null} readings Null for the waiting skeleton,
    *   which cannot know the downloads yet.
    * @param {Record<string, string>} t
    * @returns {Array<{id: string, section: string, critical: boolean,
-   *   label: string, area?: AreaReading, basemap?: string}>}
+   *   label: string, basemap?: string}>}
    */
   function rowsFor(readings, t) {
     var rows = /** @type {Array<{id: string, section: string,
-      critical: boolean, label: string, area?: AreaReading,
-      basemap?: string}>} */ (
+      critical: boolean, label: string, basemap?: string}>} */ (
       ROWS.map(function (row) {
         return {
           id: row.id,
@@ -1929,34 +1778,6 @@
         });
       });
     }
-    var areas = readings ? chosenAreas(readings) : [];
-    if (readings && areas.length === 0) {
-      // The one row that exists only when there is nothing to list, so a
-      // device with no downloads still gets a line saying so rather than
-      // a heading over a gap.
-      rows.push({
-        id: 'no-downloads',
-        section: 'downloads',
-        critical: false,
-        label: s(t, 'row-no-downloads'),
-      });
-      return rows;
-    }
-    DOWNLOAD_KIND_ORDER.forEach(function (kind) {
-      areas
-        .filter(function (area) {
-          return areaKind(area) === kind;
-        })
-        .forEach(function (area) {
-          rows.push({
-            id: 'area:' + area.id,
-            section: 'downloads',
-            critical: false,
-            label: areaLabel(area, t),
-            area: area,
-          });
-        });
-    });
     return rows;
   }
 
@@ -1990,14 +1811,9 @@
                 status: /** @type {AuditStatus} */ ('pending'),
               });
             }
-            var resolved = row.area
-              // SNOW-926: the report's own clock, so the content-age
-              // reading and the `generatedAt` stamp agree — and so a test
-              // can pin a date rather than racing midnight.
-              ? answerArea(row.area, t, readings.now)
-              : row.basemap
-                ? answerBasemap(row.basemap, readings, t)
-                : answer(row.id, readings, t);
+            var resolved = row.basemap
+              ? answerBasemap(row.basemap, readings, t)
+              : answer(row.id, readings, t);
             var status = resolved.status;
             // A No on a critical row is the reason the whole thing fails,
             // not one capability being unavailable — the log says so with
@@ -2009,17 +1825,6 @@
                 label: row.label,
                 value: s(t, 'answer-' + (status === 'blocked' ? 'no' : status)),
                 status: status,
-                // SNOW-925: what a control on this row would act on, and
-                // whether there is anything for it to do. Carried BESIDE
-                // the readout rather than folded into `value`, so the
-                // row's answer is still the same three words it has always
-                // been and SNOW-926's "a row never carries its own
-                // explanation" still holds. Absent on every row that is
-                // not a download.
-                areaId: row.area ? row.area.id : undefined,
-                completable: row.area
-                  ? completableArea(row.area, readings.now)
-                  : undefined,
               })
             );
           }),
@@ -2103,7 +1908,11 @@
         covers: ['app-opens'],
       };
     }
-    if (byId['no-downloads']) {
+    // SNOW-1308: the downloads are panels above the report now, not rows
+    // in it — but whether the map has any ground to draw is still the
+    // report's to say, so these two verdicts read the areas directly.
+    var areas = chosenAreas(r);
+    if (areas.length === 0) {
       // SNOW-1058: nothing downloaded, but the map on screen draws from
       // what the user has browsed. "There is no map to show" was this
       // verdict over a map that was showing; what is true is that nothing
@@ -2115,24 +1924,19 @@
         return {
           status: 'warn',
           text: s(t, 'verdict-browsed-only'),
-          covers: ['no-downloads', current.id],
+          covers: [current.id],
         };
       }
-      return { status: 'warn', text: s(t, 'verdict-no-map'), covers: ['no-downloads'] };
+      return { status: 'warn', text: s(t, 'verdict-no-map'), covers: [] };
     }
     // Every download failing is a different answer from some of them
-    // failing: the first means there is nothing to look at, the second
-    // means the user has to know WHICH, and only the summary has room.
-    var areaRows = /** @type {AuditCheck[]} */ ([]);
-    sections.forEach(function (section) {
-      section.checks.forEach(function (check) {
-        if (check.id.indexOf('area:') === 0) areaRows.push(check);
-      });
+    // failing: the first means there is nothing to look at, the second is
+    // what each area's own panel says.
+    var drawable = areas.filter(function (area) {
+      var state = areaState(area).status;
+      return state === 'ready' || state === 'unreadable' || state === 'unverifiable';
     });
-    var drawable = areaRows.filter(function (check) {
-      return check.status === 'yes' || check.status === 'unknown';
-    });
-    if (areaRows.length > 0 && drawable.length === 0) {
+    if (drawable.length === 0) {
       return { status: 'warn', text: s(t, 'verdict-downloads-broken'), covers: [] };
     }
     // Nothing critical is broken, but "everything you need is here" over

@@ -985,7 +985,19 @@ const PRECACHE_URLS = [OFFLINE_FALLBACK, RESET_SCRIPT, NETWORK_MODE_SCRIPT];
 // two are not: without them the audit panel stays hidden (the same
 // self-guard the reset panel uses) and every other offline path is
 // untouched. They are warmed individually below, failures and all.
-const AUDIT_SCRIPTS = ['/static/js/offline_audit_core.js', '/static/js/offline_audit.js'];
+//
+// SNOW-1308: and the per-area panels painted above the report, with the
+// shared removal they offer — so a device's downloaded areas never vanish
+// from the fallback page. The removal stays inert there (it needs the
+// download core and the IndexedDB layer, which that page does not load),
+// and offers no control rather than a dead one.
+const AUDIT_SCRIPTS = [
+  '/static/js/offline_audit_core.js',
+  '/static/js/offline_audit.js',
+  '/static/js/basemap_area_removal.js',
+  '/static/js/offline_journey_core.js',
+  '/static/js/offline_journey.js',
+];
 
 // SNOW-912: the page the app IS, re-warmed by ``activate``.
 //
