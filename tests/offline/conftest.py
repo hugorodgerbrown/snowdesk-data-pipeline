@@ -132,6 +132,11 @@ def network() -> Iterator[RecordingProxy]:
         yield proxy
 
 
+# The region sheet's download button: a proxy that presses, and is redrawn
+# as, the ribbon's #map-download-control (map_region_sheet.js).
+DOWNLOAD_PROXY = '#region-sheet [data-region-sheet-proxy="map-download-control"]'
+
+
 @dataclass
 class OfflineMapPage:
     """A signed-in map page whose every byte crosses the recording proxy.
@@ -462,11 +467,10 @@ class OfflineMapPage:
         result = self.page.locator("#search-results .search-result").first
         result.wait_for(state="visible", timeout=10_000)
         result.click()
-        # The roundel only exists once a region is selected, so its
-        # appearance is the signal that the selection landed.
-        self.page.wait_for_selector(
-            "#map-download-control", state="visible", timeout=15_000
-        )
+        # The region sheet opening with its download button is the signal
+        # that the selection landed. The ribbon's own roundel is not drawn
+        # at any width since SNOW-1173; the sheet's header button proxies it.
+        self.page.wait_for_selector(DOWNLOAD_PROXY, state="visible", timeout=15_000)
 
     def download_selected_region(self, timeout_ms: int = 240_000) -> None:
         """Press the download roundel and wait for it to report ``done``.
@@ -488,8 +492,10 @@ class OfflineMapPage:
                 ``done``.
 
         """
+        # Press the sheet's button, as a user does. The state is read from
+        # the hidden roundel it proxies, which map_region_download.js owns.
+        self.page.locator(DOWNLOAD_PROXY).click()
         roundel = self.page.locator("#map-download-control")
-        roundel.click()
         self.page.wait_for_function(
             """() => {
                 const state = document.getElementById('map-download-control')
