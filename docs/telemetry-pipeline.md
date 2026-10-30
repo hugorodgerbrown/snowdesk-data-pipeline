@@ -2,7 +2,7 @@
 name: telemetry-pipeline
 description: First-party PWA telemetry — /api/telemetry receiver, event allowlist, sendBeacon, PWA_TELEMETRY_ENABLED off switch, pwa.*/map.* event names
 status: current
-last-reviewed: 2026-10-22
+last-reviewed: 2026-10-30
 ---
 
 # Telemetry pipeline
@@ -147,7 +147,15 @@ change the frozenset + document the property shape here.
 
 - **SW lifecycle**: `pwa.sw.installed`, `pwa.sw.activated`,
   `pwa.sw.activation_failed`, `pwa.sw.update_available`,
-  `pwa.sw.update_applied`, `pwa.sw.fetch_undefined`.
+  `pwa.sw.update_applied`, `pwa.sw.fetch_undefined`, and
+  `pwa.sw.content_carried` (SNOW-1311) with `properties.cache_version`,
+  `.result` (`complete` / `incomplete`), `.copied` and `.failed` — one per
+  activation that found old `snowdesk-shell-*` caches and carried the
+  user's downloaded content out of them (`_carryShellContent` in
+  `static/js/sw.js`). `incomplete` means a put failed, quota ran out or
+  `SHELL_CARRY_BUDGET_MS` expired, and every old shell cache was kept for
+  the next activation. Not emitted on an activation with no old shell cache
+  (a first install, or one after a complete carry).
 - **Kill switch + forced update**: `pwa.kill_switch.activated`,
   `pwa.forced_update.triggered`.
 - **Install funnel**: `pwa.install.prompted`, `pwa.install.accepted`,
@@ -419,7 +427,9 @@ Currently:
   on repeat launches; 100% on the first launch after install (the
   first-launch bump is scored per session via a sessionStorage marker).
 - 100% for everything else — including all critical events and the
-  install funnel.
+  install funnel. `pwa.sw.content_carried` is deliberately left at this
+  default (SNOW-1311): at most one event per activation, and the
+  `incomplete` rate is the figure worth reading in full.
 
 ### Opt-in / opt-out (spec §16.6)
 
@@ -455,7 +465,7 @@ below the table.
 | `static/js/pwa_version_check.js::showBlockingModal` | `pwa.forced_update.triggered` — wired at `apps.analytics.schema` §16.2. One caller since SNOW-609 (`/api/version` answering `update_required: true`), so `properties.trigger` is always `'blocked_build'`; the previous `'min_version'` and `'escalation'` values are retired and will only appear on historic rows |
 | `static/js/pwa_install.js` | `pwa.install.prompted` (`revealBanner`) / `.accepted` (accepted `userChoice`) / `.dismissed` (`dismissBanner`) / `.completed` (`onInstalled`) / `.notifications_granted` (the iOS `Notification.permission` check inside `onInstalled`) |
 | `templates/includes/_freshness_indicator.html` (inline `<script>`) | `pwa.freshness.fresh` / `.stale` / `.unsafe` — sourced from the partial's own `state` render context (server-computed by `apps.core.freshness.freshness_state`); the partial isn't included on a live page yet (design-system component), so the hook fires wherever/whenever a future template adopts it |
-| `static/js/sw.js` (via the message bridge) | `pwa.sw.installed` (`install`) / `.activated` (`activate`) / `.activation_failed` (caught `activate` error) / `.fetch_undefined` (`_guardedRespond` — a strategy function resolving to a non-`Response`) / `pwa.push.received` (`push`) / `.shown` (after `showNotification()` resolves) / `.opened` (`notificationclick`) |
+| `static/js/sw.js` (via the message bridge) | `pwa.sw.installed` (`install`) / `.activated` (`activate`) / `.activation_failed` (caught `activate` error) / `.fetch_undefined` (`_guardedRespond` — a strategy function resolving to a non-`Response`) / `.content_carried` (`_carryShellContent`, inside `activate`, SNOW-1311) / `pwa.push.received` (`push`) / `.shown` (after `showNotification()` resolves) / `.opened` (`notificationclick`) |
 | `static/js/sw_register.js` | `pwa.sw.update_available` (`revealUpdateBannerIfStuck`, once per page, and only when the stuck-worker banner was actually revealed: SNOW-1025 made a routine update silent, so this counts workers that could not update themselves, not deploys) / `.update_applied` (the `controllerchange` after either a silent activation or the banner's Reload) / `pwa.kill_switch.activated` with `properties.mechanism: 'a'` (the pre-register kill fetch — `fetchSwConfig()` returning `kill: true`) |
 | `static/js/sw-kill.js` (via the message bridge) | `pwa.kill_switch.activated` with `properties.mechanism: 'b'` (Mechanism B's own activate-time wipe, just ahead of the per-client `navigate()` calls) |
 | `static/js/mutation_queue.js` (real queue, SNOW-376) | `pwa.mutation.enqueued` (`enqueue`) / `.drained` with the real count of rows a 2xx removed (`drain`) / `.failed_permanent` with `properties.attempts` reflecting the attempt that just failed — a permanent 4xx or the 20th retry (`_markRowFailed`, and `markFailed` for a caller-driven report outside the queue) |

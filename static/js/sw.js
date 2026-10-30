@@ -123,7 +123,11 @@
  * A new version string changes the bytes of this script, which is what
  * makes the browser detect the update and surface the banner. On
  * ``activate``, every cache key not matching the current version is
- * deleted so old SW deploys leave nothing behind. The version is also
+ * deleted so old SW deploys leave nothing behind — but only after
+ * ``_carryShellContent`` (SNOW-1311) has copied the user's downloaded
+ * content (bulletin pages, weather sheets, trip routes, feeds) out of the
+ * old ``snowdesk-shell-*`` caches into the new one, and an old shell cache
+ * is kept whole whenever that carry did not complete. The version is also
  * surfaced via a ``message`` handler so devtools can confirm which SW
  * version is in control.
  *
@@ -1107,6 +1111,14 @@ const SHELL_SUBRESOURCE_LIMIT = 120;
 // the activation's ``waitUntil`` open for as long as the browser allows.
 const SHELL_REWARM_BUDGET_MS = 30000;
 
+// SNOW-1311: how long ``activate`` waits for ``_carryShellContent`` to copy
+// the user's content out of the old shell caches. Same shape and reasoning
+// as ``SHELL_REWARM_BUDGET_MS``: a stop-WAITING bound on the one caller that
+// runs inside a lifecycle handler. A carry that runs out of budget is
+// ``incomplete``, so every old shell cache is kept and the next activation
+// carries the rest — nothing is reaped on a timeout.
+const SHELL_CARRY_BUDGET_MS = 30000;
+
 // SNOW-912: the country both of ``map.js``'s boot fetches hard-code. Named
 // here so a grep finds the worker's copy alongside the report's own
 // ``BOOT_COUNTRY`` (offline_audit_core.js) the day that changes.
@@ -1337,6 +1349,14 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       try {
+        // SNOW-1311: carry the user's content out of every old shell cache
+        // BEFORE anything is reaped, and before the claim, so the first
+        // fetch this worker answers already finds it. Never rejects — its
+        // own errors are an ``incomplete`` result, not an activation
+        // failure — and an incomplete carry keeps every old shell cache
+        // for the next activation to finish (see _carryShellContent).
+        const carry = await _carryShellContent();
+        const keepOldShell = carry.result !== 'complete';
         // Reap caches from earlier SW versions so disk doesn't grow.
         // Use ``startsWith('snowdesk-shell-')`` rather than a strict
         // equality check so legacy ``map-shell-*`` caches from the
@@ -1368,6 +1388,12 @@ self.addEventListener('activate', (event) => {
           )
           .filter((name) => {
             if (name === CACHE_VERSION || name === BASEMAP_CACHE) return false;
+            // SNOW-1311: complete-or-keep. An old shell cache is the only
+            // copy of whatever the carry did not reach, so it survives an
+            // incomplete carry whole; legacy ``map-shell-*`` caches, old
+            // basemap versions and the legacy pinned cache are reaped as
+            // before.
+            if (keepOldShell && name.startsWith('snowdesk-shell-')) return false;
             if (name.startsWith(BASEMAP_PINNED_CACHE_PREFIX) && name !== LEGACY_BASEMAP_PINNED_CACHE) {
               return false; // a live per-area pinned bucket — keep it.
             }
@@ -3897,6 +3923,263 @@ async function _rewarmShell() {
   } catch (_err) {
     // Best-effort, per the docstring.
   }
+}
+
+// ---------------------------------------------------------------------------
+// SNOW-1311 — an update carries your downloaded content across
+// ---------------------------------------------------------------------------
+//
+// Every deploy changes ``CACHE_VERSION``, and ``activate`` reaps every older
+// ``snowdesk-shell-*`` cache. That cache is where ``_warmCache`` writes every
+// same-origin url an area download saved — bulletin pages, weather sheets,
+// trip routes, feeds — and every read path opens ``CACHE_VERSION`` only. So
+// until this carry a silent update wiped a user's downloaded conditions,
+// typically the night before they lost signal. Full rationale:
+// docs/decisions/an-update-carries-your-downloaded-content-across.md.
+
+/**
+ * The time ``response`` says it was generated, from its ``Date`` header
+ * (SNOW-1311).
+ *
+ * The carry's tie-breaker when more than one old shell cache holds a url:
+ * the newest copy wins, never whichever cache ``caches.keys()`` happened to
+ * list first. A missing or unparseable header is ``-Infinity``, so it loses
+ * to any copy that names a time.
+ *
+ * @param {Response} response
+ * @returns {number} Epoch milliseconds, or ``-Infinity``.
+ */
+function _carryResponseDate(response) {
+  const header = (response && response.headers && response.headers.get('Date')) || '';
+  const parsed = header ? Date.parse(header) : NaN;
+  return Number.isFinite(parsed) ? parsed : -Infinity;
+}
+
+/**
+ * Best-effort size of a carried response, from ``Content-Length`` alone
+ * (SNOW-1311).
+ *
+ * Read before the ``put`` consumes the body, and deliberately never by
+ * reading the body: the figure is a debug-log and telemetry nicety, not
+ * worth a second copy of every carried page in memory. ``0`` when the
+ * header is absent.
+ *
+ * @param {Response} response
+ * @returns {number}
+ */
+function _carryResponseBytes(response) {
+  try {
+    const header = response.headers && response.headers.get('Content-Length');
+    if (header === null || header === undefined || header === '') return 0;
+    const n = Number(header);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  } catch (_err) {
+    return 0;
+  }
+}
+
+/**
+ * True for an old static asset — a url ``_classifySync`` calls ``'static'``
+ * by its extension rather than by naming a ``STATIC_PATHS`` feed
+ * (SNOW-1311).
+ *
+ * These are the only entries the carry leaves behind, and only when no
+ * carried page references them: the new install's own assets have new
+ * hashed names, so an unreferenced old ``map.<hash>.js`` is dead weight. A
+ * feed such as ``/api/ratings/?d=…`` is content, and is always carried.
+ *
+ * @param {URL} url
+ * @returns {boolean}
+ */
+function _carryIsShellAsset(url) {
+  if (STATIC_PATHS.has(url.pathname)) return false;
+  return _classifySync(WARM_CLASSIFY_REQUEST, url) === 'static';
+}
+
+/**
+ * The carry itself, unbounded — ``_carryShellContent`` is its budget
+ * (SNOW-1311).
+ *
+ * Three passes. **Gather**: every same-origin entry of every old
+ * ``snowdesk-shell-*`` cache, keeping for each url the copy with the
+ * newest ``Date`` (a tie keeps the first seen). **Plan**: drop every url
+ * the new cache already holds — what the new install wrote always wins —
+ * and collect the scripts and stylesheets each remaining HTML page names
+ * (``_shellSubresources``). **Copy**: ``put`` each entry into
+ * ``CACHE_VERSION`` exactly as stored, so an ``X-SW-Principal`` stamp
+ * survives and the read paths need no change; an old static asset no
+ * carried page names is skipped.
+ *
+ * Sequential on purpose. Cache Storage is local disk, not network, so a
+ * pool buys little, and one-at-a-time is what lets a quota error stop the
+ * run at the entry that hit it. A failed ``put`` marks the run
+ * ``incomplete`` and the rest are still tried; a ``QuotaExceededError``
+ * stops it there, because every later write would fail the same way and
+ * the old caches are being kept regardless. ``state.stopped`` is set by
+ * the budget, so a run past its time stops starting new work.
+ *
+ * @param {{result: string, copied: number, skipped: number, failed: number, bytes: number, from: number}} tally
+ *   Mutated in place, so the budget can report what a timed-out run did.
+ * @param {{stopped: boolean}} state
+ * @returns {Promise<void>}
+ */
+async function _carryShellContentRun(tally, state) {
+  const names = (await caches.keys()).filter(
+    (name) => name.startsWith('snowdesk-shell-') && name !== CACHE_VERSION,
+  );
+  tally.from = names.length;
+  if (names.length === 0) return;
+
+  // Gather.
+  const chosen = new Map();
+  for (const name of names) {
+    if (state.stopped) return;
+    const source = await caches.open(name);
+    const requests = await source.keys();
+    for (const request of requests) {
+      if (state.stopped) return;
+      let url = null;
+      try {
+        url = new URL(request.url);
+      } catch (_err) {
+        url = null;
+      }
+      // The shell cache is same-origin by contract; anything else in it is
+      // not ours to move.
+      if (!url || url.origin !== self.location.origin) {
+        tally.skipped += 1;
+        continue;
+      }
+      const response = await source.match(request, { ignoreVary: true });
+      if (!response) {
+        tally.skipped += 1;
+        continue;
+      }
+      const date = _carryResponseDate(response);
+      const held = chosen.get(url.href);
+      if (!held) {
+        chosen.set(url.href, { request, response, url, date });
+      } else if (date > held.date) {
+        chosen.set(url.href, { request, response, url, date });
+        tally.skipped += 1;
+      } else {
+        tally.skipped += 1;
+      }
+    }
+  }
+
+  // Plan.
+  const target = await caches.open(CACHE_VERSION);
+  const pending = [];
+  const referenced = new Set();
+  for (const entry of chosen.values()) {
+    if (state.stopped) return;
+    if (await target.match(entry.request, { ignoreVary: true })) {
+      tally.skipped += 1;
+      continue;
+    }
+    pending.push(entry);
+    if (_isHtmlResponse(entry.response)) {
+      try {
+        const html = await entry.response.clone().text();
+        for (const asset of _shellSubresources(html)) referenced.add(asset);
+      } catch (_err) {
+        // An unreadable page still carries; it just vouches for no assets.
+      }
+    }
+  }
+
+  // Copy.
+  for (const entry of pending) {
+    if (state.stopped) return;
+    // `_shellSubresources` drops the query string, so compare on the path.
+    const bare = entry.url.origin + entry.url.pathname;
+    if (_carryIsShellAsset(entry.url) && !referenced.has(bare)) {
+      tally.skipped += 1;
+      continue;
+    }
+    const bytes = _carryResponseBytes(entry.response);
+    try {
+      await target.put(entry.request, entry.response);
+      tally.copied += 1;
+      tally.bytes += bytes;
+    } catch (err) {
+      // A TypeError is ``put`` refusing the entry itself (a ``Vary: *``
+      // answer, a non-GET key) — it would refuse it on every activation,
+      // so counting it a failure would keep the old caches for ever and
+      // let them pile up across deploys. It is skipped instead.
+      if (err && err.name === 'TypeError') {
+        tally.skipped += 1;
+        continue;
+      }
+      tally.failed += 1;
+      tally.result = 'incomplete';
+      if (err && err.name === 'QuotaExceededError') return;
+    }
+  }
+}
+
+/**
+ * Copy the user's content out of every old shell cache into
+ * ``CACHE_VERSION`` before ``activate`` reaps them (SNOW-1311).
+ *
+ * Carries every same-origin entry — pages, weather sheets, trip routes,
+ * ``STATIC_PATHS`` feeds — except an old static asset no carried page
+ * references; never overwrites an entry the new cache already holds; and
+ * for a url held by several old caches carries the newest ``Date``. See
+ * ``_carryShellContentRun`` for the passes.
+ *
+ * Resolves, never rejects, to ``{result, copied, skipped, failed, bytes}``.
+ * ``result`` is ``'complete'`` only when every planned entry landed inside
+ * ``SHELL_CARRY_BUDGET_MS``; a failed ``put``, a quota abort, a timeout or
+ * any error of its own is ``'incomplete'``, and ``activate`` then keeps
+ * every old shell cache for the next activation to finish the job — there
+ * is no other copy of whatever was not carried.
+ *
+ * Silent when there was nothing to carry from: a first install, or an
+ * activation after a complete carry already reaped everything, logs and
+ * reports nothing, so ``pwa.sw.content_carried`` counts only activations
+ * that had content to move. An error before the old caches could even be
+ * listed is reported, as ``incomplete``.
+ *
+ * @returns {Promise<{result: 'complete'|'incomplete', copied: number, skipped: number, failed: number, bytes: number}>}
+ */
+async function _carryShellContent() {
+  const tally = { result: 'complete', copied: 0, skipped: 0, failed: 0, bytes: 0, from: 0 };
+  const state = { stopped: false };
+  let timer = null;
+  let outcome = 'done';
+  try {
+    outcome = await Promise.race([
+      _carryShellContentRun(tally, state).then(() => 'done'),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), SHELL_CARRY_BUDGET_MS);
+      }),
+    ]);
+  } catch (_err) {
+    outcome = 'error';
+  } finally {
+    clearTimeout(timer);
+    // A run past its budget keeps going only as far as the put in hand.
+    state.stopped = true;
+  }
+  const result = {
+    result: outcome === 'done' ? tally.result : 'incomplete',
+    copied: tally.copied,
+    skipped: tally.skipped,
+    failed: tally.failed,
+    bytes: tally.bytes,
+  };
+  if (tally.from > 0 || outcome === 'error') {
+    _debugLog('shell.carry', result);
+    _postTelemetry('pwa.sw.content_carried', {
+      cache_version: CACHE_VERSION,
+      result: result.result,
+      copied: result.copied,
+      failed: result.failed,
+    });
+  }
+  return result;
 }
 
 /**

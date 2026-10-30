@@ -178,3 +178,26 @@ class TestJsErrorEventAllowlisted:
         }
         with pytest.raises(TelemetrySchemaError):
             parse_payload(envelope)
+
+
+class TestContentCarriedEventAllowlisted:
+    """SNOW-1311: pwa.sw.content_carried is accepted by the schema."""
+
+    def test_event_name_in_allowed_events(self) -> None:
+        """pwa.sw.content_carried is a member of ALLOWED_EVENTS."""
+        assert "pwa.sw.content_carried" in ALLOWED_EVENTS
+
+    def test_parse_payload_accepts_valid_envelope(self) -> None:
+        """The envelope sw.js's activate handler emits parses cleanly."""
+        envelope = {
+            "event": "pwa.sw.content_carried",
+            "timestamp": "2026-10-30T10:00:00+00:00",
+            "client_version": "2026.10.30.abc",
+            "properties": {
+                "cache_version": "snowdesk-shell-abc123",
+                "result": "incomplete",
+                "copied": 41,
+                "failed": 1,
+            },
+        }
+        assert parse_payload(envelope) == [envelope]

@@ -175,6 +175,10 @@ const SW_EXPORTS = [
   '_signedInPrincipal',
   '_privateJsonNetworkFirst',
   '_publicJsonNetworkFirst',
+  // SNOW-1311: the activation-time carry of the user's content out of the
+  // old shell caches, and its budget.
+  '_carryShellContent',
+  'SHELL_CARRY_BUDGET_MS',
 ];
 
 /**
@@ -207,6 +211,8 @@ function loadSw(options = {}) {
     clients: {
       get: () => Promise.resolve(null),
       matchAll: () => Promise.resolve(options.clients || []),
+      // SNOW-1311: ``activate`` claims, and the carry tests dispatch it.
+      claim: () => Promise.resolve(),
     },
     registration: {
       showNotification: options.showNotification || (() => Promise.resolve()),
@@ -299,6 +305,11 @@ function makeCaches() {
             }
           }
           return undefined;
+        },
+        // SNOW-1311: the carry walks an old shell cache's entries. A
+        // Request-alike per url, as a real Cache's ``keys()`` answers.
+        async keys() {
+          return [...entries.keys()].map((url) => ({ url, method: 'GET' }));
         },
         // SNOW-965: a trip route the server says is no longer yours is
         // dropped from the shell cache.
@@ -4326,5 +4337,322 @@ describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
 
     expect(await offline.text()).toBe('{"html":"live"}');
     expect(offline.headers.get(sw.PRINCIPAL_HEADER)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-1311 — an update carries your downloaded content across
+// ---------------------------------------------------------------------------
+
+describe('activate carries the old shell caches into the new one (SNOW-1311)', () => {
+  /*
+   * Every deploy changes CACHE_VERSION, and `activate` reaped every older
+   * shell cache — which is where an area download wrote its bulletin pages,
+   * weather sheets and trip routes. A silent update the night before a tour
+   * wiped them. `_carryShellContent` copies them across first, and an old
+   * cache is reaped only once that copy completed.
+   */
+  const SHELL = 'snowdesk-shell-UNSUBSTITUTED';
+  const OLD = 'snowdesk-shell-old1';
+  const OLDER = 'snowdesk-shell-old0';
+  const PAGE = `${ORIGIN}/CH-4115/2026-01-06/`;
+  const ROUTE = `${ORIGIN}/trips/2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11/route.geojson`;
+  const SHEET = `${ORIGIN}/api/weather/Ab3dE_fGh1J/detail/?date=2026-01-06`;
+  const RATINGS = `${ORIGIN}/api/ratings/?d=2026-01-06&country=ch`;
+  const PAGE_JS = `${ORIGIN}/static/js/map.abc123.js`;
+  const PAGE_CSS = `${ORIGIN}/static/css/output.def456.css`;
+  const STALE_JS = `${ORIGIN}/static/js/map.0ld999.js`;
+
+  /** A cached entry as an old worker stored it. */
+  function stored(body, headers) {
+    return new Response(body, { headers: headers || {} });
+  }
+
+  /** A bulletin page naming its own hashed assets, stamped for `who`. */
+  function bulletinPage(who) {
+    return stored(
+      `<html><head><link rel="stylesheet" href="${PAGE_CSS}"><script src="/static/js/map.abc123.js"></script></head><body>CH-4115</body></html>`,
+      { 'Content-Type': 'text/html; charset=utf-8', 'X-SW-Principal': who },
+    );
+  }
+
+  /** A client that records every telemetry message the worker posts. */
+  function makeClient() {
+    const seen = [];
+    return { postMessage: (data) => seen.push(data), seen };
+  }
+
+  /** Telemetry events of `name` a client has seen. */
+  function events(client, name) {
+    return client.seen.filter((m) => m.type === 'pwa-telemetry' && m.event === name);
+  }
+
+  /**
+   * Wrap the new cache's `put` so a test can fail, hang or count it. The
+   * old caches are left alone — only writes into CACHE_VERSION go through.
+   */
+  function interceptPuts(stub, onPut) {
+    const open = stub.open;
+    stub.open = async (name) => {
+      const cache = await open(name);
+      if (name !== SHELL) return cache;
+      const put = cache.put.bind(cache);
+      return { ...cache, put: (request, response) => onPut(request, response, put) };
+    };
+    return stub;
+  }
+
+  /**
+   * A sandbox switched to offline mode, so the activation's re-warm spends
+   * nothing and the carry is all that runs.
+   */
+  async function offlineSw(caches, client, withCore) {
+    const sw = loadSw({ caches, clients: client ? [client] : [], core: withCore ? core : null });
+    await sw._hydrateNetworkMode();
+    sw._forceOffline();
+    return sw;
+  }
+
+  /** Dispatch `activate` at the real listener; resolve its waitUntil. */
+  function activate(sw) {
+    let promise = null;
+    sw.__listeners.activate({
+      waitUntil(value) {
+        promise = value;
+      },
+    });
+    return promise;
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await resetDb();
+  });
+
+  it('carries a page, a sheet and a trip route with their stamps intact', async () => {
+    const caches = makeCaches();
+    caches.seed(OLD, PAGE, bulletinPage('acct-a'));
+    caches.seed(OLD, SHEET, stored('{"html":"x"}', { 'Content-Type': 'application/json' }));
+    caches.seed(
+      OLD,
+      ROUTE,
+      stored('{"route":"a"}', { 'Content-Type': 'application/json', 'X-SW-Principal': 'acct-a' }),
+    );
+    caches.seed(OLD, RATINGS, stored('{"ratings":1}', { 'Content-Type': 'application/json' }));
+    const client = makeClient();
+    const sw = await offlineSw(caches, client);
+
+    await activate(sw);
+    await flush();
+
+    const shell = await caches.open(SHELL);
+    const page = await shell.match(PAGE);
+    expect(page.headers.get('X-SW-Principal')).toBe('acct-a');
+    expect(page.headers.get('Content-Type')).toBe('text/html; charset=utf-8');
+    expect(await (await shell.match(SHEET)).text()).toBe('{"html":"x"}');
+    expect((await shell.match(ROUTE)).headers.get('X-SW-Principal')).toBe('acct-a');
+    // A STATIC_PATHS feed is content, not an asset.
+    expect(await shell.match(RATINGS)).toBeTruthy();
+    // Complete, so the old cache is reaped.
+    expect(caches.has(OLD)).toBe(false);
+    const carried = events(client, 'pwa.sw.content_carried');
+    expect(carried).toHaveLength(1);
+    expect(carried[0].properties).toEqual({
+      cache_version: SHELL,
+      result: 'complete',
+      copied: 4,
+      failed: 0,
+    });
+  });
+
+  it.each([false, true])(
+    "carries a page's own hashed assets and leaves an unreferenced one (core: %s)",
+    async (withCore) => {
+      const caches = makeCaches();
+      caches.seed(OLD, PAGE, bulletinPage('acct-a'));
+      caches.seed(OLD, PAGE_JS, stored('js', { 'Content-Type': 'text/javascript' }));
+      caches.seed(OLD, PAGE_CSS, stored('css', { 'Content-Type': 'text/css' }));
+      caches.seed(OLD, STALE_JS, stored('old js', { 'Content-Type': 'text/javascript' }));
+      const sw = await offlineSw(caches, null, withCore);
+
+      const result = await sw._carryShellContent();
+
+      const shell = await caches.open(SHELL);
+      expect(await shell.match(PAGE_JS)).toBeTruthy();
+      expect(await shell.match(PAGE_CSS)).toBeTruthy();
+      expect(await shell.match(STALE_JS)).toBeUndefined();
+      expect(result).toMatchObject({ result: 'complete', copied: 3, skipped: 1, failed: 0 });
+    },
+  );
+
+  it('never overwrites an entry the new install already wrote', async () => {
+    const caches = makeCaches();
+    caches.seed(OLD, PAGE, bulletinPage('acct-a'));
+    caches.seed(SHELL, PAGE, stored('new install', { 'Content-Type': 'text/html' }));
+    const sw = await offlineSw(caches);
+
+    await activate(sw);
+
+    expect(await (await (await caches.open(SHELL)).match(PAGE)).text()).toBe('new install');
+    expect(caches.has(OLD)).toBe(false);
+  });
+
+  it('keeps the old cache when one put fails, and the activation still resolves', async () => {
+    const caches = interceptPuts(makeCaches(), (request, response, put) => {
+      if (request.url === SHEET) return Promise.reject(new Error('disk said no'));
+      return put(request, response);
+    });
+    caches.seed(OLD, PAGE, bulletinPage('acct-a'));
+    caches.seed(OLD, SHEET, stored('{"html":"x"}', { 'Content-Type': 'application/json' }));
+    caches.seed(OLD, ROUTE, stored('{"route":"a"}', { 'X-SW-Principal': 'acct-a' }));
+    const client = makeClient();
+    const sw = await offlineSw(caches, client);
+
+    await expect(activate(sw)).resolves.toBeUndefined();
+    await flush();
+
+    expect(caches.has(OLD)).toBe(true);
+    // The other entries were still tried, and landed.
+    const shell = await caches.open(SHELL);
+    expect(await shell.match(PAGE)).toBeTruthy();
+    expect(await shell.match(ROUTE)).toBeTruthy();
+    expect(events(client, 'pwa.sw.activation_failed')).toHaveLength(0);
+    expect(events(client, 'pwa.sw.content_carried')[0].properties).toMatchObject({
+      result: 'incomplete',
+      copied: 2,
+      failed: 1,
+    });
+  });
+
+  it('stops at a quota error and keeps the old cache', async () => {
+    const puts = vi.fn(() => Promise.reject(new DOMException('full', 'QuotaExceededError')));
+    const caches = interceptPuts(makeCaches(), puts);
+    caches.seed(OLD, PAGE, bulletinPage('acct-a'));
+    caches.seed(OLD, SHEET, stored('{"html":"x"}'));
+    caches.seed(OLD, ROUTE, stored('{"route":"a"}', { 'X-SW-Principal': 'acct-a' }));
+    const sw = await offlineSw(caches);
+
+    await activate(sw);
+
+    // Every later write would fail the same way: the first one is the last.
+    expect(puts).toHaveBeenCalledTimes(1);
+    expect(caches.has(OLD)).toBe(true);
+  });
+
+  it('skips an entry put refuses outright, so the old caches are still reaped', async () => {
+    // A TypeError is the entry itself being unstorable; it would fail on
+    // every activation, and counting it a failure would keep the old
+    // caches for ever.
+    const caches = interceptPuts(makeCaches(), (request, response, put) => {
+      if (request.url === SHEET) return Promise.reject(new TypeError('Vary: *'));
+      return put(request, response);
+    });
+    caches.seed(OLD, PAGE, bulletinPage('acct-a'));
+    caches.seed(OLD, SHEET, stored('{"html":"x"}', { 'Content-Type': 'application/json' }));
+    const client = makeClient();
+    const sw = await offlineSw(caches, client);
+
+    await activate(sw);
+    await flush();
+
+    expect(caches.has(OLD)).toBe(false);
+    expect(await (await caches.open(SHELL)).match(PAGE)).toBeTruthy();
+    expect(events(client, 'pwa.sw.content_carried')[0].properties).toMatchObject({
+      result: 'complete',
+      copied: 1,
+      failed: 0,
+    });
+  });
+
+  it('keeps every old cache on a timeout, and reaps only once a later carry completes', async () => {
+    const gate = { hang: true };
+    const caches = interceptPuts(makeCaches(), (request, response, put) =>
+      gate.hang ? new Promise(() => {}) : put(request, response),
+    );
+    caches.seed(OLD, PAGE, bulletinPage('acct-a'));
+    caches.seed(OLDER, SHEET, stored('{"html":"x"}'));
+    caches.seed('map-shell-v3', `${ORIGIN}/legacy/`, stored('legacy'));
+    const sw = await offlineSw(caches);
+
+    useTimersLeavingIndexedDb();
+    const first = activate(sw);
+    await vi.advanceTimersByTimeAsync(sw.SHELL_CARRY_BUDGET_MS + 1000);
+    await first;
+    vi.useRealTimers();
+
+    expect(caches.has(OLD)).toBe(true);
+    expect(caches.has(OLDER)).toBe(true);
+    // The other reaps carry on as before.
+    expect(caches.has('map-shell-v3')).toBe(false);
+
+    gate.hang = false;
+    await activate(sw);
+
+    const shell = await caches.open(SHELL);
+    expect(await shell.match(PAGE)).toBeTruthy();
+    expect(await shell.match(SHEET)).toBeTruthy();
+    expect(caches.has(OLD)).toBe(false);
+    expect(caches.has(OLDER)).toBe(false);
+  });
+
+  it('carries the newest Date when two old caches hold the same url', async () => {
+    const caches = makeCaches();
+    // The older copy sits in the cache listed first, so enumeration order
+    // alone would carry the wrong one.
+    caches.seed(OLDER, SHEET, stored('{"html":"monday"}', { Date: 'Mon, 05 Jan 2026 08:00:00 GMT' }));
+    caches.seed(OLD, SHEET, stored('{"html":"tuesday"}', { Date: 'Tue, 06 Jan 2026 08:00:00 GMT' }));
+    // A copy with no Date loses to one that names a time, wherever it sits.
+    caches.seed(OLDER, RATINGS, stored('{"dated":true}', { Date: 'Mon, 05 Jan 2026 08:00:00 GMT' }));
+    caches.seed(OLD, RATINGS, stored('{"dated":false}'));
+    const sw = await offlineSw(caches);
+
+    await activate(sw);
+
+    const shell = await caches.open(SHELL);
+    expect(await (await shell.match(SHEET)).text()).toBe('{"html":"tuesday"}');
+    expect(await (await shell.match(RATINGS)).text()).toBe('{"dated":true}');
+  });
+
+  it("still refuses a carried trip route to anyone but its principal", async () => {
+    const caches = makeCaches();
+    caches.seed(OLD, ROUTE, stored('{"route":"a"}', { 'X-SW-Principal': 'acct-a' }));
+    await setStoredPrincipal('acct-a');
+    const sw = await offlineSw(caches);
+    await activate(sw);
+    const request = { url: ROUTE, method: 'GET', mode: 'cors', destination: '' };
+
+    expect((await sw._privateJsonNetworkFirst(request)).status).toBe(200);
+
+    await setStoredPrincipal('acct-b');
+    expect((await sw._privateJsonNetworkFirst(request)).status).toBe(504);
+  });
+
+  it('reports nothing when there is no old shell cache to carry from', async () => {
+    const caches = makeCaches();
+    caches.seed(SHELL, PAGE, bulletinPage('acct-a'));
+    const client = makeClient();
+    const sw = await offlineSw(caches, client);
+
+    await activate(sw);
+    await flush();
+
+    expect(events(client, 'pwa.sw.content_carried')).toHaveLength(0);
+    expect(events(client, 'pwa.sw.activated')).toHaveLength(1);
+  });
+
+  it('still fails the activation on an error outside the carry', async () => {
+    const caches = makeCaches();
+    caches.keys = () => Promise.reject(new Error('storage gone'));
+    const client = makeClient();
+    const sw = await offlineSw(caches, client);
+
+    await expect(activate(sw)).rejects.toThrow('storage gone');
+    await flush();
+
+    expect(events(client, 'pwa.sw.activation_failed')).toHaveLength(1);
   });
 });

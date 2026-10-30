@@ -17,4 +17,5 @@ SNOWDESK_OFFLINE_SEED=2026-W37 uv run tox -e offline   # reproduce
 | `conftest.py` | `offline_map_page` — signed in, SW-controlled, behind the proxy — and the helpers that drive the product's own controls |
 | `test_offline_toggle_is_watertight.py` | The foundation: Offline mode on, network available, nothing leaves — on both of `sw.js`'s cross-origin routes (SNOW-854) |
 | `test_downloaded_area_renders_offline.py` | The promise: it draws inside coverage, and honestly does not outside it |
+| `test_update_keeps_downloaded_content.py` | SNOW-1311: a service-worker update carries the downloaded bulletins and weather sheets into the new shell cache |
 | `test_dead_network_conditions.py` | The hang, not just the refusal — the case the bounded read paths exist for |
