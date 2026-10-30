@@ -82,7 +82,13 @@ def region(db: Any) -> Any:
     return region
 
 
-@pytest.mark.usefixtures("flag")
+@pytest.fixture()
+def signed_in(client: Client, db: Any) -> None:
+    """Sign the test client in: the strip is never shown to anonymous pages."""
+    client.force_login(AccountFactory.create().user)
+
+
+@pytest.mark.usefixtures("flag", "signed_in")
 class TestSinceStrip:
     """The strip at the top of the region body."""
 
@@ -107,6 +113,13 @@ class TestSinceStrip:
         assert "since-strip" not in _sheet(client, first)
 
 
+@pytest.mark.usefixtures("flag")
+def test_strip_is_not_shown_signed_out(client: Client, region: Any) -> None:
+    """Anonymous pages skip the strip, and the flag lookup with it."""
+    assert "since-strip" not in _sheet(client, region)
+
+
+@pytest.mark.usefixtures("signed_in")
 def test_strip_is_flag_gated(client: Client, region: Any) -> None:
     """Without the flag the strip does not render."""
     with override_flag("bulletin_alerts", active=False):

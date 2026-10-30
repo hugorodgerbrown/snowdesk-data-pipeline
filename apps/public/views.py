@@ -4466,7 +4466,11 @@ def _since_strip(
         is off or the day before has no bulletin.
 
     """
-    if not waffle.flag_is_active(request, "bulletin_alerts") or not render_model:
+    # Anonymous first: the flag is superusers-only while alerts roll out, so
+    # an anonymous page (every audited and cached one) pays no flag lookup.
+    if not request.user.is_authenticated or not render_model:
+        return None
+    if not waffle.flag_is_active(request, "bulletin_alerts"):
         return None
     previous_date = page_date - datetime.timedelta(days=1)
     previous = alerts_service.day_state(region, previous_date)

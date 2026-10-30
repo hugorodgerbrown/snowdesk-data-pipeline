@@ -176,6 +176,10 @@ def alert_test(request: HttpRequest) -> HttpResponse:
     return JsonResponse({"ok": True, "enqueued": count})
 
 
+# RFC 8058 one-click unsubscribe: the mail provider POSTs with no session
+# and no CSRF token, so the signed token in the path is the authority, and
+# the only effect is turning alert email off.
+# nosemgrep: python.django.security.audit.csrf-exempt.no-csrf-exempt
 @csrf_exempt
 def alert_unsubscribe(request: HttpRequest, token: str) -> HttpResponse:
     """Confirm (GET) or stop (POST) alert emails for the account a link names.
