@@ -13,8 +13,8 @@
  *   - the draft clears once the queue acknowledges the key — including an
  *     acknowledgement the service worker left with no tab open, read at
  *     load (the first test, seeded before the module is imported);
- *   - with neither row nor acknowledgement the draft keeps its key, and a
- *     re-save sends it again;
+ *   - with neither row nor acknowledgement the draft keeps its key, and an
+ *     unchanged re-save sends it again — an edited one gets a new key;
  *   - a refused save untags the draft; Edit and Discard;
  *   - another account's draft is discarded;
  *   - online, Save is still the direct post, under the same key, and falls
@@ -237,16 +237,8 @@ describe('an offline save', () => {
 });
 
 describe('a tagged draft with neither row nor acknowledgement', () => {
-  it('is kept with its key, editable, and a re-save sends the same key', async () => {
-    storeDraft({ key: 'k-unsent', principal: ME });
-    document.dispatchEvent(new CustomEvent('pwa:mutation-queue-changed'));
-    await settle();
-    expect(draft().key).toBe('k-unsent');
-
-    window.pwaRouteDraw.start();
-    await settle();
-    expect(sheet.querySelector('[data-route-draw-submit]').disabled).toBe(false);
-
+  /** Re-save it online and resolve with the key the post carried. */
+  async function resave() {
     const calls = [];
     vi.stubGlobal(
       'fetch',
@@ -257,9 +249,37 @@ describe('a tagged draft with neither row nor acknowledgement', () => {
     );
     setOnline(true);
     pressSave();
-
     await waitFor(() => draft() === null);
-    expect(calls[0].headers['Idempotency-Key']).toBe('k-unsent');
+    return calls[0].headers['Idempotency-Key'];
+  }
+
+  it('is kept with its key, editable, and an unchanged re-save sends the same key', async () => {
+    const sent = self.pwaRouteDrawCore.bodyFingerprint(POINTS, 'Mont Fort');
+    storeDraft({ key: 'k-unsent', sent, principal: ME });
+    document.dispatchEvent(new CustomEvent('pwa:mutation-queue-changed'));
+    await settle();
+    expect(draft().key).toBe('k-unsent');
+
+    window.pwaRouteDraw.start();
+    await settle();
+    expect(sheet.querySelector('[data-route-draw-submit]').disabled).toBe(false);
+
+    // The same body under the same key: the server answers with the route
+    // the first post made, rather than making a second.
+    expect(await resave()).toBe('k-unsent');
+  });
+
+  it('gets a new key once it has been edited, so the server never sees an old key with a new body', async () => {
+    // Sent as "Mont Fort"; renamed since.
+    const sent = self.pwaRouteDrawCore.bodyFingerprint(POINTS, 'Mont Fort');
+    storeDraft({ key: 'k-unsent', sent, principal: ME, name: 'Mont Fort by the couloir' });
+
+    window.pwaRouteDraw.start();
+    await settle();
+
+    const key = await resave();
+    expect(key).not.toBe('k-unsent');
+    expect(key).toMatch(/.+/);
   });
 });
 

@@ -42,6 +42,7 @@
  *                                     mutation queue takes it
  *   draftState(draft, principal, row, ack) — what a stored draft is now
  *   pointsBounds(points)            — [w, s, e, n] of a list of points
+ *   bodyFingerprint(points, name)   — a short hash of the body a save sends
  *
  * SAVING OFFLINE (SNOW-1262). A save carries an Idempotency-Key the device
  * mints, and the draft is TAGGED with it before the request goes out, so
@@ -59,9 +60,12 @@
  *                drawer edit it again;
  *   'unsent'   — tagged, but neither row nor acknowledgement: the request
  *                may or may not have reached the server. Keep the draft and
- *                its key, editable; a re-save sends the same key, so within
- *                the server's 24 h window it answers with the route it made
- *                rather than making a second;
+ *                its key, editable. A re-save of the UNCHANGED draft sends
+ *                the same key, so within the server's 24 h window it answers
+ *                with the route it made rather than making a second; a
+ *                re-save after an edit mints a new key (the tag's `sent`
+ *                fingerprint no longer matches the body), because the server
+ *                refuses an old key with a different body;
  *   'draft'    — an ordinary untagged draft.
  */
 
@@ -335,7 +339,7 @@
   const ROUTE_CREATE_KIND = 'route-create';
 
   /**
-   * @typedef {{key?: ?string, failed?: ?string, principal?: ?string}} DraftTag
+   * @typedef {{key?: ?string, failed?: ?string, principal?: ?string, sent?: ?string}} DraftTag
    */
 
   /**
@@ -345,7 +349,8 @@
    * @param {string} name
    * @param {Array<number>} [taps] The taps; every point when not given.
    * @param {DraftTag} [tag] SNOW-1262: the save's Idempotency-Key while it
-   *   may be in flight (`key`), the key of a save refused for good
+   *   may be in flight (`key`), the fingerprint of the body sent under it
+   *   (`sent`, kept only with a key), the key of a save refused for good
    *   (`failed`), and the account the draft was drawn under (`principal`).
    * @returns {string}
    */
@@ -360,6 +365,7 @@
     if (tag && typeof tag.key === 'string' && tag.key) value.key = tag.key;
     if (tag && typeof tag.failed === 'string' && tag.failed) value.failed = tag.failed;
     if (tag && typeof tag.principal === 'string' && tag.principal) value.principal = tag.principal;
+    if (tag && typeof tag.sent === 'string' && tag.sent && value.key) value.sent = tag.sent;
     return JSON.stringify(value);
   }
 
@@ -427,6 +433,29 @@
   }
 
   /**
+   * A short fingerprint of the body a save sends — the points and the name
+   * exactly as createOperation encodes them (SNOW-1262). The draft keeps it
+   * beside its key: core/idempotency.py refuses an old key with a different
+   * body (a bare 409), so a draft edited since its key was sent needs a new
+   * key, and an unchanged one must keep the old key to be deduplicated. A
+   * 32-bit FNV-1a over the JSON: it only has to tell "the same body" from
+   * "an edited one" on one device.
+   *
+   * @param {Array<Waypoint>} points
+   * @param {string} name
+   * @returns {string}
+   */
+  function bodyFingerprint(points, name) {
+    const text = JSON.stringify({ points: points, name: name });
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash.toString(16).padStart(8, '0') + ':' + text.length;
+  }
+
+  /**
    * The bounding box of a list of points, `[west, south, east, north]` —
    * the shape `Route.bounds` has, so a route still waiting to sync can be
    * framed as a saved one is. Null for an empty list.
@@ -473,7 +502,7 @@
    *
    * @param {?string} raw
    * @returns {?{points: Array<Waypoint>, name: string, taps: Array<number>,
-   *   key: ?string, failed: ?string, principal: ?string}}
+   *   key: ?string, failed: ?string, principal: ?string, sent: ?string}}
    */
   function parseDraft(raw) {
     if (typeof raw !== 'string' || !raw) return null;
@@ -501,6 +530,7 @@
       key: text(value.key),
       failed: text(value.failed),
       principal: text(value.principal),
+      sent: text(value.sent),
     };
   }
 
@@ -523,5 +553,6 @@
     createOperation: createOperation,
     draftState: draftState,
     pointsBounds: pointsBounds,
+    bodyFingerprint: bodyFingerprint,
   });
 })();

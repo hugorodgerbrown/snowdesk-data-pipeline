@@ -167,6 +167,7 @@ describe('the stored draft', () => {
       key: null,
       failed: null,
       principal: null,
+      sent: null,
     });
   });
 
@@ -196,6 +197,7 @@ describe('the stored draft', () => {
       key: null,
       failed: null,
       principal: null,
+      sent: null,
     });
   });
 });
@@ -276,5 +278,25 @@ describe('what a stored draft is now (SNOW-1262)', () => {
 
   it('is unsent — kept, with its key — when there is neither row nor acknowledgement', () => {
     expect(core.draftState(tagged, 'me', null, null)).toBe('unsent');
+  });
+});
+
+describe('the body fingerprint (SNOW-1262)', () => {
+  const POINTS = [[7, 46], [7, 46.001]];
+
+  it('is the same for the same body and differs once the points or name change', () => {
+    const fp = core.bodyFingerprint(POINTS, 'Mont Fort');
+
+    expect(core.bodyFingerprint([[7, 46], [7, 46.001]], 'Mont Fort')).toBe(fp);
+    expect(core.bodyFingerprint([[7, 46], [7, 46.002]], 'Mont Fort')).not.toBe(fp);
+    expect(core.bodyFingerprint(POINTS, 'Mont Fort II')).not.toBe(fp);
+  });
+
+  it('is stored beside the key, and only with one', () => {
+    const tagged = core.serialiseDraft(POINTS, 'n', [0, 1], { key: 'k', sent: 'abc' });
+    const untagged = core.serialiseDraft(POINTS, 'n', [0, 1], { key: null, sent: 'abc' });
+
+    expect(core.parseDraft(tagged).sent).toBe('abc');
+    expect(core.parseDraft(untagged).sent).toBe(null);
   });
 });

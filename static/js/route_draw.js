@@ -44,8 +44,10 @@
  *     `failed` and the draft is editable again; the routes panel offers
  *     Edit (window.pwaRouteDraw.edit) and Discard (…discard);
  *   - neither row nor acknowledgement: the draft keeps its key and is
- *     editable; a re-save sends the same key, so within the server's 24 h
- *     replay window it answers with the route it already made.
+ *     editable; an unchanged re-save sends the same key, so within the
+ *     server's 24 h replay window it answers with the route it already
+ *     made, and an edited one mints a new key (the draft's `sent`
+ *     fingerprint no longer matches its body).
  *
  * While the save is queued, draw mode shows the line and says it is
  * waiting, and every edit and Save is disabled — so a second copy cannot
@@ -190,6 +192,9 @@
     /** SNOW-1262: the Idempotency-Key the draft's save went out under. */
     /** @type {?string} */
     key: null,
+    /** SNOW-1262: the fingerprint of the body sent under `key`. */
+    /** @type {?string} */
+    sent: null,
     /** SNOW-1262: the key of a save the server refused for good. */
     /** @type {?string} */
     failed: null,
@@ -640,6 +645,7 @@
           core.DRAFT_KEY,
           core.serialiseDraft(state.points, state.name, state.taps, {
             key: state.key,
+            sent: state.key ? state.sent : null,
             failed: state.failed,
             principal: principal(),
           }),
@@ -678,6 +684,7 @@
     state.taps = mine && draft ? draft.taps : [];
     state.name = mine && draft ? draft.name : '';
     state.key = mine && draft ? draft.key : null;
+    state.sent = mine && draft ? draft.sent : null;
     state.failed = mine && draft ? draft.failed : null;
   }
 
@@ -687,6 +694,7 @@
     state.taps = [];
     state.name = '';
     state.key = null;
+    state.sent = null;
     state.failed = null;
     state.queued = false;
     state.feature = null;
@@ -867,8 +875,14 @@
     }
     if (state.saving || state.queued || state.points.length < 2 || !CREATE_URL) return;
     // The key goes on the draft BEFORE the request, so whatever happens to
-    // the request the draft names it. An "unsent" draft keeps its key.
+    // the request the draft names it. An "unsent" draft keeps its key while
+    // its body is the one sent under it — the server then answers with the
+    // route already made — and gets a new one once it has been edited,
+    // because the server refuses an old key with a different body.
+    const fingerprint = core.bodyFingerprint(state.points, nameOrDefault());
+    if (state.key && state.sent !== fingerprint) state.key = null;
     if (!state.key) state.key = core.mintKey();
+    state.sent = fingerprint;
     state.failed = null;
     storeDraft();
     const operation = core.createOperation(

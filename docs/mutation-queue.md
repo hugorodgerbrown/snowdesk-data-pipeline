@@ -120,8 +120,25 @@ reads a tagged draft against the queue (`route_draw_core.js`'s
 `draftState`): acknowledged → clear the draft; row queued → still waiting
 (draw mode reopens locked, so no second copy can be queued); row failed →
 move the key to `failed` and make the draft editable; neither → keep the
-draft and its key, editable — a re-save sends the same key, so inside the
-server's 24 h window it returns the route already made.
+draft and its key, editable.
+
+**A re-save reuses the key only for the same body.** Beside the key the
+draft keeps `sent`, a fingerprint of the body sent under it
+(`route_draw_core.js`'s `bodyFingerprint`: FNV-1a over the
+`{points, name}` JSON). An unchanged draft re-saves under the same key, so
+inside the server's 24 h window it returns the route already made. A draft
+edited since — points or name — gets a new key at the next save, because
+`IdempotencyMiddleware` answers an old key with a different body with a
+bare 409. If the first post did land, the user ends up with the edited
+version as a second route, which is accepted (decided 30 Oct 2026). The
+panel's "This clashed with an earlier save" copy for a bare 409 stays as a
+fallback only.
+
+**One draft slot.** Draw mode holds one draft, so while its save is queued
+the drawer cannot start another route — the panel opens on the queued line
+with every edit, Start over and Save disabled. Accepted (30 Oct 2026); a
+second slot would mean moving the draft out of `localStorage`, which this
+ticket left out of scope.
 
 **Failure detail is kept.** `nextRowState(row, outcome, now, detail)` takes
 the response's `{status, error}` (`failureDetail`: the endpoint's JSON
