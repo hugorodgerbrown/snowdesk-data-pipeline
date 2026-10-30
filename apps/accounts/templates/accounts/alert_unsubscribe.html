@@ -32,6 +32,8 @@ touched, and the page says where to change the rest.
                     {% trans "Stop bulletin alert emails? Notifications on your devices are unchanged." %}
                 </p>
                 <form method="post" action="{% url 'accounts:alert_unsubscribe' token=token %}">
+                    {# The view is csrf_exempt for RFC 8058's one-click POST; the page's own form still carries a token. #}
+                    {% csrf_token %}
                     {% trans "Stop alert emails" as stop_label %}
                     {% include "includes/_button.html" with label=stop_label button_type="submit" %}
                 </form>
