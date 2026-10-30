@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 
 import pytest
+from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest, JsonResponse
 from django.test import Client
@@ -130,3 +131,17 @@ class TestAttestPrincipal:
         response = attest_principal(JsonResponse({}), request)
 
         assert not response.has_header(PRINCIPAL_RESPONSE_HEADER)
+
+    def test_the_worker_reads_the_same_header_name(self) -> None:
+        """``sw.js`` spells the header itself; a rename here must fail there.
+
+        The worker keeps a trip route only when this header names the
+        signed-in principal, so a drift between the two literals would not
+        leak anything — it would silently stop every route being kept.
+        """
+        sw_source = (settings.BASE_DIR / "static" / "js" / "sw.js").read_text()
+
+        assert (
+            f"const RESPONSE_PRINCIPAL_HEADER = '{PRINCIPAL_RESPONSE_HEADER}';"
+            in sw_source
+        )
