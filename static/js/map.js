@@ -10759,8 +10759,11 @@
     let summitEntries = [];
     /** @type {?Promise<void>} */
     let summitsLoading = null;
-    const storedSummits = async () =>
-      (await window.pwaMapOverlayCache?.getOverlay('ski_summits')) || null;
+    // A stored row of any other shape is read as nothing stored.
+    const storedSummits = async () => {
+      const row = await window.pwaMapOverlayCache?.getOverlay('ski_summits');
+      return row && Array.isArray(row.summits) ? row : null;
+    };
     const loadSummits = () => {
       if (!SKI_SUMMITS_URL) return Promise.resolve();
       if (!summitsLoading) {

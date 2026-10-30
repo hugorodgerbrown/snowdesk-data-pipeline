@@ -149,6 +149,8 @@ const ROUTES_GEOJSON = { type: 'FeatureCollection', features: [] };
 const REPORTS_GEOJSON = { type: 'FeatureCollection', features: [] };
 // SNOW-1320: search's SAC summit list, which a download stores too.
 const SUMMITS = { summits: [{ key: 'mont-fort', name: 'Mont Fort', lon: 7.3, lat: 46.08 }] };
+/** What /api/ski-summits.json answers on the next call. */
+let summitsAnswer = () => SUMMITS;
 
 /** Minimal MapLibre stub — as test_map_region_download_cancelled.js's. */
 function stubMapLibre() {
@@ -507,7 +509,7 @@ beforeAll(async () => {
       if (href.includes('favourites.geojson')) body = FAVOURITES_GEOJSON;
       if (href.includes('routes.geojson')) body = ROUTES_GEOJSON;
       if (href.includes('community-reports.geojson')) body = REPORTS_GEOJSON;
-      if (href.includes('ski-summits.json')) body = SUMMITS;
+      if (href.includes('ski-summits.json')) body = summitsAnswer();
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     }),
   );
@@ -689,6 +691,26 @@ describe('a downloaded area refreshes rather than re-downloads', () => {
       );
     } finally {
       mapEl.dataset.skiSummitsUrl = '/api/ski-summits.json';
+      await waitFor(() => btn.dataset.downloadState !== 'busy');
+    }
+  });
+});
+
+describe('a summit list of the wrong shape (SNOW-1320)', () => {
+  it('is not stored, so it cannot replace a good row', async () => {
+    const btn = document.getElementById('map-download-control');
+    await waitFor(() => btn.dataset.downloadState === 'done');
+    overlayStore.clear();
+    window.pwaWarmCache.mockClear();
+    summitsAnswer = () => ({ type: 'FeatureCollection', features: [] });
+    try {
+      btn.click();
+      await waitFor(() => window.pwaWarmCache.mock.calls.length > 0);
+
+      expect(overlayStore.has('weather')).toBe(true);
+      expect(overlayStore.has('ski_summits')).toBe(false);
+    } finally {
+      summitsAnswer = () => SUMMITS;
       await waitFor(() => btn.dataset.downloadState !== 'busy');
     }
   });

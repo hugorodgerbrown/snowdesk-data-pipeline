@@ -123,6 +123,8 @@ async function waitFor(predicate, timeoutMs = 1000) {
 }
 
 let stored;
+/** What the device holds under `ski_summits` at boot. */
+let storedRow = STORED;
 
 /**
  * Boot a fresh bundle whose summit read answers with `summits`.
@@ -141,7 +143,7 @@ async function boot(summits) {
     configurable: true,
     writable: true,
   });
-  stored = new Map([['ski_summits', STORED]]);
+  stored = new Map([['ski_summits', storedRow]]);
   window.pwaMapOverlayCache = {
     getOverlay: vi.fn(async (key) => stored.get(key) || null),
     putOverlay: vi.fn(async (key, data) => {
@@ -183,6 +185,7 @@ async function search(query) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  storedRow = STORED;
 });
 
 afterAll(() => {
@@ -205,6 +208,19 @@ describe("search's summit rows (SNOW-1320)", () => {
     expect(await search('Rosablanche')).toContain('Rosablanche');
     expect(window.pwaMapOverlayCache.getOverlay).toHaveBeenCalledWith('ski_summits');
     expect(window.pwaMapOverlayCache.putOverlay).not.toHaveBeenCalled();
+  });
+
+  it('reads a stored row of the wrong shape as nothing stored', async () => {
+    storedRow = { summits: { rosablanche: 'Rosablanche' } };
+    await boot(() => Promise.reject(new TypeError('Failed to fetch')));
+    const input = /** @type {HTMLInputElement} */ (document.getElementById('search-input'));
+    input.dispatchEvent(new Event('focus'));
+    await waitFor(() => window.pwaMapOverlayCache.getOverlay.mock.calls.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    input.value = 'Rosablanche';
+    input.dispatchEvent(new Event('input'));
+
+    expect(document.getElementById('search-results').textContent).not.toContain('Rosablanche');
   });
 
   it('lists the stored summits when the read answers non-OK', async () => {

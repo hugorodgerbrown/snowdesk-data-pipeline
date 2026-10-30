@@ -70,6 +70,10 @@
   const INK_COLOUR = '#1a1916';
   const HALO_COLOUR = '#ffffff';
   const LOAD_DEBOUNCE_MS = 250;
+  // SNOW-1320: how long a summit pick waits for its tours fetch. Long
+  // enough for the flight and a slow answer; past it a failure is no
+  // longer about the pick.
+  const SUMMIT_MARK_MS = 15000;
 
   const STRINGS = self.pwaStrings.read('ski-tours-strings-template', {
     hint: 'Tap a route',
@@ -108,10 +112,13 @@
     /** @type {?string} */
     opening: null,
     /**
-     * SNOW-1320: a summit was picked in search, so the next tours fetch to
-     * settle says so if it fails. One-shot: that fetch consumes it.
+     * SNOW-1320: when a summit was picked in search (ms), so the next tours
+     * fetch to settle says so if it fails. One-shot: that fetch consumes
+     * it. A pick no fetch followed (the view already loaded) leaves it
+     * set, so a mark older than SUMMIT_MARK_MS is ignored.
+     * @type {?number}
      */
-    summitPending: false,
+    summitPending: null,
   };
 
   /** @returns {any} The MapLibre map, or null before it exists. */
@@ -305,9 +312,12 @@
    * @param {boolean} ok Whether the fetch that settled brought tours.
    */
   function settleSummit(ok) {
-    if (!state.summitPending) return;
-    state.summitPending = false;
-    if (!ok) window.MapSheet.toast(STRINGS['tours-offline']);
+    const at = state.summitPending;
+    if (at === null) return;
+    state.summitPending = null;
+    if (!ok && Date.now() - at <= SUMMIT_MARK_MS) {
+      window.MapSheet.toast(STRINGS['tours-offline']);
+    }
   }
 
   /**
@@ -617,10 +627,10 @@
     const map = getMap();
     if (!summit || !summit.key || !map) return;
     if (navigator.onLine === false) {
-      state.summitPending = false;
+      state.summitPending = null;
       window.MapSheet.toast(STRINGS['tours-offline']);
     } else {
-      state.summitPending = true;
+      state.summitPending = Date.now();
     }
     window.pwaSkiRoutes?.show();
     if (Number.isFinite(summit.lon) && Number.isFinite(summit.lat)) {

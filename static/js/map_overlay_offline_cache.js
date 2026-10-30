@@ -92,7 +92,7 @@
    * fetch it rides on.
    *
    * @param {string} resource - ``'favourites'``, ``'community_reports'``,
-   *   ``'weather'`` or ``'routes'``
+   *   ``'weather'``, ``'routes'`` or ``'ski_summits'``
    * @param {object} geojson - the fetched FeatureCollection
    * @returns {Promise<void>}
    */
@@ -128,7 +128,7 @@
    * any session.
    *
    * @param {string} resource - ``'favourites'``, ``'community_reports'``,
-   *   ``'weather'`` or ``'routes'``
+   *   ``'weather'``, ``'routes'`` or ``'ski_summits'``
    * @returns {Promise<object | null>}
    */
   async function getOverlay(resource) {

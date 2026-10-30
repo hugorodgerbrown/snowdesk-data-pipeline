@@ -723,6 +723,7 @@ async function cacheOverlayFeedsForDownload() {
       try {
         const data = await fetch(url).then((r) => (r.ok ? r.json() : null));
         if (!data) return;
+        if (resource === 'ski_summits' && !Array.isArray(data.summits)) return;
         await cache.putOverlay(resource, data);
       } catch (_e) {
         // Best-effort, one feed at a time. The tiles are what the user

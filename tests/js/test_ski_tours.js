@@ -74,6 +74,8 @@ async function waitFor(predicate, timeoutMs = 2000) {
 
 let toast;
 let tourFetches;
+/** The tours fetch's answer, swappable mid-test. */
+let answerNow;
 
 /**
  * Boot ski_tours.js with the tours fetch answering `answer`.
@@ -100,12 +102,13 @@ async function boot(answer) {
     },
   };
   tourFetches = 0;
+  answerNow = answer;
   vi.stubGlobal(
     'fetch',
     vi.fn((url) => {
       if (String(url).startsWith(GEOJSON_URL)) {
         tourFetches += 1;
-        return answer();
+        return answerNow();
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     }),
@@ -127,6 +130,7 @@ async function settle(fetches = 1) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(navigator, 'onLine');
   delete window.MapSheet;
@@ -180,6 +184,30 @@ describe('a summit picked in search', () => {
     map.flyTo({ center: [7.6, 46.2], zoom: 13 });
     await settle(2);
     expect(toast).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a summit pick no fetch followed', () => {
+  it('goes stale: a failure more than 15 s later says nothing', async () => {
+    // Only Date is faked, so the debounce and waitFor still run on real
+    // timers while the clock is moved past the mark's life.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const map = await boot(lands);
+    window.pwaSkiRoutes.show();
+    map.flyTo({ center: [SUMMIT.lon, SUMMIT.lat], zoom: 13 });
+    await settle();
+    const loaded = tourFetches;
+
+    // The view is already loaded: the pick's own load fetches nothing.
+    answerNow = rejects;
+    window.pwaSkiTours.openSummit(SUMMIT);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(tourFetches).toBe(loaded);
+
+    vi.setSystemTime(Date.now() + 16000);
+    map.flyTo({ center: [8.5, 46.6], zoom: 13 });
+    await settle(loaded + 1);
+    expect(toast).not.toHaveBeenCalled();
   });
 });
 
