@@ -199,6 +199,27 @@ class TestAlertsDay:
         assert f"/trips/{trip.uuid}/" in content
         assert "Open the trip" in content
 
+    def test_todays_trip_stays_on_tomorrows_page(
+        self, client: Client, region: Any
+    ) -> None:
+        """A bundle links to tomorrow; today's trip keeps a row of its own day."""
+        account = AccountFactory.create()
+        today = timezone.localdate()
+        tomorrow = today + datetime.timedelta(days=1)
+        TripFactory.create(created_by=account.user, date=today, name="Mont Fort")
+        client.force_login(account.user)
+        with patch("apps.bulletins.services.alerts.start_region", return_value=region):
+            content = client.get(f"/alerts/{tomorrow.isoformat()}/").content.decode()
+            past = client.get(
+                f"/alerts/{(tomorrow + datetime.timedelta(days=1)).isoformat()}/"
+            ).content.decode()
+        assert content.count('data-testid="alerts-day-row"') == 1
+        assert "Mont Fort ·" in content
+        assert f"/map/?d={today.isoformat()}#{region.region_id}" not in content
+        assert "Up from Moderate (2)." in content
+        # Once the trip's day is past, it is not carried onto later pages.
+        assert "Mont Fort" not in past
+
     def test_empty(self, client: Client, db: Any) -> None:
         """No places: how to get some."""
         client.force_login(AccountFactory.create().user)

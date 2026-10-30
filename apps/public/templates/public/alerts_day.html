@@ -6,10 +6,12 @@ alert lands (SNOW-1328).
 One card per followed place: its name, that day's level, what moved since
 the day before (the alert's own sentences, so the page and the message
 agree word for word) and "Open on the map", which opens the place's region
-panel on that day. A saved trip's row opens the trip instead (SNOW-947).
+panel on that day. A saved trip's row opens the trip instead (SNOW-947);
+a trip on the day before, still to come, keeps a row of its own day.
 Places that moved come first, as in the alert.
 
-Context: ``rows``, ``heading``, ``since_heading``, ``target_date``
+Context: ``rows`` (each with its own ``since_heading``), ``heading``,
+``target_date``
 (apps/public/alert_views.py::alerts_day).
 {% endcomment %}
 {% load i18n components %}
@@ -38,7 +40,7 @@ Context: ``rows``, ``heading``, ``since_heading``, ``target_date``
                     <p class="mt-1 text-sm text-text-3">{% trans "No bulletin for this day." %}</p>
                 {% elif row.sentences %}
                     {# The sentences alone: the strip's own box would be a card in a card. #}
-                    {% include "includes/_eyebrow.html" with text=since_heading tag="p" class_extra="mt-2" only %}
+                    {% include "includes/_eyebrow.html" with text=row.since_heading tag="p" class_extra="mt-2" only %}
                     <ul class="mt-1 text-sm text-text-1 leading-prose">
                         {% for sentence in row.sentences %}<li>{{ sentence }}</li>{% endfor %}
                     </ul>

@@ -52,31 +52,22 @@ def alerts_day(request: HttpRequest, day: str) -> HttpResponse:
         target = datetime.date.fromisoformat(day)
     except ValueError as exc:
         raise Http404 from exc
-    previous_date = target - datetime.timedelta(days=1)
-    map_url = reverse("public:map")
-    rows = []
     user = request.user
     places = alerts_service.places_on(
         alerts_service.account_places(user),  # type: ignore[arg-type]  # login_required guarantees a User
         alerts_service.trip_places(user, target),  # type: ignore[arg-type]  # as above
     )
-    for place in places:
-        current = alerts_service.day_state(place.region, target)
-        previous = alerts_service.day_state(place.region, previous_date)
-        sentences: list[str] = []
-        if current is not None and previous is not None:
-            sentences = change_sentences(summarise_change(previous, current))
-        rows.append(
-            {
-                "label": place.label,
-                "region": place.region,
-                "headline": headline(current) if current is not None else "",
-                "sentences": sentences,
-                "has_previous": previous is not None,
-                "url": f"{map_url}?d={target.isoformat()}#{place.region.region_id}",
-                "trip_url": place.trip_url,
-            }
-        )
+    rows = [_row(place, target) for place in places]
+    # A bundled alert links to the latest day it names, so a trip on the day
+    # before (today, under tomorrow's link) would vanish from the page it
+    # was announced on. Its row keeps its own day, while that day is not
+    # yet past.
+    previous_date = target - datetime.timedelta(days=1)
+    if previous_date >= timezone.localdate():
+        rows += [
+            _row(place, previous_date, day_label=True)
+            for place in alerts_service.trip_places(user, previous_date)  # type: ignore[arg-type]  # as above
+        ]
     # Places that moved first, as in the alert itself.
     rows.sort(key=lambda r: (not r["sentences"], r["label"]))
     return render(
@@ -88,7 +79,42 @@ def alerts_day(request: HttpRequest, day: str) -> HttpResponse:
             "is_today": target == timezone.localdate(),
             "heading": _("Your places on %(day)s")
             % {"day": date_format(target, "l j F")},
-            "since_heading": _("Since %(day)s")
-            % {"day": date_format(previous_date, "l")},
         },
     )
+
+
+def _row(
+    place: alerts_service.AlertPlace, day: datetime.date, *, day_label: bool = False
+) -> dict:
+    """
+    Return one card's context: a place's bulletin on a day, and what moved.
+
+    Args:
+        place: The place.
+        day: The day its bulletin is read for.
+        day_label: Name the day after the label, for a row not on the
+            page's own day.
+
+    Returns:
+        The row.
+
+    """
+    previous_date = day - datetime.timedelta(days=1)
+    current = alerts_service.day_state(place.region, day)
+    previous = alerts_service.day_state(place.region, previous_date)
+    sentences: list[str] = []
+    if current is not None and previous is not None:
+        sentences = change_sentences(summarise_change(previous, current))
+    label = place.label
+    if day_label:
+        label = f"{label} · {date_format(day, 'l')}"
+    return {
+        "label": label,
+        "region": place.region,
+        "headline": headline(current) if current is not None else "",
+        "sentences": sentences,
+        "since_heading": _("Since %(day)s") % {"day": date_format(previous_date, "l")},
+        "has_previous": previous is not None,
+        "url": f"{reverse('public:map')}?d={day.isoformat()}#{place.region.region_id}",
+        "trip_url": place.trip_url,
+    }
