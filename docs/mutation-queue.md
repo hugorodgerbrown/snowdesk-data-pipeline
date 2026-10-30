@@ -128,11 +128,46 @@ draft keeps `sent`, a fingerprint of the body sent under it
 `{points, name}` JSON). An unchanged draft re-saves under the same key, so
 inside the server's 24 h window it returns the route already made. A draft
 edited since — points or name — gets a new key at the next save, because
-`IdempotencyMiddleware` answers an old key with a different body with a
-bare 409. If the first post did land, the user ends up with the edited
-version as a second route, which is accepted (decided 30 Oct 2026). The
-panel's "This clashed with an earlier save" copy for a bare 409 stays as a
-fallback only.
+`IdempotencyMiddleware` answers an old key with a different body with its
+reused-key 409. If the first post did land, the user ends up with the
+edited version as a second route, which is accepted (decided 30 Oct 2026).
+The panel's "This clashed with an earlier save" copy for that 409 stays as
+a fallback only.
+
+**The middleware's two 409s.** `apps/core/idempotency.py` answers a key it
+cannot run the view for in two ways, and they used to be the same bare
+`409`, so the client could not tell them apart:
+
+| Body | When | Queue |
+|------|------|-------|
+| `{"error": "idempotency_in_flight"}` | The key is RESERVED — the original request is still in the view (or the claim could not be settled). A post that timed out on the device but reached the server, or the other drain's replay of the same row. | **Retry** — `classifyStatus(409, …, 'idempotency_in_flight')`, in both drains. The next replay gets the original's cached answer. |
+| `{"error": "idempotency_key_reused"}` | The key was used for a different method, path, principal or body. | Permanent. |
+
+Failing the in-flight 409 showed "Couldn't sync" for a save that was in
+fact landing, and Edit's new key then saved it a second time. As a second
+guard, Edit (`route_draw.js`) and the routes panel both check for an
+acknowledgement before treating a failed row as failed: an acknowledged
+key is a route that exists, so the row is cleared rather than re-saved.
+
+**A drain never writes back a row that has gone.** The page's drain and
+the worker's (or two tabs') can hold the same row at once. A `put` is an
+upsert by id, so the loser's stale write-back used to re-create a row the
+winner had replayed and deleted — a ghost "Couldn't sync" or "Waiting to
+sync" for a route the server has. Both drains now check for an
+acknowledgement first (the winner writes it before deleting), then re-read
+the row and write it in ONE readwrite transaction (`pwaDb.readModifyWrite`
+on the page, the same get-then-put in `sw.js`'s `_writeBackMutation`),
+which the browser serialises across connections: absent means gone, and
+nothing is written, toasted or reported.
+
+**The 24 h window (accepted limit).** The server deduplicates a key for
+24 hours (`IDEMPOTENCY_RECORD_TTL_SECONDS`); a replay after that runs the
+view again. A duplicate is therefore possible only when an ONLINE post
+timed out on the device but did land, and the device then stayed offline
+for more than 24 hours before the queue replayed it. A save made entirely
+offline never reached the server, so its first replay is its only
+delivery and cannot duplicate. Accepted as a limit (30 Oct 2026); there is
+no age cap or UI for it.
 
 **One draft slot.** Draw mode holds one draft, so while its save is queued
 the drawer cannot start another route — the panel opens on the queued line
@@ -145,16 +180,23 @@ the response's `{status, error}` (`failureDetail`: the endpoint's JSON
 `error`, bounded to 200 characters) and stamps `last_status` /
 `last_error` on a failed or rescheduled row, in both drains. The routes
 panel's "Couldn't sync" row reads them to tell a 400, a 409 at the cap
-(`route_limit_reached`), a bare 409 (the idempotency guard's own —
-the same key with a different body), a 403 and a 404 apart. Edit takes the
+(`route_limit_reached`), the reused-key 409 (`idempotency_key_reused`),
+a 403 — and a CSRF 403 (`csrf_failed`, read as an expired session; the
+save sends `Accept: application/json` so Django's failure view answers in
+JSON) — and a 404 apart. Edit takes the
 save back into the draft (`window.pwaRouteDraw.edit`, deleting the row);
 Discard deletes the row and its draft (`…discard`). A failed row otherwise
 waits for the user.
 
 **Account.** The draft is stamped with the signed-in account
-(`<meta name="pwa-user-id">`) and discarded on load under any other; a
-draft stamped with no account (drawn signed out, or stored before this
-ticket) is adopted. A queued row is still cleared by the reconcile below
+(`<meta name="pwa-user-id">`) and DESTROYED only when a different account
+is signed in. Signed out, a session that expired, or an account not yet
+known (IndexedDB missing or awaiting a reset, which `route_draw.js`'s
+`principal()` reads as `undefined`) leaves it stored untouched and hidden
+— not shown, not editable, not overwritten by a new drawing — and the
+load-time reconcile does nothing until the account is known
+(`draftState` → `'hidden'`). A draft stamped with no account (drawn signed
+out, or stored before this ticket) is adopted. A queued row is still cleared by the reconcile below
 on an account change; that reconcile now also **reports** a discarded
 route-create row by writing "A route drawn offline under another account
 was discarded." into `#mutation-queue-toast`. The worker's drain guard,
@@ -233,6 +275,7 @@ autoIncrement; no indexes — rows are filtered/ordered in memory over
 |------------------------------------|-------------------------------------------------------------------|
 | 2xx                                | Success — row deleted; counts toward the drain's reported count. |
 | `{408, 429}`, any 5xx, network error | Retry — `attempts += 1`, `next_attempt_at = now + backoff(attempts)`, `status = 'retry-scheduled'`. |
+| 409 `{"error": "idempotency_in_flight"}` (SNOW-1262) | Retry, as above — `core/idempotency.py`'s original request with this key is still in the view. |
 | Any other 4xx (400/401/403/404/409/410/422/…) | Permanent failure on the FIRST attempt — `attempts += 1` (the attempt that just failed), `status = 'failed'`, no further retry. |
 | A code the mutation declared in `doneStatuses` (SNOW-1132) | Success — delete the row, ahead of every rule above. The downloads `forget` and `rename` writes declare 404: the account row is already gone, which is the outcome asked for. |
 | Retry count reaches `MAX_ATTEMPTS` (20) without a 2xx | Permanent failure — `status = 'failed'`, same as above. |
