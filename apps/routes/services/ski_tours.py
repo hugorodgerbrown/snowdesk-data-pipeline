@@ -102,10 +102,10 @@ _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
 _OVERVIEW_CACHE_KEY = "routes:ski-overview:v2:{count}:{stamp}"
 # The mark SNOW-1286 put on a record walked there and back (SNOW-1287).
 _THERE_AND_BACK = "there_and_back"
-# SNOW-1306: the mark on a record known to be walked in the order
-# tour_points gives, a way down from its summit. A record without it was
-# walked in SAC's own order, which is the same for most tours.
-_TOP_ORDERED = "top_ordered"
+# SNOW-1306: on a terrain record, whether its walk ran SAC's line in
+# reverse. A record without it was walked in SAC's own order. Its heights
+# then say which way SAC's line really runs (``runs_reversed``).
+_WALKED_REVERSED = "walked_reversed"
 _OVERVIEW_TOLERANCE_DEG = 0.0002
 _OVERVIEW_PLACES = 5
 
@@ -567,13 +567,48 @@ def tour_title(tour: SkiTour) -> str:
     return f"{tour.target_name} · {name}" if tour.target_name else name
 
 
+def _usable(record: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return ``record`` unless it was walked there and back (SNOW-1287)."""
+    if record is None or record.get(_THERE_AND_BACK):
+        return None
+    return record
+
+
+def _runs_up(record: dict[str, Any]) -> bool | None:
+    """Return whether a record's walk climbed, by its first and last heights.
+
+    None when it holds fewer than two heights, or they are level.
+    """
+    heights = [h for h in record.get("heights") or [] if h is not None]
+    if len(heights) < 2 or heights[0] == heights[-1]:
+        return None
+    return bool(heights[-1] > heights[0])
+
+
+def _guess_reversed(tour: SkiTour) -> bool:
+    """Return whether to turn SAC's line round, from the summit alone.
+
+    The top is the end nearer the summit, when other tours to it place it.
+    A summit with one tour is placed at that tour's own last point, so it
+    says nothing: SAC's line is then taken to run up, as 2,743 of its
+    2,941 do, and a way down is turned round.
+    """
+    _, last = ends(tour)
+    summit = summits().get(tour_key(tour))
+    near = (summit.lon, summit.lat) if summit and summit.up + summit.down > 1 else None
+    top_is_last = target_end(tour, near) == last
+    return top_is_last if is_descent(tour) else not top_is_last
+
+
 def runs_reversed(tour: SkiTour) -> bool:
     """Return whether ``tour_points`` turns SAC's line round (SNOW-1306).
 
     A way down starts at its summit and a way up ends there, whichever way
-    SAC drew it: SAC draws 2,743 of its 2,941 lines from the valley up,
-    ways down included. The summit is where ``summits()`` places it, and
-    the end nearer it is the top.
+    SAC drew it. The terrain says which way that is once the tour has been
+    walked: its record's first and last heights, in the order it was
+    walked. Before that, the summit's position is the guess
+    (``_guess_reversed``), and the first walk corrects it
+    (``tour_slope_samples``).
 
     Args:
         tour: The tour, with its geometry loaded.
@@ -584,14 +619,17 @@ def runs_reversed(tour: SkiTour) -> bool:
     """
     if not _lines(tour):
         return False
-    _, last = ends(tour)
-    summit = summits().get(tour_key(tour))
-    near = (summit.lon, summit.lat) if summit else None
-    top_is_last = target_end(tour, near) == last
-    return top_is_last if is_descent(tour) else not top_is_last
+    record = _usable(tour.slope_samples)
+    up = _runs_up(record) if record is not None else None
+    if record is not None and up is not None:
+        sac_runs_up = up != bool(record.get(_WALKED_REVERSED, False))
+        return sac_runs_up == is_descent(tour)
+    return _guess_reversed(tour)
 
 
-def tour_points(tour: SkiTour) -> list[list[float | None]]:
+def tour_points(
+    tour: SkiTour, *, reverse: bool | None = None
+) -> list[list[float | None]]:
     """Return the tour's line as stored route points, ``[[lon, lat, None], …]``.
 
     A tour in several parts (swisstopo breaks one where it crosses a gap in
@@ -603,6 +641,8 @@ def tour_points(tour: SkiTour) -> list[list[float | None]]:
 
     Args:
         tour: The tour.
+        reverse: Turn SAC's line round or not, in place of
+            ``runs_reversed``: the walk that settles it asks for both.
 
     Returns:
         The points.
@@ -615,7 +655,7 @@ def tour_points(tour: SkiTour) -> list[list[float | None]]:
             if points and points[-1][:2] == point[:2]:
                 continue
             points.append(point)
-    if runs_reversed(tour):
+    if runs_reversed(tour) if reverse is None else reverse:
         points.reverse()
     return points
 
@@ -661,7 +701,7 @@ def tours_to_sample() -> QuerySet[SkiTour]:
     return SkiTour.objects.filter(
         Q(slope_samples__isnull=True)
         | Q(slope_samples__has_key=_THERE_AND_BACK)
-        | ~Q(slope_samples__has_key=_TOP_ORDERED)
+        | ~Q(slope_samples__has_key=_WALKED_REVERSED)
     )
 
 
@@ -669,55 +709,62 @@ def needs_only_marking(tour: SkiTour) -> bool:
     """Return whether ``tour``'s record is current but for SNOW-1306's mark.
 
     Walked in SAC's order before a way down ran from its top, on a tour
-    whose order did not change: ``tour_slope_samples(sample=True)`` marks
+    whose order does not change: ``tour_slope_samples(sample=True)`` marks
     it without walking again, so the nightly backfill need not pause for it.
     """
-    held = tour.slope_samples
-    return (
-        held is not None
-        and not held.get(_THERE_AND_BACK)
-        and not held.get(_TOP_ORDERED)
-        and not runs_reversed(tour)
-    )
+    held = _usable(tour.slope_samples)
+    return held is not None and _WALKED_REVERSED not in held and not runs_reversed(tour)
 
 
 def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
     """Return the terrain under ``tour``'s line, sampling it when asked to.
 
+    The record is walked in the order ``tour_points`` gives, and says which
+    (``walked_reversed``). Its heights then settle the order: when they show
+    the walk ran the wrong way for the tour — a guess from a summit with
+    one tour — the line is walked again the other way round (SNOW-1306).
+
     Args:
         tour: The tour.
-        sample: Walk the terrain grid when the tour has never been sampled,
-            and keep the record on the tour. Otherwise answer only what is
-            held.
+        sample: Walk the terrain grid when the tour holds no record for its
+            line's order, and keep the record on the tour. Otherwise answer
+            only what is held.
 
     Returns:
         The record, or None when it is not held (or the line lies outside
         the terrain model).
 
     """
-    held: dict[str, Any] | None = tour.slope_samples
     # A record SNOW-1286 walked over the line there and back no longer
     # matches the line, which is SAC's own again (SNOW-1287): not held.
-    if held is not None and held.get(_THERE_AND_BACK):
-        held = None
-    # SNOW-1306: a record walked in SAC's order, before a way down ran from
-    # its top, matches the line only if the order did not change. The
-    # nightly walk marks one that does, so it is asked only once.
-    if held is not None and not held.get(_TOP_ORDERED):
-        if runs_reversed(tour):
+    held = _usable(tour.slope_samples)
+    if held is not None:
+        reverse = runs_reversed(tour)
+        if bool(held.get(_WALKED_REVERSED, False)) != reverse:
+            # Walked in the other order: its indices are not the line's.
             held = None
-        elif sample:
-            held = {**held, _TOP_ORDERED: True}
-            tour.slope_samples = held
-            SkiTour.objects.filter(pk=tour.pk).update(slope_samples=held)
+        elif _WALKED_REVERSED not in held and sample:
+            held = {**held, _WALKED_REVERSED: reverse}
+            _keep(tour, held)
     if held is not None or not sample:
         return held
-    record = build_slope_samples(tour_points(tour), f"ski tour {tour.sac_id}")
+    reverse = runs_reversed(tour)
+    label = f"ski tour {tour.sac_id}"
+    record = build_slope_samples(tour_points(tour, reverse=reverse), label)
+    up = _runs_up(record) if record is not None else None
+    if up is not None and up == is_descent(tour):
+        reverse = not reverse
+        record = build_slope_samples(tour_points(tour, reverse=reverse), label)
     if record is not None:
-        record = {**record, _TOP_ORDERED: True}
-        tour.slope_samples = record
-        SkiTour.objects.filter(pk=tour.pk).update(slope_samples=record)
+        record = {**record, _WALKED_REVERSED: reverse}
+        _keep(tour, record)
     return record
+
+
+def _keep(tour: SkiTour, record: dict[str, Any]) -> None:
+    """Store ``record`` on ``tour``, in memory and in the row."""
+    tour.slope_samples = record
+    SkiTour.objects.filter(pk=tour.pk).update(slope_samples=record)
 
 
 def tour_properties(tour: SkiTour) -> dict[str, Any]:

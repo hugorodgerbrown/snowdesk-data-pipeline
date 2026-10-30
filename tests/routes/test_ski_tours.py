@@ -49,9 +49,9 @@ pytestmark = pytest.mark.django_db
 TOP = [10.1, 46.85]
 VALLEY = [10.08, 46.83]
 RECORD: dict[str, Any] = {"v": 1, "segments": []}
-# What a walk keeps since SNOW-1306: the record, marked as walked in the
-# order tour_points gives.
-KEPT: dict[str, Any] = {**RECORD, "top_ordered": True}
+# What a walk keeps since SNOW-1306: the record, marked with the order it
+# was walked in — SAC's own, for a way up drawn upwards.
+KEPT: dict[str, Any] = {**RECORD, "walked_reversed": False}
 
 
 def _line(*points: list[float]) -> dict[str, Any]:
@@ -397,6 +397,35 @@ class TestTheOrder:
         assert runs_reversed(backwards) is True
         assert tour_points(backwards)[-1][:2] == TOP
 
+    def test_the_terrain_settles_a_lone_way_down_drawn_downwards(self) -> None:
+        """Its own summit says nothing; the heights it was walked over do."""
+        tour = _tour(
+            geometry=_line(TOP, VALLEY),
+            ascent_m=None,
+            descent_m=900,
+            slope_samples={**RECORD, "heights": [3100.0, None, 1700.0]},
+        )
+        assert runs_reversed(tour) is False
+        assert tour_points(tour)[0][:2] == TOP
+        assert needs_only_marking(tour) is True
+
+    def test_a_walk_the_wrong_way_is_walked_again_the_other_way(self) -> None:
+        """A lone way down drawn downwards: the guess turns it, the heights turn it back."""
+        tour = _tour(geometry=_line(TOP, VALLEY), ascent_m=None, descent_m=900)
+        assert runs_reversed(tour) is True
+        walks = [
+            {**RECORD, "heights": [1700.0, 3100.0]},
+            {**RECORD, "heights": [3100.0, 1700.0]},
+        ]
+        with patch(
+            "apps.routes.services.ski_tours.build_slope_samples", side_effect=walks
+        ) as build:
+            record = tour_slope_samples(tour, sample=True)
+        assert build.call_count == 2
+        assert build.call_args.args[0][0][:2] == TOP
+        assert record == {**walks[1], "walked_reversed": False}
+        assert runs_reversed(tour) is False
+
     def test_a_tour_with_no_line_is_not_reversed(self) -> None:
         """Nothing to turn round."""
         assert (
@@ -473,7 +502,10 @@ class TestTheTerrain:
             "apps.routes.services.ski_tours.build_slope_samples",
             return_value=dict(RECORD),
         ) as build:
-            assert tour_slope_samples(tour, sample=True) == KEPT
+            assert tour_slope_samples(tour, sample=True) == {
+                **RECORD,
+                "walked_reversed": True,
+            }
         assert build.call_args.args[0][0][:2] == TOP
 
     def test_a_line_off_the_terrain_model_keeps_nothing(self) -> None:

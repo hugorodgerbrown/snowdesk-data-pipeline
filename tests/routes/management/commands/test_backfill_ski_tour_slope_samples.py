@@ -35,7 +35,7 @@ COMMAND = "backfill_ski_tour_slope_samples"
 _BUILDER = "apps.routes.services.ski_tours.build_slope_samples"
 RECORD: dict[str, Any] = {"segments": [], "heights": [2000.0]}
 # What a walk keeps since SNOW-1306.
-KEPT: dict[str, Any] = {**RECORD, "top_ordered": True}
+KEPT: dict[str, Any] = {**RECORD, "walked_reversed": False}
 
 
 def _run(*args: str) -> str:

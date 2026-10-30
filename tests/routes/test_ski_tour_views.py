@@ -95,7 +95,7 @@ class TestFeature:
         assert response.status_code == 200
         assert "terrain_pending" not in response.json()["feature"]["properties"]
         tour.refresh_from_db()
-        assert tour.slope_samples == {**RECORD, "top_ordered": True}
+        assert tour.slope_samples == {**RECORD, "walked_reversed": False}
 
     def test_a_sampled_tour_is_not_pending(self, client: Client) -> None:
         """The held record answers the first request."""

@@ -92,15 +92,23 @@ like any other route.
 **A way down runs from its summit, a way up to it (SNOW-1306).** Hugo,
 29 Oct 2026: "Yes to descent running from peak down." `tour_points` turns
 the line round when its order disagrees with its direction
-(`runs_reversed`). The top is the end nearer where `summits()` places the
-summit, because a line's own order is no guide. The points are SAC's, in
-the reverse order, and none is added or moved, so SNOW-1287 holds. The
-profile, the figures, the estimate and a saved copy all run the way the
-tour goes. A terrain record walked before this rule carries no
-`top_ordered` mark. It is still held when the tour's order did not change,
-and the nightly backfill marks it without walking again
-(`needs_only_marking`). A tour whose order flipped is walked again. A copy
-saved earlier keeps the order it was saved in.
+(`runs_reversed`). The points are SAC's, in the reverse order, and none is
+added or moved, so SNOW-1287 holds. The profile, the figures, the estimate
+and a saved copy all run the way the tour goes. A copy saved earlier keeps
+the order it was saved in.
+
+The terrain decides which end is the top. A walked record carries the
+order it was walked in (`walked_reversed`; none means SAC's own), so its
+first and last heights say which way SAC's line runs. Before a tour has
+been walked, the guess is the end nearer its summit, where other tours
+place it. A summit with one tour is placed at that tour's own last point,
+so it says nothing, and the guess falls back to SAC drawing upwards (2,743
+of 2,941). The first walk checks the guess against the heights it found,
+and walks the line again the other way round when the guess was wrong.
+
+A record walked before this rule is still held when the order it was
+walked in is the right one, and the nightly backfill only marks it
+(`needs_only_marking`). One walked the wrong way is walked again.
 
 **The SAC guide is for members or subscribers.** SAC's route portal asks
 anyone else to sign in and subscribe, so the panel says so under the
