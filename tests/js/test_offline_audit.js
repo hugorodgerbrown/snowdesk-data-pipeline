@@ -1442,6 +1442,7 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
          data-trip-route-url-template="/trips/__UUID__/route.geojson"
          data-ratings-url="/api/ratings/"
          data-region-sheet-url="/partials/region-sheet/XX-0000/"
+         data-favourite-sheet-url="/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/"
          data-content-countries="ch fr"
          data-today="${RENDERED_DAY}">
       <button data-offline-audit-run></button>
@@ -1670,6 +1671,16 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     expect(urls).toContain('/trips/trip-uuid-1/');
     expect(urls).toContain('/trips/trip-uuid-1/route.geojson');
     expect(urls).toContain('/api/weather/BORROWEDccc/detail/?date=' + RENDERED_DAY);
+  });
+
+  it("adds each pin's own place sheet, dated with the server's day (SNOW-1313)", async () => {
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const urls = warmed.flat();
+    expect(urls).toContain('/partials/place-sheet/favourite/pin-1/?d=' + RENDERED_DAY);
   });
 
   it("dates weather sheets with the server's day, not this device's (SNOW-965)", async () => {

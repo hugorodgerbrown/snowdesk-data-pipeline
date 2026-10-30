@@ -2035,6 +2035,43 @@ describe('areaItemURLs (SNOW-965)', () => {
     expect(core.areaItemURLs({}, TEMPLATES)).toEqual([]);
     expect(core.areaItemURLs({ trips: [{}], pins: [{}] }, TEMPLATES)).toEqual([]);
   });
+
+  describe("each pin's own place sheet (SNOW-1313)", () => {
+    const SHEET = '/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/';
+    const WITH_SHEET = { ...TEMPLATES, favouriteSheet: SHEET };
+
+    it('adds the sheet per pin on the day, and still the forecast it borrows from outside the box', () => {
+      const urls = core.areaItemURLs({ pins: ITEMS.pins }, WITH_SHEET);
+
+      expect(urls).toEqual([
+        '/partials/place-sheet/favourite/pin-1/?d=2026-01-06',
+        // The borrowed point lies outside the box; area-content never named it.
+        '/api/weather/OUTSIDE0001/detail/?date=2026-01-06',
+        '/partials/place-sheet/favourite/pin-2/?d=2026-01-06',
+        '/partials/place-sheet/favourite/pin-3/?d=2026-01-06',
+      ]);
+    });
+
+    it('adds no sheet without a template, a day or a uuid', () => {
+      const noTemplate = core.areaItemURLs({ pins: ITEMS.pins }, TEMPLATES);
+      const noDay = core.areaItemURLs({ pins: ITEMS.pins }, { ...WITH_SHEET, weatherDay: '' });
+      const noUuid = core.areaItemURLs({ pins: [{ forecast: null }] }, WITH_SHEET);
+
+      for (const urls of [noTemplate, noDay]) {
+        expect(urls.some((url) => url.startsWith('/partials/'))).toBe(false);
+      }
+      expect(noUuid).toEqual([]);
+    });
+
+    it("favouriteSheetURL is the map's own request, and needs a day", () => {
+      expect(core.favouriteSheetURL(SHEET, 'pin-1', '2026-10-30')).toBe(
+        '/partials/place-sheet/favourite/pin-1/?d=2026-10-30',
+      );
+      expect(core.favouriteSheetURL(SHEET, 'pin-1', '')).toBeNull();
+      expect(core.favouriteSheetURL('/partials/place-sheet/favourite/__UUID__/', 'pin-1', '2026-10-30'))
+        .toBeNull();
+    });
+  });
 });
 
 describe('weatherDetailURL (SNOW-965)', () => {
