@@ -21,6 +21,12 @@ Covers:
     SNOW-691's slope raster), which is a second swisstopo dataset rather
     than a third basemap, so it is asserted on
     the dataset title — a bare publisher check would pass without it.
+  * The sources added since SNOW-122 whose terms ask for a credit: the
+    SAC/swisstopo ski routes, Open-Meteo's weather (CC BY 4.0), the
+    OpenMapTiles schema behind the self-hosted Liberty tiles, Font Awesome
+    Free's three glyphs, and what3words. The condition icons are drawn in
+    house, so Yr's set — kept only for the staff comparison — is no longer
+    credited.
   * The global site footer contains a link to /colophon/.
   * The URL ``public:colophon`` resolves correctly.
 
@@ -84,9 +90,39 @@ class TestColophonPage:
         response = client.get(reverse("public:colophon"))
         assert b"basmilius" in response.content
 
-    def test_yr_weather_icon_link_present(self, client: Client) -> None:
+    def test_condition_icons_credited_as_our_own(self, client: Client) -> None:
+        """The condition icons are drawn in house; Yr is a comparison set only."""
         response = client.get(reverse("public:colophon"))
-        assert b"metno/weathericons" in response.content
+        assert b"drawn in house" in response.content
+        assert b"metno/weathericons" not in response.content
+
+    def test_sac_ski_routes_credited(self, client: Client) -> None:
+        """The ski touring data names the club as well as its publisher."""
+        content = client.get(reverse("public:colophon")).content.decode()
+        assert "Swiss Alpine" in content
+        assert "sac-cas.ch" in content
+        assert "© swisstopo / SAC" in content
+
+    def test_open_meteo_credited_under_its_licence(self, client: Client) -> None:
+        """Open-Meteo's licence asks for this credit, linked to its site."""
+        content = client.get(reverse("public:colophon")).content.decode()
+        assert "Weather data by Open-Meteo.com</a>" in content
+        assert 'href="https://open-meteo.com/"' in content
+
+    def test_openmaptiles_credited(self, client: Client) -> None:
+        """The self-hosted Liberty tiles are built in the OpenMapTiles schema."""
+        response = client.get(reverse("public:colophon"))
+        assert b"OpenMapTiles" in response.content
+
+    def test_font_awesome_credited(self, client: Client) -> None:
+        """Three filled Font Awesome Free glyphs ship under CC BY 4.0."""
+        response = client.get(reverse("public:colophon"))
+        assert b"Font Awesome Free" in response.content
+        assert b"fontawesome.com/license/free" in response.content
+
+    def test_what3words_credited(self, client: Client) -> None:
+        response = client.get(reverse("public:colophon"))
+        assert b"what3words Ltd" in response.content
 
     def test_fivebar_link_present(self, client: Client) -> None:
         """SNOW-1180: the analytics section credits fivebar."""

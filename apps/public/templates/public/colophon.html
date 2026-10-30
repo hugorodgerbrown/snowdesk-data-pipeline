@@ -168,9 +168,53 @@ Reviewing this page: the browser-facing third parties are enumerated by
                             rel="noopener">Météo-France open-data licence</a>
                     {% endblocktrans %}
                 </li>
+                {# Open-Meteo's licence is CC BY 4.0 and asks for the credit #}
+                {# "Weather data by Open-Meteo.com" linked to its site; the   #}
+                {# weather sheets carry the short form ("Open-Meteo · …").    #}
                 <li>
-                    <a class="underline" href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
-                    {% trans "— elevation data" %}
+                    {% blocktrans trimmed %}
+                        <a class="underline" href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data
+                            by Open-Meteo.com</a>
+                        — the mountain weather forecasts for every weather point, and the elevation of a place, licensed
+                        under
+                        <a
+                            class="underline"
+                            href="https://creativecommons.org/licenses/by/4.0/"
+                            target="_blank"
+                            rel="noopener">CC BY 4.0</a>
+                    {% endblocktrans %}
+                </li>
+                {# SNOW-1276: the ski touring layer, "Find a route" and a     #}
+                {# saved SAC tour all read swisstopo's Ski routes dataset,     #}
+                {# which swisstopo publishes in collaboration with the SAC.    #}
+                {# swisstopo's open geodata terms require the source to be     #}
+                {# named; the map layer's own credit is "SAC ski tours ©       #}
+                {# swisstopo" (static/js/ski_tours.js), and this is the long   #}
+                {# form that names the club as well as the publisher.          #}
+                <li>
+                    {% blocktrans trimmed %}
+                        <a class="underline" href="https://www.sac-cas.ch/" target="_blank" rel="noopener">Swiss Alpine
+                            Club SAC</a>
+                        and
+                        <a
+                            class="underline"
+                            href="https://www.swisstopo.admin.ch/"
+                            target="_blank"
+                            rel="noopener">swisstopo</a>
+                        — the ski touring routes, summits and tours, from swisstopo's
+                        <a
+                            class="underline"
+                            href="https://opendata.swiss/en/dataset/skirouten1"
+                            target="_blank"
+                            rel="noopener">Ski routes</a>
+                        dataset, compiled with the SAC. © swisstopo / SAC, used under swisstopo's
+                        <a
+                            class="underline"
+                            href="https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices"
+                            target="_blank"
+                            rel="noopener">terms for free geodata</a>. A route on the map is a guide to where a tour
+                        usually goes, not a judgement of whether it is safe today
+                    {% endblocktrans %}
                 </li>
                 <li>
                     <a class="underline" href="https://www.avalanches.org/" target="_blank" rel="noopener"
@@ -198,6 +242,17 @@ Reviewing this page: the browser-facing third parties are enumerated by
                             rel="noopener">CC BY-SA 4.0</a>
                     {% endblocktrans %}
                 </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <a
+                            class="underline"
+                            href="https://what3words.com/"
+                            target="_blank"
+                            rel="noopener">what3words</a>
+                        — the three-word address of a pin, a saved place and a trip's meeting point. what3words is a
+                        registered trademark of what3words Ltd
+                    {% endblocktrans %}
+                </li>
             </ul>
         </section>
 
@@ -211,9 +266,35 @@ Reviewing this page: the browser-facing third parties are enumerated by
                     >MapLibre GL JS 4.7.1</a>
                     {% trans "— open-source map renderer" %}
                 </li>
+                {# SNOW-485: production serves the Liberty style and its     #}
+                {# tiles from tiles.snowdesk-data.info, built from           #}
+                {# OpenStreetMap with planetiler in the OpenMapTiles schema;  #}
+                {# OpenFreeMap remains the style's origin and the fallback.   #}
                 <li>
-                    <a class="underline" href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>
-                    {% trans "— Liberty vector tiles (the default basemap in the picker, and the production default)" %}
+                    {% blocktrans trimmed %}
+                        <a
+                            class="underline"
+                            href="https://openfreemap.org/"
+                            target="_blank"
+                            rel="noopener">OpenFreeMap</a>
+                        — the Liberty map style, the default basemap. Snowdesk serves it, and the tiles under it, from
+                        its own tile host
+                    {% endblocktrans %}
+                </li>
+                <li>
+                    {% blocktrans trimmed %}
+                        <a
+                            class="underline"
+                            href="https://openmaptiles.org/"
+                            target="_blank"
+                            rel="noopener">© OpenMapTiles</a>
+                        — the vector tile schema the Liberty tiles are built in, licensed under
+                        <a
+                            class="underline"
+                            href="https://creativecommons.org/licenses/by/4.0/"
+                            target="_blank"
+                            rel="noopener">CC BY 4.0</a>
+                    {% endblocktrans %}
                 </li>
                 <li>
                     {% blocktrans trimmed %}
@@ -233,7 +314,7 @@ Reviewing this page: the browser-facing third parties are enumerated by
                 <li>
                     <a class="underline" href="https://www.swisstopo.admin.ch/" target="_blank" rel="noopener"
                     >swisstopo</a>
-                    {% trans "— Winter vector tile style, covering Switzerland" %}
+                    {% trans "— Winter and Light base map vector tile styles, covering Switzerland" %}
                 </li>
                 <li>
                     <a class="underline" href="https://geoservices.ign.fr/" target="_blank" rel="noopener">IGN</a>
@@ -262,9 +343,9 @@ Reviewing this page: the browser-facing third parties are enumerated by
                     >swisstopo — swissALTI3D</a>
                     {% blocktrans trimmed %}
                         — the elevation model behind the map's slope layer, terrain filter and route slope figures,
-                        covering Switzerland. Resampled by Snowdesk to a 5 m grid, from which the slope angle, aspect
-                        and height are derived; the slope layer is classified as the SLF recommends (30–35°, 35–40°,
-                        40–45°, 45–50°, over 50°)
+                        covering Switzerland. Resampled by Snowdesk to a 5 m grid and served from Snowdesk's own tile
+                        host, from which the slope angle, aspect and height are derived; the slope layer is classified
+                        as the SLF recommends (30–35°, 35–40°, 40–45°, 45–50°, over 50°)
                     {% endblocktrans %}
                 </li>
             </ul>
@@ -275,22 +356,13 @@ Reviewing this page: the browser-facing third parties are enumerated by
                 {% trans "Icons" %}
             </h2>
             <ul class="list-disc pl-5 space-y-1">
+                {# The condition icons are drawn by bin/build-weather-icons  #}
+                {# (docs/decisions/weather-icons-are-drawn-in-house.md). Yr   #}
+                {# and Meteocons' condition sets stay in the tree only as    #}
+                {# the staff /_icon-sets/ comparison, so neither is credited #}
+                {# here for them; Meteocons still draws sunrise and sunset.   #}
                 <li>
-                    {% blocktrans trimmed %}
-                        <a
-                            class="underline"
-                            href="https://github.com/metno/weathericons"
-                            target="_blank"
-                            rel="noopener">Yr weather icons</a>
-                        by the <a class="underline" href="https://www.met.no/" target="_blank" rel="noopener">Norwegian
-                            Meteorological Institute</a>
-                        and NRK — weather condition icons, licensed under the
-                        <a
-                            class="underline"
-                            href="https://opensource.org/licenses/MIT"
-                            target="_blank"
-                            rel="noopener">MIT licence</a>
-                    {% endblocktrans %}
+                    {% trans "Snowdesk — the weather condition icons and the interface icons, drawn in house" %}
                 </li>
                 <li>
                     {% blocktrans trimmed %}
@@ -307,6 +379,25 @@ Reviewing this page: the browser-facing third parties are enumerated by
                             href="https://opensource.org/licenses/MIT"
                             target="_blank"
                             rel="noopener">MIT licence</a>
+                    {% endblocktrans %}
+                </li>
+                {# docs/decisions/ui-icons-are-house-stroke-partials.md: three #}
+                {# filled Font Awesome Free glyphs are the named exception to  #}
+                {# the house stroke icons; their licence asks for this credit. #}
+                <li>
+                    {% blocktrans trimmed %}
+                        <a
+                            class="underline"
+                            href="https://fontawesome.com/"
+                            target="_blank"
+                            rel="noopener">Font Awesome Free</a>
+                        by Fonticons, Inc. — the map's favourite star and report flag, and the observations binoculars,
+                        licensed under
+                        <a
+                            class="underline"
+                            href="https://fontawesome.com/license/free"
+                            target="_blank"
+                            rel="noopener">CC BY 4.0</a>
                     {% endblocktrans %}
                 </li>
                 <li>
