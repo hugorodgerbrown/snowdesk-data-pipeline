@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-10-26
+last-reviewed: 2026-10-30
 ---
 
 # PWA shell
@@ -428,8 +428,13 @@ before the page runs.
 
 ## Cache strategy
 
-Note first what `activate` does before any of this: it deletes every shell
-cache that is not the version now live, and then **re-warms the map page**
+Note first what `activate` does before any of this: it **carries** the
+user's content — downloaded bulletin pages, weather sheets, trip routes,
+feeds, and the hashed assets a carried page names — out of every old
+`snowdesk-shell-*` cache into the live one (`_carryShellContent`,
+SNOW-1311), then deletes every shell cache that is not the version now live
+(only if the carry completed; otherwise the old ones are kept for the next
+activation), and then **re-warms the map page**
 (`_rewarmShell`, SNOW-912) along with the same-origin scripts and
 stylesheets that page references, and — SNOW-912 — the `/api/` feeds its
 own boot will ask for, derived from the `data-today` baked into the page
@@ -3395,7 +3400,11 @@ the label is only there so a person can tell a running worker from a
 waiting one, on `/_sw-version/` or in DevTools → Cache Storage.
 
 On `activate`, the SW deletes any `snowdesk-shell-*` / `map-shell-*` cache
-whose name is not the current `CACHE_VERSION`. Because the name is a
+whose name is not the current `CACHE_VERSION` — after first carrying the
+user's downloaded content out of the old `snowdesk-shell-*` caches into the
+new one, and keeping them all if that carry did not complete (SNOW-1311,
+[`decisions/an-update-carries-your-downloaded-content-across.md`](decisions/an-update-carries-your-downloaded-content-across.md)).
+A deploy therefore never costs a user what an area download saved. Because the name is a
 function of the shell content, *any* change to *any* tracked shell source
 automatically produces a new cache name — there is nothing to bump, and no
 judgement call about whether a given edit "deserves" a bump.
