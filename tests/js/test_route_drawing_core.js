@@ -119,7 +119,7 @@ describe('lineLayers', () => {
     expect(marks[0].paint['circle-color']).toEqual(['case', ['get', 'climbing'], '#1d4ed8', '#38bdf8']);
   });
 
-  it('draws a legless tour\'s flat line in the colour it is given (SNOW-1307)', () => {
+  it('draws a legless tour\'s flat line in the colour it is given (SNOW-1310)', () => {
     const layers = core.lineLayers(options({ colours: { climb: '#1d4ed8', descent: '#38bdf8', line: '#1d4ed8' } }));
     const plain = core.lineLayers(options());
 

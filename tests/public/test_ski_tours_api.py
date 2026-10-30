@@ -59,7 +59,7 @@ def test_the_tours_and_their_summits_in_the_box_are_served(client: Client) -> No
     assert tour["properties"]["uuid"] == str(inside.source_uuid)
     assert tour["properties"]["summit"] == "piz-buin-3312"
     assert tour["properties"]["time"] == "3 h 30"
-    # No terrain yet: one line, in no direction (SNOW-1307).
+    # No terrain yet: one line, in no direction (SNOW-1310).
     assert tour["properties"]["climbing"] is None
     assert tour["geometry"]["type"] == "LineString"
     (summit,) = marks
@@ -130,7 +130,7 @@ def test_the_overview_serves_every_tour_thinned(client: Client) -> None:
         "climbing": None,
     }
     # The middle point is on the line, so the thinning drops it. No legs
-    # yet: SAC's line as it is, in no direction (SNOW-1307).
+    # yet: SAC's line as it is, in no direction (SNOW-1310).
     assert line["geometry"] == {
         "type": "MultiLineString",
         "coordinates": [[[7.0, 46.0], [7.1, 46.1]]],
@@ -142,7 +142,7 @@ def test_the_overview_serves_every_tour_thinned(client: Client) -> None:
 def test_a_tour_with_terrain_is_served_as_its_legs(
     client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SNOW-1307: one Feature per leg, climbing or not, as a route is drawn."""
+    """SNOW-1310: one Feature per leg, climbing or not, as a route is drawn."""
     tour = SkiTourFactory.create()
     parts = [
         (True, [[10.0, 46.0], [10.01, 46.01]]),

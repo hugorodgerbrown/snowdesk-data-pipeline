@@ -14,7 +14,7 @@ class Migration(migrations.Migration):
             name="legs",
             field=models.JSONField(
                 blank=True,
-                help_text="The line cut into its legs where the ground turns, as a route's are (SNOW-1307): [{climbing, line: [[lon, lat], …]}, …] in the order the tour goes. Cut from slope_samples whenever it is stored, so the tours layer reads it rather than cutting 2,941 tours per request. Null means not cut yet; [] means the terrain holds no leg. A sync that rewrites the tour clears it.",
+                help_text="The line cut into its legs where the ground turns, as a route's are (SNOW-1310): [{climbing, line: [[lon, lat], …]}, …] in the order the tour goes. Cut from slope_samples whenever it is stored, so the tours layer reads it rather than cutting 2,941 tours per request. Null means not cut yet; [] means the terrain holds no leg. A sync that rewrites the tour clears it.",
                 null=True,
             ),
         ),

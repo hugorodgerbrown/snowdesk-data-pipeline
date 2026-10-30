@@ -15,7 +15,7 @@
  * view's own rectangle at full detail. swisstopo's raster of its whole
  * network is no longer drawn: nothing in it could be tapped.
  *
- * Every tour is drawn as a route's legs are (SNOW-1307): the server cuts
+ * Every tour is drawn as a route's legs are (SNOW-1310): the server cuts
  * it where the ground turns, a climb in SAC's deep blue and a descent in
  * sky blue, so a reader's own routes (grey and fuchsia) stand apart. Both
  * solid: on SAC's own maps a dash means a leg needing extra care and a dot
@@ -199,7 +199,7 @@
     // past it, where the lines separate. Thinner than the open tour, which
     // is drawn over them in the same colours.
     const width = ['interpolate', ['linear'], ['zoom'], 9, 1.5, 12, 2.5, 15, 4];
-    // SNOW-1307: each tour arrives cut into its legs, as a route is drawn:
+    // SNOW-1310: each tour arrives cut into its legs, as a route is drawn:
     // a climb in SAC's deep blue, a descent in sky blue, so a reader's own
     // routes (grey and fuchsia) stand clear of them. A tour with no
     // terrain yet is one line with `climbing` null, drawn deep blue. Never

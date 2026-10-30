@@ -31,7 +31,7 @@ nothing beyond that (Hugo, SNOW-1302): it says the line shows the ascent
 only or the descent only, and points at SAC's guide for the rest. SAC's own
 height figures are not shown; the panel's figures are the line's own.
 That label orders the line and names the panel's half; it is never drawn.
-EACH TOUR IS DRAWN AS ITS LEGS (Hugo, SNOW-1307: "The SAC routes should
+EACH TOUR IS DRAWN AS ITS LEGS (Hugo, SNOW-1310: "The SAC routes should
 behave the same as user routes, but in a blue colour scheme"): cut from
 its terrain where the ground turns, on the map at rest (``leg_parts``) and
 in the panel alike. A tour with no terrain yet is one line in no direction.
@@ -104,7 +104,7 @@ _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
 # load. Thinned to about 20 m (Douglas-Peucker in degrees) and rounded to
 # five places (about a metre): at z9-z11 a pixel is 20-150 m, so nothing
 # drawn moves, and the whole set is ~2.3 MB, ~0.6 MB gzipped.
-# v3: SNOW-1307 cuts each tour into its legs.
+# v3: SNOW-1310 cuts each tour into its legs.
 _OVERVIEW_CACHE_KEY = "routes:ski-overview:v3:{count}:{stamp}"
 # The mark SNOW-1286 put on a record walked there and back (SNOW-1287).
 _THERE_AND_BACK = "there_and_back"
@@ -459,7 +459,7 @@ def tour_overview() -> list[dict[str, Any]]:
     """Return every tour as a thinned line Feature, cached until they change.
 
     SNOW-1285. What a map zoomed out past the per-view load draws, and is
-    tapped on: the line, cut into its legs (``leg_parts``, SNOW-1307), and
+    tapped on: the line, cut into its legs (``leg_parts``, SNOW-1310), and
     only what a tap reads (its uuid, its summit's key) and the leg's
     ``climbing``. The panel and the
     list ask the server for the rest. Not localised, so one copy serves
@@ -485,7 +485,7 @@ def tour_overview() -> list[dict[str, Any]]:
             "descent_m",
         )
         for tour in tours.iterator(chunk_size=200):
-            # SNOW-1307: a Feature per leg, each thinned on its own.
+            # SNOW-1310: a Feature per leg, each thinned on its own.
             for climbing, line in leg_parts(tour):
                 geometry = overview_geometry(
                     {"type": "LineString", "coordinates": line}
@@ -663,7 +663,7 @@ def tours_to_sample() -> QuerySet[SkiTour]:
     Never walked, walked over SNOW-1286's doubled line (the record
     ``tour_slope_samples`` does not hold), or walked before SNOW-1306 and
     not yet known to match the line's order, or with its legs not yet cut
-    (SNOW-1307).
+    (SNOW-1310).
     """
     return SkiTour.objects.filter(
         Q(slope_samples__isnull=True)
@@ -677,7 +677,7 @@ def needs_only_marking(tour: SkiTour) -> bool:
     """Return whether ``tour``'s record is current but for a mark or its legs.
 
     Walked in SAC's order before a way down ran from its top, on a tour
-    whose order does not change, or walked before SNOW-1307 stored legs:
+    whose order does not change, or walked before SNOW-1310 stored legs:
     ``tour_slope_samples(sample=True)`` marks it and cuts its legs without
     walking again, so the nightly backfill need not pause for it.
     """
@@ -717,7 +717,7 @@ def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
             # Walked in the other order: its indices are not the line's.
             held = None
         elif sample and (_WALKED_REVERSED not in held or tour.legs is None):
-            # Marked, and its legs cut (SNOW-1307), without a walk.
+            # Marked, and its legs cut (SNOW-1310), without a walk.
             held = {**held, _WALKED_REVERSED: reverse}
             _keep(tour, held)
     if held is not None or not sample:
@@ -738,7 +738,7 @@ def tour_slope_samples(tour: SkiTour, *, sample: bool) -> dict[str, Any] | None:
 def _keep(tour: SkiTour, record: dict[str, Any]) -> None:
     """Store ``record`` on ``tour``, in memory and in the row."""
     tour.slope_samples = record
-    # SNOW-1307: its legs are cut with it, and updated_at moves so the
+    # SNOW-1310: its legs are cut with it, and updated_at moves so the
     # overview's cache key reads them.
     tour.legs = cut_legs(tour)
     SkiTour.objects.filter(pk=tour.pk).update(
@@ -747,7 +747,7 @@ def _keep(tour: SkiTour, record: dict[str, Any]) -> None:
 
 
 def cut_legs(tour: SkiTour) -> list[dict[str, Any]]:
-    """Return ``tour``'s line cut into its legs, as a route's is (SNOW-1307).
+    """Return ``tour``'s line cut into its legs, as a route's is (SNOW-1310).
 
     Hugo, 2026-10-30: "The SAC routes should behave the same as user
     routes, but in a blue colour scheme". So the tours layer draws what
@@ -782,7 +782,7 @@ def cut_legs(tour: SkiTour) -> list[dict[str, Any]]:
 
 
 def leg_parts(tour: SkiTour) -> list[tuple[bool | None, list[list[float]]]]:
-    """Return what the tours layer draws of ``tour``: its legs (SNOW-1307).
+    """Return what the tours layer draws of ``tour``: its legs (SNOW-1310).
 
     The legs stored on it (``cut_legs``); a tour with none, its terrain
     not walked yet, is SAC's line as it is, ``climbing`` None: no

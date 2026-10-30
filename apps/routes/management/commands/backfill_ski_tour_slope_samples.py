@@ -18,7 +18,7 @@ a candidate once. On a tour whose order did not change it is only marked,
 counted ``marked``, with no request and no pause; on one whose order
 flipped it is walked again.
 
-**A record walked before SNOW-1307** has no legs stored. It is a candidate
+**A record walked before SNOW-1310** has no legs stored. It is a candidate
 once too, and is only cut (``cut_legs``), counted ``marked``, with no
 request and no pause: the tours layer then draws it as its legs.
 

@@ -71,7 +71,7 @@ A way down now runs from its summit (SNOW-1306, below).
 SAC publishes the ways up and the ways down to a summit separately, so a
 reader can climb by one and ski down another (Hugo, 2026-10-29). The open
 panel and the map drew each tour as one leg, in its direction's colour
-(`one_leg`). SNOW-1307 removed that: every tour is drawn as its legs, see
+(`one_leg`). SNOW-1310 removed that: every tour is drawn as its legs, see
 "An SAC tour looks like SAC's" below. The way-down label still orders the
 line and names the panel's half. Before this, the panel cut the line into
 legs by the order of its points, and that order is no guide: SAC draws
@@ -258,4 +258,4 @@ The open tour's line is built after its first walk, never before: a walk
 can turn the line round (its heights settle which end is the top), and a
 draft built first kept the guessed order while the record held the other,
 so the terrain track interleaved the two and the legs fanned across the
-map until the tour was opened again (SNOW-1307).
+map until the tour was opened again (SNOW-1310).

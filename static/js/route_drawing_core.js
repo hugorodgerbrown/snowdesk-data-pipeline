@@ -122,7 +122,7 @@
    * @property {Array<string>} [textFont] The transition labels' font.
    * @property {{climb: string, descent: string, line?: string}} [colours]
    *   The leg colours, and the flat line's; a route's own when omitted.
-   *   An SAC tour not yet saved passes SAC's (SNOW-1307).
+   *   An SAC tour not yet saved passes SAC's (SNOW-1310).
    * @property {boolean} [solidClimb] True draws a climb solid, without
    *   its dash: an SAC tour, because a dash on SAC's own maps means a leg
    *   needing extra care (SNOW-1307).

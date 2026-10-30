@@ -1475,7 +1475,7 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
     (``tour_overview``) and carrying only ``kind``, ``uuid``, ``summit`` and
     ``climbing``, with every summit as above. ``truncated`` is always false.
 
-    A tour is one Feature per leg (SNOW-1307, ``leg_parts``): ``climbing``
+    A tour is one Feature per leg (SNOW-1310, ``leg_parts``): ``climbing``
     is the leg's direction, cut from the tour's held terrain as a route's
     legs are, and null for a tour with no terrain yet, drawn as one line.
 
@@ -1507,7 +1507,7 @@ def ski_tours_geojson(request: HttpRequest) -> HttpResponse:
             : SKI_TOURS_MAX_FEATURES + 1
         ]
     )
-    # SNOW-1307: a Feature per leg, as a route is drawn.
+    # SNOW-1310: a Feature per leg, as a route is drawn.
     features: list[dict[str, Any]] = [
         {
             "type": "Feature",

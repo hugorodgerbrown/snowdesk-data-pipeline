@@ -778,7 +778,7 @@ class SkiTour(_SkiLine):
         blank=True,
         help_text=(
             "The line cut into its legs where the ground turns, as a "
-            "route's are (SNOW-1307): [{climbing, line: [[lon, lat], …]}, …] "
+            "route's are (SNOW-1310): [{climbing, line: [[lon, lat], …]}, …] "
             "in the order the tour goes. Cut from slope_samples whenever it "
             "is stored, so the tours layer reads it rather than cutting "
             "2,941 tours per request. Null means not cut yet; [] means the "

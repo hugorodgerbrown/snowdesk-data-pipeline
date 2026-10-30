@@ -68,7 +68,7 @@ class TestFeature:
         assert "token" not in props
 
     def test_a_tour_with_no_terrain_has_no_legs(self, client: Client) -> None:
-        """No heights, no legs: one line, in no direction (SNOW-1307).
+        """No heights, no legs: one line, in no direction (SNOW-1310).
 
         A named way down is not pre-labelled one: its legs come with its
         terrain, as a route's do.

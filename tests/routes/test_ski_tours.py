@@ -484,7 +484,7 @@ class TestTheTerrain:
 
 
 class TestTheLegs:
-    """SNOW-1307: a tour is drawn as its legs, as a route is, cut once."""
+    """SNOW-1310: a tour is drawn as its legs, as a route is, cut once."""
 
     TRACK: list[list[float | None]] = [
         [10.0, 46.0, 1800.0],

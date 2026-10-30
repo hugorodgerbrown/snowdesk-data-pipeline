@@ -1434,7 +1434,7 @@ def ski_tour_feature(request: HttpRequest, uuid: UUID) -> JsonResponse:
     if draft.slope_samples is None and not sample:
         identity["terrain_pending"] = True
     feature = _route_feature(draft, identity)
-    # SNOW-1307: a tour's legs are a route's, cut from its terrain where
+    # SNOW-1310: a tour's legs are a route's, cut from its terrain where
     # the ground turns. A tour with no terrain yet has none: one line, in
     # no direction, until the panel's refill brings it.
     return JsonResponse({"feature": feature})
