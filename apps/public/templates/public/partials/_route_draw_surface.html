@@ -97,6 +97,30 @@ Context expected:
             <div data-route-draw-profile hidden>
                 {% include "includes/_route_profile.html" with height_class="h-12" %}
             </div>
+            {# SNOW-1321: holds the profile's place while it is worked out, #}
+            {# at the profile's own size (the h-12 lane over the h-4 ticks) #}
+            {# so nothing jumps when it lands. A ghost of a profile shows   #}
+            {# what is coming (Hugo, 30 Oct 2026: "With a fake shadow so    #}
+            {# the user knows what to expect").                             #}
+            <div data-route-draw-building aria-live="polite" hidden class="min-w-0">
+                <div class="relative h-12 motion-safe:animate-pulse">
+                    <svg
+                        aria-hidden="true"
+                        viewBox="0 0 100 40"
+                        preserveAspectRatio="none"
+                        class="block h-12 w-full text-border"
+                    >
+                        <path
+                            fill="currentColor"
+                            d="M0 40 L0 31 L10 26 L19 28 L30 17 L40 20 L52 8 L61 12 L70 21 L79 19 L88 25 L100 22 L100 40 Z"
+                        />
+                    </svg>
+                    <p class="absolute inset-0 flex items-center justify-center text-summary text-text-2">
+                        {% trans "Building profile…" %}
+                    </p>
+                </div>
+                <div aria-hidden="true" class="h-4"></div>
+            </div>
             <p data-route-draw-notice hidden class="text-summary text-text-3"></p>
         </div>
         {# A switch, not a checkbox: route_draw.js owns the state and keeps  #}
@@ -128,7 +152,9 @@ Context expected:
                 class='{% button_classes variant="primary" size="compact" %} hover-affordance inline-flex h-11 flex-1 items-center justify-center gap-1.5'
             >
                 {% include "includes/_icon_plus.html" with size=16 %}
-                {% trans "Add point" %}
+                {# SNOW-1321: the first point is the start; route_draw.js #}
+                {# writes "Add point" once one is down.                    #}
+                <span data-route-draw-add-label>{% trans "Set start location" %}</span>
             </button>
         </div>
         <form data-route-draw-save class="flex gap-2 border-t border-border pt-2.5">
@@ -184,10 +210,12 @@ Context expected:
 <template id="route-draw-strings-template">
     <span
         data-string="hint-coarse"
-    >{% trans "Move the map to put the cross where you want the next point, then tap Add point." %}</span>
+    >{% trans "Move the map to put the cross where you want to start, then tap Set start location." %}</span>
     <span
         data-string="hint-fine"
-    >{% trans "Click the map to add a point. Near a ski route it snaps to the route." %}</span>
+    >{% trans "Click the map to set the start location. Near a ski route it snaps to the route." %}</span>
+    <span data-string="add-start">{% trans "Set start location" %}</span>
+    <span data-string="add-point">{% trans "Add point" %}</span>
     <span data-string="stats-empty">{% trans "No points yet." %}</span>
     <span data-string="stats-one">{% trans "One point — add another to start the line." %}</span>
     <span data-string="unit-km">{% blocktrans %}%(value)s km{% endblocktrans %}</span>

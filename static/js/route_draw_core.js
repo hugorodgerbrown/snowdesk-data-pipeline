@@ -47,6 +47,7 @@
  *                                     save with this key
  *   NETWORK_COLOUR                  — the snap-to network's own colour
  *   networkPaint(follow)            — the network's core and halo paint
+ *   profileBuilding(state)          — whether the profile is being built
  *
  * SAVING OFFLINE (SNOW-1262). A save carries an Idempotency-Key the device
  * mints, and the draft is TAGGED with it before the request goes out, so
@@ -608,6 +609,23 @@
     };
   }
 
+  /**
+   * Whether the panel should say the profile is being built (SNOW-1321).
+   *
+   * Hugo, 30 Oct 2026: "it should say 'Building profile' in the blank
+   * space - so the user is aware." True from the moment a line of two or
+   * more points changes until its preview is drawn: through the debounce
+   * and the request alike. Offline no request is made, so nothing is
+   * being built.
+   *
+   * @param {{count: number, fresh: boolean, waiting: boolean, online: boolean}} s
+   *   `waiting` is a preview timer pending or a request in flight.
+   * @returns {boolean}
+   */
+  function profileBuilding(s) {
+    return s.count >= 2 && !s.fresh && s.waiting && s.online;
+  }
+
   self.pwaRouteDrawCore = Object.freeze({
     DRAFT_KEY: DRAFT_KEY,
     MAX_WAYPOINTS: MAX_WAYPOINTS,
@@ -631,5 +649,6 @@
     forgetDraftFor: forgetDraftFor,
     NETWORK_COLOUR: NETWORK_COLOUR,
     networkPaint: networkPaint,
+    profileBuilding: profileBuilding,
   });
 })();

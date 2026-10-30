@@ -367,3 +367,19 @@ describe('networkPaint', () => {
     expect(core.NETWORK_COLOUR).not.toBe('#c026d3');
   });
 });
+
+describe('profileBuilding', () => {
+  const base = { count: 2, fresh: false, waiting: true, online: true };
+
+  it('is true while a line of two or more points waits for its preview', () => {
+    expect(core.profileBuilding(base)).toBe(true);
+    expect(core.profileBuilding({ ...base, count: 5 })).toBe(true);
+  });
+
+  it('is false once the preview is drawn, offline, under two points or not waiting', () => {
+    expect(core.profileBuilding({ ...base, fresh: true })).toBe(false);
+    expect(core.profileBuilding({ ...base, online: false })).toBe(false);
+    expect(core.profileBuilding({ ...base, count: 1 })).toBe(false);
+    expect(core.profileBuilding({ ...base, waiting: false })).toBe(false);
+  });
+});
