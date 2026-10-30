@@ -34,8 +34,35 @@
  *   statsParts(props, points)       — the figures the panel shows, as data
  *   guideCollection(points, cursor, options) — the map's taps, guide line,
  *                                     next leg and snap ring
- *   serialiseDraft(points, name, taps) — the draft as a string to store
+ *   serialiseDraft(points, name, taps, tag) — the draft as a string to store
  *   parseDraft(raw)                 — a stored draft back, or null
+ *   ROUTE_CREATE_KIND               — the mutation-queue `kind` of a save
+ *   mintKey()                       — a fresh Idempotency-Key
+ *   createOperation(url, csrf, points, name, key) — the save, as the
+ *                                     mutation queue takes it
+ *   draftState(draft, principal, row, ack) — what a stored draft is now
+ *   pointsBounds(points)            — [w, s, e, n] of a list of points
+ *
+ * SAVING OFFLINE (SNOW-1262). A save carries an Idempotency-Key the device
+ * mints, and the draft is TAGGED with it before the request goes out, so
+ * the draft and the queued row can never disagree about which save they
+ * are. The draft also carries the account it was drawn under. On every
+ * load `draftState` reads the draft against the queue and its
+ * acknowledgements:
+ *
+ *   'none'     — no draft;
+ *   'foreign'  — drawn under another account: discard it;
+ *   'landed'   — its save was acknowledged: the route exists, clear it;
+ *   'queued'   — its save is still in the queue: show it, not editable;
+ *   'failed'   — its save was refused for good: untag it (the key moves to
+ *                `failed`, so Edit and Discard can find it) and let the
+ *                drawer edit it again;
+ *   'unsent'   — tagged, but neither row nor acknowledgement: the request
+ *                may or may not have reached the server. Keep the draft and
+ *                its key, editable; a re-save sends the same key, so within
+ *                the server's 24 h window it answers with the route it made
+ *                rather than making a second;
+ *   'draft'    — an ordinary untagged draft.
  */
 
 // @ts-check
@@ -304,21 +331,122 @@
     return { type: 'FeatureCollection', features: features };
   }
 
+  /** The `kind` route_draw.js queues a save under (SNOW-1262). */
+  const ROUTE_CREATE_KIND = 'route-create';
+
+  /**
+   * @typedef {{key?: ?string, failed?: ?string, principal?: ?string}} DraftTag
+   */
+
   /**
    * The draft as the string kept in localStorage.
    *
    * @param {Array<Waypoint>} points
    * @param {string} name
    * @param {Array<number>} [taps] The taps; every point when not given.
+   * @param {DraftTag} [tag] SNOW-1262: the save's Idempotency-Key while it
+   *   may be in flight (`key`), the key of a save refused for good
+   *   (`failed`), and the account the draft was drawn under (`principal`).
    * @returns {string}
    */
-  function serialiseDraft(points, name, taps) {
-    return JSON.stringify({
+  function serialiseDraft(points, name, taps, tag) {
+    /** @type {Object<string, any>} */
+    const value = {
       v: 1,
       points: points,
       name: name || '',
       taps: taps || everyIndex(points),
+    };
+    if (tag && typeof tag.key === 'string' && tag.key) value.key = tag.key;
+    if (tag && typeof tag.failed === 'string' && tag.failed) value.failed = tag.failed;
+    if (tag && typeof tag.principal === 'string' && tag.principal) value.principal = tag.principal;
+    return JSON.stringify(value);
+  }
+
+  /**
+   * A fresh Idempotency-Key: a UUID where the browser has one, a random hex
+   * string where it does not (the mutation queue's own fallback).
+   *
+   * @returns {string}
+   */
+  function mintKey() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    let out = 'draw-';
+    for (let i = 0; i < 32; i += 1) out += Math.floor(Math.random() * 16).toString(16);
+    return out;
+  }
+
+  /**
+   * A save, as window.pwaMutationQueue.enqueue takes it — and, online, as
+   * route_draw.js posts it directly (the same url, headers and body, plus
+   * the key as the Idempotency-Key header).
+   *
+   * @param {string} url routes:create_drawn.
+   * @param {string} csrf The page's CSRF token.
+   * @param {Array<Waypoint>} points
+   * @param {string} name
+   * @param {string} key The Idempotency-Key the draft is tagged with.
+   * @returns {{method: string, url: string, headers: Object<string, string>,
+   *   body: string, idempotencyKey: string, kind: string}}
+   */
+  function createOperation(url, csrf, points, name, key) {
+    return {
+      method: 'POST',
+      url: url,
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+      body: JSON.stringify({ points: points, name: name }),
+      idempotencyKey: key,
+      kind: ROUTE_CREATE_KIND,
+    };
+  }
+
+  /**
+   * What a stored draft is now, read against the queue (SNOW-1262). See
+   * the module header for the seven answers.
+   *
+   * A draft with no account on it — drawn signed out, or stored before
+   * SNOW-1262 — belongs to whoever is signed in now, so a drawer who signs
+   * in to save keeps the line they drew. A draft stamped with an account is
+   * never shown to anyone else, signed in or not.
+   *
+   * @param {?{key?: ?string, principal?: ?string}} draft A parsed draft.
+   * @param {?string} principal The account signed in now (null: none).
+   * @param {?{status: string}} row The queued row with the draft's key.
+   * @param {?Object} ack The acknowledgement for the draft's key.
+   * @returns {'none'|'foreign'|'landed'|'queued'|'failed'|'unsent'|'draft'}
+   */
+  function draftState(draft, principal, row, ack) {
+    if (!draft) return 'none';
+    if (draft.principal && draft.principal !== principal) return 'foreign';
+    if (!draft.key) return 'draft';
+    if (ack) return 'landed';
+    if (row) return row.status === 'failed' ? 'failed' : 'queued';
+    return 'unsent';
+  }
+
+  /**
+   * The bounding box of a list of points, `[west, south, east, north]` —
+   * the shape `Route.bounds` has, so a route still waiting to sync can be
+   * framed as a saved one is. Null for an empty list.
+   *
+   * @param {Array<Waypoint>} points
+   * @returns {?Array<number>}
+   */
+  function pointsBounds(points) {
+    if (!points || points.length === 0) return null;
+    let west = Infinity;
+    let south = Infinity;
+    let east = -Infinity;
+    let north = -Infinity;
+    points.forEach(function (point) {
+      west = Math.min(west, point[0]);
+      east = Math.max(east, point[0]);
+      south = Math.min(south, point[1]);
+      north = Math.max(north, point[1]);
     });
+    return [west, south, east, north];
   }
 
   /**
@@ -344,7 +472,8 @@
    * tap list that does not fit, has a tap at every point.
    *
    * @param {?string} raw
-   * @returns {?{points: Array<Waypoint>, name: string, taps: Array<number>}}
+   * @returns {?{points: Array<Waypoint>, name: string, taps: Array<number>,
+   *   key: ?string, failed: ?string, principal: ?string}}
    */
   function parseDraft(raw) {
     if (typeof raw !== 'string' || !raw) return null;
@@ -361,10 +490,17 @@
     const points = value.points.map(function (/** @type {Array<number>} */ point) {
       return /** @type {Waypoint} */ ([point[0], point[1]]);
     });
+    /** @param {any} field */
+    const text = function (field) {
+      return typeof field === 'string' && field ? field : null;
+    };
     return {
       points: points,
       name: typeof value.name === 'string' ? value.name : '',
       taps: tapsFit(value.taps, points.length) ? value.taps.slice() : everyIndex(points),
+      key: text(value.key),
+      failed: text(value.failed),
+      principal: text(value.principal),
     };
   }
 
@@ -382,5 +518,10 @@
     guideCollection: guideCollection,
     serialiseDraft: serialiseDraft,
     parseDraft: parseDraft,
+    ROUTE_CREATE_KIND: ROUTE_CREATE_KIND,
+    mintKey: mintKey,
+    createOperation: createOperation,
+    draftState: draftState,
+    pointsBounds: pointsBounds,
   });
 })();
