@@ -15,9 +15,12 @@
  * view's own rectangle at full detail. swisstopo's raster of its whole
  * network is no longer drawn: nothing in it could be tapped.
  *
- * Every tour is drawn as a saved route's legs are, at every zoom
- * (SNOW-1306): a way up in the climb's dashed grey, a way down in the
- * descent's solid fuchsia, so the two read apart before anything is tapped.
+ * Every tour is drawn up or down at every zoom (SNOW-1306): a way up in SAC's deep blue, a way down in sky blue, so the
+ * two read apart before anything is tapped, and a reader's own routes (grey
+ * and fuchsia) stand apart from them (SNOW-1307). Both are solid:
+ * on SAC's own maps a dash means a leg needing extra care and a dot one
+ * climbed on foot, so a dash here would say something SAC never said
+ * (SNOW-1307).
  * A summit is a label (a dot and its name), never a target.
  *
  * A TAP (map.js's dispatcher calls `tap(point)` after the markers and the
@@ -57,8 +60,7 @@
   const SAVE_ELIGIBLE = config.dataset.saveEligible === 'true';
 
   const SOURCE = 'ski-tours';
-  // A way up and a way down: two layers, because MapLibre 4 cannot drive
-  // `line-dasharray` from data.
+  // A way up and a way down, a layer each, so map_state.js can name them.
   const LINE = 'ski-tours-line';
   const LINE_DOWN = 'ski-tours-line-down';
   const SUMMIT = 'ski-tours-summit';
@@ -160,17 +162,17 @@
   // ---------------------------------------------------------------------------
 
   /**
-   * A saved route's two leg colours, off the legs core, read when the
-   * layers are added. The literals mirror `--color-route-rail-climb` and
-   * `--color-route-rail-descent`.
+   * SAC's two colours, off the legs core, read when the layers are added
+   * (SNOW-1307). The literals mirror `--color-sac-climb` and
+   * `--color-sac-descent`.
    *
    * @returns {{climb: string, descent: string}}
    */
   function legColours() {
     const legs = self.pwaRouteLegsCore || {};
     return {
-      climb: legs.LEG_CLIMB_COLOUR || '#64748b',
-      descent: legs.LEG_DESCENT_COLOUR || '#c026d3',
+      climb: legs.SAC_CLIMB_COLOUR || '#1d4ed8',
+      descent: legs.SAC_DESCENT_COLOUR || '#38bdf8',
     };
   }
 
@@ -198,9 +200,10 @@
     // past it, where the lines separate. Thinner than the open tour, which
     // is drawn over them in the same colours.
     const width = ['interpolate', ['linear'], ['zoom'], 9, 1.5, 12, 2.5, 15, 4];
-    // SNOW-1306: a way up in the climb's grey, dashed, a way down in the
-    // descent's solid fuchsia, as a saved route's legs and the open tour
-    // are, so up and down read apart at every zoom.
+    // SNOW-1306/1307: a way up in SAC's deep blue, a way down in sky blue,
+    // as the open tour's legs are, so up and down read apart at every zoom
+    // and a reader's own routes stand clear of them. Never dashed: a dash
+    // on an SAC map means "take extra care".
     const legs = legColours();
     map.addLayer({
       id: LINE,
@@ -208,12 +211,8 @@
       source: SOURCE,
       minzoom: minzoom,
       filter: ['all', isTour, ['!', ['get', 'down']]],
-      layout: { visibility: visibility, 'line-cap': 'butt', 'line-join': 'round' },
-      paint: {
-        'line-color': legs.climb,
-        'line-width': width,
-        'line-dasharray': [2, 1.5],
-      },
+      layout: { visibility: visibility, 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': legs.climb, 'line-width': width },
     }, before);
     map.addLayer({
       id: LINE_DOWN,

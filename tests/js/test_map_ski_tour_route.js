@@ -221,6 +221,19 @@ describe('the open SAC tour', () => {
     expect(sources.get('ski-tour-route-legs').data.features).toHaveLength(0);
   });
 
+  it('is drawn in SAC blue, the way up undashed (SNOW-1307)', () => {
+    styleLoaded = true;
+    window.pwaSkiTourRoute.open(TOUR);
+    const legs = self.pwaRouteLegsCore;
+    const climb = layers.get('ski-tour-route-leg-climb');
+
+    expect(climb.paint['line-color']).toBe(legs.SAC_CLIMB_COLOUR);
+    expect(climb.paint).not.toHaveProperty('line-dasharray');
+    expect(layers.get('ski-tour-route-leg-descent').paint['line-color'])
+      .toBe(legs.SAC_DESCENT_COLOUR);
+    closePanel();
+  });
+
   it('is redrawn while tiles load once its layers exist', () => {
     styleLoaded = false;
     window.pwaSkiTourRoute.open(TOUR);

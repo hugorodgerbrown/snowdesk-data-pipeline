@@ -46,6 +46,8 @@
  *
  *   LEG_CLIMB_COLOUR          — a climbing leg's line
  *   LEG_DESCENT_COLOUR        — a descending leg's line
+ *   SAC_CLIMB_COLOUR          — an SAC tour's way up, and its climbing legs
+ *   SAC_DESCENT_COLOUR        — an SAC tour's way down, and its descending legs
  *   legCollection(fc)         — one LineString per leg,
  *                               `{uuid | token, i, climbing}`
  *   transitionCollection(fc)  — one Point per transition,
@@ -76,6 +78,19 @@
    * `src/css/main.css`.
    */
   const LEG_DESCENT_COLOUR = '#c026d3';
+
+  /**
+   * An SAC tour's climbing colour, before it is saved (SNOW-1307). Mirrors
+   * `--color-sac-climb`. SAC's own blue, so a reader's routes stand out
+   * from the tours layer under them rather than drowning in it.
+   */
+  const SAC_CLIMB_COLOUR = '#1d4ed8';
+
+  /**
+   * An SAC tour's descending colour, before it is saved (SNOW-1307).
+   * Mirrors `--color-sac-descent`.
+   */
+  const SAC_DESCENT_COLOUR = '#38bdf8';
 
   /**
    * One leg as it arrives on the wire. Every field is optional because it
@@ -362,6 +377,8 @@
   self.pwaRouteLegsCore = Object.freeze({
     LEG_CLIMB_COLOUR: LEG_CLIMB_COLOUR,
     LEG_DESCENT_COLOUR: LEG_DESCENT_COLOUR,
+    SAC_CLIMB_COLOUR: SAC_CLIMB_COLOUR,
+    SAC_DESCENT_COLOUR: SAC_DESCENT_COLOUR,
     legCollection: legCollection,
     transitionCollection: transitionCollection,
     slopeSegmentCollection: slopeSegmentCollection,

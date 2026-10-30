@@ -1430,13 +1430,15 @@ def ski_tour_feature(request: HttpRequest, uuid: UUID) -> JsonResponse:
     if draft.slope_samples is None and not sample:
         identity["terrain_pending"] = True
     feature = _route_feature(draft, identity)
-    # SNOW-1304: a tour is one leg, a way up or a way down, drawn whole in
-    # that direction's colour, as its list row and its highlight are.
-    # Built from the geometry, not the detected legs: those need heights,
-    # and an unsampled tour has none.
+    # SNOW-1307: a tour splits into legs where the ground turns, as a
+    # route does (Hugo, 2026-10-30: "display up and down as a user route
+    # does"); the panel draws them in SAC's colours. Detecting legs needs
+    # heights, so a tour not yet sampled is the one leg its direction
+    # gives it (SNOW-1304) until the refill brings the terrain.
     props = feature["properties"]
-    legs = one_leg(feature["geometry"]["coordinates"], props.get("slope"), tour)
-    if legs:
+    if "legs" not in props and (
+        legs := one_leg(feature["geometry"]["coordinates"], props.get("slope"), tour)
+    ):
         props["legs"] = legs
     return JsonResponse({"feature": feature})
 

@@ -22,9 +22,11 @@ saving, the reader can rename it, share it or plan a trip with it like any
 other route, and later imports never change it.
 
 **A tour is chosen by its line (SNOW-1306).** Every tour is drawn as a
-saved route's legs are, at every zoom: a way up in the climb's dashed grey,
-a way down in the descent's solid fuchsia (two layers, `ski-tours-line` and
-`ski-tours-line-down`). So the reader can tell up from down before tapping
+way up or a way down at every zoom: a way up in SAC's deep blue, a way
+down in sky blue (two layers, `ski-tours-line` and `ski-tours-line-down`).
+Both are solid, told apart by colour alone (SNOW-1307): SAC's own legend draws a solid line for the itinerary, a dash
+for a leg needing extra care and a dot for one climbed on foot, so a dashed
+way up told an SAC reader something SAC never said. So the reader can tell up from down before tapping
 anything (Hugo, 29 Oct 2026: "it would help … if you could see a visible
 difference between ascents and descents, even when zoomed out"). A tap on
 a line opens the tour whose line passes nearest it
@@ -68,9 +70,9 @@ A way down now runs from its summit (SNOW-1306, below).
 **A tour is one leg, and a way down is what SAC calls one (SNOW-1304).**
 SAC publishes the ways up and the ways down to a summit separately, so a
 reader can climb by one and ski down another (Hugo, 2026-10-29). The open
-panel and the map draw each tour as one leg, in its direction's colour:
-up is dashed grey, down is solid fuchsia, the same as the
-tours layer draws it at rest (`one_leg`). Before this, the panel cut the line into
+panel and the map drew each tour as one leg, in its direction's colour
+(`one_leg`). SNOW-1307 kept that only as the stand-in for a tour with no
+heights yet; see "An SAC tour looks like SAC's" below. Before this, the panel cut the line into
 legs by the order of its points, and that order is no guide: SAC draws
 2,743 of its 2,941 lines from the valley to the summit, ways down
 included. A tour is a way down when SAC names it one in any of its
@@ -221,3 +223,19 @@ forecast" Location waits for a second, non-SAC source of places.
   SNOW-1284). The reader reached it from a summit at a scale they chose,
   and the original fit to each tour's own extent zoomed in and out on
   every pick.
+
+**An SAC tour looks like SAC's until it is saved (SNOW-1307).** With the
+tours layer on, tours drawn in a route's own grey and fuchsia drowned out
+the reader's routes (Hugo, 2026-10-30), and a tour opened in the panel
+showed no downhill stretches that appeared once it was saved. So a tour
+not yet saved splits into legs where the ground turns, as a route does
+(the detected `wire_legs`; `one_leg` only until the terrain arrives), and
+is drawn in SAC's colours: `--color-sac-climb` (deep blue) and
+`--color-sac-descent` (sky blue), mirrored as `SAC_CLIMB_COLOUR` /
+`SAC_DESCENT_COLOUR` in `route_legs_core.js`. The open tour's map line
+(`route_drawing_core` `colours`, `solidClimb`), its profile (the panel's
+`data-route-tour`) and the tours layer all use them. None of it is
+dashed: on SAC's maps a dash means "take extra care" and a dot "on foot".
+A reader's own route keeps its dashed grey climb and fuchsia descent, so
+the two never read as one thing. Saving turns the copy into an ordinary
+route in the route's colours.

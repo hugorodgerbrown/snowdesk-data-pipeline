@@ -120,6 +120,12 @@
    * @property {?Array<any>} [lineFilter] The flat line's filter; defaults
    *   to `flatFilter()`.
    * @property {Array<string>} [textFont] The transition labels' font.
+   * @property {{climb: string, descent: string}} [colours] The leg
+   *   colours; a route's own when omitted. An SAC tour not yet saved
+   *   passes SAC's (SNOW-1307).
+   * @property {boolean} [solidClimb] True draws a climb solid, without
+   *   its dash: an SAC tour, because a dash on SAC's own maps means a leg
+   *   needing extra care (SNOW-1307).
    */
 
   /**
@@ -138,9 +144,12 @@
    * `--color-route-rail-descent`; the fallback is only for a page where
    * the core has not loaded, where no leg is drawn and nothing reads them.
    *
+   * @param {{climb: string, descent: string}} [override] Colours that
+   *   win over the route's own (LayerOptions.colours).
    * @returns {{climb: string, descent: string}}
    */
-  function legColours() {
+  function legColours(override) {
+    if (override) return override;
     const core = self.pwaRouteLegsCore || {};
     return {
       climb: core.LEG_CLIMB_COLOUR || '#64748b',
@@ -272,7 +281,7 @@
     const p = options.prefix;
     const s = options.sources;
     const flat = flatFilter();
-    const colours = legColours();
+    const colours = legColours(options.colours);
     const slopeCore = self.pwaRouteSlopeCore;
     const legWidth = ['interpolate', ['linear'], ['zoom'], 6, 1.5, 12, 3.2, 16, 5.5];
     const layers = [
@@ -313,15 +322,20 @@
         type: 'line',
         source: s.legs,
         filter: ['==', ['get', 'climbing'], true],
-        layout: layoutFor(options, { 'line-cap': 'butt', 'line-join': 'round' }),
-        paint: {
-          'line-color': colours.climb,
-          'line-opacity': legCoreOpacity(1),
-          'line-width': legWidth,
+        layout: layoutFor(options, {
+          'line-cap': options.solidClimb ? 'round' : 'butt',
+          'line-join': 'round',
+        }),
+        paint: Object.assign(
+          {
+            'line-color': colours.climb,
+            'line-opacity': legCoreOpacity(1),
+            'line-width': legWidth,
+          },
           // In line-widths, so the dash keeps its proportions as the line
           // thickens with zoom.
-          'line-dasharray': [2, 1.5],
-        },
+          options.solidClimb ? {} : { 'line-dasharray': [2, 1.5] },
+        ),
       },
       {
         id: p + '-leg-descent',
@@ -376,7 +390,7 @@
   function markLayers(options) {
     const p = options.prefix;
     const s = options.sources;
-    const colours = legColours();
+    const colours = legColours(options.colours);
     return [
       {
         id: p + '-transitions',
@@ -505,9 +519,9 @@
    *
    * @param {any} map A MapLibre map.
    * @param {?FeatureCollection} collection The routes to draw.
-   * @param {{prefix: string, textFont?: Array<string>}} options
+   * @param {{prefix: string, textFont?: Array<string>, colours?: {climb: string, descent: string}, solidClimb?: boolean}} options
    *   `textFont` is the transition labels' font; the style's own when
-   *   omitted.
+   *   omitted. `colours` and `solidClimb` as LayerOptions.
    * @returns {SourceIds}
    */
   function install(map, collection, options) {
@@ -522,6 +536,8 @@
       prefix: options.prefix,
       sources: sources,
       textFont: options.textFont || styleTextFont(map.getStyle ? map.getStyle() : null),
+      colours: options.colours,
+      solidClimb: options.solidClimb,
     };
     for (const layer of lineLayers(layerOptions).concat(markLayers(layerOptions))) {
       map.addLayer(layer);
