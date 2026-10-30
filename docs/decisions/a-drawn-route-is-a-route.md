@@ -94,14 +94,22 @@ anyone.
 - Saving works offline (SNOW-1262): the same save goes through the
   mutation queue under an Idempotency-Key the draft is tagged with, so a
   replay never makes a second route. See docs/mutation-queue.md.
-- A leg can follow swisstopo's ski-touring network (SNOW-1277). From z12
-  draw mode loads `/api/ski-network.geojson` for the view and draws it,
-  followed or not (SNOW-1285). Since SNOW-1319 it is a solid amber line
-  on a white halo while following, and thin and faint when not
-  (`route_draw_core.js` `networkPaint`). The faint dark shadow it was
-  before vanished among the winter basemap's own black paths (Hugo,
-  30 Oct 2026: "It's only by seeing the snap-to circle that you can
-  tell"). Amber is used by nothing else in draw mode. While following, a tap
+- A leg can follow swisstopo's ski-touring network (SNOW-1277). Draw mode
+  draws it while "Snap to known ski routes" is on and hides it when that is off
+  (SNOW-1322; Hugo, 30 Oct 2026: "the Swisstopo routes should appear at
+  the same zoom as the SAC. And if the user toggles the snap option they
+  should appear"). From z9, where the SAC tours start, it draws the whole
+  network thinned (`/api/ski-network.geojson?overview=1`,
+  `network_overview`, fetched once), thin and faint with no halo. From
+  z12 it loads the full-detail lines for the view (`?bbox=`), and those
+  alone are snapped to, as a 24 px reach further out is over a
+  kilometre. There the line is solid amber on a white halo (SNOW-1319),
+  so it pops where snapping starts (Hugo: "we should reduce the opacity of
+  the network at 9-11, so it pops when you get to 12";
+  `route_draw_core.js` `networkMode`, `networkPaint`). The faint dark
+  shadow it was before SNOW-1319 vanished among the winter basemap's own
+  black paths (Hugo, 30 Oct 2026: "It's only by seeing the snap-to circle
+  that you can tell"). Amber is used by nothing else in draw mode. While following, a tap
   within 24 px of a line snaps to it. When the last point is on the
   network too, the leg is the shortest path along it
   (`static/js/ski_snap_core.js`, Dijkstra on the device, with no server
@@ -110,6 +118,6 @@ anyone.
   `routes:draw_preview`, `routes:create_drawn` and the GPX keep their
   contracts. The draft also stores `taps`, the index of each tap's last
   point, so Undo takes back a whole leg and the map marks taps rather
-  than every vertex. "Follow ski routes" turns this off on the device
+  than every vertex. "Snap to known ski routes" (named "Follow ski routes" until SNOW-1322; Hugo, 30 Oct 2026) turns this off on the device
   (`snowdesk.route-draw-follow`). `direction` and `access` are ignored,
   and snowshoe-only segments are neither drawn nor snapped to.

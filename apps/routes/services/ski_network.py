@@ -24,6 +24,9 @@ apply them, with the same function:
       starts; None before the first one.
   bbox_of(geometry)
       A GeoJSON line's ``(west, south, east, north)``.
+  network_overview()
+      Every skiable segment as a thinned line, for draw mode at z9-z11
+      (SNOW-1322), cached until a sync changes the network.
 """
 
 from __future__ import annotations
@@ -35,8 +38,9 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
+from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import Count, Max
 from django.utils.dateparse import parse_datetime
 
 from apps.ingest.public import (
@@ -48,6 +52,7 @@ from apps.ingest.public import (
     serialise_source_ski_tour,
 )
 from apps.routes.models import SkiSegment, SkiTour
+from apps.routes.services.ski_tours import overview_geometry
 from apps.routes.services.track_render import cleared_terrain
 
 logger = logging.getLogger(__name__)
@@ -80,6 +85,11 @@ _SERIALISERS: dict[str, Callable[[Any], dict[str, Any]]] = {
 
 # How many service rows the host's own apply reads at a time.
 APPLY_CHUNK = 500
+
+# SNOW-1322: the whole network, thinned as the tours overview is, for draw
+# mode zoomed out past the per-view load. ~3.1 MB, ~0.6 MB gzipped.
+_OVERVIEW_CACHE_KEY = "routes:ski-network-overview:v1:{count}:{stamp}"
+_OVERVIEW_CACHE_SECONDS = 7 * 24 * 3600
 
 
 class SkiItemError(ValueError):
@@ -337,3 +347,45 @@ def apply_from_service(*, commit: bool) -> dict[str, Counter[str]]:
                 break
         result[kind] = counts
     return result
+
+
+def _network_stamp() -> str:
+    """Return the overview's cache key, which changes when the network does.
+
+    It carries the segments' count and newest ``source_updated_at``, not
+    ``updated_at``: ``apply_ski_items`` rewrites a row with
+    ``QuerySet.update()``, which leaves ``auto_now`` where it was.
+    """
+    stamp = SkiSegment.objects.aggregate(
+        count=Count("id"), newest=Max("source_updated_at")
+    )
+    return _OVERVIEW_CACHE_KEY.format(
+        count=stamp["count"],
+        stamp=stamp["newest"].timestamp() if stamp["newest"] else 0,
+    )
+
+
+def network_overview() -> list[dict[str, Any]]:
+    """Return every skiable segment as a thinned line Feature, cached.
+
+    SNOW-1322. What draw mode shows from z9, where the SAC tours start,
+    until z12, where the per-view load and snapping take over. Only drawn,
+    never snapped to, so a Feature carries no id and no properties.
+
+    Returns:
+        The Features, in segment id order.
+
+    """
+    key = _network_stamp()
+    cached: list[dict[str, Any]] | None = cache.get(key)
+    if cached is None:
+        cached = []
+        rows = SkiSegment.objects.skiable().order_by("segment_id").only("geometry")
+        for row in rows.iterator(chunk_size=APPLY_CHUNK):
+            geometry = overview_geometry(row.geometry)
+            if geometry is not None:
+                cached.append(
+                    {"type": "Feature", "geometry": geometry, "properties": {}}
+                )
+        cache.set(key, cached, _OVERVIEW_CACHE_SECONDS)
+    return cached

@@ -141,6 +141,7 @@ from apps.regions.services.area_content import (
 from apps.regions.services.basemap_tiles import blob_summary
 from apps.regions.services.resort_pin import set_resort_pin
 from apps.routes.models import SkiSegment, SkiTour
+from apps.routes.services.ski_network import network_overview
 from apps.routes.services.ski_tours import (
     Summit,
     drawn_tours,
@@ -1435,6 +1436,11 @@ def ski_network_geojson(request: HttpRequest) -> HttpResponse:
                        "geometry": {"type": "MultiLineString", ...},
                        "properties": {"segment_id": 123}}, ...]}
 
+    ``?overview=1`` instead of a bbox answers the whole network at once
+    (SNOW-1322), for draw mode at z9-z11: every line thinned as the tours
+    overview is (``network_overview``), with no id and no properties,
+    because it is drawn and never snapped to.
+
     Reference data, the same for everyone and changed about once a year,
     so it takes ``_geojson_response``'s ETag and revalidatable policy. The
     licence is swisstopo's OGD; the map credits "© swisstopo".
@@ -1447,6 +1453,13 @@ def ski_network_geojson(request: HttpRequest) -> HttpResponse:
         missing, malformed or wider than the cap.
 
     """
+    if request.GET.get("overview") == "1":
+        overview = network_overview()
+        return _geojson_response(
+            request,
+            {"type": "FeatureCollection", "truncated": False, "features": overview},
+            empty=not overview,
+        )
     bbox = _parse_bbox_param(request.GET.get("bbox", ""))
     if bbox is None:
         return JsonResponse({"error": "invalid_bbox"}, status=400)

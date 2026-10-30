@@ -339,27 +339,48 @@ describe('forgetDraftFor (SNOW-1262)', () => {
   });
 });
 
-describe('networkPaint', () => {
-  it('draws the network as a solid amber line on a halo while following', () => {
-    expect(core.networkPaint(true)).toEqual({
-      core: { 'line-color': core.NETWORK_COLOUR, 'line-width': 2.5, 'line-opacity': 1 },
-      halo: { 'line-color': '#ffffff', 'line-width': 5, 'line-opacity': 0.9 },
+describe('networkMode', () => {
+  it('draws nothing while following is off, at any zoom', () => {
+    [8, 9, 11.9, 12, 16].forEach((zoom) => {
+      expect(core.networkMode(zoom, false)).toBe('none');
     });
   });
 
-  it('quietens the network and drops the halo when not following', () => {
-    expect(core.networkPaint(false)).toEqual({
-      core: { 'line-color': core.NETWORK_COLOUR, 'line-width': 1.5, 'line-opacity': 0.35 },
-      halo: { 'line-color': '#ffffff', 'line-width': 5, 'line-opacity': 0 },
+  it('draws nothing below z9, the overview from z9 and the detail from z12', () => {
+    expect(core.networkMode(8, true)).toBe('none');
+    expect(core.networkMode(8.99, true)).toBe('none');
+    expect(core.networkMode(9, true)).toBe('overview');
+    expect(core.networkMode(11.9, true)).toBe('overview');
+    expect(core.networkMode(12, true)).toBe('detail');
+    expect(core.networkMode(15, true)).toBe('detail');
+  });
+
+  it('starts where the SAC tours do and snaps where it did', () => {
+    expect(core.NETWORK_OVERVIEW_MINZOOM).toBe(9);
+    expect(core.NETWORK_DETAIL_MINZOOM).toBe(12);
+  });
+});
+
+describe('networkPaint', () => {
+  it('is faint with no halo below z12 and an amber line on a halo from it', () => {
+    expect(core.networkPaint()).toEqual({
+      core: {
+        'line-color': core.NETWORK_COLOUR,
+        'line-width': ['step', ['zoom'], 1.5, 12, 2.5],
+        'line-opacity': ['step', ['zoom'], 0.6, 12, 1],
+      },
+      halo: {
+        'line-color': '#ffffff',
+        'line-width': 5,
+        'line-opacity': ['step', ['zoom'], 0, 12, 0.9],
+      },
     });
   });
 
   it('never dashes the network, so it cannot read as a basemap trail', () => {
-    [true, false].forEach((follow) => {
-      const paint = core.networkPaint(follow);
-      expect(paint.core).not.toHaveProperty('line-dasharray');
-      expect(paint.halo).not.toHaveProperty('line-dasharray');
-    });
+    const paint = core.networkPaint();
+    expect(paint.core).not.toHaveProperty('line-dasharray');
+    expect(paint.halo).not.toHaveProperty('line-dasharray');
   });
 
   it('gives the network a colour the draft does not use', () => {

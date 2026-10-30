@@ -23,7 +23,7 @@ phone first):
 FOLLOWING THE SKI ROUTES (SNOW-1277). From z12 the panel draws swisstopo's
 ski-touring network (/api/ski-network.geojson) as a faint shadow and a tap
 near a line snaps to it, the leg routed along the network when the last
-point is on it too; the "Follow ski routes" switch turns that off, and
+point is on it too; the "Snap to known ski routes" switch turns that off, and
 then the waypoints are joined by straight lines. After each change the waypoints are
 posted to routes:draw_preview, which samples the terrain under the line and
 answers with the Feature the routes layer itself draws — so the legs, the
@@ -134,7 +134,7 @@ Context expected:
             hidden
             class="hover-affordance group flex w-full items-center justify-between gap-3 rounded-tag px-2 py-1 text-left text-sm text-text-1"
         >
-            <span>{% trans "Follow ski routes" %}</span>
+            <span>{% trans "Snap to known ski routes" %}</span>
             {% include "includes/_switch_track.html" only %}
         </button>
         <div class="flex gap-2">
