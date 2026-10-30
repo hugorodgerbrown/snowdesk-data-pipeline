@@ -52,7 +52,12 @@
  * acknowledgements:
  *
  *   'none'     — no draft;
- *   'foreign'  — drawn under another account: discard it;
+ *   'foreign'  — drawn under ANOTHER SIGNED-IN account: discard it;
+ *   'hidden'   — stamped with an account, and no account is signed in
+ *                (signed out, session expired) or it is not known yet
+ *                (IndexedDB not ready): keep it untouched, but neither
+ *                show it nor let it be edited — it is someone's, and that
+ *                someone may be back;
  *   'landed'   — its save was acknowledged: the route exists, clear it;
  *   'queued'   — its save is still in the queue: show it, not editable;
  *   'failed'   — its save was refused for good: untag it (the key moves to
@@ -401,7 +406,9 @@
     return {
       method: 'POST',
       url: url,
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+      // Accept: JSON, so a refusal Django answers outside the view (a CSRF
+      // failure) says which it is in a body the queue can keep.
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRFToken': csrf },
       body: JSON.stringify({ points: points, name: name }),
       idempotencyKey: key,
       kind: ROUTE_CREATE_KIND,
@@ -415,16 +422,21 @@
    * A draft with no account on it — drawn signed out, or stored before
    * SNOW-1262 — belongs to whoever is signed in now, so a drawer who signs
    * in to save keeps the line they drew. A draft stamped with an account is
-   * never shown to anyone else, signed in or not.
+   * never shown to anyone else, signed in or not — but it is DESTROYED only
+   * when a different account is signed in. Signed out, an expired session
+   * or a principal not yet known leaves it stored and hidden ('hidden'):
+   * a session that lapsed must not cost the owner the line they drew.
    *
    * @param {?{key?: ?string, principal?: ?string}} draft A parsed draft.
-   * @param {?string} principal The account signed in now (null: none).
+   * @param {?string|undefined} principal The account signed in now: null
+   *   for none, undefined when it cannot be known yet.
    * @param {?{status: string}} row The queued row with the draft's key.
    * @param {?Object} ack The acknowledgement for the draft's key.
-   * @returns {'none'|'foreign'|'landed'|'queued'|'failed'|'unsent'|'draft'}
+   * @returns {'none'|'foreign'|'hidden'|'landed'|'queued'|'failed'|'unsent'|'draft'}
    */
   function draftState(draft, principal, row, ack) {
     if (!draft) return 'none';
+    if (draft.principal && !principal) return 'hidden';
     if (draft.principal && draft.principal !== principal) return 'foreign';
     if (!draft.key) return 'draft';
     if (ack) return 'landed';

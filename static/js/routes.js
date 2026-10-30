@@ -190,6 +190,7 @@
     'failed-limit': "You've reached your saved-route limit. Delete one, then edit this to save it.",
     'failed-conflict': 'This clashed with an earlier save. Edit it and save it again.',
     'failed-signed-out': 'You were signed out when it synced. Edit it to save it again.',
+    'failed-session': 'Your session had expired when it synced. Edit it to save it again.',
     'failed-unavailable': "Saving a drawn route isn't available right now.",
     'failed-other': "This route couldn't be saved.",
     'discard-confirm': 'Discard %(name)s? The line you drew will be lost.',
@@ -953,13 +954,15 @@
     const status = row.last_status;
     if (status === 400) return STRINGS['failed-invalid'];
     if (status === 409) {
-      // The cap answers with its own code; a bare 409 is the server's
-      // Idempotency-Key guard (core/idempotency.py) — the same key
-      // re-sent with a different body.
+      // The cap answers with its own code; any other 409 is the server's
+      // Idempotency-Key guard (core/idempotency.py) — `idempotency_key_reused`,
+      // the same key re-sent with a different body. Its in-flight 409 is
+      // retried by the queue and never reaches a failed row.
       return row.last_error === 'route_limit_reached'
         ? STRINGS['failed-limit']
         : STRINGS['failed-conflict'];
     }
+    if (status === 403 && row.last_error === 'csrf_failed') return STRINGS['failed-session'];
     if (status === 401 || status === 403) return STRINGS['failed-signed-out'];
     if (status === 404) return STRINGS['failed-unavailable'];
     return STRINGS['failed-other'];
@@ -1031,9 +1034,20 @@
     const container = /** @type {HTMLElement|null} */ (sheet.querySelector('[data-routes-pending]'));
     const queue = window.pwaMutationQueue;
     if (!container) return;
-    const rows = UPLOAD_ELIGIBLE && queue && queue.list
+    const listed = UPLOAD_ELIGIBLE && queue && queue.list
       ? await queue.list({ kind: ROUTE_CREATE_KIND })
       : [];
+    // SNOW-1262: a refused row whose key was acknowledged anyway landed —
+    // another drain replayed it. It is a route now, not a "Couldn't sync",
+    // and offering Edit (a new key) would save it twice: clear it instead.
+    const rows = [];
+    for (const row of listed) {
+      if (row.status === 'failed' && queue.acknowledged && (await queue.acknowledged(row.idempotency_key))) {
+        queue.discard(row.idempotency_key).catch(function () {});
+        continue;
+      }
+      rows.push(row);
+    }
     // Newest first, like the server's own list.
     const built = rows
       .slice()

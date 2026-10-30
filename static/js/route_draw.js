@@ -628,9 +628,32 @@
   // ---------------------------------------------------------------------------
 
   /** @returns {?string} The account signed in now, or null (SNOW-1262). */
+  /**
+   * The account signed in now (SNOW-1262): null for none, and UNDEFINED
+   * while it cannot be known — no queue, or IndexedDB missing or awaiting a
+   * reset. The difference matters: a stamped draft is destroyed only under
+   * a different, KNOWN account.
+   *
+   * @returns {?string|undefined}
+   */
   function principal() {
     const queue = window.pwaMutationQueue;
-    return queue && queue.principal ? queue.principal() : null;
+    const db = window.pwaDb;
+    if (!queue || !queue.principal || typeof db !== 'object' || !db || db.isResetRequired()) {
+      return undefined;
+    }
+    return queue.principal();
+  }
+
+  /**
+   * Whether the stored draft is someone's while no account is known — and
+   * so must be neither shown, overwritten nor removed (SNOW-1262).
+   *
+   * @returns {boolean}
+   */
+  function storedIsHidden() {
+    const stored = readDraft();
+    return Boolean(stored && core.draftState(stored, principal(), null, null) === 'hidden');
   }
 
   /**
@@ -638,6 +661,9 @@
    * with its save's key, a refused save's key and the account (SNOW-1262).
    */
   function storeDraft() {
+    // A hidden draft is another session's line: this visit's drawing lives
+    // in memory rather than replacing it.
+    if (storedIsHidden()) return;
     try {
       if (state.points.length === 0) localStorage.removeItem(core.DRAFT_KEY);
       else {
@@ -647,7 +673,7 @@
             key: state.key,
             sent: state.key ? state.sent : null,
             failed: state.failed,
-            principal: principal(),
+            principal: principal() || null,
           }),
         );
       }
@@ -679,7 +705,8 @@
   /** Read back a stored draft into state, if there is one. */
   function restoreDraft() {
     const draft = readDraft();
-    const mine = draft && core.draftState(draft, principal(), null, null) !== 'foreign';
+    const verdict = draft ? core.draftState(draft, principal(), null, null) : 'none';
+    const mine = verdict !== 'foreign' && verdict !== 'hidden';
     state.points = mine && draft ? draft.points : [];
     state.taps = mine && draft ? draft.taps : [];
     state.name = mine && draft ? draft.name : '';
@@ -713,11 +740,16 @@
    */
   async function reconcileDraft() {
     const queue = window.pwaMutationQueue;
+    // Nothing is settled until the account is known: a draft destroyed or
+    // untagged on a guess is the drawer's work lost.
+    if (principal() === undefined) return;
     const draft = readDraft();
     if (!draft) {
       state.queued = false;
       return;
     }
+    // Someone's draft, no one signed in: leave it exactly as it is.
+    if (core.draftState(draft, principal(), null, null) === 'hidden') return;
     let row = null;
     let ack = null;
     if (draft.key && queue && queue.list) {
@@ -748,7 +780,7 @@
           core.serialiseDraft(draft.points, draft.name, draft.taps, {
             key: null,
             failed: draft.key,
-            principal: draft.principal || principal(),
+            principal: draft.principal || principal() || null,
           }),
         );
       } catch (_err) {
@@ -1007,6 +1039,16 @@
   async function edit(key) {
     const queue = window.pwaMutationQueue;
     if (!queue || !key) return;
+    // Before anything mints a new key: did this save land after all? A
+    // refused row can sit beside an acknowledgement for its key (another
+    // drain replayed it), and Edit's new key would then save it twice.
+    if (await queue.acknowledged(key)) {
+      await queue.discard(key);
+      const landed = readDraft();
+      if (landed && (landed.failed === key || landed.key === key)) resetDraft();
+      window.MapSheet.toast(STRINGS.saved);
+      return;
+    }
     const rows = await queue.list({ kind: core.ROUTE_CREATE_KIND });
     const row = rows.find(function (r) {
       return r.idempotency_key === key;

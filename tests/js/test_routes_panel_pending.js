@@ -158,6 +158,8 @@ describe("a route that couldn't sync", () => {
     [409, 'route_limit_reached', "You've reached your saved-route limit. Delete one, then edit this to save it."],
     [409, null, 'This clashed with an earlier save. Edit it and save it again.'],
     [403, 'authentication_required', 'You were signed out when it synced. Edit it to save it again.'],
+    [403, 'csrf_failed', 'Your session had expired when it synced. Edit it to save it again.'],
+    [409, 'idempotency_key_reused', 'This clashed with an earlier save. Edit it and save it again.'],
     [404, null, "Saving a drawn route isn't available right now."],
     [null, null, "This route couldn't be saved."],
   ])('a %s (%s) gives its own reason', async (status, error, reason) => {
@@ -168,6 +170,18 @@ describe("a route that couldn't sync", () => {
     const [li] = pendingRows();
     expect(li.querySelector('[data-row-meta]').textContent).toBe(reason);
     expect(li.querySelector('[data-route-failed-badge]')).not.toBeNull();
+  });
+
+  it('is cleared, not offered for Edit, when its key was acknowledged after all', async () => {
+    queued = [row({ status: 'failed', last_status: 409, last_error: 'idempotency_key_reused' })];
+    window.pwaMutationQueue.acknowledged = vi.fn(async () => ({ uuid: 'u' }));
+    window.pwaMutationQueue.discard.mockClear();
+
+    await openPanel();
+
+    expect(pendingRows()).toHaveLength(0);
+    expect(window.pwaMutationQueue.discard).toHaveBeenCalledWith('k-1');
+    delete window.pwaMutationQueue.acknowledged;
   });
 
   it('gives each row its own menu ids', async () => {

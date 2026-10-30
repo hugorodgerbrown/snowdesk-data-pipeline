@@ -229,7 +229,7 @@ describe('the save as a queued operation (SNOW-1262)', () => {
     expect(op).toEqual({
       method: 'POST',
       url: '/routes/drawn/',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': 'csrf' },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRFToken': 'csrf' },
       body: JSON.stringify({ points: [[7, 46], [7, 46.001]], name: 'Mont Fort' }),
       idempotencyKey: 'k-1',
       kind: core.ROUTE_CREATE_KIND,
@@ -257,9 +257,13 @@ describe('what a stored draft is now (SNOW-1262)', () => {
     expect(core.draftState(null, 'me', null, null)).toBe('none');
   });
 
-  it("is another account's when stamped for someone else, signed in or not", () => {
+  it("is another account's only when a DIFFERENT account is signed in", () => {
     expect(core.draftState(tagged, 'someone-else', null, null)).toBe('foreign');
-    expect(core.draftState(tagged, null, null, null)).toBe('foreign');
+  });
+
+  it('is hidden, not discarded, signed out or before the account is known', () => {
+    expect(core.draftState(tagged, null, null, null)).toBe('hidden');
+    expect(core.draftState(tagged, undefined, null, { uuid: 'u' })).toBe('hidden');
   });
 
   it("is the signed-in account's when stamped for no one", () => {

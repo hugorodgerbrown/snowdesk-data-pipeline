@@ -318,6 +318,22 @@ describe('a save refused for good', () => {
     expect(draft().failed).toBeUndefined();
   });
 
+  it('Edit never mints a new key for a save that landed after all', async () => {
+    const key = await refused();
+    // Another drain replayed it: its acknowledgement sits beside the row.
+    await window.pwaDb.put('meta:app', {
+      key: 'mutations.ack:' + key,
+      value: { kind: 'route-create', uuid: 'u-landed', at: Date.now() },
+    });
+
+    await window.pwaRouteDraw.edit(key);
+
+    expect(await rows()).toEqual([]);
+    expect(draft()).toBe(null);
+    expect(window.pwaRouteDraw.isActive()).toBe(false);
+    expect(toast).toHaveBeenCalledWith('Route saved.');
+  });
+
   it('Discard throws away the row and the draft', async () => {
     const key = await refused();
 
