@@ -147,6 +147,29 @@ describe('classifySync — the SNOW-965 JSON classes', () => {
     expect(classify('/api/weather/Ab3dE_fGh1J/detail/?date=2026-01-06')).toBe('public-json');
   });
 
+  it("classifies the map's region sheet as public-partial (SNOW-1312)", () => {
+    expect(classify('/partials/region-sheet/ch-4115/?d=2026-01-06&r=1')).toBe('public-partial');
+    expect(classify('/partials/region-sheet/AT-07-14-01/')).toBe('public-partial');
+  });
+
+  it("classifies a saved pin's place sheet as private-partial (SNOW-1313)", () => {
+    const uuid = '2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11';
+    expect(classify(`/partials/place-sheet/favourite/${uuid}/?d=2026-10-30`)).toBe('private-partial');
+    expect(classify(`/partials/place-sheet/favourite/${uuid.toUpperCase()}/`)).toBe('private-partial');
+    expect(classify(`/partials/place-sheet/favourite/${uuid}/`, 'POST')).toBe('network');
+    expect(classify(`/partials/place-sheet/favourite/${uuid}/extra/`)).toBe('network');
+  });
+
+  it('leaves the resort place sheet and every other fragment network-only (SNOW-1312)', () => {
+    // A resort's place sheet carries a per-reader Save star the server
+    // renders; SNOW-1313 keeps only the favourite form.
+    expect(classify('/partials/place-sheet/resort/verbier/?d=2026-01-06')).toBe('network');
+    expect(classify('/partials/place-sheet/abc123/?d=2026-01-06')).toBe('network');
+    expect(classify('/partials/region-sheet/wp-login/')).toBe('network');
+    expect(classify('/partials/region-sheet/ch-4115/extra/')).toBe('network');
+    expect(classify('/partials/region-sheet/ch-4115/', 'POST')).toBe('network');
+  });
+
   it('leaves the share-token route, area-items and the legacy sheet alone', () => {
     // The token route is no-store and per-recipient; area-items is private
     // and never cached; the integer sheet is a 301.

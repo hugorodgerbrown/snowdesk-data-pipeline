@@ -2522,9 +2522,22 @@
    * @param {?object} geojson The routes FeatureCollection.
    * @returns {?object} The payload for the `routes` source.
    */
+  // SNOW-1262: routes drawn offline and still waiting in the mutation
+  // queue, as plain LineStrings flagged `queued`. Merged into the routes
+  // source (routesSourceData), never into routesGeojsonCache or the offline
+  // cache: the server has not got them, and the next routes:geojson read
+  // replaces whatever the cache holds. Filled by refreshQueuedRoutes.
+  let queuedRouteFeatures = [];
+
   const routesSourceData = (geojson) => {
     const core = self.pwaRouteLegsCore;
-    return core && core.withDrawableLegs ? core.withDrawableLegs(geojson) : geojson;
+    // SNOW-1262: a queued route has no legs and no slope record, so the
+    // shared drawing draws it as the flat line — the plain line the user
+    // drew, until the replay lands and the feed's own copy replaces it.
+    const merged = queuedRouteFeatures.length
+      ? { ...geojson, features: [...(geojson.features || []), ...queuedRouteFeatures] }
+      : geojson;
+    return core && core.withDrawableLegs ? core.withDrawableLegs(merged) : merged;
   };
 
   // Removes the map's subscription to the open route's cursor.
@@ -6282,7 +6295,13 @@
         installRoutesLayer(data);
       } else {
         const cached = await window.pwaMapOverlayCache?.getOverlay('routes');
-        if (!cached) {
+        if (!cached && queuedRouteFeatures.length) {
+          // SNOW-1262: nothing cached, but a route drawn offline is waiting
+          // to sync — draw that much rather than nothing. The toast still
+          // says the saved routes could not be read.
+          revealOfflineToast('map-offline-toast-routes');
+          installRoutesLayer({ type: 'FeatureCollection', features: [] });
+        } else if (!cached) {
           revealOfflineToast('map-offline-toast-routes');
           // Nothing will be installed, so the deep link's one-shot listener
           // is waiting for an event that can no longer happen. Release it
@@ -6290,8 +6309,9 @@
           // rest of the session.
           dropRouteShareSourceDataListener();
           return;
+        } else {
+          installRoutesLayer(cached);
         }
-        installRoutesLayer(cached);
       }
     }
     overlayLoaded[key] = true;
@@ -7577,6 +7597,42 @@
       }
     }
   });
+  /**
+   * Re-read the routes drawn offline from the mutation queue and redraw
+   * the routes source with them (SNOW-1262). Only those still waiting: a
+   * save the server refused is listed in the routes panel with its reason,
+   * and drawing it as a route would claim it exists.
+   *
+   * @returns {Promise<void>}
+   */
+  const refreshQueuedRoutes = async () => {
+    const queue = window.pwaMutationQueue;
+    if (!queue || !queue.list) return;
+    const rows = await queue.list({ kind: 'route-create' });
+    const features = [];
+    for (const row of rows) {
+      if (row.status === 'failed') continue;
+      let body = null;
+      try {
+        body = JSON.parse(row.body);
+      } catch (_err) {
+        body = null;
+      }
+      if (!body || !Array.isArray(body.points) || body.points.length < 2) continue;
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: body.points },
+        properties: { queued: true, queued_key: row.idempotency_key, name: body.name || '' },
+      });
+    }
+    queuedRouteFeatures = features;
+    if (routesGeojsonCache) map.getSource('routes')?.setData(routesSourceData(routesGeojsonCache));
+  };
+  refreshQueuedRoutes().catch(() => {});
+  document.addEventListener('pwa:mutation-queue-changed', () => {
+    refreshQueuedRoutes().catch(() => {});
+  });
+
   document.addEventListener('snowdesk:reports-changed', () => {
     refreshPanelOverlay('community_reports');
   });
@@ -9331,7 +9387,10 @@
       // line layers are queried in one call (SNOW-764) rather than in the
       // exclusion array's priority order, precisely so that "drawn last"
       // decides.
-      return map.queryRenderedFeatures(box, { layers: lineLayers })[0] || null;
+      // SNOW-1262: a route still waiting to sync is drawn, not opened — it
+      // has no uuid for the route panel to read — so a tap passes through it.
+      return map.queryRenderedFeatures(box, { layers: lineLayers })
+        .find((f) => !(f.properties && f.properties.queued)) || null;
     };
 
     // SNOW-419: tapping a cluster zooms in just far enough to break it apart

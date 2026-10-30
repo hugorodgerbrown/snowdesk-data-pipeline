@@ -36,6 +36,18 @@
  *     → network-first, kept unstamped, served offline on an exact url
  *     match only (_publicJsonNetworkFirst).
  *
+ *   - The map's region sheet    (SNOW-1312: /partials/region-sheet/<id>/)
+ *     → network-first, kept unstamped under path + ``d`` alone, served
+ *     offline on that key; a miss is a 504 carrying
+ *     ``X-SW-Offline-Miss: 1`` (_publicPartialNetworkFirst).
+ *
+ *   - A saved pin's place sheet (SNOW-1313:
+ *     /partials/place-sheet/favourite/<uuid>/)
+ *     → network-first, kept under the region sheet's path + ``d`` key,
+ *     stamped with the principal the answer names, served offline to that
+ *     principal only; a miss is the same offline-miss 504
+ *     (_privatePartialNetworkFirst).
+ *
  *   - Everything else          (most /api/* endpoints, and third-party
  *                                origins not registered as the active
  *                                basemap)
@@ -217,6 +229,14 @@
  * ``_processRow()`` is what makes the property hold whenever a tab is
  * open; SNOW-463 is the server-side backstop that makes it hold
  * regardless.
+ *
+ * SNOW-1262 adds three records to the same pass, so a route drawn offline
+ * resolves whether or not a tab sees it replay: a row with a ``kind`` that
+ * succeeds leaves an acknowledgement in ``meta:app``
+ * (``mutations.ack:<key>``) before it is deleted; every failed or
+ * rescheduled row keeps the response's ``last_status`` / ``last_error``;
+ * and a ``kind`` row the guard above discards leaves
+ * ``mutations.discard-notice`` for the next page load to show.
  *
  * i18n: this worker never renders UI, so there are no translatable
  * strings.
@@ -1200,6 +1220,17 @@ const STATIC_PATHS = new Set([
 // both paths over the same urls).
 const PRIVATE_JSON_PATH = /^\/trips\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/route\.geojson$/i;
 const PUBLIC_JSON_PATH = /^\/api\/weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail\/$/;
+// SNOW-1312: the map's region sheet — the third copy-pair, held to the
+// core's by the same tests.
+const PUBLIC_PARTIAL_PATH = /^\/partials\/region-sheet\/[a-z]{2}-(?=[a-z0-9-]*\d)[a-z0-9]+(?:-[a-z0-9]+)*\/$/i;
+// SNOW-1313: a saved pin's place sheet — the fourth copy-pair, held to the
+// core's by the same tests. The resort place sheet does not match.
+const PRIVATE_PARTIAL_PATH = /^\/partials\/place-sheet\/favourite\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/$/i;
+
+// SNOW-1312: the header a region-sheet miss carries, so the sheet can say
+// "this day isn't downloaded" rather than "unavailable". Read by
+// map_region_sheet.js; the other copy of this literal.
+const OFFLINE_MISS_HEADER = 'X-SW-Offline-Miss';
 
 // SNOW-965: what `_warmCache` hands `_classifySync` to ask a url's class.
 // A plain same-origin GET — not a navigation, whatever the url is.
@@ -1520,7 +1551,7 @@ function _debugLogAs(src, evt, detail) {
  * @param {Request} request
  * @param {string} strategy Which router branch ran: 'static' | 'navigate' |
  *   'private-json' | 'public-json' (SNOW-965's two network-first JSON
- *   classes) | 'basemap' | 'probe' (the SNOW-722 read-only cache probe for an
+ *   classes) | 'public-partial' (SNOW-1312's region sheet) | 'basemap' | 'probe' (the SNOW-722 read-only cache probe for an
  *   unclassified cross-origin GET) | 'network' (not intercepted at all) |
  *   'guard' (``_guardedRespond``'s re-fetch, after a strategy resolved to
  *   something that was not a Response).
@@ -1815,7 +1846,11 @@ function _hydrateDevShellCacheOptIn() {
  *
  * @param {Request} request
  * @param {URL} url
- * @returns {'static' | 'navigate' | 'private-json' | 'public-json' | 'network' | null}
+ * SNOW-1312: and ``'public-partial'`` — the map's region sheet, read by
+ * ``_publicPartialNetworkFirst``. SNOW-1313: and ``'private-partial'`` — a
+ * saved pin's place sheet, read by ``_privatePartialNetworkFirst``.
+ *
+ * @returns {'static' | 'navigate' | 'private-json' | 'public-json' | 'public-partial' | 'private-partial' | 'network' | null}
  */
 function _classifySync(request, url) {
   // SNOW-496: thin delegator — see basemap_cache_core.js's module header.
@@ -1842,6 +1877,8 @@ function _classifySync(request, url) {
   // the extension checks as there.
   if (PRIVATE_JSON_PATH.test(url.pathname)) return 'private-json';
   if (PUBLIC_JSON_PATH.test(url.pathname)) return 'public-json';
+  if (PUBLIC_PARTIAL_PATH.test(url.pathname)) return 'public-partial';
+  if (PRIVATE_PARTIAL_PATH.test(url.pathname)) return 'private-partial';
 
   if (STATIC_PATHS.has(url.pathname)) return 'static';
 
@@ -2472,8 +2509,17 @@ async function _warmCache(urls, options) {
       return 'other';
     }
     const sameOrigin = url.origin === self.location.origin;
+    const warmClass = sameOrigin ? _classifySync(WARM_CLASSIFY_REQUEST, url) : null;
+    // SNOW-1312: the region sheet is an HTMX fragment, and `require_htmx`
+    // answers a request without `HX-Request` with a 400 — so this family,
+    // and only this one, is fetched with the header the sheet sends.
+    const partial = warmClass === 'public-partial';
+    // SNOW-1313: and a saved pin's place sheet, the same kind of fragment.
+    const privatePartial = warmClass === 'private-partial';
     try {
-      const response = await fetch(url.toString());
+      const response = partial || privatePartial
+        ? await fetch(url.toString(), { headers: { 'HX-Request': 'true' } })
+        : await fetch(url.toString());
       const validType = sameOrigin ? response.type === 'basic' : response.type === 'cors';
       if (!response || !response.ok || !validType) {
         // A reachable server that answered with the wrong thing (404,
@@ -2483,6 +2529,35 @@ async function _warmCache(urls, options) {
         return 'other';
       }
       const cache = sameOrigin ? shellCache : basemapCache;
+      // SNOW-1312: a region sheet is public — no principal stamp — and is
+      // kept under its path and `d` alone (`_publicPartialKey`), the key
+      // the offline read looks up whatever `r` the sheet sends. A url with
+      // no readable day has no key, and a sheet that cannot be found
+      // offline is a failure rather than a write. Not the HTML branch
+      // below: a fragment names no viewer and boots no scripts.
+      if (partial) {
+        const key = _publicPartialKey(url);
+        if (!key || _isNoStore(response)) return 'other';
+        await cache.put(key, response.clone());
+        bytes += await _warmCacheResponseBytes(response);
+        return null;
+      }
+      // SNOW-1313: a saved pin's place sheet is the owner's HTML, kept
+      // under the region sheet's path + `d` key and stamped as a trip's
+      // route is, from the principal the answer itself names. Ahead of
+      // the HTML branch below, which would stamp it from a `pwa-user-id`
+      // meta a fragment does not carry. An undated url, a `no-store`
+      // answer, a missing attestation or one that disagrees with who is
+      // signed in is a failure, so the run's tally comes up short.
+      if (privatePartial) {
+        const key = _publicPartialKey(url);
+        if (!key || _isNoStore(response)) return 'other';
+        const principal = await _attestedPrincipal(response);
+        if (!principal) return 'other';
+        await cache.put(key, _stampPrincipal(response.clone(), principal));
+        bytes += await _warmCacheResponseBytes(response);
+        return null;
+      }
       // SNOW-965: a trip's route is the reader's own JSON, and its offline
       // read (`_privateJsonNetworkFirst`) refuses an entry without their
       // principal stamp — so it is stamped here as it is there, from the
@@ -3663,6 +3738,202 @@ async function _publicJsonNetworkFirst(request) {
 }
 
 /**
+ * The key a region sheet is kept under: its path and ``d``, nothing else
+ * (SNOW-1312).
+ *
+ * The sheet adds ``r=`` — the reports cache-buster SNOW-1295 stamps into
+ * the url when the reader files or removes a report — so the url it asks
+ * with changes after any report, while the body it wants (that region on
+ * that day) does not. Keyed on the full url, a sheet warmed by a download
+ * would never be found again by a reader who has filed a report. ``d`` is
+ * REQUIRED: an undated sheet means "today", and the worker does not know
+ * which day that was when the entry was written, so it is never kept or
+ * answered offline.
+ *
+ * This normalisation is the region sheet's alone. The weather sheet keeps
+ * its exact-url match (``_publicJsonNetworkFirst``), because its body
+ * names its day relatively.
+ *
+ * @param {URL} url
+ * @returns {string|null} ``origin + path + '?d=' + day``, or ``null``.
+ */
+function _publicPartialKey(url) {
+  // Exactly one `d`: the worker would read the first and Django the last,
+  // so a doubled one could store one day's body under another day's key.
+  const days = url.searchParams.getAll('d');
+  if (days.length !== 1) return null;
+  const day = days[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  return url.origin + url.pathname + '?d=' + day;
+}
+
+/**
+ * The synthesized 504 for a region sheet the device does not hold
+ * (SNOW-1312): ``_synthesizedGatewayTimeout`` plus ``X-SW-Offline-Miss``,
+ * so the sheet can tell "this day was not downloaded" apart from any
+ * other failure.
+ *
+ * @returns {Response}
+ */
+function _offlineMissResponse() {
+  return new Response('', {
+    status: 504,
+    statusText: 'Gateway Timeout',
+    headers: { 'X-SW-Cache': 'miss', [OFFLINE_MISS_HEADER]: '1' },
+  });
+}
+
+/**
+ * Network-first for the map's region sheet (SNOW-1312).
+ *
+ * The sheet a downloaded region opens offline. Every area download warms
+ * it for the area's regions on today and each forward day
+ * (``areaContentURLs`` in basemap_download_core.js); until this ticket it
+ * was classified ``'network'``, so a region tapped offline said its
+ * details were unavailable over a device that could have held them.
+ *
+ * Public, so unstamped: the body names nothing about the reader. One
+ * element does depend on who asks — "On the ground"'s call to report is
+ * a button signed in and a sign-in link signed out — and
+ * ``tests/public/test_region_sheet.py``'s ``TestOfflineCopy`` holds it to
+ * being the only one, so a copy saved under one account serves the other
+ * at worst that button. It is rendered in the reader's language and kept
+ * in the one it was saved in.
+ *
+ * Online, an ok, ``basic``, non-``no-store`` answer is kept under
+ * ``_publicPartialKey`` — path and ``d`` — and anything else (a 400 for a
+ * bad date, a 404 for an unknown region, a 5xx) is passed through and
+ * never kept. Offline, or when the fetch fails or runs out of budget, the
+ * kept entry for that key is served; a miss is ``_offlineMissResponse``.
+ *
+ * @param {Request} request
+ * @returns {Promise<Response>}
+ */
+async function _publicPartialNetworkFirst(request) {
+  const startedAt = Date.now();
+  const key = _publicPartialKey(new URL(request.url));
+  const cache = await caches.open(CACHE_VERSION);
+  const fromCache = async () => {
+    // `ignoreVary`: the entry is keyed on a bare url, and the sheet's own
+    // request carries `HX-Request`, which a `Vary` on the answer could
+    // otherwise hold against it.
+    const cached = key ? await cache.match(key, { ignoreVary: true }) : null;
+    if (cached) {
+      const hit = _stampCacheHit(cached);
+      _debugServe(request, 'public-partial', 'shell', hit, startedAt);
+      return hit;
+    }
+    const miss = _offlineMissResponse();
+    _debugServe(request, 'public-partial', 'timeout-504', miss, startedAt);
+    return miss;
+  };
+  if (!(await _shouldUseNetwork())) return fromCache();
+  let response;
+  try {
+    response = await _boundedFetch(request, SHELL_FETCH_BUDGET_MS);
+  } catch (_err) {
+    return fromCache();
+  }
+  if (key && response && response.ok && response.type === 'basic' && !_isNoStore(response)) {
+    cache.put(key, response.clone()).catch(() => {});
+  }
+  _debugServe(request, 'public-partial', 'network', response, startedAt);
+  return response;
+}
+
+/**
+ * Delete every entry kept for ``url``'s path, whatever its day
+ * (SNOW-1313).
+ *
+ * A pin's sheet is kept once per day it was read on. A 403 or 404 for one
+ * day is the server saying the pin is no longer this reader's on any day,
+ * so every day's copy goes, not just the one asked for.
+ *
+ * @param {Cache} cache
+ * @param {URL} url
+ * @returns {Promise<void>}
+ */
+async function _dropPathEntries(cache, url) {
+  const requests = await cache.keys();
+  for (const kept of requests) {
+    let keptUrl = null;
+    try {
+      keptUrl = new URL(kept.url);
+    } catch (_err) {
+      keptUrl = null;
+    }
+    if (keptUrl && keptUrl.origin === url.origin && keptUrl.pathname === url.pathname) {
+      await cache.delete(kept);
+    }
+  }
+}
+
+/**
+ * Network-first for a saved pin's place sheet (SNOW-1313).
+ *
+ * The sheet a downloaded pin opens offline. Every area download warms it
+ * for each pin inside the box on the download's day (``areaItemURLs`` in
+ * basemap_download_core.js); until this ticket it was classified
+ * ``'network'`` and answered ``no-store``, so a pin tapped offline showed
+ * only its name and when it was saved.
+ *
+ * The region sheet's key — path and ``d`` (``_publicPartialKey``) — so an
+ * undated or another day's request never finds it, and a trip route's
+ * principal rule: the answer names its viewer (``X-Snowdesk-Principal``,
+ * ``_attestedPrincipal``) and is kept, stamped, only when that is who is
+ * signed in on the device now; offline it is served only when the stamp
+ * matches. A 403 or 404 online DROPS the kept copy — the pin was deleted,
+ * or is no longer this reader's — every day's copy of it
+ * (``_dropPathEntries``). Anything else offline is the region
+ * sheet's offline-miss 504, which the sheet answers with its name and
+ * saved time and the "not downloaded" line.
+ *
+ * @param {Request} request
+ * @returns {Promise<Response>}
+ */
+async function _privatePartialNetworkFirst(request) {
+  const startedAt = Date.now();
+  const key = _publicPartialKey(new URL(request.url));
+  const cache = await caches.open(CACHE_VERSION);
+  const fromCache = async () => {
+    const principal = await _signedInPrincipal();
+    // `ignoreVary`, as for the region sheet: the entry is keyed on a bare
+    // url and the sheet's request carries `HX-Request`.
+    const cached = key && principal ? await cache.match(key, { ignoreVary: true }) : null;
+    if (cached && _principalMatches(cached, principal)) {
+      const hit = _stampCacheHit(cached);
+      _debugServe(request, 'private-partial', 'shell', hit, startedAt);
+      return hit;
+    }
+    const miss = _offlineMissResponse();
+    _debugServe(request, 'private-partial', 'timeout-504', miss, startedAt);
+    return miss;
+  };
+  if (!(await _shouldUseNetwork())) return fromCache();
+  let response;
+  try {
+    response = await _boundedFetch(request, SHELL_FETCH_BUDGET_MS);
+  } catch (_err) {
+    return fromCache();
+  }
+  if (key && response && response.ok && response.type === 'basic' && !_isNoStore(response)) {
+    // Cloned now, while the body is unread: the sheet consumes the
+    // original as soon as this returns.
+    const toStore = response.clone();
+    _attestedPrincipal(toStore)
+      .then((principal) => {
+        if (principal) return cache.put(key, _stampPrincipal(toStore, principal));
+        return undefined;
+      })
+      .catch(() => {});
+  } else if (response && (response.status === 403 || response.status === 404)) {
+    _dropPathEntries(cache, new URL(request.url)).catch(() => {});
+  }
+  _debugServe(request, 'private-partial', 'network', response, startedAt);
+  return response;
+}
+
+/**
  * True when ``response`` is page HTML rather than data (SNOW-624).
  *
  * The discriminator for "would `_networkFirst` have cached this, and so
@@ -4443,6 +4714,18 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
+  if (sync === 'public-partial') {
+    event.respondWith(
+      _guardedRespond(_publicPartialNetworkFirst(request), request, event.clientId),
+    );
+    return;
+  }
+  if (sync === 'private-partial') {
+    event.respondWith(
+      _guardedRespond(_privatePartialNetworkFirst(request), request, event.clientId),
+    );
+    return;
+  }
   if (sync === 'navigate') {
     // SNOW-1047: answered before any network, so it works offline too.
     const legacyMapUrl = _legacyRootMapUrl(url);
@@ -4987,44 +5270,147 @@ function _idbDelete(db, storeName, key) {
 const _INLINE_MUTATION_QUEUE_CORE = {
   MAX_ATTEMPTS: 20,
   backoffDelayMs: (attempts) => Math.min(Math.pow(2, attempts), 300) * 1000,
-  classifyStatus: (status, doneStatuses) => {
+  classifyStatus: (status, doneStatuses, error) => {
     // SNOW-1132: a status the mutation declared as "already applied".
     if (Array.isArray(doneStatuses) && doneStatuses.indexOf(status) !== -1) return 'success';
     if (status >= 200 && status < 300) return 'success';
     if (status === 408 || status === 429) return 'retry';
+    // SNOW-1262: core/idempotency.py's in-flight 409 is transient.
+    if (status === 409 && error === 'idempotency_in_flight') return 'retry';
     if (status >= 500) return 'retry';
     if (status >= 400) return 'permanent';
     return 'retry';
   },
   isRowEligible: (row, now) =>
     !!row && row.status !== 'failed' && (row.next_attempt_at || 0) <= now,
-  nextRowState: (row, outcome, now) => {
+  nextRowState: (row, outcome, now, detail) => {
     if (outcome === 'success') return { action: 'delete' };
     const attempts = (row && row.attempts ? row.attempts : 0) + 1;
+    // SNOW-1262: the response's status and error, when given.
+    const recorded = {};
+    if (detail) {
+      recorded.last_status = detail.status == null ? null : detail.status;
+      recorded.last_error = detail.error == null ? null : detail.error;
+    }
     if (outcome === 'permanent') {
       return {
         action: 'fail',
-        row: Object.assign({}, row, { attempts, status: 'failed' }),
+        row: Object.assign({}, row, recorded, { attempts, status: 'failed' }),
         reason: 'permanent_4xx',
       };
     }
     if (attempts >= _INLINE_MUTATION_QUEUE_CORE.MAX_ATTEMPTS) {
       return {
         action: 'fail',
-        row: Object.assign({}, row, { attempts, status: 'failed' }),
+        row: Object.assign({}, row, recorded, { attempts, status: 'failed' }),
         reason: 'max_attempts',
       };
     }
     return {
       action: 'reschedule',
-      row: Object.assign({}, row, {
+      row: Object.assign({}, row, recorded, {
         attempts,
         status: 'retry-scheduled',
         next_attempt_at: now + _INLINE_MUTATION_QUEUE_CORE.backoffDelayMs(attempts),
       }),
     };
   },
+  // SNOW-1262: the acknowledgement and failure-detail helpers, mirrored for
+  // the same no-core case. test_sw.js holds both copies to core's answers.
+  ACK_KEY_PREFIX: 'mutations.ack:',
+  DISCARD_NOTICE_KEY: 'mutations.discard-notice',
+  failureDetail: (status, body) => ({
+    status: typeof status === 'number' ? status : null,
+    error: body && typeof body.error === 'string' ? body.error.slice(0, 200) : null,
+  }),
+  ackRecord: (row, body, now) => {
+    if (!row || !row.kind || !row.idempotency_key) return null;
+    return {
+      key: 'mutations.ack:' + row.idempotency_key,
+      value: { kind: row.kind, uuid: body && typeof body.uuid === 'string' ? body.uuid : null, at: now },
+    };
+  },
 };
+
+/**
+ * The JSON body of a replay's response, or null (SNOW-1262). Read only to
+ * record a route's uuid in its acknowledgement or a refusal's ``error`` on
+ * its row; a body that is not JSON costs nothing but those two fields.
+ *
+ * @param {Response} response
+ * @returns {Promise<*>}
+ */
+async function _replayBody(response) {
+  try {
+    return await response.json();
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * Write a replayed row back unless it has gone meanwhile (SNOW-1262) — the
+ * worker's half of ``mutation_queue.js``'s ``_writeBack``, for the same
+ * race: a page drain that replayed and deleted this row while the worker
+ * waited on its answer must not see it re-created by the worker's stale
+ * ``put``. The acknowledgement is checked first (the winner writes it
+ * before deleting); then the row is re-read and written in one readwrite
+ * transaction, which the browser serialises against the page's.
+ *
+ * @param {IDBDatabase} db
+ * @param {object} row
+ * @returns {Promise<boolean>} Whether it was written.
+ */
+async function _writeBackMutation(db, row) {
+  if (row.idempotency_key) {
+    try {
+      const ack = await new Promise((resolve, reject) => {
+        const req = db
+          .transaction('meta:app', 'readonly')
+          .objectStore('meta:app')
+          .get('mutations.ack:' + row.idempotency_key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      if (ack) return false;
+    } catch (_e) {
+      // No meta:app on a worker-created DB: no acknowledgement either.
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('queue:mutations', 'readwrite');
+    const store = tx.objectStore('queue:mutations');
+    const read = store.get(row.id);
+    read.onerror = () => reject(read.error || new Error('get failed'));
+    read.onsuccess = () => {
+      if (read.result === undefined) {
+        resolve(false);
+        return;
+      }
+      const write = store.put(row);
+      write.onerror = () => reject(write.error || new Error('put failed'));
+      write.onsuccess = () => resolve(true);
+    };
+  });
+}
+
+/**
+ * Put one ``meta:app`` record, best effort (SNOW-1262). A worker-created DB
+ * may have no ``meta:app`` store (see ``_openMutationsDb()``), and a write
+ * that cannot land must never fail the drain around it.
+ *
+ * @param {IDBDatabase} db
+ * @param {object} record
+ * @returns {Promise<boolean>} Whether it was written.
+ */
+async function _putMetaRecord(db, record) {
+  try {
+    await _idbPut(db, 'meta:app', record);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
 
 async function _selfDrainMutations() {
   // SNOW-852: not one row is replayed while an offline mode is in force.
@@ -5094,6 +5480,15 @@ async function _selfDrainMutations() {
       } catch (_e) {
         // Non-fatal.
       }
+      // SNOW-1262: a row with a ``kind`` is something the user is waiting
+      // on (a route drawn offline), and this path has no page to tell. The
+      // notice is what the next page load shows them.
+      if (row.kind) {
+        await _putMetaRecord(db, {
+          key: core.DISCARD_NOTICE_KEY || _INLINE_MUTATION_QUEUE_CORE.DISCARD_NOTICE_KEY,
+          value: { kinds: [row.kind], at: now },
+        });
+      }
       continue;
     }
 
@@ -5103,6 +5498,8 @@ async function _selfDrainMutations() {
     }
 
     let outcome;
+    let status = null;
+    let body = null;
     try {
       const headers = Object.assign({}, row.headers || {}, {
         'Idempotency-Key': row.idempotency_key,
@@ -5115,7 +5512,15 @@ async function _selfDrainMutations() {
       // SNOW-1132: with the row's declared done statuses, exactly as the
       // page drain does — a forget queued offline and replayed by
       // Background Sync after every tab has closed comes through here.
-      outcome = core.classifyStatus(response.status, row.done_statuses);
+      status = response.status;
+      body = await _replayBody(response);
+      // SNOW-1262: with the body's error, so the idempotency middleware's
+      // in-flight 409 is retried rather than failed.
+      outcome = core.classifyStatus(
+        response.status,
+        row.done_statuses,
+        body && typeof body.error === 'string' ? body.error : null,
+      );
     } catch (_networkErr) {
       outcome = 'retry';
     }
@@ -5123,16 +5528,25 @@ async function _selfDrainMutations() {
     // SNOW-617: the transition is core's. This loop used to spell it out
     // by hand, in parallel with `mutation_queue.js`'s own copy — including
     // a `max_attempts` telemetry payload that, unlike the page's, omitted
-    // `attempts` entirely.
-    const transition = core.nextRowState(row, outcome, now);
+    // `attempts` entirely. SNOW-1262: with the response's status and
+    // error, so the page can say WHY a row was refused.
+    const failureDetail = core.failureDetail || _INLINE_MUTATION_QUEUE_CORE.failureDetail;
+    const transition = core.nextRowState(row, outcome, now, failureDetail(status, body));
 
     if (transition.action === 'delete') {
+      // SNOW-1262: the acknowledgement goes down BEFORE the row comes out,
+      // so there is no moment at which a reader finds neither — which it
+      // would read as "never sent".
+      const ackRecord = core.ackRecord || _INLINE_MUTATION_QUEUE_CORE.ackRecord;
+      const ack = ackRecord(row, body, now);
+      if (ack) await _putMetaRecord(db, ack);
       await _idbDelete(db, 'queue:mutations', row.id);
       successCount += 1;
       continue;
     }
 
-    await _idbPut(db, 'queue:mutations', transition.row);
+    // SNOW-1262: not if a page drain landed (and deleted) it meanwhile.
+    if (!(await _writeBackMutation(db, transition.row))) continue;
 
     if (transition.action === 'fail') {
       _postTelemetry('pwa.mutation.failed_permanent', {

@@ -23,6 +23,10 @@ Covers both views, ``resort_sheet_partial`` and ``favourite_sheet_partial``:
     bulletin on every day, rated or not, including when it is the one
     "No forecast available" line (SNOW-1203, SNOW-1205).
   - The map page carries the sheet, its script and the URL templates.
+  - SNOW-1313: a pin's sheet is kept offline for its owner alone — it
+    answers ``private, no-cache`` and names its viewer
+    (``X-Snowdesk-Principal``); the forecast link carries the borrowed
+    point's short id for the map to open its weather sheet in place.
 """
 
 from __future__ import annotations
@@ -37,8 +41,10 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts.identity import PRINCIPAL_RESPONSE_HEADER
 from apps.regions.models import Resort
 from tests.factories import (
+    AccountFactory,
     FavouriteFactory,
     LocationFactory,
     MicroRegionFactory,
@@ -157,6 +163,46 @@ class TestGuards:
         client.force_login(favourite.user)
         response = _get(client, _favourite_url(favourite.uuid, "nope"))
         assert response.status_code == 400
+
+
+@pytest.mark.django_db
+class TestPinOfflineCopy:
+    """SNOW-1313: a pin's sheet may be kept, for its owner alone."""
+
+    def test_the_owner_is_named_and_the_copy_may_be_kept(self, client: Client) -> None:
+        """The worker stamps the kept copy from this header.
+
+        ``private, no-cache`` rather than ``no-store``, which the worker
+        refuses to keep.
+        """
+        account = AccountFactory.create()
+        favourite = FavouriteFactory.create(user=account.user)
+        client.force_login(account.user)
+        response = _get(client, _favourite_url(favourite.uuid))
+        assert response.status_code == 200
+        assert response["Cache-Control"] == "private, no-cache"
+        assert response[PRINCIPAL_RESPONSE_HEADER] == str(account.uuid)
+
+    def test_another_readers_pin_names_nobody(self, client: Client) -> None:
+        favourite = FavouriteFactory.create()
+        client.force_login(AccountFactory.create().user)
+        response = _get(client, _favourite_url(favourite.uuid))
+        assert response.status_code == 404
+        assert not response.has_header(PRINCIPAL_RESPONSE_HEADER)
+
+    def test_anonymous_names_nobody(self, client: Client) -> None:
+        favourite = FavouriteFactory.create()
+        response = _get(client, _favourite_url(favourite.uuid))
+        assert response.status_code == 404
+        assert not response.has_header(PRINCIPAL_RESPONSE_HEADER)
+
+    def test_the_resort_sheet_stays_no_store(self, client: Client) -> None:
+        """Out of scope: its Save star is per-reader and unstamped."""
+        client.force_login(AccountFactory.create().user)
+        resort = _resort()
+        response = _get(client, _resort_url(resort.slug))
+        assert response["Cache-Control"] == "private, no-store"
+        assert not response.has_header(PRINCIPAL_RESPONSE_HEADER)
 
 
 @pytest.mark.django_db
@@ -434,6 +480,24 @@ class TestPinWeather:
         content = _get(client, _favourite_url(favourite.uuid, "2026-02-03")).content
         url = f"{point.get_absolute_url()}?date=2026-02-03"
         assert url.encode() in content
+
+    def test_forecast_link_carries_the_borrowed_points_short_id(
+        self, client: Client
+    ) -> None:
+        """SNOW-1313: the map opens that point's weather sheet in place."""
+        favourite = _pin(client)
+        point = _curated_near(favourite)
+        content = _get(client, _favourite_url(favourite.uuid)).content.decode()
+        link = re.search(
+            r'<a[^>]*data-testid="place-sheet-forecast-link"[^>]*>', content, re.S
+        )
+        assert link is not None
+        assert f'data-forecast-short-id="{point.short_id}"' in link.group(0)
+
+    def test_no_source_means_no_short_id(self, client: Client) -> None:
+        favourite = _pin(client)
+        content = _get(client, _favourite_url(favourite.uuid)).content.decode()
+        assert "data-forecast-short-id" not in content
 
     def test_point_without_a_page_gets_no_forecast_link(self, client: Client) -> None:
         favourite = _pin(client)

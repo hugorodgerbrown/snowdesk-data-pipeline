@@ -23,7 +23,7 @@ Covers ``report_route_passages`` (SNOW-964):
     match no rows at all and pass every assertion vacuously, which is how
     a table can break in silence.
 
-The grouping itself is ``tests/routes/test_passages.py``'s subject; what
+The grouping itself is ``tests/track/test_passages.py``'s subject; what
 is asserted here is the command around it.
 """
 

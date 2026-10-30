@@ -222,3 +222,86 @@ describe('nextRowState (SNOW-617)', () => {
     expect(core.nextRowState(bare, 'retry', NOW).row.attempts).toBe(1);
   });
 });
+
+describe('what a response leaves on its row (SNOW-1262)', () => {
+  const NOW = 1_000_000;
+  const ROW = { id: 1, attempts: 0, status: 'queued', idempotency_key: 'k' };
+
+  it("records a permanent refusal's status and the endpoint's error", () => {
+    const next = core.nextRowState(ROW, 'permanent', NOW, core.failureDetail(409, { error: 'route_limit_reached' }));
+
+    expect(next.row).toMatchObject({ status: 'failed', last_status: 409, last_error: 'route_limit_reached' });
+  });
+
+  it('records the status of a retry too, so the last answer is always kept', () => {
+    const next = core.nextRowState(ROW, 'retry', NOW, core.failureDetail(503, null));
+
+    expect(next.row).toMatchObject({ status: 'retry-scheduled', last_status: 503, last_error: null });
+  });
+
+  it('records a network error as no status at all', () => {
+    const next = core.nextRowState(ROW, 'retry', NOW, core.failureDetail(null, null));
+
+    expect(next.row.last_status).toBe(null);
+  });
+
+  it('leaves the row its old shape when no detail is given', () => {
+    const next = core.nextRowState(ROW, 'permanent', NOW);
+
+    expect('last_status' in next.row).toBe(false);
+    expect('last_error' in next.row).toBe(false);
+  });
+
+  it('bounds the error and ignores one that is not a string', () => {
+    const long = 'x'.repeat(core.ERROR_MAX_LENGTH + 50);
+
+    expect(core.failureDetail(400, { error: long }).error).toHaveLength(core.ERROR_MAX_LENGTH);
+    expect(core.failureDetail(400, { error: { nested: true } }).error).toBe(null);
+    expect(core.failureDetail(400, 'not json').error).toBe(null);
+  });
+});
+
+describe('acknowledgements (SNOW-1262)', () => {
+  const NOW = 1_000_000;
+
+  it('acknowledges a row with a kind, keyed on its Idempotency-Key, with the uuid', () => {
+    const record = core.ackRecord({ kind: 'route-create', idempotency_key: 'k-1' }, { uuid: 'u-1' }, NOW);
+
+    expect(record).toEqual({
+      key: core.ACK_KEY_PREFIX + 'k-1',
+      value: { kind: 'route-create', uuid: 'u-1', at: NOW },
+    });
+  });
+
+  it('acknowledges without a uuid when the body had none', () => {
+    expect(core.ackRecord({ kind: 'route-create', idempotency_key: 'k' }, null, NOW).value.uuid).toBe(null);
+  });
+
+  it('writes nothing for a row that names no kind', () => {
+    expect(core.ackRecord({ idempotency_key: 'k' }, { uuid: 'u' }, NOW)).toBe(null);
+  });
+
+  it('expires an acknowledgement after a week, and nothing else', () => {
+    const fresh = { key: core.ACK_KEY_PREFIX + 'a', value: { at: NOW } };
+    const old = { key: core.ACK_KEY_PREFIX + 'b', value: { at: NOW - core.ACK_TTL_MS - 1 } };
+    const other = { key: 'mutations.principal', value: 'user' };
+
+    expect(core.ACK_TTL_MS).toBe(7 * 24 * 60 * 60 * 1000);
+    expect(core.ackExpired(fresh, NOW)).toBe(false);
+    expect(core.ackExpired(old, NOW)).toBe(true);
+    expect(core.ackExpired(other, NOW + core.ACK_TTL_MS * 2)).toBe(false);
+  });
+});
+
+describe("the idempotency middleware's two 409s (SNOW-1262)", () => {
+  it('retries the in-flight 409: the original request is still in the view', () => {
+    expect(core.classifyStatus(409, [], core.IN_FLIGHT_ERROR)).toBe('retry');
+    expect(core.IN_FLIGHT_ERROR).toBe('idempotency_in_flight');
+  });
+
+  it('fails the reused-key 409, a bare 409 and the route cap for good', () => {
+    expect(core.classifyStatus(409, [], core.KEY_REUSED_ERROR)).toBe('permanent');
+    expect(core.classifyStatus(409, [], null)).toBe('permanent');
+    expect(core.classifyStatus(409, [], 'route_limit_reached')).toBe('permanent');
+  });
+});

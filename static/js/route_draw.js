@@ -27,6 +27,33 @@
  *      re-reads the layer once the terrain task has run), and the routes
  *      layer revealed and framed on the new route (window.pwaRowFocus).
  *
+ * SAVING OFFLINE (SNOW-1262). Online, Save is the direct post it always
+ * was — the same immediate answer, the panel closing on it — except that
+ * it carries an Idempotency-Key the device minted and tagged the draft
+ * with first. Offline, or when that post never gets an answer, the same
+ * save goes to window.pwaMutationQueue.enqueue() under the same key, the
+ * panel closes, the routes panel lists it as "Waiting to sync" and the map
+ * draws its plain line (routes.js, map.js). The draft stays stored and
+ * tagged until the queue says how it ended:
+ *
+ *   - replayed (by this page, another, or the service worker with no tab
+ *     open): the queue left an acknowledgement for the key, and the next
+ *     reconcile — on load, or on `pwa:mutation-queue-changed` — clears
+ *     the draft;
+ *   - refused for good (400, 409 at the cap, 403, 404): the tag moves to
+ *     `failed` and the draft is editable again; the routes panel offers
+ *     Edit (window.pwaRouteDraw.edit) and Discard (…discard);
+ *   - neither row nor acknowledgement: the draft keeps its key and is
+ *     editable; an unchanged re-save sends the same key, so within the
+ *     server's 24 h replay window it answers with the route it already
+ *     made, and an edited one mints a new key (the draft's `sent`
+ *     fingerprint no longer matches its body).
+ *
+ * While the save is queued, draw mode shows the line and says it is
+ * waiting, and every edit and Save is disabled — so a second copy cannot
+ * be queued. The draft is stamped with the account it was drawn under and
+ * discarded on load under any other (route_draw_core.js's draftState).
+ *
  * THE NETWORK (SNOW-1277). At z12 or closer the panel loads swisstopo's
  * ski-touring network for the view (/api/ski-network.geojson) and draws it
  * under the draft, whether or not it is followed — since SNOW-1319 a solid
@@ -49,8 +76,11 @@
  * tap that adds a waypoint never also opens the region under it.
  *
  * Publishes (frozen `window.pwaRouteDraw`):
- *   isActive() — whether the map is in draw mode
- *   start()    — enter draw mode, resuming any stored draft
+ *   isActive()   — whether the map is in draw mode
+ *   start()      — enter draw mode, resuming any stored draft
+ *   edit(key)    — SNOW-1262: take a save refused for good back into the
+ *                  draft and enter draw mode on it
+ *   discard(key) — SNOW-1262: throw a refused save away, row and draft
  */
 
 (function routeDrawInit() {
@@ -80,6 +110,10 @@
     (self.pwaRouteDrawingCore && self.pwaRouteDrawingCore.ROUTE_LINE_COLOUR) || '#c026d3';
   const HALO_COLOUR = '#ffffff';
   const PREVIEW_DEBOUNCE_MS = 350;
+  // core/idempotency.py's "a request with this key is still in the view"
+  // (SNOW-1262), from the queue's core where it is loaded.
+  const IN_FLIGHT_ERROR =
+    (self.pwaMutationQueueCore && self.pwaMutationQueueCore.IN_FLIGHT_ERROR) || 'idempotency_in_flight';
   const NETWORK_SOURCE = PREFIX + '-network';
   // The network is loaded and snapped to from this zoom: a view wider than
   // /api/ski-network.geojson's half-degree cap is refused, and a snap
@@ -109,6 +143,8 @@
     'save-failed': "That route couldn't be saved. Try again.",
     'save-limit': "You've reached your saved-route limit. Delete one to save another.",
     'save-offline': 'You need to be online to save a route.',
+    'saved-offline': "Saved on this device. It will sync when you're back online.",
+    'save-queued': "This route is waiting to sync. It will be saved when you're back online.",
     'default-name': 'Drawn route',
   });
   const PROFILE_STRINGS = self.pwaStrings.read('route-profile-strings-template', {
@@ -156,6 +192,17 @@
     /** @type {?Object} */
     profile: null,
     saving: false,
+    /** SNOW-1262: the Idempotency-Key the draft's save went out under. */
+    /** @type {?string} */
+    key: null,
+    /** SNOW-1262: the fingerprint of the body sent under `key`. */
+    /** @type {?string} */
+    sent: null,
+    /** SNOW-1262: the key of a save the server refused for good. */
+    /** @type {?string} */
+    failed: null,
+    /** SNOW-1262: whether the draft's save is waiting in the queue. */
+    queued: false,
   };
 
   const controller = window.MapSheet.attach(sheet, {
@@ -564,12 +611,21 @@
     const hint = find('[data-route-draw-hint]');
     if (hint) hint.hidden = state.points.length > 0;
 
+    // SNOW-1262: a draft whose save is queued is shown, not edited — a
+    // change now would be a second route, or a body the queued key no
+    // longer matches.
+    const locked = state.queued;
     const undo = find('[data-route-draw-undo]');
-    if (undo) undo.disabled = state.points.length === 0;
+    if (undo) undo.disabled = locked || state.points.length === 0;
     const clear = find('[data-route-draw-clear]');
-    if (clear) clear.disabled = state.points.length === 0;
+    if (clear) clear.disabled = locked || state.points.length === 0;
     const submit = find('[data-route-draw-submit]');
-    if (submit) submit.disabled = state.points.length < 2 || state.saving;
+    if (submit) submit.disabled = locked || state.points.length < 2 || state.saving;
+    const add = find('[data-route-draw-add]');
+    if (add) add.disabled = locked;
+    const name = find('#route-draw-name');
+    if (name) name.disabled = locked;
+    if (locked) showNotice(STRINGS['save-queued']);
   }
 
   /**
@@ -603,14 +659,54 @@
   // The draft
   // ---------------------------------------------------------------------------
 
-  /** Keep the draft on this device, or forget it once it is empty. */
+  /** @returns {?string} The account signed in now, or null (SNOW-1262). */
+  /**
+   * The account signed in now (SNOW-1262): null for none, and UNDEFINED
+   * while it cannot be known — no queue, or IndexedDB missing or awaiting a
+   * reset. The difference matters: a stamped draft is destroyed only under
+   * a different, KNOWN account.
+   *
+   * @returns {?string|undefined}
+   */
+  function principal() {
+    const queue = window.pwaMutationQueue;
+    const db = window.pwaDb;
+    if (!queue || !queue.principal || typeof db !== 'object' || !db || db.isResetRequired()) {
+      return undefined;
+    }
+    return queue.principal();
+  }
+
+  /**
+   * Whether the stored draft is someone's while no account is known — and
+   * so must be neither shown, overwritten nor removed (SNOW-1262).
+   *
+   * @returns {boolean}
+   */
+  function storedIsHidden() {
+    const stored = readDraft();
+    return Boolean(stored && core.draftState(stored, principal(), null, null) === 'hidden');
+  }
+
+  /**
+   * Keep the draft on this device, or forget it once it is empty. Stamped
+   * with its save's key, a refused save's key and the account (SNOW-1262).
+   */
   function storeDraft() {
+    // A hidden draft is another session's line: this visit's drawing lives
+    // in memory rather than replacing it.
+    if (storedIsHidden()) return;
     try {
       if (state.points.length === 0) localStorage.removeItem(core.DRAFT_KEY);
       else {
         localStorage.setItem(
           core.DRAFT_KEY,
-          core.serialiseDraft(state.points, state.name, state.taps),
+          core.serialiseDraft(state.points, state.name, state.taps, {
+            key: state.key,
+            sent: state.key ? state.sent : null,
+            failed: state.failed,
+            principal: principal() || null,
+          }),
         );
       }
     } catch (_err) {
@@ -618,18 +714,122 @@
     }
   }
 
-  /** Read back a stored draft into state, if there is one. */
-  function restoreDraft() {
+  /** @returns {?ReturnType<typeof core.parseDraft>} The stored draft. */
+  function readDraft() {
     let raw = null;
     try {
       raw = localStorage.getItem(core.DRAFT_KEY);
     } catch (_err) {
       raw = null;
     }
-    const draft = core.parseDraft(raw);
-    state.points = draft ? draft.points : [];
-    state.taps = draft ? draft.taps : [];
-    state.name = draft ? draft.name : '';
+    return core.parseDraft(raw);
+  }
+
+  /** Forget the stored draft outright. */
+  function forgetDraft() {
+    try {
+      localStorage.removeItem(core.DRAFT_KEY);
+    } catch (_err) {
+      // Nothing was stored.
+    }
+  }
+
+  /** Read back a stored draft into state, if there is one. */
+  function restoreDraft() {
+    const draft = readDraft();
+    const verdict = draft ? core.draftState(draft, principal(), null, null) : 'none';
+    const mine = verdict !== 'foreign' && verdict !== 'hidden';
+    state.points = mine && draft ? draft.points : [];
+    state.taps = mine && draft ? draft.taps : [];
+    state.name = mine && draft ? draft.name : '';
+    state.key = mine && draft ? draft.key : null;
+    state.sent = mine && draft ? draft.sent : null;
+    state.failed = mine && draft ? draft.failed : null;
+  }
+
+  /** Empty the draft in memory and in storage. */
+  function resetDraft() {
+    state.points = [];
+    state.taps = [];
+    state.name = '';
+    state.key = null;
+    state.sent = null;
+    state.failed = null;
+    state.queued = false;
+    state.feature = null;
+    state.previewFor = '';
+    forgetDraft();
+  }
+
+  /**
+   * Read the stored draft against the queue and settle it (SNOW-1262):
+   * clear a draft whose save landed or that another account drew, untag
+   * one whose save was refused, and note whether one is still queued.
+   * Run on load and whenever the queue changes; redraws the panel if it
+   * is open.
+   *
+   * @returns {Promise<void>}
+   */
+  async function reconcileDraft() {
+    const queue = window.pwaMutationQueue;
+    // Nothing is settled until the account is known: a draft destroyed or
+    // untagged on a guess is the drawer's work lost.
+    if (principal() === undefined) return;
+    const draft = readDraft();
+    if (!draft) {
+      state.queued = false;
+      return;
+    }
+    // Someone's draft, no one signed in: leave it exactly as it is.
+    if (core.draftState(draft, principal(), null, null) === 'hidden') return;
+    let row = null;
+    let ack = null;
+    if (draft.key && queue && queue.list) {
+      const rows = await queue.list({ kind: core.ROUTE_CREATE_KIND });
+      row = rows.find(function (r) {
+        return r.idempotency_key === draft.key;
+      }) || null;
+      ack = await queue.acknowledged(draft.key);
+    }
+    // The queue was read asynchronously: a save or an edit since then
+    // owns the draft now.
+    const now = readDraft();
+    if (!now || now.key !== draft.key) return;
+    const verdict = core.draftState(draft, principal(), row, ack);
+    if (verdict === 'foreign' || verdict === 'landed') {
+      // Another account's line, or a route that exists now: either way
+      // nothing of the draft is the drawer's to keep.
+      resetDraft();
+    } else if (verdict === 'failed') {
+      // Written from the stored draft rather than from state, which is
+      // only current while the panel is open.
+      state.key = null;
+      state.failed = draft.key;
+      state.queued = false;
+      try {
+        localStorage.setItem(
+          core.DRAFT_KEY,
+          core.serialiseDraft(draft.points, draft.name, draft.taps, {
+            key: null,
+            failed: draft.key,
+            principal: draft.principal || principal() || null,
+          }),
+        );
+      } catch (_err) {
+        // Private mode: state carries it for this visit.
+      }
+    } else {
+      state.queued = verdict === 'queued';
+    }
+    if (state.active) refreshPanel();
+  }
+
+  /** Redraw the open panel and the guide from state. */
+  function refreshPanel() {
+    if (!state.active) return;
+    renderPanel();
+    drawGuide();
+    schedulePreview();
   }
 
   /**
@@ -725,40 +925,96 @@
     notice.hidden = false;
   }
 
-  /** Save the draft as a route on this account. */
+  /**
+   * Save the draft as a route on this account.
+   *
+   * SNOW-1262: online, the direct post it always was, under a key the
+   * draft is tagged with first; offline, or with no answer, the same save
+   * queued under the same key (`queueSave`). See the module header.
+   */
   function save() {
     if (!SAVE_ELIGIBLE) {
       if (SIGNIN_URL) window.location.assign(SIGNIN_URL);
       return;
     }
-    if (state.saving || state.points.length < 2 || !CREATE_URL) return;
-    if (!online()) {
-      window.MapSheet.toast(STRINGS['save-offline']);
-      return;
-    }
+    if (state.saving || state.queued || state.points.length < 2 || !CREATE_URL) return;
+    // The key goes on the draft BEFORE the request, so whatever happens to
+    // the request the draft names it. An "unsent" draft keeps its key while
+    // its body is the one sent under it — the server then answers with the
+    // route already made — and gets a new one once it has been edited,
+    // because the server refuses an old key with a different body.
+    const fingerprint = core.bodyFingerprint(state.points, nameOrDefault());
+    if (state.key && state.sent !== fingerprint) state.key = null;
+    if (!state.key) state.key = core.mintKey();
+    state.sent = fingerprint;
+    state.failed = null;
+    storeDraft();
+    const operation = core.createOperation(
+      CREATE_URL,
+      csrfToken(),
+      state.points,
+      nameOrDefault(),
+      state.key,
+    );
     state.saving = true;
     renderFigures();
-    fetch(CREATE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
-      body: JSON.stringify({ points: state.points, name: nameOrDefault() }),
+    if (!online()) {
+      queueSave(operation);
+      return;
+    }
+    /** Whether the post was answered; a thrown fetch is queued instead. */
+    let answered = false;
+    fetch(operation.url, {
+      method: operation.method,
+      headers: Object.assign({}, operation.headers, { 'Idempotency-Key': operation.idempotencyKey }),
+      body: operation.body,
     })
       .then(function (resp) {
-        if (resp.status === 403 && SIGNIN_URL) {
-          window.location.assign(SIGNIN_URL);
-          return null;
-        }
-        if (!resp.ok) {
-          window.MapSheet.toast(resp.status === 409 ? STRINGS['save-limit'] : STRINGS['save-failed']);
-          return null;
-        }
-        return resp.json();
+        answered = true;
+        if (resp.ok) return resp.json();
+        return resp
+          .json()
+          .catch(function () {
+            return null;
+          })
+          .then(function (/** @type {any} */ body) {
+            const error = body && typeof body.error === 'string' ? body.error : null;
+            // Not a refusal: core/idempotency.py says a request with this
+            // key — the same save, from a reload or another tab — is still
+            // inside the view. Keep the key and queue the save under it,
+            // as for no answer at all; the queue retries the in-flight 409
+            // until the original's answer can be replayed. Dropping the key
+            // here made the next Save a second route.
+            if (resp.status === 409 && error === IN_FLIGHT_ERROR) {
+              queueSave(operation);
+              return 'queued';
+            }
+            // Refused: the server keeps that answer against the key for
+            // 24 h, so the next save must not send it again.
+            state.key = null;
+            storeDraft();
+            if (resp.status === 403 && SIGNIN_URL) {
+              window.location.assign(SIGNIN_URL);
+              return null;
+            }
+            const limit = resp.status === 409 && error === 'route_limit_reached';
+            window.MapSheet.toast(limit ? STRINGS['save-limit'] : STRINGS['save-failed']);
+            return null;
+          });
       })
       .catch(function () {
+        if (!answered) {
+          // No answer at all: the network went. The same save, the same
+          // key, into the queue — if the post did land, the replay gets
+          // the route it made back.
+          queueSave(operation);
+          return 'queued';
+        }
         window.MapSheet.toast(STRINGS['save-failed']);
         return null;
       })
       .then(function (body) {
+        if (body === 'queued') return;
         state.saving = false;
         if (!body) {
           renderFigures();
@@ -768,6 +1024,7 @@
         state.taps = [];
         state.name = '';
         state.feature = null;
+        state.key = null;
         storeDraft();
         controller.close();
         window.pwaTelemetry?.emit('map.route.created', { drawn: true });
@@ -784,6 +1041,106 @@
       });
   }
 
+  /**
+   * Put a save in the mutation queue under the draft's key (SNOW-1262),
+   * then close the panel as a save does: the routes panel lists it as
+   * waiting and the map draws its line, framed. The draft stays stored.
+   *
+   * @param {ReturnType<typeof core.createOperation>} operation
+   * @returns {Promise<void>}
+   */
+  async function queueSave(operation) {
+    const queue = window.pwaMutationQueue;
+    const key = queue ? await queue.enqueue(operation) : null;
+    state.saving = false;
+    if (!key) {
+      // No queue on this device (IndexedDB unavailable or awaiting a
+      // reset): say so, as Save did before it could queue.
+      state.key = null;
+      storeDraft();
+      window.MapSheet.toast(STRINGS['save-offline']);
+      renderFigures();
+      return;
+    }
+    state.queued = true;
+    const bounds = core.pointsBounds(state.points);
+    controller.close();
+    window.pwaTelemetry?.emit('map.route.created', { drawn: true, queued: true });
+    window.pwaRowFocus?.reveal({ overlay: window.pwaRoutesOverlay, coordinates: bounds });
+    window.MapSheet.toast(STRINGS['saved-offline']);
+  }
+
+  /**
+   * Take a save the server refused for good back into the draft and open
+   * draw mode on it (SNOW-1262, the routes panel's Edit). The stored draft
+   * is used when it is that save's — it keeps the taps — and the queued
+   * body otherwise. The row goes: the draft holds everything it held.
+   *
+   * @param {string} key The refused save's Idempotency-Key.
+   * @returns {Promise<void>}
+   */
+  async function edit(key) {
+    const queue = window.pwaMutationQueue;
+    if (!queue || !key) return;
+    // Before anything mints a new key: did this save land after all? A
+    // refused row can sit beside an acknowledgement for its key (another
+    // drain replayed it), and Edit's new key would then save it twice.
+    if (await queue.acknowledged(key)) {
+      await queue.discard(key);
+      const landed = readDraft();
+      if (landed && (landed.failed === key || landed.key === key)) resetDraft();
+      window.MapSheet.toast(STRINGS.saved);
+      return;
+    }
+    const rows = await queue.list({ kind: core.ROUTE_CREATE_KIND });
+    const row = rows.find(function (r) {
+      return r.idempotency_key === key;
+    });
+    if (!row) return;
+    const stored = readDraft();
+    let draft = stored && (stored.failed === key || stored.key === key) ? stored : null;
+    if (!draft) {
+      let body = null;
+      try {
+        body = JSON.parse(row.body);
+      } catch (_err) {
+        body = null;
+      }
+      draft = core.parseDraft(
+        body ? core.serialiseDraft(body.points, body.name === STRINGS['default-name'] ? '' : body.name) : null,
+      );
+    }
+    if (!draft) return;
+    await queue.discard(key);
+    if (state.active) controller.close();
+    state.points = draft.points;
+    state.taps = draft.taps;
+    state.name = draft.name;
+    state.key = null;
+    state.failed = null;
+    state.queued = false;
+    storeDraft();
+    start();
+  }
+
+  /**
+   * Throw a refused save away — the queued row, and the draft when it is
+   * that save's (SNOW-1262, the routes panel's Discard).
+   *
+   * @param {string} key The refused save's Idempotency-Key.
+   * @returns {Promise<void>}
+   */
+  async function discard(key) {
+    const queue = window.pwaMutationQueue;
+    if (!key) return;
+    if (queue) await queue.discard(key);
+    const stored = readDraft();
+    if (stored && (stored.failed === key || stored.key === key)) {
+      if (state.active) controller.close();
+      resetDraft();
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Entering and leaving
   // ---------------------------------------------------------------------------
@@ -795,6 +1152,8 @@
    * @param {[number, number]} point
    */
   function addTap(point) {
+    // SNOW-1262: a queued save's line is shown, not edited.
+    if (state.queued) return;
     const last = state.points.length ? state.points[state.points.length - 1] : null;
     const leg = following() && snapCore && state.graph
       ? snapCore.legFor(state.graph, last, point, snapReach())
@@ -867,6 +1226,9 @@
     schedulePreview();
     scheduleNetwork();
     document.dispatchEvent(new CustomEvent('snowdesk:route-draw', { detail: { active: true } }));
+    // SNOW-1262: is this draft's save still queued? Read now, so a tagged
+    // draft opens locked rather than editable.
+    reconcileDraft().catch(function () {});
   }
 
   /** Leave draw mode. The draft stays stored. */
@@ -935,10 +1297,20 @@
     save();
   });
 
+  // SNOW-1262: settle a stored draft on load — the save may have landed
+  // (from this device's worker with no tab open) or been refused while the
+  // map was shut — and whenever the queue changes under an open page.
+  reconcileDraft().catch(function () {});
+  document.addEventListener('pwa:mutation-queue-changed', function () {
+    reconcileDraft().catch(function () {});
+  });
+
   window.pwaRouteDraw = Object.freeze({
     isActive: function () {
       return state.active;
     },
     start: start,
+    edit: edit,
+    discard: discard,
   });
 })();

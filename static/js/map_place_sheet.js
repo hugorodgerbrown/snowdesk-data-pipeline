@@ -33,8 +33,20 @@
  * then closes the sheet. Each change announces `snowdesk:favourites-changed`,
  * which is what makes the map and the panel re-read the list.
  *
- * OFFLINE, a saved pin's sheet falls back to its name and saved time, the
- * popup's own content, which the map holds without a request.
+ * OFFLINE (SNOW-1313), a saved pin's sheet is the one a download kept for
+ * the reader and that day: the request carries the map's day (`?d=`), and
+ * the service worker answers it from the copy stamped for whoever is signed
+ * in ('private-partial' in basemap_cache_core.js). A day the device does not
+ * hold falls back to the pin's name and saved time, the popup's own
+ * content, which the map holds without a request, and says the day is not
+ * downloaded.
+ *
+ * "FULL FORECAST" OPENS THE MAP'S WEATHER SHEET (SNOW-1313), online and
+ * offline alike: the link names the borrowed point's short id, and a click
+ * opens `window.pwaWeatherDetail` for that point on the map's current day
+ * rather than navigating — the same day the download dated the weather
+ * sheet with, so offline it finds the saved one. The `href` is the no-JS
+ * fallback.
  *
  * PAUSED DURING PLAYBACK (SNOW-1239). While the timeline plays the sheet
  * stays open under a "Playback in progress" band
@@ -63,7 +75,12 @@
     'share-failed': 'Could not share this pin.',
     'rename-failed': 'Could not rename this pin — please try again.',
     'delete-failed': 'Could not delete this pin — please try again.',
+    notDownloaded: "This day isn't downloaded for offline use.",
   });
+
+  // SNOW-1313: the header the service worker's offline-miss 504 carries
+  // (`OFFLINE_MISS_HEADER` in sw.js; map_region_sheet.js holds a third copy).
+  const OFFLINE_MISS_HEADER = 'X-SW-Offline-Miss';
 
   // One request in flight: a newer open supersedes it, and a close by any
   // route (onTeardown) aborts it.
@@ -91,13 +108,14 @@
 
   /**
    * Replace the sheet's body with a heading and an optional line, both
-   * marked as PEEK.
+   * marked as PEEK, and an optional note under them.
    *
    * @param {string} title
    * @param {string} [line]
+   * @param {string} [note] SNOW-1313: "this day isn't downloaded".
    * @returns {void}
    */
-  const paintLines = (title, line) => {
+  const paintLines = (title, line, note) => {
     const wrap = document.createElement('div');
     wrap.setAttribute('data-sheet-peek', '');
     wrap.className = 'px-2';
@@ -110,6 +128,13 @@
       p.className = 'text-meta text-text-2';
       p.textContent = line;
       wrap.appendChild(p);
+    }
+    if (note) {
+      const n = document.createElement('p');
+      n.className = 'mt-2 text-sm text-text-2';
+      n.setAttribute('data-testid', 'place-sheet-not-downloaded');
+      n.textContent = note;
+      wrap.appendChild(n);
     }
     sheet.replaceChildren(wrap);
   };
@@ -149,7 +174,13 @@
       signal: ask.signal,
     })
       .then((resp) => {
-        if (!resp.ok) throw new Error('place sheet ' + resp.status);
+        if (!resp.ok) {
+          const err = new Error('place sheet ' + resp.status);
+          // SNOW-1313: offline, and the device holds no sheet for this pin
+          // on this day.
+          err.notDownloaded = resp.headers?.get(OFFLINE_MISS_HEADER) === '1';
+          throw err;
+        }
         return resp.text();
       })
       .then((html) => {
@@ -162,7 +193,8 @@
         // and when it was saved, both on the feature the map holds.
         if (current && current.kind === 'favourite') {
           const saved = window.snowdeskMapFormat?.relativeTime?.(current.createdAt || '') || '';
-          paintLines(current.name || '', saved || STRINGS.failed);
+          const note = err && err.notDownloaded ? STRINGS.notDownloaded : '';
+          paintLines(current.name || '', saved || (note ? '' : STRINGS.failed), note);
           return;
         }
         paintLines('', STRINGS.failed);
@@ -243,8 +275,20 @@
 
   // ---- the actions -------------------------------------------------------
 
-  /** @returns {string} The CSRF token the body's delete form carries. */
+  /**
+   * The CSRF token for a write: the page's own cookie first, then the one
+   * the body's delete form carries.
+   *
+   * SNOW-1313: the body may be a copy the service worker kept from a
+   * download, and the token rendered into it then is stale once the
+   * session's token rotates (a sign-in, even back into the same account).
+   * The cookie is the session's current one.
+   *
+   * @returns {string}
+   */
   const csrfToken = () => {
+    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    if (match) return decodeURIComponent(match[1]);
     const input = sheet.querySelector('input[name="csrfmiddlewaretoken"]');
     return input ? /** @type {HTMLInputElement} */ (input).value : '';
   };
@@ -272,6 +316,22 @@
       // After this click has reached favourites.js's document listener.
       setTimeout(() => { star.disabled = true; }, 0);
       return;
+    }
+
+    // SNOW-1313: "Full forecast" opens the borrowed point's weather sheet
+    // on the map's own day, in place, rather than navigating to its page —
+    // the request the download dated the saved sheet with, so it answers
+    // offline too. Without the weather sheet's module the link navigates.
+    // A modified click (a new tab) is the reader asking for the page.
+    const forecast = target.closest?.('[data-forecast-short-id]');
+    const modified = ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey;
+    if (forecast && window.pwaWeatherDetail && !modified) {
+      const shortId = forecast.getAttribute('data-forecast-short-id');
+      if (shortId) {
+        ev.preventDefault();
+        window.pwaWeatherDetail.open(shortId, dateKey || undefined);
+        return;
+      }
     }
 
     const share = target.closest?.('[data-favourite-share]');

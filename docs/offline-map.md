@@ -573,6 +573,30 @@ The SW classifies every fetch into one of four buckets:
   offline without any write to the passive partition — see "Download
   basemap" below.
 
+- **`private-partial`** (SNOW-1313) — a saved pin's place sheet,
+  `/partials/place-sheet/favourite/<uuid>/`, and nothing else (the resort
+  place sheet stays `network`: its Save star is per-reader). Strategy:
+  **network first** (`_privatePartialNetworkFirst`), kept under the region
+  sheet's path + `d` key (`_publicPartialKey`) and stamped with the
+  principal the answer names (`X-Snowdesk-Principal`, `attest_principal`,
+  read by `_attestedPrincipal`) — kept only when that is who is signed in
+  on the device, served offline only when the stamp matches. A 403 or 404
+  online drops every kept day of that pin's sheet; a miss offline is the
+  504 carrying `X-SW-Offline-Miss: 1`, and the sheet falls back to the
+  pin's name and saved time with "This day isn't downloaded". The view
+  answers `private, no-cache` (not `no-store`, which the worker refuses).
+  The download warms one per pin, dated with the download's day
+  (`areaItemURLs`' `favouriteSheet` template), sending `HX-Request`; a warm
+  it cannot keep fails the run. The sheet's "Full forecast" opens the
+  map's weather sheet (`pwaWeatherDetail.open(short_id, dateKey)`) rather
+  than navigating, so offline it reads the borrowed weather sheet the
+  download saved for the same day. See
+  [`decisions/an-area-download-carries-your-trips-and-borrowed-forecasts.md`](decisions/an-area-download-carries-your-trips-and-borrowed-forecasts.md).
+  The trip route (`private-json`), weather sheet (`public-json`) and region
+  sheet (`public-partial`) classes it is built from are described there and
+  in
+  [`decisions/a-download-looks-forward-and-carries-the-region-sheet.md`](decisions/a-download-looks-forward-and-carries-the-region-sheet.md).
+
 - **`network`** — everything else: bulletin JSON
   (`/api/region/<id>/summary/`), ratings (`/api/ratings/`), calendar
   partials, resort feeds that change with the bulletin, and any

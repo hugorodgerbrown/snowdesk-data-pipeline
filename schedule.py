@@ -43,10 +43,7 @@ pre-loaded with the recurring data-pipeline jobs:
   renders a coordinate pair until it does.
 - **reconcile_slope_samples** — fires at 04:30 UTC, running
   ``backfill_route_slope_samples --commit``, then
-  ``backfill_trip_slope_samples --commit``, then
-  ``backfill_ski_tour_slope_samples --commit`` (SNOW-1288: every SAC tour
-  walked ahead of time, so its profile opens at once — after a weekly
-  import, only the tours it rewrote). The safety net for
+  ``backfill_trip_slope_samples --commit``. The safety net for
   a sampling task whose enqueue failed after its route or trip had
   committed (SNOW-1228): the enqueue helpers log such a failure rather
   than raise it, which leaves ``slope_samples`` null, and both commands
@@ -57,6 +54,16 @@ pre-loaded with the recurring data-pipeline jobs:
   The commands' own one-second ``--delay`` paces the tile requests. The
   trip pass runs even if the route pass raises, and the first failure is
   re-raised afterwards, so it still reaches the worker log.
+- **render_ski_tours** — fires at 05:30 UTC, running
+  ``render_ski_tours --commit`` (SNOW-1316, replacing SNOW-1288's tour pass
+  in ``reconcile_slope_samples``). The reference-data service walks the
+  terrain under every SAC tour not yet walked from its current line and
+  terrain model, stores the walk and the drawing beside the document for
+  the v2 ``ski-tours`` feed, and applies them to this host's ``SkiTour``
+  rows. Its own job, not part of the weekly import, so a terrain outage
+  never fails an import and a builder change is redrawn within a day; on
+  a day with nothing new, every tour's fingerprint matches and it writes
+  nothing.
 - **check_resort_locations** — fires at 05:00 UTC, running
   ``link_resort_locations --check``. The only job here that writes nothing:
   it asks whether any geocoded resort has no ``ResortLocation``, which means
@@ -247,8 +254,9 @@ def _run_fill_what3words() -> None:
 def _run_reconcile_slope_samples() -> None:
     """Sample any route or trip whose terrain sampling never ran (SNOW-1228).
 
-    Runs the three slope backfill commands — routes, trips, then SAC's
-    tours (SNOW-1288). Each raises ``CommandError`` when any row failed;
+    Runs the two slope backfill commands — routes, then trips. SAC's
+    tours are the service's own job since SNOW-1316
+    (``_run_render_ski_tours``). Each raises ``CommandError`` when any row failed;
     every later pass must still run after a failed one, so the first error
     is held and re-raised once all have run.
     """
@@ -261,7 +269,6 @@ def _run_reconcile_slope_samples() -> None:
     for command in (
         "backfill_route_slope_samples",
         "backfill_trip_slope_samples",
-        "backfill_ski_tour_slope_samples",
     ):
         try:
             call_command(command, "--commit")
@@ -271,6 +278,16 @@ def _run_reconcile_slope_samples() -> None:
                 first_error = exc
     if first_error is not None:
         raise first_error
+
+
+def _run_render_ski_tours() -> None:
+    """Invoke ``render_ski_tours --commit``: walk and draw tours once (SNOW-1316)."""
+    from django.core.management import (
+        call_command,  # noqa: PLC0415 — lazy import; module is import-safe before django.setup(), see docstring
+    )
+
+    logger.info("schedule: firing render_ski_tours")
+    call_command("render_ski_tours", "--commit")
 
 
 def _run_check_resort_locations() -> None:
@@ -339,6 +356,8 @@ def build_scheduler() -> BlockingScheduler:
             Cron: ``hour=4, minute=30`` (once a day, SNOW-1228).
         ``check_resort_locations``
             Cron: ``hour=5`` (once a day; read-only detector, SNOW-885).
+        ``render_ski_tours``
+            Cron: ``hour=5, minute=30`` (once a day, SNOW-1316).
         ``purge_expired_oauth_tokens``
             Cron: ``hour=3, minute=45`` (once a day, SNOW-1035).
         ``prune_command_runs``
@@ -451,6 +470,17 @@ def build_scheduler() -> BlockingScheduler:
         switched("check_resort_locations", _run_check_resort_locations),
         trigger=CronTrigger(hour=5, minute=0, timezone="UTC"),
         id="check_resort_locations",
+        **_common,
+    )
+
+    # SNOW-1316: after the 04:30 reconcile (which used to walk the tours)
+    # and the 05:00 detector, on an hour no fetch job runs. It reaches the
+    # tile origin only for a tour not yet walked, so most days it asks
+    # nothing.
+    scheduler.add_job(
+        switched("render_ski_tours", _run_render_ski_tours),
+        trigger=CronTrigger(hour=5, minute=30, timezone="UTC"),
+        id="render_ski_tours",
         **_common,
     )
 

@@ -54,6 +54,11 @@
       "name": "schedule_check_resort_locations",
       "note": "SNOW-1201: the scheduled job link_resort_locations --check, daily at 05:00 UTC (schedule.py). Off skips its runs from the next firing; on resumes them.",
       "active": true
+    },
+    {
+      "name": "schedule_render_ski_tours",
+      "note": "SNOW-1316: the scheduled job render_ski_tours --commit, daily at 05:30 UTC (schedule.py): the reference-data service walks and draws every SAC tour not yet walked, then applies them to this host. Off skips its runs from the next firing; on resumes them.",
+      "active": true
     }
   ]
 }

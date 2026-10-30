@@ -1425,6 +1425,26 @@ def offline_page(request: HttpRequest) -> HttpResponse:
                 if request.user.is_authenticated
                 else "",
                 **_trip_item_templates(),
+                # SNOW-1312: the dated ratings feed the map boots its
+                # colours from, and the map's region sheet — the two
+                # forward-day families the map's download warms besides
+                # the bulletin pages, so an area updated from here holds
+                # what one updated from the map does. The sheet template
+                # is the one `_map_embed.html` renders onto `#map`.
+                "ratings": reverse("api:ratings"),
+                "region_sheet": reverse(
+                    "public:region_sheet_partial", kwargs={"region_id": "XX-0000"}
+                ),
+                # SNOW-1313: a saved pin's place sheet, warmed per pin the
+                # area-items answer names — the nil-uuid template
+                # `_map_embed.html` renders onto `#map`. Account-only, as
+                # area_items is.
+                "favourite_sheet": reverse(
+                    "public:favourite_sheet_partial",
+                    kwargs={"uuid": "00000000-0000-0000-0000-000000000000"},
+                )
+                if request.user.is_authenticated
+                else "",
             },
             # The countries whose region geometry a boundary may overlap.
             # SNOW-931's lesson, applied where there is no
@@ -1433,10 +1453,6 @@ def offline_page(request: HttpRequest) -> HttpResponse:
             # area silently drops a country's bulletins.
             "content_countries": " ".join(settings.MAP_COUNTRY_CODES),
             "today": timezone.localdate().isoformat(),
-            # SNOW-953: the same backwards reach the map applies, so an
-            # area topped up from this page carries the same days as one
-            # topped up from the map.
-            "content_past_days": settings.OFFLINE_CONTENT_PAST_DAYS,
             # SNOW-1138: the terrain-class tile template, so the report
             # judges an area downloaded WITH terrain data on its class
             # tiles, as the Manage downloads sheet does. The map reads the
@@ -1613,7 +1629,6 @@ def _base_map_context(
         ``map_default_overlays`` / ``map_default_boundary`` /
         ``map_default_opacity_step`` (SNOW-872's configurable opening view),
         ``season_start``, ``season_end``, ``today``, ``today_pct``,
-        ``content_past_days`` (SNOW-953),
         ``scrubber_in_season``, ``display_date``, and ``data_end`` (the latest
         ``RegionDayRating.date`` in the window, or ``None`` when the season
         has not started or the DB is empty).
@@ -1653,13 +1668,6 @@ def _base_map_context(
         "season_end": season_end,
         "today": today,
         "today_pct": today_pct,
-        # SNOW-953: how many days BEHIND today an offline download carries
-        # bulletins for, rendered onto #season-scrubber beside ``today``
-        # because that is the element ``map_shared.js`` already reads the
-        # day off. Forwards is not here and is not a setting: it runs to
-        # the last published day, which the client resolves off the season
-        # payload it already holds (SNOW-927).
-        "content_past_days": settings.OFFLINE_CONTENT_PAST_DAYS,
         "scrubber_in_season": scrubber_in_season,
         # The day map.js's boot leg fetches ratings for — ``readDisplayDate()``,
         # the ``?d=`` the visitor asked for or else today. map.html preloads

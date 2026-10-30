@@ -24,8 +24,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from apps.core.geo import haversine_km
 from apps.core.models import BaseModel
+from track.geo import haversine_km
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User

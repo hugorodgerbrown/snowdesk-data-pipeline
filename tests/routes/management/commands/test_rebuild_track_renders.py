@@ -16,9 +16,9 @@ from django.core.management import call_command
 
 from apps.core.models import CommandRun
 from apps.routes.models import Route, SkiTour
-from apps.routes.services.track_render import TRACK_RENDER_VERSION, is_current
 from apps.trips.models import Trip
 from tests.factories import RouteFactory, SkiTourFactory, TripFactory
+from track.render import TRACK_RENDER_VERSION, is_current
 
 pytestmark = pytest.mark.django_db
 

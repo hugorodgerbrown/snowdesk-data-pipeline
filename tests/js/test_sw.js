@@ -175,6 +175,11 @@ const SW_EXPORTS = [
   '_signedInPrincipal',
   '_privateJsonNetworkFirst',
   '_publicJsonNetworkFirst',
+  // SNOW-1312: the map's region sheet, read offline on path + `d`.
+  '_publicPartialNetworkFirst',
+  '_publicPartialKey',
+  // SNOW-1313: a saved pin's place sheet, kept for its owner on path + `d`.
+  '_privatePartialNetworkFirst',
   // SNOW-1311: the activation-time carry of the user's content out of the
   // old shell caches, and its budget.
   '_carryShellContent',
@@ -1166,6 +1171,12 @@ describe('inline mutation-queue core agrees with the real one (SNOW-617)', () =>
           coreQueue.classifyStatus(status, done),
         );
       }
+    }
+    // SNOW-1262: the idempotency middleware's in-flight 409 is a retry.
+    for (const error of [null, 'idempotency_in_flight', 'idempotency_key_reused']) {
+      expect(inline.classifyStatus(409, [], error), `409 / ${error}`).toBe(
+        coreQueue.classifyStatus(409, [], error),
+      );
     }
   });
 
@@ -3320,6 +3331,170 @@ describe('the Background-Sync drain respects offline mode (SNOW-852)', () => {
   });
 });
 
+/**
+ * Run one transaction against the test DB and resolve with its result.
+ *
+ * @param {string} store
+ * @param {'readonly'|'readwrite'} mode
+ * @param {(store: IDBObjectStore) => IDBRequest} op
+ * @returns {Promise<*>}
+ */
+function idb(store, mode, op) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      const inner = op(db.transaction(store, mode).objectStore(store));
+      inner.onsuccess = () => {
+        db.close();
+        resolve(inner.result);
+      };
+      inner.onerror = () => reject(inner.error);
+    };
+  });
+}
+
+/** One queued route-create row, as route_draw.js queues it. */
+function routeRow(overrides) {
+  return {
+    method: 'POST',
+    url: `${ORIGIN}/routes/drawn/`,
+    headers: {},
+    body: '{"points": [[7, 46], [7, 46.001]], "name": "Mont Fort"}',
+    idempotency_key: 'k-route',
+    kind: 'route-create',
+    attempts: 0,
+    status: 'queued',
+    next_attempt_at: 0,
+    principal: 'user-a',
+    ...overrides,
+  };
+}
+
+describe('the Background-Sync drain completes a route drawn offline (SNOW-1262)', () => {
+  beforeEach(async () => {
+    await resetDb();
+    await setStoredPrincipal('user-a');
+  });
+
+  afterEach(async () => {
+    await resetDb();
+  });
+
+  it('acknowledges the key with the route uuid, then deletes the row', async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    const fetchSpy = vi.fn(async () => new Response('{"uuid": "route-uuid"}', { status: 200 }));
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(fetchSpy.mock.calls[0][1].headers['Idempotency-Key']).toBe('k-route');
+    expect(await idb('queue:mutations', 'readonly', (store) => store.getAll())).toEqual([]);
+    const ack = await idb('meta:app', 'readonly', (store) => store.get('mutations.ack:k-route'));
+    expect(ack.value).toMatchObject({ kind: 'route-create', uuid: 'route-uuid' });
+  });
+
+  it("keeps a refusal's status and error on the row", async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    const fetchSpy = vi.fn(
+      async () => new Response('{"error": "route_limit_reached"}', { status: 409 }),
+    );
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    const [row] = await idb('queue:mutations', 'readonly', (store) => store.getAll());
+    expect(row).toMatchObject({ status: 'failed', last_status: 409, last_error: 'route_limit_reached' });
+  });
+
+  it("retries the middleware's in-flight 409 rather than failing the row", async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    const sw = loadSw({
+      caches: makeCaches(),
+      fetch: vi.fn(async () => new Response('{"error": "idempotency_in_flight"}', { status: 409 })),
+    });
+    await sw._hydrateNetworkMode();
+
+    await expect(sw._selfDrainMutations()).rejects.toThrow('mutation_queue_retry_pending');
+
+    const [row] = await idb('queue:mutations', 'readonly', (store) => store.getAll());
+    expect(row.status).toBe('retry-scheduled');
+  });
+
+  it.each([
+    ['a refusal', 400],
+    ['a retry', 503],
+  ])('never re-creates a row a page drain landed while it waited (%s)', async (_label, status) => {
+    const id = await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow()));
+    // The page wins the race: it acknowledges and deletes the row while the
+    // worker is still waiting on its own answer.
+    const fetchSpy = vi.fn(async () => {
+      await idb('meta:app', 'readwrite', (store) =>
+        store.put({ key: 'mutations.ack:k-route', value: { kind: 'route-create', uuid: 'u', at: 1 } }),
+      );
+      await idb('queue:mutations', 'readwrite', (store) => store.delete(id));
+      return new Response('{"error": "x"}', { status });
+    });
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(await idb('queue:mutations', 'readonly', (store) => store.getAll())).toEqual([]);
+  });
+
+  it('never re-creates a row deleted with no acknowledgement either', async () => {
+    const id = await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow({ kind: null })));
+    const fetchSpy = vi.fn(async () => {
+      await idb('queue:mutations', 'readwrite', (store) => store.delete(id));
+      return new Response('', { status: 503 });
+    });
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(await idb('queue:mutations', 'readonly', (store) => store.getAll())).toEqual([]);
+  });
+
+  it('leaves a notice when its guard discards a route of another account', async () => {
+    await idb('queue:mutations', 'readwrite', (store) => store.add(routeRow({ principal: 'user-b' })));
+    const fetchSpy = vi.fn();
+    const sw = loadSw({ caches: makeCaches(), fetch: fetchSpy });
+    await sw._hydrateNetworkMode();
+
+    await sw._selfDrainMutations();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const notice = await idb('meta:app', 'readonly', (store) => store.get('mutations.discard-notice'));
+    expect(notice.value.kinds).toEqual(['route-create']);
+  });
+
+  it('agrees with the real core on the acknowledgement and the failure detail', () => {
+    const inline = loadSw()._INLINE_MUTATION_QUEUE_CORE;
+    const row = routeRow();
+
+    expect(inline.ackRecord(row, { uuid: 'u' }, 5)).toEqual(coreQueue.ackRecord(row, { uuid: 'u' }, 5));
+    expect(inline.ackRecord({ idempotency_key: 'k' }, null, 5)).toEqual(
+      coreQueue.ackRecord({ idempotency_key: 'k' }, null, 5),
+    );
+    for (const [status, body] of [[400, { error: 'x'.repeat(300) }], [404, null], [null, null]]) {
+      expect(inline.failureDetail(status, body)).toEqual(coreQueue.failureDetail(status, body));
+    }
+    expect(inline.ACK_KEY_PREFIX).toBe(coreQueue.ACK_KEY_PREFIX);
+    expect(inline.DISCARD_NOTICE_KEY).toBe(coreQueue.DISCARD_NOTICE_KEY);
+    const detail = { status: 409, error: 'route_limit_reached' };
+    for (const outcome of ['permanent', 'retry']) {
+      expect(inline.nextRowState(row, outcome, 5, detail)).toEqual(
+        coreQueue.nextRowState(row, outcome, 5, detail),
+      );
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // SNOW-874 — the push handler's notification options
 // ---------------------------------------------------------------------------
@@ -4340,6 +4515,367 @@ describe('a trip route and a weather sheet are read offline (SNOW-965)', () => {
   });
 });
 
+describe("the map's region sheet is read offline on its day (SNOW-1312)", () => {
+  const SHELL = 'snowdesk-shell-UNSUBSTITUTED';
+  const SHEET = `${ORIGIN}/partials/region-sheet/ch-4115/`;
+  const TODAY = '2026-01-06';
+  const KEY = `${SHEET}?d=${TODAY}`;
+
+  /** The sheet's own request — map_region_sheet.js sends `HX-Request`. */
+  function sheetRequest(url) {
+    return {
+      url,
+      method: 'GET',
+      mode: 'cors',
+      destination: '',
+      headers: new Headers({ 'HX-Request': 'true' }),
+    };
+  }
+
+  /** A same-origin fragment, as `region_sheet_partial` answers. */
+  function fragment(body, status) {
+    return basicResponse(body, {
+      status: status || 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, max-age=600' },
+    });
+  }
+
+  /** Dispatch one fetch event at the real listener; resolve its answer. */
+  async function dispatchFetch(sw, request) {
+    let promise = null;
+    sw.__listeners.fetch({
+      request,
+      clientId: '',
+      respondWith(value) {
+        promise = value;
+      },
+    });
+    return promise;
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it('classifies the region sheet alone, with and without the core', () => {
+    for (const withCore of [true, false]) {
+      const sw = loadSw(withCore ? { core } : {});
+      const classify = (url) => sw._classifySync(sheetRequest(url), new URL(url));
+
+      expect(classify(`${SHEET}?d=${TODAY}&r=123`)).toBe('public-partial');
+      expect(classify(`${ORIGIN}/partials/region-sheet/FR-01/`)).toBe('public-partial');
+      // The place sheet (SNOW-1313) and every other fragment stay network.
+      expect(classify(`${ORIGIN}/partials/place-sheet/abc/?d=${TODAY}`)).toBe('network');
+      expect(classify(`${ORIGIN}/partials/region-sheet/wp-login/`)).toBe('network');
+      // The weather sheet keeps its own class.
+      expect(classify(`${ORIGIN}/api/weather/Ab3dE_fGh1J/detail/`)).toBe('public-json');
+    }
+  });
+
+  it('keys an entry on path and `d` alone, and needs `d`', () => {
+    const sw = loadSw();
+    const key = (url) => sw._publicPartialKey(new URL(url));
+
+    expect(key(`${SHEET}?d=${TODAY}`)).toBe(KEY);
+    expect(key(`${SHEET}?r=1793360738745&d=${TODAY}&x=y`)).toBe(KEY);
+    expect(key(SHEET)).toBeNull();
+    expect(key(`${SHEET}?d=tomorrow`)).toBeNull();
+    // Two days: the worker and Django would disagree on which.
+    expect(key(`${SHEET}?d=${TODAY}&d=2026-01-01`)).toBeNull();
+  });
+
+  it('warms with `HX-Request` and keeps the sheet under its key, unstamped', async () => {
+    const caches = makeCaches();
+    const fetchSpy = vi.fn(async () => fragment('<p>sheet</p>'));
+    const sw = loadSw({ caches, fetch: fetchSpy });
+
+    const result = await sw._warmCache([`/partials/region-sheet/ch-4115/?d=${TODAY}`]);
+
+    expect(result).toMatchObject({ ok: 1, failed: 0 });
+    expect(fetchSpy.mock.calls[0][1]).toEqual({ headers: { 'HX-Request': 'true' } });
+    const stored = await (await caches.open(SHELL)).match(KEY);
+    expect(await stored.text()).toBe('<p>sheet</p>');
+    expect(stored.headers.get(sw.PRINCIPAL_HEADER)).toBeNull();
+    // A fragment is not a page: nothing it names is warmed after it.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends no `HX-Request` for any other url it warms', async () => {
+    const fetchSpy = vi.fn(async () => basicResponse('{}', { headers: { 'Content-Type': 'application/json' } }));
+    const sw = loadSw({ fetch: fetchSpy });
+
+    await sw._warmCache([`/api/ratings/?d=${TODAY}&country=ch`]);
+
+    expect(fetchSpy.mock.calls[0]).toHaveLength(1);
+  });
+
+  it('counts a sheet that will not warm as a failure, and keeps nothing', async () => {
+    for (const status of [400, 404, 500]) {
+      const caches = makeCaches();
+      const sw = loadSw({ caches, fetch: async () => fragment('nope', status) });
+
+      expect(await sw._warmCache([`/partials/region-sheet/ch-4115/?d=${TODAY}`]))
+        .toMatchObject({ ok: 0, failed: 1 });
+      expect(caches.size(SHELL)).toBe(0);
+    }
+    // An undated sheet has no key the offline read could find.
+    const caches = makeCaches();
+    const undated = loadSw({ caches, fetch: async () => fragment('<p>x</p>') });
+    expect(await undated._warmCache(['/partials/region-sheet/ch-4115/']))
+      .toMatchObject({ ok: 0, failed: 1 });
+    expect(caches.size(SHELL)).toBe(0);
+  });
+
+  it('serves a warmed sheet offline whatever `r` the sheet sends', async () => {
+    const caches = makeCaches();
+    const state = { online: true };
+    const fetchSpy = vi.fn(async () => {
+      if (!state.online) throw new TypeError('Failed to fetch');
+      return fragment('<p>warm</p>');
+    });
+    const sw = loadSw({ caches, fetch: fetchSpy });
+    await sw._warmCache([`/partials/region-sheet/ch-4115/?d=${TODAY}`]);
+    state.online = false;
+    await settleHydration(sw);
+    sw._forceOffline();
+    fetchSpy.mockClear();
+
+    const response = await dispatchFetch(sw, sheetRequest(`${SHEET}?d=${TODAY}&r=1793360738745`));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('<p>warm</p>');
+    expect(response.headers.get('X-SW-Cache')).toBe('hit');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('answers a day it does not hold with the offline-miss 504', async () => {
+    const caches = makeCaches();
+    caches.seed(SHELL, KEY, new Response('<p>today</p>'));
+    const sw = loadSw({ caches });
+
+    const otherDay = await sw._publicPartialNetworkFirst(sheetRequest(`${SHEET}?d=2026-01-05`));
+    const undated = await sw._publicPartialNetworkFirst(sheetRequest(SHEET));
+
+    for (const response of [otherDay, undated]) {
+      expect(response.status).toBe(504);
+      expect(response.headers.get('X-SW-Offline-Miss')).toBe('1');
+    }
+  });
+
+  it('keeps an ok sheet fetched online under its key, and never a 400 or 404', async () => {
+    const caches = makeCaches();
+    let answer = () => fragment('<p>live</p>');
+    const sw = loadSw({ caches, fetch: async () => answer() });
+
+    const live = await sw._publicPartialNetworkFirst(sheetRequest(`${KEY}&r=9`));
+    await flush();
+    expect(await live.text()).toBe('<p>live</p>');
+    expect(caches.size(SHELL)).toBe(1);
+    expect(await (await (await caches.open(SHELL)).match(KEY)).text()).toBe('<p>live</p>');
+
+    for (const status of [400, 404]) {
+      answer = () => fragment('bad', status);
+      const response = await sw._publicPartialNetworkFirst(
+        sheetRequest(`${SHEET}?d=2026-01-07`),
+      );
+      await flush();
+      expect(response.status).toBe(status);
+    }
+    expect(caches.size(SHELL)).toBe(1);
+  });
+
+  it("leaves the weather sheet's exact match as it was", async () => {
+    // The normalisation is the region sheet's alone: a weather sheet with
+    // a stray parameter is not the warmed one.
+    const caches = makeCaches();
+    const weather = `${ORIGIN}/api/weather/Ab3dE_fGh1J/detail/?date=${TODAY}`;
+    caches.seed(SHELL, weather, new Response('{"html":"x"}'));
+    const sw = loadSw({ caches });
+
+    const exact = await sw._publicJsonNetworkFirst({ url: weather, method: 'GET' });
+    const extra = await sw._publicJsonNetworkFirst({ url: `${weather}&r=1`, method: 'GET' });
+
+    expect(exact.status).toBe(200);
+    expect(extra.status).toBe(504);
+    expect(extra.headers.get('X-SW-Offline-Miss')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SNOW-1313 — a saved pin's place sheet, kept for its owner
+// ---------------------------------------------------------------------------
+
+describe("a saved pin's place sheet is read offline by its owner (SNOW-1313)", () => {
+  const SHELL = 'snowdesk-shell-UNSUBSTITUTED';
+  const UUID = '2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11';
+  const SHEET = `${ORIGIN}/partials/place-sheet/favourite/${UUID}/`;
+  const TODAY = '2026-10-30';
+  const KEY = `${SHEET}?d=${TODAY}`;
+  const WARM = `/partials/place-sheet/favourite/${UUID}/?d=${TODAY}`;
+
+  /** The sheet's own request — map_place_sheet.js sends `HX-Request`. */
+  function sheetRequest(url) {
+    return {
+      url,
+      method: 'GET',
+      mode: 'cors',
+      destination: '',
+      headers: new Headers({ 'HX-Request': 'true' }),
+    };
+  }
+
+  /** The owner's fragment, as `favourite_sheet_partial` answers it. */
+  function sheetFor(who, opts = {}) {
+    const headers = {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': opts.cacheControl || 'private, no-cache',
+    };
+    if (who) headers['X-Snowdesk-Principal'] = who;
+    return basicResponse(opts.body || '<p>pin</p>', { status: opts.status || 200, headers });
+  }
+
+  /** Dispatch one fetch event at the real listener; resolve its answer. */
+  async function dispatchFetch(sw, request) {
+    let promise = null;
+    sw.__listeners.fetch({
+      request,
+      clientId: '',
+      respondWith(value) {
+        promise = value;
+      },
+    });
+    return promise;
+  }
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it('classifies the favourite sheet alone, never the resort sheet, with and without the core', () => {
+    for (const withCore of [true, false]) {
+      const sw = loadSw(withCore ? { core } : {});
+      const classify = (url) => sw._classifySync(sheetRequest(url), new URL(url));
+
+      expect(classify(KEY)).toBe('private-partial');
+      expect(classify(`${ORIGIN}/partials/place-sheet/resort/verbier/?d=${TODAY}`)).toBe('network');
+      expect(classify(`${ORIGIN}/partials/place-sheet/favourite/not-a-uuid/`)).toBe('network');
+      expect(classify(`${ORIGIN}/partials/region-sheet/ch-4115/`)).toBe('public-partial');
+    }
+  });
+
+  it('warms with `HX-Request` and keeps the sheet stamped for its owner', async () => {
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    const fetchSpy = vi.fn(async () => sheetFor('acct-a'));
+    const sw = loadSw({ caches, fetch: fetchSpy });
+
+    const result = await sw._warmCache([WARM]);
+
+    expect(result).toMatchObject({ ok: 1, failed: 0 });
+    expect(fetchSpy.mock.calls[0][1]).toEqual({ headers: { 'HX-Request': 'true' } });
+    const stored = await (await caches.open(SHELL)).match(KEY);
+    expect(await stored.text()).toBe('<p>pin</p>');
+    expect(stored.headers.get(sw.PRINCIPAL_HEADER)).toBe('acct-a');
+    // A fragment is not a page: nothing it names is warmed after it.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails a warm it cannot keep: unattested, another viewer, no-store, undated or nobody signed in', async () => {
+    const cases = [
+      { principal: 'acct-a', answer: () => sheetFor(null), url: WARM },
+      { principal: 'acct-a', answer: () => sheetFor('acct-b'), url: WARM },
+      { principal: 'acct-a', answer: () => sheetFor('acct-a', { cacheControl: 'private, no-store' }), url: WARM },
+      { principal: 'acct-a', answer: () => sheetFor('acct-a'), url: `/partials/place-sheet/favourite/${UUID}/` },
+      { principal: null, answer: () => sheetFor('acct-a'), url: WARM },
+      { principal: 'acct-a', answer: () => sheetFor('acct-a', { status: 404 }), url: WARM },
+    ];
+    for (const { principal, answer, url } of cases) {
+      await setStoredPrincipal(principal);
+      const caches = makeCaches();
+      const sw = loadSw({ caches, fetch: async () => answer() });
+
+      expect(await sw._warmCache([url])).toMatchObject({ ok: 0, failed: 1 });
+      expect(caches.size(SHELL)).toBe(0);
+    }
+  });
+
+  it('serves the warmed sheet offline to its owner on its day, and to nobody else', async () => {
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    const state = { online: true };
+    const fetchSpy = vi.fn(async () => {
+      if (!state.online) throw new TypeError('Failed to fetch');
+      return sheetFor('acct-a', { body: '<p>warm</p>' });
+    });
+    const sw = loadSw({ caches, fetch: fetchSpy });
+    await sw._warmCache([WARM]);
+    state.online = false;
+    await settleHydration(sw);
+    sw._forceOffline();
+    fetchSpy.mockClear();
+
+    const forA = await dispatchFetch(sw, sheetRequest(KEY));
+    expect(forA.status).toBe(200);
+    expect(await forA.text()).toBe('<p>warm</p>');
+    expect(forA.headers.get('X-SW-Cache')).toBe('hit');
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    // Another day, or no day: never the downloaded one.
+    for (const url of [`${SHEET}?d=2026-10-31`, SHEET]) {
+      const miss = await sw._privatePartialNetworkFirst(sheetRequest(url));
+      expect(miss.status).toBe(504);
+      expect(miss.headers.get('X-SW-Offline-Miss')).toBe('1');
+    }
+
+    // An account swap, or signing out.
+    await setStoredPrincipal('acct-b');
+    expect((await sw._privatePartialNetworkFirst(sheetRequest(KEY))).status).toBe(504);
+    await setStoredPrincipal(null);
+    expect((await sw._privatePartialNetworkFirst(sheetRequest(KEY))).status).toBe(504);
+  });
+
+  it('keeps an attested sheet fetched online, and not one naming another viewer', async () => {
+    await setStoredPrincipal('acct-a');
+    const caches = makeCaches();
+    let answer = () => sheetFor('acct-a', { body: '<p>live</p>' });
+    const sw = loadSw({ caches, fetch: async () => answer() });
+
+    const live = await sw._privatePartialNetworkFirst(sheetRequest(KEY));
+    await flush();
+    expect(await live.text()).toBe('<p>live</p>');
+    const stored = await (await caches.open(SHELL)).match(KEY);
+    expect(stored.headers.get(sw.PRINCIPAL_HEADER)).toBe('acct-a');
+
+    answer = () => sheetFor('acct-b');
+    const other = await sw._privatePartialNetworkFirst(sheetRequest(`${SHEET}?d=2026-10-31`));
+    await flush();
+    expect(other.status).toBe(200);
+    expect(caches.size(SHELL)).toBe(1);
+  });
+
+  it('drops every kept day of a sheet the server answers 403 or 404', async () => {
+    for (const status of [403, 404]) {
+      await setStoredPrincipal('acct-a');
+      const caches = makeCaches();
+      const stamp = { [loadSw().PRINCIPAL_HEADER]: 'acct-a' };
+      caches.seed(SHELL, KEY, new Response('<p>a</p>', { headers: stamp }));
+      caches.seed(SHELL, `${SHEET}?d=2026-10-31`, new Response('<p>b</p>', { headers: stamp }));
+      const other = `${ORIGIN}/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000001/?d=${TODAY}`;
+      caches.seed(SHELL, other, new Response('<p>c</p>', { headers: stamp }));
+      const sw = loadSw({ caches, fetch: async () => sheetFor(null, { status }) });
+
+      const response = await sw._privatePartialNetworkFirst(sheetRequest(KEY));
+      await flush();
+
+      expect(response.status).toBe(status);
+      const shell = await caches.open(SHELL);
+      expect(await shell.match(KEY)).toBeUndefined();
+      expect(await shell.match(`${SHEET}?d=2026-10-31`)).toBeUndefined();
+      expect(await shell.match(other)).toBeTruthy();
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // SNOW-1311 — an update carries your downloaded content across
 // ---------------------------------------------------------------------------
@@ -4467,6 +5003,40 @@ describe('activate carries the old shell caches into the new one (SNOW-1311)', (
       copied: 4,
       failed: 0,
     });
+  });
+
+  it('carries a downloaded region sheet under its own key (SNOW-1312)', async () => {
+    const regionSheet = `${ORIGIN}/partials/region-sheet/ch-4115/?d=2026-10-30`;
+    const caches = makeCaches();
+    caches.seed(OLD, regionSheet, stored('<p>sheet</p>', { 'Content-Type': 'text/html' }));
+    const sw = await offlineSw(caches);
+
+    await activate(sw);
+    await flush();
+
+    const carried = await (await caches.open(SHELL)).match(regionSheet);
+    expect(await carried.text()).toBe('<p>sheet</p>');
+    expect(carried.headers.get('X-SW-Principal')).toBeNull();
+    expect(caches.has(OLD)).toBe(false);
+  });
+
+  it('carries a kept place sheet with its principal stamp (SNOW-1313)', async () => {
+    const pinSheet = `${ORIGIN}/partials/place-sheet/favourite/2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11/?d=2026-10-30`;
+    const caches = makeCaches();
+    caches.seed(
+      OLD,
+      pinSheet,
+      stored('<p>pin</p>', { 'Content-Type': 'text/html', 'X-SW-Principal': 'acct-a' }),
+    );
+    const sw = await offlineSw(caches);
+
+    await activate(sw);
+    await flush();
+
+    const carried = await (await caches.open(SHELL)).match(pinSheet);
+    expect(await carried.text()).toBe('<p>pin</p>');
+    expect(carried.headers.get('X-SW-Principal')).toBe('acct-a');
+    expect(caches.has(OLD)).toBe(false);
   });
 
   it.each([false, true])(

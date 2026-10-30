@@ -66,10 +66,10 @@ from apps.regions.models import (
 )
 from apps.regions.services.basemap_tiles import MICRO_BAND, build_blob
 from apps.routes.models import Route, RouteShare, SkiSegment, SkiTour
-from apps.routes.services.slope_segments import stride_coordinates
-from apps.routes.services.track_render import build_track_render
 from apps.trips.models import Trip, TripParticipant
 from apps.weather.models import Weather
+from track.render import build_track_render
+from track.slope_samples import stride_coordinates
 
 # A small representative Alpine bbox (roughly Valais) used as
 # MicroRegionFactory's ``basemap_download`` default — SNOW-521's rework

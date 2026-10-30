@@ -1410,9 +1410,9 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
   // The date the fixture's HTML was rendered on, deliberately NOT today
   // and deliberately far from it: the plan is built from the CLIENT's
   // clock, and pinning that difference is what SNOW-925's review asked
-  // for. A month back rather than a fixed date, so that SNOW-953's
-  // backwards reach can never grow far enough to include it by accident
-  // and turn this assertion into a calendar coincidence.
+  // for. A month back rather than a fixed date, so it can never fall
+  // inside the download's window by accident and turn this assertion
+  // into a calendar coincidence.
   const RENDERED_DAY = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
   /** Today as the client reckons it — what the plan must actually use. */
@@ -1440,8 +1440,10 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
          data-area-items-url="/api/area-items/"
          data-trip-page-url-template="/trips/__UUID__/"
          data-trip-route-url-template="/trips/__UUID__/route.geojson"
+         data-ratings-url="/api/ratings/"
+         data-region-sheet-url="/partials/region-sheet/XX-0000/"
+         data-favourite-sheet-url="/partials/place-sheet/favourite/00000000-0000-0000-0000-000000000000/"
          data-content-countries="ch fr"
-         data-content-past-days="2"
          data-today="${RENDERED_DAY}">
       <button data-offline-audit-run></button>
       <div data-offline-audit-output hidden></div>
@@ -1516,10 +1518,32 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     };
   }
 
+  /** `clientDay()` shifted by `delta` days, as an ISO key. */
+  function dayFrom(delta) {
+    return new Date(Date.parse(clientDay()) + delta * 86400000).toISOString().slice(0, 10);
+  }
+
+  /**
+   * SNOW-1312: the season ratings the forward window is read off —
+   * yesterday, today and tomorrow are published, as on an evening once
+   * the next day's bulletin is out.
+   */
+  function seasonRatings() {
+    return {
+      [dayFrom(-1)]: { [REGION_ID]: 2 },
+      [dayFrom(0)]: { [REGION_ID]: 3 },
+      [dayFrom(1)]: { [REGION_ID]: 3 },
+    };
+  }
+
   let warmed;
+  let frAhead = false;
 
   beforeEach(async () => {
+    frAhead = false;
     await import('../../static/js/basemap_download_core.js');
+    // SNOW-1312: loaded on /offline/ for `latestKnownDate`.
+    await import('../../static/js/calendar_core.js');
     warmed = [];
     window.pwaWarmCache = vi.fn(async (urls) => {
       warmed.push(urls);
@@ -1536,6 +1560,11 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
           body = REGIONS_CH;
         }
         if (href.includes('weather.geojson')) body = WEATHER;
+        if (href.startsWith('/api/ratings/?country=')) body = seasonRatings();
+        // A forward day only France has published (Codex on #1319).
+        if (href === '/api/ratings/?country=fr' && frAhead) {
+          body = { ...seasonRatings(), [dayFrom(2)]: { 'FR-01': 2 } };
+        }
         return { ok: true, json: async () => body };
       }),
     );
@@ -1642,6 +1671,16 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     expect(urls).toContain('/trips/trip-uuid-1/');
     expect(urls).toContain('/trips/trip-uuid-1/route.geojson');
     expect(urls).toContain('/api/weather/BORROWEDccc/detail/?date=' + RENDERED_DAY);
+  });
+
+  it("adds each pin's own place sheet, dated with the server's day (SNOW-1313)", async () => {
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const urls = warmed.flat();
+    expect(urls).toContain('/partials/place-sheet/favourite/pin-1/?d=' + RENDERED_DAY);
   });
 
   it("dates weather sheets with the server's day, not this device's (SNOW-965)", async () => {
@@ -1793,24 +1832,98 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     expect(urls).toContain('/api/regions.geojson?country=fr');
     const asked = window.fetch.mock.calls.map((call) => String(call[0]));
     expect(asked.some((url) => url.includes('area-content'))).toBe(true);
-    expect(asked.some((url) => url.includes('country=fr'))).toBe(false);
+    // No country's OUTLINE is fetched to plan from (the season ratings are
+    // read for the forward window, SNOW-1312 — a different feed).
+    expect(
+      asked.some((url) => url.includes('regions.geojson') && url.includes('country=fr')),
+    ).toBe(false);
   });
 
-  it('reaches back the days the page was told to (SNOW-953)', async () => {
-    // `data-content-past-days="2"` in the fixture. Yesterday's bulletin is
-    // what says what the snowpack has just been through, and a
-    // forward-only window never carried it.
+  it('takes today and the published forward days, never before (SNOW-1312)', async () => {
+    // "You're looking forward out in the field, not back." Yesterday is in
+    // the season payload and is still not taken, for any kind of content.
     const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
 
     row.querySelector('[data-audit-complete]').click();
     await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
 
     const urls = warmed.flat();
-    const day = (back) =>
-      new Date(Date.parse(clientDay()) - back * 86400000).toISOString().slice(0, 10);
-    expect(urls).toContain('/ch-4115/martigny-verbier/' + day(1) + '/');
-    expect(urls).toContain('/ch-4115/martigny-verbier/' + day(2) + '/');
-    expect(urls).not.toContain('/ch-4115/martigny-verbier/' + day(3) + '/');
+    expect(urls).toContain('/ch-4115/martigny-verbier/' + dayFrom(0) + '/');
+    expect(urls).toContain('/ch-4115/martigny-verbier/' + dayFrom(1) + '/');
+    expect(urls.some((url) => url.includes(dayFrom(-1)))).toBe(false);
+  });
+
+  it('reaches a forward day any content country has published (SNOW-1312)', async () => {
+    // The map merges every country into its season payload, so a day
+    // France has issued and Switzerland has not is in its window too.
+    frAhead = true;
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    expect(warmed.flat()).toContain('/partials/region-sheet/ch-4115/?d=' + dayFrom(2));
+  });
+
+  it('derives the same days as the map download (SNOW-1312)', async () => {
+    // One window, two entry points: the shared core over the same ceiling.
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const days = warmed
+      .flat()
+      .map((url) => /^\/ch-4115\/martigny-verbier\/(\d{4}-\d{2}-\d{2})\/$/.exec(url))
+      .filter(Boolean)
+      .map((match) => match[1]);
+    const core = window.pwaBasemapDownloadCore;
+    const mapDays = core.forwardContentDays(
+      clientDay(),
+      window.pwaCalendarCore.latestKnownDate(seasonRatings(), clientDay()),
+      null,
+    );
+    expect(days).toEqual(mapDays);
+  });
+
+  it('takes the region sheets and dated ratings for those days (SNOW-1312)', async () => {
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    const urls = warmed.flat();
+    for (const delta of [0, 1]) {
+      expect(urls).toContain('/partials/region-sheet/ch-4115/?d=' + dayFrom(delta));
+      expect(urls).toContain('/api/ratings/?d=' + dayFrom(delta) + '&country=ch');
+    }
+    // And the season payloads the scrubber paints every day from.
+    expect(urls).toContain('/api/ratings/?country=ch');
+    expect(urls).toContain('/api/ratings/?country=fr');
+    expect(urls.some((url) => url.includes('?d=' + dayFrom(-1)))).toBe(false);
+  });
+
+  it('counts a sheet or ratings warm that fails against the area (SNOW-1312)', async () => {
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+    window.pwaWarmCache.mockImplementation(async (urls) => {
+      warmed.push(urls);
+      const failed = urls.filter(
+        (url) => url.startsWith('/partials/region-sheet/') || url.startsWith('/api/ratings/?d='),
+      ).length;
+      return { ok: urls.length - failed, failed, bytes: 10 };
+    });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(
+      async () => {
+        const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+        return stored.value[0].contentIncomplete === true;
+      },
+      { timeout: 5000 },
+    );
+
+    const stored = await window.pwaDb.get('meta:app', 'basemap.regions');
+    expect(stored.value[0].contentAt).toBe('2026-09-01T10:00:00.000Z');
   });
 
   it('stamps the record and re-checks, so the report is the receipt', async () => {

@@ -10,6 +10,9 @@
  * the scrubber, and the saved pin's Share and Delete act from inside the
  * sheet. While the timeline plays (SNOW-1239) the sheet stays open under a
  * "Playback in progress" band, fetches nothing, and loads once on stop.
+ * SNOW-1313: a pin's sheet asks with the map's day (the offline key), says
+ * when that day is not downloaded, and its "Full forecast" link opens the
+ * map's weather sheet for the map's day instead of navigating.
  *
  * The module wires itself at import, so the page is built and the modules
  * imported ONCE; each test starts from a closed sheet instead. jsdom's
@@ -24,6 +27,7 @@ const FAVOURITE_BODY = `
       <h2 data-row-label>Lac des Vaux</h2>
       <button type="button" data-row-rename data-favourite-rename="abc">Rename</button>
       <button type="button" data-favourite-share data-favourite-share-text="Lac des Vaux - https://w3w.co/a.b.c">Share</button>
+      <a href="/weather/Ab3dE/?date=2026-10-30" data-testid="place-sheet-forecast-link" data-forecast-short-id="Ab3dE">Full forecast</a>
       <form data-row-remove hx-post="/favourites/abc/delete/" hx-confirm="Delete this pin?">
         <input type="hidden" name="csrfmiddlewaretoken" value="tok">
         <button type="submit">Delete</button>
@@ -53,6 +57,7 @@ document.body.innerHTML = `
   <template id="place-sheet-strings-template">
     <span data-string="loading">Loading place details…</span>
     <span data-string="failed">Place details are unavailable offline.</span>
+    <span data-string="notDownloaded">This day isn't downloaded for offline use.</span>
   </template>
 `;
 await import('../../static/js/i18n_strings.js');
@@ -226,11 +231,75 @@ describe('offline', () => {
     expect(sheet.textContent).toContain('Lac des Vaux');
   });
 
+  it('asks for a saved pin on the map\'s current day, the key it was kept under (SNOW-1313)', () => {
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-10-30' } }));
+    window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc-123' });
+    expect(fetchMock.mock.calls[0][0]).toBe('/partials/place-sheet/favourite/abc-123/?d=2026-10-30');
+  });
+
+  it('says a day the device does not hold is not downloaded, under the pin\'s name (SNOW-1313)', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve({
+      ok: false,
+      status: 504,
+      headers: new Headers({ 'X-SW-Offline-Miss': '1' }),
+      text: () => Promise.resolve(''),
+    }));
+    window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc', name: 'Lac des Vaux' });
+    await settle();
+    expect(sheet.textContent).toContain('Lac des Vaux');
+    expect(sheet.querySelector('[data-testid="place-sheet-not-downloaded"]').textContent)
+      .toBe("This day isn't downloaded for offline use.");
+  });
+
   it('says a resort is unavailable', async () => {
     fetchMock.mockImplementation(() => Promise.reject(new Error('offline')));
     window.pwaPlaceSheet.open({ kind: 'resort', id: 'verbier' });
     await settle();
     expect(sheet.textContent).toContain('Place details are unavailable offline.');
+  });
+});
+
+describe('the forecast link (SNOW-1313)', () => {
+  afterEach(() => {
+    delete window.pwaWeatherDetail;
+  });
+
+  it('opens the weather sheet on the map\'s current day and does not navigate', async () => {
+    const open = vi.fn(() => Promise.resolve(true));
+    window.pwaWeatherDetail = { open };
+    document.dispatchEvent(new CustomEvent('snowdesk:date-changed', { detail: { date: '2026-10-30' } }));
+    window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc' });
+    await settle();
+    const link = /** @type {HTMLAnchorElement} */ (sheet.querySelector('[data-forecast-short-id]'));
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+
+    link.dispatchEvent(click);
+
+    expect(click.defaultPrevented).toBe(true);
+    expect(open).toHaveBeenCalledWith('Ab3dE', '2026-10-30');
+  });
+
+  it('leaves the link to navigate without the weather sheet, or on a modified click', async () => {
+    window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc' });
+    await settle();
+    const link = /** @type {HTMLAnchorElement} */ (sheet.querySelector('[data-forecast-short-id]'));
+    // Whether the sheet took the click, read once it has run; then the
+    // navigation jsdom cannot make is stopped.
+    const taken = [];
+    const record = (ev) => {
+      taken.push(ev.defaultPrevented);
+      ev.preventDefault();
+    };
+    document.addEventListener('click', record);
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    const open = vi.fn();
+    window.pwaWeatherDetail = { open };
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
+    document.removeEventListener('click', record);
+
+    expect(taken).toEqual([false, false]);
+    expect(open).not.toHaveBeenCalled();
   });
 });
 
@@ -307,6 +376,20 @@ describe('while open', () => {
     await settle();
     expect(changed).toHaveBeenCalled();
     expect(window.pwaPlaceSheet.isOpen()).toBe(false);
+  });
+
+  it('posts with the session\'s cookie token over a kept body\'s stale one (SNOW-1313)', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    document.cookie = 'csrftoken=fresh';
+    window.pwaPlaceSheet.open({ kind: 'favourite', id: 'abc' });
+    await settle();
+    const form = /** @type {HTMLFormElement} */ (sheet.querySelector('form[data-row-remove]'));
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    expect(fetchMock).toHaveBeenLastCalledWith('/favourites/abc/delete/', expect.objectContaining({
+      headers: { 'HX-Request': 'true', 'X-CSRFToken': 'fresh' },
+    }));
+    document.cookie = 'csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    await settle();
   });
 
   it('keeps the pin when the confirm is declined', async () => {

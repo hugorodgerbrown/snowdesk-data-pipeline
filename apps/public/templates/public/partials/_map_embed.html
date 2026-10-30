@@ -1859,10 +1859,6 @@ Optional context:
                 data-season-start="{{ season_start|date:'Y-m-d' }}"
                 data-season-end="{{ season_end|date:'Y-m-d' }}"
                 data-today="{{ today|date:'Y-m-d' }}"
-                {# SNOW-953: how many days BEHIND today an offline download #}
-                {# carries bulletins for. Forwards is data-driven off the   #}
-                {# last published day, so only the reach back is a setting. #}
-                data-content-past-days="{{ content_past_days }}"
                 data-today-pct="{{ today_pct }}"
                 {# CSS hides it when this is false. Server-rendered so first #}
                 {# paint is already right; static/js/map_scrubber_reveal.js  #}

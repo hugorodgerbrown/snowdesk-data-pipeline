@@ -295,6 +295,7 @@
     'label-dropzone': '%(name)s (drop zone)',
     'label-custom': '%(name)s (area you drew)',
     'row-bulletins': 'Bulletins you have opened',
+    'row-region-sheets': 'Region details for downloaded days',
     'row-saved-places': 'Your saved places',
     'row-routes': 'Your routes',
     'row-reports': 'Community reports',
@@ -347,6 +348,8 @@
     'note-area-unreadable':
       '%(name)s could not be checked because this device’s storage did not answer',
     'note-no-bulletins': 'no bulletin has been opened on this device yet',
+    'note-no-region-sheets': 'no downloaded area has saved its region details yet',
+    'note-empty-region-sheets': 'no area is downloaded, so there are no region details to save',
     'note-no-favourites': 'none of your saved places has been loaded here yet',
     'note-no-routes': 'none of your routes has been loaded on this device',
     'note-no-reports': 'community reports have not been loaded on this device',
@@ -1601,38 +1604,50 @@
   }
 
   /**
-   * How many days behind today this deployment carries bulletins for.
+   * The days an area's content is taken for: today and forward only
+   * (SNOW-1312).
    *
-   * @param {Object} data The panel root's dataset.
-   * @returns {number} A non-negative whole number; 0 when the attribute is
-   *   absent or malformed, which is what this page did before SNOW-953.
-   */
-  function readPastDays(data) {
-    var raw = (data && data.contentPastDays) || '';
-    if (!/^\d+$/.test(raw)) return 0;
-    var days = parseInt(raw, 10);
-    return Number.isFinite(days) && days >= 0 ? days : 0;
-  }
-
-  /**
-   * The day window an area's bulletins are taken for, oldest first.
+   * The map's own window, from the same two pieces: the last day the
+   * season ratings carry (`pwaCalendarCore.latestKnownDate`, SNOW-927 —
+   * calendar_core.js is loaded on `/offline/` for this) and the shared
+   * `pwaBasemapDownloadCore.forwardContentDays`. So an area updated from
+   * here holds the same days as one downloaded from the map: today's
+   * bulletin, tomorrow's once issued, and nothing from before today. The
+   * season feed is read through ``fetchJson``'s bound, and an answer that
+   * does not come back is "today alone" — the window the map falls back
+   * to as well.
    *
-   * Today and the days behind it, and no further forward: reaching to the
-   * last published day needs the season payload the map holds and this
-   * page does not.
+   * The ceiling is the latest day ANY content country has published —
+   * the map merges every country into the season payload it reads
+   * (`loadCountryRatings`), so a forward day France has issued and
+   * Switzerland has not is still in its window, and must be here too.
    *
+   * @param {Object} core ``pwaBasemapDownloadCore``.
    * @param {string} today An ISO date key.
-   * @param {number} pastDays How many days to reach back.
-   * @returns {string[]} Date keys, oldest first.
+   * @param {string} ratingsUrl The panel's ``data-ratings-url``.
+   * @param {string[]} countries The panel's content countries.
+   * @returns {Promise<string[]>} Date keys, oldest first.
    */
-  function contentDays(today, pastDays) {
-    var todayMs = Date.parse(today);
-    if (!Number.isFinite(todayMs)) return [today];
-    var days = [];
-    for (var back = pastDays; back >= 0; back -= 1) {
-      days.push(new Date(todayMs - back * 86400000).toISOString().slice(0, 10));
+  async function contentDays(core, today, ratingsUrl, countries) {
+    var ceiling = today;
+    var calendar = self.pwaCalendarCore;
+    if (ratingsUrl && calendar && typeof calendar.latestKnownDate === 'function') {
+      var codes = countries && countries.length > 0 ? countries : ['ch'];
+      var seasons = await Promise.all(
+        codes.map(function (code) {
+          return fetchJson(ratingsUrl + '?country=' + encodeURIComponent(code));
+        }),
+      );
+      seasons.forEach(function (season) {
+        var latest = calendar.latestKnownDate(season, today) || today;
+        if (latest > ceiling) ceiling = latest;
+      });
     }
-    return days;
+    var days =
+      typeof core.forwardContentDays === 'function'
+        ? core.forwardContentDays(today, ceiling, null)
+        : [];
+    return days.length > 0 ? days : [today];
   }
 
   // SNOW-1141 review: `shell` is optional run-wide state, `{ok?: boolean}`.
@@ -1703,6 +1718,15 @@
     var regionUrls = countries.map(function (code) {
       return data.regionsUrl + '?country=' + encodeURIComponent(code);
     });
+    // SNOW-1312: and each country's season ratings, which the scrubber
+    // paints every day from — the map's download warms them with its
+    // feeds (`assembleBasemapDownloadFeedURLs`), so an Update from here
+    // warms them too. The dated per-day feeds come with the plan below.
+    var seasonRatingsUrls = data.ratingsUrl
+      ? countries.map(function (code) {
+          return data.ratingsUrl + '?country=' + encodeURIComponent(code);
+        })
+      : [];
     // SNOW-965: the reader's own trips and pins, asked alongside. Signed
     // out, the page renders no endpoint — nothing to ask, not a shortfall.
     var itemsUrl = data.areaItemsUrl || '';
@@ -1721,10 +1745,8 @@
     var plan = core.areaContentURLs({
       regions: (content && content.regions) || [],
       weather: (content && content.weather) || [],
-      // Today, plus the days behind it the deployment asks for
-      // (`data-content-past-days`, SNOW-953). Forwards is still the map's
-      // alone: widening to the last published day (SNOW-927) needs the
-      // season payload the scrubber holds and this page does not.
+      // SNOW-1312: today to the last published day, never before today
+      // — the map's own window (`contentDays`).
       //
       // Today itself is resolved at PRESS time, not read off the rendered
       // attribute. `data-today` is the date the HTML was rendered on, and
@@ -1734,13 +1756,21 @@
       // yesterday's bulletins and then stamped a completion with the
       // current timestamp, after which the report called the area fresh
       // with today's bulletins never saved.
-      days: contentDays(day, readPastDays(data)),
+      days: await contentDays(core, day, data.ratingsUrl || '', countries),
       weatherDetailTemplate: data.weatherDetailUrl || '',
       // SNOW-965: dated, the url the map's sheet asks for today and the
       // only one the worker answers offline — see `weatherDay` above.
       weatherDay: weatherDay,
+      // SNOW-1312: the map's region sheet per region and day, and the
+      // dated ratings feed per day — composed by the same core the map's
+      // download uses, so the urls are the map's.
+      regionSheetTemplate: data.regionSheetUrl || '',
+      ratingsUrl: data.ratingsUrl || '',
     });
-    var planned = plan.bulletinUrls.concat(plan.weatherDetailUrls);
+    var planned = plan.bulletinUrls
+      .concat(plan.regionSheetUrls || [])
+      .concat(plan.ratingsUrls || [])
+      .concat(plan.weatherDetailUrls);
     // SNOW-965: each trip's page and route, and the sheet each pin
     // borrows — composed by the same core the map's download uses.
     var itemUrls =
@@ -1752,12 +1782,20 @@
               tripRoute: data.tripRouteUrlTemplate || '',
               weatherDetail: data.weatherDetailUrl || '',
               weatherDay: weatherDay,
+              // SNOW-1313: each pin's own place sheet, dated with the
+              // server's day as the weather sheet is — the day the map's
+              // place sheet asks with on boot.
+              favouriteSheet: data.favouriteSheetUrl || '',
             },
             planned,
           )
         : [];
 
-    var urls = regionUrls.concat(feedUrls).concat(planned).concat(itemUrls);
+    var urls = regionUrls
+      .concat(seasonRatingsUrls)
+      .concat(feedUrls)
+      .concat(planned)
+      .concat(itemUrls);
     if (urls.length === 0) return false;
 
     var result = await warm(urls);

@@ -39,6 +39,7 @@ And the SNOW-1169 exemption:
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import timedelta
 from unittest.mock import patch
@@ -324,6 +325,9 @@ def test_duplicate_request_mid_flight_never_reaches_the_view() -> None:
     assert outer.status_code == 201
     assert view.inner_response is not None
     assert view.inner_response.status_code == 409
+    # SNOW-1262: the in-flight 409 says so, so the mutation queue retries it
+    # rather than failing a row whose original request is about to land.
+    assert json.loads(view.inner_response.content) == {"error": "idempotency_in_flight"}
     assert IdempotencyRecord.objects.filter(key="racy").count() == 1
 
     # Once the winner has completed, a retry replays its response.
@@ -416,6 +420,8 @@ def test_unclaimable_key_returns_409_without_running_the_view() -> None:
 
     assert view.calls == 0
     assert response.status_code == 409
+    # Transient: a retry goes through reserve() again (SNOW-1262).
+    assert json.loads(response.content) == {"error": "idempotency_in_flight"}
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +476,8 @@ def test_reused_key_different_body_returns_409() -> None:
 
     assert view.calls == 1
     assert response.status_code == 409
+    # SNOW-1262: permanent, and distinguishable from the in-flight 409.
+    assert json.loads(response.content) == {"error": "idempotency_key_reused"}
     record = IdempotencyRecord.objects.get(key="fp-body")
     assert record.response_body == b"created"
 

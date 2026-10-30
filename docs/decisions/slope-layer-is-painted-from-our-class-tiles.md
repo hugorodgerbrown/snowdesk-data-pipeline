@@ -38,7 +38,7 @@ CSP origin, and the pinning of its tiles in offline downloads (SNOW-692).
 elevation data. Ours is swissALTI3D, the 0.5 m elevation model, resampled
 to the 5 m grid the terrain tiles carry. What changes is who computes the
 slope and how: Snowdesk computes it, with the same Horn kernel and 10 m
-window as `sample_slope` (`apps/locations/services/terrain.py`), rather
+window as `sample_slope` (`track/terrain.py`), rather
 than reading swisstopo's finished picture.
 
 **What swisstopo says about its raster.** The layer's metadata — the

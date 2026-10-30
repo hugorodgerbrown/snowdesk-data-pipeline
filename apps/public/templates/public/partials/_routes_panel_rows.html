@@ -17,6 +17,13 @@ htmx:sendError for that target.
 Mirrors public/partials/_favourites_panel_rows.html exactly; the two differ
 only in the hook name and the noun.
 {% endcomment %}
+{# SNOW-1262: routes drawn offline and still in the mutation queue —     #}
+{# "Waiting to sync", or "Couldn't sync" with Edit and Discard. Built by   #}
+{# static/js/routes.js from window.pwaMutationQueue.list() and kept OUT of #}
+{# [data-routes-rows], which every list load and cached repaint replaces   #}
+{# wholesale: the queue is on this device, so these rows show with or     #}
+{# without a signal, over the server's list or the cached copy of it.     #}
+<ul data-routes-pending data-testid="route-pending-list" hidden class="flex flex-col"></ul>
 <div data-routes-rows>
     <p class="text-sm text-text-2">{% trans "Loading your routes…" %}</p>
 </div>

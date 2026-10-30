@@ -1,0 +1,37 @@
+{% load i18n %}
+{% comment %}
+public/partials/_route_failed_row_menu_items.html — Edit and Discard, the
+menu of a route drawn offline that the server refused (SNOW-1262).
+
+includes/_overflow_menu.html's ``items_template`` slot. The same item
+markup as the saved route's menu (routes/partials/_route_row_menu_items.html):
+Edit takes the pencil, Discard the bin in the status-error pair, last.
+
+Both are buttons handled by static/js/routes.js, which reads the row's key
+off the ``<li>`` (``data-route-pending-key``): Edit hands it to
+window.pwaRouteDraw.edit and Discard to window.pwaRouteDraw.discard.
+"Discard" rather than "Delete": nothing on the server is destroyed — the
+route never reached it — but the line drawn on this device is.
+{% endcomment %}
+<li role="none" data-route-pending-edit-item>
+    <button
+        type="button"
+        role="menuitem"
+        data-route-pending-edit
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_pencil.html" only %}
+        {% trans "Edit" %}
+    </button>
+</li>
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-route-pending-discard
+        class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
+    >
+        {% include "includes/_icon_trash.html" only %}
+        {% trans "Discard" %}
+    </button>
+</li>

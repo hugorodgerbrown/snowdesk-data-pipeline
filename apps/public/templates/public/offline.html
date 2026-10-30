@@ -184,6 +184,10 @@ it gains is somewhere to send a reader who does have a connection.
     {# makes no claim about class tiles.                                    #}
     <script src="{% static 'js/slope_classes_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     <script src="{% static 'js/terrain_filter_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
+    {# SNOW-1312: the calendar core's ``latestKnownDate``, so an Update from #}
+    {# here takes content for the same forward days the map's download does #}
+    {# — today to the last published day. Pure, and reads no storage.       #}
+    <script src="{% static 'js/calendar_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     <script src="{% static 'js/offline_audit_core.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     <script src="{% static 'js/offline_audit.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
     {% if sync_log_visible %}

@@ -43,11 +43,11 @@ from django.core.cache import cache
 from django.db.models import Count, Max, QuerySet
 from rapidfuzz import fuzz, process
 
-from apps.core.geo import haversine_km
 from apps.locations.models import Location
 from apps.mcp_server.normalise import normalise
 from apps.public.api import COUNTRY_NAMES
 from apps.regions.models import MajorRegion, MicroRegion, RegionAlias, Resort
+from track.geo import haversine_km
 
 # ISO-3166-1 alpha-2 codes Snowdesk has bulletin coverage for. Re-exported
 # from ``apps.public.api.COUNTRY_NAMES`` (rather than a second, drifting list)

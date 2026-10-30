@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
     from django.contrib.auth.models import User
 
-    from apps.routes.services.terrain_heights import ClimbFigures
+    from track.terrain_heights import ClimbFigures
 
 
 # ---------------------------------------------------------------------------
@@ -454,11 +454,11 @@ class Trip(BaseModel):
         """
         # Imported here rather than at module scope: the service imports
         # the slope sampler, which imports ``apps.routes.models``.
-        from apps.routes.services.terrain_heights import (  # noqa: PLC0415
+        from track.render import is_current  # noqa: PLC0415
+        from track.terrain_heights import (  # noqa: PLC0415
             ClimbFigures,
             climb_figures,
         )
-        from apps.routes.services.track_render import is_current  # noqa: PLC0415
 
         # SNOW-1309: the stored render's figures, which the map reads too.
         if is_current(self.track_render):

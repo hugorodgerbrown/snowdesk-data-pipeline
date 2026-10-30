@@ -1220,9 +1220,9 @@ def area_content(request: HttpRequest) -> HttpResponse:
     55 KB of pages, on the thin connection the feature exists to serve.
 
     ``?bbox=west,south,east,north`` in degrees, and nothing else. Date-free
-    on purpose: the client already holds its own day window (today, the
-    days behind it per ``OFFLINE_CONTENT_PAST_DAYS``, and the last
-    published day ahead) and composes the bulletin URLs itself, so this
+    on purpose: the client already holds its own day window (today to the
+    last published day ahead — forward only since SNOW-1312) and composes
+    the bulletin URLs itself, so this
     answer is the same for every caller and every day — which is what
     makes it cacheable.
 

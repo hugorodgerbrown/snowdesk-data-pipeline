@@ -63,7 +63,7 @@ the smaller the exposure. Simplification (see `MAX_POINTS` in
 - Per-point timestamps, heart rate and other GPX extensions are gone at
   ingest. A feature that needs them needs this decision revisited first.
 - **The along-track gradient can be no better than `points`** (SNOW-1020,
-  `apps/routes/services/terrain_detail.py`). The slope record's boundaries
+  `track/terrain_detail.py`). The slope record's boundaries
   carry no elevation, so the gradient re-walks `points`; nothing finer
   exists to walk. Three ramifications:
   - On an upload over `MAX_POINTS` the points are the Douglas–Peucker

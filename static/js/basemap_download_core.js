@@ -267,19 +267,31 @@
  *     SNOW-924: the ground an area covers, from its stored record alone.
  *     A custom area is its ``bbox``; a region area has only ``z`` since
  *     SNOW-583, so its rectangle is derived from the tile rows.
- *   areaContentURLs({regions, weather, days, weatherDetailTemplate})
+ *   forwardContentDays(today, ceiling, onScreen)
+ *     SNOW-1312: the days a download takes content for — today to the
+ *     last published day, plus a forward day on screen. Never a past day.
+ *   regionSheetURL(template, regionId, day)
+ *     SNOW-1312: one region sheet's url, `/partials/region-sheet/<id>/?d=`.
+ *   areaContentURLs({regions, weather, days, weatherDetailTemplate,
+ *                    regionSheetTemplate, ratingsUrl})
  *     SNOW-953: the bulletin pages and weather sheets inside an area, as
  *     urls, over the answer ``/api/area-content/`` gives. It composes
  *     rather than selects — SNOW-924's rectangle test over every
  *     country's outlines is gone from here. Read its docstring for why a
  *     weather sheet is one url per location, and (SNOW-965) why it is
- *     dated with the download's day when the caller names one.
+ *     dated with the download's day when the caller names one. SNOW-1312
+ *     adds the region sheets per region and day, and the dated ratings
+ *     feed per day.
  *   areaItemURLs(items, templates, alreadyPlanned)
  *     SNOW-965: the reader's OWN things inside an area, as urls, over the
  *     answer ``/api/area-items/`` gives — each trip's page and its
  *     ``route.geojson``, and the weather sheet each pin borrows its
  *     forecast from. De-duplicated against what the area-content plan
- *     already holds.
+ *     already holds. SNOW-1313 adds each pin's own place sheet, dated
+ *     with the download's day.
+ *   favouriteSheetURL(template, uuid, day)
+ *     SNOW-1313: one saved pin's place-sheet url,
+ *     `/partials/place-sheet/favourite/<uuid>/?d=<day>`.
  *   weatherDetailURL(template, shortId, day)
  *     SNOW-965: one weather sheet's url, dated with ``?date=`` when a day
  *     is given — the exact url the map's sheet asks for on that day.
@@ -2546,6 +2558,92 @@
     return bboxFromZoomRanges(area.z);
   }
 
+  // SNOW-1312: an ISO date key, the shape every day below is held in.
+  const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const MS_PER_DAY = 86400000;
+
+  // SNOW-1312: the one country map.js's boot asks the DATED ratings feed
+  // for (`RATINGS_URL + '?d=' + day + '&country=ch'`, which map.html also
+  // preloads). The other countries paint from their season payloads, which
+  // the download already warms whole. The worker answers the feed on its
+  // exact url, so the warmed url is built in the boot's own parameter order.
+  const BOOT_RATINGS_COUNTRY = 'ch';
+
+  /**
+   * The days a download takes its content for: today and forward only
+   * (SNOW-1312).
+   *
+   * "You're looking forward out in the field, not back" (Hugo,
+   * 2026-10-30). Today's bulletin, tomorrow's once it is issued, and any
+   * forecast day the pipeline already holds — `ceiling` is that last known
+   * day, which the caller reads off the season ratings with
+   * `pwaCalendarCore.latestKnownDate` (SNOW-927) so the evening issue is
+   * picked up the moment it is published. SNOW-953's reach backwards is
+   * gone: a past day is history, and the map no longer saves it.
+   *
+   * The day on screen joins the list only when it is today or later,
+   * because a visitor who scrubbed to a forward day and then downloaded
+   * meant that day; a past day on screen is not saved.
+   *
+   * Shared by the map's download and `/offline/`'s Update, so the two can
+   * never save different days for the same area.
+   *
+   * @param {string} today The server's today, as an ISO key.
+   * @param {string} [ceiling] The latest known day; today when absent,
+   *   malformed or earlier.
+   * @param {string|null} [onScreen] The day the map is showing.
+   * @returns {string[]} ISO keys, oldest first; empty for an unreadable
+   *   `today`.
+   */
+  function forwardContentDays(today, ceiling, onScreen) {
+    if (typeof today !== 'string' || !DATE_KEY_RE.test(today)) return [];
+    const todayMs = Date.parse(today);
+    if (!Number.isFinite(todayMs)) return [];
+    const end =
+      typeof ceiling === 'string' && DATE_KEY_RE.test(ceiling) && ceiling > today
+        ? ceiling
+        : today;
+    const endMs = Date.parse(end);
+    const days = [];
+    for (let ms = todayMs; ms <= endMs; ms += MS_PER_DAY) {
+      days.push(new Date(ms).toISOString().slice(0, 10));
+    }
+    if (
+      typeof onScreen === 'string' &&
+      DATE_KEY_RE.test(onScreen) &&
+      onScreen >= today &&
+      !days.includes(onScreen)
+    ) {
+      days.push(onScreen);
+      days.sort();
+    }
+    return days;
+  }
+
+  /**
+   * One region sheet's url for one day (SNOW-1312).
+   *
+   * The map's own partial, `/partials/region-sheet/<id>/?d=<day>`, as
+   * `map_region_sheet.js` asks for it: the id LOWERCASED (the view 301s
+   * any other case) and `d` first. The sheet may add `r=` after it — the
+   * reports cache-buster, SNOW-1295 — which the worker ignores when it
+   * keys the entry, so the url warmed here is the key the offline read
+   * looks up whatever `r` the sheet sends.
+   *
+   * @param {string} template A url carrying ``XX-0000``, as `#map`'s
+   *   `data-region-sheet-url` does.
+   * @param {string} regionId The region's EAWS id.
+   * @param {string} day An ISO date key.
+   * @returns {string}
+   */
+  function regionSheetURL(template, regionId, day) {
+    return (
+      template.replace('XX-0000', encodeURIComponent(String(regionId).toLowerCase())) +
+      '?d=' +
+      encodeURIComponent(day)
+    );
+  }
+
   /**
    * The urls for what an area's boundary contains, from the server's answer.
    *
@@ -2560,14 +2658,21 @@
    * "which countries are loaded" state left for the answer to depend on.
    *
    * What stays here is the url composition, which is a client concern:
-   * the day window comes from the page (the scrubber's `data-today`, its
-   * `data-content-past-days`, and the last published day), and the
-   * weather-sheet template comes from `#map`'s dataset.
+   * the day window comes from the caller (`forwardContentDays`: today to
+   * the last published day, SNOW-1312), and the templates come from the
+   * page's dataset.
    *
    * A bulletin URL is `/<region_id>/<slug>/<date>/`. The id is LOWERCASED
    * because `bulletin_detail` is wrapped in `@lowercase_region_id` and
    * 301s a mixed-case one — a redirect the service worker would cache as
    * the entry for a URL nothing ever requests again.
+   *
+   * SNOW-1312: and, per region and day, the map's region sheet
+   * (`regionSheetURL`) — the body the sheet shows when a downloaded
+   * region is tapped offline — and, per day, the dated ratings feed the
+   * map boots its colours from (`?d=<day>&country=ch`). Each is a url
+   * the run warms and tallies, so a sheet or a feed that fails to land
+   * counts against the download exactly as a bulletin page does.
    *
    * A weather sheet is ONE URL per location, not one per day, and that is
    * a correctness point rather than a saving: `?date=` selects which
@@ -2591,29 +2696,54 @@
    * @param {Array<{short_id?: string}>} [options.weather] The endpoint's
    *   `weather` list.
    * @param {string[]} [options.days] Date keys to take a bulletin for,
-   *   supplied by the caller from the window the scrubber and calendar
-   *   answer to (SNOW-927/SNOW-953), never from a clock in here.
+   *   supplied by the caller from `forwardContentDays`, never from a
+   *   clock in here.
    * @param {string} [options.weatherDetailTemplate] A URL carrying
    *   ``__SHORTID__``, as `#map`'s `data-weather-detail-url` does.
    * @param {string} [options.weatherDay] SNOW-965: the ISO day each sheet
    *   is taken for — today. Omitted, the sheets are undated.
-   * @returns {{bulletinUrls: string[], weatherDetailUrls: string[]}} Each
-   *   list deduplicated and stable in the server's order, so a run's URL
-   *   list is reproducible.
+   * @param {string} [options.regionSheetTemplate] SNOW-1312: a url
+   *   carrying ``XX-0000``, as `#map`'s `data-region-sheet-url` does.
+   *   Omitted, no region sheets.
+   * @param {string} [options.ratingsUrl] SNOW-1312: the ratings feed's
+   *   base url (`/api/ratings/`). Omitted, no dated ratings.
+   * @returns {{bulletinUrls: string[], weatherDetailUrls: string[],
+   *   regionSheetUrls: string[], ratingsUrls: string[]}} Each list
+   *   deduplicated and stable in the server's order, so a run's URL list
+   *   is reproducible. The sheet and ratings lists are empty without days.
    */
   function areaContentURLs(options) {
     const opts = options || {};
-    const out = { bulletinUrls: [], weatherDetailUrls: [] };
+    const out = {
+      bulletinUrls: [],
+      weatherDetailUrls: [],
+      regionSheetUrls: [],
+      ratingsUrls: [],
+    };
 
-    const days = Array.isArray(opts.days) ? opts.days.filter(Boolean) : [];
+    const days = Array.isArray(opts.days) ? Array.from(new Set(opts.days.filter(Boolean))) : [];
+    const sheetTemplate = opts.regionSheetTemplate || '';
     const seenRegion = new Set();
     for (const region of opts.regions || []) {
       const regionId = region && region.id;
       const slug = region && region.slug;
-      if (!regionId || !slug || seenRegion.has(regionId)) continue;
-      seenRegion.add(regionId);
+      if (!regionId || !slug) continue;
+      // Deduplicated on the LOWERCASED id: the url is lowercase, so two
+      // spellings of one region would otherwise name one url twice.
+      const key = String(regionId).toLowerCase();
+      if (seenRegion.has(key)) continue;
+      seenRegion.add(key);
       for (const day of days) {
-        out.bulletinUrls.push('/' + String(regionId).toLowerCase() + '/' + slug + '/' + day + '/');
+        out.bulletinUrls.push('/' + key + '/' + slug + '/' + day + '/');
+        if (sheetTemplate) out.regionSheetUrls.push(regionSheetURL(sheetTemplate, key, day));
+      }
+    }
+
+    if (opts.ratingsUrl) {
+      for (const day of days) {
+        out.ratingsUrls.push(
+          opts.ratingsUrl + '?d=' + encodeURIComponent(day) + '&country=' + BOOT_RATINGS_COUNTRY,
+        );
       }
     }
 
@@ -2651,6 +2781,31 @@
     return day ? url + '?date=' + encodeURIComponent(day) : url;
   }
 
+  // SNOW-1313: the placeholder `#map`'s `data-favourite-sheet-url` carries
+  // (`_map_embed.html` reverses the route with the nil uuid), the same one
+  // `map_place_sheet.js` replaces.
+  const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+  /**
+   * One saved pin's place-sheet url for one day (SNOW-1313).
+   *
+   * The map's own request, as `map_place_sheet.js` makes it: the uuid in
+   * place of the template's nil uuid, then `?d=<day>`. The worker keeps
+   * the sheet under its path and `d` ('private-partial'), so the day is
+   * required — an undated url could never be found offline, and gives
+   * ``null``.
+   *
+   * @param {string} template A url carrying the nil uuid, as `#map`'s
+   *   `data-favourite-sheet-url` does.
+   * @param {string} uuid The pin's uuid.
+   * @param {string} [day] An ISO date key.
+   * @returns {?string}
+   */
+  function favouriteSheetURL(template, uuid, day) {
+    if (!template || !uuid || !day || template.indexOf(NIL_UUID) === -1) return null;
+    return template.replace(NIL_UUID, encodeURIComponent(uuid)) + '?d=' + encodeURIComponent(day);
+  }
+
   /**
    * The urls for the reader's own things inside an area (SNOW-965).
    *
@@ -2662,16 +2817,24 @@
    * the route is principal-stamped JSON (`'private-json'` in
    * `basemap_cache_core.js`); the sheet is public.
    *
+   * SNOW-1313: and each pin's own place sheet, for the day the weather
+   * sheet is taken for — the sheet a pin tapped offline opens, whose
+   * "Full forecast" opens that borrowed weather sheet. It is the reader's
+   * own HTML, stamped by the worker with the principal the answer names
+   * ('private-partial'). A pin's sheet is asked for whether or not it
+   * borrows a forecast.
+   *
    * A missing template drops its group rather than the whole answer: a
    * page that cannot compose a trip's page can still carry its route.
    *
    * @param {{trips?: Array<{uuid?: string}>,
-   *   pins?: Array<{forecast?: {short_id?: string}|null}>}|null} items The
+   *   pins?: Array<{uuid?: string, forecast?: {short_id?: string}|null}>}|null} items The
    *   endpoint's answer.
    * @param {{tripPage?: string, tripRoute?: string, weatherDetail?: string,
-   *   weatherDay?: string}} templates ``__UUID__`` templates for the two
-   *   trip urls, the ``__SHORTID__`` weather template, and the day each
-   *   sheet is taken for.
+   *   weatherDay?: string, favouriteSheet?: string}} templates ``__UUID__``
+   *   templates for the two trip urls, the ``__SHORTID__`` weather
+   *   template, the day each sheet is taken for, and (SNOW-1313) the
+   *   nil-uuid place-sheet template.
    * @param {Iterable<string>} [alreadyPlanned] Urls the area-content plan
    *   already holds; none of them is repeated.
    * @returns {string[]} Deduplicated, in the answer's order.
@@ -2693,12 +2856,13 @@
       if (tpl.tripRoute) add(tpl.tripRoute.replace('__UUID__', uuid));
     }
     const pins = (items && Array.isArray(items.pins) && items.pins) || [];
-    if (tpl.weatherDetail) {
-      for (const pin of pins) {
-        const shortId = pin && pin.forecast && pin.forecast.short_id;
-        if (!shortId) continue;
-        add(weatherDetailURL(tpl.weatherDetail, shortId, tpl.weatherDay));
-      }
+    for (const pin of pins) {
+      // SNOW-1313: the pin's own sheet, then the forecast it borrows.
+      const sheet = favouriteSheetURL(tpl.favouriteSheet || '', pin && pin.uuid, tpl.weatherDay);
+      if (sheet) add(sheet);
+      const shortId = pin && pin.forecast && pin.forecast.short_id;
+      if (!tpl.weatherDetail || !shortId) continue;
+      add(weatherDetailURL(tpl.weatherDetail, shortId, tpl.weatherDay));
     }
     return out;
   }
@@ -3161,7 +3325,10 @@
     bboxFromZoomRanges: bboxFromZoomRanges,
     areaBBox: areaBBox,
     areaContentURLs: areaContentURLs,
+    forwardContentDays: forwardContentDays,
+    regionSheetURL: regionSheetURL,
     areaItemURLs: areaItemURLs,
+    favouriteSheetURL: favouriteSheetURL,
     weatherDetailURL: weatherDetailURL,
     cachedTilesFromURLs: cachedTilesFromURLs,
     gridZoomFor: gridZoomFor,

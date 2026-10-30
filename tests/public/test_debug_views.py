@@ -47,9 +47,9 @@ from apps.public.design_tokens import (
     Token,
 )
 from apps.routes.models import Route
-from apps.routes.services.slope_segments import stride_coordinates
-from apps.routes.services.terrain_detail import COLUMNS
 from tests.factories import AccountFactory, RouteFactory, UserFactory
+from track.slope_samples import stride_coordinates
+from track.terrain_detail import COLUMNS
 
 
 def _all_categories() -> list[FoundationCategory]:

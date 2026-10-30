@@ -33,7 +33,7 @@ from urllib.parse import urlencode
 
 from django.utils.translation import gettext as _
 
-from apps.core.geo import (
+from track.geo import (
     EARTH_RADIUS_M,
     haversine_m,
     initial_bearing_deg,
