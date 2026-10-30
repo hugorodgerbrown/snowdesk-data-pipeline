@@ -311,9 +311,6 @@ const UNSERVED_FAMILIES = {};
  *                        worker.
  *   network-by-design  — needs the server, and ``reason`` says why.
  *   hole               — should open offline and does not; ``ticket``.
- *
- * ``SNOW-TBD``: a hole this ticket found, to be replaced with its ticket id
- * before merge. Nothing else may carry it.
  */
 const MAP_DATA_URLS = {
   'data-regions-url': {
@@ -459,14 +456,14 @@ const MAP_DATA_URLS = {
     kind: 'hole',
     sample: `/partials/place-sheet/resort/verbier/?d=${TODAY}`,
     swClass: 'network',
-    ticket: 'SNOW-TBD',
+    ticket: 'SNOW-1318',
     hole: 'a resort tapped offline says "Place details are unavailable offline" over a downloaded area',
   },
   'data-ski-summits-url': {
     kind: 'hole',
     sample: '/api/ski-summits.json',
     swClass: 'network',
-    ticket: 'SNOW-TBD',
+    ticket: 'SNOW-1320',
     hole: "search's SAC summit rows are absent offline: the feed is neither worker-cached nor in IndexedDB",
   },
 };
@@ -956,7 +953,7 @@ describe("#map's data urls are each classified", () => {
     }
     if (entry.kind === 'network-by-design') expect(entry.reason).toBeTruthy();
     if (entry.kind === 'hole') {
-      expect(entry.ticket).toMatch(/^SNOW-(?:\d+|TBD)$/);
+      expect(entry.ticket).toMatch(/^SNOW-\d+$/);
       expect(entry.hole).toBeTruthy();
     }
   });
