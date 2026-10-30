@@ -130,6 +130,7 @@ def _tour_values(document: dict[str, Any]) -> dict[str, Any]:
         # A rewritten tour may have a new line: the terrain under the old
         # one is sampled afresh the next time it is opened (SNOW-1278).
         "slope_samples": None,
+        "legs": None,
     }
 
 

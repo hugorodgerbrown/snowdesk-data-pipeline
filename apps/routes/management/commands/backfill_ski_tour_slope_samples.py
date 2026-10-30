@@ -18,6 +18,10 @@ a candidate once. On a tour whose order did not change it is only marked,
 counted ``marked``, with no request and no pause; on one whose order
 flipped it is walked again.
 
+**A record walked before SNOW-1310** has no legs stored. It is a candidate
+once too, and is only cut (``cut_legs``), counted ``marked``, with no
+request and no pause: the tours layer then draws it as its legs.
+
 **Null stays honest**, as in ``backfill_route_slope_samples``: a tour the
 terrain model has no answer for is left null, counted ``unanswered``, and
 tried again next run. Not a failure.

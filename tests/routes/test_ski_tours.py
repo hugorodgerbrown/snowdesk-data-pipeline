@@ -21,14 +21,15 @@ from apps.routes.models import Route, SkiTour
 from apps.routes.services.routes import RouteLimitReached
 from apps.routes.services.ski_tours import (
     build_summits,
+    cut_legs,
     draft_tour_route,
     ends,
     far_end,
     is_descent,
     is_hut,
+    leg_parts,
     localised,
     needs_only_marking,
-    one_leg,
     overview_geometry,
     runs_reversed,
     sac_time,
@@ -41,6 +42,7 @@ from apps.routes.services.ski_tours import (
     tour_properties,
     tour_slope_samples,
     tour_title,
+    tours_to_sample,
 )
 from tests.factories import RouteFactory, SkiTourFactory, UserFactory
 
@@ -119,44 +121,6 @@ class TestPureRules:
             name="Von der Hütte, Abfahrt wie Aufstieg", ascent_m=900, descent_m=900
         )
         assert is_descent(tour) is False
-
-    def test_a_tour_is_one_leg_in_its_direction(self) -> None:
-        """The whole line, climbing for a way up, not for a way down."""
-        points: list[list[float | None]] = [
-            [10.0, 46.0, None],
-            [10.0, 46.001, None],
-            [10.0, 46.002, None],
-        ]
-        up = one_leg(points, None, _tour())
-        down = one_leg(points, None, _tour(ascent_m=None, descent_m=1000))
-        # ~222 m of line: nine 25 m strides, the walk an unsampled route's
-        # legs index.
-        assert up == [
-            {
-                "i": 1,
-                "from": 0,
-                "to": 8,
-                "climbing": True,
-                "point_from": 0,
-                "point_to": 2,
-            }
-        ]
-        assert down is not None and down[0]["climbing"] is False
-
-    def test_a_sampled_tour_leg_spans_the_angles_it_was_sent(self) -> None:
-        """The client indexes ``slope.angles``, so the leg does too."""
-        points: list[list[float | None]] = [
-            [10.0, 46.0, 1800.0],
-            [10.0, 46.002, 2000.0],
-        ]
-        legs = one_leg(points, {"angles": [12.0, None, 30.0, 31.0]}, _tour())
-        assert legs is not None
-        assert (legs[0]["from"], legs[0]["to"]) == (0, 3)
-
-    def test_a_line_too_short_for_a_segment_has_no_leg(self) -> None:
-        """One point, or no stride to walk."""
-        assert one_leg([[10.0, 46.0, None]], None, _tour()) is None
-        assert one_leg([[10.0, 46.0, None], [10.0, 46.0, None]], None, _tour()) is None
 
     def test_the_summit_key_keeps_two_summits_of_one_name_apart(self) -> None:
         """Name and height."""
@@ -517,6 +481,108 @@ class TestTheTerrain:
             assert tour_slope_samples(tour, sample=True) is None
         tour.refresh_from_db()
         assert tour.slope_samples is None
+
+
+class TestTheLegs:
+    """SNOW-1310: a tour is drawn as its legs, as a route is, cut once."""
+
+    TRACK: list[list[float | None]] = [
+        [10.0, 46.0, 1800.0],
+        [10.0, 46.01, 2400.0],
+        [10.0, 46.02, 2100.0],
+    ]
+    LEGS: list[dict[str, Any]] = [
+        {"i": 1, "climbing": True, "point_from": 0, "point_to": 1},
+        {"i": 2, "climbing": False, "point_from": 1, "point_to": 2},
+    ]
+    CUT: list[dict[str, Any]] = [
+        {"climbing": True, "line": [[10.0, 46.0], [10.0, 46.01]]},
+        {"climbing": False, "line": [[10.0, 46.01], [10.0, 46.02]]},
+    ]
+
+    def _patched(self) -> Any:
+        """Patch the terrain track and the legs cut from it."""
+        track = patch(
+            "apps.routes.services.ski_tours.terrain_points", return_value=self.TRACK
+        )
+        legs = patch("apps.routes.services.ski_tours.wire_legs", return_value=self.LEGS)
+        return track, legs
+
+    def test_the_legs_are_cut_from_the_held_terrain(self) -> None:
+        """The legs the panel shows, sliced out of the terrain track."""
+        tour = _tour(slope_samples=KEPT)
+        track, legs = self._patched()
+        with track, legs:
+            assert cut_legs(tour) == self.CUT
+
+    def test_a_tour_with_no_terrain_has_no_legs_to_cut(self) -> None:
+        """Nothing held, nothing cut."""
+        assert cut_legs(_tour()) == []
+
+    def test_keeping_a_record_stores_its_legs(self) -> None:
+        """A walk stores the legs with the record, and moves updated_at."""
+        tour = _tour()
+        before = tour.updated_at
+        track, legs = self._patched()
+        with (
+            track,
+            legs,
+            patch(
+                "apps.routes.services.ski_tours.build_slope_samples",
+                return_value=dict(RECORD),
+            ),
+        ):
+            tour_slope_samples(tour, sample=True)
+        tour.refresh_from_db()
+        assert tour.legs == self.CUT
+        assert tour.updated_at > before
+
+    def test_a_held_record_with_no_legs_is_cut_without_a_walk(self) -> None:
+        """Walked before legs were stored: cut, and nothing walked again."""
+        tour = _tour(slope_samples=KEPT)
+        assert SkiTour.objects.filter(pk=tour.pk, legs__isnull=True).exists()
+        assert needs_only_marking(tour) is True
+        assert tours_to_sample().filter(pk=tour.pk).exists()
+        track, legs = self._patched()
+        with (
+            track,
+            legs,
+            patch("apps.routes.services.ski_tours.build_slope_samples") as build,
+        ):
+            tour_slope_samples(tour, sample=True)
+        build.assert_not_called()
+        tour.refresh_from_db()
+        assert tour.legs == self.CUT
+        assert not tours_to_sample().filter(pk=tour.pk).exists()
+        assert needs_only_marking(tour) is False
+
+    def test_the_layer_draws_the_stored_legs(self) -> None:
+        """Read, never cut, per request."""
+        tour = _tour(legs=self.CUT)
+        assert leg_parts(tour) == [
+            (True, [[10.0, 46.0], [10.0, 46.01]]),
+            (False, [[10.0, 46.01], [10.0, 46.02]]),
+        ]
+
+    def test_a_tour_with_no_legs_is_sacs_line_in_no_direction(self) -> None:
+        """No direction is claimed: SAC's own line, ``climbing`` None."""
+        tour = _tour(geometry=_line(TOP, VALLEY))
+        assert leg_parts(tour) == [(None, [list(TOP[:2]), list(VALLEY[:2])])]
+        assert leg_parts(_tour(geometry=_line(VALLEY))) == []
+
+    def test_a_tour_with_no_legs_keeps_every_part_spurs_included(self) -> None:
+        """SAC's parts as published, not chained into one route (a spur stays)."""
+        spur = [10.09, 46.84]
+        tour = _tour(
+            geometry={
+                "type": "MultiLineString",
+                "coordinates": [[VALLEY, TOP], [TOP, spur]],
+            }
+        )
+        assert leg_parts(tour) == [
+            (None, [list(VALLEY), list(TOP)]),
+            (None, [list(TOP), spur]),
+        ]
 
 
 class TestSave:

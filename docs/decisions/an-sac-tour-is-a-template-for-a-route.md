@@ -71,8 +71,9 @@ A way down now runs from its summit (SNOW-1306, below).
 SAC publishes the ways up and the ways down to a summit separately, so a
 reader can climb by one and ski down another (Hugo, 2026-10-29). The open
 panel and the map drew each tour as one leg, in its direction's colour
-(`one_leg`). SNOW-1307 kept that only as the stand-in for a tour with no
-heights yet; see "An SAC tour looks like SAC's" below. Before this, the panel cut the line into
+(`one_leg`). SNOW-1310 removed that: every tour is drawn as its legs, see
+"An SAC tour looks like SAC's" below. The way-down label still orders the
+line and names the panel's half. Before this, the panel cut the line into
 legs by the order of its points, and that order is no guide: SAC draws
 2,743 of its 2,941 lines from the valley to the summit, ways down
 included. A tour is a way down when SAC names it one in any of its
@@ -228,8 +229,21 @@ forecast" Location waits for a second, non-SAC source of places.
 tours layer on, tours drawn in a route's own grey and fuchsia drowned out
 the reader's routes (Hugo, 2026-10-30), and a tour opened in the panel
 showed no downhill stretches that appeared once it was saved. So a tour
-not yet saved splits into legs where the ground turns, as a route does
-(the detected `wire_legs`; `one_leg` only until the terrain arrives), and
+is drawn as a route is, as its legs, cut where the ground turns from its
+held terrain (`wire_legs`), never as a tour-wide "up" or "down" (Hugo:
+"We are still prequalifying routes as ascent / descent rather than
+showing the legs"). That holds on the map at rest too: the tours layer
+gets one Feature per leg with its `climbing` (`leg_parts`, in both the
+bbox load and the overview), and a tour with no terrain yet is SAC's line
+as it is, `climbing` null, drawn deep blue until the nightly backfill
+walks it. The legs are cut once and stored on the tour (`SkiTour.legs`,
+`cut_legs`, written by `_keep` with every terrain record), because a tour
+never changes and cutting all 2,941 per request took 35 s; the nightly
+backfill cuts those walked before, without walking them again. Hugo
+(2026-10-30) wants this taken the whole way: "All of the render data
+should be precalculated. Both should store the same shape of data" —
+a route and a tour each holding one stored render record, a tour adding
+SAC's metadata. `SkiTour.legs` is the first slice of that. It
 is drawn in SAC's colours: `--color-sac-climb` (deep blue) and
 `--color-sac-descent` (sky blue), mirrored as `SAC_CLIMB_COLOUR` /
 `SAC_DESCENT_COLOUR` in `route_legs_core.js`. The open tour's map line
@@ -239,3 +253,9 @@ dashed: on SAC's maps a dash means "take extra care" and a dot "on foot".
 A reader's own route keeps its dashed grey climb and fuchsia descent, so
 the two never read as one thing. Saving turns the copy into an ordinary
 route in the route's colours.
+
+The open tour's line is built after its first walk, never before: a walk
+can turn the line round (its heights settle which end is the top), and a
+draft built first kept the guessed order while the record held the other,
+so the terrain track interleaved the two and the legs fanned across the
+map until the tour was opened again (SNOW-1310).

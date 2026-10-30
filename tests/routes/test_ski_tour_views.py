@@ -67,23 +67,43 @@ class TestFeature:
         assert "uuid" not in props
         assert "token" not in props
 
-    def test_a_tour_is_drawn_as_one_leg_in_its_direction(self, client: Client) -> None:
-        """A named way down is one descending leg, sampled or not (SNOW-1304).
+    def test_a_tour_with_no_terrain_has_no_legs(self, client: Client) -> None:
+        """No heights, no legs: one line, in no direction (SNOW-1310).
 
-        Unsampled, its points carry no heights and no leg can be detected
-        in them; the leg is the whole line all the same.
+        A named way down is not pre-labelled one: its legs come with its
+        terrain, as a route's do.
         """
         tour = SkiTourFactory.create(
             name="Descente à la cabane de Chanrion", ascent_m=420, descent_m=1660
         )
-        feature = client.get(_feature_url(tour)).json()["feature"]
-        props = feature["properties"]
+        props = client.get(_feature_url(tour)).json()["feature"]["properties"]
         assert props["terrain_pending"] is True
-        assert props["down"] is True
-        [leg] = props["legs"]
-        assert leg["climbing"] is False
-        assert (leg["from"], leg["point_from"]) == (0, 0)
-        assert leg["point_to"] == len(feature["geometry"]["coordinates"]) - 1
+        assert "legs" not in props
+
+    def test_the_line_follows_the_order_a_first_walk_settles(
+        self, client: Client
+    ) -> None:
+        """The draft is built after the walk, in the order it was walked.
+
+        A first walk that turns the line round must turn the draft round
+        too: built before it, the draft kept the guessed order while the
+        record held the other, and the terrain track fanned across the map
+        until the tour was opened again.
+        """
+        tour = SkiTourFactory.create()
+        walked = {**RECORD, "walked_reversed": True}
+
+        def walk(row: Any, *, sample: bool) -> dict[str, Any]:
+            row.slope_samples = walked
+            return walked
+
+        with (
+            patch("apps.routes.views.tour_slope_samples", side_effect=walk),
+            patch("apps.routes.views.draft_tour_route") as draft,
+        ):
+            draft.side_effect = lambda row: _assert_walked(row, walked)
+            client.get(_feature_url(tour), {"sample": "1"})
+        draft.assert_called_once()
 
     def test_a_sampled_tour_splits_into_legs_as_a_route_does(
         self, client: Client
@@ -227,3 +247,11 @@ class TestSave:
     def test_get_is_405(self, client: Client) -> None:
         """POST only."""
         assert client.get(_save_url(SkiTourFactory.create())).status_code == 405
+
+
+def _assert_walked(tour: Any, record: dict[str, Any]) -> Any:
+    """Fail unless ``tour`` already holds ``record``; then draft it."""
+    from apps.routes.services.ski_tours import draft_tour_route  # noqa: PLC0415 — the real one, past the patch
+
+    assert tour.slope_samples is record
+    return draft_tour_route(tour)

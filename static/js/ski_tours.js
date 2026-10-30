@@ -15,12 +15,11 @@
  * view's own rectangle at full detail. swisstopo's raster of its whole
  * network is no longer drawn: nothing in it could be tapped.
  *
- * Every tour is drawn up or down at every zoom (SNOW-1306): a way up in SAC's deep blue, a way down in sky blue, so the
- * two read apart before anything is tapped, and a reader's own routes (grey
- * and fuchsia) stand apart from them (SNOW-1307). Both are solid:
- * on SAC's own maps a dash means a leg needing extra care and a dot one
- * climbed on foot, so a dash here would say something SAC never said
- * (SNOW-1307).
+ * Every tour is drawn as a route's legs are (SNOW-1310): the server cuts
+ * it where the ground turns, a climb in SAC's deep blue and a descent in
+ * sky blue, so a reader's own routes (grey and fuchsia) stand apart. Both
+ * solid: on SAC's own maps a dash means a leg needing extra care and a dot
+ * one climbed on foot.
  * A summit is a label (a dot and its name), never a target.
  *
  * A TAP (map.js's dispatcher calls `tap(point)` after the markers and the
@@ -200,17 +199,18 @@
     // past it, where the lines separate. Thinner than the open tour, which
     // is drawn over them in the same colours.
     const width = ['interpolate', ['linear'], ['zoom'], 9, 1.5, 12, 2.5, 15, 4];
-    // SNOW-1306/1307: a way up in SAC's deep blue, a way down in sky blue,
-    // as the open tour's legs are, so up and down read apart at every zoom
-    // and a reader's own routes stand clear of them. Never dashed: a dash
-    // on an SAC map means "take extra care".
+    // SNOW-1310: each tour arrives cut into its legs, as a route is drawn:
+    // a climb in SAC's deep blue, a descent in sky blue, so a reader's own
+    // routes (grey and fuchsia) stand clear of them. A tour with no
+    // terrain yet is one line with `climbing` null, drawn deep blue. Never
+    // dashed: a dash on an SAC map means "take extra care".
     const legs = legColours();
     map.addLayer({
       id: LINE,
       type: 'line',
       source: SOURCE,
       minzoom: minzoom,
-      filter: ['all', isTour, ['!', ['get', 'down']]],
+      filter: ['all', isTour, ['!=', ['get', 'climbing'], false]],
       layout: { visibility: visibility, 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': legs.climb, 'line-width': width },
     }, before);
@@ -219,7 +219,7 @@
       type: 'line',
       source: SOURCE,
       minzoom: minzoom,
-      filter: ['all', isTour, ['get', 'down']],
+      filter: ['all', isTour, ['==', ['get', 'climbing'], false]],
       layout: { visibility: visibility, 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': legs.descent, 'line-width': width },
     }, before);
