@@ -56,7 +56,9 @@
  *
  * THE NETWORK (SNOW-1277). At z12 or closer the panel loads swisstopo's
  * ski-touring network for the view (/api/ski-network.geojson) and draws it
- * as a faint shadow under the draft, whether or not it is followed: since
+ * under the draft, whether or not it is followed — since SNOW-1319 a solid
+ * amber line on a white halo while following, thin and faint when not
+ * (route_draw_core.js networkPaint) — and since
  * SNOW-1285 it is the only place the map draws that network. While "Follow
  * ski routes" is on, a tap within 24 px of a line snaps to it, and a ring
  * shows where it would land before it is placed. When the last point is on
@@ -113,9 +115,6 @@
   const IN_FLIGHT_ERROR =
     (self.pwaMutationQueueCore && self.pwaMutationQueueCore.IN_FLIGHT_ERROR) || 'idempotency_in_flight';
   const NETWORK_SOURCE = PREFIX + '-network';
-  // The network is a shadow to snap to, fainter than anything drawn on it
-  // (Hugo, 28 Oct 2026): a dark neutral, thin and mostly transparent.
-  const NETWORK_COLOUR = '#1e293b';
   // The network is loaded and snapped to from this zoom: a view wider than
   // /api/ski-network.geojson's half-degree cap is refused, and a snap
   // reach of 24 px is over a kilometre further out.
@@ -235,7 +234,7 @@
   }
 
   /**
-   * Add the draft's sources and layers: the network's shadow and the drawn
+   * Add the draft's sources and layers: the network and the drawn
    * preview at the bottom, the waypoints and straight guide on
    * top.
    *
@@ -244,13 +243,23 @@
   function installLayers(map) {
     if (NETWORK_URL && !map.getSource(NETWORK_SOURCE)) {
       map.addSource(NETWORK_SOURCE, { type: 'geojson', data: networkCollection() });
+      // SNOW-1319: a halo under a core, both repainted by setFollow.
+      const paint = core.networkPaint(state.follow);
+      map.addLayer({
+        id: NETWORK_SOURCE + '-halo',
+        type: 'line',
+        source: NETWORK_SOURCE,
+        minzoom: NETWORK_MINZOOM,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: paint.halo,
+      });
       map.addLayer({
         id: NETWORK_SOURCE + '-line',
         type: 'line',
         source: NETWORK_SOURCE,
         minzoom: NETWORK_MINZOOM,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': NETWORK_COLOUR, 'line-width': 1.5, 'line-opacity': 0.3 },
+        paint: paint.core,
       });
     }
     if (self.pwaRouteDrawingCore) {
@@ -387,7 +396,25 @@
     return { type: 'FeatureCollection', features: Array.from(state.network.values()) };
   }
 
-  /** Redraw the network's shadow. */
+  /** Repaint the network for the Follow switch (SNOW-1319). */
+  function paintNetwork() {
+    const map = getMap();
+    if (!map) return;
+    const paint = core.networkPaint(state.follow);
+    /** @type {Array<[string, Object<string, number|string>]>} */
+    const layers = [
+      [NETWORK_SOURCE + '-halo', paint.halo],
+      [NETWORK_SOURCE + '-line', paint.core],
+    ];
+    layers.forEach(function (entry) {
+      if (!map.getLayer(entry[0])) return;
+      Object.keys(entry[1]).forEach(function (key) {
+        map.setPaintProperty(entry[0], key, entry[1][key]);
+      });
+    });
+  }
+
+  /** Redraw the network. */
   function drawNetwork() {
     const map = getMap();
     const source = map && map.getSource(NETWORK_SOURCE);
@@ -464,6 +491,7 @@
     }
     const toggle = find('[data-route-draw-follow]');
     if (toggle) toggle.setAttribute('aria-checked', on ? 'true' : 'false');
+    paintNetwork();
     drawNetwork();
     drawGuide();
     if (on) scheduleNetwork();
