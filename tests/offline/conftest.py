@@ -114,7 +114,13 @@ def subject(
             candidates.append(
                 (region.region_id, region.name, int(blob["count"]), *centre)
             )
-    drawn = draw_subject(candidates, sorted(settings.BASEMAP_STYLES), seed=offline_seed)
+    # The picker's basemaps, not every BASEMAP_STYLES key: a style kept only
+    # as a BASEMAP= override (swisstopo_light) has no button to press, and
+    # the suite picks a basemap the way a user does.
+    from apps.public.views import _basemaps_for_picker
+
+    picker_keys = sorted(basemap["key"] for basemap in _basemaps_for_picker())
+    drawn = draw_subject(candidates, picker_keys, seed=offline_seed)
     logger.warning("offline-assurance subject: %s", drawn.to_string())
     return drawn
 
@@ -124,6 +130,11 @@ def network() -> Iterator[RecordingProxy]:
     """Start the recording proxy for the duration of one test."""
     with RecordingProxy() as proxy:
         yield proxy
+
+
+# The region sheet's download button: a proxy that presses, and is redrawn
+# as, the ribbon's #map-download-control (map_region_sheet.js).
+DOWNLOAD_PROXY = '#region-sheet [data-region-sheet-proxy="map-download-control"]'
 
 
 @dataclass
@@ -405,11 +416,18 @@ class OfflineMapPage:
         localStorage.
 
         Args:
-            key: A ``BASEMAP_STYLES`` key, e.g. ``"swisstopo_winter"``.
+            key: A basemap the picker offers, e.g. ``"swisstopo_winter"``.
 
         """
         self.page.click("#basemap-toggle")
         self.page.wait_for_selector("#basemap-menu", state="visible")
+        # The basemaps are one level down the layers menu, behind its
+        # Basemap row (the-layers-menu-is-on-off-then-options.md); level
+        # one holds only the per-layer switches.
+        self.page.click('#basemap-menu [data-layers-open="basemap"]')
+        self.page.wait_for_selector(
+            '#basemap-menu [data-layers-page="basemap"]', state="visible"
+        )
         self.page.click(f'#basemap-menu button[data-basemap-key="{key}"]')
         # `aria-checked`, not the localStorage key. Picking the basemap
         # that is ALREADY active is a deliberate no-op in
@@ -449,11 +467,10 @@ class OfflineMapPage:
         result = self.page.locator("#search-results .search-result").first
         result.wait_for(state="visible", timeout=10_000)
         result.click()
-        # The roundel only exists once a region is selected, so its
-        # appearance is the signal that the selection landed.
-        self.page.wait_for_selector(
-            "#map-download-control", state="visible", timeout=15_000
-        )
+        # The region sheet opening with its download button is the signal
+        # that the selection landed. The ribbon's own roundel is not drawn
+        # at any width since SNOW-1173; the sheet's header button proxies it.
+        self.page.wait_for_selector(DOWNLOAD_PROXY, state="visible", timeout=15_000)
 
     def download_selected_region(self, timeout_ms: int = 240_000) -> None:
         """Press the download roundel and wait for it to report ``done``.
@@ -475,8 +492,10 @@ class OfflineMapPage:
                 ``done``.
 
         """
+        # Press the sheet's button, as a user does. The state is read from
+        # the hidden roundel it proxies, which map_region_download.js owns.
+        self.page.locator(DOWNLOAD_PROXY).click()
         roundel = self.page.locator("#map-download-control")
-        roundel.click()
         self.page.wait_for_function(
             """() => {
                 const state = document.getElementById('map-download-control')
@@ -493,7 +512,8 @@ class OfflineMapPage:
             f"finished in state {state!r} rather than 'done'. "
             "'incomplete' means the tiles arrived but a render dependency "
             "— the style, a TileJSON or the sprite — did not, so the area "
-            "cannot draw offline however complete its tile set looks."
+            "cannot draw offline however complete its tile set looks.\n  "
+            + self.diagnostics()
         )
 
     def wait_for_base_layer(self, timeout_ms: int = 240_000) -> int:
@@ -719,8 +739,51 @@ class OfflineMapPage:
             *(f"console  {line}" for line in self.console_errors[-15:]),
             *(f"rejected {line}" for line in rejections[-5:]),
             *(f"maplibre {line}" for line in self.tile_errors()[-10:]),
+            *(f"fonts    {line}" for line in self.style_fonts()),
+            *(f"toast    {line}" for line in self.download_toasts()),
         ]
         return "\n  ".join(lines) if lines else "(console clean)"
+
+    def download_toasts(self) -> list[str]:
+        """Return the download-failure toast the app is showing, if any.
+
+        ``revealBasemapDownloadError`` shows one toast per failure reason
+        (quota, budget, no worker, …), so the visible one's id names why a
+        download ended in ``error`` where the roundel's state cannot.
+        """
+        toasts: list[str] = self.page.evaluate(
+            """() => [...document.querySelectorAll('[id^="map-download-error-toast"]')]
+                .filter((el) => !el.classList.contains('hidden'))
+                .map((el) => `${el.id}: ${el.textContent.trim().replace(/\\s+/g, ' ')}`)"""
+        )
+        return toasts
+
+    def style_fonts(self) -> list[str]:
+        """Return each fontstack in the live style, with the layers using it.
+
+        A download pins the glyphs of every ``text-font`` in the live style
+        against the basemap's own glyph server (``glyphURLs``), so a layer
+        carrying a font that server does not host fails the download. This
+        names the layers, which the 404 in the console does not.
+        """
+        fonts: list[str] = self.page.evaluate(
+            """() => {
+                if (typeof MAP === 'undefined' || !MAP) return [];
+                const style = MAP.getStyle();
+                const byFont = new Map();
+                for (const layer of (style && style.layers) || []) {
+                    const font = layer.layout && layer.layout['text-font'];
+                    if (!font) continue;
+                    const key = JSON.stringify(font).slice(0, 80);
+                    if (!byFont.has(key)) byFont.set(key, []);
+                    byFont.get(key).push(layer.id);
+                }
+                return [`glyphs ${style && style.glyphs}`].concat(
+                    [...byFont].map(([f, ids]) =>
+                        `${f} <- ${ids.length} layers: ${ids.slice(0, 6).join(', ')}`));
+            }"""
+        )
+        return fonts
 
     def tile_errors(self) -> list[str]:
         """Return basemap tile errors MapLibre has reported since page load.
