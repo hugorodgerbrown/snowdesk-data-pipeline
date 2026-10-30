@@ -68,8 +68,9 @@ Context:
   resort_url      — the resort page, or "".
   favourite       — the Favourite (kind "favourite" only), with
                     ``w3w_share_text`` hung on it.
-  can_favourite, favourited, favourite_uuid, signin_url
-                  — the resort's Save star (kind "resort" only).
+  signin_url      — the resort's sign-in star (kind "resort" only). The
+                    Save star itself carries no reader state (SNOW-1318):
+                    map_place_sheet.js paints it.
 {% endcomment %}
 {% trans "Unnamed pin" as unnamed_pin %}
 {% firstof name unnamed_pin as label %}
@@ -120,39 +121,44 @@ Context:
                 {% endif %}
             </div>
             {% if kind == "resort" %}
-                {% if can_favourite %}
-                    {% if favourited %}
-                        {% trans "Remove from saved places" as star_label %}
-                    {% else %}
-                        {% trans "Save resort" as star_label %}
-                    {% endif %}
-                    <button
-                        type="button"
-                        data-resort-star
-                        data-resort-slug="{{ resort.slug }}"
-                        data-resort-name="{{ resort.name }}"
-                        data-resort-lat="{{ resort.pin_coordinates.0|default:'' }}"
-                        data-resort-lon="{{ resort.pin_coordinates.1|default:'' }}"
-                        data-favourited="{{ favourited|yesno:'true,false' }}"
-                        data-favourite-uuid="{{ favourite_uuid }}"
-                        aria-pressed="{{ favourited|yesno:'true,false' }}"
-                        aria-label="{{ star_label }}"
-                        title="{{ star_label }}"
-                        class="{% icon_button_classes %}"
-                    >
-                        {% include "includes/_icon_favourite.html" with size=18 filled=favourited only %}
-                    </button>
-                {% else %}
-                    {% trans "Sign in to save this resort" as signin_label %}
-                    <a
-                        href="{{ signin_url }}"
-                        aria-label="{{ signin_label }}"
-                        title="{{ signin_label }}"
-                        class="{% icon_button_classes %}"
-                    >
-                        {% include "includes/_icon_favourite.html" with size=18 only %}
-                    </a>
-                {% endif %}
+                {# SNOW-1318: the star is rendered the same for every reader — #}
+                {# a disabled outline, and a hidden sign-in link beside it —  #}
+                {# so one copy of this body serves everyone, offline too.      #}
+                {# map_place_sheet.js paints it from map.js's favourites feed  #}
+                {# (window.pwaFavouritedResorts): the star for a signed-in     #}
+                {# reader once the feed is read, the link for anyone else.     #}
+                {% trans "Save resort" as save_label %}
+                {% trans "Remove from saved places" as remove_label %}
+                {% trans "Sign in to save this resort" as signin_label %}
+                <button
+                    type="button"
+                    data-resort-star
+                    data-resort-slug="{{ resort.slug }}"
+                    data-resort-name="{{ resort.name }}"
+                    data-resort-lat="{{ resort.pin_coordinates.0|default:'' }}"
+                    data-resort-lon="{{ resort.pin_coordinates.1|default:'' }}"
+                    data-favourited="false"
+                    data-favourite-uuid=""
+                    data-label-save="{{ save_label }}"
+                    data-label-remove="{{ remove_label }}"
+                    aria-pressed="false"
+                    aria-label="{{ save_label }}"
+                    title="{{ save_label }}"
+                    disabled
+                    class="{% icon_button_classes %}"
+                >
+                    {% include "includes/_icon_favourite.html" with size=18 only %}
+                </button>
+                <a
+                    href="{{ signin_url }}"
+                    data-resort-star-signin
+                    hidden
+                    aria-label="{{ signin_label }}"
+                    title="{{ signin_label }}"
+                    class="{% icon_button_classes %}"
+                >
+                    {% include "includes/_icon_favourite.html" with size=18 only %}
+                </a>
             {% else %}
                 {% blocktrans trimmed with name=label asvar row_actions_aria_label %}Actions for
                     {{ name }}{% endblocktrans %}

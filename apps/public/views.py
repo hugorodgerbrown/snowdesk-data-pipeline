@@ -5484,7 +5484,7 @@ def resort_detail(
         favourite = Favourite.objects.filter(user=request.user, resort=resort).first()
 
     context = {
-        **build_resort_body(request, resort, target_date),
+        **build_resort_body(resort, target_date, is_staff=request.user.is_staff),
         "favourited": favourite is not None,
         "favourite_uuid": str(favourite.uuid) if favourite else "",
         "can_favourite": can_favourite,
@@ -5502,7 +5502,7 @@ def resort_detail(
 
 
 def build_resort_body(
-    request: HttpRequest, resort: Resort, target_date: datetime.date
+    resort: Resort, target_date: datetime.date, *, is_staff: bool = False
 ) -> dict[str, Any]:
     """Build the context of a resort's body, shared by its page and sheet.
 
@@ -5517,11 +5517,16 @@ def build_resort_body(
     So nothing here selects a bulletin; the row links to the region's page
     for the day, which states the danger.
 
+    SNOW-1318: it takes the reader's staff flag rather than the request,
+    so the sheet — which a download keeps unstamped and serves to whoever
+    opens it offline — reads nothing about the reader. The page passes it;
+    the sheet leaves it ``False``, the hint being the page's alone.
+
     Args:
-        request: The incoming request, read for ``is_staff``.
         resort: The resort, with ``region`` and ``location`` loaded.
         target_date: The day to show — today on the bare page, the map's
             day in the sheet.
+        is_staff: Whether the reader is staff (the page's curation hint).
 
     Returns:
         The body's context; see ``_resort_body.html`` for each key.
@@ -5555,7 +5560,7 @@ def build_resort_body(
         # SNOW-542: the why-it-matters partial shows a curation hint instead
         # of the public blank state for staff, exactly as the popup's
         # metadata rows already do.
-        "is_staff": request.user.is_staff,
+        "is_staff": is_staff,
         "forecast_points": forecast_points,
         # SNOW-1205: no point with a forecast for the day draws one line in
         # place of the card (Hugo, 23 Oct).
