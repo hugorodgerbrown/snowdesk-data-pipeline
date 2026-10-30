@@ -1536,8 +1536,10 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
   }
 
   let warmed;
+  let frAhead = false;
 
   beforeEach(async () => {
+    frAhead = false;
     await import('../../static/js/basemap_download_core.js');
     // SNOW-1312: loaded on /offline/ for `latestKnownDate`.
     await import('../../static/js/calendar_core.js');
@@ -1558,6 +1560,10 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
         }
         if (href.includes('weather.geojson')) body = WEATHER;
         if (href.startsWith('/api/ratings/?country=')) body = seasonRatings();
+        // A forward day only France has published (Codex on #1319).
+        if (href === '/api/ratings/?country=fr' && frAhead) {
+          body = { ...seasonRatings(), [dayFrom(2)]: { 'FR-01': 2 } };
+        }
         return { ok: true, json: async () => body };
       }),
     );
@@ -1815,7 +1821,11 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     expect(urls).toContain('/api/regions.geojson?country=fr');
     const asked = window.fetch.mock.calls.map((call) => String(call[0]));
     expect(asked.some((url) => url.includes('area-content'))).toBe(true);
-    expect(asked.some((url) => url.includes('country=fr'))).toBe(false);
+    // No country's OUTLINE is fetched to plan from (the season ratings are
+    // read for the forward window, SNOW-1312 — a different feed).
+    expect(
+      asked.some((url) => url.includes('regions.geojson') && url.includes('country=fr')),
+    ).toBe(false);
   });
 
   it('takes today and the published forward days, never before (SNOW-1312)', async () => {
@@ -1830,6 +1840,18 @@ describe('the per-row "Sync now" control (SNOW-925/951)', () => {
     expect(urls).toContain('/ch-4115/martigny-verbier/' + dayFrom(0) + '/');
     expect(urls).toContain('/ch-4115/martigny-verbier/' + dayFrom(1) + '/');
     expect(urls.some((url) => url.includes(dayFrom(-1)))).toBe(false);
+  });
+
+  it('reaches a forward day any content country has published (SNOW-1312)', async () => {
+    // The map merges every country into its season payload, so a day
+    // France has issued and Switzerland has not is in its window too.
+    frAhead = true;
+    const row = await runPanelWithArea({ contentAt: '2026-09-01T10:00:00.000Z' });
+
+    row.querySelector('[data-audit-complete]').click();
+    await vi.waitUntil(() => warmed.length > 0, { timeout: 5000 });
+
+    expect(warmed.flat()).toContain('/partials/region-sheet/ch-4115/?d=' + dayFrom(2));
   });
 
   it('derives the same days as the map download (SNOW-1312)', async () => {

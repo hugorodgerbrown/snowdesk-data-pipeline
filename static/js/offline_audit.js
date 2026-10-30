@@ -1617,18 +1617,31 @@
    * does not come back is "today alone" — the window the map falls back
    * to as well.
    *
+   * The ceiling is the latest day ANY content country has published —
+   * the map merges every country into the season payload it reads
+   * (`loadCountryRatings`), so a forward day France has issued and
+   * Switzerland has not is still in its window, and must be here too.
+   *
    * @param {Object} core ``pwaBasemapDownloadCore``.
    * @param {string} today An ISO date key.
    * @param {string} ratingsUrl The panel's ``data-ratings-url``.
+   * @param {string[]} countries The panel's content countries.
    * @returns {Promise<string[]>} Date keys, oldest first.
    */
-  async function contentDays(core, today, ratingsUrl) {
+  async function contentDays(core, today, ratingsUrl, countries) {
     var ceiling = today;
     var calendar = self.pwaCalendarCore;
     if (ratingsUrl && calendar && typeof calendar.latestKnownDate === 'function') {
-      // The map's own season read (`getSeasonRatings`), on the same url.
-      var season = await fetchJson(ratingsUrl + '?country=ch');
-      ceiling = calendar.latestKnownDate(season, today) || today;
+      var codes = countries && countries.length > 0 ? countries : ['ch'];
+      var seasons = await Promise.all(
+        codes.map(function (code) {
+          return fetchJson(ratingsUrl + '?country=' + encodeURIComponent(code));
+        }),
+      );
+      seasons.forEach(function (season) {
+        var latest = calendar.latestKnownDate(season, today) || today;
+        if (latest > ceiling) ceiling = latest;
+      });
     }
     var days =
       typeof core.forwardContentDays === 'function'
@@ -1743,7 +1756,7 @@
       // yesterday's bulletins and then stamped a completion with the
       // current timestamp, after which the report called the area fresh
       // with today's bulletins never saved.
-      days: await contentDays(core, day, data.ratingsUrl || ''),
+      days: await contentDays(core, day, data.ratingsUrl || '', countries),
       weatherDetailTemplate: data.weatherDetailUrl || '',
       // SNOW-965: dated, the url the map's sheet asks for today and the
       // only one the worker answers offline — see `weatherDay` above.
