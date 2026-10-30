@@ -32,6 +32,7 @@ from django.utils.html import format_html, format_html_join
 
 from apps.bulletins.models import (
     Bulletin,
+    BulletinAlert,
     BulletinGrouping,
     BulletinShare,
     BulletinShareClick,
@@ -767,3 +768,25 @@ class BulletinGroupingAdmin(admin.ModelAdmin):
     raw_id_fields = ("bulletin",)
     readonly_fields = ("uuid", "created_at", "updated_at")
     ordering = ("-target_date",)
+
+
+@admin.register(BulletinAlert)
+class BulletinAlertAdmin(admin.ModelAdmin):
+    """Admin view for BulletinAlert, the bulletin-alert send log (SNOW-942)."""
+
+    list_display = (
+        "account",
+        "region",
+        "target_date",
+        "kind",
+        "outcome",
+        "sent_push",
+        "sent_email",
+        "created_at",
+    )
+    list_filter = ("outcome", "kind", "sent_push", "sent_email", "target_date")
+    date_hierarchy = "target_date"
+    search_fields = ("account__user__email", "region__region_id", "title")
+    raw_id_fields = ("account", "region", "bulletin")
+    readonly_fields = ("uuid", "created_at", "updated_at", "fingerprint", "state")
+    ordering = ("-created_at",)

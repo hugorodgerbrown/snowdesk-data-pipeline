@@ -1,0 +1,63 @@
+{% extends "public/base.html" %}
+{% comment %}
+apps/public/templates/public/alerts_day.html — where a bundled bulletin
+alert lands (SNOW-1328).
+
+One card per followed place: its name, that day's level, what moved since
+the day before (the alert's own sentences, so the page and the message
+agree word for word) and "Open on the map", which opens the place's region
+panel on that day. Places that moved come first, as in the alert.
+
+Context: ``rows``, ``heading``, ``since_heading``, ``target_date``
+(apps/public/alert_views.py::alerts_day).
+{% endcomment %}
+{% load i18n components %}
+
+{# sharing=False: a signed-in person's own places; an unfurl card would #}
+{# show nothing (the page requires sign-in) and say nothing useful.     #}
+{% block page_meta %}
+    {% trans "Your alerts — Snowdesk" as page_title %}
+    {% trans "The bulletin for each place you follow on Snowdesk." as page_description %}
+    {% include "includes/_page_meta.html" with title=page_title description=page_description sharing=False %}
+{% endblock page_meta %}
+
+{% block content %}
+    <div class="px-4 pt-3 pb-10">
+        <div class="max-w-narrow mx-auto">
+            {% include "includes/_page_title.html" with text=heading %}
+            {% for row in rows %}
+                {% card padding="p-4" extra="mb-3" %}
+                <div class="flex items-baseline justify-between gap-3" data-testid="alerts-day-row">
+                    <h2 class="text-sm font-semibold text-text-1 min-w-0 truncate">{{ row.label }}</h2>
+                    {% if row.headline %}<span
+                            class="font-mono text-xs text-text-2 shrink-0"
+                        >{{ row.headline }}</span>{% endif %}
+                </div>
+                {% if not row.headline %}
+                    <p class="mt-1 text-sm text-text-3">{% trans "No bulletin for this day." %}</p>
+                {% elif row.sentences %}
+                    {# The sentences alone: the strip's own box would be a card in a card. #}
+                    {% include "includes/_eyebrow.html" with text=since_heading tag="p" class_extra="mt-2" only %}
+                    <ul class="mt-1 text-sm text-text-1 leading-prose">
+                        {% for sentence in row.sentences %}<li>{{ sentence }}</li>{% endfor %}
+                    </ul>
+                {% elif row.has_previous %}
+                    <p class="mt-1 text-sm text-text-2">{% trans "No change to the level or the problems." %}</p>
+                {% endif %}
+                {% trans "Open on the map" as open_label %}
+                {% include "includes/_button.html" with label=open_label href=row.url variant="ghost" size="compact" extra_classes="mt-2" %}
+                {% endcard %}
+            {% empty %}
+                <p class="text-sm text-text-2">
+                    {% trans "You do not follow any places yet. Pin a region or save a resort on the map to get alerts for it." %}
+                </p>
+            {% endfor %}
+            <p class="text-sm text-text-3 mt-6">
+                <a
+                    href="{% url 'accounts:settings' %}#settings-alerts"
+                    class="underline"
+                >{% trans "Alert settings" %}</a>
+            </p>
+        </div>
+    </div>
+{% endblock %}

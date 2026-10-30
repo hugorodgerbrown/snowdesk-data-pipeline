@@ -18,6 +18,7 @@ def test_bulletins_app_owns_the_expected_models() -> None:
 
     SNOW-217 adds BulletinShare and BulletinShareClick.
     SNOW-323 adds BulletinGrouping.
+    SNOW-942 adds BulletinAlert, the bulletin alert send log.
     SNOW-654 moved the four Open-Meteo models out to ``apps.weather``, so
     they are deliberately absent from this set.
     """
@@ -31,4 +32,5 @@ def test_bulletins_app_owns_the_expected_models() -> None:
         "RegionDayRating",
         "BulletinShare",
         "BulletinShareClick",
+        "BulletinAlert",
     }

@@ -65,6 +65,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.cache import patch_cache_control
 from django.utils.dates import MONTHS, WEEKDAYS_ABBR
+from django.utils.formats import date_format
 from django.utils.functional import Promise
 from django.utils.html import strip_tags
 from django.utils.http import quote_etag
@@ -94,7 +95,8 @@ from apps.bulletins.models import (
     RegionDayRating,
 )
 from apps.bulletins.schema import ValidTimePeriod
-from apps.bulletins.services import day_summary
+from apps.bulletins.services import alert_wording, alerts as alerts_service, day_summary
+from apps.bulletins.services.bulletin_change import bulletin_state, summarise_change
 from apps.bulletins.services.day_rating import season_calendar_cache_key
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
@@ -4362,6 +4364,10 @@ def build_bulletin_body(
     ):
         next_update_time = selected.next_update
 
+    # Before _build_panel_context, which decorates the render model's
+    # problems in place for the templates.
+    since_strip = _since_strip(request, region, page_date, selected.render_model)
+
     panel = _build_panel_context(selected)
 
     day_windows: list[dict[str, Any]] = _build_day_windows(
@@ -4415,6 +4421,8 @@ def build_bulletin_body(
     headline: str = _build_bulletin_headline(raw_render_model, period_transition)
 
     return {
+        "since_strip": since_strip,
+        "alert_prompt": _alert_prompt(request, region),
         "bulletin": selected,
         "panel": panel,
         "page_date": page_date,
@@ -4431,6 +4439,74 @@ def build_bulletin_body(
         "period_transition_chip": period_transition_chip,
         "headline": headline,
     }
+
+
+def _since_strip(
+    request: HttpRequest,
+    region: MicroRegion,
+    page_date: datetime.date,
+    render_model: dict[str, Any],
+) -> dict[str, Any] | None:
+    """
+    Return the "since the day before" strip for a region body (SNOW-1328).
+
+    Behind the ``bulletin_alerts`` flag while alerts roll out. Compares the
+    bulletin on the page with the one authoritative the day before, in the
+    alert's own words, so tapping an alert lands on the sentence that sent
+    it.
+
+    Args:
+        request: The incoming request (for the flag).
+        region: The region.
+        page_date: The day on the page.
+        render_model: The page bulletin's render model.
+
+    Returns:
+        ``heading``, ``sentences`` and ``quiet_text``, or None when the flag
+        is off or the day before has no bulletin.
+
+    """
+    if not waffle.flag_is_active(request, "bulletin_alerts") or not render_model:
+        return None
+    previous_date = page_date - datetime.timedelta(days=1)
+    previous = alerts_service.day_state(region, previous_date)
+    if previous is None:
+        return None
+    change = summarise_change(previous, bulletin_state(render_model))
+    return {
+        "heading": _("Since %(day)s’s bulletin")
+        % {"day": date_format(previous_date, "l")},
+        "sentences": alert_wording.change_sentences(change),
+        "quiet_text": _("No change to the level or the problems."),
+    }
+
+
+def _alert_prompt(request: HttpRequest, region: MicroRegion) -> str | None:
+    """
+    Return the one-line alerts prompt under the region body (SNOW-1325).
+
+    Args:
+        request: The incoming request.
+        region: The region.
+
+    Returns:
+        ``"on"`` when the signed-in user gets alerts for this region,
+        ``"offer"`` when their alerts are off, None otherwise (flag off,
+        anonymous, alerts on but this region not followed).
+
+    """
+    user = request.user
+    if not user.is_authenticated or not waffle.flag_is_active(
+        request, "bulletin_alerts"
+    ):
+        return None
+    account = getattr(user, "account", None)
+    if account is None:
+        return None
+    if account.notify_when == account.NotifyWhen.OFF:
+        return "offer"
+    places = alerts_service.account_places(user)
+    return "on" if any(p.region.pk == region.pk for p in places) else None
 
 
 def _bulletin_detail_response(

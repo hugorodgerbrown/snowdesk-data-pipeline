@@ -93,6 +93,33 @@ Context:
             {% endif %}
 
             {% comment %}
+                   SNOW-1328: what moved since the day before, in the words
+                   a bulletin alert uses, so tapping an alert lands on the
+                   sentence that sent it. Flag-gated (bulletin_alerts) and
+                   absent when the day before had no bulletin.
+                   SNOW-1325: under it, one line about alerts for this
+                   region — an offer while the reader's alerts are off, a
+                   note when this region is one they follow.
+            {% endcomment %}
+            {% if since_strip %}
+                {% include "includes/_since_strip.html" with heading=since_strip.heading sentences=since_strip.sentences quiet_text=since_strip.quiet_text only %}
+            {% endif %}
+            {% if alert_prompt == "offer" %}
+                <p class="mb-4 text-sm text-text-2" data-testid="alert-prompt">
+                    {% url 'accounts:settings' as alert_settings_url %}
+                    {% blocktrans trimmed with url=alert_settings_url %}
+                        Get this region’s bulletin when it comes out. <a
+                            href="{{ url }}#settings-alerts"
+                            class="underline">Turn on alerts</a>
+                    {% endblocktrans %}
+                </p>
+            {% elif alert_prompt == "on" %}
+                <p class="mb-4 text-sm text-text-3" data-testid="alert-prompt">
+                    {% trans "You get alerts for this region." %}
+                </p>
+            {% endif %}
+
+            {% comment %}
                    Day-character callout banner — editorial commentary
                    produced by compute_day_character() in the render-model
                    service. Hidden while views.SHOW_DAY_CHARACTER is

@@ -3,8 +3,11 @@ tests/accounts/test_push_views.py — Tests for Web Push JSON endpoints.
 
 Covers all four push endpoints (push_register, push_unregister, push_test,
 push_subscriptions):
-  - Anonymous users are redirected to /admin/login/ (302).
-  - Non-staff authenticated users are also redirected (302).
+  - push_register / push_unregister (SNOW-1325): anonymous gets 401 JSON; a
+    signed-in account registers its own device and unregisters only its
+    own endpoints; a non-staff user with no Account is refused (403).
+  - push_test / push_subscriptions: anonymous and non-staff users are
+    redirected to /admin/login/ (302).
   - Staff POST without CSRF token is rejected (403) when enforce_csrf_checks=True.
   - Staff POST succeeds (200) and the expected side effect occurs.
   - SNOW-311 caplog regression: log records contain pk=, never the account email.
@@ -100,19 +103,28 @@ def staff_client(staff_user: Any) -> Client:
 class TestPushRegister:
     """Tests for /account/push/register/."""
 
-    def test_anonymous_redirected_to_admin_login(self) -> None:
-        """Anonymous POST is redirected to admin login."""
+    def test_anonymous_gets_401(self) -> None:
+        """Anonymous POST is refused with JSON, not a redirect (SNOW-1325)."""
         response = _post_json(Client(), _REGISTER_URL, _REGISTER_BODY)
-        assert response.status_code == 302
-        assert "/admin/login/" in response["Location"]
+        assert response.status_code == 401
+        assert response.json()["ok"] is False
 
-    def test_non_staff_redirected_to_admin_login(self, regular_user: Any) -> None:
-        """Non-staff authenticated user is also redirected."""
+    def test_account_registers_its_own_device(self, regular_user: Any) -> None:
+        """A signed-in account links the subscription to itself."""
         c = Client()
         c.force_login(regular_user.user)
         response = _post_json(c, _REGISTER_URL, _REGISTER_BODY)
-        assert response.status_code == 302
-        assert "/admin/login/" in response["Location"]
+        assert response.status_code == 200
+        sub = PushSubscription.objects.get(endpoint=_REGISTER_BODY["endpoint"])
+        assert sub.account == regular_user
+
+    def test_non_staff_without_account_refused(self, db: Any) -> None:
+        """A non-staff user with no Account profile cannot register."""
+        user = UserFactory.create(is_staff=False)
+        c = Client()
+        c.force_login(user)
+        response = _post_json(c, _REGISTER_URL, _REGISTER_BODY)
+        assert response.status_code == 403
 
     def test_staff_without_csrf_rejected(self, staff_user: Any) -> None:
         """Staff POST without CSRF token is rejected with 403.
@@ -295,19 +307,34 @@ class TestPushRegister:
 class TestPushUnregister:
     """Tests for /account/push/unregister/."""
 
-    def test_anonymous_redirected_to_admin_login(self) -> None:
-        """Anonymous POST is redirected to admin login."""
+    def test_anonymous_gets_401(self) -> None:
+        """Anonymous POST is refused with JSON (SNOW-1325)."""
         response = _post_json(Client(), _UNREGISTER_URL, _UNREGISTER_BODY)
-        assert response.status_code == 302
-        assert "/admin/login/" in response["Location"]
+        assert response.status_code == 401
 
-    def test_non_staff_redirected_to_admin_login(self, regular_user: Any) -> None:
-        """Non-staff authenticated user is also redirected."""
+    def test_account_deletes_only_its_own_endpoint(self, regular_user: Any) -> None:
+        """A non-staff caller cannot delete another account's device."""
+        other = PushSubscriptionFactory.create(
+            account=AccountFactory.create(), endpoint="https://push.example.com/other"
+        )
+        mine = PushSubscriptionFactory.create(
+            account=regular_user, endpoint="https://push.example.com/mine"
+        )
         c = Client()
         c.force_login(regular_user.user)
-        response = _post_json(c, _UNREGISTER_URL, _UNREGISTER_BODY)
-        assert response.status_code == 302
-        assert "/admin/login/" in response["Location"]
+        assert (
+            _post_json(c, _UNREGISTER_URL, {"endpoint": other.endpoint}).json()[
+                "deleted"
+            ]
+            == 0
+        )
+        assert (
+            _post_json(c, _UNREGISTER_URL, {"endpoint": mine.endpoint}).json()[
+                "deleted"
+            ]
+            == 1
+        )
+        assert PushSubscription.objects.filter(pk=other.pk).exists()
 
     def test_staff_without_csrf_rejected(self, staff_user: Any) -> None:
         """Staff POST without CSRF token is rejected with 403."""

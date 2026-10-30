@@ -114,6 +114,10 @@ directly instead of `[data-downloads-overlay-toggle]`). That particular
 caller is gone — SNOW-904 removed the four map-overlay switches — but the
 argument for typed booleans over a raw passthrough holds for every caller
 this partial has left.
+
+SNOW-939: an optional ``name`` (a plain string, not a passthrough) so the
+switch can sit inside a form and submit "on" when checked — the bulletin
+alert settings post one place's switch with hx-trigger="change".
 {% endcomment %}
 <label
     for="{{ id }}"
@@ -124,6 +128,7 @@ this partial has left.
         type="checkbox"
         role="switch"
         class="peer sr-only"
+        {% if name %}name="{{ name }}"{% endif %}
         {% if checked %}checked{% endif %}
         {% if disabled %}disabled{% endif %}
     >

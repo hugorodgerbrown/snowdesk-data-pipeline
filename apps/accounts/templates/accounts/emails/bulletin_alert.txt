@@ -1,0 +1,10 @@
+{% load i18n %}{{ title }}
+
+{{ body }}
+
+{% trans "Open the bulletin:" %} {{ open_url }}
+
+---
+{% trans "You get this because bulletin alerts are on for your Snowdesk places." %}
+{% trans "Change what you get:" %} {{ settings_url }}
+{% trans "Stop alert emails:" %} {{ unsubscribe_url }}

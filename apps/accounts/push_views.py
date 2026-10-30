@@ -1,5 +1,5 @@
 """
-apps/accounts/push_views.py — Web Push JSON endpoints (staff-only).
+apps/accounts/push_views.py — Web Push JSON endpoints.
 
 Four views, all JSON in / JSON out:
 
@@ -20,15 +20,25 @@ Four views, all JSON in / JSON out:
                               (SNOW-874). Read-only, so no CSRF token and no
                               POST; the three writes above still take both.
 
-All four are guarded by ``@staff_member_required`` and the three POSTs rely on
-Django's default CSRF middleware. The JS client at ``static/js/push_demo.js``
-sends the ``X-CSRFToken`` header read from the ``csrftoken`` cookie.
+``push_register`` and ``push_unregister`` are open to any signed-in account
+since SNOW-1325, because bulletin alerts subscribe devices from the
+settings page (``static/js/alerts_optin.js``). An anonymous call gets a 401,
+not a redirect, since the callers are fetch() clients. A non-staff caller
+needs an Account profile, and may unregister only its own endpoints; staff
+keep the spike's reach over every row. ``push_test`` and
+``push_subscriptions`` stay staff-only — they act on every row — and the
+account's own test is ``accounts:alert_test``.
+
+The POSTs rely on Django's default CSRF middleware; the JS clients send the
+``X-CSRFToken`` header read from the ``csrftoken`` cookie.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
+from functools import wraps
 from typing import Any
 
 from django.contrib.admin.views.decorators import staff_member_required
@@ -50,7 +60,22 @@ def _parse_json(request: HttpRequest) -> dict[str, Any]:
         return {}
 
 
-@staff_member_required
+def _signed_in_json(
+    view: Callable[[HttpRequest], HttpResponse],
+) -> Callable[[HttpRequest], HttpResponse]:
+    """Return 401 JSON for an anonymous caller instead of a sign-in redirect."""
+
+    @wraps(view)
+    def wrapper(request: HttpRequest) -> HttpResponse:
+        """Refuse anonymous callers, then call the view."""
+        if not request.user.is_authenticated:
+            return JsonResponse({"ok": False, "error": "sign in"}, status=401)
+        return view(request)
+
+    return wrapper
+
+
+@_signed_in_json
 @require_POST
 def push_register(request: HttpRequest) -> HttpResponse:
     """Upsert a PushSubscription keyed by the browser-provided endpoint."""
@@ -70,14 +95,15 @@ def push_register(request: HttpRequest) -> HttpResponse:
     if mechanism not in PushSubscription.Mechanism.values:
         return JsonResponse({"ok": False, "error": "invalid mechanism"}, status=400)
 
-    # The staff gate guarantees an authenticated staff User.  Staff users who
-    # have an Account profile (e.g. created via the subscribe flow) link the
-    # PushSubscription directly; staff with no profile leave account=None.
+    # A signed-in user with an Account links the PushSubscription to it.
+    # Staff with no profile (createsuperuser) may still register for the
+    # spike, leaving account=None; anyone else needs a profile.
     account: Account | None = None
     try:
-        account = request.user.account  # type: ignore[union-attr]  # staff_member_required guarantees authentication
+        account = request.user.account  # type: ignore[union-attr]  # _signed_in_json guarantees authentication
     except Account.DoesNotExist:
-        pass  # Staff with no Account profile: account stays None.
+        if not request.user.is_staff:
+            return JsonResponse({"ok": False, "error": "no account"}, status=403)
     obj, created = PushSubscription.objects.update_or_create(
         endpoint=endpoint,
         defaults={
@@ -98,15 +124,22 @@ def push_register(request: HttpRequest) -> HttpResponse:
     return JsonResponse({"ok": True, "created": created, "uuid": str(obj.uuid)})
 
 
-@staff_member_required
+@_signed_in_json
 @require_POST
 def push_unregister(request: HttpRequest) -> HttpResponse:
-    """Hard-delete the PushSubscription matching the supplied endpoint."""
+    """Hard-delete the PushSubscription matching the supplied endpoint.
+
+    A non-staff caller can delete only a row on its own account.
+    """
     data = _parse_json(request)
     endpoint = data.get("endpoint")
     if not endpoint:
         return JsonResponse({"ok": False, "error": "missing endpoint"}, status=400)
-    deleted, _ = PushSubscription.objects.filter(endpoint=endpoint).delete()
+    rows = PushSubscription.objects.filter(endpoint=endpoint)
+    if not request.user.is_staff:
+        # _signed_in_json guarantees a pk; ``or 0`` only narrows the type.
+        rows = rows.filter(account__user_id=request.user.pk or 0)
+    deleted, _ = rows.delete()
     return JsonResponse({"ok": True, "deleted": deleted})
 
 

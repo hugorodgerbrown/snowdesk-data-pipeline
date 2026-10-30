@@ -39,7 +39,7 @@ class FavouriteAdmin(admin.ModelAdmin):
         "location",
         "created_at",
     ]
-    list_filter = ["region", "created_at"]
+    list_filter = ["alerts", "region", "created_at"]
     search_fields = [
         "user__email",
         "name",

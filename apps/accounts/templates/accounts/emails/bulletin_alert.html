@@ -1,0 +1,26 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{{ title }}</title>
+    </head>
+    <body style="font-family: sans-serif; color: #1f2937; max-width: 600px; margin: 0 auto; padding: 2rem 1rem">
+        <p style="font-size: 1.125rem; font-weight: 600; margin: 0 0 0.75rem">{{ title }}</p>
+        <p style="margin: 0 0 1.5rem">{{ body }}</p>
+        <p style="margin: 0 0 2rem">
+            <a
+                href="{{ open_url }}"
+                style="background: #2563eb; color: #fff; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 600"
+            >{% trans "Open the bulletin" %}</a>
+        </p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 2rem 0">
+        <p style="color: #6b7280; font-size: 0.875rem">
+            {% trans "You get this because bulletin alerts are on for your Snowdesk places." %}
+            <a href="{{ settings_url }}" style="color: #6b7280">{% trans "Change what you get" %}</a>
+            &middot;
+            <a href="{{ unsubscribe_url }}" style="color: #6b7280">{% trans "Stop alert emails" %}</a>
+        </p>
+    </body>
+</html>

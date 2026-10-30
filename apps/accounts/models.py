@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.aaguids import lookup as _aaguid_lookup
 from apps.core.models import BaseModel
@@ -53,6 +54,12 @@ class AccountQuerySet(models.QuerySet["Account"]):
     def by_email(self, email: str) -> AccountQuerySet:
         """Return accounts matching the given email (normalised to lowercase)."""
         return self.filter(user__email=email.lower())
+
+    def alerting(self) -> AccountQuerySet:
+        """Return accounts with bulletin alerts on (SNOW-939), active users only."""
+        return self.exclude(notify_when=Account.NotifyWhen.OFF).filter(
+            user__is_active=True
+        )
 
     def get_or_create_for_email(
         self,
@@ -111,6 +118,10 @@ class AccountManager(models.Manager["Account"]):
     def by_email(self, email: str) -> AccountQuerySet:
         """Return accounts matching the given email (normalised to lowercase)."""
         return self.get_queryset().by_email(email)
+
+    def alerting(self) -> AccountQuerySet:
+        """Return accounts with bulletin alerts on."""
+        return self.get_queryset().alerting()
 
     def get_or_create_for_email(
         self,
@@ -198,6 +209,43 @@ class Account(BaseModel):
         null=True,
         blank=True,
         help_text="When the pending email change was requested.",
+    )
+
+    class NotifyWhen(models.TextChoices):
+        """What earns a bulletin alert (SNOW-939)."""
+
+        NEW_BULLETIN = "NEW_BULLETIN", _("Every new bulletin")
+        CHANGES = "CHANGES", _("Only when something changes")
+        OFF = "OFF", _("Off")
+
+    class AlertEmail(models.TextChoices):
+        """When an alert is also sent by email (SNOW-1327)."""
+
+        FALLBACK = "FALLBACK", _("Only when this account has no push device")
+        ALWAYS = "ALWAYS", _("Always, as well as push")
+        NEVER = "NEVER", _("Never")
+
+    # Off by default: the email fallback means a default of on would email
+    # people who never asked, so turning alerts on is always a choice.
+    notify_when = models.CharField(
+        max_length=16,
+        choices=NotifyWhen.choices,
+        default=NotifyWhen.OFF,
+        help_text="What earns a bulletin alert for this account's places.",
+    )
+    alert_email = models.CharField(
+        max_length=16,
+        choices=AlertEmail.choices,
+        default=AlertEmail.FALLBACK,
+        help_text="When an alert is also sent by email.",
+    )
+    alerts_enabled_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "When alerts were last turned on. A day that began before this "
+            "is announced; one already under way is recorded silently."
+        ),
     )
 
     objects = AccountManager()

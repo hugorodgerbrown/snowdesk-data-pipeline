@@ -2,7 +2,21 @@
 tests/public/test_no_bulletin_alert_claims.py — no template may promise a
 bulletin alert Snowdesk does not send (SNOW-707).
 
-Snowdesk has never emailed anyone when a bulletin publishes. No task, no
+**SNOW-937 changed the premise, for a few surfaces only.** Bulletin
+alerts now exist (``send_bulletin_alerts``), but behind the
+``bulletin_alerts`` flag and a schedule switch that deploys off, so a
+promise on a page everyone reads is still false for almost everyone. The
+alerts feature's own surfaces — the settings group, the alert email, its
+unsubscribe page, the landing page, the region-body prompt, the staff
+replay page, the privacy policy's description of them and the component
+library's since-strip entry — are listed in ``_ALERT_SURFACES`` with the
+reason each one is true where it renders. Every other template is still
+held to the rule below until the rollout makes alerts public; the help
+page's "Snowdesk sends no bulletin alerts" and /compare/'s alerts row are
+changed then, together with this guard (docs/alerts.md, "Going public").
+
+Before SNOW-937: Snowdesk had never emailed anyone when a bulletin
+publishes. No task, no
 command and no scheduled job exists that could, SNOW-875 deleted the last
 of the machinery that looked as though it might, and SNOW-7 — the ticket
 to build the digest — was cancelled, so the gap is permanent rather than
@@ -180,6 +194,40 @@ _CLAIMS: dict[str, re.Pattern[str]] = {
     "install-unlocks-notifications": re.compile(
         r"\bunlocks?\s+(?:[\w-]+\s+){0,3}(notification|alert|update|subscription)s?\b",
         re.IGNORECASE,
+    ),
+}
+
+# SNOW-937: the bulletin alert feature's own surfaces. Each renders only
+# where alerts exist for the reader (flag-gated, sent to an account that
+# opted in, or staff-only), or describes them conditionally, so a claim
+# phrase there is true. Whole files rather than lines, because a settings
+# group about alerts says "alert" on every row.
+_ALERT_SURFACES: dict[str, str] = {
+    "apps/accounts/templates/accounts/partials/_alert_settings.html": (
+        "The Alerts settings group, rendered only behind the bulletin_alerts flag."
+    ),
+    "apps/accounts/templates/accounts/emails/bulletin_alert.html": (
+        "The alert email itself, sent only to an account that turned alerts on."
+    ),
+    "apps/accounts/templates/accounts/emails/bulletin_alert.txt": (
+        "The alert email's plain-text part."
+    ),
+    "apps/accounts/templates/accounts/alert_unsubscribe.html": (
+        "Reached only from the unsubscribe link in an alert email."
+    ),
+    "apps/public/templates/public/alerts_day.html": (
+        "Where a sent alert lands; sign-in required."
+    ),
+    "apps/public/templates/public/partials/_region_body.html": (
+        "The alerts prompt renders only behind the bulletin_alerts flag."
+    ),
+    "apps/public/templates/public/privacy.html": (
+        "Describes alerts conditionally: off until you turn them on."
+    ),
+    "templates/_debug/alerts_replay.html": "Staff-only season replay (SNOW-949).",
+    "apps/public/design_tokens.py": (
+        "The since-strip registry entry names the alert it shares words with; "
+        "staff-only component library."
     ),
 }
 
@@ -373,6 +421,8 @@ def _offences() -> list[str]:
     found: list[str] = []
     for path in _template_files():
         relative_path = str(path.relative_to(_ROOT))
+        if relative_path in _ALERT_SURFACES:
+            continue
         source = _strip_comments(path.read_text(encoding="utf-8"))
         lines = source.splitlines()
         for claim, pattern in _CLAIMS.items():
@@ -463,8 +513,7 @@ class TestNoBulletinAlertClaims:
             "Your browser's push service (Google, Mozilla or Apple, depending on "
             "your browser) — if you turn on push notifications, your browser "
             "creates a subscription on its vendor's service and we send "
-            "notifications through it. We never include bulletin content or your "
-            "email address in a notification payload.",
+            "notifications through it.",
             "Create a Snowdesk account to save favourites and share field reports.",
             "Enter your email address and we'll send you a link to verify it.",
             "If that address needs verifying, we've sent you a link to confirm "

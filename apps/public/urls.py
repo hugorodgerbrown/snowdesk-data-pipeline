@@ -9,6 +9,9 @@ URL structure:
   /map/                                        Interactive map (the app).
   /terms/                                      Permanent 301 redirect to
                                                /terms-of-service/ (SNOW-770).
+  /alerts/<date>/                              Where a bundled bulletin alert
+                                               lands: the day for each place
+                                               the person follows (SNOW-1328).
   /help/                                        Plain-language "how it works"
                                                help page (SNOW-456).
   /compare/                                     Public comparison of the
@@ -62,7 +65,7 @@ resolver matches the literal suffixes first.
 from django.urls import path
 from django.views.generic import RedirectView
 
-from . import debug_views, place_sheet, region_sheet, views
+from . import alert_views, debug_views, place_sheet, region_sheet, views
 from .feeds import CountryBulletinFeed
 
 app_name = "public"
@@ -88,6 +91,9 @@ urlpatterns = [
         ),
         name="terms",
     ),
+    # Where a bundled bulletin alert lands (SNOW-1328). Ahead of the generic
+    # <region_id>/ patterns so "alerts" never resolves as a region id.
+    path("alerts/<str:day>/", alert_views.alerts_day, name="alerts_day"),
     # Technology credits and attribution page (SNOW-122).
     path("colophon/", views.colophon, name="colophon"),
     # Public comparison of the avalanche apps in this category (SNOW-836).
@@ -200,6 +206,8 @@ urlpatterns = [
     path("_errors/<str:kind>/", debug_views.error_preview, name="error_preview"),
     # Web Push spike — staff-only demo page.
     path("_push-demo/", debug_views.push_demo, name="push_demo"),
+    # SNOW-949: a season of bulletin alerts for one region, replayed.
+    path("_alerts-replay/", debug_views.alerts_replay, name="alerts_replay"),
     # SW shell cache-version page — staff-only, surfaces live vs deployed
     # CACHE_VERSION (SNOW-517).
     path("_sw-version/", debug_views.sw_version, name="sw_version"),

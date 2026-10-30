@@ -1,6 +1,11 @@
 {
   "switches": [
     {
+      "name": "schedule_send_bulletin_alerts",
+      "note": "SNOW-942: the scheduled job send_bulletin_alerts, hourly at :10 (schedule.py). Off skips its runs from the next firing; on resumes them. Deploys OFF: alerts are a rollout, and the first send waits on the alerts@ sender's SPF/DKIM/DMARC (docs/alerts.md).",
+      "active": false
+    },
+    {
       "name": "schedule_fetch_bulletins",
       "note": "SNOW-1201: the scheduled job fetch_bulletins, hourly at :00 and :05 (schedule.py). Off skips its runs from the next firing; on resumes them.",
       "active": true

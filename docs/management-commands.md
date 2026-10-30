@@ -191,6 +191,7 @@ worker logs.
 | Weather history sweep | `backfill_weather --commit` | `20 * * * *` (hourly, at :20 UTC) | One budgeted sweep of the missing past `Weather` days, newest fortnight first (SNOW-1245). The budget is this hour's share of what `fetch_weather` leaves of Open-Meteo's free daily quota, so the two never throttle each other; each run resumes where the last stopped, and a run with nothing missing issues no request. Exits non-zero on a 429. |
 | Reference-data mirror | `mirror_reference_data --commit` | `40 * * * *` (hourly, at :40 UTC) | Copies the curated places, passes and resorts into the reference-data service's `SourceLocation`, `SourcePass` and `SourceResort`, which the v2 data feeds serve (SNOW-1271). Hourly so an edit in the resort sheet or the map-admin overlays reaches the feed within the hour; database-only, and a run with nothing changed writes nothing. |
 | Ski-touring import | `import_ski_tours --commit` | `30 2 * * 1` (weekly, Mondays 02:30 UTC) | Downloads swisstopo's ski-touring GeoPackage, makes the service's `SourceSkiSegment` and `SourceSkiTour` equal it and applies what changed to `SkiSegment` and `SkiTour` (SNOW-1276). Weekly because swisstopo releases the data about once a year; a run against an unchanged release writes nothing. |
+| Bulletin alerts | `send_bulletin_alerts --commit` | `10 * * * *` (hourly, at :10 UTC, after the :00/:05 fetch) | Sends each opted-in account one message naming every place whose bulletin is new or changed, push first and email as the account asks, and logs each decision as a `BulletinAlert` (SNOW-942). Holds 22:00–06:30 Zurich time. Deploys switched off (`schedule_send_bulletin_alerts`) — see [`alerts.md`](alerts.md). |
 | Request-log retention | `purge_request_logs --commit` | `30 3 * * *` (daily, 03:30 UTC) | Deletes `RequestLog` rows past the twelve-month retention window the Privacy Policy states (SNOW-775). Runs at :30 on an hour no fetch job uses, because it holds a delete transaction over a table the request path writes to. |
 | OAuth token purge | `purge_expired_oauth_tokens --commit` | `45 3 * * *` (daily, 03:45 UTC) | Deletes expired MCP OAuth tokens and authorization codes with django-oauth-toolkit's `clear_expired()` (SNOW-1193). A connected Claude refreshing hourly writes two token rows an hour, and nothing else deletes them. |
 | Run-register prune | `prune_command_runs --commit` | `50 3 * * *` (daily, 03:50 UTC) | Marks `CommandRun` rows a killed process left `RUNNING` for over six hours as `INTERRUPTED`, and deletes `SCHEDULER` runs older than 90 days (SNOW-1189). Every other run is kept for good. |
@@ -693,6 +694,34 @@ which also carries the Open-Meteo cost this command's cadence implies.
 ```bash
 uv run python manage.py fetch_weather           # preview (calls the API)
 uv run python manage.py fetch_weather --commit  # persist
+```
+
+### `send_bulletin_alerts` — tell each person what changed in their places
+
+SNOW-942. Walks `Account.objects.alerting()` with `iterate_rows` and, for
+each account, decides every pinned region and saved resort against its own
+`BulletinAlert` log, builds one message and delivers it. Read-only without
+`--commit`: it prints what each account would get and writes no row.
+`--ignore-night-hold` runs inside 22:00–06:30 (for testing). Tallies
+`accounts`, `messages`, `pushes`, `emails`, `failed`; any failure exits
+non-zero. Rules: [`alerts.md`](alerts.md).
+
+```bash
+uv run python manage.py send_bulletin_alerts           # preview
+uv run python manage.py send_bulletin_alerts --commit  # send and log
+```
+
+### `replay_bulletin_alerts` — read a season of alerts before anyone gets one
+
+SNOW-949. Replays a provider's committed archive for one region and prints
+every alert a subscriber would have received, in delivery order. Reads the
+archive file only; there is nothing to commit. Stdout is the data artefact
+(the countdown exemption). Tallies `sent` and `skipped`. The staff page
+`/_alerts-replay/` renders the same schedule.
+
+```bash
+uv run python manage.py replay_bulletin_alerts                     # CH-4115, SLF
+uv run python manage.py replay_bulletin_alerts --mode CHANGES --all
 ```
 
 ### `mirror_reference_data` — copy the curated estate into the service

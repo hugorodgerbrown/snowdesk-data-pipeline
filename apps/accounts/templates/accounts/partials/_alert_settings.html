@@ -1,0 +1,162 @@
+{% comment %}
+apps/accounts/templates/accounts/partials/_alert_settings.html — the Alerts
+group on /account/settings/ (SNOW-939, SNOW-1325, SNOW-1326, SNOW-1327).
+
+Rendered inside settings.html and returned whole by the two HTMX posts
+(accounts:alert_settings, accounts:alert_place), which swap the section by
+its id. Context: ``account``, ``alert_places``, ``notify_choices``,
+``email_choices`` (apps/accounts/alert_views.py::alert_settings_context).
+
+Rows, in the order a person decides them:
+
+  1. Bulletin alerts — what earns one: every new bulletin, only changes, or
+     off. Off by default; turning it on is always a choice, because email
+     is the fallback and a default of on would email people who never
+     asked.
+  2. This device — the push opt-in, painted by alerts_optin.js. On an
+     iPhone in Safari it explains the Home Screen step instead of offering
+     a button that cannot work.
+  3. Email — when an alert also comes by email.
+  4. Your places — every region pin and saved resort, each with its own
+     switch. A dropped pin is not listed: it marks a spot, not a
+     subscription.
+
+Rows 2–4 are hidden while alerts are off; there is nothing for them to
+govern yet.
+{% endcomment %}
+{% load i18n components %}
+<section id="settings-alerts" aria-labelledby="settings-group-alerts" class="mt-8" data-testid="settings-alerts">
+    {% trans "Alerts" as t_group_alerts %}
+    {% include "includes/_eyebrow.html" with text=t_group_alerts heading_id="settings-group-alerts" data_testid="settings-group-alerts" class_extra="mb-3" %}
+
+    {% card padding="p-0" extra="overflow-hidden divide-y divide-border" %}
+    <form
+        hx-post="{% url 'accounts:alert_settings' %}"
+        hx-trigger="change"
+        hx-target="#settings-alerts"
+        hx-swap="outerHTML"
+        class="flex flex-col gap-3 p-4"
+    >
+        <div class="min-w-0">
+            <h3 class="text-sm font-semibold text-text-1">{% trans "Bulletin alerts" %}</h3>
+            <p class="text-sm text-text-2" data-testid="alert-mode-help">
+                {% if account.notify_when == "NEW_BULLETIN" %}
+                    {% trans "One message when the next day’s bulletin for your places is out, usually around 17:00, and again if it is updated." %}
+                {% elif account.notify_when == "CHANGES" %}
+                    {% trans "A message only when the bulletin for one of your places moves: the level, or a problem added, removed or shifted." %}
+                {% else %}
+                    {% trans "Get the bulletin for your pinned regions and saved resorts when it comes out." %}
+                {% endif %}
+            </p>
+        </div>
+        <fieldset>
+            <legend class="sr-only">{% trans "Bulletin alerts" %}</legend>
+            <div class="inline-flex flex-wrap rounded-pill border border-border bg-card p-0.5">
+                {% for value, label in notify_choices %}
+                    {% if value == account.notify_when %}
+                        {% include "includes/_segmented_option.html" with name="notify_when" value=value label=label checked=True %}
+                    {% else %}
+                        {% include "includes/_segmented_option.html" with name="notify_when" value=value label=label %}
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </fieldset>
+
+        {% if account.notify_when != "OFF" %}
+            <div class="min-w-0 border-t border-border pt-3">
+                <h3 class="text-sm font-semibold text-text-1">{% trans "Email" %}</h3>
+                <p class="text-sm text-text-2">
+                    {% blocktrans trimmed with email=account.user.email %}
+                        Alerts go to {{ email }} when no device of yours can show a notification, unless you choose
+                        otherwise.
+                    {% endblocktrans %}
+                </p>
+            </div>
+            <fieldset>
+                <legend class="sr-only">{% trans "Email" %}</legend>
+                <div class="inline-flex flex-wrap rounded-pill border border-border bg-card p-0.5">
+                    {% for value, label in email_choices %}
+                        {% if value == account.alert_email %}
+                            {% include "includes/_segmented_option.html" with name="alert_email" value=value label=label checked=True %}
+                        {% else %}
+                            {% include "includes/_segmented_option.html" with name="alert_email" value=value label=label %}
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </fieldset>
+        {% endif %}
+    </form>
+
+    {% if account.notify_when != "OFF" %}
+        <div class="flex flex-col gap-3 p-4" data-alerts-optin>
+            <div class="min-w-0">
+                <h3 class="text-sm font-semibold text-text-1">{% trans "This device" %}</h3>
+                <p class="text-sm text-text-2" data-alerts-optin-status role="status" aria-live="polite">
+                    {% trans "Checking whether this device can show notifications…" %}
+                </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button
+                    type="button"
+                    hidden
+                    data-alerts-optin-enable
+                    data-testid="alerts-optin-enable"
+                    class="{% button_classes variant='primary' size='compact' %} whitespace-nowrap"
+                >
+                    {% trans "Turn on notifications" %}
+                </button>
+                <button
+                    type="button"
+                    hidden
+                    data-alerts-optin-test
+                    data-testid="alerts-optin-test"
+                    class="{% button_classes variant='ghost' size='compact' %} whitespace-nowrap"
+                >
+                    {% trans "Send a test" %}
+                </button>
+            </div>
+            <template id="alerts-optin-strings-template">
+                <span data-string="available">{% trans "Notifications are off on this device." %}</span>
+                <span data-string="subscribed">{% trans "This device gets alerts." %}</span>
+                <span
+                    data-string="needs-home-screen"
+                >{% trans "On iPhone and iPad, add Snowdesk to your Home Screen (Share, then Add to Home Screen), open it from there and turn notifications on." %}</span>
+                <span
+                    data-string="denied"
+                >{% trans "Notifications are blocked for Snowdesk. Allow them in this browser’s site settings, then reload." %}</span>
+                <span
+                    data-string="unsupported"
+                >{% trans "This browser cannot show notifications. Alerts will come by email." %}</span>
+                <span data-string="failed">{% trans "That did not work. Try again." %}</span>
+                <span data-string="test-sent">{% trans "A test alert is on its way." %}</span>
+            </template>
+        </div>
+
+        <div class="flex flex-col gap-3 p-4" data-testid="alert-places">
+            <h3 class="text-sm font-semibold text-text-1">{% trans "Your places" %}</h3>
+            {% for row in alert_places %}
+                <form
+                    hx-post="{% url 'accounts:alert_place' favourite_uuid=row.favourite.uuid %}"
+                    hx-trigger="change"
+                    hx-target="#settings-alerts"
+                    hx-swap="outerHTML"
+                    class="flex items-center justify-between gap-3 rounded-tag bg-tag p-3"
+                >
+                    <div class="min-w-0">
+                        <label
+                            for="{{ row.switch_id }}"
+                            class="block text-sm font-medium text-text-1 truncate"
+                        >{{ row.name }}</label>
+                        <p class="font-mono text-xs text-text-3 mt-0.5">{{ row.kind }}</p>
+                    </div>
+                    {% include "includes/_switch.html" with id=row.switch_id name="alerts" checked=row.favourite.alerts %}
+                </form>
+            {% empty %}
+                <p class="text-sm text-text-3">
+                    {% trans "Pin a region or save a resort on the map to get alerts for it." %}
+                </p>
+            {% endfor %}
+        </div>
+    {% endif %}
+    {% endcard %}
+</section>

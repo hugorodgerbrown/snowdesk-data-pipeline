@@ -50,6 +50,9 @@ SALT_ACCOUNT_ACCESS = "account-access"
 SALT_EMAIL_VERIFICATION = "email-verification"
 SALT_PASSWORD_RESET = "password-reset"  # noqa: S105 — salt label, not a password
 SALT_EMAIL_CHANGE = "email-change"
+# SNOW-1327: the one-click unsubscribe link in a bulletin alert email. Signs
+# the account uuid and never expires: an unsubscribe link must keep working.
+SALT_ALERT_UNSUBSCRIBE = "alert-unsubscribe"
 
 # Separator used inside composite token values (email|payload).
 _UNSUB_SEP = "|"

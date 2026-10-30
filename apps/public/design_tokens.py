@@ -86,6 +86,7 @@ from apps.public._component_fixtures import (
     SEASON_SCRUBBER_VARIANTS,
     SEGMENTED_OPTION_VARIANTS,
     SHEET_HEADER_VARIANTS,
+    SINCE_STRIP_VARIANTS,
     SITE_FOOTER_VARIANTS,
     STATUS_PAGE_VARIANTS,
     SWITCH_TRACK_VARIANTS,
@@ -1714,6 +1715,20 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_segmented_option.html",
         variants=SEGMENTED_OPTION_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="since-strip",
+        label="Since strip",
+        description=(
+            "What moved in a region's bulletin since the day before, at the "
+            "top of the region body (SNOW-1328): a quiet eyebrow and the "
+            "movements in the bulletin alert's own words, or one line when "
+            "nothing moved."
+        ),
+        kind="components",
+        partial="includes/_since_strip.html",
+        variants=SINCE_STRIP_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
