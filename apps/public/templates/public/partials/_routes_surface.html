@@ -228,6 +228,13 @@ Context expected:
 {# observations_offline.js and unlike favourites_offline.js, which        #}
 {# base.html loads site-wide.                                             #}
 <script defer src="{% static 'js/routes_offline.js' %}"></script>
+{# SNOW-1262: the pure half of route drawing, loaded here rather than by  #}
+{# _route_draw_surface.html so it is on the page with the route_drawing   #}
+{# flag off too: a route queued while it was on can still be discarded    #}
+{# here, and its stored draft has to go with it (forgetDraftFor). This    #}
+{# partial is included before the draw surface, so route_draw.js still    #}
+{# finds it.                                                              #}
+<script defer src="{% static 'js/route_draw_core.js' %}"></script>
 <script defer src="{% static 'js/routes.js' %}"></script>
 {# Every user-facing string routes.js writes into the DOM. makemessages     #}
 {# never scans static/js, so a literal there ships as English to every      #}

@@ -1090,7 +1090,16 @@
     const name = label ? (label.textContent || '').trim() : '';
     if (!window.confirm(interpolate(STRINGS['discard-confirm'], { name: name }))) return true;
     const routeDraw = window.pwaRouteDraw;
-    const done = routeDraw ? routeDraw.discard(key) : window.pwaMutationQueue?.discard(key);
+    let done;
+    if (routeDraw) {
+      done = routeDraw.discard(key);
+    } else {
+      // Draw mode is not on this page (the route_drawing flag is off), but
+      // the save's draft is still stored: it goes with the row, or turning
+      // drawing back on would restore the line just discarded.
+      self.pwaRouteDrawCore?.forgetDraftFor(key);
+      done = window.pwaMutationQueue?.discard(key);
+    }
     Promise.resolve(done).catch(function () {});
     return true;
   }

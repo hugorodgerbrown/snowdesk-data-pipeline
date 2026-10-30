@@ -399,6 +399,32 @@ describe('an online save', () => {
     expect(draft().key).toBe(keys[0]);
   });
 
+  it('keeps the key and queues the save when the server says it is still in flight', async () => {
+    // A reload or another tab re-sent the unchanged draft under its key
+    // while the first post was still running: not a refusal.
+    const keys = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, init) => {
+        keys.push(init.headers['Idempotency-Key']);
+        return new Response('{"error": "idempotency_in_flight"}', { status: 409 });
+      }),
+    );
+    setOnline(true);
+    storeDraft({ principal: ME });
+    window.pwaRouteDraw.start();
+    pressSave();
+
+    const [row] = await waitFor(async () => {
+      const all = await rows();
+      return all.length ? all : null;
+    });
+    expect(row.idempotency_key).toBe(keys[0]);
+    expect(row.status).not.toBe('failed');
+    expect(draft().key).toBe(keys[0]);
+    expect(toast).not.toHaveBeenCalledWith("That route couldn't be saved. Try again.");
+  });
+
   it('untags the draft when the server refuses it, and names the cap', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error": "route_limit_reached"}', { status: 409 })));
     setOnline(true);

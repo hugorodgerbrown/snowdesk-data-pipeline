@@ -43,6 +43,8 @@
  *   draftState(draft, principal, row, ack) — what a stored draft is now
  *   pointsBounds(points)            — [w, s, e, n] of a list of points
  *   bodyFingerprint(points, name)   — a short hash of the body a save sends
+ *   forgetDraftFor(key, storage)    — remove the stored draft if it is the
+ *                                     save with this key
  *
  * SAVING OFFLINE (SNOW-1262). A save carries an Idempotency-Key the device
  * mints, and the draft is TAGGED with it before the request goes out, so
@@ -468,6 +470,31 @@
   }
 
   /**
+   * Remove the stored draft when it is the save with this Idempotency-Key —
+   * tagged with it as in flight (`key`) or as refused (`failed`) — and
+   * leave any other draft alone (SNOW-1262). The one place that knows the
+   * draft's storage key and shape, for the two Discards: route_draw.js's,
+   * and routes.js's when draw mode is not on the page (the route_drawing
+   * flag off), which used to delete the queued row and leave its draft to
+   * come back once drawing was switched on again.
+   *
+   * @param {string} key The discarded save's Idempotency-Key.
+   * @param {?Storage} [storage] Where the draft is kept; localStorage.
+   * @returns {boolean} Whether a draft was removed.
+   */
+  function forgetDraftFor(key, storage) {
+    try {
+      const store = storage || localStorage;
+      const draft = parseDraft(store.getItem(DRAFT_KEY));
+      if (!key || !draft || (draft.key !== key && draft.failed !== key)) return false;
+      store.removeItem(DRAFT_KEY);
+      return true;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  /**
    * The bounding box of a list of points, `[west, south, east, north]` —
    * the shape `Route.bounds` has, so a route still waiting to sync can be
    * framed as a saved one is. Null for an empty list.
@@ -566,5 +593,6 @@
     draftState: draftState,
     pointsBounds: pointsBounds,
     bodyFingerprint: bodyFingerprint,
+    forgetDraftFor: forgetDraftFor,
   });
 })();

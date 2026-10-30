@@ -108,6 +108,10 @@
     (self.pwaRouteDrawingCore && self.pwaRouteDrawingCore.ROUTE_LINE_COLOUR) || '#c026d3';
   const HALO_COLOUR = '#ffffff';
   const PREVIEW_DEBOUNCE_MS = 350;
+  // core/idempotency.py's "a request with this key is still in the view"
+  // (SNOW-1262), from the queue's core where it is loaded.
+  const IN_FLIGHT_ERROR =
+    (self.pwaMutationQueueCore && self.pwaMutationQueueCore.IN_FLIGHT_ERROR) || 'idempotency_in_flight';
   const NETWORK_SOURCE = PREFIX + '-network';
   // The network is a shadow to snap to, fainter than anything drawn on it
   // (Hugo, 28 Oct 2026): a dark neutral, thin and mostly transparent.
@@ -940,21 +944,32 @@
       .then(function (resp) {
         answered = true;
         if (resp.ok) return resp.json();
-        // Refused: the server keeps that answer against the key for 24 h,
-        // so the next save must not send it again.
-        state.key = null;
-        storeDraft();
-        if (resp.status === 403 && SIGNIN_URL) {
-          window.location.assign(SIGNIN_URL);
-          return null;
-        }
         return resp
           .json()
           .catch(function () {
             return null;
           })
           .then(function (/** @type {any} */ body) {
-            const limit = resp.status === 409 && body && body.error === 'route_limit_reached';
+            const error = body && typeof body.error === 'string' ? body.error : null;
+            // Not a refusal: core/idempotency.py says a request with this
+            // key — the same save, from a reload or another tab — is still
+            // inside the view. Keep the key and queue the save under it,
+            // as for no answer at all; the queue retries the in-flight 409
+            // until the original's answer can be replayed. Dropping the key
+            // here made the next Save a second route.
+            if (resp.status === 409 && error === IN_FLIGHT_ERROR) {
+              queueSave(operation);
+              return 'queued';
+            }
+            // Refused: the server keeps that answer against the key for
+            // 24 h, so the next save must not send it again.
+            state.key = null;
+            storeDraft();
+            if (resp.status === 403 && SIGNIN_URL) {
+              window.location.assign(SIGNIN_URL);
+              return null;
+            }
+            const limit = resp.status === 409 && error === 'route_limit_reached';
             window.MapSheet.toast(limit ? STRINGS['save-limit'] : STRINGS['save-failed']);
             return null;
           });

@@ -304,3 +304,36 @@ describe('the body fingerprint (SNOW-1262)', () => {
     expect(core.parseDraft(untagged).sent).toBe(null);
   });
 });
+
+describe('forgetDraftFor (SNOW-1262)', () => {
+  const POINTS = [[7, 46], [7, 46.001]];
+
+  function storage(value) {
+    const items = new Map(value ? [[core.DRAFT_KEY, value]] : []);
+    return {
+      getItem: (k) => (items.has(k) ? items.get(k) : null),
+      removeItem: (k) => items.delete(k),
+      has: () => items.has(core.DRAFT_KEY),
+    };
+  }
+
+  it("removes the draft tagged with the discarded save's key, in flight or refused", () => {
+    const inFlight = storage(core.serialiseDraft(POINTS, 'n', [0, 1], { key: 'k-1' }));
+    const refused = storage(core.serialiseDraft(POINTS, 'n', [0, 1], { failed: 'k-1' }));
+
+    expect(core.forgetDraftFor('k-1', inFlight)).toBe(true);
+    expect(inFlight.has()).toBe(false);
+    expect(core.forgetDraftFor('k-1', refused)).toBe(true);
+    expect(refused.has()).toBe(false);
+  });
+
+  it('leaves a draft with another key, or none, alone', () => {
+    const other = storage(core.serialiseDraft(POINTS, 'n', [0, 1], { key: 'k-2' }));
+    const untagged = storage(core.serialiseDraft(POINTS, 'n', [0, 1]));
+
+    expect(core.forgetDraftFor('k-1', other)).toBe(false);
+    expect(other.has()).toBe(true);
+    expect(core.forgetDraftFor('k-1', untagged)).toBe(false);
+    expect(untagged.has()).toBe(true);
+  });
+});
