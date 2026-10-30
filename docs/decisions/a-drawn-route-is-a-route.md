@@ -106,7 +106,12 @@ anyone.
   kilometre. There the line is solid amber on a white halo (SNOW-1319),
   so it pops where snapping starts (Hugo: "we should reduce the opacity of
   the network at 9-11, so it pops when you get to 12";
-  `route_draw_core.js` `networkMode`, `networkPaint`). The faint dark
+  `route_draw_core.js` `networkMode`, `networkPaint`). Below z12 the
+  switch is disabled, keeping its value, and its label reads "Zoom in to
+  enable snap-to-route" (SNOW-1324, `snapAvailable`; Hugo: "When
+  zoomed out beyond snap level the toggle should disable, and there
+  should be messaging to tell the user they have to zoom in in order to
+  snap"). The faint dark
   shadow it was before SNOW-1319 vanished among the winter basemap's own
   black paths (Hugo, 30 Oct 2026: "It's only by seeing the snap-to circle
   that you can tell"). Amber is used by nothing else in draw mode. While following, a tap

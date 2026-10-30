@@ -49,6 +49,7 @@
  *   NETWORK_OVERVIEW_MINZOOM        — the zoom the network is drawn from
  *   NETWORK_DETAIL_MINZOOM          — the zoom it is loaded and snapped from
  *   networkMode(zoom, follow)       — which network the map draws, if any
+ *   snapAvailable(zoom)             — whether a tap can snap at this zoom
  *   networkPaint()                  — the network's core and halo paint
  *   profileBuilding(state)          — whether the profile is being built
  *
@@ -611,6 +612,20 @@
   }
 
   /**
+   * Whether a tap can snap to the network at `zoom` (SNOW-1324).
+   *
+   * Hugo, 30 Oct 2026: "When zoomed out beyond snap level the toggle
+   * should disable, and there should be messaging to tell the user they
+   * have to zoom in in order to snap."
+   *
+   * @param {number} zoom
+   * @returns {boolean}
+   */
+  function snapAvailable(zoom) {
+    return zoom >= NETWORK_DETAIL_MINZOOM;
+  }
+
+  /**
    * The paint of swisstopo's network under a draft (SNOW-1319, SNOW-1322).
    *
    * From z12, where a tap snaps to it, a line to aim at: a solid amber
@@ -684,6 +699,7 @@
     NETWORK_OVERVIEW_MINZOOM: NETWORK_OVERVIEW_MINZOOM,
     NETWORK_DETAIL_MINZOOM: NETWORK_DETAIL_MINZOOM,
     networkMode: networkMode,
+    snapAvailable: snapAvailable,
     networkPaint: networkPaint,
     profileBuilding: profileBuilding,
   });
