@@ -114,7 +114,13 @@ def subject(
             candidates.append(
                 (region.region_id, region.name, int(blob["count"]), *centre)
             )
-    drawn = draw_subject(candidates, sorted(settings.BASEMAP_STYLES), seed=offline_seed)
+    # The picker's basemaps, not every BASEMAP_STYLES key: a style kept only
+    # as a BASEMAP= override (swisstopo_light) has no button to press, and
+    # the suite picks a basemap the way a user does.
+    from apps.public.views import _basemaps_for_picker
+
+    picker_keys = sorted(basemap["key"] for basemap in _basemaps_for_picker())
+    drawn = draw_subject(candidates, picker_keys, seed=offline_seed)
     logger.warning("offline-assurance subject: %s", drawn.to_string())
     return drawn
 
@@ -405,7 +411,7 @@ class OfflineMapPage:
         localStorage.
 
         Args:
-            key: A ``BASEMAP_STYLES`` key, e.g. ``"swisstopo_winter"``.
+            key: A basemap the picker offers, e.g. ``"swisstopo_winter"``.
 
         """
         self.page.click("#basemap-toggle")
