@@ -38,7 +38,11 @@
  * `snowdesk:favourited-resorts-changed` and on `snowdesk:favourites-changed`,
  * so a resort's body is no longer re-read when the favourites change; a
  * saved pin's still is. OFFLINE, a resort's sheet is the one a download
- * kept for that day ('public-partial'); a day it did not take says so. A saved pin's "…" menu carries the panel row's items: Share hands
+ * kept for that day ('public-partial'); a day it did not take says so.
+ * If the feed cannot be read at all (network and overlay cache both
+ * fail), the star is enabled unfilled rather than left disabled for ever.
+ *
+ * A saved pin's "…" menu carries the panel row's items: Share hands
  * the server-composed "<name> - <what3words link>" to window.pwaShare, as
  * the panel does; Rename edits the name in place through
  * window.pwaRowRenameCommit, as the panel does; Delete confirms and posts,
@@ -178,7 +182,16 @@
     const state = resorts.stateFor(star.getAttribute('data-resort-slug') || '');
     if (!state) {
       star.disabled = true;
-      resorts.load();
+      // A feed that lands announces itself and repaints. One that cannot be
+      // read (network and overlay cache both failed) leaves no state: the
+      // star is enabled as an outline then, so a tap saves through
+      // favourites.js, which re-asks — not a disabled outline for ever.
+      Promise.resolve(resorts.load())
+        .catch(() => {})
+        .then(() => {
+          if (!star.isConnected || resorts.stateFor(star.getAttribute('data-resort-slug') || '')) return;
+          star.disabled = false;
+        });
       return;
     }
     const favourited = !!state.favourited;

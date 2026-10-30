@@ -564,11 +564,27 @@ describe("the resort star, painted from the map's favourites (SNOW-1318)", () =>
 
   it('keeps the outline disabled while the feed is unread, and asks for it', async () => {
     const resorts = stubResorts({ state: null });
+    // The feed is still in flight.
+    resorts.load.mockImplementation(() => new Promise(() => {}));
     await openVerbier();
     expect(signIn()).toBeNull();
     expect(star().disabled).toBe(true);
     expect(resorts.stateFor).toHaveBeenCalledWith('verbier');
     expect(resorts.load).toHaveBeenCalled();
+  });
+
+  it('enables the outline once the feed cannot be read at all', async () => {
+    const resorts = stubResorts({ state: null });
+    let settleLoad;
+    resorts.load.mockImplementation(() => new Promise((resolve) => { settleLoad = resolve; }));
+    await openVerbier();
+    expect(star().disabled).toBe(true);
+    // Network and overlay cache both failed: load settles, still no state.
+    settleLoad();
+    await settle();
+    expect(star().disabled).toBe(false);
+    expect(star().getAttribute('data-favourited')).toBe('false');
+    expect(star().querySelector('svg').getAttribute('fill')).toBe('none');
   });
 
   it('paints an unsaved resort as an enabled outline', async () => {
