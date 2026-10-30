@@ -2,7 +2,7 @@
 name: offline-audit
 description: Offline report — offline_audit.js, offline_audit_core.js, bounded reads, X-SW-Principal, AUDIT_SCRIPTS, snowdesk-basemap-v1 browsedState
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-10-30
 ---
 
 # The offline-content report (SNOW-907)
@@ -511,7 +511,18 @@ the Manage downloads sheet applies.
 
 **What it fetches, cheapest first:** the map shell if the report just said
 it is not saved; the four overlay feeds, whole and unfiltered; then the
-bulletins and weather sheets inside this area's boundary. Everything goes
+bulletins and weather sheets inside this area's boundary; then (SNOW-965)
+the reader's own things in it, from `/api/area-items/` — each trip's page
+and `route.geojson`, and the weather sheet each pin borrows its forecast
+from, which can sit outside the boundary. The same core composes them as
+on the map (`areaItemURLs`), weather sheets are dated with the SERVER's
+day, the panel's `data-today` (`?date=`, the url the map's sheet asks for
+and the only one the worker answers offline; the device clock would miss it
+across a timezone or a midnight, so bulletins alone keep the press-time
+rule below), and an items endpoint that was asked and did not answer
+makes the run short. A signed-out reader is rendered no items endpoint
+and asks for nothing. See
+[an-area-download-carries-your-trips-and-borrowed-forecasts.md](decisions/an-area-download-carries-your-trips-and-borrowed-forecasts.md). Everything goes
 through `self.pwaWarmCache` — the worker's own warm path — because the
 worker stamps a same-origin HTML response with the principal its body
 declares, and a `cache.put` from the page writes an entry the worker
@@ -529,8 +540,9 @@ do not verify is not offered the control at all; it keeps the remedy
 item.
 
 The endpoints the plan is built from — `regions.geojson` per country,
-`weather.geojson`, the weather-detail template, the four feeds and
-today's date — are rendered onto the panel root by
+`weather.geojson`, the weather-detail template, the four feeds,
+`area-content` and (SNOW-965) `area-items` with the trip page and route
+templates, and today's date — are rendered onto the panel root by
 `apps.public.views.offline_page`. The map reads the same endpoints off
 `#map`'s own dataset; this page has no `#map`, and re-deriving them
 client-side would be a second copy of routing only the server can answer

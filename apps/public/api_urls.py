@@ -102,6 +102,14 @@ urlpatterns = [
         api.area_content,
         name="area_content",
     ),
+    # SNOW-965: the signed-in user's own trips and pins inside one
+    # rectangle, each pin with the curated forecast it borrows. Private and
+    # never cached — area-content's public twin above is the cacheable one.
+    path(
+        "area-items/",
+        api.area_items,
+        name="area_items",
+    ),
     # SNOW-323: dissolved bulletin grouping boundaries for ONE date
     # (``?d=`` is required). map.js fetches a day at a time and memoises
     # each for the session — the whole-season payload went when the

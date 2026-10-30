@@ -1856,6 +1856,92 @@ describe('areaContentURLs', () => {
 
     expect(plan).toEqual({ bulletinUrls: [], weatherDetailUrls: [] });
   });
+
+  it('dates each sheet with the download day when one is named (SNOW-965)', () => {
+    // The map's sheet always asks with the map's day, and the worker serves
+    // a sheet offline only on an exact match — so the warmed url has to be
+    // the one the map reads.
+    const plan = core.areaContentURLs({
+      weather: [{ short_id: 'AAAAAAAAAAA' }],
+      days: ['2026-01-05', '2026-01-06'],
+      weatherDetailTemplate: '/api/weather/__SHORTID__/detail/',
+      weatherDay: '2026-01-06',
+    });
+
+    expect(plan.weatherDetailUrls).toEqual([
+      '/api/weather/AAAAAAAAAAA/detail/?date=2026-01-06',
+    ]);
+  });
+});
+
+describe('areaItemURLs (SNOW-965)', () => {
+  const TEMPLATES = {
+    tripPage: '/trips/__UUID__/',
+    tripRoute: '/trips/__UUID__/route.geojson',
+    weatherDetail: '/api/weather/__SHORTID__/detail/',
+    weatherDay: '2026-01-06',
+  };
+  const ITEMS = {
+    trips: [{ uuid: 'aaaa-1' }, { uuid: 'bbbb-2' }],
+    pins: [
+      { uuid: 'pin-1', forecast: { short_id: 'OUTSIDE0001' } },
+      { uuid: 'pin-2', forecast: null },
+      { uuid: 'pin-3', forecast: { short_id: 'OUTSIDE0001' } },
+    ],
+  };
+
+  it("composes each trip's page and route, then each borrowed sheet", () => {
+    expect(core.areaItemURLs(ITEMS, TEMPLATES)).toEqual([
+      '/trips/aaaa-1/',
+      '/trips/aaaa-1/route.geojson',
+      '/trips/bbbb-2/',
+      '/trips/bbbb-2/route.geojson',
+      '/api/weather/OUTSIDE0001/detail/?date=2026-01-06',
+    ]);
+  });
+
+  it('never repeats a url the area-content plan already holds', () => {
+    // A pin inside the area usually borrows a point that is also inside it,
+    // and the area-content plan already names that sheet.
+    const urls = core.areaItemURLs(ITEMS, TEMPLATES, [
+      '/api/weather/OUTSIDE0001/detail/?date=2026-01-06',
+    ]);
+
+    expect(urls).not.toContain('/api/weather/OUTSIDE0001/detail/?date=2026-01-06');
+    expect(urls).toHaveLength(4);
+  });
+
+  it('drops only the group whose template is missing', () => {
+    const noPage = core.areaItemURLs(ITEMS, { ...TEMPLATES, tripPage: '' });
+    const noWeather = core.areaItemURLs(ITEMS, { ...TEMPLATES, weatherDetail: undefined });
+
+    expect(noPage).toEqual([
+      '/trips/aaaa-1/route.geojson',
+      '/trips/bbbb-2/route.geojson',
+      '/api/weather/OUTSIDE0001/detail/?date=2026-01-06',
+    ]);
+    expect(noWeather.some((url) => url.startsWith('/api/weather/'))).toBe(false);
+    expect(noWeather).toHaveLength(4);
+  });
+
+  it('survives an answer that is missing either list, or none at all', () => {
+    expect(core.areaItemURLs(null, TEMPLATES)).toEqual([]);
+    expect(core.areaItemURLs({}, TEMPLATES)).toEqual([]);
+    expect(core.areaItemURLs({ trips: [{}], pins: [{}] }, TEMPLATES)).toEqual([]);
+  });
+});
+
+describe('weatherDetailURL (SNOW-965)', () => {
+  it('is undated without a day and dated with one', () => {
+    const template = '/api/weather/__SHORTID__/detail/';
+
+    expect(core.weatherDetailURL(template, 'AAAAAAAAAAA')).toBe(
+      '/api/weather/AAAAAAAAAAA/detail/',
+    );
+    expect(core.weatherDetailURL(template, 'AAAAAAAAAAA', '2026-01-06')).toBe(
+      '/api/weather/AAAAAAAAAAA/detail/?date=2026-01-06',
+    );
+  });
 });
 
 /* -------------------------------------------------------------------- *

@@ -31,9 +31,16 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from django.http import HttpRequest
+    from django.http import HttpRequest, HttpResponse
 
 logger = logging.getLogger(__name__)
+
+# SNOW-965: the response header a private JSON answer names its viewer in —
+# the value ``base.html``'s ``pwa-user-id`` meta carries, from the same
+# ``request_identity``, so the worker can stamp a cached copy from the
+# response itself rather than from a principal it read asynchronously.
+# ``static/js/sw.js``'s ``RESPONSE_PRINCIPAL_HEADER`` is the other copy.
+PRINCIPAL_RESPONSE_HEADER = "X-Snowdesk-Principal"
 
 
 def user_identity(user: Any) -> str:
@@ -88,3 +95,27 @@ def request_identity(request: HttpRequest) -> str:
 
     """
     return user_identity(getattr(request, "user", None))
+
+
+def attest_principal[R: HttpResponse](response: R, request: HttpRequest) -> R:
+    """Name the viewer a private response was rendered for, in a header.
+
+    SNOW-965. The JSON twin of the ``pwa-user-id`` meta tag: the same
+    ``request_identity`` value, so the two cannot diverge. The service
+    worker keeps a private JSON answer only when this header is present
+    and agrees with the principal signed in on the device. Anonymous (or a
+    user with no ``Account``) sends no header, which the worker reads as
+    "do not keep".
+
+    Args:
+        response: The response to label.
+        request: The request it answers.
+
+    Returns:
+        The same response, labelled.
+
+    """
+    identity = request_identity(request)
+    if identity:
+        response[PRINCIPAL_RESPONSE_HEADER] = identity
+    return response

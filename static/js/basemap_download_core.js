@@ -272,7 +272,17 @@
  *     urls, over the answer ``/api/area-content/`` gives. It composes
  *     rather than selects — SNOW-924's rectangle test over every
  *     country's outlines is gone from here. Read its docstring for why a
- *     weather sheet is one UNDATED url per location.
+ *     weather sheet is one url per location, and (SNOW-965) why it is
+ *     dated with the download's day when the caller names one.
+ *   areaItemURLs(items, templates, alreadyPlanned)
+ *     SNOW-965: the reader's OWN things inside an area, as urls, over the
+ *     answer ``/api/area-items/`` gives — each trip's page and its
+ *     ``route.geojson``, and the weather sheet each pin borrows its
+ *     forecast from. De-duplicated against what the area-content plan
+ *     already holds.
+ *   weatherDetailURL(template, shortId, day)
+ *     SNOW-965: one weather sheet's url, dated with ``?date=`` when a day
+ *     is given — the exact url the map's sheet asks for on that day.
  *   cachedTilesFromURLs(spec, cachedURLs, zoom)
  *     The tiles a cache actually holds, read back out of its URLs — the
  *     pure half of the "cached tiles" overlay. A tile counts only when
@@ -2559,14 +2569,21 @@
    * 301s a mixed-case one — a redirect the service worker would cache as
    * the entry for a URL nothing ever requests again.
    *
-   * A weather sheet is ONE undated URL per location, not one per day, and
-   * that is a correctness point rather than a saving: `?date=` selects
-   * which `Weather` ROW the page reads, and only today's row exists.
-   * The forward days live inside that row's `forecast[]` and the day
-   * picker selects among them client-side — see
+   * A weather sheet is ONE URL per location, not one per day, and that is
+   * a correctness point rather than a saving: `?date=` selects which
+   * `Weather` ROW the page reads, and only today's row exists. The
+   * forward days live inside that row's `forecast[]` and the day picker
+   * selects among them client-side — see
    * `docs/decisions/weather-day-picker-is-a-selector-not-navigation.md`.
    * Fetching a URL per day would cache six "no weather was recorded here
    * for this day" pages out of every seven.
+   *
+   * SNOW-965: that one URL carries `?date=<weatherDay>` when the caller
+   * names the day — today — because it is the URL the map's weather
+   * sheet asks for (`map_weather_detail.js` always sends the map's day),
+   * and the service worker serves a sheet offline on an EXACT match
+   * only. An undated entry would be today's sheet stored under a key
+   * nothing ever reads. See `weatherDetailURL`.
    *
    * @param {Object} options
    * @param {Array<{id?: string, slug?: string}>} [options.regions] The
@@ -2578,6 +2595,8 @@
    *   answer to (SNOW-927/SNOW-953), never from a clock in here.
    * @param {string} [options.weatherDetailTemplate] A URL carrying
    *   ``__SHORTID__``, as `#map`'s `data-weather-detail-url` does.
+   * @param {string} [options.weatherDay] SNOW-965: the ISO day each sheet
+   *   is taken for — today. Omitted, the sheets are undated.
    * @returns {{bulletinUrls: string[], weatherDetailUrls: string[]}} Each
    *   list deduplicated and stable in the server's order, so a run's URL
    *   list is reproducible.
@@ -2605,10 +2624,82 @@
         const shortId = point && point.short_id;
         if (!shortId || seenLocation.has(shortId)) continue;
         seenLocation.add(shortId);
-        out.weatherDetailUrls.push(template.replace('__SHORTID__', shortId));
+        out.weatherDetailUrls.push(weatherDetailURL(template, shortId, opts.weatherDay));
       }
     }
 
+    return out;
+  }
+
+  /**
+   * One location's weather-sheet URL, dated when a day is given (SNOW-965).
+   *
+   * The map's weather sheet always asks with the map's day
+   * (`map_weather_detail.js`), and the service worker answers a sheet
+   * offline only on an exact match — an undated sheet names no day of its
+   * own ("Today" is relative), so serving it for another day would be a
+   * stale forecast claiming to be today's. Dating the warmed URL with the
+   * day it is warmed on makes it the URL the map reads on that day.
+   *
+   * @param {string} template A URL carrying ``__SHORTID__``.
+   * @param {string} shortId The location's short id.
+   * @param {string} [day] An ISO date key, or nothing for an undated URL.
+   * @returns {string}
+   */
+  function weatherDetailURL(template, shortId, day) {
+    const url = template.replace('__SHORTID__', shortId);
+    return day ? url + '?date=' + encodeURIComponent(day) : url;
+  }
+
+  /**
+   * The urls for the reader's own things inside an area (SNOW-965).
+   *
+   * Composes over `/api/area-items/`'s answer, as `areaContentURLs` does
+   * over `/api/area-content/`'s: each trip's page and its `route.geojson`,
+   * then the weather sheet each pin borrows its forecast from — which can
+   * sit outside the area, and is the reason this exists. The trip page is
+   * page HTML, so the worker stamps it with the principal its body names;
+   * the route is principal-stamped JSON (`'private-json'` in
+   * `basemap_cache_core.js`); the sheet is public.
+   *
+   * A missing template drops its group rather than the whole answer: a
+   * page that cannot compose a trip's page can still carry its route.
+   *
+   * @param {{trips?: Array<{uuid?: string}>,
+   *   pins?: Array<{forecast?: {short_id?: string}|null}>}|null} items The
+   *   endpoint's answer.
+   * @param {{tripPage?: string, tripRoute?: string, weatherDetail?: string,
+   *   weatherDay?: string}} templates ``__UUID__`` templates for the two
+   *   trip urls, the ``__SHORTID__`` weather template, and the day each
+   *   sheet is taken for.
+   * @param {Iterable<string>} [alreadyPlanned] Urls the area-content plan
+   *   already holds; none of them is repeated.
+   * @returns {string[]} Deduplicated, in the answer's order.
+   */
+  function areaItemURLs(items, templates, alreadyPlanned) {
+    const tpl = templates || {};
+    const seen = new Set(alreadyPlanned || []);
+    const out = [];
+    const add = (url) => {
+      if (seen.has(url)) return;
+      seen.add(url);
+      out.push(url);
+    };
+    const trips = (items && Array.isArray(items.trips) && items.trips) || [];
+    for (const trip of trips) {
+      const uuid = trip && trip.uuid;
+      if (!uuid) continue;
+      if (tpl.tripPage) add(tpl.tripPage.replace('__UUID__', uuid));
+      if (tpl.tripRoute) add(tpl.tripRoute.replace('__UUID__', uuid));
+    }
+    const pins = (items && Array.isArray(items.pins) && items.pins) || [];
+    if (tpl.weatherDetail) {
+      for (const pin of pins) {
+        const shortId = pin && pin.forecast && pin.forecast.short_id;
+        if (!shortId) continue;
+        add(weatherDetailURL(tpl.weatherDetail, shortId, tpl.weatherDay));
+      }
+    }
     return out;
   }
 
@@ -3070,6 +3161,8 @@
     bboxFromZoomRanges: bboxFromZoomRanges,
     areaBBox: areaBBox,
     areaContentURLs: areaContentURLs,
+    areaItemURLs: areaItemURLs,
+    weatherDetailURL: weatherDetailURL,
     cachedTilesFromURLs: cachedTilesFromURLs,
     gridZoomFor: gridZoomFor,
     tileGridPlan: tileGridPlan,

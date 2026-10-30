@@ -19,6 +19,9 @@ Swiss region choropleth and back the per-region tooltip:
   public weather locations inside one ``?bbox=w,s,e,n`` rectangle. What an
   offline download's boundary contains, answered where the boundaries are
   rather than from four countries of region outlines on the client.
+* ``/api/area-items/``                     — SNOW-965: the signed-in user's
+  own trips and pins inside one ``?bbox=w,s,e,n`` rectangle, each pin with
+  the curated forecast it borrows. Private, never cached.
 * ``/api/region-basemap-tiles/``           — SNOW-521: the full precomputed
   basemap_download blob (incl. ``z`` tile ranges) for one MicroRegion,
   ``?id=<region_id>``. Fetched on demand when the user clicks the
@@ -119,6 +122,7 @@ from apps.locations.models import Location, LocationQuerySet, ResortLocation
 from apps.locations.services.prime import enqueue_location_prime
 from apps.observations.models import FieldObservation, leading_family
 from apps.observations.services.ground import report_window
+from apps.public.area_items import area_items as build_area_items
 from apps.regions.forms import RESORT_DETAIL_FIELDS, ResortDetailsForm
 from apps.regions.models import (
     MajorRegion,
@@ -1275,6 +1279,51 @@ def area_content(request: HttpRequest) -> HttpResponse:
     # for a day is what the branch exists to avoid — here it would pin
     # "your download needs no bulletins" over every rectangle on Earth.
     return _geojson_response(request, payload, empty=not regions)
+
+
+@require_GET
+@cache_control(private=True, no_store=True)
+def area_items(request: HttpRequest) -> HttpResponse:
+    """
+    Return the requester's own trips and pins inside one rectangle.
+
+    SNOW-965. The private twin of :func:`area_content`: a downloaded area
+    should carry the trips the reader is on and the forecasts their pins
+    borrow, and neither is public content. ``?bbox=west,south,east,north``
+    in degrees, validated by the same parser.
+
+    Response shape::
+
+        {"trips": [{"uuid": "…"}, ...],
+         "pins": [{"uuid": "…", "forecast": {"short_id": "…"} | null}, ...]}
+
+    An anonymous caller gets ``200`` with both lists empty and costs no
+    query: someone signed out has nothing of their own to carry, and a
+    ``403`` would make an existing area's refresh read as a failure.
+
+    **Never cached.** ``private, no-store`` and ``Vary: Cookie``, and no
+    ETag: the answer is per-user, and a shared or service-worker cache
+    holding one reader's trips must never answer for another. The client
+    composes the urls it fetches from this answer; this answer itself is
+    not one of them.
+
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        A JsonResponse with the payload above, or 400 for a bbox that is
+        missing, non-numeric, the wrong length, out of range or inverted.
+
+    """
+    bbox = _parse_bbox_param(request.GET.get("bbox", ""))
+    if bbox is None:
+        response = JsonResponse({"error": "invalid_bbox"}, status=400)
+    else:
+        response = JsonResponse(
+            build_area_items(request.user, bbox, today=timezone.localdate())
+        )
+    patch_vary_headers(response, ["Cookie"])
+    return response
 
 
 def _cached_area_content_index(name: str, build: Callable[[], list[Any]]) -> list[Any]:

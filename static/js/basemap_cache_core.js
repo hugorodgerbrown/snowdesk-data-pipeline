@@ -27,9 +27,11 @@
  *   classifySync(request, url, selfOrigin, staticPaths, staticShellExtensions)
  *     Synchronous portion of fetch-strategy classification: the
  *     ``method !== GET`` short-circuit, and every same-origin case.
- *     Returns ``'static' | 'navigate' | 'network' | null`` — ``null`` means
- *     "a cross-origin GET; the caller must decide separately" (deciding that
- *     case needs the async basemap-origin hydration, which stays in sw.js).
+ *     Returns ``'static' | 'navigate' | 'private-json' | 'public-json' |
+ *     'network' | null`` — ``null`` means "a cross-origin GET; the caller
+ *     must decide separately" (deciding that case needs the async
+ *     basemap-origin hydration, which stays in sw.js). SNOW-965 added the
+ *     two JSON classes — see ``PRIVATE_JSON_PATH`` / ``PUBLIC_JSON_PATH``.
  *   isBasemapOrigin(url, originsSet)
  *     True when ``url.origin`` is a member of ``originsSet`` — the allowlist
  *     check half of ``_classifyCrossOriginGet``; the async hydration that
@@ -75,6 +77,21 @@
 (function () {
   'use strict';
 
+  // SNOW-965: a trip's route, addressed by uuid — participant-scoped JSON
+  // the worker keeps for an offline read of a downloaded area, stamped
+  // with the principal it was fetched for and served back to that
+  // principal alone (``_privateJsonNetworkFirst`` in sw.js). The
+  // share-token route (``/trips/s/<token>/route.geojson``) does not match:
+  // it is ``no-store`` and stays network-only.
+  const PRIVATE_JSON_PATH = /^\/trips\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/route\.geojson$/i;
+
+  // SNOW-965: one location's weather sheet. Public, and warmed by every
+  // area download since SNOW-924 — but classified ``'network'`` until
+  // this ticket, a branch that never reads the cache, so every warmed
+  // sheet was unservable offline. An all-digit segment is the legacy
+  // integer form, a 301, and stays network-only.
+  const PUBLIC_JSON_PATH = /^\/api\/weather\/(?!\d+\/)[A-Za-z0-9_-]+\/detail\/$/;
+
   /**
    * Synchronous portion of fetch-strategy classification.
    *
@@ -85,8 +102,8 @@
    *   stale-while-revalidate regardless of extension.
    * @param {Set<string>} staticShellExtensions Same-origin file extensions
    *   (lowercased, with leading dot) that count as static shell assets.
-   * @returns {'static'|'navigate'|'network'|null} ``null`` means "cross-origin
-   *   GET — the caller must decide separately".
+   * @returns {'static'|'navigate'|'private-json'|'public-json'|'network'|null}
+   *   ``null`` means "cross-origin GET — the caller must decide separately".
    */
   function classifySync(request, url, selfOrigin, staticPaths, staticShellExtensions) {
     if (request.method !== 'GET') return 'network';
@@ -95,6 +112,11 @@
     if (request.mode === 'navigate' || request.destination === 'document') {
       return 'navigate';
     }
+
+    // SNOW-965: before the extension checks, so a future ``.geojson`` in
+    // the static set could never claim a private route.
+    if (PRIVATE_JSON_PATH.test(url.pathname)) return 'private-json';
+    if (PUBLIC_JSON_PATH.test(url.pathname)) return 'public-json';
 
     if (staticPaths.has(url.pathname)) return 'static';
 

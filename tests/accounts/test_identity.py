@@ -16,11 +16,17 @@ from __future__ import annotations
 import re
 
 import pytest
+from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
-from django.http import HttpRequest
+from django.http import HttpRequest, JsonResponse
 from django.test import Client
 
-from apps.accounts.identity import request_identity, user_identity
+from apps.accounts.identity import (
+    PRINCIPAL_RESPONSE_HEADER,
+    attest_principal,
+    request_identity,
+    user_identity,
+)
 from tests.factories import AccountFactory, UserFactory
 
 _META_RE = re.compile(rb'<meta name="pwa-user-id" content="([^"]*)"')
@@ -99,3 +105,43 @@ class TestPwaUserIdMetaTag:
         """Anonymous visitors get an empty tag — db.js treats it as null."""
         response = Client().get("/")
         assert _meta_user_id(response.content) == ""
+
+
+@pytest.mark.django_db
+class TestAttestPrincipal:
+    """``attest_principal`` names a private response's viewer (SNOW-965)."""
+
+    def test_names_the_same_identity_the_meta_tag_carries(self, client: Client) -> None:
+        """One source for both, so the worker's two stamps cannot diverge."""
+        account = AccountFactory.create()
+        client.force_login(account.user)
+        meta = _meta_user_id(client.get("/map/").content)
+        request = HttpRequest()
+        request.user = account.user
+
+        response = attest_principal(JsonResponse({}), request)
+
+        assert response[PRINCIPAL_RESPONSE_HEADER] == meta == str(account.uuid)
+
+    def test_sends_nothing_for_an_anonymous_request(self) -> None:
+        """No identity is no header, never an empty one."""
+        request = HttpRequest()
+        request.user = AnonymousUser()
+
+        response = attest_principal(JsonResponse({}), request)
+
+        assert not response.has_header(PRINCIPAL_RESPONSE_HEADER)
+
+    def test_the_worker_reads_the_same_header_name(self) -> None:
+        """``sw.js`` spells the header itself; a rename here must fail there.
+
+        The worker keeps a trip route only when this header names the
+        signed-in principal, so a drift between the two literals would not
+        leak anything — it would silently stop every route being kept.
+        """
+        sw_source = (settings.BASE_DIR / "static" / "js" / "sw.js").read_text()
+
+        assert (
+            f"const RESPONSE_PRINCIPAL_HEADER = '{PRINCIPAL_RESPONSE_HEADER}';"
+            in sw_source
+        )

@@ -811,6 +811,20 @@ def test_map_page_renders_the_area_content_endpoint_and_its_day_reach() -> None:
 
 
 @pytest.mark.django_db
+def test_map_page_renders_what_an_area_items_plan_is_composed_from() -> None:
+    """
+    SNOW-965: a download carries the reader's own trips and the forecasts
+    their pins borrow — the endpoint that names them and the two trip
+    templates their urls are composed from.
+    """
+    content = Client().get(reverse("public:map")).content.decode()
+
+    assert f'data-area-items-url="{reverse("api:area_items")}"' in content
+    assert 'data-trip-page-url-template="/trips/__UUID__/"' in content
+    assert 'data-trip-route-url-template="/trips/__UUID__/route.geojson"' in content
+
+
+@pytest.mark.django_db
 def test_map_page_renders_unified_time_controls() -> None:
     """
     The play button (#scrubber-play) must be rendered server-side so the JS

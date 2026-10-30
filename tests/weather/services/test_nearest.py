@@ -9,11 +9,18 @@ surface prints about it, ``includes/_forecast_source.html``.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 from django.template.loader import render_to_string
 
-from apps.weather.services.nearest import nearest_forecast
+from apps.weather.models import Weather
+from apps.weather.services.nearest import (
+    forecast_candidates,
+    nearest_candidate,
+    nearest_forecast,
+)
 from tests.factories import (
     FavouriteFactory,
     LocationFactory,
@@ -77,6 +84,50 @@ class TestNearestForecast:
         assert nearest is not None
         assert nearest.is_same_place
         assert nearest.elevation_m == 1500
+
+
+@pytest.mark.django_db
+class TestForecastCandidateHelpers:
+    """The scan and the choice ``nearest_forecast`` composes (SNOW-965)."""
+
+    def test_the_helpers_agree_with_nearest_forecast(self) -> None:
+        """One scan, then a pick per place, answers as the composition does."""
+        near = LocationFactory.create(latitude=46.1, longitude=7.4)
+        ResortLocationFactory.create(location=near)
+        WeatherFactory.create(location=near, observed_on=DAY)
+        far = LocationFactory.create(latitude=46.9, longitude=7.4)
+        ResortLocationFactory.create(location=far)
+        WeatherFactory.create(location=far, observed_on=DAY)
+
+        candidates = forecast_candidates(DAY)
+        for latitude in (46.0, 46.6, 47.0):
+            picked = nearest_candidate(latitude, 7.4, candidates)
+            composed = nearest_forecast(latitude, 7.4, DAY)
+            assert picked is not None
+            assert composed is not None
+            assert picked[0].short_id == composed.location.short_id
+            assert picked[1] == pytest.approx(composed.distance_km)
+
+    def test_candidates_are_one_query(
+        self, django_assert_num_queries: Callable[..., Any]
+    ) -> None:
+        """The scan reads bare coordinates in a single query."""
+        for latitude in (46.0, 46.5):
+            point = LocationFactory.create(latitude=latitude, longitude=7.4)
+            ResortLocationFactory.create(location=point)
+            WeatherFactory.create(location=point, observed_on=DAY)
+
+        with django_assert_num_queries(1):
+            candidates = forecast_candidates(DAY)
+
+        assert {c.short_id for c in candidates} == {
+            row.location.short_id for row in Weather.objects.all()
+        }
+
+    def test_no_candidates_picks_nothing(self) -> None:
+        """An empty day borrows nothing."""
+        assert forecast_candidates(DAY) == []
+        assert nearest_candidate(46.0, 7.4, []) is None
 
 
 def _source(**overrides: object) -> dict[str, object]:

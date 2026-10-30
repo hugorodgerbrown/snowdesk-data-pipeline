@@ -1417,6 +1417,14 @@ def offline_page(request: HttpRequest) -> HttpResponse:
                 # the map needs them offline — but nothing here parses
                 # them to plan from any more.
                 "area_content": reverse("api:area_content"),
+                # SNOW-965: the reader's own trips and pins inside an
+                # area, and the two templates a trip's urls are composed
+                # from. Account-only, like favourites and routes above: a
+                # signed-out reader has none, so the Update asks nothing.
+                "area_items": reverse("api:area_items")
+                if request.user.is_authenticated
+                else "",
+                **_trip_item_templates(),
             },
             # The countries whose region geometry a boundary may overlap.
             # SNOW-931's lesson, applied where there is no
@@ -1982,9 +1990,13 @@ def _trips_context() -> dict[str, Any]:
     endpoints are addressed by different things, and a link-holder must
     never be handed a uuid.
 
+    SNOW-965 adds ``trip_page_url_template``: an area download carries
+    the trips inside it (``/api/area-items/``), and composes each one's
+    page and route from these two uuid templates.
+
     Returns:
-        Dict with ``trip_route_url_template`` and
-        ``trip_share_route_url_template``.
+        Dict with ``trip_route_url_template``,
+        ``trip_share_route_url_template`` and ``trip_page_url_template``.
 
     """
     dummy_uuid = uuid.UUID(int=0)
@@ -1992,11 +2004,32 @@ def _trips_context() -> dict[str, Any]:
         "trip_route_url_template": reverse(
             "trips:route_geojson", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),
+        "trip_page_url_template": reverse("trips:detail", args=[dummy_uuid]).replace(
+            str(dummy_uuid), "__UUID__"
+        ),
         # ``__TOKEN__`` survives ``<str:token>``'s converter, which accepts
         # any non-empty run without a slash.
         "trip_share_route_url_template": reverse(
             "trips:share_route_geojson", args=["__TOKEN__"]
         ),
+    }
+
+
+def _trip_item_templates() -> dict[str, str]:
+    """Return the two trip url templates an area's items are composed from.
+
+    SNOW-965: the ``/offline/`` page's Update composes a trip's page and
+    route exactly as the map does, from the same ``__UUID__`` templates
+    ``_trips_context`` renders onto ``#map``.
+
+    Returns:
+        Dict with ``trip_page`` and ``trip_route``.
+
+    """
+    trips = _trips_context()
+    return {
+        "trip_page": trips["trip_page_url_template"],
+        "trip_route": trips["trip_route_url_template"],
     }
 
 

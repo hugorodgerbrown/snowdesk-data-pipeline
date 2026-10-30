@@ -118,6 +118,50 @@ describe('classifySync', () => {
   });
 });
 
+describe('classifySync — the SNOW-965 JSON classes', () => {
+  const classify = (path, method, extensions) =>
+    core.classifySync(
+      req(method || 'GET'),
+      new URL(path, SELF_ORIGIN),
+      SELF_ORIGIN,
+      STATIC_PATHS,
+      extensions || STATIC_SHELL_EXTENSIONS,
+    );
+
+  it("classifies a trip's uuid-addressed route as private-json", () => {
+    expect(classify('/trips/2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11/route.geojson')).toBe(
+      'private-json',
+    );
+  });
+
+  it('is decided ahead of the extension checks', () => {
+    // A `.geojson` in the static set must still not claim a private route.
+    const withGeojson = new Set([...STATIC_SHELL_EXTENSIONS, '.geojson']);
+    expect(
+      classify('/trips/2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11/route.geojson', 'GET', withGeojson),
+    ).toBe('private-json');
+  });
+
+  it('classifies a weather sheet as public-json, dated or not', () => {
+    expect(classify('/api/weather/Ab3dE_fGh1J/detail/')).toBe('public-json');
+    expect(classify('/api/weather/Ab3dE_fGh1J/detail/?date=2026-01-06')).toBe('public-json');
+  });
+
+  it('leaves the share-token route, area-items and the legacy sheet alone', () => {
+    // The token route is no-store and per-recipient; area-items is private
+    // and never cached; the integer sheet is a 301.
+    expect(classify('/trips/s/some-token/route.geojson')).toBe('network');
+    expect(classify('/api/area-items/?bbox=7,46,8,47')).toBe('network');
+    expect(classify('/api/weather/1234/detail/')).toBe('network');
+  });
+
+  it('never classifies a write as either', () => {
+    expect(classify('/trips/2f1c0b7e-4b7a-4c39-9a51-0d6c1f0e9a11/route.geojson', 'POST')).toBe(
+      'network',
+    );
+  });
+});
+
 describe('isBasemapOrigin', () => {
   it('is true when the origin is in the allowlist', () => {
     const origins = new Set(['https://tiles.example.com']);
