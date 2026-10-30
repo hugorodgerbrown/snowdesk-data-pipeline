@@ -226,6 +226,81 @@ class TestCreateDrawn:
         assert Route.objects.filter(user=user).count() == 1
 
 
+def _replay(client: Client, body: Any, key: str) -> Any:
+    """POST a JSON body under an Idempotency-Key, as the mutation queue does.
+
+    Args:
+        client: The test client.
+        body: The value to encode.
+        key: The Idempotency-Key header.
+
+    Returns:
+        The response.
+
+    """
+    return client.post(
+        CREATE_URL,
+        data=json.dumps(body),
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=key,
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("drawing_on")
+class TestCreateDrawnReplay:
+    """A route saved offline replays without ever making a second route (SNOW-1262).
+
+    route_draw.js sends one Idempotency-Key for a draft — on the direct post
+    and on every queued replay of it — and relies on
+    apps.core.idempotency.IdempotencyMiddleware, with no change to the view,
+    to turn a second delivery into the first answer.
+    """
+
+    def test_the_same_key_twice_makes_one_route_and_one_answer(
+        self, client: Client
+    ) -> None:
+        """The replay is the cached 200: same uuid, same bounds, one row."""
+        user = UserFactory.create()
+        client.force_login(user)
+        body = {"points": WAYPOINTS, "name": "Offline"}
+
+        first = _replay(client, body, "draft-key-1")
+        second = _replay(client, body, "draft-key-1")
+
+        assert first.status_code == second.status_code == 200
+        assert second.json() == first.json()
+        assert Route.objects.filter(user=user).count() == 1
+
+    @override_settings(ROUTES_MAX_PER_USER=1)
+    def test_a_refusal_at_the_cap_replays_as_the_same_refusal(
+        self, client: Client
+    ) -> None:
+        """A 409 is cached too, so a replay neither saves nor answers differently."""
+        user = UserFactory.create()
+        RouteFactory.create(user=user)
+        client.force_login(user)
+        body = {"points": WAYPOINTS}
+
+        first = _replay(client, body, "draft-key-2")
+        second = _replay(client, body, "draft-key-2")
+
+        assert first.status_code == second.status_code == 409
+        assert second.json() == first.json() == {"error": "route_limit_reached"}
+        assert Route.objects.filter(user=user).count() == 1
+
+    def test_a_new_key_is_a_new_route(self, client: Client) -> None:
+        """The key, not the body, is what makes a save a replay."""
+        user = UserFactory.create()
+        client.force_login(user)
+        body = {"points": WAYPOINTS}
+
+        _replay(client, body, "draft-key-3")
+        _replay(client, body, "draft-key-4")
+
+        assert Route.objects.filter(user=user).count() == 2
+
+
 @pytest.mark.django_db
 @pytest.mark.usefixtures("drawing_on")
 class TestRouteGpx:
