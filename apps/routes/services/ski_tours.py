@@ -97,15 +97,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # v2: SNOW-1282 chains a tour's parts, which moves some summits.
-_SUMMITS_CACHE_KEY = "routes:ski-summits:v3:{count}:{stamp}"
+# v4: SNOW-1323 adds the newest source_updated_at to the stamp.
+_SUMMITS_CACHE_KEY = "routes:ski-summits:v4:{count}:{source}:{stamp}"
 _SUMMITS_CACHE_SECONDS = 7 * 24 * 3600
 
 # SNOW-1285: every tour at once, for a map zoomed out past the per-view
 # load. Thinned to about 20 m (Douglas-Peucker in degrees) and rounded to
 # five places (about a metre): at z9-z11 a pixel is 20-150 m, so nothing
 # drawn moves, and the whole set is ~2.3 MB, ~0.6 MB gzipped.
-# v3: SNOW-1310 cuts each tour into its legs.
-_OVERVIEW_CACHE_KEY = "routes:ski-overview:v3:{count}:{stamp}"
+# v3: SNOW-1310 cuts each tour into its legs; v4: SNOW-1323's stamp.
+_OVERVIEW_CACHE_KEY = "routes:ski-overview:v4:{count}:{source}:{stamp}"
 _OVERVIEW_TOLERANCE_DEG = 0.0002
 _OVERVIEW_PLACES = 5
 
@@ -113,12 +114,22 @@ _OVERVIEW_PLACES = 5
 def _tours_stamp(template: str) -> str:
     """Return a cache key from ``template`` that changes when the tours do.
 
-    It carries the tours' count and newest ``updated_at``, so an import
-    that adds, rewrites or removes a tour reads afresh.
+    It carries the tours' count, newest ``source_updated_at`` and newest
+    ``updated_at``, one for each writer (SNOW-1323). A sync rewrites a
+    tour with ``QuerySet.update()``, which moves ``source_updated_at`` and
+    leaves ``auto_now`` alone; a tour walked here on its first open
+    (``store_terrain``) moves ``updated_at`` and not ``source_updated_at``.
+    So a sync that adds, rewrites or removes a tour, or a local walk that
+    gives one its drawing, reads afresh.
     """
-    stamp = SkiTour.objects.aggregate(count=Count("id"), newest=Max("updated_at"))
+    stamp = SkiTour.objects.aggregate(
+        count=Count("id"),
+        source=Max("source_updated_at"),
+        newest=Max("updated_at"),
+    )
     return template.format(
         count=stamp["count"],
+        source=stamp["source"].timestamp() if stamp["source"] else 0,
         stamp=stamp["newest"].timestamp() if stamp["newest"] else 0,
     )
 
