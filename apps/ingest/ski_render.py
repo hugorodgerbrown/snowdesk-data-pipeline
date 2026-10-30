@@ -86,8 +86,12 @@ class DocumentTour:
     sac_id: Any = None
 
     @classmethod
-    def of(cls, row: SourceSkiTour) -> DocumentTour:
-        """Return ``row``'s document as a tour, with the record it holds."""
+    def of(cls, row: SourceSkiTour, *, samples: bool = True) -> DocumentTour:
+        """Return ``row``'s document as a tour, with the record it holds.
+
+        ``samples=False`` leaves the record out, for a row loaded without
+        it: reading a deferred field would query once per tour.
+        """
         document = row.document or {}
         return cls(
             geometry=document.get("geometry") or {},
@@ -97,7 +101,7 @@ class DocumentTour:
             descent_m=document.get("descent_m"),
             target_name=str(document.get("target_name") or "")[:255],
             target_altitude_m=document.get("target_altitude_m"),
-            slope_samples=row.slope_samples,
+            slope_samples=row.slope_samples if samples else None,
             sac_id=document.get("sac_id"),
         )
 
@@ -133,7 +137,9 @@ def tour_summits() -> dict[str, sac.Summit]:
     rows = SourceSkiTour.objects.live().only("id", "document", "content_hash")
     return {
         summit.key: summit
-        for summit in sac.build_summits(DocumentTour.of(row) for row in rows)
+        for summit in sac.build_summits(
+            DocumentTour.of(row, samples=False) for row in rows
+        )
     }
 
 

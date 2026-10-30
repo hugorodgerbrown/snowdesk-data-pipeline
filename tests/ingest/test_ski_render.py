@@ -192,3 +192,12 @@ def test_the_feed_serves_walk_and_drawing() -> None:
     assert item["slope_samples"] is None
     assert item["track_render"] is None
     assert item["document"] == row.document
+
+
+def test_the_summits_are_read_in_one_query(
+    django_assert_num_queries: Any,
+) -> None:
+    """No deferred terrain record is read per tour."""
+    SourceSkiTourFactory.create_batch(3)
+    with django_assert_num_queries(1):
+        assert tour_summits()
