@@ -740,8 +740,23 @@ class OfflineMapPage:
             *(f"rejected {line}" for line in rejections[-5:]),
             *(f"maplibre {line}" for line in self.tile_errors()[-10:]),
             *(f"fonts    {line}" for line in self.style_fonts()),
+            *(f"toast    {line}" for line in self.download_toasts()),
         ]
         return "\n  ".join(lines) if lines else "(console clean)"
+
+    def download_toasts(self) -> list[str]:
+        """Return the download-failure toast the app is showing, if any.
+
+        ``revealBasemapDownloadError`` shows one toast per failure reason
+        (quota, budget, no worker, …), so the visible one's id names why a
+        download ended in ``error`` where the roundel's state cannot.
+        """
+        toasts: list[str] = self.page.evaluate(
+            """() => [...document.querySelectorAll('[id^="map-download-error-toast"]')]
+                .filter((el) => !el.classList.contains('hidden'))
+                .map((el) => `${el.id}: ${el.textContent.trim().replace(/\\s+/g, ' ')}`)"""
+        )
+        return toasts
 
     def style_fonts(self) -> list[str]:
         """Return each fontstack in the live style, with the layers using it.
